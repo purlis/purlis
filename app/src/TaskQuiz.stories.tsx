@@ -88,17 +88,13 @@ function StewardsPane({ asks, minimised }: { asks: Shown[]; minimised?: boolean 
               <span className="ui-text-meta">Claude Code · smart-ide</span>
             </div>
             <NoticePaneRow
-              bell={
-                minimised === undefined
-                  ? undefined
-                  : {
-                      minimised,
-                      minimise: () => {},
-                      expand: () => {},
-                      onHolds: () => {},
-                      focus: () => {},
-                    }
-              }
+              bell={{
+                minimised: minimised === true,
+                minimise: () => {},
+                expand: () => {},
+                onHolds: () => {},
+                focus: () => {},
+              }}
             >
               <QuizBand plane="/plane" session={4} />
             </NoticePaneRow>
@@ -296,7 +292,7 @@ export const FoldedWithThePanesNotices: Story = {
     const canvas = within(canvasElement);
     // Folded, the band is one line, and the note and the question are in it, unseen (#5215).
     const line = await canvas.findByRole("button", {
-      name: "1 waiting · A task's question · Show",
+      name: /^1 waiting · A task's question\s*·\s*Show$/,
     });
     await waitFor(() => expect(canvas.getByText(FIRST_LINE)).not.toBeVisible());
     await waitFor(() =>

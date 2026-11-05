@@ -190,14 +190,14 @@ describe("a pane's notices, minimised (the default)", () => {
     expect(pill()).toHaveAttribute("aria-hidden", "true");
     expect(seen()).toEqual([]);
     expect(
-      within(frame()).getByRole("button", { name: "1 waiting · Remove workspace · Show" }),
+      within(frame()).getByRole("button", { name: /^1 waiting · Remove workspace\s*·\s*Show$/ }),
     ).toBeTruthy();
     expect(within(frame()).queryByRole("button", { name: /Dismiss all/ })).toBeNull();
   });
 
   it("puts the bell in the header, before split and close, and the band under the header", async () => {
     await aPane({ asks: [removal("beta", 10)], failed: [] });
-    await within(frame()).findByRole("button", { name: /· Show$/ });
+    await within(frame()).findByRole("button", { name: /·\s*Show$/ });
 
     const top = frame().querySelector(".pane-top") as HTMLElement;
     expect([...top.children].map((one) => one.getAttribute("data-scope") ?? one.className)).toEqual(
@@ -232,7 +232,7 @@ describe("a pane's notices, minimised (the default)", () => {
 
   it("never opens the band or takes the focus when a note arrives, and says the count politely", async () => {
     await aPane({ asks: [removal("beta", 10)], failed: [] });
-    const line = await within(frame()).findByRole("button", { name: /· Show$/ });
+    const line = await within(frame()).findByRole("button", { name: /·\s*Show$/ });
     line.focus();
 
     await act(() => emit("chat-sandbox-blocked", BLOCKED));
@@ -306,7 +306,9 @@ describe("a full band", () => {
     await act(() => emit("chat-mcp-failed", FAILED));
     await act(() => emit("chat-sandbox-blocked", BLOCKED));
 
-    await within(frame()).findByRole("button", { name: "4 waiting · Remove workspace · Show" });
+    await within(frame()).findByRole("button", {
+      name: /^4 waiting · Remove workspace\s*·\s*Show$/,
+    });
     expect(within(frame()).queryByText(/wait in the Inbox|waits in the Inbox/)).toBeNull();
     expect(within(frame()).queryByRole("button", { name: /more/ })).toBeNull();
     await waitFor(() =>
@@ -336,7 +338,7 @@ const QUESTION: Shown = {
 describe("a task's question in the band (#5213)", () => {
   it("is drawn in the band under the pane's head, and opens whole", async () => {
     await aPane({ asks: [QUESTION], failed: [] });
-    await userEvent.click(await within(frame()).findByRole("button", { name: /· Show$/ }));
+    await userEvent.click(await within(frame()).findByRole("button", { name: /·\s*Show$/ }));
 
     const band = await within(frame()).findByRole("region", { name: /^Pane notices/ });
     const quiz = within(band).getByRole("group", { name: "claude 4 asks" });

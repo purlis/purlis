@@ -48,7 +48,7 @@
 .pane-frame.pane-headed > .pane-body {
   /* Three of the terminal's own lines, as it measures them (`SessionPane`, `--terminal-row`), and
      its strip under the last. Before a terminal says, three lines of the base text. */
-  min-block-size: calc(3 * var(--terminal-row, 1.5rem) + var(--space-4));
+  min-block-size: calc(3 * var(--terminal-row, 1.25rem) + var(--space-4));
 }
 
 /* ---------------------------------------------------------------------------------------------
@@ -103,8 +103,16 @@
 }
 
 .pane-band-folded-show {
+  display: inline-flex;
   flex: none;
+  gap: var(--space-2);
+  align-items: center;
   margin-inline-start: auto;
+}
+
+.pane-band-folded-show > svg {
+  inline-size: var(--font-size-md);
+  block-size: var(--font-size-md);
 }
 
 /* The warnings, one under another and each the band's width; past the band's room they scroll
@@ -440,6 +448,12 @@
   inset-block-end: 0;
   padding-block: var(--space-2);
   background-color: var(--surface-raised);
+}
+
+/* On the question's own card, whatever its ground. */
+.task-quiz-whole,
+.task-quiz-pinned {
+  background-color: inherit;
 }
 
 /* A prompt's question over the lines it was written on, once opened (#4710). */

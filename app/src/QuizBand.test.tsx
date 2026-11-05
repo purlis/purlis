@@ -187,7 +187,7 @@ describe("where a task's question is drawn (#4565)", () => {
     await waitFor(() => expect(screen.getByText(LINE)).not.toBeVisible());
     expect(quiz()).toBeNull();
     expect(
-      screen.getByRole("button", { name: "1 waiting · A task's question · Show" }),
+      screen.getByRole("button", { name: /^1 waiting · A task's question\s*·\s*Show$/ }),
     ).toBeTruthy();
     cleanup();
     render(<Pane session={4} asks={[QUESTION]} />);

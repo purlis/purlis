@@ -1631,9 +1631,9 @@ describe("a chat's state, as a word and a shape (#1484)", () => {
     expect(quiz.getAttribute("data-task")).toBe("2");
     expect(quiz.closest(".pane-top")).not.toBeNull();
     // Whole once it is opened (#5215), and the band is folded until asked.
-    expect(screen.getByRole("button", { name: /· Show$/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /·\s*Show$/ })).toBeTruthy();
     expect(document.activeElement).toBe(typing);
-    fireEvent.click(screen.getByRole("button", { name: /· Show$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /·\s*Show$/ }));
     await waitFor(() => expect(quiz).toBeVisible());
     fireEvent.click(within(quiz).getByRole("button", { name: "Show the whole question" }));
     expect(within(quiz).getByText("steward 1 passed this on.")).toBeTruthy();
@@ -1688,7 +1688,7 @@ describe("a chat's state, as a word and a shape (#1484)", () => {
 
   it("closes a question from this pane only: it still waits in the count and the Inbox's (#5213)", async () => {
     const quiz = await aQuizAtTheTop();
-    fireEvent.click(screen.getByRole("button", { name: /· Show$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /·\s*Show$/ }));
     await waitFor(() => expect(quiz).toBeVisible());
 
     fireEvent.click(within(quiz).getByRole("button", { name: CLOSE_QUIZ }));

@@ -253,7 +253,7 @@ describe("a pane's row of Notices", () => {
       await waitFor(() => expect(holds()).toEqual({ notes: 2, trouble: 1, asks: 2 }));
       expect(seen()).toEqual([]);
       expect(
-        screen.getByRole("button", { name: "2 waiting · dispatch, change · Show" }),
+        screen.getByRole("button", { name: /^2 waiting · dispatch, change\s*·\s*Show$/ }),
       ).toBeTruthy();
       // Folded, not gone: every note is still in the band, with its ways out.
       expect(document.querySelector('[data-cause="a:1"]')).not.toBeNull();
@@ -341,7 +341,7 @@ describe("a pane's row of Notices", () => {
         );
       }
       render(<Arriving />);
-      const line = await screen.findByRole("button", { name: /· Show$/ });
+      const line = await screen.findByRole("button", { name: /·\s*Show$/ });
       line.focus();
       act(() => raise());
       await waitFor(() => expect(holds()).toEqual({ notes: 1, trouble: 0, asks: 1 }));
@@ -364,7 +364,7 @@ describe("a pane's row of Notices", () => {
         expect(screen.queryByRole("button", { name: "Fold the band" })).toBeNull(),
       );
       expect(seen()).toEqual(["first"]);
-      screen.getByRole("button", { name: /· Show$/ }).focus();
+      screen.getByRole("button", { name: /·\s*Show$/ }).focus();
       await waitFor(() => expect(seen()).toEqual([]));
     });
   });

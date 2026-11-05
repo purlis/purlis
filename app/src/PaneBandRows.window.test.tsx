@@ -166,14 +166,14 @@ const frame = () => screen.getByTestId("pane").closest(".pane-frame") as HTMLEle
 const bell = () => within(frame()).getByRole("button", { name: /^Pane notices:/ });
 const band = () => within(frame()).getByRole("region", { name: /^Pane notices/ });
 const unfold = async () =>
-  userEvent.click(await within(frame()).findByRole("button", { name: /· Show$/ }));
+  userEvent.click(await within(frame()).findByRole("button", { name: /·\s*Show$/ }));
 
 describe("the band folded (the default)", () => {
   it("is one line naming how many wait and on what, and shows no row", async () => {
     await aPane([removal("beta"), removal("gamma"), PROMPT]);
 
     const line = await within(frame()).findByRole("button", {
-      name: "3 waiting · Terminal prompt, Remove workspace · Show",
+      name: /^3 waiting · Terminal prompt, Remove workspace\s*·\s*Show$/,
     });
     expect(band()).toContainElement(line);
     expect(band()).toHaveAccessibleName("Pane notices: 3 waiting on you");
@@ -202,7 +202,7 @@ describe("the band folded (the default)", () => {
 
     await userEvent.click(await within(frame()).findByRole("button", { name: "Fold the band" }));
 
-    const line = await within(frame()).findByRole("button", { name: /· Show$/ });
+    const line = await within(frame()).findByRole("button", { name: /·\s*Show$/ });
     await waitFor(() => expect(line).toHaveFocus());
     expect(within(frame()).queryByRole("status", { name: "Remove workspace" })).toBeNull();
   });
@@ -214,7 +214,7 @@ describe("the band folded (the default)", () => {
     await waitFor(() =>
       expect(bell()).toHaveAccessibleName("Pane notices: 1 notice, 1 in trouble"),
     );
-    expect(within(frame()).queryByRole("button", { name: /· Show$/ })).toBeNull();
+    expect(within(frame()).queryByRole("button", { name: /·\s*Show$/ })).toBeNull();
     expect(within(frame()).queryByRole("region", { name: /^Pane notices/ })).toBeNull();
   });
 });

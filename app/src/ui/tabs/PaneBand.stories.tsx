@@ -489,7 +489,7 @@ export const Minimised: Story = {
     warnings: ["vault-refused", "mcp-failed", "stale-clone", "skills-missing"],
   },
   play: async ({ canvas, canvasElement, userEvent }) => {
-    const line = await canvas.findByRole("button", { name: "1 waiting · Vault · Show" });
+    const line = await canvas.findByRole("button", { name: /^1 waiting · Vault\s*·\s*Show$/ });
     await waitFor(() => expect(rowsOf(canvasElement).warnings).toHaveLength(0));
     await heldInThePane(canvasElement);
     expect(canvas.getByRole("region", { name: /^Pane notices/ })).toHaveAccessibleName(
@@ -511,7 +511,7 @@ export const Minimised: Story = {
     expectFocusInSight();
     await userEvent.keyboard("{Enter}");
     await untilFocused(
-      () => canvas.getByRole("button", { name: "1 waiting · Vault · Show" }),
+      () => canvas.getByRole("button", { name: /^1 waiting · Vault\s*·\s*Show$/ }),
       "the fold gives the keyboard back to the line",
     );
     expectFocusInSight();
@@ -916,7 +916,7 @@ export const ConsentClamped: Story = {
 /**
  * **A narrow pane's band says it has more** (#3168): two warnings are taller than the band's
  * room, so it scrolls. At rest a fade at its bottom says more is below; scrolled to its end, the
- * fade is at its top alone; partway, at both. The warnings fade into the terminal's fill they
+ * fade is at its top alone; partway, at both. The rows fade into the band's ground they
  * stand on, and the fade is never in the way of a press. The picture is the band partway, with
  * both.
  */
@@ -926,7 +926,8 @@ export const NarrowScrolled: Story = {
     const vault = await canvas.findByRole("status", { name: "Vault" });
     const stack = vault.closest('[data-scope="notice-row"][data-part="stack"]') as HTMLElement;
     await waitFor(() => expect(stack.scrollHeight).toBeGreaterThan(stack.clientHeight + 24));
-    const ground = getComputedStyle(rowsOf(canvasElement).frame).backgroundColor;
+    // The band's own ground, which the rows stand on (#5215).
+    const ground = getComputedStyle(rowsOf(canvasElement).band as Element).backgroundColor;
     const fade = (edge: "::before" | "::after") => getComputedStyle(stack, edge);
     const shows = async (above: boolean, below: boolean) => {
       await waitFor(() => {

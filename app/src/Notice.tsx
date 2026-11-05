@@ -25,7 +25,7 @@ import {
   sameHolds,
   type BandHolds,
 } from "./paneNotices";
-import { ChevronUp, X } from "lucide-react";
+import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { Twist } from "./ui/disclosure/Disclosure";
 import { Button, ButtonRow, IconButton } from "./ui/button/Button";
 import {
@@ -1153,16 +1153,19 @@ export function NoticePaneRow({
           size="sm"
           variant="ghost"
           className="pane-band-folded"
-          aria-label={`${foldedSays(asks, held.waitsOn)} · ${SHOW_BAND}`}
           onPress={() => {
             goesOn.current = true;
             bell?.expand();
           }}
           data-way="show"
-          icon={<Twist />}
         >
           <span className="pane-band-folded-says">{foldedSays(asks, held.waitsOn)}</span>
-          <span className="pane-band-folded-show">{` · ${SHOW_BAND}`}</span>
+          {/* The prototype's line: Show at the far end, where a dot before it would stand alone. */}
+          <span className="sr-only"> · </span>
+          <span className="pane-band-folded-show">
+            {SHOW_BAND}
+            <ChevronDown aria-hidden="true" />
+          </span>
         </Button>
       )}
       {headed && (
