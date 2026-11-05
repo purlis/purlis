@@ -55,7 +55,7 @@ const meta = {
   component: AllowedRows,
   args: {
     plane: "/Users/you/work/shop",
-    file: "charter.toml",
+    file: "purlis.toml",
     ids: { id: "allowed", labelledBy: undefined },
   },
   parameters: { screenshot: "page" },

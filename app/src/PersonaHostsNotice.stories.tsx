@@ -12,7 +12,7 @@ import { expect, userEvent, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { PersonaHosts, SandboxState } from "./bindings";
 import { PersonaHostsNotice } from "./PersonaHostsNotice";
-import { expectFocusInSight, untilFocused } from "./stories.testkit";
+import { expectFocusInSight, pictureNow, untilFocused } from "./stories.testkit";
 
 const PLANE = "/Users/you/work/shop";
 
@@ -88,6 +88,8 @@ export const ATeammatesHostWaitsBesideTheNewLine: Story = {
       "Tab goes on to Not now",
     );
     expectFocusInSight();
+    // Not now hides it, and the picture is of what stays up.
+    await pictureNow();
     await userEvent.keyboard("{Enter}");
     await waitFor(() =>
       expect(
