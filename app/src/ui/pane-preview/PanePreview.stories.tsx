@@ -62,8 +62,10 @@ function Pane({
   return (
     <div className="pane-frame pane-headed" data-pane-preview={doing} style={box}>
       <div className="pane-top">
-        <div className="pane-chips">
-          <span className="pane-name">{name}</span>
+        <div className="pane-head">
+          <div className="pane-chips">
+            <span className="pane-name">{name}</span>
+          </div>
         </div>
       </div>
       <div className="pane-body">

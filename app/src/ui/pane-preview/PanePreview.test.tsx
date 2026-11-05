@@ -3,6 +3,8 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   PanePreviewArriving,
   PanePreviewHeld,
@@ -19,6 +21,17 @@ const partOf = (container: HTMLElement, part: string) =>
 
 /** **What a drag draws over the panes** (#5291): drawn by its parts, and read by nobody. */
 describe("the pane preview", () => {
+  // jsdom draws no stylesheet. A part left out of this rule sits in the flow at the layer's root,
+  // and moves what is under it: the strip's line did, until a picture showed it wasn't drawn.
+  it.each(["arriving", "line", "size", "refused", "held", "words"])(
+    "keeps its %s out of the flow and out of the pointer's way",
+    (part) => {
+      const css = readFileSync(join(__dirname, "pane-preview.css"), "utf8");
+      const placed = css.slice(css.indexOf(":is("), css.indexOf("position: fixed"));
+      expect(placed).toContain(`[data-part="${part}"]`);
+    },
+  );
+
   it("draws a pane about to be at its box, with its name", () => {
     const { container } = render(<PanePreviewArriving box={BOX} name="codeql-issues" />);
     const arriving = partOf(container, "arriving");
