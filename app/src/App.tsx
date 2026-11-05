@@ -27,6 +27,7 @@ import {
   type PlaneId,
   PROJECT_READY,
   type ProjectReady,
+  type ProjectRetried,
   type RelaunchChoice,
   type RelaunchQuestion,
   type SlowStart,
@@ -147,9 +148,12 @@ import { SidebarIcon } from "./ui/rail/Rail";
 import { ProjectRail } from "./ProjectRail";
 import {
   inTurn,
+  isFailed,
   isLoading,
   loadOf,
   loadSaid,
+  offersRetry,
+  withoutLoad,
   placed,
   railOrder,
   STILL_LOADING_AFTER,
@@ -260,7 +264,18 @@ function App() {
   const rememberedNow = useRef<string[]>([]);
   const [loads, setLoads] = useState<Record<string, ProjectLoad>>({});
   /** The restore's queue, while it has one: a waiting project the person chooses goes next. */
-  const turn = useRef<{ toFront: (path: string) => void } | undefined>(undefined);
+  const turn = useRef<
+    { toFront: (path: string) => void; waits: (path: string) => boolean } | undefined
+  >(undefined);
+  /** The same loads, as of the last render, for a verb kept stable across renders. */
+  const loadsNow = useRef(loads);
+  useLayoutEffect(() => {
+    loadsNow.current = loads;
+  });
+  /** Projects whose open failed: their row stays `coming`, for its Retry, after the restore. */
+  const failedOpens = useRef(new Set<string>());
+  /** Projects a Retry asked the trust question about: the yes goes on to put them back. */
+  const askedByRetry = useRef(new Set<string>());
   /** The waiting project the person chose, which comes in front as its open answers. */
   const chosen = useRef<string | undefined>(undefined);
   /** Projects this window held before it was reloaded, whose opening is long over. */
@@ -634,10 +649,16 @@ function App() {
    * **A project another window holds is not taken in twice** (charter#126): one project is
    * one tab in one window, so opening it here brings that window to the front instead. And
    * `into: false` opens it without taking it into this window at all, for a restore that is
-   * about to move it into a window of its own.
+   * about to move it into a window of its own. `refused` takes the core's refusal where the
+   * project's own row says it (#5324), and it is then said nowhere else.
    */
   const openInto = useCallback(
-    async (path: string, andShow: boolean, into = true): Promise<PlaneId | undefined> => {
+    async (
+      path: string,
+      andShow: boolean,
+      into = true,
+      refused?: (error: string) => void,
+    ): Promise<PlaneId | undefined> => {
       setOpenTrouble(undefined);
       // A project this window is still letting go of opens once that is done (#1949): the
       // core would make it wait anyway, and the window says why in the meantime.
@@ -653,7 +674,8 @@ function App() {
       // Verbatim: the sentence names the path and what was wrong with it, and an operator shown
       // a reworded version of it can neither act on it nor search for it.
       if (answer.status === "error") {
-        setOpenTrouble(answer.error);
+        if (refused !== undefined) refused(answer.error);
+        else setOpenTrouble(answer.error);
         return undefined;
       }
       if (answer.data.plane === null) {
@@ -690,6 +712,91 @@ function App() {
   );
 
   /**
+   * One remembered project's open answered, at a launch or on its row's Retry: in among the rest
+   * at its place, with its row its own. `error` is a refused open: the row stays, for its Retry.
+   */
+  const cameBack = useCallback(
+    (path: string, plane: PlaneId | undefined, error: string | undefined) => {
+      if (error !== undefined) {
+        failedOpens.current.add(path);
+        setLoads((was) => ({ ...was, [path]: { kind: "failed", error } }));
+        return;
+      }
+      failedOpens.current.delete(path);
+      setComing((was) => was.filter((one) => one !== path));
+      setLoads((was) => {
+        const { [path]: load, ...rest } = was;
+        // Back already, or answered with nothing to load: no mark. Otherwise it is loading
+        // under its root until the core says how it came out.
+        if (plane === undefined || heldBefore.current.has(plane))
+          return isLoading(load) ? rest : was;
+        if (plane === path || load === undefined || rest[plane] !== undefined) return was;
+        return { ...rest, [plane]: load };
+      });
+      if (plane === undefined) return;
+      rememberedNow.current = rememberedNow.current.map((one) => (one === path ? plane : one));
+      setRemembered(rememberedNow.current);
+      // The order as it is now: the updater may run after the restore has let go of it.
+      const order = rememberedNow.current;
+      setPlanes((was) => placed(was, plane, order) as PlaneId[]);
+    },
+    [],
+  );
+
+  /**
+   * **Retry on a project** (#5324, the rulings of 2026-11-05): the one action behind its row on
+   * the rail and a waiting task's row in its sidebar. Reopens that project alone, its chats with
+   * it, and its row is loading afresh until the core says how it came out (`project-ready`).
+   *
+   * One this window does not hold yet opens, through the gate every open goes through, or goes
+   * next if it is still waiting its turn. The core does the rest (`retry_project`).
+   */
+  const retryProject = useCallback(
+    async (path: string): Promise<ProjectRetried | undefined> => {
+      const before = loadsNow.current[path];
+      setLoads((was) => ({ ...was, [path]: { kind: "loading", since: Date.now() } }));
+      if (!planesNow.current.includes(path)) {
+        if (turn.current?.waits(path)) {
+          turn.current.toFront(path);
+          return undefined;
+        }
+        let error: string | undefined;
+        const plane = await openInto(path, false, false, (said) => (error = said));
+        cameBack(path, plane, error);
+        if (plane !== undefined && chosen.current === path) setShowing({ at: "plane", plane });
+        return undefined;
+      }
+      const said = await commands
+        .retryProject(path)
+        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+      if (said.status === "error") {
+        setLoads((was) => ({ ...was, [path]: { kind: "failed", error: said.error } }));
+        return undefined;
+      }
+      const ask = said.data.ask;
+      if (ask !== null) {
+        // Its record read again asks more than this machine approved: nothing ran, and the row
+        // says what it said until the person answers.
+        askedByRetry.current.add(ask.path);
+        setApproving((queue) => (queue.some((q) => q.path === ask.path) ? queue : [...queue, ask]));
+        setLoads((was) => {
+          if (before !== undefined) return { ...was, [path]: before };
+          return withoutLoad(was, path);
+        });
+      }
+      return said.data;
+    },
+    [cameBack, openInto],
+  );
+
+  /** A project whose open failed, put away: its row goes, until it is opened again. */
+  const putAwayFailed = useCallback((path: string) => {
+    failedOpens.current.delete(path);
+    setComing((was) => was.filter((one) => one !== path));
+    setLoads((was) => withoutLoad(was, path));
+  }, []);
+
+  /**
    * The operator said yes. The approval carries back the contribution they were shown, so it
    * is an answer to the question that was asked and not to whatever the project says by the
    * time the button is pressed.
@@ -698,37 +805,42 @@ function App() {
    * this command gives is "it changed while you were reading it", and the only honest repair
    * is to ask again about what it says now — which is what opening it again does.
    */
-  const approveProject = useCallback(async (ask: Ask) => {
-    const answer = await commands
-      .approvePlane(ask.path, ask.contributes)
-      .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
-    setApproving((queue) => queue.filter((q) => q.path !== ask.path));
-    if (answer.status === "error") {
-      setOpenTrouble(answer.error);
-      return;
-    }
-    setOpenTrouble(undefined);
-    const plane = answer.data;
-    setPlanes((was) => (was.includes(plane) ? was : [...was, plane]));
-    setShowing({ at: "plane", plane });
-    // A project the guided steps asked for is held behind their harness step (#1817): a repo's
-    // where its first chat starts, any other at its root.
-    if (stepsNow.current.awaiting) {
-      const repo = madeAsking.current?.asking === ask.path ? madeAsking.current : undefined;
-      stepsNow.current.arrived({
-        plane,
-        cwd: repo?.cwd ?? plane,
-        workspace: repo?.workspace ?? OUTSIDE,
-      });
-    }
-    // A repo opened into this project was waiting on this yes for its first chat.
-    setFirstChat((was) =>
-      was?.asking === ask.path ? { ...was, plane, asking: null, at: was.at + 1 } : was,
-    );
-    setShellAsk((was) =>
-      was?.asking === ask.path ? { ...was, plane, asking: null, at: was.at + 1 } : was,
-    );
-  }, []);
+  const approveProject = useCallback(
+    async (ask: Ask) => {
+      const answer = await commands
+        .approvePlane(ask.path, ask.contributes)
+        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+      setApproving((queue) => queue.filter((q) => q.path !== ask.path));
+      if (answer.status === "error") {
+        setOpenTrouble(answer.error);
+        return;
+      }
+      setOpenTrouble(undefined);
+      const plane = answer.data;
+      setPlanes((was) => (was.includes(plane) ? was : [...was, plane]));
+      setShowing({ at: "plane", plane });
+      // The question a Retry raised (#5324): the yes puts its chats back too, and takes one press.
+      if (askedByRetry.current.delete(ask.path)) void retryProject(plane);
+      // A project the guided steps asked for is held behind their harness step (#1817): a repo's
+      // where its first chat starts, any other at its root.
+      if (stepsNow.current.awaiting) {
+        const repo = madeAsking.current?.asking === ask.path ? madeAsking.current : undefined;
+        stepsNow.current.arrived({
+          plane,
+          cwd: repo?.cwd ?? plane,
+          workspace: repo?.workspace ?? OUTSIDE,
+        });
+      }
+      // A repo opened into this project was waiting on this yes for its first chat.
+      setFirstChat((was) =>
+        was?.asking === ask.path ? { ...was, plane, asking: null, at: was.at + 1 } : was,
+      );
+      setShellAsk((was) =>
+        was?.asking === ask.path ? { ...was, plane, asking: null, at: was.at + 1 } : was,
+      );
+    },
+    [retryProject],
+  );
 
   /** Lets go of one project. Its chats end, its record is written into it, and its tab goes.
    *  Nothing of the project on disk goes. Reached through {@link closeProject}, which asks
@@ -1127,6 +1239,7 @@ function App() {
   const windowDoes = useMemo<WindowDoing>(
     () => ({
       openProject: () => setShowing({ at: "opener" }),
+      retryProject,
       createProject: () => {
         setCreateTrouble(undefined);
         setCreating(true);
@@ -1163,7 +1276,7 @@ function App() {
       },
       quit: () => void commands.askToQuit().catch(() => undefined),
     }),
-    [closeProject, moveProject, pinProject, toggleFocusMode],
+    [closeProject, moveProject, pinProject, retryProject, toggleFocusMode],
   );
 
   /**
@@ -1379,25 +1492,11 @@ function App() {
           for (const path of waiting) next[path] ??= { kind: "loading", since };
           return next;
         });
-        /** One of this window's projects answered: in among the rest at its place, its row its
-         *  own, and in front when it is the one the person chose or the one remembered there. */
-        const arrived = (path: string, plane: PlaneId | undefined) => {
-          setComing((was) => was.filter((one) => one !== path));
-          setLoads((was) => {
-            const { [path]: load, ...rest } = was;
-            // Back already, or answered with nothing to load: no mark. Otherwise it is loading
-            // under its root until the core says how it came out.
-            if (plane === undefined || heldBefore.current.has(plane))
-              return isLoading(load) ? rest : was;
-            if (plane === path || load === undefined || rest[plane] !== undefined) return was;
-            return { ...rest, [plane]: load };
-          });
+        /** One of this window's projects answered: its row its own, and in front when it is
+         *  the one the person chose or the one remembered there. */
+        const arrived = (path: string, plane: PlaneId | undefined, error: string | undefined) => {
+          cameBack(path, plane, error);
           if (plane === undefined) return;
-          rememberedNow.current = rememberedNow.current.map((one) => (one === path ? plane : one));
-          setRemembered(rememberedNow.current);
-          // The order as it is now: the updater may run after the restore has let go of it.
-          const order = rememberedNow.current;
-          setPlanes((was) => placed(was, plane, order) as PlaneId[]);
           // The remembered front tab, unless the launch already named one: a terminal launch
           // inside a project is the operator saying which project he means, and it outranks an
           // arrangement from yesterday. A project the person chose while it waited outranks both.
@@ -1417,9 +1516,16 @@ function App() {
           .filter((path) => !here.includes(path));
         const answered = new Map<string, PlaneId | undefined>();
         const going = inTurn([...new Set([...here, ...elsewhere])], frontPath, async (path) => {
-          const plane = await openInto(path, false, false);
+          const mine = here.includes(path);
+          let error: string | undefined;
+          const plane = await openInto(
+            path,
+            false,
+            false,
+            mine ? (said) => (error = said) : undefined,
+          );
           answered.set(path, plane);
-          if (here.includes(path)) arrived(path, plane);
+          if (mine) arrived(path, plane, error);
           return plane;
         });
         turn.current = going;
@@ -1441,15 +1547,19 @@ function App() {
         // Whatever happened, the restore is over. A window that stayed `restoring` would
         // never write its arrangement down and would warn on every quit for the rest of the
         // day, which is a worse failure than the one that caused it.
-        setComing([]);
-        rememberedNow.current = [];
-        setRemembered([]);
+        // A project whose open failed keeps its row and its place, for its Retry (#5324).
+        const failed = [...failedOpens.current];
+        setComing(failed);
+        if (failed.length === 0) {
+          rememberedNow.current = [];
+          setRemembered([]);
+        }
         chosen.current = undefined;
         setRestoring(false);
         restoreOver.settle();
       }
     })();
-  }, [launch, openInto, own, restoreOver, split]);
+  }, [cameBack, launch, openInto, own, restoreOver, split]);
 
   // Nothing is ever drawn on a project this window does not hold. `showing` is set from
   // several places — a close, a restore, an approval — and a plane that went in between
@@ -2102,7 +2212,13 @@ function App() {
     (project: Project) => {
       const load = loads[project.plane];
       const says = loadSaid(load, loadsAt);
-      return isLoading(load) || says !== undefined ? { loading: isLoading(load), says } : undefined;
+      if (!isLoading(load) && says === undefined) return undefined;
+      return {
+        loading: isLoading(load),
+        failed: isFailed(load),
+        says,
+        retry: offersRetry(load, loadsAt),
+      };
     },
     [loads, loadsAt],
   );
@@ -2724,6 +2840,8 @@ function App() {
             coming={coming}
             loadOf={loadOfRow}
             onChoose={chooseComing}
+            onRetry={retryProject}
+            onDismiss={putAwayFailed}
             inFront={inFront}
             rows={strip}
             offers={stripFound}

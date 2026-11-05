@@ -244,6 +244,8 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
         "first_task_run",
         "resume_session",
         "retry_chat_that_did_not_start",
+        "retry_project",
+        "retry_project",
         "reopen_finished_task",
         "curate",
         "relaunch",

@@ -27,8 +27,8 @@ export const STILL_LOADING_AFTER = 15_000;
 /**
  * How a project's load is going, as its row draws it.
  *
- * `failed` is the core's word for a project none of whose chats were put back; its row's error
- * and Retry are #5324's. Until then a failed project draws as a project, with no loading mark.
+ * `failed` is the core's word for a project none of whose chats were put back, or the window's
+ * for one whose open was refused: its row says the error and offers Retry (#5324).
  */
 export type ProjectLoad =
   | { kind: "loading"; since: number }
@@ -45,8 +45,37 @@ export function loadOf(outcome: ProjectOutcome): ProjectLoad {
 /** Whether a row draws its loading mark. */
 export const isLoading = (load: ProjectLoad | undefined): boolean => load?.kind === "loading";
 
+/** Whether a row draws its failed mark. */
+export const isFailed = (load: ProjectLoad | undefined): boolean => load?.kind === "failed";
+
 /**
- * What a project's row says of its load, beside its name: nothing once it is all back.
+ * **Whether a row offers Retry** (#5324, round 2): one that failed, one still loading after
+ * {@link STILL_LOADING_AFTER}, and one short of chats. Never one loading afresh, so a press has
+ * its time to answer, and never one all back.
+ */
+export function offersRetry(load: ProjectLoad | undefined, now: number): boolean {
+  if (load === undefined) return false;
+  switch (load.kind) {
+    case "loading":
+      return now - load.since >= STILL_LOADING_AFTER;
+    case "ready":
+      return load.back < load.wanted;
+    case "failed":
+      return true;
+  }
+}
+
+/** `loads` without the one of `path`: its row says nothing more of it. */
+export function withoutLoad(
+  loads: Readonly<Record<string, ProjectLoad>>,
+  path: string,
+): Record<string, ProjectLoad> {
+  return Object.fromEntries(Object.entries(loads).filter(([one]) => one !== path));
+}
+
+/**
+ * What a project's row says of its load, beside its name: nothing once it is all back, and the
+ * error, verbatim, once it has failed (#5324).
  *
  * "Still loading…" after {@link STILL_LOADING_AFTER} with no answer: slow is not failed, and is
  * said apart from it (round 2). "N of M chats back" when only some of its chats came back: the
@@ -60,7 +89,7 @@ export function loadSaid(load: ProjectLoad | undefined, now: number): string | u
     case "ready":
       return load.back < load.wanted ? `${load.back} of ${load.wanted} chats back` : undefined;
     case "failed":
-      return undefined;
+      return load.error;
   }
 }
 
@@ -77,7 +106,12 @@ export function inTurn<T>(
   front: string | undefined,
   open: (path: string) => Promise<T>,
   atOnce = AT_ONCE,
-): { done: Promise<(T | undefined)[]>; toFront: (path: string) => void } {
+): {
+  done: Promise<(T | undefined)[]>;
+  toFront: (path: string) => void;
+  /** Whether `path` is still waiting its turn. */
+  waits: (path: string) => boolean;
+} {
   const waiting =
     front !== undefined && paths.includes(front)
       ? [front, ...paths.filter((path) => path !== front)]
@@ -111,6 +145,7 @@ export function inTurn<T>(
       waiting.splice(at, 1);
       waiting.unshift(path);
     },
+    waits: (path) => waiting.includes(path),
   };
 }
 

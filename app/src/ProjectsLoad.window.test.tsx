@@ -12,6 +12,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { ProjectReady } from "./bindings";
@@ -53,9 +54,22 @@ const at = (name: string) => `/home/dev/${name}`;
  * A core that remembers `remembered` from the last quit, `active` in front, and answers each
  * project's open only when the test says so (`answer`), unless it is in `quick`.
  */
-function core(remembered: string[], active: number, quick: string[] = []) {
+function core(
+  remembered: string[],
+  active: number,
+  quick: string[] = [],
+  /** The chats waiting to start, and what a Retry of the project does of them (#5324). */
+  chats: {
+    waiting?: unknown[];
+    afterRetry?: { open: unknown[]; started: { id: string; session: number }[] };
+  } = {},
+) {
   const asked: string[] = [];
+  const retried: string[] = [];
+  let retriedYet = false;
+  let readAfterRetry = false;
   const opens = new Map<string, () => void>();
+  const refusals = new Map<string, (why: string) => void>();
   const listeners = new Map<string, number[]>();
   mockIPC((cmd, args) => {
     const given = (args ?? {}) as Record<string, unknown>;
@@ -76,13 +90,27 @@ function core(remembered: string[], active: number, quick: string[] = []) {
       const path = given.path as string;
       asked.push(path);
       if (quick.map(at).includes(path)) return { plane: path, ask: null };
-      return new Promise((resolve) => opens.set(path, () => resolve({ plane: path, ask: null })));
+      return new Promise((resolve, reject) => {
+        opens.set(path, () => resolve({ plane: path, ask: null }));
+        refusals.set(path, reject);
+      });
+    }
+    if (cmd === "retry_project") {
+      retried.push(given.plane as string);
+      retriedYet = true;
+      return { ask: null, started: chats.afterRetry?.started ?? [] };
     }
     if (cmd === "plane_sidebar")
       return { root: plane, workspaces: [], personas: [], persona: null, unfiled: [] };
-    if (cmd === "opened_chats") return [];
+    if (cmd === "opened_chats") {
+      if (retriedYet && chats.afterRetry !== undefined) {
+        readAfterRetry = true;
+        return chats.afterRetry.open;
+      }
+      return [];
+    }
     if (cmd === "chat_states") return [];
-    if (cmd === "chats_that_would_not_start") return [];
+    if (cmd === "chats_that_would_not_start") return retriedYet ? [] : (chats.waiting ?? []);
     if (cmd === "recent_planes") return { planes: [], dropped: [], forgetful: null };
     if (cmd === "extensions_on") return [];
     if (cmd === "theme_in_force") return themeInForce(args);
@@ -91,6 +119,26 @@ function core(remembered: string[], active: number, quick: string[] = []) {
   return {
     /** The paths the window asked the core to open, in the order it asked. */
     asked,
+    /** The projects the window asked the core to retry (#5324). */
+    retried,
+    /** Whether the window read the chats again once the Retry had brought them back. */
+    openedAfterRetry: () => readAfterRetry,
+    /** Refuses the open of the project called `name`, with `why`. */
+    refuse: async (name: string, why: string) => {
+      const refuse = refusals.get(at(name));
+      if (refuse === undefined) throw new Error(`${name} was not asked to open`);
+      await act(async () => refuse(why));
+    },
+    /** The core saying a chat of the project called `name` has started again. */
+    restored: (name: string, session: number) =>
+      act(() => {
+        for (const handler of listeners.get("chat-restored") ?? [])
+          window.__TAURI_INTERNALS__.runCallback(handler, {
+            event: "chat-restored",
+            id: 1,
+            payload: { plane: at(name), number: session, session, left: 0 },
+          });
+      }),
     /** Answers the open of the project called `name`. */
     answer: async (name: string) => {
       const open = opens.get(at(name));
@@ -212,5 +260,156 @@ describe("projects loading independently at a launch (#5323)", () => {
     await answer("two");
     ready("two");
     await waitFor(() => expect(screen.queryByText(/^Loading \d project/)).not.toBeInTheDocument());
+  });
+});
+
+/**
+ * **A project that fell short has one Retry** (#5324, the rulings of 2026-11-05): a project that
+ * failed says why on its row, and its Retry, or the one offered on a row still loading after
+ * 15 s or short of chats, reopens only it, its chats with it.
+ */
+describe("retrying a project from its row (#5324)", () => {
+  const retryOf = (name: string) =>
+    within(stripNamed("Projects").closest("[data-part='column']") as HTMLElement).queryByRole(
+      "button",
+      { name: `Retry ${name}` },
+    );
+
+  it("says a failed project's error on its row with a Retry, and leaves the others alone", async () => {
+    const { ready, asked } = core(["one", "two"], 0, ["one", "two"]);
+
+    render(<App />);
+
+    await waitFor(() => expect(rows()).toEqual(["one…", "two…"]));
+    ready("one", { kind: "failed", error: "The record could not be read." });
+    ready("two");
+    await waitFor(() => expect(rows()).toEqual(["one", "two"]));
+    expect(row("one")).toHaveAccessibleDescription(/The record could not be read\.$/);
+    expect(retryOf("one")).toBeInTheDocument();
+    expect(retryOf("two")).toBeNull();
+
+    await userEvent.click(retryOf("one") as HTMLElement);
+
+    await waitFor(() => expect(rows()).toEqual(["one…", "two"]));
+    expect(asked).toEqual(["one", "two"].map(at));
+    ready("one");
+    await waitFor(() => expect(rows()).toEqual(["one", "two"]));
+    expect(retryOf("one")).toBeNull();
+  });
+
+  it("reopens only that project, through the core's retry", async () => {
+    const { ready, retried } = core(["one", "two"], 0, ["one", "two"]);
+
+    render(<App />);
+
+    await waitFor(() => expect(rows()).toEqual(["one…", "two…"]));
+    ready("one", { kind: "failed", error: "No." });
+    ready("two");
+    await userEvent.click(await waitFor(() => retryOf("one") as HTMLElement));
+
+    await waitFor(() => expect(retried).toEqual([at("one")]));
+  });
+
+  it("keeps the row of a project whose open failed, and its Retry opens it", async () => {
+    const { answer, refuse, ready, asked } = core(["one", "two"], 0, ["two"]);
+
+    render(<App />);
+
+    await waitFor(() => expect(rows()).toEqual(["one…", "two…"]));
+    await refuse("one", "The folder is not readable.");
+    ready("two");
+    await waitFor(() => expect(rows()).toEqual(["one", "two"]));
+    expect(row("one")).toHaveAccessibleDescription(/The folder is not readable\.$/);
+
+    await userEvent.click(retryOf("one") as HTMLElement);
+
+    await waitFor(() => expect(rows()).toEqual(["one…", "two"]));
+    await waitFor(() => expect(asked.filter((path) => path === at("one"))).toHaveLength(2));
+    await answer("one");
+    ready("one");
+    await waitFor(() => expect(rows()).toEqual(["one", "two"]));
+    expect(retryOf("one")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Dismiss one" })).toBeNull();
+  });
+
+  it("lets a project whose open failed be put away", async () => {
+    const { refuse, ready } = core(["one", "two"], 0, ["two"]);
+
+    render(<App />);
+
+    await waitFor(() => expect(rows()).toEqual(["one…", "two…"]));
+    await refuse("one", "The folder is not readable.");
+    ready("two");
+
+    await userEvent.click(await screen.findByRole("button", { name: "Dismiss one" }));
+
+    await waitFor(() => expect(rows()).toEqual(["two"]));
+  });
+
+  it("offers Retry on a project still loading after 15 s, and not before", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { retried, ready } = core(["one"], 0, ["one"]);
+
+    render(<App />);
+
+    await waitFor(() => expect(rows()).toEqual(["one…"]));
+    await waitFor(() => expect(row("one")).toHaveAccessibleDescription(/Loading…$/));
+    expect(retryOf("one")).toBeNull();
+    await act(async () => vi.advanceTimersByTime(15_000));
+    await waitFor(() => expect(retryOf("one")).toBeInTheDocument());
+
+    fireEvent.click(retryOf("one") as HTMLElement);
+
+    // Loading afresh: it says so, and offers no second press for another 15 s.
+    await waitFor(() => expect(retried).toEqual([at("one")]));
+    await waitFor(() => expect(row("one")).toHaveAccessibleDescription(/Loading…$/));
+    expect(retryOf("one")).toBeNull();
+    ready("one");
+    await waitFor(() => expect(rows()).toEqual(["one"]));
+  });
+
+  it("brings back the missing chats on N of M: they are listed, and the row says nothing more", async () => {
+    const CHAT = {
+      session: 2,
+      name: "the missing chat",
+      cwd: at("one"),
+      harness: "claude",
+      in_front: false,
+      resumed: null,
+      fresh: null,
+      profile: "claude",
+      persona: null,
+      unreported: null,
+      card: null,
+      guessed: null,
+      pinned: false,
+      label: null,
+      from: null,
+    };
+    const world = core(["one"], 0, ["one"], {
+      waiting: [
+        { id: "01MISSING", name: "the missing chat", why: "its program went", approval: null },
+      ],
+      afterRetry: { open: [CHAT], started: [{ id: "01MISSING", session: 2 }] },
+    });
+
+    render(<App />);
+
+    await waitFor(() => expect(rows()).toEqual(["one…"]));
+    world.ready("one", { kind: "ready", back: 1, wanted: 2 });
+    await waitFor(() => expect(row("one")).toHaveAccessibleDescription(/1 of 2 chats back$/));
+    await screen.findByText(/did not start/);
+
+    await userEvent.click(retryOf("one") as HTMLElement);
+    await waitFor(() => expect(world.retried).toEqual([at("one")]));
+    world.restored("one", 2);
+    world.ready("one", { kind: "ready", back: 2, wanted: 2 });
+
+    await waitFor(() => expect(rows()).toEqual(["one"]));
+    expect(row("one")).not.toHaveAccessibleDescription(/chats back/);
+    expect(retryOf("one")).toBeNull();
+    // The Notice of the chat that did not start has gone, and the chat is back in the list.
+    await waitFor(() => expect(screen.queryByText(/did not start/)).toBeNull());
+    await waitFor(() => expect(world.openedAfterRetry()).toBe(true));
   });
 });

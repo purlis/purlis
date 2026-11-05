@@ -16,7 +16,8 @@
 //! stopped, a profile wants approving again, a folder moved) waits in the list of chats that
 //! did not start, its dispatch still running, drawn under the chat that asked (#1497). **Try
 //! to start again** on that row starts it told to carry on, while that dispatch still runs
-//! ([`retrying`]); **End task** on it ends it and tells the chat that asked
+//! ([`retrying`], for every chat its project is short of: the project's one Retry, #5324);
+//! **End task** on it ends it and tells the chat that asked
 //! (`crate::unstarted::end`). Forget, for a chat listed across the window, does the same
 //! ([`forgetting`]).
 //!

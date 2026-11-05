@@ -188,6 +188,30 @@
   pointer-events: none;
 }
 
+/* Failed to load (#5324): a "!" out of the bottom left corner, as the badge is out of the top
+   right, so a shape and not a colour alone says it. Its words are the button's description and
+   tooltip. */
+[data-part="failed"][data-scope="rail"] {
+  position: absolute;
+  inset-block-end: calc(var(--space-2) * -1 - 1px);
+  inset-inline-start: calc(var(--space-2) * -1 - 1px);
+  display: inline-grid;
+  place-items: center;
+  inline-size: 16px;
+  block-size: 16px;
+  border-radius: var(--radius-full);
+  color: var(--state-failed);
+  background-color: var(--surface-overlay);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-strong);
+  line-height: 1;
+  pointer-events: none;
+}
+
+[data-part="failed"][data-scope="rail"]::after {
+  content: "!";
+}
+
 /* An action: an icon in the muted tier, no box until the pointer reaches it (R80). */
 [data-part="button"][data-scope="rail"][data-variant="action"][data-hovered] {
   color: var(--text-primary);

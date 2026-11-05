@@ -624,6 +624,7 @@ fn ending_a_chat_is_the_window_s_alone_and_never_in_the_link_s_client() {
         "first_task_run",
         "resume_session",
         "retry_chat_that_did_not_start",
+        "retry_project",
         "reopen_finished_task",
         "resume_ended_chat",
         "curate",

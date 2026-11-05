@@ -1145,6 +1145,11 @@ pub(crate) mod pretend {
             lock(&self.seen.refusing_numbers).push((number, why.to_owned()));
         }
 
+        /// What [`Self::refuses_number`] refused starts from now: its program is back.
+        pub fn stops_refusing(&self, number: u32) {
+            lock(&self.seen.refusing_numbers).retain(|(one, _)| *one != number);
+        }
+
         /// Every start from now takes `long`, as a harness and its sandbox coming up do.
         pub fn takes(&self, long: Duration) {
             *lock(&self.seen.taking) = long;

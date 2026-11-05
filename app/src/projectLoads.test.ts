@@ -7,6 +7,7 @@ import {
   inTurn,
   loadOf,
   loadSaid,
+  offersRetry,
   placed,
   railOrder,
   STILL_LOADING_AFTER,
@@ -121,5 +122,23 @@ describe("a project put in its remembered place as its open answers (#5323)", ()
 
   it("keeps a project already held where it is", () => {
     expect(placed(["b", "a"], "a", ["a", "b"])).toEqual(["b", "a"]);
+  });
+});
+
+describe("what a row offers Retry on (#5324)", () => {
+  it("offers it on a failure, a slow load and a project short of chats, and on nothing else", () => {
+    const now = 100_000;
+    expect(offersRetry({ kind: "failed", error: "No." }, now)).toBe(true);
+    expect(offersRetry({ kind: "loading", since: now - 15_000 }, now)).toBe(true);
+    expect(offersRetry({ kind: "ready", back: 2, wanted: 3 }, now)).toBe(true);
+    expect(offersRetry({ kind: "loading", since: now - 14_999 }, now)).toBe(false);
+    expect(offersRetry({ kind: "ready", back: 3, wanted: 3 }, now)).toBe(false);
+    expect(offersRetry(undefined, now)).toBe(false);
+  });
+
+  it("says a failure's error as it came", () => {
+    expect(loadSaid({ kind: "failed", error: "The record could not be read." }, 0)).toBe(
+      "The record could not be read.",
+    );
   });
 });
