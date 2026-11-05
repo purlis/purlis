@@ -298,6 +298,34 @@ pub struct PoolSetupOver {
     pub said: String,
     /// What to raise it to, where a value would do.
     pub raise_to: Option<u32>,
+    /// What its runner's older purlis holds it to, and what helps, where only that does (#5175).
+    pub older_runner: Option<OlderRunner>,
+}
+
+/// **What helps a profile over what a pool's older runner takes** (#5175): by what makes its image.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum OlderRunner {
+    /// A pool of purlis's own image: a new runner on the current image, which the window makes.
+    Move,
+    /// A pool of a team's own image, which purlis never moves: built anew, and the pool added again.
+    OwnImage,
+    /// A cluster pool, whose image its Pool in the cluster names.
+    Cluster,
+}
+
+/// What helps pool `pool`'s older runner, of the pool as this machine keeps it.
+#[cfg(unix)]
+fn older_runner_way(config: &std::path::Path, pool: &str) -> OlderRunner {
+    let docker = purlis_core::runners::pools(config)
+        .unwrap_or_default()
+        .into_iter()
+        .find(|one| one.name() == pool);
+    match docker {
+        Some(one) if one.image().is_purlis_own() => OlderRunner::Move,
+        Some(_) => OlderRunner::OwnImage,
+        None => OlderRunner::Cluster,
+    }
 }
 
 /// This machine's profiles against pool `pool`'s limits (#4482).
@@ -337,6 +365,7 @@ pub async fn pool_setup_sizes(
             let sizes =
                 purlis_core::poolsetup::signins::sizes(&config, Some(&root), &pool, &highest)
                     .map_err(|why| why.to_string())?;
+            let way = older_runner_way(&config, &pool);
             Ok(PoolSetupSizes {
                 most_mib: small(sizes.most_mib),
                 most_files: small(sizes.most_files),
@@ -355,6 +384,7 @@ pub async fn pool_setup_sizes(
                                 key: hit.limit.limit().key.to_owned(),
                                 said: hit.said(),
                                 raise_to: hit.suggested.map(small),
+                                older_runner: hit.older_runner.then_some(way),
                             })
                             .collect(),
                         in_use: one.in_use,
@@ -390,6 +420,54 @@ pub async fn pool_setup_sign_ins_by_hand(
             },
         ),
     )
+}
+
+/// **Moves pool `pool` to a runner on the current image, as the person pressed** (#5175): this
+/// version's image, as a new pool is offered it, made beside the old runner, which keeps its chats
+/// until they end ([`purlis_core::pools::follow`]). A pool of a team's own image is refused, and
+/// one on that image already says so. The window's alone.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_move_runner(app: tauri::AppHandle, pool: String) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        let image = match crate::poolfollow::image_offered(&app).await? {
+            crate::dockerpools::RunnerImageOffered::Ours { image } => image,
+            _ => {
+                return Err(
+                    "this purlis names no runner image of its own, so the pool stays on its \
+                     runner"
+                        .to_owned(),
+                );
+            }
+        };
+        crate::off_the_window("moving a pool to this version", move || {
+            let image = purlis_core::dockerpool::Image::pinned(&image).map_err(|why| why.0)?;
+            let machine = crate::runnerlinks::Machine::here(&config_root()?)?;
+            let desktop = machine.desktop()?.pinned();
+            match purlis_core::pools::follow(
+                &machine.config,
+                &machine.docker,
+                &pool,
+                &image,
+                &desktop,
+            )
+            .map_err(|why| why.to_string())?
+            {
+                Some(_) => Ok(()),
+                None => Err(format!(
+                    "pool {pool} is on this version's image already, and its runner is older than \
+                     this purlis expects"
+                )),
+            }
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (app, pool);
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
 }
 
 /// **Keeps that the person skipped step `step` on pool `pool`, or takes the skip back.** Refused

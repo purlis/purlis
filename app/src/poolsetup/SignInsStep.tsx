@@ -14,10 +14,11 @@ import {
   askProfiles,
   profilesHeld,
   removeProfileFromPool,
+  rereadPools,
   saveLimits,
   usePools,
 } from "../pools";
-import { PoolLimits } from "../settings/PoolLimits";
+import { PoolLimits, ReplaceRunner } from "../settings/PoolLimits";
 import { DRIVEN, PoolProfiles } from "../settings/PoolProfiles";
 import { PoolSignIn } from "../settings/PoolSignIn";
 import { Badge } from "../ui/badge/Badge";
@@ -34,6 +35,13 @@ export const STAYS_ON_THE_RUNNER =
 /** The core's words as a sentence of their own. */
 const sentence = (said: string) =>
   `${said.charAt(0).toUpperCase()}${said.slice(1)}${said.endsWith(".") ? "" : "."}`;
+
+/** What helps where a runner's older purlis holds a profile and the window can't move it (#5175). */
+const OLDER_RUNNER_HELP: Record<"own-image" | "cluster", string> = {
+  "own-image":
+    "Your team's image is never moved: build it from this version of purlis, then add the pool again.",
+  cluster: "Ask whoever looks after this pool's Pool in the cluster to move it to the current image.",
+};
 
 /** "1 profile", "2 profiles". */
 const profiles = (n: number) => `${n} profile${n === 1 ? "" : "s"}`;
@@ -80,6 +88,9 @@ export function SignInsStep({
   const [lines, setLines] = useState(false);
   /** The rows drawn as a save began, held while it asks the runner again, so the step stays put. */
   const [heldRows, setHeldRows] = useState<Row[]>();
+  /** The dialog before the runner is moved to the current image, and the move itself (#5175). */
+  const [movingAsked, setMovingAsked] = useState(false);
+  const [moving, setMoving] = useState(false);
 
   const measure = useCallback(() => {
     void commands.poolSetupSizes(plane, pool).then((read) => {
@@ -348,6 +359,21 @@ export function SignInsStep({
     else if (!own) changed();
   };
 
+  const moveRunner = async () => {
+    setMovingAsked(false);
+    setMoving(true);
+    setSaid(undefined);
+    const moved = await commands.poolSetupMoveRunner(pool);
+    setMoving(false);
+    if (moved.status === "error") {
+      setSaid(moved.error);
+      return;
+    }
+    await rereadPools();
+    measure();
+    changed();
+  };
+
   const most = sizes.most_mib;
   if (lines)
     return (
@@ -424,13 +450,26 @@ export function SignInsStep({
                           {`Raise the limit to ${hit.raise_to}${hit.key === "profileSize" ? " MiB" : " files"}`}
                         </Button>
                       )}
+                      {hit.older_runner === "move" && (
+                        <Button
+                          variant="primary"
+                          isDisabled={moving}
+                          onPress={() => setMovingAsked(true)}
+                        >
+                          {moving ? "Replacing…" : "Replace the runner…"}
+                        </Button>
+                      )}
                       <Button variant="ghost" onPress={() => tick(row.name, false)}>
                         Leave this profile out
                       </Button>
                     </>
                   }
                 >
-                  {`${sentence(hit.said)} Raising the limit only changes this pool, and applies from the next send.`}
+                  {hit.older_runner === null
+                    ? `${sentence(hit.said)} Raising the limit only changes this pool, and applies from the next send.`
+                    : hit.older_runner === "move"
+                      ? sentence(hit.said)
+                      : `${sentence(hit.said)} ${OLDER_RUNNER_HELP[hit.older_runner]}`}
                 </Say>
               ))}
             </li>
@@ -438,6 +477,13 @@ export function SignInsStep({
         })}
       </ul>
       {told}
+      {movingAsked && (
+        <ReplaceRunner
+          pool={pool}
+          onCancel={() => setMovingAsked(false)}
+          onReplace={() => void moveRunner()}
+        />
+      )}
       {none && (
         <p className="pool-setup-does">Tick a profile for chats on {pool}, or skip this for now.</p>
       )}

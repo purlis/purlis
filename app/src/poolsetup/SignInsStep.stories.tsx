@@ -72,6 +72,7 @@ const OVER: PoolSetupSizes = {
           key: "profileSize",
           said: "it needs 212 MiB, over this pool's limit of 128 MiB",
           raise_to: 256,
+          older_runner: null,
         },
       ],
     },
@@ -152,6 +153,35 @@ export const OverItsLimit: Story = {
     const raise = await canvas.findByRole("button", { name: "Raise the limit to 256 MiB" });
     raise.focus();
     await expect(raise).toHaveFocus();
+    await expectFocusInSight();
+  },
+};
+
+/** A profile only a runner on the current image would take (#5175): no limit to raise. */
+export const OverWhatAnOlderRunnerTakes: Story = {
+  beforeEach: faked(PROFILES, {
+    ...OVER,
+    profiles: [
+      {
+        ...size("work", 212, true),
+        over: [
+          {
+            key: "profileSize",
+            said: "it needs 212 MiB, over this pool's limit of 120 MiB (Most a profile may send: size), and this pool's runner runs an older purlis, which takes at most 120 MiB: make the runner again on the current image, or send less",
+            raise_to: null,
+            older_runner: "move",
+          },
+        ],
+      },
+      size("personal", 18, true),
+      size("oss", 9, false),
+    ],
+  }),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const replace = await canvas.findByRole("button", { name: "Replace the runner…" });
+    replace.focus();
+    await expect(replace).toHaveFocus();
     await expectFocusInSight();
   },
 };

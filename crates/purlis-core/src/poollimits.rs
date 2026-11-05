@@ -551,6 +551,7 @@ impl Limit {
             runner_memory: None,
             memory_on_replace: None,
             team_suggested: false,
+            older_runner: false,
         }
     }
 
@@ -613,6 +614,9 @@ pub struct LimitHit {
     pub memory_on_replace: Option<u64>,
     /// The value suggested is what the team defining the pool suggests (#4287).
     pub team_suggested: bool,
+    /// No value of the limit helps: that highest is what the older purlis its runner runs takes,
+    /// and a runner on the current image takes more (#5175).
+    pub older_runner: bool,
 }
 
 impl LimitHit {
@@ -662,6 +666,11 @@ impl LimitHit {
             }
             (None, None) if self.by_team => format!(
                 ", and this pool allows at most {}: {TEAM_SET}, or send less",
+                limit.unit.said(self.highest.unwrap_or(limit.most))
+            ),
+            (None, None) if self.older_runner => format!(
+                ", and this pool's runner runs an older purlis, which takes at most {}: make the \
+                 runner again on the current image, or send less",
                 limit.unit.said(self.highest.unwrap_or(limit.most))
             ),
             (None, None) => format!(", more than this limit can be: send less than {}", {
@@ -1017,14 +1026,21 @@ impl Chosen {
         let runner_memory = memory
             .filter(|(_, room)| !by_team && Some(*room) == highest && needed <= id.limit().most)
             .map(|(memory, _)| memory);
+        let suggested = team_says.or(hit.suggested);
         LimitHit {
             by_team,
             runner_memory,
+            // Only where nothing else holds it as low: a new runner would be held there too.
+            older_runner: suggested.is_none()
+                && older.is_some()
+                && older == highest
+                && team != highest
+                && memory.map(|(_, room)| room) != highest,
             memory_on_replace: runner_memory
                 .and(self.memory_waiting())
                 .filter(|pool| profile_room(*pool) >= needed),
             team_suggested: team_says.is_some(),
-            suggested: team_says.or(hit.suggested),
+            suggested,
             ..hit
         }
     }
@@ -1432,6 +1448,42 @@ mod tests {
         assert_eq!(size.default << 20, code::MOST_BUNDLE_BYTES);
         let time = LimitId::CodeSendTime.limit();
         assert_eq!(time.most * 60, code::LONGEST_TRANSFER_SECS);
+    }
+
+    /// **#5175**: raising the limit can't help a profile over what an older runner takes, so it
+    /// says the runner's version holds it, and what does help.
+    #[test]
+    fn a_hit_at_an_older_runners_highest_says_its_version_holds_it_and_what_helps() {
+        let hit = Chosen::default().hit(LimitId::ProfileSize, 120, 212, Some(120));
+        assert!(hit.older_runner);
+        assert_eq!(hit.suggested, None);
+        assert_eq!(
+            hit.said(),
+            "it needs 212 MiB, over this pool's limit of 120 MiB (Most a profile may send: \
+             size), and this pool's runner runs an older purlis, which takes at most 120 MiB: \
+             make the runner again on the current image, or send less"
+        );
+    }
+
+    /// **#5175**: where a value of the limit still helps, that is what it offers.
+    #[test]
+    fn a_hit_a_raised_limit_holds_offers_that_on_an_older_runner_too() {
+        let hit = Chosen::default().hit(LimitId::ProfileSize, 64, 100, Some(120));
+        assert!(!hit.older_runner);
+        assert_eq!(hit.suggested, Some(120));
+        assert!(hit.said().contains("raise it to 120 MiB"), "{}", hit.said());
+    }
+
+    /// **#5175**: no older runner, no word of one.
+    #[test]
+    fn a_hit_at_what_the_limit_can_be_names_no_runner() {
+        let hit = Chosen::default().hit(LimitId::ProfileFiles, 65_536, 70_000, None);
+        assert!(!hit.older_runner);
+        assert!(
+            hit.said().contains("more than this limit can be"),
+            "{}",
+            hit.said()
+        );
     }
 
     #[test]

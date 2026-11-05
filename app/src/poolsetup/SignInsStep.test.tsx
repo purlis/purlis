@@ -110,7 +110,7 @@ describe("SignInsStep", () => {
       ...SIZES,
       profiles: [
         size("work", 212, true, [
-          { key: "profileSize", said: "it needs 212 MiB, over 128 MiB", raise_to: 256 },
+          { key: "profileSize", said: "it needs 212 MiB, over 128 MiB", raise_to: 256, older_runner: null },
         ]),
       ],
     };
@@ -140,7 +140,7 @@ describe("SignInsStep", () => {
         ...SIZES,
         profiles: [
           size("work", 42, true),
-          size("personal", 212, true, [{ key: "profileSize", said: "too big", raise_to: 256 }]),
+          size("personal", 212, true, [{ key: "profileSize", said: "too big", raise_to: 256, older_runner: null }]),
         ],
       }),
     });
@@ -259,6 +259,81 @@ describe("SignInsStep", () => {
     });
     expect(await screen.findByText(/isn't running/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Skip for now" })).toBeTruthy();
+  });
+
+  it("says a kept profile unticked is taken off by hand, with its own line (#5174)", async () => {
+    const calls = core({
+      pool_setup_sign_ins_by_hand: (args) => {
+        const { takingOff } = args as { takingOff: string[] };
+        return {
+          note: "Run these yourself if you prefer.",
+          text: takingOff.map((name) => `purlis pool remove-profile P ${name}`).join("\n"),
+        };
+      },
+    });
+    draw();
+    await userEvent.click(await screen.findByRole("button", { name: "See what this does" }));
+    const list = screen.getByRole("list", { name: "Your profiles" });
+    await userEvent.click(within(list).getByRole("checkbox", { name: /^work/ }));
+    expect(await screen.findByText(/purlis pool remove-profile P work/)).toBeTruthy();
+    const asked = calls.filter((call) => call.cmd === "pool_setup_sign_ins_by_hand").at(-1);
+    expect(asked?.args).toMatchObject({ takingOff: ["work"] });
+  });
+
+  it("offers a new runner where only the runner's older purlis holds a profile (#5175)", async () => {
+    let sizes: PoolSetupSizes = {
+      ...SIZES,
+      profiles: [
+        size("work", 212, true, [
+          {
+            key: "profileSize",
+            said: "it needs 212 MiB, and this pool's runner runs an older purlis",
+            raise_to: null,
+            older_runner: "move",
+          },
+        ]),
+      ],
+    };
+    const calls = core({
+      pool_setup_sizes: () => sizes,
+      pool_setup_move_runner: () => {
+        sizes = { ...SIZES, profiles: [size("work", 212, true)] };
+        return null;
+      },
+    });
+    const { pool, changed } = draw();
+    expect(await screen.findByText(/runs an older purlis/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Raise the limit/ })).toBeNull();
+    expect(screen.queryByText(/Raising the limit/)).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Replace the runner…" }));
+    expect(calls.some((call) => call.cmd === "pool_setup_move_runner")).toBe(false);
+    await userEvent.click(await screen.findByRole("button", { name: "Replace the runner" }));
+    await waitFor(() =>
+      expect(calls.find((call) => call.cmd === "pool_setup_move_runner")?.args).toEqual({ pool }),
+    );
+    await waitFor(() => expect(screen.queryByText(/runs an older purlis/)).toBeNull());
+    expect(changed).toHaveBeenCalled();
+  });
+
+  it("says what helps where purlis can't move the pool's image (#5175)", async () => {
+    core({
+      pool_setup_sizes: () => ({
+        ...SIZES,
+        profiles: [
+          size("work", 212, true, [
+            {
+              key: "profileSize",
+              said: "it runs an older purlis",
+              raise_to: null,
+              older_runner: "own-image",
+            },
+          ]),
+        ],
+      }),
+    });
+    draw();
+    expect(await screen.findByText(/build it from this version of purlis/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Replace the runner…" })).toBeNull();
   });
 
   it("shows by hand what its button records and signs in, for the profiles ticked (#4718)", async () => {
