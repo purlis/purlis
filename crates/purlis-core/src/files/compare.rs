@@ -269,6 +269,8 @@ pub struct WhatChanged {
     /// What this was drawn from, as a digest of the base and the file on disk: what a
     /// [`Discard`] is checked against. `None` for a file past [`super::LARGEST`] or unreadable.
     pub stamp: Option<String>,
+    /// The branch's check results as this file shows them (ADR 0114): placed on the same hunks.
+    pub checks: crate::checks::OnFile,
 }
 
 /// One file of `branch`, by its path relative to the branch's folder, compared against the
@@ -402,11 +404,22 @@ fn one_file_compared(
         from,
         Whitespace::Shown,
     )?;
+    let head = opened.repo.head_commit().ok().map(|c| c.id.to_string());
+    let hunks: &[Hunk] = match &diff {
+        FileDiff::Text { hunks, .. } => hunks,
+        _ => &[],
+    };
+    let checks = if branch.is_plane_root() {
+        crate::checks::OnFile::default()
+    } else {
+        crate::checks::of_branch(plane, branch, &change.path, hunks, head.as_deref())
+    };
     Ok(Shown::Changed(WhatChanged {
         change,
         base: compared.base,
         diff,
         stamp,
+        checks,
     }))
 }
 

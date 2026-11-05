@@ -253,6 +253,58 @@ fn a_level_comes_from_the_rule_when_the_result_has_none_and_a_pass_has_no_severi
     assert_eq!(read[0].diagnostics[1].severity, Severity::None);
 }
 
+#[test]
+fn past_the_most_a_list_holds_the_rest_are_counted_and_never_lost_without_a_word() {
+    let many = purlis_core::checks::MOST_LISTED + 7;
+    let set = Set {
+        tool: "t".into(),
+        branch: "feature".into(),
+        head: Some(HEAD.into()),
+        reported_at: "2026-11-05T20:00:00Z".into(),
+        diagnostics: vec![
+            Diagnostic {
+                path: Some("other.rs".into()),
+                line: Some(1),
+                end_line: None,
+                severity: Severity::Note,
+                rule: None,
+                message: "m".into(),
+            };
+            many
+        ],
+    };
+    let shown = on_file(&[set], "a.rs", &[], Some(HEAD));
+    assert_eq!(shown.elsewhere.len(), purlis_core::checks::MOST_LISTED);
+    assert_eq!(shown.more_elsewhere, 7);
+    assert_eq!(shown.sets[0].results, many);
+}
+
+/// The bounded reader, as the app starts it, but this test binary run again, picking
+/// [`reader_child`].
+fn reader() -> purlis_core::files::Reader {
+    purlis_core::files::Reader::new(
+        std::env::current_exe().expect("the test binary"),
+        [
+            "check_results_on_a_comparison::reader_child",
+            "--exact",
+            "--nocapture",
+            "--test-threads=1",
+            purlis_core::files::READ_ARG,
+        ]
+        .map(std::ffi::OsString::from),
+    )
+}
+
+/// The reader's child: in a run of this binary that [`reader`] started, it answers the one
+/// question it was asked and exits; in any other run it does nothing.
+#[test]
+fn reader_child() {
+    purlis_core::unsteered!();
+    if let Some(code) = purlis_core::files::serve_if_asked() {
+        std::process::exit(code);
+    }
+}
+
 mod the_store {
     use super::*;
     use crate::support;
@@ -343,6 +395,62 @@ mod the_store {
         assert!(why.contains("Have the tool write SARIF 2.1.0"), "{why}");
         let sets = read_sets(&f.plane, &f.ws, &f.repo, Some("feature")).unwrap();
         assert_eq!(sets[0].diagnostics[0].message, "kept");
+    }
+
+    #[test]
+    fn what_changed_in_a_file_carries_its_results_placed_on_its_own_hunks_and_marks_them_stale() {
+        purlis_core::unsteered!();
+        let f = support::plane_with_clone("thing");
+        let cut = purlis_core::worktree::add(&f.plane, &f.ws, &f.repo, "feature", None).unwrap();
+        let text: String = (1..=30).map(|n| format!("line {n}\n")).collect();
+        std::fs::write(cut.path.join("a.txt"), &text).unwrap();
+        let commit = |at: &std::path::Path, message: &str| {
+            for args in [
+                &["add", "-A"][..],
+                &[
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "user.email=t@example.invalid",
+                    "commit",
+                    "-q",
+                    "-m",
+                    message,
+                ][..],
+            ] {
+                assert!(
+                    std::process::Command::new("git")
+                        .args(args)
+                        .current_dir(at)
+                        .status()
+                        .unwrap()
+                        .success()
+                );
+            }
+        };
+        commit(&cut.path, "the file");
+        let branch = Branch::piece(&f.ws, &f.repo, "feature");
+        let dir = tempfile::tempdir().unwrap();
+        let sarif = br#"{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"t"}},"results":[
+            {"level":"error","message":{"text":"on it"},"locations":[{"physicalLocation":{
+             "artifactLocation":{"uri":"a.txt"},"region":{"startLine":2}}}]},
+            {"message":{"text":"elsewhere"},"locations":[{"physicalLocation":{
+             "artifactLocation":{"uri":"b.txt"},"region":{"startLine":9}}}]}]}]}"#;
+        let file = sarif_file(dir.path(), "out.sarif", sarif);
+        report(&f.plane, branch, &file, chrono::Utc::now()).unwrap();
+        let reader = reader();
+        let read = purlis_core::files::what_changed(&reader, &f.plane, branch, "a.txt").unwrap();
+        assert_eq!(read.checks.on_lines[0].diagnostic.message, "on it");
+        assert_eq!(
+            read.checks.elsewhere[0].diagnostic.path.as_deref(),
+            Some("b.txt")
+        );
+        assert!(!read.checks.sets[0].out_of_date);
+        std::fs::write(cut.path.join("a.txt"), format!("{text}more\n")).unwrap();
+        commit(&cut.path, "the head moves");
+        let read = purlis_core::files::what_changed(&reader, &f.plane, branch, "a.txt").unwrap();
+        assert!(read.checks.sets[0].out_of_date);
+        assert!(read.checks.on_lines[0].out_of_date);
     }
 
     #[test]

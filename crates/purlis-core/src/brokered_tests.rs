@@ -1161,3 +1161,81 @@ fn each_table_a_chat_runs_under_is_refused_on_its_own_and_sandbox_by_the_sandbox
         assert!(runs_under_differs(Some(table), None), "{table}");
     }
 }
+
+/// A plane with workspace `alpha` holding a clone `svc`, one commit in it.
+fn a_project_with_a_clone() -> (tempfile::TempDir, PathBuf) {
+    let (dir, root) = a_project();
+    let clone = root.join("workspaces/alpha/svc");
+    std::fs::create_dir_all(&clone).unwrap();
+    for args in [
+        &["init", "-q", "-b", "main"][..],
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.invalid",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "first",
+        ][..],
+    ] {
+        assert!(
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(&clone)
+                .status()
+                .unwrap()
+                .success()
+        );
+    }
+    (dir, root)
+}
+
+const A_SARIF_FILE: &str = r#"{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"eslint"}},"results":[{"message":{"text":"m"}}]}]}"#;
+
+#[test]
+fn a_check_report_lands_in_the_chats_own_workspace_from_a_file_in_the_branchs_folder() {
+    let (_dir, root) = a_project_with_a_clone();
+    std::fs::write(root.join("workspaces/alpha/svc/out.sarif"), A_SARIF_FILE).unwrap();
+    let write = Write::CheckReport {
+        repo: "svc".into(),
+        piece: None,
+        file: "out.sarif".into(),
+    };
+    let written = perform(&root, &in_alpha_as(None), &write, now()).unwrap();
+    assert_eq!(written.to, "alpha");
+    assert_eq!(written.path, "workspaces/alpha/pieces/checks/svc.json");
+    let sets = crate::checks::read_sets(&root, "alpha", "svc", None).unwrap();
+    assert_eq!(sets[0].tool, "eslint");
+}
+
+#[test]
+fn a_check_report_refuses_a_file_outside_the_branchs_folder_or_through_a_link() {
+    let (dir, root) = a_project_with_a_clone();
+    let outside = dir.path().join("secret.sarif");
+    std::fs::write(&outside, A_SARIF_FILE).unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&outside, root.join("workspaces/alpha/svc/link.sarif")).unwrap();
+    for file in [
+        "../../../../secret.sarif",
+        outside.to_str().unwrap(),
+        "link.sarif",
+    ] {
+        let write = Write::CheckReport {
+            repo: "svc".into(),
+            piece: None,
+            file: file.into(),
+        };
+        assert!(
+            perform(&root, &in_alpha_as(None), &write, now()).is_err(),
+            "{file}"
+        );
+    }
+    assert!(
+        !root
+            .join("workspaces/alpha/pieces/checks/svc.json")
+            .exists()
+    );
+}

@@ -92,6 +92,7 @@ fn run_read(run: &sarif::Run, folder: Option<&Path>) -> ToolResults {
             .clone()
             .or_else(|| result.message.markdown.clone())
             .or_else(|| result.message.id.clone())
+            .map(held_message)
             .unwrap_or_default();
         let located: Vec<&sarif::PhysicalLocation> = result
             .locations
@@ -258,7 +259,7 @@ pub fn read_sets(
 ) -> Result<Vec<Set>, String> {
     let path = store_path(plane, ws, repo, piece);
     crate::contain::writable(plane, &path).map_err(|e| e.to_string())?;
-    let text = match std::fs::read(&path) {
+    let text = match crate::contain::read_no_link(plane, &path) {
         Ok(text) => text,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(e) => return Err(format!("purlis could not read {}: {e}", path.display())),
@@ -293,21 +294,41 @@ pub fn report(
     file: &Path,
     now: DateTime<Utc>,
 ) -> Result<Reported, String> {
-    let piece = branch.piece;
     let folder = crate::files::folder(plane, branch, "").map_err(|e| e.to_string())?;
-    let refused = |why: String| {
-        format!(
-            "{} was not recorded: {why}. Have the tool write SARIF {VERSION}, then report it again",
-            file.display()
-        )
-    };
-    let bytes = bounded(file).map_err(&refused)?;
-    let results = read_sarif(&bytes, Some(&folder)).map_err(&refused)?;
-    if results.is_empty() {
-        return Err(refused("it holds no run, so no tool's results".to_owned()));
-    }
-    let head = line_of(&folder, &["rev-parse", "--verify", "--quiet", "HEAD"]);
-    let name = line_of(&folder, &["symbolic-ref", "--short", "--quiet", "HEAD"])
+    let results = results_in(file, &folder).map_err(|why| not_recorded(file, &why))?;
+    recorded(plane, branch, &folder, results, now)
+}
+
+/// [`report`] for a chat, by the app: `relative` is a file of the branch's folder, already confined
+/// by [`crate::files::named`], and **it is opened following no link**. A link at it, which that
+/// check lets through, would have the app read for a chat a file the chat's sandbox denies it.
+pub fn report_inside(
+    plane: &Path,
+    branch: Branch<'_>,
+    relative: &str,
+    now: DateTime<Utc>,
+) -> Result<Reported, String> {
+    let folder = crate::files::folder(plane, branch, "").map_err(|e| e.to_string())?;
+    let file = folder.join(relative);
+    let results = crate::contain::open_no_link(&folder, &file)
+        .map_err(|e| format!("it cannot be read ({e})"))
+        .and_then(read_bounded)
+        .and_then(|bytes| results_of(&bytes, &folder))
+        .map_err(|why| not_recorded(&file, &why))?;
+    recorded(plane, branch, &folder, results, now)
+}
+
+/// `results` kept as the branch's, each tool's replacing its own and leaving the others.
+fn recorded(
+    plane: &Path,
+    branch: Branch<'_>,
+    folder: &Path,
+    results: Vec<ToolResults>,
+    now: DateTime<Utc>,
+) -> Result<Reported, String> {
+    let piece = branch.piece;
+    let head = line_of(folder, &["rev-parse", "--verify", "--quiet", "HEAD"]);
+    let name = line_of(folder, &["symbolic-ref", "--short", "--quiet", "HEAD"])
         .unwrap_or_else(|| "(detached)".to_owned());
     let path = store_path(plane, branch.ws, branch.repo, piece);
     let stamp = now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
@@ -342,6 +363,28 @@ pub fn report(
         head,
         tools,
     })
+}
+
+/// The sentence a bad file is refused in: what is wrong with it, and what to do.
+pub fn not_recorded(file: &Path, why: &str) -> String {
+    format!(
+        "{} was not recorded: {why}. Have the tool write SARIF {VERSION}, then report it again",
+        file.display()
+    )
+}
+
+/// The results in the SARIF file at `file`, for a branch whose folder is `folder`, or what is wrong
+/// with it: what [`report`] records, and what a command checks before handing a file to the app.
+pub fn results_in(file: &Path, folder: &Path) -> Result<Vec<ToolResults>, String> {
+    results_of(&bounded(file)?, folder)
+}
+
+fn results_of(bytes: &[u8], folder: &Path) -> Result<Vec<ToolResults>, String> {
+    let results = read_sarif(bytes, Some(folder))?;
+    if results.is_empty() {
+        return Err("it holds no run, so no tool's results".to_owned());
+    }
+    Ok(results)
 }
 
 /// The record put in place whole, through the workspace's folder held by descriptor: a link at the
@@ -386,6 +429,11 @@ fn bounded(file: &Path) -> Result<Vec<u8>, String> {
     let opened = open
         .open(file)
         .map_err(|e| format!("it cannot be read ({e})"))?;
+    read_bounded(opened)
+}
+
+/// What an open file holds, up to [`MOST_SARIF_BYTES`]; only a plain file.
+fn read_bounded(opened: std::fs::File) -> Result<Vec<u8>, String> {
     let meta = opened
         .metadata()
         .map_err(|e| format!("it cannot be read ({e})"))?;
@@ -490,6 +538,10 @@ pub struct Set {
     pub diagnostics: Vec<Diagnostic>,
 }
 
+/// The most results one list of [`OnFile`] holds. Past it they are counted and said, never dropped
+/// without a word: a report of many thousands must not stop the file's diff from being drawn.
+pub const MOST_LISTED: usize = 200;
+
 /// A branch's results as one file of its comparison shows them.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OnFile {
@@ -500,7 +552,24 @@ pub struct OnFile {
     pub outside: Vec<Placed>,
     /// In any other file, or in none.
     pub elsewhere: Vec<Placed>,
+    /// How many results past [`MOST_LISTED`] each list left out.
+    pub more_on_lines: usize,
+    pub more_outside: usize,
+    pub more_elsewhere: usize,
+    /// Why the results could not be read, where they could not. The diff is drawn regardless.
+    pub trouble: Option<String>,
 }
+
+/// `text` held to [`MOST_MESSAGE_CHARS`], on a character.
+fn held_message(text: String) -> String {
+    match text.char_indices().nth(MOST_MESSAGE_CHARS) {
+        Some((at, _)) => format!("{}…", &text[..at]),
+        None => text,
+    }
+}
+
+/// The longest message kept: a tool's explanation, and past this it is cut, saying so with `…`.
+const MOST_MESSAGE_CHARS: usize = 4000;
 
 /// `sets` placed on the file at `path`, whose comparison has `hunks`, with the branch at `head`.
 /// **Every result lands in one of the three lists**: nothing a tool said is dropped. A result that
@@ -516,13 +585,17 @@ pub fn on_file(sets: &[Set], path: &str, hunks: &[Hunk], head: Option<&str>) -> 
             results: set.diagnostics.len(),
         });
         for diagnostic in &set.diagnostics {
-            let list = if diagnostic.path.as_deref() != Some(path) {
-                &mut out.elsewhere
+            let (list, more) = if diagnostic.path.as_deref() != Some(path) {
+                (&mut out.elsewhere, &mut out.more_elsewhere)
             } else if shown_by(diagnostic, hunks) {
-                &mut out.on_lines
+                (&mut out.on_lines, &mut out.more_on_lines)
             } else {
-                &mut out.outside
+                (&mut out.outside, &mut out.more_outside)
             };
+            if list.len() == MOST_LISTED {
+                *more += 1;
+                continue;
+            }
             list.push(Placed {
                 tool: set.tool.clone(),
                 out_of_date,
@@ -531,6 +604,24 @@ pub fn on_file(sets: &[Set], path: &str, hunks: &[Hunk], head: Option<&str>) -> 
         }
     }
     out
+}
+
+/// A branch's results on the file at `path`, read from its store: [`on_file`], or the sentence that
+/// says why they could not be read. A branch's diff is never refused for its results.
+pub fn of_branch(
+    plane: &Path,
+    branch: Branch<'_>,
+    path: &str,
+    hunks: &[Hunk],
+    head: Option<&str>,
+) -> OnFile {
+    match read_sets(plane, branch.ws, branch.repo, branch.piece) {
+        Ok(sets) => on_file(&sets, path, hunks, head),
+        Err(why) => OnFile {
+            trouble: Some(why),
+            ..OnFile::default()
+        },
+    }
 }
 
 /// Whether any line of `diagnostic` is one a hunk shows on the head's side. git's `+n,0` has none.

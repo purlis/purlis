@@ -33,6 +33,7 @@ mod bridge;
 mod brokered;
 mod browsing;
 mod change;
+mod check;
 mod curation;
 mod dispatch;
 mod extcmd;
@@ -186,6 +187,11 @@ enum Command {
     /// Pieces: worktrees of a workspace's clones — cut, declared done or abandoned, removed.
     #[command(subcommand, alias = "wt")]
     Worktree(piece::WorktreeCommand),
+
+    /// A branch's check results: hand purlis what a typecheck, a linter or a test run found, in
+    /// SARIF 2.1.0, and they are drawn on the branch's diff.
+    #[command(subcommand)]
+    Check(check::CheckCommand),
 
     /// A cross-repo change: one piece of work across several of a workspace's repos — why,
     /// which repos, which branch in each, and which must land first
@@ -3761,6 +3767,7 @@ fn run(command: Command) -> Result<u8, String> {
         Command::Recall(args) => return memory::recall(&here, args),
         Command::Persona(command) => return memory::persona(&here, command),
         Command::Worktree(command) => return piece::run(&here, command),
+        Command::Check(command) => return check::run(&here, command),
         Command::Change(command) => return change::run(&here, command),
         Command::Curation(command) => return curation::run(here.plane.root(), command),
         Command::Skill(command) => return skill::run(here.plane.root(), command),
