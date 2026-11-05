@@ -680,6 +680,7 @@ pub(super) fn carries_value(address: &str, value: &str) -> bool {
     let spaced = |text: &str| zeroize::Zeroizing::new(text.replace('+', " "));
     let plain = lowered(value);
     let mut forms = vec![spaced(&plain)];
+    forms.extend(super::super::scrub::escaped_in_latin1(value).map(|form| spaced(&lowered(&form))));
     let standard = base64::engine::general_purpose::STANDARD_NO_PAD.encode(value);
     let url_safe = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(value);
     let hex: String = value.bytes().map(|byte| format!("{byte:02x}")).collect();

@@ -3413,6 +3413,10 @@ impl ChatBrowsers {
                 let Some(program) = chat.program(&name) else {
                     return (no(&no_such(&name)), false);
                 };
+                // The person drives it, so the page is theirs: they end it from the window.
+                if self.driver_of(&program) == Some(BrowserDriver::Person) {
+                    return (no(&not_closed_taken_over_said(&name)), false);
+                }
                 chat.drop_browser(&name);
                 self.relisted();
                 let closing = [ChatBrowser {
@@ -3981,6 +3985,14 @@ pub fn taken_over_said(browser: &str) -> String {
     format!(
         "the person has taken {browser} over, so nothing was filled: do something else, and \
          call browser_fill_secret again once they hand it back"
+    )
+}
+
+/// **What a chat is told of closing a browser the person has taken over**: it stays open, and why.
+pub fn not_closed_taken_over_said(browser: &str) -> String {
+    format!(
+        "the person has taken {browser} over, so it stays open: do something else, and call \
+         browser_close again once they hand it back"
     )
 }
 

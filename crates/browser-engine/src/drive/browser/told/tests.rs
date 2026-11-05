@@ -11,7 +11,8 @@ fn scrub() -> Keeping {
     kept.run(&[VALUE]);
     Keeping {
         every: Scrub::of(&kept),
-        filled: Scrub::of(&kept),
+        filled: kept.clone(),
+        named_by_their_sites: Vec::new(),
         browser: kept,
         pages: Vec::new(),
     }
@@ -187,7 +188,8 @@ fn what_the_person_typed_on_a_page_does_not_hide_a_site_that_has_it_in_its_name(
     typed.run(&["github"]);
     let keeping = Keeping {
         every: Scrub::of(&typed),
-        filled: Scrub::of(&Kept::default()),
+        filled: Kept::default(),
+        named_by_their_sites: Vec::new(),
         browser: Kept::default(),
         pages: Vec::new(),
     };
@@ -205,4 +207,166 @@ fn what_the_person_typed_on_a_page_does_not_hide_a_site_that_has_it_in_its_name(
         panic!("a field");
     };
     assert_eq!(field.origin.as_deref(), Some("https://github.com"));
+}
+
+/// #5152: a page on the site the agent is kept off, whose host holds a text kept out, as a login's
+/// user name may be part of its site's name.
+fn kept_off_acme() -> KeptOff {
+    std::sync::Arc::new(|address: &str| {
+        address
+            .starts_with("https://login.acme.test")
+            .then(|| "login.acme.test:443".to_owned())
+    })
+}
+
+#[test]
+fn a_page_kept_off_is_judged_by_its_address_before_a_text_is_taken_out_of_it() {
+    let mut kept = Kept::default();
+    kept.run(&["acme"]);
+    let keeping = Keeping {
+        every: Scrub::of(&kept),
+        filled: kept.clone(),
+        named_by_their_sites: Vec::new(),
+        browser: kept,
+        pages: Vec::new(),
+    };
+    let on_it = page("https://login.acme.test/account?id=7", "Your account");
+
+    let told = keeping.answer(kept_off_told(
+        Answer {
+            page: Some(on_it.clone()),
+            opened: vec![on_it.clone()],
+            content: Content::Pages(vec![on_it, page("https://a.test/x", "Another")]),
+            ..answer()
+        },
+        &kept_off_acme(),
+    ));
+
+    let shown = told.page.expect("a page");
+    assert_eq!(shown.address, "https://login.(blanked).test");
+    assert!(shown.title.is_empty());
+    assert_eq!(told.opened[0].address, "https://login.(blanked).test");
+    assert!(told.opened[0].title.is_empty());
+    let Content::Pages(pages) = told.content else {
+        panic!("pages");
+    };
+    assert_eq!(pages[0].address, "https://login.(blanked).test");
+    assert_eq!(
+        pages[1].address, "https://a.test/x",
+        "another site as it is"
+    );
+    assert_eq!(pages[1].title, "Another");
+    let note = told.note.expect("the chat is told");
+    assert!(note.contains("you may not read or act on it"), "{note}");
+    assert!(!note.contains("acme"), "{note}");
+}
+
+/// What purlis filled on `https://acme.com`, a login's user name that its site's name holds, and
+/// a value it doesn't.
+fn user_name_on_its_own_site() -> Keeping {
+    let mut state = State::default();
+    let mut filled = Kept::default();
+    filled.run(&["acme", "hunter-5310"]);
+    state.keep_filled_out(&filled, "https://acme.com");
+    Keeping {
+        every: Scrub::of(&state.kept),
+        filled: state.filled.clone(),
+        named_by_their_sites: state.named_by_their_sites.clone(),
+        browser: state.kept.clone(),
+        pages: Vec::new(),
+    }
+}
+
+#[test]
+fn a_site_named_by_what_was_filled_on_it_is_still_said_and_filled() {
+    let told = user_name_on_its_own_site().answer(Answer {
+        asked: vec!["acme.com:443".to_owned(), "api.acme.com:443".to_owned()],
+        page: Some(page("https://acme.com/sign-in", "Sign in")),
+        content: Content::Field(FieldInfo {
+            origin: Some("https://acme.com".to_owned()),
+            label: String::new(),
+            kind: FieldKind::OneLine,
+        }),
+        ..answer()
+    });
+    assert_eq!(told.asked, ["acme.com:443", "api.acme.com:443"]);
+    assert!(told.note.is_none());
+    let Content::Field(field) = told.content else {
+        panic!("a field");
+    };
+    assert_eq!(field.origin.as_deref(), Some("https://acme.com"));
+    assert_eq!(
+        told.page.expect("a page").address,
+        "https://acme.com",
+        "so the window reads the field as on its page's own site"
+    );
+}
+
+#[test]
+fn a_site_named_by_what_was_filled_elsewhere_stays_unsaid() {
+    let told = user_name_on_its_own_site().answer(Answer {
+        asked: vec![
+            "acme.evil.test:443".to_owned(),
+            "acme.com.evil.test:443".to_owned(),
+            "notacme.com:443".to_owned(),
+            "hunter-5310.acme.com:443".to_owned(),
+        ],
+        page: Some(page("https://acme.evil.test/", "")),
+        content: Content::Field(FieldInfo {
+            origin: Some("https://acme.evil.test".to_owned()),
+            label: String::new(),
+            kind: FieldKind::OneLine,
+        }),
+        ..answer()
+    });
+    assert!(told.asked.is_empty(), "{:?}", told.asked);
+    assert!(told.note.expect("said").contains("nobody is asked"));
+    let Content::Field(field) = told.content else {
+        panic!("a field");
+    };
+    assert_eq!(field.origin, None);
+    assert_eq!(
+        told.page.expect("a page").address,
+        "https://(blanked).evil.test/"
+    );
+}
+
+#[test]
+fn what_the_person_typed_while_driving_hides_a_site_asked_about_and_takes_no_origin_from_a_fill() {
+    let mut state = State::default();
+    let mut typed = Kept::default();
+    typed.run(&["https://", "github.com"]);
+    state.keep_out_everywhere(&typed);
+    let keeping = Keeping {
+        every: Scrub::of(&state.kept),
+        filled: state.filled.clone(),
+        named_by_their_sites: Vec::new(),
+        browser: state.kept.clone(),
+        pages: Vec::new(),
+    };
+    let told = keeping.answer(Answer {
+        asked: vec![
+            "github.com.evil.test:443".to_owned(),
+            "a.test:443".to_owned(),
+        ],
+        content: Content::Field(FieldInfo {
+            origin: Some("https://any.test".to_owned()),
+            label: String::new(),
+            kind: FieldKind::OneLine,
+        }),
+        ..answer()
+    });
+    assert_eq!(told.asked, ["a.test:443"]);
+    assert!(told.note.expect("said").contains("nobody is asked"));
+    let Content::Field(field) = told.content else {
+        panic!("a field");
+    };
+    assert_eq!(field.origin.as_deref(), Some("https://any.test"));
+}
+
+#[test]
+fn a_name_cut_where_a_space_falls_is_still_a_name_that_was_cut() {
+    let name = crate::drive::plain_file_name(&format!("{} hunter-5310", "a".repeat(119)));
+    assert_eq!(name.chars().count(), MOST_FILE_NAME_CHARS);
+    assert_eq!(name_shown(&name, &scrub().every), "download");
 }
