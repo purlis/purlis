@@ -952,6 +952,21 @@ fn a_rebase_stopped_in_a_clone_goes_on_and_back_by_a_sandboxed_chats_own_git() {
 }
 
 #[test]
+fn a_folder_removed_takes_purlis_s_notes_of_its_updates_with_it() {
+    purlis_core::unsteered!();
+    let w = world();
+    let _piece = pushed_piece(&w, "p1");
+    w.they_commit("new.txt", "new\n");
+    assert_eq!(update(&w, "p1", &start(None), &Reach::default()).0, 0);
+    assert!(noted(&w, "purlis-updated").is_file());
+    let noted_at = noted(&w, "purlis-updated");
+
+    let removed = brokered(|| purlis_core::worktree::remove(&w.plane, WS, REPO, "p1", true, false));
+    assert!(removed.is_ok());
+    assert!(!noted_at.exists());
+}
+
+#[test]
 fn fetching_alone_moves_nothing_and_takes_a_folder_with_uncommitted_changes() {
     purlis_core::unsteered!();
     let w = world();
@@ -964,8 +979,11 @@ fn fetching_alone_moves_nothing_and_takes_a_folder_with_uncommitted_changes() {
     let theirs = out(&w.theirs, &["rev-parse", "HEAD"]);
     assert_ne!(out(&piece, &["rev-parse", "origin/main"]), theirs);
 
+    let fetch_head = w.clone.join(".git/FETCH_HEAD");
+    let fetch_head_was = std::fs::read(&fetch_head).ok();
     let (code, said) = update(&w, "p1", &UpdateStep::FetchOnly, &Reach::default());
     assert_eq!(code, 0, "{said}");
+    assert_eq!(std::fs::read(&fetch_head).ok(), fetch_head_was);
     assert_eq!(out(&piece, &["rev-parse", "origin/main"]), theirs);
     assert_eq!(out(&piece, &["rev-parse", "HEAD"]), head);
     assert_eq!(out(&piece, &["branch", "--show-current"]), "p1");
