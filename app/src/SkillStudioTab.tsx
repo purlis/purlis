@@ -1102,8 +1102,10 @@ export function SkillStudioTab({
       label,
       run,
       async (notes) => {
-        setSelected(undefined);
-        return then === undefined ? undefined : then(notes);
+        const said = then === undefined ? undefined : await then(notes);
+        // An export the person did not place wrote nothing: Select stays as it was.
+        if (then === undefined || said !== undefined) setSelected(undefined);
+        return said;
       },
       refusedIn,
     );
@@ -1396,11 +1398,16 @@ export function SkillStudioTab({
       });
     // What the list draws, a screen at a time or not yet: what Select calls shown (#5332). A
     // built-in folded away is not.
-    const inTheList = new Set(
-      [...own, ...(foldsBuiltIns && builtInsFolded ? builtIns.filter(standsOut) : builtIns)].map(
-        skillRowId,
-      ),
-    );
+    // Read only while Select is on: off, it costs the Library nothing (#4351).
+    const inTheList =
+      sel === undefined
+        ? new Set<string>()
+        : new Set(
+            [
+              ...own,
+              ...(foldsBuiltIns && builtInsFolded ? builtIns.filter(standsOut) : builtIns),
+            ].map(skillRowId),
+          );
     selectAll = () =>
       setSel((was) => ({ ...was, keys: new Set([...was.keys, ...shown.map(skillRowId)]) }));
     const chosenRows =

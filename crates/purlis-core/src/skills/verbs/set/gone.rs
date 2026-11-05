@@ -46,8 +46,9 @@ pub struct Gone {
 }
 
 /// **Takes every skill of `set` off the Deleted list now**: refused whole, before anything is
-/// done, where one is no longer listed. Each committed one is marked first, as a mark can be taken
-/// back; then each this machine kept is removed, which cannot.
+/// done, where one is no longer listed. Past that check nothing can be taken back, so each that
+/// could not go is said in [`Gone::failed`] and the rest stay gone: each committed one is marked,
+/// then each this machine kept is removed.
 pub fn delete_now(plane: &Path, set: &[Deleted]) -> Result<Gone, String> {
     if set.is_empty() {
         return Err("no deleted skill was named".to_owned());

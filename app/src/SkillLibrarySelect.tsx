@@ -96,7 +96,10 @@ function pinnedBy(skill: StudioSkill, by: SkillPinner): boolean {
 
 /** Why `skill` stays as it is under `act`, or `null` where `act` changes it. */
 function staysWhy(act: SkillSetAct, skill: StudioSkill, at: SelectFor): string | null {
-  if (skill.level === "built-in") return "Built-in skills can't be changed.";
+  if (skill.level === "built-in")
+    return act === "export"
+      ? "Built-in skills come with purlis, so there is nothing to export."
+      : "Built-in skills can't be changed.";
   if (levelOf(skill, at.scope) === null)
     return "It comes from outside the project, so its program changes it.";
   switch (act) {
@@ -253,53 +256,51 @@ function Counted({
 
 /** **One row of the actions**: what it does, how many of those chosen it reaches, and its
  *  button, which opens its review. */
-function ActionsList({
+function ActionsList<A extends string>({
   acts,
   busy,
   onAct,
 }: {
-  acts: readonly {
-    act: SkillSetAct;
-    label: string;
-    says: string;
-    count: string;
-    danger?: boolean;
-  }[];
+  acts: readonly { act: A; label: string; says: string; count: string; danger?: boolean }[];
   busy: boolean;
-  onAct: (act: SkillSetAct) => void;
+  onAct: (act: A) => void;
 }) {
   return (
-    <List
-      aria-label="What to do with them"
-      className="skill-select-acts"
-      data-testid="select-acts"
-      onAction={(key) => {
-        if (!busy) onAct(String(key) as SkillSetAct);
-      }}
-    >
-      {acts.map((one) => (
-        <ListRow
-          key={one.act}
-          id={one.act}
-          textValue={`${one.label}, ${one.count}`}
-          data-testid={`select-act-${one.act}`}
-        >
-          <RowLabel>{one.label}</RowLabel>
-          <RowTrail>
-            <Badge>{one.count}</Badge>
-            <Button
-              size="sm"
-              variant={one.danger === true ? "danger" : "secondary"}
-              isDisabled={busy}
-              onPress={() => onAct(one.act)}
-            >
-              {`${one.label}…`}
-            </Button>
-          </RowTrail>
-          <RowBelow clamp={1}>{one.says}</RowBelow>
-        </ListRow>
-      ))}
-    </List>
+    <>
+      <h3 className="ui-text-small ui-text-strong">What to do with them</h3>
+      <List
+        aria-label="What to do with them"
+        className="skill-select-acts"
+        data-testid="select-acts"
+        onAction={(key) => {
+          const act = acts.find((one) => one.act === String(key));
+          if (!busy && act !== undefined) onAct(act.act);
+        }}
+      >
+        {acts.map((one) => (
+          <ListRow
+            key={one.act}
+            id={one.act}
+            textValue={`${one.label}, ${one.count}`}
+            data-testid={`select-act-${one.act}`}
+          >
+            <RowLabel>{one.label}</RowLabel>
+            <RowTrail>
+              <Badge>{one.count}</Badge>
+              <Button
+                size="sm"
+                variant={one.danger === true ? "danger" : "secondary"}
+                isDisabled={busy}
+                onPress={() => onAct(one.act)}
+              >
+                {`${one.label}…`}
+              </Button>
+            </RowTrail>
+            <RowBelow clamp={1}>{one.says}</RowBelow>
+          </ListRow>
+        ))}
+      </List>
+    </>
   );
 }
 
@@ -365,7 +366,6 @@ export function SelectionPage({
         }
       />
       <div className="skill-select-body">
-        <h3 className="ui-text-small ui-text-strong">What to do with them</h3>
         {acts.length === 0 ? (
           <p className="honest" data-testid="select-acts-none">
             Nothing can change these: built-in skills and skills from outside the project stay as
@@ -637,43 +637,29 @@ export function DeletedSelectionPage({
         }
       />
       <div className="skill-select-body">
-        <h3 className="ui-text-small ui-text-strong">What to do with them</h3>
-        <List
-          aria-label="What to do with them"
-          className="skill-select-acts"
-          data-testid="select-acts"
-          onAction={(key) => {
-            if (!busy) onAct(String(key) as DeletedAct);
-          }}
-        >
-          {back > 0 && (
-            <ListRow id="bring-back" textValue={`Bring back, ${count(back)}`}>
-              <RowLabel>Bring back</RowLabel>
-              <RowTrail>
-                <Badge>{count(back)}</Badge>
-                <Button size="sm" isDisabled={busy} onPress={() => onAct("bring-back")}>
-                  Bring back…
-                </Button>
-              </RowTrail>
-              <RowBelow clamp={1}>With their history and grades. One Undo right after.</RowBelow>
-            </ListRow>
-          )}
-          <ListRow id="delete-now" textValue={`Delete now, ${count(chosen.length)}`}>
-            <RowLabel>Delete now</RowLabel>
-            <RowTrail>
-              <Badge>{count(chosen.length)}</Badge>
-              <Button
-                size="sm"
-                variant="danger"
-                isDisabled={busy}
-                onPress={() => onAct("delete-now")}
-              >
-                Delete now…
-              </Button>
-            </RowTrail>
-            <RowBelow clamp={1}>It asks first: this one has no undo.</RowBelow>
-          </ListRow>
-        </List>
+        <ActionsList<DeletedAct>
+          acts={[
+            ...(back > 0
+              ? [
+                  {
+                    act: "bring-back" as const,
+                    label: "Bring back",
+                    says: "With their history and grades. One Undo right after.",
+                    count: count(back),
+                  },
+                ]
+              : []),
+            {
+              act: "delete-now" as const,
+              label: "Delete now",
+              says: "It asks first: this one has no undo.",
+              count: count(chosen.length),
+              danger: true,
+            },
+          ]}
+          busy={busy}
+          onAct={onAct}
+        />
         <Names
           title={`Selected (${chosen.length})`}
           skills={chosen.map((one) => ({ key: one.id, name: one.name, label: one.label }))}

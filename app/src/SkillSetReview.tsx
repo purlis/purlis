@@ -49,6 +49,8 @@ const WORDS: Record<
   {
     /** On its main action and each skill's box: "Delete". */
     verb: string;
+    /** After "will be", in a review's first line: "deleted". */
+    done: string;
     /** In the page's title: "Delete all from". */
     title: string;
     /** After a name: "which you're deleting". */
@@ -60,6 +62,7 @@ const WORDS: Record<
   }
 > = {
   delete: {
+    done: "deleted",
     verb: "Delete",
     title: "Delete all from",
     doing: "which you're deleting",
@@ -68,6 +71,7 @@ const WORDS: Record<
       "Each stays in Deleted for 30 days. It is one change, and Undo is offered right after.",
   },
   "turn-off": {
+    done: "turned off",
     verb: "Turn off",
     title: "Turn all off from",
     doing: "which you're turning off",
@@ -76,6 +80,7 @@ const WORDS: Record<
       `It turns off in ${workspace ?? "this workspace"} as one change, and Undo is offered right after.`,
   },
   "turn-on": {
+    done: "turned on",
     verb: "Turn on",
     title: "Turn all on from",
     doing: "which stays off",
@@ -84,6 +89,7 @@ const WORDS: Record<
       `It turns on in ${workspace ?? "this workspace"} as one change, and Undo is offered right after.`,
   },
   pin: {
+    done: "pinned",
     verb: "Pin",
     title: "Pin all from",
     doing: "which you're pinning",
@@ -92,6 +98,7 @@ const WORDS: Record<
       "A pinned skill stays in a chat's list, whatever the budget. It is one change, and Undo is offered right after.",
   },
   unpin: {
+    done: "unpinned",
     verb: "Unpin",
     title: "Unpin all from",
     doing: "which you're unpinning",
@@ -100,6 +107,7 @@ const WORDS: Record<
       "The router decides about them again. It is one change, and Undo is offered right after.",
   },
   archive: {
+    done: "archived",
     verb: "Archive",
     title: "Archive all from",
     doing: "which you're archiving",
@@ -108,6 +116,7 @@ const WORDS: Record<
       "They never load until they are restored. It is one change, and Undo is offered right after.",
   },
   unarchive: {
+    done: "unarchived",
     verb: "Unarchive",
     title: "Unarchive all from",
     doing: "which you're unarchiving",
@@ -115,6 +124,7 @@ const WORDS: Record<
     does: () => "They load again. It is one change, and Undo is offered right after.",
   },
   move: {
+    done: "moved",
     verb: "Move",
     title: "Move all from",
     doing: "which you're moving",
@@ -123,6 +133,7 @@ const WORDS: Record<
       "They keep their history and grades. It is one change, and Undo is offered right after.",
   },
   export: {
+    done: "exported",
     verb: "Export",
     title: "Export all from",
     doing: "which you're exporting",
@@ -363,6 +374,21 @@ export function applySet({
  *  be changed." */
 export type Stays = { name: string; label: string; why: string };
 
+/** **A review's first line where some stay** (#5332): "12 will be deleted, 2 are built-in and
+ *  stay". Those that stay for one reason are counted by it; the built-in ones by their kind. */
+function staysSaid(count: number, done: string, stays: readonly Stays[]): string {
+  const builtIn = stays.filter((one) => one.label === "built-in").length;
+  const rest = stays.length - builtIn;
+  return [
+    `${count} will be ${done}`,
+    builtIn > 0 && `${counted(builtIn, "is", "are")} built-in and stay${builtIn === 1 ? "s" : ""}`,
+    rest > 0 &&
+      `${counted(rest, "other stays", "others stay")} as ${rest === 1 ? "it is" : "they are"}`,
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
 /** A skill of a set's own key among the set: no two share a level and a name. */
 export function memberKey(member: Pick<SkillSetMember, "level" | "name">): string {
   return `${JSON.stringify(member.level)}\u0000${member.name}`;
@@ -590,12 +616,12 @@ export function SetReviewPage({
       <p className="honest" data-testid="set-review-lead">
         {can.length === 0
           ? "Nothing is left in this change."
-          : `${counted(can.length, "skill", "skills")} in this change. ${words.does(workspace)}`}
+          : stays.length > 0
+            ? `${staysSaid(can.length, words.done, stays)}. ${words.does(workspace)}`
+            : `${counted(can.length, "skill", "skills")} in this change. ${words.does(workspace)}`}
         {can.length > 0 &&
           alsoRemoves !== undefined &&
           ` ${alsoRemoves} stops being a source in the same change.`}
-        {stays.length > 0 &&
-          ` ${counted(stays.length, "other stays", "others stay")} as ${stays.length === 1 ? "it is" : "they are"}.`}
       </p>
       {going.length > 0 && (
         <Held read={read} what="the review of these skills" again={again}>

@@ -178,7 +178,7 @@ fn cannot(
             }
             super::free_at(plane, to, &member.name, &super::folder_name(&folder))
                 .err()
-                .map(|why| format!("{}.", capitalised(&why)))
+                .map(|why| format!("{}.", crate::skills::router::capitalised(&why)))
         }
         Act::Export => crate::skills::name_reserved(&member.name).then(|| {
             "A name starting with purlis- belongs to purlis, so it cannot be exported: rename it \
@@ -186,14 +186,6 @@ fn cannot(
                 .to_owned()
         }),
     }
-}
-
-/// `text` with its first letter a capital.
-fn capitalised(text: &str) -> String {
-    let mut chars = text.chars();
-    chars.next().map_or_else(String::new, |first| {
-        first.to_uppercase().chain(chars).collect()
-    })
 }
 
 /// **The review of `act` on `members`**: each one's marks, and each skill left naming one that

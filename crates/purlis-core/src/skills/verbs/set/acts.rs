@@ -134,7 +134,7 @@ pub fn lifecycle_set(
         .iter()
         .all(|(_, to, _, _)| **to == Lifecycle::Archived);
     let count = planned.len();
-    let word = if archiving { "archive" } else { "lifecycle" };
+    let word = if archiving { "archive" } else { "unarchive" };
     cx.commit(&paths, &format!("skill {word} {count}"));
     if commits_now && head(plane) == before {
         unstaged(plane, &paths);
@@ -162,7 +162,7 @@ pub fn lifecycle_set(
             counted(count, "skill", "skills")
         )
     } else {
-        format!("{} changed", counted(count, "skill", "skills"))
+        format!("{} in use again", counted(count, "skill", "skills"))
     });
     Ok(planned
         .into_iter()
@@ -179,7 +179,7 @@ pub struct Moving {
     pub grant: Option<Grant>,
 }
 
-/// The bytes of each file at `paths`, or that it is not there: what a move put back restores.
+/// The bytes of each file at `paths`, or that it is not there: what a change put back restores.
 fn kept_as_is(paths: &[PathBuf]) -> Vec<(PathBuf, Option<Vec<u8>>)> {
     paths
         .iter()

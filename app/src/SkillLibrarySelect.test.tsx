@@ -74,6 +74,9 @@ function core(
         return { notes: [], changed: given.names };
       case "skill_set_move":
         return { notes: [], back: [] };
+      case "skill_set_export":
+        // The person closed the save dialog without choosing a place.
+        return null;
       case "skill_set_delete_now":
         return { off_the_list: 1, removed: 1, failed: [] };
       default:
@@ -164,6 +167,9 @@ describe("the Library's Select mode", () => {
     expect(within(review).getByTestId("set-stays-browser").textContent).toContain(
       "Built-in skills can't be changed.",
     );
+    expect(within(review).getByTestId("set-review-lead").textContent).toMatch(
+      /^2 will be deleted, 1 is built-in and stays\./,
+    );
     const go = within(review).getByRole("button", { name: "Delete" });
     await waitFor(() => expect(go).not.toHaveAttribute("aria-disabled", "true"));
     await user.click(go);
@@ -222,6 +228,25 @@ describe("the Library's Select mode", () => {
       { at: "workspace", name: "ops", local: false },
       { at: "workspace", name: "ops", local: false },
     ]);
+  });
+
+  it("keeps Select on when an export's save dialog is closed without a place", async () => {
+    const asked = core([skill("deploy"), builtIn("browser")]);
+    open();
+    const user = userEvent.setup();
+    await select(user);
+    await user.keyboard("{Meta>}a{/Meta}");
+    await user.click(await within(page()).findByRole("button", { name: "Export…" }));
+    const review = await screen.findByTestId("set-review");
+    expect(within(review).getByTestId("set-stays-browser").textContent).toContain(
+      "nothing to export",
+    );
+    const go = within(review).getByRole("button", { name: "Choose where to save…" });
+    await waitFor(() => expect(go).not.toHaveAttribute("aria-disabled", "true"));
+    await user.click(go);
+    await vi.waitFor(() => expect(asks(asked, "skill_set_export")).toHaveLength(1));
+    await waitFor(() => expect(screen.getByTestId("set-review")).toBeTruthy());
+    expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
   });
 
   it("goes back to the selection from a review, and Esc on the list leaves Select", async () => {
