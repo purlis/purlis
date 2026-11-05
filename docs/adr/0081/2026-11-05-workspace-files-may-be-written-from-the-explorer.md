@@ -2,19 +2,22 @@
 
 From the operator's grill of the workspace-files feature, alongside
 [ADR 0113](../0113-a-workspaces-repos-live-in-repos-and-both-layouts-are-read.md). It narrows the
-rule the explorer holds (V86 F8: *never create, rename, move or delete*) to repos and their
-branches' folders.
+rule the explorer's tree holds (V86 F8: it creates, renames, moves and deletes nothing) to repos,
+branches' folders and the plane root.
 
-- **A repo's files and a branch's folder stay no-write.** They are the agents' work and git's, and
-  nothing in this amendment reaches them.
+- **The tree still creates, renames, moves and deletes nothing in a repo, a branch's folder or the
+  plane root** (the 2026-10-13 amendment). They are the agents' work and git's, and nothing in this
+  amendment reaches them. The light editor's small edits there are unchanged.
 - **The person's own workspace files may be written** from the explorer, with the workspace
   picked: new file, new folder, rename, delete, and import (**Import files…** through the system's
   file picker, and by dropping files from the system's file manager once #4713 is settled).
   - Every write is confined to the workspace's folder, outside `repos/`, `.worktrees/` and any
     clone at the root.
-  - The files purlis keeps there (`WORKSPACE_OWN`: its charter, `workspace.json`, memory, todos,
-    sessions and the rest) are never written this way. They open read-only, with a link to their
-    own view where one exists.
+  - The files purlis keeps there are never written this way: the reserved workspace names
+    (`WORKSPACE_OWN`: its charter, `workspace.json`, memory, todos, sessions and the rest),
+    `skills.local/`, the folders an extension keeps in the workspace, and purlis's generated
+    `.claude/` and `.purlis-*` files. They open read-only, with a link to their own view where one
+    exists.
   - Delete sends to the system's Trash after one confirmation, and is refused, never made
     permanent, where there is no Trash.
   - A drop copies. A name already taken gets a ` (2)` suffix, as the system's file manager does.

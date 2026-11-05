@@ -1784,16 +1784,18 @@ Two rules hold for the whole area and are not repeated per file:
   - **its repos**, each a clone at [`repos/<repo>/`](#workspaceswsreposrepo--a-cloned-repo-guest-checkout),
     or, for a clone made before structure version 6, at `<repo>/` directly under the workspace.
     Both places are read for ever, a workspace may hold clones in both, and one resolver in the
-    core says where a repo is: `repos/<repo>/` when it exists, else `<repo>/`;
+    core says where a repo is: `repos/<repo>/` when that is a clone, else `<repo>/`;
   - **their branches' folders**, at [`.worktrees/<repo>/<piece>/`](#workspaceswsworktreesrepopiece--pieces),
     wherever the repo itself is;
-  - **the workspace files** (`CONTEXT.md`): everything else — the stores purlis keeps here
-    (the reserved names below) and whatever the person or a chat puts here (notes, scripts,
-    artifacts). purlis gives no name but `repos` a meaning, and creates no folder for the person's
-    files.
+  - **the workspace files** (`CONTEXT.md`): everything else — what purlis keeps here (*managed*:
+    the reserved names below, `skills.local/`, the folders an extension keeps in the workspace, and
+    its generated `.claude/` and `.purlis-*` files) and whatever the person or a chat puts here
+    (notes, scripts, artifacts). For the person's files purlis gives no name a meaning and creates
+    no folder.
 - **Reserved names:** `workspace.md`, `workspace.json`, `memory`, `todos`, `sessions`, `pieces`,
-  `refs`, `skills`, `themes`, `changes`, `work` and, from structure version 6, `repos`. A clone
-  never takes one; `skills` and `skills.local` are refused as clone names as before.
+  `refs`, `skills`, `themes`, `changes`, `work` and, from structure version 6, `repos`. A clone may
+  still take most of them: `skills` and `skills.local` are refused as clone names as before, and
+  from version 6 only `repos` is newly refused. A clone in `repos/` can't collide with any of them.
 - **Encoding details:** `scaffold` refuses the whole directory when it does not resolve
   inside `workspaces/` (`charter/workspace.py:1840`). Baseline creation order is
   memory → refs → workspace.md → workspace.json → harness layer → structure stamp
@@ -5088,7 +5090,7 @@ harness's `workspace_files` / `checkout_files` (`charter/workspace.py:2020`
   Empty plane settings ⇒ **no file at all**.
 - **Git:** inside `workspaces/<ws>/`, already ignored by `/workspaces/*/*`.
 
-#### `workspaces/<ws>/<repo>/.claude/settings.json` and `.claude/settings.local.json` (generated, in a clone)
+#### `workspaces/<ws>/repos/<repo>/.claude/settings.json` and `.claude/settings.local.json` (generated, in a clone)
 
 **Tier:** Clone state, rebuildable — purlis's part; Claude Code co-writes the local file.
 

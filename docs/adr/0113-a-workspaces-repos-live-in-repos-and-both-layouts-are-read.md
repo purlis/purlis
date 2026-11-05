@@ -8,8 +8,8 @@
 
 - **A workspace's repos were cloned at its root**, `workspaces/<ws>/<name>/`, beside
   `workspace.md`, `memory/`, `sessions/`, `todos/` and whatever the person or a chat put there.
-  Repos and workspace files were mixed, and a clone could take any name not in
-  `WORKSPACE_OWN`, `repos` included.
+  Repos and workspace files were mixed, and a clone could take any name but `skills` and
+  `skills.local`, `memory` and `repos` included.
 - **No one place said where a clone is.** About twenty call sites joined
   `workspaces/<ws>/<repo>` by hand (`gitbroker.rs`, `chatpiece.rs`, `files.rs`, `runnercode.rs`
   and more), and about six found clones by walking the workspace folder for `.git`.
@@ -23,7 +23,7 @@
    the reserved names. Branch folders stay at `workspaces/<ws>/.worktrees/<repo>/<piece>`: moving
    them would break git's links back to their clone for nothing.
 2. **One function in the core says where a repo is**, and every call site and every scanner goes
-   through it. It answers `repos/<name>` when that exists and the old `<name>` otherwise, and a
+   through it. It answers `repos/<name>` when that is a clone and the old `<name>` otherwise, and a
    test refuses a new hand-built `workspaces/<ws>/<repo>` path. It lands first, with no change a
    person can see.
 3. **Both layouts are read for ever.** A clone at the root keeps working with nothing done.
