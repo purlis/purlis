@@ -2605,7 +2605,9 @@ export const PlaneView = memo(function PlaneView({
       if (listed !== undefined && isShell(listed)) return;
       // Named as its row named it (`shownName`), and as its tab does where it was not listed.
       const name =
-        listed !== undefined ? shownName(now.current, listed) : now.current.byId[held].name;
+        listed !== undefined
+          ? shownName(now.current, listed)
+          : (heldName(now.current, session) ?? String(session));
       // A Smart close's record brings it back; else its conversation.
       const resumes = record !== undefined || listed !== undefined;
       const one: EndedHere = { name, record, resumes, workspace: filedIn(session) };
@@ -2699,10 +2701,11 @@ export const PlaneView = memo(function PlaneView({
         setSavedNotice({ record: step.record });
         return;
       }
-      const tab = now.current.order.find((id) =>
-        panesOf(now.current, id).some((one) => one.session === step.session),
-      );
-      const name = tab === undefined ? `chat ${step.session}` : now.current.byId[tab].name;
+      const listed = listedNow.current.get(step.session);
+      const name =
+        (listed === undefined || tabHolding(now.current, step.session) === undefined
+          ? heldName(now.current, step.session)
+          : shownName(now.current, listed)) ?? `chat ${step.session}`;
       if (step.phase === "kept_open") {
         setKeptOpen((was) => [
           ...was.filter((one) => one.session !== step.session),
@@ -5276,9 +5279,7 @@ export const PlaneView = memo(function PlaneView({
     () => ({
       chats: Object.entries(studioLinks).flatMap(([at, link]) => {
         const session = Number(at);
-        const listed = chatNames.get(session);
-        const held = tabHolding(tabs, session);
-        const name = listed ?? (held === undefined ? undefined : tabs.byId[held].name);
+        const name = chatNames.get(session) ?? heldName(tabs, session);
         return name === undefined ? [] : [{ session, name, link }];
       }),
       show: (session) => showChat(session),
@@ -5302,13 +5303,10 @@ export const PlaneView = memo(function PlaneView({
   /** What a chat the project lists is called now, or nothing for one it does not list. */
   const nameOfListed = useCallback((session: number) => chatNames.get(session), [chatNames]);
   /** What a chat is called here: as its row names it (`shownName`); for a chat the project
-   *  does not list yet, the tab holding it; or its session number. */
+   *  does not list yet, what the tab holding it says of it (`heldName`); or its session number. */
   const nameOf = useCallback(
     (session: number) => {
-      const listed = chatNames.get(session);
-      if (listed !== undefined) return listed;
-      const held = tabHolding(tabs, session);
-      return held !== undefined ? tabs.byId[held].name : String(session);
+      return chatNames.get(session) ?? heldName(tabs, session) ?? String(session);
     },
     [chatNames, tabs],
   );
@@ -5318,19 +5316,29 @@ export const PlaneView = memo(function PlaneView({
   }, [nameOf]);
 
   /** What a pane drop is judged against (#4763): where chats are filed, and what each is called. */
-  const dropContext = useMemo<DropContext>(
-    () => ({
+  const dropContext = useMemo<DropContext>(() => {
+    const viewTabName = (content: Extract<Content, { kind: "view" }>) =>
+      tabs.byId[findView(tabs, content.view)?.tab ?? -1]?.name ?? "this view";
+    return {
       filedIn,
       pinned: isPinned,
       name: (content) =>
         content.kind === "session"
           ? nameOf(content.session)
           : content.kind === "view"
-            ? (tabs.byId[findView(tabs, content.view)?.tab ?? -1]?.name ?? "this view")
+            ? viewTabName(content)
             : "the empty pane",
-    }),
-    [filedIn, isPinned, nameOf, tabs],
-  );
+      tabName: (content) => {
+        if (content.kind !== "session") {
+          const name = content.kind === "view" ? viewTabName(content) : "the empty pane";
+          return { name, defaultName: name };
+        }
+        const { who, label } = pressedOf(content.session);
+        const defaultName = who ? `${who} ${content.chat}` : content.chat;
+        return { name: label ?? defaultName, defaultName };
+      },
+    };
+  }, [filedIn, isPinned, nameOf, pressedOf, tabs]);
   const holdTab = useCallback((id: number) => change((tabs) => selectTab(tabs, id)), [change]);
   const ownNameOf = useCallback(
     (session: number) =>
@@ -9947,9 +9955,9 @@ export const PlaneView = memo(function PlaneView({
             chat: {
               key: `${plane}#${session}`,
               project: plane,
-              // The tab's name — the one the operator gave it, or its default — and not the
-              // harness's: this is a list the operator reads (charter-app#254).
-              name: tabs.byId[id].name,
+              // As its row names it, and not as the harness does: this is a list the operator
+              // reads (charter-app#254).
+              name: nameOf(session),
               harness: known?.harness ?? null,
               cwd: known?.cwd ?? null,
               workspace: filed === OUTSIDE ? OUTSIDE_TITLE : filed,
@@ -9957,7 +9965,7 @@ export const PlaneView = memo(function PlaneView({
           };
         });
       }),
-    [filedIn, plane, reopened, tabs],
+    [filedIn, nameOf, plane, reopened, tabs],
   );
 
   // **This project's chats asking, for the title bar's list** (charter-app#249), which is the
@@ -10230,7 +10238,7 @@ export const PlaneView = memo(function PlaneView({
     const chatsOpen = tabs.order.flatMap((id) =>
       panesOf(tabs, id)
         .filter((pane) => sidebar === undefined || chatsByNumber.has(pane.session))
-        .map((pane) => ({ session: pane.session, name: tabs.byId[id].name })),
+        .map((pane) => ({ session: pane.session, name: nameOf(pane.session) })),
     );
     return {
       plane,
@@ -10263,7 +10271,7 @@ export const PlaneView = memo(function PlaneView({
         });
       },
     };
-  }, [chatsByNumber, nameOfListed, plane, showChat, sidebar, startChatHere, tabs]);
+  }, [chatsByNumber, nameOf, nameOfListed, plane, showChat, sidebar, startChatHere, tabs]);
 
   /** **While you were away** (#1514): kept for this project whether or not it is in front,
    *  so a project behind another has its own summary when the person switches to it. */
@@ -12535,17 +12543,28 @@ function tabHolding(tabs: Tabs, session: number): number | undefined {
 }
 
 /**
- * **What a chat is called in every list** (#1484): the name of the tab holding it, and for a
- * chat with no tab, what its tab would say. The Chats list, the explorer and the needs-you
+ * **What a chat is called in every list** (#1484): the name of the tab it is the own chat of,
+ * and for any other chat, what its tab would say. The Chats list, the explorer and the needs-you
  * list all read this, so a task is one name everywhere and never its number.
  */
 function shownName(tabs: Tabs, chat: OpenChat): string {
-  const held = tabHolding(tabs, chat.session);
-  // **A task beside its session is not called what the session's tab is** (#1489): the tab's
-  // name is its own chat's. A task says its own name wherever it is drawn.
-  const beside =
-    held !== undefined && chat.from?.task === true && chatOf(tabs, held) !== chat.session;
-  return held !== undefined && !beside ? tabs.byId[held].name : untabbedName(chat);
+  // **A chat beside a tab's own chat is not called what the tab is** (#1489, #5283): the tab's
+  // name is its first pane's. Every other chat says its own name wherever it is drawn.
+  const own = ownTabOf(tabs, chat.session);
+  return own !== undefined ? tabs.byId[own].name : untabbedName(chat);
+}
+
+/** What a chat with no row yet is called where a tab holds it: the tab's name where it is that
+ *  tab's own chat, else the name its pane holds. Nothing where no tab holds it. */
+function heldName(tabs: Tabs, session: number): string | undefined {
+  const own = ownTabOf(tabs, session);
+  if (own !== undefined) return tabs.byId[own].name;
+  for (const id of tabs.order) {
+    for (const { content } of contentsOf(tabs, id)) {
+      if (content.kind === "session" && content.session === session) return content.chat;
+    }
+  }
+  return undefined;
 }
 
 /** The waiting chat's Notice's way out that asks first (NO-3), and where a Cancel goes back to. */

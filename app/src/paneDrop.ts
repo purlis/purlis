@@ -4,6 +4,8 @@
 import {
   type Content,
   closeTab,
+  contentsOf,
+  EMPTY_TAB,
   type FiledIn,
   type Layout,
   nothingPinned,
@@ -13,6 +15,7 @@ import {
   panes,
   type Pinned,
   replace,
+  sameContent,
   showIn,
   type Tab,
   type Tabs,
@@ -37,6 +40,8 @@ import {
  * - **A pane's last chat leaving its tab closes the tab**, unless it is its strip's last tab,
  *   which keeps an empty pane (#4587).
  * - **A moved pane keeps its number**, so its terminal is the same one wherever it lands.
+ * - **A tab's name is its first pane's** (`tabs.renameTab`), so a drop that puts something else
+ *   first names the tab for it (#5283). A chat's own name never changes for a drop.
  */
 
 /** Where in a pane a drop lands: an edge splits on that side, the middle swaps. */
@@ -67,8 +72,15 @@ export type DropContext = {
   filedIn: FiledIn;
   /** What a pane's content is called in a sentence. */
   name: (content: Content) => string;
+  /**
+   * What a tab is called when `content` is its first pane: the name it says, and what that goes
+   * back to when a given name is taken off (`Tab.defaultName`). `name` for both where absent.
+   */
+  tabName?: (content: Content) => TabName;
   pinned?: Pinned;
 };
+
+type TabName = { name: string; defaultName: string };
 
 /** What a drop would do, said, or why it is refused. */
 export type Verdict =
@@ -207,7 +219,27 @@ export function judgeDrop(
 /** **`tabs` after dropping `from` on `to`**, or `tabs` itself when the drop is refused. */
 export function dropOn(tabs: Tabs, from: Source, to: Target, ctx: DropContext, size?: Size): Tabs {
   if (!judgeDrop(tabs, from, to, ctx, size).ok) return tabs;
-  return apply(tabs, asDropped(tabs, from, to), to, ctx);
+  return namedForFirstPanes(tabs, apply(tabs, asDropped(tabs, from, to), to, ctx), ctx);
+}
+
+/** What a tab with `content` in its first pane is called. */
+function tabNameOf(content: Content, ctx: DropContext): TabName {
+  if (content.kind === "empty") return { name: EMPTY_TAB, defaultName: EMPTY_TAB };
+  if (ctx.tabName !== undefined) return ctx.tabName(content);
+  const name = ctx.name(content);
+  return { name, defaultName: name };
+}
+
+/** `after`, with each tab whose first pane shows something else than `before` named for it. */
+function namedForFirstPanes(before: Tabs, after: Tabs, ctx: DropContext): Tabs {
+  const byId = { ...after.byId };
+  for (const id of after.order) {
+    const was = contentsOf(before, id)[0]?.content;
+    const is = contentsOf(after, id)[0]?.content;
+    if (was === undefined || is === undefined || sameContent(was, is)) continue;
+    byId[id] = { ...byId[id], ...tabNameOf(is, ctx) };
+  }
+  return { ...after, byId };
 }
 
 const refused = (why: string): Verdict => ({ ok: false, why });
@@ -329,11 +361,9 @@ function toStrip(tabs: Tabs, source: Source, at: number, ctx: DropContext): Tabs
   const lifted = lift(tabs, source, ctx);
   const next = lifted.tabs;
   const id = next.named.tabs + 1;
-  const name = ctx.name(panes(lifted.moved)[0].content);
   const tab: Tab = {
     id,
-    name,
-    defaultName: name,
+    ...tabNameOf(panes(lifted.moved)[0].content, ctx),
     layout: lifted.moved,
     focused: firstPane(lifted.moved),
   };

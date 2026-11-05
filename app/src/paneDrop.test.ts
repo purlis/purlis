@@ -16,6 +16,7 @@ import { undone } from "./layoutUndo";
 import {
   type Content,
   contentsOf,
+  EMPTY_TAB,
   insertPane,
   type Layout,
   noTabs,
@@ -641,7 +642,7 @@ describe("review fixes (#4763)", () => {
     const after = dropOn(
       tabs,
       paneSource(tabs, second, 5),
-      { kind: "pane", tab: first, pane: paneOf(tabs, first, 1), place: "left" },
+      { kind: "pane", tab: first, pane: paneOf(tabs, first, 1), place: "right" },
       ctx,
     );
     const renamed = renameTab(after, first, "mine");
@@ -701,5 +702,116 @@ describe("a one-job pane", () => {
     const from: Source = { kind: "chat", session: 5, chat: "5" };
     expect(judgeDrop(tabs, from, to, ctx, ROOMY)).toMatchObject({ ok: true });
     expect(strip(dropOn(tabs, from, to, ctx, ROOMY))).toEqual(["row(1 column(9 5))"]);
+  });
+});
+
+describe("a tab's name follows its first pane through a drop (#5283)", () => {
+  const named: DropContext = {
+    ...ctx,
+    tabName: (content) =>
+      content.kind === "session"
+        ? { name: `label ${content.session}`, defaultName: `chat ${content.session}` }
+        : { name: "a view", defaultName: "a view" },
+  };
+  const twoTabs = (): { tabs: Tabs; first: number; second: number; pane: number } => {
+    let tabs = openTab(noTabs(), 1, "1");
+    const first = tabs.order[0];
+    const pane = contentsOf(tabs, first)[0].pane;
+    tabs = openTab(tabs, 2, "2");
+    return { tabs, first, second: tabs.order[1], pane };
+  };
+  const seven: Source = { kind: "chat", session: 7, chat: "7" };
+
+  it("keeps the tab's name when a chat lands after its first pane", () => {
+    const { tabs, first, pane } = twoTabs();
+    const before = tabs.byId[first];
+    const after = dropOn(tabs, seven, { kind: "pane", tab: first, pane, place: "right" }, named);
+    expect(after.byId[first].name).toBe(before.name);
+    expect(after.byId[first].defaultName).toBe(before.defaultName);
+  });
+
+  it("names the tab for a chat that lands before its first pane", () => {
+    const { tabs, first, pane } = twoTabs();
+    const after = dropOn(tabs, seven, { kind: "pane", tab: first, pane, place: "left" }, named);
+    expect(after.byId[first].name).toBe("label 7");
+    expect(after.byId[first].defaultName).toBe("chat 7");
+  });
+
+  it("names the tab for a chat that replaces its first pane", () => {
+    const { tabs, first, pane } = twoTabs();
+    const after = dropOn(tabs, seven, { kind: "pane", tab: first, pane, place: "middle" }, named);
+    expect(after.byId[first].name).toBe("label 7");
+  });
+
+  it("names both tabs when panes that lead them swap", () => {
+    const { tabs, first, second, pane } = twoTabs();
+    const other = contentsOf(tabs, second)[0].pane;
+    const after = dropOn(
+      tabs,
+      { kind: "pane", tab: first, pane },
+      { kind: "pane", tab: second, pane: other, place: "middle" },
+      named,
+    );
+    expect(after.byId[first].name).toBe("label 2");
+    expect(after.byId[second].name).toBe("label 1");
+  });
+
+  it("names the tab for what is left first when its first pane leaves", () => {
+    const { tabs: both, first, second, pane } = twoTabs();
+    const tabs = insertPane(both, {
+      tab: first,
+      pane,
+      direction: "row",
+      side: "after",
+      content: { kind: "session", session: 3, chat: "3" },
+    });
+    const other = contentsOf(tabs, second)[0].pane;
+    const after = dropOn(
+      tabs,
+      { kind: "pane", tab: first, pane },
+      { kind: "pane", tab: second, pane: other, place: "right" },
+      named,
+    );
+    expect(after.byId[first].name).toBe("label 3");
+  });
+
+  it("names a tab left with an empty pane as an empty tab says", () => {
+    const filed: DropContext = { ...named, filedIn: (session) => (session === 1 ? "ops" : "dev") };
+    const { tabs, first, second, pane } = twoTabs();
+    const other = contentsOf(tabs, second)[0].pane;
+    const after = dropOn(
+      tabs,
+      { kind: "pane", tab: first, pane },
+      { kind: "pane", tab: second, pane: other, place: "right" },
+      filed,
+    );
+    expect(contentsOf(after, first)[0].content.kind).toBe("empty");
+    expect(after.byId[first].name).toBe(EMPTY_TAB);
+  });
+
+  it("makes a new strip tab under the name and default of what it shows", () => {
+    const { tabs } = twoTabs();
+    const after = dropOn(tabs, seven, { kind: "strip", at: 0 }, named);
+    const made = after.byId[after.order[0]];
+    expect(made.name).toBe("label 7");
+    expect(made.defaultName).toBe("chat 7");
+  });
+
+  it("gives a tab its first chat's name back when a layout change is undone", () => {
+    const { tabs, first, pane } = twoTabs();
+    const labelled = renameTab(tabs, first, "given");
+    const after = dropOn(labelled, seven, { kind: "pane", tab: first, pane, place: "left" }, named);
+    expect(after.byId[first].name).toBe("label 7");
+    const back = undone(after, labelled, after);
+    expect(back?.byId[first].name).toBe("given");
+    expect(back?.byId[first].defaultName).toBe(labelled.byId[first].defaultName);
+  });
+
+  it("does not call the tab's first chat by a name given since to the chat the undo takes away", () => {
+    const { tabs, first, pane } = twoTabs();
+    const before = tabs.byId[first].name;
+    const after = dropOn(tabs, seven, { kind: "pane", tab: first, pane, place: "left" }, named);
+    const given = renameTab(after, first, "given to chat 7");
+    expect(undone(given, tabs, after)?.byId[first].name).toBe(before);
   });
 });
