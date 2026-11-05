@@ -4,7 +4,7 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
-import { closeTheViewTabsOpenedSince, tabNames } from "../reach.js";
+import { SETTINGS_GROUPS, closesTheTabsItOpens, openProjectSettings } from "../reach.js";
 import { theProfilesWrapper } from "../harness.js";
 
 /**
@@ -25,8 +25,6 @@ import { theProfilesWrapper } from "../harness.js";
  * this spec opened is closed.
  */
 
-const PALETTE = '[role="dialog"][aria-label="Command palette"]';
-const GROUPS = 'nav[aria-label="Groups"]';
 const NAME = "e2e-profile";
 const TABLE = `[harness.${NAME}]`;
 
@@ -38,30 +36,6 @@ async function planeRoot(): Promise<string> {
   return ((await said.getAttribute("data-directory")) ?? "").trim();
 }
 
-/** Opens Settings at the Project level through the palette, as the operator does. */
-async function openProjectSettings(): Promise<void> {
-  await browser.keys(["F2"]);
-  await $(PALETTE).waitForDisplayed({ timeout: 20_000 });
-  const box = await $("#palette-query");
-  await browser.waitUntil(async () => box.isFocused(), {
-    timeout: 10_000,
-    timeoutMsg: "the palette did not take the keyboard when it opened",
-  });
-  await box.addValue("Project settings");
-  await browser.waitUntil(
-    async () =>
-      browser.execute(
-        () =>
-          document
-            .querySelector('[role="option"][aria-selected="true"] .palette-title')
-            ?.textContent?.startsWith("Project settings") ?? false,
-      ),
-    { timeout: 10_000, timeoutMsg: "the palette did not offer Project settings…" },
-  );
-  await browser.keys(["Enter"]);
-  await $(GROUPS).waitForDisplayed({ timeout: 20_000 });
-}
-
 /** The local settings file as it is on disk now, or `null` when there is none. */
 const onDisk = (file: string): string | null =>
   existsSync(file) ? readFileSync(file, "utf8") : null;
@@ -70,14 +44,11 @@ describe("Settings › Harness & profiles", () => {
   let root = "";
   let file = "";
   let original: string | null = null;
-  /** The tabs on the strip before this spec, so its `after` closes only what it opened. */
-  let wereOpen: string[] = [];
 
   before(async () => {
     root = await planeRoot();
     file = join(root, "charter.local.toml");
     original = onDisk(file);
-    wereOpen = await tabNames();
   });
 
   after(async () => {
@@ -89,14 +60,15 @@ describe("Settings › Harness & profiles", () => {
         if (now !== null) rmSync(file);
       } else if (now !== original) writeFileSync(file, original);
     }
-    // The Settings tab it opened, by its own ×, waited for until the strip is as it was (#5111).
-    await closeTheViewTabsOpenedSince(wereOpen);
   });
+
+  // Then the Settings tab it opened, by its own ×, waited for until the strip is as it was (#5111).
+  closesTheTabsItOpens();
 
   it("adds a profile that lands in charter.local.toml with a page of its own, and removes it", async () => {
     expect(original ?? "").not.toContain(TABLE);
     await openProjectSettings();
-    await $(GROUPS).$("button=Harness & profiles").click();
+    await $(SETTINGS_GROUPS).$("button=Harness & profiles").click();
 
     await $("button=Add profile").click();
     const form = await $('form[aria-label="New profile"]');
@@ -117,7 +89,7 @@ describe("Settings › Harness & profiles", () => {
     expect(written).toContain(theProfilesWrapper(root));
 
     // Its own page, from the nav, which is where its Remove is.
-    const page = await $(GROUPS).$(`button=${NAME}`);
+    const page = await $(SETTINGS_GROUPS).$(`button=${NAME}`);
     await page.waitForDisplayed({
       timeout: 20_000,
       timeoutMsg: `the nav never listed ${NAME}'s page`,
@@ -133,7 +105,7 @@ describe("Settings › Harness & profiles", () => {
     });
     // The profiles the run started with are still there, and the page went with the profile.
     expect(onDisk(file) ?? "").toContain("[harness.scenario]");
-    await $(GROUPS)
+    await $(SETTINGS_GROUPS)
       .$(`button=${NAME}`)
       .waitForExist({
         timeout: 20_000,

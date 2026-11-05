@@ -3,7 +3,7 @@
 
 import { $, browser, expect } from "@wdio/globals";
 import { READY } from "../harness.js";
-import { closeTheViewTabsOpenedSince, tabNames } from "../reach.js";
+import { closesTheTabsItOpens, openProjectSettings } from "../reach.js";
 import { endChatsStartedHere, startAChat, type Started } from "../started.js";
 
 /**
@@ -31,34 +31,9 @@ import { endChatsStartedHere, startAChat, type Started } from "../started.js";
  */
 
 const STRIP = '[data-strip="Tabs"]';
-const PALETTE = '[role="dialog"][aria-label="Command palette"]';
 const NOTE = '[data-testid="dispatch-tokens-time-note"]';
 
 type Box = { left: number; right: number; top: number; bottom: number };
-
-/** Opens Settings at the Project level through the palette, as the operator does. */
-async function openProjectSettings(): Promise<void> {
-  await browser.keys(["F2"]);
-  await $(PALETTE).waitForDisplayed({ timeout: 20_000 });
-  const box = await $("#palette-query");
-  await browser.waitUntil(async () => box.isFocused(), {
-    timeout: 10_000,
-    timeoutMsg: "the palette did not take the keyboard when it opened",
-  });
-  await box.addValue("Project settings");
-  await browser.waitUntil(
-    async () =>
-      browser.execute(
-        () =>
-          document
-            .querySelector('[role="option"][aria-selected="true"] .palette-title')
-            ?.textContent?.startsWith("Project settings") ?? false,
-      ),
-    { timeout: 10_000, timeoutMsg: "the palette did not offer Project settings…" },
-  );
-  await browser.keys(["Enter"]);
-  await $('nav[aria-label="Groups"]').waitForDisplayed({ timeout: 20_000 });
-}
 
 /** Presses the level called `level` on the switcher, then the nav's group called `group`. */
 async function goTo(level: string, group: string): Promise<void> {
@@ -198,11 +173,8 @@ describe("the limits' lines and the set's native controls, in the real WebView",
   let was = { width: 1280, height: 800 };
   /** The chat the time-limit case starts, by the number its start answered. */
   let mine: Started | undefined;
-  /** The tabs on the strip before this spec, so its `after` closes only what it opened. */
-  let wereOpen: string[] = [];
 
   before(async () => {
-    wereOpen = await tabNames();
     was = await browser.getWindowSize();
     await windowIs(1280, 800);
   });
@@ -224,9 +196,10 @@ describe("the limits' lines and the set's native controls, in the real WebView",
     await tried(() => browser.setWindowSize(was.width, was.height));
     // The chat this file started, ended by its number: the Settings tab it opened ends nothing.
     await tried(() => endChatsStartedHere([mine]));
-    // Then the Settings tab it opened, by its own ×, until the strip is as it was (#5111).
-    await closeTheViewTabsOpenedSince(wereOpen);
   });
+
+  // Then the Settings tab it opened, by its own ×, waited for until the strip is as it was (#5111).
+  closesTheTabsItOpens();
 
   it("draws the note under the limits table whole, inside its column, wide and narrow", async () => {
     await openProjectSettings();

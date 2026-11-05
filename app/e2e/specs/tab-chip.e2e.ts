@@ -3,7 +3,6 @@
 
 import { browser, expect, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
-import { closeTheViewTabsOpenedSince } from "../reach.js";
 import { REST_MS } from "../../src/tabRest.ts";
 import { bringSideBack, putSideAway, sideIsAway, type SideRegion } from "../sides.js";
 import {
@@ -13,7 +12,7 @@ import {
   startAChat,
   type Started,
 } from "../started.js";
-import { openedSince } from "../reach.js";
+import { KEPT_EMPTY, untilTheStripIsBare } from "../reach.js";
 
 /**
  * **A session's tab wears a chip of its tasks, measured and driven in the real WebView**
@@ -471,8 +470,6 @@ async function equalShare(): Promise<boolean> {
 }
 
 describe("the chip a session's tab wears for its tasks", () => {
-  /** The tabs that were already there, so only this file's own are ended again. */
-  let wereAlreadyOpen: string[] = [];
   let was = { width: 1280, height: 800 };
   /** This file's own tabs, in the order they were opened, and the first one's chat. */
   let mine: string[] = [];
@@ -503,16 +500,11 @@ describe("the chip a session's tab wears for its tasks", () => {
   }
 
   before(async () => {
-    // **It starts from a strip of its own.** The strip draws what fits and the tab in front,
-    // so what earlier files left open decides which of this file's tabs are drawn, and how
-    // wide each is: measured in CI, eleven tabs left behind, and this file's three not drawn.
-    // The chatsLeft guard now starts every file with no chat running, so nothing is ended here
-    // that this file did not start. **And the tabs earlier files left are closed**: every strip
-    // also keeps one empty tab now (#4758), so at 1280 wide a Settings tab or two left behind
-    // was enough to put this file's first two tabs behind "Show N tabs" when the third opened.
-    // Closing one ends nothing (#4756); the strip's kept empty tab stays.
-    await closeTheViewTabsOpenedSince([]);
-    wereAlreadyOpen = await tabNames();
+    // **It starts from a strip of its own.** The strip draws what fits and the tab in front, so
+    // anything else on it decides which of this file's tabs are drawn, and how wide each is. The
+    // guards start every file with no chat running and no tab left (#5111), so the strip holds
+    // at most its kept empty tab (#4758).
+    await untilTheStripIsBare("tab-chip");
     // Only the dispatched pointer is ever on the strip (#3521, the file's comment).
     await fenceRealPointer(true);
     was = await browser.getWindowSize();
@@ -526,7 +518,7 @@ describe("the chip a session's tab wears for its tasks", () => {
     mine = [];
     started = [];
     for (let opened = 0; opened < 3; opened++) {
-      const known = new Set([...wereAlreadyOpen, ...(await tabNames()), ...mine]);
+      const known = new Set([KEPT_EMPTY, ...(await tabNames()), ...mine]);
       started.push(await startAChat());
       let saw = "nothing was read";
       let came: string | undefined;
@@ -617,10 +609,7 @@ describe("the chip a session's tab wears for its tasks", () => {
     await tried(() => browser.keys("Escape"));
     await tried(() => browser.setWindowSize(was.width, was.height));
     await tried(() => endChatsStartedHere(started));
-    await browser.waitUntil(
-      async () => openedSince(wereAlreadyOpen, await tabNames()).length === 0,
-      { timeout: 20_000, timeoutMsg: "the tab-chip spec left a chat open behind it" },
-    );
+    await untilTheStripIsBare("tab-chip");
   });
 
   it("leaves every tab the width it was, the one with tasks and the ones without", async () => {
