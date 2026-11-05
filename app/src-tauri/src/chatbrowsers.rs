@@ -1350,6 +1350,7 @@ impl ChatBrowsers {
         else {
             return None;
         };
+        let _ = (persona, read);
         let (closing, name) = {
             let mut chats = self.lock();
             let open =
