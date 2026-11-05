@@ -135,6 +135,9 @@ export const Table: Story = {
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(within(document.body).queryByRole("dialog")).toBeNull());
     await untilFocusWithin(() => grid, "Esc gives the keyboard back to the table");
+    // The whole table is one Tab stop: one Tab leaves it, whichever button had the keyboard.
+    await userEvent.tab();
+    await expect(grid.contains(document.activeElement)).toBe(false);
   },
 };
 
@@ -204,6 +207,7 @@ export const ReadOnly: Story = {
     const change = canvas.getByRole("button", { name: "Change Codex's skill budget" });
     await expect(change).toHaveAttribute("aria-disabled", "true");
     await userEvent.tab();
+    await arrowTo("Change Claude Code's skill budget");
     expectFocusInSight();
   },
 };
