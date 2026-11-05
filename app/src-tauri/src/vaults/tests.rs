@@ -245,7 +245,7 @@ fn an_otpauth_address_is_not_marked_and_the_window_is_told_why() {
     )
     .unwrap();
     let refused = mark_no_seed(&ctx, "files", "APP").unwrap_err();
-    assert!(refused.contains("otpauth address"), "{refused}");
+    assert!(refused.contains("authenticator app's address"), "{refused}");
     assert!(!refused.contains("GEZDGNBV"), "{refused}");
     assert!(!open(&ctx, "files").unwrap().secrets[0].no_seed);
 }
