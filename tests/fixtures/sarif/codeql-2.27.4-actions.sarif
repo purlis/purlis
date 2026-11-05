@@ -1,0 +1,176 @@
+{
+ "runs": [
+  {
+   "artifacts": [
+    {
+     "location": {
+      "index": 0,
+      "uri": ".github/workflows/release.yml"
+     }
+    },
+    {
+     "location": {
+      "index": 1,
+      "uri": ".github/actions/rust-toolchain/action.yml"
+     }
+    },
+    {
+     "location": {
+      "index": 2,
+      "uri": ".github/workflows/runner-image.yml"
+     }
+    }
+   ],
+   "automationDetails": {
+    "id": "/language:actions/"
+   },
+   "conversion": {
+    "tool": {
+     "driver": {
+      "name": "GitHub Code Scanning"
+     }
+    }
+   },
+   "properties": {
+    "codeqlConfigSummary": {}
+   },
+   "results": [
+    {
+     "correlationGuid": "53c2b675-36d5-42d3-b2eb-cc20f4d81123",
+     "level": "error",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "index": 0,
+         "uri": ".github/workflows/release.yml"
+        },
+        "region": {
+         "endColumn": 7,
+         "endLine": 354,
+         "startColumn": 9,
+         "startLine": 352
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "Potential cache poisoning in the context of the default branch due to privilege checkout of untrusted code from [github.event.workflow_run.head_sha || github.sha](1). ([workflow_dispatch](2)).\nPotential cache poisoning in the context of the default branch due to privilege checkout of untrusted code from [github.event.workflow_run.head_sha || github.sha](1). ([schedule](3))."
+     },
+     "partialFingerprints": {
+      "primaryLocationLineHash": "3846508dca311d5a:1"
+     },
+     "properties": {
+      "github/alertNumber": 33,
+      "github/alertUrl": "https://api.github.com/repos/purlis/purlis/code-scanning/alerts/33"
+     },
+     "rule": {
+      "id": "actions/cache-poisoning/poisonable-step",
+      "toolComponent": {
+       "index": 0
+      },
+      "index": 3
+     },
+     "ruleId": "actions/cache-poisoning/poisonable-step"
+    },
+    {
+     "correlationGuid": "149cf21c-e510-4d23-8b1c-dcf4f59948c1",
+     "level": "error",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "index": 0,
+         "uri": ".github/workflows/release.yml"
+        },
+        "region": {
+         "endColumn": 7,
+         "endLine": 368,
+         "startColumn": 9,
+         "startLine": 354
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "Potential cache poisoning in the context of the default branch due to privilege checkout of untrusted code from [github.event.workflow_run.head_sha || github.sha](1). ([workflow_dispatch](2)).\nPotential cache poisoning in the context of the default branch due to privilege checkout of untrusted code from [github.event.workflow_run.head_sha || github.sha](1). ([schedule](3))."
+     },
+     "partialFingerprints": {
+      "primaryLocationLineHash": "578eb4b755ea263b:1"
+     },
+     "properties": {
+      "github/alertNumber": 1,
+      "github/alertUrl": "https://api.github.com/repos/purlis/purlis/code-scanning/alerts/1"
+     },
+     "rule": {
+      "id": "actions/cache-poisoning/poisonable-step",
+      "toolComponent": {
+       "index": 0
+      },
+      "index": 3
+     },
+     "ruleId": "actions/cache-poisoning/poisonable-step"
+    },
+    {
+     "correlationGuid": "d2268d95-f78b-4f5b-8dd6-57b3fb60ecd2",
+     "level": "error",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "index": 2,
+         "uri": ".github/workflows/runner-image.yml"
+        },
+        "region": {
+         "endColumn": 7,
+         "endLine": 150,
+         "startColumn": 9,
+         "startLine": 147
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "Potential cache poisoning in the context of the default branch due to privilege checkout of untrusted code from [needs.plan.outputs.sha](1). ([workflow_dispatch](2)).\nPotential cache poisoning in the context of the default branch due to privilege checkout of untrusted code from [needs.plan.outputs.sha](1). ([schedule](3)).\nPotential cache poisoning in the context of the default branch due to privilege checkout of untrusted code from [needs.plan.outputs.sha](1). ([workflow_dispatch](4))."
+     },
+     "partialFingerprints": {
+      "primaryLocationLineHash": "547671a90af4c153:1"
+     },
+     "properties": {
+      "github/alertNumber": 218,
+      "github/alertUrl": "https://api.github.com/repos/purlis/purlis/code-scanning/alerts/218"
+     },
+     "rule": {
+      "id": "actions/cache-poisoning/poisonable-step",
+      "toolComponent": {
+       "index": 0
+      },
+      "index": 3
+     },
+     "ruleId": "actions/cache-poisoning/poisonable-step"
+    }
+   ],
+   "tool": {
+    "driver": {
+     "name": "CodeQL",
+     "semanticVersion": "2.27.4"
+    },
+    "extensions": [
+     {
+      "name": "codeql/actions-queries",
+      "semanticVersion": "0.6.39+1be292a1e54696ca543b4ad0f9b4537b9687caa7"
+     }
+    ]
+   },
+   "versionControlProvenance": [
+    {
+     "branch": "refs/heads/main",
+     "repositoryUri": "https://github.com/purlis/purlis",
+     "revisionId": "32f2ddcb58188242edb5affe991602eee59f1aba"
+    }
+   ]
+  }
+ ],
+ "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+ "version": "2.1.0"
+}

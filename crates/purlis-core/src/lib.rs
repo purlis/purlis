@@ -19,6 +19,7 @@ pub mod briefing;
 pub mod brokered;
 pub mod browsertools;
 pub mod change;
+pub mod checks;
 pub mod chatenv;
 pub mod chatpiece;
 pub mod chatspec;
