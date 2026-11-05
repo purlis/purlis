@@ -142,6 +142,9 @@ fn isolated_answer(
             bound(root, asker.cwd.as_deref(), &ask.workspace)
                 .and_then(|()| above(root, asker.cwd.as_deref(), repo, piece))
         }
+        // Every finished folder of the chat's own workspace (ADR 0110), from wherever in it
+        // the chat stands: the folder it stands in is kept ([`crate::prune::Asker::stands_in`]).
+        GitWork::WorktreePrune { .. } => bound(root, asker.cwd.as_deref(), &ask.workspace),
         // The project root: only for the chat whose place it is.
         GitWork::RootUpdate {} => at_the_root(root, asker.cwd.as_deref()),
         // A clone's own checkout: the chat stands in it, or above it in its workspace.
@@ -299,6 +302,50 @@ fn isolated_answer(
                 (_, Some(why)) | (Err(why), _) => return no(why),
                 (Ok(code), None) => code,
             }
+        }
+        // Never forced: a folder that is not finished is kept, and why is said (ADR 0110). A
+        // place that cannot be read is refused: whether it is a folder the prune would take
+        // cannot be told.
+        // Each folder's git runs in its checked clone and folder, and each removal is held to
+        // its claim, as a chat's own removal is.
+        GitWork::WorktreePrune {
+            repo,
+            dry_run,
+            keep_branches,
+        } => {
+            let Some(cwd) = asker
+                .cwd
+                .as_deref()
+                .filter(|cwd| std::fs::canonicalize(cwd).is_ok())
+            else {
+                return no(
+                    "the app could not place where this chat stands, so it will not \
+                           prune branch folders for it"
+                        .to_owned(),
+                );
+            };
+            let standing_in =
+                crate::worktree::locate(root, cwd).map(|at| crate::finished::Folder {
+                    repo: at.repo,
+                    piece: at.piece,
+                });
+            crate::prune::prune(
+                &crate::prune::Asked {
+                    ws: &ask.workspace,
+                    repo: repo.as_deref(),
+                    dry_run: *dry_run,
+                    keep_branches: *keep_branches,
+                },
+                &crate::prune::Asker {
+                    who: &who(asker),
+                    live: asker.live.as_deref(),
+                    brokered: true,
+                    stands_in: standing_in.as_ref(),
+                },
+                root,
+                now,
+                &mut say,
+            )
         }
         // Answered before anything above was asked ([`claim`]), and never reaches here.
         GitWork::WorktreeClaim { .. } => unreachable!("a claim is answered before any check"),
@@ -790,6 +837,17 @@ fn touched(root: &Path, ws: &str, work: &GitWork) -> Vec<PathBuf> {
         }
         GitWork::Clone { .. } => crate::repos::clones(root, ws)
             .map(|found| found.repos.into_iter().map(|repo| repo.path).collect())
+            .unwrap_or_default(),
+        // Every clone of the workspace, or the one named.
+        GitWork::WorktreePrune { repo, .. } => crate::repos::clones(root, ws)
+            .map(|found| {
+                found
+                    .repos
+                    .into_iter()
+                    .filter(|clone| repo.as_deref().is_none_or(|named| clone.name == named))
+                    .map(|clone| clone.path)
+                    .collect()
+            })
             .unwrap_or_default(),
         // A workspace that is not there yet holds no clone; one that is there is refused.
         // The root is the window's own Update's to check, as it checks it for the person.

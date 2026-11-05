@@ -268,6 +268,8 @@ export async function answerTaken(
   typed?: string,
   /** The entry a Secret ask is filled with, where the person picked one they keep (#5073). */
   picked?: { vault: string; key: string },
+  /** The purpose of the line a Secret ask's Fill writes, where Remember is ticked (#5240). */
+  remember?: string,
 ): Promise<{ refused: string | undefined; live: boolean; opened?: boolean }> {
   const path = ask.answer;
   if (path.via === "in-its-pane") return { refused: IN_ITS_CHAT, live: false };
@@ -455,11 +457,20 @@ export async function answerTaken(
         // tells them it was declined. The chat never hears the value.
         // An entry the person picked makes the key a Linked entry reading it, never a copy
         // (#5073); the chat hears filled and the key's name, never the entry.
+        // Remember, ticked, writes the line the person read once the value is stored (#5240).
         if (option === "fill" && picked !== undefined)
-          return commands.linkSecretAsk(plane, path.id, picked.vault, picked.key);
+          return commands.linkSecretAsk(plane, path.id, picked.vault, picked.key, remember ?? null);
         if (option === "fill")
-          return commands.answerSecretAsk(plane, path.id, typed ?? "", null, null);
-        if (option === "keep") return commands.answerSecretAsk(plane, path.id, null, null, null);
+          return commands.answerSecretAsk(
+            plane,
+            path.id,
+            typed ?? "",
+            null,
+            null,
+            remember ?? null,
+          );
+        if (option === "keep")
+          return commands.answerSecretAsk(plane, path.id, null, null, null, null);
         break;
       case "run-grant":
         // A program a chat's brokered run names that its persona doesn't declare (ADR 0111): an

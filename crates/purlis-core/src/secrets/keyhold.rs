@@ -276,7 +276,7 @@ impl Items for OsItems {
         };
         // The user's keychain, the one the `keyring` crate reads and writes.
         let added = SecKeychain::default_for_domain(SecPreferencesDomain::User)
-            .and_then(|keychain| keychain.add_generic_password(service, account, value.as_bytes()));
+            .and_then(|keychain| add_in(&keychain, service, account, value));
         match added {
             Ok(()) => Ok(()),
             Err(e) if e.code() == DUPLICATE => Err(Refused::Owned),
@@ -290,6 +290,21 @@ impl Items for OsItems {
             .and_then(|entry| entry.set_password(value))
             .map_err(|e| Refused::Failed(super::keyring::failure("write", service, &e)))
     }
+}
+
+/// **The add that holds an item to this program**: a new generic password in `keychain`, made
+/// with no access object of its own, so the Keychain's default rule applies (V90a): this
+/// program reads it without asking, and every other program asks the person or fails. The one
+/// call [`OsItems`] makes an item with, in the user's keychain; a test makes one in a keychain
+/// of its own the same way.
+#[cfg(target_os = "macos")]
+fn add_in(
+    keychain: &security_framework::os::macos::keychain::SecKeychain,
+    service: &str,
+    account: &str,
+    value: &str,
+) -> Result<(), security_framework::base::Error> {
+    keychain.add_generic_password(service, account, value.as_bytes())
 }
 
 /// `errSecDuplicateItem`: an add found the item there already.
@@ -947,5 +962,264 @@ mod tests {
     #[test]
     fn a_process_not_started_as_the_writer_is_left_alone() {
         assert_eq!(serve_if_asked(), None);
+    }
+}
+
+/// **The rule V90a rests on, tried against the Keychain itself** (macOS, CI). An item made by
+/// [`add_in`], the call that holds an item to the program that makes it, is read back by that
+/// program without a question, and by no other program silently. Every item lives in a keychain
+/// of the test's own, made in a temporary folder and unlocked. Making one puts it on the search
+/// list for as long as it lives (the Keychain's own doing), it is never made the default, and it
+/// is deleted, which takes it off the list again, when the test ends, by a failure too: the
+/// person's login keychain is never touched. They run only where CI's step asks for them.
+///
+/// The `purlis` command is not the other program here: a test build reads a file in place of
+/// the Keychain ([`crate::fence::FENCED`]), and the real store reads only the user's default
+/// keychain. Its read is the Keychain's `SecKeychainFindGenericPassword`, which `security
+/// find-generic-password` makes too, and which this test makes itself, with purlis's dialogs
+/// off ([`super::keyring::DialogsOff`]), for an item another program made.
+#[cfg(all(test, target_os = "macos"))]
+mod held_by_the_keychain {
+    use std::path::{Path, PathBuf};
+    use std::process::{Command, Stdio};
+    use std::sync::{Mutex, MutexGuard};
+    use std::time::{Duration, Instant};
+
+    use security_framework::os::macos::keychain::SecKeychain;
+
+    use super::add_in;
+
+    /// The keychain's password: a literal, for a keychain that lives for one test.
+    const PASSWORD: &str = "a-keychain-for-one-test";
+
+    /// What the item holds. A literal: not a credential.
+    const HELD: &str = "held-to-the-program-that-made-it";
+
+    /// `errSecInteractionNotAllowed`: the read would have asked the person, with dialogs off.
+    const WOULD_ASK: i32 = -25308;
+
+    /// `errSecAuthFailed`: the same refusal as CI's macOS runner gave it, with dialogs off
+    /// (`studio-confinement-macos`, the first run of this test).
+    const AUTH_FAILED: i32 = -25293;
+
+    /// How long another program is given before it counts as waiting on a question nobody
+    /// answers.
+    const PATIENCE: Duration = Duration::from_secs(20);
+
+    const SECURITY: &str = "/usr/bin/security";
+
+    /// Set by the CI step that runs these (`studio-confinement-macos`), on a runner of its own.
+    const ASKED: &str = "PURLIS_TEST_THROWAWAY_KEYCHAIN";
+
+    /// One keychain at a time: making and deleting one each rewrite the search list.
+    static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+
+    /// A keychain of the test's own, deleted when it is dropped.
+    struct Throwaway {
+        path: PathBuf,
+        _dir: tempfile::TempDir,
+        _alone: MutexGuard<'static, ()>,
+    }
+
+    /// The user's search list, as `security` prints it.
+    fn search_list() -> String {
+        let listed = crate::forklock::output(
+            Command::new(SECURITY)
+                .args(["list-keychains", "-d", "user"])
+                .stdin(Stdio::null()),
+        )
+        .expect("security lists the keychains");
+        String::from_utf8_lossy(&listed.stdout).into_owned()
+    }
+
+    impl Throwaway {
+        /// Made and unlocked, or `None` where this process may not make one.
+        fn make() -> Option<Self> {
+            let dir = tempfile::tempdir().expect("a temporary folder");
+            let path = dir.path().join("held.keychain-db");
+            let _alone = ONE_AT_A_TIME
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let made = Self {
+                path,
+                _dir: dir,
+                _alone,
+            };
+            let ran = |args: &[&str]| {
+                crate::forklock::status(
+                    Command::new(SECURITY)
+                        .args(args)
+                        .arg(&made.path)
+                        .stdin(Stdio::null())
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null()),
+                )
+                .is_ok_and(|status| status.success())
+            };
+            (ran(&["create-keychain", "-p", PASSWORD]) && ran(&["unlock-keychain", "-p", PASSWORD]))
+                .then_some(made)
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for Throwaway {
+        fn drop(&mut self) {
+            let _ = crate::forklock::status(
+                Command::new(SECURITY)
+                    .arg("delete-keychain")
+                    .arg(&self.path)
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null()),
+            );
+        }
+    }
+
+    /// A keychain of the test's own where [`ASKED`] says to make one. Nowhere else: another
+    /// program's read may raise a dialog on the person's Mac, and each keychain is on their
+    /// search list while it lives. Where it is asked for, not being able to make one is a failure.
+    fn throwaway() -> Option<Throwaway> {
+        if std::env::var_os(ASKED).is_none() {
+            use std::io::Write;
+            let _ = writeln!(std::io::stderr(), "skipped: {ASKED} is not set");
+            return None;
+        }
+        Some(Throwaway::make().expect("a keychain of the test's own"))
+    }
+
+    /// What `security find-generic-password` printed and how it ended, given [`PATIENCE`] and no
+    /// terminal: `None` for its status where it was still waiting (on a question nobody answers)
+    /// and was killed.
+    fn security_reads(keychain: &Path, service: &str, args: &[&str]) -> (String, Option<i32>) {
+        let mut child = crate::forklock::spawn(
+            Command::new(SECURITY)
+                .args(["find-generic-password", "-s", service, "-a", "kept"])
+                .args(args)
+                .arg(keychain)
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped()),
+        )
+        .expect("security starts");
+        let began = Instant::now();
+        let status = loop {
+            if let Some(status) = child.try_wait().expect("security's status") {
+                break status.code();
+            }
+            if began.elapsed() > PATIENCE {
+                let _ = child.kill();
+                let _ = child.wait();
+                break None;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        };
+        let output = child.wait_with_output().expect("security's output");
+        let said = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        (said, status)
+    }
+
+    /// A service name no other test or person uses.
+    fn service() -> String {
+        format!(
+            "purlis-test-held-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        )
+    }
+
+    #[test]
+    fn an_item_held_to_the_program_that_made_it_is_read_silently_by_no_other_program() {
+        let Some(keychain) = throwaway() else { return };
+        let service = service();
+        let opened = SecKeychain::open(keychain.path()).expect("the keychain opens");
+        add_in(&opened, &service, "kept", HELD).expect("the item is made");
+
+        // The program that made it reads it with every dialog off: the rule lets its owner in.
+        {
+            let _off = super::super::keyring::DialogsOff::now().expect("dialogs off");
+            let (value, _) = opened
+                .find_generic_password(&service, "kept")
+                .expect("its owner reads it without a question");
+            assert_eq!(value.as_ref(), HELD.as_bytes());
+        }
+
+        // Another program finds the item, which is there and in an unlocked keychain...
+        let (said, status) = security_reads(keychain.path(), &service, &[]);
+        assert_eq!(status, Some(0), "the item is there: {said}");
+        assert!(!said.contains(HELD), "its attributes alone: {said}");
+
+        // ...and is refused its value, or left waiting on a question, never handed it.
+        let (said, status) = security_reads(keychain.path(), &service, &["-w"]);
+        assert!(
+            !said.contains(HELD),
+            "another program read the value: {said}"
+        );
+        assert_ne!(status, Some(0), "another program was answered: {said}");
+        let _ = std::io::Write::write_all(
+            &mut std::io::stderr(),
+            format!("another program's read ended {status:?}: {said}\n").as_bytes(),
+        );
+
+        // Nothing of it is left on the person's search list.
+        // By its folder's own name: the list may spell the path above it another way.
+        let folder = keychain
+            .path()
+            .parent()
+            .and_then(Path::file_name)
+            .expect("the keychain's folder")
+            .to_string_lossy()
+            .into_owned();
+        drop(opened);
+        drop(keychain);
+        assert!(!search_list().contains(&folder), "{folder} was left listed");
+        crate::secrets::test_really_ran("held-item-read-by-no-other-program");
+    }
+
+    #[test]
+    fn purlis_reading_an_item_another_program_holds_is_refused_rather_than_asking() {
+        let Some(keychain) = throwaway() else { return };
+        let service = service();
+        // Made by `security`, with no access of its own: held to `security` as an item purlis's
+        // app makes is held to the app.
+        let made = crate::forklock::status(
+            Command::new(SECURITY)
+                .args([
+                    "add-generic-password",
+                    "-s",
+                    &service,
+                    "-a",
+                    "kept",
+                    "-w",
+                    HELD,
+                ])
+                .arg(keychain.path())
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null()),
+        )
+        .is_ok_and(|status| status.success());
+        assert!(made, "security makes the item");
+        let opened = SecKeychain::open(keychain.path()).expect("the keychain opens");
+        let _off = super::super::keyring::DialogsOff::now().expect("dialogs off");
+        let refused = opened
+            .find_generic_password(&service, "kept")
+            .map(|(value, _)| String::from_utf8_lossy(value.as_ref()).into_owned())
+            .expect_err("a program the item does not trust is never handed its value");
+        assert!(
+            [WOULD_ASK, AUTH_FAILED].contains(&refused.code()),
+            "refused for another reason: {} {refused}",
+            refused.code()
+        );
+        crate::secrets::test_really_ran("item-another-program-holds-refused");
     }
 }

@@ -677,3 +677,24 @@ describe("a runner chat's change to the project (#2046)", () => {
     expect(calls).toEqual([]);
   });
 });
+
+describe("a secret ask's Fill with an entry (#5240)", () => {
+  it("carries what Remember says, as a Fill with a value does", async () => {
+    const asked: Record<string, unknown>[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "link_secret_ask") asked.push(args as Record<string, unknown>);
+      return null;
+    });
+    const ask: Shown = {
+      session: 7,
+      ask: "secret:3",
+      says: "Needs KEY",
+      options: [{ id: "fill", label: "Fill", allows: true, preselected: null }],
+      source: "secret",
+      chain: ["steward 7"],
+      answer: { via: "secret", id: 3 },
+    };
+    await answerTaken("p", ask, "fill", undefined, "", { vault: "own", key: "STRIPE" }, "words");
+    expect(asked).toEqual([{ plane: "p", id: 3, vault: "own", key: "STRIPE", remember: "words" }]);
+  });
+});

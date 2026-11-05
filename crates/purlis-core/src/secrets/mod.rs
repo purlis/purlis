@@ -33,7 +33,6 @@ use crate::tui::Markup;
 pub mod ask;
 pub mod brokered;
 pub mod cmd;
-pub mod dismissed_needs;
 pub mod dotenv;
 pub mod exec;
 pub mod fingerprint;
@@ -53,6 +52,7 @@ pub mod run;
 pub mod seen;
 pub mod setup;
 pub mod tokeyring;
+pub mod totp;
 pub mod tty;
 pub mod vaultcmd;
 
@@ -765,3 +765,15 @@ pub fn reads_on_open(provider: &str) -> bool {
 
 #[cfg(test)]
 mod tests;
+
+/// **A test that can skip says it really ran**: a file named `test` under the workspace's
+/// `target/tests-that-really-ran/`, written once it has passed. The CI step that exists to run
+/// that test clears the folder first and fails without the file, so a skip there, whatever
+/// caused it, is never a green step with nothing tested.
+#[cfg(all(test, any(target_os = "macos", target_os = "linux")))]
+pub(crate) fn test_really_ran(test: &str) {
+    let folder =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/tests-that-really-ran");
+    std::fs::create_dir_all(&folder).expect("the folder of tests that really ran");
+    std::fs::write(folder.join(test), "").expect("a test's marker");
+}

@@ -606,7 +606,7 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "family's own expression (#2910)",
   },
   "VaultTab.tsx": {
-    count: 7,
+    count: 8,
     why: VAULT,
   },
   "Views.tsx": {

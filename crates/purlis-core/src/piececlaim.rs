@@ -234,6 +234,43 @@ pub fn writer(
     }
 }
 
+/// **Why an open chat keeps the branch folder `at` from a prune** (ADR 0110), or `None`: its
+/// claim names a chat that has declared neither `done` nor `abandoned` and is open among
+/// `live`, the asking chat (`me`) included; or `live` is `None`, no app having said which chats
+/// are open, and a held folder is kept (fail closed). A chat not open here holds nothing.
+pub fn held_open(
+    plane: &Path,
+    at: &Located,
+    me: Option<&str>,
+    live: Option<&[Live]>,
+) -> Option<String> {
+    let holder = holder(plane, at)?;
+    let chat = |number: Option<u32>| match number {
+        Some(number) => format!("chat {number}"),
+        None => "a chat".to_owned(),
+    };
+    if me == Some(holder.id.as_str()) {
+        return Some(
+            "this chat holds it and has declared neither done nor abandoned: run `purlis \
+             worktree done` in it first"
+                .to_owned(),
+        );
+    }
+    match live {
+        None => Some(format!(
+            "{} holds it, and whether that chat is still open cannot be told without the purlis \
+             app: run this from a chat, or `purlis worktree done` in the folder",
+            chat(holder.number)
+        )),
+        Some(live) => live.iter().find(|one| one.id == holder.id).map(|one| {
+            format!(
+                "{} holds it and has declared neither done nor abandoned",
+                chat(one.chat.or(holder.number))
+            )
+        }),
+    }
+}
+
 /// The file whose advisory lock every check-and-claim in a workspace holds: beside its piece
 /// log, so the app and a command line in a chat take the same one.
 fn lock_path(plane: &Path, ws: &str) -> PathBuf {

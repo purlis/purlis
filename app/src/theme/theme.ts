@@ -59,6 +59,7 @@ import {
   hueOf,
   mostOf,
   noNearer,
+  signalChroma,
   tintHex,
   wordsChroma,
   type Apart,
@@ -715,8 +716,10 @@ function tintedAs(
     );
   const held = theme.tint.apart
     .map((rule) => ({
+      name: rule.token,
       alone: rule.alone === true,
       words: rule.words === true,
+      signal: rule.signal === true,
       rule: {
         token: theme.values[rule.token as Token],
         tokenTinted: tokens.includes(rule.token),
@@ -730,8 +733,10 @@ function tintedAs(
     .filter(({ rule }) => rule.tokenTinted || rule.fromTinted);
   // The rules every held token gives way to, then those held alone too (`tint::Most`, #3130).
   // The accent's words are measured after (`tint::words_chroma_of`, #3100).
-  const shared = held.filter((one) => !one.alone && !one.words).map((one) => one.rule);
-  const all = held.filter((one) => !one.words).map((one) => one.rule);
+  const shared = held
+    .filter((one) => !one.alone && !one.words && !one.signal)
+    .map((one) => one.rule);
+  const all = held.filter((one) => !one.words && !one.signal).map((one) => one.rule);
   const { shared: most, alone } = mostOf(all, shared, hue);
   const words = wordsChroma(
     held.filter((one) => one.words).map((one) => one.rule),
@@ -739,11 +744,35 @@ function tintedAs(
     most,
     alone,
   );
+  // Each mark of the accent is answered on its own, after every other rule (`tint::signal_rules`,
+  // #4921): its own rules from the state colours, and danger's.
+  const marks = new Set(
+    theme.tint.apart.filter((rule) => rule.signal === true).map((r) => r.token),
+  );
+  const signal = Object.fromEntries(
+    [...marks].map((mark) => [
+      mark,
+      signalChroma(
+        held.filter((one) => one.name === mark && !one.alone && !one.words).map((one) => one.rule),
+        hue,
+        most,
+        alone,
+      ),
+    ]),
+  );
   const values = { ...theme.values };
   for (const one of tokens) {
     const value = theme.values[one as Token];
     // Only the sides of a rule are held to `most`; a side no amount holds is drawn untinted.
-    const chroma = chromaFor(one, most, theme.tint.apart, alone, words, theme.tint.with_words);
+    const chroma = chromaFor(
+      one,
+      most,
+      theme.tint.apart,
+      alone,
+      words,
+      theme.tint.with_words,
+      signal,
+    );
     // Only a colour turns: a value left to the platform (`platform`) is drawn as it is.
     if (chroma !== undefined && typeof value === "string" && value.startsWith("#"))
       values[one as Token] = tintHex(value, hue, chroma);

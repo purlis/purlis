@@ -182,6 +182,8 @@ pub struct Open {
     /// it was opened from and gone when its program exits. Never recorded
     /// ([`Chats::start_one_job`]), and no sidebar row.
     pub one_job: bool,
+    /// What the Skill studio started it for (#5185): [`purlis_core::reopen::Chat::studio`].
+    pub studio: Option<purlis_core::reopen::StudioJob>,
 }
 
 /// Who an open chat is beyond this launch, and the directory it works in.
@@ -5181,6 +5183,11 @@ impl Chats {
         // written down for the next launch to resume it.
         // And no longer as a chat a workspace rename left without its conversation: it has
         // said so once, at this start, and is under a conversation of its own now.
+        let opted_out = if reattaching {
+            chat.unsandboxed
+        } else {
+            unsandboxed.is_some()
+        };
         let under = Chat {
             resume: conversation
                 .as_deref()
@@ -5188,11 +5195,12 @@ impl Chats {
             renamed_from: None,
             // What this run started under, for the next run's audit and the session record —
             // never read as an opt-out by any start. A chat reattached runs as it started.
-            unsandboxed: if reattaching {
-                chat.unsandboxed
-            } else {
-                unsandboxed.is_some()
-            },
+            unsandboxed: opted_out,
+            // And a run with no sandbox and no opt-out says so, for what runs below it, which has
+            // only the record to ask. Read from the run's own record, this start's or its host's
+            // on a reattach: a runner's chat has no sandbox of this window's, and is confined.
+            no_sandbox: matches!(ran, Some(purlis_session_protocol::session::RunSandbox::Off))
+                && !opted_out,
             identity,
             // The Skill studio's flag this start took (#3466): what its record keeps, and what
             // a later reattach of it takes.
@@ -5710,6 +5718,23 @@ impl Chats {
         drop(open);
         self.write_it_down();
         Ok(label)
+    }
+
+    /// **Marks the Skill studio's job of chat `session` done** (#5185): its draft came. Kept on
+    /// its record, so the chat stays done across a relaunch, and once the draft is accepted or
+    /// discarded. Nothing for a chat the studio did not start, or one already done.
+    pub fn studio_job_done(&self, session: u32) {
+        let mut open = lock(&self.open);
+        let Some(job) = open
+            .get_mut(&session)
+            .and_then(|one| one.chat.studio.as_mut())
+            .filter(|job| !job.done)
+        else {
+            return;
+        };
+        job.done = true;
+        drop(open);
+        self.write_it_down();
     }
 
     /// The name `session` is shown under — the one it was given, or its default — or `None`
@@ -6795,6 +6820,7 @@ impl Chats {
                     floorless: floorless.get(&session).cloned(),
                     untaken: untaken.get(&session).cloned(),
                     one_job: is_a_one_job(chat, &one_jobs),
+                    studio: chat.studio.clone(),
                 })
             })
             .collect()
@@ -7381,6 +7407,7 @@ impl Chats {
                 untaken: None,
                 // A one-job program is never recorded, so a launch puts none back.
                 one_job: false,
+                studio: one.chat.studio.clone(),
             })
             .collect()
     }

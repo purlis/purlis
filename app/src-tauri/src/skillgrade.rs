@@ -2316,6 +2316,8 @@ impl InChats<'_> {
                 prompt: chat.prompt.clone(),
                 then_a_space: false,
                 starts_runs: Some(StartedBy::Grade),
+                studio: None,
+                skill: None,
             },
             SIZE,
             self.model,

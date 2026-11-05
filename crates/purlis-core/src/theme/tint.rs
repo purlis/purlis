@@ -39,7 +39,7 @@ use std::collections::BTreeMap;
 
 use serde_json::Value;
 
-use super::floors::{ALLOW_APART, DANGER_APART, WAITING_APART};
+use super::floors::{ALLOW_APART, DANGER_APART, SIGNAL_APART, WAITING_APART};
 use super::vocabulary::{
     ACCENT_GROUNDS, ACCENT_WASHES, ACCENT_WORDS, TAB_ONLY, TINTABLE, TINTED, TOKENS, is_colour,
 };
@@ -278,6 +278,11 @@ pub struct Apart {
     /// costs the accent no colour ([`words_chroma_of`]).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub words: bool,
+    /// A rule of the accent's marks (#4921): measured only once every other rule is answered,
+    /// so it costs the accent and its kin no colour; the mark gives way on its own
+    /// ([`signal_chroma_of`]).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub signal: bool,
 }
 
 /// **What every tint holds apart**, at every hue, a workspace's own colour included: the accent
@@ -287,8 +292,10 @@ pub struct Apart {
 /// accent from the waiting colour (waiting is distinguishable from the accent, #3130), so a
 /// yellow or orange workspace's accent never reads as the waiting signal; and the accent's words
 /// from the waiting and danger colours (#3100). The washes those words stand on are held by
-/// [`NO_NEARER`] (#4666).
-pub const APART: [Apart; 17] = [
+/// [`NO_NEARER`] (#4666). And a link and the first chart colour from each state colour
+/// ([`SIGNALS`], #4921), so a green workspace's link is never read as success: measured last, they
+/// give way on their own.
+pub const APART: [Apart; 25] = [
     danger_apart("accent.base"),
     // Keep blocked's edge is a plain control's (#3177).
     Apart {
@@ -297,6 +304,7 @@ pub const APART: [Apart; 17] = [
         distance: ALLOW_APART,
         alone: false,
         words: false,
+        signal: false,
     },
     danger_apart(ACCENT_KIN[0]),
     danger_apart(ACCENT_KIN[1]),
@@ -318,7 +326,45 @@ pub const APART: [Apart; 17] = [
     // accent, so they never cost it colour.
     words_apart(ACCENT_WORDS, "state.waiting", WAITING_APART),
     words_apart(ACCENT_WORDS, "danger.base", DANGER_APART),
+    // A link and the first chart colour are never taken for a state colour (#4921): measured
+    // after the accent and its kin, so they cost them no colour.
+    signal_apart(SIGNAL_MARKS[0], SIGNALS[0]),
+    signal_apart(SIGNAL_MARKS[0], SIGNALS[1]),
+    signal_apart(SIGNAL_MARKS[0], SIGNALS[2]),
+    signal_apart(SIGNAL_MARKS[0], SIGNALS[3]),
+    signal_apart(SIGNAL_MARKS[1], SIGNALS[0]),
+    signal_apart(SIGNAL_MARKS[1], SIGNALS[1]),
+    signal_apart(SIGNAL_MARKS[1], SIGNALS[2]),
+    signal_apart(SIGNAL_MARKS[1], SIGNALS[3]),
 ];
+
+/// **What a person reads as the accent but the window draws as a mark of its own** (#3049,
+/// #4921): a link and the first chart colour, each held apart from the state colours on its own.
+pub const SIGNAL_MARKS: [&str; 2] = ["markdown.link", "chart.1"];
+
+/// **The state colours a mark of the accent is held apart from** (#4921), past danger, which
+/// [`ACCENT_KIN`] holds: what a run is waiting on, what succeeded, what failed and what could not
+/// be read. Not `state.running`, which Purlis draws in the accent's own cool family: a link is
+/// a running mark's neighbour by design, and is told from it by being words.
+pub const SIGNALS: [&str; 4] = [
+    "state.waiting",
+    "state.success",
+    "state.failed",
+    "state.unreadable",
+];
+
+/// `token`, a mark of the accent, held [`super::floors::SIGNAL_APART`] from `from`, a state
+/// colour ([`signal_chroma_of`]).
+const fn signal_apart(token: &'static str, from: &'static str) -> Apart {
+    Apart {
+        token,
+        from,
+        distance: SIGNAL_APART,
+        alone: false,
+        words: false,
+        signal: true,
+    }
+}
 
 /// `token`, the accent's words, held `distance` from `from` ([`words_chroma_of`]).
 const fn words_apart(token: &'static str, from: &'static str, distance: f64) -> Apart {
@@ -328,6 +374,7 @@ const fn words_apart(token: &'static str, from: &'static str, distance: f64) -> 
         distance,
         alone: false,
         words: true,
+        signal: false,
     }
 }
 
@@ -350,6 +397,7 @@ const fn waiting_apart(token: &'static str) -> Apart {
         distance: WAITING_APART,
         alone: true,
         words: false,
+        signal: false,
     }
 }
 
@@ -379,6 +427,7 @@ const fn danger_apart(token: &'static str) -> Apart {
         distance: DANGER_APART,
         alone: false,
         words: false,
+        signal: false,
     }
 }
 
@@ -695,6 +744,8 @@ pub struct Most {
     pub shared: Option<f64>,
     pub alone: Option<f64>,
     pub words: Option<f64>,
+    /// The most chroma each mark of [`SIGNAL_MARKS`] is given, by its place there (#4921).
+    pub signal: [Option<f64>; 2],
     /// The tokens kept as written at this hue, one bit each by their place in [`TINTABLE`]: a
     /// ground [`NO_NEARER`] keeps, and every token the theme draws in the same value, so what a
     /// theme draws alike stays alike (Classic's primary's fill is its surface).
@@ -725,6 +776,7 @@ pub fn most_at(theme: &ResolvedTheme, hue: f64) -> Most {
 pub(super) fn finished(theme: &ResolvedTheme, hue: f64, most: Most) -> Most {
     let most = Most {
         words: words_chroma_of(&words_rules(theme), hue, most),
+        signal: SIGNAL_MARKS.map(|mark| signal_chroma_of(&signal_rules(theme, mark), hue, most)),
         ..most
     };
     Most {
@@ -797,6 +849,7 @@ pub(super) fn most_of(all: &[Rule<'_>], shared: &[Rule<'_>], hue: f64) -> Most {
             shared: shared_most,
             alone: shared_most,
             words: shared_most,
+            signal: [shared_most; 2],
             kept: 0,
         };
     }
@@ -805,6 +858,7 @@ pub(super) fn most_of(all: &[Rule<'_>], shared: &[Rule<'_>], hue: f64) -> Most {
             shared: None,
             alone: None,
             words: None,
+            signal: [None; 2],
             kept: 0,
         };
     };
@@ -814,6 +868,7 @@ pub(super) fn most_of(all: &[Rule<'_>], shared: &[Rule<'_>], hue: f64) -> Most {
         shared: holds.then_some(ceiling),
         alone,
         words: alone,
+        signal: [holds.then_some(ceiling); 2],
         kept: 0,
     }
 }
@@ -826,6 +881,8 @@ pub fn chroma_of(token: &str, most: Most) -> Option<f64> {
         None
     } else if words_of(token) {
         most.words
+    } else if let Some(at) = SIGNAL_MARKS.iter().position(|mark| *mark == token) {
+        most.signal[at]
     } else if held_alone(token) {
         most.alone
     } else {
@@ -940,17 +997,26 @@ pub fn apart_chroma(theme: &ResolvedTheme, hue: f64) -> Option<f64> {
 /// The rules of [`APART`] as `theme` draws them, each with a side its recipe turns, but the
 /// accent's words' ([`words_rules`]).
 pub(super) fn held_rules(theme: &ResolvedTheme) -> Vec<Rule<'_>> {
-    rules_where(theme, |rule| !rule.words)
+    rules_where(theme, |rule| !rule.words && !rule.signal)
 }
 
 /// [`held_rules`] but those held alone: what every held token gives way to.
 pub(super) fn shared_rules(theme: &ResolvedTheme) -> Vec<Rule<'_>> {
-    rules_where(theme, |rule| !rule.alone && !rule.words)
+    rules_where(theme, |rule| !rule.alone && !rule.words && !rule.signal)
 }
 
 /// The rules of the accent's words as `theme` draws them ([`words_chroma_of`]).
 pub(super) fn words_rules(theme: &ResolvedTheme) -> Vec<Rule<'_>> {
     rules_where(theme, |rule| rule.words)
+}
+
+/// The rules `mark`, one of [`SIGNAL_MARKS`], is held to as `theme` draws them: its own from the
+/// state colours, and the shared ones it is a side of (danger's), so giving way never brings it
+/// nearer danger ([`signal_chroma_of`]).
+pub(super) fn signal_rules<'a>(theme: &'a ResolvedTheme, mark: &str) -> Vec<Rule<'a>> {
+    rules_where(theme, |rule| {
+        rule.token == mark && !rule.alone && !rule.words
+    })
 }
 
 fn rules_where(theme: &ResolvedTheme, keep: impl Fn(&Apart) -> bool) -> Vec<Rule<'_>> {
@@ -992,6 +1058,26 @@ pub fn alone_chroma_of(rules: &[Rule<'_>], kin: &[Rule<'_>], shared: f64, hue: f
             .all(|rule| rule.holds(hue, Some(most), Some(most)))
     };
     searched(rules, hue, shared, |alone| alone, whole)
+}
+
+/// **The chroma a mark of the accent is drawn at** (#4921): the shared answer, [`Most::shared`],
+/// where every one of its `rules` holds there; else the accent's own, [`Most::alone`], since a
+/// link reads as the accent (#3049); else `None`, the mark as written, in the theme's own colour,
+/// as the accent's words are where they cannot hold (#3100). Never a grey: a chroma under
+/// [`GREY`] is passed over, so where the accent has given way to danger or waiting all but its
+/// colour (Purlis Classic light's red, orange and yellow), the link keeps the theme's own rather
+/// than a grey that reads as words. Measured after every other rule, so a link held apart from
+/// success costs the accent no colour. `tint.ts`' `signalChroma` is the same.
+pub fn signal_chroma_of(rules: &[Rule<'_>], hue: f64, most: Most) -> Option<f64> {
+    [most.shared, most.alone]
+        .into_iter()
+        .flatten()
+        .filter(|chroma| *chroma >= GREY)
+        .find(|chroma| {
+            rules
+                .iter()
+                .all(|rule| rule.holds(hue, Some(*chroma), Some(*chroma)))
+        })
 }
 
 /// Whether every rule holds with the sides held alone as written and every other side at

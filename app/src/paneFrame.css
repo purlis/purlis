@@ -5,8 +5,8 @@
    2026-10-24; #4754, `LayoutPanes.tsx`). Three rows, each with one job, all inside the pane and
    on the terminal's own fill:
 
-   1. **the header** (`PaneHead`): the chat at a glance at its start, the pane's own controls at
-      its end, the bell among them in a fixed slot before split and close (`PaneBell`);
+   1. **the header** (`PaneHead`): the chat at a glance at its start, the chat's actions and the
+      pane's own controls at its end, the bell in a fixed slot before ⋯ (`PaneBell`);
    2. **the band** (`NoticePaneRow`): the pane's notices as washed cards, the words above their
       ways out: its asks, and, expanded, its notes too under a head row with Dismiss all. Under
       the header, so a notice arriving never moves it;
@@ -296,6 +296,13 @@
   .pane-head {
     padding-inline: var(--space-5) var(--space-3);
   }
+
+  /* **And a task's line keeps the grip's room too** (#4764): with a breadcrumb on it, the grip
+     is not drawn in a narrow pane, so the state word stays whole (it needs about 17px more in a
+     pane of two in the narrowest window). ⌘⇧M and a drag of the head still pick the pane up. */
+  .pane-head:has(> .pane-chips > .pane-crumbs) > [data-pane-grip-handle] {
+    display: none;
+  }
 }
 
 /* **The header is the top of the pane** (#4754): it keeps the runway, band or none. */
@@ -352,8 +359,8 @@
   text-overflow: ellipsis;
 }
 
-/* **The one state button** (`PaneStateButton`, #4760): the chat's part of the head, before ⋯
-   and the bell, drawn always, as they are. */
+/* **The one state button** (`PaneStateButton`, #4760): the chat's part of the head, before
+   the bell and ⋯, drawn always, as they are. */
 .pane-actions > :is(.pane-state, .pane-brief) {
   flex: none;
 }
@@ -446,8 +453,9 @@
   color: var(--text-muted);
 }
 
-/* **A pane's actions** (`PaneActions`, shared with a view's pane, #3147): split side by side,
-   split stacked and close, one cluster in its own place at the pane's top right. Plain marks in
+/* **A pane's actions** (`PaneActions`, shared with a view's pane, #3147, #5203): the chat's
+   actions, then split side by side, split stacked and close, one cluster in its own place at the
+   pane's top right. Plain marks in
    the quiet tier with no box around them. When they are drawn is the window's rule (`App.css`,
    `.pane-doing`). */
 .pane-actions {
@@ -467,6 +475,17 @@
   padding: 0;
   border: 0;
   background-color: transparent;
+}
+
+/* **The divider between the chat's actions and the pane's controls** (#5203, spec #5191): the
+   separator family's thin line, shorter than the marks it parts and centred on them, as the M70
+   prototype draws it, with a step of room either side beside the marks' own gap. Written as
+   specifically as the family's vertical line, whose `align-self: stretch` would otherwise hold
+   it at the top of the row; later in the same layer, so it wins. */
+.pane-actions > .pane-doing > .pane-divider {
+  align-self: center;
+  block-size: var(--space-6);
+  margin-inline: var(--space-2);
 }
 
 /* Each is the button family's quiet ghost (#3214), the close too: it ends nothing (#4756). */
@@ -843,4 +862,65 @@
   align-items: center;
   justify-content: space-between;
   color: var(--text-muted);
+}
+
+/* **Placement mode** (#4764): every other pane shows its five targets in a cross in its middle,
+   as real buttons over the terminal, and the strip a New tab at its end. Over the drop's preview,
+   which draws the result of the target the keyboard is on. Only the buttons take the pointer: a
+   press anywhere else puts what is held back. */
+.pane-placing {
+  position: fixed;
+  z-index: 5;
+  display: grid;
+  grid-template-areas:
+    ". top ."
+    "left middle right"
+    ". bottom .";
+  gap: var(--space-1);
+  place-content: center;
+  pointer-events: none;
+}
+
+.pane-placing-at {
+  display: flex;
+  pointer-events: auto;
+}
+
+.pane-placing-at[data-place="top"] {
+  grid-area: top;
+}
+
+.pane-placing-at[data-place="left"] {
+  grid-area: left;
+}
+
+.pane-placing-at[data-place="middle"] {
+  grid-area: middle;
+}
+
+.pane-placing-at[data-place="right"] {
+  grid-area: right;
+}
+
+.pane-placing-at[data-place="bottom"] {
+  grid-area: bottom;
+}
+
+/* The strip's New tab, at its end, as tall as the strip. */
+.pane-placing-strip {
+  position: fixed;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  padding-inline: var(--space-1);
+  transform: translateX(-100%);
+}
+
+/* What is held, where it is: dashed, as a place it leaves. */
+.pane-placing-held {
+  position: fixed;
+  z-index: 4;
+  pointer-events: none;
+  border: var(--focus-ring-width) dashed var(--border-strong);
+  border-radius: var(--radius-sm);
 }

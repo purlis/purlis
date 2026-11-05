@@ -7,7 +7,7 @@
  * break. The core is faked at its command boundary; no value is ever drawn.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, userEvent, within } from "storybook/test";
+import { expect, userEvent, waitFor, within } from "storybook/test";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { VaultContents, VaultSecret } from "./bindings";
 import { VaultTab } from "./VaultTab";
@@ -42,6 +42,23 @@ const LINKED: VaultContents = {
 
 function answers() {
   mockIPC((cmd) => (cmd === "vault_open" ? LINKED : new Promise(() => {})));
+}
+
+/** A key that may be remembered for `shop`, which names no vault (#5240). */
+function answersWithPersonas() {
+  mockIPC((cmd) => {
+    if (cmd === "vault_open") return LINKED;
+    if (cmd === "secret_need_personas")
+      return [
+        {
+          persona: "shop",
+          file: "personas/shop/persona.md",
+          declares: [],
+          names_no_vault: true,
+        },
+      ];
+    return new Promise(() => {});
+  });
 }
 
 const meta: Meta<typeof VaultTab> = {
@@ -96,5 +113,35 @@ export const DeleteALink: Story = {
     expectFocusInSight();
     await userEvent.keyboard("{Escape}");
     await expect(body.queryByRole("alertdialog")).toBeNull();
+  },
+};
+
+/**
+ * #5240: *Offer as a Secret need ▸* opens the exact line, its purpose to type and the `vault:`
+ * line, reached and added by the keyboard alone.
+ */
+export const OfferAsASecretNeed: Story = {
+  parameters: { screenshot: "page" },
+  beforeEach: () => answersWithPersonas(),
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement.ownerDocument.body);
+    const more = await page.findByRole("button", { name: "More for API_TOKEN" });
+    more.focus();
+    await userEvent.keyboard("{Enter}");
+    (await page.findByRole("menuitem", { name: "Offer as a Secret need" })).focus();
+    await userEvent.keyboard("{Enter}");
+    (await page.findByRole("menuitem", { name: "shop" })).focus();
+    await userEvent.keyboard("{Enter}");
+    const dialog = await page.findByRole("dialog", { name: "Remember API_TOKEN for shop" });
+    // Once the dialog has come in.
+    await waitFor(() => expect(within(dialog).getByText("secret-need.API_TOKEN:")).toBeVisible());
+    await expect(within(dialog).getByText("vault: ops")).toBeVisible();
+    const add = within(dialog).getByRole("button", { name: "Add the line" });
+    await expect(add).toBeDisabled();
+    const purpose = within(dialog).getByRole("textbox", { name: "What API_TOKEN is for" });
+    purpose.focus();
+    await userEvent.keyboard("reach the API");
+    await expect(add).toBeEnabled();
+    expectFocusInSight();
   },
 };

@@ -35,6 +35,8 @@ use crate::harness::{Harness, SessionId};
 
 mod arrival;
 pub use arrival::{Arrival, CloneSeat, arrive};
+mod studio;
+pub use studio::{StudioJob, StudioWork};
 pub mod layout;
 pub use layout::Layout;
 pub mod upgrade;
@@ -226,6 +228,14 @@ pub struct Chat {
     /// applied. This is how a sandboxed start knows to say the sandbox came back on
     /// (`trust.sandbox.on`), and how the chat's session record says what it ran under. `false` is every other chat, and every record written before this field.
     pub unsandboxed: bool,
+    /// Whether the chat's last run started with no sandbox and no opt-out: the floor could not
+    /// be applied here, no sandbox is compiled for its harness, or it is a shell tab. On disk as
+    /// `sandbox = "none"`, where [`Self::unsandboxed`] is `"off"`.
+    ///
+    /// **A fact about the run that was**, like [`Self::unsandboxed`], and read by what runs below
+    /// the chat ([`chat_runs`]) and never by a start: it is not an opt-out, and no audit reads it
+    /// as a sandbox that came back on.
+    pub no_sandbox: bool,
     /// Who this chat is beyond this clone: its id, its origin device, its current run and the
     /// chat it was resumed from (ADR 0066). See [`Identity`].
     pub identity: Identity,
@@ -287,6 +297,12 @@ pub struct Chat {
     /// a format change: no key is written or read for it. **Only for a chat that does no work**:
     /// what reads the record, a commit's provenance among it, never sees such a chat.
     pub unrecorded: bool,
+    /// **What the Skill studio started this chat for** (#5185): the skill, its level and the
+    /// job, which the chat's header names and the skill's page says while it runs. Recorded by
+    /// the app when the studio starts the chat, and never by the chat. `None` is every other
+    /// chat, and every record written before this field — not a format change, for
+    /// [`Self::pinned`]'s reason.
+    pub studio: Option<StudioJob>,
 }
 
 impl Chat {
@@ -1112,6 +1128,29 @@ enum Held {
 pub fn chat_pids(
     plane_root: &Path,
 ) -> Result<(Vec<u32>, Option<std::time::SystemTime>), std::io::Error> {
+    let (runs, written) = chat_runs(plane_root)?;
+    Ok((runs.into_iter().map(|run| run.pid).collect(), written))
+}
+
+/// A running chat as [`chat_runs`] reads it from the record: its program's process, and
+/// whether that run was one with no sandbox the record can tell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChatRun {
+    /// The process the app started the chat's program as ([`Chat::pid`]).
+    pub pid: u32,
+    /// **The record says this run had no sandbox**: `sandbox = "off"` ([`Chat::unsandboxed`]) or
+    /// `"none"` ([`Chat::no_sandbox`]), or a plain shell tab in a record written before that word:
+    /// no profile, and a program named that is no harness ([`Harness::of_command`]). Every other
+    /// chat reads as sandboxed: a doubt never reads as "no sandbox".
+    pub unsandboxed: bool,
+}
+
+/// [`chat_pids`] with what each chat's record says of its sandbox ([`ChatRun`]), read as
+/// leniently: only `pid`, `sandbox`, `profile` and `program` of each entry, from a record of
+/// any version.
+pub fn chat_runs(
+    plane_root: &Path,
+) -> Result<(Vec<ChatRun>, Option<std::time::SystemTime>), std::io::Error> {
     let Some((text, written)) = guarded_text(plane_root)? else {
         return Ok((Vec::new(), None));
     };
@@ -1121,15 +1160,31 @@ pub fn chat_pids(
             format!("{} is not JSON", path(plane_root).display()),
         )
     })?;
-    let pids = doc
+    let word = |chat: &serde_json::Value, key: &str| {
+        chat.get(key)
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let runs = doc
         .get("chats")
         .and_then(serde_json::Value::as_array)
         .into_iter()
         .flatten()
-        .filter_map(|chat| chat.get("pid")?.as_u64())
-        .filter_map(|pid| u32::try_from(pid).ok())
+        .filter_map(|chat| {
+            let pid = u32::try_from(chat.get("pid")?.as_u64()?).ok()?;
+            let program = word(chat, "program");
+            let plain_shell = word(chat, "profile").is_empty()
+                && !program.is_empty()
+                && Harness::of_command(&program).is_none();
+            let sandbox = word(chat, "sandbox");
+            Some(ChatRun {
+                pid,
+                unsandboxed: sandbox == SANDBOX_OFF || sandbox == SANDBOX_NONE || plain_shell,
+            })
+        })
         .collect();
-    Ok((pids, written))
+    Ok((runs, written))
 }
 
 /// The record's text, opened with every guard [`read_held`] asks for, and when it was last
@@ -1629,8 +1684,9 @@ struct ChatOnDisk {
     /// `"this-machine"` or `"pool:<name>"`. Any other word reads as absent.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     runs_on: String,
-    /// `"off"` where the chat's last run was unsandboxed — see [`Chat::unsandboxed`] — and
-    /// absent otherwise. Any other word reads as absent.
+    /// `"off"` where the chat's last run was unsandboxed — see [`Chat::unsandboxed`] — `"none"`
+    /// where it started with no sandbox and no opt-out — see [`Chat::no_sandbox`] — and absent
+    /// otherwise. Any other word reads as absent.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     sandbox: String,
     /// The chat's ids — see [`Identity`]. Each is a ULID, absent when not known: every record
@@ -1669,6 +1725,14 @@ struct ChatOnDisk {
         deserialize_with = "lenient"
     )]
     routing: Option<crate::skills::router::Kept>,
+    /// What the Skill studio started the chat for, or absent — see [`Chat::studio`]. A value
+    /// that does not read whole reads as absent.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "lenient"
+    )]
+    studio: Option<studio::StudioOnDisk>,
 }
 
 fn is_zero(n: &u32) -> bool {
@@ -1683,6 +1747,9 @@ pub fn a_ulid(word: &str) -> Option<String> {
 
 /// The one word a record's `sandbox` holds.
 const SANDBOX_OFF: &str = "off";
+
+/// What `sandbox` says for a run with no sandbox and no opt-out ([`Chat::no_sandbox`]).
+const SANDBOX_NONE: &str = "none";
 
 /// A new ULID: how the host mints a chat's id and each of its runs' (ADR 0066).
 pub fn mint() -> String {
@@ -1896,6 +1963,8 @@ impl From<&Record> for OnDisk {
                         .unwrap_or_default(),
                     sandbox: if chat.unsandboxed {
                         SANDBOX_OFF.to_owned()
+                    } else if chat.no_sandbox {
+                        SANDBOX_NONE.to_owned()
                     } else {
                         String::new()
                     },
@@ -1907,6 +1976,7 @@ impl From<&Record> for OnDisk {
                     model: chat.model.clone().unwrap_or_default(),
                     plane_skills: chat.plane_skills,
                     routing: chat.routing.clone(),
+                    studio: chat.studio.as_ref().map(studio::StudioOnDisk::of),
                 })
                 .collect(),
             dealt: highest_dealt(record),
@@ -1986,6 +2056,7 @@ impl From<ChatOnDisk> for Chat {
                 .filter(|name| crate::contain::workspace_name_ok(name)),
             runs_on: crate::machine::StartChoice::read(&chat.runs_on),
             unsandboxed: chat.sandbox == SANDBOX_OFF,
+            no_sandbox: chat.sandbox == SANDBOX_NONE,
             identity: Identity {
                 id: a_ulid(&chat.id),
                 device: a_ulid(&chat.device),
@@ -2000,6 +2071,7 @@ impl From<ChatOnDisk> for Chat {
             task_level: crate::dispatchmode::Level::Asks,
             // Never on disk ([`Chat::unrecorded`]): a chat that is read back was recorded.
             unrecorded: false,
+            studio: chat.studio.and_then(studio::StudioOnDisk::sound),
         }
     }
 }

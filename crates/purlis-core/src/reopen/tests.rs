@@ -281,7 +281,7 @@ fn a_chat_that_ran_unsandboxed_is_recorded_so_and_its_relaunch_is_built_the_same
     fs::write(path(plane.path()), text.replace("\"off\"", "\"none\"")).unwrap();
     assert!(
         !read(plane.path()).chats[0].unsandboxed,
-        "only the one word"
+        "only the one word is an opt-out"
     );
 }
 
@@ -2973,5 +2973,76 @@ fn where_a_start_chose_to_run_survives_a_quit_and_a_word_it_cannot_read_follows_
     for unreadable in ["pool:Not A Pool", "pool:", "here", "pool:../x"] {
         fs::write(path(plane.path()), text.replace("pool:gpu-1", unreadable)).unwrap();
         assert_eq!(read(plane.path()).chats[0].runs_on, None, "{unreadable}");
+    }
+}
+
+// ----- what the Skill studio started a chat for (#5185) -----------------------------------
+
+#[test]
+fn what_the_studio_started_a_chat_for_survives_a_relaunch_5185() {
+    let plane = tempfile::tempdir().unwrap();
+    let evals = StudioJob {
+        skill: Some("test-design".to_owned()),
+        level: crate::skills::verbs::Level::workspace("purlis-demo"),
+        job: StudioWork::OutcomeEvals,
+        done: false,
+    };
+    // A job whose draft came is done, and stays so across a relaunch.
+    let draft = StudioJob {
+        skill: None,
+        level: crate::skills::verbs::Level::persona("steward").local(true),
+        job: StudioWork::Draft,
+        done: true,
+    };
+    let record = Record {
+        chats: vec![
+            Chat {
+                studio: Some(evals.clone()),
+                ..claude("3", None)
+            },
+            Chat {
+                studio: Some(draft.clone()),
+                ..claude("4", None)
+            },
+            claude("5", None),
+        ],
+        ..Default::default()
+    };
+    write(plane.path(), &record).unwrap();
+
+    let text = std::fs::read_to_string(path(plane.path())).unwrap();
+    assert_eq!(text.matches(r#""studio""#).count(), 2, "{text}");
+    let back = read(plane.path()).chats;
+    assert_eq!(back[0].studio, Some(evals));
+    assert_eq!(back[1].studio, Some(draft));
+    assert_eq!(back[2].studio, None);
+}
+
+#[test]
+fn a_studio_link_that_does_not_read_whole_reads_as_none_5185() {
+    // Off a file anyone who can write the plane's state can write: a job no studio asks for, a
+    // skill or a workspace that is not one plain name, or no level at all is no link.
+    for studio in [
+        r#"{"job": "launch", "skill": "deploy", "at": "project"}"#,
+        r#"{"job": "outcome-evals", "skill": "../deploy", "at": "project"}"#,
+        r#"{"job": "outcome-evals", "skill": "deploy", "at": "workspace", "name": "../ops"}"#,
+        r#"{"job": "outcome-evals", "skill": "deploy", "at": "persona"}"#,
+        r#"{"job": "outcome-evals", "skill": "deploy"}"#,
+        r#""outcome-evals""#,
+    ] {
+        let plane = tempfile::tempdir().unwrap();
+        let file = path(plane.path());
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(
+            &file,
+            format!(
+                r#"{{"version": 1, "at": 0, "chats": [{{"program": "claude", "name": "3", "studio": {studio}}}]}}"#
+            ),
+        )
+        .unwrap();
+
+        let back = read(plane.path()).chats;
+        assert_eq!(back.len(), 1, "{studio}");
+        assert_eq!(back[0].studio, None, "{studio}");
     }
 }

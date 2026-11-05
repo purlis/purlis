@@ -416,12 +416,14 @@ describe("the window's tab order", () => {
       "button New tab",
       // No Tile all at the strip's end (#4765): the tab in front has one pane, so it is not
       // drawn.
-      // The focused pane's own controls, drawn in its top corners left to right — the harness
-      // it runs (HP-19), its bell (#4754), then the chat's ⋯ (#4753), split and end — then its
-      // terminal. From here Tab is the shell's, and Ctrl+Tab is the way on.
+      // The focused pane's own controls, drawn in its top corners left to right — its grip,
+      // which picks it up to place it with the keys (#4764), the harness it runs (HP-19), its
+      // bell (#4754), then the chat's ⋯ (#4753), split and end — then its terminal. From here
+      // Tab is the shell's, and Ctrl+Tab is the way on.
+      "button Move steward two",
       "button What Claude Code can do here",
-      "button More for steward two",
       "button Pane notices: No notices",
+      "button More for steward two",
       "button Split right",
       "button Split down",
       "button Close this pane",
@@ -529,7 +531,8 @@ describe("a list is one Tab stop", () => {
     const asks = within(inbox).getAllByRole("listitem");
     // The keyboard lands on the first ask, never on one of its buttons.
     await waitFor(() => expect(asks[0]).toHaveFocus());
-    await userEvent.keyboard("{ArrowDown}");
+    // Past the card's head, Go to chat and its × (#5214), to its reply.
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}");
     expect(within(asks[0]).getByRole("textbox", { name: "Reply to steward three" })).toHaveFocus();
   });
 

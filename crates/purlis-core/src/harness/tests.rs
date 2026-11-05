@@ -587,6 +587,8 @@ fn a_claude_code_chat_may_run_charter_session_record_and_read_charter_without_as
             "Bash(purlis worktree list)",
             "Bash(purlis worktree list *)",
             "Bash(purlis worktree remove *)",
+            "Bash(purlis worktree prune)",
+            "Bash(purlis worktree prune *)",
             "mcp__purlis__dispatch",
             "mcp__purlis__dispatch_report",
             "mcp__purlis__dispatch_tell",

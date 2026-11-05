@@ -772,7 +772,7 @@ export const commands = {
 	 *  where the person chose either in place of the asked one (#5072), and the chats hear that
 	 *  name.
 	 */
-	answerSecretAsk: (plane: PlaneId, id: number, value: string | null, vault: string | null, key: string | null) => typedError<null, string>(__TAURI_INVOKE("answer_secret_ask", { plane, id, value, vault, key })),
+	answerSecretAsk: (plane: PlaneId, id: number, value: string | null, vault: string | null, key: string | null, remember: string | null) => typedError<null, string>(__TAURI_INVOKE("answer_secret_ask", { plane, id, value, vault, key, remember })),
 	/**
 	 *  **The person answers the ask to allow a program `id`** (ADR 0111, #5239): the run that waits
 	 *  on it goes on, or hears it was not allowed, and a chat whose command stopped waiting is nudged.
@@ -783,7 +783,7 @@ export const commands = {
 	 *  Linked entry reading `key` in `vault`, never a copy, and every command that waits on it runs
 	 *  with that entry's value. The chat hears filled and the key's name, never the entry.
 	 */
-	linkSecretAsk: (plane: PlaneId, id: number, vault: string, key: string) => typedError<null, string>(__TAURI_INVOKE("link_secret_ask", { plane, id, vault, key })),
+	linkSecretAsk: (plane: PlaneId, id: number, vault: string, key: string, remember: string | null) => typedError<null, string>(__TAURI_INVOKE("link_secret_ask", { plane, id, vault, key, remember })),
 	/**
 	 *  **The entries the person could fill Secret ask `id` with** (#5073), vault by vault: every
 	 *  key of every vault that holds a value of its own, but the asked one. Names only.
@@ -891,17 +891,14 @@ export const commands = {
 	 *  Window-only.
 	 */
 	dismissProposedChange: (plane: PlaneId, id: number) => typedError<null, string>(__TAURI_INVOKE("dismiss_proposed_change", { plane, id })),
+	/**  **The personas a key in `vault` may be remembered for**, for its row's menu (#5240). */
+	secretNeedPersonas: (plane: PlaneId, vault: string) => typedError<NeedPersona[], string>(__TAURI_INVOKE("secret_need_personas", { plane, vault })),
 	/**
-	 *  **The Secret need offers dismissed on this machine that still hold** (#5159), for the vault
-	 *  view to offer each again.
+	 *  **Remember a key as a persona's Secret need** (#5240, spec #5235), on the person's press in the
+	 *  vault view: they read the line, with `purpose` as they edited it, so it is written there and
+	 *  then, with no proposal to apply. Window-only.
 	 */
-	dismissedSecretNeeds: (plane: PlaneId) => typedError<DismissedNeed[], string>(__TAURI_INVOKE("dismissed_secret_needs", { plane })),
-	/**
-	 *  **Offer a dismissed Secret need again** (#5159), on the person's press in the vault view:
-	 *  the dismissal is lifted, and the change adding `key` to `persona`'s needs is held for them
-	 *  to apply or dismiss. Window-only.
-	 */
-	offerSecretNeedAgain: (plane: PlaneId, persona: string, key: string) => typedError<null, string>(__TAURI_INVOKE("offer_secret_need_again", { plane, persona, key })),
+	rememberSecretNeed: (plane: PlaneId, vault: string, persona: string, key: string, purpose: string) => typedError<string, string>(__TAURI_INVOKE("remember_secret_need", { plane, vault, persona, key, purpose })),
 	/**
 	 *  **Remove** on the Ask: each file's change held for the person to apply, each with its
 	 *  file. Window-only: only the person proposes purlis's own change.
@@ -2275,8 +2272,8 @@ export const commands = {
 	/**  **Rejects a draft**: deletes it. */
 	skillDraftReject: (plane: PlaneId, id: string) => typedError<null, string>(__TAURI_INVOKE("skill_draft_reject", { plane, id })),
 	/**
-	 *  **"Ask a chat to draft a skill"** (decision 13): a chat where `level`'s skills are reached
-	 *  from (the project's root, or the workspace's folder), on the project's default profile, with
+	 *  **"Ask a chat to draft a skill"** (decision 13): a chat where `level`'s skills live (#5184: the
+	 *  project's root, the workspace's folder, or as the persona), on the project's default profile, with
 	 *  the core's prompt typed and never sent, ending with `what` the skill should do where New
 	 *  skill… asked it (S4, #3684).
 	 */
@@ -6306,6 +6303,11 @@ export type ChatBrowser = {
 	 *  what its row and thumbnail name as its device.
 	 */
 	pool: string | null,
+	/**
+	 *  **The vault secrets purlis filled into it** (#5119, SF-8): by key and site, never a value,
+	 *  oldest first. Its view marks each while its page is on that site.
+	 */
+	secrets: SecretFilled[],
 };
 
 /**
@@ -6898,12 +6900,6 @@ export type DiskHeld =
 { state: "not_read"; why: string } | 
 /**  It was not read within the time a second read of it waits ([`WAITS_AT_MOST`]). */
 { state: "unanswered" };
-
-/**  One Secret need offer the person dismissed (#5159): the persona and the key, names only. */
-export type DismissedNeed = {
-	persona: string,
-	key: string,
-};
 
 /**  Why a grant the person accepted before waits for a yes again. */
 export type DispatchAgain = 
@@ -8046,6 +8042,11 @@ export type FillShown = {
 	no_always?: string | null,
 	/**  Always also allows the vault for the persona. */
 	vault_too: boolean,
+	/**
+	 *  **A 2FA code the seed under `key` makes, not the value itself** (#5118): the notice says
+	 *  so, and that the seed reaches no page.
+	 */
+	code: boolean,
 };
 
 /**  What finishing them came to. What each step said is in the app's log. */
@@ -10017,6 +10018,20 @@ export type NeedFix =
 export type NeedKind = "review" | "clash" | "problem" | "pins" | "tidy-up";
 
 /**
+ *  **One persona the vault view may remember a need for** (#5240): names only, read from no
+ *  vault.
+ */
+export type NeedPersona = {
+	persona: string,
+	/**  The file the line goes in, relative to the project. */
+	file: string,
+	/**  The keys it declares already: a row of one of them offers it nothing. */
+	declares: string[],
+	/**  It names no vault, so a `vault:` line goes with the need. */
+	names_no_vault: boolean,
+};
+
+/**
  *  **A profile's command waiting on the operator's approval** (ADR 0022), as a waiting chat's
  *  Notice offers it (#1246): which profile, and the exact line the approval is for.
  * 
@@ -10420,6 +10435,11 @@ export type OpenChat = {
 	 *  is never recorded. `null` for every other chat.
 	 */
 	one_job?: boolean | null,
+	/**
+	 *  **What the Skill studio started it for** (#5185): its header's chip, which opens the
+	 *  skill's page, and the skill page's line while it runs. `null` for every other chat.
+	 */
+	studio?: StudioLink | null,
 };
 
 /**  One group of **Open hosts**: a preset's, or the project's own. */
@@ -14046,6 +14066,38 @@ export type SecretEntryShown = {
 };
 
 /**
+ *  **A vault secret purlis filled into a browser** (#5119, SF-8), as its view marks it: the
+ *  key's name, the site it went to and the field the page labels, never a value.
+ */
+export type SecretFilled = {
+	/**  The key's name in its vault (`dash-api-key`). */
+	key: string,
+	/**  The origin of the field's own frame it went into (`https://dash.example.test`). */
+	origin: string,
+	/**
+	 *  The origin of the page that frame was in, where it was known: the field may be in a
+	 *  part of the page from another site.
+	 */
+	page: string | null,
+	/**  What the page labels the field: the page's words, never purlis's. */
+	label: string,
+	/**  A 2FA code the seed under `key` made (#5118), not the value itself. */
+	code: boolean,
+};
+
+/**  **The line a Secret ask's Remember writes** (#5240): shown whole before it is ticked for. */
+export type SecretNeedShown = {
+	/**  The file it goes in, relative to the project. */
+	file: string,
+	/**  The persona does not declare the key, so a `secret-need.<key>` line goes in. */
+	need: boolean,
+	/**  The chat's words for it, for the person to edit: empty where it said none. */
+	purpose: string,
+	/**  The vault a `vault:` line names, where the persona names none. */
+	vault?: string | null,
+};
+
+/**
  *  **A Secret ask, as its row draws it** (#5068, ADR 0109): the persona, the vault and the key
  *  its chats miss, and how many wait on it. Names only: no value is ever here.
  */
@@ -14084,6 +14136,11 @@ export type SecretShown = {
 	reads?: SecretEntryShown | null,
 	/**  The entry a broken link read, which is gone (#5075). */
 	gone?: SecretEntryShown | null,
+	/**
+	 *  **What *Remember this need for the persona* would write** (#5240, spec #5235), where it
+	 *  would write anything and may.
+	 */
+	remember?: SecretNeedShown | null,
 };
 
 /**
@@ -15704,6 +15761,9 @@ export type StudioHarness = {
 	plugins_off: PluginOffShown[],
 };
 
+/**  The studio's jobs a chat is started for: [`StudioWork`], by the record's words. */
+export type StudioJobKind = "draft" | "trigger-tests" | "outcome-evals" | "checks" | "improve" | "redo";
+
 /**  A level a skill can be moved to or made at, and its words. */
 export type StudioLevel = {
 	level: SkillLevel,
@@ -15718,6 +15778,19 @@ export type StudioLevel = {
 export type StudioLevelsToConfirm = {
 	said: string,
 	folders: string[],
+};
+
+/**
+ *  **What the Skill studio started a chat for** (#5185), as the window reads it off the chat:
+ *  its header's chip, the skill page's running line and its Runs.
+ */
+export type StudioLink = {
+	/**  The skill, by its name: `None` for a new skill's draft. */
+	skill: string | null,
+	level: SkillLevel,
+	job: StudioJobKind,
+	/**  Whether the chat wrote its draft: once true, never running again. */
+	done: boolean,
 };
 
 /**
@@ -16910,6 +16983,11 @@ export type WindowApart = {
 	 *  answered, so it costs the accent no colour.
 	 */
 	words: boolean,
+	/**
+	 *  Whether the rule is one of the accent's marks' (#4921): measured once every other rule is
+	 *  answered, each mark on its own, so it costs the accent and its kin no colour.
+	 */
+	signal: boolean,
 };
 
 /**  One theme draft, as the strip and the close of its chat name it. */

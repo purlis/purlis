@@ -5656,3 +5656,295 @@ fn a_fill_reads_a_key_the_vault_holds_and_says_none_of_one_it_doesnt() {
             .is_none()
     );
 }
+
+// ----------------------------------------------------------------------------------------
+// a keyring read where the chat's environment carries no sandbox mark
+
+/// A vault whose values come from the keyring.
+fn a_keyring_vault() -> registry::Vault {
+    registry::Vault {
+        name: "kept".into(),
+        provider: "keyring".into(),
+        persona: None,
+        config: serde_json::Map::new(),
+    }
+}
+
+/// Where this process runs, as a test says it.
+fn runs(said: crate::secrets::setup::Sandboxed) -> impl Fn() -> crate::secrets::setup::Sandboxed {
+    move || said.clone()
+}
+
+#[test]
+fn a_keyring_read_below_a_sandboxed_chat_is_refused_though_its_mark_was_unset() {
+    let project = project();
+    let ctx = Ctx::new(project.path(), Env::of(&[]));
+    let said = refused_where(
+        &ctx,
+        &a_keyring_vault(),
+        Reader::GetOrCp,
+        &runs(crate::secrets::setup::Sandboxed::Yes),
+    )
+    .expect("refused");
+    let said = said.to_string();
+    assert!(said.contains("does not read"), "{said}");
+    assert!(said.contains("purlis secret exec kept"), "{said}");
+}
+
+#[test]
+fn a_keyring_read_in_an_unsandboxed_chat_or_the_persons_terminal_goes_on() {
+    let project = project();
+    let ctx = Ctx::new(project.path(), Env::of(&[]));
+    for reader in [Reader::Exec, Reader::GetOrCp, Reader::Other] {
+        assert_eq!(
+            refused_where(
+                &ctx,
+                &a_keyring_vault(),
+                reader,
+                &runs(crate::secrets::setup::Sandboxed::No)
+            ),
+            None
+        );
+    }
+}
+
+#[test]
+fn a_keyring_read_where_purlis_cannot_tell_where_it_runs_is_refused_saying_why() {
+    let project = project();
+    let ctx = Ctx::new(project.path(), Env::of(&[]));
+    let said = refused_where(
+        &ctx,
+        &a_keyring_vault(),
+        Reader::Other,
+        &runs(crate::secrets::setup::Sandboxed::Unsure(
+            "a parent could not be read".into(),
+        )),
+    )
+    .expect("refused")
+    .to_string();
+    assert!(said.contains("cannot tell"), "{said}");
+    assert!(said.contains("a parent could not be read"), "{said}");
+}
+
+#[test]
+fn where_a_process_runs_is_asked_only_for_a_keyring_vault_with_no_mark() {
+    let project = project();
+    let never = || -> crate::secrets::setup::Sandboxed { panic!("where it runs was asked") };
+    let marked = Ctx::new(
+        project.path(),
+        Env::of(&[(crate::hookwire::SANDBOXED_ENV, "1")]),
+    );
+    assert!(refused_where(&marked, &a_keyring_vault(), Reader::Exec, &never).is_some());
+    let other = registry::Vault {
+        provider: "file".into(),
+        ..a_keyring_vault()
+    };
+    let unmarked = Ctx::new(project.path(), Env::of(&[]));
+    assert_eq!(refused_where(&unmarked, &other, Reader::Exec, &never), None);
+}
+
+#[test]
+fn a_chat_that_unset_its_mark_below_a_sandboxed_chat_has_its_secret_exec_run_by_the_app() {
+    let project = project();
+    for (located, sent) in [
+        (crate::secrets::setup::Sandboxed::Yes, true),
+        (crate::secrets::setup::Sandboxed::No, false),
+        (
+            crate::secrets::setup::Sandboxed::Unsure("unreadable".into()),
+            true,
+        ),
+    ] {
+        let asked = Arc::new(AtomicBool::new(false));
+        let (_dir, _reading, mut env) = an_app(the_app_runs_it(project.path()), Arc::clone(&asked));
+        env.retain(|(k, _)| k != crate::hookwire::SANDBOXED_ENV);
+        let ctx = chat_ctx(project.path(), &env);
+        let req = Request {
+            vault: "team".into(),
+            env: vec!["X=TOKEN".into()],
+            ..Request::default()
+        };
+        let mut rec = Rec::default();
+        let code = forwarded_where(&ctx, &req, &sh("true"), &mut rec, &runs(located.clone()));
+        assert_eq!(asked.load(Ordering::SeqCst), sent, "{located:?}");
+        assert_eq!(code.is_some(), sent, "{located:?}");
+    }
+}
+
+#[test]
+fn where_a_process_runs_is_never_asked_with_no_app_socket_in_its_environment() {
+    let project = project();
+    let ctx = Ctx::new(project.path(), Env::of(&[("PATH", "/usr/bin:/bin")]));
+    let never = || -> crate::secrets::setup::Sandboxed { panic!("where it runs was asked") };
+    let mut rec = Rec::default();
+    let req = Request {
+        vault: "team".into(),
+        ..Request::default()
+    };
+    assert_eq!(
+        forwarded_where(&ctx, &req, &sh("true"), &mut rec, &never),
+        None
+    );
+}
+
+// ----------------------------------------------------------------------------------------
+// a brokered child's network, under the run's real sandbox: through its proxy alone
+
+/// A TCP connect from inside the run to `address` on `port`, said as `connected`, `timeout`, or
+/// `connect <errno>`: the sandbox's own refusal (`EPERM` under Seatbelt, `EACCES` under purlis's
+/// wrap) told apart from an address that does not answer.
+const CONNECT: &str = r#"
+use Socket qw(:all);
+my ($address, $port) = @ARGV;
+socket(my $s, AF_INET, SOCK_STREAM, 0) or do { print "socket ", $! + 0, "\n"; exit };
+$SIG{ALRM} = sub { print "timeout\n"; exit };
+alarm 5;
+connect($s, pack_sockaddr_in($port, inet_aton($address))) or do { print "connect ", $! + 0, "\n"; exit };
+print "connected\n";
+"#;
+
+/// An address of TEST-NET-1 (RFC 5737): never this machine's, and routed nowhere.
+const AWAY: &str = "192.0.2.1";
+
+/// The run's sandbox's own refusal of a connect, as [`CONNECT`] says it.
+const REFUSED_HERE: &str = if cfg!(target_os = "linux") {
+    "connect 13"
+} else {
+    "connect 1"
+};
+
+/// **A brokered child reaches the network through its proxy and in no other way**, under the
+/// sandbox the run is really wrapped in (`wrap`, with `asker`'s confines). A stand-in service on
+/// loopback, listed in the chat's hosts so the proxy carries it, is tried directly by `curl
+/// --noproxy '*'` and by a raw socket; a raw socket also tries an address that is not this
+/// machine's, on a port of the open web and on the proxy's own port (which Landlock alone, naming
+/// ports and no address, would let through). Each must be the sandbox's refusal, and the service
+/// must hear nothing until the same child asks for it through its proxy, which reaches it.
+fn a_wrapped_child_reaches_only_through_its_proxy(asker: Asker, root: &Path, wrap: Wrap) {
+    use std::io::Read as _;
+    let service = std::net::TcpListener::bind("127.0.0.1:0").expect("a stand-in service");
+    let port = service.local_addr().unwrap().port();
+    let heard = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let serving = {
+        let heard = Arc::clone(&heard);
+        std::thread::spawn(move || {
+            for stream in service.incoming() {
+                let Ok(mut stream) = stream else { break };
+                heard.fetch_add(1, Ordering::SeqCst);
+                let mut request = [0u8; 1024];
+                let _ = stream.read(&mut request);
+                if request.starts_with(b"STOP") {
+                    break;
+                }
+                let _ = stream.write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 7\r\nConnection: close\r\n\r\nthrough",
+                );
+            }
+        })
+    };
+    let script = format!(
+        r#"proxy_port=${{HTTPS_PROXY##*:}}
+echo "curl-direct $(/usr/bin/curl --noproxy '*' -sS --max-time 5 -o /dev/null -w '%{{http_code}}' http://127.0.0.1:{port}/ >/dev/null 2>&1 && echo reached || echo refused)"
+echo "loopback $(/usr/bin/perl -e '{CONNECT}' 127.0.0.1 {port})"
+echo "away $(/usr/bin/perl -e '{CONNECT}' {AWAY} 443)"
+echo "away-on-the-proxys-port $(/usr/bin/perl -e '{CONNECT}' {AWAY} "$proxy_port")"
+echo "proxied $(/usr/bin/curl -sS --max-time 10 --noproxy '' -p -x "$HTTPS_PROXY" http://127.0.0.1:{port}/ 2>&1)"
+"#
+    );
+    let listed = format!("127.0.0.1:{port}");
+    let (asker, want) = as_tool(
+        reaching(asker, &[listed.as_str()]),
+        wanted(root, "team", sh(&script)),
+    );
+    let (reader, _keep) = held_open();
+    let wire = Wire::default();
+    serve_wrapped(&asker, want, reader, Box::new(wire.clone()), wrap);
+    // The stand-in ends once it hears this test's own last word.
+    if let Ok(mut stop) = std::net::TcpStream::connect(("127.0.0.1", port)) {
+        let _ = stop.write_all(b"STOP");
+    }
+    let _ = serving.join();
+    let frames: Vec<Frame> = String::from_utf8(wire.0.lock().unwrap().clone())
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    let out = stdout(&frames);
+    let said = |what: &str| -> String {
+        out.lines()
+            .find_map(|line| line.strip_prefix(&format!("{what} ")))
+            .unwrap_or_else(|| panic!("no `{what}` line in {out:?}"))
+            .to_owned()
+    };
+    assert_eq!(said("curl-direct"), "refused", "{out}");
+    assert_eq!(said("loopback"), REFUSED_HERE, "{out}");
+    assert_eq!(said("away"), REFUSED_HERE, "{out}");
+    assert_eq!(said("away-on-the-proxys-port"), REFUSED_HERE, "{out}");
+    assert_eq!(said("proxied"), "through", "{out}");
+    // The proxied request, and this test's own last word: nothing else reached it.
+    assert_eq!(heard.load(Ordering::SeqCst), 2, "{out}");
+}
+
+/// Seatbelt, as a macOS run is wrapped. Binds a socket: first run on CI.
+#[cfg(target_os = "macos")]
+#[test]
+fn under_seatbelt_a_brokered_child_reaches_the_network_only_through_its_proxy() {
+    let can_apply = crate::forklock::status(
+        std::process::Command::new(crate::sandbox::backend::SANDBOX_EXEC).args([
+            "-p",
+            "(version 1)(allow default)",
+            "/usr/bin/true",
+        ]),
+    )
+    .is_ok_and(|s| s.success());
+    if !can_apply {
+        // On CI nothing sandboxes the test, so a skip there is a failure.
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "this process cannot apply a Seatbelt profile on CI"
+        );
+        let _ = writeln!(
+            std::io::stderr(),
+            "skipped: this process is already sandboxed, so no second profile applies"
+        );
+        return;
+    }
+    let project = project();
+    let root = project.path().canonicalize().unwrap();
+    a_wrapped_child_reaches_only_through_its_proxy(
+        asker(&root, Some("devops")),
+        &root,
+        Wrap::Seatbelt,
+    );
+}
+
+/// purlis's own wrap, as a Linux run is wrapped: `sandbox-probe`, which is the wrap as `purlis
+/// _sandbox` is, named by `PURLIS_SANDBOX_PROBE` or beside this build's test binaries. Binds a
+/// socket: first run on CI.
+#[cfg(target_os = "linux")]
+#[test]
+fn under_purlis_wrap_a_brokered_child_reaches_the_network_only_through_its_proxy() {
+    let probe = match std::env::var_os("PURLIS_SANDBOX_PROBE") {
+        Some(named) => Some(PathBuf::from(named)),
+        None => std::env::current_exe()
+            .ok()
+            .and_then(|exe| Some(exe.parent()?.parent()?.join("sandbox-probe")))
+            .filter(|beside| beside.is_file()),
+    };
+    // A build of this package alone has none. The step that names it insists on it, and on the
+    // marker this test leaves.
+    let Some(probe) = probe else {
+        let _ = writeln!(
+            std::io::stderr(),
+            "skipped: no sandbox-probe beside this build"
+        );
+        return;
+    };
+    assert!(probe.is_file(), "no program at {}", probe.display());
+    let project = project();
+    let root = project.path().canonicalize().unwrap();
+    let mut asker = asker(&root, Some("devops"));
+    asker.confines.as_mut().unwrap().wrap = Some(probe.canonicalize().unwrap());
+    a_wrapped_child_reaches_only_through_its_proxy(asker, &root, Wrap::Purlis);
+    crate::secrets::test_really_ran("brokered-network-under-purlis-wrap");
+}

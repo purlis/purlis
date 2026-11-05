@@ -21,6 +21,8 @@ import { inForce, tintVariables, type Token } from "./theme/theme";
 import { followTheme } from "./PersonaMark";
 import { Group, Panel, useParentGroup } from "react-resizable-panels";
 import { Separator } from "./ui/panel/Separator";
+// The line between two groups, named apart from the panel's resize handle above.
+import { Separator as Divider } from "./ui/separator/Separator";
 import {
   type ChatBlocked,
   type HarnessGlance,
@@ -54,7 +56,7 @@ import { EVEN, shareOf, WHOLE } from "./laidOut";
 import { floorAlong, type Size } from "./paneDrop";
 import { drawnOf, offerInRoom, type Drawn, type Folded } from "./paneFold";
 import { PaneRail, type RailPane } from "./PaneRail";
-import { dropPane, GRIP } from "./paneDrag";
+import { dropPane, GRIP, PaneGrip } from "./paneDrag";
 import { paneNamesOf } from "./panePlaces";
 import { type Crumbs } from "./tabChats";
 import { BriefButton, type BriefAsk } from "./Brief";
@@ -72,6 +74,7 @@ import { HarnessChip } from "./HarnessCard";
 import { movedAt, stateOf, useChatsHere, useChatsSelect } from "./chatState";
 import { EmptyPane } from "./EmptyPane";
 import { EndedBand, endedBy, endedState, resumeOf } from "./EndedBand";
+import { StudioChatChip } from "./studioChats";
 import { markOf } from "./StripMarks";
 import {
   type RestartAct,
@@ -291,6 +294,7 @@ export function PaneFrame({
         <PaneDropsOf.Provider value={drops}>
           <PaneHead
             grip={!oneJob}
+            at={tab === undefined || pane === undefined ? undefined : { tab, pane }}
             menu={
               headMenu &&
               ((element) => (
@@ -401,6 +405,8 @@ export function PaneFrame({
                   {/* The chat's skills (#2775, S8): not beside a task's path, which is the
                   fullest line a pane has, nor in a narrow pane. */}
                   {!crumbs && roomy && <SkillsChip plane={plane} session={session} />}
+                  {/* What the Skill studio started it for, which opens the skill (#5185). */}
+                  {!crumbs && <StudioChatChip plane={plane} session={session} />}
                   {from && <span className="pane-from">{from}</span>}
                   {workItem && <span className="pane-work-item">{workItemSaid(workItem)}</span>}
                   {/* **The gauge last** (#3142, rule 15): it is drawn once the chat's first
@@ -445,6 +451,7 @@ export function PaneHead({
   menu,
   children,
   grip = true,
+  at,
 }: {
   doing: ReactNode;
   /** Puts the head's right-click around it (#4760): the chat's list, then the pane's rows. */
@@ -452,11 +459,16 @@ export function PaneHead({
   children?: ReactNode;
   /** Whether a press on it, outside its controls, picks the pane up to drag (#4763). */
   grip?: boolean;
+  /** The pane it heads, whose grip control picks it up for placement mode (#4764). */
+  at?: { tab: number; pane: number };
 }) {
   const drawn = (
     // Its hints open below it (#5189): one at a control's end would stand on the row, over the
     // next control, as the bell's did over Split right.
     <div className="pane-head" {...TIPS_BELOW} {...(grip ? { [GRIP]: "" } : {})}>
+      {/* **The grip, first in the head** (#4764): a press, Enter or Space on it picks the pane up
+          to place it with the keys, and a drag from it moves the pane. */}
+      {grip && at !== undefined && <PaneGrip tab={at.tab} pane={at.pane} />}
       {children}
       {doing}
     </div>
@@ -465,9 +477,12 @@ export function PaneHead({
 }
 
 /**
- * **A pane's actions** (#3142, #3147, #4760): on a chat's pane its one state button, its ⋯ and
- * its bell (#4754), then split it side by side, split it stacked, and close it, as one cluster
- * in its own place, the top right of the pane (`.pane-actions`, `paneFrame.css`). A chat's pane
+ * **A pane's actions** (#3142, #3147, #4760, #5203): two groups in one cluster, in its own place,
+ * the top right of the pane (`.pane-actions`, `paneFrame.css`). First the chat's actions: its one
+ * state button, its bell (#4754), then its ⋯ last, since an overflow menu ends the group it
+ * overflows. Then, after a thin divider, the pane's controls: split it side by side, split it
+ * stacked, then close it, last, in the corner (the person's ruling on the M70 prototype, spec
+ * #5191). Tab takes them in that order, which is the order they are written. A chat's pane
  * draws it at the end of its header; a view's pane draws the same component with no chat, so
  * every pane's split and close look and behave as one. What it offers is the catalogue's own
  * rows, and the window's rule for when they are drawn.
@@ -483,14 +498,17 @@ export function PaneActions({
   /** Its one state button (#4760, `PaneStateButton`), where its state has one. */
   state?: ReactNode;
 }) {
+  // The bell is a chat's, drawn where the pane holds a chat's notices: a view's pane has none.
+  const hasBell = useContext(PaneBellOf) !== null;
   return (
     <div className="pane-actions">
-      {/* **The state button, then ⋯, then the bell** (#4760, spec #4750 story 54), each always
-          drawn: a chat's part of the head, before the pane's own controls. The bell keeps a
-          fixed slot with its count or none (#4754); the controls after it are drawn only under
-          the pointer or the keyboard (`.pane-doing`, `App.css`), and keep their room hidden, so
-          nothing beside them moves when a notice arrives or they are drawn. */}
+      {/* **The state button, then the bell, then ⋯** (#4760, #5203), each always drawn: the
+          chat's part of the head, before the pane's own controls. The bell keeps a fixed slot
+          with its count or none (#4754); the controls after it are drawn only under the pointer
+          or the keyboard (`.pane-doing`, `App.css`), and keep their room hidden, so nothing
+          beside them moves when a notice arrives or they are drawn. */}
       {state}
+      <PaneBell />
       {chat !== undefined && (
         <ChatMenuButton
           session={chat.session}
@@ -498,8 +516,7 @@ export function PaneActions({
           onPress={(offer) => props.onPaneDoes(props.pane, offer)}
         />
       )}
-      <PaneBell />
-      <PaneDoing {...props} />
+      <PaneDoing {...props} parted={state != null || hasBell || chat !== undefined} />
     </div>
   );
 }
@@ -1083,6 +1100,7 @@ export function LayoutPanes({
           {/* Before the view, for `PaneFrame`'s reason: the tab order is the document's. Over
               the view's first row, which keeps the room it takes (`paneFrame.css`). */}
           <PaneHead
+            at={{ tab, pane: layout.pane }}
             doing={
               <PaneActions
                 pane={layout.pane}
@@ -1541,6 +1559,7 @@ export function PaneDoing({
   task = false,
   oneJob = false,
   size,
+  parted = false,
 }: {
   pane: number;
   /** The pane's size as drawn (`paneFold.ts`): Split right and Split down grey out, with their
@@ -1558,6 +1577,9 @@ export function PaneDoing({
   /** A one-job program's pane (#4761): no close, since it goes when its program exits. Its
    *  edges still take a split. */
   oneJob?: boolean;
+  /** **The chat's actions are drawn before these** (#5203): a thin divider parts the two
+   *  groups. None on a view's pane, whose controls are all its head has. */
+  parted?: boolean;
 }) {
   // **A task's own pane keeps its minimise whatever it shows** (#1489): switched to a task of
   // its own, it is still the pane that is sent back. Only a close is not drawn over a task.
@@ -1571,7 +1593,15 @@ export function PaneDoing({
     ...(drops.has("splitDown") ? [] : ["pane.split.down"]),
     ...((task && !minimise) || oneJob ? [] : ["pane.close"]),
   ];
-  return <div className="pane-doing">{rows.map(draw)}</div>;
+  return (
+    <div className="pane-doing">
+      {/* **The divider** (#5203): the first of the pane's controls, so it is drawn and hidden
+          with them and never stands alone at rest. It parts marks a screen reader already hears
+          one by one, so it is not said. */}
+      {parted && <Divider orientation="vertical" decorative className="pane-divider" />}
+      {rows.map(draw)}
+    </div>
+  );
   function draw(id: string) {
     const offer = offerInRoom(id === "pane.close" ? closeOf(pane) : offerFor(id), size);
     if (!offer) return null;
@@ -1603,7 +1633,7 @@ export const PaneBellAt = createContext<RefObject<HTMLButtonElement | null> | nu
 
 /**
  * **A pane's bell** (#4754, spec #4750 stories 33, 37 to 39): in the pane's header, in a fixed
- * slot before split and close, there with no count when there is nothing, so nothing beside it
+ * slot before ⋯, there with no count when there is nothing, so nothing beside it
  * moves. An icon button the size of its neighbours (#5189), its hint below the head.
  *
  * - **Its count is the pane's notes**, never its asks, the same number minimised and expanded:

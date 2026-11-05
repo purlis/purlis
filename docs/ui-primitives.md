@@ -292,9 +292,9 @@ row above the pane, between the chosen tab and its pane, until the operator's sc
 2026-10-24 showed it breaking the tab's join. **A pane is three rows** (`paneFrame.css`, the
 operator's variant A, and #4754): the header (`PaneHead`), with a runway at its top so the chosen
 tab joins the terminal's fill, the chat at a glance at its start and the pane's actions at its
-end (`PaneActions`, the one cluster of the bell, split side by side, split stacked and close,
-which a view's pane draws too, without the bell, #3147); then the band, under the header so a
-Notice arriving never moves it; then the terminal, pinned to its bottom so a warning
+end (`PaneActions`: the chat's state button, bell and ⋯, a thin divider, then split side by side,
+split stacked and close, which are all a view's pane draws, #3147, #5203); then the band, under
+the header so a Notice arriving never moves it; then the terminal, pinned to its bottom so a warning
 coming or going moves its top and never its last line. **A view's pane carries no title of its
 own** (#3147, the operator's ruling of 2026-10-24): its tab is its name and the content panel is
 that tab's panel, so the view starts on the fill its chosen tab joins, with no band; the same
@@ -450,7 +450,7 @@ own `min-width: max-content` beside the class.
 
 | Prop | Says |
 | --- | --- |
-| `variant` | `secondary` (the default, the plain button), `primary` (the answer purlis suggests), `ghost` (no box until the pointer reaches it), `danger` (what cannot be undone from purlis, D-1719-3), `grants` (an answer that grants, an Allow or an Accept), `soft-accent` (a suggestion that is not the answer), `warning-soft` (care, without ending anything), `link` (a button that reads as a link, as tall as its words so it can stand in a sentence), `quiet` (a ghost whose words are in the quiet tier until the pointer reaches it: a strip's end mark, a pane's split and close, a line's own marks, a breadcrumb's crumbs and a tab's task chip, #3214, #3264) |
+| `variant` | `secondary` (the default, the plain button), `primary` (the answer purlis suggests), `ghost` (no box until the pointer reaches it), `danger` (what cannot be undone from purlis, D-1719-3), `grants` (an answer that grants, an Allow or an Accept), `soft-accent` (a suggestion that is not the answer), `warning-soft` (care, without ending anything), `link` (a button that reads as a link, as tall as its words so it can stand in a sentence), `quiet` (a ghost whose words are in the quiet tier until the pointer reaches it: a strip's end mark, a pane's split and close, a line's own marks, a breadcrumb's crumbs and a tab's task chip, #3214, #3264), `quiet-link` (a link in the quiet tier, underlined in the primary words under the pointer and the keyboard and never filled: a card's way on beside its one answer, Go to chat in an Inbox card's head, #5214) |
 | `size` | `sm` 24, `md` 28 (the default), `lg` 32, at the default text size and density; `lg` only beside a list's main filter field |
 | `inline` | words in a line of words, a breadcrumb's crumb (#3264): as tall as the line, no box padding or edge, cut to an ellipsis where the line squeezes it, underlined (no fill) under the pointer and the keyboard; words only |
 | `icon` | the icon before the words, drawn as the `icon` part; `IconButton` takes only an icon and an `aria-label`, and is square |
@@ -545,10 +545,15 @@ the select family's (`purlis/select-family`, an error: [The select and combobox 
   search box in the window has its glass (`fieldIcon.test.tsx`).
 - **A textarea** is three controls tall at least, in the mono face, and as tall as a person
   drags it; with `grows` (a settings list field, DS-10) it is as tall as its lines and never
-  dragged.
+  dragged. With `strip` (`data-foot-strip`; an Inbox card's reply, #5214) it is a strip at a card's foot: no box
+  but a divider above it, in the words' face, one line tall at rest (`data-rows`), two while it
+  holds the caret and up to four as its lines need, moving at the theme's pace. Its `hint` part
+  (in the quiet tier) shows at its foot only while it holds the caret, and is always the box's
+  description; `end` places its send button inside it. A shape, like `grows`, and not a
+  variant: the strip keeps the box's colours and refused edge.
 - **Stories hold it** (`Field.stories.tsx`, `docs/component-stories.md`): a labelled field,
   inline validation on blur, a refusal, the three sizes with their glass, an unavailable box, a
-  textarea, a form sent by ⌘⏎, and a filter that keeps its caret while its list redraws, each
+  textarea and its strip, a form sent by ⌘⏎, and a filter that keeps its caret while its list redraws, each
   walked by the keyboard and checked by axe in Chromium and WebKit.
 
 ## The select and combobox families
@@ -2794,7 +2799,7 @@ Panel, every half of it, and shows it again on the views its halves had. It hide
 that is drawn: a half holding only extensions' panels that no extension contributes now is not
 drawn, so where that is all that is left, the key shows the Panel (#1752). `Ctrl+J` is a
 terminal's newline, so a chat with the keyboard keeps it, as it keeps `Ctrl+B`; a `⌘` chord is no
-byte. `⌘⇧J` is the tab's chats menu, so Shift held is never this key. Its palette row is _Hide
+byte. `⌘⇧J` is the focused chat's tasks, so Shift held is never this key. Its palette row is _Hide
 the Panel_ or _Show the panel_, with the key said on it. A press of a half's open **Lower icon**
 puts that half away, as a press of a side's open view does; with both halves away the Panel is
 not drawn and the editor has the height. The handle between the editor and the Panel resizes it
@@ -2931,14 +2936,16 @@ has no `[` or `]` without AltGr (German, Nordic, French) is the key in their pla
 then never when it types a letter or a digit or is another of the window's keys.
 
 They are capture listeners on the window, held by the project in front. ⌘⇧J and ⌘⇧H press
-their catalogue rows (`tasks.menu`, `pane.back`), which the palette lists with their keys; the
-pane and tab keys move the keyboard and have no rows. **Nothing is taken while a dialog has the keyboard.** Over a
+their catalogue rows (`tasks.menu`, `pane.back`), which the palette lists with their keys. ⌘⇧J
+opens a menu of the tasks the focused pane's chat asked for and nothing else's, under that pane's
+head (`ChatTasksMenu.tsx`, #5058): the one picked is shown in that pane as a press shows it, and
+one on screen already is jumped to. The pane and tab keys move the keyboard and have no rows. **Nothing is taken while a dialog has the keyboard.** Over a
 terminal the chord is the window's whether or not its row can run, so the same chord never
 means two things from one tab to the next; in a text field or an editor a chord whose row
 cannot run is left to the field.
 
 **A menu that opens under a resting pointer takes no keyboard** (#1487, `TabChip.tsx`). The
-task menu on a tab's chip is Radix's dropdown menu, opened three ways: a press, the key above,
+task menu on a tab's chip is Radix's dropdown menu, opened three ways: a press, Down on its tab,
 and the pointer resting on the chip. Radix moves the focus into a menu as it opens and onto
 each row the pointer crosses, which is right for the first two and would take the keyboard out
 of a terminal for the third. So a rest-opened menu refuses both (the menu's `onOpenAutoFocus`,

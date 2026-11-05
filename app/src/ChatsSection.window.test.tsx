@@ -2268,6 +2268,75 @@ const threeTasks = () => [
   chat(4, "alpha", { persona: "devops", from: by(1, "task") }),
 ];
 
+describe("a chat's row places its chat (#4764)", () => {
+  it("picks its chat up for placement mode on a press of its Place…", async () => {
+    const { move } = core(threeTasks());
+    render(<App />);
+    const tree = await section();
+    await waitFor(() => expect(shape(tree)).toHaveLength(4));
+    move(3, "running", 13);
+    const one = row(tree, "devops 3");
+    const place = one.querySelector<HTMLElement>(".chat-row-place");
+    expect(place).not.toBeNull();
+    fireEvent.click(place as HTMLElement);
+    await waitFor(() =>
+      expect(document.querySelector("[data-pane-drag-said]")?.textContent).toMatch(
+        /^Picked up devops 3\. Arrow keys choose a side/,
+      ),
+    );
+    // Drawn and said where it is seen, never inside a section that hides itself (the Inbox's
+    // Notices hide with none to show, and once held this layer).
+    expect(document.querySelector("[data-pane-drag-said]")?.closest("[hidden]")).toBeNull();
+    // The keyboard is on placement mode's first target.
+    await waitFor(() => expect(document.activeElement).toHaveAttribute("data-place-target"));
+  });
+
+  it("picks its chat up from its list's Place…, which Shift+F10 opens, and Esc gives the row back the keyboard", async () => {
+    const { move } = core(threeTasks());
+    render(<App />);
+    const tree = await section();
+    await waitFor(() => expect(shape(tree)).toHaveLength(4));
+    move(3, "running", 13);
+    const one = row(tree, "devops 3");
+    // The row's own keyboard route to its list (D10): the ⋯ is the pointer's.
+    act(() => one.focus());
+    fireEvent.keyDown(one, { key: "F10", shiftKey: true });
+    await screen.findByRole("menu");
+    const place = menuRow("Place…");
+    // Its key, which does the same from the row, said at the row's end.
+    expect(place.textContent).toMatch(/(⌘⇧M|Ctrl\+Shift\+M)/);
+    await userEvent.click(place);
+    await waitFor(() => expect(placingSaid()).toMatch(/^Picked up devops 3\. Arrow keys/));
+    await waitFor(() => expect(document.activeElement).toHaveAttribute("data-place-target"));
+
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(placingSaid()).toBe("Put back. Nothing moved."));
+    expect(document.activeElement).toBe(row(tree, "devops 3"));
+  });
+});
+
+describe("a tab's menu places its tab (#4764)", () => {
+  it("picks the tab up from its right-click's Place…, offering the strip's new place", async () => {
+    core(threeDeep());
+    render(<App />);
+    const tree = await section();
+    await waitFor(() => expect(shape(tree)).toHaveLength(4));
+    const tab = within(strip()).getByRole("tab", { name: /^steward 1/ });
+    fireEvent.contextMenu(tab);
+    await screen.findByRole("menu");
+    await userEvent.click(menuRow("Place…"));
+    await waitFor(() => expect(placingSaid()).toMatch(/^Picked up steward 1\. Arrow keys/));
+    await waitFor(() => expect(document.activeElement).toHaveAttribute("data-place-target"));
+
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(placingSaid()).toBe("Put back. Nothing moved."));
+    expect(document.activeElement).toBe(within(strip()).getByRole("tab", { name: /^steward 1/ }));
+  });
+});
+
+/** What placement mode last told a reader (#4764). */
+const placingSaid = () => document.querySelector("[data-pane-drag-said]")?.textContent ?? "";
+
 describe("a chat's row is one line, with a hover card (#1675)", () => {
   it("draws its persona's badge with its state on it, and its name, and nothing more", async () => {
     const { move } = core(threeTasks());
@@ -2281,12 +2350,16 @@ describe("a chat's row is one line, with a hover card (#1675)", () => {
       // One line, and no second line: the name, then the state, which is drawn first and
       // heard after the name, then the persona's badge at the row's end (DS-11).
       expect(one.querySelector(".line.two")).toBeNull();
-      const parts = [...one.children].filter((part) => !part.matches(".ui-tree-twist"));
+      // The twist and Place… are the pointer's, out of the accessibility tree (#4764).
+      const parts = [...one.children].filter(
+        (part) => !part.matches(".ui-tree-twist, .chat-row-place"),
+      );
       expect(parts.map((part) => part.className)).toEqual([
         "ui-row-label session ui-text-body",
         "ui-row-lead",
         "ui-row-trail",
       ]);
+      expect(one.querySelector(".chat-row-place")).toHaveAttribute("aria-hidden", "true");
       expect(drawnAs(parts[1], "order")).toBe("-1");
       // The persona's mark leads, with the state on it, and both are said (#3342).
       expect(parts[1].children[0]).toHaveClass("chat-persona");

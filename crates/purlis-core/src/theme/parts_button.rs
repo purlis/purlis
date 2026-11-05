@@ -92,6 +92,12 @@ pub(super) const BUTTON: Family = Family {
             description: "A ghost with quiet words: a strip's end mark, a crumb, a pane's corner.",
             consent: None,
         },
+        Variant {
+            name: "quiet-link",
+            since: super::NEXT,
+            description: "A link in quiet words: a card's way on beside its one answer.",
+            consent: None,
+        },
     ],
     grounds: CONTROL_GROUNDS,
     keeps_size: &[
