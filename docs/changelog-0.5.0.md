@@ -5,6 +5,12 @@ The complete list of what [0.5.0](../CHANGELOG.md) brought, from v0.4.1. The cha
 
 ## Added
 
+- `purlis pool remove-profile <pool> <profile>` takes a profile off a pool from your own terminal. You confirm it in the purlis window, against a code the terminal shows. The runner forgets the profile first, and its sign-in there with it, as Pool setup's Sign-ins button does, and See what this does on that step now shows the line.
+- **A sandboxed chat can merge its base into a branch folder.** `purlis worktree update --merge`
+  has the app run the merge, so no commit is rewritten and a plain `purlis worktree push` follows,
+  with no line typed by the person. A conflict stops it and names the files, with `--continue` and
+  `--abort`. `--take-base-baselines` gives a conflicted `.png` under a `__screenshots__` folder the
+  base's copy, since CI redraws those; every other conflict still stops (#5253).
 - **Say a vault key's value is no 2FA seed.** A secret fill refuses a value that looks like a seed,
   and some real values look like one, such as a 16-letter app password. In a vault's tab, a key's
   menu has *Mark as no 2FA seed…*, and a marked key then fills as a plain value on the same notice
@@ -3751,6 +3757,35 @@ The complete list of what [0.5.0](../CHANGELOG.md) brought, from v0.4.1. The cha
 
 ## Changed
 
+- **One rule says where a chat opens.** A new chat fills an empty pane in the front tab, or else
+  gets a new tab, and never replaces anything. Pressing a chat that's off screen fills an empty
+  pane, shows it in a one-pane tab, and gets a new tab in a split, so your layout survives
+  (#5289).
+- **A narrow pane drops parts from its head and its foot in a fixed order.** The foot drops `cache`,
+  then shrinks the skills warning to its ⚠, drops `↳ from`, then the workspace. The harness's name,
+  ⚠ and `ctx` always stay (#5206).
+- **A pane's foot says what the pane is running.** A pane showing a task says the task's harness,
+  gauge and skills, and `↳ from` names the chat that asked. An ended chat keeps its foot, its gauge
+  frozen at its last values, greyed and marked `ended` (#5205).
+- **The rest of a chat's facts moved to its pane foot.** Where the chat came from, what the Skill
+  studio started it for, its work item, its skills warning and its sandbox are on the quiet line
+  under the terminal now, and each part you can press runs a row of the chat's ⋯. Those rows are new
+  in ⋯ and the palette: the harness's card, the chat's workspace, the chat it came from and its
+  skills. The count of a chat's skills is no longer on its pane unless something needs you (#5204).
+- Secret fill: a redirect goes on by itself only to where the sign-in began. Any other site asks the person once and names the site.
+- Secret fill: the hold follows related windows. A fill is refused while a window on the field's site opened its page or was opened by it, and any other such window closes when the page is done with the value.
+- **A login kept for reuse leaves no empty browser behind.** When it opens from what is kept in a
+  browser of its own, purlis closes the browser the chat just opened and never used, and says so
+  in the answer and in your view of the browser. At the project's limit that makes the room for it.
+  A browser with anything done in it, or one you took over or pinned, stays open (#5296).
+- **A chat at the browser limit is told what its browsers hold.** The refusal lists that chat's
+  browsers: empty, on an error page, on which site, holding which login, or taken over by you.
+  Other chats' browsers are counted and not named, and no value is shown (#5296).
+- Pool commands use the same in-a-chat check as secret setup.
+- **The branch folder list answers at once, however many branch folders a repo has.** It names
+  every folder first and reads each folder's uncommitted changes after, several at a time, where
+  it used to read them one after another before answering (21.5 s with about sixty folders). A
+  folder whose state is still coming says "reading…" in the Explorer until it is in (#5321).
 - **A vault refusal is an ask in the Inbox** (#5160). A vault a chat was refused for its persona
   is counted on the ✋ and said in a notification like any other ask. Allow and Keep blocked
   answer it there as they do on the chat's pane, and an answer in either place clears both. A
@@ -7416,6 +7451,22 @@ The complete list of what [0.5.0](../CHANGELOG.md) brought, from v0.4.1. The cha
 
 ## Fixed
 
+- A login's read of whether a page asks to sign in no longer loses a site it asked about, and keeps the sites the person allowed.
+- **A moved pane names the chat it shows.** After a chat is dragged into a split, each pane head and sidebar row says its own chat. Stored names were never changed, so nothing needs repairing (#5283).
+- **A drag's preview is drawn over the pane.** Dragging to a pane's edge draws over that half of the pane, not as a line across the top of the window. A pane or tab dragged over itself draws no warning, since letting go there moves nothing (#5284).
+- **One project opening no longer holds up the others.** While a project opens, every other open
+  project's branch folders, save status, health check, stale clones and repos answer without
+  waiting for it (#5320).
+- **Links, the first chart colour and an imported theme's selected edge follow a given
+  accent.** An accent you give over Purlis now turns the link and the first chart colour too.
+  Where the accent would read as a state colour, they stay in its family, nudged just far enough
+  to stand apart, and the first chart colour stays distinct from the other chart colours. The focus
+  ring and the selected row's edge now always match when they follow an accent, and a base16 import's
+  edge matches its ring. Over Purlis Classic, the primary's fill follows its surface when an accent
+  turns it, and keeps that hue under the pointer. An accent left out for its contrast now takes
+  everything that followed it out too (#5157).
+- **A fresh runner on an image with very many files its user may change can go.** Where the runner's user may change every file in a folder it may not write, that folder is recorded once and its files are looked at at each check, so such an image is looked through whole instead of keeping every fresh runner on it (#5112).
+- A profile too big for an older runner now says the runner's version is what holds it, not the pool's limit. Pool setup's Sign-ins step offers to replace the runner on the current image, or says what to do for a team's own image or a cluster pool, and a send refused for the same reason says the same.
 - **A sign-in whose server redirects to another site now finishes after `browser_fill_secret`.**
   A redirect from the approved site's own server, after a form sent there, takes the page on: to a
   site this browser was on before the fill by itself, and to any other once you allow it. The filled
@@ -10464,6 +10515,15 @@ The complete list of what [0.5.0](../CHANGELOG.md) brought, from v0.4.1. The cha
 
 ## Security
 
+- The check that keeps a 2FA seed out of a page recognises more of the forms seeds come in. A value it takes for a seed by mistake still fills once you mark its key as no 2FA seed in the vault's tab.
+- **A value purlis filled no longer reaches the chat through what a page does with it.** The line
+  saying a page is still loading printed each pending request's whole address, so a field that
+  sends what it holds as you type put the value in the chat's answer. That line now names hosts and
+  a count. Every string a browser answers a chat with, on this machine or a runner, now has the
+  value taken out whole, plain, URL-encoded, form-encoded or in base64, in page text as well as in
+  addresses, and the fill notice says plainly that the site receives the value and can send it to
+  its servers. If you filled a value on an earlier version into a page that sends what's typed,
+  treat it as seen by that chat and rotate it (#5310).
 - **The Inbox says when a file that can run later appears in a chat's folder.** When a sandboxed
   chat's turn ends, purlis looks for what a later program loads, such as a repository's hooks, an
   editor's tasks or a harness's project config, in the folders that chat may write. Anything new
