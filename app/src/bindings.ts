@@ -1611,6 +1611,7 @@ export const commands = {
 	/**  The question waiting for the person's answer, if one is. */
 	poolSignInAsked: () => __TAURI_INVOKE<{
 	id: number,
+	asks: Asks,
 	profile: string,
 	pool: string,
 	/**  What the terminal of the command that asks shows. */

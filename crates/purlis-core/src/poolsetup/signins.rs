@@ -160,21 +160,18 @@ pub fn changeable(config: &Path, pool: &str, project_open: bool) -> Result<(), S
     Ok(())
 }
 
-/// **Refused, in words, where profile `name` can't be taken off pool `pool`** (#5174): what a
-/// pool that names no profiles keeps is the default of the project at `project`, as
-/// [`changeable`] says, and a profile the pool doesn't keep has nothing to come off. It reads
-/// only, so the runner is asked of nothing this refuses.
-pub fn may_take_off(
-    config: &Path,
-    project: Option<&Path>,
-    pool: &str,
-    name: &str,
-) -> Result<(), String> {
-    changeable(config, pool, project.is_some())?;
-    let default = default_of(config, project)?;
-    let kept = runners::profiles_kept_of(config, pool, default.as_deref())
-        .map_err(|why| why.to_string())?;
-    if kept.iter().any(|one| one == name) {
+/// **Refused, in words, where profile `name` can't be taken off pool `pool` from the command**
+/// (#5174): only a profile the pool names. What a pool that names none keeps is an open project's
+/// default, and nothing on the window line says which project, so that one comes off in the
+/// window. It reads only, so the runner is asked of nothing this refuses.
+pub fn may_take_off(config: &Path, pool: &str, name: &str) -> Result<(), String> {
+    let Some(named) = runners::profiles_of(config, pool).map_err(|why| why.to_string())? else {
+        return Err(format!(
+            "pool {pool} names none of its profiles yet: it keeps the profile a new chat in your \
+             project gets, so take this one off in Pool setup's Sign-ins step in the window"
+        ));
+    };
+    if named.iter().any(|one| one == name) {
         return Ok(());
     }
     Err(format!(

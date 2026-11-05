@@ -67,14 +67,13 @@ pub enum Asked {
     },
     /// This machine's pool `pool` is to have its profile `name` taken off, by the command: the
     /// person answers in the window, then its runner forgets it and the pool leaves it out. `code`
-    /// and `config` are as [`Self::ApproveSignIn`]'s; `project` is the project whose folder the
-    /// command runs in, whose default a pool that names no profiles keeps.
+    /// and `config` are as [`Self::ApproveSignIn`]'s. Nothing here names a project: only a pool
+    /// that names its profiles is taken from, so what the person is asked is all that changes.
     TakeOffAPool {
         name: String,
         pool: String,
         code: String,
         config: PathBuf,
-        project: Option<PathBuf>,
     },
 }
 
@@ -103,15 +102,15 @@ pub enum Answered {
 /// sign-in off a runner; `keep` only for one it has, so no line puts anything else on one;
 /// `approve`, given the name, the pool and the code, only for a profile it has on a pool it has
 /// that may be signed in on, and a command reading these same files, so the person is asked only
-/// of what the window's own files name; `take_off`, given the name, the pool, the code and the
-/// project, only for a profile that pool keeps, for a command reading these same files.
+/// of what the window's own files name; `take_off`, given the name, the pool and the code, only
+/// for a profile that pool names, for a command reading these same files.
 pub fn answer(
     config: &Path,
     asked: Asked,
     forget: impl FnOnce(&str) -> Result<Option<String>, String>,
     keep: impl FnOnce(&str, &str) -> Result<Option<String>, String>,
     approve: impl FnOnce(&str, &str, &str) -> Result<Option<String>, String>,
-    take_off: impl FnOnce(&str, &str, &str, Option<&Path>) -> Result<Option<String>, String>,
+    take_off: impl FnOnce(&str, &str, &str) -> Result<Option<String>, String>,
 ) -> Said {
     let name = match &asked {
         Asked::ForgetOffThePools { name }
@@ -165,14 +164,13 @@ pub fn answer(
             pool,
             code,
             config: theirs,
-            project,
         } => {
-            if let Err(why) = same_command(config, code, theirs).and_then(|()| {
-                crate::poolsetup::signins::may_take_off(config, project.as_deref(), pool, name)
-            }) {
+            if let Err(why) = same_command(config, code, theirs)
+                .and_then(|()| crate::poolsetup::signins::may_take_off(config, pool, name))
+            {
                 return Said::Refused { why };
             }
-            take_off(name, pool, code, project.as_deref())
+            take_off(name, pool, code)
         }
     };
     match said {
@@ -264,13 +262,12 @@ pub fn approved(
 }
 
 /// **Has the window take profile `name` off pool `pool`, on the person's yes there** (#5174), for
-/// this command, whose config home is `config`, run in the folder of `project`: `ask` puts the
+/// this command, whose config home is `config`: `ask` puts the
 /// question, with `code`, to the running window, which has the runner forget the profile and then
 /// leaves it out of the pool's record, as its own button does. What the window notes of it comes
 /// back. With no window running, no answer in time, or a no, this says so.
 pub fn taken_off(
     config: &Path,
-    project: Option<&Path>,
     pool: &str,
     name: &str,
     code: &str,
@@ -281,7 +278,6 @@ pub fn taken_off(
         pool: pool.to_owned(),
         code: code.to_owned(),
         config: config.to_path_buf(),
-        project: project.map(Path::to_path_buf),
     };
     match ask(&asked) {
         Answered::Said(Said::Asked { note }) => Ok(note.map(|note| shown(&note))),

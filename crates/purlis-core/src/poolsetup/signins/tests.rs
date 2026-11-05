@@ -220,10 +220,18 @@ fn only_a_profile_the_pool_keeps_can_be_taken_off() {
     let machine = a_machine(&["work", "home"]);
     let config = machine.path();
     record(config, None, "builds", &["work".to_owned()]).unwrap();
-    assert_eq!(may_take_off(config, None, "builds", "work"), Ok(()));
-    let why = may_take_off(config, None, "builds", "home").unwrap_err();
+    assert_eq!(may_take_off(config, "builds", "work"), Ok(()));
+    let why = may_take_off(config, "builds", "home").unwrap_err();
     assert!(why.contains("doesn't keep"), "{why}");
-    assert!(may_take_off(config, None, "elsewhere", "work").is_err());
+    assert!(may_take_off(config, "elsewhere", "work").is_err());
+}
+
+/// **#5174**: what a pool that names none keeps depends on a project the line doesn't name.
+#[test]
+fn a_pool_that_names_none_gives_up_nothing_from_the_command() {
+    let machine = a_machine(&["work"]);
+    let why = may_take_off(machine.path(), "builds", "work").unwrap_err();
+    assert!(why.contains("Sign-ins step"), "{why}");
 }
 
 #[test]

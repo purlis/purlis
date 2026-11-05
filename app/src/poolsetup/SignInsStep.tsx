@@ -480,6 +480,7 @@ export function SignInsStep({
       {movingAsked && (
         <ReplaceRunner
           pool={pool}
+          onCurrentImage
           onCancel={() => setMovingAsked(false)}
           onReplace={() => void moveRunner()}
         />

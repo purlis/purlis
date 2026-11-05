@@ -590,7 +590,7 @@ pub fn listen_for_the_command_line() {
                     ),
                     None => Err("this window is still starting".to_owned()),
                 },
-                |name, pool, code, project| {
+                |name, pool, code| {
                     let Some(app) = APP.get() else {
                         return Err("this window is still starting".to_owned());
                     };
@@ -602,7 +602,8 @@ pub fn listen_for_the_command_line() {
                         code,
                         hung_up,
                     )?;
-                    take_off(&config, project, pool, name)
+                    // Only a pool that names its profiles comes this way: no project's default.
+                    take_off(&config, None, pool, name)
                 },
             )
         });

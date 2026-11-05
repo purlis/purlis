@@ -18,7 +18,7 @@ fn no_approve(_: &str, _: &str, _: &str) -> Result<Option<String>, String> {
     panic!("the person is asked nothing")
 }
 
-fn no_take_off(_: &str, _: &str, _: &str, _: Option<&Path>) -> Result<Option<String>, String> {
+fn no_take_off(_: &str, _: &str, _: &str) -> Result<Option<String>, String> {
     panic!("nothing is taken off")
 }
 
@@ -373,6 +373,7 @@ fn the_person_is_asked_only_of_a_profile_and_a_pool_this_machine_has() {
         no_forget,
         no_keep,
         no_approve,
+        no_take_off,
     );
     assert!(matches!(another, Said::Refused { why } if why.contains("another config home")));
     let Asked::ApproveSignIn {
@@ -395,6 +396,7 @@ fn the_person_is_asked_only_of_a_profile_and_a_pool_this_machine_has() {
         no_forget,
         no_keep,
         no_approve,
+        no_take_off,
     );
     assert!(matches!(bad_code, Said::Refused { .. }));
 
@@ -448,7 +450,6 @@ fn take_off(name: &str, pool: &str, config: &Path) -> Asked {
         pool: pool.to_owned(),
         code: "A1B2C3".to_owned(),
         config: config.to_path_buf(),
-        project: None,
     }
 }
 
@@ -461,8 +462,22 @@ fn a_profile_comes_off_a_pool_only_where_the_pool_keeps_it_and_the_command_is_th
     a_profile_on(&config, dir.path(), "work");
     a_profile_on(&config, dir.path(), "home");
     a_pool_on(&config);
-    crate::runners::add_pool_profile(&config, "team", "work", None).unwrap();
     let no_forget = |_: &str| -> Result<Option<String>, String> { panic!("nothing is forgotten") };
+
+    // Naming none, it keeps a project's default, and the line names no project.
+    let said = answer(
+        &config,
+        take_off("work", "team", &config),
+        no_forget,
+        no_keep,
+        no_approve,
+        no_take_off,
+    );
+    assert!(
+        matches!(&said, Said::Refused { why } if why.contains("names none")),
+        "{said:?}"
+    );
+    crate::runners::add_pool_profile(&config, "team", "work", None).unwrap();
 
     let other = dir.path().join("other");
     std::fs::create_dir_all(&other).unwrap();
@@ -486,7 +501,7 @@ fn a_profile_comes_off_a_pool_only_where_the_pool_keeps_it_and_the_command_is_th
         no_forget,
         no_keep,
         no_approve,
-        |name, pool, code, _| {
+        |name, pool, code| {
             asked_of
                 .borrow_mut()
                 .push((name.to_owned(), pool.to_owned(), code.to_owned()));
@@ -511,7 +526,7 @@ fn a_profile_comes_off_a_pool_only_where_the_pool_keeps_it_and_the_command_is_th
 fn a_profile_taken_off_by_the_command_goes_on_only_on_the_windows_yes() {
     let config = Path::new("/the/config");
     let asked = std::cell::Cell::new(None);
-    let yes = taken_off(config, None, "team", "work", "A1B2C3", |what| {
+    let yes = taken_off(config, "team", "work", "A1B2C3", |what| {
         asked.set(Some(what.clone()));
         Answered::Said(Said::Asked {
             note: Some("it keeps it".to_owned()),
@@ -530,7 +545,7 @@ fn a_profile_taken_off_by_the_command_goes_on_only_on_the_windows_yes() {
             "you said no",
         ),
     ] {
-        let said = taken_off(config, None, "team", "work", "A1B2C3", |_| answered).unwrap_err();
+        let said = taken_off(config, "team", "work", "A1B2C3", |_| answered).unwrap_err();
         assert!(said.contains(says), "{said}");
     }
 }
