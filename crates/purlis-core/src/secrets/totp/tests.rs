@@ -269,6 +269,9 @@ fn an_ordinary_password_is_no_seed() {
         // Words of unequal lengths whose letters would add up to a seed's.
         "Blue-Mountain-Sky2",
         "Mountain-Sky2-Rain",
+        "bLue-mOuntain-sKy2",
+        "mOuntain-sKy2-bLue",
+        "aB-cD3eF4gH5jK6mN",
         "Welcome-To-The-Jungle-2",
         // Capitalised words of one length with a digit among them.
         "Summer24 Password",
