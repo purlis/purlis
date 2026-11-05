@@ -791,6 +791,9 @@ export const ConsentPressedByThePointer: Story = {
       await mouse.click(allow);
     } finally {
       letGo();
+      // **This story's picture is taken after its `play`, and of the band at rest**: the engine's
+      // mouse is taken off the Allow it pressed, which would otherwise be drawn hovered.
+      await mouse.hover(document.body, { position: { x: 0, y: 0 } });
     }
     expect(allowed).toEqual(["forge"]);
     atRest();
