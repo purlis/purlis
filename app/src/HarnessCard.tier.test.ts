@@ -4,9 +4,10 @@
 import { describe, expect, it } from "vitest";
 import { drawnWith } from "./cascade.testkit";
 
-/** A pane's header with the harness chip as the button family draws it, in a split or alone. */
+/** A pane's foot with the harness chip as the button family draws it, in a split or alone
+ *  (#5202: harness · workspace is the foot's). */
 function harnessIn(pane: "alone" | "focused" | "unfocused"): Element {
-  const chip = `<div class="pane-head"><div class="pane-chips"><button id="harness" class="pane-harness" data-scope="button" data-part="root" data-variant="ghost" data-size="sm">Claude Code</button></div></div>`;
+  const chip = `<div class="pane-foot" data-scope="pane-foot" data-part="root"><div data-scope="pane-foot" data-part="start"><span class="pane-where"><button id="harness" class="pane-harness" data-scope="button" data-part="root" data-variant="ghost" data-size="sm">Claude Code</button></span></div></div>`;
   const frame = (focused: boolean) =>
     `<div class="pane-frame"${focused ? " data-focused" : ""}>${chip}</div>`;
   document.body.innerHTML =
@@ -17,7 +18,7 @@ function harnessIn(pane: "alone" | "focused" | "unfocused"): Element {
 }
 
 /**
- * **The harness's name keeps the header's tier** (#2914, #3129): muted on a pane alone and on the
+ * **The harness's name keeps the foot's tier** (#2914, #3129): muted on a pane alone and on the
  * pane of a split without the keyboard, primary on the one with it and under the pointer, over
  * the ghost variant's primary words.
  */

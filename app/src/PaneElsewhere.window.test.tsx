@@ -18,9 +18,9 @@ import type { LaidOut } from "./bindings";
 /**
  * **A pane showing another workspace's chat wears that workspace's badge** (#4982; #4583
  * rule 2), against the whole window. A drag may put a chat of another workspace in a pane; the
- * chat stays filed in its own, and its pane head names that workspace, in its colour, in the
- * head's "harness · workspace" part, so a narrow pane drops it with that part. The model's half
- * is `tabs.elsewhere.test.ts`.
+ * chat stays filed in its own, and its pane names that workspace, in its colour, in the
+ * "harness · workspace" part, on the pane foot since #5202. The foot drops nothing yet (#5206
+ * orders its drops, the workspace part last). The model's half is `tabs.elsewhere.test.ts`.
  */
 
 vi.mock("./SessionPane", () => ({
@@ -175,16 +175,23 @@ const headOf = (session: number) =>
     ?.closest(".pane-frame")
     ?.querySelector(".pane-head") as HTMLElement;
 
-const whereOf = (session: number) => headOf(session).querySelector(".pane-where");
+/** The foot of the pane showing chat `session`, where harness · workspace is since #5202. */
+const footOf = (session: number) =>
+  document
+    .querySelector(`[data-testid="pane"][data-session="${session}"]`)
+    ?.closest(".pane-frame")
+    ?.querySelector('[data-scope="pane-foot"][data-part="root"]') as HTMLElement;
+
+const whereOf = (session: number) => footOf(session).querySelector(".pane-where");
 const badgeOf = (session: number) =>
-  headOf(session).querySelector('.pane-where [data-scope="badge"]') as HTMLElement | null;
+  footOf(session).querySelector('.pane-where [data-scope="badge"]') as HTMLElement | null;
 
 describe("a pane showing another workspace's chat (#4982)", () => {
-  it("names that workspace on its head with a badge in its colour", async () => {
+  it("names that workspace on its foot with a badge in its colour", async () => {
     await twoPanes(7);
 
     await waitFor(() => expect(badgeOf(7)).not.toBeNull());
-    expect(whereOf(7)).toHaveTextContent(/^claude · (filed in )?beta$/);
+    expect(whereOf(7)).toHaveTextContent(/^claude\s*·\s*(filed in )?beta$/);
     // On its ground, which the badge's tokens inherit: a badge takes no look of its own.
     expect(badgeOf(7)?.parentElement).toHaveAttribute("data-colour", "teal");
     expect(badgeOf(7)?.parentElement?.getAttribute("style") ?? "").toMatch(/--accent-surface:/);
@@ -212,7 +219,7 @@ describe("a pane showing another workspace's chat (#4982)", () => {
     await twoPanes(7);
 
     await waitFor(() => expect(badgeOf(7)).not.toBeNull());
-    expect(whereOf(4)).toHaveTextContent(/^claude · alpha$/);
+    expect(whereOf(4)).toHaveTextContent(/^claude\s*·\s*alpha$/);
     expect(badgeOf(4)).toBeNull();
   });
 });
@@ -221,7 +228,7 @@ describe("a pane showing its tab's own workspace's chat (#4982)", () => {
   it("shows no badge", async () => {
     await twoPanes(5);
 
-    await waitFor(() => expect(whereOf(5)).toHaveTextContent(/^claude · alpha$/));
+    await waitFor(() => expect(whereOf(5)).toHaveTextContent(/^claude\s*·\s*alpha$/));
     expect(badgeOf(5)).toBeNull();
     expect(badgeOf(4)).toBeNull();
   });
@@ -235,16 +242,17 @@ describe("a narrow pane showing another workspace's chat (#4982)", () => {
     await waitFor(() => expect(badgeOf(7)).not.toBeNull());
   });
 
-  it("drops the badge with harness · workspace, first in the ruled order", async () => {
+  it("keeps the badge on the foot where the head has drawn its narrow form (#5202)", async () => {
     panesOf(500);
     await twoPanes(7);
 
-    // The head has drawn its narrow form: harness · workspace, badge and all, is gone, and the
-    // parts the ruled order drops after it are still there.
+    // The head has drawn its narrow form, and the badge was never on it: harness · workspace,
+    // badge and all, is the foot's, which drops nothing here.
     await waitFor(() => expect(headOf(7).querySelector(".pane-name")).not.toBeNull());
-    expect(whereOf(7)).toBeNull();
     expect(headOf(7)).not.toHaveTextContent("beta");
     expect(headOf(7).querySelector(".pane-state-mark")).not.toBeNull();
     expect(within(headOf(7)).getByRole("button", { name: "Split down" })).toBeInTheDocument();
+    await waitFor(() => expect(badgeOf(7)).not.toBeNull());
+    expect(whereOf(7)).toHaveTextContent(/^claude\s*·\s*(filed in )?beta$/);
   });
 });

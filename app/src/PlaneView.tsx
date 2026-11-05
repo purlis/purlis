@@ -11378,6 +11378,7 @@ export const PlaneView = memo(function PlaneView({
                                   offerFor={by}
                                   offers={found}
                                   heads={paneHeads}
+                                  shells={shells}
                                   onPaneDoes={onPaneDoes}
                                   name={frontTab.name}
                                   handedFrom={handedFrom}

@@ -43,9 +43,13 @@ import { openedSince } from "../reach.js";
 /** The centre region's box, each pane's box, and each pane's terminal grid. */
 type Measured = {
   centre: { top: number; bottom: number };
+  /** How tall a tab of the centre's strip is: what a pane foot is drawn at (#5202). */
+  tabHeight: number;
   panes: {
     top: number;
     bottom: number;
+    /** The pane foot under its terminal (#5202): none on a pane that draws no foot. */
+    foot: { top: number; bottom: number; height: number } | null;
     screenBottom: number;
     screenWidth: number;
     rows: number;
@@ -62,16 +66,24 @@ async function measure(): Promise<Measured> {
     const strip = centre?.querySelector("header.bar")?.getBoundingClientRect();
     return {
       centre: { top: strip?.bottom ?? box?.top ?? Number.NaN, bottom: box?.bottom ?? Number.NaN },
+      tabHeight:
+        centre?.querySelector('[data-scope="tabs"][data-part="tab"]')?.getBoundingClientRect()
+          .height ?? Number.NaN,
       panes: [...document.querySelectorAll('[data-testid="pane"]')].map((pane) => {
-        // The pane's frame: its band and its header are at its top, inside it (#3142), and the
-        // terminal is under them, down to the frame's bottom.
-        const own = (pane.closest(".pane-frame") ?? pane).getBoundingClientRect();
+        // The pane's frame: its band and its header are at its top, inside it (#3142), the
+        // terminal is under them, and its foot (#5202) under that, down to the frame's bottom.
+        const frame = pane.closest(".pane-frame");
+        const own = (frame ?? pane).getBoundingClientRect();
+        const foot = frame
+          ?.querySelector('[data-scope="pane-foot"][data-part="root"]')
+          ?.getBoundingClientRect();
         const screen = pane.querySelector(".xterm-screen")?.getBoundingClientRect();
         const rows = pane.querySelector(".xterm-rows")?.children.length ?? 0;
         const height = screen?.height ?? 0;
         return {
           top: own.top,
           bottom: own.bottom,
+          foot: foot ? { top: foot.top, bottom: foot.bottom, height: foot.height } : null,
           screenBottom: screen?.bottom ?? Number.NaN,
           screenWidth: screen?.width ?? Number.NaN,
           rows,
@@ -90,6 +102,10 @@ async function measure(): Promise<Measured> {
  * fractional layout's rounding and the pane's own 1 px border. The grid is whole rows, so it
  * may stop short of the bottom by less than one row and the xterm element's few pixels of
  * padding; any more than that is a terminal that was not fitted to the room it has.
+ *
+ * **The room it has ends at the pane foot** (#5202), so the same slack is measured from the
+ * foot's top, and what the foot may take is held as tightly: it sits at the frame's bottom, it is
+ * a tab's height and no taller, and the grid never runs under it, which would hide its last row.
  */
 function whatIsShort(now: Measured, many: number): string | null {
   if (now.panes.length !== many) return `${now.panes.length} panes on screen, not ${many}`;
@@ -99,11 +115,24 @@ function whatIsShort(now: Measured, many: number): string | null {
       return `pane ${at} runs ${pane.top}–${pane.bottom}; the centre runs ${centre.top}–${centre.bottom}`;
     }
     if (!(pane.rows > 0)) return `pane ${at} has no terminal grid`;
+    const { foot } = pane;
+    if (foot !== null) {
+      if (Math.abs(foot.bottom - pane.bottom) > 2) {
+        return `pane ${at}'s foot ends at ${foot.bottom}; its frame ends at ${pane.bottom}`;
+      }
+      if (!(Math.abs(foot.height - now.tabHeight) <= 1)) {
+        return `pane ${at}'s foot is ${foot.height} px tall; a tab is ${now.tabHeight} px`;
+      }
+      if (pane.screenBottom > foot.top + 1) {
+        return `pane ${at}'s terminal runs to ${pane.screenBottom}, under its foot at ${foot.top}`;
+      }
+    }
+    const room = foot?.top ?? centre.bottom;
     const slack = pane.rowHeight + 8;
-    if (centre.bottom - pane.screenBottom > slack) {
+    if (room - pane.screenBottom > slack) {
       return (
-        `pane ${at}'s terminal stops at ${pane.screenBottom} with ${pane.rows} rows; the centre ` +
-        `ends at ${centre.bottom}, more than a row (${pane.rowHeight.toFixed(1)} px) below it`
+        `pane ${at}'s terminal stops at ${pane.screenBottom} with ${pane.rows} rows; its room ` +
+        `ends at ${room}, more than a row (${pane.rowHeight.toFixed(1)} px) below it`
       );
     }
   }

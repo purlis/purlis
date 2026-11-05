@@ -43,9 +43,9 @@ export function HarnessSummary({ glance }: { glance: HarnessGlance }) {
 }
 
 /**
- * The harness in a chat's header, by its product's name, with its card one press away: a ghost
- * button of the family, small as the line's other chips are (#3129). Its accessible name is the
- * card's label; its tooltip is the card's lines, which a screen reader hears as the button's
+ * The harness on a chat's pane foot, by its product's name, with its card one press away: a ghost
+ * button of the family drawn inline, as the foot's words are (#3129, #5202). Its accessible name
+ * is the card's label; its tooltip is the card's lines, which a screen reader hears as the button's
  * description.
  */
 export function HarnessChip({
@@ -58,8 +58,8 @@ export function HarnessChip({
 }) {
   return (
     <Button
+      inline
       variant="ghost"
-      size="sm"
       className="pane-harness"
       tooltip={glanceSaid(glance)}
       aria-label={glance.label}

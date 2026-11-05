@@ -10,7 +10,7 @@ import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
  * **A pane's breadcrumb, while its tab shows a task** (#1486, V100-34): `steward 4 › talk ·
- * working`, in the pane's existing top line beside the gauge and the harness's name. It is why
+ * working`, in the pane's existing top line. It is why
  * a person never types into the wrong chat: the session the tab is, the task on screen, and
  * what that task is doing. **A pane never shows a task without it.**
  *

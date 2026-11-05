@@ -471,9 +471,11 @@ describe("a refused vault, on a pane whose chat has already asked that persona",
       ),
     ).toEqual(["grip", "pane-chips", "pane-actions"]);
     const frame = head?.closest(".pane-frame");
-    expect([...(frame?.children ?? [])].map((one) => one.className)).toEqual([
+    // The notices are never under the terminal: the pane foot there says only facts (#5202).
+    expect([...(frame?.children ?? [])].map((one) => one.classList[0])).toEqual([
       "pane-top",
       "pane-body",
+      "pane-foot",
     ]);
     expect(
       [...(frame?.firstElementChild?.children ?? [])].map(
