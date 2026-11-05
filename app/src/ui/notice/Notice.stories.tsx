@@ -210,7 +210,8 @@ export const NeedsADecision: Story = {
     ];
     await expect(boxes).toHaveLength(3);
     for (const box of boxes) {
-      await expect(box).toHaveTextContent(/Needs a decision:/);
+      // A pane's line says it to a reader with a colon, a Notices centre card in its head (#5217).
+      await expect(box).toHaveTextContent(/Needs a decision/);
     }
     // Its mark on the card and on the Inbox's line; the pane's band draws its own.
     await expect(boxes[0].querySelector('[data-part="mark"] svg')).not.toBeNull();
