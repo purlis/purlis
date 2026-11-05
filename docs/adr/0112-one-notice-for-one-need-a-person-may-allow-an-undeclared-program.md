@@ -37,6 +37,10 @@ file collected a line for every one-off key.
   **A Run grant carries the vault for its own scope.** Allow once and Allow for this chat write nothing
   lasting and leave the persona's vault access as it was; only Always allow also gives the persona the
   vault. Where a notice has no program Allow, the vault's line has its own, as today.
+  **Only a reviewed program gets more than once.** Allow for this chat and Always allow are offered
+  for a short reviewed list, kept in code, that starts with curl alone. Any other program that is not
+  refused gets Allow once on the exact command the person read, and a persona can still declare a tool
+  by hand.
 - **What the person reads is told apart from what the chat wrote.** The program's path and the
   hosts come from the app. The command is the chat's, shown as plain monospace, wrapped, with
   control characters made visible.
@@ -71,5 +75,8 @@ file collected a line for every one-off key.
 - **Always allow on this machine only**: a second place tools live, which teammates never see.
 - **Run grants on runners now**: a desktop click sending a value to a program under limits the notice
   cannot show.
+- **A longer refused list alone**: it cannot be complete. `find . -name '*.log'` allowed for a chat
+  would also allow `find . -exec sh -c …` with no further ask (found in #5265's security review).
+- **A cool-off after repeated Don't allows**: each notice is still the person's click. Left for later.
 - **Keeping the proposal and fixing its label**: still an approval nobody asked for, and still a
   committed line per one-off key.
