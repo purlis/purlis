@@ -2028,7 +2028,22 @@ fn a_commit_is_read_as_itself_whatever_refs_replace_says() {
     let dir = repo();
     let at = dir.path();
     let commit = |subject: &str| {
-        let made = crate::testgit::run(at, &["commit", "-q", "--allow-empty", "-m", subject]);
+        let made = crate::testgit::run(
+            at,
+            &[
+                "-c",
+                "user.name=A",
+                "-c",
+                "user.email=a@example.invalid",
+                "-c",
+                "commit.gpgSign=false",
+                "commit",
+                "-q",
+                "--allow-empty",
+                "-m",
+                subject,
+            ],
+        );
         assert!(made.ok(), "{subject}");
         crate::testgit::run(at, &["rev-parse", "HEAD"])
             .out
