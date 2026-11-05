@@ -98,13 +98,13 @@ describe("the pane's two lines: what the head and the foot of a chat's pane draw
     [
       "chat",
       900,
-      ["persona", "name", "sandbox", "mark", "markWord", "skills", "from", "workItem"],
+      ["persona", "name", "sandbox", "mark", "markWord", "skills", "studio", "from", "workItem"],
       ["harness", "workspace", "ctx", "cache"],
     ],
     [
       "chat",
       undefined,
-      ["persona", "name", "sandbox", "mark", "markWord", "skills", "from", "workItem"],
+      ["persona", "name", "sandbox", "mark", "markWord", "skills", "studio", "from", "workItem"],
       ["harness", "workspace", "ctx", "cache"],
     ],
     [
@@ -125,7 +125,7 @@ describe("the pane's two lines: what the head and the foot of a chat's pane draw
     [
       "shell",
       900,
-      ["persona", "name", "sandbox", "mark", "markWord", "skills", "from", "workItem"],
+      ["persona", "name", "sandbox", "mark", "markWord", "skills", "studio", "from", "workItem"],
       null,
     ],
     ["oneJob", 300, ["persona", "name"], null],
@@ -161,6 +161,7 @@ describe("the pane's two lines: what the head and the foot of a chat's pane draw
       "sandbox",
       "mark",
       "markWord",
+      "studio",
     ]);
     expect(paneLinesOf("chat", 900, { from: true }).head).toContain("from");
   });

@@ -408,7 +408,7 @@ export function PaneFrame({
               line a pane has, nor in a narrow pane. */}
               {line.has("skills") && <SkillsChip plane={plane} session={session} />}
               {/* What the Skill studio started it for, which opens the skill (#5185). */}
-              {!crumbs && !drops.has("where") && <StudioChatChip plane={plane} session={session} />}
+              {line.has("studio") && <StudioChatChip plane={plane} session={session} />}
               {line.has("from") && <span className="pane-from">{from}</span>}
               {line.has("workItem") && workItem && (
                 <span className="pane-work-item">{workItemSaid(workItem)}</span>

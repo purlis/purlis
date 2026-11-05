@@ -103,10 +103,20 @@ export type PaneKind = "chat" | "task" | "shell" | "oneJob";
  * **A chip of the head's line** (the **pane line**, `.pane-chips`), in its drawn order: who it
  * runs as, which chat it is (its name, or the path to the task it shows), its sandbox, its state
  * mark and the mark's word, then the details still on the head until #5204 moves them to the
- * foot: its skills, where it came from and its work item.
+ * foot: its skills, what the Skill studio started it for (#5185), where it came from and its work
+ * item. `studio` is drawn only for a chat the studio started: its chip reads that itself.
  */
 export type LinePart =
-  "persona" | "name" | "crumbs" | "sandbox" | "mark" | "markWord" | "skills" | "from" | "workItem";
+  | "persona"
+  | "name"
+  | "crumbs"
+  | "sandbox"
+  | "mark"
+  | "markWord"
+  | "skills"
+  | "studio"
+  | "from"
+  | "workItem";
 
 /**
  * **A part of the pane foot** (#5202, spec #5191, look A), in its drawn order: the harness and the
@@ -155,6 +165,7 @@ export function paneLinesOf(
   }
   if (!drops.has("where")) {
     if (facts.skills === true && kind !== "task") head.push("skills");
+    if (kind !== "task") head.push("studio");
     if (facts.from === true) head.push("from");
     if (facts.workItem === true) head.push("workItem");
   }
