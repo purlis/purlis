@@ -10380,3 +10380,22 @@ fn why_a_chat_runs_at_its_level_says_a_restart_applies_a_level_changed_since_it_
     };
     assert_eq!(chats.level_whys_on(&windows), Vec::new());
 }
+
+/// **A Discard pressed while a check runs wins when it ends** (#5312): that press isn't dropped,
+/// and whatever the check found, the runner goes with what it holds. Unpressed, what it found
+/// stands.
+#[cfg(unix)]
+#[test]
+fn a_discard_during_a_check_lets_the_runner_go_whatever_the_check_found() {
+    let found = vec!["the runner ran out of time".to_owned()];
+
+    assert_eq!(
+        ends_as(true, found.clone(), Going::OnProof),
+        (Vec::new(), false)
+    );
+    assert_eq!(ends_as(false, found.clone(), Going::OnProof), (found, true));
+    assert_eq!(
+        ends_as(false, Vec::new(), Going::Discarded),
+        (Vec::new(), false)
+    );
+}

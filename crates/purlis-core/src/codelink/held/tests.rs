@@ -1609,6 +1609,247 @@ fn more_files_it_may_change_than_the_bound_in_one_folder_are_looked_through_whol
     assert!(!says(&said, "/opt/app/2.conf"), "{said:?}");
 }
 
+/// How many times `said` says a check ran out of time.
+#[cfg(unix)]
+fn times_out_of_time_is_said(said: &[String]) -> usize {
+    said.iter()
+        .filter(|one| one.contains("ran out of time"))
+        .count()
+}
+
+/// **A check that runs out of time stops, says so and keeps the runner** (#5312): what it has not
+/// looked at is not named, and the sentence says why and what helps.
+#[cfg(unix)]
+#[test]
+fn a_check_out_of_time_stops_says_why_and_keeps_the_runner() {
+    let (_dir, _root, home, since) = a_runners_root();
+    std::fs::write(home.join("notes.txt"), "saved by the task\n").unwrap();
+
+    let said = outside_until(
+        &home,
+        None,
+        &[],
+        Some(since),
+        None,
+        std::time::Instant::now(),
+    );
+
+    assert_eq!(times_out_of_time_is_said(&said), 1, "{said:?}");
+    assert!(!says(&said, "notes.txt"), "it stopped: {said:?}");
+    assert!(
+        says(&said, "5 minutes")
+            && says(&said, "purlis can't tell")
+            && says(&said, "Fetch again")
+            && says(&said, "smaller image"),
+        "why, and what helps: {said:?}"
+    );
+    let work = tempfile::tempdir().unwrap();
+    assert!(
+        says(
+            &not_home(work.path(), PROJECT, &[], &said),
+            "ran out of time"
+        ),
+        "it keeps the runner"
+    );
+}
+
+/// **A check with time left says nothing of time** (#5312), and finds what it finds.
+#[cfg(unix)]
+#[test]
+fn a_check_within_its_limit_says_nothing_of_time() {
+    let (_dir, _root, home, since) = a_runners_root();
+    std::fs::write(home.join("notes.txt"), "saved by the task\n").unwrap();
+
+    let said = outside_until(
+        &home,
+        None,
+        &[],
+        Some(since),
+        None,
+        std::time::Instant::now() + LOOK_WITHIN,
+    );
+
+    assert_eq!(times_out_of_time_is_said(&said), 0, "{said:?}");
+    assert!(says(&said, "notes.txt"), "{said:?}");
+}
+
+/// **A first look that runs out of time is not kept** (#5312), so the next check looks again, and
+/// it is said once, however much of the check's time is left.
+#[cfg(unix)]
+#[test]
+fn a_first_look_out_of_time_is_not_kept_and_is_said_once() {
+    if the_runners_user() == 0 {
+        return;
+    }
+    let (_dir, root, home, _shut) = a_large_image(5);
+    let since = std::time::SystemTime::now();
+    let beyond = Beyond {
+        root: &root,
+        owner: the_runners_user().wrapping_add(1),
+    };
+
+    let found = writable_until(
+        beyond,
+        std::slice::from_ref(&home),
+        since,
+        std::time::Instant::now(),
+    );
+
+    assert!(!found.whole(), "{found:?}");
+    assert!(found.places().is_empty(), "{found:?}");
+    let far_off = std::time::Instant::now() + LOOK_WITHIN;
+    let said = outside_until(
+        &home,
+        None,
+        &[],
+        Some(since),
+        Some((beyond, &found)),
+        far_off,
+    );
+    assert_eq!(times_out_of_time_is_said(&said), 1, "{said:?}");
+    let spent = outside_until(
+        &home,
+        None,
+        &[],
+        Some(since),
+        Some((beyond, &found)),
+        std::time::Instant::now(),
+    );
+    assert_eq!(times_out_of_time_is_said(&spent), 1, "{spent:?}");
+}
+
+/// **A check out of time looks at neither a recorded folder's files nor a file recorded alone**
+/// (#5312): a folder recorded is what makes a check's cost follow the image (#5112).
+#[cfg(unix)]
+#[test]
+fn a_check_out_of_time_looks_at_no_recorded_file_or_folder() {
+    use std::os::unix::fs::PermissionsExt;
+    if the_runners_user() == 0 {
+        return;
+    }
+    let (_dir, root, home, _) = a_runners_root();
+    let files: Vec<String> = [
+        "opt/app/1.conf",
+        "etc/tool/shared.conf",
+        "etc/tool/shut.conf",
+    ]
+    .map(str::to_owned)
+    .to_vec();
+    let _shut = an_image_of_open_files(&root, &files, &["opt", "opt/app", "etc", "etc/tool"]);
+    std::fs::set_permissions(
+        root.join("etc/tool/shut.conf"),
+        std::fs::Permissions::from_mode(0o444),
+    )
+    .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let since = std::time::SystemTime::now();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let beyond = Beyond {
+        root: &root,
+        owner: the_runners_user().wrapping_add(1),
+    };
+    let found = writable(beyond, std::slice::from_ref(&home), since);
+    assert!(found.whole(), "{found:?}");
+    assert!(
+        found
+            .files
+            .iter()
+            .any(|file| file == "etc/tool/shared.conf")
+            && found.folders.iter().any(|folder| folder == "opt/app"),
+        "one recorded alone, one by its folder: {found:?}"
+    );
+    std::fs::write(root.join("opt/app/1.conf"), "as the task left it\n").unwrap();
+    std::fs::write(root.join("etc/tool/shared.conf"), "as the task left it\n").unwrap();
+    let looked = |until| {
+        let mut outside = Outside::new(MOST_FOLDERS, until);
+        outside.look_at_recorded(beyond, &found, std::slice::from_ref(&home), since);
+        outside.sentences()
+    };
+
+    let in_time = looked(std::time::Instant::now() + LOOK_WITHIN);
+    assert!(
+        says(&in_time, "/opt/app/1.conf") && says(&in_time, "/etc/tool/shared.conf"),
+        "{in_time:?}"
+    );
+
+    let late = looked(std::time::Instant::now());
+    assert_eq!(times_out_of_time_is_said(&late), 1, "{late:?}");
+    assert!(
+        !says(&late, "/opt/app/1.conf") && !says(&late, "/etc/tool/shared.conf"),
+        "{late:?}"
+    );
+}
+
+/// **A first look that finished stays whole though the check after it ran out** (#5312), so the
+/// next check has only the rest to do.
+#[cfg(unix)]
+#[test]
+fn a_first_look_that_finished_stays_whole_when_its_check_runs_out() {
+    if the_runners_user() == 0 {
+        return;
+    }
+    let (_dir, root, home, _shut) = a_large_image(5);
+    let since = std::time::SystemTime::now();
+    let beyond = Beyond {
+        root: &root,
+        owner: the_runners_user().wrapping_add(1),
+    };
+    let found = writable(beyond, std::slice::from_ref(&home), since);
+
+    let said = outside_until(
+        &home,
+        None,
+        &[],
+        Some(since),
+        Some((beyond, &found)),
+        std::time::Instant::now(),
+    );
+
+    assert_eq!(times_out_of_time_is_said(&said), 1, "{said:?}");
+    assert!(found.whole(), "{found:?}");
+}
+
+/// **The projects are looked through within the same limit** (#5312): a look stopped there says so
+/// even where no program has started, when nothing after it would.
+#[test]
+fn a_look_through_the_projects_out_of_time_is_said() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join(PROJECT)).unwrap();
+
+    let (held, unread) = repos_held_until(dir.path(), std::time::Instant::now());
+
+    assert!(held.is_empty(), "{held:?}");
+    assert!(says(&unread, "ran out of time"), "{unread:?}");
+}
+
+/// **That a check ran out of time comes first and once** (#5312): the window names only the first
+/// few, and both the look through the projects and the walks after it may say it.
+#[test]
+fn a_check_that_ran_out_says_so_first_and_once() {
+    let ran_out = ran_out_of_time();
+    let said = ran_out_first(vec![
+        "a folder could not be read".to_owned(),
+        ran_out.clone(),
+        "another could not".to_owned(),
+        ran_out.clone(),
+    ]);
+    assert_eq!(
+        said,
+        [
+            ran_out,
+            "a folder could not be read".to_owned(),
+            "another could not".to_owned()
+        ]
+    );
+    let none = vec!["a folder could not be read".to_owned()];
+    assert_eq!(ran_out_first(none.clone()), none);
+    assert_eq!(
+        marked(vec![ran_out_of_time()]),
+        [ran_out_of_time()],
+        "marking leaves it as it is, so it is still found after a walk marked it"
+    );
+}
+
 /// **A folder recorded holds its one bound with the files** (#5112): each is one more thing kept,
 /// so more of them than the bound are said and not whole, and what it keeps stays bounded.
 #[cfg(unix)]
