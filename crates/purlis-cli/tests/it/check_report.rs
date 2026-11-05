@@ -114,3 +114,149 @@ fn a_branch_no_folder_has_exits_1_naming_it() {
         said(&out)
     );
 }
+
+/// **Through a Check reporter** (#5410): the check's output, handed to the `check-probe` extension
+/// with the status the check exited with, its SARIF recorded as a file's is.
+#[cfg(unix)]
+mod through_a_check_reporter {
+    use super::*;
+    use purlis_core::extension;
+    use std::sync::OnceLock;
+
+    /// The probe's program, built beside the `purlis` binary, as `extension_commands.rs` builds
+    /// its own.
+    fn probe_program() -> PathBuf {
+        static BUILT: OnceLock<PathBuf> = OnceLock::new();
+        BUILT
+            .get_or_init(|| {
+                let beside = Path::new(support::PURLIS).with_file_name("check-probe");
+                if !beside.is_file() {
+                    let status = support::command(env!("CARGO"))
+                        .args(["build", "--quiet", "-p", "check-probe"])
+                        .status()
+                        .expect("cargo runs");
+                    assert!(status.success(), "the probe did not build: {status}");
+                }
+                beside
+            })
+            .clone()
+    }
+
+    /// The probe assembled under `root`, installed in its config home, and approved when
+    /// `approved`.
+    fn the_probe(root: &Path, approved: bool) {
+        let ext = root.join("ext");
+        let status = support::command(probe_program())
+            .arg("assemble")
+            .arg(&ext)
+            .status()
+            .expect("assemble runs");
+        assert!(status.success(), "assemble failed: {status}");
+        let found = extension::install(root, &extension::BuiltIn::none(), &ext).expect("installed");
+        if approved {
+            extension::approve(root, found.id(), &found.path, &found.fingerprint)
+                .expect("approved");
+        }
+    }
+
+    fn output(root: &Path, text: &str) -> PathBuf {
+        let file = root.join("check.log");
+        std::fs::write(&file, text).unwrap();
+        file
+    }
+
+    fn record(root: &Path) -> serde_json::Value {
+        let text =
+            std::fs::read_to_string(root.join("workspaces/alpha/pieces/checks/svc.json")).unwrap();
+        serde_json::from_str(&text).unwrap()
+    }
+
+    #[test]
+    fn an_approved_reporter_s_sarif_is_recorded_for_the_branch() {
+        let (_dir, root) = a_plane();
+        the_probe(&root, true);
+        let log = output(&root, "a.py:3: name 'x' is not defined\n");
+        let out = report(
+            &root,
+            &[
+                "main",
+                log.to_str().unwrap(),
+                "--reporter",
+                "check-probe",
+                "--status",
+                "1",
+            ],
+        );
+        assert_eq!(out.status.code(), Some(0), "{}", said(&out));
+        assert!(
+            said(&out).contains("2 results from probe-check recorded for main"),
+            "{}",
+            said(&out)
+        );
+        let record = record(&root);
+        assert_eq!(record["sets"][0]["tool"], "probe-check");
+        assert_eq!(
+            record["sets"][0]["diagnostics"][1]["message"],
+            "the check exited with status 1"
+        );
+    }
+
+    #[test]
+    fn a_reporter_not_approved_is_refused_and_nothing_is_recorded() {
+        let (_dir, root) = a_plane();
+        the_probe(&root, false);
+        let log = output(&root, "a.py:3: x\n");
+        let out = report(
+            &root,
+            &[
+                "main",
+                log.to_str().unwrap(),
+                "--reporter",
+                "check-probe",
+                "--status",
+                "1",
+            ],
+        );
+        assert_eq!(out.status.code(), Some(1), "{}", said(&out));
+        assert!(
+            said(&out).contains("you have not approved 'check-probe'"),
+            "{}",
+            said(&out)
+        );
+        assert!(!root.join("workspaces/alpha/pieces/checks/svc.json").exists());
+    }
+
+    #[test]
+    fn a_reporter_s_invalid_sarif_exits_1_naming_it_and_is_kept_as_its_fault() {
+        let (_dir, root) = a_plane();
+        the_probe(&root, true);
+        let log = output(&root, "check-probe: answer garbage\n");
+        let out = report(
+            &root,
+            &[
+                "main",
+                log.to_str().unwrap(),
+                "--reporter",
+                "check-probe",
+                "--status",
+                "1",
+            ],
+        );
+        assert_eq!(out.status.code(), Some(1), "{}", said(&out));
+        assert!(said(&out).contains("'check-probe'"), "{}", said(&out));
+        let record = record(&root);
+        assert_eq!(record["faults"][0]["extension"], "check-probe");
+    }
+
+    #[test]
+    fn a_reporter_needs_the_check_s_exit_status() {
+        let (_dir, root) = a_plane();
+        let log = output(&root, "a.py:3: x\n");
+        let out = report(
+            &root,
+            &["main", log.to_str().unwrap(), "--reporter", "check-probe"],
+        );
+        assert_eq!(out.status.code(), Some(1), "{}", said(&out));
+        assert!(said(&out).contains("--status <STATUS>"), "{}", said(&out));
+    }
+}
