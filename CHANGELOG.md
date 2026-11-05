@@ -25,7 +25,7 @@ own.
 **After updating:** if your personas had sub-agents, run `purlis doctor --fix persona-agents`
 in each project (see *Removed*).
 
-These are the highlights. All 2,438 changes are in
+These are the highlights. All 2,441 changes are in
 [Every change in 0.5.0](https://github.com/purlis/purlis/blob/v0.5.0/docs/changelog-0.5.0.md).
 
 ### Added
