@@ -244,6 +244,9 @@ pub fn parts(ask: &Ask, piece_note: Option<String>) -> Vec<String> {
 /// `/sandbox exclude` writes, so a model that recommends one sends the person to a refusal.
 /// It names the branch-folder commands too (#3798): a sandboxed chat cannot write a clone's git
 /// metadata, and one that never heard of `purlis worktree` reached for a second workspace.
+/// It names the person's level too (#5207): a chat that knew only Start without the sandbox told
+/// the person that was the only way out. The note is static, so it never says which reason holds
+/// this chat: the window does ([`crate::sandbox::level_why`]), and the chat asks the person for it.
 pub const SANDBOXED_NOTE: &str = "⬢ **This chat runs in purlis's sandbox.** When it blocks a \
      command (a host it may not reach, or a folder it may not write), the person sees a Notice \
      on this chat's tab and chooses **Allow for this chat**, **Always allow** (for every chat of \
@@ -251,7 +254,13 @@ pub const SANDBOXED_NOTE: &str = "⬢ **This chat runs in purlis's sandbox.** Wh
      blocked**. If they allow it, this chat restarts on the same conversation and is told to \
      retry, so say what was blocked and wait for them. Where purlis grants nothing, the person \
      alone may choose **Start without the sandbox** for this chat; never suggest it as something \
-     you can do. A blocked local socket (Docker's, a database's, an SSH agent's) or system \
+     you can do. **This chat's level is the person's alone**: they set it in **Settings › \
+     Project › Sandbox › Your level**, and you cannot lower it, so never suggest you can, never \
+     write it in a file for them to confirm, and never ask them to lower it. If \
+     they say they lowered it and this chat is still sandboxed, do not guess why: ask them to \
+     read the reason on this chat's sandbox mark or on its Notice. It may say that a restart \
+     applies the level, that a persona's row or a policy holds it, that a level waits for \
+     their Confirm, or that a chat that asked for this one is stricter. A blocked local socket (Docker's, a database's, an SSH agent's) or system \
      service (macOS's certificate check, which Go tools such as `gh` and `glab` use) may get a \
      Notice the person can answer: say which one was blocked, by its path or name, and that \
      the person decides. Claude Code's `/sandbox`, `/sandbox exclude` and `excludedCommands` do not \

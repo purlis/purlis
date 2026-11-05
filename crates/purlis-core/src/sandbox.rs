@@ -6845,8 +6845,8 @@ impl Lifted {
                 .to_owned(),
             By::YourLevel(_) => "No sandbox — your setting. This chat runs without the sandbox \
                               because your level for this project, on this machine, is no \
-                              sandbox (Settings › Sandbox › Your level). Every chat it covers \
-                              starts this way until you change it."
+                              sandbox (Settings › Project › Sandbox › Your level). Every chat \
+                              it covers starts this way until you change it."
                 .to_owned(),
             // The Windows backend is M46, #565.
             By::NoBackend(os) => format!(
@@ -7453,6 +7453,7 @@ pub mod hosted;
 pub mod hosts;
 pub mod internal;
 pub mod kubeconfig;
+pub mod level_why;
 pub mod local;
 pub mod localport;
 pub mod nat64;

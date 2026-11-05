@@ -29,6 +29,7 @@ import {
   type HeldBlock,
 } from "./sandboxBlocks";
 import { SandboxChoose, chooseSaid, mayChoose } from "./SandboxChoose";
+import { useLevelWhys } from "./SandboxChanged";
 import { SETTLE_MS } from "./TaskBlocksNotice";
 import { moreRefusedSaid, useRefusedMore } from "./refusedMore";
 import { RestartEndsLine } from "./RestartEnds";
@@ -105,6 +106,10 @@ import { Card } from "./ui/card/Card";
  * output of a command that ran earlier, by a tool that ran nothing. It says so, asks nothing,
  * and is put away with Dismiss; **Show what you can do** takes it up, and it is then the
  * block's own Notice, with every way out it has.
+ *
+ * **A block of the chat's own work says why it runs at its level** (#5207, `useLevelWhys`): the
+ * same words as its sandbox mark, so a person who turned their level down sees what holds this
+ * chat, and where to change it, on the Notice they are reading.
  */
 export function SandboxBlockNotice({
   block,
@@ -147,8 +152,10 @@ export function SandboxBlockNotice({
   const [takenUp, setTakenUp] = useState(false);
   const [taking, setTaking] = useState(false);
   const cause = `sandbox-blocked:${block.session}:${block.operation}:${block.kind}:${block.ours ? "ours" : "chat"}`;
-  const behind =
+  const levelWhy = useLevelWhys(block.plane).get(block.session);
+  const moreBehind =
     more > 0 ? ` ${more} more ${more === 1 ? "block" : "blocks"} behind this one.` : "";
+  const behind = `${levelWhy === undefined ? "" : ` ${levelWhy}`}${moreBehind}`;
 
   if (!block.ours && typeof block.quiet === "string" && !takenUp) {
     /** What the core holds for it, which taking it up makes an ask: nothing for a block no
@@ -196,7 +203,7 @@ export function SandboxBlockNotice({
       <>
         This chat read a sandbox refusal back: {block.said}. {block.quiet}
         {said !== undefined && ` ${said}`}
-        {behind}
+        {moreBehind}
       </>
     );
     // Taking one up makes it ask, which is the window's alone to do; a block nothing holds
@@ -310,7 +317,7 @@ export function SandboxBlockNotice({
       The sandbox blocked {block.said}. It was purlis&apos;s own operation, so it is a purlis bug.
       {filed !== undefined && ` Reported: ${filed}.`}
       {said !== undefined && ` ${said}`}
-      {behind}
+      {moreBehind}
     </Notice>
   );
 }

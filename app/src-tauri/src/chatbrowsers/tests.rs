@@ -69,6 +69,9 @@ struct Hosted {
     fills: Mutex<Vec<(String, purlis_session_protocol::browsing::FillSecret)>>,
     /// Where set, the browser refuses each fill so, as an engine judging the field does (#5122).
     fill_refused: Mutex<Option<String>>,
+    /// What a read of whether the page asks to sign in answers (#5121): `None` is a host too old
+    /// to say, which refuses it.
+    asks_to_sign_in: Mutex<Option<bool>>,
 }
 
 impl Hosted {
@@ -137,6 +140,7 @@ impl Driver for Hosted {
             return Err(Refused::Gone);
         }
         let pages = matches!(act, Act::Pages);
+        let signs_in = matches!(act, Act::AsksToSignIn);
         self.acts
             .lock()
             .unwrap()
@@ -152,7 +156,12 @@ impl Driver for Hosted {
         )
         .then(|| self.field.lock().unwrap().clone())
         .flatten();
+        let asks_to_sign_in = signs_in.then(|| *self.asks_to_sign_in.lock().unwrap());
+        if asks_to_sign_in == Some(None) {
+            return Err(Refused::Said("this host is too old to say".into()));
+        }
         Ok(Browsed {
+            asks_to_sign_in: asks_to_sign_in.flatten(),
             field,
             settled: true,
             asked: self.asks.lock().unwrap().clone(),
@@ -348,7 +357,7 @@ fn logins(name: &str) -> super::ReadLogin {
         },
         opens: name == "kept-login",
         identity: IDENTITY.into(),
-        fresh: false,
+        granted: false,
     })
 }
 
@@ -3294,6 +3303,7 @@ fn a_runners_refusal_for_its_engines_sandbox_names_that_runner_to_the_chat_and_o
 }
 
 mod fills;
+mod login_preset;
 mod taken_back;
 
 // ---- Following a page to its login form (#4995, #5015) ----

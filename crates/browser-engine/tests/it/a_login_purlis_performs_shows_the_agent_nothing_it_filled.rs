@@ -15,7 +15,7 @@
 
 use crate::common;
 
-use common::drive::{call, find, open, red_pixels, ref_on, screenshot, snapshot};
+use common::drive::{call, find, open, red_pixels, ref_on, screenshot, sees, snapshot};
 use common::site::started;
 use purlis_browser_engine::WebAddress;
 use purlis_browser_engine::drive::{Call, Content, Driver, Login, Refusal};
@@ -179,6 +179,170 @@ fn a_login_on_a_page_that_redefines_finding_and_focusing_a_field_goes_through() 
     let shown = snapshot(&browser);
     assert!(shown.contains("Account"), "the account page shows");
     assert!(!holds_a_value(&shown), "the account page shows no value");
+}
+
+/// #5121, the person's ruling: a login a chat chose starts clean on its own site, so what an earlier
+/// session there showed isn't what it fills.
+#[test]
+fn a_login_a_chat_chose_fills_the_form_of_a_site_with_no_earlier_session() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    open(&browser, "clean-earlier-session.html");
+    assert!(
+        sees(&browser, "An earlier session"),
+        "{}",
+        snapshot(&browser)
+    );
+    let login = Login {
+        suggested: true,
+        ..login_on("clean-site.html", "http://fixture.test")
+    };
+    let ended = browser.log_in(&login, binds()).expect("the login runs");
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    assert!(sees(&browser, "Account"), "{}", snapshot(&browser));
+    assert!(!snapshot(&browser).contains("Kept for the earlier session"));
+}
+
+/// #5121: a page left open on the site goes blank with the clearing, and one of another stays.
+#[test]
+fn a_login_a_chat_chose_leaves_no_page_of_its_site_open_and_others_where_they_are() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    open(&browser, "clean-earlier-session.html");
+    let login = Login {
+        suggested: true,
+        ..login_on("clean-site.html", "http://fixture.test")
+    };
+    let ended = browser.log_in(&login, binds()).expect("the login runs");
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let pages = call(&browser, Call::Pages);
+    let Content::Pages(pages) = pages.content else {
+        panic!("its pages");
+    };
+    assert!(
+        !pages.iter().any(|page| page.title == "An earlier session"),
+        "the page of its site went blank"
+    );
+}
+
+/// #5121, the person's ruling: a declared login stays as it is, which is what the test above is
+/// measured against: this page shows its settings field to the earlier session.
+#[test]
+fn a_declared_login_leaves_an_earlier_session_where_it_is() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    open(&browser, "clean-earlier-session.html");
+    assert!(
+        sees(&browser, "An earlier session"),
+        "{}",
+        snapshot(&browser)
+    );
+    let login = login_on("clean-site.html", "http://fixture.test");
+    let ended = browser.log_in(&login, binds()).expect("the login runs");
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    assert!(
+        sees(&browser, "Kept for the earlier session"),
+        "{}",
+        snapshot(&browser)
+    );
+}
+
+/// #5121, SF-7: a value is kept out as a form spells it, as any fill's is, where the page it sent
+/// the form to writes what its address carries into the page.
+#[test]
+fn a_login_value_a_page_echoes_as_a_form_sent_it_is_kept_out() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    let login = Login {
+        password: "fixture+word/7".to_owned().into(),
+        ..login_on("login-echoes.html", "http://fixture.test")
+    };
+    let ended = browser.log_in(&login, binds()).expect("the login runs");
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    assert!(sees(&browser, "Sent"), "the page it sent the form to");
+    assert!(
+        !snapshot(&browser).contains("fixture%2Bword"),
+        "the page shows the value as a form spelled it"
+    );
+}
+
+/// #5121, SF-7: a login's field gives nothing to a copy, a cut or a drag, whoever makes it. Here a
+/// page of one document keeps its user-name field once the password field has gone.
+#[test]
+fn a_filled_login_field_gives_nothing_to_a_copy_a_cut_or_a_drag() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    // Before a fill, the page's own copy goes: so a stop below is the guard's.
+    open(&browser, "login-one-page.html");
+    let take = ref_on(
+        &find(&browser, "Try to take the name"),
+        "Try to take the name",
+    );
+    call(&browser, Call::Click { target: take });
+    let went = "Tried: copy went, cut went, dragstart went, trusted copy went";
+    assert!(sees(&browser, went), "{}", snapshot(&browser));
+
+    let ended = browser
+        .log_in(
+            &login_on("login-one-page.html", "http://fixture.test"),
+            binds(),
+        )
+        .expect("the login runs");
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let take = ref_on(
+        &find(&browser, "Try to take the name"),
+        "Try to take the name",
+    );
+    call(&browser, Call::Click { target: take });
+    let tried = "Tried: copy stopped, cut stopped, dragstart stopped, trusted copy stopped";
+    assert!(sees(&browser, tried), "the page's own copy went");
+}
+
+/// #5121, SF-5: a box named for the user isn't a field a login goes into, whichever comes first.
+#[test]
+fn a_login_fills_a_one_line_field_and_never_a_box_named_for_the_user() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    let ended = browser
+        .log_in(
+            &login_on("login-one-page.html", "http://fixture.test"),
+            binds(),
+        )
+        .expect("the login runs");
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    assert!(
+        sees(&browser, "Signed in as 14 characters"),
+        "the field took it"
+    );
+}
+
+/// #5121: whether a page asks to sign in is read with nothing typed, and the page stays put.
+#[test]
+fn a_page_is_read_for_whether_it_asks_to_sign_in() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    open(&browser, "frames.html");
+    let asked = call(&browser, Call::AsksToSignIn);
+    assert_eq!(asked.content, Content::AsksToSignIn(false));
+    open(&browser, "login.html");
+    let asked = call(&browser, Call::AsksToSignIn);
+    assert_eq!(asked.content, Content::AsksToSignIn(true));
+    assert!(sees(&browser, "Sign in"), "the page stays where it was");
+    // A form that asks for the name first, with nothing saying so but its field's name.
+    open(&browser, "login-name-first.html");
+    let asked = call(&browser, Call::AsksToSignIn);
+    assert_eq!(asked.content, Content::AsksToSignIn(true));
+    // And a page with a search box doesn't ask.
+    open(&browser, "search-box.html");
+    let asked = call(&browser, Call::AsksToSignIn);
+    assert_eq!(asked.content, Content::AsksToSignIn(false));
 }
 
 /// A holder that binds, and is told nothing.

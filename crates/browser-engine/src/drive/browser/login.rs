@@ -40,8 +40,25 @@
 //! and fails; one the person cut by taking the browser over has them cleared as they hand it
 //! back. Either way the browser is handed back to the agent with a new lease, so every
 //! reference dealt before is void. A password field that went is all purlis can tell: it says
-//! so, and never that the person is signed in, since a page may ask for a second step. No
+//! so, and never that the person is signed in, since a page may ask for a second step. Only a page
+//! that asks for nothing, in a browser already held to this login, is said to be logged in already. No
 //! sentence it answers carries a value.
+//!
+//! **A login a chat chose starts clean on its own site** (#5121, the person's ruling of 2026-11-05):
+//! once the browser is held to the login, and before anything is filled, every page showing those
+//! sites goes blank, the cookies they would be sent, a parent domain's too, and their service workers
+//! are gone, and the page is loaded again. Where that can't be done, nothing is filled. Other sites are left as they are.
+//!
+//! **A login is a preset of secret fill** (#5121, the person's ruling SF-7 on #5096): a fill of the
+//! user name, a fill of the password and a press of submit, under the same rules as any fill. Each
+//! value is kept out as an address or a form would spell it too. A user name goes only into a
+//! one-line field, and one that doesn't take what's typed ends the browser. From the moment a value may be in a page, the agent copies, cuts and drags
+//! nothing in this browser, for its life, and each filled field gives nothing to a copy, a cut or a
+//! drag, whoever makes it ([`GUARD_FIELD`]). Only the page purlis made for the login is filled, never
+//! one another tab opens meanwhile. The value still goes in by typing where the field has
+//! the focus, with the checks above, since a login's page listens for typing: a page that changes
+//! as it goes in ends the browser, which is stricter than a fill's refusal, and a login's hold is
+//! stricter too: the browser stays held to its sites for its life, not while the page lives.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -52,8 +69,9 @@ use super::super::kept::Kept;
 use super::super::keys::key_events;
 use super::super::tree::NodeKey;
 use super::Browser;
+use super::fill::{GUARD_FIELD, spellings};
 use super::takeover::Carrying;
-use crate::drive::{Answer, Content, Driver, Hold, Login, Refusal, lock};
+use crate::drive::{Answer, Content, Driver, Hold, Login, Refusal, Why, lock};
 
 /// How long a login waits for its form to show, and then for the password field to go, unless
 /// the browser's limits say otherwise ([`crate::drive::Limits::login_within`]).
@@ -78,9 +96,27 @@ pub(crate) const SAYS_IT_IS_A_NAME: &str = r#"(() => {
   return null;
 })()"#;
 
-/// The script that finds the page's first shown user-name field: a constant.
+/// The script that finds a shown field a page asks for a user name in, for whether it asks to sign
+/// in (#5121): [`NAME_FIELD`]'s, without any text field at all, which a search box would be.
+pub(crate) const A_NAME_IS_ASKED: &str = r#"(() => {
+  const oneLine = ['text', 'email', 'tel', 'url', 'number'];
+  const shown = (e) => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden'
+    && oneLine.includes(e.type);
+  const named = ['input[autocomplete~="username"]', 'input[autocomplete~="email"]',
+    'input[type="email"]', 'input[name*="user" i]', 'input[name*="login" i]',
+    'input[name*="email" i]', 'input[id*="user" i]', 'input[id*="email" i]'];
+  for (const one of named) for (const e of document.querySelectorAll(one)) if (shown(e)) return e;
+  return null;
+})()"#;
+
+/// The script that finds the page's first shown user-name field: a constant. Only a one-line field
+/// counts (SF-5, #5121): a box named for the user is not one. One that's read-only for now counts,
+/// as a page may keep it so until it has the focus, and a field that doesn't take what's typed
+/// ends the browser ([`Browser::holds_as_typed`]).
 pub(crate) const NAME_FIELD: &str = r#"(() => {
-  const shown = (e) => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden';
+  const oneLine = ['text', 'email', 'tel', 'url', 'number'];
+  const shown = (e) => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden'
+    && oneLine.includes(e.type);
   const named = ['input[autocomplete~="username"]', 'input[autocomplete~="email"]',
     'input[type="email"]', 'input[name*="user" i]', 'input[name*="login" i]',
     'input[name*="email" i]', 'input[id*="user" i]', 'input[id*="email" i]', 'input[type="text"]'];
@@ -227,11 +263,12 @@ impl Browser {
         let origin = login.origin.as_str();
         // What it fills is kept out before anything else, for the browser's life.
         let mut held = Kept::default();
-        let values: Vec<&str> = login
+        let values: Vec<zeroize::Zeroizing<String>> = login
             .user
             .iter()
             .map(|user| user.as_str())
             .chain(std::iter::once(login.password.as_str()))
+            .flat_map(spellings)
             .collect();
         held.run(&values);
         lock(&self.inner.state).keep_out_everywhere(&held);
@@ -240,7 +277,7 @@ impl Browser {
                 "purlis could not let this browser reach {origin} ({why}), so nothing was filled"
             ))
         })?;
-        let target = self.go_to(login)?;
+        let target = self.own_page_at(&login.address)?;
         let within = self.inner.limits.login_within;
         let deadline = Instant::now() + within;
         // Whether the page shows its form: unknown (`None`) while it cannot be read.
@@ -257,7 +294,8 @@ impl Browser {
                 name => password.and(name),
             })
         };
-        // Opened from kept logins, a page that asks for nothing is signed in already: twice
+        // Opened from kept logins, or holding this login already (#5121), a page that asks for
+        // nothing is signed in already: twice
         // read, so a page between documents is not taken for one (#2021), and never a page
         // that cannot be read. One whose form is on another origin (#5014) must stay on its own
         // page's origin for a fifth of the wait, as a page may send the browser to its form by
@@ -271,10 +309,9 @@ impl Browser {
             let mut asks_nothing = true;
             loop {
                 self.pause(LOOK_AGAIN)?;
-                let on_its_page = login
-                    .back_to
-                    .as_deref()
-                    .is_none_or(|back| self.on_origin(&target, back));
+                // A page that failed to load, or went elsewhere, says nothing of a session.
+                let on_its_page =
+                    self.on_origin(&target, login.back_to.as_deref().unwrap_or(origin));
                 if !on_its_page || shows_form(self)? != Some(false) {
                     asks_nothing = false;
                     break;
@@ -290,8 +327,7 @@ impl Browser {
                     .unwrap_or_else(|| target.clone());
                 let mut answer = self.answer_now(&shown, Content::Nothing);
                 answer.note = Some(format!(
-                    "{origin} asks for no password: this browser opened from its kept logins, \
-                     and purlis filled nothing"
+                    "already logged in: {origin} asks for no password, so purlis filled nothing"
                 ));
                 return Ok(answer);
             }
@@ -328,6 +364,49 @@ impl Browser {
                 "purlis could not hold this browser to {origin} ({why}), so nothing was filled"
             ))
         })?;
+        // From the moment a value may be in a page, the agent copies, cuts and drags nothing in
+        // this browser (#5121), as after any fill.
+        self.inner
+            .copy_withheld
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        // A login a chat chose starts clean on its own site (#5121), held already, and before
+        // anything watches this page leave, as it's loaded again.
+        if login.suggested {
+            // No document of those sites is left to put back what goes.
+            self.blank_pages_of(&target, login).map_err(|why| {
+                not_logged_in(format!(
+                    "purlis could not clear {origin} before the login ({why}), so nothing was \
+                     filled"
+                ))
+            })?;
+            self.clear_sites(&target, login).map_err(|why| {
+                not_logged_in(format!(
+                    "purlis could not clear {origin} before the login ({why}), so nothing was \
+                     filled"
+                ))
+            })?;
+            let before = self.main_document(&target);
+            let session = self.page_session(&target)?;
+            {
+                let _addressing = self.addressing(&target, Why::Addressed);
+                self.acting_on(&target, || self.navigate(&session, &login.address))?;
+            }
+            lock(&self.inner.state).current = Some(target.clone());
+            self.wait_until(within, 1, || {
+                Ok(self.main_document(&target) != before && shows_form(self)? == Some(true))
+            })
+            .map_err(|why| {
+                or_said(
+                    why,
+                    format!(
+                        "no login form appeared on {origin} within {} seconds of clearing it, so \
+                         nothing was filled: a login page that needs another site can't load it \
+                         once the browser is held to the login",
+                        within.as_secs()
+                    ),
+                )
+            })?;
+        }
         // Its holder is told once this page leaves the form's origin (#4995): back on the
         // login's page's, or anywhere else.
         if login.back_to.is_some() {
@@ -355,6 +434,96 @@ impl Browser {
             }
         }
         done
+    }
+
+    /// **Sends every page showing a document of the login's sites to a blank one** (module docs),
+    /// `target` too, and waits until none shows one: a page there could put back what's cleared.
+    /// Pages of other sites are left as they are.
+    fn blank_pages_of(&self, target: &str, login: &Login) -> Result<(), String> {
+        let on_its_sites = |this: &Self, page: &str| {
+            this.document_origin(page).is_some_and(|here| {
+                here == login.origin || login.back_to.as_deref() == Some(here.as_str())
+            })
+        };
+        let pages: Vec<String> = self
+            .targets()
+            .into_iter()
+            .filter(|page| page == target || on_its_sites(self, page))
+            .collect();
+        for page in &pages {
+            let session = self.page_session(page).map_err(|why| why.to_string())?;
+            let _addressing = self.addressing(page, Why::Addressed);
+            self.devtools()
+                .call(
+                    "Page.navigate",
+                    json!({ "url": "about:blank" }),
+                    Some(session.as_str()),
+                )
+                .map_err(|_| "a page of its would not leave".to_owned())?;
+        }
+        self.wait_until(self.inner.limits.login_within, 1, || {
+            Ok(!pages.iter().any(|page| on_its_sites(self, page)))
+        })
+        .map_err(|_| "a page of its would not leave".to_owned())
+    }
+
+    /// **Clears what the login's sites hold** (module docs): the service workers of its origin and
+    /// of its page's where that's another's, and every cookie either would be sent. Read again
+    /// after: one that's still there is a failure.
+    fn clear_sites(&self, target: &str, login: &Login) -> Result<(), String> {
+        let session = self.page_session(target).map_err(|why| why.to_string())?;
+        let on = Some(session.as_str());
+        let origins: Vec<&str> = std::iter::once(login.origin.as_str())
+            .chain(login.back_to.as_deref())
+            .collect();
+        for origin in &origins {
+            self.devtools()
+                .call(
+                    "Storage.clearDataForOrigin",
+                    json!({ "origin": origin, "storageTypes": "service_workers" }),
+                    on,
+                )
+                .map_err(|_| format!("its service workers on {origin} did not go"))?;
+        }
+        let hosts: Vec<&str> = origins.iter().filter_map(|one| host_of(one)).collect();
+        if hosts.len() != origins.len() {
+            return Err("its address names no host".to_owned());
+        }
+        let cookies = || -> Result<Vec<Value>, String> {
+            let read = self
+                .devtools()
+                .call("Storage.getCookies", json!({}), None)
+                .map_err(|_| "its cookies could not be read".to_owned())?;
+            let all = read
+                .get("cookies")
+                .and_then(Value::as_array)
+                .ok_or_else(|| "its cookies could not be read".to_owned())?;
+            Ok(all
+                .iter()
+                .filter(|cookie| {
+                    let domain = cookie.get("domain").and_then(Value::as_str);
+                    domain.is_some_and(|domain| hosts.iter().any(|host| reaches(domain, host)))
+                })
+                .cloned()
+                .collect())
+        };
+        for cookie in cookies()? {
+            let mut named = json!({
+                "name": cookie.get("name"),
+                "domain": cookie.get("domain"),
+                "path": cookie.get("path"),
+            });
+            if let Some(key) = cookie.get("partitionKey") {
+                named["partitionKey"] = key.clone();
+            }
+            self.devtools()
+                .call("Network.deleteCookies", named, on)
+                .map_err(|_| "a cookie of its did not go".to_owned())?;
+        }
+        if !cookies()?.is_empty() {
+            return Err("a cookie of its did not go".to_owned());
+        }
+        Ok(())
     }
 
     /// Fills the user name where the page asks for one and the password, submits, and waits
@@ -453,11 +622,7 @@ impl Browser {
     /// or sent: this is how purlis learns where a login's password would go, before anyone is
     /// asked about it. No form within [`crate::drive::Limits::login_within`] is a refusal.
     pub(crate) fn find_login_form(&self, address: &crate::WebAddress) -> Result<Answer, Refusal> {
-        self.open(address)?;
-        let target = lock(&self.inner.state)
-            .current
-            .clone()
-            .ok_or(Refusal::NoPage)?;
+        let target = self.own_page_at(address)?;
         let within = self.inner.limits.login_within;
         let began = Instant::now();
         let deadline = began + within;
@@ -494,14 +659,26 @@ impl Browser {
         }
     }
 
-    /// Opens a page of purlis's own at the login's address, which no other page opened, and
-    /// answers its target: it becomes the browser's current page.
-    fn go_to(&self, login: &Login) -> Result<String, Refusal> {
-        self.open(&login.address)?;
-        lock(&self.inner.state)
-            .current
-            .clone()
-            .ok_or(Refusal::NoPage)
+    /// Opens a page of purlis's own at `address`, which no other page opened, and answers its
+    /// target: it becomes the browser's current page. The page it made, by what the engine said
+    /// it made, never the last page to appear: another tab may open one as this one opens, and
+    /// that one's opener is a page nobody asked about (#5121).
+    fn own_page_at(&self, address: &crate::WebAddress) -> Result<String, Refusal> {
+        let (target, _) = self.open_own(address)?;
+        lock(&self.inner.state).current = Some(target.clone());
+        Ok(target)
+    }
+
+    /// **Whether the page the browser shows asks to sign in now** (#5121): its own document shows
+    /// a password field, or a field for a user name. A page that can't be read is taken to ask, so
+    /// nobody is told they're logged in on the strength of a page nobody read. Purlis's own read,
+    /// so it's made on a page of the site the agent is kept off too (#5152): the host cuts that
+    /// page's address and title from the answer, as for any act.
+    pub(super) fn asks_to_sign_in(&self) -> Result<Answer, Refusal> {
+        let target = self.target(None)?;
+        let asks = self.shows(&target, PASSWORD_FIELD)? != Some(false)
+            || self.shows(&target, A_NAME_IS_ASKED)? != Some(false);
+        Ok(self.answer_now(&target, Content::AsksToSignIn(asks)))
     }
 
     /// Whether `target`'s own document shows a password field now (#5152): a page of the site
@@ -625,6 +802,24 @@ impl Browser {
             )
         })?
         .map_err(|_| could_not())?;
+        // The field gives nothing to a copy, a cut or a drag from before the value is in it: where
+        // that can't be made so, the value doesn't go in.
+        let guarded = self
+            .gated(|| {
+                self.devtools().call(
+                    "Runtime.callFunctionOn",
+                    json!({
+                        "objectId": field.object,
+                        "functionDeclaration": GUARD_FIELD,
+                        "arguments": [{ "value": value }],
+                    }),
+                    on,
+                )
+            })?
+            .map_err(|_| could_not())?;
+        if guarded.get("exceptionDetails").is_some() {
+            return Err(could_not());
+        }
         if !self.still_filling(target, origin, document, field, on) {
             return Err(self.ended_for_a_changed_page(origin));
         }
@@ -811,6 +1006,27 @@ impl Browser {
                 }
             });
         }
+    }
+}
+
+/// The host of `origin` (`scheme://host[:port]`), as a cookie's domain spells it.
+pub(super) fn host_of(origin: &str) -> Option<&str> {
+    let (_, rest) = origin.split_once("://")?;
+    let host = match rest.rsplit_once(':') {
+        Some((host, port)) if port.bytes().all(|byte| byte.is_ascii_digit()) => host,
+        _ => rest,
+    };
+    (!host.is_empty()).then_some(host)
+}
+
+/// Whether a cookie of `domain` is sent to `host`: `.parent.example` to it and every host under
+/// it, and a bare host to itself alone. Never a host beside it, or one under `host`.
+pub(super) fn reaches(domain: &str, host: &str) -> bool {
+    let domain = domain.to_ascii_lowercase();
+    let host = host.to_ascii_lowercase();
+    match domain.strip_prefix('.') {
+        Some(parent) => host == parent || host.ends_with(&format!(".{parent}")),
+        None => host == domain,
     }
 }
 

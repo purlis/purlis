@@ -746,6 +746,7 @@ export const commands = {
 	/**  The chats, by session, lowest first. */
 	chats: OnOlderSandbox[],
 } | null, string>(__TAURI_INVOKE("chats_on_older_sandbox", { plane })),
+	chatsLevelWhy: __WINDOW_ONLY_RESULT,
 	restartChatWithoutSandbox: __WINDOW_ONLY_RESULT,
 	moveChat: __WINDOW_ONLY_RESULT,
 	moveChatNow: __WINDOW_ONLY_RESULT,
@@ -6913,6 +6914,15 @@ export type LevelWaiting = {
 	persona: string | null,
 	/**  What the file says: `on`, `floor` or `off`. */
 	level: string,
+};
+
+/**
+ *  **Why one open chat runs at its level** (#5207), in the core's words
+ *  ([`purlis_core::sandbox::level_why`]): what its sandbox mark and its block's Notice say.
+ */
+export type LevelWhy = {
+	session: number,
+	why: string,
 };
 
 /**
