@@ -310,3 +310,13 @@ fn a_string_too_much_to_read_is_said_as_blanked_whole() {
     let plain = "x".repeat(2_000_000);
     assert_eq!(scrub.text(&plain), plain);
 }
+
+#[test]
+fn a_value_kept_in_two_cases_is_found_in_the_hex_and_base64_of_each() {
+    let scrub = scrub_of(&["hunter2abc", "Hunter2ABC"]);
+    let hex: String = "Hunter2ABC"
+        .bytes()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    assert_eq!(scrub.text(&format!("a {hex} b")), "a (blanked) b");
+}

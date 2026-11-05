@@ -1062,3 +1062,25 @@ fn a_window_takes_on_what_its_opener_keeps_and_what_a_page_kept_outlives_it() {
     }]);
     assert_eq!(named[0].name, "(blanked).txt");
 }
+
+#[test]
+fn a_page_kept_off_is_said_by_its_origin_alone_though_its_address_holds_a_value_kept_out() {
+    let (browser, _engine) = browser();
+    let _ = snapshot(&browser, 1);
+    let mut held = crate::drive::kept::Kept::default();
+    held.run(&["fixture"]);
+    super::super::super::lock(&browser.inner.state).keep_out_everywhere(&held);
+    browser.keep_off(Arc::new(|address: &str| {
+        address
+            .starts_with("http://fixture.test")
+            .then(|| "fixture.test:80".to_owned())
+    }));
+
+    let answer = browser.call(&id(2), Call::Pages).expect("listed");
+
+    let Content::Pages(pages) = answer.content else {
+        panic!("pages");
+    };
+    assert_eq!(pages[0].address, "http://(blanked).test");
+    assert!(pages[0].title.is_empty());
+}

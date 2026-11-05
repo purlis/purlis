@@ -63,6 +63,7 @@ fn folded(c: char) -> impl Iterator<Item = char> {
 /// What is taken out of an answer: texts kept out in each of their [`forms`], and the texts groups
 /// of boxes hold together, matched also with any spaces or dashes between their characters. Wiped
 /// as it goes.
+#[derive(Clone)]
 pub(crate) struct Scrub {
     exact: Vec<Needle>,
     loose: Vec<Needle>,

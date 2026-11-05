@@ -1500,7 +1500,8 @@ impl State {
     fn info(&self, target: &str) -> Option<PageInfo> {
         self.page(target).map(|p| PageInfo {
             id: p.id.clone(),
-            address: p.shown(&p.url),
+            // Whole, as answers are judged by it: taken out of on the way out ([`told`]).
+            address: p.url.clone(),
             title: p.shown_title(),
             current: self.current.as_deref() == Some(target),
         })

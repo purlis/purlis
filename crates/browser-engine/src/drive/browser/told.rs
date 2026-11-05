@@ -132,12 +132,12 @@ impl Keeping {
         Scrub::of(&self.filled.without(&own)).holds(site)
     }
 
-    /// What is said of `page`: its own texts, or where it has gone, the browser's.
+    /// What is said of `page`: its own texts, or where it has gone, everything kept.
     fn of_page(&self, page: &PageId) -> Scrub {
         self.pages
             .iter()
             .find(|(id, _)| id == page)
-            .map_or_else(|| Scrub::of(&self.browser), |(_, kept)| Scrub::of(kept))
+            .map_or_else(|| self.every.clone(), |(_, kept)| Scrub::of(kept))
     }
 
     fn page(&self, page: PageInfo) -> PageInfo {
