@@ -667,7 +667,7 @@ fn writable_within(
     writable_bounded(beyond, skip, since, most, MOST_OWN_FILES, true)
 }
 
-/// [`writable_within`], recording no more than `most_files` files of the user's own, with
+/// [`writable_within`], keeping no more than `most_files` files and folders of them, with
 /// `owned_is_a_place` false only for a test: there a folder the test's own user owns stands for
 /// an image's, shut to the runner's user, since only root could make one another user owns.
 #[cfg(unix)]
@@ -948,7 +948,7 @@ impl Outside {
             // that can't be made makes it a place.
             if let (Some(finding), Rules::Beyond(owner)) = (&mut self.finding, rules) {
                 let owned = self.owned_is_a_place
-                    && rustix::fs::fstat(&*fd).is_ok_and(|stat| stat.st_uid == owner);
+                    && !rustix::fs::fstat(&*fd).is_ok_and(|stat| stat.st_uid != owner);
                 let may_write = !matches!(
                     rustix::fs::accessat(&*fd, ".", Access::WRITE_OK, AtFlags::EACCESS),
                     Err(rustix::io::Errno::ACCESS | rustix::io::Errno::ROFS)

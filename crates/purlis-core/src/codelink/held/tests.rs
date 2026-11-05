@@ -1507,11 +1507,11 @@ fn a_file_its_user_owns_where_it_may_not_write_keeps_the_runner_once_changed() {
     assert!(says(&said, "/etc/tool/settings.conf"), "{said:?}");
 }
 
-/// **Past the most files of its user's own it records, the look is said and not whole**
+/// **Past the most files its user may change it records, the look is said and not whole**
 /// (#5030), so it keeps the runner and is made again at the next check.
 #[cfg(unix)]
 #[test]
-fn too_many_files_of_its_users_own_where_it_may_not_write_are_said() {
+fn too_many_files_it_may_change_in_a_folder_it_may_not_write_are_said() {
     if the_runners_user() == 0 {
         return;
     }
@@ -1659,6 +1659,57 @@ fn a_link_of_anothers_does_not_stop_a_folder_being_recorded() {
     let found = writable_bounded(beyond, std::slice::from_ref(&home), since, 100, 2, true);
 
     assert!(found.whole(), "{found:?}");
+}
+
+/// **A file or link of its user's own in a recorded folder is looked at too** (#5112): it counts
+/// as its user's whatever its mode, and a link is looked at, never through.
+#[cfg(unix)]
+#[test]
+fn a_file_or_link_of_its_users_own_in_a_recorded_folder_keeps_the_runner_once_changed() {
+    use std::os::unix::fs::PermissionsExt;
+    if the_runners_user() == 0 {
+        return;
+    }
+    let (_dir, root, home, _) = a_runners_root();
+    std::fs::create_dir_all(root.join("opt")).unwrap();
+    std::fs::write(root.join("opt/a.conf"), "as the image had it\n").unwrap();
+    std::fs::write(root.join("opt/b.conf"), "as the image had it\n").unwrap();
+    std::fs::set_permissions(
+        root.join("opt/a.conf"),
+        std::fs::Permissions::from_mode(0o444),
+    )
+    .unwrap();
+    std::os::unix::fs::symlink("b.conf", root.join("opt/link")).unwrap();
+    let _shut = an_image_of_open_files(&root, &[], &["opt"]);
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let since = std::time::SystemTime::now();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let beyond = Beyond {
+        root: &root,
+        owner: the_runners_user(),
+    };
+    // As an image's folders, shut to its user, which the test's own user can only stand for.
+    let found = writable_bounded(beyond, std::slice::from_ref(&home), since, 100, 2, false);
+    assert!(found.whole(), "{found:?}");
+    let look = || outside_with(&home, None, &[], Some(since), Some((beyond, &found)));
+    assert_eq!(look(), Vec::<String>::new());
+
+    std::fs::set_permissions(
+        root.join("opt/a.conf"),
+        std::fs::Permissions::from_mode(0o400),
+    )
+    .unwrap();
+    let said = look();
+    assert!(says(&said, "/opt/a.conf"), "{said:?}");
+    assert!(!says(&said, "/opt/link"), "{said:?}");
+
+    let opt = root.join("opt");
+    std::fs::set_permissions(&opt, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::remove_file(opt.join("link")).unwrap();
+    std::os::unix::fs::symlink("a.conf", opt.join("link")).unwrap();
+    std::fs::set_permissions(&opt, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let said = look();
+    assert!(says(&said, "/opt/link"), "{said:?}");
 }
 
 /// **A folder recorded is looked at by the same rules as the walk that found it** (#5112): a
