@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793875532390,
+  "lastUpdate": 1793877956665,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -40026,6 +40026,48 @@ window.BENCHMARK_DATA = {
             "value": 102.2539455,
             "unit": "ms",
             "extra": "median of 5 runs: 100.923, 102.066, 102.254, 102.630, 102.755 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ac4902e1ce1eb3fdf61392abb11cb4d523a57456",
+          "message": "Prepare 0.5.0 (#5301)\n\n* Prepare 0.5.0\n\nThe version moves to 0.5.0 in Cargo.toml, tauri.conf.json and Cargo.lock, and\nevery fragment in changes/ is folded. 0.4.2 was never tagged, so its section\njoins 0.5.0's, which then covers everything since v0.4.1.\n\nThe folded section was about 1 MB, past the 125,000 characters GitHub takes as\na release body, and latest.json carries the same notes. So 0.5.0's section is\nthe headline, what to do after updating, and 95 highlights, each copied as\nwritten; all 2,411 entries are in docs/changelog-0.5.0.md. The section is now\n62 KB.\n\nrelease.yml names the release, the dev notes and the job summaries purlis, not\ncharter, and the release page offers install.sh first and says the macOS build\nis signed ad hoc.\n\nSigned-off-by: Aaron Yordanyan <aharon@easydmarc.us>\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N6P0CBBHAZVBQGVM68JTGJ\nPurlis-Persona: steward\n\n* Every change in 0.5.0, as its own page\n\nThe full list the 0.5.0 section links to.\n\nSigned-off-by: Aaron Yordanyan <aharon@easydmarc.us>\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N6P0CBBHAZVBQGVM68JTGJ\nPurlis-Persona: steward\n\n* The built-in themes name the 0.5.0 schema\n\nPurlis Classic's $schema follows the version, as its test asks after a bump\n(PURLIS_THEME_SCHEMA_WRITE=1). The default theme's pointed at v0.4.2, a tag that\nwas never pushed, so its URL was a 404; it names v0.5.0 too.\n\nSigned-off-by: Aaron Yordanyan <aharon@easydmarc.us>\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N6P0CBBHAZVBQGVM68JTGJ\nPurlis-Persona: steward\n\n* Fold what landed since into 0.5.0\n\nFive fragments merged after the first fold, among them install.sh from #5295.\nTheir six entries join the full list, and the install script also joins the\nhighlights. 0.5.0 now holds 2,417 changes; its notes are 62,993 bytes.\n\nSigned-off-by: Aaron Yordanyan <aharon@easydmarc.us>\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6N6P0CBBHAZVBQGVM68JTGJ\nPurlis-Persona: steward\n\n* 0.5.0 is dated the day it is tagged, 2026-11-08\n\nThe dogfood gate (DF-2) asks for three days on the dev channel first.\n\nSigned-off-by: Aaron Yordanyan <aharon@easydmarc.us>\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6N6P0CBBHAZVBQGVM68JTGJ\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aharon@easydmarc.us>\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-05T10:36:20Z",
+          "tree_id": "d486f6359a705c179d713cb5429d65e54d91f025",
+          "url": "https://github.com/purlis/purlis/commit/ac4902e1ce1eb3fdf61392abb11cb4d523a57456"
+        },
+        "date": 1793877951359,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.683914,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.673, 0.678, 0.684, 0.691, 0.709 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.575072,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.446, 16.507, 16.575, 16.626, 16.763 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.635744,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.307, 102.461, 102.636, 102.927, 102.963 ms"
           }
         ]
       }
