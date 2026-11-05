@@ -220,10 +220,7 @@ fn a_server_error_is_asked_again_and_the_answer_after_it_is_read() {
     assert_eq!(text, "the manifest");
     assert_eq!(
         *heard.lock().unwrap(),
-        [
-            (url.clone(), Some(504), true),
-            (url, Some(200), true)
-        ],
+        [(url.clone(), Some(504), true), (url, Some(200), true)],
         "each request is heard, the refused one included"
     );
 }
@@ -270,6 +267,10 @@ fn a_server_error_is_not_asked_again_past_the_download_s_total_time() {
         panic!("asked again past its total time");
     };
     assert_eq!(why.to_string(), format!("{url} answered 504"));
-    assert!(started.elapsed() < Duration::from_secs(2), "{:?}", started.elapsed());
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "{:?}",
+        started.elapsed()
+    );
     assert_eq!(heard.lock().unwrap().len(), 1);
 }
