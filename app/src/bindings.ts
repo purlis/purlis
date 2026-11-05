@@ -717,7 +717,7 @@ export const commands = {
 	/**
 	 *  **Keep blocked** on a refused vault's Notice: puts it away, and grants nothing. The chat's
 	 *  next turn is told in one line not to retry, with `reason`, what the person typed for it, if
-	 *  anything (#1987). Its next try at the vault raises the Notice again.
+	 *  anything (#1987). Its next try at the vault raises nothing, for as long as the chat is open.
 	 */
 	keepVaultBlocked: (plane: PlaneId, session: number, vault: string, reason: string | null) => typedError<null, string>(__TAURI_INVOKE("keep_vault_blocked", { plane, session, vault, reason })),
 	/**

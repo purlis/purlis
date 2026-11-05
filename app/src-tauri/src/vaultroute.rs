@@ -120,6 +120,13 @@ impl Refusals {
     /// Notes that chat `session` was refused `not`, and answers whether that is news: one
     /// Notice per chat and vault, however often the chat tries again.
     pub fn note(&self, session: u32, not: NotTagged) -> bool {
+        if self
+            .kept_lock()
+            .iter()
+            .any(|(chat, vault)| *chat == session && *vault == not.vault)
+        {
+            return false;
+        }
         let mut held = self.lock();
         if held
             .iter()

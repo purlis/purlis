@@ -906,7 +906,9 @@ fn run_granted(
         args: command[1..].to_vec(),
     };
     let took_the_run = || {
-        let _ = missing.run_asked;
+        if let Some(asked) = missing.run_asked {
+            asked.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
     };
     if is_a_tool {
         return if missing.asks.granted(&bound) {
