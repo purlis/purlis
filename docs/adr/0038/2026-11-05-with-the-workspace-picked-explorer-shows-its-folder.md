@@ -12,8 +12,9 @@ to, keeps its promise, and adds no fold and no icon.
 - **#3343's *one repo: files visible with no click* still holds:** in a workspace with one repo,
   that repo's row starts open in the workspace's folder, so its files show with no click. With
   several, each is a closed row, as #3343 draws them.
-- **The filter's scopes:** with the workspace's folder showing, *Selected* finds among the workspace
-  files, and *All repos* finds in every repo as it does today.
+- **The filter's scopes:** with the workspace's folder showing and several repos, *Selected* finds
+  among the workspace files, and *All repos* finds in every repo as it does today. With one repo no
+  switch is drawn, as today, and the filter covers the workspace files and that repo.
 - **The files purlis keeps there carry a *managed* mark** and open read-only, with a link to their
   own view where one exists. Managed means the reserved workspace names, `skills.local/`, the
   folders an extension keeps in the workspace, and purlis's generated `.claude/` and `.purlis-*`
