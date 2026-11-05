@@ -462,7 +462,7 @@ describe("what the window is told about the chats", () => {
     move(moving("/home/dev/plane", 8, "running"));
 
     await vi.waitFor(() => expect(stateShown("claude ide.8")).toBe("working"));
-    expect(stateShown("claude ide.7")).toBe("running (no detail from claude)");
+    expect(stateShown("claude ide.7")).toBe("running (no detail)");
   });
 });
 
