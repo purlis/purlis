@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793889096135,
+  "lastUpdate": 1793891712627,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -40236,6 +40236,48 @@ window.BENCHMARK_DATA = {
             "value": 102.0851355,
             "unit": "ms",
             "extra": "median of 5 runs: 101.755, 101.781, 102.085, 102.825, 104.035 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "32f2ddcb58188242edb5affe991602eee59f1aba",
+          "message": "Release 0.5.0 today: fold the latest fragments and date it 2026-11-05 (#5395)\n\nThe maintainer releases 0.5.0 now rather than after three days on the dev\nchannel. The 16 fragments merged since #5301 are folded: their 21 entries join\nthe full list (2,438 changes). The heading is dated today.\n\n\n\nAssisted-by: claude-code\nPurlis-Chat: 01M6N6P0CBBHAZVBQGVM68JTGJ\nPurlis-Persona: steward\n\nSigned-off-by: Aaron Yordanyan <aharon@easydmarc.us>\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-05T14:12:26Z",
+          "tree_id": "03469574f6bd77c3797d71bdcebcb3cd16abfc71",
+          "url": "https://github.com/purlis/purlis/commit/32f2ddcb58188242edb5affe991602eee59f1aba"
+        },
+        "date": 1793891707970,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.541716,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.525, 0.531, 0.542, 0.551, 0.551 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.380233,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.260, 16.365, 16.380, 16.393, 16.417 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5899205,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.496, 100.824, 101.590, 102.090, 102.219 ms"
           }
         ]
       }
