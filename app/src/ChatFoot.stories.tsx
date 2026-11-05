@@ -238,7 +238,11 @@ function Foot({
   });
   return (
     <Lent>
-      <div className="pane-frame pane-headed" style={{ inlineSize: width, blockSize: 96 }}>
+      {/* With a head, tall enough for it, the terminal's three lines (#5215) and the foot. */}
+      <div
+        className="pane-frame pane-headed"
+        style={{ inlineSize: width, blockSize: withHead ? 148 : 96 }}
+      >
         {withHead && <Head kind={kind} width={width} />}
         <div className="pane-body" tabIndex={-1} />
         <ChatFoot
@@ -287,6 +291,10 @@ async function leftAlone() {
 async function walked({ canvasElement, args }: { canvasElement: HTMLElement; args: FootArgs }) {
   const canvas = within(canvasElement);
   const foot = canvas.getByRole("group", { name: /where it runs and its context$/ });
+  // In its pane: a foot pushed out of the frame is clipped, and Tab still reaches what it holds.
+  await expect(foot.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+    (foot.closest(".pane-frame") as Element).getBoundingClientRect().bottom + 1,
+  );
   if (paneLinesOf(args.kind ?? "chat", args.width ?? 900, args.facts ?? {}).foot?.some(warns))
     await canvas.findByTestId("pane-skills");
   // From the terminal, as the window has it: the foot's parts follow it (story 38).
