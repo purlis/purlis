@@ -52,7 +52,7 @@ const PATH = [
   listed(12, "fix-login", { parent: 9, byYou: true }),
 ];
 
-/** A pane's header line as a pane showing a task draws it: the breadcrumb, where the chat came
+/** A pane line as a pane showing a task draws it: the breadcrumb, where the chat came
  *  from and its work item, on the terminal's fill; and its foot (#5202): harness · workspace and
  *  the gauge, the line's quiet words. */
 function HeaderLine() {

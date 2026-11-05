@@ -480,8 +480,10 @@ const NOT_A_STRIP = new Set(["chart-bar", "state-bar", "activity-bar"]);
  *  chat came from, its work item and its skills (#2775); and since the pane head names its chat
  *  (#4760), its persona icon, its name, its sandbox (`SandboxMark`'s own class, which the tab
  *  wore first), its state, its wrapping-up mark and a task's end asked there. Brief is the state
- *  button's, in the pane's actions (#4760); harness · workspace, the harness and the gauge are the
- *  foot's (`PANE_FOOT_CHIPS`, #5202). Each is as tall as the line, the chrome height, so the line
+ *  button's, in the pane's actions (#4760); harness · workspace and the gauge are the foot's
+ *  (`PANE_FOOT_CHIPS`, #5202), but for `pane-head-where`, that part on the head of a pane that has
+ *  no foot, a shell's or a one-job program's (spec #5191), a chip of its own so the foot's cannot
+ *  drift up. Each is as tall as the line, the chrome height, so the line
  *  is one height. */
 export const PANE_LINE_CHIPS = [
   "pane-persona",
@@ -495,13 +497,14 @@ export const PANE_LINE_CHIPS = [
   "pane-work-item",
   "pane-skills",
   "pane-studio",
+  "pane-head-where",
 ];
 
-/** **The chips of the pane foot** (#5202, spec #5191 stories 43 and 44): harness · workspace, the
- *  harness alone where the chat is not listed yet, and the gauge. Held at the head's chips'
- *  height, inside a foot the tab strip's height, and read off the foot's own groups, so a chip
- *  cannot drift back onto the head's line, nor a head's chip onto the foot, unnoticed. */
-export const PANE_FOOT_CHIPS = ["pane-where", "pane-harness", "chat-gauge"];
+/** **The chips of the pane foot** (#5202, spec #5191 stories 43 and 44): harness · workspace and
+ *  the gauge. Held at the head's chips' height, inside a foot the tab strip's height, and read off
+ *  the foot's own groups, so a chip cannot drift back onto the head's line, nor a head's chip onto
+ *  the foot, unnoticed. */
+export const PANE_FOOT_CHIPS = ["pane-where", "chat-gauge"];
 
 /** What is drawn as part of a strip or a pane's top line, as tall as it is: the ways to end a
  *  pane's task (#1488), the chip a tab wears for its tasks (#1487) and the chips of the pane's
@@ -509,6 +512,8 @@ export const PANE_FOOT_CHIPS = ["pane-where", "pane-harness", "chat-gauge"];
 const STRIP_PARTS = new Set([
   "pane-task-ends",
   "tab-tasks",
+  // The harness's button: inside harness · workspace, a chip of either line.
+  "pane-harness",
   ...PANE_LINE_CHIPS,
   ...PANE_FOOT_CHIPS,
 ]);
@@ -833,7 +838,7 @@ export const FOOT_ROW: ChipRow = {
   name: "the pane foot",
   opens: (tag) => tag.name === "PaneFootStart" || tag.name === "PaneFootEnd",
   chips: PANE_FOOT_CHIPS,
-  components: { ChatGauge: "chat-gauge", HarnessChip: "pane-harness" },
+  components: { ChatGauge: "chat-gauge" },
 };
 
 /** A component that draws its one child as itself (`asChild`): the line reads through it. */
@@ -1206,7 +1211,7 @@ export const plantedTall = { minBlockSize: 32 };
 
   it("pins each chip to its own row: none is listed on both, and harness · workspace and the gauge are the foot's (#5202)", () => {
     expect(PANE_LINE_CHIPS.filter((chip) => PANE_FOOT_CHIPS.includes(chip))).toEqual([]);
-    for (const chip of ["pane-where", "pane-harness", "chat-gauge"]) {
+    for (const chip of ["pane-where", "chat-gauge"]) {
       expect(PANE_FOOT_CHIPS).toContain(chip);
       expect(PANE_LINE_CHIPS).not.toContain(chip);
     }
@@ -1262,7 +1267,7 @@ export const plantedTall = { minBlockSize: 32 };
         controls,
         PANE_FOOT_CHIPS,
       ),
-    ).toEqual(["pane-where", "pane-harness"]);
+    ).toEqual(["pane-where"]);
     // A chip off the chrome height fails, a button chip as any other.
     expect(cssHeights(".pane-from { min-height: 1.25rem; }", controls)).toEqual([
       ".pane-from | min-height: 1.25rem (a strip)",

@@ -351,9 +351,14 @@
 /* **Harness · workspace, on the pane foot** (#5202): cut short at its end before the gauge
    gives way, in the foot's muted tier. */
 .pane-foot .pane-where {
+  /* The foot's start's, which a theme's `pane-foot.start.gap` sets. */
+  gap: inherit;
+}
+
+/* And on the head of a pane with no foot, a shell's or a one-job program's (spec #5191). */
+:is(.pane-foot .pane-where, .pane-chips > .pane-head-where) {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
   flex: 0 1 auto;
   min-inline-size: 0;
   overflow: hidden;
@@ -433,16 +438,16 @@
    under the pointer or the keyboard. **Interim, until the quiet ghost variant (#3214)**: the
    family's ghost draws primary words, so these rules out-rank its variant (0,3,0) by
    specificity, naming the button's own attributes, never by where they are written. */
-.pane-foot .pane-harness[data-scope="button"][data-variant="ghost"] {
+:is(.pane-foot, .pane-head) .pane-harness[data-scope="button"][data-variant="ghost"] {
   color: var(--text-muted);
 }
 
 [data-scope="panel"][data-variant="content"]
   [data-group]
   .pane-frame[data-focused]
-  .pane-foot
+  :is(.pane-foot, .pane-head)
   .pane-harness[data-scope="button"][data-variant="ghost"],
-.pane-foot
+:is(.pane-foot, .pane-head)
   .pane-harness[data-scope="button"][data-variant="ghost"]:is(
     [data-hovered],
     [data-focus-visible]

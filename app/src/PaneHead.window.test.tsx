@@ -90,6 +90,9 @@ const CHAT = {
   browser_sites: null,
 };
 
+/** A plain shell in the same place: no harness and no profile (`isShell`). */
+const SHELL = { ...CHAT, name: "zsh", harness: null, profile: null };
+
 /** Chat 4 mid-turn, then waiting for you: what the board says as its turn runs and ends. */
 const RUNNING: Moved = {
   plane: PLANE,
@@ -108,21 +111,21 @@ const WAITING = { ...RUNNING, state: "waiting", moved_at: 2, sequence: 2 } as Mo
 /** What the core says of chat 4's usage: none by default, as before its first turn. */
 let usage: unknown = null;
 
-function core() {
+function core(chat: typeof CHAT | typeof SHELL = CHAT) {
   mockIPC(
     (cmd) => {
       if (cmd === "chat_usage") return usage;
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
-      if (cmd === "opened_chats") return [CHAT];
+      if (cmd === "opened_chats") return [chat];
       // The chat in a tab of its own on alpha, as the stored layout keeps it (#4758).
-      if (cmd === "reopened_layout") return aTabForEachChat([CHAT], () => "alpha");
+      if (cmd === "reopened_layout") return aTabForEachChat([chat], () => "alpha");
       if (cmd === "plane_sidebar")
         return {
           root: PLANE,
           personas: [],
           persona: null,
           unfiled: [],
-          workspaces: [{ name: "alpha", path: ALPHA, vision: "", todos: [], chats: [CHAT] }],
+          workspaces: [{ name: "alpha", path: ALPHA, vision: "", todos: [], chats: [chat] }],
         };
       if (cmd === "chat_states") return [];
       if (cmd === "chats_that_would_not_start") return [];
@@ -137,8 +140,8 @@ function core() {
   );
 }
 
-async function aPane() {
-  core();
+async function aPane(chat: typeof CHAT | typeof SHELL = CHAT) {
+  core(chat);
   render(<App />);
   await screen.findByTestId("pane");
   await act(async () => {
@@ -448,5 +451,14 @@ describe("a chat's pane foot (#5202)", () => {
     expect(head().querySelector(".chat-gauge")).toBeNull();
     expect(within(head()).queryByText("ctx")).toBeNull();
     expect(document.querySelector('[data-testid="gauge-trend"]')).toBeNull();
+  });
+
+  it("is drawn on no shell's pane, whose head keeps its workspace (spec #5191, Out of Scope)", async () => {
+    await aPane(SHELL);
+
+    await waitFor(() =>
+      expect(head().querySelector(".pane-head-where")).toHaveTextContent("alpha"),
+    );
+    expect(foot()).toBeNull();
   });
 });

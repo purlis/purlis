@@ -325,8 +325,8 @@ about half the pane, and inside it the stack is never wider or taller than the p
 the ways out go under it when they do not fit beside it, and the stack scrolls (#1481). Every
 change of the row's height refits the terminal, which resizes the chat's pty and redraws its
 harness; minimised, a note arriving changes only the bell's count. The
-chat at a glance (the gauge, the harness, the breadcrumb) is the header's line, never over the
-terminal. `Notice.pane.test.tsx` and `PaneBand.test.tsx` hold the shape and the rules, and
+chat at a glance (its name, its state, the breadcrumb) is the pane line, and harness · workspace and
+the gauge are the pane foot, neither over the terminal. `Notice.pane.test.tsx` and `PaneBand.test.tsx` hold the shape and the rules, and
 `pane-notices.e2e.ts` and `pane-warnings.e2e.ts` measure them, with no Notice over the terminal in a narrow pane and a
 wide one. Everything the window draws is ordered inside `#root`, which is one stacking
 context, so no `z-index` in the window is over a dialog or a menu: those are portaled to the

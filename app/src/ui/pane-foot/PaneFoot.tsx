@@ -76,19 +76,15 @@ export function PaneFootGauge({
   value,
   fill,
 }: {
-  /** Its name: `ctx`, `cache`. */
+  /** Its name: `ctx`, `cache`, `↻2`. */
   label: string;
-  /** Its value as figures: `62%`. */
+  /** Its value: `62%`, `696k`. */
   value: string;
   /** How full it is, from 0 to 100, and the core's tone for it: drawn as the bar. */
   fill?: { percent: number; tone: PaneFootTone };
 }) {
   return (
-    <span
-      data-scope="pane-foot"
-      data-part="gauge"
-      data-barred={fill === undefined ? undefined : ""}
-    >
+    <span data-scope="pane-foot" data-part="gauge">
       <span data-scope="pane-foot" data-part="label">
         {label}
       </span>{" "}

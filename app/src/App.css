@@ -733,7 +733,7 @@ body {
 }
 
 /* **The pane line**: the chat at a glance, its breadcrumb, its skills, where it came from and its
-   work item. One row, in the pane's header (`PaneHead`); harness · workspace and the gauge are
+   work item. One row, in the pane head (`PaneHead`); harness · workspace and the gauge are
    on the pane foot (#5202). */
 .pane-chips {
   display: flex;
@@ -761,16 +761,17 @@ body {
     .pane-from,
     .pane-work-item,
     .pane-skills,
-    .pane-studio
+    .pane-studio,
+    .pane-head-where
   ) {
   height: var(--size-chrome);
 }
 
 /* **The pane foot's chips are under the same rule** (#5202, spec #5191 story 43): harness ·
-   workspace, the harness alone and the gauge are the chrome height, inside a foot the tab
+   workspace and the gauge are the chrome height, inside a foot the tab
    strip's height, so no theme makes them taller than the line. The heights guard holds every
    chip here (`PANE_FOOT_CHIPS`). */
-.pane-foot > * > :is(.pane-where, .pane-harness, .chat-gauge) {
+.pane-foot > * > :is(.pane-where, .chat-gauge) {
   height: var(--size-chrome);
 }
 
@@ -918,12 +919,13 @@ body {
 .chat-gauge {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  /* The foot's end's, which a theme's `pane-foot.end.gap` sets. */
+  gap: inherit;
   white-space: nowrap;
 }
 
 /* **Where a handed-off chat came from** (charter-app#258): `↳ from steward 3 · ops`, beside the
-   gauge in the chat's own corner, and quiet — it is a note about the chat's origin, read once,
+   line's other details, and quiet — it is a note about the chat's origin, read once,
    not a status. The gauge's box so the two read as one strip, never a border of its own colour.
    Clipped rather than wrapped: a corner that grew a second line would cover the terminal. */
 .pane-from {

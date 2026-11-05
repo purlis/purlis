@@ -102,7 +102,7 @@ export type PaneKind = "chat" | "task" | "shell" | "oneJob";
 /**
  * **A chip of the head's line** (the **pane line**, `.pane-chips`), in its drawn order: who it
  * runs as, which chat it is (its name, or the path to the task it shows), its sandbox, its state
- * mark and the mark's word, then the details still on the head until #5204 moves them to the
+ * mark and the mark's word, harness · workspace on a pane with no foot (`where`), then the details still on the head until #5204 moves them to the
  * foot: its skills, what the Skill studio started it for (#5185), where it came from and its work
  * item. `studio` is drawn only for a chat the studio started: its chip reads that itself.
  */
@@ -113,6 +113,7 @@ export type LinePart =
   | "sandbox"
   | "mark"
   | "markWord"
+  | "where"
   | "skills"
   | "studio"
   | "from"
@@ -141,14 +142,22 @@ export type LineFacts = {
 export type PaneLines = { head: LinePart[]; foot: FootPart[] | null };
 
 /** The foot of a chat's pane, whole: it drops nothing yet (#5206 orders its drops). */
-const WHOLE_FOOT: readonly FootPart[] = ["harness", "workspace", "ctx", "cache"];
+export const WHOLE_FOOT: readonly FootPart[] = ["harness", "workspace", "ctx", "cache"];
+
+/** **A pane's kind, by what it shows**: a task's path says it first, whatever runs there. */
+export function paneKindOf(shows: { task: boolean; oneJob: boolean; shell: boolean }): PaneKind {
+  if (shows.task) return "task";
+  if (shows.oneJob) return "oneJob";
+  return shows.shell ? "shell" : "chat";
+}
 
 /**
  * **What a pane of `kind`, `width` pixels wide (none where not measured), draws on its two lines**
  * (#5202): the head says which chat this is and what it is doing; the foot, under the terminal,
- * where it runs and how full it is. Harness · workspace and the gauge are the foot's, never the
- * head's, at any width. A shell and a one-job program draw no foot: they have no harness or
- * gauge to say.
+ * where it runs and how full it is. On a chat's or a task's pane, harness · workspace and the gauge
+ * are the foot's, never the head's, at any width. A shell and a one-job program draw no foot and
+ * keep their heads as they were (spec #5191), `where` among them. The head's actions are not
+ * here: they are `PaneActions`', by `droppedAt`, until #5203 and #5206 settle them.
  */
 export function paneLinesOf(
   kind: PaneKind,
@@ -163,12 +172,13 @@ export function paneLinesOf(
     head.push("mark");
     if (!drops.has("markWord")) head.push("markWord");
   }
+  const footed = kind === "chat" || kind === "task";
   if (!drops.has("where")) {
+    if (!footed) head.push("where");
     if (facts.skills === true && kind !== "task") head.push("skills");
     if (kind !== "task") head.push("studio");
     if (facts.from === true) head.push("from");
     if (facts.workItem === true) head.push("workItem");
   }
-  const foot = kind === "chat" || kind === "task" ? [...WHOLE_FOOT] : null;
-  return { head, foot };
+  return { head, foot: footed ? [...WHOLE_FOOT] : null };
 }

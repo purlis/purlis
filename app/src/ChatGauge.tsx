@@ -3,10 +3,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useOnShownAgain, useProjectShown } from "./projectShown";
-import { commands, type ChatUsage, type GaugeTone, type PlaneId } from "./bindings";
+import { commands, type ChatUsage, type PlaneId } from "./bindings";
+import { WHOLE_FOOT, type FootPart } from "./paneHead";
 import { everyWhileShown } from "./whileShown";
 import { Tooltip } from "./ui/tooltip/Tooltip";
-import { PaneFootGauge, type PaneFootTone } from "./ui/pane-foot/PaneFoot";
+import { PaneFootGauge } from "./ui/pane-foot/PaneFoot";
 
 /**
  * **A chat's `ctx`/`cache` gauge, on its own pane's foot** (#5202).
@@ -148,13 +149,24 @@ function sameReading(a: ChatUsage | null, b: ChatUsage | null): boolean {
  *  thin bar under its number, then `cache`, then the rebuilds and a cold streak where the core
  *  says them. The separate row of bars, one per turn, is gone: one figure says what the number
  *  and the row said twice. */
-export function ChatGauge({ usage }: { usage: ChatUsage | undefined }) {
+export function ChatGauge({
+  usage,
+  parts = WHOLE_FOOT,
+}: {
+  usage: ChatUsage | undefined;
+  /** What the pane's model answers for its foot (`paneHead.paneLinesOf`). */
+  parts?: readonly FootPart[];
+}) {
   if (usage === undefined) return null;
-  const { context, cache, rebuilds, cold } = usage;
+  const { rebuilds, cold } = usage;
+  const context = parts.includes("ctx") ? usage.context : null;
+  // The rebuilds and a cold streak are the cache's own story, and go with it.
+  const cached = parts.includes("cache");
+  const cache = cached ? usage.cache : null;
   const said = [
     context && `context window ${context.value}% full`,
     cache && `${cache.value}% of the last turn's input served from cache`,
-    rebuilds && `${rebuilds.count} prompt-cache rebuilds, ${rebuilds.cost} tokens`,
+    cached && rebuilds && `${rebuilds.count} prompt-cache rebuilds, ${rebuilds.cost} tokens`,
   ]
     .filter(Boolean)
     .join("; ");
@@ -167,16 +179,16 @@ export function ChatGauge({ usage }: { usage: ChatUsage | undefined }) {
           <PaneFootGauge
             label="ctx"
             value={`${context.value}%`}
-            fill={{ percent: context.value, tone: TONE[context.tone] }}
+            fill={{ percent: context.value, tone: context.tone }}
           />
         )}
         {cache && <PaneFootGauge label="cache" value={`${cache.value}%`} />}
-        {rebuilds && <PaneFootGauge label={`↻${rebuilds.count}`} value={rebuilds.cost} />}
-        {cold != null && (
+        {cached && rebuilds && <PaneFootGauge label={`↻${rebuilds.count}`} value={rebuilds.cost} />}
+        {cached && cold != null && (
           <Tooltip
             tip={`The cache has been cold ${cold} turns running: something keeps changing the prompt's prefix — a model or effort switch, an MCP server toggling, a /compact. /rewind keeps it; /compact rebuilds it.`}
           >
-            <span className="gauge-cold">
+            <span>
               <PaneFootGauge label="cold" value={String(cold)} />
             </span>
           </Tooltip>
@@ -185,6 +197,3 @@ export function ChatGauge({ usage }: { usage: ChatUsage | undefined }) {
     </Tooltip>
   );
 }
-
-/** The core's tone, as the foot's bar names it. */
-const TONE: Record<GaugeTone, PaneFootTone> = { ok: "ok", warn: "warn", bad: "bad" };

@@ -31,8 +31,8 @@ pub(super) const PANE_FOOT: Family = Family {
         Part {
             name: "root",
             since: super::NEXT,
-            description: "The line: its fill, the hairline above it, its words, the room around \
-                          and between its groups.",
+            description: "The line: its fill, any line a theme draws on it, its words, the room \
+                          around and between its groups.",
             properties: &[
                 Prop::Fill,
                 Prop::Text,

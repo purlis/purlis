@@ -57,6 +57,14 @@ describe("the gauge, on the pane foot (#5202)", () => {
     expect(fills[0].closest('[data-part="gauge"]')?.textContent).toContain("ctx 83%");
   });
 
+  it("draws only the parts the pane's model answers, the rebuilds and a cold streak going with cache", () => {
+    render(<ChatGauge usage={{ ...USAGE, cold: 3 }} parts={["harness", "ctx"]} />);
+
+    expect(screen.getByTestId("chat-gauge").textContent?.replace(/\s+/g, " ").trim()).toBe(
+      "ctx 83%",
+    );
+  });
+
   it("draws no row of bars, however many turns are recorded", () => {
     const turn = { cache: { value: 90, tone: "ok" as const }, context: null, written: null };
     render(<ChatGauge usage={{ ...USAGE, turns: [turn, turn, turn] }} />);
@@ -213,7 +221,7 @@ describe("useChatUsage", () => {
  *
  * It floated in the pane's top-left corner, over the terminal, so a pane with a gauge was as tall
  * as one without (the operator, of #207: *"its changing harness container sizes"*); and it
- * covered the harness's own first line. It is on the pane's header now, a row every chat's pane
+ * covered the harness's own first line. It is on the pane foot now (#5202), a row every chat's pane
  * has, with a gauge or without. jsdom lays nothing out, so what is held here is the rules as
  * written:
  *

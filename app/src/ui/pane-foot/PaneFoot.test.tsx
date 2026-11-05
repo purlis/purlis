@@ -37,7 +37,6 @@ describe("the pane foot", () => {
     );
     const gauge = container.querySelector('[data-part="gauge"]') as HTMLElement;
     expect(gauge.textContent?.replace(/\s+/g, " ")).toBe("ctx 62%");
-    expect(gauge).toHaveAttribute("data-barred");
     const fill = gauge.querySelector('[data-part="track"] > [data-part="fill"]') as HTMLElement;
     expect(fill).toHaveAttribute("data-tone", "warn");
     expect(fill.style.inlineSize).toBe("62%");
@@ -58,6 +57,5 @@ describe("the pane foot", () => {
   it("draws no bar for a gauge without a fill", () => {
     const { container } = render(<PaneFootGauge label="cache" value="91%" />);
     expect(container.querySelector('[data-part="track"]')).toBeNull();
-    expect(container.querySelector('[data-part="gauge"]')).not.toHaveAttribute("data-barred");
   });
 });

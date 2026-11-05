@@ -25,9 +25,10 @@ apart.
   under its number, and the separate row of bars goes: one figure says what the number and the
   row said twice. Where the chat came from, the skills warning and the sandbox follow (#5204).
 - **One model answers both lines.** The pane head's pure model (`paneHead.ts`) answers, for a
-  pane's kind and width, the head's parts and the foot's parts, and the pane draws what it
-  answers. A shell and a one-job program draw no foot. The head's drop order loses its workspace
-  step, and the foot gets its own (#5206).
+  pane's kind and width, the pane line's parts and the foot's parts, and the pane draws what it
+  answers. The head's actions join it as #5203 and #5206 settle them. A shell and a one-job program
+  draw no foot and keep harness · workspace on their heads. The head's drop order loses its
+  workspace step, and the foot gets its own (#5206).
 - **The foot is a themable family of its own**, `pane-foot` (ADR 0103, ADR 0104), drawn in look
   A: its parts joined by `·`, in muted words, on the terminal's fill, the tab strip's height at
   the density in force, so a compact appearance makes it compact.

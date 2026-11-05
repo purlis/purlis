@@ -3,7 +3,14 @@
 
 import { describe, expect, it } from "vitest";
 import { answerId, briefId, smartCloseCancelId, stopId } from "./actions";
-import { HEAD_DROPS, droppedAt, paneLinesOf, stateButtonOf, type HeadPart } from "./paneHead";
+import {
+  HEAD_DROPS,
+  droppedAt,
+  paneKindOf,
+  paneLinesOf,
+  stateButtonOf,
+  type HeadPart,
+} from "./paneHead";
 
 /** A chat whose list holds exactly `ids`. */
 function listing(...ids: string[]) {
@@ -66,7 +73,7 @@ describe("a narrow pane head drops its parts in the ruled order (#4760, #4585 ru
     expect([...droppedAt(undefined)]).toEqual([]);
   });
 
-  it("drops harness · workspace first, then the mark's word, the button's word, the mark and Split down", () => {
+  it("drops the details first, then the mark's word, the button's word, the mark and Split down", () => {
     expect([...droppedAt(519)]).toEqual(["where"]);
     expect([...droppedAt(469)]).toEqual(["where", "markWord"]);
     expect([...droppedAt(419)]).toEqual(["where", "markWord", "buttonWord"]);
@@ -125,7 +132,18 @@ describe("the pane's two lines: what the head and the foot of a chat's pane draw
     [
       "shell",
       900,
-      ["persona", "name", "sandbox", "mark", "markWord", "skills", "studio", "from", "workItem"],
+      [
+        "persona",
+        "name",
+        "sandbox",
+        "mark",
+        "markWord",
+        "where",
+        "skills",
+        "studio",
+        "from",
+        "workItem",
+      ],
       null,
     ],
     ["oneJob", 300, ["persona", "name"], null],
@@ -135,13 +153,29 @@ describe("the pane's two lines: what the head and the foot of a chat's pane draw
     expect(lines.foot).toEqual(foot);
   });
 
-  it("never draws harness · workspace or the gauge on the head, at any width", () => {
-    for (const kind of ["chat", "task", "shell", "oneJob"] as const)
+  it("never draws harness · workspace or the gauge on a chat's or a task's head, at any width", () => {
+    for (const kind of ["chat", "task"] as const)
       for (const width of [undefined, 1200, 900, 520, 420, 300, 0]) {
         const head: string[] = paneLinesOf(kind, width, full).head;
         for (const gone of ["harness", "workspace", "where", "ctx", "cache", "gauge", "trend"])
           expect(head, `${kind} at ${width}`).not.toContain(gone);
       }
+  });
+
+  it("keeps harness · workspace on the head of a pane with no foot, dropped as it always was", () => {
+    // Spec #5191: shells' and one-job programs' panes "keep their current heads and get no foot".
+    for (const kind of ["shell", "oneJob"] as const) {
+      expect(paneLinesOf(kind, 900, {}).head).toContain("where");
+      expect(paneLinesOf(kind, 519, {}).head).not.toContain("where");
+      expect(paneLinesOf(kind, 900, {}).foot).toBeNull();
+    }
+  });
+
+  it("tells a pane's kind by what it shows, a task's path before anything else", () => {
+    expect(paneKindOf({ task: true, oneJob: false, shell: false })).toBe("task");
+    expect(paneKindOf({ task: false, oneJob: true, shell: false })).toBe("oneJob");
+    expect(paneKindOf({ task: false, oneJob: false, shell: true })).toBe("shell");
+    expect(paneKindOf({ task: false, oneJob: false, shell: false })).toBe("chat");
   });
 
   it("keeps the whole foot of a chat at every width, its drops being #5206's", () => {
