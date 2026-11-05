@@ -1632,6 +1632,145 @@ pub fn declared<'a>(
     Ok(ready)
 }
 
+/// Whether `program`, as a chat named it, is a tool of its persona's in any standing: armed for
+/// the chat, or listed by the project now though not armed. Such a program is never one a Run
+/// grant is asked for (ADR 0111): a declared tool behaves exactly as before, and one a teammate
+/// declared runs nothing here until this machine's own Allow.
+pub fn is_declared(armed: &[Ready], listed: &[Tool], program: &str) -> bool {
+    let named = Path::new(program)
+        .file_name()
+        .map_or_else(|| program.to_owned(), |n| n.to_string_lossy().into_owned());
+    armed.iter().any(|ready| names(ready, program)) || listed.iter().any(|tool| tool.name == named)
+}
+
+/// **The program and values a chat's command names, as a Run grant would hand them** (ADR 0111,
+/// #5239): read as a declared tool is, by the same refusals, so nothing a tool may not be is
+/// offered to the person. `written` is every folder the asking chat may write. Refused, with a
+/// sentence and with nothing asked:
+///
+/// - a program named by anything but its plain name or its absolute path as the app finds it, so
+///   the path the person is shown is never one the chat picked ([`names`]);
+/// - a program that runs what it is told, or purlis itself, by name, as found and as its links
+///   resolve ([`refused_name`], [`refused_at`]);
+/// - one found only where a chat writes, or not at all ([`resolve_beside`]);
+/// - a `--dotenv`, which names no variable; a variable that steers what runs ([`refused_var`]);
+///   a key no Secret ask takes;
+/// - a key a `mint` line names ([`mint::raw`]), or one `listed` hands only to a browser login or a
+///   secret-fill line: purlis fills those on one origin itself, and no program is handed them.
+pub fn for_run_grant(
+    root: &Path,
+    persona: &str,
+    asked: &Asked<'_>,
+    listed: &[Tool],
+    locks: &super::policy::Locks,
+    written: &[PathBuf],
+) -> Result<Ready, String> {
+    let name = Path::new(asked.program)
+        .file_name()
+        .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+    if let Some(why) = refused_name(&name) {
+        return Err(why);
+    }
+    if !asked.dotenv.is_empty() {
+        return Err(format!(
+            "--dotenv names no variable, so {name} can't be allowed with it: hand each key with              --file VARIABLE=key or --env VARIABLE=key"
+        ));
+    }
+    let mut values = Vec::new();
+    for (specs, handed) in [(asked.file, Handed::File), (asked.env, Handed::Env)] {
+        for spec in specs {
+            let Some((var, key)) = spec.split_once('=') else {
+                return Err(format!("{} expects VARIABLE=key", handed.flag()));
+            };
+            if let Some(why) = refused_var(var) {
+                return Err(why);
+            }
+            if !crate::secrets::needs::is_key(key) {
+                return Err(format!(
+                    "{} is not a key name a run grant takes: use letters, digits, _, - and ., \
+                     starting with a letter or _",
+                    crate::shown::one_line(key, 40)
+                ));
+            }
+            if values.iter().any(|value: &Value| value.var == var) {
+                return Err(format!("{var} is handed two values"));
+            }
+            if let mint::Raw::Refused(why) = mint::raw(root, asked.vault, key) {
+                return Err(why);
+            }
+            let only_a_browser_fills_it = |tool: &Tool| {
+                tool.vault == asked.vault
+                    && (tool.fill.as_ref().is_some_and(|fill| fill.key == key)
+                        || (tool.login.is_some()
+                            && tool.values.iter().any(|value| value.key == key)))
+            };
+            if listed.iter().any(only_a_browser_fills_it) {
+                return Err(format!(
+                    "{key} in vault {} is one purlis fills in a browser itself, on the one site \
+                     {persona} declares, so no program is handed it",
+                    asked.vault
+                ));
+            }
+            values.push(Value {
+                var: var.to_owned(),
+                handed,
+                key: key.to_owned(),
+            });
+        }
+    }
+    if values.is_empty() {
+        return Err(format!(
+            "the command hands {name} no key, so there is nothing to allow"
+        ));
+    }
+    if values.len() > MOST_VALUES {
+        return Err(format!(
+            "a run is handed at most {MOST_VALUES} values, so {name} can't be allowed with more"
+        ));
+    }
+    let tool = Tool {
+        name: name.clone(),
+        vault: asked.vault.to_owned(),
+        values,
+        login: None,
+        args: None,
+        mint: None,
+        host: None,
+        fill: None,
+    };
+    let resolved = resolve_beside(
+        root,
+        persona,
+        std::slice::from_ref(&tool),
+        locks,
+        &search_dirs(),
+        written,
+        &temp_folders(),
+    );
+    let Some(mut resolved) = resolved else {
+        return Err(format!(
+            "no {name} was found outside the folders a chat may write"
+        ));
+    };
+    let Some(ready) = resolved.ready.pop() else {
+        return Err(resolved.left.pop().unwrap_or_else(|| {
+            format!("no {name} was found outside the folders a chat may write")
+        }));
+    };
+    if !names(&ready, asked.program) {
+        return Err(format!(
+            "{} is not the {name} purlis finds outside the folders a chat may write: name it {name}",
+            crate::shown::one_line(asked.program, 120)
+        ));
+    }
+    Ok(ready)
+}
+
+/// **The caution beside a Run grant's Allow** ([`caution`]), on the app's own search path.
+pub fn caution_here(tool: &Tool) -> Option<String> {
+    caution(tool, &search_dirs())
+}
+
 /// **What a declared tool's run is**, once [`declared`] took it: the tool's own program by its
 /// absolute path, then the chat's arguments. Refused for a browser login, which runs no program:
 /// purlis performs it in the chat's own browser (#2016).

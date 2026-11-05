@@ -53,7 +53,8 @@
 //! authorisation and the run, the command must be a tool the chat's persona declares
 //! (`[sandbox.personas.<p>] tools`), armed as the chat started (allowed on this machine with the
 //! persona's hosts, D-PE-ruling-1, its program found where no chat writes), asked for with
-//! exactly that tool's vault and hand-over ([`crate::sandbox::tools::declared`]). Anything else
+//! exactly that tool's vault and hand-over ([`crate::sandbox::tools::declared`]), or a program the
+//! person allowed under a Run grant ([`run_granted`], ADR 0111). Anything else
 //! is refused with a sentence naming the tool to declare. The run is of the tool's program by
 //! its absolute path, from a `PATH` without the folders the chat may write, and without the
 //! chat's variables that make a program load code ([`crate::sandbox::tools::loads_code`]): it
@@ -627,6 +628,150 @@ pub fn forwarded(_ctx: &Ctx, _req: &Request, _command: &[String], _io: &mut dyn 
 
 // ----------------------------------------------------------------------------------------
 // the app: authorise, resolve, run
+
+/// **The longest command a person is asked to allow**, as it is shown ([`command_shown`]): what
+/// runs past this is not offered, so no host is pushed out of what they read.
+pub const MOST_COMMAND_SHOWN: usize = 2000;
+
+/// **A chat's command as the person reads it** (ADR 0111): each word a shell word, every byte
+/// outside printable ASCII spelled out ([`crate::shown::shell_word`]), so no control character,
+/// direction override or lookalike letter changes what it seems to say. Inert, and told apart
+/// from the app's facts wherever it is drawn.
+pub fn command_shown(words: &[String]) -> String {
+    words
+        .iter()
+        .map(|word| crate::shown::shell_word(word))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// **Whether `wanted`'s command runs under a Run grant** (ADR 0111, #5239): the program its words
+/// name, as the app resolves it where no chat writes, once the person allowed it. Asked only for
+/// a program that is no declared tool, and refused with no notice for one no tool may be
+/// ([`crate::sandbox::tools::for_run_grant`]), and for any `why`, which is what the chat was to
+/// hear without this. `say` tells the command, as it starts to wait, what it waits on.
+#[allow(clippy::too_many_arguments)]
+fn run_granted(
+    asker: &Asker,
+    confines: &Confines,
+    wanted: &Wanted,
+    command: &[String],
+    missing: &Missing<'_>,
+    why: String,
+    say: &mut dyn FnMut(&str),
+) -> Result<crate::sandbox::tools::Ready, (i32, String)> {
+    use super::ask::run::{Bound, Hosts, RunHeld, RunNeed};
+    use crate::sandbox::tools;
+    let persona = asker.persona.as_deref().unwrap_or_default();
+    // A server's start is its harness's, and nobody is there to retry it.
+    if wanted.mcp.is_some() {
+        return Err((1, why));
+    }
+    let plane = crate::sandbox::Plane::read(&asker.root);
+    // A manifest nobody can read may declare this program, so nobody is asked about it.
+    if plane.unreadable() {
+        return Err((1, why));
+    }
+    let locks = crate::sandbox::policy::Locks::of(&asker.root);
+    // Every tool line written for this persona, in force or not: a teammate's is no ask.
+    let (written_lines, _) = tools::declared_and_allowed_here(&asker.root, persona);
+    let listed = written_lines.as_slice();
+    let ready = tools::for_run_grant(
+        &asker.root,
+        persona,
+        &tools::Asked {
+            vault: &wanted.vault,
+            env: &wanted.env,
+            file: &wanted.file,
+            dotenv: &wanted.dotenv,
+            program: &command[0],
+        },
+        listed,
+        &locks,
+        &chat_writes(asker, confines),
+    )
+    .map_err(|refused| (1, format!("{why} ({refused})")))?;
+    // A command its run would refuse is not offered.
+    tools::allows(&ready, &command[1..]).map_err(|refused| (1, refused))?;
+    if let Some(folder) = asker.folder.as_deref().filter(|folder| folder.is_dir()) {
+        let start_in = wanted
+            .cwd
+            .as_deref()
+            .filter(|cwd| cwd.is_absolute() && cwd.is_dir())
+            .unwrap_or(folder);
+        tools::reads_held_repository(
+            &ready,
+            &command[1..],
+            start_in,
+            &asker.root,
+            &chat_writes(asker, confines),
+        )
+        .map_err(|refused| (1, refused))?;
+    }
+    let mut env = wanted.env.clone();
+    let mut file = wanted.file.clone();
+    env.sort();
+    file.sort();
+    let bound = Bound {
+        chat: asker.chat,
+        program: ready.program.clone(),
+        vault: wanted.vault.clone(),
+        env,
+        file,
+        args: command[1..].to_vec(),
+    };
+    // A tool's own program, or one a teammate declared, is held as it always was. A grant the
+    // person gave is another matter: Always allow declares it as it grants it.
+    let is_a_tool = tools::is_declared(&confines.tools, listed, &command[0]);
+    let shown = command_shown(command);
+    if !is_a_tool && shown.chars().count() > MOST_COMMAND_SHOWN {
+        return Err((
+            1,
+            format!(
+                "{why} (this command is too long to show the person whole, so purlis did not \
+                 ask: shorten it)"
+            ),
+        ));
+    }
+    // What the person reads is what runs: a stretch the mask would hide could hide a host.
+    if !is_a_tool && crate::dispatchrecord::masked(&shown) != shown {
+        return Err((
+            1,
+            "this command holds what reads as a credential, so purlis did not show it to the \
+             person or run it: hand a credential by --file or --env"
+                .to_owned(),
+        ));
+    }
+    let need = RunNeed {
+        bound,
+        persona: persona.to_owned(),
+        hosts: if confines.level == crate::sandbox::Level::Floor {
+            Hosts::Every
+        } else {
+            Hosts::Listed(confines.decides().hosts())
+        },
+        caution: tools::caution_here(&ready.tool),
+        command: shown,
+    };
+    if is_a_tool {
+        return if missing.asks.granted(&need.bound) {
+            Ok(ready)
+        } else {
+            Err((1, why))
+        };
+    }
+    let held = missing
+        .asks
+        .allowed_or_held(need, missing.within, &mut |line: &str| {
+            (missing.moved)();
+            say(line);
+        });
+    match held {
+        RunHeld::Allowed => Ok(ready),
+        RunHeld::Refused { line } => Err((1, line)),
+        RunHeld::StillOpen { line } => Err((WAITING_ON_THE_PERSON, line)),
+    }
+}
 
 /// How long the app waits for a chat that is still starting to be recorded as open, before a
 /// brokered run it asked for is refused (qw381).
@@ -2260,7 +2405,7 @@ pub(crate) fn serve_recorded(
     // [`crate::sandbox::tools::a_run_starts_from`]'s: those its approved entry sets, with the
     // values the person approved (#3441).
     let mut its_entry_sets: Vec<(String, String)> = Vec::new();
-    match crate::sandbox::tools::declared(
+    let its_tool = match crate::sandbox::tools::declared(
         &confines.tools,
         &listed,
         persona,
@@ -2278,7 +2423,32 @@ pub(crate) fn serve_recorded(
             return refuse(&mut *writer, 2, login_by_the_browser_tool(&ready.tool.name));
         }
         // Any other tool, its own program.
-        Ok(ready) => match crate::sandbox::tools::run_words(ready, &command[1..]) {
+        Ok(ready) => Some(ready.clone()),
+        // A persona's credentialed MCP server this machine approved, started by the chat's
+        // harness, asks for its line as approved: the person's consent, as an Allow is.
+        Err(why) => match an_approved_server(&asker.root, persona, &wanted, &command) {
+            Some(sets) => {
+                its_entry_sets = sets;
+                None
+            }
+            // No tool: the person may allow this program, here and now (ADR 0111, #5239), where
+            // somebody is there to be asked. A runner's values were sent for a tool it declared.
+            None => match missing.filter(|_| handed.is_none()) {
+                None => return refuse(&mut *writer, 1, why),
+                Some(missing) => {
+                    let mut say = |line: &str| {
+                        let _ = send(&mut *writer, &Frame::Note(line.to_owned()));
+                    };
+                    match run_granted(asker, confines, &wanted, &command, missing, why, &mut say) {
+                        Ok(ready) => Some(ready),
+                        Err((code, why)) => return refuse(&mut *writer, code, why),
+                    }
+                }
+            },
+        },
+    };
+    if let Some(ready) = &its_tool {
+        match crate::sandbox::tools::run_words(ready, &command[1..]) {
             Ok(words) => {
                 declared_as = ready.argv0().map(str::to_owned);
                 minting = ready.tool.mint.is_some().then(|| ready.tool.clone());
@@ -2287,13 +2457,7 @@ pub(crate) fn serve_recorded(
                 forge_env = crate::sandbox::tools::forge_env(ready);
             }
             Err(why) => return refuse(&mut *writer, 1, why),
-        },
-        // A persona's credentialed MCP server this machine approved, started by the chat's
-        // harness, asks for its line as approved: the person's consent, as an Allow is.
-        Err(why) => match an_approved_server(&asker.root, persona, &wanted, &command) {
-            Some(sets) => its_entry_sets = sets,
-            None => return refuse(&mut *writer, 1, why),
-        },
+        }
     }
     // At most a few at once per chat: each holds a proxy, a temp directory and a process group.
     let Some(_slot) = Slot::take(&asker.root, asker.chat) else {

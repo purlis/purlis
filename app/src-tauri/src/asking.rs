@@ -143,10 +143,46 @@ pub struct Shown {
     /// is typed in. Absent for any other ask.
     #[specta(optional)]
     pub secret: Option<SecretShown>,
+    /// **The program a run asks the person to allow** (ADR 0111, #5239): the app's facts, kept
+    /// apart from the chat's command. Absent for any other ask.
+    #[specta(optional)]
+    pub run: Option<RunShown>,
     /// **The secret a fill would put into a page, and where** (#5115): drawn with its site
     /// large. Absent for any other ask.
     #[specta(optional)]
     pub fill: Option<FillShown>,
+}
+
+/// **An ask to allow a program, as its row draws it** (ADR 0111, #5239). Every field is the app's
+/// own record of the run but [`Self::command`], which is the chat's words made inert: spelled so
+/// no character in them changes what they seem to say, and drawn as the chat's. Names only: no
+/// value is ever here.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct RunShown {
+    pub persona: String,
+    pub vault: String,
+    /// The program's full path, as the app resolved it where no chat writes.
+    pub program: String,
+    /// Each hand-over: the variable, the key, and whether it is a file or the value itself.
+    pub values: Vec<RunValueShown>,
+    /// The hosts this chat's sandbox lets the run reach.
+    pub hosts: Vec<String>,
+    /// The chat's sandbox holds the run to no host.
+    pub every_host: bool,
+    /// T-4's sentence, where the program is a general-purpose one.
+    #[specta(optional)]
+    pub caution: Option<String>,
+    /// The chat's command, its words made inert.
+    pub command: String,
+}
+
+/// One value a run asks to hand its program ([`RunShown`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct RunValueShown {
+    pub var: String,
+    pub key: String,
+    /// In a private file, whose path is in the variable; otherwise in the variable itself.
+    pub in_a_file: bool,
 }
 
 /// **A Secret ask, as its row draws it** (#5068, ADR 0109): the persona, the vault and the key
@@ -339,6 +375,9 @@ pub enum AskSource {
     /// A secret a chat asks purlis to fill into a field of its browser (#5115): an Allow lets
     /// purlis put that one key into that field, on that one origin, once.
     SecretFill,
+    /// A brokered run of a program its persona does not declare (ADR 0111, #5239): an Allow is a
+    /// Run grant, and Don't allow is remembered for that chat, program and vault.
+    RunGrant,
 }
 
 /// **The existing, checked path an ask is answered by** (#1690): the command the window
@@ -425,6 +464,8 @@ pub enum AnswerPath {
     /// `answer_secret_fill` at the press an option names, on held fill `id`, for the notice
     /// whose digest is `shown` (#5115).
     SecretFill { id: u32, shown: String },
+    /// `answer_run_grant` on the ask `id`, at the press an option names (ADR 0111).
+    RunGrant { id: u32 },
     /// Nothing the window can send: the person answers in the chat.
     InItsPane,
 }
@@ -534,6 +575,7 @@ pub fn permission(raised: Raised) -> Option<Shown> {
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     })
 }
 
@@ -734,6 +776,7 @@ pub fn dispatch(told: &crate::dispatchgrants::DispatchPending) -> Shown {
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -780,6 +823,7 @@ pub fn sandbox_host(
             fill: None,
             earlier_messages: None,
             secret: None,
+            run: None,
         });
     };
     // In its Notice's order (#1666, N-3): this project on this machine is the main button.
@@ -818,6 +862,7 @@ pub fn sandbox_host(
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     })
 }
 
@@ -885,6 +930,7 @@ pub fn sandbox_write(
             fill: None,
             earlier_messages: None,
             secret: None,
+            run: None,
         });
     }
     Some(Shown {
@@ -913,6 +959,7 @@ pub fn sandbox_write(
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     })
 }
 
@@ -981,6 +1028,7 @@ pub fn sandbox_runner(
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     })
 }
 
@@ -1060,6 +1108,7 @@ pub fn sandbox_port(
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     })
 }
 
@@ -1136,6 +1185,7 @@ pub fn sandbox_local(
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     })
 }
 
@@ -1179,6 +1229,7 @@ pub fn terminal(
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -1203,6 +1254,7 @@ pub fn question(session: u32, last_message: Option<String>, earlier: Vec<String>
         fill: None,
         earlier_messages: (!earlier.is_empty()).then_some(earlier),
         secret: None,
+        run: None,
     }
 }
 
@@ -1236,6 +1288,7 @@ pub fn task_question(
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -1296,6 +1349,7 @@ pub fn workspace_removal(
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -1413,6 +1467,7 @@ pub fn browser_posture(
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -1482,6 +1537,7 @@ pub fn browser_needs_you(waiting: &crate::browserneedsyou::Waiting) -> Shown {
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -1546,6 +1602,7 @@ pub fn secret_fill(
         login: None,
         earlier_messages: None,
         secret: None,
+        run: None,
         fill: Some(FillShown {
             key: wait.key.clone(),
             vault: wait.vault.clone(),
@@ -1674,6 +1731,7 @@ pub fn browser_login(
         }),
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -1744,6 +1802,7 @@ pub fn pool_login(waits: &crate::chatbrowsers::PoolLoginWaits) -> Shown {
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -1810,6 +1869,7 @@ pub fn pool_tool(waits: &crate::pooltools::PoolToolWaits) -> Shown {
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -1959,6 +2019,86 @@ pub fn secret_ask(open: &purlis_core::secrets::ask::Open) -> Shown {
             reads,
             gone,
         }),
+        run: None,
+    }
+}
+
+/// The key of the ask to allow a program `id` (ADR 0111).
+fn run_grant_key(id: u32) -> String {
+    format!("run-grant:{id}")
+}
+
+/// The id of Allow once on a Run grant's ask (ADR 0111).
+pub const RUN_ALLOW_ONCE: &str = "allow-once";
+
+/// **The Run grant adapter** (ADR 0111, #5239): a chat's brokered run names a program its persona
+/// does not declare. Every word of the line is purlis's, and every name the app's; the chat's
+/// command is never in it, and is drawn apart ([`RunShown::command`]). Allow once comes first, the
+/// narrowest and the one a keyboard reaches first.
+pub fn run_grant(open: &purlis_core::secrets::ask::run::OpenRun) -> Shown {
+    use purlis_core::secrets::ask::run::Hosts;
+    let bound = &open.bound;
+    let values = |specs: &[String], in_a_file: bool| -> Vec<RunValueShown> {
+        specs
+            .iter()
+            .filter_map(|spec| spec.split_once('='))
+            .map(|(var, key)| RunValueShown {
+                var: var.to_owned(),
+                key: key.to_owned(),
+                in_a_file,
+            })
+            .collect()
+    };
+    let (hosts, every_host) = match &open.hosts {
+        Hosts::Listed(hosts) => (hosts.clone(), false),
+        Hosts::Every => (Vec::new(), true),
+    };
+    let says = format!(
+        "Wants to run {} with {} from {}'s vault {}. Allow once runs this exact command, in this \
+         chat's own sandbox",
+        bound.program.display(),
+        open.keys().join(", "),
+        open.persona,
+        bound.vault,
+    );
+    Shown {
+        session: bound.chat,
+        ask: run_grant_key(open.id),
+        says: said_inertly(&says),
+        options: vec![
+            Offered {
+                id: RUN_ALLOW_ONCE.to_owned(),
+                label: "Allow once".to_owned(),
+                allows: true,
+                preselected: None,
+            },
+            refuses(KEEP, "Don't allow"),
+        ],
+        source: AskSource::RunGrant,
+        chain: Vec::new(),
+        answer: AnswerPath::RunGrant { id: open.id },
+        since: None,
+        held_until: None,
+        writes: None,
+        lines: None,
+        last_message: None,
+        login: None,
+        earlier_messages: None,
+        fill: None,
+        secret: None,
+        run: Some(RunShown {
+            persona: open.persona.clone(),
+            vault: bound.vault.clone(),
+            program: bound.program.display().to_string(),
+            values: values(&bound.file, true)
+                .into_iter()
+                .chain(values(&bound.env, false))
+                .collect(),
+            hosts,
+            every_host,
+            caution: open.caution.clone(),
+            command: open.command.clone(),
+        }),
     }
 }
 
@@ -2003,6 +2143,7 @@ pub fn browser_sites(
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -2177,6 +2318,7 @@ pub fn proposed_change(one: &crate::proposals::Proposal, now: &crate::proposals:
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -2207,6 +2349,7 @@ pub fn runner_dispatch(one: &crate::runnerdispatches::HeldDispatch) -> Shown {
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -2265,6 +2408,7 @@ pub fn runner_write(one: &crate::runnerwrites::HeldWrite) -> Shown {
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -2324,6 +2468,7 @@ pub fn sign_in(wait: &purlis_core::profilestore::sign_in::Wait) -> Shown {
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -2383,6 +2528,7 @@ pub fn pool_sign_in(wait: &purlis_core::profilestore::onrunner::PoolWait) -> Sho
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -2443,6 +2589,7 @@ pub fn sandbox_only(_wait: &purlis_core::profilestore::sandbox_only::Wait) -> Sh
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -2476,6 +2623,7 @@ pub fn old_harness_plugins(old: &crate::oldplugins::OldHarnessPlugins) -> Shown 
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -2559,6 +2707,8 @@ pub struct Waiting<'a> {
     pub browser_logins: Vec<crate::loginasks::LoginWait>,
     /// The Secret asks chats' brokered runs wait on (#5068).
     pub secrets: Vec<purlis_core::secrets::ask::Open>,
+    /// The programs chats' brokered runs ask the person to allow (ADR 0111).
+    pub run_grants: Vec<purlis_core::secrets::ask::run::OpenRun>,
     /// The secret fills chats asked for that wait on the person (#5115).
     pub secret_fills: Vec<crate::secretfills::FillWait>,
     /// The administrator's policy, which the levels an Allow is offered at answer to.
@@ -2662,6 +2812,8 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
     asks.extend(waiting.pool_tools.iter().map(pool_tool));
     // A chat whose brokered run missed a key waits on the person to fill it (#5068).
     asks.extend(waiting.secrets.iter().map(secret_ask));
+    // A chat whose brokered run names a program its persona does not declare (ADR 0111).
+    asks.extend(waiting.run_grants.iter().map(run_grant));
     let said: std::collections::HashSet<u32> = asks.iter().map(|ask| ask.session).collect();
     // About no chat: a profile that waits to be signed in (#2035).
     let signing = asks.len();
@@ -2885,6 +3037,10 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     for one in &secrets {
         since.insert(secret_key(one.id), one.since);
     }
+    let run_grants = held.secret_asks().open_runs();
+    for one in &run_grants {
+        since.insert(run_grant_key(one.id), one.since);
+    }
     let declared = purlis_core::sandbox::services::declared(root);
     let tasks = held.tasks();
     let waiting = Waiting {
@@ -2895,6 +3051,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         pool_tools,
         browser_logins,
         secrets,
+        run_grants,
         secret_fills,
         sandbox_only,
         sign_ins,

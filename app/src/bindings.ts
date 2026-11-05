@@ -774,6 +774,11 @@ export const commands = {
 	 */
 	answerSecretAsk: (plane: PlaneId, id: number, value: string | null, vault: string | null, key: string | null) => typedError<null, string>(__TAURI_INVOKE("answer_secret_ask", { plane, id, value, vault, key })),
 	/**
+	 *  **The person answers the ask to allow a program `id`** (ADR 0111, #5239): the run that waits
+	 *  on it goes on, or hears it was not allowed, and a chat whose command stopped waiting is nudged.
+	 */
+	answerRunGrant: (plane: PlaneId, id: number, press: RunGrantPress) => typedError<null, string>(__TAURI_INVOKE("answer_run_grant", { plane, id, press })),
+	/**
 	 *  **The person fills Secret ask `id` with an entry they keep** (#5073): the asked key becomes a
 	 *  Linked entry reading `key` in `vault`, never a copy, and every command that waits on it runs
 	 *  with that entry's value. The chat hears filled and the key's name, never the entry.
@@ -5342,6 +5347,8 @@ export type AnswerPath =
  *  whose digest is `shown` (#5115).
  */
 { via: "secret-fill"; id: number; shown: string } | 
+/**  `answer_run_grant` on the ask `id`, at the press an option names (ADR 0111). */
+{ via: "run-grant"; id: number } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -5533,7 +5540,12 @@ export type AskSource =
  *  A secret a chat asks purlis to fill into a field of its browser (#5115): an Allow lets
  *  purlis put that one key into that field, on that one origin, once.
  */
-"secret-fill";
+"secret-fill" | 
+/**
+ *  A brokered run of a program its persona does not declare (ADR 0111, #5239): an Allow is a
+ *  Run grant, and Don't allow is remembered for that chat, program and vault.
+ */
+"run-grant";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -13263,6 +13275,36 @@ export type RunEndedOnARunner = {
 	device: string,
 };
 
+/**  **What the person pressed on an ask to allow a program** (ADR 0111). */
+export type RunGrantPress = 
+/**  One run of exactly this command. */
+"once" | 
+/**  Don't allow. */
+"refuse";
+
+/**
+ *  **An ask to allow a program, as its row draws it** (ADR 0111, #5239). Every field is the app's
+ *  own record of the run but [`Self::command`], which is the chat's words made inert: spelled so
+ *  no character in them changes what they seem to say, and drawn as the chat's. Names only: no
+ *  value is ever here.
+ */
+export type RunShown = {
+	persona: string,
+	vault: string,
+	/**  The program's full path, as the app resolved it where no chat writes. */
+	program: string,
+	/**  Each hand-over: the variable, the key, and whether it is a file or the value itself. */
+	values: RunValueShown[],
+	/**  The hosts this chat's sandbox lets the run reach. */
+	hosts: string[],
+	/**  The chat's sandbox holds the run to no host. */
+	every_host: boolean,
+	/**  T-4's sentence, where the program is a general-purpose one. */
+	caution?: string | null,
+	/**  The chat's command, its words made inert. */
+	command: string,
+};
+
 /**  What started a skill run, as the Runs panel draws it. */
 export type RunStart = 
 /**  The chat's own Skill tool. */
@@ -13281,6 +13323,14 @@ export type RunStart =
 "grade" | 
 /**  A start a newer purlis wrote. */
 "unknown";
+
+/**  One value a run asks to hand its program ([`RunShown`]). */
+export type RunValueShown = {
+	var: string,
+	key: string,
+	/**  In a private file, whose path is in the variable; otherwise in the variable itself. */
+	in_a_file: boolean,
+};
 
 /**  **How one runner is**, as its row says it once asked (#2052). */
 export type RunnerAsked = {
@@ -14403,6 +14453,11 @@ export type Shown = {
 	 *  is typed in. Absent for any other ask.
 	 */
 	secret?: SecretShown | null,
+	/**
+	 *  **The program a run asks the person to allow** (ADR 0111, #5239): the app's facts, kept
+	 *  apart from the chat's command. Absent for any other ask.
+	 */
+	run?: RunShown | null,
 	/**
 	 *  **The secret a fill would put into a page, and where** (#5115): drawn with its site
 	 *  large. Absent for any other ask.

@@ -461,6 +461,12 @@ export async function answerTaken(
           return commands.answerSecretAsk(plane, path.id, typed ?? "", null, null);
         if (option === "keep") return commands.answerSecretAsk(plane, path.id, null, null, null);
         break;
+      case "run-grant":
+        // A program a chat's brokered run names that its persona doesn't declare (ADR 0111): an
+        // Allow is a Run grant for that chat, and the command that waits goes on at once.
+        if (option === "allow-once") return commands.answerRunGrant(plane, path.id, "once");
+        if (option === "keep") return commands.answerRunGrant(plane, path.id, "refuse");
+        break;
       case "take-over": {
         // A browser whose page needs the person (#2015): Take over takes the session host's
         // lease first, so their first click or key reaches the page, then opens its view. The

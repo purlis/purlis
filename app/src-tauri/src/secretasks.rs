@@ -79,6 +79,53 @@ pub async fn link_secret_ask(
     .await
 }
 
+/// **What the person pressed on an ask to allow a program** (ADR 0111).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum RunGrantPress {
+    /// One run of exactly this command.
+    Once,
+    /// Don't allow.
+    Refuse,
+}
+
+/// **The person answers the ask to allow a program `id`** (ADR 0111, #5239): the run that waits
+/// on it goes on, or hears it was not allowed, and a chat whose command stopped waiting is nudged.
+#[tauri::command]
+#[specta::specta]
+pub async fn answer_run_grant(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    id: u32,
+    press: RunGrantPress,
+) -> Result<(), String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("answering a run grant", move || {
+        run_grant_answered(&held, id, press)
+    })
+    .await
+}
+
+/// [`answer_run_grant`]'s work.
+pub fn run_grant_answered(
+    held: &crate::planes::Held,
+    id: u32,
+    press: RunGrantPress,
+) -> Result<(), String> {
+    use purlis_core::secrets::ask::run::RunAnswer;
+    let answer = match press {
+        RunGrantPress::Once => RunAnswer::Once,
+        RunGrantPress::Refuse => RunAnswer::Refuse,
+    };
+    let answered = held
+        .secret_asks()
+        .answer_run(id, answer, crate::asking::the_window());
+    held.chats().asks_may_have_moved();
+    let answered = answered?;
+    told_each(held, &answered.nudge, &answered.told);
+    Ok(())
+}
+
 /// **One vault's entries a Secret ask's picker offers** (#5073): the vault, the keys a link may
 /// read in it, and why none could be listed, where that is so. Names only, never a value.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
@@ -181,7 +228,16 @@ fn answered_with(
 /// Tells each chat [`Answered::nudge`] names [`Answered::told`]'s one line, as its board
 /// allows: now, at its turn's end, or else at its next turn's start.
 fn nudge(held: &crate::planes::Held, answered: &Answered) {
-    for &chat in &answered.nudge {
+    told_each(held, &answered.nudge, &answered.told);
+}
+
+/// Tells each of `chats` `outcome`'s one line, as its board allows.
+fn told_each(
+    held: &crate::planes::Held,
+    chats: &[u32],
+    outcome: &purlis_core::askoutcome::Outcome,
+) {
+    for &chat in chats {
         let told = tell(
             held.vault_refusals(),
             chat,
@@ -189,11 +245,11 @@ fn nudge(held: &crate::planes::Held, answered: &Answered) {
                 let glance = held.board().glance(chat);
                 (glance.state, glance.asking)
             },
-            answered.told.line(),
+            outcome.line(),
             |chat, text| held.type_in_turn(chat, sent_as(text).as_bytes()),
         );
         if told == Told::NotSent {
-            held.chats().tell_outcome(chat, answered.told.clone());
+            held.chats().tell_outcome(chat, outcome.clone());
         }
     }
 }

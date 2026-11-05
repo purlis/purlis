@@ -74,6 +74,7 @@ import { capMarks } from "./combiningMarks";
 import { blankOf, marksIn, markOf } from "./invisible";
 import { AskWrites } from "./AskWrites";
 import { LoginSite, useTypedSite } from "./LoginSite";
+import { RunGrantFacts } from "./RunGrantFacts";
 import { SecretFill, type FillWith } from "./SecretFill";
 import { SecretFillSite } from "./SecretFillNotice";
 import type { VaultEntry } from "./VaultEntryPicker";
@@ -560,6 +561,7 @@ export const ALLOW_OR_KEEP: ReadonlySet<Shown["source"]> = new Set<Shown["source
   "pool-tool",
   "browser-login",
   "secret-fill",
+  "run-grant",
 ]);
 
 /** What one ask's row offers, decided once for its stops and its drawing. */
@@ -810,6 +812,7 @@ const SOURCE_SAID: Record<Shown["source"], string> = {
   secret: "Asks you for a secret its vault doesn't hold",
   "browser-login": "Asks to log its browser in to a site with vault credentials",
   "secret-fill": "Asks to put a vault secret into a field of its browser",
+  "run-grant": "Asks you to allow a program to use a vault secret",
   terminal: "In its terminal",
   question: "Waiting on your reply",
   "task-question": "Asks you, through its asking chat",
@@ -979,6 +982,8 @@ function Ask({
             />
           </Stop>
         )}
+        {/* What a program would receive, and from whom each word comes (ADR 0111). */}
+        {ask.run != null && <RunGrantFacts run={ask.run} />}
         {/* What a secret fill puts where (#5115): words to read, nothing to reach. */}
         {ask.fill != null && <SecretFillSite fill={ask.fill} />}
         {shape.reason && (

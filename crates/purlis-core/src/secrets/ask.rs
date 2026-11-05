@@ -66,6 +66,8 @@ use super::{Ctx, Zeroizing, cmd};
 use crate::harness::Harness;
 use crate::harness::asks::{Answerer, HumanScope};
 
+pub mod run;
+
 /// What the trace records an ask's life under.
 pub const TRACED_AS: &str = "secret.ask";
 
@@ -370,6 +372,8 @@ struct Inner {
     open: HashMap<(String, String), Asked>,
     /// Each chat's declines, by vault and key, for the chat's life.
     declined: HashSet<(u32, String, String)>,
+    /// The asks to allow a program, and the Run grants given ([`run`], ADR 0111).
+    runs: run::Runs,
 }
 
 /// **The Secret asks one project holds open** (module docs).
@@ -398,6 +402,9 @@ struct Kept {
     /// The last number an ask was given, so a number is never given twice.
     asked: u32,
     asks: Vec<KeptAsk>,
+    /// The open asks to allow a program ([`run`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    runs: Vec<run::OpenRun>,
 }
 
 /// One open ask as it is kept: each name masked as an open question is.
@@ -614,6 +621,10 @@ impl Asks {
             Err(_) => Kept::default(),
         };
         inner.next = kept.asked;
+        for one in kept.runs {
+            inner.runs.keep(one);
+        }
+        inner.next = inner.next.max(inner.runs.highest());
         for one in kept.asks {
             let at = (one.vault.clone(), one.key.clone());
             if !one.reads() {
@@ -696,6 +707,7 @@ impl Asks {
             v: KEPT_VERSION,
             asked: inner.next,
             asks,
+            runs: inner.runs.kept(),
         };
         let written = serde_json::to_vec_pretty(&kept)
             .map_err(std::io::Error::other)
@@ -725,6 +737,7 @@ impl Asks {
             asked.cannot_receive.retain(|chat| back.contains(chat));
             asked.needed()
         });
+        inner.runs.retain_chats(|chat| back.contains(&chat));
         self.save(&inner);
     }
 
@@ -1331,6 +1344,7 @@ impl Asks {
             asked.cannot_receive.retain(|one| *one != chat);
             asked.needed()
         });
+        Self::forget_runs(&mut inner, chat);
         self.save(&inner);
     }
 }

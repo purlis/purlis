@@ -65,6 +65,9 @@ pub enum About {
     /// A key a brokered run of the chat's found missing from vault `vault`, which the person
     /// was asked for (#5068, ADR 0109). Names only, never a value.
     Secret { vault: String, key: String },
+    /// A program its persona does not declare, which a brokered run of the chat's asked the
+    /// person to allow with vault `vault` (ADR 0111). Names only, never a value.
+    Run { program: String, vault: String },
 }
 
 impl About {
@@ -132,6 +135,9 @@ impl About {
                 format!("browser login {}", code(login))
             }
             Self::Secret { vault, key } => format!("secret {}", code(&format!("{vault}/{key}"))),
+            Self::Run { program, vault } => {
+                format!("running {} with vault {}", code(program), code(vault))
+            }
             Self::PoolLogin { pool } => {
                 format!(
                     "purlis filling your browser logins on pool {}'s runner",

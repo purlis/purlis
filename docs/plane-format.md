@@ -6279,7 +6279,12 @@ down rather than read off the code.
   "asked": <n>, "asks": [{"id", "persona", "vault", "key", "tool"?, "purpose"?, "declared"?,
   "names_no_vault"?, "since", "chats": [<n>, ...], "cannot_receive"?: [<n>, ...], "starts"?:
   <n>, "reason"?: {"kind": "replace", "said", "reads"?: {"vault", "key"}} | {"kind":
-  "broken_link", "was": {"vault", "key"}}}]}`: `asked` is the last number an ask was given, so one
+  "broken_link", "was": {"vault", "key"}}}], "runs"?: [{"id", "persona", "bound": {"chat",
+  "program", "vault", "env"?, "file"?, "args"?}, "hosts": {"reach": "listed", "hosts": [...]} |
+  {"reach": "every"}, "caution"?, "command", "since"}]}`: `runs` the open asks to allow a program
+  a persona does not declare (ADR 0111), absent for none: `bound` is what the grant would bind,
+  and `command` the chat's words as they were shown, mask-clean or never raised. A Run grant
+  itself is never written. `asked` is the last number an ask was given, so one
   is never given twice; `since` is seconds since 1970; `chats` the chats that wait on it, by
   the app's number, which a restart keeps (`app/reopen.json`'s `chats[].number`), the first to
   ask first; `cannot_receive` the chats on a pool's runner that cannot receive a value, which
