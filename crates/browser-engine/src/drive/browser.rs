@@ -1501,7 +1501,7 @@ impl State {
         self.page(target).map(|p| PageInfo {
             id: p.id.clone(),
             // Whole, as answers are judged by it: taken out of on the way out ([`told`]).
-            address: if cfg!(test) { p.shown(&p.url) } else { p.url.clone() },
+            address: p.url.clone(),
             title: p.shown_title(),
             current: self.current.as_deref() == Some(target),
         })
@@ -2727,7 +2727,7 @@ impl Browser {
         state.addressing_seen = false;
         // Whatever it was on the way to is over: only this act's load showing a document begins a
         // chain again, so an act that comes to nothing leaves none (#5230).
-        if !cfg!(test) && let Some(page) = state.page_mut(target) {
+        if let Some(page) = state.page_mut(target) {
             page.chain_began = None;
         }
         drop(state);
@@ -4279,7 +4279,7 @@ impl Browser {
     fn keys_withheld(&self, target: &str) -> Result<(), Refusal> {
         let held = lock(&self.inner.fill_holds)
             .iter()
-            .any(|held| (cfg!(test) || !held.left) && held.target == target);
+            .any(|held| !held.left && held.target == target);
         if held {
             return Err(Refusal::KeysWithheld);
         }

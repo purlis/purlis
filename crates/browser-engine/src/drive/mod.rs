@@ -687,11 +687,7 @@ pub const MOST_FILE_NAME_CHARS: usize = 120;
 pub fn plain_file_name(suggested: &str) -> String {
     let plain = plain_file_name_uncut(suggested);
     // Trimmed before it is cut, so a name that was cut is as long as a name is cut to.
-    let cut: String = if cfg!(test) {
-        plain.chars().take(MOST_FILE_NAME_CHARS).collect::<String>().trim().to_owned()
-    } else {
-        plain.trim().chars().take(MOST_FILE_NAME_CHARS).collect()
-    };
+    let cut: String = plain.trim().chars().take(MOST_FILE_NAME_CHARS).collect();
     if cut.is_empty() {
         "download".to_owned()
     } else {
