@@ -208,7 +208,7 @@ export const OneAtATimeWithACount: Story = {
 
 /** A question a task wrote over several lines, as the core gives it: its line ends as themselves. */
 const OVER_LINES =
-  "Which branch should the fix land on?\n\n- main, where the next release is cut\n- the fork the person keeps";
+  "Which branch should the fix land on?\n\n- **main**, where the next release is cut\n- the fork the person keeps";
 
 /**
  * **A question over several lines is drawn over its lines** (#5213): each line end the task
@@ -222,16 +222,17 @@ export const AQuestionOverSeveralLines: Story = {
   },
   play: async ({ canvasElement }) => {
     const quiz = within(canvasElement).getByRole("group", { name: "developer 7 asks" });
-    const asked = within(quiz).getByText((_, node) => node?.textContent === OVER_LINES, {
-      selector: "span",
-    });
-    await expect(quiz).not.toHaveTextContent(/⟦U\+/);
-    // As tall as three of its lines at least: the four lines fit on one where their line ends
-    // are lost. (It is a flex item, so it is one box however many lines it is drawn over.)
-    const style = getComputedStyle(asked);
-    const line = Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) * 1.2;
-    await expect(style.whiteSpace).toBe("pre-wrap");
-    await expect(asked.getBoundingClientRect().height).toBeGreaterThanOrEqual(line * 3 - 1);
+    await expect(quiz).not.toHaveTextContent(/⟦U\+|\*\*/);
+    // Drawn over its lines: the question's line above its list, each of the list's on its own.
+    const line = within(quiz).getByText("Which branch should the fix land on?");
+    const [first, second] = within(quiz).getAllByRole("listitem");
+    await expect(within(quiz).getByText("main").tagName).toBe("STRONG");
+    await expect(first.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      line.getBoundingClientRect().bottom,
+    );
+    await expect(second.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      first.getBoundingClientRect().bottom,
+    );
     await waitFor(() => expect(box(canvasElement)).toBeEnabled());
   },
 };

@@ -5,6 +5,7 @@ import { useState } from "react";
 import { X } from "lucide-react";
 import type { PlaneId, ReachedWhy, Shown } from "./bindings";
 import { answerHowSaid, useAnswerQuestion } from "./AnswerQuestion";
+import { ChatText } from "./ChatText";
 import { KindMark, useNow } from "./InboxRow";
 import { agoSaid } from "./inboxRules";
 import { Count } from "./ui/badge/Badge";
@@ -40,8 +41,8 @@ export const moreSaidFully = (count: number) =>
  * - **It is one item everywhere**: it reads the asks registry's item, the same the ✋ and the
  *   Inbox read, and the answer goes the one path a task's question is answered by
  *   (`answer_task_question`). One answer clears it from every surface.
- * - **The words are data**: a chat's question and note are text nodes, never markup. A question
- *   is drawn over the lines its task wrote (#5213), as the Inbox draws a chat's message.
+ * - **A question is a chat's text** (`ChatText`, #5214): over the lines its task wrote (#5213), in
+ *   markdown under the safe subset, as the Inbox draws it.
  * - **It closes** (#5213): Close puts the quiz away from this pane and answers nothing, so the
  *   question stays in the Inbox and on the ✋ until it is answered.
  */
@@ -128,12 +129,10 @@ export function TaskQuiz({
           )}
         </span>
       </p>
-      <p className="inbox-says">
+      <div className="inbox-says">
         <KindMark kind="reply" />
-        <span className="inbox-primary inbox-said ui-text-body ui-text-strong" id={`${ids}-asked`}>
-          {ask.says}
-        </span>
-      </p>
+        <ChatText id={`${ids}-asked`} className="inbox-primary" text={ask.says} />
+      </div>
       {why !== undefined && (
         <>
           <p className="task-quiz-why ui-text-secondary">{QUIZ_WHY[why.why](why.from)}</p>

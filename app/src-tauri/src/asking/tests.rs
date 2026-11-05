@@ -2439,6 +2439,24 @@ fn a_secret_ask_shows_the_line_remember_would_write() {
 /// **A task's question keeps its lines** (#5213): the window draws a question as the prose it
 /// is, so its line ends and tabs reach it as themselves and are never written as marks.
 #[test]
+fn a_task_questions_link_and_raw_html_reach_the_window_as_written() {
+    // The same words as `TASK_PATH_QUESTION` in `TaskQuiz.test.tsx`, which draws what this hands on.
+    let says = "Read [the plan](https://example.com/plan).\n<script>alert(1)</script>\n\nBefore <b onclick=\"x()\">tag</b>.";
+    let reached = purlis_core::dispatchtalk::ReachedYou {
+        task: 7,
+        number: 1,
+        text: says.to_owned(),
+        why: purlis_core::dispatchtalk::Reached::PassedOn,
+        at: 0,
+        note: None,
+    };
+
+    let shown = task_question(reached, "lead".to_owned(), Vec::new());
+
+    assert_eq!(shown.says, says);
+}
+
+#[test]
 fn a_task_question_keeps_its_line_breaks_and_tabs() {
     let reached = purlis_core::dispatchtalk::ReachedYou {
         task: 7,

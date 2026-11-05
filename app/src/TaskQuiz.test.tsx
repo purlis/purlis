@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { Shown } from "./bindings";
@@ -16,6 +16,11 @@ import { TaskQuiz } from "./TaskQuiz";
 
 const PLANE = "/home/dev/plane";
 const NOW = Date.UTC(2026, 10, 3, 12, 0, 0);
+
+/** A question as `task_question` hands it to the window: the same words, in
+ *  `asking::tests::a_task_questions_link_and_raw_html_reach_the_window_as_written`. */
+const TASK_PATH_QUESTION =
+  'Read [the plan](https://example.com/plan).\n<script>alert(1)</script>\n\nBefore <b onclick="x()">tag</b>.';
 
 function asked(over: Partial<Shown> = {}, answer?: Partial<Shown["answer"]>): Shown {
   return {
@@ -97,19 +102,45 @@ describe("a task question's quiz (#4565)", () => {
     expect(screen.getByText("steward 4 has closed, so this came to you.")).toBeInTheDocument();
   });
 
-  it("shows a question over several lines as its lines, never a line break's mark (#5213)", () => {
+  it("shows a question over several lines as its lines, in markdown, never a line break's mark (#5213)", () => {
     core();
-    const says = "Which branch?\n\n- **main**\n\t- or a fork";
-    draw(asked({ says }));
+    draw(asked({ says: "Which branch?\nSay why.\n\n- **main**\n- or a fork" }));
     const quiz = screen.getByRole("group", { name: "developer 7 asks" });
-    const question = screen.getByText((_, node) => node?.textContent === says, {
-      selector: "span",
-    });
-    expect(quiz).toContainElement(question);
     expect(quiz.textContent).not.toMatch(/⟦U\+/);
-    // Its words are still a text node, never markup, until chats' text is drawn as markdown.
-    expect(question.childNodes).toHaveLength(1);
-    expect(question.firstChild?.nodeType).toBe(Node.TEXT_NODE);
+    expect(quiz.querySelector("br")).not.toBeNull();
+    expect(within(quiz).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(quiz).getByText("main").tagName).toBe("STRONG");
+    expect(quiz.textContent).not.toContain("**");
+  });
+
+  it("draws a question's link to open only on a press, and drops its raw HTML (#5213)", async () => {
+    const urls: string[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "plugin:opener|open_url") urls.push((args as { url: string }).url);
+      if (cmd === "task_question")
+        return { task: "developer 7", asked: "steward 4", number: 3, question: "Which wins?" };
+      return null;
+    });
+    draw(asked({ says: TASK_PATH_QUESTION }));
+    const quiz = screen.getByRole("group", { name: "developer 7 asks" });
+
+    expect(quiz.querySelector("b, script, img")).toBeNull();
+    expect(quiz.textContent).not.toContain("alert");
+    expect(quiz.textContent).not.toContain("<b");
+    expect(within(quiz).getByText("(example.com)")).toBeInTheDocument();
+    expect(urls).toEqual([]);
+
+    await userEvent.click(within(quiz).getByRole("link", { name: "the plan" }));
+
+    expect(urls).toEqual(["https://example.com/plan"]);
+  });
+
+  it("names the question's words as what the answer box answers", () => {
+    core();
+    draw(asked({ says: "Which **branch**?" }));
+    expect(screen.getByRole("textbox", { name: "Your answer" })).toHaveAccessibleDescription(
+      expect.stringContaining("Which branch?"),
+    );
   });
 
   it("names the whole chain of a nested task", () => {
