@@ -196,21 +196,99 @@ fn digits_alone_and_a_passphrase_are_no_seed() {
 }
 
 #[test]
-fn text_in_both_cases_is_no_seed_at_any_length() {
-    // A password or an API key, base32's characters by chance: no app gives a seed so.
+fn a_seed_with_a_name_before_it_looks_like_one() {
     for value in [
-        "aB3dE5fG7hJ2kL4mN6pQ",
-        "aB3dE5fG7hJ2kL4m",
+        "secret=GEZDGNBVGY3TQOJQ",
+        "secret: GEZDGNBVGY3TQOJQ",
+        "secret_GEZDGNBVGY3TQOJQ",
+        "Dash GEZDGNBVGY3TQOJQ",
+        "Dash\nGEZDGNBVGY3TQOJQ",
+        "Dash\r\nGEZDGNBVGY3TQOJQ\n",
+        "Dash: GEZD GNBV GY3T QOJQ",
+        "Dash\ngezd gnbv gy3t qojq",
+        "alice@example.com\nGEZD-GNBV-GY3T-QOJQ",
+        r#"{"secret":"GEZDGNBVGY3TQOJQ"}"#,
+        "Dash ABCDEFGHIJKLMNOP",
+    ] {
+        assert!(looks_like_a_seed(value), "{value:?}");
+    }
+}
+
+#[test]
+fn a_seed_grouped_with_any_separator_looks_like_one() {
+    for gap in ["_", ".", ":", "/", "|", ",", "+", "~", "\u{b7}", ", "] {
+        let value = ["GEZD", "GNBV", "GY3T", "QOJQ"].join(gap);
+        assert!(looks_like_a_seed(&value), "{value:?}");
+    }
+    // Groups of another size, and a last group cut short.
+    assert!(looks_like_a_seed("GEZDGN_BVGY3T_QOJQ"));
+    assert!(looks_like_a_seed("GEZDG.NBVGY.3TQOJ.Q"));
+}
+
+#[test]
+fn a_seed_in_both_cases_looks_like_one_at_a_length_apps_give() {
+    for value in [
+        "GeZdGnBvGy3tQoJq",
+        "Gezdgnbvgy3tqojq",
+        "GeZd GnBv Gy3t QoJq",
+        "GeZd_GnBv_Gy3t_QoJq",
+        "secret=GeZdGnBvGy3tQoJq",
         "aB3dE5fG7hJ2kL4mN6pQrS2tU3vW4xY5",
     ] {
-        assert!(!looks_like_a_seed(value), "{value}");
-        assert!(Seed::parse(value).is_err(), "{value}");
+        assert!(looks_like_a_seed(value), "{value:?}");
     }
+    // A code is made only from what an app gives, so these fill no code.
+    assert!(Seed::parse("GeZdGnBvGy3tQoJq").is_err());
     // Everything a bare seed is taken as still looks like one.
     let upper = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
     assert!(looks_like_a_seed(upper) && Seed::parse(upper).is_ok());
     let lower = upper.to_ascii_lowercase();
     assert!(looks_like_a_seed(&lower) && Seed::parse(&lower).is_ok());
+}
+
+#[test]
+fn an_ordinary_password_is_no_seed() {
+    for value in [
+        "CorrectHorseBatteryStaple",
+        "correct horse battery staple",
+        "Tr0ub4dor&3",
+        "Summer2024!",
+        "hunter2",
+        // Both cases and base32's letters, with no digit: words.
+        "MySecretPassword",
+        "Blue Frog Tree Rock",
+        // Both cases and a digit, at a length no app gives.
+        "aB3dE5fG7hJ2kL4mN6pQ",
+        // Words of unequal lengths whose letters would add up to a seed's.
+        "Blue-Mountain-Sky2",
+        "Mountain-Sky2-Rain",
+        "Welcome-To-The-Jungle-2",
+        // Different separators between words: no group.
+        "anna.bob2/mail:site",
+        "https://example.com/login",
+    ] {
+        assert!(!looks_like_a_seed(value), "{value:?}");
+    }
+}
+
+#[test]
+fn a_hex_key_is_no_seed() {
+    for value in [
+        // Hex digits base32 has too, in each case and alone, grouped or named.
+        "abcdef2345672345",
+        "ABCDEF2345672345",
+        "AbCdEf2345672345",
+        "abcd ef23 4567 2345",
+        "deadbeef-deadbeef",
+        "Key: abcdef2345672345",
+        "Dash\nAbCdEf2345672345",
+        // As hex usually comes, with the digits base32 hasn't.
+        "0123456789abcdef0123456789abcdef",
+        "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+        "d3b07384-d9a0-4c1f-8f2e-0a1b2c3d4e5f",
+    ] {
+        assert!(!looks_like_a_seed(value), "{value:?}");
+    }
 }
 
 #[test]

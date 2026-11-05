@@ -9,8 +9,8 @@
 //!   own algorithm (SHA-1, SHA-256 or SHA-512), digits (6 to 10) and period, or the bare base32
 //!   secret, read as six digits of SHA-1 every 30 seconds, the defaults every app takes. A bare
 //!   secret is taken only at the lengths apps are given (10, 16, 20, 32 or 64 bytes), in one case,
-//!   and is never digits alone. A value that looks like a seed never goes into a page as itself, a wider net
-//!   than what a code is made from ([`looks_like_a_seed`]).
+//!   and is never digits alone. A value that looks like a seed never goes into a page as itself, a
+//!   wider net than what a code is made from ([`looks_like_a_seed`]).
 //! - **A counter's seed (`otpauth://hotp/…`) is refused**: its code needs a count purlis doesn't
 //!   keep, and a code used out of turn locks the account.
 //! - **Words, never the seed**: a seed that can't be read is refused in fixed words, which name
@@ -100,12 +100,16 @@ const FEWEST_CHARACTERS: usize = 16;
 /// How many base32 characters a bare secret of each of [`BARE_BYTES`] is.
 const BARE_CHARACTERS: [usize; 5] = [16, 26, 32, 52, 103];
 
+/// The longest of [`BARE_CHARACTERS`]: a stretch longer than this is no bare secret.
+const LONGEST_CHARACTERS: usize = BARE_CHARACTERS[BARE_CHARACTERS.len() - 1];
+
 /// **Whether `text` looks like a 2FA seed** (#5118): such a value never goes into a page as
-/// itself, so this reads wider than [`Seed::parse`] and accepts refusing some passwords. An
-/// authenticator's address or its export's, or text of base32 characters alone, however grouped
-/// and in one case, that holds letters and digits from 80 bits' worth, or letters at a length apps
-/// are given. Digits alone are no seed, as a card's number may be written, and neither is text in
-/// both cases, as a password or an API key often is: no app gives a seed so.
+/// itself, so this reads wider than [`Seed::parse`] and accepts refusing some passwords, which the
+/// person's mark lets through ([`super::no_seed`]). An authenticator's address or its export's;
+/// text of base32 characters alone, however grouped and in one case, that holds letters and digits
+/// from 80 bits' worth, or letters at a length apps are given; or a seed's shape anywhere in the
+/// text ([`holds_a_seed`]). Digits alone are no seed, as a card's number may be written, and
+/// neither is hex, as an API key often is.
 pub fn looks_like_a_seed(text: &str) -> bool {
     let trimmed = text.trim_start();
     if an_address(trimmed)
@@ -115,23 +119,116 @@ pub fn looks_like_a_seed(text: &str) -> bool {
     {
         return true;
     }
-    let (mut lower, mut upper, mut digits) = (0usize, 0usize, 0usize);
+    base32_alone(text) || holds_a_seed(text)
+}
+
+/// Whether `text`, once its spaces, `=` and `-` are set aside, is a seed by its characters.
+fn base32_alone(text: &str) -> bool {
+    let mut count = Base32Count::default();
     for c in text.chars() {
-        match c {
-            'a'..='z' => lower += 1,
-            'A'..='Z' => upper += 1,
-            '2'..='7' => digits += 1,
-            '=' | '-' => {}
-            c if c.is_whitespace() => {}
-            _ => return false,
+        if c.is_whitespace() || c == '=' || c == '-' {
+            continue;
+        }
+        if !count.add(c) {
+            return false;
         }
     }
-    if lower > 0 && upper > 0 {
+    if count.hex() || (count.lower > 0 && count.upper > 0) {
         return false;
     }
-    let letters = lower + upper;
-    let all = letters + digits;
-    letters > 0 && ((digits > 0 && all >= FEWEST_CHARACTERS) || BARE_CHARACTERS.contains(&all))
+    count.letters() > 0
+        && ((count.digits > 0 && count.all() >= FEWEST_CHARACTERS)
+            || BARE_CHARACTERS.contains(&count.all()))
+}
+
+/// **Whether a seed's shape stands anywhere in `text`**, whatever comes before it or after: one
+/// word, or a run of words of one length (the last may be shorter) with the same separator between
+/// them, as a seed is grouped. Words of uneven lengths, as a passphrase has, are no group.
+fn holds_a_seed(text: &str) -> bool {
+    let words = words_of(text);
+    (0..words.len()).any(|start| {
+        let (_, first) = words[start];
+        let mut count = Base32Count::default();
+        for (at, (gap, word)) in words[start..].iter().enumerate() {
+            if at > 0 && (word.len() > first.len() || (at > 1 && *gap != words[start + 1].0)) {
+                return false;
+            }
+            if !word.chars().all(|c| count.add(c)) || count.all() > LONGEST_CHARACTERS {
+                return false;
+            }
+            if count.is_a_seeds_shape() {
+                return true;
+            }
+            if at > 0 && word.len() < first.len() {
+                return false;
+            }
+        }
+        false
+    })
+}
+
+/// The words of `text`, its runs of letters and digits, each with the text between it and the last.
+/// Slices of `text`, so no copy of a value is made here.
+fn words_of(text: &str) -> Vec<(&str, &str)> {
+    let mut words = Vec::new();
+    let mut rest = text;
+    while let Some(start) = rest.find(char::is_alphanumeric) {
+        let (gap, from) = rest.split_at(start);
+        let end = from
+            .find(|c: char| !c.is_alphanumeric())
+            .unwrap_or(from.len());
+        let (word, after) = from.split_at(end);
+        words.push((gap, word));
+        rest = after;
+    }
+    words
+}
+
+/// How many characters of each kind a stretch of base32 holds.
+#[derive(Default)]
+struct Base32Count {
+    lower: usize,
+    upper: usize,
+    digits: usize,
+    /// Letters past `f`: with none, the stretch is hex as well as base32.
+    past_hex: usize,
+}
+
+impl Base32Count {
+    /// Counts `c`, or answers false where base32 has no such character.
+    fn add(&mut self, c: char) -> bool {
+        match c {
+            'a'..='z' => self.lower += 1,
+            'A'..='Z' => self.upper += 1,
+            '2'..='7' => self.digits += 1,
+            _ => return false,
+        }
+        if c.is_ascii_alphabetic() && !c.is_ascii_hexdigit() {
+            self.past_hex += 1;
+        }
+        true
+    }
+
+    fn letters(&self) -> usize {
+        self.lower + self.upper
+    }
+
+    fn all(&self) -> usize {
+        self.letters() + self.digits
+    }
+
+    fn hex(&self) -> bool {
+        self.past_hex == 0
+    }
+
+    /// At a length apps are given and not hex, with a digit or in capitals alone: a word in
+    /// lower case or both, however long, is a word sooner than a seed.
+    fn is_a_seeds_shape(&self) -> bool {
+        self.letters() > 0
+            && !self.hex()
+            && BARE_CHARACTERS.contains(&self.all())
+            && (self.digits > 0 || self.lower == 0)
+    }
 }
 
 /// The address an authenticator app exports its seeds in.
