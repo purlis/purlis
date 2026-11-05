@@ -4910,7 +4910,7 @@ impl Chats {
                 // told of.
                 if let (false, Some(id)) = (on_the_runner, identity.id.as_deref()) {
                     crate::arrived::began(
-                        &self.project,
+                        applied.root(),
                         id,
                         &purlis_core::reopen::shown_name(chat, harness.map(Harness::name)),
                         applied.arrived_watch(
