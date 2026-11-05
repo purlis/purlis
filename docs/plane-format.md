@@ -1780,7 +1780,7 @@ Two rules hold for the whole area and are not repeated per file:
   frame launch.
 - **Read by:** everything in this area.
 - **Git:** the directory entry is ignored by `/workspaces/*/*`.
-- **Layout (ADR 0113):** a workspace's folder holds three kinds of thing:
+- **Layout (ADR 0114):** a workspace's folder holds three kinds of thing:
   - **its repos**, each a clone at [`repos/<repo>/`](#workspaceswsreposrepo--a-cloned-repo-guest-checkout),
     or, for a clone made before structure version 6, at `<repo>/` directly under the workspace.
     Both places are read for ever, a workspace may hold clones in both, and one resolver in the
@@ -1939,7 +1939,7 @@ Two rules hold for the whole area and are not repeated per file:
 | `name` | string | required; the workspace's own name | identity; rewritten by `rename` | stable | `charter/workspace.py:1677`, `charter/workspace.py:1487` |
 | `description` | string | `""` | free text, set by `snapshot --description` | stable | `charter/commands_workspace.py:937` |
 | `repos` | list of objects | `[]` | membership, and optionally pinned branches | stable | `charter/workspace.py:1677` |
-| `repos[].name` | string | required | the clone's folder name: under the workspace's `repos/`, or directly under the workspace for a clone made before structure version 6 (ADR 0113). It never holds a path, and the file has no `path` field: where a clone lives is this machine's layout, not the project's. Untrusted, gated by `contain.child` on restore | stable | `charter/workspace.py:1649`, `charter/commands_workspace.py:985` |
+| `repos[].name` | string | required | the clone's folder name: under the workspace's `repos/`, or directly under the workspace for a clone made before structure version 6 (ADR 0114). It never holds a path, and the file has no `path` field: where a clone lives is this machine's layout, not the project's. Untrusted, gated by `contain.child` on restore | stable | `charter/workspace.py:1649`, `charter/commands_workspace.py:985` |
 | `repos[].branch` | string | **absent** for every row purlis writes itself; set by `snapshot` | the branch `restore` checks out; a row without one restores at the default branch | stable | `charter/commands_workspace.py:939`, `charter/commands_workspace.py:1014` |
 | `updated_at` | string | required | UTC ISO-8601, `timespec="seconds"`, e.g. `2026-09-17T14:01:35+00:00` | stable | `charter/workspace.py:1616`, `charter/commands_workspace.py:940` |
 | `updated_by` | string | required | `$USER` or `"unknown"` for automatic writes (`charter/workspace.py:1633`); `git config user.name` for `snapshot`/`fork` (`charter/commands_workspace.py:860`) | stable | `charter/workspace.py:1679` |
@@ -2663,7 +2663,7 @@ renamed to it the first time it is read, keeping its version (V93i).
   (`charter/workspace.py:4515`), `structure_status` (`charter/workspace.py:4584`),
   `needs_reinit` (`charter/workspace.py:4618`).
 - **Git:** gitignored (`/workspaces/*/*`; not in the LIVE block).
-- **Encoding details:** `STRUCTURE_VERSION = 6` (ADR 0113; 5 in `charter/workspace.py:4473`)
+- **Encoding details:** `STRUCTURE_VERSION = 6` (ADR 0114; 5 in `charter/workspace.py:4473`)
   — v2 memory-as-DB, v3 `changes/` in the LIVE block, v4 the harness layer, v5 every workspace
   has a `workspace.json`, v6 a new clone goes to `repos/<repo>/` and `repos` is reserved.
   Version 6 only adds: re-stamping creates no `repos/`, moves no clone, and a clone at the
@@ -2743,7 +2743,7 @@ beside a purlis one is removed when the record is published (V93i).
 
 ### `workspaces/<ws>/repos/<repo>/` — a cloned repo (guest checkout)
 
-- **Where (ADR 0113):** every clone made from structure version 6 on is at
+- **Where (ADR 0114):** every clone made from structure version 6 on is at
   `workspaces/<ws>/repos/<repo>/`, its landing folder beside it in `repos/` while it is made. A
   clone made before then stays at `workspaces/<ws>/<repo>/` and is read there for ever; the
   operator moves it only through `doctor`'s **Move into repos/** fix, which refuses while a chat

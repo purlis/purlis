@@ -1,7 +1,7 @@
 # Amended (2026-11-05): workspace files may be written from the explorer
 
 From the operator's grill of the workspace-files feature, alongside
-[ADR 0113](../0113-a-workspaces-repos-live-in-repos-and-both-layouts-are-read.md). It narrows the
+[ADR 0114](../0114-a-workspaces-repos-live-in-repos-and-both-layouts-are-read.md). It narrows the
 rule the explorer's tree holds (V86 F8: it creates, renames, moves and deletes nothing) to repos,
 branches' folders and the plane root.
 
