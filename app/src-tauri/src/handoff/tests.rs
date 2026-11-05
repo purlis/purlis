@@ -12882,3 +12882,57 @@ fn keep_blocked_closes_a_run_grants_ask_already_open_on_that_vault() {
         run.join().expect("it ends");
     });
 }
+
+/// A key that came to be a browser login's while its ask was up is no program's: Always allow
+/// would declare the program a tool for it, and a declared tool's run is never asked again.
+#[cfg(unix)]
+#[test]
+fn always_allow_is_refused_for_a_key_a_login_came_to_hold_while_its_ask_was_up() {
+    use purlis_core::harness::asks::{Admitted, Answerer};
+    use purlis_core::secrets::ask::run::RunAnswer;
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let chat = a_chat_refused_vault_team(&plane, &held);
+    let manifest = plane.root.join(purlis_core::plane::MANIFEST);
+
+    std::thread::scope(|scope| {
+        let run = scope.spawn(|| run_on_team(&held, &id, chat, "curl"));
+        let open = loop {
+            if let Some(open) = held.secret_asks().open_runs().into_iter().next() {
+                break open;
+            }
+            assert!(!run.is_finished(), "the run ended without asking");
+            std::thread::yield_now();
+        };
+        // A teammate's login line comes in with a pull while the person reads the notice.
+        let mut file = std::fs::read_to_string(&manifest).unwrap_or_default();
+        file.push_str(
+            "\n[sandbox.personas.qa.tools.shop]\nvault = \"team\"\nbrowser = \
+             \"https://shop.example.test/login\"\nkey = \"TOKEN\"\n",
+        );
+        std::fs::write(&manifest, &file).expect("the login line");
+        let pressed = crate::secretasks::run_grant_answered(
+            &held,
+            None,
+            open.id,
+            crate::secretasks::RunGrantPress::Always,
+        );
+        assert!(
+            pressed.as_ref().is_err_and(|why| why.contains("browser")),
+            "{pressed:?}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&manifest).expect("the file"),
+            file,
+            "no tool was declared"
+        );
+        let window = Answerer::admitted(Admitted::LocalUi).expect("the window");
+        held.secret_asks()
+            .answer_run(open.id, RunAnswer::Refuse, window)
+            .expect("answered");
+        run.join().expect("it ends");
+    });
+}

@@ -1514,3 +1514,62 @@ tools = { pay = { vault = "other", key = "token", fill = "https://pay.example.te
         assert!(asks.open_runs().is_empty(), "{vault} asked nobody");
     }
 }
+
+/// A key that came to be a browser's while the person read the notice goes to no program, however
+/// they answer: the gate judges it again once allowed, as it judges policy.
+#[test]
+fn a_key_a_login_came_to_hold_while_the_ask_was_up_is_not_handed_on_allow() {
+    let project = project();
+    let root = project.path();
+    let asks = Asks::new(root);
+    let frames = std::thread::scope(|scope| {
+        let run = scope.spawn(|| {
+            crate::sandbox::tools::SEARCH_HERE
+                .with(|dirs| *dirs.borrow_mut() = Some(vec!["/usr/bin".into(), "/bin".into()]));
+            let wire = Wire::default();
+            let (reader, _keep) = held_open();
+            serve_asking(
+                &the_chat(root),
+                printenv(root, &["X"]),
+                reader,
+                Box::new(wire.clone()),
+                Wrap::Unwrapped,
+                Missing {
+                    asks: &asks,
+                    within: Duration::from_secs(60),
+                    // A teammate's login line comes in once the notice is up.
+                    moved: &|| {
+                        if !asks.open_runs().is_empty() {
+                            std::fs::write(
+                                root.join("charter.toml"),
+                                "[sandbox.personas.qa.tools.shop]\nvault = \"team\"\nbrowser = \
+                                 \"https://shop.example.test/login\"\nkey = \"TOKEN\"\n",
+                            )
+                            .unwrap();
+                        }
+                    },
+                    run_gate: None,
+                },
+            );
+            let bytes = wire.0.lock().unwrap().clone();
+            String::from_utf8(bytes)
+                .unwrap()
+                .lines()
+                .map(|line| serde_json::from_str(line).expect("every line is a frame"))
+                .collect::<Vec<Frame>>()
+        });
+        let open = open_ask(&asks, || run.is_finished());
+        asks.answer_run(open.id, RunAnswer::Once, window()).unwrap();
+        run.join().unwrap()
+    });
+    assert!(
+        refusal(&frames).0.contains("fills in a browser"),
+        "{frames:?}"
+    );
+    assert!(
+        !frames
+            .iter()
+            .any(|frame| matches!(frame, Frame::Exit { .. })),
+        "nothing ran: {frames:?}"
+    );
+}
