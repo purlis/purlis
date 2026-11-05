@@ -383,7 +383,7 @@ fn while_the_person_drives_a_chats_act_is_refused_in_words_and_their_keys_reach_
         BrowserReach::default(),
     );
     assert!(
-        matches!(&refused, Err(Refused::Said(why)) if why.contains("the person has taken this browser over")),
+        matches!(&refused, Err(Refused::LoginNotRun(why)) if why.contains("the person has taken this browser over")),
         "{refused:?}"
     );
     assert_eq!(

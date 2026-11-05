@@ -109,7 +109,8 @@ async fn no_login_runs_while_the_person_drives() {
         .unwrap()
         .expect_err("refused");
     let refusal = refused.refusal().expect("a refusal");
-    assert_eq!(refusal.code, session::BROWSER_REFUSED);
+    // Refused before it ran (1.76, #5251): the window keeps its Allow once.
+    assert_eq!(refusal.code, session::LOGIN_NOT_RUN);
     assert_eq!(refusal.why, purlis_host::A_BROWSER_THE_PERSON_DRIVES);
     assert!(screen.shown().logins.is_empty());
 }
