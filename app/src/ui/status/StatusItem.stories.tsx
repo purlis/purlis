@@ -126,6 +126,18 @@ const DRAWN_IN_THE_ACCENT: Record<string, Token | undefined> = {
  *  `tint::SIGNAL_MARKS`). */
 const SIGNAL_MARKS: readonly Token[] = ["markdown.link", "chart.1"];
 
+/** WCAG's contrast between two opaque `#rrggbb` colours. */
+function contrast(one: string, other: string): number {
+  const luminance = (hex: string) => {
+    const [r, g, b] = [1, 3, 5]
+      .map((at) => Number.parseInt(hex.slice(at, at + 2), 16) / 255)
+      .map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const [dark, light] = [luminance(one), luminance(other)].sort((a, b) => a - b);
+  return (light + 0.05) / (dark + 0.05);
+}
+
 /** An accent set over the cell's theme, its words and grounds as the engine resolves them. */
 function OverPurlis() {
   const root = getComputedStyle(document.documentElement);
@@ -151,8 +163,12 @@ function OverPurlis() {
       return token === "accent.fill-hover" ? toward(value(token), held("accent.fill")) : value(kin);
     }
     // What the theme draws as its accent is the accent given (#5157). The engine also passes over
-    // a colour that would lose a contrast (`check::keeps_contrast`); this blue loses none here.
-    const turned = value(token) === value("accent.base") ? accent : toward(value(token), accent);
+    // a colour that would lose a contrast (`check::keeps_contrast`): of this blue's, only a link
+    // over Purlis Classic light, on the ground this story draws it on.
+    const asAccent =
+      value(token) === value("accent.base") &&
+      (token !== "markdown.link" || contrast(accent, value("surface.deep")) >= 4.5);
+    const turned = asAccent ? accent : toward(value(token), accent);
     const holds = (colour: string) =>
       inForce()
         .tint.apart.filter((rule) => rule.token === token && !rule.words)
