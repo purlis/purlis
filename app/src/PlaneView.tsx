@@ -2605,9 +2605,7 @@ export const PlaneView = memo(function PlaneView({
       if (listed !== undefined && isShell(listed)) return;
       // Named as its row named it (`shownName`), and as its tab does where it was not listed.
       const name =
-        listed !== undefined
-          ? shownName(now.current, listed)
-          : (heldName(now.current, session) ?? String(session));
+        listed !== undefined ? shownName(now.current, listed) : now.current.byId[held].name;
       // A Smart close's record brings it back; else its conversation.
       const resumes = record !== undefined || listed !== undefined;
       const one: EndedHere = { name, record, resumes, workspace: filedIn(session) };
@@ -2701,11 +2699,14 @@ export const PlaneView = memo(function PlaneView({
         setSavedNotice({ record: step.record });
         return;
       }
+      const tab = tabHolding(now.current, step.session);
       const listed = listedNow.current.get(step.session);
       const name =
-        (listed === undefined || tabHolding(now.current, step.session) === undefined
-          ? heldName(now.current, step.session)
-          : shownName(now.current, listed)) ?? `chat ${step.session}`;
+        tab === undefined
+          ? `chat ${step.session}`
+          : listed !== undefined
+            ? shownName(now.current, listed)
+            : now.current.byId[tab].name;
       if (step.phase === "kept_open") {
         setKeptOpen((was) => [
           ...was.filter((one) => one.session !== step.session),
@@ -5279,7 +5280,9 @@ export const PlaneView = memo(function PlaneView({
     () => ({
       chats: Object.entries(studioLinks).flatMap(([at, link]) => {
         const session = Number(at);
-        const name = chatNames.get(session) ?? heldName(tabs, session);
+        const listed = chatNames.get(session);
+        const held = tabHolding(tabs, session);
+        const name = listed ?? (held === undefined ? undefined : tabs.byId[held].name);
         return name === undefined ? [] : [{ session, name, link }];
       }),
       show: (session) => showChat(session),
@@ -5303,10 +5306,13 @@ export const PlaneView = memo(function PlaneView({
   /** What a chat the project lists is called now, or nothing for one it does not list. */
   const nameOfListed = useCallback((session: number) => chatNames.get(session), [chatNames]);
   /** What a chat is called here: as its row names it (`shownName`); for a chat the project
-   *  does not list yet, what the tab holding it says of it (`heldName`); or its session number. */
+   *  does not list yet, the tab holding it; or its session number. */
   const nameOf = useCallback(
     (session: number) => {
-      return chatNames.get(session) ?? heldName(tabs, session) ?? String(session);
+      const listed = chatNames.get(session);
+      if (listed !== undefined) return listed;
+      const held = tabHolding(tabs, session);
+      return held !== undefined ? tabs.byId[held].name : String(session);
     },
     [chatNames, tabs],
   );
@@ -12552,19 +12558,6 @@ function shownName(tabs: Tabs, chat: OpenChat): string {
   // name is its first pane's. Every other chat says its own name wherever it is drawn.
   const own = ownTabOf(tabs, chat.session);
   return own !== undefined ? tabs.byId[own].name : untabbedName(chat);
-}
-
-/** What a chat with no row yet is called where a tab holds it: the tab's name where it is that
- *  tab's own chat, else the name its pane holds. Nothing where no tab holds it. */
-function heldName(tabs: Tabs, session: number): string | undefined {
-  const own = ownTabOf(tabs, session);
-  if (own !== undefined) return tabs.byId[own].name;
-  for (const id of tabs.order) {
-    for (const { content } of contentsOf(tabs, id)) {
-      if (content.kind === "session" && content.session === session) return content.chat;
-    }
-  }
-  return undefined;
 }
 
 /** The waiting chat's Notice's way out that asks first (NO-3), and where a Cancel goes back to. */
