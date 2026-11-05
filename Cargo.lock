@@ -905,7 +905,7 @@ dependencies = [
 
 [[package]]
 name = "changelog"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "parse-changelog",
 ]
@@ -1857,7 +1857,7 @@ dependencies = [
 
 [[package]]
 name = "extension-probe"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "chrono",
  "purlis-core",
@@ -1867,7 +1867,7 @@ dependencies = [
 
 [[package]]
 name = "fake-harness"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "clap",
  "portable-pty",
@@ -5203,7 +5203,7 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
 name = "persona-statistics"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "chrono",
  "purlis-core",
@@ -5569,7 +5569,7 @@ checksum = "33cb294fe86a74cbcf50d4445b37da762029549ebeea341421c7c70370f86cac"
 
 [[package]]
 name = "purlis-app"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "arboard",
  "base64 0.23.1",
@@ -5618,7 +5618,7 @@ dependencies = [
 
 [[package]]
 name = "purlis-browser-engine"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -5647,7 +5647,7 @@ dependencies = [
 
 [[package]]
 name = "purlis-cli"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "base64 0.23.1",
  "changelog",
@@ -5671,7 +5671,7 @@ dependencies = [
 
 [[package]]
 name = "purlis-core"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "agent-client-protocol",
  "base64 0.23.1",
@@ -5758,7 +5758,7 @@ dependencies = [
 
 [[package]]
 name = "purlis-host"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "bytes",
  "futures",
@@ -5778,7 +5778,7 @@ dependencies = [
 
 [[package]]
 name = "purlis-linux-sandbox"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "landlock",
  "libc",
@@ -5791,7 +5791,7 @@ dependencies = [
 
 [[package]]
 name = "purlis-same-user"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "nix 0.31.3",
  "tempfile",
@@ -5800,7 +5800,7 @@ dependencies = [
 
 [[package]]
 name = "purlis-session-protocol"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "base64 0.23.1",
  "bytes",
@@ -5825,7 +5825,7 @@ dependencies = [
 
 [[package]]
 name = "purlis-skills"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "purlis-unicode",
  "rustix",
@@ -5839,7 +5839,7 @@ dependencies = [
 
 [[package]]
 name = "purlis-terminal"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "alacritty_terminal",
  "futures",
@@ -5859,7 +5859,7 @@ dependencies = [
 
 [[package]]
 name = "purlis-unicode"
-version = "0.4.2"
+version = "0.5.0"
 
 [[package]]
 name = "quick-error"
@@ -6028,7 +6028,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "release-manifest"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "minisign",
  "minisign-verify",
@@ -7185,7 +7185,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "stand-in"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "rustix",
  "tempfile",
@@ -7256,7 +7256,7 @@ dependencies = [
 
 [[package]]
 name = "studio-probe"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "purlis-core",
  "purlis-linux-sandbox",
