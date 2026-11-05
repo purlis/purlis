@@ -2010,3 +2010,104 @@ describe("a secret fill (#5115)", () => {
     expect(screen.getByRole("button", { name: "Allow once" })).toBeInTheDocument();
   });
 });
+
+describe("a secret ask's Remember (#5240)", () => {
+  const ask = (remember: boolean): Shown => ({
+    session: 7,
+    ask: "secret:3",
+    says: "Needs STRIPE_KEY (not declared by this persona) from devops's vault team",
+    options: [
+      { id: "fill", label: "Fill", allows: true, preselected: null },
+      { id: "keep", label: "Not now", allows: false, preselected: null },
+    ],
+    source: "secret",
+    chain: ["steward 7"],
+    answer: { via: "secret", id: 3 },
+    secret: {
+      persona: "devops",
+      vault: "team",
+      key: "STRIPE_KEY",
+      declared: false,
+      waiting: 1,
+      remember: remember
+        ? {
+            file: "personas/devops/persona.md",
+            need: true,
+            purpose: "charge https://shop.example/",
+            vault: null,
+          }
+        : null,
+    },
+  });
+  const REMEMBER = { name: "Remember this need for the persona" };
+  const fill = async (user: ReturnType<typeof userEvent.setup>) => {
+    read();
+    await user.type(screen.getByLabelText("Value of STRIPE_KEY"), "s3cret");
+    await user.click(screen.getByRole("button", { name: "Fill" }));
+  };
+  const answered = (asked: { cmd: string; args: unknown }[]) =>
+    asked.find((one) => one.cmd === "answer_secret_ask")?.args;
+
+  it("fills and remembers nothing, unticked", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const asked = core();
+    draw([ask(true)]);
+    await fill(user);
+    await waitFor(() =>
+      expect(answered(asked)).toEqual({
+        plane: PLANE,
+        id: 3,
+        value: "s3cret",
+        vault: null,
+        key: null,
+        remember: null,
+      }),
+    );
+  });
+
+  it("sends the purpose as the person edited it, ticked", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const asked = core();
+    draw([ask(true)]);
+    await user.click(screen.getByRole("checkbox", REMEMBER));
+    const purpose = screen.getByRole("textbox", { name: "What STRIPE_KEY is for" });
+    expect(purpose).toHaveValue("charge https://shop.example/");
+    await user.clear(purpose);
+    await user.type(purpose, "test cards");
+    await fill(user);
+    await waitFor(() =>
+      expect(answered(asked)).toMatchObject({ value: "s3cret", remember: "test cards" }),
+    );
+  });
+
+  it("asks for a purpose before it fills, ticked with none, and keeps the value typed", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const asked = core();
+    draw([ask(true)]);
+    await user.click(screen.getByRole("checkbox", REMEMBER));
+    await user.clear(screen.getByRole("textbox", { name: "What STRIPE_KEY is for" }));
+    await fill(user);
+    expect(await screen.findByText(/Say what STRIPE_KEY is for/)).toBeInTheDocument();
+    expect(answered(asked)).toBeUndefined();
+    expect(screen.getByLabelText("Value of STRIPE_KEY")).toHaveValue("s3cret");
+  });
+
+  it("sends no purpose on Not now, even ticked", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const asked = core();
+    draw([ask(true)]);
+    await user.click(screen.getByRole("checkbox", REMEMBER));
+    read();
+    await user.click(screen.getByRole("button", { name: "Not now" }));
+    await waitFor(() =>
+      expect(answered(asked)).toEqual({
+        plane: PLANE,
+        id: 3,
+        value: null,
+        vault: null,
+        key: null,
+        remember: null,
+      }),
+    );
+  });
+});

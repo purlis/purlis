@@ -120,6 +120,7 @@ struct World {
     pool_logins: Vec<crate::chatbrowsers::PoolLoginWaits>,
     pool_tools: Vec<crate::pooltools::PoolToolWaits>,
     secrets: Vec<purlis_core::secrets::ask::Open>,
+    may_remember: bool,
     /// What the project's committed file declares it expects (ADR 0093).
     declared: purlis_core::sandbox::services::Declared,
 }
@@ -152,6 +153,7 @@ impl World {
             pool_logins: Vec::new(),
             pool_tools: Vec::new(),
             secrets: Vec::new(),
+            may_remember: true,
             declared: purlis_core::sandbox::services::Declared::default(),
         }
     }
@@ -190,6 +192,7 @@ impl World {
             pool_tools: self.pool_tools.clone(),
             browser_logins: Vec::new(),
             secrets: self.secrets.clone(),
+            may_remember: &|_| self.may_remember,
             secret_fills: Vec::new(),
             permissions: self.permissions.clone(),
             queue: self.queue.clone(),
@@ -2108,10 +2111,13 @@ fn a_replace_or_broken_link_secret_ask_says_why_and_names_the_entry() {
         vault: "own".into(),
         key: "STRIPE".into(),
     };
-    let replace = super::secret_ask(&open(Reason::Replace {
-        said: "401 from the API".into(),
-        reads: Some(stripe.clone()),
-    }));
+    let replace = super::secret_ask(
+        &open(Reason::Replace {
+            said: "401 from the API".into(),
+            reads: Some(stripe.clone()),
+        }),
+        true,
+    );
     assert_eq!(
         replace.says,
         "Replace KEY in devops's vault team: the chat says the current value doesn't work: 401 \
@@ -2127,7 +2133,7 @@ fn a_replace_or_broken_link_secret_ask_says_why_and_names_the_entry() {
             key: "STRIPE".into()
         })
     );
-    let broken = super::secret_ask(&open(Reason::BrokenLink { was: stripe }));
+    let broken = super::secret_ask(&open(Reason::BrokenLink { was: stripe }), true);
     assert_eq!(
         broken.says,
         "Mend KEY in devops's vault team: KEY was linked to STRIPE in vault own, which is gone. \
@@ -2190,6 +2196,7 @@ fn a_key_chats_miss_is_one_secret_ask_saying_how_many_wait_on_it() {
             replace: None,
             reads: None,
             gone: None,
+            remember: None,
         })
     );
     assert_eq!(
@@ -2382,4 +2389,49 @@ fn the_old_harness_plugin_keys_are_one_ask_of_no_chat() {
         .map(|one| one.id.as_str())
         .collect();
     assert_eq!(ids, [DISMISS]);
+}
+
+/// #5240, spec #5235: the line Remember would write is shown on the ask: the chat's words to edit,
+/// a `vault:` line where the persona names none, and nothing where nothing would be written or
+/// policy turns it off.
+#[test]
+fn a_secret_ask_shows_the_line_remember_would_write() {
+    let open = |declared: Option<&str>, names_no_vault: bool| purlis_core::secrets::ask::Open {
+        id: 4,
+        persona: "devops".into(),
+        vault: "team".into(),
+        key: "KEY".into(),
+        tool: None,
+        purpose: Some("the chat's words".into()),
+        declared: declared.map(str::to_owned),
+        names_no_vault,
+        reason: None,
+        chats: vec![6],
+        starts: 0,
+        cannot_receive: Vec::new(),
+        since: 1_700_000_000,
+    };
+    let remember = |one, may: bool| {
+        super::secret_ask(&one, may)
+            .secret
+            .expect("a secret ask")
+            .remember
+    };
+
+    assert_eq!(
+        remember(open(None, true), true),
+        Some(super::SecretNeedShown {
+            file: "personas/devops/persona.md".into(),
+            need: true,
+            purpose: "the chat's words".into(),
+            vault: Some("team".into()),
+        })
+    );
+    assert_eq!(
+        remember(open(Some("words"), true), true).map(|line| (line.need, line.vault)),
+        Some((false, Some("team".to_owned()))),
+        "a declared key in no named vault writes the vault line alone"
+    );
+    assert_eq!(remember(open(Some("words"), false), true), None);
+    assert_eq!(remember(open(None, false), false), None, "policy says no");
 }
