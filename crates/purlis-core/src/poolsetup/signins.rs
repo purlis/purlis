@@ -189,6 +189,12 @@ pub fn default_of(config: &Path, project: Option<&Path>) -> Result<Option<String
         .filter(|default| records.iter().any(|r| &r.name == default)))
 }
 
+/// Whether pool `pool` names none of its profiles yet (#5349).
+#[must_use]
+pub fn names_none(_config: &Path, _pool: &str) -> bool {
+    false
+}
+
 /// **What Sign-ins' button runs, by hand** (#4718, #5174, Q30): `adding` recorded on pool `pool`,
 /// each of `taking_off` taken off it, then each of `signing_in` signed in there, in the order the
 /// button does them. None where it would run nothing.
@@ -198,6 +204,7 @@ pub fn by_hand(
     adding: &[String],
     taking_off: &[String],
     signing_in: &[String],
+    _names_none: bool,
 ) -> Option<super::See> {
     let pool = if runners::usable_pool_name(pool).is_ok() {
         crate::shellseg::shell_quote(pool)

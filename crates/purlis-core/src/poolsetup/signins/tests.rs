@@ -152,6 +152,7 @@ fn by_hand_records_the_ticked_profiles_then_signs_in_each_that_needs_it() {
         &["home".into(), "work".into()],
         &[],
         &["home".into()],
+        false,
     )
     .unwrap();
     assert_eq!(
@@ -168,7 +169,7 @@ fn by_hand_records_the_ticked_profiles_then_signs_in_each_that_needs_it() {
 
 #[test]
 fn by_hand_with_nothing_to_record_only_signs_in() {
-    let see = by_hand("builds", &[], &[], &["work".into()]).unwrap();
+    let see = by_hand("builds", &[], &[], &["work".into()], false).unwrap();
     assert_eq!(see.text, "purlis profile sign-in work --pool builds");
     assert!(
         see.note
@@ -187,6 +188,7 @@ fn by_hand_takes_each_unticked_profile_off_after_recording_and_before_signing_in
         &["home".into()],
         &["old".into(), "older".into()],
         &["home".into()],
+        false,
     )
     .unwrap();
     assert_eq!(
@@ -206,7 +208,7 @@ fn by_hand_takes_each_unticked_profile_off_after_recording_and_before_signing_in
 
 #[test]
 fn by_hand_with_one_to_take_off_says_what_it_does_to_its_sign_in() {
-    let see = by_hand("builds", &[], &["old".into()], &[]).unwrap();
+    let see = by_hand("builds", &[], &["old".into()], &[], false).unwrap();
     assert_eq!(see.text, "purlis pool remove-profile builds old");
     assert!(
         see.note.contains("its sign-in there with it"),
@@ -236,7 +238,7 @@ fn a_pool_that_names_none_gives_up_nothing_from_the_command() {
 
 #[test]
 fn by_hand_with_nothing_to_do_shows_nothing() {
-    assert_eq!(by_hand("builds", &[], &[], &[]), None);
+    assert_eq!(by_hand("builds", &[], &[], &[], false), None);
 }
 
 #[test]
@@ -246,6 +248,7 @@ fn by_hand_spells_no_word_that_isnt_a_name() {
         &["$(x)".into()],
         &["$(x)".into()],
         &["$(x)".into()],
+        false,
     )
     .unwrap();
     assert_eq!(
@@ -295,4 +298,62 @@ fn the_most_a_profile_may_send_is_what_the_runner_takes_where_that_is_lower() {
     assert_eq!((held.most_mib, held.most_files), (120, 8192));
     let unknown = sizes(machine.path(), None, "builds", &Chosen::default()).unwrap();
     assert_eq!((unknown.most_mib, unknown.most_files), (128, 8192));
+}
+
+/// **#5349**: a pool that names none refuses `remove-profile`, so See what this does offers no such
+/// line, and says why, for the one step only the button can take.
+#[test]
+fn by_hand_says_taking_off_has_no_command_on_a_pool_that_names_none() {
+    let see = by_hand("builds", &[], &["work".into()], &[], true).unwrap();
+
+    assert_eq!(see.text, "");
+    assert!(
+        see.note.contains("names none of its profiles")
+            && see.note.contains("the button")
+            && see.note.contains("work"),
+        "{}",
+        see.note
+    );
+    assert!(!see.note.contains("Run it yourself"), "{}", see.note);
+}
+
+/// **#5349**: the sign-ins still have their lines beside it.
+#[test]
+fn by_hand_keeps_the_sign_ins_on_a_pool_that_names_none() {
+    let see = by_hand("builds", &[], &["work".into()], &["home".into()], true).unwrap();
+
+    assert_eq!(see.text, "purlis profile sign-in home --pool builds");
+    assert!(see.note.contains("Run it yourself"), "{}", see.note);
+    assert!(
+        see.note.contains("names none of its profiles"),
+        "{}",
+        see.note
+    );
+    assert!(!see.note.contains("takes the unticked"), "{}", see.note);
+}
+
+/// **#5349**: adding a profile first makes the pool name its default too, so the line works.
+#[test]
+fn by_hand_keeps_the_line_where_adding_first_makes_the_pool_name_it() {
+    let machine = a_machine(&["work", "home"]);
+    let config = machine.path();
+    assert!(names_none(config, "builds"));
+
+    let see = by_hand("builds", &["home".into()], &["work".into()], &[], true).unwrap();
+    assert_eq!(
+        see.text,
+        "purlis pool add-profile builds home\npurlis pool remove-profile builds work"
+    );
+    assert!(!see.note.contains("names none"), "{}", see.note);
+
+    runners::add_pool_profiles(config, "builds", &["home".to_owned()], Some("work")).unwrap();
+    assert_eq!(may_take_off(config, "builds", "work"), Ok(()));
+    assert!(!names_none(config, "builds"));
+}
+
+/// **#5349**: a pool that can't be read isn't said to name none: its own line says what is wrong.
+#[test]
+fn a_pool_that_is_not_there_is_not_said_to_name_none() {
+    let machine = a_machine(&["work"]);
+    assert!(!names_none(machine.path(), "elsewhere"));
 }

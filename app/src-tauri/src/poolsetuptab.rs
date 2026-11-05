@@ -403,7 +403,7 @@ pub async fn pool_setup_sizes(
 
 /// **What Sign-ins' button runs, by hand, for the profiles ticked** (#4718, #5174, Q30): `adding`
 /// recorded on pool `pool`, each of `taking_off` taken off it, then each of `signing_in` signed in
-/// there, as the core spells it. None where the button would run nothing. It only spells.
+/// there, as the core spells it. None where the button would run nothing. It only reads.
 #[tauri::command]
 #[specta::specta]
 pub async fn pool_setup_sign_ins_by_hand(
@@ -412,13 +412,16 @@ pub async fn pool_setup_sign_ins_by_hand(
     taking_off: Vec<String>,
     signing_in: Vec<String>,
 ) -> Result<Option<PoolSetupSee>, String> {
+    use purlis_core::poolsetup::signins;
+    let names_none = purlis_core::machine::config_root()
+        .is_some_and(|config| signins::names_none(&config, &pool));
     Ok(
-        purlis_core::poolsetup::signins::by_hand(&pool, &adding, &taking_off, &signing_in).map(
-            |see| PoolSetupSee {
+        signins::by_hand(&pool, &adding, &taking_off, &signing_in, names_none).map(|see| {
+            PoolSetupSee {
                 note: see.note,
                 text: see.text,
-            },
-        ),
+            }
+        }),
     )
 }
 
