@@ -3441,6 +3441,7 @@ impl ChatBrowsers {
                         );
                     }
                     if let Some(chat) = self.lock().get_mut(&browse.chat) {
+                        chat.clean_load_tried.push(program.clone());
                         chat.clean_load_tried.push(clean.clone());
                         chat.left_behind.push(LeftBehind {
                             opened: opened.clone(),
