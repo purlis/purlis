@@ -141,6 +141,7 @@ export function SkillBudgetTable({
                   <Button
                     size="sm"
                     variant="ghost"
+                    className="skill-budget-press"
                     aria-label={`Reset to default, ${one.program}'s most skills`}
                     isDisabled={off || one.skills_here === null}
                     tooltip={unavailable(one.skills_here)}
@@ -163,6 +164,7 @@ export function SkillBudgetTable({
                   <Button
                     size="sm"
                     variant="ghost"
+                    className="skill-budget-press"
                     aria-label={`Reset to default, ${one.program}'s most characters`}
                     isDisabled={off || one.chars_here === null}
                     tooltip={unavailable(one.chars_here)}
@@ -179,9 +181,10 @@ export function SkillBudgetTable({
                   </Button>
                 </span>
               </TableCell>
-              <TableCell heading="Change">
+              <TableCell>
                 <Button
                   size="sm"
+                  className="skill-budget-press"
                   aria-label={`Change ${one.program}'s skill budget`}
                   isDisabled={off}
                   tooltip={readOnly}

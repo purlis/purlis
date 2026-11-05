@@ -8573,6 +8573,12 @@ nav.piece-files-head {
   white-space: normal;
 }
 
+/* Each button as wide as its words, under its number, stacked or not. */
+.skill-budget-press {
+  align-self: flex-start;
+  inline-size: fit-content;
+}
+
 .skill-budget-cost {
   display: flex;
   flex-direction: column;

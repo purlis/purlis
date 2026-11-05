@@ -75,6 +75,7 @@ function Budget({
   refuses,
   readOnly,
   followed,
+  width = "46rem",
 }: {
   preview: SkillBudgetPreview;
   extensionRouter: boolean;
@@ -82,18 +83,22 @@ function Budget({
   readOnly?: string;
   /** A control after the table, for a Tab to land on as it leaves. */
   followed?: boolean;
+  /** The room it has: a table from 32rem, a stacked form below that. */
+  width?: string;
 }) {
   clearMocks();
   mockIPC((cmd) => (cmd === "skill_budget_preview" ? preview : null));
   return (
     <ReadOnlySaid.Provider value={readOnly}>
-      <SkillBudgetTable
-        plane="p"
-        budget={BUDGET}
-        level={{ workspace: "smart-ide", persona: null }}
-        extensionRouter={extensionRouter}
-        onWrite={(_write, told) => (refuses === undefined ? told.done() : told.refused(refuses))}
-      />
+      <div style={{ inlineSize: width }}>
+        <SkillBudgetTable
+          plane="p"
+          budget={BUDGET}
+          level={{ workspace: "smart-ide", persona: null }}
+          extensionRouter={extensionRouter}
+          onWrite={(_write, told) => (refuses === undefined ? told.done() : told.refused(refuses))}
+        />
+      </div>
       {followed && <Button>After the table</Button>}
     </ReadOnlySaid.Provider>
   );
@@ -220,6 +225,20 @@ export const ReadOnly: Story = {
     await expect(change).toHaveAttribute("aria-disabled", "true");
     await userEvent.tab();
     await arrowTo("Change Claude Code's skill budget");
+    expectFocusInSight();
+  },
+};
+
+/** **Where its room is narrow**, as on the Routing page beside a list: a form, each number's words
+ *  whole, its reset under them, and Change… on a line of its own. */
+export const Stacked: Story = {
+  args: { width: "20rem" },
+  play: async ({ canvas }) => {
+    await userEvent.tab();
+    await arrowTo("Change Claude Code's skill budget");
+    await expect(
+      canvas.getByRole("button", { name: "Change Claude Code's skill budget" }),
+    ).toBeVisible();
     expectFocusInSight();
   },
 };
