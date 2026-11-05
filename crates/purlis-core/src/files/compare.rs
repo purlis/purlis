@@ -307,7 +307,7 @@ pub fn what_changed(
         path: path.to_string(),
     };
     match reader.ask(plane, branch, ask)? {
-        super::Answer::WhatChanged(Shown::Changed(shown)) => Ok(shown),
+        super::Answer::WhatChanged(Shown::Changed(shown)) => Ok(*shown),
         super::Answer::WhatChanged(Shown::NotListed { more: 0 }) => {
             Err(Refused::NotChanged(path.to_string()))
         }
@@ -339,7 +339,7 @@ pub fn discard(
 /// the app says whether the file is unchanged or only not among the first.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Shown {
-    Changed(WhatChanged),
+    Changed(Box<WhatChanged>),
     NotListed { more: usize },
 }
 
@@ -437,14 +437,14 @@ pub(super) fn one_file_compared(
     } else {
         crate::checks::of_branch(plane, branch, &change.path, hunks, head.as_deref())
     };
-    Ok(Shown::Changed(WhatChanged {
+    Ok(Shown::Changed(Box::new(WhatChanged {
         change,
         base: compared.base,
         diff,
         stamp,
         checks: Box::new(checks),
         since_turn_ended,
-    }))
+    })))
 }
 
 /// A turn of a chat, as the file diff's turn picker names it (#5408).
@@ -552,7 +552,7 @@ pub(super) fn turn_changed_here(
         Ok(listed.clone().unwrap_or_default())
     };
     let file = match one_file_compared(plane, branch, &opened, &comparison, path)? {
-        Shown::Changed(shown) => InTurn::Changed(Box::new(shown)),
+        Shown::Changed(shown) => InTurn::Changed(shown),
         Shown::NotListed { .. } => {
             if list()?.is_empty() {
                 InTurn::Nothing

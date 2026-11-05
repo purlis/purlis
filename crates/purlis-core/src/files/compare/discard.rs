@@ -268,7 +268,7 @@ pub(in super::super) fn discard_here(
         None => what_changed_here(plane, branch, &path),
     };
     let now = match now {
-        Ok(Shown::Changed(shown)) => Some(Box::new(shown)),
+        Ok(Shown::Changed(shown)) => Some(shown),
         Ok(Shown::NotListed { .. }) | Err(_) => None,
     };
     Ok(Discarded::Done {
