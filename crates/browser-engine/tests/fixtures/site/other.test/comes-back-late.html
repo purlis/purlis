@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Comes back late</title></head>
+<body>
+  <h1>Comes back late</h1>
+  <script>
+    // A while after it loaded, it takes this tab to a page that leaves a session on another site.
+    setTimeout(() => { location.href = 'http://fixture.test/clean-earlier-session.html'; }, 1500);
+  </script>
+</body></html>

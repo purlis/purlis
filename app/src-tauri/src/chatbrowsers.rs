@@ -245,9 +245,12 @@ struct Chat {
     /// The browsers `browser_new` opened that nothing has been asked of since (#5121): the chat
     /// asked for a browser apart, so a login goes there and not back to one holding it already.
     apart: Vec<String>,
-    /// A browser opened for a login with another left behind, until the person's timeline has
+    /// The browsers opened for a login with another left behind, until the person's timeline has
     /// said so (#5121, #5272).
-    left_behind: Option<LeftBehind>,
+    left_behind: Vec<LeftBehind>,
+    /// The browsers opened as a login's form didn't appear on its clean load (#5272): a login whose
+    /// form doesn't appear in one of these opens no other.
+    opened_clean: Vec<String>,
     /// Its identity (ADR 0066), as the app's record of it says: what a window that comes back
     /// matches its browsers' notes by (#2025).
     id: Option<String>,
@@ -313,7 +316,8 @@ impl Default for Chat {
     fn default() -> Self {
         Chat {
             apart: Vec::new(),
-            left_behind: None,
+            left_behind: Vec::new(),
+            opened_clean: Vec::new(),
             id: None,
             posture: Posture::Unasked,
             since: 0,
@@ -1459,7 +1463,8 @@ impl ChatBrowsers {
         )
     }
 
-    /// **The moment of chat `session`'s timeline that says a browser was left behind** (#5121), once.
+    /// **The next moment of chat `session`'s timeline that says a browser was left behind** (#5121),
+    /// each once.
     pub fn left_behind_moment(
         &self,
         session: u32,
@@ -1470,7 +1475,14 @@ impl ChatBrowsers {
             login,
             left,
             why,
-        } = self.lock().get_mut(&session)?.left_behind.take()?;
+        } = {
+            let mut chats = self.lock();
+            let left = &mut chats.get_mut(&session)?.left_behind;
+            if left.is_empty() {
+                return None;
+            }
+            left.remove(0)
+        };
         Some(match why {
             WentApart::ToKeep => {
                 purlis_core::browsertimeline::opened_to_keep(&opened, &login, &left, at)
@@ -3167,8 +3179,7 @@ impl ChatBrowsers {
         // the one it uses (#5121, SF-7). Only one kept for later reuse goes elsewhere: its store
         // opens in a browser of its own (#2021), already held to the login's site, and the one
         // left behind is said (`LoginRead::opens`).
-        let mut left_behind = None;
-        let mut went_apart = WentApart::ToKeep;
+        let mut left_behind: Vec<(String, String, WentApart)> = Vec::new();
         let named = match &act {
             Doing::LogIn(declared, read) if browse.browser.is_none() => {
                 // A login that went through there, or a store opened there: never one merely
@@ -3205,13 +3216,13 @@ impl ChatBrowsers {
                         match start(chat, read.login.keep.clone()) {
                             Ok(name) => {
                                 if let Some(left) = left {
-                                    chat.left_behind = Some(LeftBehind {
+                                    chat.left_behind.push(LeftBehind {
                                         opened: name.clone(),
                                         login: declared.clone(),
                                         left: left.clone(),
                                         why: WentApart::ToKeep,
                                     });
-                                    left_behind = Some((name.clone(), left));
+                                    left_behind.push((name.clone(), left, WentApart::ToKeep));
                                 }
                                 Some(name)
                             }
@@ -3356,13 +3367,35 @@ impl ChatBrowsers {
                 };
                 let mut done = perform(&program, login.clone());
                 // A form that doesn't appear on the clean load leads to a browser that has held
-                // nothing, once, and to nothing else (#5272): what that browser says is the answer.
-                if let Err(Refused::NoFormOnCleanLoad(why)) = &done {
+                // nothing, once, and to nothing else (#5272): what that browser says is the answer,
+                // this call or a later one. The first try may have taken a while, so whether the
+                // login may still be filled is asked again.
+                let was_opened_clean = self
+                    .lock()
+                    .get(&browse.chat)
+                    .is_some_and(|chat| chat.opened_clean.contains(&program));
+                if let (Err(Refused::NoFormOnCleanLoad(why)), false) = (&done, was_opened_clean) {
                     let why = why.clone();
-                    let opened = self
-                        .lock()
-                        .get_mut(&browse.chat)
-                        .map(|chat| start(chat, None));
+                    let locks = purlis_core::sandbox::policy::Locks::of(root);
+                    let refused = locks
+                        .refuses_tool(persona_now.as_deref().unwrap_or_default(), &declared)
+                        .or_else(|| {
+                            if granted {
+                                locks.vault_grants_refused()
+                            } else {
+                                None
+                            }
+                        });
+                    if let Some(not) = refused {
+                        return (no(&format!("{why}. {not}")), false);
+                    }
+                    let opened = self.lock().get_mut(&browse.chat).map(|chat| {
+                        if matches!(chat.posture, Posture::Allowed { .. }) {
+                            start(chat, None)
+                        } else {
+                            Err("this chat may no longer use a browser".to_owned())
+                        }
+                    });
                     let opened = match opened {
                         Some(Ok(opened)) => opened,
                         Some(Err(not)) => return (no(&format!("{why}. {not}")), false),
@@ -3386,31 +3419,33 @@ impl ChatBrowsers {
                         );
                     }
                     if let Some(chat) = self.lock().get_mut(&browse.chat) {
-                        chat.left_behind = Some(LeftBehind {
+                        chat.opened_clean.push(clean.clone());
+                        chat.left_behind.push(LeftBehind {
                             opened: opened.clone(),
                             login: declared.clone(),
                             left: name.clone(),
                             why: WentApart::NoFormOnCleanLoad,
                         });
                     }
-                    left_behind = Some((opened.clone(), name.clone()));
-                    went_apart = WentApart::NoFormOnCleanLoad;
+                    left_behind.push((opened.clone(), name.clone(), WentApart::NoFormOnCleanLoad));
                     done = perform(&clean, login.clone());
                     name = opened;
                     program = clean;
                 }
                 drop(login);
-                let moved = |said: String| match &left_behind {
-                    Some((opened, left)) => {
-                        let apart = match went_apart {
+                let moved = |said: String| {
+                    let mut told = String::new();
+                    for (opened, left, why) in &left_behind {
+                        told.push_str(&match why {
                             WentApart::ToKeep => kept_apart_said(opened, &declared, left),
                             WentApart::NoFormOnCleanLoad => {
                                 clean_apart_said(opened, &declared, left)
                             }
-                        };
-                        format!("{apart}. {said}")
+                        });
+                        told.push_str(". ");
                     }
-                    None => said,
+                    told.push_str(&said);
+                    told
                 };
                 let logged_in = match done {
                     Ok(mut browsed) => {
@@ -3420,8 +3455,7 @@ impl ChatBrowsers {
                     }
                     // It moved all the same, and is told so.
                     Err(Refused::Said(why)) => Err(Refused::Said(moved(why))),
-                    // Only the first browser says this, and it was answered above: a browser
-                    // that has held nothing never does.
+                    // One opened clean said it: it opens no other.
                     Err(Refused::NoFormOnCleanLoad(why)) => Err(Refused::Said(moved(why))),
                     Err(gone) => Err(gone),
                 };
@@ -3910,7 +3944,7 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
         keep_in_timeline(held, browse.chat, happened);
     }
     // A login that went into a new browser says why in the person's view too (#5121).
-    if let Some(happened) = held.browsers().left_behind_moment(browse.chat, now) {
+    while let Some(happened) = held.browsers().left_behind_moment(browse.chat, now) {
         keep_in_timeline(held, browse.chat, happened);
     }
     // A secret fill refused says why in the person's view of the browser too (#5115).

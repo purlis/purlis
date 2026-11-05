@@ -286,6 +286,22 @@ fn a_login_leaves_no_page_of_its_site_open_and_others_as_they_are() {
     );
 }
 
+/// #5272: a page of another site can't put a session back while the login clears and fills: its timer
+/// waits for the login to answer, though the login's form takes longer than the timer to show.
+#[test]
+fn a_page_elsewhere_cannot_put_a_session_back_during_a_login() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    let later = WebAddress::parse("http://other.test/comes-back-late.html").unwrap();
+    call(&browser, Call::Open { address: later });
+    let login = in_a_used_browser("clean-late-site.html");
+    let ended = browser.log_in(&login, binds()).expect("the login runs");
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    assert!(sees(&browser, "Account"), "{}", snapshot(&browser));
+    assert!(!snapshot(&browser).contains("Kept for the earlier session"));
+}
+
 /// #5272: a page the clean load can't show its form on is said by its own kind, with nothing filled.
 #[test]
 fn a_login_page_with_no_form_for_a_clean_browser_is_said_by_its_own_kind() {

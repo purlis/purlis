@@ -357,6 +357,59 @@ fn a_form_not_on_the_clean_load_opens_one_browser_and_no_more() {
     assert!(logged_into(&hosted).is_empty());
 }
 
+/// #5272: nor does a later call, whatever the browser opened for it says then.
+#[test]
+fn a_browser_opened_as_a_clean_load_failed_opens_no_other_on_a_later_call() {
+    let (browsers, hosted) = with_a_used_browser();
+    *hosted.no_form_on_clean_load.lock().unwrap() = 5;
+    called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    assert!(matches!(answer, Answer::No { .. }), "{answer:?}");
+    assert_eq!(started_browsers(&hosted), 2);
+}
+
+/// #5272: each browser left behind keeps its offer, in the answer and in the person's view.
+#[test]
+fn a_kept_login_with_no_form_on_its_clean_load_offers_to_close_both_browsers() {
+    let (browsers, hosted) = with_a_used_browser();
+    *hosted.no_form_on_clean_load.lock().unwrap() = 1;
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("kept-login")));
+
+    let (browser, note) = browser_and_note(&answer);
+    assert_eq!(browser, "b3");
+    assert!(note.contains("Browser b1 is still open"), "{note}");
+    assert!(note.contains("Browser b2 is still open"), "{note}");
+    let first = browsers.left_behind_moment(3, 1000).expect("said");
+    assert!(first.moment.did.contains("b1 is still open"), "{first:?}");
+    let second = browsers.left_behind_moment(3, 1000).expect("said");
+    assert!(second.moment.did.contains("b2 is still open"), "{second:?}");
+    assert!(browsers.left_behind_moment(3, 1000).is_none());
+}
+
+/// #5272: the first try may have taken a while: what policy says now holds the second.
+#[test]
+fn a_form_not_on_the_clean_load_opens_no_browser_where_policy_now_forbids_the_login() {
+    use purlis_core::sandbox::policy::{Locks, set_for_this_test};
+    let (browsers, hosted) = with_a_used_browser();
+    *hosted.no_form_on_clean_load.lock().unwrap() = 1;
+    set_for_this_test(Locks::parse(
+        r#"{"sandbox": {"persona-tools": false}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    ));
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    let Answer::No { why } = answer else {
+        panic!("{answer:?}");
+    };
+    assert!(why.contains("policy forbids"), "{why}");
+    assert_eq!(started_browsers(&hosted), 1);
+    assert!(logged_into(&hosted).is_empty());
+}
+
 /// #5272: no room for one says so, and leaves the chat where it is, with nothing filled.
 #[test]
 fn a_form_not_on_the_clean_load_with_no_room_for_a_browser_says_both() {

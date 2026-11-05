@@ -45,8 +45,9 @@
 //! sentence it answers carries a value.
 //!
 //! **Every login that fills starts clean on its own site** (#5272, the person's ruling of
-//! 2026-11-05): once the browser is held to the login, and before anything is filled, every page
-//! showing those sites goes blank, all they store is gone (the cookies they would be sent, a parent
+//! 2026-11-05): before the browser is held to the login, every page showing those sites goes blank
+//! and every other page is held still until the login answers, as nothing else could put back what
+//! goes. Once it's held, and before anything is filled, all they store is gone (the cookies they would be sent, a parent
 //! domain's too, their service workers, local storage, IndexedDB and caches), and the login's page
 //! loads in a new tab of its own, past the browser's HTTP cache, which has no way to clear one site.
 //! Where that can't be done, nothing is filled. Other sites are left as they are. A page that asks
@@ -165,6 +166,26 @@ pub struct LoginEnded {
     pub driver: Driver,
     pub epoch: u64,
     pub outcome: Result<Answer, Refusal>,
+}
+
+/// The pages held still while a login clears its sites and fills them, let go of as it's dropped.
+struct HeldStill<'a> {
+    browser: &'a Browser,
+    pages: Vec<String>,
+}
+
+impl Drop for HeldStill<'_> {
+    fn drop(&mut self) {
+        for page in &self.pages {
+            if let Ok(session) = self.browser.page_session(page) {
+                let _ = self.browser.devtools().call(
+                    "Page.setWebLifecycleState",
+                    json!({ "state": "active" }),
+                    Some(session.as_str()),
+                );
+            }
+        }
+    }
 }
 
 /// A field of the login's page: the engine's handle on it, and the element it is.
@@ -346,11 +367,26 @@ impl Browser {
             }
         }
         // A browser that has held nothing has its first load clean, so the form is looked for
-        // there, and it's held once one shows. Any other is held first, and looks only on the
-        // clean load: what it shows now is an earlier session's, whatever it shows.
-        if login.clean_already {
+        // there, and it's held once one shows. One that may hold this login clears only for a form
+        // it sees: a page that can't be read, or that went elsewhere, says nothing of its session
+        // (#5272). Any other is held first, and looks only on the clean load: what it shows now is
+        // an earlier session's, whatever it shows.
+        if login.clean_already || login.only_if_asked {
             self.wait_for_form(&target, origin, deadline, &|page| shows_form(self, page))?;
         }
+        // No page but the login's own runs while it's cleared and filled, or it could put back
+        // what goes. Let go of as the login answers, whatever it answers.
+        let _still = if login.clean_already {
+            None
+        } else {
+            let not_cleared = |why: String| not_cleared(origin, &why);
+            self.blank_pages_of(&target, login).map_err(not_cleared)?;
+            let still = self.hold_still_all_but(&target).map_err(not_cleared)?;
+            if self.a_page_of_its_sites_besides(&target, login) {
+                return Err(not_cleared("a page of its came back".to_owned()));
+            }
+            Some(still)
+        };
         // From here on, the browser holds the login.
         hold.bind().map_err(|why| {
             not_logged_in(format!(
@@ -451,13 +487,7 @@ impl Browser {
     ) -> Result<String, Refusal> {
         let origin = login.origin.as_str();
         let within = self.inner.limits.login_within;
-        let not_cleared = |why: String| {
-            not_logged_in(format!(
-                "purlis could not clear {origin} before the login ({why}), so nothing was filled"
-            ))
-        };
-        // No document of those sites is left to put back what goes.
-        self.blank_pages_of(opened, login).map_err(not_cleared)?;
+        let not_cleared = |why: String| not_cleared(origin, &why);
         self.clear_sites(opened, login).map_err(not_cleared)?;
         let target = self.own_blank_page()?;
         let session = self.page_session(&target)?;
@@ -493,22 +523,58 @@ impl Browser {
             );
             return Err(why);
         }
+        if self.a_page_of_its_sites_besides(&target, login) {
+            return Err(not_cleared("a page of its came back".to_owned()));
+        }
         Ok(target)
+    }
+
+    /// Whether `page` shows a document of the login's sites.
+    fn on_its_sites(&self, page: &str, login: &Login) -> bool {
+        self.document_origin(page).is_some_and(|here| {
+            here == login.origin || login.back_to.as_deref() == Some(here.as_str())
+        })
+    }
+
+    /// Whether any page but `target` shows a document of the login's sites.
+    fn a_page_of_its_sites_besides(&self, target: &str, login: &Login) -> bool {
+        self.targets()
+            .iter()
+            .any(|page| page != target && self.on_its_sites(page, login))
+    }
+
+    /// **Holds every page but `target` still** (module docs), for as long as what it answers lives.
+    /// One that won't is a failure, and those already held are let go of.
+    fn hold_still_all_but(&self, target: &str) -> Result<HeldStill<'_>, String> {
+        let mut still = HeldStill {
+            browser: self,
+            pages: Vec::new(),
+        };
+        for page in self.targets() {
+            if page == target {
+                continue;
+            }
+            let session = self.page_session(&page).map_err(|why| why.to_string())?;
+            self.devtools()
+                .call(
+                    "Page.setWebLifecycleState",
+                    json!({ "state": "frozen" }),
+                    Some(session.as_str()),
+                )
+                .map_err(|_| "a page of this browser would not hold still".to_owned())?;
+            still.pages.push(page);
+        }
+        Ok(still)
     }
 
     /// **Sends every page showing a document of the login's sites to a blank one** (module docs),
     /// `target` too, and waits until none shows one: a page there could put back what's cleared.
     /// Pages of other sites are left as they are.
     fn blank_pages_of(&self, target: &str, login: &Login) -> Result<(), String> {
-        let on_its_sites = |this: &Self, page: &str| {
-            this.document_origin(page).is_some_and(|here| {
-                here == login.origin || login.back_to.as_deref() == Some(here.as_str())
-            })
-        };
         let pages: Vec<String> = self
             .targets()
             .into_iter()
-            .filter(|page| page == target || on_its_sites(self, page))
+            .filter(|page| page == target || self.on_its_sites(page, login))
             .collect();
         for page in &pages {
             let session = self.page_session(page).map_err(|why| why.to_string())?;
@@ -522,7 +588,7 @@ impl Browser {
                 .map_err(|_| "a page of its would not leave".to_owned())?;
         }
         self.wait_until(self.inner.limits.login_within, 1, || {
-            Ok(!pages.iter().any(|page| on_its_sites(self, page)))
+            Ok(!pages.iter().any(|page| self.on_its_sites(page, login)))
         })
         .map_err(|_| "a page of its would not leave".to_owned())
     }
@@ -1088,6 +1154,13 @@ pub(super) fn reaches(domain: &str, host: &str) -> bool {
         Some(parent) => host == parent || host.ends_with(&format!(".{parent}")),
         None => host == domain,
     }
+}
+
+/// What a login is refused with where `origin` couldn't be cleared for it.
+fn not_cleared(origin: &str, why: &str) -> Refusal {
+    not_logged_in(format!(
+        "purlis could not clear {origin} before the login ({why}), so nothing was filled"
+    ))
 }
 
 fn not_logged_in(why: String) -> Refusal {

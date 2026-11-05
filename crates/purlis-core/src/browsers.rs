@@ -1429,6 +1429,13 @@ impl Keeping {
         self.fresh.store(false, std::sync::atomic::Ordering::SeqCst);
     }
 
+    /// **Its login's form didn't appear once its site was cleared** (#5272), so the login goes to a
+    /// new browser: this one lets go of the store it opened from, for that one to keep, and writes
+    /// nothing of what it cleared over it.
+    fn no_form_on_clean_load(&mut self) {
+        self.writes = None;
+    }
+
     /// **Whether it has held nothing so far** (#5272): no act, no input of the person's, no login
     /// tried, and nothing opened from a kept login.
     fn held_nothing(&self) -> bool {
@@ -2009,6 +2016,12 @@ impl Screen for EngineScreen {
             })
             .map_err(NotActed::Refused)?;
         let ended = ended.map_err(not_acted)?;
+        if matches!(ended.outcome, Err(drive::Refusal::NoFormOnCleanLoad(_))) {
+            self.keeping
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .no_form_on_clean_load();
+        }
         // Only where the browser is held to its page: nothing else counts as signed in (#5121).
         if counts_as_signed_in(
             ended.outcome.is_ok(),

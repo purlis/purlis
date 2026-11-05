@@ -762,8 +762,6 @@ fn a_login_of_another_site_is_refused_while_a_page_holding_a_secret_holds_the_br
     assert!(done.is_ok() && ran, "that very site goes ahead");
 }
 
-/// #5121: a login counts as signed in, for a later call, only where it answered with the browser
-/// held to its page.
 /// #5272: only a browser with nothing behind it skips the clearing: an act of anyone's, a login tried
 /// or a kept login it opened from is something to clear.
 #[test]
@@ -804,6 +802,8 @@ fn a_logins_address_says_nothing_of_whether_it_is_clean_already() {
     assert!(!login.clean_already);
 }
 
+/// #5121: a login counts as signed in, for a later call, only where it answered with the browser
+/// held to its page.
 #[test]
 fn a_login_counts_as_signed_in_only_where_it_answered_and_holds_the_browser_to_its_page() {
     use crate::sandbox::browser_reach::Site;
@@ -1301,6 +1301,31 @@ fn a_browser_opened_from_its_store_keeps_it_however_it_browsed_since() {
 
     assert_eq!(it.keep(&kept_login()), None);
     assert!(it.writes.is_some());
+}
+
+/// #5272: a browser whose login moved on writes nothing it cleared over its store, and leaves it for
+/// the new browser to keep.
+#[test]
+fn a_browser_whose_form_did_not_appear_on_its_clean_load_lets_go_of_its_store() {
+    let base = tempfile::tempdir().unwrap();
+    let home = base.path().join("data");
+    let keyring = std::sync::Arc::new(crate::secrets::keyring::FileStore::at(
+        base.path().join("keyring.json"),
+    ));
+    let folder = browsers_in(&home).join("opened");
+    let mut it = keeping(&home, &folder, &keyring);
+    it.open(&kept_login()).unwrap();
+    assert_eq!(it.keep(&kept_login()), None);
+    assert!(it.writes.is_some());
+
+    it.no_form_on_clean_load();
+
+    assert!(it.writes.is_none());
+    let next = browsers_in(&home).join("next");
+    let mut clean = keeping(&home, &next, &keyring);
+    clean.tried(Some(&kept_login()));
+    assert_eq!(clean.keep(&kept_login()), None, "the new browser keeps it");
+    assert!(clean.writes.is_some());
 }
 
 #[test]
