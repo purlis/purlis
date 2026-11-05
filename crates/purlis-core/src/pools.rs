@@ -536,15 +536,18 @@ pub fn pools_run_on(
 ) -> Vec<String> {
     let store = crate::machine::read(config_root).store;
     let clones = crate::codelink::clones_in(plane, workspace).unwrap_or_default();
-    let folder = plane.join("workspaces").join(workspace);
+    let folders: Vec<std::path::PathBuf> = clones
+        .iter()
+        .filter_map(|clone| crate::repofolder::folder(plane, workspace, clone).ok())
+        .collect();
     pools
         .iter()
         .filter(|pool| {
             clones.is_empty()
                 || store.ran_on(plane, workspace, pool)
-                || clones
+                || folders
                     .iter()
-                    .any(|clone| crate::codelink::holds_branches_of(&folder.join(clone), pool))
+                    .any(|folder| crate::codelink::holds_branches_of(folder, pool))
         })
         .cloned()
         .collect()
