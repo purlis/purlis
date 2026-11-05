@@ -156,7 +156,6 @@ function core(
       if (cmd === "asks_waiting") return { plane: PLANE, asks: [] };
       if (cmd === "mcp_failures") return [];
       if (cmd === "smart_closing") return [];
-      if (cmd === "skill_studio_on") return true;
       if (cmd === "skill_drafts") return [];
       if (cmd === "skill_studio") return { on: false };
       if (cmd === "chat_skills") return skillsOf;
