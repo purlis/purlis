@@ -2047,36 +2047,52 @@ impl HostLink {
         }
     }
 
-    /// How long a fresh runner's proof waits for its list (#5312): the host's limit for looking
-    /// through every file of its image the task could have changed, on top of the wait for any
-    /// answer. Never for a call that may run under a lock the window's commands wait on.
-    pub(crate) fn proof_within(&self) -> Duration {
-        let answer = if self.pool.is_some() {
+    /// How long this link waits for any answer.
+    pub(crate) fn answer_within(&self) -> Duration {
+        if self.pool.is_some() {
             use purlis_core::poollimits::LimitId::AnswerWait;
             Duration::from_secs(self.limits().in_force(AnswerWait))
         } else {
             ANSWER_WITHIN
-        };
-        purlis_core::codelink::held::LOOK_WITHIN + answer
+        }
+    }
+
+    /// How long a fresh runner's proof waits for its list (#5312): the host's limit for looking
+    /// through every file of its image the task could have changed, on top of the wait for any
+    /// answer. Never for a call that may run under a lock the window's commands wait on.
+    pub(crate) fn proof_within(&self) -> Duration {
+        purlis_core::codelink::held::LOOK_WITHIN + self.answer_within()
     }
 
     /// [`Self::repos_held`], waiting at most `within`, and said why where that ran out.
     pub(crate) fn repos_held_within(&self, within: Duration) -> Result<Option<ReposHeld>, String> {
-        if self.version() < session::KNOWS_REPOS_HELD {
-            return Ok(None);
-        }
-        match self.call_timed(Command::ReposHeld, within) {
-            Some(Ok(Answer::ReposHeld { repos, unread })) => Ok(Some((repos, unread))),
-            Some(Ok(_)) => Err("the runner did not say which repositories it holds".to_owned()),
-            Some(Err(refused)) => Err(refused.why),
-            // Only this machine's own clock says the wait ran out.
-            None => Err(format!(
-                "it did not answer within {}, the longest purlis waits for one check, so purlis \
-                 can't tell all its work is here. {}",
-                purlis_core::poollimits::Unit::Minutes.said(within.as_secs().div_ceil(60)),
+        self.repos_held_unless_late(within).unwrap_or_else(|| {
+            let waited = if within.as_secs() < 60 {
+                format!("{} seconds", within.as_secs())
+            } else {
+                purlis_core::poollimits::Unit::Minutes.said(within.as_secs().div_ceil(60))
+            };
+            Err(format!(
+                "it did not answer within {waited}, so purlis can't tell all its work is here. {}",
                 purlis_core::codelink::held::WHAT_HELPS_A_CHECK
-            )),
+            ))
+        })
+    }
+
+    /// [`Self::repos_held`], or `None` where `within` ran out, which only this machine's own clock
+    /// says.
+    fn repos_held_unless_late(
+        &self,
+        within: Duration,
+    ) -> Option<Result<Option<ReposHeld>, String>> {
+        if self.version() < session::KNOWS_REPOS_HELD {
+            return Some(Ok(None));
         }
+        Some(match self.call_timed(Command::ReposHeld, within)? {
+            Ok(Answer::ReposHeld { repos, unread }) => Ok(Some((repos, unread))),
+            Ok(_) => Err("the runner did not say which repositories it holds".to_owned()),
+            Err(refused) => Err(refused.why),
+        })
     }
 
     /// Whether the host names where each clone it holds came from (1.54, #3985), so a clone it
@@ -3498,7 +3514,17 @@ fn reconnects_of(
 /// runner's task: one that cannot list what it holds can never be proved to hold nothing more. A
 /// list that is not whole is taken as holding it, so nothing is sent over what it missed.
 fn holds_its_own_code(link: &HostLink, project: &str) -> Result<bool, String> {
-    let Some((repos, unread)) = link.repos_held()? else {
+    // The ordinary wait: this may run under a lock the window's commands wait on.
+    let within = link.answer_within();
+    let Some(held) = link.repos_held_unless_late(within) else {
+        return Err(format!(
+            "This task's runner did not say within {} seconds what it holds, as it has a very \
+             large number of files to look through, so nothing was started. Start the task again \
+             in a moment: a second look is often quicker.",
+            within.as_secs()
+        ));
+    };
+    let Some((repos, unread)) = held? else {
         return Err(
             "This pool's runner image is too old to give a task a runner of its own, since it \
              can't list what it holds. Update the pool's runner image to this purlis's version."
@@ -4910,6 +4936,20 @@ impl SessionHost for HostedSessions {
             }
             Err(why) => vec![why],
         }
+    }
+
+    /// Over the same link, and under no lock (#5393).
+    fn not_home_of_runner(&self, runner: &str) -> Vec<String> {
+        match self.link() {
+            Ok((link, project)) => crate::runnercode::proof_of(&link, &project, &self.root, runner),
+            Err(why) => vec![why],
+        }
+    }
+
+    /// Only of a link already open: this opens none.
+    fn reaches_runner(&self, runner: &str) -> bool {
+        self.own_link(Duration::ZERO)
+            .is_ok_and(|link| link.reached_runner() == Some(runner))
     }
 
     /// Its links end, and the window keeps no connection under its name: no fresh runner's name

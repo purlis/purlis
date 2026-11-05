@@ -504,6 +504,11 @@ fn a_fresh_runners_work_is_proved_home_and_a_commit_on_no_branch_keeps_it() {
     assert_eq!(
         world.sessions.fetch_back_whole("app", FRESH),
         Vec::<String>::new(),
+        "every commit it holds came"
+    );
+    assert_eq!(
+        world.sessions.not_home_of_runner(FRESH),
+        Vec::<String>::new(),
         "every commit it holds is here"
     );
     assert_eq!(
@@ -516,11 +521,55 @@ fn a_fresh_runners_work_is_proved_home_and_a_commit_on_no_branch_keeps_it() {
 
     git(&there, &["checkout", "-q", "--detach"]);
     committed(&there, "lost.rs", "on no branch\n");
-    let missing = world.sessions.fetch_back_whole("app", FRESH);
+    assert_eq!(
+        world.sessions.fetch_back_whole("app", FRESH),
+        Vec::<String>::new()
+    );
+    let missing = world.sessions.not_home_of_runner(FRESH);
     assert!(
         missing.iter().any(|why| why.contains("HEAD")),
         "{missing:?}"
     );
+}
+
+/// **A look that took long is taken again, and only a second that passes lets the runner go**
+/// (#5393): what a first look found is no answer once it is old.
+#[test]
+fn a_passing_look_that_took_long_is_taken_again_and_a_quick_one_is_not() {
+    use std::cell::Cell;
+    use std::time::Duration;
+    let again = Cell::new(0);
+    let looks_again = |said: Vec<String>| {
+        again.set(again.get() + 1);
+        said
+    };
+
+    let said = crate::runnercode::proved_recently(Duration::from_secs(60), Vec::new, || {
+        looks_again(vec!["never asked".to_owned()])
+    });
+    assert!(said.is_empty(), "{said:?}");
+    assert_eq!(again.get(), 0, "a quick look is recent enough");
+
+    let said = crate::runnercode::proved_recently(
+        Duration::ZERO,
+        || {
+            std::thread::sleep(Duration::from_millis(5));
+            vec!["it holds more".to_owned()]
+        },
+        || looks_again(Vec::new()),
+    );
+    assert_eq!(said, ["it holds more"], "a look that failed already failed");
+    assert_eq!(again.get(), 0);
+
+    let slow = || {
+        std::thread::sleep(Duration::from_millis(5));
+        Vec::new()
+    };
+    let said = crate::runnercode::proved_recently(Duration::ZERO, slow, || {
+        looks_again(vec!["a commit since".to_owned()])
+    });
+    assert_eq!(said, ["a commit since"], "the second look is what counts");
+    assert_eq!(again.get(), 1);
 }
 
 /// A runner that takes its time over a list of what it holds, as the look through a very large
@@ -622,7 +671,11 @@ fn a_repository_the_task_made_where_no_clone_is_keeps_its_runner() {
     git(&nested, &["init", "-q", "-b", "main"]);
     committed(&nested, "lib.rs", "made on the runner\n");
 
-    let missing = world.sessions.fetch_back_whole("app", FRESH);
+    assert_eq!(
+        world.sessions.fetch_back_whole("app", FRESH),
+        Vec::<String>::new()
+    );
+    let missing = world.sessions.not_home_of_runner(FRESH);
 
     assert!(
         missing.iter().any(|why| why.contains("vendor/made")),

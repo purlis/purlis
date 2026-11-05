@@ -357,17 +357,74 @@ pub fn keep_chat_on_pool(
     pool: &str,
     workspace: &str,
 ) -> Result<(), String> {
-    let chat = crate::machine::ChatOnPool {
-        pool: pool.to_owned(),
-        workspace: workspace.to_owned(),
-    };
     crate::machine::update(config_root, |store| {
-        if runners::runner_of(config_root, pool).is_ok() {
-            store.keep_chat_on_pool(plane, number, chat);
+        if let Ok(runner) = runners::runner_of(config_root, pool) {
+            store.keep_chat_on_pool(
+                plane,
+                number,
+                crate::machine::ChatOnPool {
+                    pool: pool.to_owned(),
+                    workspace: workspace.to_owned(),
+                    runner: Some(runner.name().to_owned()),
+                },
+            );
         }
     })
     .map(|_| ())
     .map_err(|why| why.to_string())
+}
+
+/// **Keeps where chat `number` runs, as a restart found it** (#4683, #5393): on one of the pool's
+/// runners, and the record can't say which, so it counts for each of them.
+pub fn keep_chat_found_on_pool(
+    config_root: &Path,
+    plane: &Path,
+    number: u32,
+    pool: &str,
+    workspace: &str,
+) -> Result<(), String> {
+    crate::machine::update(config_root, |store| {
+        if runners::runner_of(config_root, pool).is_ok() {
+            store.keep_chat_on_pool(
+                plane,
+                number,
+                crate::machine::ChatOnPool {
+                    pool: pool.to_owned(),
+                    workspace: workspace.to_owned(),
+                    runner: None,
+                },
+            );
+        }
+    })
+    .map(|_| ())
+    .map_err(|why| why.to_string())
+}
+
+/// **The projects whose work on the draining runner `runner` of `pool` may not have come back**
+/// (#5393), by their folders: each that still owes a fetch from the pool, or keeps a chat that may
+/// be on that runner. A chat kept on the pool's next runner holds nothing back. Why, where the
+/// records can't be read, which says nothing of what is owed.
+pub fn work_owed_from(
+    config_root: &Path,
+    pool: &str,
+    runner: &str,
+) -> Result<Vec<std::path::PathBuf>, String> {
+    let loaded = crate::machine::read(config_root);
+    if let Some(why) = loaded.unreadable {
+        return Err(why);
+    }
+    Ok(loaded
+        .store
+        .recents
+        .iter()
+        .filter(|recent| {
+            recent.branches_to_fetch.contains_key(pool)
+                || recent.chats_on_pools.values().any(|chat| {
+                    chat.pool == pool && chat.runner.as_deref().is_none_or(|on| on == runner)
+                })
+        })
+        .map(|recent| recent.plane.clone())
+        .collect())
 }
 
 /// **Chat `number` no longer runs where it was kept** (#4590): no restart asks for it, and its

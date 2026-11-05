@@ -338,12 +338,20 @@ pub fn fresh_runner_ended(config: &Path, chat: &str, missing: &[String], proved:
         Err(why) => {
             tracing::warn!("purlis: a chat's fresh runner stays for now: {why}");
             FreshEnd::Kept {
-                why: vec![format!(
-                    "Its work is all here, but its claim could not be deleted: {why}"
-                )],
+                why: vec![release_failed_said(proved, &why)],
                 gone: false,
             }
         }
+    }
+}
+
+/// What a release that failed says (#5393): that all the runner's work is here only where a proof
+/// said so, and not for a runner the person discarded, whatever it holds.
+fn release_failed_said(proved: bool, why: &str) -> String {
+    if proved {
+        format!("Its work is all here, but its claim could not be deleted: {why}")
+    } else {
+        format!("It was to go, but its claim could not be deleted: {why}")
     }
 }
 

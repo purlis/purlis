@@ -1064,6 +1064,11 @@ pub struct Recent {
 pub struct ChatOnPool {
     pub pool: String,
     pub workspace: String,
+    /// The pool's runner as the chat started there, so a draining runner is held only by a chat
+    /// that may be on it (#5393). None for a chat found by a restart or kept before this was
+    /// written: it may be on any of the pool's runners.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runner: Option<String>,
 }
 
 /// The most chats on pools a project keeps: the lowest numbers, the oldest, go first.
@@ -1642,10 +1647,16 @@ impl Store {
     /// **Keeps where chat `number` of `plane` runs** (#4590). What it ran on before, on another
     /// pool, leaves its branches to come back. A plane this store doesn't remember keeps nothing,
     /// and such a chat is asked for as its settings say.
-    pub fn keep_chat_on_pool(&mut self, plane: &Path, number: u32, chat: ChatOnPool) {
+    pub fn keep_chat_on_pool(&mut self, plane: &Path, number: u32, mut chat: ChatOnPool) {
         let Some(entry) = self.recents.iter_mut().find(|one| one.plane == plane) else {
             return;
         };
+        // Kept again where it was, it is still on the runner it started on (#5393).
+        if let Some(before) = entry.chats_on_pools.get(&number)
+            && before.pool == chat.pool
+        {
+            chat.runner.clone_from(&before.runner);
+        }
         if let Some(before) = entry.chats_on_pools.insert(number, chat)
             && entry.chats_on_pools.get(&number) != Some(&before)
         {

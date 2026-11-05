@@ -109,6 +109,7 @@ impl KeptPlaces for TheStore {
             purlis_core::machine::ChatOnPool {
                 pool: pool.to_owned(),
                 workspace: workspace.to_owned(),
+                runner: None,
             },
         );
     }
@@ -927,6 +928,177 @@ fn a_runner_nothing_ran_on_goes_with_nothing_fetched() {
     assert!(fresh.fetched().is_empty());
 }
 
+/// **A check that takes minutes holds up no other chat's fetch-back** (#5393), and only what it
+/// finds decides whether the runner goes.
+#[test]
+fn a_fresh_runners_check_holds_up_no_other_fetch_and_decides_whether_it_goes() {
+    let (world, fresh) = a_world_with_a_fresh_runner();
+    world.sessions.when_one_ends(Arc::new(|_, _| {}));
+    let there = world
+        .sessions
+        .open_named(None, &named_in("app"), Default::default(), &|_| {})
+        .unwrap()
+        .number;
+    let check = Arc::new(std::sync::Barrier::new(2));
+    fresh.holds_its_proof(Arc::clone(&check));
+    fresh.not_home_says(&["it holds more"]);
+    let (tell, told) = std::sync::mpsc::channel();
+    world.sessions.take_back_fresh(
+        FRESH,
+        Some("app"),
+        Box::new(move |failed| {
+            tell.send(failed).expect("the test waits");
+            true
+        }),
+    );
+    check.wait();
+
+    world.builds.program_ends(there, Exit::Code(0));
+    let until = std::time::Instant::now() + Duration::from_secs(30);
+    while world.builds.fetched().is_empty() {
+        assert!(
+            std::time::Instant::now() < until,
+            "the other chat's fetch waited on the check"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    check.wait();
+    let failed = told
+        .recv_timeout(Duration::from_secs(30))
+        .expect("the end is told");
+    assert_eq!(failed, ["it holds more"]);
+}
+
+/// A runner whose work did not come is not looked through: it stays whatever that would find.
+#[test]
+fn a_fresh_runner_whose_fetch_failed_is_not_looked_through() {
+    let (world, fresh) = a_world_with_a_fresh_runner();
+    fresh.fetch_fails("the link went");
+    assert_eq!(
+        told_of_its_end(&world.sessions, false),
+        vec!["the link went".to_owned()]
+    );
+    assert_eq!(fresh.proofs(), 0);
+}
+
+/// A window with `app`'s chats on `builds`, one of whose runners, `old`, drains, reached under its
+/// own name, as a window that started again reaches it.
+fn a_window_with_a_draining_runner(machine: &AMachine) -> (RoutedSessions, Pretend) {
+    let old = Pretend::default();
+    old.on_a_runner();
+    let to_a_pool: ToAPool = {
+        let (builds, old) = (machine.builds.clone(), old.clone());
+        Arc::new(move |pool| match pool {
+            "builds" => Ok(Box::new(builds.clone()) as Box<dyn SessionHost>),
+            "builds/old" => Ok(Box::new(old.clone()) as Box<dyn SessionHost>),
+            other => Err(format!("pool {other} is not kept")),
+        })
+    };
+    let setting = Arc::clone(&machine.setting);
+    let runs_on: RunsOn = Arc::new(move |workspace, _start| {
+        Ok(workspace.and_then(|workspace| setting.lock().unwrap().get(workspace).cloned()))
+    });
+    let store: Arc<dyn KeptPlaces> = machine.store.clone();
+    let window = RoutedSessions::new(
+        Path::new("/planes/a"),
+        Box::new(machine.here.clone()),
+        runs_on,
+        on_pools(),
+        to_a_pool,
+    )
+    .keeping_chats(ChatsKept::in_places(store))
+    .taking_back_from(Arc::new(|_: &str| -> Vec<Result<String, String>> {
+        vec![Ok("builds/old".to_owned())]
+    }));
+    (window, old)
+}
+
+/// The window's fetch for `workspace` of `builds`, as a chat's end or its focus runs it.
+fn fetches_what_is_owed(window: &RoutedSessions) -> Vec<String> {
+    fetch_back_owed(
+        &window.shared,
+        &window.to_a_pool,
+        &window.draining_of,
+        &window.on_pools,
+        &window.chats_kept,
+        "builds",
+        &BTreeSet::from(["app".to_owned()]),
+    )
+}
+
+/// **What a draining runner holds is fetched before what is owed from its pool is settled**
+/// (#5393), though no chat of this window is on it: its removal goes by that record.
+#[test]
+fn a_fetch_asks_a_draining_runner_no_host_reaches_and_settles_only_once_it_answered() {
+    let machine = AMachine::new();
+    machine.store.owes("builds", "app");
+    let (window, old) = a_window_with_a_draining_runner(&machine);
+
+    old.fetch_fails_with(Some("the runner did not answer"));
+    assert_eq!(fetches_what_is_owed(&window), ["the runner did not answer"]);
+    window.chats_kept.settled();
+    assert!(
+        !machine.store.owed().is_empty(),
+        "its runner's work is still owed"
+    );
+
+    old.fetch_fails_with(None);
+    assert_eq!(fetches_what_is_owed(&window), Vec::<String>::new());
+    window.chats_kept.settled();
+    assert!(
+        old.fetched()
+            .contains(&("app".to_owned(), "builds".to_owned())),
+        "{:?}",
+        old.fetched()
+    );
+    assert!(machine.store.owed().values().all(BTreeSet::is_empty));
+}
+
+/// A draining runner that can't be told about settles nothing.
+#[test]
+fn a_draining_runner_that_cant_be_told_of_keeps_what_is_owed() {
+    let machine = AMachine::new();
+    machine.store.owes("builds", "app");
+    let (window, _) = a_window_with_a_draining_runner(&machine);
+    let window = window.taking_back_from(Arc::new(|_: &str| -> Vec<Result<String, String>> {
+        vec![Err("docker did not answer".to_owned())]
+    }));
+
+    assert_eq!(fetches_what_is_owed(&window), ["docker did not answer"]);
+    window.chats_kept.settled();
+    assert!(!machine.store.owed().values().all(BTreeSet::is_empty));
+}
+
+/// A runner's word that it holds no such repository is nothing to fetch, or a runner a workspace
+/// never ran on could never go.
+#[test]
+fn a_runner_that_holds_no_such_repository_owes_nothing() {
+    let machine = AMachine::new();
+    machine.store.owes("builds", "app");
+    let (window, old) = a_window_with_a_draining_runner(&machine);
+    old.fetch_fails_with(Some(purlis_core::codelink::NO_REPOSITORY_THERE));
+
+    assert_eq!(fetches_what_is_owed(&window), Vec::<String>::new());
+    window.chats_kept.settled();
+    assert!(machine.store.owed().values().all(BTreeSet::is_empty));
+}
+
+/// A host whose link is on the draining runner already asks it: a second link under its name would
+/// be refused, and what is owed never settled.
+#[test]
+fn a_draining_runner_a_host_reaches_already_gets_no_second_link() {
+    let machine = AMachine::new();
+    machine.store.owes("builds", "app");
+    let (window, old) = a_window_with_a_draining_runner(&machine);
+    machine.builds.reaches("old");
+
+    assert_eq!(fetches_what_is_owed(&window), Vec::<String>::new());
+
+    assert!(old.fetched().is_empty());
+    assert!(!machine.builds.fetched().is_empty());
+}
+
 /// A runner whose work did not come keeps its host, and is said to have failed: what ends it holds
 /// on to the claim.
 #[test]
@@ -1139,11 +1311,14 @@ fn the_routing_says_every_method_of_a_chats_host() {
     let every = methods(trait_source, "pub trait SessionHost");
     let said = methods(routed_source, "impl SessionHost for RoutedSessions");
     // `fetch_back` and `fetch_back_left` are the routing's own, through its saver
-    // (`FetchingBack`), and the two a fresh runner's end asks are its own host's.
+    // (`FetchingBack`), and what a fresh runner's end asks, and a fetch asks of each host, is that
+    // host's own.
     let its_own = [
         "fetch_back",
         "fetch_back_left",
         "fetch_back_whole",
+        "not_home_of_runner",
+        "reaches_runner",
         "let_go_of_runner",
     ];
     let unsaid: Vec<&String> = every

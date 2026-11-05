@@ -24,6 +24,10 @@ const SETTLED_WITHIN: Duration = Duration::from_secs(5);
 /// What keeps the records: this machine's store, or a test's.
 pub trait KeptPlaces: Send + Sync {
     fn keep(&self, number: u32, pool: &str, workspace: &str);
+    /// A restart found it on one of the pool's runners, and nothing says which (#5393).
+    fn keep_found(&self, number: u32, pool: &str, workspace: &str) {
+        self.keep(number, pool, workspace);
+    }
     /// It ran there and no longer does: never asked for again, its branches still to come back.
     fn leave(&self, number: u32);
     /// It never started there.
@@ -43,6 +47,19 @@ pub struct OnThisMachine {
 impl KeptPlaces for OnThisMachine {
     fn keep(&self, number: u32, pool: &str, workspace: &str) {
         let kept = purlis_core::pools::keep_chat_on_pool(
+            &self.config,
+            &self.plane,
+            number,
+            pool,
+            workspace,
+        );
+        if let Err(why) = kept {
+            tracing::warn!("purlis: where chat {number} runs was not kept: {why}");
+        }
+    }
+
+    fn keep_found(&self, number: u32, pool: &str, workspace: &str) {
+        let kept = purlis_core::pools::keep_chat_found_on_pool(
             &self.config,
             &self.plane,
             number,
@@ -91,6 +108,11 @@ enum Step {
         pool: String,
         workspace: String,
     },
+    KeepFound {
+        number: u32,
+        pool: String,
+        workspace: String,
+    },
     Leave(u32),
     Forget(u32),
     Fetched {
@@ -125,6 +147,11 @@ impl ChatsKept {
                             pool,
                             workspace,
                         } => writes.keep(number, &pool, &workspace),
+                        Step::KeepFound {
+                            number,
+                            pool,
+                            workspace,
+                        } => writes.keep_found(number, &pool, &workspace),
                         Step::Leave(number) => writes.leave(number),
                         Step::Forget(number) => writes.forget(number),
                         Step::Fetched { pool, workspace } => writes.fetched(&pool, &workspace),
@@ -149,6 +176,14 @@ impl ChatsKept {
 
     pub fn keep(&self, number: u32, pool: &str, workspace: &str) {
         self.step(Step::Keep {
+            number,
+            pool: pool.to_owned(),
+            workspace: workspace.to_owned(),
+        });
+    }
+
+    pub fn keep_found(&self, number: u32, pool: &str, workspace: &str) {
+        self.step(Step::KeepFound {
             number,
             pool: pool.to_owned(),
             workspace: workspace.to_owned(),

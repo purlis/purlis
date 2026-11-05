@@ -587,14 +587,40 @@ fn fetch_whole_said(
             }
         }
     }
-    // **Only proof lets the runner go** (#4569): what it holds, listed by the runner itself and
-    // not the clones this machine expected, each commit reached from a ref here.
-    let missing = not_home(link, project, root, runner);
-    if missing.is_empty() {
-        return Vec::new();
-    }
-    failed.extend(missing);
     failed
+}
+
+/// **Only proof lets a fresh runner go** (#4569): what it holds, listed by the runner itself and
+/// not the clones this machine expected, each commit reached from a ref here. Answers what is
+/// missing, in sentences. Runs after [`fetch_whole`], outside the lock on fetches (#5393).
+///
+/// **A look that took long is taken again** (#5393): where the first took longer than the wait for
+/// any answer, the runner goes only on a second that passes within that wait, so a proof is as
+/// recent as when a look had only that wait. A look warms the runner's file system and what its
+/// first look found of the image is kept, so a second is far quicker.
+pub(crate) fn proof_of(link: &HostLink, project: &str, root: &Path, runner: &str) -> Vec<String> {
+    let again_within = link.answer_within();
+    codelink::held::marked(proved_recently(
+        again_within,
+        || not_home(link, project, root, runner),
+        || not_home_within(link, project, root, runner, again_within),
+    ))
+}
+
+/// [`proof_of`]'s rule: what `look` finds, and where it passed but took longer than `long`, what
+/// `again` finds.
+fn proved_recently(
+    long: std::time::Duration,
+    look: impl FnOnce() -> Vec<String>,
+    again: impl FnOnce() -> Vec<String>,
+) -> Vec<String> {
+    let began = std::time::Instant::now();
+    let missing = look();
+    if missing.is_empty() && began.elapsed() > long {
+        again()
+    } else {
+        missing
+    }
 }
 
 /// **What runner `runner` holds that the project at `root` does not** (#4569), in sentences:
