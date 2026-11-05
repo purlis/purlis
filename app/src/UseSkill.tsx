@@ -469,10 +469,13 @@ export const SHOW_THIS_CHATS_SKILLS = "Show this chat's skills";
 export const SkillsChip = memo(function SkillsChip({
   session,
   onOpen,
+  markOnly = false,
 }: {
   session: number;
   /** The row a press runs (#5204): the chat's Skills, in the sidebar's Skills view. */
   onOpen?: () => void;
+  /** A narrow pane's: its ⚠ alone, named all the same (#5206, story 31). */
+  markOnly?: boolean;
 }) {
   const warning = useChatSkillsWarn(session);
   const said = useContext(ChatSkillSetsHere)[session];
@@ -490,7 +493,7 @@ export const SkillsChip = memo(function SkillsChip({
       onPress={onOpen}
     >
       <TriangleAlert aria-hidden="true" className="pane-skills-sign" />
-      {count}
+      {!markOnly && count}
     </Button>
   );
 });

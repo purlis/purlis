@@ -78,24 +78,46 @@ export function stateButtonOf(chat: {
 
 /**
  * The parts of a pane head a narrow pane can drop. The bell, ⋯, Split right and Close are not
- * among them: they never go.
+ * among them: they never go. The workspace is not either, being the foot's (#5206).
  *
- * - `where`: the details on the head of a pane with no foot (its sandbox, harness · workspace,
- *   where it came from and its work item). A chat's are on its foot since #5204.
  * - `markWord`: the state mark's word, its dot staying.
  * - `buttonWord`: the state button's word, its icon staying with the word as its name.
  * - `mark`: the state mark, dot and all.
  * - `splitDown`: the Split down button.
  */
-export type HeadPart = "where" | "markWord" | "buttonWord" | "mark" | "splitDown";
+export type HeadPart = "markWord" | "buttonWord" | "mark" | "splitDown";
 
 /** **The ruled order**, and the pane width in CSS pixels under which each part goes (#4585). */
 export const HEAD_DROPS: readonly { part: HeadPart; below: number }[] = [
-  { part: "where", below: 520 },
   { part: "markWord", below: 470 },
   { part: "buttonWord", below: 420 },
   { part: "mark", below: 380 },
   { part: "splitDown", below: 300 },
+];
+
+/** Under this width a pane with no foot drops its details from its head, as it always has. */
+const FOOTLESS_DETAILS_BELOW = 520;
+
+/**
+ * **The foot's order** (spec #5191 stories 30 to 32), and the width under which each part gives
+ * way. Measured (#5206) on the default theme at the comfortable density, with the longest case the
+ * prototype draws: `Claude Code · smart-ide · ↳ from steward 3 · ops · ⚠ 40 skills · 🛡` and `ctx 100%
+ * cache 100%`, which needs 518 px, then 445 with no `cache`, 399 with the warning its ⚠, and 263 with
+ * no `↳ from`. A longer name is cut at its end, so nothing but these widths moves the gauge.
+ *
+ * - `cache`: the number with no bar.
+ * - `skills`: the warning's words, its ⚠ staying.
+ * - `from`: where it came from, with what the studio started it for and its work item.
+ * - `workspace`: the harness's name stays.
+ */
+export const FOOT_DROPS: readonly {
+  part: "cache" | "skills" | "from" | "workspace";
+  below: number;
+}[] = [
+  { part: "cache", below: 520 },
+  { part: "skills", below: 450 },
+  { part: "from", below: 400 },
+  { part: "workspace", below: 270 },
 ];
 
 /** The parts a pane `width` pixels wide drops, in the ruled order: none where it is not
@@ -134,6 +156,7 @@ export type FootPart =
   | "studio"
   | "workItem"
   | "skills"
+  | "skillsMark"
   | "sandbox"
   | "ended"
   | "ctx"
@@ -150,6 +173,7 @@ export const FOOT_ROWS = {
   from: askerId,
   studio: chatStudioId,
   skills: chatSkillsId,
+  skillsMark: chatSkillsId,
   ctx: activityId,
 } as const satisfies Partial<Record<FootPart, (session: number) => string>>;
 
@@ -157,6 +181,25 @@ export const FOOT_ROWS = {
  *  item, whose rows change them rather than show them, `cache`, whose words are `ctx`'s, and the
  *  mark of a chat that has ended, whose ways on are its ended band's. */
 export const FOOT_FACTS: readonly FootPart[] = ["workItem", "sandbox", "ended", "cache"];
+
+/**
+ * **A control of the head's right side**, in its drawn order (#5203, #5206): the chat's actions,
+ * its state button and that button's word, the bell and ⋯ last; then the pane's controls, Split
+ * right, Split down and Close last.
+ */
+export type ActionPart =
+  "state" | "stateWord" | "bell" | "menu" | "splitRight" | "splitDown" | "close";
+
+/** The head's actions, whole: a chat's pane with room for them. */
+export const WHOLE_ACTIONS: readonly ActionPart[] = [
+  "state",
+  "stateWord",
+  "bell",
+  "menu",
+  "splitRight",
+  "splitDown",
+  "close",
+];
 
 /** The details a chat has for its lines: drawn only where it has them. */
 export type LineFacts = {
@@ -170,11 +213,13 @@ export type LineFacts = {
   workItem?: boolean;
   /** Its sandbox is known. */
   sandbox?: boolean;
+  /** False where the pane draws no close: a pane showing a task of its session (#1486). */
+  closes?: boolean;
 };
 
-/** **Both lines of a pane**: the head's chips, and the foot's parts, or `null` for a pane that
+/** **Both lines of a pane**: the head's chips and its actions, and the foot's parts, or `null` for a pane that
  *  draws no foot. */
-export type PaneLines = { head: LinePart[]; foot: FootPart[] | null };
+export type PaneLines = { head: LinePart[]; actions: ActionPart[]; foot: FootPart[] | null };
 
 /** **A pane's kind, by what it shows**: a task's path says it first, whatever runs there. */
 export function paneKindOf(shows: {
@@ -196,42 +241,66 @@ export function paneKindOf(shows: {
  * the chat's facts are the foot's, never the head's, at any width. A shell and a one-job program
  * draw no foot and keep their heads as they were (spec #5191), `where` among them, as does a
  * view's pane, an empty pane and a folded one. What has ended keeps its foot, marked `ended`, its
- * gauge frozen (#5205). The head's actions are not here: they are `PaneActions`', by `droppedAt`, until #5206 settles them.
+ * gauge frozen (#5205). A narrow pane drops parts of both lines in their orders (#5206).
  */
 export function paneLinesOf(
   kind: PaneKind,
   width: number | undefined,
   facts: LineFacts,
 ): PaneLines {
-  // A view's and an empty pane's head is its actions alone; a folded pane is a rail, which says
-  // who it runs as and its name.
-  if (kind === "view" || kind === "empty") return { head: [], foot: null };
-  if (kind === "folded") return { head: ["persona", "name"], foot: null };
+  // A view's and an empty pane's head is its controls alone, which never drop; a folded pane is a
+  // rail, which says who it runs as, its name and its bell.
+  const controls: ActionPart[] = ["splitRight", "splitDown", "close"];
+  if (kind === "view" || kind === "empty") return { head: [], actions: controls, foot: null };
+  if (kind === "folded") return { head: ["persona", "name"], actions: ["bell"], foot: null };
   const drops = droppedAt(width);
   const pathed = kind === "task" || kind === "endedTask";
   const ended = kind === "ended" || kind === "endedTask";
   const footed = kind === "chat" || pathed || ended;
+  const details = width === undefined || width >= FOOTLESS_DETAILS_BELOW;
+
   const head: LinePart[] = ["persona", pathed ? "crumbs" : "name"];
-  if (!footed && !drops.has("where")) head.push("sandbox");
+  if (!footed && details) head.push("sandbox");
   // A task's path says its state; a chat's head says it with its mark.
   if (!pathed && !drops.has("mark")) {
     head.push("mark");
     if (!drops.has("markWord")) head.push("markWord");
   }
-  if (!footed && !drops.has("where")) {
+  if (!footed && details) {
     head.push("where");
     if (facts.from === true) head.push("from");
     if (facts.workItem === true) head.push("workItem");
   }
-  if (!footed) return { head, foot: null };
-  const foot: FootPart[] = ["harness", "workspace"];
-  if (facts.from === true) foot.push("from");
-  if (facts.studio === true) foot.push("studio");
-  if (facts.workItem === true) foot.push("workItem");
+
+  const actions: ActionPart[] = ["state"];
+  if (!drops.has("buttonWord")) actions.push("stateWord");
+  actions.push("bell", "menu", "splitRight");
+  if (!drops.has("splitDown")) actions.push("splitDown");
+  if (kind !== "oneJob" && facts.closes !== false) actions.push("close");
+
+  if (!footed) return { head, actions, foot: null };
+  return { head, actions, foot: footOf(ended, width, facts) };
+}
+
+/** The parts a foot draws, by what the chat has and what its width leaves it (#5204, #5206). */
+function footOf(ended: boolean, width: number | undefined, facts: LineFacts): FootPart[] {
+  const gives = new Set(
+    width === undefined
+      ? []
+      : FOOT_DROPS.filter((drop) => width < drop.below).map((drop) => drop.part),
+  );
+  const foot: FootPart[] = ["harness"];
+  if (!gives.has("workspace")) foot.push("workspace");
+  if (!gives.has("from")) {
+    if (facts.from === true) foot.push("from");
+    if (facts.studio === true) foot.push("studio");
+    if (facts.workItem === true) foot.push("workItem");
+  }
   // What has ended can do nothing about its skills.
-  if (facts.skills === true && !ended) foot.push("skills");
+  if (facts.skills === true && !ended) foot.push(gives.has("skills") ? "skillsMark" : "skills");
   if (facts.sandbox === true) foot.push("sandbox");
   if (ended) foot.push("ended");
-  foot.push("ctx", "cache");
-  return { head, foot };
+  foot.push("ctx");
+  if (!gives.has("cache")) foot.push("cache");
+  return foot;
 }

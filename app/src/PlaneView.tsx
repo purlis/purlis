@@ -8260,6 +8260,8 @@ export const PlaneView = memo(function PlaneView({
         setAddingToChat(rows.map(({ at, folder }) => ({ plane, ...at, folder }))),
     }),
     [
+      studioChats,
+      studioLinks,
       beginRename,
       showSideViewSeen,
       toggleRegionSeen,
@@ -9235,6 +9237,8 @@ export const PlaneView = memo(function PlaneView({
             places,
           }),
     [
+      glances,
+      studioLinks,
       readOnlySaid,
       places,
       askedBy,

@@ -88,14 +88,14 @@ import { Button, IconButton } from "./ui/button/Button";
 import { TIPS_BELOW } from "./ui/tooltip/Tooltip";
 import { Bell, Plus, Puzzle, Reply, ScrollText, Square, SquareTerminal, Undo2 } from "lucide-react";
 import {
-  droppedAt,
   paneKindOf,
   paneLinesOf,
   FOOT_ROWS,
+  WHOLE_ACTIONS,
+  type ActionPart,
   type FootPart,
   stateButtonOf,
   type ChatHead,
-  type HeadPart,
 } from "./paneHead";
 import { PaneTerminalAt, type PaneTerminal } from "./paneTerminal";
 import { stemOf } from "./menuModel";
@@ -195,6 +195,7 @@ export function PaneFrame({
   focused = false,
   oneJob = false,
   shell = false,
+  closes = true,
   children,
 }: {
   plane: PlaneId;
@@ -217,6 +218,9 @@ export function PaneFrame({
   /** **It runs a shell**, as the open chats say before the plane lists it: it draws no foot. A
    *  shell still restoring is not known yet, and has an empty foot until it is. */
   shell?: boolean;
+  /** False where its head draws no close: a pane showing a task of its session (#1486), since a
+   *  close there would read as ending the task. */
+  closes?: boolean;
   /** While the pane shows a task of its tab's session: the path to it (#1486). Also for a task
    *  in a pane of its own, and the session it is beside (#1489). */
   crumbs?: Crumbs;
@@ -273,7 +277,6 @@ export function PaneFrame({
   // **What a narrow pane drops, in the ruled order** (#4760, `paneHead.ts`), and whether the
   // line has room for the Skills chip too (#2775).
   const width = usePaneWidth(frame);
-  const drops = droppedAt(width);
   const skillsWarn = useChatSkillsWarn(session);
   const startedByStudio = useStudioChats().chats.some((one) => one.session === session);
   // **Its two lines** (#5202, `paneHead.paneLinesOf`): the head's chips, and the foot's parts,
@@ -292,6 +295,7 @@ export function PaneFrame({
     studio: startedByStudio,
     workItem: Boolean(workItem),
     sandbox: lastHead?.sandbox?.level != null,
+    closes,
   });
   const line = new Set(lines.head);
   /** **What a part of the foot presses** (#5204, spec #5191 story 37): its row of the chat's list,
@@ -338,7 +342,7 @@ export function PaneFrame({
           after it is one Tab never reaches (charter-app#189). */}
       <div className="pane-top">
         {strip}
-        <PaneDropsOf.Provider value={drops}>
+        <PaneActionsOf.Provider value={lines.actions}>
           <PaneHead
             grip={!oneJob}
             at={tab === undefined || pane === undefined ? undefined : { tab, pane }}
@@ -445,7 +449,7 @@ export function PaneFrame({
               )}
             </div>
           </PaneHead>
-        </PaneDropsOf.Provider>
+        </PaneActionsOf.Provider>
         {/* **The band under the header** (#4754): a Notice arriving never moves the header. */}
         <PaneNotices
           band={pane === undefined ? undefined : paneBand(plane, pane)}
@@ -556,9 +560,13 @@ export function ChatFoot({
           </PaneFootJoined>
         )}
         {/* **Its skills warning** (#2775, #5204): only while something needs the person. */}
-        {foot.has("skills") && (
+        {(foot.has("skills") || foot.has("skillsMark")) && (
           <PaneFootJoined>
-            <SkillsChip session={session} onOpen={rowOf("skills")?.press} />
+            <SkillsChip
+              session={session}
+              onOpen={rowOf("skills")?.press}
+              markOnly={foot.has("skillsMark")}
+            />
           </PaneFootJoined>
         )}
         {/* **Its sandbox** (#4760, #5204): how the chat runs, a mark with its words on it. */}
@@ -653,6 +661,7 @@ export function PaneActions({
 }) {
   // The bell is a chat's, drawn where the pane holds a chat's notices: a view's pane has none.
   const hasBell = useContext(PaneBellOf) !== null;
+  const parts = useContext(PaneActionsOf);
   return (
     <div className="pane-actions">
       {/* **The state button, then the bell, then ⋯** (#4760, #5203), each always drawn: the
@@ -661,8 +670,8 @@ export function PaneActions({
           or the keyboard (`.pane-doing`, `App.css`), and keep their room hidden, so nothing
           beside them moves when a notice arrives or they are drawn. */}
       {state}
-      <PaneBell />
-      {chat !== undefined && (
+      {parts.includes("bell") && <PaneBell />}
+      {parts.includes("menu") && chat !== undefined && (
         <ChatMenuButton
           session={chat.session}
           offers={chat.offers}
@@ -823,9 +832,9 @@ function harnessWord(head: ChatHead, glance: HarnessGlance | undefined): string 
   return glance?.title ?? head.chat.harness ?? "";
 }
 
-/** The parts of its head a pane drops for its width (#4760, `paneHead.droppedAt`): none where it
- *  is not measured, and none in a view's pane, whose head is its actions alone. */
-export const PaneDropsOf = createContext<ReadonlySet<HeadPart>>(new Set());
+/** **The controls the pane's model answers for its head** (#5206, `paneHead.paneLinesOf`): all of
+ *  them where nothing says otherwise. */
+export const PaneActionsOf = createContext<readonly ActionPart[]>(WHOLE_ACTIONS);
 
 /** How wide the pane frame in `frame` is, in CSS pixels, as it is resized: none where it cannot
  *  be measured, or is not laid out, as in a test with no layout. */
@@ -875,15 +884,14 @@ export function PaneStateButton({
     useChatsHere(),
     (states) => stateOf(states, session) === "running",
   );
-  const drops = useContext(PaneDropsOf);
+  const worded = useContext(PaneActionsOf).includes("stateWord");
   if (ended)
     return brief === undefined ? null : (
-      <BriefButton of={brief} word={drops.has("buttonWord") ? undefined : SAID.brief} />
+      <BriefButton of={brief} word={worded ? SAID.brief : undefined} />
     );
   const pick = stateButtonOf({ session, task, working, has: (id) => offers.has(id) });
   const offer = pick === undefined ? undefined : offers.get(pick.id);
   if (pick === undefined || offer === undefined) return null;
-  const worded = !drops.has("buttonWord");
   if (pick.id === briefId(session) && brief !== undefined)
     return <BriefButton of={brief} word={worded ? pick.word : undefined} />;
   const Icon = STATE_ICONS[stemOf(pick.id)] ?? Square;
@@ -1327,18 +1335,20 @@ export function LayoutPanes({
           {...dropPane(tab, layout.pane)}
         >
           {/* An empty pane has nothing to pick up, so its head is no grip (#4583). */}
-          <PaneHead
-            grip={false}
-            doing={
-              <PaneActions
-                pane={layout.pane}
-                size={drawn?.sizes[layout.pane]}
-                offerFor={offerFor}
-                closeOf={closeOf}
-                onPaneDoes={onPaneDoes}
-              />
-            }
-          />
+          <PaneActionsOf.Provider value={paneLinesOf("empty", undefined, {}).actions}>
+            <PaneHead
+              grip={false}
+              doing={
+                <PaneActions
+                  pane={layout.pane}
+                  size={drawn?.sizes[layout.pane]}
+                  offerFor={offerFor}
+                  closeOf={closeOf}
+                  onPaneDoes={onPaneDoes}
+                />
+              }
+            />
+          </PaneActionsOf.Provider>
           <div
             className={layout.pane === focused ? "pane view focused" : "pane view"}
             onFocus={() => onFocus(layout.pane)}
@@ -1369,18 +1379,20 @@ export function LayoutPanes({
         >
           {/* Before the view, for `PaneFrame`'s reason: the tab order is the document's. Over
               the view's first row, which keeps the room it takes (`paneFrame.css`). */}
-          <PaneHead
-            at={{ tab, pane: layout.pane }}
-            doing={
-              <PaneActions
-                pane={layout.pane}
-                size={drawn?.sizes[layout.pane]}
-                offerFor={offerFor}
-                closeOf={closeOf}
-                onPaneDoes={onPaneDoes}
-              />
-            }
-          />
+          <PaneActionsOf.Provider value={paneLinesOf("view", undefined, {}).actions}>
+            <PaneHead
+              at={{ tab, pane: layout.pane }}
+              doing={
+                <PaneActions
+                  pane={layout.pane}
+                  size={drawn?.sizes[layout.pane]}
+                  offerFor={offerFor}
+                  closeOf={closeOf}
+                  onPaneDoes={onPaneDoes}
+                />
+              }
+            />
+          </PaneActionsOf.Provider>
           <div
             className={layout.pane === focused ? "pane view focused" : "pane view"}
             onFocus={() => onFocus(layout.pane)}
@@ -1476,9 +1488,6 @@ export function LayoutPanes({
         offerFor={offerFor}
         closeOf={closeOf}
         onPaneDoes={onPaneDoes}
-        // No close on a pane showing a task: nothing on screen ends the task, and the
-        // session's close is its tab's (#1486).
-        task={crumb !== undefined || endedTask !== undefined}
         // Its one state button and its ⋯: rows of the list of the chat it shows (#4753, #4760).
         // A task that has ended is read by its finished row's record (#1494), and has no Brief
         // of its own once that row is gone (#4757).
@@ -1501,7 +1510,6 @@ export function LayoutPanes({
           />
         }
         chat={{ session: content.session, offers }}
-        oneJob={isOneJob(content)}
       />
     );
     return (
@@ -1513,6 +1521,13 @@ export function LayoutPanes({
         focused={layout.pane === focused}
         oneJob={isOneJob(content)}
         shell={shells.has(content.session)}
+        // No close on a pane showing a task: nothing on screen ends the task, and the session's
+        // close is its tab's (#1486). A task's own pane keeps its minimise whatever it shows
+        // (#1489): switched to a task of its own, it is still the pane that is sent back.
+        closes={
+          (crumb === undefined && endedTask === undefined) ||
+          closeOf(layout.pane)?.does.verb === "sendBack"
+        }
         crumbs={shownPath}
         said={
           endedTask === undefined
@@ -1833,8 +1848,6 @@ export function PaneDoing({
   offerFor,
   closeOf,
   onPaneDoes,
-  task = false,
-  oneJob = false,
   size,
   parted = false,
 }: {
@@ -1848,27 +1861,18 @@ export function PaneDoing({
    *  (#1489), which sends the task back and ends nothing. */
   closeOf: (pane: number) => Offer | undefined;
   onPaneDoes: (pane: number, offer: Offer | undefined) => void;
-  /** The pane shows a task of its tab's session (#1486): it draws no close. A close here
-   *  would read as ending the task, and what it would end is the session under it. */
-  task?: boolean;
-  /** A one-job program's pane (#4761): no close, since it goes when its program exits. Its
-   *  edges still take a split. */
-  oneJob?: boolean;
   /** **The chat's actions are drawn before these** (#5203): a thin divider parts the two
    *  groups. None on a view's pane, whose controls are all its head has. */
   parted?: boolean;
 }) {
-  // **A task's own pane keeps its minimise whatever it shows** (#1489): switched to a task of
-  // its own, it is still the pane that is sent back. Only a close is not drawn over a task.
-  const minimise = closeOf(pane)?.does.verb === "sendBack";
-  // **A narrow pane drops Split down last of its head's parts** (#4760, `paneHead.ts`); Split
-  // right and the close never go. A task's own tab and its pane beside its session are rows of
-  // its ⋯ now (`command-table.md`, rule 4), not buttons here.
-  const drops = useContext(PaneDropsOf);
+  // **What the pane's model answers** (#5206, `paneHead.ts`): a narrow pane drops Split down last
+  // of its head's parts, and Split right and the close never go. A task's own tab and its pane
+  // beside its session are rows of its ⋯ now (`command-table.md`, rule 4), not buttons here.
+  const parts = useContext(PaneActionsOf);
   const rows = [
     "pane.split.right",
-    ...(drops.has("splitDown") ? [] : ["pane.split.down"]),
-    ...((task && !minimise) || oneJob ? [] : ["pane.close"]),
+    ...(parts.includes("splitDown") ? ["pane.split.down"] : []),
+    ...(parts.includes("close") ? ["pane.close"] : []),
   ];
   return (
     <div className="pane-doing">

@@ -932,6 +932,11 @@ writes `data-scope="pane-foot"`: `purlis/pane-foot-family` is an error.
   runs, and `chatList.test.ts` holds each to the chat's ⋯ and the palette. A part whose row is
   missing or cannot run now is its words alone. Its parts are inline buttons, so they stay words on
   the line; the skills warning takes the button family's `warning-soft` drawn inline, with no ground.
+- **A narrow pane drops its parts in one order** (#5206, `paneHead.FOOT_DROPS`, widths measured on the
+  default theme): `cache`, the skills warning to its ⚠, `↳ from` with what the studio started the
+  chat for and its work item, then the workspace. The harness's name, ⚠ and `ctx` never go, and a
+  longer name is cut at its end. `paneLinesOf` answers the head's chips, its actions and the foot's
+  parts, so Split down's drop comes from there too.
 - **Its chips are held like the head's**: `PANE_FOOT_CHIPS` in `controls.guard.test.ts`, read off
   `PaneFootStart` and `PaneFootEnd`, each at the chrome height.
 

@@ -8,3 +8,6 @@
 - **A pane's foot says what the pane is running.** A pane showing a task says the task's harness,
   gauge and skills, and `↳ from` names the chat that asked. An ended chat keeps its foot, its gauge
   frozen at its last values, greyed and marked `ended` (#5205).
+- **A narrow pane drops parts from its head and its foot in a fixed order.** The foot drops `cache`,
+  then shrinks the skills warning to its ⚠, drops `↳ from`, then the workspace. The harness's name,
+  ⚠ and `ctx` always stay (#5206).

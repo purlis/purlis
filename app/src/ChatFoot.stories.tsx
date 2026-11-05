@@ -13,7 +13,15 @@ import { useState, type ReactNode } from "react";
 import { expect, userEvent, within } from "storybook/test";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { ChatUsage, HarnessGlance } from "./bindings";
-import { ChatFoot, type FootPress } from "./LayoutPanes";
+import {
+  ChatFoot,
+  PaneActions,
+  PaneActionsOf,
+  PaneBellOf,
+  PaneHead,
+  type FootPress,
+} from "./LayoutPanes";
+import { catalogued, type Offer } from "./actions";
 import type { ChatHead } from "./paneHead";
 import { FOOT_ROWS, paneLinesOf, type LineFacts, type PaneKind } from "./paneHead";
 import { expectFocusInSight } from "./stories.testkit";
@@ -71,7 +79,74 @@ type FootArgs = {
   from?: string;
   workItem?: string;
   usage?: ChatUsage;
+  /** Draws the head over it too: the two lines drop together (#5206). */
+  withHead?: boolean;
 };
+
+const SPLITS: Offer[] = [
+  {
+    id: "pane.split.right",
+    title: "Split right",
+    available: true,
+    reason: "",
+    does: { verb: "split", direction: "row" },
+  },
+  {
+    id: "pane.split.down",
+    title: "Split down",
+    available: true,
+    reason: "",
+    does: { verb: "split", direction: "column" },
+  },
+];
+const CLOSE: Offer = {
+  id: "pane.close",
+  title: "Close this pane",
+  available: true,
+  reason: "",
+  does: { verb: "closePane" },
+};
+/** The chat's list, which its ⋯ opens. */
+const LIST = catalogued([
+  {
+    id: `chat.rename:${SESSION}`,
+    title: "Rename…",
+    available: true,
+    reason: "",
+    does: { verb: "renameChat", session: SESSION },
+  },
+]);
+
+/** The head the pane's model answers at its width: the chat's name and mark, then its actions. */
+function Head({ kind, width }: { kind: PaneKind; width: number }) {
+  const lines = paneLinesOf(kind, width, {});
+  return (
+    <PaneActionsOf.Provider value={lines.actions}>
+      <PaneHead
+        grip={false}
+        doing={
+          <PaneBellOf.Provider value={{ notes: 2, trouble: 0, asks: 0 }}>
+            <PaneActions
+              pane={1}
+              state={lines.actions.includes("stateWord") ? <span>Stop</span> : undefined}
+              chat={{ session: SESSION, offers: LIST }}
+              offerFor={(id) => SPLITS.find((offer) => offer.id === id)}
+              closeOf={() => CLOSE}
+              onPaneDoes={() => undefined}
+            />
+          </PaneBellOf.Provider>
+        }
+      >
+        <div className="pane-chips">
+          <span className="pane-name">M69 chats, tabs and panes: build</span>
+          {lines.head.includes("mark") && (
+            <span className="pane-state-mark">{lines.head.includes("markWord") && "working"}</span>
+          )}
+        </div>
+      </PaneHead>
+    </PaneActionsOf.Provider>
+  );
+}
 
 function Lent({ children }: { children: ReactNode }) {
   return (
@@ -101,7 +176,15 @@ function Lent({ children }: { children: ReactNode }) {
 }
 
 /** A pane's foot at `width`, with the row last pressed said under it. */
-function Foot({ kind = "chat", width = 900, facts = {}, from, workItem, usage = USAGE }: FootArgs) {
+function Foot({
+  kind = "chat",
+  width = 900,
+  facts = {},
+  from,
+  workItem,
+  usage = USAGE,
+  withHead = false,
+}: FootArgs) {
   const [said, setSaid] = useState("Nothing pressed");
   const parts = paneLinesOf(kind, width, facts).foot ?? [];
   const rowOf = (part: keyof typeof FOOT_ROWS): FootPress => ({
@@ -111,6 +194,7 @@ function Foot({ kind = "chat", width = 900, facts = {}, from, workItem, usage = 
   return (
     <Lent>
       <div className="pane-frame pane-headed" style={{ inlineSize: width, blockSize: 96 }}>
+        {withHead && <Head kind={kind} width={width} />}
         <div className="pane-body" />
         <ChatFoot
           plane="story"
@@ -199,5 +283,36 @@ export const AnEndedChat: Story = {
     kind: "ended",
     facts: { sandbox: true },
     usage: { ...USAGE, context: { value: 87, tone: "warn" }, cache: { value: 40, tone: "warn" } },
+  },
+};
+
+/** The longest case at a width, the head's own model saying which of its parts stay. */
+const AT_A_WIDTH = {
+  withHead: true,
+  facts: { from: true, skills: true, sandbox: true },
+  from: "↳ from steward 3 · ops",
+};
+
+/** **The foot at the four widths the prototype draws** (#5206): whole at 900; no `cache` and the
+ *  warning its ⚠ at 420; no `↳ from` at 300 too, the harness, ⚠ and `ctx` staying. */
+export const At900: Story = { args: { ...AT_A_WIDTH, width: 900 } };
+export const At520: Story = { args: { ...AT_A_WIDTH, width: 520 } };
+export const At420: Story = {
+  args: { ...AT_A_WIDTH, width: 420 },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const warning = await canvas.findByTestId("pane-skills");
+    await expect(warning.textContent).toBe("");
+    await expect(warning).toHaveAccessibleName(/^39 skills\./);
+    await expect(canvas.queryByText(/cache/)).toBeNull();
+  },
+};
+export const At300: Story = {
+  args: { ...AT_A_WIDTH, width: 300 },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByTestId("pane-skills");
+    await expect(canvas.queryByText(/↳ from/)).toBeNull();
+    await expect(canvas.getByText(/ctx/)).toBeInTheDocument();
   },
 };

@@ -374,3 +374,107 @@ describe("an ended chat's foot (#5205, stories 23 and 24)", () => {
     expect(within(foot()).queryByTestId("chat-gauge")).toBeNull();
   });
 });
+
+describe("a narrow pane drops parts from its two lines, and has them back (#5206)", () => {
+  /** How wide every pane is now, as the layout engine would say, and who to tell when it moves. */
+  let wide = 900;
+  const told: (() => void)[] = [];
+  function panesOfAWidth(width: number) {
+    wide = width;
+    told.length = 0;
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(tell: (entries: unknown[], seen: unknown) => void) {
+          told.push(() => tell([], this));
+        }
+        observe() {}
+        disconnect() {}
+        unobserve() {}
+      },
+    );
+    const real = HTMLElement.prototype.getBoundingClientRect;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return this.classList.contains("pane-frame")
+        ? ({ width: wide, height: 400, top: 0, left: 0, right: wide, bottom: 400 } as DOMRect)
+        : real.call(this);
+    });
+  }
+  const toWidth = (width: number) =>
+    act(async () => {
+      wide = width;
+      for (const tell of told) tell();
+    });
+  const says = (part: string) => foot().querySelector(part) !== null;
+
+  it("drops cache, shrinks nothing it has not got, drops ↳ from and the workspace, then brings each back as it widens", async () => {
+    panesOfAWidth(900);
+    await aPane();
+    await waitFor(() => expect(says(".pane-foot-from")).toBe(true));
+    await within(foot()).findByTestId("chat-gauge");
+    await toWidth(900);
+    expect(within(foot()).getByTestId("chat-gauge")).toHaveTextContent("cache");
+
+    await toWidth(519);
+    expect(within(foot()).getByTestId("chat-gauge")).not.toHaveTextContent("cache");
+    expect(says(".pane-foot-from")).toBe(true);
+
+    await toWidth(399);
+    expect(says(".pane-foot-from")).toBe(false);
+    expect(foot().querySelector(".pane-where")).toHaveTextContent(/alpha/);
+
+    await toWidth(269);
+    expect(foot().querySelector(".pane-where")).not.toHaveTextContent(/alpha/);
+    // The harness and ctx never go.
+    expect(foot().querySelector(".pane-where")).toHaveTextContent("Claude Code");
+    expect(within(foot()).getByTestId("chat-gauge")).toHaveTextContent("ctx 62%");
+
+    await toWidth(900);
+    expect(foot().querySelector(".pane-where")).toHaveTextContent(/alpha/);
+    expect(says(".pane-foot-from")).toBe(true);
+    expect(within(foot()).getByTestId("chat-gauge")).toHaveTextContent("cache");
+  });
+
+  it("drops the head's words, its mark and Split down in the ruled order, from the same model", async () => {
+    panesOfAWidth(900);
+    await aPane();
+    const buttons = () =>
+      [...head().querySelectorAll(".pane-actions button")].map(
+        (one) => one.getAttribute("aria-label") ?? "",
+      );
+    await waitFor(() => expect(buttons()).toContain("Split down"));
+
+    await toWidth(379);
+    expect(head().querySelector(".pane-state-mark")).toBeNull();
+    expect(buttons()).toContain("Split down");
+    await toWidth(299);
+    expect(buttons()).not.toContain("Split down");
+
+    await toWidth(900);
+    expect(head().querySelector(".pane-state-mark")).not.toBeNull();
+    expect(buttons()).toContain("Split down");
+  });
+
+  it("groups a task's head the same, with no Close, and drops its Split down too (#5203's window test)", async () => {
+    panesOfAWidth(900);
+    await aPane([PARENT, TASK]);
+    const actions = () => head(5).querySelector(".pane-actions") as HTMLElement;
+    const names = () =>
+      [...actions().querySelectorAll("button")].map(
+        (one) => one.getAttribute("aria-label") ?? one.textContent ?? "",
+      );
+    await waitFor(() => expect(names()).toContain("Split down"));
+    expect(actions().querySelector('[data-scope="separator"]')).not.toBeNull();
+    // The bell and ⋯, the divider, then the pane's own, with the task's minimise last.
+    const at = names();
+    expect(at.findIndex((one) => one.startsWith("More for"))).toBeLessThan(
+      at.indexOf("Split right"),
+    );
+
+    await toWidth(299);
+    expect(names()).not.toContain("Split down");
+    expect(names()).toContain("Split right");
+  });
+});

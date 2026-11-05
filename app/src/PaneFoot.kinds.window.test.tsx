@@ -4,6 +4,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Offer } from "./actions";
 import { LayoutPanes } from "./LayoutPanes";
 import type { Layout } from "./tabs";
 
@@ -96,6 +97,15 @@ function propsOf(layout: Layout, more: Partial<Props> = {}): Props {
   return read as unknown as Props;
 }
 
+const offer = (id: string, title: string) =>
+  ({ id, title, available: true, reason: "", does: { verb: "closePane" } }) as Offer;
+const SPLITS = (id: string) =>
+  ({
+    "pane.split.right": offer("pane.split.right", "Split right"),
+    "pane.split.down": offer("pane.split.down", "Split down"),
+  })[id];
+const CLOSE = offer("pane.close", "Close this pane");
+
 const feet = () => document.querySelectorAll('[data-scope="pane-foot"][data-part="root"]');
 
 describe("a foot, for each kind of pane (#5205)", () => {
@@ -113,6 +123,16 @@ describe("a foot, for each kind of pane (#5205)", () => {
 
     expect(screen.getByText("a view")).toBeInTheDocument();
     expect(feet()).toHaveLength(0);
+  });
+
+  it("groups a view's head as its controls alone, with no divider, whatever its width (#5203's window test)", () => {
+    render(<LayoutPanes {...propsOf(view(1), { offerFor: SPLITS, closeOf: () => CLOSE })} />);
+
+    const head = document.querySelector(".pane-head .pane-actions") as HTMLElement;
+    expect(
+      [...head.querySelectorAll("button")].map((one) => one.getAttribute("aria-label")),
+    ).toEqual(["Split right", "Split down", "Close this pane"]);
+    expect(head.querySelector('[data-scope="separator"]')).toBeNull();
   });
 
   it("is not drawn on a one-job program's pane", () => {
