@@ -675,7 +675,11 @@ fn a_workspaces_folder_is_listed_with_its_repos_apart_and_its_marks() {
         .collect();
     assert_eq!(
         names,
-        [("memory", true, false), ("notes", false, false), (".env", false, true)]
+        [
+            ("memory", true, false),
+            ("notes", false, false),
+            (".env", false, true)
+        ]
     );
     assert_eq!(
         top.repos,
@@ -719,7 +723,9 @@ fn copy_path_and_reveal_place_a_workspace_file_and_never_a_repos() {
         "notes/plan.md"
     );
     assert_eq!(
-        placed_of(&reader, &root, files, "notes/plan.md").unwrap().absolute,
+        placed_of(&reader, &root, files, "notes/plan.md")
+            .unwrap()
+            .absolute,
         root.join("workspaces/alpha/notes/plan.md")
     );
     assert_eq!(

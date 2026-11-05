@@ -252,6 +252,14 @@ import { onAMac } from "./tabKeys";
  * repo or in all of them, Search's *Branch* and *Workspace*, and *Search contents* opens Search
  * on the same scope.
  *
+ * **With the workspace itself picked, the tree is the workspace's folder** (#5375, ADR 0038 as
+ * amended 2026-11-05): its own files, read through `workspace_tree`, and each repo's row where
+ * the repo is on disk — in `repos/`, or at the top for a clone made before structure version 6.
+ * One repo's row, and `repos/` above it, start open, so its files still show with no click. What
+ * purlis keeps is marked *managed* and opens read-only; dotfiles show with Show hidden. The
+ * filter's *Selected* is the workspace's own files until a repo is pressed, and with one repo it
+ * covers them and that repo. Read-only here: no row writes (#5376 and #5377 add the writes).
+ *
  * **What a chat is touching right now is marked live** (FM-6, #1109; V86 F6): a file a chat's
  * tool reads or edits, and every folder above it up to the branch's *Files* row, carry a dot
  * naming the chat on hover, which fades a few seconds after the chat goes quiet on it
@@ -484,7 +492,7 @@ export function Explorer({
   const reads = useBranchFolders(
     plane,
     filesWorkspace,
-    open.filter((ref) => !(isWsRef(ref) && ref.folder === REPOS_FOLDER)),
+    onWs ? open.filter((ref) => !(isWsRef(ref) && ref.folder === REPOS_FOLDER)) : open,
   );
   // What the chats are touching (#4730): held outside the explorer, which a touch does not
   // draw again. Each row reads its own mark, worked out once per touch for each branch read here.
@@ -1109,13 +1117,13 @@ export function Explorer({
               .join(" · ")
           : undefined
         : [
-          filesTop.repo,
-          filesTop.piece === null
-            ? repoBranch(state, filesTop.repo)
-            : branchName(pieces[filesTop.repo], filesTop.piece),
-        ]
-          .filter((part) => part !== undefined && part !== "")
-          .join(" · ");
+            filesTop.repo,
+            filesTop.piece === null
+              ? repoBranch(state, filesTop.repo)
+              : branchName(pieces[filesTop.repo], filesTop.piece),
+          ]
+            .filter((part) => part !== undefined && part !== "")
+            .join(" · ");
   const selectedName =
     selected === undefined
       ? ""
@@ -2052,7 +2060,8 @@ export function levelOf(files: FilesOf, ref: BranchFolderRef): Level {
 
 function levelOfUncached(files: FilesOf, ref: BranchFolderRef): Level {
   // A workspace's own folder (#5375) is no branch: nothing it holds is compared.
-  if (isWsRef(ref)) {
+  // The plane root is named by no repo either: its tree is named by no workspace.
+  if (isWsRef(ref) && files.workspace !== PLANE_ROOT.workspace) {
     const read = files.reads.get(folderKey(ref));
     // The top's own trouble is said above its repos, which are drawn whatever it says.
     const said = ref.folder === "" ? read?.trouble : undefined;
@@ -2146,18 +2155,16 @@ function wsChildren(files: FilesOf, ref: BranchFolderRef): Child[] | Level {
   if (!top && read?.trouble !== undefined) return { trouble: read.trouble };
   const listed = (read?.entries ?? [])
     .filter((entry) => files.showHidden === true || entry.hidden !== true)
-    .map(
-      (entry): Child => ({
-        name: entry.name,
-        kind: entry.kind,
-        ignored: false,
-        refused: entry.refused ?? undefined,
-        expands: expands(entry),
-        always: false,
-        marked: undefined,
-        managed: entry.managed === true,
-      }),
-    );
+    .map((entry): Child => ({
+      name: entry.name,
+      kind: entry.kind,
+      ignored: false,
+      refused: entry.refused ?? undefined,
+      expands: expands(entry),
+      always: false,
+      marked: undefined,
+      managed: entry.managed === true,
+    }));
   if (!top) return listed;
   const inside = new Set(repos.filter((one) => one.inside_repos).map((one) => one.name));
   const names = files.wsRepos ?? repos.map((one) => one.name);
@@ -2458,7 +2465,11 @@ function FilesRow({
       hasChildItems
       // A folder's menu (FM-10). The branch's own *Files* row has one too (#1143): its folder
       // placed whole, the rows its branch's row offers (`actions.fileRows`).
-      menu={bare ? undefined : fileMenu({ on: "file", at: pathOn(at, branch.folder), kind: "folder" }, at)}
+      menu={
+        bare
+          ? undefined
+          : fileMenu({ on: "file", at: pathOn(at, branch.folder), kind: "folder" }, at)
+      }
       carries={bare ? undefined : carriedBy(at, branch.folder, true)}
       content={
         <>
@@ -2533,9 +2544,10 @@ function folderItems(branch: BranchFolderRef, level: Level, at: FileRows): React
     said === undefined
       ? []
       : [
+          // A row of the tree, heard as one; the Repos view says the workspace's own trouble.
           <TreeLine key="trouble" id={line("trouble")} textValue={said} className="trouble">
             <TriangleAlert className="node-icon" />
-            <span role="alert">{said}</span>
+            <span>{said}</span>
           </TreeLine>,
         ];
   // What the branch changed and purlis names and does not read (#704), under its top only.
@@ -2995,7 +3007,12 @@ function folderNode(
     const here = { ...ref, folder: joined(ref.folder, child.name) };
     // A repo in a workspace's own folder (#5375) is that repo's own folder, as its row is.
     if (child.repo !== undefined)
-      return folderNode(workspace, { repo: child.repo, piece: null, folder: "" }, child.name, files);
+      return folderNode(
+        workspace,
+        { repo: child.repo, piece: null, folder: "" },
+        child.name,
+        files,
+      );
     return child.expands
       ? folderNode(workspace, here, child.name, files, child.always)
       : { id: fileRow(here), name: child.name, kids: [], shows: true };

@@ -212,12 +212,20 @@ fn a_link_is_listed_and_never_followed_out_of_the_workspace_folder() {
         assert!(files.open(path).is_err(), "{path} opened");
         assert!(files.place(path).is_err(), "{path} placed");
         assert!(
-            files.in_your_editor(path, 1, crate::youreditor::Editor::VsCode, &|_| None).is_err(),
+            files
+                .in_your_editor(path, 1, crate::youreditor::Editor::VsCode, &|_| None)
+                .is_err(),
             "{path} handed to an editor"
         );
     }
-    assert!(files.tree("away", &[]).is_err(), "a linked folder is listed");
-    assert!(files.folders(&["away"])[0].is_err(), "a linked folder is watched");
+    assert!(
+        files.tree("away", &[]).is_err(),
+        "a linked folder is listed"
+    );
+    assert!(
+        files.folders(&["away"])[0].is_err(),
+        "a linked folder is watched"
+    );
     // Its own path is copied, followed nowhere.
     assert_eq!(files.named("secret.txt").unwrap(), "secret.txt");
 }
@@ -244,7 +252,10 @@ fn the_folder_itself_is_placed_for_the_empty_path_and_a_file_by_its_path() {
     assert_eq!(plan.absolute, ws.join("notes/plan.md"));
     assert_eq!(plan.relative, "notes/plan.md");
     assert!(!plan.folder);
-    assert_eq!(files.folders(&["", "notes"])[1].as_ref().unwrap(), &ws.join("notes"));
+    assert_eq!(
+        files.folders(&["", "notes"])[1].as_ref().unwrap(),
+        &ws.join("notes")
+    );
 }
 
 #[test]
@@ -278,7 +289,11 @@ fn a_find_by_name_in_the_workspace_files_finds_the_persons_file_and_no_repos() {
     assert!(found.hits.is_empty(), "a repo's file was found: {found:?}");
     let found = super::super::find(&scope, "plan", 10);
     assert_eq!(
-        found.hits.iter().map(|hit| hit.path.as_str()).collect::<Vec<_>>(),
+        found
+            .hits
+            .iter()
+            .map(|hit| hit.path.as_str())
+            .collect::<Vec<_>>(),
         vec!["notes/plan.md"]
     );
     assert!(found.refused.is_empty());

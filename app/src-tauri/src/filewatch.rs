@@ -817,7 +817,10 @@ fn workspace_folders(
             .collect(),
         Err(why) => {
             let why = why.to_string();
-            named.iter().map(|_| Err(Refused::Read(why.clone()))).collect()
+            named
+                .iter()
+                .map(|_| Err(Refused::Read(why.clone())))
+                .collect()
         }
     }
 }
