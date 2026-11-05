@@ -5563,10 +5563,10 @@ export type Asking = {
 
 /**  Which command's question it is. */
 export type Asks = 
-	/**  `purlis profile sign-in --pool`. */
-	"sign-in"
-	/**  `purlis pool remove-profile`: its runner forgets the profile, and its sign-in there. */
-	| "take-off";
+/**  `purlis profile sign-in --pool`. */
+"sign-in" | 
+/**  `purlis pool remove-profile`: its runner forgets the profile, and its sign-in there. */
+"take-off";
 
 /**  What a chat's row says while it is at its task limit. */
 export type AtLimit = {
@@ -10251,12 +10251,12 @@ export type OldHome =
 
 /**  **What helps a profile over what a pool's older runner takes** (#5175): by what makes its image. */
 export type OlderRunner = 
-	/**  A pool of purlis's own image: a new runner on the current image, which the window makes. */
-	"move"
-	/**  A pool of a team's own image, which purlis never moves: built anew, and the pool added again. */
-	| "own-image"
-	/**  A cluster pool, whose image its Pool in the cluster names. */
-	| "cluster";
+/**  A pool of purlis's own image: a new runner on the current image, which the window makes. */
+"move" | 
+/**  A pool of a team's own image, which purlis never moves: built anew, and the pool added again. */
+"own-image" | 
+/**  A cluster pool, whose image its Pool in the cluster names. */
+"cluster";
 
 /**
  *  The chats of a project still running under an older sandbox (#1428), for the Notice after

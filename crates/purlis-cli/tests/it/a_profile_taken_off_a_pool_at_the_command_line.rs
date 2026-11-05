@@ -221,7 +221,7 @@ fn pool_writes_use_the_same_in_a_chat_check_as_secret_setup() {
         ..Default::default()
     };
     purlis_core::reopen::write(config, &record).unwrap();
-    let file = config.join("runners.json");
+    let file = purlis_core::machine::dir(config).join(purlis_core::machine::RUNNERS_FILE);
     let before = std::fs::read(&file).unwrap();
     let window = AWindow::answering(config, Said::Asked { note: None });
     let writes: [&[&str]; 4] = [
