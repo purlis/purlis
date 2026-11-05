@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **Where a workspace's repo is** (ADR 0113), the one module that knows both layouts.
+//! **Where a workspace's repo is** (ADR 0114), the one module that knows both layouts.
 //!
 //! A repo made from structure version 6 on is at `workspaces/<ws>/repos/<repo>/`. One made before
 //! it is at `workspaces/<ws>/<repo>/`, and is read there for ever. A workspace may hold repos in
@@ -21,7 +21,7 @@
 //! it stands, as the path a caller joined by hand did. [`locate`] answers any `.git` and says which.
 //!
 //! **An old clone in a kept name.** A clone at the root named as the workspace keeps (`work`,
-//! `memory`) keeps working (ADR 0113, decision 3): [`folder`] and [`locate`] answer it, though
+//! `memory`) keeps working (ADR 0114, decision 3): [`folder`] and [`locate`] answer it, though
 //! [`repos`] does not list it. `repos/<kept>` is never a repo.
 //!
 //! **An old repo named `repos`.** A `repos/` with `.git` directly in it is a repo cloned at the
@@ -99,7 +99,7 @@ pub struct Holdings {
     /// **The repos**, one for each name: [`Git::Directory`] and a name purlis takes for a repo.
     pub repos: Vec<Row>,
     /// A folder at the root with a `.git` of any kind, beside the repo of its name in `repos/`.
-    /// The repo in `repos/` is the repo; this is what `doctor` warns about (ADR 0113, decision 3).
+    /// The repo in `repos/` is the repo; this is what `doctor` warns about (ADR 0114, decision 3).
     pub shadowed: Vec<Row>,
     /// A folder with a `.git` that is no repo and shadows nothing: one whose `.git` is a file or
     /// a link, or whose name the workspace keeps for its own ([`contain::workspace_keeps`]). A

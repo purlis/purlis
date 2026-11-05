@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Where a workspace's repo is, in the layout before structure version 6 (`<ws>/<repo>`), the
-//! one after it (`<ws>/repos/<repo>`) and a workspace holding both (ADR 0113), against real
+//! one after it (`<ws>/repos/<repo>`) and a workspace holding both (ADR 0114), against real
 //! planes on disk and real git.
 //!
 //! Asked only of [`purlis_core::repofolder`], the one place that knows both layouts: what a
@@ -360,7 +360,7 @@ fn a_name_the_workspace_keeps_is_no_new_repos_and_no_repos_in_repos() {
 #[test]
 fn an_old_clone_in_a_name_the_workspace_keeps_goes_on_working() {
     purlis_core::unsteered!();
-    // ADR 0113, decision 3: a clone at the root keeps working with nothing done, whatever it is
+    // ADR 0114, decision 3: a clone at the root keeps working with nothing done, whatever it is
     // named, and `repos::clones` and `repos::clone_at` have always taken these.
     let plane = Plane::new();
     for name in ["work", "themes", "memory"] {
