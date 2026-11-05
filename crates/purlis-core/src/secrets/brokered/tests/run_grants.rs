@@ -27,7 +27,7 @@ fn run_with(asker: &Asker, wanted: Wanted, asks: &Asks, within: Duration) -> Vec
             asks,
             within,
             moved: &|| {},
-            run_asked: None,
+            run_gate: None,
         },
     );
     let bytes = wire.0.lock().unwrap().clone();
@@ -1174,25 +1174,37 @@ fn a_declared_tool_off_the_reviewed_list_runs_as_it_always_did() {
 
 /// Whether the gate took `want`'s run, heard as the app hears it, with a person who says no.
 fn the_gate_took(root: &Path, want: Wanted, asks: &Asks) -> bool {
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::Ordering;
+    let gate = RunGate::default();
+    run_at_the_gate(root, want, asks, &gate);
+    gate.took_it.load(Ordering::Relaxed)
+}
+
+/// `want` run by a chat with `gate`, with nobody there to answer.
+fn run_at_the_gate(root: &Path, want: Wanted, asks: &Asks, gate: &RunGate) -> Vec<Frame> {
     crate::sandbox::tools::SEARCH_HERE
         .with(|dirs| *dirs.borrow_mut() = Some(vec!["/usr/bin".into(), "/bin".into()]));
-    let run_asked = AtomicBool::new(false);
+    let wire = Wire::default();
     let (reader, _keep) = held_open();
     serve_asking(
         &the_chat(root),
         want,
         reader,
-        Box::new(Wire::default()),
+        Box::new(wire.clone()),
         Wrap::Unwrapped,
         Missing {
             asks,
             within: Duration::ZERO,
             moved: &|| {},
-            run_asked: Some(&run_asked),
+            run_gate: Some(gate),
         },
     );
-    run_asked.load(Ordering::Relaxed)
+    let bytes = wire.0.lock().unwrap().clone();
+    String::from_utf8(bytes)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("every line is a frame"))
+        .collect()
 }
 
 #[test]
@@ -1219,4 +1231,80 @@ fn the_gate_takes_no_run_it_has_no_allow_for() {
     interpreter.command = vec!["python3".into(), "-c".into(), "print(1)".into()];
     assert!(!the_gate_took(root, interpreter, &asks));
     assert!(asks.open_runs().is_empty());
+}
+
+#[test]
+fn a_vault_kept_blocked_for_this_chat_offers_nothing_that_would_open_it() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    let root = project.path();
+    let gate = RunGate {
+        kept_blocked: true,
+        ..RunGate::default()
+    };
+    let frames = run_at_the_gate(root, curl_on_another_vault(root), &asks, &gate);
+    assert!(asks.open_runs().is_empty(), "nobody is asked");
+    assert!(vault_was_refused(&frames), "{frames:?}");
+    assert!(!gate.took_it.load(std::sync::atomic::Ordering::Relaxed));
+
+    // A vault that is its persona's is another matter: nothing was kept blocked there.
+    run_at_the_gate(root, curl(root, &["--version"]), &asks, &gate);
+    assert_eq!(asks.open_runs().len(), 1);
+}
+
+/// `/usr/bin/vimdiff` is a link to `vim` where one is installed so.
+#[cfg(unix)]
+#[test]
+fn a_program_a_link_leads_to_a_refused_one_is_refused_with_no_notice() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    let linked = ["vimdiff", "view", "rview", "ex"].into_iter().find(|name| {
+        let at = Path::new("/usr/bin").join(name);
+        std::fs::read_link(&at).is_ok() && at.canonicalize().is_ok_and(|real| real.ends_with("vim"))
+    });
+    let Some(linked) = linked else {
+        return;
+    };
+    let mut want = printenv(project.path(), &[]);
+    want.command = vec![linked.to_owned(), "--version".to_owned()];
+    let frames = run_with(&the_chat(project.path()), want, &asks, Duration::ZERO);
+    assert!(asks.open_runs().is_empty(), "{frames:?}");
+    assert!(
+        refusal(&frames).0.contains("runs other programs"),
+        "{frames:?}"
+    );
+}
+
+#[test]
+fn a_lookalike_letter_in_a_command_is_spelled_out_for_the_person() {
+    let shown = command_shown(&["curl".to_owned(), "https://\u{430}pi.github.com".to_owned()]);
+    assert!(!shown.contains('\u{430}'), "{shown}");
+    assert!(shown.contains(r"\xd0\xb0pi.github.com"), "{shown}");
+    assert_eq!(
+        command_shown(&[
+            "curl".to_owned(),
+            "https://api.example.com/status".to_owned()
+        ]),
+        "curl https://api.example.com/status",
+        "plain words read as they are"
+    );
+}
+
+#[test]
+fn a_grant_for_the_chat_stops_where_policy_leaves_it_no_scope() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    let root = project.path();
+    answered(root, curl(root, &["--version"]), &asks, RunAnswer::ForChat);
+    assert_eq!(asks.given_runs().len(), 1);
+
+    let _policy = Policy::says(r#"{"sandbox": {"allow-scopes": ["once"]}}"#);
+    let frames = run_with(
+        &the_chat(root),
+        curl(root, &["--help"]),
+        &asks,
+        Duration::ZERO,
+    );
+    assert!(refusal(&frames).0.contains("Policy"), "{frames:?}");
+    assert!(asks.open_runs().is_empty(), "{frames:?}");
 }

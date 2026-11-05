@@ -2674,3 +2674,32 @@ fn a_refused_vault_policy_locks_offers_keep_blocked_alone_and_says_why() {
          Locked by policy, set by IT. purlis told the chat how to dispatch to devops"
     );
 }
+
+#[test]
+fn a_run_grants_folder_is_spelled_so_it_cant_read_as_another() {
+    use purlis_core::secrets::ask::run::{Bound, Hosts, OpenRun};
+    let open = OpenRun {
+        id: 7,
+        persona: "devops".to_owned(),
+        bound: Bound {
+            chat: 3,
+            name: "curl".to_owned(),
+            program: "/usr/bin/curl".into(),
+            vault: "team".to_owned(),
+            env: vec!["KUBE=TOKEN".to_owned()],
+            file: Vec::new(),
+            cwd: "/work/\u{202e}pohs".into(),
+            args: Vec::new(),
+        },
+        hosts: Hosts::Listed(Vec::new()),
+        caution: None,
+        not_its_vault: false,
+        command: "curl".to_owned(),
+        since: 0,
+    };
+    let none = purlis_core::sandbox::policy::Locks::none();
+    let shown = run_grant(&open, &none);
+    let cwd = &shown.run.as_ref().expect("the facts of the run").cwd;
+    assert!(!cwd.contains('\u{202e}'), "{cwd}");
+    assert!(cwd.contains(r"\xe2\x80\xae"), "{cwd}");
+}

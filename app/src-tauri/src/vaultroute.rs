@@ -105,26 +105,33 @@ impl Refusals {
     }
 
     /// **Keep blocked**: puts chat `session`'s refusal of `vault` away, and its later tries at
-    /// `vault` raise no ask for as long as the chat is open.
+    /// `vault` raise no ask for as long as the chat is open: not this one, and no Run grant's,
+    /// whose Always allow would give the persona the vault.
     pub fn keep_blocked(&self, session: u32, vault: &str) {
+        // Kept first, so a refusal heard meanwhile finds it, and is not left up.
+        {
+            let mut kept = self.kept_lock();
+            if !kept
+                .iter()
+                .any(|(chat, one)| *chat == session && one == vault)
+            {
+                kept.push((session, vault.to_owned()));
+            }
+        }
         self.put_away(session, vault);
-        let mut kept = self.kept_lock();
-        if !kept
+    }
+
+    /// Whether the person kept `vault` blocked for chat `session`.
+    pub fn kept_blocked(&self, session: u32, vault: &str) -> bool {
+        self.kept_lock()
             .iter()
             .any(|(chat, one)| *chat == session && one == vault)
-        {
-            kept.push((session, vault.to_owned()));
-        }
     }
 
     /// Notes that chat `session` was refused `not`, and answers whether that is news: one
     /// Notice per chat and vault, however often the chat tries again.
     pub fn note(&self, session: u32, not: NotTagged) -> bool {
-        if self
-            .kept_lock()
-            .iter()
-            .any(|(chat, vault)| *chat == session && *vault == not.vault)
-        {
+        if self.kept_blocked(session, &not.vault) {
             return false;
         }
         let mut held = self.lock();

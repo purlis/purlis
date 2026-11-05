@@ -12833,6 +12833,12 @@ fn a_chat_refused_after_keep_blocked_cannot_bring_the_vaults_allow_back() {
     assert_eq!(inbox_of_a_run(&held), []);
     run_on_team(&held, &id, chat, "python3");
     assert_eq!(inbox_of_a_run(&held), [], "its next try raises nothing");
+    run_on_team(&held, &id, chat, "curl");
+    assert_eq!(
+        inbox_of_a_run(&held),
+        [],
+        "and no Run grant's, whose Always allow would give the persona the vault"
+    );
 
     let another = a_chat_as(&held, &plane.root, Some("ops"), &plane.root);
     run_on_team(&held, &id, another, "python3");

@@ -577,6 +577,15 @@ impl Asks {
         self.inner().runs.covers(bound).is_some()
     }
 
+    /// **Whether a grant for the chat's life covers `bound`**, whatever its arguments.
+    pub fn covers_for_the_chat(&self, bound: &Bound) -> bool {
+        self.inner()
+            .runs
+            .given
+            .iter()
+            .any(|given| !given.once && given.bound.same_but_args(bound))
+    }
+
     /// **Whether a grant covers `bound`**, with nothing asked: Allow once goes as it is taken.
     pub fn granted(&self, bound: &Bound) -> bool {
         self.inner().runs.take(bound)

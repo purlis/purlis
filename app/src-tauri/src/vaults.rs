@@ -256,12 +256,15 @@ pub(crate) fn run_brokered(
     };
     // A key its vault holds no value under is asked of the person, and the run waits until
     // just before its harness would kill it (#5068, #5071, ADR 0109).
-    let run_asked = std::sync::atomic::AtomicBool::new(false);
+    let run_gate = brokered::RunGate {
+        took_it: Default::default(),
+        kept_blocked: held.vault_refusals().kept_blocked(ask.chat, &vault),
+    };
     let missing = brokered::Missing {
         asks: held.secret_asks(),
         within: purlis_core::secrets::ask::holds_for(asker.harness),
         moved: &|| held.chats().asks_may_have_moved(),
-        run_asked: Some(&run_asked),
+        run_gate: Some(&run_gate),
     };
     brokered::serve_recording(
         &asker,
@@ -272,7 +275,7 @@ pub(crate) fn run_brokered(
         reached,
         missing,
     );
-    if !run_asked.load(std::sync::atomic::Ordering::Relaxed) {
+    if !run_gate.took_it.load(std::sync::atomic::Ordering::Relaxed) {
         crate::vaultroute::refused(
             plane,
             held.vault_refusals(),

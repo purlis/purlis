@@ -1803,11 +1803,14 @@ pub fn for_run_grant(
     if let Some(why) = refused_name(&name) {
         return Err(why);
     }
-    if NOT_FOR_A_RUN_GRANT.contains(&name.to_ascii_lowercase().as_str()) {
-        return Err(format!(
+    let runs_others = |name: &str| {
+        format!(
             "{name} runs other programs as it is told, so purlis does not offer to allow it: \
              declare what it's for as a tool, with the arguments it takes"
-        ));
+        )
+    };
+    if not_for_a_run_grant(&name) {
+        return Err(runs_others(&name));
     }
     if !asked.dotenv.is_empty() {
         return Err(format!(
@@ -1900,6 +1903,10 @@ pub fn for_run_grant(
             format!("no {name} was found outside the folders a chat may write")
         }));
     };
+    // A link may lead to one: `vimdiff` to `vim`, `editor` to `vim.basic`.
+    if not_for_a_run_grant(&file_name_of(&ready.program)) {
+        return Err(runs_others(&name));
+    }
     if !names(&ready, asked.program) {
         return Err(format!(
             "{} is not the {name} purlis finds outside the folders a chat may write: name it {name}",
@@ -1913,6 +1920,13 @@ pub fn for_run_grant(
         ));
     }
     Ok(ready)
+}
+
+/// Whether `name` is on [`NOT_FOR_A_RUN_GRANT`], as itself or as a build of it (`vim.basic`).
+fn not_for_a_run_grant(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    let stem = name.split('.').next().unwrap_or_default();
+    NOT_FOR_A_RUN_GRANT.contains(&name.as_str()) || NOT_FOR_A_RUN_GRANT.contains(&stem)
 }
 
 /// **The caution beside a Run grant's Allow** ([`caution`]), on the app's own search path.

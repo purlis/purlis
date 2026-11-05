@@ -4083,7 +4083,7 @@ fn secret_missing<'a>(
         asks: held.secret_asks(),
         within: purlis_core::secrets::ask::holds_for(asker.harness),
         moved,
-        run_asked: None,
+        run_gate: None,
     }
 }
 

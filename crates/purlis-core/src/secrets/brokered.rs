@@ -695,13 +695,13 @@ pub fn forwarded(_ctx: &Ctx, _req: &Request, _command: &[String], _io: &mut dyn 
 pub const MOST_COMMAND_SHOWN: usize = 2000;
 
 /// **A chat's command as the person reads it** (ADR 0112): each word a shell word, every byte
-/// outside printable ASCII spelled out ([`crate::shown::shell_word`]), so no control character,
+/// outside printable ASCII spelled out ([`crate::shown::ascii_word`]), so no control character,
 /// direction override or lookalike letter changes what it seems to say. Inert, and told apart
 /// from the app's facts wherever it is drawn.
 pub fn command_shown(words: &[String]) -> String {
     words
         .iter()
-        .map(|word| crate::shown::shell_word(word))
+        .map(|word| crate::shown::ascii_word(word))
         .collect::<Vec<_>>()
         .join(" ")
 }
@@ -825,6 +825,11 @@ fn run_granted(
 ) -> Result<crate::sandbox::tools::Ready, (i32, String)> {
     use super::ask::run::{Bound, Hosts, RunHeld, RunNeed};
     use crate::sandbox::tools;
+    // The person kept this vault blocked for this chat: nothing here is to open it, whatever was
+    // given before, and they are not asked again.
+    if not_its_vault && missing.run_gate.is_some_and(|gate| gate.kept_blocked) {
+        return Err((1, why));
+    }
     let persona = asker.persona.as_deref().unwrap_or_default();
     // A server's start is its harness's, and nobody is there to retry it.
     if wanted.mcp.is_some() {
@@ -905,9 +910,26 @@ fn run_granted(
         cwd: start_in.map(Path::to_path_buf).unwrap_or_default(),
         args: command[1..].to_vec(),
     };
+    // A grant for the chat lasts as long as policy leaves a scope it can stand at.
+    use crate::sandbox::grant::Level;
+    if !locks.keeps_scope(Level::Chat)
+        && !locks.keeps_scope(Level::Project)
+        && missing.asks.covers_for_the_chat(&bound)
+    {
+        return Err((
+            1,
+            format!(
+                "Policy removes every scope a program could be allowed at for a chat, so {} needs \
+                 to be declared as a tool of {persona}'s. {}",
+                bound.name,
+                locks.locked_by()
+            ),
+        ));
+    }
     let took_the_run = || {
-        if let Some(asked) = missing.run_asked {
-            asked.store(true, std::sync::atomic::Ordering::Relaxed);
+        if let Some(gate) = missing.run_gate {
+            gate.took_it
+                .store(true, std::sync::atomic::Ordering::Relaxed);
         }
     };
     if is_a_tool {
@@ -1529,10 +1551,21 @@ pub struct Missing<'a> {
     pub within: Duration,
     /// Told once an ask is raised or joined, so the window lists it.
     pub moved: &'a (dyn Fn() + Sync),
-    /// Set when the Run grant gate takes the run: it asks, a grant covers it, or the person's
-    /// Don't allow stands. That is the run's one ask, so the app raises no vault ask beside it
-    /// (ADR 0112).
-    pub run_asked: Option<&'a std::sync::atomic::AtomicBool>,
+    /// What the app and the Run grant gate tell each other about this run, where the app raises
+    /// a vault's own ask ([`RunGate`]).
+    pub run_gate: Option<&'a RunGate>,
+}
+
+/// **The Run grant gate and the vault's own ask, for one run** (ADR 0112): one run raises one ask.
+#[derive(Debug, Default)]
+pub struct RunGate {
+    /// Set when the gate takes the run: a grant covers it, the person's Don't allow stands, or it
+    /// goes to be asked about, which a chat with too many asks open tries again. Whichever, the
+    /// app raises no vault ask beside it.
+    pub took_it: std::sync::atomic::AtomicBool,
+    /// Whether the person kept this vault blocked for this chat: the gate offers nothing that
+    /// would open it, so a later command can't bring the question back.
+    pub kept_blocked: bool,
 }
 
 impl Missing<'_> {

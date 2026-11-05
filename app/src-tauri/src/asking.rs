@@ -2281,7 +2281,7 @@ pub fn run_grant(
             caution: open.caution.clone(),
             not_its_vault: open.not_its_vault,
             command: open.command.clone(),
-            cwd: bound.cwd.display().to_string(),
+            cwd: purlis_core::shown::ascii_word(&bound.cwd.to_string_lossy()),
             always,
         }),
     }
