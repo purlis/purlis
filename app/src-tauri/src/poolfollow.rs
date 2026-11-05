@@ -512,6 +512,33 @@ pub fn follow_and_drain(
                 continue;
             }
         }
+        // **A runner goes only with its work fetched** (#5393): its last chat's end is told apart
+        // from its fetch, which waits its turn, and a project whose window is closed has not
+        // fetched at all. One already unpaired takes no link, so nothing more can come from it.
+        if !kept.unpaired {
+            match purlis_core::pools::work_owed_from(&machine.config, kept.pool(), kept.name()) {
+                Ok(owed) if owed.is_empty() => {}
+                Ok(owed) => {
+                    let shown: Vec<String> = owed
+                        .iter()
+                        .map(|plane| plane.display().to_string())
+                        .collect();
+                    said.push(format!(
+                        "draining runner {} stays until its work is fetched into {}",
+                        kept.name(),
+                        shown.join(", ")
+                    ));
+                    continue;
+                }
+                Err(why) => {
+                    said.push(format!(
+                        "draining runner {} stays, since what it owes could not be read: {why}",
+                        kept.name()
+                    ));
+                    continue;
+                }
+            }
+        }
         let unpair = |_: &purlis_core::runners::Kept| crate::runnerlinks::unpair(&to);
         said.push(said_of_a_drain(
             kept.name(),

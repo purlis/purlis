@@ -101,6 +101,77 @@ fn names(machine: &Machine) -> Vec<String> {
         .collect()
 }
 
+/// **A draining runner goes only with its work fetched** (#5393): no chat is left on it, and until
+/// the project's fetch has run it stays, however often it is looked at.
+#[test]
+fn a_draining_runner_with_no_chat_left_stays_until_its_work_is_fetched() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine(config.path());
+    a_pool_draining(&machine);
+    let plane = std::path::Path::new("/planes/a");
+    purlis_core::machine::update(&machine.config, |store| {
+        store.remember(plane, 1);
+        store.keep_chat_on_pool(
+            plane,
+            7,
+            purlis_core::machine::ChatOnPool {
+                pool: "first".to_owned(),
+                workspace: "ide".to_owned(),
+                runner: Some("first".to_owned()),
+            },
+        );
+        store.leave_chat_on_pool(plane, 7);
+    })
+    .unwrap();
+
+    let said = follow_and_drain(&machine, None, &|_| Ok(0));
+
+    assert_eq!(names(&machine), ["first", "first-fedcba98"]);
+    assert!(
+        said.iter()
+            .any(|line| line.contains("stays until its work is fetched")),
+        "{said:?}"
+    );
+    assert!(
+        only_looked(config.path()),
+        "nothing of it is carried or removed"
+    );
+
+    purlis_core::machine::update(&machine.config, |store| {
+        store.branches_fetched(plane, "first", "ide");
+    })
+    .unwrap();
+    let said = follow_and_drain(&machine, None, &|_| Ok(0));
+
+    assert_eq!(names(&machine), ["first-fedcba98"], "{said:?}");
+}
+
+/// A chat kept on the pool's next runner has nothing on the draining one, so it does not hold it.
+#[test]
+fn a_chat_on_the_pools_next_runner_does_not_hold_a_draining_one_back() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine(config.path());
+    a_pool_draining(&machine);
+    let plane = std::path::Path::new("/planes/a");
+    purlis_core::machine::update(&machine.config, |store| {
+        store.remember(plane, 1);
+        store.keep_chat_on_pool(
+            plane,
+            7,
+            purlis_core::machine::ChatOnPool {
+                pool: "first".to_owned(),
+                workspace: "ide".to_owned(),
+                runner: Some("first-fedcba98".to_owned()),
+            },
+        );
+    })
+    .unwrap();
+
+    let said = follow_and_drain(&machine, None, &|_| Ok(0));
+
+    assert_eq!(names(&machine), ["first-fedcba98"], "{said:?}");
+}
+
 #[test]
 fn a_draining_runner_is_removed_once_no_chat_is_left_on_it_and_not_before() {
     let config = tempfile::tempdir().unwrap();

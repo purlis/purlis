@@ -988,6 +988,9 @@ pub struct Chats {
     /// whatever its check found. It is held with the end, so it can't outlive it and let go of a
     /// runner whose chat was opened again since.
     fresh_ending: Arc<Mutex<std::collections::HashMap<String, bool>>>,
+    /// When the sweep may next ask each kept fresh runner, by its chat's id (#5393): a check that
+    /// took minutes is not run again a minute later. Nothing but the sweep waits for it.
+    fresh_asked_again: Arc<Mutex<std::collections::HashMap<String, std::time::Instant>>>,
     /// When the fresh runners were last swept ([`Self::sweeps_fresh_runners`]).
     fresh_swept: Mutex<Option<std::time::Instant>>,
     /// **The fresh runners kept since their work is not all here**, by their chat's id (#4569):
@@ -1356,6 +1359,18 @@ fn ends_as(discarded: bool, missing: Vec<String>, going: Going) -> (Vec<String>,
 #[cfg(unix)]
 const FRESH_SWEPT_AT_MOST_EVERY: std::time::Duration = std::time::Duration::from_secs(60);
 
+/// The longest the sweep leaves a kept fresh runner unasked (#5393).
+#[cfg(unix)]
+const FRESH_ASKED_AGAIN_AT_LEAST_EVERY: std::time::Duration = std::time::Duration::from_secs(3600);
+
+/// How long the sweep leaves a kept fresh runner whose end took `took` (#5393): ten times that, so
+/// a runner whose check always runs out spends a tenth of its time on checks at most, however
+/// large its image is.
+#[cfg(unix)]
+fn fresh_asked_again_after(took: std::time::Duration) -> std::time::Duration {
+    (took * 10).clamp(FRESH_SWEPT_AT_MOST_EVERY, FRESH_ASKED_AGAIN_AT_LEAST_EVERY)
+}
+
 /// The runner of its own a chat starts on, and whether this start made it (#4569).
 struct OwnRunner {
     name: String,
@@ -1538,6 +1553,7 @@ impl Chats {
             going: crate::goingaway::Going::default(),
             fresh_starting: Arc::default(),
             fresh_ending: Arc::default(),
+            fresh_asked_again: Arc::default(),
             fresh_swept: Mutex::new(None),
             fresh_kept: Arc::default(),
             fresh_told: Arc::default(),
@@ -1802,6 +1818,8 @@ impl Chats {
         let config = config.clone();
         let (kept, told) = (Arc::clone(&self.fresh_kept), Arc::clone(&self.fresh_told));
         let (runner_named, workspace_named) = (runner.clone(), workspace.clone());
+        let asked_again = Arc::clone(&self.fresh_asked_again);
+        let began = std::time::Instant::now();
         self.sessions.take_back_fresh(
             &runner,
             (going == Going::OnProof).then_some(workspace.as_str()),
@@ -1818,6 +1836,12 @@ impl Chats {
                     end = crate::clusterpools::fresh_runner_ended(&config, &ending.id, &[], false);
                 }
                 let went = matches!(end, crate::clusterpools::FreshEnd::Went);
+                if went {
+                    lock(&asked_again).remove(&ending.id);
+                } else {
+                    let next = std::time::Instant::now() + fresh_asked_again_after(began.elapsed());
+                    lock(&asked_again).insert(ending.id.clone(), next);
+                }
                 {
                     let mut kept = lock(&kept);
                     match end {
@@ -1926,10 +1950,20 @@ impl Chats {
                 .is_some_and(|of| of.is_of(&plane, &self.project));
             if let (true, Some(id)) = (ours, &kept.chat)
                 && !self.holds_a_chat(id)
+                && self.sweep_may_ask(id)
             {
                 self.fresh_runner_ends(id, true);
             }
         }
+    }
+
+    /// Whether the sweep may ask chat `id`'s kept runner again by now (#5393). Fetch again and a
+    /// chat's end go by no such wait: they don't ask this.
+    #[cfg(unix)]
+    fn sweep_may_ask(&self, id: &str) -> bool {
+        !lock(&self.fresh_asked_again)
+            .get(id)
+            .is_some_and(|next| std::time::Instant::now() < *next)
     }
 
     /// [`Self::sweeps_fresh_runners`]: pools run on Unix alone.
