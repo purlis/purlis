@@ -644,9 +644,14 @@ fn extension_folders() -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Workspace `branch.ws`'s own files, for a command that named them ([`branch`]).
-fn workspace_files(plane: &Path, branch: Branch<'_>) -> Result<workspace::Files, String> {
-    workspace::Files::of(plane, branch.ws).map_err(|why| why.to_string())
+/// What `read` answers of workspace `ws`'s own files (#5375). Its error is named here, so the
+/// window's copy check (`copy.rust.test.ts`) reads the core's sentences each caller passes on.
+fn in_workspace_files<T>(
+    plane: &Path,
+    ws: &str,
+    read: impl FnOnce(&workspace::Files) -> Result<T, workspace::NotHere>,
+) -> Result<T, workspace::NotHere> {
+    read(&workspace::Files::of(plane, ws)?)
 }
 
 pub(crate) fn workspace_tree_of(
@@ -655,8 +660,7 @@ pub(crate) fn workspace_tree_of(
     folder: &str,
     extension_folders: &[String],
 ) -> Result<WorkspaceListing, String> {
-    let listing = workspace::Files::of(plane, ws)
-        .and_then(|files| files.tree(folder, extension_folders))
+    let listing = in_workspace_files(plane, ws, |files| files.tree(folder, extension_folders))
         .map_err(|why| why.to_string())?;
     Ok(WorkspaceListing {
         entries: listing.entries.into_iter().map(FolderEntry::from).collect(),
@@ -678,9 +682,8 @@ pub(crate) fn workspace_file_of(
     path: &str,
     extension_folders: &[String],
 ) -> Result<WorkspaceFile, String> {
-    let opened = workspace::Files::of(plane, ws)
-        .and_then(|files| files.open(path))
-        .map_err(|why| why.to_string())?;
+    let opened =
+        in_workspace_files(plane, ws, |files| files.open(path)).map_err(|why| why.to_string())?;
     let managed = workspace::managed(path, extension_folders);
     Ok(WorkspaceFile {
         file: opened.into(),
@@ -899,9 +902,10 @@ fn launch_of(
     var: &dyn Fn(&str) -> Option<String>,
 ) -> Result<Launch, String> {
     if branch.is_workspace_files() {
-        return workspace_files(plane, branch)?
-            .in_your_editor(path, line, editor.into(), var)
-            .map_err(|why| why.to_string());
+        return in_workspace_files(plane, branch.ws, |files| {
+            files.in_your_editor(path, line, editor.into(), var)
+        })
+        .map_err(|why| why.to_string());
     }
     files::root(reader, plane, branch)
         .and_then(|root| root.in_your_editor(reader, path, line, editor.into(), var))
@@ -985,8 +989,7 @@ fn placed_of(
     path: &str,
 ) -> Result<files::Placed, String> {
     if branch.is_workspace_files() {
-        return workspace_files(plane, branch)?
-            .place(path)
+        return in_workspace_files(plane, branch.ws, |files| files.place(path))
             .map_err(|why| why.to_string());
     }
     let root = files::root(reader, plane, branch).map_err(|refused| refused.to_string())?;
@@ -1009,8 +1012,7 @@ fn path_text(
 ) -> Result<String, String> {
     if !absolute {
         if branch.is_workspace_files() {
-            return workspace_files(plane, branch)?
-                .named(path)
+            return in_workspace_files(plane, branch.ws, |files| files.named(path))
                 .map_err(|why| why.to_string());
         }
         // A link's own path, followed nowhere: what its row copies (`files::named`).
@@ -1042,8 +1044,8 @@ fn shell_folder_by(
         return placed_of(reader, plane, branch, folder).map(|placed| placed.absolute);
     }
     if branch.is_workspace_files() {
-        let mut found = workspace_files(plane, branch)?.folders(&[folder]);
-        return found.remove(0).map_err(|why| why.to_string());
+        return in_workspace_files(plane, branch.ws, |files| files.listed_folder(folder))
+            .map_err(|why| why.to_string());
     }
     files::root(reader, plane, branch)
         .and_then(|root| root.folder(folder))

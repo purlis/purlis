@@ -6,11 +6,16 @@
 //! nowhere (#5375).
 //!
 //! **What they are.** Everything in `workspaces/<ws>/` but its repos and their branches' folders:
-//! `repos/`, `.worktrees/`, and every folder at the top that holds a `.git` (an old clone, ADR
-//! 0114), which [`crate::repofolder::holdings`] names. Those are never listed, opened, placed or
-//! watched here, under any spelling of their names: a repo's files are its own row's, read as a
-//! branch's are. The top's listing says the repos apart ([`Listing::repos`]), each with where it
-//! is, so the window draws a row for each where it stands on disk.
+//! `repos/`, `.worktrees/`, and each folder at the top that [`crate::repofolder::holdings`] names
+//! as a clone there (an old clone, ADR 0114), whether it is a repo of the workspace, shadowed by
+//! one in `repos/`, or another clone. Those are never listed, opened, placed or watched here,
+//! under any spelling of their names: a repo's files are its own row's, read as a branch's are.
+//! The top's listing says the repos apart ([`Listing::repos`]), each with where it is, so the
+//! window draws a row for each where it stands on disk.
+//!
+//! **A folder at the top that `holdings` does not name is the workspace's**, though it holds a
+//! `.git`: one in a name no repo may take, or whose `.git` cannot be read. It is listed as the
+//! person's files are, with only its `.git` left out, as `.git` is everywhere here.
 //!
 //! **Read as a skill's folder is** ([`super::folder`]): the workspace's folder checked by
 //! [`confine::workspace_dir`], each folder listed and each file opened through a descriptor, one
@@ -92,11 +97,20 @@ pub enum NotHere {
     Repos(#[from] repofolder::Trouble),
     #[error(transparent)]
     Files(#[from] Refused),
-    #[error("'{0}' is in a repo, whose files are under the repo's own row")]
+    #[error(
+        "purlis does not read '{0}' among the workspace's files: it is in a repo. Open it from \
+         that repo's row in Explorer."
+    )]
     OfARepo(String),
-    #[error("'{0}' is in the branches' folders, whose files are under each branch")]
+    #[error(
+        "purlis does not read '{0}' among the workspace's files: it is in a branch's folder. \
+         Open it from that branch's row in Explorer."
+    )]
     OfABranch(String),
-    #[error("'{0}' is reached through a link, and purlis follows no link in the workspace's files")]
+    #[error(
+        "purlis does not read '{0}': it is reached through a link, and purlis follows no link \
+         in the workspace's files. Open the file the link points to from where it is kept."
+    )]
     ThroughALink(String),
 }
 
@@ -139,7 +153,7 @@ pub struct Files {
     /// The workspace's folder, as the disk spells it.
     dir: PathBuf,
     /// The names at the top that are no workspace file, lowercased: `repos`, `.worktrees` and
-    /// every folder there with a `.git` of its own.
+    /// every clone there that `holdings` names.
     outside: Vec<String>,
     repos: Vec<Repo>,
     kept: Kept,
@@ -384,15 +398,19 @@ impl Files {
     pub fn folders(&self, named: &[&str]) -> Vec<Result<PathBuf, NotHere>> {
         named
             .iter()
-            .map(|folder| {
-                let placed = self.place(folder)?;
-                if placed.folder {
-                    Ok(placed.absolute)
-                } else {
-                    Err(Refused::NotAFolder((*folder).to_string()).into())
-                }
-            })
+            .map(|folder| self.listed_folder(folder))
             .collect()
+    }
+
+    /// **One folder of the workspace files**, resolved as [`Self::tree`] would list it: where a
+    /// shell tab starts, and what a watch watches. Refused for a file.
+    pub fn listed_folder(&self, folder: &str) -> Result<PathBuf, NotHere> {
+        let placed = self.place(folder)?;
+        if placed.folder {
+            Ok(placed.absolute)
+        } else {
+            Err(Refused::NotAFolder(folder.to_string()).into())
+        }
     }
 
     /// **One file handed to your editor** at `line` (RC-20): placed as [`Self::place`] places
