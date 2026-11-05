@@ -139,10 +139,31 @@ if (typeof Element !== "undefined") {
 // either. What a test asserts is WHAT the window becomes, never how fast, so it waits as long as
 // a slow machine needs; a wait that must be short says its own `timeout`. Vitest's `testTimeout`
 // (`vite.config.ts`) is raised to match.
+//
+// **Vitest's own waits get the same budget** (#5249). Each stops at a second unless told otherwise,
+// and that second took merge groups down. `expect.poll` has a setting for it. `vi.waitFor` and
+// `vi.waitUntil` have none (the second is a default in their signature), so they are wrapped here.
+// Moving their callers to Testing Library's `waitFor` wouldn't do: that one polls inside `act`,
+// which is a different wait (AGENTS.md), and the next `vi.waitFor` written would have the second
+// again. A wait only lasts longer when it would have failed.
+const WAIT_BUDGET_MS = 5_000;
+
 configure({
   defaultIgnore: 'script, style, [data-testid="hidden-select-container"] *',
-  asyncUtilTimeout: 5_000,
+  asyncUtilTimeout: WAIT_BUDGET_MS,
 });
+
+vi.setConfig({ expect: { poll: { timeout: WAIT_BUDGET_MS } } });
+
+/** `options` as a wait took them, with the budget where they name no timeout of their own. */
+const withBudget = <Options extends { timeout?: number }>(options?: number | Options) =>
+  typeof options === "number"
+    ? options
+    : { ...options, timeout: options?.timeout ?? WAIT_BUDGET_MS };
+
+const { waitFor: vitestWaitFor, waitUntil: vitestWaitUntil } = vi;
+vi.waitFor = (callback, options) => vitestWaitFor(callback, withBudget(options));
+vi.waitUntil = (callback, options) => vitestWaitUntil(callback, withBudget(options));
 
 // A select's value is the option it holds, as `toHaveValue` reads a native one's. Every select in
 // the window is the select family's (`ui/select/Select.tsx`, #2906), a `<button>` that carries
