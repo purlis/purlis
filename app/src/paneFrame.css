@@ -32,6 +32,9 @@
 .pane-frame.pane-headed {
   /* Its size is the layout's, never its content's, so what it holds can be capped by it. */
   container-type: size;
+  /* What the band's own box takes of the pane above and below its Notices (#5215): its head row,
+     that row's line and the box's two, and the step under it. A Notice's caps give this back. */
+  --pane-band-box: calc(var(--size-control) + 3 * var(--separator-width) + var(--space-3));
   background-color: var(--terminal-background);
 }
 
@@ -178,9 +181,8 @@
   flex: none;
   min-block-size: auto;
   /* Never taller than its pane: what a way out opened gives way first, inside the card. The
-     header above the band (#4754) and the band's runway are taken off: a chrome row and its
-     steps. */
-  max-block-size: calc(100cqb - var(--size-chrome) - var(--space-8));
+     header above the band (#4754), the band's runway and the band's own box are taken off. */
+  max-block-size: calc(100cqb - var(--size-chrome) - var(--space-8) - var(--pane-band-box));
 }
 
 /* **A row is as tall as what it says** (#5215): the band scrolls as one, so a row has no cap, and
@@ -274,7 +276,7 @@
   opacity: 1;
 }
 
-/* What a way out opened stays under the line, at the warning's width, and never more than a
+/* What a way out opened stays under the line, at the warning's width, and never more than about a
    third of the pane's height: past that it scrolls in its own box, so a warning with a long
    brief under it is never taller than the band can scroll to, and its line and ways out are
    always whole. */
@@ -282,7 +284,8 @@
   :is(.notice-pane-box, [data-scope="notice"][data-placement="pane"])
   > :is(.notice-under-pane, [data-scope="notice"][data-part="under"]) {
   padding-inline: 0;
-  max-block-size: 33cqb;
+  /* The room the band's own box took comes off here first, in a short pane above all. */
+  max-block-size: max(var(--size-control), calc(33cqb - var(--pane-band-box)));
   overflow-y: auto;
 }
 
