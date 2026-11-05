@@ -85,7 +85,10 @@ type TabName = { name: string; defaultName: string };
 /** What a drop would do, said, or why it is refused. */
 export type Verdict =
   /** `says` what it would do, before the drop; `did` what it did, after it. */
-  { ok: true; says: string; did: string } | { ok: false; why: string };
+  | { ok: true; says: string; did: string }
+  /** `overItself`: what is dragged is over its own place, which is no mistake to warn about:
+   *  letting go there moves nothing (#5284). */
+  | { ok: false; why: string; overItself?: true };
 
 /** How far in from an edge, as a share of the pane, a drop splits rather than swaps. */
 export const EDGE = 0.25;
@@ -154,9 +157,9 @@ export function judgeDrop(
   const target = paneAt(tabs, to);
   if (target === undefined) return refused("That pane has closed.");
   if (source.kind === "pane" && source.pane === to.pane)
-    return refused("That's the pane being moved. Drop it on another pane.");
+    return overItself("That's the pane being moved. Drop it on another pane.");
   if (source.kind === "tab" && source.tab === to.tab)
-    return refused("That's the tab being moved. Drop it on a pane in another tab.");
+    return overItself("That's the tab being moved. Drop it on a pane in another tab.");
   const there = ctx.name(target.content);
 
   let verdict: { says: string; did: string };
@@ -243,6 +246,7 @@ function namedForFirstPanes(before: Tabs, after: Tabs, ctx: DropContext): Tabs {
 }
 
 const refused = (why: string): Verdict => ({ ok: false, why });
+const overItself = (why: string): Verdict => ({ ok: false, why, overItself: true });
 const said = (says: string, did: string): Verdict => ({ ok: true, says, did });
 
 /**

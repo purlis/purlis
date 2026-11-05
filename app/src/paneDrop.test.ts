@@ -443,7 +443,11 @@ describe("what a drop refuses, with its reason (#4763)", () => {
     for (const place of ["left", "middle"] as const)
       expect(
         judgeDrop(tabs, { kind: "pane", tab, pane }, { kind: "pane", tab, pane, place }, ctx),
-      ).toEqual({ ok: false, why: "That's the pane being moved. Drop it on another pane." });
+      ).toEqual({
+        ok: false,
+        why: "That's the pane being moved. Drop it on another pane.",
+        overItself: true,
+      });
   });
 
   it("refuses a tab dropped on its own panes", () => {
@@ -452,6 +456,7 @@ describe("what a drop refuses, with its reason (#4763)", () => {
     expect(judgeDrop(tabs, { kind: "tab", tab: second }, to, ctx)).toEqual({
       ok: false,
       why: "That's the tab being moved. Drop it on a pane in another tab.",
+      overItself: true,
     });
   });
 
@@ -813,5 +818,35 @@ describe("a tab's name follows its first pane through a drop (#5283)", () => {
     const after = dropOn(tabs, seven, { kind: "pane", tab: first, pane, place: "left" }, named);
     const given = renameTab(after, first, "given to chat 7");
     expect(undone(given, tabs, after)?.byId[first].name).toBe(before);
+  });
+});
+
+describe("what is dragged over its own place (#5284)", () => {
+  it("counts a sidebar chat over the pane already showing it as over itself", () => {
+    const tabs = openTab(noTabs(), 1, "1");
+    const tab = tabs.order[0];
+    const pane = contentsOf(tabs, tab)[0].pane;
+    const verdict = judgeDrop(
+      tabs,
+      { kind: "chat", session: 1, chat: "1" },
+      { kind: "pane", tab, pane, place: "left" },
+      ctx,
+    );
+    expect(verdict).toMatchObject({ ok: false, overItself: true });
+  });
+
+  it("does not count a refusal for lack of room as over itself", () => {
+    const tabs = openTab(noTabs(), 1, "1");
+    const tab = tabs.order[0];
+    const pane = contentsOf(tabs, tab)[0].pane;
+    const verdict = judgeDrop(
+      tabs,
+      { kind: "chat", session: 7, chat: "7" },
+      { kind: "pane", tab, pane, place: "left" },
+      ctx,
+      { width: 100, height: 900 },
+    );
+    expect(verdict.ok).toBe(false);
+    expect(verdict).not.toHaveProperty("overItself");
   });
 });

@@ -74,7 +74,8 @@ import { onTooltipEscape } from "./ui/tooltip/Tooltip";
  *   Along the strip it is the strip's own drag, which reorders (SI-6).
  *
  * Esc cancels a drag. Holding over a tab for {@link HOLD_MS} brings it forward, so a pane can
- * land in another tab's layout. A refused place is drawn dashed, with its reason.
+ * land in another tab's layout. A refused place is drawn dashed, with its reason; what is dragged
+ * over its own place draws nothing, since letting go there moves nothing (#5284).
  *
  * **Placement mode** (#4764, `panePlacement.ts`) is every drag's route by keys and single presses
  * (WCAG 2.5.7): a press of a pane's grip ({@link PaneGrip}), Enter or Space on it, or ⌘⇧M on what
@@ -317,7 +318,7 @@ export function usePaneDrag({
           return;
         }
         if (!over.verdict.ok) {
-          setSaid(`Not dropped: ${over.verdict.why}`);
+          setSaid(over.verdict.overItself === true ? PUT_BACK : `Not dropped: ${over.verdict.why}`);
           return;
         }
         const did = over.verdict.did;
@@ -332,7 +333,7 @@ export function usePaneDrag({
         key.preventDefault();
         key.stopPropagation();
         end();
-        if (live) setSaid("Put back. Nothing moved.");
+        if (live) setSaid(PUT_BACK);
       };
       window.addEventListener("pointermove", move, true);
       window.addEventListener("pointerup", up, true);
@@ -363,7 +364,9 @@ export function usePaneDrag({
       return {
         target,
         verdict: judgeDrop(tabs, source, target, ctx, size),
-        box: previewOf(r, place),
+        // Its sides as plain values: a `DOMRect` keeps them on its prototype, so a spread of one
+        // has no box (#5284).
+        box: previewOf(boxOfRect(r), place),
         size,
       };
     };
@@ -562,7 +565,7 @@ export function usePaneDrag({
   const layer = (
     <>
       {targets}
-      {dragging?.over !== undefined && (
+      {dragging?.over !== undefined && !isOverItself(dragging.over.verdict) && (
         <div
           className="pane-drop-preview"
           data-refused={!dragging.over.verdict.ok || undefined}
@@ -579,7 +582,9 @@ export function usePaneDrag({
       {dragging?.over !== undefined && (
         <div
           className="pane-drop-says"
-          data-refused={!dragging.over.verdict.ok || undefined}
+          data-refused={
+            (!dragging.over.verdict.ok && !isOverItself(dragging.over.verdict)) || undefined
+          }
           aria-hidden="true"
           style={{ left: dragging.x + 14, top: dragging.y + 14 }}
         >
@@ -606,6 +611,9 @@ export function usePaneDrag({
 
   return { layer, undoLine, undo: takeBack, placing };
 }
+
+/** Whether what is dragged is over its own place: nothing to warn about, or to draw (#5284). */
+const isOverItself = (verdict: Verdict) => !verdict.ok && verdict.overItself === true;
 
 const paneKey = (tab: number, pane: number) => `${tab}:${pane}`;
 
