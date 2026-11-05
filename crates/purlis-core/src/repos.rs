@@ -117,12 +117,16 @@ fn clone_rows(walked: &repofolder::Holdings) -> Vec<repofolder::Row> {
 /// the path must stay inside the workspace without passing through a link, and its `.git`
 /// must be a directory. A link out of the workspace, a plain directory and a linked worktree
 /// are all `None`.
+///
+/// In either layout ([`repofolder::folder`]): `repos/<name>` where that is a repo, else
+/// `<name>`. A name only one entry and no repo's name purlis takes (`.github`) is only ever at
+/// the root, where it always was.
 pub fn clone_at(plane: &Path, ws: &str, name: &str) -> Option<Repo> {
     if !contain::segment_ok(name) {
         return None;
     }
-    let dir = confine::workspace_dir(plane, ws).ok()?;
-    let path = confine::within_workspace(plane, ws, &dir.join(name)).ok()?;
+    let named = repofolder::entry(plane, ws, name)?;
+    let path = confine::within_workspace(plane, ws, &named).ok()?;
     matches!(repofolder::git_of(&path), Ok(Some(Git::Directory))).then(|| Repo {
         name: name.to_string(),
         path,

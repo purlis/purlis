@@ -66,6 +66,17 @@ pub fn git(dir: &Path, args: &[&str]) -> std::process::Output {
 }
 
 pub fn plane_with_clone(repo: &str) -> Fixture {
+    plane_with_clone_at(repo, repo)
+}
+
+/// [`plane_with_clone`], with the clone in the workspace's `repos/` folder, where a repo goes
+/// from structure version 6 on (ADR 0114).
+pub fn plane_with_clone_in_repos(repo: &str) -> Fixture {
+    plane_with_clone_at(repo, &format!("repos/{repo}"))
+}
+
+/// A plane with clone `repo` at `below` its workspace's folder.
+fn plane_with_clone_at(repo: &str, below: &str) -> Fixture {
     let dir = tempfile::tempdir().unwrap();
     // Resolved: on macOS a temp dir is under `/var/folders/…`, itself a link to
     // `/private/var/…`, and a test that compares an unresolved path against a resolved one
@@ -73,7 +84,7 @@ pub fn plane_with_clone(repo: &str) -> Fixture {
     let plane = std::fs::canonicalize(dir.path()).unwrap();
     std::fs::write(plane.join("charter.toml"), "schema = 1\n").unwrap();
     let ws = "alpha".to_string();
-    let clone = plane.join("workspaces").join(&ws).join(repo);
+    let clone = plane.join("workspaces").join(&ws).join(below);
     std::fs::create_dir_all(&clone).unwrap();
     git(&clone, &["init", "-q", "-b", "main", "."]);
     std::fs::write(clone.join("README.md"), "one\n").unwrap();

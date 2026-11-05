@@ -809,10 +809,8 @@ impl Here {
             Ok(_) => return Err(not_a_branch_folder()),
             Err(why) => return Err(why.to_owned()),
         };
-        let recorded = root
-            .join("workspaces")
-            .join(&piece.workspace)
-            .join(&piece.repo);
+        let recorded = crate::repofolder::folder(root, &piece.workspace, &piece.repo)
+            .map_err(|_| not_a_branch_folder())?;
         let (Some(common), Some(clone)) = (link::worktree_of(&git_dir), link::cut_from(&top))
         else {
             return Err(not_a_branch_folder());
