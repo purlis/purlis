@@ -1406,3 +1406,72 @@ fn programs_that_keep_running_what_they_are_told_are_not_offered() {
         assert!(asks.open_runs().is_empty(), "{program}");
     }
 }
+
+/// A login is filled by purlis whoever's it is: a key another persona's browser login or fill line
+/// holds is no program's, on a vault that isn't the asking persona's as on its own.
+#[test]
+fn a_key_another_personas_browser_fills_is_never_offered_to_a_program() {
+    let project = project();
+    std::fs::write(
+        project.path().join("charter.toml"),
+        r#"[sandbox]
+open = "off"
+[sandbox.personas.ops]
+tools = { shop = { vault = "other", browser = "https://shop.example.test/login", key = "TOKEN" } }
+[sandbox.personas.qa]
+tools = { pay = { vault = "team", key = "TOKEN", fill = "https://pay.example.test" } }
+"#,
+    )
+    .unwrap();
+    let asks = Asks::new(project.path());
+    for want in [
+        on_another_vault(project.path()),
+        printenv(project.path(), &["X"]),
+    ] {
+        let vault = want.vault.clone();
+        let frames = run_with(&the_chat(project.path()), want, &asks, Duration::ZERO);
+        assert_eq!(refusal(&frames).1, 1, "{vault}: {frames:?}");
+        assert!(
+            refusal(&frames).0.contains("fills in a browser"),
+            "{vault}: {frames:?}"
+        );
+        assert!(asks.open_runs().is_empty(), "{vault} asked nobody");
+    }
+}
+
+/// What a run under a grant connects to and trusts is what the person read: the chat's hosts,
+/// ports and certificate authorities stay behind, so a chat that wants them says them in the
+/// command.
+#[test]
+fn a_granted_run_takes_none_of_the_chats_hosts_ports_or_certificate_authorities() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    for var in [
+        "PGHOST",
+        "PGHOSTADDR",
+        "PGPORT",
+        "PGSSLMODE",
+        "MYSQL_HOST",
+        "MYSQL_TCP_PORT",
+        "REDIS_HOST",
+        "REDIS_PORT",
+        "AWS_REGION",
+        "AWS_DEFAULT_REGION",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+        "NODE_EXTRA_CA_CERTS",
+        "REQUESTS_CA_BUNDLE",
+        "CURL_CA_BUNDLE",
+        "AWS_CA_BUNDLE",
+    ] {
+        let mut want = printenv(project.path(), &[var]);
+        want.environment = vec![(var.into(), "evil.example".into())];
+        let frames = answered(project.path(), want, &asks, RunAnswer::Once);
+        assert_eq!(frames.last(), Some(&Frame::Exit(1)), "{var}: {frames:?}");
+    }
+    // The chat's language still reaches it: only where it connects is left out.
+    let mut want = printenv(project.path(), &["LANG"]);
+    want.environment = vec![("LANG".into(), "C".into())];
+    let frames = answered(project.path(), want, &asks, RunAnswer::Once);
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+}
