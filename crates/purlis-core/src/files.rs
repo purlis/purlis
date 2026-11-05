@@ -23,10 +23,11 @@
 //! does not ignore. The tree names an ignored file, so the operator can see that a build output
 //! exists, but marks it ignored, and [`open`] refuses it.
 //!
-//! **Read only, but for two writes.** [`review_fetch`] fetches a request's head into the
+//! **Read only, but for three writes.** [`review_fetch`] fetches a request's head into the
 //! workspace's clone for its review and deletes those refs when nothing needs them (ADR 0084 §2).
 //! [`discard`] puts one hunk of a file back as the branch's base has it (#5406; ADR 0081, as
 //! amended 2026-11-05), through the same names and the same guards, and a Human edit records it.
+//! [`turns`] records each turn of a chat as refs in the clone (#5405), and moves no branch or file.
 
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
@@ -60,12 +61,15 @@ pub use offered::{Ignored, Offered};
 mod compare;
 pub use compare::{
     Against, COUNTED, Compared, Comparison, Discard, Discarded, FileChange, FileDiff, Head, Hunk,
-    Lines, MemberCompared, Shown, Sides, Target, WhatChanged, Whitespace, compare, compare_change,
-    compare_file, compare_file_with, compare_with, discard, line_hunks, what_changed,
+    Lines, MemberCompared, Shown, Sides, Target, TurnChanged, WhatChanged, Whitespace, compare,
+    compare_change, compare_file, compare_file_with, compare_with, discard, latest_turn_changed,
+    line_hunks, what_changed,
 };
 // A request's head, fetched under `refs/purlis/review/` for its review (RC-2's kind (f)).
 pub mod review_fetch;
+// Each turn of a chat, as two refs (N3, RC-2's kind (d)).
 mod search;
+pub mod turns;
 pub use search::{
     BadQuery, Ended, FILE_LINES, FILL, FileHits, HitLine, LINE_CHARS, LONGEST_LINE, LONGEST_QUERY,
     PAGE_TIME, Part, Search, SearchOptions, Searched, search,

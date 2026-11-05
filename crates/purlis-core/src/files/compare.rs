@@ -81,6 +81,9 @@ pub enum Comparison {
     /// (c) What is not committed: the folder's last commit to its working tree, untracked
     /// files git does not ignore included, the index never touched.
     Uncommitted,
+    /// (d) One turn of a chat: from the state its start recorded to the state its end recorded
+    /// ([`super::turns`]), exactly.
+    Turn { chat: String, number: u32 },
 }
 
 /// The head of a comparison.
@@ -339,18 +342,30 @@ pub(super) fn what_changed_here(
     path: &str,
 ) -> Result<Shown, Refused> {
     let opened = open(plane, branch)?;
+    one_file_compared(
+        plane,
+        branch,
+        &opened,
+        &Comparison::BranchAndUncommitted,
+        path,
+    )
+}
+
+/// One file of `comparison`: the path confined in the resolved folder before anything else is
+/// read, then the file list, then the file's hunks at the sides the list was read at.
+fn one_file_compared(
+    plane: &Path,
+    branch: Branch<'_>,
+    opened: &Opened,
+    comparison: &Comparison,
+    path: &str,
+) -> Result<Shown, Refused> {
     let (relative, gone) = super::named_or_gone(
         &super::Kept::of(plane, &opened.base, branch),
         &opened.base,
         path,
     )?;
-    let compared = compared_in(
-        plane,
-        branch,
-        &opened,
-        &Comparison::BranchAndUncommitted,
-        Whitespace::Shown,
-    )?;
+    let compared = compared_in(plane, branch, opened, comparison, Whitespace::Shown)?;
     let Some(change) = compared.files.into_iter().find(|one| one.path == relative) else {
         if gone {
             return Err(Refused::NotThere(path.to_string()));
@@ -367,16 +382,21 @@ pub(super) fn what_changed_here(
         None => None,
     };
     // Read before the diff, so a write between the two reads as stale and never as drawn.
-    let stamp = hold(plane, &opened.base).ok().and_then(|held| {
-        discard::stamp_of(
-            compared.sides.base.as_deref(),
-            &on_disk(&held, &at, super::LARGEST),
-        )
-    });
+    // A turn's hunks are not the base's, and a discard puts a hunk back as the base has it: so a
+    // turn's diff has no stamp, and nothing can be discarded from it.
+    let stamp = (!matches!(comparison, Comparison::Turn { .. }))
+        .then(|| hold(plane, &opened.base).ok())
+        .flatten()
+        .and_then(|held| {
+            discard::stamp_of(
+                compared.sides.base.as_deref(),
+                &on_disk(&held, &at, super::LARGEST),
+            )
+        });
     let diff = file_diff_in(
         plane,
         branch,
-        &opened,
+        opened,
         &compared.sides,
         at,
         from,
@@ -388,6 +408,73 @@ pub(super) fn what_changed_here(
         diff,
         stamp,
     }))
+}
+
+/// One file of the latest turn on a branch: what the file diff's "Latest turn" draws (#5405).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum TurnChanged {
+    /// No turn has ended on this branch.
+    NoTurn,
+    /// The latest turn left this file as it found it.
+    NotChanged { number: u32 },
+    /// The file, compared across the turn.
+    Changed {
+        chat: String,
+        number: u32,
+        shown: WhatChanged,
+    },
+}
+
+/// One file of `branch`, by its path relative to the branch's folder, across the latest turn that
+/// ended there ([`super::turns`]). Confined and read as [`what_changed`] reads.
+pub fn latest_turn_changed(
+    reader: &super::Reader,
+    plane: &Path,
+    branch: Branch<'_>,
+    path: &str,
+) -> Result<TurnChanged, Refused> {
+    super::spelled_inside(path)?;
+    let ask = super::Ask::TurnChanged {
+        path: path.to_string(),
+    };
+    match reader.ask(plane, branch, ask)? {
+        super::Answer::TurnChanged(changed) => Ok(changed),
+        _ => Err(Refused::Read("the reader answered something else".into())),
+    }
+}
+
+/// [`latest_turn_changed`], in this process: only the bounded reader's child calls it.
+pub(super) fn latest_turn_changed_here(
+    plane: &Path,
+    branch: Branch<'_>,
+    path: &str,
+) -> Result<TurnChanged, Refused> {
+    let opened = open(plane, branch)?;
+    let on = opened
+        .repo
+        .head_name()
+        .ok()
+        .flatten()
+        .map(|name| name.shorten().to_string());
+    let Some(latest) = on.and_then(|on| super::turns::latest_of(&opened.repo, &on)) else {
+        return Ok(TurnChanged::NoTurn);
+    };
+    let comparison = Comparison::Turn {
+        chat: latest.chat.clone(),
+        number: latest.number,
+    };
+    Ok(
+        match one_file_compared(plane, branch, &opened, &comparison, path)? {
+            Shown::Changed(shown) => TurnChanged::Changed {
+                chat: latest.chat,
+                number: latest.number,
+                shown,
+            },
+            Shown::NotListed { .. } => TurnChanged::NotChanged {
+                number: latest.number,
+            },
+        },
+    )
 }
 
 /// One member of a cross-repo change, compared (e).
@@ -779,6 +866,24 @@ fn resolve(
             Ok((Some(since), At::Commit(b), Some(from.clone())))
         }
         Comparison::Uncommitted => Ok((head_commit(), At::WorkingTree, None)),
+        Comparison::Turn { chat, number } => {
+            let side = |name: Option<String>| {
+                name.and_then(|name| repo.find_reference(name.as_str()).ok())
+                    .and_then(|mut found| found.peel_to_commit().ok())
+                    .map(|commit| commit.id)
+            };
+            let sides = super::turns::sides_of(chat, *number);
+            let (start, end) = sides.map_or((None, None), |(start, end)| (Some(start), Some(end)));
+            let start = side(start)
+                .ok_or_else(|| refused(format!("this branch has no turn {number} of that chat")))?;
+            let end = side(end)
+                .ok_or_else(|| refused(format!("turn {number} of that chat has not ended")))?;
+            Ok((
+                Some(start),
+                At::Commit(end),
+                Some(format!("the start of turn {number}")),
+            ))
+        }
     }
 }
 

@@ -6,7 +6,7 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import { emit } from "@tauri-apps/api/event";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import type { BranchChanged, PlaneId, WhatChanged } from "../bindings";
+import type { BranchChanged, PlaneId, TurnChanged, WhatChanged } from "../bindings";
 import { PieceDiffTab } from "./PieceDiff";
 import { settleJump, useJumpAsks, type Pending } from "../fileJump";
 import { forgetYourEditor, setYourEditor } from "../yourEditor";
@@ -46,6 +46,94 @@ afterEach(() => {
   cleanup();
   clearMocks();
   forgetYourEditor();
+});
+
+/** The core, answering both comparisons: what each was asked is noted by its command. */
+function coreWithTurns(base: WhatChanged, turn: TurnChanged) {
+  const asked: string[] = [];
+  mockIPC((cmd) => {
+    if (cmd === "what_changed" || cmd === "latest_turn_changed") asked.push(cmd);
+    if (cmd === "what_changed") return base;
+    if (cmd === "latest_turn_changed") return turn;
+    throw new Error(`unexpected ${cmd}`);
+  });
+  return asked;
+}
+
+describe("the latest turn beside against base (#5405)", () => {
+  const whole = changed({
+    kind: "text",
+    base: "one\n",
+    head: "one\ntwo\nthree\n",
+    hunks: [{ oldStart: 1, oldLines: 0, newStart: 2, newLines: 2 }],
+  });
+  const ofTheTurn: TurnChanged = {
+    kind: "changed",
+    number: 3,
+    shown: {
+      ...changed({
+        kind: "text",
+        base: "one\ntwo\n",
+        head: "one\ntwo\nthree\n",
+        hunks: [{ oldStart: 2, oldLines: 0, newStart: 3, newLines: 1 }],
+      }),
+      base: "the start of turn 3",
+    },
+  };
+
+  it("opens against base, and a press draws the latest turn's own lines", async () => {
+    const asked = coreWithTurns(whole, ofTheTurn);
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
+    expect(await screen.findByText("against main")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Against base" })).toBeChecked();
+    expect(asked).toEqual(["what_changed"]);
+
+    await userEvent.click(screen.getByRole("radio", { name: "Latest turn" }));
+
+    expect(await screen.findByText("against the start of turn 3")).toBeInTheDocument();
+    await waitFor(() =>
+      expect([...document.querySelectorAll(".cm-changedLine")].map((l) => l.textContent)).toEqual([
+        "three",
+      ]),
+    );
+    expect(asked).toEqual(["what_changed", "latest_turn_changed"]);
+  });
+
+  it("goes back to the branch's whole change by the arrow keys", async () => {
+    coreWithTurns(whole, ofTheTurn);
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
+    await screen.findByText("against main");
+    screen.getByRole("radio", { name: "Against base" }).focus();
+
+    await userEvent.keyboard("{ArrowRight}");
+    expect(await screen.findByText("against the start of turn 3")).toBeInTheDocument();
+    await userEvent.keyboard("{ArrowLeft}");
+    expect(await screen.findByText("against main")).toBeInTheDocument();
+  });
+
+  it("says why a branch has no turn to show, never an empty diff", async () => {
+    const why = "A shell runs a program that does not report its turns to purlis.";
+    coreWithTurns(whole, { kind: "no-turn", why });
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
+    await screen.findByText("against main");
+
+    await userEvent.click(screen.getByRole("radio", { name: "Latest turn" }));
+
+    expect(await screen.findByTestId("piece-diff-trouble")).toHaveTextContent(why);
+    expect(document.querySelector(".cm-mergeView")).toBeNull();
+  });
+
+  it("says a file the latest turn left alone by the turn's number", async () => {
+    coreWithTurns(whole, { kind: "not-changed", number: 3 });
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
+    await screen.findByText("against main");
+
+    await userEvent.click(screen.getByRole("radio", { name: "Latest turn" }));
+
+    expect(await screen.findByTestId("piece-diff-trouble")).toHaveTextContent(
+      "Turn 3 did not change lib.rs",
+    );
+  });
 });
 
 describe("what changed in one file (FM-11)", () => {

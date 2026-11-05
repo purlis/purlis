@@ -49,6 +49,7 @@ mod createproject;
 mod curation;
 mod layout;
 mod questiontrail;
+mod turns;
 // The Devices view (#2052).
 mod clusterpools;
 mod devices;

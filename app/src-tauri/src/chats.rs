@@ -2019,6 +2019,34 @@ impl Chats {
         })
     }
 
+    /// **The name of a chat open in this branch's folder whose program reports no turns** (#5405):
+    /// a shell, or a harness purlis has no hooks for. What says why the branch has no turn.
+    pub fn silent_about_turns_in(
+        &self,
+        plane: &Path,
+        ws: &str,
+        repo: &str,
+        piece: Option<&str>,
+    ) -> Option<String> {
+        let open = lock(&self.open);
+        open.values()
+            .filter(|one| {
+                !one.chat
+                    .harness()
+                    .is_some_and(purlis_core::harness::Harness::prompt_hook)
+            })
+            .find(|one| {
+                one.chat
+                    .cwd
+                    .as_deref()
+                    .and_then(|cwd| purlis_core::files::turns::place_of(plane, cwd))
+                    .is_some_and(|place| {
+                        place.ws == ws && place.repo == repo && place.piece.as_deref() == piece
+                    })
+            })
+            .map(|one| one.chat.name.clone())
+    }
+
     /// **The chats open here, each with its id, its name and the workspace it works in**, in
     /// the order of their numbers (#2332): whose theme drafts a workspace draws, and what the
     /// draft strip and the close of a chat name. A chat that has no id has no drafts.
