@@ -200,7 +200,6 @@ fn a_seed_with_a_name_before_it_looks_like_one() {
     for value in [
         "secret=GEZDGNBVGY3TQOJQ",
         "secret: GEZDGNBVGY3TQOJQ",
-        "secret_GEZDGNBVGY3TQOJQ",
         "Dash GEZDGNBVGY3TQOJQ",
         "Dash\nGEZDGNBVGY3TQOJQ",
         "Dash\r\nGEZDGNBVGY3TQOJQ\n",
@@ -209,6 +208,13 @@ fn a_seed_with_a_name_before_it_looks_like_one() {
         "alice@example.com\nGEZD-GNBV-GY3T-QOJQ",
         r#"{"secret":"GEZDGNBVGY3TQOJQ"}"#,
         "Dash ABCDEFGHIJKLMNOP",
+        "Dash abcdefghijklmnop",
+        // At a length apps aren't given, as it is refused with no name.
+        "secret=GEZDGNBVGY3TQOJQGEZD",
+        "Dash GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+        // Wrapped over lines, or with spaces of uneven widths.
+        "Dash\nGEZD GNBV\nGY3T QOJQ",
+        "Dash: GEZD  GNBV GY3T QOJQ",
     ] {
         assert!(looks_like_a_seed(value), "{value:?}");
     }
@@ -232,6 +238,7 @@ fn a_seed_in_both_cases_looks_like_one_at_a_length_apps_give() {
         "Gezdgnbvgy3tqojq",
         "GeZd GnBv Gy3t QoJq",
         "GeZd_GnBv_Gy3t_QoJq",
+        "Gezd gnbv gy3t qojq",
         "secret=GeZdGnBvGy3tQoJq",
         "aB3dE5fG7hJ2kL4mN6pQrS2tU3vW4xY5",
     ] {
@@ -263,12 +270,35 @@ fn an_ordinary_password_is_no_seed() {
         "Blue-Mountain-Sky2",
         "Mountain-Sky2-Rain",
         "Welcome-To-The-Jungle-2",
+        // Capitalised words of one length with a digit among them.
+        "Summer24 Password",
+        "Blue-Sky2-Rain-Tree",
         // Different separators between words: no group.
         "anna.bob2/mail:site",
         "https://example.com/login",
+        // A seed's shape inside a longer value, with no name before it or something after it.
+        "https://example.com/abcdefgh2345abcd",
+        "Abcd-ABCDEFGHIJKLMNOP",
+        "Ab9+GeZdGnBvGy3tQoJq",
+        "secret=GeZdGnBvGy3tQoJq/Zz9",
     ] {
         assert!(!looks_like_a_seed(value), "{value:?}");
     }
+}
+
+#[test]
+fn a_cards_number_behind_a_name_is_no_seed() {
+    assert!(!looks_like_a_seed("Visa 7654 7654 7654 7654"));
+    assert!(!looks_like_a_seed("Visa\n2345234523452346"));
+}
+
+#[test]
+fn a_very_long_value_of_short_words_is_read_in_one_pass() {
+    // Both cases and no digit, so no stretch of it is ever a seed and the walk goes the whole way.
+    let long = "Gh ".repeat(1_000_000);
+    let started = std::time::Instant::now();
+    assert!(!looks_like_a_seed(&long));
+    assert!(started.elapsed() < std::time::Duration::from_secs(30));
 }
 
 #[test]
@@ -281,6 +311,8 @@ fn a_hex_key_is_no_seed() {
         "abcd ef23 4567 2345",
         "deadbeef-deadbeef",
         "Key: abcdef2345672345",
+        "key=abcdef2345672345",
+        "Name abcd ef23 4567 8901",
         "Dash\nAbCdEf2345672345",
         // As hex usually comes, with the digits base32 hasn't.
         "0123456789abcdef0123456789abcdef",

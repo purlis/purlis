@@ -100,16 +100,12 @@ const FEWEST_CHARACTERS: usize = 16;
 /// How many base32 characters a bare secret of each of [`BARE_BYTES`] is.
 const BARE_CHARACTERS: [usize; 5] = [16, 26, 32, 52, 103];
 
-/// The longest of [`BARE_CHARACTERS`]: a stretch longer than this is no bare secret.
-const LONGEST_CHARACTERS: usize = BARE_CHARACTERS[BARE_CHARACTERS.len() - 1];
-
 /// **Whether `text` looks like a 2FA seed** (#5118): such a value never goes into a page as
 /// itself, so this reads wider than [`Seed::parse`] and accepts refusing some passwords, which the
 /// person's mark lets through ([`super::no_seed`]). An authenticator's address or its export's;
-/// text of base32 characters alone, however grouped and in one case, that holds letters and digits
-/// from 80 bits' worth, or letters at a length apps are given; or a seed's shape anywhere in the
-/// text ([`holds_a_seed`]). Digits alone are no seed, as a card's number may be written, and
-/// neither is hex, as an API key often is.
+/// text of base32 characters alone, however grouped; or a seed's shape that ends a line, with a
+/// name before it on that line or on the line before. Digits alone are no seed, as a card's number
+/// may be written, and neither is hex, as an API key often is.
 pub fn looks_like_a_seed(text: &str) -> bool {
     let trimmed = text.trim_start();
     if an_address(trimmed)
@@ -119,10 +115,31 @@ pub fn looks_like_a_seed(text: &str) -> bool {
     {
         return true;
     }
-    base32_alone(text) || holds_a_seed(text)
+    if ends_in_hex(text) {
+        return false;
+    }
+    base32_alone(text)
+        || trimmed
+            .split_once('\n')
+            .is_some_and(|(_, after_a_name)| base32_alone(after_a_name))
+        || text.lines().any(ends_in_a_seed)
 }
 
-/// Whether `text`, once its spaces, `=` and `-` are set aside, is a seed by its characters.
+/// Whether the words that end `text` are hex digits, as many of them as the fewest a seed has.
+/// Whatever stands before them is a name, so digits alone behind a name end this way too.
+fn ends_in_hex(text: &str) -> bool {
+    let hex: usize = words_of(text)
+        .iter()
+        .rev()
+        .map(|(_, word)| *word)
+        .take_while(|word| word.chars().all(|c| c.is_ascii_hexdigit()))
+        .map(str::len)
+        .sum();
+    hex >= FEWEST_CHARACTERS
+}
+
+/// Whether `text`, once its spaces, `=` and `-` are set aside, is a seed by its characters, in one
+/// case: in both, it is left to [`ends_in_a_seed`], which asks for more.
 fn base32_alone(text: &str) -> bool {
     let mut count = Base32Count::default();
     for c in text.chars() {
@@ -133,38 +150,50 @@ fn base32_alone(text: &str) -> bool {
             return false;
         }
     }
-    if count.hex() || (count.lower > 0 && count.upper > 0) {
-        return false;
-    }
-    count.letters() > 0
-        && ((count.digits > 0 && count.all() >= FEWEST_CHARACTERS)
-            || BARE_CHARACTERS.contains(&count.all()))
+    count.one_case_seed()
 }
 
-/// **Whether a seed's shape stands anywhere in `text`**, whatever comes before it or after: one
-/// word, or a run of words of one length (the last may be shorter) with the same separator between
-/// them, as a seed is grouped. Words of uneven lengths, as a passphrase has, are no group.
-fn holds_a_seed(text: &str) -> bool {
-    let words = words_of(text);
-    (0..words.len()).any(|start| {
-        let (_, first) = words[start];
-        let mut count = Base32Count::default();
-        for (at, (gap, word)) in words[start..].iter().enumerate() {
-            if at > 0 && (word.len() > first.len() || (at > 1 && *gap != words[start + 1].0)) {
-                return false;
-            }
-            if !word.chars().all(|c| count.add(c)) || count.all() > LONGEST_CHARACTERS {
-                return false;
-            }
-            if count.is_a_seeds_shape() {
-                return true;
-            }
-            if at > 0 && word.len() < first.len() {
-                return false;
-            }
+/// **Whether `line` ends in a seed's shape**: one word or a group of them, from the line's start or
+/// after a name. A group is words of one length (the last may be shorter) with one separator
+/// between them, so a passphrase's uneven words are none, and neither are capitalised words.
+/// Walks back from the line's end, as a stretch that isn't a group stays none however far back it
+/// goes, so a long line costs one pass.
+fn ends_in_a_seed(line: &str) -> bool {
+    let words = words_of(line);
+    let mut count = Base32Count::default();
+    let mut capitalised = true;
+    let mut length = 0;
+    for (at, (gap, word)) in words.iter().enumerate().rev() {
+        let last = at + 1 == words.len();
+        let even = last
+            || if at + 2 == words.len() {
+                word.len() >= length
+            } else {
+                word.len() == length && same_gap(words[at + 1].0, words[at + 2].0)
+            };
+        if !even || !word.chars().all(|c| count.add(c)) {
+            return false;
         }
-        false
-    })
+        length = word.len();
+        capitalised &= word.chars().skip(1).all(|c| !c.is_ascii_uppercase())
+            && word.chars().next().is_some_and(|c| !c.is_ascii_lowercase());
+        let starts_it =
+            at == 0 || gap.contains(|c: char| NAME_ENDS.contains(&c) || c.is_whitespace());
+        let words_not_a_seed = !last && capitalised;
+        if starts_it && (count.one_case_seed() || (count.both_cases_seed() && !words_not_a_seed)) {
+            return true;
+        }
+    }
+    false
+}
+
+/// What stands between a name and the seed after it, besides white space.
+const NAME_ENDS: [char; 4] = [':', '=', '"', '\''];
+
+/// Whether two separators are one: the same text, or white space of any kind and length.
+fn same_gap(one: &str, other: &str) -> bool {
+    let white = |gap: &str| gap.chars().all(char::is_whitespace);
+    one == other || (white(one) && white(other))
 }
 
 /// The words of `text`, its runs of letters and digits, each with the text between it and the last.
@@ -190,8 +219,6 @@ struct Base32Count {
     lower: usize,
     upper: usize,
     digits: usize,
-    /// Letters past `f`: with none, the stretch is hex as well as base32.
-    past_hex: usize,
 }
 
 impl Base32Count {
@@ -203,31 +230,25 @@ impl Base32Count {
             '2'..='7' => self.digits += 1,
             _ => return false,
         }
-        if c.is_ascii_alphabetic() && !c.is_ascii_hexdigit() {
-            self.past_hex += 1;
-        }
         true
     }
 
-    fn letters(&self) -> usize {
-        self.lower + self.upper
-    }
-
     fn all(&self) -> usize {
-        self.letters() + self.digits
+        self.lower + self.upper + self.digits
     }
 
-    fn hex(&self) -> bool {
-        self.past_hex == 0
+    /// In one case, with letters and digits from 80 bits' worth, or letters at a length apps give.
+    fn one_case_seed(&self) -> bool {
+        let letters = self.lower + self.upper;
+        (self.lower == 0 || self.upper == 0)
+            && letters > 0
+            && ((self.digits > 0 && self.all() >= FEWEST_CHARACTERS)
+                || BARE_CHARACTERS.contains(&self.all()))
     }
 
-    /// At a length apps are given and not hex, with a digit or in capitals alone: a word in
-    /// lower case or both, however long, is a word sooner than a seed.
-    fn is_a_seeds_shape(&self) -> bool {
-        self.letters() > 0
-            && !self.hex()
-            && BARE_CHARACTERS.contains(&self.all())
-            && (self.digits > 0 || self.lower == 0)
+    /// In both cases, with a digit and at a length apps give: with no digit it is words.
+    fn both_cases_seed(&self) -> bool {
+        self.lower > 0 && self.upper > 0 && self.digits > 0 && BARE_CHARACTERS.contains(&self.all())
     }
 }
 
