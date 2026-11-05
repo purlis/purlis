@@ -172,6 +172,33 @@ describe("a note in the Notices centre (#5217)", () => {
     }
   });
 
+  it("draws its mark in its tone's colour, though the mark stands in its head", async () => {
+    for (const [tone, colour] of [
+      ["trouble", "var(--danger-text)"],
+      ["attention", "var(--attention-text)"],
+      ["news", "var(--state-success)"],
+    ] as const) {
+      const card = await inTheCentre({
+        cause: `mark:${tone}`,
+        tone,
+        onDismiss: () => {},
+        children: "It stands.",
+      });
+      expect(drawnWith(part(card, "mark") as HTMLElement, "color"), tone).toBe(colour);
+      cleanup();
+    }
+  });
+
+  it("sets a quiet link among its ways under its words, with no room of its own before it", async () => {
+    const card = await inTheCentre({
+      cause: "aligned",
+      link: { label: "Open the pins", onPress: () => {} },
+      children: "It stands.",
+    });
+    const link = within(card).getByRole("button", { name: "Open the pins" });
+    expect(drawnWith(link, "padding-inline")).toBe("0");
+  });
+
   it("leads with the way the caller named, where it names one", async () => {
     const card = await inTheCentre({
       cause: "named-way",

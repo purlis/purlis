@@ -112,6 +112,8 @@ export const InTheInbox: Story = {
     await userEvent.tab();
     await expect(canvas.getByRole("button", { name: "Try again" })).toHaveFocus();
     expectFocusInSight();
+    // The picture is of the list at rest, never of a way the keyboard is on.
+    (document.activeElement as HTMLElement).blur();
   },
 };
 
@@ -235,6 +237,8 @@ export const NeedsADecision: Story = {
       "Needs a decision: Tab goes on to the card's fix",
     );
     expectFocusInSight();
+    // The picture is of the Notices at rest, never of a way the keyboard is on.
+    (document.activeElement as HTMLElement).blur();
   },
 };
 
