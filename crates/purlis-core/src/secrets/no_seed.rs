@@ -208,7 +208,7 @@ pub fn mark(ctx: &Ctx, v: &Vault, key: &str) -> Result<(), VaultError> {
             .or_default()
             .insert(key.to_owned(), seal);
     })?;
-    traced(ctx, &v.name, key, true, &[value.to_string()]);
+    traced(ctx, &v.name, key, true, std::slice::from_ref(&*value));
     Ok(())
 }
 
