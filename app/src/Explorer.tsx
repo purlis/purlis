@@ -394,8 +394,9 @@ export function Explorer({
   const cockpit = has("files") ? cockpitOf(workspace, state, focus) : undefined;
   /** The workspace's repos: one is its tree, open at once; several a row each (#3343). */
   const repos = workspace === undefined ? [] : (state.panels?.repos ?? []);
-  /** Where the *Files* tree is of: the picked branch or repo, or the workspace's one repo; or
-   *  nothing for a workspace of several, whose repos' own folders it lists. */
+  /** Where the *Files* tree is of: the plane root, the cockpit's branch, the branch or repo
+   *  picked in Repos, or with the workspace itself picked its own folder (#5375), which holds
+   *  its repos as rows; nothing with no workspace picked. */
   const filesTop: BranchFolderRef | undefined = atRoot
     ? { repo: PLANE_ROOT.repo, piece: PLANE_ROOT.piece, folder: "" }
     : cockpit !== undefined
@@ -409,8 +410,6 @@ export function Explorer({
           : undefined;
   /** Whether the tree is the workspace's own folder, the workspace itself picked (#5375). */
   const onWs = filesTop !== undefined && isWsRef(filesTop) && !atRoot;
-  /** The repo row pressed last, which the filter's *Selected* scope is of (#3343). */
-  const [chosenRepo, setChosenRepo] = useState<string>();
   /** Whether the filter finds in all the workspace's repos rather than the selected one. */
   const [allRepos, setAllRepos] = useState(false);
   /** Whether the filter finds files by name (#3343), as it does on a workspace's own Files; on a
@@ -533,17 +532,16 @@ export function Explorer({
    *  no fold since #3343, though a file from before says it was. */
   const folds = (section: SectionId) =>
     section === "repos" && part !== "repos" && closed.has(section);
-  /** The branch the filter's *Selected* scope is of (#3343): the tree's own, else the repo row
-   *  pressed last; in the workspace's own folder with nothing pressed, its own files (#5375),
-   *  as `repo` `""`. */
+  /** What the filter's *Selected* scope is of (#3343): the picked branch's or repo's tree, or in
+   *  the workspace's own folder its own files (#5375; ADR 0038, amended 2026-11-05), as `repo`
+   *  `""`. Opening or closing a repo's row there never moves it: a repo is found in by *All
+   *  repos*, or picked in Repos. */
   const selected: { repo: string; piece: string | null } | undefined =
     filesTop !== undefined && !atRoot && !onWs
       ? { repo: filesTop.repo, piece: filesTop.piece }
-      : chosenRepo !== undefined && repos.includes(chosenRepo)
-        ? { repo: chosenRepo, piece: null }
-        : onWs
-          ? { repo: WS_TOP.repo, piece: WS_TOP.piece }
-          : undefined;
+      : onWs
+        ? { repo: WS_TOP.repo, piece: WS_TOP.piece }
+        : undefined;
   /** Whether the filter finds in all the repos: only offered where there are several. */
   const wide = repos.length > 1 && allRepos;
   /** Where *Search contents* looks: a repo or branch, never a workspace's own files, which
@@ -567,7 +565,7 @@ export function Explorer({
             near: searchAt === undefined ? null : { workspace, ...searchAt },
           }
         : // One repo (#5375): the filter covers the workspace's own files and that repo.
-          onWs && repos.length === 1 && chosenRepo === undefined
+          onWs && repos.length === 1
           ? { kind: "workspace-folder", plane, workspace }
           : { kind: "branch", plane, workspace, ...selected };
   const found = useFileFind(finds && filter.trim() !== "", findIn, filter);
@@ -601,14 +599,6 @@ export function Explorer({
   /** Opens or closes a clone or a branch's folder: the one fold state of each, whether a click
    *  or a key asked. A clone is open until folded; a folder is closed until opened. */
   const fold = (key: string, open: boolean) => {
-    // A repo of several opened or closed, by a press, a twist or an arrow, is the one the
-    // filter's *Selected* scope is of (#3343), as every open selects in the prototype.
-    if (onWs && workspace !== undefined && repos.length > 1) {
-      const repo = repos.find(
-        (one) => key === fileFold(workspace, { repo: one, piece: null, folder: "" }),
-      );
-      if (repo !== undefined) setChosenRepo(repo);
-    }
     if (startOpen.includes(key))
       setShut((was) => {
         if (open !== was.has(key)) return was;
@@ -905,8 +895,7 @@ export function Explorer({
     );
   }
 
-  const { panels, pieces } = state;
-  const clones = panels?.repos ?? [];
+  const { pieces } = state;
   /** A file row's menu pressed. *Add to a chat's context* on a picked row hands the picks in
    *  the order the tree draws them, as the picked rows' own button does (#1151): the menu was
    *  drawn from them in the order they were picked. */
@@ -948,8 +937,9 @@ export function Explorer({
     />
   );
   /** **A repo of several, as a folder** (#3343): its own folder's row, closed until opened, with
-   *  how many files it changed and its branch; a press opens it in place and selects it as the
-   *  filter's *Selected* scope. */
+   *  how many files it changed and its branch; a press opens it in place. It never becomes the
+   *  filter's *Selected* scope, which is the workspace's own files (ADR 0038, amended
+   *  2026-11-05). */
   const repoRowOf = (repo: string) => {
     const top: BranchFolderRef = { repo, piece: null, folder: "" };
     const branch = repoBranch(state, repo);
@@ -959,9 +949,6 @@ export function Explorer({
         branch={top}
         name={repo}
         repo
-        // The repo the filter's *Selected* scope is of, drawn so (the scope switch names it):
-        // never `aria-current`, which is where the next chat starts.
-        data-in-scope={selected?.repo === repo && selected.piece === null ? "" : undefined}
         trail={
           branch === undefined ? undefined : (
             <span className="repo-branch ui-text-meta">{branch}</span>
@@ -1266,7 +1253,8 @@ export function Explorer({
             <FoundFiles
               found={found}
               query={filter.trim()}
-              grouped={wide}
+              grouped={wide || findIn?.kind === "workspace-folder"}
+              workspace={workspace}
               pieces={pieces}
               icons={icons}
               onOpen={(hit) => onOpenFile?.(placeOf(hit), hit.path)}
@@ -1281,7 +1269,8 @@ export function Explorer({
                 {...fileTree}
               >
                 {filesTop === undefined || topLevel === undefined
-                  ? clones.map(repoRowOf)
+                  ? // No workspace picked: no folder to draw.
+                    []
                   : [
                       <TopItems
                         // Keyed by its folder: another workspace's one repo is other rows, whose
@@ -1430,13 +1419,18 @@ function FoundFiles({
   found,
   query,
   grouped,
+  workspace,
   pieces,
   icons,
   onOpen,
 }: {
   found: FilesFoundNow;
   query: string;
+  /** Whether the hits are under the name of the place each is in: wherever the scope covers
+   *  more than one (#5375). */
   grouped: boolean;
+  /** The workspace's name, which heads its own files' group (`repo` `""`, #5375). */
+  workspace?: string;
   /** Each repo's branches, so a group of a branch is headed by its name. */
   pieces?: WorkspaceState["pieces"];
   icons: IconTheme;
@@ -1462,11 +1456,20 @@ function FoundFiles({
         )}
       </>
     );
-  const groups = new Map<string, FoundFile[]>();
+  /** Where a hit is, as its group is headed: the workspace for its own files, else the repo,
+   *  and the branch for a branch's. */
+  const placeOf = (hit: FoundFile) =>
+    hit.repo === ""
+      ? (workspace ?? "")
+      : hit.piece === null
+        ? hit.repo
+        : `${hit.repo} · ${branchName(pieces?.[hit.repo], hit.piece)}`;
+  // Keyed by repo and branch, never by the heading: a repo may be named as its workspace is.
+  const groups = new Map<string, { title: string; hits: FoundFile[] }>();
   for (const hit of found.files) {
-    const at =
-      hit.piece === null ? hit.repo : `${hit.repo} · ${branchName(pieces?.[hit.repo], hit.piece)}`;
-    groups.set(at, [...(groups.get(at) ?? []), hit]);
+    const key = `${hit.repo}/${hit.piece ?? ""}`;
+    const group = groups.get(key) ?? { title: placeOf(hit), hits: [] };
+    groups.set(key, { ...group, hits: [...group.hits, hit] });
   }
   const rowOf = (hit: FoundFile) => {
     const said = hitSaid(hit, () => "");
@@ -1493,7 +1496,7 @@ function FoundFiles({
             ),
           )}
         </RowLabel>
-        <RowBelow className="ui-text-meta">{folder === "" ? hit.repo : folder}</RowBelow>
+        <RowBelow className="ui-text-meta">{folder === "" ? placeOf(hit) : folder}</RowBelow>
       </ListRow>
     );
   };
@@ -1502,8 +1505,8 @@ function FoundFiles({
       {refused}
       <List aria-label="Files found" size="sm" className="found-files">
         {grouped
-          ? [...groups].map(([at, hits]) => (
-              <ListRowSection key={at} id={at} title={at} named count={hits.length}>
+          ? [...groups].map(([key, { title, hits }]) => (
+              <ListRowSection key={key} id={key} title={title} named count={hits.length}>
                 {hits.map(rowOf)}
               </ListRowSection>
             ))

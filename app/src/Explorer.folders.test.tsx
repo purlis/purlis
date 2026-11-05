@@ -201,22 +201,19 @@ describe("Explorer, repos as folders (#3343)", () => {
     );
   });
 
-  it("finds by name in the selected repo, or in all of them, and opens a file found", async () => {
+  it("finds by name among the workspace's files, or in all the repos, and opens a file found", async () => {
     const finds = core();
     const { onOpenFile } = draw(["svc", "web"]);
-    // The repo pressed last is the selected one.
+    // A repo's row pressed opens it in place and leaves *Selected* the workspace's own files
+    // (ADR 0038, amended 2026-11-05).
     await userEvent.click(within(tree()).getByRole("row", { name: /^web/ }));
-    expect(screen.getByRole("radio", { name: "Selected: web" })).toBeChecked();
-    // Drawn as the scope's, never as where the next chat starts.
-    const web = within(tree()).getByRole("row", { name: /^web/ });
-    expect(web).toHaveAttribute("data-in-scope");
-    expect(web).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("radio", { name: "Selected: alpha" })).toBeChecked();
 
     await userEvent.type(screen.getByRole("searchbox", { name: "Filter files" }), "main");
 
     const found = await screen.findByRole("grid", { name: "Files found" });
-    expect(finds.at(-1)).toMatchObject({ kind: "branch", repo: "web", piece: null });
-    // One repo's files are no group: no repo's name over them, as in the prototype.
+    expect(finds.at(-1)).toMatchObject({ kind: "branch", repo: "", piece: null });
+    // One place's files are no group: no name over them, as in the prototype.
     expect(found.querySelector('[data-part="header"]')).toBeNull();
     expect(within(found).getAllByRole("row", { name: /main\.rs/ })).toHaveLength(1);
 
@@ -273,20 +270,14 @@ describe("Explorer, repos as folders (#3343)", () => {
     expect(mark && inherited(mark, "color")).toBe("var(--state-failed)");
   });
 
-  it("opens Search on the filter's scope: Branch for the selected repo, Workspace for all", async () => {
+  it("opens Search on the filter's scope: none for the workspace's files, Workspace for all", async () => {
     core();
     const { onSearchContents } = draw(["svc", "web"]);
-    // Nothing pressed, *Selected* is the workspace's own files (#5375), which content search
-    // does not read: the link waits for a repo.
+    // *Selected* is the workspace's own files (#5375), which content search does not read, and
+    // opening a repo's row leaves it so (ADR 0038, amended 2026-11-05).
     expect(screen.queryByRole("button", { name: /Search contents in Branch/ })).toBeNull();
     await userEvent.click(within(tree()).getByRole("row", { name: /^svc/ }));
-
-    await userEvent.click(screen.getByRole("button", { name: /Search contents in Branch/ }));
-    expect(onSearchContents).toHaveBeenLastCalledWith(
-      "branch",
-      { workspace: "alpha", repo: "svc", piece: null },
-      "",
-    );
+    expect(screen.queryByRole("button", { name: /Search contents in Branch/ })).toBeNull();
 
     await userEvent.click(screen.getByRole("radio", { name: "All repos" }));
     await userEvent.type(screen.getByRole("searchbox", { name: "Filter files" }), "lib");
@@ -298,7 +289,7 @@ describe("Explorer, repos as folders (#3343)", () => {
     );
   });
 
-  it("makes a repo opened by its arrow the Selected one, as a press does", async () => {
+  it("leaves Selected the workspace's files when a repo is opened by its arrow, as a press does", async () => {
     core();
     draw(["svc", "web"]);
     const web = within(tree()).getByRole("row", { name: /^web/ });
@@ -307,7 +298,7 @@ describe("Explorer, repos as folders (#3343)", () => {
     await userEvent.keyboard("{ArrowRight}");
 
     await waitFor(() => expect(web).toHaveAttribute("aria-expanded", "true"));
-    expect(screen.getByRole("radio", { name: "Selected: web" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "Selected: alpha" })).toBeChecked();
   });
 
   it("keeps a row the keyboard comes to clear of the held top (WCAG 2.4.11)", async () => {

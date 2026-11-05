@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { Explorer } from "./Explorer";
@@ -113,6 +113,18 @@ function core(inRepos: string[] = ["api"], atTop: string[] = ["svc"]) {
               path: "notes/plan.md",
               matched: [6],
             },
+            ...(scope.kind === "workspace-folder"
+              ? [
+                  {
+                    plane: PLANE,
+                    workspace: "alpha",
+                    repo: "api",
+                    piece: null,
+                    path: "docs/plan.md",
+                    matched: [5],
+                  },
+                ]
+              : []),
           ],
           branches: 1,
           refused: [],
@@ -263,12 +275,54 @@ describe("Explorer, the workspace's own folder (#5375)", () => {
     expect(finds.at(-1)).toEqual({ kind: "workspace-folder", plane: PLANE, workspace: "alpha" });
   });
 
+  it("keeps Selected on the workspace's files when a repo's row is opened (ADR 0038, 2026-11-05)", async () => {
+    const { finds } = core();
+    draw(["api", "svc"]);
+    // `api` is in `repos/`, closed with several repos.
+    await userEvent.click(await row(/^repos/));
+    await userEvent.click(await row(/^api/));
+    await row(/^README\.md/);
+
+    await userEvent.type(screen.getByRole("searchbox", { name: "Filter files" }), "plan");
+
+    const found = await screen.findByRole("grid", { name: "Files found" });
+    expect(screen.getByRole("radio", { name: "Selected: alpha" })).toBeChecked();
+    expect(finds.at(-1)).toMatchObject({ kind: "branch", repo: "", piece: null });
+    expect(await within(found).findByRole("row", { name: /^plan\.md/ })).toHaveTextContent("notes");
+  });
+
+  it("with one repo, says which hits are the workspace's and which the repo's", async () => {
+    core(["api"], []);
+    draw(["api"]);
+
+    await userEvent.type(screen.getByRole("searchbox", { name: "Filter files" }), "plan");
+
+    const found = await screen.findByRole("grid", { name: "Files found" });
+    const own = await within(found).findByRole("rowgroup", { name: /^alpha/ });
+    const repo = within(found).getByRole("rowgroup", { name: /^api/ });
+    expect(within(own).getByRole("row", { name: /^plan\.md/ })).toHaveTextContent("notes");
+    expect(within(repo).getByRole("row", { name: /^plan\.md/ })).toHaveTextContent("docs");
+  });
+
   it("offers no row that writes: no new file, rename or Trash", async () => {
     core();
     draw(["api", "svc"]);
     await row(/^notes/);
 
-    for (const name of [/new file/i, /new folder/i, /rename/i, /trash/i, /import/i])
-      expect(screen.queryByRole("button", { name })).toBeNull();
+    const writes = [/new file/i, /new folder/i, /rename/i, /trash/i, /import/i, /delete/i];
+    for (const name of writes) expect(screen.queryByRole("button", { name })).toBeNull();
+
+    // Nor does a row's menu, of a file or of a folder.
+    for (const name of [/^workspace\.md/, /^notes/]) {
+      fireEvent.contextMenu(await row(name));
+      const menu = await screen.findByRole("menu");
+      const items = within(menu)
+        .getAllByRole("menuitem")
+        .map((one) => one.getAttribute("aria-label") ?? one.textContent ?? "");
+      expect(items.length).toBeGreaterThan(0);
+      expect(items.filter((item) => writes.some((write) => write.test(item)))).toEqual([]);
+      await userEvent.keyboard("{Escape}");
+      await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    }
   });
 });

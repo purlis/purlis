@@ -269,10 +269,11 @@ export const SeveralRepos: Story = {
   play: async ({ canvas, userEvent }) => {
     const purlis = await canvas.findByRole("row", { name: /^purlis/ });
     await waitFor(() => expect(purlis).toHaveAccessibleName(/3 changes/));
-    // Nothing pressed, *Selected* is the workspace's own files (#5375).
+    // *Selected* is the workspace's own files (#5375), and opening a repo's row leaves it so
+    // (ADR 0038, amended 2026-11-05).
     await expect(canvas.getByRole("radio", { name: "Selected: smart-ide" })).toBeChecked();
     await userEvent.click(purlis);
-    await expect(canvas.getByRole("radio", { name: "Selected: purlis" })).toBeChecked();
+    await expect(canvas.getByRole("radio", { name: "Selected: smart-ide" })).toBeChecked();
     await canvas.findByRole("row", { name: /^Cargo\.toml/ });
     (document.activeElement as HTMLElement | null)?.blur();
     await settled();
