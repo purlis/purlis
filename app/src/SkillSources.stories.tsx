@@ -678,7 +678,10 @@ export const RemoveSourceAlsoDeleting: Story = {
     await userEvent.keyboard(" ");
     await expect(choice).toBeChecked();
     await expect(dialog).toHaveTextContent("You review the skills next.");
-    await expect(within(dialog).getByRole("button", { name: "Review" })).toBeVisible();
+    // The dialog may still be drawing itself in, so this is waited for rather than asked once.
+    await waitFor(() =>
+      expect(within(dialog).getByRole("button", { name: "Review" })).toBeVisible(),
+    );
   },
 };
 
