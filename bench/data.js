@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793861624785,
+  "lastUpdate": 1793864078169,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -39816,6 +39816,48 @@ window.BENCHMARK_DATA = {
             "value": 101.37976549999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.768, 101.254, 101.380, 102.746, 102.758 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "bb654af5cd87df2ff8bb41a1d144cada20463fa7",
+          "message": "A vault refusal is an Inbox ask (#5160) (#5163)\n\n* A vault refusal is an ask in the asks registry (#5160)\n\nAskSource::Vault and AnswerPath::Vault: a vault a chat was refused for its\npersona is listed by every_ask, counted on the hand and notified, and\nanswered from the Inbox by its Notice's own allow_refused_vault and\nkeep_vault_blocked, so what a grant allows is unchanged. The chat's pane\ndraws the refusal while the registry lists it, and an answer in either\nplace reads the other again.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6JWZMGGTT93BW0HYPHZKGPF\nPurlis-Persona: steward\n\n* Changelog fragment for #5160\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6JWZMGGTT93BW0HYPHZKGPF\nPurlis-Persona: steward\n\n* A locked vault ask's line ends with no full stop, as every ask's does (#5160)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6JWZMGGTT93BW0HYPHZKGPF\nPurlis-Persona: steward\n\n* A chat in no pane has its vault refusal in the Inbox alone (#5160)\n\nThe Notices centre draws a paneless chat's Notices with no asks, so the registry gate draws no\nvault line there. Pinned, with the placement rows, and the vault ask takes Shown's new field.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6JWZMGGTT93BW0HYPHZKGPF\nPurlis-Persona: steward\n\n* A vault ask says what Allow grants and is drawn as a grant (#5160)\n\nTwo-axis review of #5163: Allow takes the grants look in the Inbox, the row says Allow's scope ahead\nof details a line's cut could lose, the pane draws the labels its ask carries and notes the answer\ntaken, and what refuses a stray grant names the ask.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6JWZMGGTT93BW0HYPHZKGPF\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-05T07:02:49Z",
+          "tree_id": "e7d3face482114d72b07af86eeff701a3680ed94",
+          "url": "https://github.com/purlis/purlis/commit/bb654af5cd87df2ff8bb41a1d144cada20463fa7"
+        },
+        "date": 1793864072378,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6922744999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.688, 0.692, 0.692, 0.706, 0.717 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.457371,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.383, 16.444, 16.457, 16.623, 16.660 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.69253499999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.761, 101.974, 102.693, 102.906, 103.725 ms"
           }
         ]
       }
