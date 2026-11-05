@@ -625,13 +625,13 @@ function declaredGroups(read: ProjectRead, reread?: () => void): SettingsGroup[]
         ? { after: harnessDeclarationRows(read.plane, read.declarations) }
         : {}),
     },
-    // Its chats' skill budget (#4610).
+    ...profilePages(read),
+    // Its chats' skill budget (#4610), after the profiles' pages, which stand under their group.
     ...(read.plane !== undefined ? [projectSkillsGroup(read.plane)] : []),
     // An org's skill controls, read only, and what was audited (#6031).
     ...(read.plane !== undefined
       ? [projectSkillSourcesGroup(read.plane, read.shared.file), projectSkillActsGroup(read.plane)]
       : []),
-    ...profilePages(read),
     // Which of purlis's refusals run here (Q308a, instruction 45), and what they let through.
     ...(read.plane !== undefined
       ? [policyGroup(read.plane, read.shared.file), policyLogGroup(read.plane)]

@@ -397,7 +397,7 @@ describe("the Skills chip on a chat's pane", () => {
     const asked: unknown[] = [];
     const listen = (event: Event) => asked.push((event as CustomEvent).detail);
     window.addEventListener(SKILL_STUDIO_ASKED, listen);
-    studioOn();
+    aCoreAskedNothing();
     render(
       <ChatSkillSetsHere.Provider
         value={{
@@ -421,7 +421,7 @@ describe("the Skills chip on a chat's pane", () => {
   });
 
   it("never says more skills than its budget for manual-only ones, which are free (#5353)", async () => {
-    studioOn();
+    aCoreAskedNothing();
     render(
       <ChatSkillSetsHere.Provider
         value={{
@@ -438,7 +438,7 @@ describe("the Skills chip on a chat's pane", () => {
   });
 
   it("leaves the budget's link out of a narrow pane's mark, and says nothing with nothing wrong (#5353)", async () => {
-    studioOn();
+    aCoreAskedNothing();
     const warned = { ...BUDGET, warns: "skills" as const };
     render(
       <ChatSkillSetsHere.Provider value={{ 4: held({ budget: warned }), 5: held() }}>
