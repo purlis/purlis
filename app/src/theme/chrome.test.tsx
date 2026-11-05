@@ -100,6 +100,7 @@ import { PinItem, UpdateItem } from "../Updates";
 import { VaultTab } from "../VaultTab";
 import { OpenVault } from "../Vaults";
 import { AddToAChat } from "../AddToAChat";
+import { SkillBudgetChange } from "../SkillBudget";
 import { RouterChange } from "../SkillStudioRouting";
 import { KeepAsk } from "../ThemeDraftStrip";
 import { forgetThisLaunch } from "../regions";
@@ -769,6 +770,7 @@ const DIALOGS: Opened[] = [
               manual: 1,
               most_skills: 30,
               most_chars: 6000,
+              workspace: null,
               hidden: 0,
               still_over: null,
               pinned_by: [],
@@ -1695,6 +1697,30 @@ const DIALOGS: Opened[] = [
           offers={new Map()}
           onPress={nothing}
           onCancel={nothing}
+        />,
+      ),
+  },
+  {
+    name: "a program's skill budget",
+    file: "SkillBudget.tsx",
+    open: async () =>
+      render(
+        <SkillBudgetChange
+          plane={PLANE}
+          program={{
+            program: "Claude Code",
+            key: "claude",
+            skills: 60,
+            chars: 15000,
+            skills_said: "60, Claude Code's default",
+            chars_said: "15,000, Claude Code's default",
+            skills_here: null,
+            chars_here: null,
+          }}
+          level={{ workspace: null, persona: null }}
+          extensionRouter={false}
+          onClose={nothing}
+          onWrite={nothing}
         />,
       ),
   },

@@ -519,6 +519,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "what a picked entry does to the asked key, a live value under the picker in the ask's own row (#5073)",
   },
   "UnsavedWorkQuestion.tsx": { count: 1, why: ACTION },
+  "SkillBudget.tsx": {
+    count: 3,
+    why: "A reset's refusal under the table, Change…'s own refusal, and what a typed number would cost, said as it moves: each about the act in hand, gone when that is done, so not a standing line",
+  },
   "SkillChangeDialogs.tsx": {
     count: 2,
     why:

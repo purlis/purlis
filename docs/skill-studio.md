@@ -343,11 +343,26 @@ A chat's **Skills** chip, on its pane, shows how many skills it has, and warns n
 
 ### Changing the budget
 
-In Settings, under the project's or a workspace's **Skills** group, set **Most skills in a
-chat's list** and **Most characters in a chat's list**. Leave them empty for each program's own
-numbers. A workspace's numbers win over the project's. **In force** shows what a chat starting
-there gets on each program. More characters cost more of each chat's context, about 91 tokens a
-skill. A value past what Codex can hold is never refused: Settings says what Codex would drop.
+Each program has its own budget: **Most skills in a chat's list** and **Most characters in a
+chat's list**. Change it where you see it: on the studio's **Routing** page each program has a row
+with **Change…**, and the numbers in the Skills view take you there, as does `of 60` beside the
+skills warning on a chat's pane. **Settings** shows the same rows, under the project's or a workspace's **Skills**
+group, in **In force**.
+
+- **Whose it is.** In a workspace, the number is that workspace's. At the project's root it is the
+  project's, for every workspace that sets none. Under a persona it is the project's too: a persona
+  has no budget of its own, and neither do you.
+- **As you type**, **Change…** says which skills new chats would list or hide, about how many more
+  or fewer tokens that is per chat, and whether it passes what the program can hold. More
+  characters cost more of each chat's context, about 91 tokens a skill.
+- **Where each number comes from.** A row says it: "100, this workspace · project says 60 · Claude
+  Code's default is 60". **Reset to default** beside a number takes out what this level says. In a
+  workspace, the project's number then stands, if it has one.
+- **What it takes.** A whole number of at least 1, or empty for the number below it. There is no
+  maximum. A number past what a program can hold is never refused: Change… says what Codex would
+  drop. Below your pinned skills it says they are still listed and go over it.
+- **When it applies.** New chats get it. Open chats keep what they started with, and offer a restart
+  once if the change moves what they would list.
 
 ### Routers, the index skill and pins
 

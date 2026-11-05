@@ -714,28 +714,84 @@ pub struct StudioRouter {
     pub preview: String,
 }
 
-/// **A chat's skill budget on one harness**, as the Routing page says it: the most skills its
-/// list holds, and the most characters of what is listed of them.
+/// **A chat's skill budget on one harness**, as the Routing page and Settings say it: the most
+/// skills its list holds and the most characters of what is listed of them, each with where it
+/// comes from (#5353).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct StudioBudget {
     pub program: String,
+    /// The word its numbers are kept under and a change names it by: `claude`, `codex`.
+    pub key: String,
     pub skills: u32,
     pub chars: u32,
+    /// `100, this workspace · project says 60 · Claude Code's default is 60`.
+    pub skills_said: String,
+    pub chars_said: String,
+    /// What this level writes, which Change… starts from and Reset to default takes out.
+    pub skills_here: Option<u32>,
+    pub chars_here: Option<u32>,
 }
 
-/// Every harness's budget for a chat in `workspace` of the project at `root`.
-fn budgets_in(root: &std::path::Path, workspace: Option<&str>) -> Vec<StudioBudget> {
+/// A count as the window is told it. Past `u32` a budget is no limit anyone could reach.
+fn capped(number: usize) -> u32 {
+    u32::try_from(number).unwrap_or(u32::MAX)
+}
+
+/// **Every harness's budget for a chat in `workspace`** of the project at `root`, which is also the
+/// level its Change… writes: the project's where it is none.
+pub(crate) fn budgets_in(root: &std::path::Path, workspace: Option<&str>) -> Vec<StudioBudget> {
+    use purlis_core::skills::budget_setting::in_force;
     purlis_core::harness::Harness::ALL
         .into_iter()
         .map(|harness| {
-            let budget = purlis_core::skills::budget_in(root, workspace, harness);
+            let numbers = in_force(root, workspace, harness);
             StudioBudget {
                 program: harness.title().to_owned(),
-                skills: u32::try_from(budget.skills).unwrap_or(u32::MAX),
-                chars: u32::try_from(budget.chars).unwrap_or(u32::MAX),
+                key: harness.name().to_owned(),
+                skills: capped(numbers.skills.in_force),
+                chars: capped(numbers.chars.in_force),
+                skills_said: numbers.skills.said(workspace, harness),
+                chars_said: numbers.chars.said(workspace, harness),
+                skills_here: numbers.skills.here.map(capped),
+                chars_here: numbers.chars.here.map(capped),
             }
         })
         .collect()
+}
+
+/// **What a typed skill budget would do to new chats** (#5353), as the Change… dialog says it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillBudgetPreview {
+    pub listed: u32,
+    pub hidden: u32,
+    /// By name, what would now be listed.
+    pub now_listed: Vec<String>,
+    /// By name, what would now be hidden.
+    pub now_hidden: Vec<String>,
+    /// About how many more tokens each new chat spends, or fewer below zero.
+    pub more_tokens: i32,
+    /// What the program would drop, past a limit of its own purlis cannot move.
+    pub past_limit: Option<String>,
+    /// What stays listed past these numbers: the pins, or what no pin decides.
+    pub over: Option<String>,
+}
+
+impl From<purlis_core::skills::budget_setting::Preview> for SkillBudgetPreview {
+    fn from(said: purlis_core::skills::budget_setting::Preview) -> Self {
+        Self {
+            listed: capped(said.listed),
+            hidden: capped(said.hidden),
+            now_listed: said.now_listed,
+            now_hidden: said.now_hidden,
+            more_tokens: i32::try_from(said.more_tokens).unwrap_or(if said.more_tokens < 0 {
+                i32::MIN
+            } else {
+                i32::MAX
+            }),
+            past_limit: said.past_limit,
+            over: said.over,
+        }
+    }
 }
 
 /// One chat a router extension was asked about at its start.
@@ -814,9 +870,7 @@ fn router_of(
         graded,
         written: pinner.and_then(|by| purlis_core::skills::router::written(root, &by)),
         budget: budgets_in(root, workspace),
-        past_limits: purlis_core::skills::budget_setting::warnings(
-            purlis_core::skills::budget_setting::set_in(root, workspace),
-        ),
+        past_limits: purlis_core::skills::budget_setting::warnings(root, workspace),
     }
 }
 

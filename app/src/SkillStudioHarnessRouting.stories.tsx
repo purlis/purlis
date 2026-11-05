@@ -109,9 +109,36 @@ const ROUTER: StudioRouter = {
   extension: "relevance",
   written: "relevance",
   budget: [
-    { program: "Claude Code", skills: 60, chars: 15000 },
-    { program: "Codex", skills: 30, chars: 6000 },
-    { program: "opencode", skills: 30, chars: 6000 },
+    {
+      program: "Claude Code",
+      key: "claude",
+      skills: 100,
+      chars: 15000,
+      skills_said: "100, this workspace · project says 70 · Claude Code's default is 60",
+      chars_said: "15,000, Claude Code's default",
+      skills_here: 100,
+      chars_here: null,
+    },
+    {
+      program: "Codex",
+      key: "codex",
+      skills: 30,
+      chars: 6000,
+      skills_said: "30, Codex's default",
+      chars_said: "6,000, Codex's default",
+      skills_here: null,
+      chars_here: null,
+    },
+    {
+      program: "opencode",
+      key: "opencode",
+      skills: 30,
+      chars: 6000,
+      skills_said: "30, opencode's default",
+      chars_said: "6,000, opencode's default",
+      skills_here: null,
+      chars_here: null,
+    },
   ],
   past_limits: [],
   preview:
@@ -419,7 +446,7 @@ export const RouterScorecard: Story = {
       "Graded 2026-10-27 09:12 UTC, on the library at 3f9a2c1d7e40",
     );
     await expect(canvas.getByRole("heading", { name: "lint-rs" })).toBeInTheDocument();
-    await tabInto(() => canvas.getByTestId("router-grade-scorecard"));
+    await tabInto(() => canvas.getByTestId("router-grade-scorecard"), 40);
     expectFocusInSight();
   },
 };
@@ -437,7 +464,7 @@ export const RouterGradePlanPage: Story = {
     await expect(
       canvas.getByRole("button", { name: "Start grading · 18 chats" }),
     ).toBeInTheDocument();
-    await tabInto(() => canvas.getByTestId("router-grade-plan"));
+    await tabInto(() => canvas.getByTestId("router-grade-plan"), 40);
     expectFocusInSight();
   },
 };

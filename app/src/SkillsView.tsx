@@ -51,7 +51,14 @@ import { useFoldedGroups } from "./skillsViewPrefs";
 import { PLANE_ROOT, pieceFileView } from "./pieceViews";
 import type { ViewRef } from "./tabs";
 import { useListFilter } from "./ui/list/ListFilter";
-import { chatNeedsOf, chatSetSaid, type ChatNeed, type ChatSkillsSaid } from "./chatSkillNeeds";
+import {
+  budgetSaid,
+  budgetScope,
+  chatNeedsOf,
+  chatSetBeside,
+  type ChatNeed,
+  type ChatSkillsSaid,
+} from "./chatSkillNeeds";
 import { SKILLS_MISSING_PUT_AWAY, type ChatSkillsAsk } from "./chatSkillsAsk";
 
 /** The chat in front, as the Skills view reads its set: its session, its name, where it works,
@@ -477,7 +484,16 @@ function SkillsViewDrawn({
     <SkillsList
       whose={whose}
       chat={read.of !== undefined}
-      setSaid={shown.said === undefined ? [] : chatSetSaid(shown.said)}
+      setSaid={shown.said === undefined ? [] : chatSetBeside(shown.said)}
+      budgetSaid={
+        shown.said?.budget === null || shown.said === undefined
+          ? undefined
+          : budgetSaid(shown.said.budget)
+      }
+      onBudget={() => {
+        if (shown.said?.budget)
+          onOpenView(skillStudioAt(budgetScope(shown.said.budget), "routing"), SKILL_STUDIO_TITLE);
+      }}
       chatNeeds={filter.query.trim() === "" ? chatNeeds : []}
       onChatFix={chatFix}
       groups={groups}

@@ -8,7 +8,6 @@ import {
   type SkillPinner,
   type SkillRouterOffer,
   type StudioRouted,
-  type StudioBudget,
   type StudioRouter,
 } from "./bindings";
 import { counted } from "./dispatches";
@@ -23,19 +22,11 @@ import { List, ListRow, type Selection } from "./ui/list/List";
 import { RowBelow, RowLabel, RowTrail } from "./ui/list/Row";
 import { ViewPageHeader } from "./ui/panel/ViewFrame";
 import { routedChatId } from "./skillStudio";
+import { SkillBudgetTable, type BudgetWrite, type BudgetWriteTold } from "./SkillBudget";
 import { capitalised } from "./saving";
 
 /** The word a choice of the built-in router is written as (`purlis_core::skills::router`). */
 export const BUILT_IN_ROUTER = "built-in";
-
-/** **Each program's skill budget, in a line** (#4610): its own numbers, or what Settings writes. */
-export function budgetSaid(budget: readonly StudioBudget[]): string {
-  const each = budget.map(
-    (one) =>
-      `${one.program}: ${counted(one.skills, "skill", "skills")}, ${one.chars.toLocaleString("en-US")} characters.`,
-  );
-  return each.join(" ");
-}
 
 /**
  * **What the budget counts, and what it does not** (#3324, ADR 0102 as amended 2026-10-31): the
@@ -109,6 +100,8 @@ export function RoutingFacts({
   busy,
   onChoose,
   onReadsPrompts,
+  budgetWorkspace,
+  onBudget,
   gradeRunning,
   onGradeRunning,
   onGradePlan,
@@ -124,6 +117,10 @@ export function RoutingFacts({
   onChoose: (by: SkillPinner, router: string | null, said: string) => void;
   /** Turns the chosen router's reading of prompts on or off, and says `said` once it is. */
   onReadsPrompts: (router: string, on: boolean, said: string) => void;
+  /** The workspace whose skill budget the table changes: the project's for none (#5353). */
+  budgetWorkspace: string | null;
+  /** Writes one program's skill budget, and tells the table how it went. */
+  onBudget: (write: BudgetWrite, told: BudgetWriteTold) => void;
   /** The router's grade running in this scope, and the way to its page and its Stop (#4222). */
   gradeRunning?: RouterGradeStep;
   onGradeRunning: (grade: string) => void;
@@ -213,9 +210,8 @@ export function RoutingFacts({
           <span data-testid="skill-routing-preview">{router.preview}</span>
         </Fact>
         <Fact label="Budget">
-          {budgetSaid(router.budget)}
           <span className="honest" data-testid="skill-routing-budget-counts">
-            {` ${BUDGET_COUNTS}`}
+            {BUDGET_COUNTS}
           </span>
           {router.past_limits.map((line) => (
             <span key={line} className="honest" data-testid="skill-routing-past-limit">
@@ -251,6 +247,13 @@ export function RoutingFacts({
           </Fact>
         )}
       </Facts>
+      <SkillBudgetTable
+        plane={plane}
+        budget={router.budget}
+        level={{ workspace: budgetWorkspace, persona }}
+        extensionRouter={extension !== null}
+        onWrite={onBudget}
+      />
       {changing && by !== null && (
         <RouterChange
           plane={plane}

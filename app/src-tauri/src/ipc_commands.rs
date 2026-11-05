@@ -370,6 +370,8 @@ macro_rules! app_commands {
                 skillchange::skill_routers,
                 skillchange::skill_router_choose,
                 skillchange::skill_router_reads_prompts,
+                skillchange::skill_budget_set,
+                skillchange::skill_budget_preview,
                 skillhistory::skill_details,
                 skillhistory::skill_revert_widens,
                 skillhistory::skill_diff,

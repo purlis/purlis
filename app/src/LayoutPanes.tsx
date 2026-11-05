@@ -569,6 +569,7 @@ export function ChatFoot({
         {(foot.has("skills") || foot.has("skillsMark")) && (
           <PaneFootJoined>
             <SkillsChip
+              plane={plane}
               session={session}
               onOpen={rowOf("skills")?.press}
               markOnly={foot.has("skillsMark")}
