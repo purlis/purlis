@@ -7,6 +7,7 @@ import {
   contentsOf,
   EMPTY_TAB,
   type FiledIn,
+  findView,
   type Layout,
   nothingPinned,
   isOneJob,
@@ -73,10 +74,11 @@ export type DropContext = {
   /** What a pane's content is called in a sentence. */
   name: (content: Content) => string;
   /**
-   * What a tab is called when `content` is its first pane: the name it says, and what that goes
-   * back to when a given name is taken off (`Tab.defaultName`). `name` for both where absent.
+   * What a tab is called when `chat` is its first pane: the name it says, and what that goes back
+   * to when a given name is taken off (`Tab.defaultName`). `name` for both where this says
+   * nothing: where it is absent, or for a chat it does not know, such as one with no row yet.
    */
-  tabName?: (content: Content) => TabName;
+  tabName?: (chat: Extract<Content, { kind: "session" }>) => TabName | undefined;
   pinned?: Pinned;
 };
 
@@ -130,6 +132,9 @@ export function judgeDrop(
   if (source.kind === "pane") {
     const pane = paneAt(tabs, source);
     if (pane === undefined) return refused("That pane has closed.");
+    // First: over its own place nothing moves, whatever it is that could not have moved (#5284).
+    if (to.kind === "pane" && source.pane === to.pane)
+      return overItself("That's the pane being moved. Drop it on another pane.");
     if (pane.content.kind === "empty")
       return refused("An empty pane has nothing to move. Close it instead.");
     // A one-job program stays beside the pane it opened from (#4761; spec #4750 story 78).
@@ -156,8 +161,6 @@ export function judgeDrop(
 
   const target = paneAt(tabs, to);
   if (target === undefined) return refused("That pane has closed.");
-  if (source.kind === "pane" && source.pane === to.pane)
-    return overItself("That's the pane being moved. Drop it on another pane.");
   if (source.kind === "tab" && source.tab === to.tab)
     return overItself("That's the tab being moved. Drop it on a pane in another tab.");
   const there = ctx.name(target.content);
@@ -225,10 +228,24 @@ export function dropOn(tabs: Tabs, from: Source, to: Target, ctx: DropContext, s
   return namedForFirstPanes(tabs, apply(tabs, asDropped(tabs, from, to), to, ctx), ctx);
 }
 
-/** What a tab with `content` in its first pane is called. */
-function tabNameOf(content: Content, ctx: DropContext): TabName {
+/**
+ * **What a tab with `content` in its first pane is called**, as `tabs` stands before the drop. A
+ * view keeps the title of the tab it led; a view beside another pane has no title of its own, so
+ * it says its own word, as the layout records it (`laidOut.nodeOf`), never the name of the chat
+ * beside it, which the record would then keep as its title.
+ */
+function tabNameOf(content: Content, tabs: Tabs, ctx: DropContext): TabName {
   if (content.kind === "empty") return { name: EMPTY_TAB, defaultName: EMPTY_TAB };
-  if (ctx.tabName !== undefined) return ctx.tabName(content);
+  if (content.kind === "view") {
+    const at = findView(tabs, content.view);
+    if (at !== undefined && contentsOf(tabs, at.tab)[0]?.pane === at.pane) {
+      const { name, defaultName } = tabs.byId[at.tab];
+      return { name, defaultName };
+    }
+    return { name: content.view.view, defaultName: content.view.view };
+  }
+  const named = ctx.tabName?.(content);
+  if (named !== undefined) return named;
   const name = ctx.name(content);
   return { name, defaultName: name };
 }
@@ -240,7 +257,7 @@ function namedForFirstPanes(before: Tabs, after: Tabs, ctx: DropContext): Tabs {
     const was = contentsOf(before, id)[0]?.content;
     const is = contentsOf(after, id)[0]?.content;
     if (was === undefined || is === undefined || sameContent(was, is)) continue;
-    byId[id] = { ...byId[id], ...tabNameOf(is, ctx) };
+    byId[id] = { ...byId[id], ...tabNameOf(is, before, ctx) };
   }
   return { ...after, byId };
 }
@@ -367,7 +384,7 @@ function toStrip(tabs: Tabs, source: Source, at: number, ctx: DropContext): Tabs
   const id = next.named.tabs + 1;
   const tab: Tab = {
     id,
-    ...tabNameOf(panes(lifted.moved)[0].content, ctx),
+    ...tabNameOf(panes(lifted.moved)[0].content, tabs, ctx),
     layout: lifted.moved,
     focused: firstPane(lifted.moved),
   };

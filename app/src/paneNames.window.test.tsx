@@ -114,7 +114,8 @@ function boxOf(el: Element) {
 
 beforeEach(() => {
   vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
-    return { ...boxOf(this), toJSON: () => ({}) } as DOMRect;
+    const { left: x, top: y, width, height } = boxOf(this);
+    return DOMRect.fromRect({ x, y, width, height });
   });
   document.elementFromPoint = (x: number, y: number) => {
     for (const el of document.querySelectorAll("[data-drop-pane], [data-drag-chat]")) {

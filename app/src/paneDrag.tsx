@@ -318,7 +318,7 @@ export function usePaneDrag({
           return;
         }
         if (!over.verdict.ok) {
-          setSaid(over.verdict.overItself === true ? PUT_BACK : `Not dropped: ${over.verdict.why}`);
+          setSaid(isOverItself(over.verdict) ? PUT_BACK : `Not dropped: ${over.verdict.why}`);
           return;
         }
         const did = over.verdict.did;

@@ -5322,29 +5322,26 @@ export const PlaneView = memo(function PlaneView({
   }, [nameOf]);
 
   /** What a pane drop is judged against (#4763): where chats are filed, and what each is called. */
-  const dropContext = useMemo<DropContext>(() => {
-    const viewTabName = (content: Extract<Content, { kind: "view" }>) =>
-      tabs.byId[findView(tabs, content.view)?.tab ?? -1]?.name ?? "this view";
-    return {
+  const dropContext = useMemo<DropContext>(
+    () => ({
       filedIn,
       pinned: isPinned,
       name: (content) =>
         content.kind === "session"
           ? nameOf(content.session)
           : content.kind === "view"
-            ? viewTabName(content)
+            ? (tabs.byId[findView(tabs, content.view)?.tab ?? -1]?.name ?? "this view")
             : "the empty pane",
-      tabName: (content) => {
-        if (content.kind !== "session") {
-          const name = content.kind === "view" ? viewTabName(content) : "the empty pane";
-          return { name, defaultName: name };
-        }
-        const { who, label } = pressedOf(content.session);
-        const defaultName = who ? `${who} ${content.chat}` : content.chat;
+      // A chat with no row yet has no name to give a tab: what its pane holds is no name to show.
+      tabName: ({ session, chat }) => {
+        if (!listedNow.current.has(session)) return undefined;
+        const { who, label } = pressedOf(session);
+        const defaultName = who ? `${who} ${chat}` : chat;
         return { name: label ?? defaultName, defaultName };
       },
-    };
-  }, [filedIn, isPinned, nameOf, pressedOf, tabs]);
+    }),
+    [filedIn, isPinned, nameOf, pressedOf, tabs],
+  );
   const holdTab = useCallback((id: number) => change((tabs) => selectTab(tabs, id)), [change]);
   const ownNameOf = useCallback(
     (session: number) =>

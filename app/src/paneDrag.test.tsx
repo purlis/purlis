@@ -122,47 +122,12 @@ const boxOf = (el: Element) => {
   return { left, top, width, height, right: left + width, bottom: top + height, x: left, y: top };
 };
 
-/**
- * **A box as a browser measures one**: a `DOMRect` keeps its sides as getters on its prototype, so
- * spreading it gives nothing, and nothing here may pass by reading a plain object (#5284).
- */
-class Measured {
-  readonly #box: ReturnType<typeof boxOf>;
-  constructor(box: ReturnType<typeof boxOf>) {
-    this.#box = box;
-  }
-  get left() {
-    return this.#box.left;
-  }
-  get top() {
-    return this.#box.top;
-  }
-  get width() {
-    return this.#box.width;
-  }
-  get height() {
-    return this.#box.height;
-  }
-  get right() {
-    return this.#box.right;
-  }
-  get bottom() {
-    return this.#box.bottom;
-  }
-  get x() {
-    return this.#box.x;
-  }
-  get y() {
-    return this.#box.y;
-  }
-  toJSON() {
-    return this.#box;
-  }
-}
-
 beforeEach(() => {
   vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
-    return new Measured(boxOf(this)) as unknown as DOMRect;
+    // A real one, as a browser measures: its sides are getters on its prototype, so a spread of
+    // it gives nothing, and no test here passes by reading a plain object (#5284).
+    const { left: x, top: y, width, height } = boxOf(this);
+    return DOMRect.fromRect({ x, y, width, height });
   });
   // The deepest element whose box holds the point.
   document.elementFromPoint = (x: number, y: number) => {

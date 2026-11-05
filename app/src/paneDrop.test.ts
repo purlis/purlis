@@ -23,6 +23,7 @@ import {
   ONE_JOB_STAYS,
   openOneJob,
   openTab,
+  openEmptyTab,
   openView,
   renameTab,
   selectTab,
@@ -713,10 +714,7 @@ describe("a one-job pane", () => {
 describe("a tab's name follows its first pane through a drop (#5283)", () => {
   const named: DropContext = {
     ...ctx,
-    tabName: (content) =>
-      content.kind === "session"
-        ? { name: `label ${content.session}`, defaultName: `chat ${content.session}` }
-        : { name: "a view", defaultName: "a view" },
+    tabName: (chat) => ({ name: `label ${chat.session}`, defaultName: `chat ${chat.session}` }),
   };
   const twoTabs = (): { tabs: Tabs; first: number; second: number; pane: number } => {
     let tabs = openTab(noTabs(), 1, "1");
@@ -794,6 +792,47 @@ describe("a tab's name follows its first pane through a drop (#5283)", () => {
     expect(after.byId[first].name).toBe(EMPTY_TAB);
   });
 
+  it("names a tab for a view left first by the view's own word, never the chat that left", () => {
+    const { tabs, first, second, pane } = twoTabs();
+    const beside = insertPane(tabs, {
+      tab: first,
+      pane,
+      direction: "row",
+      side: "after",
+      content: { kind: "view", view: SETTINGS, workspace: "ops" },
+    });
+    const other = contentsOf(beside, second)[0].pane;
+    const after = dropOn(
+      beside,
+      { kind: "pane", tab: first, pane },
+      { kind: "pane", tab: second, pane: other, place: "right" },
+      named,
+    );
+    expect(contentsOf(after, first)[0].content.kind).toBe("view");
+    expect(after.byId[first].name).toBe(SETTINGS.view);
+    expect(after.byId[first].defaultName).toBe(SETTINGS.view);
+  });
+
+  it("keeps a view's title on the tab it goes to when it led the tab it left", () => {
+    const opened = openView(openTab(noTabs(), 1, "1"), SETTINGS, "Settings", "ops");
+    const from = opened.inFront as number;
+    const to = opened.order[0];
+    const after = dropOn(
+      opened,
+      { kind: "pane", tab: from, pane: contentsOf(opened, from)[0].pane },
+      { kind: "pane", tab: to, pane: contentsOf(opened, to)[0].pane, place: "left" },
+      named,
+    );
+    expect(after.byId[to].name).toBe("Settings");
+  });
+
+  it("names a tab by `name` for a chat `tabName` cannot name, such as one with no row yet", () => {
+    const unnamed: DropContext = { ...ctx, tabName: () => undefined };
+    const { tabs, first, pane } = twoTabs();
+    const after = dropOn(tabs, seven, { kind: "pane", tab: first, pane, place: "left" }, unnamed);
+    expect(after.byId[first].name).toBe("chat 7");
+  });
+
   it("makes a new strip tab under the name and default of what it shows", () => {
     const { tabs } = twoTabs();
     const after = dropOn(tabs, seven, { kind: "strip", at: 0 }, named);
@@ -830,6 +869,19 @@ describe("what is dragged over its own place (#5284)", () => {
       tabs,
       { kind: "chat", session: 1, chat: "1" },
       { kind: "pane", tab, pane, place: "left" },
+      ctx,
+    );
+    expect(verdict).toMatchObject({ ok: false, overItself: true });
+  });
+
+  it("counts an empty tab's pane, under its own tab being dragged, as over itself", () => {
+    const tabs = openEmptyTab(noTabs(), "ops");
+    const tab = tabs.order[0];
+    const pane = contentsOf(tabs, tab)[0].pane;
+    const verdict = judgeDrop(
+      tabs,
+      { kind: "tab", tab },
+      { kind: "pane", tab, pane, place: "middle" },
       ctx,
     );
     expect(verdict).toMatchObject({ ok: false, overItself: true });
