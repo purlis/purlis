@@ -1196,6 +1196,7 @@ fn a_check_report_lands_in_the_chats_own_workspace_from_a_file_in_the_branchs_fo
         repo: "svc".into(),
         piece: None,
         file: "out.sarif".into(),
+        reporter: None,
     };
     let written = perform(&root, &in_alpha_as(None), &write, now()).unwrap();
     assert_eq!(written.to, "alpha");
@@ -1220,6 +1221,7 @@ fn a_check_report_refuses_a_file_outside_the_branchs_folder_or_through_a_link() 
             repo: "svc".into(),
             piece: None,
             file: file.into(),
+            reporter: None,
         };
         assert!(
             perform(&root, &in_alpha_as(None), &write, now()).is_err(),

@@ -75,6 +75,7 @@ function core() {
               moreOutside: 0,
               moreElsewhere: 0,
               trouble: null,
+              faults: [],
             },
             diff: {
               kind: "text",

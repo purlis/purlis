@@ -9,6 +9,13 @@
 //! write the workspace's `pieces/`. The file is checked here first, so a bad one is refused in the
 //! same words either way, and it must lie inside the branch's folder for the app to read it.
 //! **The exit is 0 when it was recorded, 1 when it was refused**, nothing recorded.
+//!
+//! **With `--reporter <extension>`, the file is a check's output, not SARIF** (#5410): it is handed,
+//! with the check's `--status`, to that **Check reporter**, as its own process through the executor,
+//! and the SARIF it answers is recorded as a file's is. A reporter not approved, or one that does
+//! not ask for the capability, is refused and nothing is recorded; one whose answer is not SARIF
+//! exits 1 and is kept as its fault, which the window draws as a Notice naming it. In a sandboxed
+//! chat the app asks the reporter, as its own process, and makes the write.
 
 use std::path::Path;
 
@@ -28,8 +35,15 @@ pub enum CheckCommand {
     Report {
         /// The branch: one a folder of this workspace has checked out.
         branch: String,
-        /// The SARIF 2.1.0 file. In a sandboxed chat it must be inside the branch's folder.
+        /// The SARIF 2.1.0 file, or with --reporter the check's output. In a sandboxed chat it must
+        /// be inside the branch's folder.
         file: std::path::PathBuf,
+        /// The Check reporter extension to hand the check's output to, which answers SARIF.
+        #[arg(long, requires = "status")]
+        reporter: Option<String>,
+        /// The status the check exited with, handed to the Check reporter.
+        #[arg(long, requires = "reporter", allow_negative_numbers = true)]
+        status: Option<i32>,
         /// The repo, where two of the workspace's have the branch. Default: the one you stand in.
         #[arg(long)]
         repo: Option<String>,
@@ -43,6 +57,8 @@ pub fn run(here: &Here, command: CheckCommand) -> Result<u8, String> {
     let CheckCommand::Report {
         branch,
         file,
+        reporter,
+        status,
         repo,
         workspace,
     } = command;
@@ -67,6 +83,26 @@ pub fn run(here: &Here, command: CheckCommand) -> Result<u8, String> {
     };
     let folder = purlis_core::files::folder(root, place, "").map_err(|e| e.to_string())?;
     let file = here.cwd.join(file);
+    if let Some(extension) = reporter {
+        let reporter = purlis_core::brokered::CheckReporter {
+            extension,
+            status: status.unwrap_or_default(),
+        };
+        if matches!(named, Named::Own)
+            && let Some(code) = by_the_app(
+                &file,
+                &folder,
+                &repo,
+                piece.as_deref(),
+                Some(&reporter),
+                &format!("What '{}' answered", reporter.extension),
+                &branch,
+            )
+        {
+            return Ok(code);
+        }
+        return Ok(through(root, place, &file, &reporter, &branch));
+    }
     let tools = match checks::results_in(&file, &folder) {
         Ok(results) => said_tools(&results),
         Err(why) => {
@@ -75,7 +111,15 @@ pub fn run(here: &Here, command: CheckCommand) -> Result<u8, String> {
         }
     };
     if matches!(named, Named::Own)
-        && let Some(code) = by_the_app(&file, &folder, &repo, piece.as_deref(), &tools, &branch)
+        && let Some(code) = by_the_app(
+            &file,
+            &folder,
+            &repo,
+            piece.as_deref(),
+            None,
+            &tools,
+            &branch,
+        )
     {
         return Ok(code);
     }
@@ -91,12 +135,89 @@ pub fn run(here: &Here, command: CheckCommand) -> Result<u8, String> {
     }
 }
 
+/// The check's output in `file` handed to `reporter` here, as its own process, and its answer
+/// recorded: the code to exit with.
+fn through(
+    root: &Path,
+    place: Branch<'_>,
+    file: &Path,
+    reporter: &purlis_core::brokered::CheckReporter,
+    branch: &str,
+) -> u8 {
+    let output = match checks::output_in(file) {
+        Ok(output) => output,
+        Err(why) => {
+            voice::err(format!(
+                "{} was not handed to '{}': {why}. Nothing was recorded",
+                file.display(),
+                reporter.extension
+            ));
+            return 1;
+        }
+    };
+    let Some(config_root) = purlis_core::machine::config_root() else {
+        voice::err(
+            "purlis cannot find its config home, where it records extensions, so it asked no Check reporter",
+        );
+        return 1;
+    };
+    let project = purlis_core::extension::project::Choices::read(root);
+    let answered = match checks::converted(
+        &crate::extensions::executor(),
+        &config_root,
+        &project,
+        &reporter.extension,
+        &output,
+        reporter.status,
+    ) {
+        Ok(answered) => answered,
+        Err(why) => {
+            voice::err(why);
+            return 1;
+        }
+    };
+    match checks::report_converted(
+        root,
+        place,
+        &reporter.extension,
+        answered,
+        chrono::Utc::now(),
+    ) {
+        Ok(done) => {
+            voice::ok(format!(
+                "{} recorded for {branch}",
+                said_counts(&done.tools)
+            ));
+            0
+        }
+        Err(why) => {
+            voice::err(why);
+            1
+        }
+    }
+}
+
+/// `2 results from mypy`, from what was recorded.
+fn said_counts(tools: &[(String, usize)]) -> String {
+    tools
+        .iter()
+        .map(|(tool, count)| match count {
+            0 => format!("no results from {tool}"),
+            1 => format!("1 result from {tool}"),
+            many => format!("{many} results from {tool}"),
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// The write handed to the app, and the code to exit with; `None` where no app took it.
+/// `reporter`, where there is one, is asked by the app. `tools` says what is recorded.
 fn by_the_app(
     file: &Path,
     folder: &Path,
     repo: &str,
     piece: Option<&str>,
+    reporter: Option<&purlis_core::brokered::CheckReporter>,
     tools: &str,
     branch: &str,
 ) -> Option<u8> {
@@ -117,6 +238,7 @@ fn by_the_app(
         repo: repo.to_owned(),
         piece: piece.map(str::to_owned),
         file: inside,
+        reporter: reporter.cloned(),
     };
     match crate::brokered::forwarded(write) {
         Forwarded::Written { .. } => {

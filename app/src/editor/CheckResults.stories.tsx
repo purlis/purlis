@@ -43,6 +43,7 @@ const CHECKS: CheckResults = {
   moreOutside: 0,
   moreElsewhere: 2,
   trouble: null,
+  faults: [],
 };
 
 const meta = {
@@ -98,6 +99,40 @@ export const CouldNotBeRead: Story = {
       moreElsewhere: 0,
       trouble: "purlis could not read the results: delete the file, and report them again",
     },
+  },
+};
+
+/** A Check reporter answered something that is not SARIF (#5410): a Notice naming it, above the
+ *  results recorded before, which stay. Dismiss is reached by the keyboard and puts it away. */
+export const ReporterFault: Story = {
+  args: {
+    results: {
+      ...CHECKS,
+      faults: [
+        {
+          extension: "mypy-sarif",
+          said:
+            "The Check reporter 'mypy-sarif' answered something purlis cannot read as SARIF " +
+            "2.1.0: it is not JSON (expected value at line 1 column 1). Nothing it said was " +
+            "recorded, and the results before stay. Run the check again once the extension is " +
+            "fixed",
+        },
+      ],
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const notice = () =>
+      canvasElement.querySelector('[data-cause="check-reporter-fault:mypy-sarif"]');
+    await expect(notice()).not.toBeNull();
+    await userEvent.tab();
+    await userEvent.tab();
+    await untilFocused(
+      () => canvasElement.querySelector<HTMLElement>("[data-cause] button"),
+      "the Notice's Dismiss",
+    );
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await expect(notice()).toBeNull();
   },
 };
 

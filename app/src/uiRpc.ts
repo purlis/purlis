@@ -4135,6 +4135,17 @@ export type ChatsRunOn = {
 	pools: string[],
 };
 
+/**
+ *  A Check reporter whose last answer could not be recorded: what the review says in a Notice
+ *  naming it (#5410). The results before it stay.
+ */
+export type CheckFault = {
+	/**  The extension, by its id. */
+	extension: string,
+	/**  What was wrong, in the core's sentence, naming it. */
+	said: string,
+};
+
 /**  One result of a check. */
 export type CheckResult = {
 	tool: string,
@@ -4170,6 +4181,8 @@ export type CheckResults = {
 	moreElsewhere: number,
 	/**  Why they could not be read, where they could not. */
 	trouble: string | null,
+	/**  Each Check reporter whose last answer could not be recorded, for the whole branch (#5410). */
+	faults: CheckFault[],
 };
 
 /**  One tool's results for a branch, and whether the branch has moved since they were reported. */

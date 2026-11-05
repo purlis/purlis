@@ -645,6 +645,12 @@ tool, severity and message, and every result is listed with those words: on the 
 outside them, or in other files, never dropped. Each opens at its line, in the file tab and in your
 editor. Each tool's results record the commit they were reported for, and are marked out of date
 once the branch's head moves.
+
+A tool that does not write SARIF is converted by an extension with the **Check reporter**
+capability (added 2026-11-06, #5410): `purlis check report <branch> <output> --reporter <extension>
+--status <n>` hands the approved extension the check's output and exit status, and its SARIF is
+recorded the same way. A reporter whose answer is not SARIF is named in a Notice above the results,
+and the results before stay (`docs/extension-api.md`).
 ### Where the multi-plane work goes (added 2026-09-20)
 
 Decisions 22-28 are product work this spec missed, not a milestone of their own, so they are

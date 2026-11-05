@@ -25,6 +25,7 @@ const NO_CHECKS: WhatChanged["checks"] = {
   moreOutside: 0,
   moreElsewhere: 0,
   trouble: null,
+  faults: [],
 };
 
 function core(answer: WhatChanged | string) {

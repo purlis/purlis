@@ -915,6 +915,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "check-probe"
+version = "0.5.0"
+dependencies = [
+ "chrono",
+ "purlis-core",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "chrono"
 version = "0.4.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"

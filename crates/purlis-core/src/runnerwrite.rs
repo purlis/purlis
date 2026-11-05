@@ -120,12 +120,20 @@ pub fn texts(write: &Write) -> Vec<&str> {
         Write::Todo { text }
         | Write::WorkspaceVision { text }
         | Write::WorkspaceSection { text, .. } => vec![text.as_str()],
-        Write::CheckReport { repo, piece, file } => {
-            [Some(repo.as_str()), piece.as_deref(), Some(file.as_str())]
-                .into_iter()
-                .flatten()
-                .collect()
-        }
+        Write::CheckReport {
+            repo,
+            piece,
+            file,
+            reporter,
+        } => [
+            Some(repo.as_str()),
+            piece.as_deref(),
+            Some(file.as_str()),
+            reporter.as_ref().map(|it| it.extension.as_str()),
+        ]
+        .into_iter()
+        .flatten()
+        .collect(),
         Write::EditMemory {
             slug, title, text, ..
         } => [Some(slug.as_str()), title.as_deref(), text.as_deref()]
@@ -251,9 +259,21 @@ fn said_held_to(write: &Write, most: Option<usize>) -> String {
             "Remember in this workspace's memory: {}",
             titled(title.as_deref(), text)
         ),
-        Write::CheckReport { repo, piece, file } => format!(
-            "Record the check results in {} for {}",
-            shown(file),
+        Write::CheckReport {
+            repo,
+            piece,
+            file,
+            reporter,
+        } => format!(
+            "Record the check results {} for {}",
+            match reporter {
+                None => format!("in {}", shown(file)),
+                Some(reporter) => format!(
+                    "the Check reporter {} makes of {}",
+                    shown(&reporter.extension),
+                    shown(file)
+                ),
+            },
             match piece {
                 Some(piece) => format!("{} of {repo}", shown(piece)),
                 None => format!("the clone {repo}"),

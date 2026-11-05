@@ -460,6 +460,19 @@ pub struct CheckResults {
     pub more_elsewhere: u32,
     /// Why they could not be read, where they could not.
     pub trouble: Option<String>,
+    /// Each Check reporter whose last answer could not be recorded, for the whole branch (#5410).
+    pub faults: Vec<CheckFault>,
+}
+
+/// A Check reporter whose last answer could not be recorded: what the review says in a Notice
+/// naming it (#5410). The results before it stay.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckFault {
+    /// The extension, by its id.
+    pub extension: String,
+    /// What was wrong, in the core's sentence, naming it.
+    pub said: String,
 }
 
 impl From<purlis_core::checks::OnFile> for CheckResults {
@@ -503,6 +516,14 @@ impl From<purlis_core::checks::OnFile> for CheckResults {
             more_outside: count(on.more_outside),
             more_elsewhere: count(on.more_elsewhere),
             trouble: on.trouble,
+            faults: on
+                .faults
+                .into_iter()
+                .map(|fault| CheckFault {
+                    extension: fault.extension,
+                    said: fault.said,
+                })
+                .collect(),
         }
     }
 }
