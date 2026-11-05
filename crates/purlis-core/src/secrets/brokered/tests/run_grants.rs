@@ -538,3 +538,29 @@ fn a_manifest_nobody_can_read_asks_nothing_for_it_may_declare_the_program() {
     assert_eq!(refusal(&frames).1, 1, "{frames:?}");
     assert!(asks.open_runs().is_empty());
 }
+
+#[test]
+fn allow_for_this_chat_runs_the_program_with_other_arguments_and_no_more_asks() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    answered(
+        project.path(),
+        printenv(project.path(), &["X"]),
+        &asks,
+        RunAnswer::ForChat,
+    );
+    let other = run_with(
+        &the_chat(project.path()),
+        printenv(project.path(), &["HOME"]),
+        &asks,
+        Duration::ZERO,
+    );
+    assert_ne!(
+        other.last().map(
+            |frame| matches!(frame, Frame::Refused { code, .. } if *code == WAITING_ON_THE_PERSON)
+        ),
+        Some(true),
+        "{other:?}"
+    );
+    assert!(asks.open_runs().is_empty(), "nothing more was asked");
+}

@@ -2030,6 +2030,8 @@ fn run_grant_key(id: u32) -> String {
 
 /// The id of Allow once on a Run grant's ask (ADR 0111).
 pub const RUN_ALLOW_ONCE: &str = "allow-once";
+/// The Allow of an ask to allow a program that holds for the chat (#5241).
+pub const RUN_ALLOW_CHAT: &str = "allow-chat";
 
 /// **The Run grant adapter** (ADR 0111, #5239): a chat's brokered run names a program its persona
 /// does not declare. Every word of the line is purlis's, and every name the app's; the chat's
@@ -2054,8 +2056,8 @@ pub fn run_grant(open: &purlis_core::secrets::ask::run::OpenRun) -> Shown {
         Hosts::Every => (Vec::new(), true),
     };
     let says = format!(
-        "Wants to run {} with {} from {}'s vault {}. Allow once runs this exact command, in this \
-         chat's own sandbox",
+        "Wants to run {} with {} from {}'s vault {}. Allow once runs this exact command, and Allow for \
+         this chat runs it with any arguments until the chat ends, in this chat's own sandbox",
         bound.program.display(),
         open.keys().join(", "),
         open.persona,
@@ -2069,6 +2071,12 @@ pub fn run_grant(open: &purlis_core::secrets::ask::run::OpenRun) -> Shown {
             Offered {
                 id: RUN_ALLOW_ONCE.to_owned(),
                 label: "Allow once".to_owned(),
+                allows: true,
+                preselected: None,
+            },
+            Offered {
+                id: RUN_ALLOW_CHAT.to_owned(),
+                label: "Allow for this chat".to_owned(),
                 allows: true,
                 preselected: None,
             },

@@ -15,8 +15,14 @@
 //! - **One ask for one command of one chat.** The same command run again joins the open ask, and a
 //!   changed one asks again, up to [`MOST_OPEN_PER_CHAT`] open at once, so a chat cannot bury the
 //!   person in notices.
+//! - **Allow for this chat (#5241) binds all of that but the arguments**: the same program and
+//!   the same variables and keys, with any arguments, for the chat's life. A key added asks again.
+//!   It is listed with Allow once's not yet used ([`Asks::given_runs`]), and taken back from the
+//!   next run ([`Asks::revoke_run`]): a run already going is not stopped, since it holds its
+//!   values by then.
 //! - **Don't allow is remembered for the chat, the program and the vault**, as a decline is: that
-//!   chat is told so at once from then on, whatever the arguments, and nothing is asked.
+//!   chat is told so at once from then on, whatever the arguments, and nothing is asked. What the
+//!   chat was given of them goes with it.
 //! - **Only the window answers** ([`Asks::answer_run`]), as for every Secret ask.
 //!
 //! An open ask outlives a restart of the app as a Secret ask does, since a command that stopped
@@ -145,8 +151,77 @@ fn keys_of(bound: &Bound) -> Vec<String> {
 pub enum RunAnswer {
     /// One run of exactly this command.
     Once,
+    /// This program with these variables and keys and any arguments, until the chat ends.
+    ForChat,
     /// Don't allow: this chat is not asked about this program and vault again.
     Refuse,
+}
+
+/// The audit's kind for a Run grant the person gave.
+pub const GRANT_AUDITED: &str = "trust.run_grant.grant";
+/// The audit's kind for a Run grant taken back.
+pub const REVOKE_AUDITED: &str = "trust.run_grant.revoke";
+/// The audit's kind for a Don't allow.
+pub const REFUSE_AUDITED: &str = "trust.run_grant.refuse";
+
+/// **A Run grant given, taken back or not allowed, as the audit records it** (#5241, ADR 0075 §4):
+/// who, the level, the program, the keys, the vault and the chat. **Never a value, and never the
+/// command's arguments**, which are the chat's words and may hold anything.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Audited<'a> {
+    kind: &'static str,
+    level: &'static str,
+    bound: &'a Bound,
+}
+
+impl<'a> Audited<'a> {
+    /// The person's `answer` on an ask for `bound`.
+    pub fn granted(bound: &'a Bound, answer: RunAnswer) -> Self {
+        let (kind, level) = match answer {
+            RunAnswer::Once => (GRANT_AUDITED, "once"),
+            RunAnswer::ForChat => (GRANT_AUDITED, "chat"),
+            RunAnswer::Refuse => (REFUSE_AUDITED, "chat"),
+        };
+        Self { kind, level, bound }
+    }
+
+    /// The person took back `bound`'s grant, which was good `once` or for the chat.
+    pub fn revoked(bound: &'a Bound, once: bool) -> Self {
+        Self {
+            kind: REVOKE_AUDITED,
+            level: if once { "once" } else { "chat" },
+            bound,
+        }
+    }
+
+    /// The event's kind.
+    pub fn kind(&self) -> &'static str {
+        self.kind
+    }
+
+    /// The event's body.
+    pub fn body(&self) -> Value {
+        serde_json::json!({
+            "actor_kind": "human",
+            "actor": "operator",
+            "scope": "local-ui",
+            "level": self.level,
+            "program": self.bound.program.display().to_string(),
+            "keys": keys_of(self.bound),
+            "vault": self.bound.vault,
+            "chat": self.bound.chat,
+        })
+    }
+}
+
+/// **A Run grant the chat has not used up** ([`Asks::given_runs`]), for the Granted list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GivenRun {
+    pub id: u32,
+    pub bound: Bound,
+    /// Good for one run of exactly its arguments; otherwise for any, for the chat's life.
+    pub once: bool,
+    pub at: u64,
 }
 
 /// What an answer did: the chats to nudge, whose command stopped waiting before it, and what each
@@ -194,9 +269,12 @@ pub(super) struct RunAsked {
 /// One grant the person gave.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Given {
+    /// What Revoke is sent by: numbered with the asks, so never one of theirs.
+    id: u32,
     bound: Bound,
     /// Good for one run of exactly its arguments; otherwise for any, for the chat's life.
     once: bool,
+    at: u64,
 }
 
 /// The Run grants half of [`Inner`].
@@ -427,6 +505,44 @@ impl Asks {
         self.inner().runs.take(bound)
     }
 
+    /// **Every Run grant given and not used up**, oldest first, for the Granted list.
+    pub fn given_runs(&self) -> Vec<GivenRun> {
+        let inner = self.inner();
+        let mut given: Vec<GivenRun> = inner
+            .runs
+            .given
+            .iter()
+            .map(|one| GivenRun {
+                id: one.id,
+                bound: one.bound.clone(),
+                once: one.once,
+                at: one.at,
+            })
+            .collect();
+        given.sort_by_key(|one| (one.at, one.id));
+        given
+    }
+
+    /// **Takes back Run grant `id`**, from `by`: refused from anywhere but the window. It applies
+    /// from the chat's next run; one going holds its values already and is not stopped.
+    pub fn revoke_run(&self, id: u32, by: Answerer) -> Result<GivenRun, String> {
+        if by.scope() != HumanScope::LocalUi {
+            return Err("a run grant is taken back in purlis's window only".to_owned());
+        }
+        let mut inner = self.inner();
+        let Some(at) = inner.runs.given.iter().position(|one| one.id == id) else {
+            return Err("purlis did not remove it: it is no longer there.".to_owned());
+        };
+        let gone = inner.runs.given.remove(at);
+        drop(inner);
+        Ok(GivenRun {
+            id: gone.id,
+            bound: gone.bound,
+            once: gone.once,
+            at: gone.at,
+        })
+    }
+
     /// **Every ask to allow a program open now**, longest waiting first.
     pub fn open_runs(&self) -> Vec<OpenRun> {
         let inner = self.inner();
@@ -468,12 +584,40 @@ impl Asks {
                     }
                 }
                 if !held {
+                    inner.next += 1;
+                    let id = inner.next;
                     inner.runs.given.push(Given {
+                        id,
                         bound: bound.clone(),
                         once: true,
+                        at: now_secs(),
                     });
                 }
                 Answer::Allowed { scope: Scope::Once }
+            }
+            RunAnswer::ForChat => {
+                // Every run holding on this ask goes on, and every other this grant covers.
+                let mut covered = asked.waiters;
+                let mut at = 0;
+                while at < inner.runs.open.len() {
+                    if inner.runs.open[at].open.bound.same_but_args(&bound) {
+                        covered.extend(inner.runs.open.remove(at).waiters);
+                    } else {
+                        at += 1;
+                    }
+                }
+                for waiter in covered {
+                    held |= reach(RunSettled::Allowed, waiter);
+                }
+                inner.next += 1;
+                let id = inner.next;
+                inner.runs.given.push(Given {
+                    id,
+                    bound: bound.clone(),
+                    once: false,
+                    at: now_secs(),
+                });
+                Answer::Allowed { scope: Scope::Chat }
             }
             RunAnswer::Refuse => {
                 for waiter in asked.waiters {
@@ -483,6 +627,11 @@ impl Asks {
                     .runs
                     .refused
                     .insert((bound.chat, bound.program.clone(), bound.vault.clone()));
+                inner.runs.given.retain(|one| {
+                    one.bound.chat != bound.chat
+                        || one.bound.program != bound.program
+                        || one.bound.vault != bound.vault
+                });
                 Answer::KeptBlocked { reason: None }
             }
         };
@@ -512,6 +661,7 @@ impl Asks {
                     "what",
                     Value::from(match answer {
                         RunAnswer::Once => "allowed once",
+                        RunAnswer::ForChat => "allowed for this chat",
                         RunAnswer::Refuse => "not allowed",
                     }),
                 ),

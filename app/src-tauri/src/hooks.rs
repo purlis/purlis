@@ -3142,6 +3142,23 @@ impl Hooks {
         )
     }
 
+    /// **Records a Run grant given, taken back or not allowed** (ADR 0111, #5241), under the chat
+    /// it is of: before it takes effect, so no grant is made unrecorded.
+    pub fn record_run_grant(
+        &self,
+        root: &Path,
+        chat: u32,
+        audited: &purlis_core::secrets::ask::run::Audited<'_>,
+    ) -> Result<(), String> {
+        self.audit(
+            root,
+            Some(chat),
+            audited.kind(),
+            audited.body(),
+            ("changed", "run grant"),
+        )
+    }
+
     /// **Records a proposed change the person applied** (#1975, PC-4), under chat `number`:
     /// before the file is written, so nothing is applied unrecorded.
     pub fn record_proposed(

@@ -85,6 +85,8 @@ pub async fn link_secret_ask(
 pub enum RunGrantPress {
     /// One run of exactly this command.
     Once,
+    /// This program with these variables and keys and any arguments, until the chat ends.
+    Chat,
     /// Don't allow.
     Refuse,
 }
@@ -112,11 +114,33 @@ pub fn run_grant_answered(
     id: u32,
     press: RunGrantPress,
 ) -> Result<(), String> {
-    use purlis_core::secrets::ask::run::RunAnswer;
+    use purlis_core::secrets::ask::run::{Audited, RunAnswer};
     let answer = match press {
         RunGrantPress::Once => RunAnswer::Once,
+        RunGrantPress::Chat => RunAnswer::ForChat,
         RunGrantPress::Refuse => RunAnswer::Refuse,
     };
+    let Some(open) = held
+        .secret_asks()
+        .open_runs()
+        .into_iter()
+        .find(|open| open.id == id)
+    else {
+        return Err(format!("secret ask {id} is no longer open"));
+    };
+    let audited = held.hooks().record_run_grant(
+        held.root(),
+        open.bound.chat,
+        &Audited::granted(&open.bound, answer),
+    );
+    // Nothing is granted unrecorded. A Don't allow stands either way: it gives nothing.
+    match (answer, audited) {
+        (_, Ok(())) => {}
+        (RunAnswer::Refuse, Err(why)) => {
+            tracing::warn!("purlis: a run grant's Don't allow was not audited ({why})");
+        }
+        (_, Err(why)) => return Err(why),
+    }
     let answered = held
         .secret_asks()
         .answer_run(id, answer, crate::asking::the_window());

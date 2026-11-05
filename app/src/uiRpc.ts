@@ -6298,7 +6298,13 @@ export type GrantWhat =
  *  on, for the browser alone, never the chat's own commands. Allowed from the chat's browser
  *  sites Ask (`allow_browser_sites`), never from a block's Allow.
  */
-"browser-site";
+"browser-site" | 
+/**
+ *  A Run grant (ADR 0111, #5241): a program a chat may run with a vault's keys, for that
+ *  chat. Given from its own ask (`answer_run_grant`), never from a block's Allow, and kept in
+ *  memory only.
+ */
+"run-grant";
 
 /**  The folders chats may be granted, and those just dropped from the list. */
 export type GrantableFolders = {
@@ -10756,6 +10762,8 @@ export type RunEndedOnARunner = {
 export type RunGrantPress = 
 /**  One run of exactly this command. */
 "once" | 
+/**  This program with these variables and keys and any arguments, until the chat ends. */
+"chat" | 
 /**  Don't allow. */
 "refuse";
 

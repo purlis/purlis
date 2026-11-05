@@ -2423,5 +2423,5 @@ fn a_run_grant_shows_the_apps_facts_apart_from_the_chats_inert_command() {
         shown.says
     );
     let labels: Vec<_> = shown.options.iter().map(|one| one.label.as_str()).collect();
-    assert_eq!(labels, ["Allow once", "Don't allow"]);
+    assert_eq!(labels, ["Allow once", "Allow for this chat", "Don't allow"]);
 }

@@ -250,3 +250,154 @@ fn a_chat_has_at_most_so_many_asks_open() {
     stopped(&asks, bound(8, &["a"]));
     assert_eq!(asks.open_runs().len(), MOST_OPEN_PER_CHAT + 1, "per chat");
 }
+
+/// The one ask open for `bound`'s chat, answered from the window.
+fn answer_open(asks: &Asks, answer: RunAnswer) {
+    let open = asks.open_runs();
+    asks.answer_run(open[0].id, answer, window()).unwrap();
+}
+
+#[test]
+fn allow_for_this_chat_runs_any_arguments_of_that_program_and_keys() {
+    let asks = Asks::new(std::path::Path::new("/nowhere"));
+    stopped(&asks, bound(1, &["get"]));
+    answer_open(&asks, RunAnswer::ForChat);
+    assert_eq!(stopped(&asks, bound(1, &["get"])), RunHeld::Allowed);
+    assert_eq!(stopped(&asks, bound(1, &["delete", "x"])), RunHeld::Allowed);
+    assert!(asks.open_runs().is_empty(), "nothing more was asked");
+}
+
+#[test]
+fn allow_for_this_chat_answers_every_open_ask_it_covers_and_leaves_the_rest() {
+    let asks = Asks::new(std::path::Path::new("/nowhere"));
+    stopped(&asks, bound(1, &["get"]));
+    stopped(&asks, bound(1, &["delete"]));
+    stopped(&asks, bound(2, &["get"]));
+    let first = asks.open_runs()[0].id;
+    let answered = asks
+        .answer_run(first, RunAnswer::ForChat, window())
+        .unwrap();
+    assert_eq!(answered.nudge, [1], "one chat, nudged once");
+    let open = asks.open_runs();
+    assert_eq!(open.len(), 1, "{open:?}");
+    assert_eq!(open[0].bound.chat, 2, "another chat's stays open");
+}
+
+#[test]
+fn a_key_added_to_what_a_chat_was_allowed_asks_again() {
+    let asks = Asks::new(std::path::Path::new("/nowhere"));
+    stopped(&asks, bound(1, &[]));
+    answer_open(&asks, RunAnswer::ForChat);
+    let mut more = bound(1, &[]);
+    more.env.push("U=OTHER".into());
+    assert!(matches!(stopped(&asks, more), RunHeld::StillOpen { .. }));
+    assert_eq!(asks.open_runs().len(), 1, "a key added asks again");
+}
+
+#[test]
+fn allow_for_this_chat_ends_with_the_chat_and_reaches_no_other() {
+    let asks = Asks::new(std::path::Path::new("/nowhere"));
+    stopped(&asks, bound(1, &[]));
+    answer_open(&asks, RunAnswer::ForChat);
+    assert!(matches!(
+        stopped(&asks, bound(2, &[])),
+        RunHeld::StillOpen { .. }
+    ));
+    asks.forget(1);
+    assert!(asks.given_runs().is_empty());
+    assert!(matches!(
+        stopped(&asks, bound(1, &[])),
+        RunHeld::StillOpen { .. }
+    ));
+}
+
+#[test]
+fn a_grant_is_listed_and_revoked_and_the_next_run_asks_again() {
+    let asks = Asks::new(std::path::Path::new("/nowhere"));
+    stopped(&asks, bound(1, &[]));
+    answer_open(&asks, RunAnswer::ForChat);
+    let given = asks.given_runs();
+    assert_eq!(given.len(), 1);
+    assert!(!given[0].once);
+    let gone = asks.revoke_run(given[0].id, window()).unwrap();
+    assert_eq!(gone.bound, bound(1, &[]));
+    assert!(asks.given_runs().is_empty());
+    assert!(matches!(
+        stopped(&asks, bound(1, &[])),
+        RunHeld::StillOpen { .. }
+    ));
+    assert!(
+        asks.revoke_run(given[0].id, window()).is_err(),
+        "it is no longer there"
+    );
+}
+
+#[test]
+fn an_allow_once_not_yet_used_is_listed_and_goes_when_it_is_used() {
+    let asks = Asks::new(std::path::Path::new("/nowhere"));
+    stopped(&asks, bound(1, &["get"]));
+    answer_open(&asks, RunAnswer::Once);
+    assert!(asks.given_runs()[0].once);
+    assert_eq!(stopped(&asks, bound(1, &["get"])), RunHeld::Allowed);
+    assert!(asks.given_runs().is_empty());
+}
+
+#[test]
+fn only_the_window_revokes_a_grant() {
+    let asks = Asks::new(std::path::Path::new("/nowhere"));
+    stopped(&asks, bound(1, &[]));
+    answer_open(&asks, RunAnswer::ForChat);
+    let id = asks.given_runs()[0].id;
+    assert!(
+        asks.revoke_run(id, Answerer::admitted(Admitted::Approval).unwrap())
+            .is_err()
+    );
+    assert_eq!(asks.given_runs().len(), 1);
+}
+
+#[test]
+fn dont_allow_takes_back_what_that_chat_was_given_of_that_program_and_vault() {
+    let asks = Asks::new(std::path::Path::new("/nowhere"));
+    stopped(&asks, bound(1, &[]));
+    answer_open(&asks, RunAnswer::ForChat);
+    let mut more = bound(1, &[]);
+    more.env.push("U=OTHER".into());
+    stopped(&asks, more.clone());
+    answer_open(&asks, RunAnswer::Refuse);
+    assert!(asks.given_runs().is_empty());
+    assert!(matches!(
+        stopped(&asks, bound(1, &[])),
+        RunHeld::Refused { .. }
+    ));
+}
+
+#[test]
+fn a_kept_ask_comes_back_but_never_a_chat_grant() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(crate::names::state(tmp.path()).join("app")).unwrap();
+    let asks = Asks::kept(tmp.path());
+    stopped(&asks, bound(1, &[]));
+    answer_open(&asks, RunAnswer::ForChat);
+    assert!(Asks::kept(tmp.path()).given_runs().is_empty());
+}
+
+#[test]
+fn what_the_audit_says_names_the_program_keys_vault_scope_and_chat_and_nothing_of_the_command() {
+    let mut one = bound(4, &["--token", "s3cret-in-an-argument"]);
+    one.file.push("KUBECONFIG=config".into());
+    let audited = Audited::granted(&one, RunAnswer::ForChat);
+    assert_eq!(audited.kind(), GRANT_AUDITED);
+    let body = audited.body();
+    assert_eq!(body["program"], "/usr/bin/curl");
+    assert_eq!(body["keys"], serde_json::json!(["TOKEN", "config"]));
+    assert_eq!(body["vault"], "team");
+    assert_eq!(body["level"], "chat");
+    assert_eq!(body["chat"], 4);
+    assert!(!body.to_string().contains("s3cret"), "{body}");
+    assert_eq!(Audited::revoked(&one, true).kind(), REVOKE_AUDITED);
+    assert_eq!(Audited::revoked(&one, true).body()["level"], "once");
+    assert_eq!(
+        Audited::granted(&one, RunAnswer::Refuse).kind(),
+        REFUSE_AUDITED
+    );
+}

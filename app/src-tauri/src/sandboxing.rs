@@ -1358,6 +1358,9 @@ fn shown_draft(
 
 // ---- a block's Allow, and every grant (#1342, #1348) -----------------------------------------
 
+/// How a Run grant is named in the Granted list's ids.
+const RUN_GRANT: &str = "run-grant";
+
 /// What a grant names, as the window sends it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
@@ -1390,6 +1393,10 @@ pub enum GrantWhat {
     /// on, for the browser alone, never the chat's own commands. Allowed from the chat's browser
     /// sites Ask (`allow_browser_sites`), never from a block's Allow.
     BrowserSite,
+    /// A Run grant (ADR 0111, #5241): a program a chat may run with a vault's keys, for that
+    /// chat. Given from its own ask (`answer_run_grant`), never from a block's Allow, and kept in
+    /// memory only.
+    RunGrant,
 }
 
 impl GrantWhat {
@@ -1415,6 +1422,7 @@ impl GrantWhat {
             Self::Listen => "listen",
             Self::Browser => sandbox::local::BROWSER,
             Self::BrowserSite => sandbox::local::BROWSER_SITE,
+            Self::RunGrant => RUN_GRANT,
         }
     }
 
@@ -1430,6 +1438,7 @@ impl GrantWhat {
             Self::Listen,
             Self::Browser,
             Self::BrowserSite,
+            Self::RunGrant,
         ]
         .into_iter()
         .find(|what| what.word() == word)
@@ -1658,6 +1667,13 @@ pub(crate) fn judged(
         );
     }
     let what = match what {
+        GrantWhat::RunGrant => {
+            return refused(
+                "purlis allows a program with a vault's keys from the ask it raises, not from a \
+                 block's."
+                    .to_owned(),
+            );
+        }
         GrantWhat::Vault => {
             return refused(
                 "purlis allows a vault from the notice its refusal raises, not from a block's."
@@ -2449,6 +2465,84 @@ const SEP: char = '\u{1f}';
 
 /// **Every grant in force for the project at `root`** (#1348): each open chat's (a closed
 /// chat's ended with it, D-1348-1), yours (hosts and folders), and the project's own hosts.
+/// What a Run grant lets its chat run, as the Granted list says it: never its arguments, which
+/// are the chat's words.
+fn run_grant_target(bound: &purlis_core::secrets::ask::run::Bound) -> String {
+    let mut keys: Vec<&str> = bound
+        .env
+        .iter()
+        .chain(&bound.file)
+        .filter_map(|spec| spec.split_once('=').map(|(_, key)| key))
+        .collect();
+    keys.sort_unstable();
+    keys.dedup();
+    format!(
+        "{} with {} from vault {}",
+        bound.program.display(),
+        keys.join(", "),
+        bound.vault
+    )
+}
+
+/// The number of the Run grant a Granted list's `id` names, where it names one.
+fn run_grant_of(id: &str) -> Option<u32> {
+    let parts: Vec<&str> = id.split(SEP).collect();
+    match parts.as_slice() {
+        ["once" | "chat", RUN_GRANT, number] => number.parse().ok(),
+        _ => None,
+    }
+}
+
+/// **Every Allow on the list** ([`grants_of`]), with the programs chats may run with a vault's keys
+/// (ADR 0111, #5241), each of its chat alone and first, as a chat's own grants are.
+fn all_grants_of(held: &crate::planes::Held) -> Vec<SandboxGrant> {
+    let mut out: Vec<SandboxGrant> = held
+        .secret_asks()
+        .given_runs()
+        .into_iter()
+        .map(|one| {
+            let level = if one.once {
+                sandbox::grant::Level::Once
+            } else {
+                sandbox::grant::Level::Chat
+            };
+            SandboxGrant {
+                id: format!("{}{SEP}{RUN_GRANT}{SEP}{}", level.word(), one.id),
+                what: GrantWhat::RunGrant,
+                target: run_grant_target(&one.bound),
+                persona: None,
+                level: level.into(),
+                by: None,
+                at: u32::try_from(one.at).ok(),
+                chat: held.chats().shown_name(one.bound.chat),
+                locked: None,
+                waiting: None,
+                for_no_persona: false,
+                expected: false,
+                cautions: None,
+            }
+        })
+        .collect();
+    out.extend(grants_of(held.root(), held.chats(), held.browsers()));
+    out
+}
+
+/// **Takes back Run grant `number`** (#5241), audited first. It applies from its chat's next run.
+fn revoke_run_grant(held: &crate::planes::Held, number: u32) -> Result<(), String> {
+    use purlis_core::secrets::ask::run::Audited;
+    let asks = held.secret_asks();
+    let Some(one) = asks.given_runs().into_iter().find(|one| one.id == number) else {
+        return Err("purlis did not remove it: it is no longer there.".to_owned());
+    };
+    held.hooks().record_run_grant(
+        held.root(),
+        one.bound.chat,
+        &Audited::revoked(&one.bound, one.once),
+    )?;
+    asks.revoke_run(number, crate::asking::the_window())?;
+    Ok(())
+}
+
 fn grants_of(
     root: &std::path::Path,
     chats: &crate::chats::Chats,
@@ -2713,7 +2807,10 @@ fn grants_of(
                 level,
             ),
             // A vault's row and a browser's were given their own lock as they were listed.
-            GrantWhat::Vault | GrantWhat::Browser | GrantWhat::BrowserSite => one.locked.take(),
+            GrantWhat::Vault
+            | GrantWhat::Browser
+            | GrantWhat::BrowserSite
+            | GrantWhat::RunGrant => one.locked.take(),
             // Only hosts a chat would reach are listed for a persona (#1362).
             GrantWhat::PersonaHosts => None,
             // A socket or a service of the system's name lookup is never granted (#2657): one
@@ -2805,7 +2902,8 @@ fn revoke(
         GrantWhat::Vault
         | GrantWhat::PersonaHosts
         | GrantWhat::Browser
-        | GrantWhat::BrowserSite => return Err(gone()),
+        | GrantWhat::BrowserSite
+        | GrantWhat::RunGrant => return Err(gone()),
         GrantWhat::Host => What::Host(sandbox::hosts::Host::parse(target).map_err(|_| gone())?),
         GrantWhat::Write => What::Write(std::path::PathBuf::from(target)),
         GrantWhat::Socket => What::Socket(std::path::PathBuf::from(target)),
@@ -3024,7 +3122,7 @@ pub async fn sandbox_grants(
     let held = planes.held(&plane)?;
     // On a blocking thread: naming who committed the project's hosts asks git (#1543).
     crate::off_the_window("reading the sandbox grants", move || {
-        Ok(grants_of(held.root(), held.chats(), held.browsers()))
+        Ok(all_grants_of(&held))
     })
     .await
 }
@@ -3045,6 +3143,10 @@ pub async fn revoke_sandbox_grant(
     crate::off_the_window("revoking a sandbox grant", move || {
         let root = held.root();
         let audit = held.audit_then_record(network.as_ref());
+        if let Some(number) = run_grant_of(&id) {
+            revoke_run_grant(&held, number)?;
+            return Ok(all_grants_of(&held));
+        }
         match browser_site_of(&id) {
             // A browser site's (#2018): its browsers end, as a narrowing ends them.
             Some(granted) => {
@@ -3057,7 +3159,7 @@ pub async fn revoke_sandbox_grant(
         if let Some(persona) = browser_always_of(&id) {
             crate::chatbrowsers::always_removed(&held, &plane, persona, &*browsers_ended);
         }
-        Ok(grants_of(root, held.chats(), held.browsers()))
+        Ok(all_grants_of(&held))
     })
     .await
 }
