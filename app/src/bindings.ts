@@ -3405,11 +3405,11 @@ export const commands = {
 	 */
 	poolSetupCreate: (adding: PoolAdding) => typedError<PoolSetupCreated, string>(__TAURI_INVOKE("pool_setup_create", { adding })),
 	/**
-	 *  **What Sign-ins' button runs, by hand, for the profiles ticked** (#4718, Q30): `adding`
-	 *  recorded on pool `pool`, then each of `signing_in` signed in there, as the core spells it. None
-	 *  where the button would run nothing. It only spells.
+	 *  **What Sign-ins' button runs, by hand, for the profiles ticked** (#4718, #5174, Q30): `adding`
+	 *  recorded on pool `pool`, each of `taking_off` taken off it, then each of `signing_in` signed in
+	 *  there, as the core spells it. None where the button would run nothing. It only spells.
 	 */
-	poolSetupSignInsByHand: (pool: string, adding: string[], signingIn: string[]) => typedError<{
+	poolSetupSignInsByHand: (pool: string, adding: string[], takingOff: string[], signingIn: string[]) => typedError<{
 	note: string,
 	text: string,
 } | null, string>(__TAURI_INVOKE("pool_setup_sign_ins_by_hand", { pool, adding, signingIn })),
@@ -5551,6 +5551,13 @@ export type Asking = {
 	 */
 	with_asking_chat: WithAskingChat[],
 };
+
+/**  Which command's question it is. */
+export type Asks = 
+	/**  `purlis profile sign-in --pool`. */
+	"sign-in"
+	/**  `purlis pool remove-profile`: its runner forgets the profile, and its sign-in there. */
+	| "take-off";
 
 /**  What a chat's row says while it is at its task limit. */
 export type AtLimit = {
@@ -11814,6 +11821,7 @@ export type PoolSetupTried = {
 /**  What the person is asked. */
 export type PoolSignInAsk = {
 	id: number,
+	asks: Asks,
 	profile: string,
 	pool: string,
 	/**  What the terminal of the command that asks shows. */

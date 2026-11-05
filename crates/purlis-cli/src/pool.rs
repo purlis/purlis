@@ -73,6 +73,19 @@ pub enum PoolCommand {
         #[arg(required = true)]
         profiles: Vec<String>,
     },
+    /// Take a profile off a pool: its runner forgets it first, and its sign-in there with it, and
+    /// then the pool leaves it out.
+    ///
+    /// This is what Pool setup's Sign-ins button does to a profile you untick. Only the running
+    /// purlis window can reach the runner, so you confirm it there, against the code this prints,
+    /// and with no window it refuses. Run it in your project's folder if the pool names no
+    /// profiles.
+    RemoveProfile {
+        /// The pool's name.
+        pool: String,
+        /// The profile, by name, as `purlis pool setup` shows it.
+        profile: String,
+    },
     /// Pool setup: each step's state and what to do next, for a pool or a new one. It only reads.
     Setup {
         /// The pool. Without it, a new Docker pool.
@@ -129,6 +142,11 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
              Run it in your own terminal, or use Pool setup in the window."
                 .to_owned(),
         ),
+        PoolCommand::RemoveProfile { .. } if in_a_chat => Err(
+            "Taking a profile off a pool deletes its sign-in there, which is the person's choice \
+             and not a chat's. Run it in your own terminal, or use Pool setup in the window."
+                .to_owned(),
+        ),
         PoolCommand::Add { .. } if in_a_chat => Err(
             "Adding a pool uses this machine's Docker, which a chat doesn't reach. Run it in your \
              own terminal, or use Pool setup in the window."
@@ -159,9 +177,7 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
             added(&config()?, &asked)
         }
         PoolCommand::AddProfile { pool, profiles } => {
-            let project = std::env::current_dir()
-                .ok()
-                .and_then(|cwd| purlis_core::plane::find_root(&cwd).ok());
+            let project = project_here();
             let config = config()?;
             poolsetup::signins::record(&config, project.as_deref(), pool, profiles)?;
             // Every profile it keeps now, a project's default added beside them included.
@@ -173,6 +189,20 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
                  asked, and Pool setup's Sign-ins step picks this up.",
                 keeps.join(", ")
             ));
+            Ok(0)
+        }
+        PoolCommand::RemoveProfile { pool, profile } => {
+            let project = project_here();
+            let config = config()?;
+            poolsetup::signins::may_take_off(&config, project.as_deref(), pool, profile)?;
+            let note = taken_off(&config, project.as_deref(), pool, profile)?;
+            crate::voice::ok(format!(
+                "Pool {pool} no longer keeps '{profile}', and Pool setup's Sign-ins step picks \
+                 this up."
+            ));
+            if let Some(note) = note {
+                crate::voice::info(note);
+            }
             Ok(0)
         }
         PoolCommand::Setup { name, json } => {
@@ -247,6 +277,47 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
             Ok(0)
         }
     }
+}
+
+/// The project whose folder this runs in, if it runs in one.
+fn project_here() -> Option<std::path::PathBuf> {
+    std::env::current_dir()
+        .ok()
+        .and_then(|cwd| purlis_core::plane::find_root(&cwd).ok())
+}
+
+/// **Has the running window take `name` off pool `pool`**, on the person's yes there, which alone
+/// can reach its runner.
+#[cfg(unix)]
+fn taken_off(
+    config: &std::path::Path,
+    project: Option<&std::path::Path>,
+    pool: &str,
+    name: &str,
+) -> Result<Option<String>, String> {
+    use purlis_core::windowline;
+    let code = windowline::a_new_code();
+    windowline::taken_off(config, project, pool, name, &code, |asked| {
+        crate::voice::info(format!(
+            "Confirm taking '{name}' off pool {pool} in the purlis window, if it shows the code \
+             {code}…"
+        ));
+        windowline::ask(asked)
+    })
+}
+
+/// A runner is never Windows, and no window line reaches one from there.
+#[cfg(not(unix))]
+fn taken_off(
+    _config: &std::path::Path,
+    _project: Option<&std::path::Path>,
+    pool: &str,
+    name: &str,
+) -> Result<Option<String>, String> {
+    Err(format!(
+        "taking '{name}' off pool {pool} is confirmed in the purlis window, which this command \
+         cannot reach on this system, so nothing changed. Use Pool setup in the window."
+    ))
 }
 
 /// **Adds the pool `asked` asks for**, as Pool setup's button does.

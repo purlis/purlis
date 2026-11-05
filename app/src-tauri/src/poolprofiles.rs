@@ -580,10 +580,29 @@ pub fn listen_for_the_command_line() {
                     )
                 },
                 |name, pool, code| match APP.get() {
-                    Some(app) => {
-                        crate::poolsignin_confirm::ask_the_person(app, name, pool, code, hung_up)
-                    }
+                    Some(app) => crate::poolsignin_confirm::ask_the_person(
+                        app,
+                        crate::poolsignin_confirm::Asks::SignIn,
+                        name,
+                        pool,
+                        code,
+                        hung_up,
+                    ),
                     None => Err("this window is still starting".to_owned()),
+                },
+                |name, pool, code, project| {
+                    let Some(app) = APP.get() else {
+                        return Err("this window is still starting".to_owned());
+                    };
+                    crate::poolsignin_confirm::ask_the_person(
+                        app,
+                        crate::poolsignin_confirm::Asks::TakeOff,
+                        name,
+                        pool,
+                        code,
+                        hung_up,
+                    )?;
+                    take_off(&config, project, pool, name)
                 },
             )
         });
@@ -1406,33 +1425,43 @@ pub async fn pool_profile_remove(
 ) -> Result<Option<String>, String> {
     let root = root_of(&planes, open.plane.as_ref())?;
     tauri::async_runtime::spawn_blocking(move || {
-        let config = config_root()?;
-        let yours = yours(&config, &pool)?;
-        changeable(&config, &pool, root.as_deref())?;
-        let shown = purlis_core::shown::short(&name);
-        // First: no drain carries its sign-in back to the pool's runner (#4145).
-        purlis_core::runners::hold_from_carrying(&config, &pool, &name)
-            .map_err(|why| why.to_string())?;
-        let to = to_a_runner(&config, &pool, Waking::Yes, &yours)?;
-        let forgotten = crate::runnerlinks::forget_profile(&to, &name).map_err(|why| {
-            format!(
-                "pool {pool}'s runner did not forget the profile '{shown}', so it stays on the \
-                 pool: {why}"
-            )
-        })?;
-        let default = default_in(root.as_deref(), &profilestore::list(&config)?);
-        purlis_core::runners::remove_pool_profile(&config, &pool, &name, default.as_deref())
-            .map_err(|why| why.to_string())?;
-        let_go_everywhere(&pool, &name);
-        Ok(forgotten.is_none().then(|| {
-            format!(
-                "The profile '{shown}' is off pool {pool}, but its runner runs a purlis before \
-                 1.52, so it keeps the profile and its sign-in until the runner is made again."
-            )
-        }))
+        take_off(&config_root()?, root.as_deref(), &pool, &name)
     })
     .await
     .map_err(|why| format!("the profile was not removed: {why}"))?
+}
+
+/// **Takes the profile `name` off pool `pool`**, with `root` the project whose default a pool that
+/// names no profiles keeps: the runner forgets it first, then the record leaves it out. What the
+/// window's Remove and `purlis pool remove-profile` both do (#5174).
+fn take_off(
+    config: &Path,
+    root: Option<&Path>,
+    pool: &str,
+    name: &str,
+) -> Result<Option<String>, String> {
+    let yours = yours(config, pool)?;
+    changeable(config, pool, root)?;
+    let shown = purlis_core::shown::short(name);
+    // First: no drain carries its sign-in back to the pool's runner (#4145).
+    purlis_core::runners::hold_from_carrying(config, pool, name).map_err(|why| why.to_string())?;
+    let to = to_a_runner(config, pool, Waking::Yes, &yours)?;
+    let forgotten = crate::runnerlinks::forget_profile(&to, name).map_err(|why| {
+        format!(
+            "pool {pool}'s runner did not forget the profile '{shown}', so it stays on the \
+             pool: {why}"
+        )
+    })?;
+    let default = default_in(root, &profilestore::list(config)?);
+    purlis_core::runners::remove_pool_profile(config, pool, name, default.as_deref())
+        .map_err(|why| why.to_string())?;
+    let_go_everywhere(pool, name);
+    Ok(forgotten.is_none().then(|| {
+        format!(
+            "The profile '{shown}' is off pool {pool}, but its runner runs a purlis before \
+             1.52, so it keeps the profile and its sign-in until the runner is made again."
+        )
+    }))
 }
 
 /// The open project a command is asked for: a type of its own, so its plane stays a `PlaneId`.

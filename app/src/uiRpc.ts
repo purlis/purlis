@@ -3032,6 +3032,13 @@ export type Asking = {
 	with_asking_chat: WithAskingChat[],
 };
 
+/**  Which command's question it is. */
+export type Asks = 
+	/**  `purlis profile sign-in --pool`. */
+	"sign-in"
+	/**  `purlis pool remove-profile`: its runner forgets the profile, and its sign-in there. */
+	| "take-off";
+
 /**  What a chat's row says while it is at its task limit. */
 export type AtLimit = {
 	/**  The limit that binds, as a number. */
@@ -9294,6 +9301,7 @@ export type PoolSetupTried = {
 /**  What the person is asked. */
 export type PoolSignInAsk = {
 	id: number,
+	asks: Asks,
 	profile: string,
 	pool: string,
 	/**  What the terminal of the command that asks shows. */

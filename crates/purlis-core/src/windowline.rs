@@ -11,7 +11,7 @@
 //!
 //! **What keeps this safe.** The socket sits beside the session host's, in the folder only this
 //! user may enter and every chat's sandbox is denied ([`crate::hostsocket`]), and each side
-//! closes a peer of another user unread. It serves two things. [`answer`] refuses a forget of a
+//! closes a peer of another user unread. [`answer`] refuses a forget of a
 //! name still among this machine's profiles as it is asked, so such a line asks what the next
 //! tidy would do anyway. It refuses a keep of anything but one of this machine's profiles, and the
 //! window holds it to the gate its own strip passes, so such a line asks what Sign in on the
@@ -23,6 +23,11 @@
 //! command asks before it reaches a runner or its engine, shows a code the dialog shows too, and
 //! goes on only on the person's answer there. With no window it refuses. A keep from the command
 //! then needs that yes as well.
+//!
+//! **So is a profile taken off a pool from the command** ([`taken_off`], #5174). It is the one
+//! line that takes a live profile's sign-in off a runner, so it asks nothing of a runner until
+//! the person says yes in the window, to that profile, that pool and that code. That yes lets no
+//! keep through: it answers only the question it was asked.
 
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -60,6 +65,17 @@ pub enum Asked {
         code: String,
         config: PathBuf,
     },
+    /// This machine's pool `pool` is to have its profile `name` taken off, by the command: the
+    /// person answers in the window, then its runner forgets it and the pool leaves it out. `code`
+    /// and `config` are as [`Self::ApproveSignIn`]'s; `project` is the project whose folder the
+    /// command runs in, whose default a pool that names no profiles keeps.
+    TakeOffAPool {
+        name: String,
+        pool: String,
+        code: String,
+        config: PathBuf,
+        project: Option<PathBuf>,
+    },
 }
 
 /// What the window says.
@@ -87,18 +103,21 @@ pub enum Answered {
 /// sign-in off a runner; `keep` only for one it has, so no line puts anything else on one;
 /// `approve`, given the name, the pool and the code, only for a profile it has on a pool it has
 /// that may be signed in on, and a command reading these same files, so the person is asked only
-/// of what the window's own files name.
+/// of what the window's own files name; `take_off`, given the name, the pool, the code and the
+/// project, only for a profile that pool keeps, for a command reading these same files.
 pub fn answer(
     config: &Path,
     asked: Asked,
     forget: impl FnOnce(&str) -> Result<Option<String>, String>,
     keep: impl FnOnce(&str, &str) -> Result<Option<String>, String>,
     approve: impl FnOnce(&str, &str, &str) -> Result<Option<String>, String>,
+    take_off: impl FnOnce(&str, &str, &str, Option<&Path>) -> Result<Option<String>, String>,
 ) -> Said {
     let name = match &asked {
         Asked::ForgetOffThePools { name }
         | Asked::KeepOnAPool { name, .. }
-        | Asked::ApproveSignIn { name, .. } => name,
+        | Asked::ApproveSignIn { name, .. }
+        | Asked::TakeOffAPool { name, .. } => name,
     };
     if !crate::profiles::name_ok(name) {
         return Said::Refused {
@@ -139,6 +158,22 @@ pub fn answer(
             }
             approve(name, pool, code)
         }
+        // By what the pool keeps, not what this machine has: a profile gone from here still comes
+        // off.
+        Asked::TakeOffAPool {
+            name,
+            pool,
+            code,
+            config: theirs,
+            project,
+        } => {
+            if let Err(why) = same_command(config, code, theirs).and_then(|()| {
+                crate::poolsetup::signins::may_take_off(config, project.as_deref(), pool, name)
+            }) {
+                return Said::Refused { why };
+            }
+            take_off(name, pool, code, project.as_deref())
+        }
     };
     match said {
         Ok(note) => Said::Asked { note },
@@ -148,16 +183,7 @@ pub fn answer(
 
 /// Why the window would not ask the person of a sign-in on `pool`, if it would not.
 fn may_ask_the_person(config: &Path, pool: &str, code: &str, theirs: &Path) -> Result<(), String> {
-    if !a_code(code) {
-        return Err("that is not a code this purlis made".to_owned());
-    }
-    let same = |one: &Path, other: &Path| match (one.canonicalize(), other.canonicalize()) {
-        (Ok(one), Ok(other)) => one == other,
-        _ => false,
-    };
-    if !same(config, theirs) {
-        return Err("that command reads another config home than this window".to_owned());
-    }
+    same_command(config, code, theirs)?;
     let pools = crate::runners::pool_names(config).map_err(|why| why.to_string())?;
     if !pools.iter().any(|one| one == pool) {
         return Err(format!(
@@ -167,6 +193,22 @@ fn may_ask_the_person(config: &Path, pool: &str, code: &str, theirs: &Path) -> R
     }
     if crate::runnertaint::pool_ran_unsandboxed(config, pool) {
         return Err(crate::runnertaint::signs_nothing_in_on(pool));
+    }
+    Ok(())
+}
+
+/// Refused where `code` is none this purlis made, or the command reads another config home than
+/// `config`.
+fn same_command(config: &Path, code: &str, theirs: &Path) -> Result<(), String> {
+    if !a_code(code) {
+        return Err("that is not a code this purlis made".to_owned());
+    }
+    let same = |one: &Path, other: &Path| match (one.canonicalize(), other.canonicalize()) {
+        (Ok(one), Ok(other)) => one == other,
+        _ => false,
+    };
+    if !same(config, theirs) {
+        return Err("that command reads another config home than this window".to_owned());
     }
     Ok(())
 }
@@ -216,6 +258,44 @@ pub fn approved(
         Answered::Said(Said::Refused { why }) => Err(format!(
             "the purlis window did not confirm signing '{name}' in on pool {pool}: {}. Nothing \
              was started.",
+            shown(&why)
+        )),
+    }
+}
+
+/// **Has the window take profile `name` off pool `pool`, on the person's yes there** (#5174), for
+/// this command, whose config home is `config`, run in the folder of `project`: `ask` puts the
+/// question, with `code`, to the running window, which has the runner forget the profile and then
+/// leaves it out of the pool's record, as its own button does. What the window notes of it comes
+/// back. With no window running, no answer in time, or a no, this says so.
+pub fn taken_off(
+    config: &Path,
+    project: Option<&Path>,
+    pool: &str,
+    name: &str,
+    code: &str,
+    ask: impl FnOnce(&Asked) -> Answered,
+) -> Result<Option<String>, String> {
+    let asked = Asked::TakeOffAPool {
+        name: name.to_owned(),
+        pool: pool.to_owned(),
+        code: code.to_owned(),
+        config: config.to_path_buf(),
+        project: project.map(Path::to_path_buf),
+    };
+    match ask(&asked) {
+        Answered::Said(Said::Asked { note }) => Ok(note.map(|note| shown(&note))),
+        Answered::NoWindow => Err(format!(
+            "only the purlis window can have pool {pool}'s runner forget '{name}', and none is \
+             running, so nothing changed. Open purlis and run this again, or use Pool setup's \
+             Sign-ins step."
+        )),
+        Answered::NoAnswer => Err(format!(
+            "the purlis window did not say in time whether it took '{name}' off pool {pool}. Run \
+             purlis pool setup {pool} to see where it stands."
+        )),
+        Answered::Said(Said::Refused { why }) => Err(format!(
+            "the purlis window did not take '{name}' off pool {pool}: {}.",
             shown(&why)
         )),
     }
@@ -341,6 +421,8 @@ pub fn ask(asked: &Asked) -> Answered {
         Asked::ForgetOffThePools { .. } => THE_WINDOW_ANSWERS_WITHIN,
         Asked::KeepOnAPool { .. } => THE_WINDOW_KEEPS_WITHIN,
         Asked::ApproveSignIn { .. } => THE_PERSON_HAS + THE_WINDOW_SAYS_WITHIN,
+        // The person's answer, then the runner woken and asked to forget it.
+        Asked::TakeOffAPool { .. } => THE_PERSON_HAS + THE_WINDOW_KEEPS_WITHIN,
     };
     ask_on(&socket(), asked, within)
 }

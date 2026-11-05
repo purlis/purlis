@@ -74,8 +74,9 @@ function useAsked(): [PoolSignInAsk | null, () => void] {
 }
 
 /**
- * **A pool sign-in started from the command is confirmed here**: `purlis profile sign-in --pool`
- * waits for this answer. It starts on Cancel, so a Return meant for something else declines it,
+ * **A pool sign-in started from the command is confirmed here**, and so is a profile taken off a
+ * pool from the command (#5174): `purlis profile sign-in --pool` and `purlis pool remove-profile`
+ * wait for this answer. It starts on Cancel, so a Return meant for something else declines it,
  * and its yes is pressed or not taken (`variant: "grants"`), and only once nothing has been typed
  * for a moment. Escape declines too. It shows the code the command's terminal shows, to tell one
  * command from another. Each window draws it, and the question going takes it from all of them.
@@ -97,25 +98,39 @@ export function PoolSignInConfirm() {
       // Taken back already: the core says so, and the dialog goes with it.
     });
   };
+  const takingOff = drawn.asks === "take-off";
   return (
     <AlertDialog
       onClose={() => answer(false)}
-      title={`Sign ${drawn.profile} in on ${drawn.pool}?`}
+      title={
+        takingOff
+          ? `Take ${drawn.profile} off ${drawn.pool}?`
+          : `Sign ${drawn.profile} in on ${drawn.pool}?`
+      }
       titleId="pool-sign-in-confirm"
       aria-describedby="pool-sign-in-confirm-said"
       initialFocus="cancel"
       main={{
-        children: "Sign in",
-        variant: "grants",
+        children: takingOff ? "Take it off" : "Sign in",
+        variant: takingOff ? "danger" : "grants",
         isDisabled: !armed,
         onPress: () => answer(true),
       }}
     >
-      <p id="pool-sign-in-confirm-said">
-        The <code>purlis profile sign-in</code> command asks to sign this profile in on this
-        pool&apos;s runner. Sign in only if you ran it and your terminal shows the code{" "}
-        <code>{drawn.code}</code>. Otherwise, cancel and nothing starts.
-      </p>
+      {takingOff ? (
+        <p id="pool-sign-in-confirm-said">
+          The <code>purlis pool remove-profile</code> command asks to take this profile off this
+          pool. Its runner forgets the profile, and its sign-in there with it. Take it off only if
+          you ran it and your terminal shows the code <code>{drawn.code}</code>. Otherwise, cancel
+          and nothing changes.
+        </p>
+      ) : (
+        <p id="pool-sign-in-confirm-said">
+          The <code>purlis profile sign-in</code> command asks to sign this profile in on this
+          pool&apos;s runner. Sign in only if you ran it and your terminal shows the code{" "}
+          <code>{drawn.code}</code>. Otherwise, cancel and nothing starts.
+        </p>
+      )}
     </AlertDialog>
   );
 }

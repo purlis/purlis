@@ -140,9 +140,7 @@ pub fn record(
         })?;
         crate::profilestore::onrunner::Kept::of(record)?;
     }
-    let default = project
-        .and_then(|root| crate::profiles::for_launch(root).0.for_a_new_chat())
-        .filter(|default| records.iter().any(|r| &r.name == default));
+    let default = default_of(config, project)?;
     runners::add_pool_profiles(config, pool, names, default.as_deref())
         .map_err(|why| why.to_string())
 }
@@ -162,10 +160,48 @@ pub fn changeable(config: &Path, pool: &str, project_open: bool) -> Result<(), S
     Ok(())
 }
 
-/// **What Sign-ins' button runs, by hand** (#4718, Q30): `adding` recorded on pool `pool`, then
-/// each of `signing_in` signed in there. None where it would run nothing.
+/// **Refused, in words, where profile `name` can't be taken off pool `pool`** (#5174): what a
+/// pool that names no profiles keeps is the default of the project at `project`, as
+/// [`changeable`] says, and a profile the pool doesn't keep has nothing to come off. It reads
+/// only, so the runner is asked of nothing this refuses.
+pub fn may_take_off(
+    config: &Path,
+    project: Option<&Path>,
+    pool: &str,
+    name: &str,
+) -> Result<(), String> {
+    changeable(config, pool, project.is_some())?;
+    let default = default_of(config, project)?;
+    let kept = runners::profiles_kept_of(config, pool, default.as_deref())
+        .map_err(|why| why.to_string())?;
+    if kept.iter().any(|one| one == name) {
+        return Ok(());
+    }
+    Err(format!(
+        "pool {pool} doesn't keep the profile '{}', so nothing was taken off",
+        crate::shown::short(name)
+    ))
+}
+
+/// The profile a new chat in the project at `project` gets, where it is one of this machine's:
+/// what a pool that names no profiles keeps.
+pub fn default_of(config: &Path, project: Option<&Path>) -> Result<Option<String>, String> {
+    let records = crate::profilestore::list(config)?;
+    Ok(project
+        .and_then(|root| crate::profiles::for_launch(root).0.for_a_new_chat())
+        .filter(|default| records.iter().any(|r| &r.name == default)))
+}
+
+/// **What Sign-ins' button runs, by hand** (#4718, #5174, Q30): `adding` recorded on pool `pool`,
+/// each of `taking_off` taken off it, then each of `signing_in` signed in there, in the order the
+/// button does them. None where it would run nothing.
 #[must_use]
-pub fn by_hand(pool: &str, adding: &[String], signing_in: &[String]) -> Option<super::See> {
+pub fn by_hand(
+    pool: &str,
+    adding: &[String],
+    taking_off: &[String],
+    signing_in: &[String],
+) -> Option<super::See> {
     let pool = if runners::usable_pool_name(pool).is_ok() {
         crate::shellseg::shell_quote(pool)
     } else {
@@ -187,18 +223,32 @@ pub fn by_hand(pool: &str, adding: &[String], signing_in: &[String]) -> Option<s
         ));
     }
     lines.extend(
+        taking_off
+            .iter()
+            .map(|name| format!("purlis pool remove-profile {pool} {}", profile(name))),
+    );
+    lines.extend(
         signing_in
             .iter()
             .map(|name| format!("purlis profile sign-in {} --pool {pool}", profile(name))),
     );
-    let note = match (adding.is_empty(), lines.len()) {
-        (_, 0) => return None,
-        (true, 1) => "This is the sign-in the button runs.",
-        (true, _) => "These are the sign-ins the button runs.",
-        (false, 1) => "This records the ticked profiles on the pool, as the button does.",
-        (false, _) => {
+    let note = match (adding.is_empty(), taking_off.is_empty(), lines.len()) {
+        (_, _, 0) => return None,
+        (true, true, 1) => "This is the sign-in the button runs.",
+        (true, true, _) => "These are the sign-ins the button runs.",
+        (false, true, 1) => "This records the ticked profiles on the pool, as the button does.",
+        (false, true, _) => {
             "These record the ticked profiles on the pool, then sign in each one that needs it, \
              as the button does."
+        }
+        (true, false, 1) => {
+            "This takes the unticked profile off the pool, as the button does: its runner forgets \
+             it first, and its sign-in there with it. You confirm it in the purlis window."
+        }
+        (_, false, _) => {
+            "These do what the button does, in its order. A profile taken off is forgotten by the \
+             runner first, and its sign-in there with it, and you confirm each one in the purlis \
+             window."
         }
     };
     Some(super::See {

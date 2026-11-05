@@ -82,13 +82,15 @@ const OVER: PoolSetupSizes = {
 
 /** What the core spells for the ticked profiles (#4718), as `poolsetup::signins::by_hand` does. */
 function byHand(args: unknown) {
-  const { pool, adding, signingIn } = args as {
+  const { pool, adding, takingOff, signingIn } = args as {
     pool: string;
     adding: string[];
+    takingOff: string[];
     signingIn: string[];
   };
   const lines = [
     ...(adding.length > 0 ? [`purlis pool add-profile ${pool} ${adding.join(" ")}`] : []),
+    ...takingOff.map((name) => `purlis pool remove-profile ${pool} ${name}`),
     ...signingIn.map((name) => `purlis profile sign-in ${name} --pool ${pool}`),
   ];
   if (lines.length === 0) return null;

@@ -125,14 +125,19 @@ export function SignInsStep({
     new Set((rows ?? []).filter((row) => row.kept || used.has(row.name)).map((row) => row.name));
   // What the button would run, by hand, as the core spells it for what is ticked (#4718, Q30).
   const adding = (rows ?? []).filter((row) => ticked.has(row.name) && !row.kept);
+  const takingOff = (rows ?? []).filter((row) => !ticked.has(row.name) && row.kept);
   const signing = (rows ?? []).filter((row) => ticked.has(row.name) && !row.signedIn);
-  const handKey = JSON.stringify([adding.map((row) => row.name), signing.map((row) => row.name)]);
+  const handKey = JSON.stringify([
+    adding.map((row) => row.name),
+    takingOff.map((row) => row.name),
+    signing.map((row) => row.name),
+  ]);
   /** Not asked yet, or what the core spelled: `null` where the button would run nothing. */
   const [byHand, setByHand] = useState<PoolSetupSee | null | undefined>(undefined);
   useEffect(() => {
-    const [add, sign] = JSON.parse(handKey) as [string[], string[]];
+    const [add, off, sign] = JSON.parse(handKey) as [string[], string[], string[]];
     let current = true;
-    void commands.poolSetupSignInsByHand(pool, add, sign).then((said) => {
+    void commands.poolSetupSignInsByHand(pool, add, off, sign).then((said) => {
       if (current) setByHand(said.status === "ok" ? said.data : undefined);
     });
     return () => {

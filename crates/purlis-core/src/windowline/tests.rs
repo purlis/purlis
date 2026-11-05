@@ -18,6 +18,10 @@ fn no_approve(_: &str, _: &str, _: &str) -> Result<Option<String>, String> {
     panic!("the person is asked nothing")
 }
 
+fn no_take_off(_: &str, _: &str, _: &str, _: Option<&Path>) -> Result<Option<String>, String> {
+    panic!("nothing is taken off")
+}
+
 fn keep(name: &str) -> Asked {
     Asked::KeepOnAPool {
         name: name.to_owned(),
@@ -43,8 +47,9 @@ fn a_profile_on(config: &Path, dir: &Path, name: &str) {
     .expect("made");
 }
 
-/// **No line takes a live profile off a runner** (#4141): what is still among this machine's
-/// profiles is refused, and so is what is not a name.
+/// **A forget takes no live profile off a runner** (#4141): what is still among this machine's
+/// profiles is refused, and so is what is not a name. Only [`Asked::TakeOffAPool`], on the
+/// person's yes, does (#5174).
 #[test]
 fn the_window_forgets_only_a_name_this_machine_no_longer_has() {
     let dir = tempfile::tempdir().unwrap();
@@ -53,11 +58,18 @@ fn the_window_forgets_only_a_name_this_machine_no_longer_has() {
     let never = |_: &str| -> Result<Option<String>, String> { panic!("no runner is asked") };
 
     assert!(matches!(
-        answer(&config, forget("work"), never, no_keep, no_approve),
+        answer(&config, forget("work"), never, no_keep, no_approve, no_take_off),
         Said::Refused { why } if why.contains("still a profile")
     ));
     assert!(matches!(
-        answer(&config, forget("../up"), never, no_keep, no_approve),
+        answer(
+            &config,
+            forget("../up"),
+            never,
+            no_keep,
+            no_approve,
+            no_take_off
+        ),
         Said::Refused { .. }
     ));
     assert_eq!(
@@ -66,7 +78,8 @@ fn the_window_forgets_only_a_name_this_machine_no_longer_has() {
             forget("gone"),
             |name| Ok(Some(format!("{name} kept"))),
             no_keep,
-            no_approve
+            no_approve,
+            no_take_off
         ),
         Said::Asked {
             note: Some("gone kept".to_owned())
@@ -84,7 +97,8 @@ fn a_window_that_could_not_ask_says_so() {
             forget("gone"),
             |_| Err("no engine".to_owned()),
             no_keep,
-            no_approve
+            no_approve,
+            no_take_off
         ),
         Said::Refused {
             why: "no engine".to_owned()
@@ -104,7 +118,14 @@ fn the_window_keeps_only_a_profile_this_machine_has() {
     for name in ["gone", "../up"] {
         assert!(
             matches!(
-                answer(&config, keep(name), no_forget, no_keep, no_approve),
+                answer(
+                    &config,
+                    keep(name),
+                    no_forget,
+                    no_keep,
+                    no_approve,
+                    no_take_off
+                ),
                 Said::Refused { .. }
             ),
             "{name}"
@@ -116,7 +137,8 @@ fn the_window_keeps_only_a_profile_this_machine_has() {
             keep("work"),
             no_forget,
             |name, pool| { Ok(Some(format!("{name} on {pool}"))) },
-            no_approve
+            no_approve,
+            no_take_off
         ),
         Said::Asked {
             note: Some("work on builds".to_owned())
@@ -128,7 +150,8 @@ fn the_window_keeps_only_a_profile_this_machine_has() {
             keep("work"),
             no_forget,
             |_, _| Err("not yours".to_owned()),
-            no_approve
+            no_approve,
+            no_take_off
         ),
         Said::Refused {
             why: "not yours".to_owned()
@@ -320,7 +343,8 @@ fn the_person_is_asked_only_of_a_profile_and_a_pool_this_machine_has() {
                     sign_in(name, pool, &config),
                     no_forget,
                     no_keep,
-                    no_approve
+                    no_approve,
+                    no_take_off
                 ),
                 Said::Refused { .. }
             ),
@@ -336,6 +360,7 @@ fn the_person_is_asked_only_of_a_profile_and_a_pool_this_machine_has() {
             assert_eq!((name, pool, code), ("work", "team", "A1B2C3"));
             Ok(None)
         },
+        no_take_off,
     );
     assert_eq!(yes, Said::Asked { note: None });
 
@@ -414,6 +439,99 @@ fn a_sign_in_goes_on_only_on_the_windows_yes() {
         let said = approved(config, "team", "work", "A1B2C3", |_| answered).unwrap_err();
         assert!(said.contains(says), "{said}");
         assert!(said.contains("othing was started"), "{said}");
+    }
+}
+
+fn take_off(name: &str, pool: &str, config: &Path) -> Asked {
+    Asked::TakeOffAPool {
+        name: name.to_owned(),
+        pool: pool.to_owned(),
+        code: "A1B2C3".to_owned(),
+        config: config.to_path_buf(),
+        project: None,
+    }
+}
+
+/// **#5174: the person is asked only of a profile the pool keeps**, by a command reading the
+/// window's own files, and nothing else on the line takes it off.
+#[test]
+fn a_profile_comes_off_a_pool_only_where_the_pool_keeps_it_and_the_command_is_this_machines() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config");
+    a_profile_on(&config, dir.path(), "work");
+    a_profile_on(&config, dir.path(), "home");
+    a_pool_on(&config);
+    crate::runners::add_pool_profile(&config, "team", "work", None).unwrap();
+    let no_forget = |_: &str| -> Result<Option<String>, String> { panic!("nothing is forgotten") };
+
+    let other = dir.path().join("other");
+    std::fs::create_dir_all(&other).unwrap();
+    for (asked, says) in [
+        (take_off("home", "team", &config), "doesn't keep"),
+        (take_off("../up", "team", &config), "not a profile's name"),
+        (take_off("work", "elsewhere", &config), "elsewhere"),
+        (take_off("work", "team", &other), "another config home"),
+    ] {
+        let said = answer(&config, asked, no_forget, no_keep, no_approve, no_take_off);
+        assert!(
+            matches!(&said, Said::Refused { why } if why.contains(says)),
+            "{says}: {said:?}"
+        );
+    }
+
+    let asked_of = std::cell::RefCell::new(Vec::new());
+    let said = answer(
+        &config,
+        take_off("work", "team", &config),
+        no_forget,
+        no_keep,
+        no_approve,
+        |name, pool, code, _| {
+            asked_of
+                .borrow_mut()
+                .push((name.to_owned(), pool.to_owned(), code.to_owned()));
+            Ok(Some("a note".to_owned()))
+        },
+    );
+    assert_eq!(
+        said,
+        Said::Asked {
+            note: Some("a note".to_owned())
+        }
+    );
+    assert_eq!(
+        asked_of.into_inner(),
+        vec![("work".to_owned(), "team".to_owned(), "A1B2C3".to_owned())]
+    );
+}
+
+/// **#5174**: each way the window doesn't take it off says so, and what the window notes comes
+/// back.
+#[test]
+fn a_profile_taken_off_by_the_command_goes_on_only_on_the_windows_yes() {
+    let config = Path::new("/the/config");
+    let asked = std::cell::Cell::new(None);
+    let yes = taken_off(config, None, "team", "work", "A1B2C3", |what| {
+        asked.set(Some(what.clone()));
+        Answered::Said(Said::Asked {
+            note: Some("it keeps it".to_owned()),
+        })
+    });
+    assert_eq!(yes, Ok(Some("it keeps it".to_owned())));
+    assert_eq!(asked.take(), Some(take_off("work", "team", config)));
+
+    for (answered, says) in [
+        (Answered::NoWindow, "none is running"),
+        (Answered::NoAnswer, "in time"),
+        (
+            Answered::Said(Said::Refused {
+                why: "you said no".to_owned(),
+            }),
+            "you said no",
+        ),
+    ] {
+        let said = taken_off(config, None, "team", "work", "A1B2C3", |_| answered).unwrap_err();
+        assert!(said.contains(says), "{said}");
     }
 }
 
