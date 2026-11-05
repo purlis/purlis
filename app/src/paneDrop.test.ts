@@ -446,7 +446,7 @@ describe("what a drop refuses, with its reason (#4763)", () => {
         judgeDrop(tabs, { kind: "pane", tab, pane }, { kind: "pane", tab, pane, place }, ctx),
       ).toEqual({
         ok: false,
-        why: "That's the pane being moved. Drop it on another pane.",
+        why: "Let go to leave it where it is.",
         overItself: true,
       });
   });
@@ -456,7 +456,7 @@ describe("what a drop refuses, with its reason (#4763)", () => {
     const to = { kind: "pane", tab: second, pane: paneOf(tabs, second, 4), place: "left" } as const;
     expect(judgeDrop(tabs, { kind: "tab", tab: second }, to, ctx)).toEqual({
       ok: false,
-      why: "That's the tab being moved. Drop it on a pane in another tab.",
+      why: "Let go to leave it where it is.",
       overItself: true,
     });
   });
@@ -516,6 +516,29 @@ describe("where in a pane the pointer is picks the place (#4763)", () => {
     [0.2, 0.05, "top"],
   ] as const)("at %s, %s it is %s", (x, y, place) => {
     expect(placeAt(x, y)).toBe(place);
+  });
+});
+
+describe("a place holds a little past its edge, so a pointer near a line doesn't flip it (#5291)", () => {
+  it.each([
+    // In the edge's quarter, or just past it, it stays that edge.
+    ["left", 0.27, 0.5, "left"],
+    ["left", 0.2, 0.5, "left"],
+    // Well past it, it is the middle.
+    ["left", 0.3, 0.5, "middle"],
+    // Just inside the edge's quarter, it stays the middle.
+    ["middle", 0.23, 0.5, "middle"],
+    ["middle", 0.21, 0.5, "left"],
+    // An edge holds against the other edge at a corner.
+    ["top", 0.2, 0.22, "top"],
+    ["left", 0.22, 0.2, "left"],
+  ] as const)("from %s, a point at %d, %d picks %s", (was, x, y, place) => {
+    expect(placeAt(x, y, was)).toBe(place);
+  });
+
+  it("holds nothing with no place before it", () => {
+    expect(placeAt(0.27, 0.5)).toBe("middle");
+    expect(placeAt(0.23, 0.5)).toBe("left");
   });
 });
 

@@ -96,10 +96,18 @@ export type Verdict =
 export const EDGE = 0.25;
 
 /**
- * **The place a point in a pane picks**: the nearest edge when it is within its outer quarter,
- * else the middle. `x` and `y` are the point's share of the pane's width and height, 0 to 1.
+ * How far past its line, as a share of the pane, a place holds for a pointer already on it, so
+ * holding near a line doesn't flip the preview (#5291). A starting value: a measured one replaces
+ * it without a new decision.
  */
-export function placeAt(x: number, y: number): Place {
+export const STICK = 0.03;
+
+/**
+ * **The place a point in a pane picks**: the nearest edge when it is within its outer quarter,
+ * else the middle. `x` and `y` are the point's share of the pane's width and height, 0 to 1. `was`
+ * is the place the pointer was already on in this pane, which holds {@link STICK} past its line.
+ */
+export function placeAt(x: number, y: number, was?: Place): Place {
   const edges: [Place, number][] = [
     ["left", x],
     ["right", 1 - x],
@@ -107,6 +115,9 @@ export function placeAt(x: number, y: number): Place {
     ["bottom", 1 - y],
   ];
   const [place, distance] = edges.reduce((near, one) => (one[1] < near[1] ? one : near));
+  const held = edges.find(([edge]) => edge === was);
+  if (held !== undefined && held[1] < EDGE + STICK) return held[0];
+  if (was === "middle" && distance > EDGE - STICK) return "middle";
   return distance < EDGE ? place : "middle";
 }
 
@@ -134,7 +145,7 @@ export function judgeDrop(
     if (pane === undefined) return refused("That pane has closed.");
     // First: over its own place nothing moves, whatever it is that could not have moved (#5284).
     if (to.kind === "pane" && source.pane === to.pane)
-      return overItself("That's the pane being moved. Drop it on another pane.");
+      return overItself(LET_GO_LEAVES_IT);
     if (pane.content.kind === "empty")
       return refused("An empty pane has nothing to move. Close it instead.");
     // A one-job program stays beside the pane it opened from (#4761; spec #4750 story 78).
@@ -162,7 +173,7 @@ export function judgeDrop(
   const target = paneAt(tabs, to);
   if (target === undefined) return refused("That pane has closed.");
   if (source.kind === "tab" && source.tab === to.tab)
-    return overItself("That's the tab being moved. Drop it on a pane in another tab.");
+    return overItself(LET_GO_LEAVES_IT);
   const there = ctx.name(target.content);
 
   let verdict: { says: string; did: string };
@@ -261,6 +272,9 @@ function namedForFirstPanes(before: Tabs, after: Tabs, ctx: DropContext): Tabs {
   }
   return { ...after, byId };
 }
+
+/** What is said over what is being moved's own place, where letting go moves nothing. */
+const LET_GO_LEAVES_IT = "Let go to leave it where it is.";
 
 const refused = (why: string): Verdict => ({ ok: false, why });
 const overItself = (why: string): Verdict => ({ ok: false, why, overItself: true });
