@@ -277,12 +277,7 @@ pub fn read_sets(
 }
 
 /// The record of a branch folder, or why it cannot be read. None reported is an empty one.
-fn read_record(
-    plane: &Path,
-    ws: &str,
-    repo: &str,
-    piece: Option<&str>,
-) -> Result<Record, String> {
+fn read_record(plane: &Path, ws: &str, repo: &str, piece: Option<&str>) -> Result<Record, String> {
     let path = store_path(plane, ws, repo, piece);
     crate::contain::writable(plane, &path).map_err(|e| e.to_string())?;
     let text = match crate::contain::read_no_link(plane, &path) {
@@ -291,11 +286,11 @@ fn read_record(
         Err(e) => return Err(format!("purlis could not read {}: {e}", path.display())),
     };
     serde_json::from_slice::<Record>(&text).map_err(|e| {
-            format!(
-                "purlis could not read {} ({e}): delete it, and report the results again",
-                path.display()
-            )
-        })
+        format!(
+            "purlis could not read {} ({e}): delete it, and report the results again",
+            path.display()
+        )
+    })
 }
 
 /// What [`report`] recorded.
@@ -448,9 +443,7 @@ pub fn report_converted_inside(
     let file = folder.join(relative);
     let output = crate::contain::open_no_link(&folder, &file)
         .map_err(|e| format!("it cannot be read ({e})"))
-        .and_then(|opened| {
-            read_bounded_to(opened, crate::executor::MOST_CHECK_OUTPUT_BYTES as u64)
-        })
+        .and_then(|opened| read_bounded_to(opened, crate::executor::MOST_CHECK_OUTPUT_BYTES as u64))
         .map_err(|why| {
             format!(
                 "{} was not handed to '{reporter}': {why}. Nothing was recorded",

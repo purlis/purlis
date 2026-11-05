@@ -2253,7 +2253,12 @@ fn an_extension_that_does_not_ask_for_the_check_reporter_does_not_report_checks(
     let made = Made::new();
     made.manifest(r#"{"version":5,"id":"x","contributes":{"runs":"bin/run"}}"#);
     made.file("bin/run", "#!/bin/sh\n");
-    assert!(!read_at(&made.at()).expect("loads").manifest.reports_checks());
+    assert!(
+        !read_at(&made.at())
+            .expect("loads")
+            .manifest
+            .reports_checks()
+    );
 }
 
 #[test]

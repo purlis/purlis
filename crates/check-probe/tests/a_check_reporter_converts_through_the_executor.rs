@@ -197,7 +197,10 @@ fn an_extension_that_does_not_ask_for_the_capability_is_never_handed_a_check() {
     .expect("a manifest without the capability");
     probe.install_and_approve();
     let why = probe.report("a.py:1: x\n", 1).expect_err("refused");
-    assert!(why.contains("does not ask for the capability \"check-reporter\""), "{why}");
+    assert!(
+        why.contains("does not ask for the capability \"check-reporter\""),
+        "{why}"
+    );
 }
 
 #[test]

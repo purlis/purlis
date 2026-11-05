@@ -223,7 +223,11 @@ mod through_a_check_reporter {
             "{}",
             said(&out)
         );
-        assert!(!root.join("workspaces/alpha/pieces/checks/svc.json").exists());
+        assert!(
+            !root
+                .join("workspaces/alpha/pieces/checks/svc.json")
+                .exists()
+        );
     }
 
     #[test]

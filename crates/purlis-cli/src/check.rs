@@ -89,8 +89,15 @@ pub fn run(here: &Here, command: CheckCommand) -> Result<u8, String> {
             status: status.unwrap_or_default(),
         };
         if matches!(named, Named::Own)
-            && let Some(code) =
-                by_the_app(&file, &folder, &repo, piece.as_deref(), Some(&reporter), &format!("What '{}' answered", reporter.extension), &branch)
+            && let Some(code) = by_the_app(
+                &file,
+                &folder,
+                &repo,
+                piece.as_deref(),
+                Some(&reporter),
+                &format!("What '{}' answered", reporter.extension),
+                &branch,
+            )
         {
             return Ok(code);
         }
@@ -104,7 +111,15 @@ pub fn run(here: &Here, command: CheckCommand) -> Result<u8, String> {
         }
     };
     if matches!(named, Named::Own)
-        && let Some(code) = by_the_app(&file, &folder, &repo, piece.as_deref(), None, &tools, &branch)
+        && let Some(code) = by_the_app(
+            &file,
+            &folder,
+            &repo,
+            piece.as_deref(),
+            None,
+            &tools,
+            &branch,
+        )
     {
         return Ok(code);
     }
@@ -141,7 +156,9 @@ fn through(
         }
     };
     let Some(config_root) = purlis_core::machine::config_root() else {
-        voice::err("purlis cannot find its config home, where it records extensions, so it asked no Check reporter");
+        voice::err(
+            "purlis cannot find its config home, where it records extensions, so it asked no Check reporter",
+        );
         return 1;
     };
     let project = purlis_core::extension::project::Choices::read(root);
@@ -167,7 +184,10 @@ fn through(
         chrono::Utc::now(),
     ) {
         Ok(done) => {
-            voice::ok(format!("{} recorded for {branch}", said_counts(&done.tools)));
+            voice::ok(format!(
+                "{} recorded for {branch}",
+                said_counts(&done.tools)
+            ));
             0
         }
         Err(why) => {

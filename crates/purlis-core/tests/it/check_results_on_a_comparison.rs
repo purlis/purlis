@@ -481,8 +481,18 @@ mod the_store {
             let _ = report_converted(&f.plane, branch, reporter, Ok(b"nope".to_vec()), now);
         }
         let _ = report_converted(&f.plane, branch, "mypy-sarif", Ok(b"again".to_vec()), now);
-        assert_eq!(of_branch(&f.plane, branch, "a.txt", &[], None).faults.len(), 2);
-        report_converted(&f.plane, branch, "mypy-sarif", Ok(a_tool("mypy", "ok")), now).unwrap();
+        assert_eq!(
+            of_branch(&f.plane, branch, "a.txt", &[], None).faults.len(),
+            2
+        );
+        report_converted(
+            &f.plane,
+            branch,
+            "mypy-sarif",
+            Ok(a_tool("mypy", "ok")),
+            now,
+        )
+        .unwrap();
         let faults = of_branch(&f.plane, branch, "a.txt", &[], None).faults;
         let named: Vec<&str> = faults.iter().map(|it| it.extension.as_str()).collect();
         assert_eq!(named, ["pytest-sarif"]);
@@ -509,12 +519,9 @@ mod the_store {
         )
         .unwrap();
         std::fs::set_permissions(&run, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let found = purlis_core::extension::install(
-            config,
-            &purlis_core::extension::BuiltIn::none(),
-            ext,
-        )
-        .unwrap();
+        let found =
+            purlis_core::extension::install(config, &purlis_core::extension::BuiltIn::none(), ext)
+                .unwrap();
         purlis_core::extension::approve(config, found.id(), &found.path, &found.fingerprint)
             .unwrap();
     }
@@ -571,7 +578,11 @@ mod the_store {
         )
         .unwrap_err();
         assert!(why.contains("was not handed to 'sh-reporter'"), "{why}");
-        assert!(read_sets(&f.plane, &f.ws, &f.repo, None).unwrap().is_empty());
+        assert!(
+            read_sets(&f.plane, &f.ws, &f.repo, None)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
