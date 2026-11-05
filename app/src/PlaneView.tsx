@@ -381,6 +381,11 @@ import {
   movedBetweenWindows,
   NOTE_CLEARED,
   type NoteCleared,
+  NOTES_ASKED,
+  NOTES_HANDED,
+  type NotesAsked,
+  type NotesHanded,
+  withStartHanded,
   PRESS_HERE,
 } from "./tabWindows";
 import type { TabFacts } from "./ChatRows";
@@ -1552,6 +1557,8 @@ export const PlaneView = memo(function PlaneView({
     blocks: sandboxBlocks,
     dismiss: dropBlock,
     answered: blockAnswered,
+    letGo: letBlockGo,
+    take: takeBlocks,
   } = useSandboxBlocks(plane);
   /** **A note cleared here is cleared in every window of the project** (#5225): each hears what
    *  its chats say, so another may hold it for the chat coming back to it. */
@@ -4161,9 +4168,7 @@ export const PlaneView = memo(function PlaneView({
   }, [plane]);
 
   const dropStartNote = useCallback((session: number) => {
-    setStartNotes((was) =>
-      Object.fromEntries(Object.entries(was).filter(([held]) => Number(held) !== session)),
-    );
+    setStartNotes((was) => withoutKey(was, session));
   }, []);
   /** A start notice put away: it is said once, and the operator has read it. */
   const dismissStartNote = useCallback(
@@ -4174,13 +4179,11 @@ export const PlaneView = memo(function PlaneView({
     [dropStartNote, noteCleared],
   );
 
+  const dropByHand = useCallback((session: number) => {
+    setByHand((was) => withoutKey(was, session));
+  }, []);
   /** The banner's two answers: open that harness as a chat where the shell was standing — the
    *  picker, started on that harness — or put the banner away. Either way it is answered. */
-  const dropByHand = useCallback((session: number) => {
-    setByHand((was) =>
-      Object.fromEntries(Object.entries(was).filter(([held]) => Number(held) !== session)),
-    );
-  }, []);
   const answerByHand = useCallback(
     (session: number, open: boolean) => {
       const note = byHand[session];
@@ -7372,20 +7375,82 @@ export const PlaneView = memo(function PlaneView({
       const { session, note } = cleared;
       if (note.kind === "start") dropStartNote(session);
       if (note.kind === "by-hand") dropByHand(session);
-      if (note.kind === "block") dropBlock(session, note.block);
+      if (note.kind === "block") letBlockGo(session, note.block);
       if (note.kind === "restart") {
         setRestartTrouble((was) => withoutKey(was, session));
         setRestartNotYet((was) => withoutKey(was, session));
       }
     }).catch(() => undefined);
     return () => void listening.then((stop) => stop?.()).catch(() => undefined);
-  }, [dropBlock, dropByHand, dropStartNote, plane]);
+  }, [dropByHand, dropStartNote, letBlockGo, plane]);
+
+  /**
+   * **What this window holds of a chat another window shows, handed to it** (#5225): each window
+   * hears what a chat says from when it is listening, so a note held from before a tab was torn
+   * off is in no other. Said as it comes to be held, and again when a tab window first draws. It
+   * is kept here too, for the chat coming back; clearing it clears both (`note-cleared`).
+   */
+  const notesHeldElsewhere = useRef(new Map<number, string>());
+  const handNotes = useCallback(
+    (session: number, start: StartNotes | undefined, blocks: readonly HeldBlock[]) =>
+      void emit(NOTES_HANDED, {
+        plane,
+        session,
+        start,
+        blocks,
+        from: thisWindow(),
+      } satisfies NotesHanded).catch(() => undefined),
+    [plane],
+  );
+  const handAgain = useRef<() => void>(() => undefined);
+  useEffect(() => {
+    const holding = new Map<number, string>();
+    for (const session of shownElsewhere) {
+      const start = startNotes[session];
+      const blocks = sandboxBlocks[session] ?? [];
+      if (start === undefined && blocks.length === 0) continue;
+      const said = JSON.stringify([start, blocks]);
+      holding.set(session, said);
+      if (notesHeldElsewhere.current.get(session) !== said) handNotes(session, start, blocks);
+    }
+    notesHeldElsewhere.current = holding;
+    handAgain.current = () => {
+      for (const session of holding.keys())
+        handNotes(session, startNotes[session], sandboxBlocks[session] ?? []);
+    };
+  }, [handNotes, sandboxBlocks, shownElsewhere, startNotes]);
+  const askedForNotes = useRef(false);
+  useEffect(() => {
+    const listening = Promise.all([
+      listen<NotesHanded>(NOTES_HANDED, ({ payload: handed }) => {
+        if (handed.plane !== plane || handed.from === thisWindow()) return;
+        const { session, start, blocks } = handed;
+        if (start !== undefined)
+          setStartNotes((was) => ({ ...was, [session]: withStartHanded(was[session], start) }));
+        takeBlocks(session, blocks);
+      }),
+      listen<NotesAsked>(NOTES_ASKED, ({ payload: asked }) => {
+        if (asked.plane === plane && asked.from !== thisWindow()) handAgain.current();
+      }),
+    ])
+      .then((stops) => {
+        if (tabWindow !== undefined && !askedForNotes.current) {
+          askedForNotes.current = true;
+          void emit(NOTES_ASKED, { plane, from: thisWindow() } satisfies NotesAsked).catch(
+            () => undefined,
+          );
+        }
+        return stops;
+      })
+      .catch(() => [] as (() => void)[]);
+    return () => void listening.then((stops) => stops.forEach((stop) => stop()));
+  }, [plane, tabWindow, takeBlocks]);
 
   const answerRestart = useCallback(
     (session: number, act: RestartAct) => {
       setRestartTrouble((was) => withoutKey(was, session));
       setRestartNotYet((was) => withoutKey(was, session));
-      if (act === "dismiss") noteCleared(session, { kind: "restart" });
+      noteCleared(session, { kind: "restart" });
       // Asked again, so a restart the core no longer owes is owed once more.
       if (act === "now") void askRestart(session);
       // Owed already, and the person will not wait for the turn to end: the driver's step, now,

@@ -436,6 +436,98 @@ describe("a note of a chat shown only in a tab window (#5225)", () => {
     await waitFor(() => expect(saidHere()).toBe(1));
   });
 
+  /** What this window told the other windows, of one event. */
+  const told = (wire: ReturnType<typeof core>, event: string) =>
+    wire
+      .sent("plugin:event|emit")
+      .map((one) => one.args as { event: string; payload: unknown })
+      .filter((one) => one.event === event)
+      .map((one) => one.payload);
+
+  it("is handed to the window that comes to show its chat, what this one held before", async () => {
+    const project = await windowOf(undefined, 1);
+    project.fire("chat-browsers-ended", says(3));
+    await waitFor(() => expect(saidHere()).toBe(1));
+
+    project.fire("layout-reported", {
+      plane: ONE,
+      layout: { strip: null, tabs: [tab(0, true, 1), tab(1, true, 3)] },
+    });
+    await waitFor(() => expect(saidHere()).toBe(0));
+    await waitFor(() =>
+      expect(told(project, "notes-handed")).toEqual([
+        {
+          plane: ONE,
+          session: 3,
+          from: "main",
+          start: { notes: [SAID], agentsMd: [] },
+          blocks: [],
+        },
+      ]),
+    );
+  });
+
+  it("is said on the band of the window it was handed to, once, however often it is handed", async () => {
+    const shows = await windowOf(1, 2);
+    const handed = {
+      plane: ONE,
+      session: 2,
+      from: "main",
+      start: { notes: [SAID], agentsMd: [] },
+      blocks: [],
+    };
+    shows.fire("notes-handed", handed);
+    shows.fire("notes-handed", handed);
+    await waitFor(() => expect(saidHere()).toBe(1));
+    expect(screen.getByText(SAID).closest('[data-placement="pane"]')).not.toBeNull();
+    expect(screen.getByText(SAID).textContent).toBe(SAID);
+  });
+
+  it("is asked for by a tab window as it first draws, and handed by the window holding it", async () => {
+    const shows = await windowOf(1, 2);
+    await waitFor(() =>
+      expect(told(shows, "notes-asked")).toEqual([{ plane: ONE, from: "window-1" }]),
+    );
+    cleanup();
+    clearMocks();
+
+    const project = await windowOf(undefined, 1);
+    project.fire("chat-browsers-ended", says(2));
+    await waitFor(() => expect(told(project, "notes-handed")).toHaveLength(1));
+    project.fire("notes-asked", { plane: ONE, from: "window-1" });
+    await waitFor(() => expect(told(project, "notes-handed").length).toBeGreaterThan(1));
+  });
+
+  it("a block cleared in another window is let go here, and the core is told once, by that window", async () => {
+    const block = {
+      plane: ONE,
+      session: 2,
+      operation: "write",
+      kind: "path",
+      ours: false,
+      harness: null,
+      said: "a write",
+      offer: "host",
+      target: "api.example.com",
+      levels: ["chat"],
+      route: null,
+      held: false,
+      ruled: null,
+    };
+    const project = await windowOf(undefined, 1);
+    project.fire("chat-sandbox-blocked", block);
+    project.fire("note-cleared", {
+      plane: ONE,
+      session: 2,
+      note: { kind: "block", block },
+      from: "window-1",
+    });
+    project.fire(LAYOUT_MOVED, { plane: ONE, layout: BACK });
+    await screen.findByText("session 2");
+    expect(screen.queryByText(/The sandbox blocked a write/)).toBeNull();
+    expect(project.sent("forget_sandbox_block")).toEqual([]);
+  });
+
   it("a note cleared in another project's window stays here", async () => {
     const project = await windowOf(undefined, 1);
     project.fire("chat-browsers-ended", says(3));

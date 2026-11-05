@@ -278,29 +278,27 @@ pub(crate) fn tell_reported<R: Runtime>(
     plane: &PlaneId,
     held: &crate::planes::Held,
 ) {
-    let Some(layout) = held.chats().layout() else {
-        return;
-    };
-    crate::windows::emit_for_plane(
-        app,
-        plane,
-        LAYOUT_REPORTED,
-        LayoutMoved {
-            plane: plane.clone(),
-            layout: layout.into(),
-        },
-    );
+    tell_layout(app, plane, held, LAYOUT_REPORTED);
 }
 
 /// Tells every window of `plane` what each holds now.
 fn tell_moved<R: Runtime>(app: &AppHandle<R>, plane: &PlaneId, held: &crate::planes::Held) {
+    tell_layout(app, plane, held, LAYOUT_MOVED);
+}
+
+fn tell_layout<R: Runtime>(
+    app: &AppHandle<R>,
+    plane: &PlaneId,
+    held: &crate::planes::Held,
+    event: &str,
+) {
     let Some(layout) = held.chats().layout() else {
         return;
     };
     crate::windows::emit_for_plane(
         app,
         plane,
-        LAYOUT_MOVED,
+        event,
         LayoutMoved {
             plane: plane.clone(),
             layout: layout.into(),
