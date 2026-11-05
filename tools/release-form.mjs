@@ -49,9 +49,17 @@ export const GATES = [
       "ADR 0042",
       "the `build provenance` job",
       "the `SBOM` job",
+      "the studio-opening measurement",
+      "a real Mac",
+      "Measuring the studio opening",
     ],
   },
-  { id: "technical-evidence", type: "textarea", label: "Technical evidence" },
+  {
+    id: "technical-evidence",
+    type: "textarea",
+    label: "Technical evidence",
+    names: ["the studio-opening measurement's three lines"],
+  },
   {
     id: "dogfood-gate",
     type: "checkboxes",

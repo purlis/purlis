@@ -48,11 +48,13 @@ body:
           required: true
         - label: "SBOM: the release carries a CycloneDX SBOM for each platform, `purlis-<platform>.cdx.json`, from the `SBOM` job."
           required: true
+        - label: "Studio opening (L10): the studio-opening measurement was run for this commit on a real Mac, following CONTRIBUTING.md, \"Measuring the studio opening\"."
+          required: true
   - type: textarea
     id: technical-evidence
     attributes:
       label: Technical evidence
-      description: A link to each run named above, and the output of the attestation check.
+      description: A link to each run named above, the output of the attestation check, and the studio-opening measurement's three lines.
     validations:
       required: true
   - type: checkboxes

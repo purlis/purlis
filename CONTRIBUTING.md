@@ -195,12 +195,48 @@ The maintainer cuts every release and is the only one who pushes a `v*` tag. Bef
 is promoted from the dev channel to stable, the maintainer opens a
 [release checklist](https://github.com/purlis/purlis/issues/new?template=release.yml), one
 issue per release, and checks every box: the technical gate (CI, the nightly, signing,
-provenance and the SBOM), at least 3 days of the maintainer running it as their daily app on
+provenance, the SBOM and the studio-opening measurement), at least 3 days of the maintainer running it as their daily app on
 the dev channel, the user signal, the test behind each acceptance line the release meets, the
 outcome bars of the features it ships, the folded changelog and its news entry. Each box names
 where its evidence is read. The form is
 [`.github/ISSUE_TEMPLATE/release.yml`](.github/ISSUE_TEMPLATE/release.yml), and
 `node tools/release-form.mjs` fails when it loses a gate.
+
+#### Measuring the studio opening
+
+Spec row L10 is the Skill studio opening with 200 skills in under 300 ms, at the p95 of 20
+openings. It is judged on a real Mac, on a `dev-release` build, because a hosted runner moves
+the same code's times by several hundred ms between runs. CI only guards against large
+regressions, so a smaller one shows up only in this measurement. The release checklist asks for
+it on the commit the tag will point at.
+
+From `app/`, in a checkout of that commit:
+
+```sh
+npm ci &&
+npx tauri build --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json -- -p purlis-app -p fake-harness -p purlis-cli --profile dev-release &&
+for h in claude codex opencode; do
+  env -u CI CHARTER_TARGET_DIR="$PWD/../target/dev-release" PURLIS_OUTCOME_HARNESS=$h npm run e2e:outcome 2>&1 | tee "l10-$h.log" | grep "outcome bar (.*the studio opening"
+done
+```
+
+- The app under test uses its own identifier, data and home, so your own purlis isn't touched
+  and can stay open, with its chats idle.
+- A window opens and takes focus. Leave it alone and don't run a heavy build at the same time.
+- Spotlight may index the fresh build while the openings run. `ps -Ao pcpu,comm -r | sed -n 1,7p`
+  shows what is busy; CI turns Spotlight off for the same reason.
+- `env -u CI` matters: with `CI=true` the run judges CI's guard instead of the 300 ms bar.
+
+Each harness prints one line:
+
+```text
+outcome bar (claude): the studio opening with 200 skills: p95 N ms against 300 ms, over 20 openings (...)
+```
+
+L10 is met when N is under 300 on all three lines. The p95 of 20 is the 19th fastest opening, so
+one slow opening doesn't move it and two do; the list in brackets is every opening, fastest
+first. If something else was busy, rerun the loop. Only these lines count: the run can exit non-zero for its other
+bars. If a harness prints no such line, read its `l10-<harness>.log`.
 
 ## 5. Quality and design expectations
 
