@@ -1635,6 +1635,10 @@ fn read_login(
     let password = read(pass_key)?;
     // A login's values follow a fill's rules (#5272), whoever declared it: the `mint` mark is by a
     // name in a vault, and one item may have two, and Always may have saved the line that names it.
+    goes_into_a_page(asker, &password, vault, pass_key)?;
+    if let (Some(user), Some(user_key)) = (&user, user_key) {
+        goes_into_a_page(asker, user, vault, user_key)?;
+    }
     Ok((
         LogIn {
             address: login.url.clone(),
