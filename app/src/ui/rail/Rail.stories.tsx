@@ -222,7 +222,7 @@ export const Loading: Story = {
   play: async ({ canvas, userEvent }) => {
     const loading = canvas.getByRole("tab", { name: "volaticloud" });
     await expect(loading).toHaveAttribute("aria-busy", "true");
-    await expect(loading).toHaveAccessibleDescription("Loading…");
+    await expect(loading).toHaveAccessibleDescription("Loading…, 2 waiting");
     await expect(
       canvas.getByRole("tab", { name: "easydmarc-umbrella" }),
     ).toHaveAccessibleDescription("Still loading…, 3 waiting");
