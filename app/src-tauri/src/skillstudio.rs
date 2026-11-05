@@ -239,6 +239,9 @@ pub struct StudioSkill {
     pub source_label: Option<String>,
     /// Whether that chat's workspace or persona pins it, so no router hides it.
     pub pinned: bool,
+    /// Whether it is archived, so it never loads until it is restored (SK-19): what the
+    /// Library's Select mode counts its Archive and Unarchive by (#5332).
+    pub archived: bool,
     /// Which of the studio's workspace and persona have it in their pins, as written (SK-15d):
     /// what the row's Pin switch shows. Empty for a skill from outside the plane.
     pub pinned_by: Vec<crate::skillchange::SkillPinner>,
@@ -567,6 +570,7 @@ fn plane_shown(
         hidden: row.hidden.iter().map(Into::into).collect(),
         source_label: row.source_label.clone(),
         pinned: row.pinned,
+        archived: row.lifecycle == purlis_core::skills::Lifecycle::Archived,
         pinned_by,
     }
 }
@@ -1123,6 +1127,7 @@ fn outside_shown(row: purlis_core::skills::StudioRow) -> StudioSkill {
         hidden: row.hidden.iter().map(Into::into).collect(),
         source_label: row.source_label.clone(),
         pinned: row.pinned,
+        archived: row.lifecycle == purlis_core::skills::Lifecycle::Archived,
         pinned_by: Vec::new(),
     }
 }

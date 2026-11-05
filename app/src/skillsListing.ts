@@ -297,6 +297,7 @@ function rowOfChat(skill: ChatSkill): StudioSkill {
     lint: [],
     hidden: [],
     pinned: false,
+    archived: false,
     pinned_by: [],
   };
 }

@@ -1130,6 +1130,12 @@ export const commands = {
 	skillSetDelete: __WINDOW_ONLY_RESULT,
 	skillSetRestore: __WINDOW_ONLY_RESULT,
 	skillSetTurn: __WINDOW_ONLY_RESULT,
+	skillSetPin: __WINDOW_ONLY_RESULT,
+	skillSetLifecycle: __WINDOW_ONLY_RESULT,
+	skillSetMove: __WINDOW_ONLY_RESULT,
+	skillSetDeleteNow: __WINDOW_ONLY_RESULT,
+	skillSetExportReview: __WINDOW_ONLY_RESULT,
+	skillSetExport: __WINDOW_ONLY_RESULT,
 	skillGrant: __WINDOW_ONLY_RESULT,
 	skillTurn: __WINDOW_ONLY_RESULT,
 	skillPin: __WINDOW_ONLY_RESULT,
@@ -12740,7 +12746,7 @@ export type SkillRouting = {
 };
 
 /**  What is asked of a set. */
-export type SkillSetAct = "delete" | "turn-off" | "turn-on";
+export type SkillSetAct = "delete" | "turn-off" | "turn-on" | "pin" | "unpin" | "archive" | "unarchive" | "move" | "export";
 
 /**  What a set's delete did, and what an Undo hands back. */
 export type SkillSetDeleted = {
@@ -12749,11 +12755,47 @@ export type SkillSetDeleted = {
 	deleted: string[],
 };
 
+/**  What a Delete now did. */
+export type SkillSetGone = {
+	/**  Those whose delete was a commit, off the list: the project's history still holds them. */
+	off_the_list: number,
+	/**  Those this machine kept, removed from it for good. */
+	removed: number,
+	/**  Each that could not be taken off, with why. */
+	failed: string[],
+};
+
+/**  One skill's lifecycle state in a set's change: what it is set to, or what an Undo sets back. */
+export type SkillSetLifecycle = {
+	member: SkillSetMember,
+	lifecycle: SkillLifecycle,
+};
+
+/**  What a set's archive or unarchive did, and what an Undo sets back. */
+export type SkillSetLifecycled = {
+	notes: string[],
+	/**  Each it changed, with the state it had. */
+	was: SkillSetLifecycle[],
+};
+
 /**  One skill of a set: its level and name, and its level as a person reads it. */
 export type SkillSetMember = {
 	level: SkillLevel,
 	name: string,
 	label: string,
+};
+
+/**  One skill's move in a set's: where it goes, and the grant it takes into the project's skills. */
+export type SkillSetMove = {
+	member: SkillSetMember,
+	to: SkillLevel,
+	grant: SkillGrant | null,
+};
+
+/**  What a set's move did, and the moves its Undo makes. */
+export type SkillSetMoved = {
+	notes: string[],
+	back: SkillSetMove[],
 };
 
 /**  A skill that stays naming one that goes. */
@@ -13637,6 +13679,11 @@ export type StudioSkill = {
 	source_label: string | null,
 	/**  Whether that chat's workspace or persona pins it, so no router hides it. */
 	pinned: boolean,
+	/**
+	 *  Whether it is archived, so it never loads until it is restored (SK-19): what the
+	 *  Library's Select mode counts its Archive and Unarchive by (#5332).
+	 */
+	archived: boolean,
 	/**
 	 *  Which of the studio's workspace and persona have it in their pins, as written (SK-15d):
 	 *  what the row's Pin switch shows. Empty for a skill from outside the plane.
