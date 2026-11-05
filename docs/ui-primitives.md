@@ -2338,7 +2338,7 @@ and `FourRegions.test.tsx` found it by holding a `nav` that had been replaced.
 **A terminal keeps Tab.** xterm prevents Tab and Shift+Tab and sends them to the shell —
 completion, and Claude Code's mode cycling — and nothing in the window takes either. So a
 terminal is a stop you can reach and cannot Tab out of, which is why the pane's own controls are
-written _before_ it in the document (they are absolutely positioned, so the look is unchanged).
+written _before_ it in the document, in the pane's head above it.
 **They are always drawn** (#5318, ADR 0111), so every pane's are in the sequence, in the order
 they are drawn. A tab's only pane has no Close, so no stop is left for it.
 

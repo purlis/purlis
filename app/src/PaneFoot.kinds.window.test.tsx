@@ -176,6 +176,39 @@ describe("a foot, for each kind of pane (#5205)", () => {
     }
   });
 
+  it("draws a shell's Close in a split, and none alone (#5318)", () => {
+    const close = () => screen.queryByRole("button", { name: "Close this pane" });
+    const shells = new Set([1]);
+    const more = { offerFor: SPLITS, closeOf: () => CLOSE, shells };
+    render(<LayoutPanes {...propsOf(chat(1), { ...more, alone: true })} />);
+    expect(close()).toBeNull();
+    cleanup();
+
+    render(<LayoutPanes {...propsOf(chat(1), { ...more, alone: false })} />);
+    expect(close()).toBeInTheDocument();
+  });
+
+  it("draws no Close on a one-job program's pane beside a chat, as it goes when its program exits (#5318)", () => {
+    const oneJob = {
+      kind: "pane",
+      pane: 1,
+      content: { kind: "session", session: 1, chat: "job", oneJob: { title: "Log in" } },
+    } as unknown as Layout;
+    render(
+      <LayoutPanes
+        {...propsOf(row(oneJob, chat(2)), {
+          offerFor: SPLITS,
+          closeOf: () => CLOSE,
+          room: { width: 1600, height: 900 },
+        })}
+      />,
+    );
+    const frameOf = (words: string) =>
+      screen.getByText(words).closest(".pane-frame") as HTMLElement;
+    expect(frameOf("session 1").querySelectorAll('[aria-label="Close this pane"]')).toHaveLength(0);
+    expect(frameOf("session 2").querySelectorAll('[aria-label="Close this pane"]')).toHaveLength(1);
+  });
+
   it("is not drawn on a one-job program's pane", () => {
     const oneJob: Layout = {
       kind: "pane",

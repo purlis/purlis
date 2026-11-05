@@ -587,8 +587,8 @@ export const SettingsActionsShown: Story = {
   play: async ({ canvas, canvasElement, userEvent }) => {
     await oneWithItsTab(canvasElement, "Settings");
     expect(pressableUnderTheActions(canvasElement)).toEqual([]);
-    // The keyboard on the first of them draws the cluster; Esc puts its tooltip away, so the
-    // picture shows the actions in place and nothing over them.
+    // The keyboard on the first of them; Esc puts its tooltip away, so the picture shows the
+    // actions in place and nothing over them.
     const split = canvas.getByRole("button", { name: "Split right" });
     split.focus();
     await waitFor(() => expect(split).toBeVisible());

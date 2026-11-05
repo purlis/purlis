@@ -658,7 +658,7 @@ export function PaneHead({
  * #5191). Tab takes them in that order, which is the order they are written. A chat's pane
  * draws it at the end of its header; a view's pane draws the same component with no chat, so
  * every pane's split and close look and behave as one. What it offers is the catalogue's own
- * rows, and the window's rule for when they are drawn.
+ * rows, always drawn (#5318).
  */
 export function PaneActions({
   chat,
@@ -1369,6 +1369,7 @@ export function LayoutPanes({
       // where it is. The view carries no title of its own: its tab is its name, and the content
       // panel is that tab's panel (`tabPanelOf`). Clicking anywhere in it focuses it, which is
       // what a terminal's click does.
+      const viewActions = paneLinesOf("view", undefined, { alone }).actions;
       return (
         <div
           className="pane-frame pane-viewed"
@@ -1378,12 +1379,13 @@ export function LayoutPanes({
         >
           {/* Before the view, for `PaneFrame`'s reason: the tab order is the document's. Over
               the view's first row, which keeps the room it takes (`paneFrame.css`). */}
-          <PaneActionsOf.Provider value={paneLinesOf("view", undefined, { alone }).actions}>
+          <PaneActionsOf.Provider value={viewActions}>
             <PaneHead
               at={{ tab, pane: layout.pane }}
-              // A view alone in its tab has none of them (#5318): its splits are the palette's.
+              // A view alone in its tab has none of them (#5318): its splits are the palette's and
+              // its tab's menu's.
               doing={
-                alone ? null : (
+                viewActions.length === 0 ? null : (
                   <PaneActions
                     pane={layout.pane}
                     size={drawn?.sizes[layout.pane]}
@@ -1841,7 +1843,7 @@ export function EvenedSeparator({
 }
 
 /**
- * The controls in a pane's top right corner: split it two ways, and end its chat.
+ * The controls in a pane's top right corner: split it two ways, and close it.
  *
  * **The operator's, in his own words**: *"harnesses panes should each have close button and
  * spliting buttons in pane right top corner … buttons should not have texts — only tooltips on

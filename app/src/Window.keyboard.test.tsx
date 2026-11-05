@@ -574,11 +574,8 @@ describe("a pane's controls", () => {
     .map(([, selectors, body]) => ({ selectors, body }))
     .filter((rule) => rule.selectors.includes(".pane-doing"));
 
-  it("are named by rules this reads, so finding none fails", () => {
-    expect(rules.length).toBeGreaterThan(0);
-  });
-
   it("have no rule that hides them, fades them or takes the pointer from them", () => {
+    expect(rules.length).toBeGreaterThan(0);
     for (const { selectors, body } of rules) {
       expect(`${selectors}{${body}}`).not.toMatch(/visibility:|opacity:|pointer-events:/);
       expect(selectors).not.toMatch(/:hover|:focus-within|\.focused/);

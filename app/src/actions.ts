@@ -2156,9 +2156,9 @@ export function catalogue(now: Now): Offer[] {
     });
   }
 
-  for (const [id, title, direction] of [
-    ["pane.split.right", "Split right", "row"],
-    ["pane.split.down", "Split down", "column"],
+  for (const [id, onTab, title, direction] of [
+    ["pane.split.right", "tab.split.right", "Split right", "row"],
+    ["pane.split.down", "tab.split.down", "Split down", "column"],
   ] as const) {
     const refused = splitRefused(now.paneRoom, direction);
     offers.push(
@@ -2173,10 +2173,12 @@ export function catalogue(now: Now): Offer[] {
     for (const tab of now.tabs.order) {
       if (!hasOnePane(now.tabs, tab) || contentsOf(now.tabs, tab)[0].content.kind !== "view")
         continue;
-      const row = id.replace("pane.split", "tab.split") + `:${tab}`;
+      const row = `${onTab}:${tab}`;
+      // The room is the focused pane's in front, which says nothing of a tab behind it.
+      const noRoom = tab === now.tabs.inFront ? refused : undefined;
       offers.push({
-        ...(refused !== undefined
-          ? cannot(row, title, refused)
+        ...(noRoom !== undefined
+          ? cannot(row, title, noRoom)
           : can(row, title, { verb: "splitTab", tab, direction })),
         menuOnly: true,
       });

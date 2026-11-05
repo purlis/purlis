@@ -626,6 +626,13 @@ describe("the one list of actions", () => {
       expect(by(offers, "tab.split.right:1")?.available).toBe(false);
       expect(by(offers, "tab.split.right:1")?.reason).toBe(by(offers, "pane.split.right")?.reason);
     });
+
+    it("takes no answer about room from the pane in front when its tab is behind it", () => {
+      const tabs = openTab(aView(), 7, "3", "steward");
+      const offers = catalogue(now({ tabs, paneRoom: { width: 100, height: 100 } }));
+      expect(by(offers, "pane.split.right")?.available).toBe(false);
+      expect(by(offers, "tab.split.right:1")?.available).toBe(true);
+    });
   });
 
   it("decides a pane's close for that pane, and closes the one showing a task too", () => {

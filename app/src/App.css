@@ -810,9 +810,9 @@ body {
 
 /* **The find bar** (SI-4, `app/src/FindBar.tsx`): what `⌘F` opens over the focused pane. A
    sibling of the terminal like the corners, positioned against the same frame — and under the
-   end corner rather than in it, so the pane's own controls, which appear there on hover, never
-   land on top of the field being typed into. It is drawn only while open, and it is where the
-   keyboard is while it is, so it is always visible and never takes the corners' hover rule. */
+   end corner rather than in it, so the pane's own controls, which are there, never land on top
+   of the field being typed into. It is drawn only while open, and it is where the keyboard is
+   while it is. */
 .pane-find {
   position: absolute;
   top: var(--space-8);

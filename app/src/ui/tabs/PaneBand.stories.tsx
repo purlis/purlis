@@ -984,6 +984,10 @@ export const Actions: Story = {
     const actions = boxOf(head?.querySelector(".pane-actions"));
     expect(boxOf(frame).right - actions.right).toBeLessThanOrEqual(16);
     expect(actions.top - boxOf(frame).top).toBeLessThanOrEqual(16);
+    // Taken off them, so the picture is the head at rest: drawn with no keyboard and no tooltip.
+    (document.activeElement as HTMLElement | null)?.blur();
+    await waitFor(() => expect(document.querySelector('[role="tooltip"]')).toBeNull());
+    expect(canvas.getByRole("button", { name: "Split right" })).toBeVisible();
   },
 };
 

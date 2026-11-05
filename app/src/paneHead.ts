@@ -257,8 +257,8 @@ export function paneLinesOf(
   width: number | undefined,
   facts: LineFacts,
 ): PaneLines {
-  // A view's and an empty pane's head is its controls alone, which never drop; a folded pane is a
-  // rail, which says who it runs as, its name and its bell.
+  // A view's and an empty pane's head is its controls alone, which never drop, and a view alone in
+  // its tab has none; a folded pane is a rail, which says who it runs as, its name and its bell.
   const alone = facts.alone === true;
   if (kind === "view" && alone) return { head: [], actions: [], foot: null };
   if (kind === "view" || kind === "empty") {
