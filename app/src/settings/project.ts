@@ -606,9 +606,9 @@ function declaredGroups(read: ProjectRead, reread?: () => void): SettingsGroup[]
         ? { after: harnessDeclarationRows(read.plane, read.declarations) }
         : {}),
     },
-    // Its chats' skill budget (#4610).
-    ...(read.plane !== undefined ? [projectSkillsGroup(read.plane)] : []),
     ...profilePages(read),
+    // Its chats' skill budget (#4610), after the profiles' pages, which stand under their group.
+    ...(read.plane !== undefined ? [projectSkillsGroup(read.plane)] : []),
     {
       id: "project.sandbox",
       label: "Sandbox",
