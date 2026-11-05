@@ -7443,7 +7443,10 @@ export const PlaneView = memo(function PlaneView({
         return stops;
       })
       .catch(() => [] as (() => void)[]);
-    return () => void listening.then((stops) => stops.forEach((stop) => stop()));
+    return () =>
+      void listening
+        .then((stops) => Promise.all(stops.map((stop) => stop())))
+        .catch(() => undefined);
   }, [plane, tabWindow, takeBlocks]);
 
   const answerRestart = useCallback(
