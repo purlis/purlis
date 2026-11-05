@@ -8580,9 +8580,11 @@ nav.piece-files-head {
 }
 
 /* The grid's arrows land on Change…'s cell too, so that is a target as well: this keeps 24 CSS px of
-   it clear above the button, stacked and compact as well (WCAG 2.5.8). */
-.skill-budget-change-press {
-  margin-block-start: var(--space-4);
+   it clear above the button where the table stacks, the family's own query (WCAG 2.5.8). */
+@container table-frame (max-width: 32rem) {
+  .skill-budget-change-press {
+    margin-block-start: var(--space-7);
+  }
 }
 
 .skill-budget-cost {
