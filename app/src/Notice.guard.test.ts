@@ -297,6 +297,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "Choose a folder… could not open; the owners being asked for; and the creation's stages " +
       "while it runs, with Cancel, said as they change",
   },
+  "ProjectRail.tsx": {
+    count: 1,
+    why:
+      "how many projects a launch is still loading, said as it changes (#5323): each row's " +
+      "loading mark is its description, which a screen reader hears only on reaching it, and " +
+      "there is nothing to fix or dismiss while a project loads",
+  },
   "PublishProject.tsx": {
     count: 3,
     why:

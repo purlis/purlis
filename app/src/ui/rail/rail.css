@@ -175,6 +175,19 @@
   background-color: var(--state-failed);
 }
 
+/* Loading at a launch (#5323): a dashed ring just inside the button, in the project's own
+   colour, so a shape and not a colour alone tells it from the current one's solid ring outside.
+   It stands still: it is a state, not a motion, and nothing moves while projects come back. Its
+   words are the button's description and tooltip. */
+[data-part="loading"][data-scope="rail"] {
+  position: absolute;
+  inset: var(--space-1);
+  box-sizing: border-box;
+  border: 1.5px dashed var(--accent-base);
+  border-radius: var(--radius-control);
+  pointer-events: none;
+}
+
 /* An action: an icon in the muted tier, no box until the pointer reaches it (R80). */
 [data-part="button"][data-scope="rail"][data-variant="action"][data-hovered] {
   color: var(--text-primary);

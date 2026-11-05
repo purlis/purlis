@@ -30,7 +30,15 @@ const PROJECTS: {
   { name: "notes", waiting: 0 },
 ];
 
-function TheRail({ peek = false }: { peek?: boolean }) {
+/** How each project's load is going at a launch (#5323): two still coming, one of them for a
+ *  while, and one back with only some of its chats. */
+const LOADS: Record<string, { loading: boolean; says?: string }> = {
+  volaticloud: { loading: true, says: "Loading…" },
+  "easydmarc-umbrella": { loading: true, says: "Still loading…" },
+  "elastic-press": { loading: false, says: "2 of 3 chats back" },
+};
+
+function TheRail({ peek = false, loading = false }: { peek?: boolean; loading?: boolean }) {
   const [current, setCurrent] = useState("charter");
   const [said, setSaid] = useState("Nothing pressed");
   const tintOf = useProjectTints();
@@ -57,6 +65,7 @@ function TheRail({ peek = false }: { peek?: boolean }) {
                 waiting={one.waiting}
                 unsaved={one.unsaved}
                 colour={tintOf(one.name)}
+                load={loading ? LOADS[one.name] : undefined}
                 onClick={() => setCurrent(one.name)}
               />
             ))}
@@ -196,6 +205,39 @@ export const FocusedCurrent: Story = {
     const after = current.getBoundingClientRect();
     await expect([after.width, after.height]).toEqual([before.width, before.height]);
     // Its tooltip, which the keyboard opened, taken down by Esc: the picture is of the rings.
+    await userEvent.keyboard("{Escape}");
+    await untilNoTooltip();
+    await atRest();
+  },
+};
+
+/**
+ * **Projects coming back at a launch** (#5323): a loading project has a dashed ring inside its
+ * button, which a shape tells from the current one's solid ring, is busy, and says how its load is
+ * going as its description; one back with only some of its chats says how many. The keyboard
+ * reaches a loading project as any other, and nothing changes size.
+ */
+export const Loading: Story = {
+  args: { loading: true },
+  play: async ({ canvas, userEvent }) => {
+    const loading = canvas.getByRole("tab", { name: "volaticloud" });
+    await expect(loading).toHaveAttribute("aria-busy", "true");
+    await expect(loading).toHaveAccessibleDescription("Loading…");
+    await expect(
+      canvas.getByRole("tab", { name: "easydmarc-umbrella" }),
+    ).toHaveAccessibleDescription("Still loading…, 3 waiting");
+    const partly = canvas.getByRole("tab", { name: "elastic-press" });
+    await expect(partly).not.toHaveAttribute("aria-busy");
+    await expect(partly).toHaveAccessibleDescription("2 of 3 chats back, saving is blocked");
+    for (const one of canvas.getAllByRole("tab")) {
+      const box = one.getBoundingClientRect();
+      await expect([Math.round(box.width), Math.round(box.height)]).toEqual([36, 36]);
+    }
+    loading.focus();
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(loading).toHaveAttribute("data-selected"));
+    // Its tooltip, which the keyboard opened, taken down by Esc: the picture is of the marks.
     await userEvent.keyboard("{Escape}");
     await untilNoTooltip();
     await atRest();
