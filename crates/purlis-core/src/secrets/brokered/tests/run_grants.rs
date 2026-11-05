@@ -1573,3 +1573,56 @@ fn a_key_a_login_came_to_hold_while_the_ask_was_up_is_not_handed_on_allow() {
         "nothing ran: {frames:?}"
     );
 }
+
+/// A key the run misses may be filled with an entry the person keeps already, as a link: one a
+/// browser login fills goes to no program that way either, though the Allow was given before.
+#[test]
+fn a_missing_key_filled_with_a_link_to_a_browsers_key_is_not_handed_on() {
+    let project = project();
+    let root = project.path();
+    std::fs::write(
+        root.join("charter.toml"),
+        "[sandbox.personas.qa.tools.shop]\nvault = \"team\"\nbrowser = \
+         \"https://shop.example.test/login\"\nkey = \"TOKEN\"\n",
+    )
+    .unwrap();
+    let asks = Asks::new(root);
+    let mut want = printenv(root, &["X"]);
+    want.env = vec!["X=SHOP_PASSWORD".into()];
+    let frames = std::thread::scope(|scope| {
+        let run = scope.spawn(|| run_with(&the_chat(root), want, &asks, Duration::from_secs(60)));
+        let open = open_ask(&asks, || run.is_finished());
+        asks.answer_run(open.id, RunAnswer::Once, window()).unwrap();
+        let id = loop {
+            if let Some(one) = asks.open().first() {
+                break one.id;
+            }
+            assert!(
+                !run.is_finished(),
+                "the run ended without asking for its key"
+            );
+            std::thread::yield_now();
+        };
+        asks.answer(
+            &Ctx::new(root, Env::of(&[])),
+            id,
+            crate::secrets::ask::Answer::Link(crate::secrets::links::Target {
+                vault: "team".into(),
+                key: "TOKEN".into(),
+            }),
+            window(),
+        )
+        .unwrap();
+        run.join().unwrap()
+    });
+    assert!(
+        refusal(&frames).0.contains("fills in a browser"),
+        "{frames:?}"
+    );
+    assert!(
+        !frames
+            .iter()
+            .any(|frame| matches!(frame, Frame::Exit { .. })),
+        "nothing ran: {frames:?}"
+    );
+}
