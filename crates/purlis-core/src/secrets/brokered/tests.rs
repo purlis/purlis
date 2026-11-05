@@ -17,6 +17,8 @@ use std::sync::Mutex;
 const TOKEN: &str = "s3cret-value";
 const KUBECONFIG: &str = "apiVersion: v1\nclusters: [k8s-s3cret]\n";
 
+mod run_grants;
+
 /// A project whose vault `team` is a plain file tagged for persona `devops`, beside a vault
 /// `other` tagged for nobody, and a folder `work` for the chat.
 fn project() -> tempfile::TempDir {
@@ -5309,6 +5311,7 @@ fn served_asking(
             asks,
             within,
             moved: &|| {},
+            run_gate: None,
         },
     );
     let bytes = wire.0.lock().unwrap().clone();
@@ -5568,6 +5571,7 @@ fn login_asking(
         asks,
         within,
         moved: &|| {},
+        run_gate: None,
     };
     login_and_identity_for(asker, "shop-login", false, Some(&missing)).map(|(login, _)| login)
 }

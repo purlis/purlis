@@ -124,6 +124,7 @@ macro_rules! app_commands {
                 secretfills::answer_secret_fill,
                 pooltools::answer_pool_tool,
                 secretasks::answer_secret_ask,
+                secretasks::answer_run_grant,
                 secretasks::link_secret_ask,
                 secretasks::secret_ask_entries,
                 chatbrowsers::allow_browser_sites,

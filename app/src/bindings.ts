@@ -725,7 +725,7 @@ export const commands = {
 	/**
 	 *  **Keep blocked** on a refused vault's Notice: puts it away, and grants nothing. The chat's
 	 *  next turn is told in one line not to retry, with `reason`, what the person typed for it, if
-	 *  anything (#1987). Its next try at the vault raises the Notice again.
+	 *  anything (#1987). Its next try at the vault raises nothing, for as long as the chat is open.
 	 */
 	keepVaultBlocked: (plane: PlaneId, session: number, vault: string, reason: string | null) => typedError<null, string>(__TAURI_INVOKE("keep_vault_blocked", { plane, session, vault, reason })),
 	/**
@@ -781,6 +781,11 @@ export const commands = {
 	 *  name.
 	 */
 	answerSecretAsk: (plane: PlaneId, id: number, value: string | null, vault: string | null, key: string | null, remember: string | null) => typedError<null, string>(__TAURI_INVOKE("answer_secret_ask", { plane, id, value, vault, key, remember })),
+	/**
+	 *  **The person answers the ask to allow a program `id`** (ADR 0112, #5239): the run that waits
+	 *  on it goes on, or hears it was not allowed, and a chat whose command stopped waiting is nudged.
+	 */
+	answerRunGrant: (plane: PlaneId, id: number, press: RunGrantPress) => typedError<null, string>(__TAURI_INVOKE("answer_run_grant", { plane, id, press })),
 	/**
 	 *  **The person fills Secret ask `id` with an entry they keep** (#5073): the asked key becomes a
 	 *  Linked entry reading `key` in `vault`, never a copy, and every command that waits on it runs
@@ -5323,6 +5328,15 @@ export type Allowed = {
 };
 
 /**
+ *  **What Always allow writes** ([`RunShown`], #5245): the exact line, and whether it hands a value
+ *  by a variable as the command did, where a file is safer.
+ */
+export type AlwaysShown = {
+	line: string,
+	by_env: boolean,
+};
+
+/**
  *  **The existing, checked path an ask is answered by** (#1690): the command the window
  *  already answers that source with, and what that command is sent. The registry adds no route.
  */
@@ -5424,6 +5438,8 @@ export type AnswerPath =
  *  masked field, Not now with none.
  */
 { via: "secret"; id: number } | 
+/**  `answer_run_grant` on the ask `id`, at the press an option names (ADR 0112). */
+{ via: "run-grant"; id: number } | 
 /**
  *  `answer_secret_fill` at the press an option names, on held fill `id`, for the notice
  *  whose digest is `shown` (#5115).
@@ -5622,6 +5638,11 @@ export type AskSource =
  *  answered by a value typed in the window, or Not now.
  */
 "secret" | 
+/**
+ *  A brokered run of a program its persona does not declare (ADR 0112, #5239): an Allow is a
+ *  Run grant, and Don't allow is remembered for that chat, program and vault.
+ */
+"run-grant" | 
 /**
  *  A secret a chat asks purlis to fill into a field of its browser (#5115): an Allow lets
  *  purlis put that one key into that field, on that one origin, once.
@@ -8929,7 +8950,13 @@ export type GrantWhat =
  *  on, for the browser alone, never the chat's own commands. Allowed from the chat's browser
  *  sites Ask (`allow_browser_sites`), never from a block's Allow.
  */
-"browser-site";
+"browser-site" | 
+/**
+ *  A Run grant (ADR 0112, #5241): a program a chat may run with a vault's keys, for that
+ *  chat. Given from its own ask (`answer_run_grant`), never from a block's Allow, and kept in
+ *  memory only.
+ */
+"run-grant";
 
 /**  The folders chats may be granted, and those just dropped from the list. */
 export type GrantableFolders = {
@@ -13489,6 +13516,46 @@ export type RunEndedOnARunner = {
 	device: string,
 };
 
+/**  **What the person pressed on an ask to allow a program** (ADR 0112). */
+export type RunGrantPress = 
+/**  One run of exactly this command. */
+"once" | 
+/**  This program with these variables and keys and any arguments, until the chat ends. */
+"chat" | 
+/**  As [`Self::Chat`], and write its line to the persona's tools (#5245). */
+"always" | 
+/**  Don't allow. */
+"refuse";
+
+/**
+ *  **An ask to allow a program, as its row draws it** (ADR 0112, #5239). Every field is the app's
+ *  own record of the run but [`Self::command`], which is the chat's words made inert: spelled so
+ *  no character in them changes what they seem to say, and drawn as the chat's. Names only: no
+ *  value is ever here.
+ */
+export type RunShown = {
+	persona: string,
+	vault: string,
+	/**  The program's full path, as the app resolved it where no chat writes. */
+	program: string,
+	/**  Each hand-over: the variable, the key, and whether it is a file or the value itself. */
+	values: RunValueShown[],
+	/**  The hosts this chat's sandbox lets the run reach. */
+	hosts: string[],
+	/**  The chat's sandbox holds the run to no host. */
+	every_host: boolean,
+	/**  T-4's sentence, where the program is a general-purpose one. */
+	caution?: string | null,
+	/**  The vault is not one the persona may use: an Allow opens it for that grant's scope alone. */
+	not_its_vault: boolean,
+	/**  The chat's command, its words made inert. */
+	command: string,
+	/**  The folder it starts in. */
+	cwd: string,
+	/**  What Always allow would write, where it is offered (#5245). */
+	always?: AlwaysShown | null,
+};
+
 /**  What started a skill run, as the Runs panel draws it. */
 export type RunStart = 
 /**  The chat's own Skill tool. */
@@ -13507,6 +13574,14 @@ export type RunStart =
 "grade" | 
 /**  A start a newer purlis wrote. */
 "unknown";
+
+/**  One value a run asks to hand its program ([`RunShown`]). */
+export type RunValueShown = {
+	var: string,
+	key: string,
+	/**  In a private file, whose path is in the variable; otherwise in the variable itself. */
+	in_a_file: boolean,
+};
 
 /**  **How one runner is**, as its row says it once asked (#2052). */
 export type RunnerAsked = {
@@ -13827,6 +13902,8 @@ export type SandboxPolicy = {
 	 *  chat hears `declined: policy` and the person is never asked.
 	 */
 	undeclared_secret_asks: boolean,
+	/**  Whether Run grants are turned off (ADR 0112, #5243). */
+	run_grants: boolean,
 };
 
 /**  One Internet access preset (`sandbox::Preset`), as Settings shows it. */
@@ -14272,6 +14349,8 @@ export type SecretShown = {
 	declared_purpose?: string | null,
 	/**  How many chats wait on it. */
 	waiting: number,
+	/**  **Why the run that missed it is offered no Allow** (ADR 0112, #5243): the app's own words. */
+	no_allow?: string | null,
 	/**
 	 *  **The chat says its value doesn't work** (#5075): the chat's own words, drawn as the
 	 *  chat's. Absent on an ask for a key the vault doesn't hold.
@@ -14666,6 +14745,11 @@ export type Shown = {
 	 *  is typed in. Absent for any other ask.
 	 */
 	secret?: SecretShown | null,
+	/**
+	 *  **The program a run asks the person to allow** (ADR 0112, #5239): the app's facts, kept
+	 *  apart from the chat's command. Absent for any other ask.
+	 */
+	run?: RunShown | null,
 	/**
 	 *  **The secret a fill would put into a page, and where** (#5115): drawn with its site
 	 *  large. Absent for any other ask.

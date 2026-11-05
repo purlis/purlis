@@ -14,7 +14,7 @@
 //!   audited before it is kept, listed in Settings › Sandbox › Granted, revocable there, and
 //!   forbidden where an administrator's policy says so (`vault-grants`). The next brokered run
 //!   reads it, so the chat does not restart.
-//! - **Keep blocked** puts the Notice away ([`Refusals::put_away`]).
+//! - **Keep blocked** puts the Notice away for the rest of the chat ([`Refusals::keep_blocked`]).
 //!
 //! The third way, a chat opened as the vault's persona, is not a button here (D-1430-12): the
 //! chat's own refusal names it, and a direct dispatch from the Notice is #1438's.
@@ -90,6 +90,9 @@ pub struct Refusals {
     /// What each chat is told once its turn ends ([`reported`]): the lines of an Allow made
     /// while it was mid-turn, oldest first.
     queued: Mutex<Vec<(u32, String)>>,
+    /// The vaults the person kept blocked for each chat: its next try raises no ask, so a chat
+    /// can't wear them down. In memory, as the refusals are, and gone with the chat.
+    kept: Mutex<Vec<(u32, String)>>,
 }
 
 impl Refusals {
@@ -97,9 +100,40 @@ impl Refusals {
         self.held.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
+    fn kept_lock(&self) -> std::sync::MutexGuard<'_, Vec<(u32, String)>> {
+        self.kept.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// **Keep blocked**: puts chat `session`'s refusal of `vault` away, and its later tries at
+    /// `vault` raise no ask for as long as the chat is open: not this one, and no Run grant's,
+    /// whose Always allow would give the persona the vault.
+    pub fn keep_blocked(&self, session: u32, vault: &str) {
+        // Kept first, so a refusal heard meanwhile finds it, and is not left up.
+        {
+            let mut kept = self.kept_lock();
+            if !kept
+                .iter()
+                .any(|(chat, one)| *chat == session && one == vault)
+            {
+                kept.push((session, vault.to_owned()));
+            }
+        }
+        self.put_away(session, vault);
+    }
+
+    /// Whether the person kept `vault` blocked for chat `session`.
+    pub fn kept_blocked(&self, session: u32, vault: &str) -> bool {
+        self.kept_lock()
+            .iter()
+            .any(|(chat, one)| *chat == session && one == vault)
+    }
+
     /// Notes that chat `session` was refused `not`, and answers whether that is news: one
     /// Notice per chat and vault, however often the chat tries again.
     pub fn note(&self, session: u32, not: NotTagged) -> bool {
+        if self.kept_blocked(session, &not.vault) {
+            return false;
+        }
         let mut held = self.lock();
         if held
             .iter()
@@ -164,6 +198,7 @@ impl Refusals {
     /// outlives its chat or reaches a later chat dealt the same number.
     pub fn forget(&self, session: u32) {
         self.lock().retain(|(chat, ..)| *chat != session);
+        self.kept_lock().retain(|(chat, _)| *chat != session);
         self.queue().retain(|(chat, _)| *chat != session);
     }
 
@@ -651,7 +686,7 @@ pub async fn allow_refused_vault(
 
 /// **Keep blocked** on a refused vault's Notice: puts it away, and grants nothing. The chat's
 /// next turn is told in one line not to retry, with `reason`, what the person typed for it, if
-/// anything (#1987). Its next try at the vault raises the Notice again.
+/// anything (#1987). Its next try at the vault raises nothing, for as long as the chat is open.
 #[tauri::command]
 #[specta::specta]
 pub fn keep_vault_blocked(
@@ -662,7 +697,7 @@ pub fn keep_vault_blocked(
     reason: Option<String>,
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
-    held.vault_refusals().put_away(session, &vault);
+    vault_kept_blocked(&held, planes.network(), session, &vault);
     crate::askoutcome::kept_blocked(
         held.chats(),
         session,
@@ -670,6 +705,31 @@ pub fn keep_vault_blocked(
         reason.as_deref(),
     );
     Ok(())
+}
+
+/// What Keep blocked does to what the app holds for chat `session` and `vault`: its later tries
+/// raise nothing, and a Run grant's ask already open on the vault is answered Don't allow, since
+/// its Allow would open what the person just kept blocked.
+pub(crate) fn vault_kept_blocked(
+    held: &crate::planes::Held,
+    network: Option<&purlis_core::sandboxblock::record::Record>,
+    session: u32,
+    vault: &str,
+) {
+    held.vault_refusals().keep_blocked(session, vault);
+    for open in held.secret_asks().open_runs() {
+        if open.not_its_vault && open.bound.chat == session && open.bound.vault == vault {
+            let answered = crate::secretasks::run_grant_answered(
+                held,
+                network,
+                open.id,
+                crate::secretasks::RunGrantPress::Refuse,
+            );
+            if let Err(why) = answered {
+                tracing::warn!("purlis: a run grant's ask stayed up after Keep blocked: {why}");
+            }
+        }
+    }
 }
 
 /// **Puts a refused vault's Notice away, and tells the chat nothing** (#1987): Dispatch to

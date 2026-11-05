@@ -83,6 +83,198 @@ pub async fn link_secret_ask(
     .await
 }
 
+/// **What the person pressed on an ask to allow a program** (ADR 0112).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum RunGrantPress {
+    /// One run of exactly this command.
+    Once,
+    /// This program with these variables and keys and any arguments, until the chat ends.
+    Chat,
+    /// As [`Self::Chat`], and write its line to the persona's tools (#5245).
+    Always,
+    /// Don't allow.
+    Refuse,
+}
+
+/// **The person answers the ask to allow a program `id`** (ADR 0112, #5239): the run that waits
+/// on it goes on, or hears it was not allowed, and a chat whose command stopped waiting is nudged.
+#[tauri::command]
+#[specta::specta]
+pub async fn answer_run_grant(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    id: u32,
+    press: RunGrantPress,
+) -> Result<(), String> {
+    let held = planes.held(&plane)?;
+    let network = planes.network().cloned();
+    crate::off_the_window("answering a run grant", move || {
+        run_grant_answered(&held, network.as_ref(), id, press)
+    })
+    .await
+}
+
+/// [`answer_run_grant`]'s work.
+pub fn run_grant_answered(
+    held: &crate::planes::Held,
+    network: Option<&purlis_core::sandboxblock::record::Record>,
+    id: u32,
+    press: RunGrantPress,
+) -> Result<(), String> {
+    use purlis_core::secrets::ask::run::{Audited, RunAnswer};
+    let answer = match press {
+        RunGrantPress::Once => RunAnswer::Once,
+        RunGrantPress::Chat => RunAnswer::ForChat,
+        RunGrantPress::Always => RunAnswer::Always,
+        RunGrantPress::Refuse => RunAnswer::Refuse,
+    };
+    let Some(open) = held
+        .secret_asks()
+        .open_runs()
+        .into_iter()
+        .find(|open| open.id == id)
+    else {
+        return Err("This ask has already been answered, or its chat has closed.".to_owned());
+    };
+    // Policy holds here as it holds at the run: it may have come to lock this since it was shown.
+    if answer != RunAnswer::Refuse {
+        use purlis_core::sandbox::grant::Level;
+        // Before any audit: nothing was given. The core holds to it again as it answers.
+        if answer != RunAnswer::Once && !open.bound.reviewed_for_any_arguments() {
+            return Err(format!(
+                "{} is allowed one exact command at a time: purlis has not reviewed it for any \
+                 arguments. Press Allow once, or declare it as a tool.",
+                open.bound.program_name()
+            ));
+        }
+        let locks = purlis_core::sandbox::policy::Locks::of(held.root());
+        if let Some(why) = locks.refuses_run_grant(&open.persona, &open.bound.program_name()) {
+            return Err(why);
+        }
+        let level = match answer {
+            RunAnswer::Once => Level::Once,
+            RunAnswer::Always => Level::Project,
+            RunAnswer::ForChat | RunAnswer::Refuse => Level::Chat,
+        };
+        if let Some(why) = locks.scope_removed(level) {
+            return Err(why);
+        }
+        if open.not_its_vault
+            && let Some(why) = locks.vault_grants_refused()
+        {
+            return Err(why);
+        }
+        // A key may have come to be a browser login's while the notice was up: Always allow would
+        // declare the program a tool for it, which is never asked about again.
+        let keys: Vec<&str> = open
+            .bound
+            .env
+            .iter()
+            .chain(&open.bound.file)
+            .filter_map(|spec| spec.split_once('=').map(|(_, key)| key))
+            .collect();
+        let ctx =
+            purlis_core::secrets::Ctx::new(held.root(), purlis_core::secrets::Env::from_process());
+        if let Some(why) =
+            purlis_core::secrets::brokered::no_program_is_handed(&ctx, &open.bound.vault, &keys)
+        {
+            let mut said = why.chars();
+            let first = said.next().map(|c| c.to_uppercase().to_string());
+            return Err(format!(
+                "{}{}. Nothing was allowed.",
+                first.unwrap_or_default(),
+                said.as_str()
+            ));
+        }
+    }
+    let audited = held.hooks().record_run_grant(
+        held.root(),
+        open.bound.chat,
+        &Audited::granted(&open.bound, answer),
+    );
+    // Nothing is granted unrecorded. A Don't allow stands either way: it gives nothing.
+    match (answer, audited) {
+        (_, Ok(())) => {}
+        (RunAnswer::Refuse, Err(why)) => {
+            tracing::warn!("purlis: a run grant's Don't allow was not audited ({why})");
+        }
+        (_, Err(why)) => return Err(why),
+    }
+    // Written before any grant: a write that fails says why, the ask stays open, and nothing is
+    // given. Where the person had allowed all of the persona's list, the Allow moves with the line.
+    if answer == RunAnswer::Always {
+        let written = match declare_the_tool(held, &open) {
+            Ok(written) => written,
+            Err(why) => {
+                let taken_back = Audited::revoked_always(&open.bound);
+                if let Err(unrecorded) =
+                    held.hooks()
+                        .record_run_grant(held.root(), open.bound.chat, &taken_back)
+                {
+                    tracing::warn!("purlis: a failed Always allow was not audited ({unrecorded})");
+                }
+                return Err(format!(
+                    "purlis could not declare the tool, so nothing was allowed: {why}"
+                ));
+            }
+        };
+        // Always allow alone gives the persona the vault, audited as any such Allow is. The line
+        // is written by now, so a failure here leaves the usual refused vault's Notice to ask.
+        if let Some(grant) = written.vault
+            && let Err(why) = give_the_vault(held, network, open.bound.chat, &grant)
+        {
+            tracing::warn!("purlis: Always allow did not give the persona the vault ({why})");
+        }
+        if let Some(shown) = written.allow
+            && let Err(why) = crate::sandboxing::allow_shown(
+                held.root(),
+                &shown,
+                &held.audit_then_record(network),
+                crate::sandboxing::now_secs(),
+            )
+        {
+            // The line is written and the chat runs on its Run grant; the usual Notice asks.
+            tracing::warn!("purlis: the Allow did not move with the line ({why})");
+        }
+    }
+    let answered = held
+        .secret_asks()
+        .answer_run(id, answer, crate::asking::the_window());
+    held.chats().asks_may_have_moved();
+    let answered = answered?;
+    told_each(held, &answered.nudge, &answered.told);
+    Ok(())
+}
+
+/// **Writes the line Always allow showed to the persona's tools** (#5245).
+fn declare_the_tool(
+    held: &crate::planes::Held,
+    open: &purlis_core::secrets::ask::run::OpenRun,
+) -> Result<purlis_core::settings::always_allow::Written, String> {
+    purlis_core::settings::always_allow::write(held.root(), &open.persona, &open.bound)
+}
+
+/// **Gives the persona the vault Always allow named** (ADR 0112), audited first.
+fn give_the_vault(
+    held: &crate::planes::Held,
+    network: Option<&purlis_core::sandboxblock::record::Record>,
+    chat: u32,
+    grant: &purlis_core::sandbox::local::VaultGrant,
+) -> Result<(), String> {
+    use purlis_core::sandbox::{grant::Audited, grant::Level, local};
+    held.audit_then_record(network)(
+        Some(chat),
+        &Audited {
+            granted: true,
+            what: local::VAULT,
+            target: &grant.target(),
+            level: Level::You,
+        },
+    )?;
+    local::grant_vault(held.root(), &grant.vault, &grant.persona).map_err(|why| why.to_string())
+}
+
 /// **One vault's entries a Secret ask's picker offers** (#5073): the vault, the keys a link may
 /// read in it, and why none could be listed, where that is so. Names only, never a value.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
@@ -202,7 +394,16 @@ fn answered_with(
 /// Tells each chat [`Answered::nudge`] names [`Answered::told`]'s one line, as its board
 /// allows: now, at its turn's end, or else at its next turn's start.
 fn nudge(held: &crate::planes::Held, answered: &Answered) {
-    for &chat in &answered.nudge {
+    told_each(held, &answered.nudge, &answered.told);
+}
+
+/// Tells each of `chats` `outcome`'s one line, as its board allows.
+fn told_each(
+    held: &crate::planes::Held,
+    chats: &[u32],
+    outcome: &purlis_core::askoutcome::Outcome,
+) {
+    for &chat in chats {
         let told = tell(
             held.vault_refusals(),
             chat,
@@ -210,11 +411,11 @@ fn nudge(held: &crate::planes::Held, answered: &Answered) {
                 let glance = held.board().glance(chat);
                 (glance.state, glance.asking)
             },
-            answered.told.line(),
+            outcome.line(),
             |chat, text| held.type_in_turn(chat, sent_as(text).as_bytes()),
         );
         if told == Told::NotSent {
-            held.chats().tell_outcome(chat, answered.told.clone());
+            held.chats().tell_outcome(chat, outcome.clone());
         }
     }
 }

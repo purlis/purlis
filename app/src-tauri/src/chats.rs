@@ -4601,6 +4601,7 @@ impl Chats {
                 asks,
                 within: std::time::Duration::ZERO,
                 moved: &moved,
+                run_gate: None,
             });
         let handed =
             match sign_in.filter(|s| !reattaching && !on_the_runner && !s.credentials.is_empty()) {

@@ -640,6 +640,7 @@ describe("Settings › Sandbox › Persona hosts", () => {
         required: null,
         write_grants: false,
         undeclared_secret_asks: false,
+        run_grants: false,
       },
     });
     await at("Persona hosts");
@@ -663,6 +664,7 @@ describe("Settings › Sandbox › Persona hosts", () => {
         required: null,
         write_grants: false,
         undeclared_secret_asks: true,
+        run_grants: false,
       },
     });
     await at("Secret asks");
