@@ -42,6 +42,7 @@ fn rust_files(dir: &Path, into: &mut Vec<PathBuf>) {
 
 #[test]
 fn the_only_caller_of_the_marks_writer_is_the_windows_command() {
+    purlis_core::unsteered!();
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let mut files = Vec::new();
     rust_files(&root.join("crates"), &mut files);
@@ -72,6 +73,7 @@ fn the_only_caller_of_the_marks_writer_is_the_windows_command() {
 
 #[test]
 fn the_commands_that_make_and_take_off_a_mark_reach_no_link() {
+    purlis_core::unsteered!();
     use purlis_session_protocol::ui;
     for command in ["vault_secret_mark_no_seed", "vault_secret_unmark_no_seed"] {
         assert!(ui::window_only(command), "{command}");
@@ -81,6 +83,7 @@ fn the_commands_that_make_and_take_off_a_mark_reach_no_link() {
 
 #[test]
 fn a_refusal_names_the_rows_the_window_draws() {
+    purlis_core::unsteered!();
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let words = std::fs::read_to_string(root.join("app/src/menuWords.ts")).expect("the words");
     for said in [

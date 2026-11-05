@@ -1421,8 +1421,8 @@ pub fn fill_value(
     };
     if super::totp::holds_an_address(value.expose()) {
         return Err(format!(
-            "{key} in vault '{vault}' holds an otpauth address, so purlis filled nothing: a seed \
-             never goes into a page, and no mark changes that. {code}"
+            "{key} in vault '{vault}' holds an otpauth address, which carries a 2FA seed, so \
+             purlis filled nothing: a seed never goes into a page, and no mark changes that. {code}"
         ));
     }
     if super::totp::looks_like_a_seed(value.expose()) {
