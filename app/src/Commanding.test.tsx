@@ -234,7 +234,6 @@ describe("the palette reaching what the window can do", () => {
         "New tab",
         "Split right",
         "Split down",
-        "Close this pane",
         "Close steward 1",
         "End chat steward 1…",
         "Focus workspace beta",
@@ -513,12 +512,27 @@ describe("one list, two surfaces", () => {
       "New tab",
       "Split right",
       "Split down",
-      "Close this pane",
       "Close steward 1",
     ]) {
       expect(rows).toContain(words);
       expect(screen.getByRole("button", { name: words })).toBeInTheDocument();
     }
+  });
+
+  it("has Close this pane in the palette only while the tab has another pane (#5318)", async () => {
+    core();
+    render(<App />);
+    await openAChat();
+
+    await palette("");
+    expect(rowTitles()).not.toContain("Close this pane");
+    await userEvent.keyboard("{Escape}");
+
+    await userEvent.click(screen.getByRole("button", { name: "Split right" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
+    await waitFor(() => expect(screen.getAllByTestId("pane")).toHaveLength(2));
+    await palette("");
+    expect(rowTitles()).toContain("Close this pane");
   });
 
   it("lists a row that cannot run, with its reason, where the button for it has gone", async () => {

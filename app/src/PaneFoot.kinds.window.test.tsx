@@ -135,6 +135,47 @@ describe("a foot, for each kind of pane (#5205)", () => {
     expect(head.querySelector('[data-scope="separator"]')).toBeNull();
   });
 
+  it("draws a view alone in its tab with no splits or close, and one in a split with all three (#5318)", () => {
+    render(
+      <LayoutPanes
+        {...propsOf(view(1), { alone: true, offerFor: SPLITS, closeOf: () => CLOSE })}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /^Split |^Close / })).toBeNull();
+    expect(document.querySelector(".pane-actions")).toBeNull();
+    cleanup();
+
+    render(
+      <LayoutPanes
+        {...propsOf(row(view(1), chat(2)), {
+          alone: false,
+          offerFor: SPLITS,
+          closeOf: () => CLOSE,
+          room: { width: 1600, height: 900 },
+        })}
+      />,
+    );
+    const frame = screen.getByText("a view").closest(".pane-frame") as HTMLElement;
+    expect(
+      [...frame.querySelectorAll(".pane-actions button")].map((one) =>
+        one.getAttribute("aria-label"),
+      ),
+    ).toEqual(["Split right", "Split down", "Close this pane"]);
+  });
+
+  it("draws an empty pane or a chat alone with its two splits and no Close, nothing to Tab through (#5318)", () => {
+    for (const lone of [empty(1), chat(1)]) {
+      render(
+        <LayoutPanes {...propsOf(lone, { alone: true, offerFor: SPLITS, closeOf: () => CLOSE })} />,
+      );
+      const buttons = [...document.querySelectorAll(".pane-doing button")].map((one) =>
+        one.getAttribute("aria-label"),
+      );
+      expect(buttons).toEqual(["Split right", "Split down"]);
+      cleanup();
+    }
+  });
+
   it("is not drawn on a one-job program's pane", () => {
     const oneJob: Layout = {
       kind: "pane",

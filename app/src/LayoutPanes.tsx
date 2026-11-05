@@ -148,9 +148,10 @@ function paneRowsOf(
   offerFor: (id: string) => Offer | undefined,
   closeOf: (pane: number) => Offer | undefined,
   task: boolean,
+  alone: boolean,
 ): Catalogued {
   const close = closeOf(pane);
-  const drawn = !task || close?.does.verb === "sendBack";
+  const drawn = !alone && (!task || close?.does.verb === "sendBack");
   return paneMenuOf(
     (id) => (id === "pane.close" ? (drawn ? close : undefined) : offerFor(id)),
     tab,
@@ -199,6 +200,7 @@ export function PaneFrame({
   oneJob = false,
   shell = false,
   closes = true,
+  alone = false,
   children,
 }: {
   plane: PlaneId;
@@ -224,6 +226,8 @@ export function PaneFrame({
   /** False where its head draws no close: a pane showing a task of its session (#1486), since a
    *  close there would read as ending the task. */
   closes?: boolean;
+  /** The only pane of its tab, whose own × does what a Close would (#5318). */
+  alone?: boolean;
   /** While the pane shows a task of its tab's session: the path to it (#1486). Also for a task
    *  in a pane of its own, and the session it is beside (#1489). */
   crumbs?: Crumbs;
@@ -302,6 +306,7 @@ export function PaneFrame({
     workItem: Boolean(workItem),
     sandbox: lastHead?.sandbox?.level != null,
     closes,
+    alone,
   });
   const line = new Set(lines.head);
   /** **What a part of the foot presses** (#5204, spec #5191 story 37): its row of the chat's list,
@@ -673,9 +678,8 @@ export function PaneActions({
     <div className="pane-actions">
       {/* **The state button, then the bell, then ⋯** (#4760, #5203), each always drawn: the
           chat's part of the head, before the pane's own controls. The bell keeps a fixed slot
-          with its count or none (#4754); the controls after it are drawn only under the pointer
-          or the keyboard (`.pane-doing`, `App.css`), and keep their room hidden, so nothing
-          beside them moves when a notice arrives or they are drawn. */}
+          with its count or none (#4754), and the controls after it are always drawn too (#5318),
+          so nothing beside them moves when a notice arrives or the pointer comes. */}
       {state}
       {parts.includes("bell") && <PaneBell />}
       {parts.includes("menu") && chat !== undefined && (
@@ -1102,6 +1106,7 @@ export function LayoutPanes({
   onShowInbox,
   onAnswer,
   closeOf,
+  alone = false,
   onShowChat,
   focused,
   onFocus,
@@ -1194,6 +1199,9 @@ export function LayoutPanes({
   onAnswer?: (words: string, ask: Shown) => void;
   /** The close of pane `pane`, decided for that pane and not for the one in focus. */
   closeOf: (pane: number) => Offer | undefined;
+  /** **The tab has this one pane** (#5318, `tabs.hasOnePane`): no Close on it, the tab's own ×
+   *  doing the same. A pane zoomed to fill its tab, drawn alone, is not. */
+  alone?: boolean;
   /** Goes to a chat: what a name in a breadcrumb does, with the pane it was named in, which
    *  shows it in place (#4757). */
   onShowChat: (session: number, pane?: number) => void;
@@ -1326,7 +1334,7 @@ export function LayoutPanes({
           {...dropPane(tab, layout.pane)}
         >
           {/* An empty pane has nothing to pick up, so its head is no grip (#4583). */}
-          <PaneActionsOf.Provider value={paneLinesOf("empty", undefined, {}).actions}>
+          <PaneActionsOf.Provider value={paneLinesOf("empty", undefined, { alone }).actions}>
             <PaneHead
               grip={false}
               doing={
@@ -1370,17 +1378,20 @@ export function LayoutPanes({
         >
           {/* Before the view, for `PaneFrame`'s reason: the tab order is the document's. Over
               the view's first row, which keeps the room it takes (`paneFrame.css`). */}
-          <PaneActionsOf.Provider value={paneLinesOf("view", undefined, {}).actions}>
+          <PaneActionsOf.Provider value={paneLinesOf("view", undefined, { alone }).actions}>
             <PaneHead
               at={{ tab, pane: layout.pane }}
+              // A view alone in its tab has none of them (#5318): its splits are the palette's.
               doing={
-                <PaneActions
-                  pane={layout.pane}
-                  size={drawn?.sizes[layout.pane]}
-                  offerFor={offerFor}
-                  closeOf={closeOf}
-                  onPaneDoes={onPaneDoes}
-                />
+                alone ? null : (
+                  <PaneActions
+                    pane={layout.pane}
+                    size={drawn?.sizes[layout.pane]}
+                    offerFor={offerFor}
+                    closeOf={closeOf}
+                    onPaneDoes={onPaneDoes}
+                  />
+                )
               }
             />
           </PaneActionsOf.Provider>
@@ -1519,6 +1530,7 @@ export function LayoutPanes({
           (crumb === undefined && endedTask === undefined) ||
           closeOf(layout.pane)?.does.verb === "sendBack"
         }
+        alone={alone}
         crumbs={shownPath}
         said={
           endedTask === undefined
@@ -1541,6 +1553,7 @@ export function LayoutPanes({
             offerFor,
             closeOf,
             crumb !== undefined || endedTask !== undefined,
+            alone,
           ),
           onPress: (offer) => onPaneDoes(layout.pane, offer),
         }}
@@ -1666,6 +1679,7 @@ export function LayoutPanes({
       onShowInbox={onShowInbox}
       onAnswer={onAnswer}
       closeOf={closeOf}
+      alone={alone}
       onShowChat={onShowChat}
       focused={focused}
       onFocus={onFocus}
@@ -1830,19 +1844,19 @@ export function EvenedSeparator({
  * The controls in a pane's top right corner: split it two ways, and end its chat.
  *
  * **The operator's, in his own words**: *"harnesses panes should each have close button and
- * spliting buttons in pane right top corner — and its visible when hovering harness only …
- * buttons should not have texts — only tooltips on hovering — so this will fully replace
- * separate buttons Split right, Split left, Exit this pane's chat buttons, and this will be
- * clear for spliting — user will know what pane is spliting."*
+ * spliting buttons in pane right top corner … buttons should not have texts — only tooltips on
+ * hovering — so this will fully replace separate buttons Split right, Split left, Exit this pane's
+ * chat buttons, and this will be clear for spliting — user will know what pane is spliting."*
  *
- * **Three things he did not say, which the rest of this repo does:**
+ * **Always drawn** (#5318, the person's ask of 2026-11-05, ADR 0111): they were once drawn only
+ * under the pointer or the keyboard. Nothing appears or moves as the pointer comes, and every
+ * pane's are in the tab sequence. A tab's only pane has no close, the tab's own × doing the same.
+ *
+ * **Two things he did not say, which the rest of this repo does:**
  *
  * - **A tooltip is not an accessible name.** `title` is what a pointer gets and a screen
  *   reader may or may not read it; `aria-label` is what a keyboard and `pressOnly()` find.
  *   Both carry the catalogue's own words, so there is still one place they are written down.
- * - **Hover-only is invisible without a pointer**, so these are drawn for the FOCUSED pane as
- *   well as the hovered one. `App.css` has the rule and the reason it is `visibility` rather
- *   than `opacity`: an invisible button that can still be clicked is a press nobody meant.
  * - **The close ends nothing** (#4756): it clears the pane, asks nothing, and has the quiet
  *   hover a split has.
  *
@@ -1876,15 +1890,14 @@ export function PaneDoing({
   // beside its session are rows of its ⋯ now (`command-table.md`, rule 4), not buttons here.
   const parts = useContext(PaneActionsOf);
   const rows = [
-    "pane.split.right",
+    ...(parts.includes("splitRight") ? ["pane.split.right"] : []),
     ...(parts.includes("splitDown") ? ["pane.split.down"] : []),
     ...(parts.includes("close") ? ["pane.close"] : []),
   ];
   return (
     <div className="pane-doing">
-      {/* **The divider** (#5203): the first of the pane's controls, so it is drawn and hidden
-          with them and never stands alone at rest. It parts marks a screen reader already hears
-          one by one, so it is not said. */}
+      {/* **The divider** (#5203): the first of the pane's controls, always drawn with them
+          (#5318). It parts marks a screen reader already hears one by one, so it is not said. */}
       {parted && <Divider orientation="vertical" decorative className="pane-divider" />}
       {rows.map(draw)}
     </div>

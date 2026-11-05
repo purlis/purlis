@@ -291,6 +291,7 @@ import {
   chatInFrontOf,
   chatOf,
   contentsOf,
+  hasOnePane,
   findView,
   openViewBesidePane,
   openChatsKey,
@@ -4538,6 +4539,16 @@ export const PlaneView = memo(function PlaneView({
     [change, filedIn, sidebar],
   );
 
+  /** A view alone in its tab, split from the tab's menu (#5318): what its splits ask of the pane
+   *  in front, once that tab is. `change` has moved the front by the next line. */
+  const splitTab = useCallback(
+    (id: number, direction: Direction) => {
+      bringToFront(id);
+      split(direction);
+    },
+    [bringToFront, split],
+  );
+
   /**
    * **Gives a task a tab of its own** (#1489, V100-38): on the strip of the workspace it works
    * in, in front, with the keyboard in it. Asked for by the person: its row's menu, its line
@@ -8316,6 +8327,7 @@ export const PlaneView = memo(function PlaneView({
       newBrowser,
       runAction,
       split,
+      splitTab,
       closePane,
       tileAll: tileAllIn,
       moveToWindow,
@@ -8481,6 +8493,7 @@ export const PlaneView = memo(function PlaneView({
       bringToFront,
       cancelSmartClose,
       close,
+      splitTab,
       closePane,
       tileAllIn,
       moveToWindow,
@@ -11613,6 +11626,7 @@ export const PlaneView = memo(function PlaneView({
                                   onShowInbox={showInbox}
                                   onAnswer={answeredOnPane}
                                   closeOf={closeOfPane}
+                                  alone={hasOnePane(tabs, frontTab.id)}
                                   onShowChat={showChatFromPane}
                                   focused={frontTab.focused}
                                   onFocus={(pane) => change((tabs) => focusPane(tabs, pane))}

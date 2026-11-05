@@ -966,7 +966,7 @@ export const NarrowScrolled: Story = {
 /**
  * **The pane's actions** (`PaneActions`, shared with a view's pane, #3147): split side by side,
  * split stacked and close, after a divider from the chat's actions, at the pane's top right, drawn by the catalogue's own
- * rows. Hidden at rest in the pane with the keyboard, drawn once the keyboard is on them.
+ * rows, and always drawn (#5318).
  */
 export const Actions: Story = {
   args: { warnings: [] },

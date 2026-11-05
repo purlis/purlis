@@ -2339,11 +2339,8 @@ and `FourRegions.test.tsx` found it by holding a `nav` that had been replaced.
 completion, and Claude Code's mode cycling — and nothing in the window takes either. So a
 terminal is a stop you can reach and cannot Tab out of, which is why the pane's own controls are
 written _before_ it in the document (they are absolutely positioned, so the look is unchanged).
-**They are shown on hover and while the keyboard is on them, and at no other time** — not
-because their pane is focused, which is the pane the operator is typing in and a corner he
-asked to keep clear. A `visibility: hidden` control is out of the sequence, so the focused
-pane's are hidden by `opacity` with `pointer-events: none` instead: Tab still lands on them, and
-`.pane-doing:focus-within` draws the group the moment it does.
+**They are always drawn** (#5318, ADR 0111), so every pane's are in the sequence, in the order
+they are drawn. A tab's only pane has no Close, so no stop is left for it.
 
 **The way out is Ctrl+Tab, and Ctrl+Shift+Tab backwards** (`SessionPane.leavesTheChat`). It is
 the platforms' own key for leaving a control that keeps Tab — GTK's text view, Windows'

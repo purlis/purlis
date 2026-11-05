@@ -347,8 +347,9 @@ describe("a terminal keeps its Tab", () => {
 
     terminal.focus();
     await userEvent.keyboard("{Control>}{Shift>}{Tab}{/Shift}{/Control}");
-    // And the one before it: the focused pane's own controls, drawn in its top corner.
-    await waitFor(() => expect(document.activeElement).toHaveAccessibleName(/Close/));
+    // And the one before it: the focused pane's own controls, drawn in its top corner. It is its
+    // tab's only pane, so the last of them is Split down and no Close is left to stop on (#5318).
+    await waitFor(() => expect(document.activeElement).toHaveAccessibleName("Split down"));
   });
 });
 
@@ -428,7 +429,7 @@ describe("the window's tab order", () => {
       "button More for steward two",
       "button Split right",
       "button Split down",
-      "button Close this pane",
+      // No Close: this is the tab's only pane, and the tab's own × does the same (#5318).
       "textarea Terminal 2",
       "button What Claude Code can do here",
       "separator Resize the right sidebar",
@@ -558,53 +559,30 @@ describe("a list is one Tab stop", () => {
 });
 
 /**
- * **A pane's controls show when the keyboard is on them, not whenever their pane is focused.**
- *
- * The focused pane is the one the operator types in, and he asked for that corner to stay
- * clear (`App.css`, `.pane-doing`). jsdom computes no stylesheet, so the rules are read as
- * text, the way `ChatGauge.test.tsx` reads its own; `keyboard-reach.e2e.ts` computes them in
- * the real WebView.
+ * **A pane's controls are always drawn** (#5318, ADR 0111): nothing appears or moves as the pointer
+ * comes, and each is in the tab sequence. jsdom computes no stylesheet, so the rules are read as
+ * text, the way `ChatGauge.test.tsx` reads its own; `keyboard-reach.e2e.ts` computes them in the
+ * real WebView.
  */
 describe("a pane's controls", () => {
-  const css = readFileSync(join(process.cwd(), "src/App.css"), "utf8").replace(
-    /\/\*[\s\S]*?\*\//g,
-    "",
-  );
-  /** Every rule as its selectors and its declarations. */
-  const rules = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].map(([, selectors, body]) => ({
-    selectors: selectors.split(",").map((one) => one.trim()),
-    body,
-  }));
-  /** The selectors that DRAW the controls: visible, and not faded out. */
-  const drawing = rules
-    .filter(
-      (rule) => /visibility:\s*visible/.test(rule.body) && !/opacity:\s*0\s*;/.test(rule.body),
-    )
-    .flatMap((rule) => rule.selectors)
-    .filter((selector) => selector.endsWith(".pane-doing") || selector.includes(".pane-doing:"));
+  const css = ["src/App.css", "src/paneFrame.css"]
+    .map((file) => readFileSync(join(process.cwd(), file), "utf8"))
+    .join("\n")
+    .replace(/\/\*[\s\S]*?\*\//g, "");
+  /** The rules that name the controls, as their selectors and their declarations. */
+  const rules = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+    .map(([, selectors, body]) => ({ selectors, body }))
+    .filter((rule) => rule.selectors.includes(".pane-doing"));
 
-  it("are drawn by hover and by the keyboard being on them, and by nothing else", () => {
-    expect(drawing.sort()).toEqual([".pane-doing:focus-within", ".pane-frame:hover .pane-doing"]);
+  it("are named by rules this reads, so finding none fails", () => {
+    expect(rules.length).toBeGreaterThan(0);
   });
 
-  it("are not drawn because their pane is focused, or because its terminal has the keyboard", () => {
-    for (const selector of drawing) {
-      expect(selector).not.toContain(".focused");
-      expect(selector).not.toContain(".pane-frame:focus-within");
+  it("have no rule that hides them, fades them or takes the pointer from them", () => {
+    for (const { selectors, body } of rules) {
+      expect(`${selectors}{${body}}`).not.toMatch(/visibility:|opacity:|pointer-events:/);
+      expect(selectors).not.toMatch(/:hover|:focus-within|\.focused/);
     }
-  });
-
-  it("stay in the tab sequence on the focused pane, unseen and unclickable until reached", () => {
-    const focused = rules.find((rule) =>
-      rule.selectors.some((one) => one.includes(":has(.pane.focused)")),
-    );
-    expect(focused?.selectors).toEqual([
-      ".pane-frame:has(.pane.focused):not(:hover) .pane-doing:not(:focus-within)",
-    ]);
-    // `visibility: visible` is what keeps them focusable; `opacity` is what hides them.
-    expect(focused?.body).toMatch(/visibility:\s*visible/);
-    expect(focused?.body).toMatch(/opacity:\s*0\s*;/);
-    expect(focused?.body).toMatch(/pointer-events:\s*none/);
   });
 });
 
