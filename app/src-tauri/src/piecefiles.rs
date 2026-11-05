@@ -20,7 +20,7 @@
 use std::path::Path;
 
 use base64::Engine as _;
-use purlis_core::files::{self, Branch, Entry, Kind, Mark, Opened, Reader};
+use purlis_core::files::{self, Branch, Entry, Kind, Mark, Opened, Reader, workspace};
 use purlis_core::youreditor::{self, Editor, Launch};
 
 use crate::planes::{PlaneId, Planes};
@@ -126,6 +126,14 @@ pub struct FolderEntry {
     /// workspace's tab, and never a folder that opens here. Left out everywhere else.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace: Option<String>,
+    /// In a workspace's own files (#5375), whether purlis keeps it: marked *managed*, and
+    /// opened read-only. Left out where it is not.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub managed: bool,
+    /// In a workspace's own files, whether it is a dotfile, drawn only with Show hidden. Left
+    /// out where it is not.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub hidden: bool,
 }
 
 impl From<Kind> for EntryKind {
@@ -146,6 +154,22 @@ impl From<Entry> for FolderEntry {
             ignored: entry.ignored,
             refused: entry.refused,
             workspace: entry.workspace,
+            managed: false,
+            hidden: false,
+        }
+    }
+}
+
+impl From<workspace::Entry> for FolderEntry {
+    fn from(entry: workspace::Entry) -> Self {
+        Self {
+            name: entry.name,
+            kind: entry.kind.into(),
+            ignored: false,
+            refused: entry.refused,
+            workspace: None,
+            managed: entry.managed,
+            hidden: entry.hidden,
         }
     }
 }
@@ -520,6 +544,154 @@ pub async fn plane_file(
     .await
 }
 
+/// One folder of a workspace's own files (#5375), one level deep, as [`branch_tree`] answers a
+/// branch's: everything in the workspace's folder but its repos and their branches' folders, each
+/// entry saying whether purlis keeps it and whether it is hidden. At the top, the workspace's
+/// repos, each with where it is. `""` is the workspace's folder.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct WorkspaceListing {
+    /// Folders first, then files, each in the order a person reads names; at most 5,000.
+    pub entries: Vec<FolderEntry>,
+    /// How many entries past those are not listed.
+    pub more: u32,
+    /// At the top, the workspace's repos by name; none below it.
+    pub repos: Vec<WorkspaceRepo>,
+}
+
+/// One repo of a workspace, where its folder's top holds it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct WorkspaceRepo {
+    pub name: String,
+    /// In `repos/`, or at the top as a clone made before structure version 6 (ADR 0114).
+    pub inside_repos: bool,
+}
+
+/// A file of a workspace's own files, as the light editor draws it, and whether purlis keeps it.
+#[derive(Debug, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct WorkspaceFile {
+    pub file: PieceFile,
+    /// Whether purlis keeps it: opened read-only.
+    pub managed: bool,
+    /// The view of its own a managed file has, where the window has one.
+    pub view: Option<OwnFileView>,
+}
+
+/// A managed workspace file's own view (#5375).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum OwnFileView {
+    Memory,
+    Todos,
+    Sessions,
+    /// `workspace.md`'s vision, which has an editor of its own.
+    Vision,
+}
+
+impl From<workspace::View> for OwnFileView {
+    fn from(view: workspace::View) -> Self {
+        match view {
+            workspace::View::Memory => Self::Memory,
+            workspace::View::Todos => Self::Todos,
+            workspace::View::Sessions => Self::Sessions,
+            workspace::View::Vision => Self::Vision,
+        }
+    }
+}
+
+// The window's alone (`WINDOW_ONLY`, #5375), as `plane_tree` is: it lists the person's own files,
+// which no link is served. Read here, on a blocking thread, by no git: the plane's `.gitignore`
+// ignores a workspace's files. Not a doc comment, because the generated bindings carry those.
+#[tauri::command]
+#[specta::specta]
+pub async fn workspace_tree(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    workspace: String,
+    folder: String,
+) -> Result<WorkspaceListing, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    crate::off_the_window("reading the folder", move || {
+        workspace_tree_of(&root, &workspace, &folder, &extension_folders())
+    })
+    .await
+}
+
+/// One file of a workspace's own files, by its path in the workspace's folder, and whether purlis
+/// keeps it. Refused for a path that leaves the folder or is a repo's, and through a link.
+// The window's alone (`WINDOW_ONLY`, #5375), on a blocking thread, as `plane_file` is. Not a doc
+// comment, because the generated bindings carry those.
+#[tauri::command]
+#[specta::specta]
+pub async fn workspace_file(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    workspace: String,
+    path: String,
+) -> Result<WorkspaceFile, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    crate::off_the_window("reading the file", move || {
+        workspace_file_of(&root, &workspace, &path, &extension_folders())
+    })
+    .await
+}
+
+/// The folders the extensions this machine approved keep in a workspace: managed there.
+fn extension_folders() -> Vec<String> {
+    purlis_core::machine::config_root()
+        .map(|config| {
+            purlis_core::extension::events::carried(&config, &crate::extensions::built_in())
+        })
+        .unwrap_or_default()
+}
+
+/// Workspace `branch.ws`'s own files, for a command that named them ([`branch`]).
+fn workspace_files(plane: &Path, branch: Branch<'_>) -> Result<workspace::Files, String> {
+    workspace::Files::of(plane, branch.ws).map_err(|why| why.to_string())
+}
+
+pub(crate) fn workspace_tree_of(
+    plane: &Path,
+    ws: &str,
+    folder: &str,
+    extension_folders: &[String],
+) -> Result<WorkspaceListing, String> {
+    let listing = workspace::Files::of(plane, ws)
+        .and_then(|files| files.tree(folder, extension_folders))
+        .map_err(|why| why.to_string())?;
+    Ok(WorkspaceListing {
+        entries: listing.entries.into_iter().map(FolderEntry::from).collect(),
+        more: u32::try_from(listing.more).unwrap_or(u32::MAX),
+        repos: listing
+            .repos
+            .into_iter()
+            .map(|repo| WorkspaceRepo {
+                name: repo.name,
+                inside_repos: repo.layout == purlis_core::repofolder::Layout::Repos,
+            })
+            .collect(),
+    })
+}
+
+pub(crate) fn workspace_file_of(
+    plane: &Path,
+    ws: &str,
+    path: &str,
+    extension_folders: &[String],
+) -> Result<WorkspaceFile, String> {
+    let opened = workspace::Files::of(plane, ws)
+        .and_then(|files| files.open(path))
+        .map_err(|why| why.to_string())?;
+    let managed = workspace::managed(path, extension_folders);
+    Ok(WorkspaceFile {
+        file: opened.into(),
+        managed,
+        view: managed
+            .then(|| workspace::view_of(path))
+            .flatten()
+            .map(OwnFileView::from),
+    })
+}
+
 /// The branch the window named: a piece of a repo, or the repo's own folder. Shared with
 /// `filewatch.rs`, which names branches the same way.
 ///
@@ -532,6 +704,9 @@ pub(crate) fn branch<'a>(
 ) -> Branch<'a> {
     match piece {
         Some(piece) => Branch::piece(workspace, repo, piece),
+        // **A workspace's own files** (#5375): a workspace and no repo, which no branch is, so
+        // each command below reads them through `files::workspace` and nothing else.
+        None if repo.is_empty() && !workspace.is_empty() => Branch::workspace_files(workspace),
         None => Branch::repo(workspace, repo),
     }
 }
@@ -723,6 +898,11 @@ fn launch_of(
     editor: YourEditor,
     var: &dyn Fn(&str) -> Option<String>,
 ) -> Result<Launch, String> {
+    if branch.is_workspace_files() {
+        return workspace_files(plane, branch)?
+            .in_your_editor(path, line, editor.into(), var)
+            .map_err(|why| why.to_string());
+    }
     files::root(reader, plane, branch)
         .and_then(|root| root.in_your_editor(reader, path, line, editor.into(), var))
         .map_err(|refused| refused.to_string())
@@ -804,6 +984,11 @@ fn placed_of(
     branch: Branch<'_>,
     path: &str,
 ) -> Result<files::Placed, String> {
+    if branch.is_workspace_files() {
+        return workspace_files(plane, branch)?
+            .place(path)
+            .map_err(|why| why.to_string());
+    }
     let root = files::root(reader, plane, branch).map_err(|refused| refused.to_string())?;
     if path.is_empty() {
         root.place_branch_folder()
@@ -823,6 +1008,11 @@ fn path_text(
     absolute: bool,
 ) -> Result<String, String> {
     if !absolute {
+        if branch.is_workspace_files() {
+            return workspace_files(plane, branch)?
+                .named(path)
+                .map_err(|why| why.to_string());
+        }
         // A link's own path, followed nowhere: what its row copies (`files::named`).
         return files::named_by(reader, plane, branch, path).map_err(|refused| refused.to_string());
     }
@@ -850,6 +1040,10 @@ fn shell_folder_by(
 ) -> Result<std::path::PathBuf, String> {
     if folder.is_empty() {
         return placed_of(reader, plane, branch, folder).map(|placed| placed.absolute);
+    }
+    if branch.is_workspace_files() {
+        let mut found = workspace_files(plane, branch)?.folders(&[folder]);
+        return found.remove(0).map_err(|why| why.to_string());
     }
     files::root(reader, plane, branch)
         .and_then(|root| root.folder(folder))

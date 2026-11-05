@@ -1,0 +1,460 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! **The workspace files** (CONTEXT.md; ADR 0038 and ADR 0081, both amended 2026-11-05): a
+//! workspace's own folder as Explorer draws it with the workspace picked, read here and written
+//! nowhere (#5375).
+//!
+//! **What they are.** Everything in `workspaces/<ws>/` but its repos and their branches' folders:
+//! `repos/`, `.worktrees/`, and every folder at the top that holds a `.git` (an old clone, ADR
+//! 0114), which [`crate::repofolder::holdings`] names. Those are never listed, opened, placed or
+//! watched here, under any spelling of their names: a repo's files are its own row's, read as a
+//! branch's are. The top's listing says the repos apart ([`Listing::repos`]), each with where it
+//! is, so the window draws a row for each where it stands on disk.
+//!
+//! **Read as a skill's folder is** ([`super::folder`]): the workspace's folder checked by
+//! [`confine::workspace_dir`], each folder listed and each file opened through a descriptor, one
+//! component at a time with no link followed. A link is listed, and never followed, opened or
+//! placed. Not by git: the plane's own `.gitignore` ignores every workspace's files but a LIVE
+//! one's, so the offered list a branch opens by says nothing here. What purlis keeps to itself in
+//! the project ([`super::kept`]) is left out here as in every place.
+//!
+//! **Each entry says two things of itself**: whether purlis keeps it ([`managed`]), which the
+//! window marks and opens read-only, with its own view where it has one ([`view_of`]); and whether
+//! it is a dotfile, which the window draws only with Show hidden.
+
+use std::path::{Path, PathBuf};
+
+use super::{Kept, Kind, Opened, Placed, Refused};
+use crate::repofolder::{self, Layout};
+use crate::worktree::confine::{self, Outside};
+use crate::youreditor::{self, Editor, Launch};
+
+/// The folder of the branches' folders, never one of the workspace files.
+const WORKTREES: &str = ".worktrees";
+
+/// The folders purlis keeps in a workspace beside the reserved names: its local skills.
+const ALSO_KEPT: [&str; 2] = ["skills.local", ".claude"];
+
+/// The prefixes of the files purlis generates in a workspace (`.purlis-structure`, and the same
+/// files from before the rename).
+const GENERATED: [&str; 2] = [".purlis", ".charter"];
+
+/// One entry of a folder of the workspace files.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Entry {
+    /// Its name in the folder, not its path.
+    pub name: String,
+    pub kind: Kind,
+    /// Whether purlis keeps it ([`managed`]).
+    pub managed: bool,
+    /// Whether its name starts with a dot.
+    pub hidden: bool,
+    /// Why it does not open, as the sentence the window shows; `None` for a file that opens and
+    /// a folder that expands.
+    pub refused: Option<String>,
+}
+
+/// One repo of the workspace, as the top of its folder holds it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Repo {
+    pub name: String,
+    /// Where it is: in `repos/`, or at the top as an old clone.
+    pub layout: Layout,
+}
+
+/// One folder of the workspace files: its first [`super::SHOWN`] entries, how many more, and at
+/// the top the workspace's repos.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Listing {
+    pub entries: Vec<Entry>,
+    pub more: usize,
+    /// The repos, sorted by name, for the top folder alone; none below it.
+    pub repos: Vec<Repo>,
+}
+
+/// A managed file's own view, where the window has one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum View {
+    Memory,
+    Todos,
+    Sessions,
+    /// `workspace.md`, whose vision has an editor of its own.
+    Vision,
+}
+
+/// Why a path of the workspace files was not read, as the sentence the window shows.
+#[derive(Debug, thiserror::Error)]
+pub enum NotHere {
+    #[error(transparent)]
+    Workspace(#[from] Outside),
+    #[error(transparent)]
+    Repos(#[from] repofolder::Trouble),
+    #[error(transparent)]
+    Files(#[from] Refused),
+    #[error("'{0}' is in a repo, whose files are under the repo's own row")]
+    OfARepo(String),
+    #[error("'{0}' is in the branches' folders, whose files are under each branch")]
+    OfABranch(String),
+    #[error("'{0}' is reached through a link, and purlis follows no link in the workspace's files")]
+    ThroughALink(String),
+}
+
+/// Whether `path`, a path of the workspace files, is one purlis keeps: a reserved workspace name
+/// ([`crate::contain::workspace_keeps`]), its local skills, its generated `.claude/` and
+/// `.purlis-*` files, or a folder an approved extension keeps there (`extension_folders`, from
+/// [`crate::extension::events::carried`]). Judged by the path's first step, in any case, so what a
+/// managed folder holds is managed too.
+pub fn managed(path: &str, extension_folders: &[String]) -> bool {
+    let first = path.split('/').next().unwrap_or("");
+    let lower = first.to_lowercase();
+    crate::contain::workspace_keeps(first)
+        || ALSO_KEPT.contains(&lower.as_str())
+        || GENERATED
+            .iter()
+            .any(|prefix| lower == *prefix || lower.starts_with(&format!("{prefix}-")))
+        || extension_folders
+            .iter()
+            .any(|folder| folder.eq_ignore_ascii_case(first))
+}
+
+/// The view a managed file at `path` has of its own, if the window has one.
+pub fn view_of(path: &str) -> Option<View> {
+    let mut steps = path.split('/');
+    let first = steps.next().unwrap_or("").to_lowercase();
+    let more = steps.next().is_some();
+    match first.as_str() {
+        "workspace.md" if !more => Some(View::Vision),
+        "memory" => Some(View::Memory),
+        "todos" => Some(View::Todos),
+        "sessions" => Some(View::Sessions),
+        _ => None,
+    }
+}
+
+/// **One workspace's files**, its folder checked and its repos found once: what every read of
+/// them goes through.
+#[derive(Debug)]
+pub struct Files {
+    /// The workspace's folder, as the disk spells it.
+    dir: PathBuf,
+    /// The names at the top that are no workspace file, lowercased: `repos`, `.worktrees` and
+    /// every folder there with a `.git` of its own.
+    outside: Vec<String>,
+    repos: Vec<Repo>,
+    kept: Kept,
+}
+
+impl Files {
+    /// Workspace `ws`'s files in the project at `plane`. Refused for a name that is no
+    /// workspace's, a folder reached through a link or not there, and one whose repos cannot be
+    /// read: without them a repo's folder could not be told from the person's.
+    pub fn of(plane: &Path, ws: &str) -> Result<Self, NotHere> {
+        let checked = confine::workspace_dir(plane, ws)?;
+        let dir = std::fs::canonicalize(&checked).map_err(|e| Refused::Unreadable {
+            what: format!("workspace '{ws}'"),
+            why: e.to_string(),
+        })?;
+        let holdings = repofolder::holdings(plane, ws)?;
+        let mut outside = vec![repofolder::REPOS.to_string(), WORKTREES.to_string()];
+        let at_root = holdings
+            .repos
+            .iter()
+            .chain(&holdings.shadowed)
+            .chain(&holdings.others)
+            .filter(|row| row.layout == Layout::Root);
+        outside.extend(at_root.map(|row| row.repo.name.to_lowercase()));
+        let repos = holdings
+            .repos
+            .iter()
+            .map(|row| Repo {
+                name: row.repo.name.clone(),
+                layout: row.layout,
+            })
+            .collect();
+        let kept = Kept::in_a_branch(plane, &dir, &crate::sandbox::Machine::this());
+        kept.whole()?;
+        Ok(Self {
+            dir,
+            outside,
+            repos,
+            kept,
+        })
+    }
+
+    /// The workspace's folder, as the disk spells it.
+    pub fn path(&self) -> &Path {
+        &self.dir
+    }
+
+    /// `path`, a path of the workspace files as the window spells it, judged by its spelling:
+    /// inside the folder, not git's, not a repo's or a branch's, and nothing purlis keeps to
+    /// itself. `""` is the folder itself.
+    fn judged(&self, path: &str) -> Result<String, NotHere> {
+        if path.is_empty() {
+            return Ok(String::new());
+        }
+        let spelled = super::spelled_inside(path)?;
+        let first = spelled.split('/').next().unwrap_or("");
+        if self.is_outside(first) {
+            return Err(if first.eq_ignore_ascii_case(WORKTREES) {
+                NotHere::OfABranch(path.to_string())
+            } else {
+                NotHere::OfARepo(path.to_string())
+            });
+        }
+        self.kept.refuse(Path::new(&spelled), path)?;
+        Ok(spelled)
+    }
+
+    /// Whether `name`, at the top, is a repo's or the branches' folders.
+    fn is_outside(&self, name: &str) -> bool {
+        let lower = name.to_lowercase();
+        self.outside.iter().any(|one| *one == lower)
+    }
+
+    /// `relative`, judged, resolved as the disk spells it and required to be that very path: no
+    /// link on its way, the leaf included.
+    fn resolved(&self, relative: &str, path: &str) -> Result<PathBuf, NotHere> {
+        let absolute = self.dir.join(relative);
+        match std::fs::canonicalize(&absolute) {
+            Ok(resolved) if resolved == absolute => Ok(absolute),
+            Ok(_) => Err(NotHere::ThroughALink(path.to_string())),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                Err(Refused::NotThere(path.to_string()).into())
+            }
+            Err(e) => Err(Refused::Unreadable {
+                what: path.to_string(),
+                why: e.to_string(),
+            }
+            .into()),
+        }
+    }
+
+    /// **One folder, one level deep** (`""` for the top): folders first, each kind in the order a
+    /// person reads names, the first [`super::SHOWN`]. Each entry says whether purlis keeps it,
+    /// by `extension_folders` too, and whether it is hidden; a link and anything that is not a
+    /// file are listed with why they do not open. At the top, the repos are said apart.
+    pub fn tree(&self, folder: &str, extension_folders: &[String]) -> Result<Listing, NotHere> {
+        let relative = self.judged(folder)?;
+        let mut listed = super::listing(&self.dir, Path::new(&relative)).map_err(|e| {
+            if super::swapped(&e) {
+                NotHere::ThroughALink(folder.to_string())
+            } else if e.kind() == std::io::ErrorKind::NotFound {
+                Refused::NotThere(folder.to_string()).into()
+            } else {
+                Refused::Unreadable {
+                    what: folder.to_string(),
+                    why: e.to_string(),
+                }
+                .into()
+            }
+        })?;
+        let top = relative.is_empty();
+        listed.retain(|one| {
+            let name = one.name.to_string_lossy();
+            !super::gits(Path::new(&one.name))
+                && !(top && self.is_outside(&name))
+                && !self.kept.private_entry(Path::new(&relative), &one.name)
+        });
+        listed.sort_by(|a, b| {
+            (a.kind != Kind::Folder)
+                .cmp(&(b.kind != Kind::Folder))
+                .then_with(|| super::natural(&a.name.to_string_lossy(), &b.name.to_string_lossy()))
+        });
+        let more = listed.len().saturating_sub(super::SHOWN);
+        listed.truncate(super::SHOWN);
+        let entries = listed
+            .into_iter()
+            .map(|one| {
+                let name = one.name.to_string_lossy().into_owned();
+                let path = if top {
+                    name.clone()
+                } else {
+                    format!("{relative}/{name}")
+                };
+                let refused = if one.name.to_str().is_none() {
+                    Some("purlis opens only a file whose name is UTF-8".to_string())
+                } else {
+                    match one.kind {
+                        Kind::Link => Some(
+                            "a link, and purlis follows no link in the workspace's files"
+                                .to_string(),
+                        ),
+                        Kind::File if !one.file => {
+                            Some("not a file: only files open here".to_string())
+                        }
+                        _ => None,
+                    }
+                };
+                Entry {
+                    managed: managed(&path, extension_folders),
+                    hidden: name.starts_with('.'),
+                    name,
+                    kind: one.kind,
+                    refused,
+                }
+            })
+            .collect();
+        Ok(Listing {
+            entries,
+            more,
+            repos: if top { self.repos.clone() } else { Vec::new() },
+        })
+    }
+
+    /// **One file**, by its path: refused as [`Self::tree`] refuses a folder, and when a link is
+    /// on its way or is the file itself, when it is not a regular file, and when it is a second
+    /// name of a file purlis keeps to itself.
+    pub fn open(&self, path: &str) -> Result<Opened, NotHere> {
+        let spelled = self.judged(path)?;
+        if spelled.is_empty() {
+            return Err(Refused::NotAFile(path.to_string()).into());
+        }
+        let held = super::hold_folder(&self.dir, &self.dir).map_err(|e| Refused::Unreadable {
+            what: "the workspace's folder".to_string(),
+            why: e.to_string(),
+        })?;
+        let file = super::open_inside(&held, Path::new(&spelled)).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                NotHere::from(Refused::NotThere(path.to_string()))
+            } else {
+                NotHere::ThroughALink(path.to_string())
+            }
+        })?;
+        let meta = file.metadata().map_err(|e| Refused::Unreadable {
+            what: path.to_string(),
+            why: e.to_string(),
+        })?;
+        if !meta.is_file() {
+            return Err(Refused::NotAFile(path.to_string()).into());
+        }
+        if self.kept.holds_a_name_of(&file) {
+            return Err(Refused::KeptPrivate(path.to_string()).into());
+        }
+        Ok(super::read_opened(file, meta.len(), path)?)
+    }
+
+    /// **One file or folder placed on disk** (Copy path, Reveal, a shell tab, a chat's
+    /// reference), or with `""` the workspace's folder itself: its absolute path, which no link
+    /// is on.
+    pub fn place(&self, path: &str) -> Result<Placed, NotHere> {
+        let relative = self.judged(path)?;
+        let absolute = if relative.is_empty() {
+            self.dir.clone()
+        } else {
+            self.resolved(&relative, path)?
+        };
+        let folder = absolute.is_dir();
+        Ok(Placed {
+            absolute,
+            relative,
+            folder,
+        })
+    }
+
+    /// **One file, folder or link by its own path** (Copy relative path), the leaf followed
+    /// nowhere: its folder is resolved through no link, and the leaf is only looked at.
+    pub fn named(&self, path: &str) -> Result<String, NotHere> {
+        let spelled = self.judged(path)?;
+        if spelled.is_empty() {
+            return Err(Refused::NotInPiece(path.to_string()).into());
+        }
+        let (parent, leaf) = spelled.rsplit_once('/').unwrap_or(("", spelled.as_str()));
+        let folder = if parent.is_empty() {
+            self.dir.clone()
+        } else {
+            self.resolved(parent, path)?
+        };
+        match std::fs::symlink_metadata(folder.join(leaf)) {
+            Ok(_) => Ok(spelled),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                Err(Refused::NotThere(path.to_string()).into())
+            }
+            Err(e) => Err(Refused::Unreadable {
+                what: path.to_string(),
+                why: e.to_string(),
+            }
+            .into()),
+        }
+    }
+
+    /// **The folders a window's Explorer has open, for its watch**: each resolved as
+    /// [`Self::tree`] would list it, or refused.
+    pub fn folders(&self, named: &[&str]) -> Vec<Result<PathBuf, NotHere>> {
+        named
+            .iter()
+            .map(|folder| {
+                let placed = self.place(folder)?;
+                if placed.folder {
+                    Ok(placed.absolute)
+                } else {
+                    Err(Refused::NotAFolder((*folder).to_string()).into())
+                }
+            })
+            .collect()
+    }
+
+    /// **One file handed to your editor** at `line` (RC-20): placed as [`Self::place`] places
+    /// it, a regular file, and no second name of a file purlis keeps to itself.
+    pub fn in_your_editor(
+        &self,
+        path: &str,
+        line: u32,
+        editor: Editor,
+        var: &dyn Fn(&str) -> Option<String>,
+    ) -> Result<Launch, NotHere> {
+        if self.judged(path)?.is_empty() {
+            return Err(Refused::NotAFile(path.to_string()).into());
+        }
+        let placed = self.place(path)?;
+        if !placed.absolute.is_file() {
+            return Err(Refused::NotAFile(path.to_string()).into());
+        }
+        let opened = crate::contain::open_no_link(&self.dir, &placed.absolute)
+            .map_err(|_| NotHere::ThroughALink(path.to_string()))?;
+        if self.kept.holds_a_name_of(&opened) {
+            return Err(Refused::KeptPrivate(path.to_string()).into());
+        }
+        Ok(youreditor::launch(editor, &placed.absolute, line, var).map_err(Refused::from)?)
+    }
+
+    /// **The files found by name** (the Explorer's filter): every regular file the tree shows
+    /// without Show hidden, as paths, the first `cap` in reading order, and how many more there
+    /// were. No link, and nothing inside a folder whose name starts with a dot.
+    pub fn list(&self, cap: usize) -> (Vec<String>, usize) {
+        let mut found = Vec::new();
+        let mut more = 0;
+        let mut folders = vec![String::new()];
+        while let Some(folder) = folders.pop() {
+            let Ok(listing) = self.tree(&folder, &[]) else {
+                continue;
+            };
+            let mut inside = Vec::new();
+            for entry in listing.entries {
+                if entry.hidden || entry.refused.is_some() {
+                    continue;
+                }
+                let path = if folder.is_empty() {
+                    entry.name
+                } else {
+                    format!("{folder}/{}", entry.name)
+                };
+                match entry.kind {
+                    Kind::Folder => inside.push(path),
+                    Kind::File if found.len() < cap => found.push(path),
+                    Kind::File => more += 1,
+                    Kind::Link => {}
+                }
+            }
+            // Depth first, in reading order: the stack takes them back to front.
+            folders.extend(inside.into_iter().rev());
+        }
+        found.sort();
+        (found, more)
+    }
+}
+
+#[cfg(test)]
+#[path = "workspace/tests.rs"]
+mod tests;

@@ -198,6 +198,8 @@ pub struct Server {
 /// project's own files, of no workspace's repo, which the person browses in their window. A
 /// link is served a branch's files and never these, so no chat gains a second way to read the
 /// project through one.
+///
+/// `workspace_tree` and `workspace_file` do the same for a workspace's own files (#5375).
 pub const WINDOW_ONLY: &[&str] = &[
     "answer_ask",
     // The person's word that a key's value is no 2FA seed (#5237): theirs alone, so no chat lets
@@ -650,6 +652,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // person's window alone.
     "plane_tree",
     "plane_file",
+    // A workspace's own files (#5375), as the plane root's are: the person's notes and what
+    // purlis keeps there, listed and opened in the person's window alone.
+    "workspace_tree",
+    "workspace_file",
     // A skill's folder, for its page's Files tab (#5183): listed, a file of it opened, and the
     // folder opened in the file manager. A built-in or third-party skill's folder is outside
     // the project, so only the person's own window reads it.
