@@ -442,12 +442,28 @@ pub fn remove(
         carried_branch(plane, ws, repo, piece)
     };
     let carried = how.is_some();
+    // Asked while the folder is there: its git directory goes with it.
+    let git_dir = worktree::path_for(plane, ws, repo, piece)
+        .ok()
+        .and_then(|folder| {
+            worktree::git::run(
+                &folder,
+                &["rev-parse", "--absolute-git-dir"],
+                worktree::git::READ,
+            )
+            .ok()
+            .filter(worktree::git::Run::ok)
+            .map(|run| std::path::PathBuf::from(run.line().trim()))
+        });
     let removed = if carried {
         worktree::remove_keeping_branch(plane, ws, repo, piece)
     } else {
         worktree::remove(plane, ws, repo, piece, force, delete_branch)
     };
     if removed.is_ok() {
+        if let Some(git_dir) = &git_dir {
+            crate::pieceupdate::forget_notes(plane, git_dir);
+        }
         match how {
             Some(Carried::ByItsFiles) => say(Say::Info(
                 format!(

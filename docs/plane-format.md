@@ -331,6 +331,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`app/dispatch-never.json`](#appdispatch-neverjson)
   - [`app/sandbox-blocks.json`](#appsandbox-blocksjson)
   - [`app/reopen.json`](#appreopenjson)
+  - [`app/worktree-updates/<id>/`](#appworktree-updatesid)
   - [`app/dispatches/<id>.json` — a dispatch's record](#appdispatchesidjson--a-dispatchs-record)
   - [`app/dispatches/refused-while-away.json`](#appdispatchesrefused-while-awayjson)
   - [`app/spend/<chat>.json` — what a chat's harness says its session has cost](#appspendchatjson--what-a-chats-harness-says-its-session-has-cost)
@@ -6330,6 +6331,21 @@ down rather than read off the code.
 - **Tier:** Clone state — deleting it costs the open Secret asks: a chat's next run that
   misses the key asks again.
 - **Code:** `crates/purlis-core/src/secrets/ask.rs`.
+
+### `app/worktree-updates/<id>/`
+- **Format:** one folder per git directory an update has run in, named by the SHA-256 of that
+  directory's real path, so a branch folder and its clone never share one. It holds up to three
+  text files, each replaced whole (`rewrite::replace`, mode 0600): `purlis-update`, while an update
+  is under way, and `purlis-updated`, for the update last left and not yet pushed, each with the
+  branch, then the commit, then the remote and the commit it had where a push may go over it, a line
+  each; and `purlis-update-base`, the base to record once the branch is on it.
+- **Status:** **internal** — written and read by `purlis worktree update` and `push`, wherever they
+  run. Earlier versions kept these in the git directory, and those are not read.
+- **Tier:** Clone state — what the app itself did to this clone's branches, never rebuilt from the
+  git directory. Deleting it costs a stopped update's `--continue` and `--abort`, and the next push
+  over a rewritten branch: each says so, and goes from a terminal.
+- **Written by:** `crates/purlis-core/src/pieceupdate.rs`. A branch folder's goes with it when it is
+  removed (`purlis worktree remove`).
 
 ### `app/reopen.json`
 - **Format:** JSON, `indent=2`, trailing `\n`. Replaced whole by `rewrite::replace`: written

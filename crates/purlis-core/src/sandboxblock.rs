@@ -1401,7 +1401,8 @@ const WORKTREE_COMMIT_WAY: &str = "A branch folder keeps its git record in its c
      branch folder with `purlis worktree add <repo> <piece>`. Commit with `purlis worktree \
      commit -m \"<message>\" --all`, or with paths in place of --all: the commit is made on the \
      folder's branch, outside the sandbox. A fetch, pull or rebase there is refused the same \
-     way: `purlis worktree update` brings the folder up to its base.";
+     way: `purlis worktree update` brings the folder up to its base, and `purlis worktree update \
+     --fetch-only` fetches and moves nothing else.";
 
 /// `path`, spelled as a block's path is compared, where it is in a branch folder's git record
 /// ([`in_a_branch_folders_record`]): what [`way_out`] and [`its_own_to_retry`] both judge.

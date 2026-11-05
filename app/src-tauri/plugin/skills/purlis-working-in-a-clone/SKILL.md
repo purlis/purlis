@@ -63,7 +63,7 @@ A chat that cuts its own piece was started above it, usually in the workspace fo
 
 ```bash
 purlis worktree add <repo> <piece>     # cuts .worktrees/<repo>/<piece> on branch <piece>
-env -C .worktrees/<repo>/<piece> purlis worktree update   # rebase onto the base; --continue / --abort after a conflict
+env -C .worktrees/<repo>/<piece> purlis worktree update   # rebase onto the base; --continue / --abort after a conflict; --fetch-only to fetch and move nothing
 env -C .worktrees/<repo>/<piece> purlis worktree update --merge   # or merge it in, once pushed: no commit rewritten; --take-base-baselines for conflicted screenshots
 purlis worktree commit -m "<message>" .worktrees/<repo>/<piece>/<path> …   # or just .worktrees/<repo>/<piece> for every change in it
 env -C .worktrees/<repo>/<piece> purlis worktree push     # pushes the branch after purlis's scan of what it publishes

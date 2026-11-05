@@ -1404,6 +1404,29 @@ pub struct Denied {
     pub git_folder_pins: Vec<PathBuf>,
 }
 
+/// The clone's git folder, for a chat in a branch folder purlis cut (`cwd`): written by the app
+/// alone, which commits, updates and pushes for it, as a chat above the folder finds it already.
+/// Claude Code opens the git folder of the linked worktree it starts in unless a path denies it.
+/// A worktree the person made elsewhere keeps its own git, since the app commits for none of those.
+fn clones_git_held(root: &Path, cwd: Option<&Path>) -> Option<Denial> {
+    let here = crate::worktree::locate(root, cwd?)?;
+    let dot_git = root
+        .join(WORKSPACES)
+        .join(&here.workspace)
+        .join(&here.repo)
+        .join(".git");
+    // The one shape the app keeps a branch folder's clone in: it updates no other.
+    crate::worktree::is_own_git_dir(&dot_git).then_some(())?;
+    Some(Denial {
+        class: Class::LaterCode,
+        path: dot_git,
+        access: Access::Write,
+        named: None,
+        reach: Reach::AndBelow,
+        any_case: false,
+    })
+}
+
 /// The folders searched for repositories as a chat of the plane at `root` starts: the plane, and
 /// each folder you listed as one chats may be granted.
 pub fn git_folders_searched(root: &Path) -> Vec<PathBuf> {
@@ -4461,8 +4484,12 @@ impl Applied {
 
     /// The manifests a chat in `cwd` is denied that the compiled form does not already deny.
     fn chain(&self, cwd: Option<&Path>) -> Vec<Denial> {
+        let clones_git = matches!(*self.form, Form::ClaudeCode(_))
+            .then(|| clones_git_held(&self.root, cwd))
+            .flatten();
         manifests_held(&self.root, cwd)
             .into_iter()
+            .chain(clones_git)
             .filter(|denial| !self.denied.contains(denial))
             .collect()
     }

@@ -74,7 +74,7 @@ pub enum WorktreeCommand {
         /// The branch to bring in, or a remote-tracking branch (`origin/main`); a rebase carries
         /// only the piece's own commits (default: the one the piece was cut from). A branch
         /// folder's only.
-        #[arg(long, value_name = "BRANCH", conflicts_with_all = ["go_on", "abort"])]
+        #[arg(long, value_name = "BRANCH", conflicts_with_all = ["go_on", "abort", "fetch_only"])]
         base: Option<String>,
         /// Merge the base into the branch instead of rebasing onto it: no commit is rewritten,
         /// so a plain push follows. A branch folder's only.
@@ -90,6 +90,10 @@ pub enum WorktreeCommand {
         /// Put the branch back where it was before the rebase or merge.
         #[arg(long)]
         abort: bool,
+        /// Fetch the remote and move nothing else, so `origin/<branch>` says what it has now,
+        /// with or without uncommitted changes.
+        #[arg(long, conflicts_with_all = ["go_on", "abort", "merge"])]
+        fetch_only: bool,
     },
     /// Push the branch of the folder you stand in to its remote, under its own name, after
     /// purlis's scan of what it would publish. Where purlis's own `update` rewrote the branch,
@@ -247,8 +251,10 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
             take_base_baselines,
             go_on,
             abort,
+            fetch_only,
         } => {
             let step = match (go_on, abort, merge) {
+                _ if fetch_only => purlis_core::hookwire::UpdateStep::FetchOnly,
                 (true, _, _) => purlis_core::hookwire::UpdateStep::Continue,
                 (_, true, _) => purlis_core::hookwire::UpdateStep::Abort,
                 (_, _, true) => purlis_core::hookwire::UpdateStep::Merge {
