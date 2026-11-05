@@ -295,3 +295,81 @@ fn a_login_not_kept_goes_into_the_browser_never_used_and_closes_nothing() {
     assert!(hosted.closed.lock().unwrap().is_empty());
     assert_eq!(hosted.logins.lock().unwrap().len(), 1);
 }
+
+#[test]
+fn a_browser_the_person_used_and_handed_back_is_not_said_to_be_empty() {
+    let browsers = limited_to(1);
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, click()));
+    browsers.allow(3, false);
+    answered(&browsers, &hosted, &ask(3, Browsing::New));
+    browsers.driven("program-1", true, 1000);
+    browsers.driven("program-1", false, 1001);
+
+    let why = refusal(answered(&browsers, &hosted, &ask(3, Browsing::New)).0);
+
+    assert!(why.contains("b1 (no page purlis has read)"), "{why}");
+    assert!(!why.contains("empty"), "{why}");
+}
+
+#[test]
+fn a_browser_the_person_has_is_not_offered_to_close() {
+    let browsers = limited_to(1);
+    let hosted = Arc::new(Hosted::default());
+    allowed_and_acting(&browsers, &hosted, 3);
+    browsers.driven("program-1", true, 1000);
+
+    let why = refusal(answered(&browsers, &hosted, &ask(3, Browsing::New)).0);
+
+    assert!(!why.contains("browser_close"), "{why}");
+    assert!(why.contains("ask the person"), "{why}");
+}
+
+#[test]
+fn a_never_used_browser_that_will_not_end_stays_this_chats_in_the_refusal() {
+    let browsers = limited_to(1);
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, click()));
+    browsers.allow(3, false);
+    answered(&browsers, &hosted, &ask(3, Browsing::New));
+    *hosted.closes_fail.lock().unwrap() = 100;
+    *hosted.stops_fail.lock().unwrap() = 100;
+
+    let why = refusal(answered(&browsers, &hosted, &ask(3, log_in("kept-login"))).0);
+
+    assert!(why.contains("keeps trying"), "{why}");
+    assert!(why.contains("b1 (purlis is still ending it)"), "{why}");
+    assert!(!why.contains("None of them"), "{why}");
+    assert!(!why.contains("another chat"), "{why}");
+    assert_eq!(hosted.logins.lock().unwrap().len(), 0, "over no limit");
+}
+
+#[test]
+fn a_sweep_and_a_refusal_at_the_limit_at_once_never_wait_on_each_other() {
+    let browsers = Arc::new(limited_to(1));
+    let hosted = Arc::new(Hosted::default());
+    allowed_and_acting(&browsers, &hosted, 3);
+    let (done, finished) = std::sync::mpsc::channel();
+    let told = done.clone();
+    {
+        let (browsers, hosted) = (Arc::clone(&browsers), Arc::clone(&hosted));
+        std::thread::spawn(move || {
+            for _ in 0..2000 {
+                refusal(answered(&browsers, &hosted, &ask(3, Browsing::New)).0);
+            }
+            told.send(()).expect("told");
+        });
+    }
+    std::thread::spawn(move || {
+        for _ in 0..2000 {
+            browsers.idle(None, 0, &[]);
+        }
+        done.send(()).expect("told");
+    });
+    finished
+        .recv_timeout(Duration::from_secs(60))
+        .expect("neither waits for ever");
+    finished
+        .recv_timeout(Duration::from_secs(60))
+        .expect("neither waits for ever");
+}

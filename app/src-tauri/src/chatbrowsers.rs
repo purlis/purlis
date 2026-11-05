@@ -788,8 +788,9 @@ impl EndWhy {
     /// (`crate::browsers::stop_every_browser`).
     fn closer(self) -> Option<Closer> {
         match self {
-            EndWhy::ClosedByItsChat | EndWhy::ChatEnded | EndWhy::NeverUsed => Some(Closer::Chat),
-            EndWhy::Unused { .. } => Some(Closer::Idle),
+            EndWhy::ClosedByItsChat | EndWhy::ChatEnded => Some(Closer::Chat),
+            // purlis ended it, for going unused: the one word the log has for that.
+            EndWhy::Unused { .. } | EndWhy::NeverUsed => Some(Closer::Idle),
             // The person's own act ended it: they narrowed its reach, or handed it on.
             EndWhy::ReachNarrowed | EndWhy::NotHandedOver => Some(Closer::Person),
             EndWhy::StopAll => None,
@@ -818,6 +819,14 @@ impl std::fmt::Display for EndWhy {
                 )
             }
         }
+    }
+}
+
+/// **The person is about to take `program` over** (#5296): from before the host hands it to them,
+/// it is no browser a kept login closes as never used.
+pub fn person_will_drive(projects: &[Arc<crate::planes::Held>], program: &str) {
+    for held in projects {
+        held.browsers().no_longer_unused(program);
     }
 }
 
@@ -1053,18 +1062,18 @@ impl ChatBrowsers {
             None => Vec::new(),
         };
         let driving = {
+            // The chats' lock first: a refusal at the limit reads who drives under it (#5296).
+            let chats = self.lock();
             let mut driving = self
                 .person_drives
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner);
             // One no chat has any more is forgotten.
-            let chats = self.lock();
             driving.retain(|program| {
                 chats
                     .values()
                     .any(|chat| chat.browsers.iter().any(|(_, one)| one == program))
             });
-            drop(chats);
             driving.clone()
         };
         let mut stopping: Vec<(u32, Vec<ChatBrowser>)> = Vec::new();
@@ -1274,11 +1283,29 @@ impl ChatBrowsers {
         })
     }
 
-    /// **What each of `chat`'s running browsers holds, as a refusal at the limit lists it**
-    /// (#5296): the login it last held, who has it, and the site of the page its last answer
-    /// showed. Never its address, which may hold a value, nor any other chat's.
-    fn own_browsers(&self, chat: &Chat) -> Vec<purlis_core::browserlimits::OwnBrowser> {
+    /// **What each browser of chat `session` holds, as a refusal at the limit lists it** (#5296):
+    /// the login it last held, who has it, and the site of the page its last answer showed, then
+    /// those still ending. "Empty" only of one nothing has been done in, or whose page is blank:
+    /// purlis has no address of what the person did. Never its address, which may hold a value,
+    /// nor any other chat's.
+    fn own_browsers(
+        &self,
+        session: u32,
+        chat: &Chat,
+    ) -> Vec<purlis_core::browserlimits::OwnBrowser> {
         use purlis_core::browserlimits::{OwnBrowser, Shows};
+        let ending: Vec<OwnBrowser> = self
+            .endings()
+            .browsers
+            .iter()
+            .filter(|one| one.session == session)
+            .map(|one| OwnBrowser {
+                name: one.name.clone(),
+                login: None,
+                shows: Shows::Ending,
+                person_has_it: false,
+            })
+            .collect();
         let held = self
             .logins_held
             .lock()
@@ -1289,23 +1316,26 @@ impl ChatBrowsers {
             .unwrap_or_else(PoisonError::into_inner);
         chat.browsers
             .iter()
-            .filter(|(_, program)| !chat.ended.contains(program) && program.is_empty())
+            .filter(|(_, program)| !chat.ended.contains(program))
             .map(|(name, program)| OwnBrowser {
                 name: name.clone(),
                 login: held
                     .get(program)
                     .and_then(|logins| logins.last())
                     .map(|one| one.login.clone()),
-                shows: match self.address_of(program) {
+                shows: match self.address_of(program).as_deref() {
                     Some(address) if address.starts_with("chrome-error://") => Shows::ErrorPage,
-                    Some(address) => purlis_core::browsers::judge::site_of(&address)
-                        .map_or(Shows::Nothing, |(host, port)| {
+                    Some("" | "about:blank") => Shows::Nothing,
+                    Some(address) => purlis_core::browsers::judge::site_of(address)
+                        .map_or(Shows::Unread, |(host, port)| {
                             Shows::Site(Site::of(&host, port).to_string())
                         }),
-                    None => Shows::Nothing,
+                    None if chat.apart.contains(program) => Shows::Nothing,
+                    None => Shows::Unread,
                 },
                 person_has_it: person.contains(program),
             })
+            .chain(ending)
             .collect()
     }
 
@@ -1324,7 +1354,7 @@ impl ChatBrowsers {
         else {
             return None;
         };
-        if !read.opens || browse.chat != u32::MAX {
+        if !read.opens {
             return None;
         }
         let (closing, name) = {
@@ -2308,12 +2338,12 @@ impl ChatBrowsers {
                 ));
             }
             if running >= per_project {
-                let own = self.own_browsers(chat);
+                let own = self.own_browsers(session, chat);
                 return Err(not_followed(
                     &purlis_core::browserlimits::project_full_said(
                         per_project,
                         &own,
-                        running.saturating_sub(own.len()),
+                        running.saturating_sub(own.len() + chat.following),
                     ),
                 ));
             }
@@ -3162,8 +3192,9 @@ impl ChatBrowsers {
                 identity: kept.identity.clone(),
             });
             if elsewhere + chat.running() >= per_project {
-                let own = self.own_browsers(chat);
-                let others = (elsewhere + chat.running()).saturating_sub(own.len());
+                let own = self.own_browsers(browse.chat, chat);
+                let others =
+                    (elsewhere + chat.running()).saturating_sub(own.len() + chat.following);
                 return Err(purlis_core::browserlimits::project_full_said(
                     per_project,
                     &own,

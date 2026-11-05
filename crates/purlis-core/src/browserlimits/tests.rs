@@ -160,3 +160,26 @@ fn a_refusal_to_a_chat_with_no_browser_offers_it_no_close_of_its_own() {
     assert!(said.contains("None of them is this chat's"), "{said}");
     assert!(!said.contains("browser_close"), "{said}");
 }
+
+#[test]
+fn a_refusal_offers_no_close_of_what_the_person_has_or_of_what_is_ending_already() {
+    let said = project_full_said(
+        2,
+        &[
+            own("b1", None, Shows::Unread, true),
+            own("b2", None, Shows::Ending, false),
+        ],
+        0,
+    );
+    assert!(said.contains("b2 (purlis is still ending it)"), "{said}");
+    assert!(said.contains("ask the person"), "{said}");
+    assert!(!said.contains("browser_close"), "{said}");
+}
+
+#[test]
+fn a_browser_purlis_cannot_read_is_never_said_to_be_empty() {
+    assert_eq!(
+        own("b1", None, Shows::Unread, false).to_string(),
+        "b1 (no page purlis has read)"
+    );
+}

@@ -170,8 +170,13 @@ pub fn budget_for(total: Option<u64>) -> usize {
 /// **What one of a chat's own browsers shows, as a refusal at the limit says it** (#5296).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Shows {
-    /// No page it can name.
+    /// Nothing: nothing has been done in it, or its page is blank.
     Nothing,
+    /// A page purlis has no site of: what the person did in it, or an address that is no site's.
+    /// It may hold anything, so it is never said to be empty.
+    Unread,
+    /// purlis has let go of it and still works to end it, so no close of the chat's reaches it.
+    Ending,
     /// The engine's own page for a load that failed.
     ErrorPage,
     /// A page of this site: a site alone, as an address may hold a value.
@@ -203,8 +208,10 @@ impl std::fmt::Display for OwnBrowser {
         match &self.shows {
             Shows::Site(site) => holds.push(format!("on {site}")),
             Shows::ErrorPage => holds.push("on an error page".to_owned()),
+            Shows::Ending => holds.push("purlis is still ending it".to_owned()),
             Shows::Nothing if holds.is_empty() => holds.push("empty".to_owned()),
-            Shows::Nothing => {}
+            Shows::Unread if holds.is_empty() => holds.push("no page purlis has read".to_owned()),
+            Shows::Nothing | Shows::Unread => {}
         }
         write!(f, "{} ({})", self.name, holds.join(", "))
     }
@@ -228,10 +235,17 @@ pub fn project_full_said(most: usize, own: &[OwnBrowser], others: usize) -> Stri
             1 => "; 1 more is another chat's".to_owned(),
             more => format!("; {more} more are other chats'"),
         };
-        format!(
-            "This chat's: {listed}{rest}. Close one of this chat's with browser_close first, or \
-             go on without one"
-        )
+        // Never an offer to close the person's, or one already ending.
+        let closable = own
+            .iter()
+            .any(|one| !one.person_has_it && one.shows != Shows::Ending);
+        let then = if closable {
+            "Close one of this chat's with browser_close first, or go on without one"
+        } else {
+            "None of those is this chat's to close now: ask the person to close one or to raise \
+             the limit, or go on without one"
+        };
+        format!("This chat's: {listed}{rest}. {then}")
     };
     format!(
         "this project's chats have {} open, the most a project holds at once ({SETTING} sets \
