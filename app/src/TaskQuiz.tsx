@@ -70,6 +70,7 @@ export function TaskQuiz({
   onAnswered,
   onTyped,
   onClose,
+  defaultOpen = false,
 }: {
   plane: PlaneId;
   /** The question, as the asks registry lists it (`source: "task-question"`). */
@@ -89,6 +90,8 @@ export function TaskQuiz({
   onTyped?: (text: string) => void;
   /** Put away from this pane, unanswered. Without it the quiz has no close. */
   onClose?: () => void;
+  /** Starts opened, whole: for a story or a test about what an opened question holds. */
+  defaultOpen?: boolean;
 }) {
   const read = useNow();
   const now = given ?? read;
@@ -111,7 +114,7 @@ export function TaskQuiz({
   });
   const { asked, text, setText, sending, refused, setRefused, send, box, ids } = answering;
   /** **Opened, it shows whole** (#5215): a row until then. What was typed is kept here either way. */
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const held = taken || sending || asked === undefined || asked === null;
   const why = ask.answer.via === "task-question" ? ask.answer : undefined;
   const age = ask.since == null ? undefined : agoSaid(ask.since * 1000, now);

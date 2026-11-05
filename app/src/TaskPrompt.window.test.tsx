@@ -373,7 +373,7 @@ describe("a task stopped on a permission prompt", () => {
     // the line away (qw386).
     const buttons = within(notice)
       .getAllByRole("button")
-      .map((one) => one.textContent);
+      .map((one) => one.getAttribute("aria-label") ?? one.textContent);
     expect(buttons).toEqual(["Show the task", "Dismiss"]);
 
     fireEvent.click(within(notice).getByRole("button", { name: "Show the task" }));
@@ -429,13 +429,13 @@ describe("a task stopped on a permission prompt", () => {
       return found;
     });
     // Without the prompt's words, which only the hold carried.
-    expect(notice.textContent).toBe(
+    expect(notice.querySelector('[data-part="message"]')?.textContent).toBe(
       "“sweep” (a task of “steward 1”) is stopped on a prompt and waiting on you. Answer it in its own pane.Show the taskDismiss",
     );
     expect(
       within(notice)
         .getAllByRole("button")
-        .map((one) => one.textContent),
+        .map((one) => one.getAttribute("aria-label") ?? one.textContent),
     ).toEqual(["Show the task", "Dismiss"]);
     expect(hand("steward 1")).not.toBeNull();
 
@@ -501,8 +501,9 @@ describe("putting a waiting chat's Notice away (qw386)", () => {
       return found;
     });
     const dismiss = within(notice).getByRole("button", { name: "Dismiss" });
+    // An icon button's tip is its name, then what it does.
     expect(tipOf(dismiss)).toEqual(
-      "Hides this line. The chat still waits on you, and the needs-you list still shows it.",
+      "DismissHides this line. The chat still waits on you, and the needs-you list still shows it.",
     );
 
     fireEvent.click(dismiss);

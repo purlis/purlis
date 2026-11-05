@@ -174,7 +174,7 @@ const seen = () =>
     .filter((name) => name !== null);
 
 describe("a pane's notices, minimised (the default)", () => {
-  it("folds the notes into the bell's count and stands the asks as full cards", async () => {
+  it("folds the notes into the bell's count and the asks to the band's one line", async () => {
     await aPane({ asks: [removal("beta", 10)], failed: [FAILED] });
     await act(() => emit("chat-mcp-failed", FAILED));
 
@@ -188,16 +188,16 @@ describe("a pane's notices, minimised (the default)", () => {
     expect(pill()).toHaveAttribute("data-variant", "hot");
     expect(pill()).toHaveAttribute("data-size", "sm");
     expect(pill()).toHaveAttribute("aria-hidden", "true");
-    // The ask keeps its words and its answers, and has no Dismiss.
-    expect(seen()).toEqual(["Remove workspace"]);
-    const ask = within(frame()).getByRole("status", { name: "Remove workspace" });
-    expect(within(ask).queryByRole("button", { name: "Dismiss" })).toBeNull();
+    expect(seen()).toEqual([]);
+    expect(
+      within(frame()).getByRole("button", { name: "1 waiting · Remove workspace · Show" }),
+    ).toBeTruthy();
     expect(within(frame()).queryByRole("button", { name: /Dismiss all/ })).toBeNull();
   });
 
   it("puts the bell in the header, before split and close, and the band under the header", async () => {
     await aPane({ asks: [removal("beta", 10)], failed: [] });
-    await waitFor(() => expect(seen()).toEqual(["Remove workspace"]));
+    await within(frame()).findByRole("button", { name: /· Show$/ });
 
     const top = frame().querySelector(".pane-top") as HTMLElement;
     expect([...top.children].map((one) => one.getAttribute("data-scope") ?? one.className)).toEqual(
@@ -227,23 +227,22 @@ describe("a pane's notices, minimised (the default)", () => {
     await waitFor(() => expect(bell()).toHaveAccessibleName("Pane notices: No notices"));
     expect(count()).toBe("");
     expect(bell()).not.toHaveAttribute("data-trouble");
-    expect(within(frame()).queryByRole("region", { name: "Pane notices" })).toBeNull();
+    expect(within(frame()).queryByRole("region", { name: /^Pane notices/ })).toBeNull();
   });
 
   it("never opens the band or takes the focus when a note arrives, and says the count politely", async () => {
     await aPane({ asks: [removal("beta", 10)], failed: [] });
-    await waitFor(() => expect(seen()).toEqual(["Remove workspace"]));
-    const keep = within(frame()).getByRole("button", { name: "Keep" });
-    keep.focus();
+    const line = await within(frame()).findByRole("button", { name: /· Show$/ });
+    line.focus();
 
     await act(() => emit("chat-sandbox-blocked", BLOCKED));
 
     await waitFor(() =>
       expect(bell()).toHaveAccessibleName("Pane notices: 1 notice, 1 in trouble, 1 asking"),
     );
-    expect(seen()).toEqual(["Remove workspace"]);
+    expect(seen()).toEqual([]);
     expect(bell()).toHaveAttribute("aria-expanded", "false");
-    expect(keep).toHaveFocus();
+    expect(line).toHaveFocus();
     // Said politely, once it changed: never the count the pane was first drawn with.
     const said = () =>
       [...frame().querySelectorAll('.pane-actions > [aria-live="polite"]')].map(
@@ -264,8 +263,8 @@ describe("a pane's notices, expanded", () => {
     await waitFor(() => expect(seen()).toEqual(["Remove workspace", "MCP server"]));
     expect(bell()).toHaveAttribute("aria-expanded", "true");
     expect(count()).toBe("1");
-    const band = within(frame()).getByRole("region", { name: "Pane notices" });
-    expect(within(band).getByText("2 notices, 1 waiting on you")).toBeTruthy();
+    const band = within(frame()).getByRole("region", { name: /^Pane notices/ });
+    expect(within(band).getByText("1 waiting on you · 1 notice")).toBeTruthy();
     await waitFor(() =>
       expect(layouts.map((text) => JSON.parse(text) as { notices?: string }).pop()?.notices).toBe(
         "expanded",
@@ -293,9 +292,9 @@ describe("a pane's notices, expanded", () => {
     await userEvent.click(bell());
     await waitFor(() => expect(seen()).toEqual(["Remove workspace", "MCP server"]));
 
-    await userEvent.click(within(frame()).getByRole("button", { name: "Minimise" }));
+    await userEvent.click(within(frame()).getByRole("button", { name: "Fold the band" }));
 
-    await waitFor(() => expect(seen()).toEqual(["Remove workspace"]));
+    await waitFor(() => expect(seen()).toEqual([]));
     expect(bell()).toHaveAttribute("aria-expanded", "false");
   });
 });
@@ -307,8 +306,7 @@ describe("a full band", () => {
     await act(() => emit("chat-mcp-failed", FAILED));
     await act(() => emit("chat-sandbox-blocked", BLOCKED));
 
-    await waitFor(() => expect(seen()).toHaveLength(4));
-    expect(seen()).toEqual(Array.from({ length: 4 }, () => "Remove workspace"));
+    await within(frame()).findByRole("button", { name: "4 waiting · Remove workspace · Show" });
     expect(within(frame()).queryByText(/wait in the Inbox|waits in the Inbox/)).toBeNull();
     expect(within(frame()).queryByRole("button", { name: /more/ })).toBeNull();
     await waitFor(() =>
@@ -317,8 +315,8 @@ describe("a full band", () => {
 
     await userEvent.click(bell());
     await waitFor(() => expect(seen()).toHaveLength(6));
-    const band = within(frame()).getByRole("region", { name: "Pane notices" });
-    expect(within(band).getByText("6 notices, 4 waiting on you")).toBeTruthy();
+    const band = within(frame()).getByRole("region", { name: /^Pane notices/ });
+    expect(within(band).getByText("4 waiting on you · 2 notices")).toBeTruthy();
     expect(within(band).getByRole("button", { name: "Dismiss all 2" })).toBeTruthy();
   });
 });
@@ -336,16 +334,17 @@ const QUESTION: Shown = {
 };
 
 describe("a task's question in the band (#5213)", () => {
-  it("is drawn in the band under the pane's head, and stands while the band is minimised", async () => {
+  it("is drawn in the band under the pane's head, and opens whole", async () => {
     await aPane({ asks: [QUESTION], failed: [] });
+    await userEvent.click(await within(frame()).findByRole("button", { name: /· Show$/ }));
 
-    const band = await within(frame()).findByRole("region", { name: "Pane notices" });
+    const band = await within(frame()).findByRole("region", { name: /^Pane notices/ });
     const quiz = within(band).getByRole("group", { name: "claude 4 asks" });
+    await userEvent.click(within(quiz).getByRole("button", { name: "Show the whole question" }));
     const top = frame().querySelector(".pane-top") as HTMLElement;
     const head = top.querySelector(":scope > .pane-head") as HTMLElement;
     // Under the head: the head comes first in the pane's top, and the quiz is in the band.
     expect(head.compareDocumentPosition(quiz) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(bell()).toHaveAttribute("aria-expanded", "false");
     expect(quiz).toBeVisible();
     // Its lines are the task's, never a mark for a line break, and its markdown is drawn.
     expect(quiz).not.toHaveTextContent(/⟦U\+|\*\*/);

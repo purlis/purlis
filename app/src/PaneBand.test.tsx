@@ -210,16 +210,14 @@ describe("the band, the header and the terminal, in a pane", () => {
     expect([...head.children].map((one) => one.className)).toEqual(["pane-chips", "pane-actions"]);
   });
 
-  it("joins the tab: the pane is the terminal's fill, and the band has no ground or line", async () => {
+  it("joins the tab: the pane is the terminal's fill, and the band stands apart from its edges", async () => {
     render(<Warnings causes={["first"]} />);
     await waitFor(() => expect(shown()).toEqual(["first"]));
     const frame = screen.getByTestId("frame");
     expect(drawnWith(frame, "background-color")).toBe("var(--terminal-background)");
     const band = frame.querySelector('[data-scope="notice-row"][data-part="root"]') as Element;
-    expect(drawnWith(band, "background-color")).toBe("transparent");
-    expect(drawnWith(band, "border")).toBe("0");
     // The runway is the header's, at the pane's top (rule 2): the band starts under it.
-    expect(drawnWith(band, "padding")).toMatch(/^0 /);
+    expect(drawnWith(band, "margin")).toMatch(/^0 /);
     const head = frame.querySelector(".pane-head") as Element;
     expect(drawnWith(head, "margin-block-start")).toBe("var(--space-2)");
   });
@@ -281,10 +279,12 @@ describe("the pane's rules", () => {
   const rule = (selector: string) =>
     new RegExp(`(^|[},])\\s*${selector}\\s*\\{([^}]*)\\}`).exec(css)?.[2] ?? "";
 
-  it("never lets the band and the header take more than about half the pane (rule 6)", () => {
+  it("lets the top give way, and the terminal never past its three lines (#5215)", () => {
     const top = rule("\\.pane-top");
-    expect(top).toMatch(/max-block-size:\s*46%/);
+    expect(top).toMatch(/flex:\s*0 1 auto/);
     expect(top).toMatch(/flex-direction:\s*column/);
+    expect(top).not.toMatch(/max-block-size/);
+    expect(rule("\\.pane-frame\\.pane-headed > \\.pane-body")).toMatch(/--terminal-row/);
   });
 
   it("scrolls the warnings inside the band past its room", () => {

@@ -12,9 +12,8 @@
    list's (no box of its own), and one alone on a page is edged in the subtle hairline. Its
    edge's width is no theme's: a Notice holds answers, and an ask keeps its mark.
 
-   **In a chat's pane the band places and draws them** (`paneFrame.css`, #3142, the operator's
-   variant A): washed cards with their mark and no edge, inside the pane and outside the
-   terminal. That file comes after this one, so its rules win where both set a property; the
+   **In a chat's pane the band places and draws them** (`paneFrame.css`, #5215, the person's approved
+   prototype): compact rows, inside the pane and outside the terminal. That file comes after this one, so its rules win where both set a property; the
    rules here are the family's default wherever no pane places it. The Inbox's list takes the
    card family's ground and edge width a theme sets (`purlis_core::theme::parts`, #3177).
 

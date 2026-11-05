@@ -18,7 +18,7 @@
  *   the grounds an answer that grants is held apart from the primary on, and its edge's width is
  *   no theme's (`purlis_core::theme::parts`): Allow keeps its own look on it, and purlis speaking
  *   wherever the window draws its edge keeps its waiting edge. A chat pane's band draws its
- *   Notices as washed cards with their mark and no edge (`paneFrame.css`, #3142).
+ *   Notices as compact rows (`layout="row"`, `paneFrame.css`, #5215), a consent's waiting edge held.
  * - **The Inbox's list** (`NoticeListBox`, `data-scope="notice-list"`) is one box of rows with a
  *   separator between them; **a pane's row** (`NoticeRow`, `NoticeStack`,
  *   `data-scope="notice-row"`) stands above the terminal and takes the height it leaves. Both are

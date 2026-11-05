@@ -7,9 +7,8 @@
 
    1. **the header** (`PaneHead`): the chat at a glance at its start, the chat's actions and the
       pane's own controls at its end, the bell in a fixed slot before ⋯ (`PaneBell`);
-   2. **the band** (`NoticePaneRow`): the pane's notices as washed cards, the words above their
-      ways out: its asks, and, expanded, its notes too under a head row with Dismiss all. Under
-      the header, so a notice arriving never moves it;
+   2. **the band** (`NoticePaneRow`): the pane's notices as compact rows under a head that folds
+      them to one line (#5215). Under the header, so a notice arriving never moves it;
    3. **the terminal**, which has the room the two leave and is pinned to its bottom.
 
    **Nothing sits between a tab and its pane, and nothing draws over the terminal.** The band was
@@ -47,8 +46,9 @@
 }
 
 .pane-frame.pane-headed > .pane-body {
-  /* Three lines of the terminal's own text: `SessionPane` sets the font; 3 × 1.2 of the base. */
-  min-block-size: calc(3 * 1.2 * var(--font-size-base) + var(--space-4));
+  /* Three of the terminal's own lines, as it measures them (`SessionPane`, `--terminal-row`), and
+     its strip under the last. Before a terminal says, three lines of the base text. */
+  min-block-size: calc(3 * var(--terminal-row, 1.5rem) + var(--space-4));
 }
 
 /* ---------------------------------------------------------------------------------------------
@@ -73,7 +73,9 @@
 
 /* **The band's own box** (#5215, the approved prototype): the raised ground and a hairline, with
    its rows one under another inside it. Its folded line is the same box, one line high. */
-.pane-frame.pane-headed > .pane-top > [data-scope="notice-row"][data-part="root"]:has(
+.pane-frame.pane-headed
+  > .pane-top
+  > [data-scope="notice-row"][data-part="root"]:has(
     > [data-scope="notice-row"][data-part="head"],
     > .pane-band-folded,
     > [data-scope="notice-row"][data-part="stack"] > *:not([hidden])
@@ -335,8 +337,7 @@
   border-block-start: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
-.pane-top
-  [data-scope="notice"][data-part="root"][data-layout="row"]:has([data-variant="grants"]) {
+.pane-top [data-scope="notice"][data-part="root"][data-layout="row"]:has([data-variant="grants"]) {
   border: 1px solid var(--state-waiting);
   border-radius: var(--radius-md);
   background-color: transparent;
@@ -366,10 +367,7 @@
   color: var(--text-muted);
 }
 
-.pane-top
-  [data-layout="row"]:has([data-variant="grants"])
-  > [role="status"]
-  > [data-part="mark"] {
+.pane-top [data-layout="row"]:has([data-variant="grants"]) > [role="status"] > [data-part="mark"] {
   color: var(--accent-base);
 }
 
@@ -437,6 +435,11 @@
   background-color: var(--surface-raised);
 }
 
+/* A prompt's question over the lines it was written on, once opened (#4710). */
+.terminal-prompt-says {
+  white-space: pre-wrap;
+}
+
 /* A row's words keep their room in a narrow pane, and its ways go under them. */
 @container (max-width: 34rem) {
   .pane-top [data-layout="row"] > [role="status"] {
@@ -450,9 +453,7 @@
 
 /* What a way out opened stays in the row and has no box of its own to scroll: the band is the one
    thing that scrolls (#5215). */
-.pane-top
-  [data-layout="row"]
-  > :is(.notice-under-pane, [data-scope="notice"][data-part="under"]) {
+.pane-top [data-layout="row"] > :is(.notice-under-pane, [data-scope="notice"][data-part="under"]) {
   max-block-size: none;
   overflow-y: visible;
   padding-inline: var(--space-5) var(--space-3);
@@ -784,12 +785,12 @@
   margin: var(--space-4) var(--space-4) 0;
 }
 
-/* **Opened, it stays inside the top's cap** (#4843): in a short pane the top is 46% of it, and
-   the strip gives way to it like the band does, its text scrolling inside it, so the terminal
-   below keeps its room whatever the message holds. */
+/* **Opened, it stays inside its cap** (#4843): with the header, no more than 46% of a short pane,
+   its text scrolling inside it, so the terminal below keeps its room whatever the message holds. */
 .pane-top > .waiting-strip[data-open] {
   flex: 0 1 auto;
   min-block-size: 0;
+  max-block-size: calc(46cqb - var(--size-chrome));
 }
 
 /* ---------------------------------------------------------------------------------------------

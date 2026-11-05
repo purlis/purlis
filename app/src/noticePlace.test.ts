@@ -31,6 +31,20 @@ const A_CHAT: About = { pane: 3 };
 /** Chat 3 asking for gamma's removal: a consent, answered on its band (#3652). */
 const ASKS_TO_REMOVE_GAMMA: About = { pane: 3, removes: "gamma" };
 
+/** **What the band under a pane's head holds** (#5215): each kind one row of chat 3's band. */
+const IN_THE_BAND: [string, About][] = [
+  ["a task's question", A_CHAT],
+  ["a prompt in the chat's terminal", A_CHAT],
+  ["a sandbox block", A_CHAT],
+  ["a note about a setting", A_CHAT],
+];
+
+describe("what a chat's pane holds in its band (#5215)", () => {
+  it.each(IN_THE_BAND)("draws %s on that pane's band", (_kind, about) => {
+    expect(placeOf(about, [PINNED])).toEqual({ at: "pane", pane: 3 });
+  });
+});
+
 describe("where a notice is drawn (spec #3647, the one test seam)", () => {
   const table: [string, About, readonly Chip[], Place][] = [
     [

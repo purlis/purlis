@@ -91,7 +91,13 @@ function StewardsPane({ asks, minimised }: { asks: Shown[]; minimised?: boolean 
               bell={
                 minimised === undefined
                   ? undefined
-                  : { minimised, minimise: () => {}, expand: () => {}, onHolds: () => {}, focus: () => {} }
+                  : {
+                      minimised,
+                      minimise: () => {},
+                      expand: () => {},
+                      onHolds: () => {},
+                      focus: () => {},
+                    }
               }
             >
               <QuizBand plane="/plane" session={4} />
@@ -136,6 +142,14 @@ function apart(one: Element, other: Element): boolean {
 const terminal = (canvas: HTMLElement) => within(canvas).getByLabelText("Terminal of steward 4");
 const box = (canvas: HTMLElement) => within(canvas).getByRole("textbox", { name: "Your answer" });
 
+/** Opens the question on screen, a row until then (#5215), and waits for its box to take words. */
+const opened = async (canvas: HTMLElement) => {
+  const toggle = await within(canvas).findByRole("button", { name: "Show the whole question" });
+  toggle.click();
+  await waitFor(() => expect(box(canvas)).toBeEnabled());
+  toggle.blur();
+};
+
 /**
  * **The first question, with the note above it said once** (#5213): a quiet note, never a dialog,
  * saying questions now come here, with Change and its ×. The quiz says who asks, why it reached
@@ -162,7 +176,7 @@ export const FirstQuestionOffersTheChoice: Story = {
     await expect(apart(dismiss, quiz)).toBe(true);
     await expect(quiz).toHaveTextContent("steward 4 passed this on.");
     await expect(quiz).toHaveTextContent("steward 4's note");
-    await waitFor(() => expect(box(canvasElement)).toBeEnabled());
+    await opened(canvasElement);
     // It never took the keyboard: whatever had it still has it.
     await expect(box(canvasElement)).not.toHaveFocus();
     change.focus();
@@ -189,7 +203,7 @@ export const OneAtATimeWithACount: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.getByText("2 more")).toBeVisible();
     await expect(canvas.queryByText(FIRST_LINE)).toBeNull();
-    await waitFor(() => expect(box(canvasElement)).toBeEnabled());
+    await opened(canvasElement);
     terminal(canvasElement).focus();
     await userEvent.keyboard("pnpm te");
     await expect(terminal(canvasElement)).toHaveFocus();
@@ -235,7 +249,7 @@ export const AQuestionOverSeveralLines: Story = {
     await expect(second.getBoundingClientRect().top).toBeGreaterThanOrEqual(
       first.getBoundingClientRect().bottom,
     );
-    await waitFor(() => expect(box(canvasElement)).toBeEnabled());
+    await opened(canvasElement);
   },
 };
 
@@ -263,7 +277,7 @@ export const ClosingOneShowsTheNext: Story = {
       () => expect(canvas.getByRole("group", { name: "designer 3 asks" })).toBeVisible(),
       { timeout: 5000 },
     );
-    await waitFor(() => expect(box(canvasElement)).toBeEnabled());
+    await opened(canvasElement);
   },
 };
 
@@ -280,15 +294,18 @@ export const FoldedWithThePanesNotices: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const quiz = canvas.getByRole("group", { name: "developer 7 asks" });
-    await expect(quiz).toBeVisible();
+    // Folded, the band is one line, and the note and the question are in it, unseen (#5215).
+    const line = await canvas.findByRole("button", {
+      name: "1 waiting · A task's question · Show",
+    });
     await waitFor(() => expect(canvas.getByText(FIRST_LINE)).not.toBeVisible());
-    await waitFor(() => expect(box(canvasElement)).toBeEnabled());
-    const close = within(quiz).getByRole("button", { name: CLOSE_QUIZ });
-    close.focus();
-    await untilFocused(() => close, "on the quiz's Close");
+    await waitFor(() =>
+      expect(canvas.queryByRole("group", { name: "developer 7 asks" })).toBeNull(),
+    );
+    line.focus();
+    await untilFocused(() => line, "on the band's line");
     expectFocusInSight();
-    close.blur();
+    line.blur();
   },
 };
 
@@ -306,6 +323,6 @@ export const NoReplyInTime: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.getByText("steward 4 did not reply in 100 seconds.")).toBeVisible();
     await expect(canvas.queryByText(/'s note/)).toBeNull();
-    await waitFor(() => expect(box(canvasElement)).toBeEnabled());
+    await opened(canvasElement);
   },
 };

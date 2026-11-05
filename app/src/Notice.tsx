@@ -555,12 +555,12 @@ function BandRow({
 }: Said &
   Omit<Ways, "onDismiss"> &
   Pick<LineProps, "label" | "persona" | "sub" | "mark"> & {
-  whose: { whose: string; onGo: () => void } | null;
-  waitsHere: boolean;
-  onDismiss?: () => void;
-  mayAct: (way: Element) => boolean;
-  onClose: () => void;
-}) {
+    whose: { whose: string; onGo: () => void } | null;
+    waitsHere: boolean;
+    onDismiss?: () => void;
+    mayAct: (way: Element) => boolean;
+    onClose: () => void;
+  }) {
   const [whole, setWhole] = useState(false);
   const { at, cut } = useCut(whole);
   const grants = fixes?.some((fix) => fix.allows) === true;
@@ -587,7 +587,6 @@ function BandRow({
         <NoticeWords>
           <NoticeMessage ref={at}>
             {tone === "attention" && <span className="sr-only">{NEEDS_A_DECISION}</span>}
-            {tone === "trouble" && <span className="sr-only">Not done: </span>}
             {persona != null && <PersonaMark persona={persona} />}
             {whose !== null && <NoticeWhose>{whose.whose}: </NoticeWhose>}
             {children}
@@ -962,15 +961,16 @@ export function NoticePaneRow({
   // **What this pane's band was told to close** (#5215), kept with the pane's band as it is drawn
   // anew. A chat's band alone: only there is a Notice a row.
   const [closed, setClosed] = useState<ReadonlySet<string>>(() => closedIn(band));
+  const hasBell = bell !== undefined;
   const rows = useMemo(
     () =>
-      bell === undefined
+      !hasBell
         ? null
         : {
             closed,
             close: (cause: string) => setClosed(closeIn(band, cause)),
           },
-    [bell === undefined, closed, band], // eslint-disable-line react-hooks/exhaustive-deps
+    [hasBell, closed, band],
   );
   // **A granting Notice's ways out wait for it to settle once it moved** (#1695, train 54's
   // review): a Notice above it answered or gone can move another's way out under the pointer.
@@ -1131,7 +1131,11 @@ export function NoticePaneRow({
       // The pane's notices, named as one place with its count (#3142, #5215), while it shows any.
       role={empty ? undefined : "region"}
       aria-label={
-        empty ? undefined : bell === undefined ? "Pane notices" : bandRegionSays({ notes, trouble, asks })
+        empty
+          ? undefined
+          : bell === undefined
+            ? "Pane notices"
+            : bandRegionSays({ notes, trouble, asks })
       }
       ref={rowAt}
     >

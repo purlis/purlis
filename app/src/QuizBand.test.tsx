@@ -114,6 +114,12 @@ const LINE = "Questions from this chat's tasks now come here, so you answer them
 const noticeOf = (words: string | RegExp) =>
   screen.getByText(words).closest('[data-scope="notice"][data-part="root"]') as HTMLElement;
 
+/** Opens the quiz of the row on screen: a question is one row until it is opened (#5215). */
+const opened = async () => {
+  const toggle = screen.queryByRole("button", { name: "Show the whole question" });
+  if (toggle !== null) await userEvent.click(toggle);
+};
+
 describe("where a task's question is drawn (#4565)", () => {
   it("draws it from the top by default, in the top's pane and the task's own", () => {
     render(<Pane session={4} asks={[QUESTION]} />);
@@ -176,10 +182,13 @@ describe("where a task's question is drawn (#4565)", () => {
     expect(screen.queryByText(/told developer 7/)).not.toBeInTheDocument();
   });
 
-  it("folds with the pane's notices: minimised, the quiz stands and the note folds into the bell (#5213)", async () => {
+  it("folds with the pane's notices: minimised, the quiz folds to the band's line and the note into the bell (#5213, #5215)", async () => {
     render(<Pane session={4} asks={[QUESTION]} minimised />);
     await waitFor(() => expect(screen.getByText(LINE)).not.toBeVisible());
-    expect(quiz()).toBeVisible();
+    expect(quiz()).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "1 waiting · A task's question · Show" }),
+    ).toBeTruthy();
     cleanup();
     render(<Pane session={4} asks={[QUESTION]} />);
     await waitFor(() => expect(screen.getByText(LINE)).toBeVisible());
@@ -201,6 +210,7 @@ describe("where a task's question is drawn (#4565)", () => {
     setWhereYouAnswer({ offered: true });
     const user = userEvent.setup();
     render(<Pane session={4} asks={[QUESTION]} />);
+    await user.click(screen.getByRole("button", { name: "Show the whole question" }));
     expect(openTask).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Open task" }));
     expect(openTask).toHaveBeenCalledWith(7);
@@ -230,6 +240,7 @@ describe("several questions at once (#4566)", () => {
   it("pauses before the next quiz, keeping its place, so a second click lands on nothing", async () => {
     const user = userEvent.setup();
     const { rerender } = render(<Pane session={4} asks={[QUESTION, SECOND]} />);
+    await opened();
     const box = screen.getByRole("textbox", { name: "Your answer" });
     await waitFor(() => expect(box).not.toBeDisabled());
     await user.type(box, "Per project{Enter}");
@@ -253,6 +264,7 @@ describe("several questions at once (#4566)", () => {
     const { rerender } = render(
       <Pane session={4} asks={[QUESTION, SECOND]} pauseMs={PAUSE_MS * 10} />,
     );
+    await opened();
     const box = screen.getByRole("textbox", { name: "Your answer" });
     await waitFor(() => expect(box).not.toBeDisabled());
     await user.type(box, "Per project{Enter}");
@@ -269,6 +281,7 @@ describe("several questions at once (#4566)", () => {
     let taken = () => {};
     holdAnswer = new Promise((done) => (taken = done));
     const { rerender } = render(<Pane session={4} asks={[QUESTION, SECOND]} />);
+    await opened();
     const box = screen.getByRole("textbox", { name: "Your answer" });
     await waitFor(() => expect(box).not.toBeDisabled());
     await user.type(box, "Per project{Enter}");
@@ -338,6 +351,7 @@ describe("several questions at once (#4566)", () => {
     const user = userEvent.setup();
     chatAnswered = AGENT_SAID;
     const { rerender } = render(<Pane session={4} asks={[QUESTION]} />);
+    await opened();
     const box = screen.getByRole("textbox", { name: "Your answer" });
     await waitFor(() => expect(box).not.toBeDisabled());
     await user.type(box, "Per runner");
@@ -362,6 +376,7 @@ describe("several questions at once (#4566)", () => {
     const user = userEvent.setup();
     chatAnswered = AGENT_SAID;
     const { rerender } = render(<Pane session={4} asks={[QUESTION]} />);
+    await opened();
     const box = screen.getByRole("textbox", { name: "Your answer" });
     await waitFor(() => expect(box).not.toBeDisabled());
     await user.type(box, "Per runner{Enter}");
