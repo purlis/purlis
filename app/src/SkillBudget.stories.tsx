@@ -11,6 +11,7 @@ import { expect, userEvent, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { SkillBudgetPreview, StudioBudget } from "./bindings";
 import { ReadOnlySaid } from "./ReadOnlyLine";
+import { Button } from "./ui/button/Button";
 import { SkillBudgetTable } from "./SkillBudget";
 import { expectFocusInSight, untilFocused, untilFocusWithin } from "./stories.testkit";
 
@@ -73,11 +74,14 @@ function Budget({
   extensionRouter,
   refuses,
   readOnly,
+  followed,
 }: {
   preview: SkillBudgetPreview;
   extensionRouter: boolean;
   refuses?: string;
   readOnly?: string;
+  /** A control after the table, for a Tab to land on as it leaves. */
+  followed?: boolean;
 }) {
   clearMocks();
   mockIPC((cmd) => (cmd === "skill_budget_preview" ? preview : null));
@@ -90,6 +94,7 @@ function Budget({
         extensionRouter={extensionRouter}
         onWrite={(_write, told) => (refuses === undefined ? told.done() : told.refused(refuses))}
       />
+      {followed && <Button>After the table</Button>}
     </ReadOnlySaid.Provider>
   );
 }
@@ -117,6 +122,7 @@ async function arrowTo(name: string): Promise<void> {
  * on each row. The arrows reach Change…, Enter opens it, Esc gives the keyboard back.
  */
 export const Table: Story = {
+  args: { followed: true },
   play: async ({ canvas }) => {
     const grid = canvas.getByRole("grid", { name: "Skill budget on each program" });
     await userEvent.tab();
@@ -137,7 +143,7 @@ export const Table: Story = {
     await untilFocusWithin(() => grid, "Esc gives the keyboard back to the table");
     // The whole table is one Tab stop: one Tab leaves it, whichever button had the keyboard.
     await userEvent.tab();
-    await expect(grid.contains(document.activeElement)).toBe(false);
+    await expect(canvas.getByRole("button", { name: "After the table" })).toHaveFocus();
   },
 };
 
