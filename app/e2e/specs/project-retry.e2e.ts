@@ -89,9 +89,19 @@ describe("retrying a project", () => {
     );
 
     mkdirSync(folder, { recursive: true });
-    const retried = await ask<{ started: { id: string; session: number }[] }>("retry_project", {
-      plane,
-    });
+    // The chat is listed as short before its project's opening is over, and a Retry while the
+    // project is still opening does nothing, by design (`Planes::retry_project`). So it is pressed
+    // again until the opening is over and the Retry starts the chat.
+    let retried: { started: { id: string; session: number }[] } = { started: [] };
+    await browser.waitUntil(
+      async () => {
+        retried = await ask<{ started: { id: string; session: number }[] }>("retry_project", {
+          plane,
+        });
+        return retried.started.length > 0;
+      },
+      { timeout: 20_000, interval: 500, timeoutMsg: "Retry never started the chat" },
+    );
 
     expect(retried.started).toHaveLength(1);
     expect(await ask("chats_that_would_not_start", { plane })).toEqual([]);
