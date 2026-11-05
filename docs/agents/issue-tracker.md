@@ -13,6 +13,14 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
 
 Infer the repo from `git remote -v`; `gh` does this automatically when run inside a clone.
 
+## Every triaged issue has a milestone
+
+Set the milestone whenever a skill files or triages an issue (`gh issue create --milestone "<title>"`, `gh issue edit <number> --milestone "<title>"`). A raw report waits in `needs-triage` until triage gives it one. Issues labelled `bot-maintained` are written by a workflow and carry no milestone.
+
+- **A fitting milestone exists:** use it. In order: the parent's or spec's milestone, then the milestone of the issue's area. When two fit equally, ask the maintainer.
+- **None fits, and two or more issues share a theme (or there is a new spec):** suggest a new milestone named for their outcome, listing its issues. Only the maintainer creates one.
+- **None fits, for a single issue:** suggest the closest existing milestone. Don't create a milestone for one issue.
+
 ## Pull requests as a triage surface
 
 **PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature requests; `/triage` reads this flag.)_
