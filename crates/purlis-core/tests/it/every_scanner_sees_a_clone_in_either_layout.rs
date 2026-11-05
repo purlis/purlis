@@ -53,7 +53,7 @@ fn a_clone_at_the_root_beside_its_name_in_repos_is_listed_once_from_repos() {
     let found = repos::clones(&f.plane, "alpha").unwrap();
 
     let paths: Vec<PathBuf> = found.repos.into_iter().map(|repo| repo.path).collect();
-    assert_eq!(paths, [f.clone.clone()]);
+    assert_eq!(paths, std::slice::from_ref(&f.clone));
 }
 
 #[test]
