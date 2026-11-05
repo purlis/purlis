@@ -22,7 +22,7 @@ fn the_quiet_link_is_a_variant_of_the_next_manifest_held_to_its_words_floor() {
         .iter()
         .find(|one| one.name == "quiet-link")
         .expect("the quiet link");
-    assert_eq!(link.since, parts::NEXT);
+    assert_eq!(link.since, 13);
     // Its default: no box and quiet words; under the pointer, primary words and still no
     // ground, since it is underlined rather than filled.
     let held = parts::defaults_json("quiet-link");

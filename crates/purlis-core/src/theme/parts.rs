@@ -80,7 +80,7 @@ use super::{Complaint, ResolvedTheme, stringify};
 /// never changes it: what it adds is `since:` [`NEXT`], and the release step
 /// (`node tools/theme-parts-release.mjs`, `docs/updating.md`) turns every [`NEXT`] into this
 /// version plus one, raises this, and pins the new version's digest.
-pub const VERSION: u32 = 12;
+pub const VERSION: u32 = 13;
 
 /// **The version what is added since the last release comes in**: a pull request that adds a
 /// family, a part, a variant, a state or a property gives it `since: NEXT` (written
@@ -167,7 +167,7 @@ impl State {
     /// The manifest version it came in.
     pub fn since(self) -> u32 {
         match self {
-            Self::Invalid => NEXT,
+            Self::Invalid => 13,
             _ => 1,
         }
     }
@@ -712,7 +712,7 @@ pub(super) fn apart_look_in(family_name: &str, part: &str, states: &[State]) -> 
 
 /// **The version the manifest says which parts are drawn apart in** (#3656): its `apart` on each
 /// such part. The release step writes the number over `NEXT`, as it does a part's `since`.
-const APART_SINCE: u32 = NEXT;
+const APART_SINCE: u32 = 13;
 
 /// The states `part` of `family` is marked in on its own element, when it is drawn apart from
 /// the family's root ([`APART`]).

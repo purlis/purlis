@@ -45,7 +45,7 @@ fn the_content_families_are_in_the_manifest_since_next() {
             .iter()
             .find(|one| one["name"] == name)
             .unwrap_or_else(|| panic!("{name} is in the manifest"));
-        assert_eq!(family["since"], parts::NEXT, "{name}");
+        assert_eq!(family["since"], 13, "{name}");
         let parts = family["parts"]
             .as_array()
             .unwrap()

@@ -63,7 +63,7 @@ fn the_choice_families_are_in_the_manifest_since_next() {
             .iter()
             .find(|one| one["name"] == *name)
             .unwrap_or_else(|| panic!("{name} is in the manifest"));
-        assert_eq!(family["since"], parts::NEXT, "{name}");
+        assert_eq!(family["since"], 13, "{name}");
         let names = |list: &str| -> Vec<String> {
             family[list]
                 .as_array()

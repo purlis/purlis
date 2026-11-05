@@ -488,7 +488,7 @@ fn the_plane_root_s_chip_is_the_workspace_chip_s_root_variant_since_next() {
         .iter()
         .find(|one| one["name"] == "root")
         .expect("the root chip is a variant of the title bar's chip");
-    assert_eq!(root["since"], parts::NEXT);
+    assert_eq!(root["since"], 13);
     assert_eq!(root["consent"], false);
     // Drawn as a pin is (titlebar.css): quiet at rest, the card's fill under the pointer, the
     // accent's wash while the plane root is in front, and never looking merely hovered then.
@@ -533,7 +533,7 @@ fn a_dormant_pin_s_chip_is_the_workspace_chip_s_dormant_variant_since_next() {
         .iter()
         .find(|one| one["name"] == "dormant")
         .expect("a dormant pin's chip is a variant of the title bar's chip");
-    assert_eq!(dormant["since"], parts::NEXT);
+    assert_eq!(dormant["since"], 13);
     assert_eq!(dormant["consent"], false);
     // Drawn as titlebar.css draws it: muted words and the subtle line at rest, never the chosen
     // wash (it is never current), the card's fill and the primary words under the pointer.

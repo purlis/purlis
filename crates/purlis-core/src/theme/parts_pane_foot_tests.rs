@@ -15,7 +15,7 @@ fn the_pane_foot_is_in_the_manifest_since_next() {
         .iter()
         .find(|one| one["name"] == "pane-foot")
         .expect("the pane foot is in the manifest");
-    assert_eq!(foot["since"], parts::NEXT);
+    assert_eq!(foot["since"], 13);
     let names: Vec<&str> = foot["parts"]
         .as_array()
         .unwrap()
