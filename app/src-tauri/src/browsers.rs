@@ -308,6 +308,15 @@ mod hosted {
         Ok(())
     }
 
+    /// **Whether a host of `version` says whether a page asks to sign in** (#5121).
+    fn says_asks_to_sign_in(version: purlis_session_protocol::version::Version) -> bool {
+        version >= session::KNOWS_ASKS_TO_SIGN_IN
+    }
+
+    /// Why a host before 1.73 isn't asked (#5121): never told to a chat, whose login goes on.
+    const TOO_OLD_TO_SAY: &str = "the purlis that runs this browser is too old to say whether a \
+                                  page asks to sign in";
+
     /// What a chat is told where the purlis that runs its browser fills no secret (#5115).
     const TOO_OLD_TO_FILL: &str = "the purlis that runs this browser is too old to fill a \
                                    secret, so nothing was filled. Update purlis where the \
@@ -357,6 +366,10 @@ mod hosted {
             if matches!(act, Act::DescribeField { .. }) {
                 fills_secrets(link.version()).map_err(Refused::Said)?;
             }
+            // A host before 1.73 can't say whether a page asks to sign in (#5121).
+            if matches!(act, Act::AsksToSignIn) && !says_asks_to_sign_in(link.version()) {
+                return Err(Refused::Said(TOO_OLD_TO_SAY.to_owned()));
+            }
             let command = Command::Browse {
                 program: program.to_owned(),
                 call_id: call_id.to_owned(),
@@ -399,6 +412,15 @@ mod hosted {
             // Again once its link is had, as a browser's start is checked (#3702).
             if let Some(why) = self.pool_of(program).and_then(|pool| self.untrusted(&pool)) {
                 return Err(Refused::Said(why));
+            }
+            // A host before 1.73 doesn't start a chat's chosen login clean (#5121).
+            if login.suggested && !says_asks_to_sign_in(link.version()) {
+                return Err(Refused::Said(
+                    "the purlis that runs this browser is too old to start this login clean on \
+                     its site, so nothing was filled. Update purlis where the browser runs, then \
+                     call browser_login again"
+                        .to_owned(),
+                ));
             }
             // A host before 1.70 drops a login's form and would fill it on its page's origin
             // (#4995): such a login is never sent to one.

@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Echoes its address</title></head>
+<body>
+  <h1>Sent</h1>
+  <p id="said"></p>
+  <script>
+    // A page that writes what its address carries into itself, as a form sent it.
+    document.getElementById('said').textContent = 'Carried ' + location.search;
+  </script>
+</body></html>

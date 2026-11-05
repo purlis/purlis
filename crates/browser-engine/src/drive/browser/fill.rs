@@ -81,35 +81,12 @@ pub(crate) const FIELD_KIND: &str = r"function () {
   return { kind, label };
 }";
 
-/// The function that writes a value into the field it is given, run in purlis's own world in
-/// the field's frame: a constant. In the same step it checks that the field is still in its
-/// document and that the document is on `origin`, answering `moved` where not and writing
-/// nothing, so no focus and no moment between a check and a write decides where the value goes.
-/// Before the value goes in, a copy, a cut and a drag started on the field are stopped for as
-/// long as the field lives, and so is one anywhere in its document of a field or a selection that
-/// holds the value (#5117): nothing is put on the clipboard or dragged, and nothing of the page
-/// hears of them after. And the field is marked as one the browser keeps nothing of, so a
-/// page left and gone back to doesn't come back with the value in it. The value goes in through the field's own setter, with the events a
-/// page hears for typing, and the answer is how much the field then holds. A field that holds
-/// less is emptied again.
-///
-/// A multi-line text box or an editable area is written only where `manyLines` says the person
-/// was asked about this fill (#5120), and answers `kind` otherwise, in the same step, before
-/// anything of the field is touched.
-pub(crate) const WRITE_FIELD: &str = r"function (field, value, origin, manyLines) {
-  if (!field.isConnected || field.ownerDocument.location.origin !== origin) return 'moved';
-  let own = null;
-  const oneLine = ['password', 'text', 'email', 'number', 'tel', 'url'];
-  if (field instanceof HTMLInputElement) {
-    if (!oneLine.includes(field.type) || field.disabled || field.readOnly) return 'kind';
-    own = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
-  } else if (manyLines === true && field instanceof HTMLTextAreaElement) {
-    own = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
-  } else if (manyLines === true && field instanceof HTMLElement && field.isContentEditable) {
-    own = Object.getOwnPropertyDescriptor(Node.prototype, 'textContent');
-  }
-  if (own === null) return 'kind';
-  const stop = (event) => {
+/// **What stops a copy, a cut and a drag of a filled field** (#5117), and a wheel over it, as
+/// script run in purlis's own world with `field` and `value` in scope: one text, so a login's
+/// fields ([`GUARD_FIELD`]) and any other's ([`WRITE_FIELD`]) can't come to differ.
+macro_rules! takes_nothing_from_a_filled_field {
+    () => {
+        r#"  const stop = (event) => {
     if (event.clipboardData) event.clipboardData.clearData();
     if (event.dataTransfer) event.dataTransfer.clearData();
     event.preventDefault();
@@ -129,7 +106,42 @@ pub(crate) const WRITE_FIELD: &str = r"function (field, value, origin, manyLines
   // A wheel over a focused number field steps its value: not this one's.
   field.addEventListener('wheel', (event) => event.preventDefault(), { capture: true, passive: false });
   field.setAttribute('autocomplete', 'off');
-  own.set.call(field, value);
+"#
+    };
+}
+
+/// The function that writes a value into the field it is given, run in purlis's own world in
+/// the field's frame: a constant. In the same step it checks that the field is still in its
+/// document and that the document is on `origin`, answering `moved` where not and writing
+/// nothing, so no focus and no moment between a check and a write decides where the value goes.
+/// Before the value goes in, a copy, a cut and a drag started on the field are stopped for as
+/// long as the field lives, and so is one anywhere in its document of a field or a selection that
+/// holds the value (#5117): nothing is put on the clipboard or dragged, and nothing of the page
+/// hears of them after. And the field is marked as one the browser keeps nothing of, so a
+/// page left and gone back to doesn't come back with the value in it. The value goes in through the field's own setter, with the events a
+/// page hears for typing, and the answer is how much the field then holds. A field that holds
+/// less is emptied again.
+///
+/// A multi-line text box or an editable area is written only where `manyLines` says the person
+/// was asked about this fill (#5120), and answers `kind` otherwise, in the same step, before
+/// anything of the field is touched.
+pub(crate) const WRITE_FIELD: &str = concat!(
+    r#"function (field, value, origin, manyLines) {
+  if (!field.isConnected || field.ownerDocument.location.origin !== origin) return 'moved';
+  let own = null;
+  const oneLine = ['password', 'text', 'email', 'number', 'tel', 'url'];
+  if (field instanceof HTMLInputElement) {
+    if (!oneLine.includes(field.type) || field.disabled || field.readOnly) return 'kind';
+    own = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+  } else if (manyLines === true && field instanceof HTMLTextAreaElement) {
+    own = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
+  } else if (manyLines === true && field instanceof HTMLElement && field.isContentEditable) {
+    own = Object.getOwnPropertyDescriptor(Node.prototype, 'textContent');
+  }
+  if (own === null) return 'kind';
+"#,
+    takes_nothing_from_a_filled_field!(),
+    r#"  own.set.call(field, value);
   field.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText' }));
   field.dispatchEvent(new Event('change', { bubbles: true }));
   const held = own.get.call(field).length;
@@ -138,7 +150,19 @@ pub(crate) const WRITE_FIELD: &str = r"function (field, value, origin, manyLines
     field.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContent' }));
   }
   return held;
-}";
+}"#
+);
+
+/// **The function that gives a login's field the same stops before its value goes in** (#5121,
+/// SF-7): run on the field, as an object of purlis's own world, with the value it is about to
+/// hold.
+pub(crate) const GUARD_FIELD: &str = concat!(
+    r#"function (value) {
+  const field = this;
+"#,
+    takes_nothing_from_a_filled_field!(),
+    "}"
+);
 
 /// A field as resolved for a fill: where it is, and its object in purlis's own world there.
 struct Resolved {
@@ -349,7 +373,7 @@ impl Browser {
     }
 
     /// The document page `page` shows in its main frame, by its number.
-    fn main_document(&self, page: &str) -> Option<u64> {
+    pub(super) fn main_document(&self, page: &str) -> Option<u64> {
         let state = lock(&self.inner.state);
         Some(state.page(page)?.frames.get(page)?.generation)
     }
@@ -458,7 +482,7 @@ fn asks_each_time(target: &Ref) -> Refusal {
 /// address carries it, and form-encoded as a form sent by its address does. A page that puts
 /// the value into its address, or echoes it so spelled, shows the agent none of it. Each is
 /// wiped as it goes.
-fn spellings(value: &str) -> Vec<zeroize::Zeroizing<String>> {
+pub(super) fn spellings(value: &str) -> Vec<zeroize::Zeroizing<String>> {
     let encoded = |space: &str| {
         let mut out = String::with_capacity(value.len() * 3);
         for byte in value.bytes() {
