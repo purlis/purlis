@@ -74,6 +74,11 @@ fn load(ctx: &Ctx) -> Result<Index, VaultError> {
             )));
         }
     };
+    // Empty is no links, not a corrupt index: a chat's sandbox may hold a denied path that isn't
+    // there with an empty file while the chat runs, and purlis never writes one (`rewrite`).
+    if text.trim().is_empty() {
+        return Ok(Index::new());
+    }
     let doc: Value =
         serde_json::from_str(&text).map_err(|e| corrupt(ctx, &registry::py_json_error(&e)))?;
     let mut index = Index::new();

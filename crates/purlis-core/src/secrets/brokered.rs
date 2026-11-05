@@ -1426,10 +1426,10 @@ pub fn fill_value(
         ));
     }
     if super::totp::looks_like_a_seed(value.expose()) {
-        let place = format!(
-            "in the window, open the vault's tab and open the menu on the row of {key}, or of the \
-             entry it reads if it is linked, and choose"
-        );
+        // The key is named once, up front: what the person has to do comes last, and has to
+        // survive what their view of the browser keeps of a long key's name.
+        let place = "in the window, open the vault's tab and open the menu on this key's row, or \
+                     on the row of the entry it reads if it is linked, and choose";
         let then = match super::no_seed::of(&reading_for(asker), vault, key, value.expose()) {
             super::no_seed::Mark::Holds => return Ok(Some(value)),
             super::no_seed::Mark::None => format!(
@@ -1437,8 +1437,8 @@ pub fn fill_value(
                 super::no_seed::MARK_WORDS
             ),
             super::no_seed::Mark::ValueChanged => format!(
-                "The person marked {key} as no 2FA seed, and its value has changed since. If this \
-                 value is no seed either, ask them to mark it again: {place} {}, then {}",
+                "The person marked this key as no 2FA seed, and its value has changed since. If \
+                 this value is no seed either, ask them to mark it again: {place} {}, then {}",
                 super::no_seed::UNMARK_WORDS,
                 super::no_seed::MARK_WORDS
             ),

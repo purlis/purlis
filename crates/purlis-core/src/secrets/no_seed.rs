@@ -105,6 +105,10 @@ fn load(ctx: &Ctx) -> Result<Index, VaultError> {
             )));
         }
     };
+    // Empty holds none, as an empty links index does ([`super::links`]).
+    if text.trim().is_empty() {
+        return Ok(Index::new());
+    }
     let doc: Value =
         serde_json::from_str(&text).map_err(|e| corrupt(ctx, &registry::py_json_error(&e)))?;
     let mut index = Index::new();

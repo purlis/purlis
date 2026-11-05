@@ -361,20 +361,42 @@ fn a_linked_entry_fills_on_the_mark_of_the_entry_it_reads() {
 
 #[test]
 fn the_persons_view_of_a_refusal_keeps_where_to_mark_the_key() {
-    let tmp = project(serde_json::json!({"AN_APP_PASSWORD_KEY": APP_PASSWORD}));
-    let refused = filled(tmp.path(), "AN_APP_PASSWORD_KEY").unwrap_err();
-    let seen = crate::browsertimeline::fill_refused("b1", "AN_APP_PASSWORD_KEY", &refused, 1);
+    // As long a name as a Secret ask takes.
+    let key = "K".repeat(128);
+    let tmp = project(serde_json::json!({key.clone(): APP_PASSWORD}));
+    let refused = filled(tmp.path(), &key).unwrap_err();
+    let seen = crate::browsertimeline::fill_refused("b1", &key, &refused, 1);
     assert!(seen.moment.did.contains(MARK_WORDS), "{}", seen.moment.did);
     // So does the longer one, for a value that changed.
     let c = ctx(tmp.path());
-    mark(&c, &team(tmp.path()), "AN_APP_PASSWORD_KEY").unwrap();
-    holding(
-        tmp.path(),
-        &serde_json::json!({"AN_APP_PASSWORD_KEY": A_SEED}),
-    );
-    let refused = filled(tmp.path(), "AN_APP_PASSWORD_KEY").unwrap_err();
-    let seen = crate::browsertimeline::fill_refused("b1", "AN_APP_PASSWORD_KEY", &refused, 1);
+    mark(&c, &team(tmp.path()), &key).unwrap();
+    holding(tmp.path(), &serde_json::json!({key.clone(): A_SEED}));
+    let refused = filled(tmp.path(), &key).unwrap_err();
+    let seen = crate::browsertimeline::fill_refused("b1", &key, &refused, 1);
     assert!(seen.moment.did.contains(MARK_WORDS), "{}", seen.moment.did);
+}
+
+#[test]
+fn an_empty_marks_file_holds_none_and_takes_a_mark() {
+    let tmp = project(serde_json::json!({"APP": APP_PASSWORD}));
+    let c = ctx(tmp.path());
+    std::fs::create_dir_all(c.vaults_dir()).unwrap();
+    std::fs::write(path(&c), "").unwrap();
+    assert_eq!(of(&c, "team", "APP", APP_PASSWORD), Mark::None);
+    mark(&c, &team(tmp.path()), "APP").unwrap();
+    assert_eq!(filled(tmp.path(), "APP").unwrap(), APP_PASSWORD);
+}
+
+#[test]
+fn an_empty_links_index_holds_no_link_and_a_vault_still_reads() {
+    let tmp = project(serde_json::json!({"API": "fixture-not-a-seed-5237"}));
+    let c = ctx(tmp.path());
+    std::fs::create_dir_all(&c.state).unwrap();
+    std::fs::write(crate::secrets::links::path(&c), "").unwrap();
+    assert_eq!(
+        cmd::get_value(&c, &team(tmp.path()), "API").unwrap(),
+        "fixture-not-a-seed-5237"
+    );
 }
 
 #[test]
