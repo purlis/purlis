@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793910586791,
+  "lastUpdate": 1793912125998,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -40488,6 +40488,48 @@ window.BENCHMARK_DATA = {
             "value": 102.0828855,
             "unit": "ms",
             "extra": "median of 5 runs: 101.767, 102.075, 102.083, 102.836, 102.942 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "298014beebb17b1052bd3ea4c53a4efe5e60451a",
+          "message": "A project that fell short says so on its row, with one Retry (#5324) (#5420)\n\n* A project that fell short says so on its row, with one Retry (#5324)\n\nA failed project's row shows its error with a Retry; one still loading after 15 s\nor short of chats offers Retry too. Retry reopens that project alone with its chats,\nand a waiting task's row in the sidebar runs the same action.\n\nretry_project is new in the core because open_plane on a held project puts nothing back.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6P8K12CZQXA364HAV018QP8\nPurlis-Persona: steward\n\n* Rail: a row's Retry and Dismiss hold their size as the list fills (#5324)\n\nThe list shrinks what it can, and an icon button's aspect ratio took one to 14px square,\nunder the 24px axe holds a target to.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6P8K12CZQXA364HAV018QP8\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-05T20:02:41Z",
+          "tree_id": "86d0a798a13c940c957870b3aa037ea7d0080499",
+          "url": "https://github.com/purlis/purlis/commit/298014beebb17b1052bd3ea4c53a4efe5e60451a"
+        },
+        "date": 1793912121457,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6739550000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.661, 0.662, 0.674, 0.674, 0.709 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6795915,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.520, 16.636, 16.680, 16.772, 17.003 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.3902315,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.754, 102.027, 102.390, 102.942, 104.190 ms"
           }
         ]
       }
