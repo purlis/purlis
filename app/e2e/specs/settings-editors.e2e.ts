@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { $, browser, expect } from "@wdio/globals";
-import { closeTheViewTabsOpenedSince, tabNames } from "../reach.js";
+import { closesTheTabsItOpens } from "../reach.js";
+import { SETTINGS_GROUPS, openProjectSettings } from "../settingsTab.js";
 
 /**
  * **Settings' editors, in the real WebView** (DS-10, #1842; spec #1832's seam 3):
@@ -17,8 +18,6 @@ import { closeTheViewTabsOpenedSince, tabNames } from "../reach.js";
  * spec only opens and measures, and closes the Settings tab it opened.
  */
 
-const PALETTE = '[role="dialog"][aria-label="Command palette"]';
-const GROUPS = 'nav[aria-label="Groups"]';
 const LIST = "Environment passed to chats";
 
 type Box = {
@@ -29,30 +28,6 @@ type Box = {
   width: number;
   height: number;
 };
-
-/** Opens Settings at the Project level through the palette, as the operator does. */
-async function openProjectSettings(): Promise<void> {
-  await browser.keys(["F2"]);
-  await $(PALETTE).waitForDisplayed({ timeout: 20_000 });
-  const box = await $("#palette-query");
-  await browser.waitUntil(async () => box.isFocused(), {
-    timeout: 10_000,
-    timeoutMsg: "the palette did not take the keyboard when it opened",
-  });
-  await box.addValue("Project settings");
-  await browser.waitUntil(
-    async () =>
-      browser.execute(
-        () =>
-          document
-            .querySelector('[role="option"][aria-selected="true"] .palette-title')
-            ?.textContent?.startsWith("Project settings") ?? false,
-      ),
-    { timeout: 10_000, timeoutMsg: "the palette did not offer Project settings…" },
-  );
-  await browser.keys(["Enter"]);
-  await $(GROUPS).waitForDisplayed({ timeout: 20_000 });
-}
 
 /** Opens `file` from the Edit as TOML links at the nav's foot. The group is named by its
  *  visible label (`aria-labelledby`), which no CSS selector reads, so it is found by its words. */
@@ -131,17 +106,7 @@ async function listMeasured() {
 }
 
 describe("Settings' editors, in the real WebView", () => {
-  /** The tabs on the strip before this spec, so its `after` closes only what it opened. */
-  let wereOpen: string[] = [];
-
-  before(async () => {
-    wereOpen = await tabNames();
-  });
-
-  after(async () => {
-    // The Settings tab it opened, by its own ×, waited for until the strip is as it was (#5111).
-    await closeTheViewTabsOpenedSince(wereOpen);
-  });
+  closesTheTabsItOpens();
 
   it("draws Edit as TOML as CodeMirror: numbered, coloured, the group's width, eight controls tall", async () => {
     await openProjectSettings();
@@ -163,7 +128,7 @@ describe("Settings' editors, in the real WebView", () => {
   });
 
   it("draws a list field under its name, at the row's width, with every line shown", async () => {
-    await $(GROUPS).$("button=Harness & profiles").click();
+    await $(SETTINGS_GROUPS).$("button=Harness & profiles").click();
     await browser.waitUntil(async () => (await listMeasured()).field !== null, {
       timeout: 20_000,
       timeoutMsg: `Harness & profiles never drew ${LIST}`,

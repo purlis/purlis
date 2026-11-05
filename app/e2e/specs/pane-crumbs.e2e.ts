@@ -6,7 +6,7 @@ import { READY } from "../harness.js";
 import { pressAndStart } from "../opening.js";
 import { roomForTwoPanes } from "../paneRoom.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
-import { openedSince } from "../reach.js";
+import { untilTheStripIsBare } from "../reach.js";
 
 /**
  * **A pane's breadcrumb fits its pane's one top line, measured** (#1486).
@@ -51,14 +51,6 @@ const LONG_PATH = [
 ];
 /** The longest state there is (`shownState`). */
 const LONGEST_STATE = "ended without a report";
-
-async function tabNames(): Promise<string[]> {
-  return browser.execute(() =>
-    [
-      ...(document.querySelector('[data-strip="Tabs"]')?.querySelectorAll('[role="tab"]') ?? []),
-    ].map((tab) => tab.querySelector(".tab-name")?.textContent ?? ""),
-  );
-}
 
 async function untilShows(index: number, text: string): Promise<void> {
   await browser.waitUntil(
@@ -472,14 +464,12 @@ async function scrolledSideways(pane: number): Promise<number[]> {
 }
 
 describe("a pane's breadcrumb, while its tab shows a task", () => {
-  /** The tabs that were already there: the strip is back to them once this file's chats end. */
-  let wereAlreadyOpen: string[] = [];
   /** The chats running when the file began, so only the ones it started are ended again. */
   let chatsBefore: Running = {};
   let was = { width: 1280, height: 800 };
 
   before(async () => {
-    wereAlreadyOpen = await tabNames();
+    await untilTheStripIsBare("pane-crumbs");
     chatsBefore = await chatsRunning();
     was = await browser.getWindowSize();
     await pressAndStart("New tab");
@@ -497,10 +487,7 @@ describe("a pane's breadcrumb, while its tab shows a task", () => {
     // Each chat this file started, by the number the core gave it (#1796): a tab's name may be
     // one an older chat has too.
     await endTheChatsStartedSince(chatsBefore);
-    await browser.waitUntil(
-      async () => openedSince(wereAlreadyOpen, await tabNames()).length === 0,
-      { timeout: 20_000, timeoutMsg: "the pane-crumbs spec left a chat open behind it" },
-    );
+    await untilTheStripIsBare("pane-crumbs");
   });
 
   /** Asks for a window of this size and waits until the page has stopped changing width. */

@@ -757,6 +757,20 @@ type Typed =
  */
 let cloneRuns = 0;
 
+/** `was`, and which chat each task `sidebar` lists is a task of now: `was` itself if none moved. */
+function withAskersOf(
+  was: ReadonlyMap<number, number>,
+  sidebar: Pick<SidebarModel, "unfiled" | "workspaces">,
+): ReadonlyMap<number, number> {
+  const tasks = [...sidebar.workspaces.flatMap((ws) => ws.chats), ...sidebar.unfiled].flatMap(
+    (chat) =>
+      chat.from?.task && was.get(chat.session) !== chat.from.chat
+        ? [[chat.session, chat.from.chat] as const]
+        : [],
+  );
+  return tasks.length === 0 ? was : new Map([...was, ...tasks]);
+}
+
 /**
  * One project, with everything that belongs to it.
  *
@@ -1464,6 +1478,11 @@ export const PlaneView = memo(function PlaneView({
    * by a different chat.
    */
   const [startedIn, setStartedIn] = useState<Record<number, string>>({});
+  /** **Which chat each task the plane has listed was a task of**, kept once it lists it no more:
+   *  the plane can be read again before a task's end arrives (#5106), and until then, and after,
+   *  its tab stands where its asker is filed and its end keeps its pane. `askedByNow` is what
+   *  the core lists now, and stays so. */
+  const [askedOnce, setAskedOnce] = useState<ReadonlyMap<number, number>>(() => new Map());
   /**
    * Where each handed-off chat came from, by session, as its tab's tooltip and its pane say it:
    * `↳ from steward 3 · platform-next` (charter-app#258). By the parent's name, never its
@@ -2204,6 +2223,7 @@ export const PlaneView = memo(function PlaneView({
         const held = sidebarHeld.current;
         if (held !== undefined && dequal(held, next)) finishedQuietly.current();
         setSidebar((held) => (held !== undefined && dequal(held, next) ? held : next));
+        setAskedOnce((was) => withAskersOf(was, next));
         // Focus follows the plane rather than being guessed: whichever workspace was picked,
         // while it still exists — and otherwise **the workspace of the chat in front**,
         // because the strip below shows that workspace's chats and a strip that opened on
@@ -2402,12 +2422,15 @@ export const PlaneView = memo(function PlaneView({
         // as it ended (#5106).
         return startedIn[chat] ?? endedHere.get(chat)?.workspace ?? endedFiled.get(chat);
       };
-      // A task a scenario spec pretends (`e2eTasks.ts`, none in a shipped build) is in no
-      // list of the core's: it is filed where the chat that asked for it is.
-      const asker = pretended.find((one) => one.chat.session === session)?.chat.from?.chat;
+      // A task the plane lists no more (#5106), or one a scenario spec pretends (`e2eTasks.ts`,
+      // none in a shipped build), which is in no list of the core's: it is filed where the chat
+      // that asked for it is.
+      const asker =
+        pretended.find((one) => one.chat.session === session)?.chat.from?.chat ??
+        askedOnce.get(session);
       return at(session) ?? (asker === undefined ? undefined : at(asker)) ?? OUTSIDE;
     },
-    [endedFiled, endedHere, pretended, sidebar, startedIn],
+    [askedOnce, endedFiled, endedHere, pretended, sidebar, startedIn],
   );
 
   /** What a press reads that the tabs do not hold (#4757): where each chat is filed, and each
@@ -2555,7 +2578,6 @@ export const PlaneView = memo(function PlaneView({
     },
     [filedIn],
   );
-  /** Chat `session`'s pane no longer shows it as ended: cleared, or resumed. */
   /** A task's pane no longer shows it as ended: cleared, or resumed. */
   const forgetEndedFiled = useCallback((session: number) => {
     endedInPanes.current.delete(session);
@@ -2591,17 +2613,14 @@ export const PlaneView = memo(function PlaneView({
    *  ended on purpose where a pane shows it (#5019). */
   const keepsItsPane = useCallback(
     (session: number) => {
-      const keep = askedByNow(session) !== undefined || endedHereNow.current.has(session);
-      // Filed where it was as it ends (#5106), before the plane stops listing it.
+      const keep =
+        askedByNow(session) !== undefined ||
+        askedOnce.has(session) ||
+        endedHereNow.current.has(session);
+      // Filed where it was as it ends (#5106), before the plane stops listing it; or, where the
+      // plane was read again before the end arrived, where the chat that asked for it is.
       if (keep) {
-        // Where the plane was read again before the end arrived, it lists the task no more:
-        // it is filed where the chat that asked for it is, as a task is.
-        const listed =
-          sidebar === undefined ||
-          sidebar.unfiled.some((one) => one.session === session) ||
-          sidebar.workspaces.some((ws) => ws.chats.some((one) => one.session === session));
-        const asker = askedByNow(session);
-        const workspace = filedIn(listed || asker === undefined ? session : asker);
+        const workspace = filedIn(session);
         endedInPanes.current.set(session, workspace);
         setEndedFiled((was) =>
           was.get(session) === workspace ? was : new Map(was).set(session, workspace),
@@ -2609,7 +2628,7 @@ export const PlaneView = memo(function PlaneView({
       }
       return keep;
     },
-    [askedByNow, filedIn, sidebar],
+    [askedByNow, askedOnce, filedIn],
   );
 
   const stoppedFor = useCallback((session: number, why: string | undefined) => {
@@ -8855,13 +8874,14 @@ export const PlaneView = memo(function PlaneView({
   }, [chatTasksAsked, finishedTasks, listedChats]);
   /** **A task picked there is shown in the focused pane**, as a press shows it: one on screen
    *  already is jumped to (D1), in this window or, asked first, another of the project's
-   *  (#4768). That pane while it is still there; else wherever a press puts it. */
+   *  (#4768). That pane while it is still there, whichever window's pane was used last, so the
+   *  core is told it was used before it is asked (#5108: the chord itself never reaches the
+   *  panes); else wherever a press puts it. */
   const showPickedTask = useCallback(
     (session: number) => {
       const asked = chatTasksAsked?.into;
       const into =
         asked !== undefined &&
-        now.current.byId[asked.tab] !== undefined &&
         contentsOf(now.current, asked.tab).some((one) => one.pane === asked.pane)
           ? asked
           : undefined;
@@ -8873,8 +8893,8 @@ export const PlaneView = memo(function PlaneView({
         here();
         return;
       }
-      void commands
-        .pressElsewhere(plane, session)
+      void (into === undefined ? Promise.resolve() : commands.paneUsed(plane))
+        .then(() => commands.pressElsewhere(plane, session))
         .then((answer) => {
           if (answer.status !== "ok" || answer.data === null) here();
         })

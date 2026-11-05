@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { $, browser, expect } from "@wdio/globals";
-import { closeTheViewTabsOpenedSince, tabNames } from "../reach.js";
+import { closesTheTabsItOpens } from "../reach.js";
+import { SETTINGS_GROUPS, openProjectSettings } from "../settingsTab.js";
 import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
 
 /**
@@ -21,35 +22,9 @@ import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
  * tab it opened.
  */
 
-const PALETTE = '[role="dialog"][aria-label="Command palette"]';
-const GROUPS = 'nav[aria-label="Groups"]';
 const LABEL = "[memory] share (deprecated)";
 
 type Box = { top: number; bottom: number; left: number; right: number; height: number };
-
-/** Opens Settings at the Project level through the palette, as the operator does. */
-async function openProjectSettings(): Promise<void> {
-  await browser.keys(["F2"]);
-  await $(PALETTE).waitForDisplayed({ timeout: 20_000 });
-  const box = await $("#palette-query");
-  await browser.waitUntil(async () => box.isFocused(), {
-    timeout: 10_000,
-    timeoutMsg: "the palette did not take the keyboard when it opened",
-  });
-  await box.addValue("Project settings");
-  await browser.waitUntil(
-    async () =>
-      browser.execute(
-        () =>
-          document
-            .querySelector('[role="option"][aria-selected="true"] .palette-title')
-            ?.textContent?.startsWith("Project settings") ?? false,
-      ),
-    { timeout: 10_000, timeoutMsg: "the palette did not offer Project settings…" },
-  );
-  await browser.keys(["Enter"]);
-  await $(GROUPS).waitForDisplayed({ timeout: 20_000 });
-}
 
 /** The row's label, its select and its Reset, measured; and what its group says. */
 async function measured() {
@@ -91,21 +66,11 @@ describe("a settings row, in the real WebView", () => {
   before(() => windowAt(WINDOW_1280));
   after(() => theWindowHoldsTheRail());
 
-  /** The tabs on the strip before this spec, so its `after` closes only what it opened. */
-  let wereOpen: string[] = [];
-
-  before(async () => {
-    wereOpen = await tabNames();
-  });
-
-  after(async () => {
-    // The Settings tab it opened, by its own ×, waited for until the strip is as it was (#5111).
-    await closeTheViewTabsOpenedSince(wereOpen);
-  });
+  closesTheTabsItOpens();
 
   it("draws a select and its Reset one height, side by side, on the label's line", async () => {
     await openProjectSettings();
-    await $(GROUPS).$("button=Saving").click();
+    await $(SETTINGS_GROUPS).$("button=Saving").click();
     await browser.waitUntil(async () => (await measured()).reset !== null, {
       timeout: 20_000,
       timeoutMsg: `Saving never drew ${LABEL} with its Reset`,
