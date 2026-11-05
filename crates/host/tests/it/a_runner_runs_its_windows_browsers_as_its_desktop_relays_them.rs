@@ -183,6 +183,7 @@ fn a_fill() -> FillSecret {
         key: "dash-api-key".into(),
         value: Secret::new("fixture-key-5122".into()),
         multi_line: false,
+        also: Vec::new(),
     }
 }
 

@@ -145,7 +145,7 @@ fn says_why_refused(browser: &Browser) -> Arc<Mutex<Vec<String>>> {
 }
 
 #[test]
-fn a_click_elsewhere_the_hold_refused_answers_why_and_the_hold_lives_on() {
+fn a_click_elsewhere_the_hold_refused_answers_why() {
     let Some((browser, _data, _site)) = started() else {
         return;
     };
@@ -166,7 +166,7 @@ fn a_click_elsewhere_the_hold_refused_answers_why_and_the_hold_lives_on() {
         asked.lock().unwrap().first().map(String::as_str),
         Some("https://elsewhere.test/away?from=dash")
     );
-    assert_eq!(told.said(), ["held"], "the request is still in its history");
+    told.comes_to(&["held", "released"]);
 }
 
 #[test]

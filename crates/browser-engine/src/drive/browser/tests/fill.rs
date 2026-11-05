@@ -567,26 +567,23 @@ fn a_page_that_starts_another_document_as_it_is_held_is_released_and_takes_no_va
     assert_eq!(holding.told(), ["held, 0 written", "released"]);
 }
 
-/// A request a filled page sent elsewhere was refused, and the engine showed its own page for it:
-/// no page was left, and the request is still in the page's history, so the hold lives on.
+/// The engine showed its own page for a load that failed: no page is left, and nothing holds the
+/// browser (#5230).
 #[test]
-fn the_engines_own_page_for_a_refused_load_keeps_the_hold() {
+fn the_engines_own_page_for_a_load_that_failed_ends_the_hold() {
     let holding = Arc::new(Holding::default());
-    let (browser, engine) = filled_under(&holding);
+    let (_browser, engine) = filled_under(&holding);
 
     engine.emit(
         "Page.frameNavigated",
         json!({ "frame": {
             "id": "PAGE-1", "loaderId": "LOADER-ERROR", "name": "",
             "url": "chrome-error://chromewebdata/",
-            "unreachableUrl": "http://elsewhere.test/search?q=open%20sesame",
+            "unreachableUrl": "http://fixture.test/gone.html",
         } }),
         Some("S-PAGE-1"),
     );
-    let _ = snapshot(&browser, 2);
-    assert_eq!(holding.told(), ["held, 0 written"], "still held");
 
-    main_frame_loads(&engine, "http://fixture.test/next.html");
     wait_for("the hold is released", || holding.told().len() == 2);
 }
 
@@ -652,7 +649,9 @@ fn an_answer_on_the_engines_own_page_says_why_its_caller_refused_that_load() {
     error_page_for("http://elsewhere.test/");
     main_frame_loads(&engine, "http://fixture.test/next.html");
     wait_for("the hold is released", || holding.told().len() == 2);
-    assert_eq!(note_of_a_read(&browser, 5), None, "a document loaded");
+    // What the failed load had to say is said once.
+    let _ = note_of_a_read(&browser, 5);
+    assert_eq!(note_of_a_read(&browser, 6), None, "a document loaded");
 }
 
 /// Going back to an address that carries a filled value would send it again, wherever that
