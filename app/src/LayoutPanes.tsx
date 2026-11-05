@@ -191,6 +191,7 @@ export function PaneFrame({
   said,
   focused = false,
   oneJob = false,
+  shell = false,
   children,
 }: {
   plane: PlaneId;
@@ -210,6 +211,9 @@ export function PaneFrame({
   /** **A one-job program's pane** (#4761; spec #4750 story 78): its head is no grip, so it
    *  cannot be picked up. It goes when its program exits. */
   oneJob?: boolean;
+  /** **It runs a shell**, as the open chats say before the plane lists it: it draws no foot. A
+   *  shell still restoring is not known yet, and has an empty foot until it is. */
+  shell?: boolean;
   /** While the pane shows a task of its tab's session: the path to it (#1486). Also for a task
    *  in a pane of its own, and the session it is beside (#1489). */
   crumbs?: Crumbs;
@@ -266,7 +270,9 @@ export function PaneFrame({
   const kind = paneKindOf({
     task: crumbs !== undefined,
     oneJob,
-    shell: head?.chat.shell,
+    // The plane's listing, once it has come; until then what the open chats said of it, so a
+    // chat reserves its foot from its first frame and its terminal gets one size (story 46).
+    shell: head?.chat.shell ?? shell,
   });
   const lines = paneLinesOf(kind, width, {
     from: Boolean(from),
@@ -437,8 +443,7 @@ export function PaneFrame({
         <div className="pane-body">{children}</div>
       </PaneTerminalAt.Provider>
       {/* **The pane foot** (#5202, spec #5191, look A): under the terminal, where the chat runs
-          and how full it is. Drawn once the plane says this is a chat, and whether or not the
-          gauge is known yet, so the terminal keeps its rows when the first usage arrives; after it in the tab order, as it is drawn. */}
+          and how full it is. Drawn whether or not the gauge is known yet, so the terminal keeps its rows when the first usage arrives; after it in the tab order, as it is drawn. */}
       {lines.foot !== null && (
         <PaneFoot className="pane-foot">
           <PaneFootStart>
@@ -854,6 +859,7 @@ export function NoticeOfChat({
 
 /** No chat's head facts: a pane head then says what its pane line says without them. */
 const NO_HEADS = (): ChatHead | undefined => undefined;
+const NO_SHELLS: ReadonlySet<number> = new Set();
 
 /** **What a folded pane's rail shows for what it holds** (#4766): its name and its icon. */
 export type PaneFace = { name: string; mark: ReactNode };
@@ -914,6 +920,7 @@ export function LayoutPanes({
   offerFor,
   offers,
   heads = NO_HEADS,
+  shells = NO_SHELLS,
   onPaneDoes,
   name,
   handedFrom,
@@ -1012,6 +1019,8 @@ export function LayoutPanes({
   /** What each chat's pane head says of it (#4760), by session: none where the plane has not
    *  listed it. */
   heads?: (session: number) => ChatHead | undefined;
+  /** The chats that run a shell, known from the open chats before the plane lists them. */
+  shells?: ReadonlySet<number>;
   onPaneDoes: (pane: number, offer: Offer | undefined) => void;
   /** The tab's name, which is the title of the view it opened on. */
   name: string;
@@ -1314,6 +1323,7 @@ export function LayoutPanes({
         session={content.session}
         focused={layout.pane === focused}
         oneJob={isOneJob(content)}
+        shell={shells.has(content.session)}
         crumbs={shownPath}
         said={
           endedTask === undefined
@@ -1463,6 +1473,7 @@ export function LayoutPanes({
       offerFor={offerFor}
       offers={offers}
       heads={heads}
+      shells={shells}
       onPaneDoes={onPaneDoes}
       name={name}
       handedFrom={handedFrom}

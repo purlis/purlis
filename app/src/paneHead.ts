@@ -96,9 +96,8 @@ export function droppedAt(width: number | undefined): ReadonlySet<HeadPart> {
 }
 
 /** **What a pane shows**, as its two lines tell it apart (#5202): a chat, a task shown in a
- *  chat's pane (#1486), a shell, a one-job program (#4761), and a pane whose chat the plane has
- *  not listed yet, which could still be a shell. */
-export type PaneKind = "chat" | "task" | "shell" | "oneJob" | "unlisted";
+ *  chat's pane (#1486), a shell, and a one-job program (#4761). */
+export type PaneKind = "chat" | "task" | "shell" | "oneJob";
 
 /**
  * **A chip of the head's line** (the **pane line**, `.pane-chips`), in its drawn order: who it
@@ -145,16 +144,10 @@ export type PaneLines = { head: LinePart[]; foot: FootPart[] | null };
 /** The foot of a chat's pane, whole: it drops nothing yet (#5206 orders its drops). */
 export const WHOLE_FOOT: readonly FootPart[] = ["harness", "workspace", "ctx", "cache"];
 
-/** **A pane's kind, by what it shows**: a task's path says it first, whatever runs there, and
- *  a chat is only told from a shell once the plane has listed it (`shell` known). */
-export function paneKindOf(shows: {
-  task: boolean;
-  oneJob: boolean;
-  shell: boolean | undefined;
-}): PaneKind {
+/** **A pane's kind, by what it shows**: a task's path says it first, whatever runs there. */
+export function paneKindOf(shows: { task: boolean; oneJob: boolean; shell: boolean }): PaneKind {
   if (shows.task) return "task";
   if (shows.oneJob) return "oneJob";
-  if (shows.shell === undefined) return "unlisted";
   return shows.shell ? "shell" : "chat";
 }
 
@@ -163,8 +156,7 @@ export function paneKindOf(shows: {
  * (#5202): the head says which chat this is and what it is doing; the foot, under the terminal,
  * where it runs and how full it is. On a chat's or a task's pane, harness · workspace and the gauge
  * are the foot's, never the head's, at any width. A shell and a one-job program draw no foot and
- * keep their heads as they were (spec #5191), `where` among them; a pane not listed yet draws no
- * foot until it is known, so a shell never shows an empty strip (story 20). The head's actions are not
+ * keep their heads as they were (spec #5191), `where` among them. The head's actions are not
  * here: they are `PaneActions`', by `droppedAt`, until #5203 and #5206 settle them.
  */
 export function paneLinesOf(

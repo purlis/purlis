@@ -178,16 +178,6 @@ describe("the pane's two lines: what the head and the foot of a chat's pane draw
     expect(paneKindOf({ task: false, oneJob: false, shell: false })).toBe("chat");
   });
 
-  it("draws no foot on a pane not listed yet, so a shell never shows an empty strip (story 20)", () => {
-    const kind = paneKindOf({ task: false, oneJob: false, shell: undefined });
-    expect(kind).toBe("unlisted");
-    expect(paneLinesOf(kind, 900, {}).foot).toBeNull();
-    expect(paneLinesOf(kind, 900, {}).head).not.toContain("where");
-    // Whatever it turns out to be, a task's path and a one-job program are known already.
-    expect(paneKindOf({ task: true, oneJob: false, shell: undefined })).toBe("task");
-    expect(paneKindOf({ task: false, oneJob: true, shell: undefined })).toBe("oneJob");
-  });
-
   it("keeps the whole foot of a chat at every width, its drops being #5206's", () => {
     for (const width of [undefined, 1200, 520, 300, 0])
       expect(paneLinesOf("chat", width, full).foot).toEqual([

@@ -462,10 +462,11 @@ describe("a chat's pane foot (#5202)", () => {
     expect(foot()).toBeNull();
   });
 
-  it("waits until the plane lists the pane's chat, so a shell never shows an empty strip (story 20)", async () => {
+  /** The window with the plane's listing held back, and what lets it through. */
+  async function beforeTheListing(chat: typeof CHAT | typeof SHELL) {
     let list = () => {};
     core(
-      CHAT,
+      chat,
       new Promise<void>((resolve) => {
         list = resolve;
       }),
@@ -475,9 +476,26 @@ describe("a chat's pane foot (#5202)", () => {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
+    return () => act(async () => list());
+  }
+
+  it("is there from a chat's first frame, so its terminal gets one size from the start (story 46)", async () => {
+    const listed = await beforeTheListing(CHAT);
+    const reserved = foot();
+    expect(reserved).not.toBeNull();
+
+    await listed();
+    // The listing fills the foot in: the same line, and nothing rows the terminal again.
+    await waitFor(() => expect(reserved.querySelector(".pane-where")).not.toBeNull());
+    expect(foot()).toBe(reserved);
+  });
+
+  it("is never drawn on a shell, listed or not, as the open chats say what it is (story 20)", async () => {
+    const listed = await beforeTheListing(SHELL);
     expect(foot()).toBeNull();
 
-    await act(async () => list());
-    await waitFor(() => expect(foot()).not.toBeNull());
+    await listed();
+    await waitFor(() => expect(head().querySelector(".pane-head-where")).not.toBeNull());
+    expect(foot()).toBeNull();
   });
 });
