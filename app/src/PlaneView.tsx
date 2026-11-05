@@ -756,14 +756,16 @@ type Typed =
  */
 let cloneRuns = 0;
 
-/** `was`, and which chat each task `sidebar` lists was a task of: `was` itself if none is new. */
-function withTasksOf(
+/** `was`, and which chat each task `sidebar` lists is a task of now: `was` itself if none moved. */
+function withAskersOf(
   was: ReadonlyMap<number, number>,
   sidebar: Pick<SidebarModel, "unfiled" | "workspaces">,
 ): ReadonlyMap<number, number> {
   const tasks = [...sidebar.workspaces.flatMap((ws) => ws.chats), ...sidebar.unfiled].flatMap(
     (chat) =>
-      chat.from?.task && !was.has(chat.session) ? [[chat.session, chat.from.chat] as const] : [],
+      chat.from?.task && was.get(chat.session) !== chat.from.chat
+        ? [[chat.session, chat.from.chat] as const]
+        : [],
   );
   return tasks.length === 0 ? was : new Map([...was, ...tasks]);
 }
@@ -2220,7 +2222,7 @@ export const PlaneView = memo(function PlaneView({
         const held = sidebarHeld.current;
         if (held !== undefined && dequal(held, next)) finishedQuietly.current();
         setSidebar((held) => (held !== undefined && dequal(held, next) ? held : next));
-        setAskedOnce((was) => withTasksOf(was, next));
+        setAskedOnce((was) => withAskersOf(was, next));
         // Focus follows the plane rather than being guessed: whichever workspace was picked,
         // while it still exists — and otherwise **the workspace of the chat in front**,
         // because the strip below shows that workspace's chats and a strip that opened on

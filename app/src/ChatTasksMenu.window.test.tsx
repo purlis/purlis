@@ -301,6 +301,9 @@ async function drawn(open: Listed[], how: Parameters<typeof core>[1] = {}) {
   return held;
 }
 
+/** What the window was just told has been read and drawn. */
+const settled = () => act(() => new Promise((done) => setTimeout(done, 0)));
+
 /** Chat 1's menu, open from its pane, with the keyboard on the task called `first`. */
 async function menuOpenOn(first: string) {
   await waitFor(() => expect(onScreen()).toContain(1));
@@ -331,12 +334,12 @@ describe("a pick of ⌘⇧J's menu in a project with another window (#5058, #476
     tabs: [tabOf(0, true, "alpha", 1), tabOf(1, true, "alpha", 5)],
   };
   /** The window has put back the project's tab windows, so it knows it is not the only one. */
-  const settled = async (held: { sent: (cmd: string) => unknown[] }) =>
+  const toldOfWindows = async (held: { sent: (cmd: string) => unknown[] }) =>
     waitFor(() => expect(held.sent("tab_windows_back")).toHaveLength(1));
 
   it("jumps to a task on screen in another window, and this window's pane stays as it was", async () => {
     const held = await drawn(open(), { layout, elsewhere: { 5: "window-1" } });
-    await settled(held);
+    await toldOfWindows(held);
     await menuOpenOn("talk");
 
     await userEvent.keyboard("{ArrowDown}");
@@ -345,7 +348,7 @@ describe("a pick of ⌘⇧J's menu in a project with another window (#5058, #476
 
     await waitFor(() => expect(held.sent("press_elsewhere")).toEqual([{ plane: PLANE, chat: 5 }]));
     await waitFor(() => expect(menu()).toBeNull());
-    await act(() => new Promise((done) => setTimeout(done, 0)));
+    await settled();
     // That window came forward with it, and a chat is never shown in two.
     expect(onScreen()).toEqual([1]);
     expect(held.told().flat()).not.toContain(5);
@@ -356,7 +359,7 @@ describe("a pick of ⌘⇧J's menu in a project with another window (#5058, #476
   it("shows a task in no pane in the pane asked from, though another window's pane was used last", async () => {
     // ⌘⇧J from a pane is that pane being used, so the press is this window's.
     const held = await drawn(open(), { layout, usedLast: "window-1" });
-    await settled(held);
+    await toldOfWindows(held);
     await menuOpenOn("talk");
 
     await userEvent.keyboard("{Enter}");
@@ -386,7 +389,7 @@ describe("a pick of ⌘⇧J's menu in a project with another window (#5058, #476
         usedLast: "window-1",
       },
     );
-    await settled(held);
+    await toldOfWindows(held);
     await menuOpenOn("talk");
 
     await userEvent.keyboard("{Enter}");
@@ -429,10 +432,18 @@ describe("a pick of ⌘⇧J's menu when its pane has gone (#5058)", () => {
     await waitFor(() => expect(document.activeElement).toBe(pane(4)));
   });
 
-  it("goes to the pane asked from while it is still there, though the keyboard moved on", async () => {
-    await drawn([chat(1, "alpha"), chat(2, "alpha"), talk()], {
-      layout: { strip: "alpha", tabs: [tabOf(0, true, "alpha", 1, 2)] },
-    });
+  it("goes to the pane asked from while it is still there, wherever the task is filed", async () => {
+    // Filed in beta: a press with no pane to go to would take it to beta's strip.
+    await drawn(
+      [
+        chat(1, "alpha"),
+        chat(2, "alpha"),
+        chat(4, "beta", { persona: "devops", label: "talk", from: taskOf(1) }),
+      ],
+      {
+        layout: { strip: "alpha", tabs: [tabOf(0, true, "alpha", 1, 2)] },
+      },
+    );
     await menuOpenOn("talk");
 
     await userEvent.keyboard("{Enter}");
@@ -459,11 +470,11 @@ describe("a task kept in its pane when the plane was read again before its end (
     held.unlists(4);
     await held.rowsChanged();
     await waitFor(() => expect(held.sent("plane_sidebar").length).toBeGreaterThan(read));
-    await act(() => new Promise((done) => setTimeout(done, 0)));
+    await settled();
     // Its tab has not moved meanwhile.
     expect(tabNames()).toEqual(["steward 1", "steward 2", "talk"]);
     await held.stopped(4);
-    await act(() => new Promise((done) => setTimeout(done, 0)));
+    await settled();
 
     // It stands where it stood, beside its workspace's other tabs, as ended.
     expect(tabNames()).toEqual(["steward 1", "steward 2", "talk"]);
@@ -487,10 +498,30 @@ describe("a task kept in its pane when the plane was read again before its end (
     await held.stopped(4);
     held.unlists(4);
     await held.rowsChanged();
-    await act(() => new Promise((done) => setTimeout(done, 0)));
+    await settled();
 
     expect(tabNames()).toContain("talk");
     await goToWorkspace("alpha");
     await waitFor(() => expect(tabNames()).toEqual(["steward 1"]));
+  });
+
+  it("stands on its asker's strip from that read on, away from the strip it was filed on", async () => {
+    const held = await drawn([
+      chat(1, "alpha"),
+      chat(4, "beta", { persona: "devops", label: "talk", from: taskOf(1) }),
+    ]);
+    fireEvent.contextMenu(row(await section(), "talk"));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Move to its own tab" }));
+    await goToWorkspace("beta");
+    await waitFor(() => expect(tabNames()).toContain("talk"));
+
+    held.unlists(4);
+    await held.rowsChanged();
+    await settled();
+    await held.stopped(4);
+    await settled();
+
+    await goToWorkspace("alpha");
+    await waitFor(() => expect(tabNames()).toEqual(["steward 1", "talk"]));
   });
 });
