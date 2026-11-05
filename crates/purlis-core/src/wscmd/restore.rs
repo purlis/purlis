@@ -362,11 +362,20 @@ pub fn restore(request: &Request, say: Sink) -> u8 {
 /// that is a symlink out of the plane is a checkout this command may not touch. Never the
 /// parent — `workspaces/<ws>` being fine says nothing about the child a committed manifest
 /// names.
+///
+/// The repo's folder in either layout ([`crate::repofolder::folder`]), so a clone in `repos/` is
+/// one already there. A name only one entry and no repo's name purlis takes is at the root, where
+/// it always was.
 fn child(root: &Path, ws: &str, ws_dir: &Path, name: &str) -> Option<PathBuf> {
     if !crate::contain::segment_ok(name) {
         return None;
     }
-    let dir = crate::worktree::confine::within_workspace(root, ws, &ws_dir.join(name)).ok()?;
+    let named = match crate::repofolder::folder(root, ws, name) {
+        Ok(folder) => folder,
+        Err(crate::repofolder::Refused::NotARepoName(_)) => ws_dir.join(name),
+        Err(_) => return None,
+    };
+    let dir = crate::worktree::confine::within_workspace(root, ws, &named).ok()?;
     crate::contain::readable(root, &dir).ok()?;
     Some(dir)
 }

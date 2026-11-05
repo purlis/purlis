@@ -363,7 +363,10 @@ pub fn unclaimed(
         return BTreeMap::new();
     };
     let logged = events(plane, ws);
-    let common = common_git_dir(&plane.join("workspaces").join(ws).join(repo));
+    let Ok(clone) = crate::repofolder::folder(plane, ws, repo) else {
+        return BTreeMap::new();
+    };
+    let common = common_git_dir(&clone);
     let mut marks: Option<BTreeMap<String, String>> = None;
     let mut out = BTreeMap::new();
     for piece in candidates {

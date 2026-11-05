@@ -599,13 +599,32 @@ pub(crate) fn clone_dir(plane: &Path, ws: &str, repo: &str) -> Result<PathBuf, R
     if !crate::contain::repo_name_ok(repo) {
         return Err(Refusal::BadRepo(repo.to_string()));
     }
-    let clone = plane.join("workspaces").join(ws).join(repo);
-    let clone = within_workspace(plane, ws, &clone)?;
+    let clone = within_workspace(plane, ws, &clone_folder(plane, ws, repo)?)?;
     let seen = git::run(&clone, &["rev-parse", "--git-dir"], git::READ)?;
     if !seen.ok() {
         return Err(not_read(repo, &seen.err));
     }
     Ok(clone)
+}
+
+/// **The folder of `repo`'s clone in workspace `ws`**, in either layout ([`crate::repofolder::folder`]),
+/// with the resolver's refusal said as this module says it. Nothing about the folder is checked
+/// here but its name and its workspace: a caller gates it ([`within_workspace`]) as it gated the
+/// path it joined by hand before.
+pub fn clone_folder(plane: &Path, ws: &str, repo: &str) -> Result<PathBuf, Refusal> {
+    use crate::repofolder::{Refused, Trouble};
+    crate::repofolder::folder(plane, ws, repo).map_err(|refused| match refused {
+        Refused::NotARepoName(name) => Refusal::BadRepo(name),
+        Refused::Trouble(Trouble::Outside(outside)) => Refusal::Outside(outside),
+        Refused::Trouble(Trouble::Unreadable { ws, why }) => Refusal::Unreadable { what: ws, why },
+        // Only a new repo's place is refused for these, and `folder` never answers them.
+        other @ (Refused::RepoNamedRepos { .. } | Refused::ReposNotAFolder { .. }) => {
+            Refusal::Unreadable {
+                what: ws.to_string(),
+                why: other.to_string(),
+            }
+        }
+    })
 }
 
 /// Why `repo`'s folder was not read, from what its refused git call wrote: the link check's own
@@ -1685,25 +1704,21 @@ pub fn is_own_git_dir(dot_git: &Path) -> bool {
 }
 
 /// Which workspace's clone a path stands in, as `(workspace, repo)`, or `None` for a path in no
-/// clone (#3831): `workspaces/<ws>/<repo>` or below it, where that folder holds a `.git`, and
-/// never a branch folder. Path arithmetic, as [`locate`] is; git is asked the rest by the
-/// command that runs there.
+/// clone (#3831): a repo's folder in either layout ([`crate::repofolder::locate`]) or below it,
+/// where that folder holds a `.git` folder of its own, and never a branch folder. Nor an old
+/// `<repo>` that a `repos/<repo>` shadows, which is not the repo of that name. Path arithmetic,
+/// as [`locate`] is; git is asked the rest by the command that runs there.
 pub fn locate_clone(plane: &Path, path: &Path) -> Option<(String, String)> {
-    let here = std::fs::canonicalize(path).ok()?;
-    let workspaces = std::fs::canonicalize(plane.join("workspaces")).ok()?;
-    let rest = here.strip_prefix(&workspaces).ok()?;
-    let mut parts = rest.components().map(|c| c.as_os_str().to_str());
-    let (Some(Some(ws)), Some(Some(repo))) = (parts.next(), parts.next()) else {
-        return None;
-    };
+    let found = crate::repofolder::locate(plane, path)?;
+    let repo = found.repo.name;
     if repo == DIR_NAME
-        || !crate::contain::workspace_name_ok(ws)
-        || !crate::contain::repo_name_ok(repo)
-        || !is_own_git_dir(&workspaces.join(ws).join(repo).join(".git"))
+        || !crate::contain::workspace_name_ok(&found.ws)
+        || found.git != crate::repofolder::Git::Directory
+        || crate::repofolder::folder(plane, &found.ws, &repo).ok()? != found.repo.path
     {
         return None;
     }
-    Some((ws.to_owned(), repo.to_owned()))
+    Some((found.ws, repo))
 }
 
 /// Where a path sits, when it sits in a piece.
@@ -1829,6 +1844,27 @@ mod locate_tests {
             locate_clone(&root, &root.join("workspaces/alpha/.worktrees/thing/piece")),
             None
         );
+    }
+
+    #[test]
+    fn a_path_in_a_clone_in_repos_names_its_workspace_and_repo_and_a_shadowed_one_does_not() {
+        let dir = plane();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        std::fs::create_dir_all(root.join("workspaces/alpha/repos/thing/.git")).unwrap();
+        std::fs::create_dir_all(root.join("workspaces/alpha/repos/thing/src")).unwrap();
+        // An old `thing` beside it, which `repos/thing` shadows.
+        std::fs::create_dir_all(root.join("workspaces/alpha/thing/.git")).unwrap();
+        let alpha_thing = Some(("alpha".to_owned(), "thing".to_owned()));
+
+        for path in [
+            "workspaces/alpha/repos/thing",
+            "workspaces/alpha/repos/thing/src",
+        ] {
+            assert_eq!(locate_clone(&root, &root.join(path)), alpha_thing, "{path}");
+        }
+        for path in ["workspaces/alpha/repos", "workspaces/alpha/thing"] {
+            assert_eq!(locate_clone(&root, &root.join(path)), None, "{path}");
+        }
     }
 
     #[cfg(unix)]

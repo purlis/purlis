@@ -54,30 +54,23 @@ pub struct Cut {
 
 /// The workspace and repo whose clone `cwd` is, or `None` when it is not one.
 ///
-/// Path arithmetic and one existence check: `cwd` is exactly `workspaces/<ws>/<repo>` and holds
-/// a `.git`. A directory inside a clone is not the clone, so a chat started in `api/src` is not
-/// cut a branch it did not ask for; nor is `.worktrees` a repo.
+/// `cwd` is exactly a repo's folder, in either layout ([`crate::repofolder::locate`]):
+/// `workspaces/<ws>/<repo>` or `workspaces/<ws>/repos/<repo>`, holding a `.git`. A directory
+/// inside a clone is not the clone, so a chat started in `api/src` is not cut a branch it did
+/// not ask for; nor is `.worktrees` or `repos/` a repo. Nor is an old `<repo>` that a
+/// `repos/<repo>` shadows: the repo of that name is the other one, which a branch is cut from.
 pub fn clone_at(plane: &Path, cwd: &Path) -> Option<(String, String)> {
     let here = std::fs::canonicalize(cwd).ok()?;
-    let workspaces = std::fs::canonicalize(plane.join("workspaces")).ok()?;
-    let rest = here.strip_prefix(&workspaces).ok()?;
-    let parts: Vec<&str> = rest
-        .components()
-        .map(|c| c.as_os_str().to_str())
-        .collect::<Option<_>>()?;
-    let [ws, repo] = parts.as_slice() else {
-        return None;
-    };
-    if !crate::contain::workspace_name_ok(ws)
-        || !crate::contain::repo_name_ok(repo)
-        || *repo == worktree::DIR_NAME
+    let found = crate::repofolder::locate(plane, &here)?;
+    let repo = found.repo.name;
+    if !crate::contain::workspace_name_ok(&found.ws)
+        || repo == worktree::DIR_NAME
+        || found.repo.path != here
+        || crate::repofolder::folder(plane, &found.ws, &repo).ok()? != here
     {
         return None;
     }
-    here.join(".git")
-        .symlink_metadata()
-        .is_ok()
-        .then(|| ((*ws).to_string(), (*repo).to_string()))
+    Some((found.ws, repo))
 }
 
 /// The most names [`Naming::After`] tries in one run before it says so: up to twice this in
@@ -91,9 +84,11 @@ const TRIES: usize = 100;
 /// loser's `worktree add` fails with git's own words rather than moving on to `chat-2`. Only
 /// this process is ordered; a `charter worktree add` in a terminal still meets git's refusal.
 fn clone_lock(plane: &Path, ws: &str, repo: &str) -> Arc<Mutex<()>> {
-    static LOCKS: LazyLock<Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>> =
+    type Key = (PathBuf, String, String);
+    static LOCKS: LazyLock<Mutex<HashMap<Key, Arc<Mutex<()>>>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
-    let key = plane.join("workspaces").join(ws).join(repo);
+    // Keyed by the names, not a folder: whichever place the clone is in, one repo is one lock.
+    let key = (plane.to_path_buf(), ws.to_string(), repo.to_string());
     let mut held = LOCKS.lock().unwrap_or_else(PoisonError::into_inner);
     Arc::clone(held.entry(key).or_default())
 }

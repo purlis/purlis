@@ -244,6 +244,10 @@ pub fn keep_only_whats_new(repo: &Path, runner: &str) -> Result<(), Refused> {
 /// **The folder of a project's repository a transfer is for**: `repo` is empty for the
 /// project's own, or `workspaces/<workspace>/<repo>` in it, each name one purlis takes, and no
 /// folder from the project down to it a link. Answered whether or not it is there yet.
+///
+/// `workspaces/<workspace>/<repo>` names the repo, not its folder: which of a workspace's two
+/// places the clone is in is each machine's own (ADR 0114), so it is answered here, by
+/// [`crate::repofolder::folder`].
 pub fn repo_in(project: &Path, repo: &str) -> Result<PathBuf, Refused> {
     let refused = || {
         not_allowed(format!(
@@ -256,7 +260,7 @@ pub fn repo_in(project: &Path, repo: &str) -> Result<PathBuf, Refused> {
             if crate::contain::workspace_name_ok(workspace)
                 && crate::contain::repo_name_ok(name) =>
         {
-            project.join("workspaces").join(workspace).join(name)
+            crate::repofolder::folder(project, workspace, name).map_err(|_| refused())?
         }
         _ => return Err(refused()),
     };

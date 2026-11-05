@@ -433,15 +433,13 @@ fn stands_in(root: &Path, cwd: &Path) -> Result<Repo, Refused> {
             },
         );
     }
-    let (ws, rest) = under_workspaces(root, cwd).ok_or(Refused::NotInARepo)?;
-    let Some(repo) = rest.first() else {
-        return Err(Refused::NotInARepo);
-    };
+    // A clone in either layout, as `chatpiece::clone_at` finds one.
+    let found = crate::repofolder::locate(root, cwd).ok_or(Refused::NotInARepo)?;
     is_a_clone(
         root,
         Repo {
-            workspace: ws,
-            repo: repo.clone(),
+            workspace: found.ws,
+            repo: found.repo.name,
             piece: None,
             from_default: false,
         },
@@ -516,13 +514,9 @@ fn is_a_clone(root: &Path, repo: Repo) -> Result<Repo, Refused> {
     let named = crate::contain::workspace_name_ok(&repo.workspace)
         && crate::contain::repo_name_ok(&repo.repo)
         && repo.repo != worktree::DIR_NAME;
-    let there = root
-        .join("workspaces")
-        .join(&repo.workspace)
-        .join(&repo.repo)
-        .join(".git")
-        .symlink_metadata()
-        .is_ok();
+    let there = named
+        && crate::repofolder::folder(root, &repo.workspace, &repo.repo)
+            .is_ok_and(|clone| clone.join(".git").symlink_metadata().is_ok());
     if named && there {
         Ok(repo)
     } else {
@@ -1899,10 +1893,8 @@ pub fn branch_left(
     if tree.there(root) || name::branch_name_ok(branch).is_err() {
         return Ok(None);
     }
-    let clone = root
-        .join("workspaces")
-        .join(&tree.workspace)
-        .join(&tree.repo);
+    let clone = crate::repofolder::folder(root, &tree.workspace, &tree.repo)
+        .map_err(|refused| NotDone::Repo(refused.to_string()))?;
     crate::gitbroker::in_a_checked_clone(root, &tree.workspace, &tree.repo, isolation, || {
         left_in(&clone, branch)
     })
@@ -1931,10 +1923,8 @@ pub fn delete_left_branch(
     if name::branch_name_ok(branch).is_err() {
         return Err(NotDeleted::Gone);
     }
-    let clone = root
-        .join("workspaces")
-        .join(&tree.workspace)
-        .join(&tree.repo);
+    let clone = crate::repofolder::folder(root, &tree.workspace, &tree.repo)
+        .map_err(|refused| NotDeleted::Route(NotDone::Repo(refused.to_string())))?;
     let (ws, repo, piece) = (&tree.workspace, &tree.repo, &tree.piece);
     crate::gitbroker::in_a_checked_clone(root, ws, repo, isolation, || {
         if tree.there(root) {

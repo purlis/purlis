@@ -1816,7 +1816,9 @@ fn first_clone_step(run: &mut Run, root: &Path, args: &InitArgs) -> u8 {
                 planefile::Read::Config(cfg) => planefile::default_workspace(&cfg),
                 _ => "default".to_owned(),
             };
-            if !root.join("workspaces").join(&ws).join(&name).exists() {
+            let cloned =
+                crate::repofolder::folder(root, &ws, &name).is_ok_and(|clone| clone.exists());
+            if !cloned {
                 run.info(Markup::lines([
                     format!(
                         "You are standing in the git repo '{name}'. Work happens in a \
@@ -1997,7 +1999,9 @@ pub fn adopt_as_workspace(
             }
         })
         .find(|name| {
-            let clone = root.join("workspaces").join(name).join(name);
+            let Ok(clone) = crate::repofolder::folder(&root, name, name) else {
+                return false;
+            };
             !clone.exists() || firstclone::origin_of(&clone).as_deref() == Some(from.as_str())
         })
         .expect("an unbounded range always has a free name");
