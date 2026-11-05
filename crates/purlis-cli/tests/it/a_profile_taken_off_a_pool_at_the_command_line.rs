@@ -3,7 +3,8 @@
 
 //! **`purlis pool remove-profile`** (#5174, Q30): what Pool setup's Sign-ins button does to a
 //! profile unticked, by hand. Only the window reaches the runner, so the command asks it, on the
-//! person's yes there, and changes nothing itself.
+//! person's yes there, and changes nothing itself. Pool commands use the same in-a-chat check as
+//! secret setup.
 #![cfg(unix)]
 
 use crate::support;
@@ -199,5 +200,40 @@ fn in_a_chat_the_window_is_asked_nothing() {
     let out = purlis(config, &TAKE_OFF, &env);
     assert!(!out.status.success(), "{}", said(&out));
     assert!(said(&out).contains("own terminal"), "{}", said(&out));
+    assert_eq!(window.asked(), Vec::new());
+}
+
+/// Each `purlis pool` verb that writes refuses where secret setup's check says this is a chat,
+/// and the file stays as it was.
+#[test]
+fn pool_writes_use_the_same_in_a_chat_check_as_secret_setup() {
+    let machine = a_machine();
+    let config = machine.path();
+    let record = purlis_core::reopen::Record {
+        chats: vec![purlis_core::reopen::Chat {
+            program: "/bin/zsh".into(),
+            name: "chat 3".into(),
+            number: Some(3),
+            pid: Some(std::process::id()),
+            ..Default::default()
+        }],
+        dealt: 3,
+        ..Default::default()
+    };
+    purlis_core::reopen::write(config, &record).unwrap();
+    let file = config.join("runners.json");
+    let before = std::fs::read(&file).unwrap();
+    let window = AWindow::answering(config, Said::Asked { note: None });
+    let writes: [&[&str]; 4] = [
+        &["pool", "add", "other", "--image", IMAGE],
+        &["pool", "add-profile", "builds", "home"],
+        &TAKE_OFF,
+        &["pool", "limit", "builds", "profileSize", "256"],
+    ];
+    for args in writes {
+        let out = purlis(config, args, &[]);
+        assert!(!out.status.success(), "{args:?}: {}", said(&out));
+        assert_eq!(std::fs::read(&file).unwrap(), before, "{args:?}");
+    }
     assert_eq!(window.asked(), Vec::new());
 }

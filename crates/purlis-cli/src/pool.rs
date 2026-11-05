@@ -129,6 +129,11 @@ fn answered(command: &PoolCommand) -> Result<u8, String> {
             .ok_or_else(|| "There is no config home on this machine to keep a pool in.".to_owned())
     };
     let in_a_chat = crate::gradelink::in_a_chat(&purlis_core::envvar::var);
+    let in_a_chat = if writes_a_pool(command) {
+        in_a_chat || below_a_chat()?
+    } else {
+        in_a_chat
+    };
     match command {
         // A chat doesn't reach this machine's Docker or a runner, so it asks nothing of them.
         PoolCommand::Setup { .. } if in_a_chat => Err(
@@ -284,6 +289,35 @@ fn project_here() -> Option<std::path::PathBuf> {
     std::env::current_dir()
         .ok()
         .and_then(|cwd| purlis_core::plane::find_root(&cwd).ok())
+}
+
+/// Whether `command` writes this machine's pools.
+fn writes_a_pool(command: &PoolCommand) -> bool {
+    match command {
+        PoolCommand::Add { .. }
+        | PoolCommand::AddProfile { .. }
+        | PoolCommand::RemoveProfile { .. }
+        | PoolCommand::Limit { .. } => true,
+        PoolCommand::Limits { .. } | PoolCommand::Setup { .. } => false,
+    }
+}
+
+/// Whether this runs in a chat, by the same check as secret setup. Where that can't tell, nothing
+/// is written.
+fn below_a_chat() -> Result<bool, String> {
+    use purlis_core::secrets::{Ctx, Env, setup};
+    let root = project_here()
+        .or_else(|| std::env::current_dir().ok())
+        .ok_or_else(|| "this command's folder could not be read, so nothing changed.".to_owned())?;
+    match setup::in_a_chat(&Ctx::new(&root, Env::from_process())) {
+        setup::Where::Outside => Ok(false),
+        setup::Where::Inside => Ok(true),
+        setup::Where::Unsure(why) => Err(format!(
+            "purlis could not tell whether this runs in a chat, so nothing changed: {}. Use Pool \
+             setup in the window.",
+            purlis_core::shown::short(&why)
+        )),
+    }
 }
 
 /// **Has the running window take `name` off pool `pool`**, on the person's yes there, which alone
