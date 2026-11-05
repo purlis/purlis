@@ -58,7 +58,7 @@ pub fn repos_held(projects: &Path) -> (Vec<Held>, Vec<String>) {
     repos_held_until(projects, std::time::Instant::now() + LOOK_WITHIN)
 }
 
-/// [`repos_held`], stopping at `until` (#5312): between folders and repositories, so one git call
+/// [`repos_held`], stopping at `until` (#5312): between folders, so the listing of a repository
 /// under way finishes first. What ran out is said, as it keeps the runner.
 pub fn repos_held_until(projects: &Path, until: std::time::Instant) -> (Vec<Held>, Vec<String>) {
     let mut held = Vec::new();

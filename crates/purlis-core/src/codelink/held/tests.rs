@@ -1843,6 +1843,11 @@ fn a_check_that_ran_out_says_so_first_and_once() {
     );
     let none = vec!["a folder could not be read".to_owned()];
     assert_eq!(ran_out_first(none.clone()), none);
+    assert_eq!(
+        marked(vec![ran_out_of_time()]),
+        [ran_out_of_time()],
+        "marking leaves it as it is, so it is still found after a walk marked it"
+    );
 }
 
 /// **A folder recorded holds its one bound with the files** (#5112): each is one more thing kept,

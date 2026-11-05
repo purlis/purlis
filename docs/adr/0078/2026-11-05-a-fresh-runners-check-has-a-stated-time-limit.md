@@ -7,11 +7,12 @@ request that built it).
 1. **One check looks through a runner's files for at most 5 minutes**, on the runner's own clock
    (`held::LOOK_WITHIN`). The look through its projects, the first look at where its user may write
    and every walk after them share those 5 minutes. Past them nothing more is looked at, and the
-   check says so. One git call under way finishes first, so the window's clock is what bounds a
-   repository that holds git up.
+   check says so. The listing of a repository under way finishes first, so the window's clock is
+   what bounds a repository that holds git up.
 2. **The window waits that long plus its wait for any answer**, on this machine's clock, for the
    proof's list only. A start's question of whether a runner holds its own code keeps the wait for
-   any answer, since it may run under a lock the window's commands wait on. The proof holds the
+   any answer, since it may run under a lock the window's commands wait on, so opening a chat again
+   on a very large kept runner can fail at that wait. The proof holds the
    one-at-a-time lock on fetches meanwhile, so another chat's fetch-back can wait that long too. No
    window command waits on that lock.
 3. **A check that runs out keeps the runner**, as anything not looked through does. Its sentence
@@ -26,7 +27,9 @@ request that built it).
    leaves room for one several times slower.
 6. **A Discard pressed during a check is kept**, and the runner goes when that check ends. A sweep
    starts a check about once a minute, so on such a runner a press would otherwise nearly always
-   be dropped. Fetch again during a check does nothing more: the check under way says how it went.
+   be dropped. The press is held with that end and goes with it, so it can never let go of a runner
+   whose chat was opened again later. It can't be taken back meanwhile: a Fetch again does nothing
+   more, since the check under way says how it went, and a chat can't start until the end is over.
 7. **Rejected:** a new pool limit, since an image too large for this is better made smaller than
    waited on, and a person has no way to know the right number; only the window's wait, since the
    look would run on after the window gave up and each sweep, once a minute, would start another

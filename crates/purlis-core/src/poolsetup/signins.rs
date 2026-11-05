@@ -168,7 +168,8 @@ pub fn may_take_off(config: &Path, pool: &str, name: &str) -> Result<(), String>
     let Some(named) = runners::profiles_of(config, pool).map_err(|why| why.to_string())? else {
         return Err(format!(
             "pool {pool} names none of its profiles yet: it keeps the profile a new chat in your \
-             project gets, so take this one off in Pool setup's Sign-ins step in the window"
+             project gets. Take this one off in the window: tick another profile in Pool setup's \
+             Sign-ins step and untick this one, or use Remove on the pool in Settings"
         ));
     };
     if named.iter().any(|one| one == name) {
@@ -217,8 +218,9 @@ pub fn by_hand(
             .map(|name| crate::shown::short(name))
             .collect();
         format!(
-            "Only the button takes {} off, because pool {} names none of its profiles yet: it \
-             keeps the profile a new chat in your project gets.",
+            "No command takes {} off yet. Pool {} names none of its profiles, so it keeps the \
+             profile a new chat in your project gets. Tick another profile and this shows a \
+             command for it, or use Remove on the pool in Settings › You › This machine › Pools.",
             names.join(", "),
             crate::shown::short(pool)
         )

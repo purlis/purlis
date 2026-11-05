@@ -309,7 +309,8 @@ fn by_hand_says_taking_off_has_no_command_on_a_pool_that_names_none() {
     assert_eq!(see.text, "");
     assert!(
         see.note.contains("names none of its profiles")
-            && see.note.contains("the button")
+            && see.note.contains("Tick another profile")
+            && see.note.contains("Remove on the pool")
             && see.note.contains("work"),
         "{}",
         see.note

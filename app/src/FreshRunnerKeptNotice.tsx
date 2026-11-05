@@ -104,11 +104,10 @@ export function FreshRunnerKeptNotice({ plane }: { plane: PlaneId }) {
       setConfirming((was) => new Set([...was, chat]));
       return;
     }
-    void commands
-      .discardFreshRunner(plane, chat)
-      .then((done) =>
-        refused(chat, "let the runner go", done.status === "error" ? done.error : undefined),
-      );
+    void commands.discardFreshRunner(plane, chat).then((done) => {
+      if (done.status === "error") refused(chat, "let the runner go", done.error);
+      else setSaid((was) => ({ ...was, [chat]: "It goes once any check of it has ended." }));
+    });
   };
   return runners
     .filter((runner) => !putAway.has(runner.chat))
