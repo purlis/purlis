@@ -381,6 +381,7 @@ fn a_login_moved_by_its_clean_load_holds_its_session_in_the_new_browser() {
     let (browsers, hosted) = with_a_used_browser();
     *hosted.no_form_on_clean_load.lock().unwrap() = 1;
     called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    *hosted.asks_to_sign_in.lock().unwrap() = Some(false);
 
     let again = called(&browsers, &hosted, &ask(3, log_in("shop-login")));
 
