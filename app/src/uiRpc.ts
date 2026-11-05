@@ -474,6 +474,7 @@ export const commands = {
 	mcpFailures: (plane: PlaneId, session: number) => typedError<McpFailed[], string>(__TAURI_INVOKE("mcp_failures", { plane, session })),
 	putAwayMcpFailure: __WINDOW_ONLY_RESULT,
 	putAwayLeftMessages: __WINDOW_ONLY_RESULT,
+	putAwayArrivedFiles: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Chat `session`, where its program ended with its session host and the person has not put
 	 *  it away.
@@ -2688,7 +2689,13 @@ autosave: boolean; merge: SaveMerge } |
  *  takes the Notice back ([`put_away_left_messages`]), by `report`, the name purlis keeps
  *  it under.
  */
-{ kind: "left-messages"; report: string };
+{ kind: "left-messages"; report: string } | 
+/**
+ *  **What can run later and appeared in a sandboxed chat's folders** (ADR 0067 §5, amended
+ *  2026-11-05): Put away takes the Notice back ([`put_away_arrived_files`]) by the `chat`'s
+ *  id, and the files stay where they are.
+ */
+{ kind: "arrived-files"; chat: string };
 
 /**
  *  **What Stop all tasks on a session would end** (#1498, V100-53), as the window asks before

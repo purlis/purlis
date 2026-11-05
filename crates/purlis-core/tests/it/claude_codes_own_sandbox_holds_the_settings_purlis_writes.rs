@@ -55,12 +55,13 @@ const SUPPORTED: &str = include_str!("../../../../tests/fixtures/harness-version
 const SCRIPT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tools/seatbelt-case.sh");
 
 /// The probes `--here` asserts, each one answer: the sample project's eight, its
-/// repositories' thirteen, and four of the other harnesses' default sign-ins.
-const PROBES: usize = 25;
+/// repositories' thirteen, four of the other harnesses' default sign-ins, two of a chat's temp
+/// folder at work and seven names new to the project.
+const PROBES: usize = 34;
 
 /// The probes `--repositories-here` asserts, as it is run on Linux: the repositories' thirteen,
-/// and four of the other harnesses' default sign-ins.
-const REPOSITORY_PROBES: usize = 17;
+/// four of the other harnesses' default sign-ins, and two of a chat's temp folder at work.
+const REPOSITORY_PROBES: usize = 19;
 
 /// The id of the stand-in's one Bash call.
 const CALL: &str = "toolu_seatbelt_case";
@@ -473,10 +474,46 @@ fn claude_codes_own_sandbox_holds_the_settings_purlis_writes() {
             continue;
         };
         let what = format!("claude-code at {name}");
+        // What purlis records as a chat starts, for the look after its turn.
+        const CHAT: &str = "01M6M3VNN8GNE85XEV3194WJE6";
+        let watched = sandbox::arrived::Watched {
+            folders: vec![root.clone()],
+            ..sandbox::arrived::Watched::default()
+        };
+        sandbox::arrived::begin(&root, CHAT, Some("probes"), &watched).expect("the record");
+        // At the floor on macOS a chat can't make these names even in its temp folder, so what
+        // the look is to find is laid out here, beside the project, for the chat to move in.
+        if cfg!(target_os = "macos") && level == Level::Floor {
+            let from = tmp.join("brought");
+            fs::create_dir_all(from.join(".git/hooks")).expect("a repository to bring");
+            fs::write(from.join(".git/hooks/pre-commit"), "x\n").expect("its hook");
+        }
         let result = probed(program, &home, &tmp, &root, &file, &sources, &what);
         // Each wrong answer as the script wrote it, so the run's annotations name it.
         for line in result.lines().filter(|line| line.starts_with("::error::")) {
             println!("{line}");
+        }
+        // What the probes left in the project is told at the turn's end.
+        let landed = root.join("brought/.git/hooks/pre-commit").exists();
+        if cfg!(target_os = "macos") {
+            assert!(landed, "{what}: nothing to look for:\n{result}");
+        }
+        let looked = sandbox::arrived::look(&root, CHAT, None)
+            .expect("a look")
+            .expect("the record");
+        assert_eq!(
+            looked
+                .new
+                .contains(&root.join("brought/.git").display().to_string()),
+            landed,
+            "{what}: {looked:?}"
+        );
+        if landed {
+            assert_eq!(
+                sandbox::arrived::told(&root).len(),
+                1,
+                "{what}: one Notice for the chat"
+            );
         }
         let probes = if cfg!(target_os = "macos") {
             PROBES

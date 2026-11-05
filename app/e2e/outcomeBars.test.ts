@@ -4,9 +4,11 @@
 import { describe, expect, it } from "vitest";
 import {
   OPEN_BUDGET_MS,
+  OPEN_GUARD_MEDIAN_MS,
   USE_BUDGET_MS,
   aPersonsTime,
   harnessUnderTest,
+  openJudged,
   openVerdict,
   reasonProblem,
   useVerdict,
@@ -30,6 +32,51 @@ describe("the 300 ms bar", () => {
 
   it("refuses to judge no samples", () => {
     expect(() => openVerdict([])).toThrow(/no samples/);
+  });
+});
+
+describe("how an L10 opening is judged where it is measured", () => {
+  const of = (ms: number) => Array.from({ length: 20 }, () => ms);
+  const spiky = [...of(OPEN_GUARD_MEDIAN_MS - 1).slice(2), 5000, 5000];
+
+  it("holds a real machine to the 300 ms p95", () => {
+    const here = { ci: false, platform: "darwin" };
+    expect(openJudged(of(OPEN_BUDGET_MS - 1), here).met).toBe(true);
+    expect(openJudged(of(OPEN_BUDGET_MS), here).met).toBe(false);
+    expect(openJudged(of(OPEN_BUDGET_MS), here).said).toContain("p95");
+  });
+
+  it("holds macOS CI to the median guard, not to 300 ms", () => {
+    const here = { ci: true, platform: "darwin" };
+    expect(openJudged(spiky, here).met).toBe(true);
+    expect(openJudged(of(OPEN_GUARD_MEDIAN_MS), here).met).toBe(false);
+    expect(openJudged(of(OPEN_GUARD_MEDIAN_MS), here).said).toContain(
+      `median ${OPEN_GUARD_MEDIAN_MS}.0 ms`,
+    );
+  });
+
+  it("takes the middle opening, or the mean of the two in the middle of an even count", () => {
+    const here = { ci: true, platform: "darwin" };
+    expect(openJudged([100, 200, 900], here).said).toContain("median 200.0 ms");
+    expect(openJudged([100, 200, 300, 900], here).said).toContain("median 250.0 ms");
+  });
+
+  it("does not read a median just under the guard as the guard's own number", () => {
+    const here = { ci: true, platform: "darwin" };
+    const verdict = openJudged([OPEN_GUARD_MEDIAN_MS - 0.5], here);
+    expect(verdict.met).toBe(true);
+    expect(verdict.said).toContain(`median ${OPEN_GUARD_MEDIAN_MS - 0.5} ms`);
+  });
+
+  it("sets no limit on Linux CI, where no run has measured one, and says so", () => {
+    const verdict = openJudged(of(5000), { ci: true, platform: "linux" });
+    expect(verdict.met).toBe(true);
+    expect(verdict.said).toContain("no limit");
+  });
+
+  it("refuses to judge no samples anywhere", () => {
+    expect(() => openJudged([], { ci: true, platform: "darwin" })).toThrow(/no samples/);
+    expect(() => openJudged([], { ci: true, platform: "linux" })).toThrow(/no samples/);
   });
 });
 

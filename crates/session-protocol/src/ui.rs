@@ -408,6 +408,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Put away on the Inbox's Notice of a chat's undelivered messages (#3958): the person's
     // answer that they have read it.
     "put_away_left_messages",
+    // Put away on the Inbox's Notice of what appeared in a chat's folders: the person's answer
+    // that they have read it.
+    "put_away_arrived_files",
     // Fetch again and Discard on the Notice of a task's runner kept since its work is not all
     // here (#4569): Discard lets that work go, so only the person's own press in their window.
     "fetch_fresh_runner_again",

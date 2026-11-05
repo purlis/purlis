@@ -12,6 +12,7 @@ import {
   SKILLS_AT_THE_BAR,
   type Effort,
   harnessUnderTest,
+  openJudged,
   openVerdict,
   reasonProblem,
   useVerdict,
@@ -38,7 +39,9 @@ import { paneInFront, startAChat } from "../started.js";
  *   line, the two a persona's chat alone meets among them, is `purlis_skills`'s test
  *   (`every_reason_reads_as_one_line`).
  * - **The studio opens in under 300 ms with 200 skills**: from the press of the palette's row to
- *   the frame after the Library's first row is drawn (row L10 of the budgets of record).
+ *   the frame after the Library's first row is drawn (row L10 of the budgets of record). That
+ *   p95 is judged on a real machine, and always said; CI judges a coarser guard on the median
+ *   (`openJudged`, #4351).
  *
  * The same file runs on every harness: only the line a skill is typed as differs.
  */
@@ -437,10 +440,14 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
       expect(problems).toEqual([]);
     });
 
-    it("opens the studio in under 300 ms", async () => {
-      const verdict = openVerdict(
-        await theOpenings((await tabNames()).filter((one) => one !== "Skill studio")),
+    it("opens the studio within what it is judged against here", async () => {
+      const openings = await theOpenings(
+        (await tabNames()).filter((one) => one !== "Skill studio"),
       );
+      // Only `CI=true`, what GitHub sets: anywhere else this is a real machine's run, and its bar.
+      const ci = process.env.CI === "true";
+      const verdict = openJudged(openings, { ci, platform: process.platform });
+      if (ci) report(`${openVerdict(openings).said}: said, not judged, on CI`);
       report(verdict.said);
       if (!verdict.met) throw new Error(`missed: ${verdict.said}`);
     });

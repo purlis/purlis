@@ -241,6 +241,21 @@ pub fn opened_to_keep(browser: &str, login: &str, left: &str, at: u64) -> Happen
     )
 }
 
+/// **purlis closed `browser`, which its chat opened and never used, for login `login`, which is
+/// kept for later reuse and opens in a browser of its own** (#5296).
+pub fn closed_unused(browser: &str, login: &str, at: u64) -> Happened {
+    plain(
+        browser,
+        By::Purlis,
+        &format!(
+            "purlis closed {browser}, which was never used: {} is kept for later and opens in a \
+             browser of its own",
+            cut_to(login, MOST_TARGET_CHARS)
+        ),
+        at,
+    )
+}
+
 /// **purlis filled vault key `key`, or the 2FA code its seed made, into field `target` of
 /// `browser`, on site `origin`** (#5115, #5118, #5119, SF-8): the key's name, the field and the
 /// site it went to, never a value.

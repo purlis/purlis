@@ -1945,6 +1945,7 @@ pub async fn take_over_browser(
     {
         let browsers = browsers(&app)?;
         crate::off_the_window("taking a browser over", move || {
+            crate::chatbrowsers::person_will_drive(&projects, &program);
             browsers.take_over(&program)?;
             crate::browserneedsyou::taken_over(&projects, &program);
             crate::chatbrowsers::person_drove(&projects, &program, true);
