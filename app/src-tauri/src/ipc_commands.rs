@@ -629,6 +629,8 @@ macro_rules! app_commands {
                 vaults::vault_secret_set,
                 vaults::vault_secret_rename,
                 vaults::vault_secret_delete,
+                vaults::vault_secret_mark_no_seed,
+                vaults::vault_secret_unmark_no_seed,
                 vaults::vault_identity_move,
                 vaults::vault_identity_put,
                 personas::persona_create,

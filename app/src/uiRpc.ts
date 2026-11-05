@@ -1952,6 +1952,8 @@ export const commands = {
 	vaultSecretSet: __WINDOW_ONLY_RESULT,
 	vaultSecretRename: __WINDOW_ONLY_RESULT,
 	vaultSecretDelete: __WINDOW_ONLY_RESULT,
+	vaultSecretMarkNoSeed: __WINDOW_ONLY_RESULT,
+	vaultSecretUnmarkNoSeed: __WINDOW_ONLY_RESULT,
 	vaultIdentityMove: __WINDOW_ONLY_RESULT,
 	vaultIdentityPut: __WINDOW_ONLY_RESULT,
 	/**
@@ -14206,6 +14208,11 @@ export type VaultSecret = {
 	link: VaultLink | null,
 	/**  How many linked entries read it: what deleting it would break. */
 	linked_by: number,
+	/**
+	 *  Whether the person marked its value as no 2FA seed (#5237), by name: no value is read to
+	 *  say so, and the fill checks the mark against the value it reads.
+	 */
+	no_seed: boolean,
 };
 
 /**  One registered vault, as the Vaults panel lists it. */

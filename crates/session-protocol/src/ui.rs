@@ -199,6 +199,10 @@ pub struct Server {
 /// project through one.
 pub const WINDOW_ONLY: &[&str] = &[
     "answer_ask",
+    // The person's word that a key's value is no 2FA seed (#5237): theirs alone, so no chat lets
+    // a seed into a page through a link.
+    "vault_secret_mark_no_seed",
+    "vault_secret_unmark_no_seed",
     // The clipboard's text, read for a Paste the person pressed in a terminal's menu
     // (ADR 0052 amended 2026-10-14). The clipboard is the person's, and may hold a vault's
     // value: no link reads it, so no chat, tool or hook does.

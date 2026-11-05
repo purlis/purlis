@@ -1719,15 +1719,25 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         crate::secrets::fingerprint::key_path(&ctx),
         Access::ReadWrite,
     );
+    deny(
+        Class::Vaults,
+        crate::secrets::links::path(&ctx),
+        Access::ReadWrite,
+    );
     // …and under EVERY spelling of the state folder, there or not, as its other records are
     // below (RN-2a): which folder holds the vaults is decided by which are there.
     // The folder in use is one of the spellings unless `$PURLIS_HOME` moved it: named once.
     let in_use = [
         ctx.vaults_dir(),
         crate::secrets::fingerprint::key_path(&ctx),
+        crate::secrets::links::path(&ctx),
     ];
     for state in crate::names::STATE_DIR.spellings() {
-        for kept in ["vaults", crate::secrets::fingerprint::KEY_FILE] {
+        for kept in [
+            "vaults",
+            crate::secrets::fingerprint::KEY_FILE,
+            crate::secrets::links::FILE,
+        ] {
             let path = root.join(state).join(kept);
             if !in_use.contains(&path) {
                 deny(Class::Vaults, path, Access::ReadWrite);
