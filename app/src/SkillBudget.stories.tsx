@@ -191,7 +191,9 @@ export const NotANumber: Story = {
     const dialog = await within(document.body).findByRole("dialog");
     await userEvent.keyboard("0");
     await userEvent.tab();
-    await expect(await within(dialog).findByText(/whole number of at least 1/)).toBeVisible();
+    await waitFor(() =>
+      expect(within(dialog).getByText(/whole number of at least 1/)).toBeVisible(),
+    );
     expectFocusInSight();
   },
 };

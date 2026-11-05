@@ -396,6 +396,15 @@ export const TheChatsOwnNeeds: Story = {
     await expect(row(/^Needs you/)).toHaveAccessibleName(/^Needs you, 5/);
     // Pictured as it opens, before the keyboard moves anything (a tooltip, a scroll).
     await pictureNow();
+    // The chat's budget is first, a link to where it is changed (#5353).
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByTestId("skills-view-budget"),
+      "Skills: Tab lands on the budget's link",
+    );
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Routing"));
     await userEvent.tab();
     await userEvent.tab();
     await userEvent.tab();
