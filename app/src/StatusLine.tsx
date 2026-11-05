@@ -370,9 +370,6 @@ export function StatusLine({
 /** The mark before the workspace's name: purlis's own (`crates/purlis-core/src/footer.rs`). */
 const WORKSPACE_GLYPH = <span aria-hidden="true">⬢</span>;
 
-/** A project's name, where the status line has always lent it. */
-export { projectName };
-
 /**
  * **The project, as its name** (qw357): the operator's *"project directory is very large and
  * can be just compacted and showed only project name, and on hovering just show directory"*.

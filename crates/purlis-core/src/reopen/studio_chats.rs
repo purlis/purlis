@@ -15,7 +15,7 @@
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
 
-use super::studio::{StudioJob, StudioOnDisk, time};
+use super::studio::{StudioJob, StudioOnDisk, reads_as_time, time};
 
 /// The file in this machine's app state of the project that holds the closed studio chats.
 pub const FILE: &str = "studio-chats.json";
@@ -67,11 +67,6 @@ struct Kept {
 /// Where the file of the project at `root` is: `None` where this machine has no data home.
 fn path_of(root: &Path) -> Option<PathBuf> {
     Some(crate::appstate::dir(root)?.join(FILE))
-}
-
-/// Whether `said` reads as an RFC 3339 time.
-fn reads_as_time(said: &str) -> bool {
-    chrono::DateTime::parse_from_rfc3339(said).is_ok()
 }
 
 /// One entry as it reads, or `None` where it does not hold together.

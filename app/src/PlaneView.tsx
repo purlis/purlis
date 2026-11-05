@@ -274,7 +274,8 @@ import { DoctorNotices, useDoctor } from "./Doctor";
 import { StaleCloneNotices, useStaleClones } from "./StaleCloneNotices";
 import { BrowsersAtQuitNotice } from "./BrowsersAtQuitNotice";
 import { usePin } from "./Updates";
-import { StatusLine, projectName, runningIn, todoCount, type Alerts } from "./StatusLine";
+import { projectName } from "./projectName";
+import { StatusLine, runningIn, todoCount, type Alerts } from "./StatusLine";
 import {
   closeChat,
   closeFocusedPane,

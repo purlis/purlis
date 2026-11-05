@@ -74,11 +74,14 @@ pub fn time(now: chrono::DateTime<chrono::Utc>) -> String {
     now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 
+/// Whether `said` reads as an RFC 3339 time, as the record keeps one.
+pub(super) fn reads_as_time(said: &str) -> bool {
+    chrono::DateTime::parse_from_rfc3339(said).is_ok()
+}
+
 /// `said` where it reads as an RFC 3339 time, and `None` for anything else.
 fn a_time(said: String) -> Option<String> {
-    chrono::DateTime::parse_from_rfc3339(&said)
-        .is_ok()
-        .then_some(said)
+    reads_as_time(&said).then_some(said)
 }
 
 /// The studio's jobs a chat is started for.

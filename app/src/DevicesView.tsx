@@ -58,7 +58,7 @@ import {
   type DeviceRow,
 } from "./devices";
 import { DEVICES_TITLE } from "./tabs";
-import { projectName } from "./StatusLine";
+import { projectName } from "./projectName";
 
 /**
  * **Where a row's chat is, where the window holds more than one project** (#3534): ` in <project>`,

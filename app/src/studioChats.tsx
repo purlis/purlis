@@ -22,7 +22,7 @@
  * has no tab to open.
  */
 import { createContext, useContext, useEffect, useId, useMemo, useState } from "react";
-import { OPEN_CHAT, REVIEW_DRAFT } from "./actions";
+import { OPEN_CHAT, REVIEW_DRAFT, STOP_IT } from "./actions";
 import {
   commands,
   type ClosedStudioChat,
@@ -586,7 +586,7 @@ export function RunningJob({ plane, chat }: { plane: string; chat: StudioChat })
           {OPEN_CHAT}
         </Button>
         <Button size="sm" tooltip={`Asks to stop ${chat.name}`} onPress={() => stop(chat.session)}>
-          Stop it
+          {STOP_IT}
         </Button>
       </ButtonRow>
     </div>

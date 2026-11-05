@@ -3621,7 +3621,7 @@ impl Chats {
     /// where it was (#3453): another chat of its move did not start.
     pub fn let_go_of_start(&self, session: u32, started: u32) {
         self.unclaim(session);
-        if let Err(why) = self.close(started) {
+        if let Err(why) = self.close_held_start(started) {
             tracing::warn!("purlis: a start of a move that did not happen did not end ({why})");
         }
     }
@@ -3659,7 +3659,7 @@ impl Chats {
         if !lock(&self.open).contains_key(&session) {
             lock(&self.owed).remove(&session);
             self.unclaim(session);
-            if let Err(why) = self.close(started) {
+            if let Err(why) = self.close_held_start(started) {
                 tracing::warn!("purlis: a restart of a closed chat did not end ({why})");
             }
             return Err(format!(
@@ -5562,6 +5562,18 @@ impl Chats {
 
     /// Ends a chat. It is no longer one a quit would record.
     pub fn close(&self, session: u32) -> Result<(), String> {
+        self.close_as(session, true)
+    }
+
+    /// **Ends a start held apart for chat `session`'s move or restart** ([`Self::close`]), which
+    /// is no chat of its own: a studio chat's job stays with the chat, so nothing is kept for its
+    /// skill's Runs (#5248).
+    fn close_held_start(&self, started: u32) -> Result<(), String> {
+        self.close_as(started, false)
+    }
+
+    /// [`Self::close`], keeping a studio chat for its skill's Runs only where `a_chat`.
+    fn close_as(&self, session: u32, a_chat: bool) -> Result<(), String> {
         lock(&self.starting_as).remove(&session);
         lock(&self.named_while_starting).remove(&session);
         lock(&self.untaken).remove(&session);
@@ -5613,6 +5625,7 @@ impl Chats {
             // let go of: its record brings the chat back.
             // Nor a first run that failed and is replaced: its chat goes on.
             if let Some(job) = gone.chat.studio.as_ref()
+                && a_chat
                 && !self.ending.load(Ordering::SeqCst)
                 && !lock(&self.replacing).contains(&session)
             {
