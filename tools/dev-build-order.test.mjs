@@ -14,7 +14,7 @@ const NEW = "e827217c".padEnd(40, "1");
 function manifest(version, sha) {
   return JSON.stringify({
     version,
-    notes: `charter ${version}, a dev build of ${sha}.`,
+    notes: `purlis ${version}, a dev build of ${sha}.`,
     pub_date: "2026-10-13T14:09:00Z",
     platforms: {},
   });

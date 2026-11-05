@@ -11,35 +11,289 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-05
+
+0.5.0 is the first release as purlis, and the first under the Apache License 2.0. The app,
+its command, its environment variables and its keyring items now carry the purlis name, and
+the charter names keep working until 1.0. Every chat runs in a sandbox, on Claude Code, Codex
+and opencode alike, at least at the floor level. Chats can now run on a Docker pool or in your
+team's cluster, drive a real browser, and dispatch tasks that work on their own branches and
+report back. The Inbox gathers everything that waits on you, and the Skill studio writes,
+tests and grades skills. It also carries 0.4.2's hardening, which was never published on its
+own.
+
+**After updating:** if your personas had sub-agents, run `purlis doctor --fix persona-agents`
+in each project (see *Removed*).
+
+These are the highlights. All 2,411 changes are in
+[Every change in 0.5.0](https://github.com/purlis/purlis/blob/v0.5.0/docs/changelog-0.5.0.md).
+
 ### Added
 
+- **A chat can put a vault secret into a field of its browser, with your yes.**
+  `browser_fill_secret` names a field from the page, a vault and a key; you see the key, its
+  vault, the exact site, the page and the field's label on one notice, and choose Allow once or
+  Keep blocked. purlis fills it only into a one-line field whose own frame is on that site at the
+  moment of filling, and the value never reaches the chat (#5115, spec #5100).
+- **Run a workspace's chats in your team's cluster.** The add pool dialog has a Kind: Cluster
+  takes your kubeconfig's context and the name of a Pool of purlis's cluster operator, shows the
+  cluster operator's key for you to check against the one your cluster's admin gives you, then
+  claims a runner there as you, pairs it and keeps it. A workspace set to run on that pool runs
+  its chats on that runner. Before every link purlis checks that the Pool still names the key you
+  checked and that the operator still vouches for the runner it paired with; either changed is
+  refused and asked about, as a Docker runner's changed key is. purlis runs your own `kubectl`,
+  found where its installers put it. The pool keeps its own copy of the context, taken when it
+  was added; to pick up a changed kubeconfig, add the pool again (#3292).
+- **A workspace's chats run on a Docker pool** (#2046). Once this machine keeps a pool, a
+  workspace's settings offer **Runs on**: this machine, or a pool. A chat started in a workspace
+  set to a pool runs on the pool's runner and behaves as a local one: its tab, input, asks and
+  stop work the same. The workspace's code goes to the runner as the chat starts, with your
+  uncommitted work. The runner's branches come back when a chat there ends and when you return
+  to the window. Changes lists them under each repo, with the commits not on this machine. Chat numbers
+  never repeat between this machine and its pools. Shells still run on this machine.
+- Agent identity, from the palette: give chats their own GitHub identity with GitHub's own page, with no file edited and no terminal. Its row says what it acts as and on how many repos, and removing it takes the tool lines, the key and live tokens at once.
+- **Chats drive a real browser.** Every harness's chat gets purlis's `browser_` tools: a
+  snapshot of a page with a reference for each element, clicks, typing, drags, waits and a
+  screenshot the model sees as an image, on a browser purlis runs and no script the model
+  writes. A chat's first browser tool asks you once what its browser may reach: this project's
+  sites and its dev servers, also the open web, or Keep off. A project's chats hold at most
+  three browsers together, and a browser's reach follows its chat's reach, including what you
+  withdraw (#2013).
+- **Chats survive a crash of the app.** With chats running in the session host (the default,
+  #2004), a crash or a kill of the app no longer ends them: the session host keeps every chat,
+  its network and its project's saving for ten minutes. Start purlis again within them and every
+  tab comes back on the same chat, with what it wrote meanwhile on screen and each chat's state
+  and Needs you as the host kept them. After ten minutes the host ends them as a quit would, and
+  the next start offers to reopen them. Quitting still ends every chat, and so does an update
+  (#2006, #646, #2194).
+- **Sandboxed Codex and opencode chats on Linux.** A project that runs its chats sandboxed now
+  starts Codex and opencode chats on Linux inside purlis's own sandbox, built from the same
+  policy as on macOS, where before they were refused. It needs no extra package, privilege or
+  namespace, so it works the same on a Linux desktop, in a Docker container and in a Kubernetes
+  pod. It needs Linux 6.12 or later (Landlock version 6). In a project with `mode = "on"`, an
+  older kernel refuses the chat and says how to go on; elsewhere the chat starts without the
+  floor and its tab says why (#1040).
+- **Create a project on GitHub or GitLab, in one step.** The welcome's **Create a project** now
+  asks where the project lives: **GitHub**, **GitLab** or **Only this Mac**. On a forge, give it
+  a name, an owner (you, or one of your organisations or groups), private or public (private
+  unless you say otherwise) and a stack template or none. **Create project** makes the repo with
+  your purlis sign-in, lays out the project, commits it, pushes the first commit through
+  purlis's own credential helper and opens the project, showing each stage as it runs. Without a
+  purlis sign-in to that forge, the page asks you to sign in first, and the guided steps add their
+  sign-in step. **Cancel**, or a stage that fails, takes back what this creation made: the repo on
+  the forge and the folder, and only those (#1819). GitHub deletes a repo only for a token with
+  the `delete_repo` scope, which purlis does not ask for; when it cannot delete the repo it made,
+  purlis names it and the page where you delete it.
+- **A chat can dispatch a task to its own persona, and gets the report on its next turn.**
+  `purlis dispatch --name "<task>" <<'BRIEF'`, or purlis's `dispatch` tool, starts a chat of its
+  own for the task: as the asking chat's persona, on its harness profile and in its folder, with
+  the sandbox the project gives that persona. What you allowed the asking chat alone, and a
+  start without the sandbox, are not carried to it. Its first message says which chat asked and
+  that the brief is a request from a chat. In the explorer it is listed under the chat that
+  asked for it. It finishes with `purlis dispatch report --outcome done|blocked|failed "<text>"`,
+  and the chat that asked reads the outcome, the text, what changed and the session record's
+  path on its next turn, quoted as data. A dispatch to another persona starts nothing until you
+  allow the pair (see "A dispatch to another persona waits for your answer"). Where purlis's hook can tell a sub-agent made the call, it is refused
+  and told to return to its chat. One chat waits on at most 6 tasks, a lineage holds 16 chats
+  that still owe work, and a chain goes 3 deep (#1436).
+- **The doctor fixes what it can, from the terminal and from the window.** A doctor finding that
+  purlis can fix carries a fix id, which `purlis doctor --json` prints as `fix` on that row.
+  `purlis doctor --fix <id>` applies that one fix. Bare `purlis doctor --fix` applies every fix
+  the rows offer, on top of its plugin and ask-rule repairs. Each fix says what it changed or why
+  it was refused. The Doctor dialog has a **Fix** button on those rows, which applies the fix and
+  checks again. The first fix is `reinit`, offered when the project is missing a baseline folder.
+  It adds what is missing and never removes or replaces your content. Removing a git index lock
+  is never a fix (FX-1, #1224).
+- **Drag panes to split, swap and move them.** Drag a pane by its head, a chat's row in the
+  sidebar, or a tab pulled down off the strip. Drop it in a pane's outer quarter, by an edge, to
+  split on that side, or in its middle to swap. Drop it on the strip to make a tab. The result is
+  drawn before you drop. A place that would leave a pane under about 40 columns by 8 rows is
+  refused, with its reason. Holding over a tab brings it forward. Esc cancels the drag. After a
+  drop, a split or Tile all, Undo or ⌘Z puts the last layout back. A split's separator now stops
+  at the same minimum, and double-click or Enter on it makes both sides even (#4763).
+- **Your Claude Code, Codex and opencode folders are now profiles, with nothing to do.** When
+  purlis starts after the upgrade, each harness folder this Mac already uses becomes a profile in
+  place, named after its harness (*Claude Code (this Mac)*): the same folder, so the same sign-in,
+  settings and conversations. Nothing is copied or moved, nothing in the folder is changed, and
+  you are not asked to sign in again. Every chat resumes its own conversation, and profiles in a
+  project's `charter.local.toml` work as before. `purlis profile list` shows each adopted profile
+  with its folder (#2033).
+- **A chat can make your theme** (#2333). Ask any chat for a theme, or use **Create a theme** in a
+  workspace's or the plane's Curate menu, or **New theme** and **Edit with a chat** in Settings ›
+  Theme. purlis's theme skill builds it from a brand colour, an image, a Figma frame, an
+  imported theme or another theme. The chat works on a theme draft that the window draws live,
+  and checks it until the check is clean, or tells you which warnings are left and why. You keep
+  or revert it from the draft's strip. Each of these opens the chat with its prompt typed, ready
+  for you to read and send.
+- **Move a chat to a pool's runner and back.** A chat's tab offers *Move chat … to pool …* and,
+  on a runner, *Move chat … here*. The move is prepared while the chat keeps working and happens
+  at its next pause between turns, never mid-turn: its branch, uncommitted work and conversation
+  go with it, and its workspace's chats run there from then on. A move that fails leaves the chat
+  where it was and says why. Claude Code chats move today (#2048).
+- Pool setup: a guided tab, opened from the palette, that finds Docker, recommends it and makes a Docker pool step by step, with no terminal. The other steps show what purlis finds and what to do next for now. The add pool form stays until the whole Docker path is in.
+- **Codex chats run sandboxed on macOS.** In a project with `[sandbox]` `mode = "on"`, a Codex
+  chat now starts inside the sandbox purlis writes, as an opencode chat does, instead of being
+  refused (#1123).
+  - **Codex's own sandbox is off inside it.** macOS applies one sandbox to a process, so Codex's
+    own cannot run inside purlis's. purlis's holds what Codex's held, and what Codex's could
+    not: a folder moved aside, changed and moved back, and a folder swapped for a link.
+  - **A Codex home of the project's own.** A sandboxed project's Codex chats keep their Codex
+    state in a home of their own, outside the project, seeded with your Codex login. They
+    neither read nor write your own Codex home, so nothing they write in Codex's own state
+    reaches a conversation you resume outside the sandbox. Files they write in their own
+    folder, such as an instruction file, are still read by a later Codex started there.
+  - **Writes.** The chat can write its own folder and a temp folder of its own. In the
+    project's Codex home, only what a turn writes: its sessions, history, state, log and a
+    refreshed login, and the memories, goals and queue Codex's own screen needs. So one
+    sandboxed Codex chat can influence what a later sandboxed Codex chat of the same project
+    loads, but never your own Codex state. It cannot write Codex's config, skills or
+    plugins.
+  - **Trust.** purlis marks each chat's folder untrusted for Codex, so Codex loads no
+    project-local config, hooks or exec policies there and asks nothing, and it trusts exactly
+    the hooks purlis arms, so purlis's own hooks run and no other does.
+  - **Network.** Its traffic, Codex's own requests included, leaves through purlis's proxy,
+    which carries only the hosts of the project's egress presets. Codex checks certificates
+    against the system's authorities.
+  - **Linux.** purlis cannot wrap Codex on Linux yet (#1040), so there such a chat is still
+    refused, with a sentence that says so.
+- **New projects run their chats sandboxed.** A project that `purlis init` or the app makes
+  now has `[sandbox]` with `mode = "on"` in its `charter.toml`. Its sandboxed chats can reach
+  model providers, your forges and package registries (SD-2, #1056).
+  - **Existing projects.** A project made before this keeps running as it did. The first time
+    you open it, a notice offers to turn the sandbox on. "Turn the sandbox on" adds the same
+    block to `charter.toml`, and "Keep it off" changes nothing. The notice does not come back
+    either way.
+  - **One chat without the sandbox.** The new-chat picker has "start without the sandbox", for
+    that one chat, with a box for your reason. The chat's tab says it runs without the
+    sandbox. A relaunched or resumed chat does not inherit the choice: it starts sandboxed, or
+    not at all where the sandbox cannot be applied (a Codex chat, or a program the sandbox
+    will not bind). Only a new chat can start without the sandbox; continuing an opted-out
+    chat's conversation without it is not offered yet (#1098). If the sandbox cannot be
+    applied on this machine, the picker shows why, and its button says "Start without the
+    sandbox".
+  - **Installing what is missing.** On Linux, if bubblewrap or socat is missing, the picker
+    shows your distribution's install command. "Type it in a shell tab" opens a shell at the
+    project root with the command typed. It needs sudo, so you run it yourself.
+  - **Programs the sandbox will not bind.** A profile whose program is anywhere a chat can
+    write or is named by a relative path, or a Claude Code profile whose program does not
+    answer as Claude Code, is refused in a sandboxed project; the picker says why before you
+    start it. It checks a profile's program only once you have approved the profile.
+  - **Codex.** purlis cannot keep a Codex chat inside its sandbox yet (#1123), so in a
+    sandboxed project the picker says so and a new Codex chat starts only without the sandbox.
+  - **Windows.** There is no sandbox on Windows yet (#565), so chats there start without it
+    and their tabs say so.
+  - **Recorded.** Each start without the sandbox is a `trust.sandbox.off` event in purlis's
+    event log on this machine. The sandbox coming back on for that chat is `trust.sandbox.on`.
+    The chat's session record says `sandbox: off`.
+  - **How often.** `purlis doctor` and Project settings show how many new chats in the project
+    started without the sandbox on this machine. The count is never sent anywhere.
+- **opencode chats run sandboxed on macOS.** In a project with `[sandbox]` `mode = "on"`, an
+  opencode chat now starts instead of being refused. opencode has no sandbox of its own, so
+  purlis runs the whole harness inside a profile it writes, which starts from "deny
+  everything".
+  - **Writes.** The chat can write its own directory and a temp directory of its own. Of
+    opencode's own files, it can write only what a turn writes: its sessions and log. Its state
+    is kept in the chat's own temp directory.
+    It cannot write opencode's credentials, plugins or packages.
+  - **Snapshots.** A sandboxed opencode chat makes no snapshots (#1075).
+  - **Network.** Its traffic leaves through a proxy purlis runs for that chat, including
+    opencode's own requests to its model provider. The proxy carries only the hosts of the
+    project's egress presets.
+  - **Keychain.** The profile also keeps the chat away from the keychain, so a project with a
+    keyring vault can run sandboxed opencode chats.
+  - **Hook reports.** A report purlis's hooks could not hand to the app is shown in the chat's
+    window, not dropped.
+  - **Linux.** purlis cannot wrap opencode on Linux yet (#1040), so there such a chat is still
+    refused, with a sentence that says so (SD-2, #695).
+- **⌘⇧F searches the content of your files** (Ctrl+Shift+F off a Mac, outside a chat). It opens a
+  Search tab on the branch picked in the explorer, or the workspace or project in front, and you
+  can widen it to the workspace, the project, or every open project. Literal or regular
+  expression, match case and whole word. Hits stream in grouped by project, branch and file,
+  with the matching lines and a count per file; a large result stops at a page and _Show more_
+  carries on, and a new query stops the one before. ↓ steps from the box into the hits, ↑/↓ move
+  through them, and Enter opens the hit in its branch's file tab at its line. The search never
+  looks inside what git ignores, links, vaults, files named like a credential, binary files or
+  files past the preview's 2 MiB. A file with a line longer than 256 KiB is listed as not
+  searched. Search tabs are not reopened at the next launch (FM-8, #1111).
+- Any chat can ask you for a credential it lacks, declared or not, with the `secret_ask` tool
+  or `purlis secret ask <KEY> --purpose "<what for>"`, and every chat is told to at its start
+  instead of asking you to paste one. The ask shows the chat's purpose in its own words, says
+  when the persona does not declare the key, and goes to the persona's vault unless the chat
+  names another. A key the vault holds already answers at once. The chat hears only filled
+  (under the name you stored it as) or declined, never the value. The tool doesn't stop on
+  Claude Code's permission prompt first, since you answer the ask in the window.
+- **Install skills from a git repository in the Skill studio preview** (#2773).
+  - **Add source** takes a repository's https:// URL, or a folder on this machine, and optionally its branch and the folder its skills are in. Browse lists the skills it holds.
+  - **The install review leads with a summary**: the scripts a skill carries and what runs each, the network hosts its files name, its `!` commands, anything it writes outside the workspace, any text hidden from a reader, and any file that is not text. Risky items are marked, every file is one click away with hidden characters shown, and skills it refers to come along in the same review.
+  - **An install is a copy, pinned** to the commit you reviewed, all or nothing, and one commit of the skill's files and `skills.lock`. A local install is kept in `skills.local.lock` on this machine.
+  - **Updates are never applied by themselves.** A newer commit is offered with what its summary gains and loses, then each file's diff, your own edits beside it, and any skill it now needs; only Accept moves the pin. A source only the team's record names is not contacted from your machine until you confirm it.
+  - **A private repository signs in with a vault entry** of your own: the token stays in the vault, is sent to that repository's host alone, and is never shown or written anywhere.
+  - The same on the command line: `purlis skill install` prints the review and asks before it copies anything, and `purlis skill update` lists newer commits and shows each one's diff before it asks; `purlis skill update --confirm <url>` confirms a source.
+- **Grade a skill's trigger tests** (Skill studio preview, #2779). A skill can carry trigger tests:
+  queries it should start on, and near misses it should leave alone. _Grade…_ on a skill's tab
+  first shows what a grade runs: how many chats, each test as the chat will read it (a character
+  no reader would see marked), what the skill's last grade spent, and that the chats are paid for
+  by the profile you pick, as any chat is. A grade stops once its chats have spent 200,000 tokens,
+  or the cap you set in the plan for this machine, or once they cost that many tokens would at
+  the dearest price, where Claude Code says what they cost, and says what it spent. Nothing runs until you
+  press _Grade_. Each test then
+  runs in a chat of its own, three times with the skill and three times without it, in a
+  throwaway folder, only in the project's full sandbox, with none of your own Allows, no tools
+  but purlis's that only read, and only on a Claude Code profile that keeps its permission
+  prompts; the plan says why when a grade cannot run. A chat that asks you something is ended
+  there and does not count. A grade of a skill kept on this machine stays on this machine. Those chats get no tab, and each ends as soon as
+  the skill starts. The tab says how far the grade has got and offers _Stop_. The skill's
+  _Grades_ panel shows each grade: the version it graded, what it ran on, the tests passed, each
+  side's pass rate and the difference the skill made. Each version in its history shows its
+  newest grade. Grades are kept in the project beside its skill runs, so the team sees them, and
+  a run a grade started says so. `purlis skill grade` prints the same plan and the grades.
+- **The Inbox: everything in a project that waits on you, answered where you see it.** It is the
+  first view on the right side's activity bar, and its icon counts what waits, while the side is
+  away too. Each chat that asks is a group under its chain (`steward 12 › #3046 drill`), the one
+  waiting longest first. A permission prompt, a choice of several, a sandbox host and a dispatch
+  grant are answered in place, through the same path as their Notice, and answering in either
+  place clears both. A chat waiting on your reply gets a reply box, a prompt in a harness's own
+  terminal says so, and every ask has Go to chat, which opens a task in its session's tab. The
+  title bar's ✋ opens it, and so does ⌘⇧I (Ctrl+Shift+I elsewhere). ↑ and ↓ move, Enter presses
+  the focused button and Escape goes back to the chat; no single letter does anything. Empty, it
+  says "Nothing is waiting on you" and lists what you answered there lately (#1692).
+- **The Skill studio is ready to try** (Skill studio preview, #2786). Every skill your chats get,
+  in one place: see what each chat has and why any other is left out, write a skill or ask a chat
+  to draft one, install one from a git repository after reading what it adds, grade it with real
+  chats against no skill and its previous version, keep a large library within each chat's skill
+  budget, and publish or export a skill to share it. It is still a preview: turn it on in
+  Settings › You › Previews with the _Skill studio_ switch, on each machine, and some of it may
+  change before it is finished. [The Skill studio](docs/skill-studio.md) explains it from
+  the start.
+- **Themes at every level, and your choices kept per project and workspace.** Theme folders
+  can live in your config folder's `themes/`, a project's `themes/` and a workspace's
+  `themes/`. Your choice of theme and appearance is kept on your machine per project and per
+  workspace, set in Settings › Theme, and survives a re-clone when the project
+  has a `[project] id`; a project's `[theme]` and a LIVE workspace's settings commit a default,
+  and your choice beats it. Switching workspace repaints with a short crossfade. An old
+  single-file `theme.json` is offered, once, a move into a theme folder (#2323).
+- **purlis estimates weekly users without an identifier.** The first update check of each
+  ISO week reads the channel's weekly manifest, `latest-weekly.json` or `dev-weekly.json`, which
+  has the same bytes as the manifest. Its download count is the estimate. The request is the
+  same from every machine and carries no id. `DO_NOT_TRACK=1` opts out.
+  `docs/updating.md` gives the estimator and its biases (OB-17, #688).
+- **Merge and discard a task's own branch.** In its Changes tab, **Merge…** lands exactly the
+  commit you were shown in the branch it was cut from, as a fast-forward or not at all, and
+  **Discard branch…** removes its folder; each asks first. A merge that does not apply
+  cleanly changes nothing and says why. Only you can have purlis merge or discard: no chat
+  can, through purlis.
+- **While you were away: one summary of what happened.** When you come back after five minutes
+  or more away from the window (in another app or window, or with no key or pointer on it), one
+  Notice per project says what happened meanwhile, each project its own: "While you were away: 7 tasks done, 1 failed, 2 waiting on you". Each part is a
+  link: one chat goes straight to it, several open a list of them. A chat waiting on you is shown
+  where it lives, where its question is answered as before, and a finished task goes to its row
+  under the chat that asked; going to a failed task marks it looked at, as its needs-you item
+  does. Only what happened while you were away is counted. The summary hides nothing: each task
+  keeps its row and its Activity lines, and Dismiss puts away the summary and nothing else. _Away summary_ in Settings, under Chats list,
+  turns it off (#1514).
 - **A redesigned first window.** With no project open, the ways in now stay down the left of the
   window and each one opens its page beside them. Recent projects sit in the same place on every
   launch, and a person who has already been through setup is no longer counted through steps.
-- **Create a project on this Mac from a name alone**, with no repo and no account. Starting from
-  a repo you already have is still on the same page.
-- **The event log keeps 30 days and can be followed from a cursor.** The host's event log
-  (`<data>/events/<device>/`) is now written in segments: at 16 MiB a segment is sealed as
-  `events.<first seq>.jsonl`, and a sealed segment whose newest event is more than 30 days old is
-  deleted when the log is opened or a segment sealed. A client subscribes from the last `seq` it
-  holds and gets every later event once and in order, across segments and across a host that was
-  killed and started again; a cursor older than what is kept is told what it missed (FD-24,
-  #661).
-- **A first task, beside your first chat.** After the first run opens your repo, a **First task**
-  tab sits beside the chat. It gives one small, real task to two chats, on two harnesses or two
-  profiles of one, each on a branch of its own in purlis's copy of your repo, with the task typed
-  in for you to read and send. The task asks each chat to record what it learned, so the second
-  chat starts with the first one's lesson in its briefing, whichever harness it runs on. **Show its
-  diff** opens a shell in that chat's branch with its diff. Nothing is written into your repo, and
-  the task asks for nothing to be pushed (FR-28, #621).
-- **No harness found.** On a machine with no Claude Code, Codex or opencode, opening your repo
-  on the first run opens a **Set up a harness** tab instead of the chat picker. It lists each
-  harness with its vendor's own install command, and **Install** runs exactly that command in
-  a shell tab at the project's root. Each installer puts its harness where purlis looks, so **Check
-  again** finds it without a restart, and **Start a chat** opens the picker on it; the harness asks
-  for its own login when its chat starts. If Ollama or LM Studio is already answering on this
-  machine, the tab says so and names opencode as the harness that can use it with no account.
-
 - **A local network log.** purlis's forge calls, through its own client or through `gh` and
   `glab`, `purlis report`'s filing and the updater's reads are listed in
   `~/.config/charter/network-log/`, a file a day, kept for 30 days. Each line says which feature
@@ -47,132 +301,6 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   took, and whether it went to purlis or to a third party. It never holds a body, a header, a
   token, a query or the names in a path, and nothing sends it anywhere. Without an account, and
   unless you send a report, the only purlis addresses it lists are the updater's.
-- **Read any file of a worktree in purlis.** A worktree's menu in the explorer has *Browse the
-  files of …*: a tab listing the worktree's files, narrowed as you type, with the file you pick
-  drawn beside the list in the light editor, purlis's read-only CodeMirror 6 viewer with syntax
-  colours from your theme. *Open in a tab of its own* gives a file a tab to itself. A binary file
-  or one past 5 MiB is named rather than drawn. The diff view the Review tab will use is built
-  on the same component (RC-5, #706).
-
-- **Agent commits say who made them.** A commit an agent makes in a chat, with its own
-  `git commit` in a workspace repo or with `purlis save` in the project, ends with git
-  trailers: `Assisted-by: <harness>:<model>`, `Charter-Chat: <chat id>`,
-  `Charter-Persona: <persona>`, and `Charter-Change: <change>` when its branch is a change's. A
-  trailer purlis does not know is left out, a commit you make by hand gets none, and your own
-  `Co-Authored-By` lines stay. Set `assisted_by = "llm"` under `[plane]` or `[repos.<name>]` for
-  the Linux kernel's bare `Assisted-by: LLM` (V67, GL-8, #702).
-
-- **Link a chat to a work item.** A chat tab's menu and the palette have **Link to work item…**,
-  which asks for the item's tracker key (`github:github.com/owner/repo#12`, or a todo's
-  `todo:<workspace>/<todo>`), and **Unlink work item**. A linked chat shows `Work item: <key>`
-  in its tab's tooltip and in its pane's corner. A chat works on one work item at a time. The
-  link goes in the workspace's work link log, so it reaches your other devices when the
-  workspace is LIVE, and it follows a todo when that todo is promoted to an issue. A chat at
-  the project root is not offered it (V60, ADR 0088, FW-5, #732, #914).
-
-- **Promote a todo to an issue.** `purlis ws todo promote <slug> --repo <repo>` opens an issue
-  with the todo's title and text in one of the workspace's repos, on GitHub or GitLab, as you.
-  It names the repo, whether it is public and the workspace label it adds (private repos only)
-  before it sends anything, and refuses a repo that is archived or takes no issue from your
-  account. The todo is then closed, journalled as `Promoted todo:
-  <title> → <issue>`, and an alias in the workspace's new work link log
-  (`workspaces/<ws>/work/<device>.jsonl`, committed with a LIVE workspace) makes every work link
-  on the todo reach the issue. The Work list shows the issue once, not the issue and the todo
-  Claude Code and opencode ask you before
-  any spelling of it runs: `purlis init` and `purlis reinit` write the ask rule
-  `purlis *todo*promote*` (V42) (ADR 0088, FW-5, #732).
-
-- **The changes view pushes a change and lands a member, and asks first.** Each change in the
-  changes tab has a **Push** button, and each member row a **Land** button. Push names every
-  repo, branch, commit and destination, and where each pull request or merge request goes, before
-  anything is pushed. Land runs every gate first: a refusal is shown beside the row in the same
-  words as `purlis change land`, and otherwise it names the request, the head commit its
-  checks passed at, and whether purlis merges it now or puts it in the merge queue or merge
-  train. Pressing Push or Land does exactly what was shown, and nothing if it has changed since
-  (#474).
-
-- **A chat keeps its id across a relaunch.** The app records each chat's id, the device that
-  made it and its current run in `.charter/app/reopen.json`, so the event log names a reopened
-  chat as the chat it was, and its first event after the relaunch is `run.started` with cause
-  `reopen`. A chat that comes back without its conversation, or that **Resume** starts again
-  after its harness could not find the conversation, begins a `fresh` run in the same chat
-  (ADR 0066, #834).
-
-- **A copied project's chats get ids of their own.** A project copied with its `.charter/`
-  directory (`cp -R`, rsync, a backup restore) used to carry its original's chat ids, so the two
-  clones' events named one chat. The record now says which clone and device wrote it, and the
-  first launch of a copy, at another path or on another machine, gives every chat a new id. A
-  moved project keeps its ids. Its chats also get new ids when the project moves to another
-  machine, when the machine store is reset, and when a different `PURLIS_CONFIG_HOME` opens
-  it. A copy keeps its ids only when its original has
-  been deleted and was never opened on this machine (V43,
-  amending ADR 0066).
-
-- **The supported platforms are written down.** macOS 27 and 26 on Apple silicon, Ubuntu 26.04
-  and 24.04 LTS, and Fedora 44, each with the CI job that covers it and what that job proves,
-  are in the README and in `docs/platforms.md`. macOS 27, Ubuntu 26.04 and Fedora are covered
-  by evidence jobs, which report and never gate. Windows 11 joins the list when the
-  Windows port lands; iOS 16.4 and the current desktop browsers are the floor for clients that
-  do not exist yet (FR-25, #619).
-
-- **A project switcher.** ⌘P (Ctrl+Shift+P off a Mac), the new button at the start of the
-  project strip's controls, or *Switch project…* in the palette lists the projects open in the
-  window, the last one you were in first and already selected, so the key and Enter take you
-  back to it. Pressing the key again moves down the list, and typing narrows it by name. The
-  button shows once a window holds two projects (FR-27, #620).
-
-- **`purlis change revert` undoes a cross-repo change as a new one.** `purlis change revert
-  <change>` creates `revert-<change>`: for every member purlis landed, a branch off that repo's
-  default branch carrying `git revert` of the commit purlis recorded, ordered so a member that
-  depended on another is reverted first. It pushes and merges nothing; you push and land the
-  revert with `purlis change push` and `purlis change land` like any other change. A member
-  merged outside purlis is named for you to revert by hand. A recorded commit that is not a
-  commit id, or that the default branch no longer holds, is refused by name, and so is a clone
-  with uncommitted work. A revert that conflicts is aborted and its branch left for you to
-  finish. Run it again once a refusal is put right, and it seeds only the members it has not
-  seeded yet. It never force-pushes, deletes a branch or resets one (#473).
-
-- **`purlis change land` lands one member of a cross-repo change.** `purlis change land
-  <change> --repo <name>` merges that member's request at the commit its checks passed on, and
-  only once every member it needs has landed. Each refusal says which gate stopped it: a
-  blocker not landed, checks failed, running, not run or unreadable at that commit, a branch
-  that moved after the checks were read, or more than one member named. Where the target
-  branch has a merge queue (GitHub) or a merge train (GitLab), the request goes into it at that
-  commit, and running `land` again after it merged records the landing. A merge purlis did
-  not start, in the browser or before a queue existed, is never recorded as purlis's. It never
-  turns on auto-merge. The landing commit carries a `Charter-Change:` trailer where the forge lets
-  purlis write the message, and a line goes into the change's landing log once the forge
-  confirms the merge. Like `gh pr merge`, it is refused in a session nobody is watching.
-  `purlis doctor` now also names a member landed ahead of one it needs, a member's pushed
-  branch merged outside purlis, and a request GitLab was left set to merge later (#472).
-
-- **`purlis change push` pushes a cross-repo change.** For each member it prints the repo,
-  the branch and where it goes, then pushes the branch, opens its pull request into the repo's
-  default branch (or finds the one already there), and writes a block into each request's
-  description that lists every member's request, so a partial landing can be read from any one
-  repo. Running it again opens no second request, and the block is rewritten in place when the
-  members change; the rest of the description is left alone. It commits nothing, never
-  force-pushes, sends no tags with the branch, and pushes repos whose save mode is `off` too.
-  A repo whose git config sends pushes somewhere other than the URL printed is refused. A
-  member that is not a repo in this workspace is refused by name and the others are still
-  pushed. GitLab members are pushed and their merge requests opened and updated the same way,
-  on gitlab.com and on a self-managed GitLab declared in `charter.toml`; a draft merge request
-  is adopted and stays a draft, and one from a fork with the same branch name is never touched.
-  When members are on different hosts, a member elsewhere is named by its request's link, so
-  a GitLab description never points at a GitHub number as if it were a GitLab one. The guard
-  that stops a live substitution in `purlis change create` or `drop` now names `purlis
-  change push` as what writes the `why` into requests (#471).
-
-- **The first run lays your project out for the stack you work in.** Project templates for
-  Rust, TypeScript, Python, Go, monorepos and docs-only repos each add an engineer and a
-  reviewer persona, a review checklist (`REVIEW.md`, in the reviewer's refs), how a change is
-  checked in the workspace's `workspace.md`, and the publish and deploy commands, such as
-  `cargo publish` or `twine upload`, that Claude Code and opencode ask you about before they run
-  them. Codex's command rules live in `CODEX_HOME` or a trusted project's `.codex/rules`, which
-  purlis does not write, so purlis's own guard applies there. The first run picks the
-  template that fits your repo from the files at its top level, and says which when you type the
-  path; pick another, or None, before you open it. Nothing is written into your repo, nothing you
-  already have is replaced, and a command you deny stays denied.
 - **A project can say which purlis it needs.** When a newer purlis starts writing something an
   older one would get wrong, it lists the feature in `charter.toml`'s `requires` and sets
   `schema = 2`. A purlis that lacks the feature, or does not understand the project's `schema`,
@@ -184,7 +312,6 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   doctor`'s `schema` row says the same. Keys and sections purlis does not know are kept when it
   rewrites `charter.toml` or a workspace's `workspace.json`. The window and the chat hooks will
   follow the same rule before any release carries it (#826).
-
 - **A chat that starts in a repo gets a branch of its own.** Start a chat with *New tab in
   <repo>*, or after *Start new chats in <repo>*, and purlis cuts a new branch for it, in a folder
   beside the repo's clone, so two chats in one repo no longer edit the same files. The branch is
@@ -192,67 +319,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   to work on the branch the repo has checked out, as before. If the chat does not start, the
   branch goes with it. *New branch in <repo>…* on the repo's menu and in the palette cuts one
   without starting a chat, and new chats start on it.
-
-- **A chat in its own worktree leaves an `AGENTS.md` behind for any agent that opens it.** When
-  a chat starts in a piece of a repo that has no `AGENTS.md`, purlis writes one there, hidden
-  from `git status`. It says which persona the chat was started as and which piece it holds, so
-  a Codex, opencode or other agent started there by hand is told the same. It never carries
-  memory, todos or session records, and it is never written into a shared clone. A repo that has
-  its own `AGENTS.md` keeps it. Because git hides the file by one line for every worktree of the
-  repo, `purlis doctor`, a note on the chat's pane and the chat's briefing name any `AGENTS.md`
-  of yours that line hides (ADR 0085).
-
-- **purlis keeps a log of every hook call its chats make.** Each state hook and each tool call
-  is one line in the event log in purlis's data home (`~/Library/Application Support/charter`
-  on macOS, `~/.local/share/charter` on Linux, or `PURLIS_DATA_HOME`). A line records the chat
-  and the run it happened in, the tool, what purlis's guard answered and how long it took. A
-  tool call's arguments are never written, only a digest keyed to this machine. The log is
-  never committed or sent anywhere; a backup of purlis's data carries it, and anything running
-  as your user can read it. The coming timeline, audit and fleet views are built from it (#649).
-
-- **The first run offers your repo's agent instructions to its workspace's memory.** When the
-  repo you open has a `CLAUDE.md`, an `AGENTS.md` or Cursor rules in `.cursor/rules`, a *Memory
-  from the repo* tab opens beside the first chat, showing each file whole. Press Add to memory
-  and every chat in that workspace starts with them, whichever agent runs it. Nothing is written
-  until you press it, and nothing is ever written into your repo. A link, a file over 64 KB, or
-  one that looks like it holds a secret is left out and says which line. A file over 8 KB, or one
-  with invisible characters, starts unticked, and the preview shows each invisible character by
-  its code point.
-
-- **Where to get help, in the app and the repository.** About purlis now links to Discussions
-  for questions and ideas, to the bug report form, and to `SUPPORT.md`, which says where each
-  kind of question goes and how soon it gets a first response. The repository gains a Code of
-  Conduct (Contributor Covenant 2.1), a `CONTRIBUTING.md` with DCO sign-off, issue and
-  discussion forms, and a pull request template (#609).
-
-- **Every release says what it is made of.** Each release carries a CycloneDX SBOM per platform
-  (`charter-macos-arm64.cdx.json`, `charter-linux-x86_64.cdx.json`). It lists the Rust crates
-  read out of the built binaries and the front end's npm packages from its lockfile. Every
-  Rust binary purlis ships now carries its own dependency list, so
-  `cargo audit bin` can check an installed copy against the RustSec advisories. `SECURITY.md`
-  says how to read both (#584).
-
-- **Every build file a release publishes carries signed build provenance.** Each installer and
-  updater archive now has a SLSA build provenance attestation, so you can check that a download
-  came out of purlis's own release workflow with `gh attestation verify`. `SECURITY.md` has
-  the command (#583). The update manifest (`latest.json`, `dev.json`) is not attested; the
-  updater checks each build's own minisign signature, as before.
-
-- **The app keeps a log you can read after the fact.** What the app notices while it runs, such
-  as a chat that would not start, a project it could not watch or a record it could not write,
-  now goes to `charter.<date>.log` in the app's log directory (`~/Library/Logs/dev.charter.app`
-  on macOS, `~/.local/share/dev.charter.app/logs` on Linux), as well as to standard error. An app
-  started from the Dock or a desktop launcher used to lose all of it. A new file starts each
-  day and the last seven are kept. A line that looks like it holds a credential is replaced by
-  a note saying what kind it looked like. `PURLIS_LOG_DIR` moves the log.
-
 - **A kill switch that stops every chat and shell purlis started.** Stop all on the title bar,
   or `purlis stop --all` in any terminal, interrupts and ends every chat's and shell's program in
   every project and every window within seconds. No chat starts again, not even from a relaunch,
   until you re-arm it from the title bar; you can still open a shell to look around. The stopped
   chats stay as tabs to reopen. Each stop, re-arm and tamper is one line in `kill-switch.jsonl`
   in purlis's config directory (ADR 0071).
-
 - **A plane can run every Claude Code chat in a sandbox.** Add `[sandbox]` with `mode = "on"`
   to `charter.toml`, and every Claude Code chat purlis starts there runs inside Claude Code's
   own sandbox, which purlis compiles from one policy. It can reach only the hosts of the
@@ -262,44 +334,21 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sandbox cannot be applied, the chat does not start, and purlis says what is missing and how
   to install it. `SECURITY.md` says what the sandbox covers and what it does not. Planes that
   say nothing run as before (#695).
-
   **What this cannot do yet:**
-
   - A plane with a keyring vault starts no Claude Code chat while the sandbox is on. Keyring is
     the default vault provider, so on most machines this release can sandbox only a plane with
     no keyring vault. That lifts when purlis can wrap the harness, or resolve secrets for the
     chat.
   - opencode chats are not started in a sandboxed plane yet.
-
-- **Codex chats run in the sandbox too.** In a plane with `mode = "on"`, every Codex chat
-  purlis starts runs in Codex's own workspace-write sandbox, which purlis selects explicitly
-  and compiles from the same policy. It reaches only the plane's egress hosts, through Codex's
-  own proxy, and never reads a vault's storage or writes purlis's own state. Codex never asks
-  to run a command outside the sandbox, and its web search is off. A Codex chat whose command
-  would drop or widen the sandbox is refused, and the refusal names the flag and where it is.
-  That covers `-s`, `--add-dir`, `--cd`, `--enable`, `--disable`, an approval flag other than
-  `-a never`, and a `-c` for anything but the model and how it is shown. A Codex without the
-  proxy feature starts no sandboxed chat. As with Claude Code, a plane with a keyring vault
-  starts no sandboxed Codex chat yet (#695).
-
-- **A first run that goes straight to a chat.** On a machine with no project, purlis asks for
-  one thing: the repo to work on. It makes a project for you on this machine only
-  (`~/.config/charter/local-plane`, with no remote), copies your repo into a workspace named
-  after it, and opens the first chat there. When exactly one of Claude Code, Codex and opencode
-  is signed in, the chat starts on it without asking. The screen shows what is installed and
-  signed in, and offers **Sign in to GitHub**, which runs `gh auth login` in a shell tab. New
-  project asks for a repo the same way, and the two-folder form is under Advanced (#603).
 - **A chat's commits are scanned for secrets and personal data before they are made, in any
   repository.** Every chat the app starts on a harness commits through purlis's own git
   hooks. Before each commit, including a merge commit, purlis reads the lines the commit adds.
   These refuse the commit:
-
   - a token or key in a vendor's known shape (purlis's forge-prefix rules plus gitleaks'
     prefix-anchored vendor rules);
   - an email address;
   - a card number;
   - a US Social Security number.
-
   git prints where each one is and what kind it is, with the value masked, and the chat joins
   the needs-you queue saying why. This holds in a workspace repo, a piece, or a repository
   outside any plane. The repository's own hooks (husky, pre-commit, git-lfs) still run after
@@ -311,70 +360,172 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   below lets any other false positive through. Commits made by `cherry-pick`, `rebase` and
   `am` are not scanned (#592, ADR 0074).
 
-- **An allowlist for the commit scan.** A repository's `.charter-scan-allow.toml` lets a
-  finding through by its rule and paths. A key can also be let through by its fingerprint;
-  personal data never is. Every entry gives its reason, and the file is reviewed like code.
-  `purlis scan --explain` names a finding's rule and prints the entry that would let it
-  through. The file is read as committed. A chat's own commit may not change it, and neither may
-  its `git revert` or `git merge --ff-only`, so the operator is the one who commits an entry.
-  This is a guard against mistakes; the sandbox is where it becomes a boundary (#784). An
-  author's email in `Cargo.toml`, `package.json`, `.mailmap`, `AUTHORS`, `CONTRIBUTORS` or a
-  `CHANGELOG` passes with no entry at all, unless `[builtin] enabled = false` turns that off
-  (#593).
-
 ### Changed
 
-- **A project's per-chat files no longer pile up.** When the app opens a project, it removes
-  the per-chat markers in `.charter/sessions/`, the chat traces in
-  `.charter/persona-state/trace/` and the old report drafts in `.charter/reports/` that nothing
-  has written for 30 days. The files of every chat the app is about to reopen are kept, however
-  old, and so is a trace that records a secret being handed out (SC-7, #682).
-
-- **Switching into a project with many chats is quicker.** Each chat's row in the explorer and its
-  state mark on the tab are dimmed in their colour rather than by transparency, and the mark for a
-  chat that has said nothing yet is a ring broken into two arcs rather than a dashed one, so fifty
-  of them no longer cost the switch a slow paint (FR-27, #891).
-
-- **Per-machine logs are named by the device id, not the hostname.** The dispatch and skill
-  logs (`personas/_dispatch/`, `personas/_skills/`), the piece claim log, the landing log and
-  pending landings are now filed under this device's id from the machine store. Two machines
-  that share a hostname no longer write into one file, and renaming a machine no longer starts
-  a new one. The hostname stays as a label: a piece claim still says which machine made it.
-  Files an earlier version wrote under a hostname are still read; a later migration renames them
-  (FD-25, #662).
-
-- **The window no longer waits on the project's files.** The sidebar, a workspace's panels,
-  the project root's session records, the Curate menu and every memory read or edit are read
-  off the thread that draws the window. On a project with sixty workspaces and a thousand
-  memories, a workspace's panels used to hold the window for about 45 ms per read and the
-  sidebar for about 27 ms; now each holds it for about 10 µs. A terminal's resize and watch stay
-  where they were, so they keep their order (SC-2, #680).
-- **No hook call is lost when the app is down.** A hook now waits for the app to say it has
-  recorded the call, on disk, before it answers the harness. When the app is not running, is
-  slow or quits mid-turn, the hook writes the call to its chat's spool in `.charter/app/spool/`
-  instead, and the app records it the next time it opens the project, saying which lines were
-  missing or did not check. A hook call takes about a millisecond longer (FD-30, #667).
-
-- **The sidebar no longer reads every workspace's todos for each change.** The app keeps what
-  the sidebar draws in memory and reads again only what a change is part of: a todo closed in
-  one workspace reads that workspace's todos, and nothing else. A change the app cannot place
-  still reads the whole sidebar again (FD-10b, #933).
-
-- **Fewer redraws when switching projects.** A project's tab strip comes back at the width it
-  had instead of drawing every tab and then folding them away, the palette closes in the same
-  frame as the switch, and the project's theme and its repos' save standing are drawn from what
-  the window already knows, then checked again behind them (FR-27, #620).
-
-- **A new project tracks the forge its repo is on, and asks when it cannot tell.** The first
-  run, the New project dialog and `purlis init` now follow one rule. The forge, and its owner or
-  group, come from the `origin` of the repo the project is made for, when that remote is on
-  github.com or gitlab.com. Otherwise the window asks GitHub or GitLab with two buttons, and
-  `purlis init` writes nothing and asks for `--forge` or `--adopt`. Before, the first run made
-  a GitHub project with no owner, and `purlis init` defaulted to GitLab. **A script that runs a
-  bare `purlis init` now exits 2 and makes nothing, where it used to make a GitLab project:
-  add `--forge gitlab` to keep the old result.** `--forge` and `--owner` still win when given,
-  and running `init` again on an existing project asks nothing.
-
+- **A `gh` or `glab` tool used with GitHub Enterprise Server or a self-managed GitLab needs
+  `host`.** Without it the tool reaches `github.com` or `gitlab.com`, and a run naming your
+  own host is refused with a sentence that says so: add `host` to the tool and allow the
+  persona's tools again (#3869).
+- **purlis is now licensed under the Apache License 2.0 (was MIT); copyright Purlis.** The
+  licence and its NOTICE ship with the app and show under About › Licences. Releases up to and
+  including v0.4.1 remain under MIT.
+- **purlis's own skills are named `purlis-<name>` on every harness.** `handoff` is now `purlis-handoff`, and on Claude Code `/purlis:purlis-handoff`. Old names keep working where purlis reads them: `purlis:handoff` in a persona's `skills:` list, a skill's text or `skill_load` reads as the new name, so no project has to change. A bare `handoff` is now an ordinary skill name, so a project's skill named `handoff` loads. A bare `/smart-close` no longer starts purlis's smart close (#4524).
+- **Certificate checks are on by default in every sandboxed chat.** `gh`, `glab` and other Go
+  tools verify a host's certificate through a macOS system service, and a sandboxed chat was
+  refused it until each person allowed it on each machine, so those tools failed with
+  `x509: OSStatus -26276`, or with an error that hid the cause (`gh auth status` said the token
+  was invalid). Now every sandboxed chat has it, on Claude Code, Codex and opencode, with
+  nothing to allow:
+  - Settings › Sandbox has one switch, **Certificate checks**, on unless the project turns it
+    off. The separate "on this machine" row is gone;
+  - `[sandbox] certificate-checks = false` turns it off for everyone in a project. `true` says
+    what leaving the key out says. **A project that never set the key now has the check**;
+    nothing in your files changes;
+  - an administrator's `sandbox.socket-grants: false` turns it off on that machine, and
+    Settings says who set it;
+  - a chat that was already running when you updated keeps the sandbox it started with: the
+    Sandbox changed Notice lists it with Restart, and a block in it says the same;
+  - a chat that has the check and whose tool still fails a certificate check is told so, and
+    is not told to restart.
+  What this leaves open, by decision: that system service makes its own requests, for revoked
+  certificates and for the certificates a certificate names, and those do not go through the
+  sandbox's proxy. Turn the switch off in a project where that matters more than those tools.
+- **Chats run in the session host by default.** Every chat now runs in purlis's session host
+  rather than in the app's own process, so a crash of the app no longer ends it. Nothing you see
+  or do with a chat changes. Upgrading loses nothing: each chat that was open reopens on its own
+  conversation, on its own profile, in its own folder and branch, and your session records and
+  the profiles you declared yourself work as they did, with nothing to set up or approve again.
+  Opening a project writes nothing into it. Quitting still ends every chat, and so does an
+  update. If chats misbehave in the session host, you can run them in the app again while purlis
+  still carries both: on macOS run `launchctl setenv PURLIS_CHATS_IN_THE_HOST 0` in a terminal,
+  then quit purlis and start it again (`launchctl unsetenv PURLIS_CHATS_IN_THE_HOST` and a
+  restart undo it); on Linux start purlis with `PURLIS_CHATS_IN_THE_HOST=0` set. Switched back
+  after a crash, purlis first ends the chats the session host kept, as a quit would, and then
+  reopens them in the app, so no conversation runs twice. Tell us what made you switch back
+  (#2004).
+- **Claude Code chats now go through purlis's proxy, as Codex and opencode chats do.** Each
+  Claude Code chat gets its own pair of proxy ports, HTTP and SOCKS5, and purlis names both in
+  the settings it starts the chat with. Every host the chat reached before is reached the same
+  way, and every connection is in the network record and on the chat's Network view. This needs
+  Claude Code 2.1.285 or later. An older Claude Code keeps its own proxy and the same allowed
+  hosts, and says so once.
+- **A Claude Code chat can no longer connect to other local ports or listen on one**, even where
+  your own Claude Code settings turn local binding on, so it reaches the network only through
+  its own two ports. Codex and opencode chats already could not.
+- **Closing never ends a chat.** Close pane clears a pane and Close tab closes a tab. Their chats
+  keep running in the sidebar, nothing is asked, and the close button no longer turns red under
+  the pointer. To end a chat, use End… in its list. Closing the last tab on a strip leaves one
+  empty pane (#4756). Undo, ⌘Z or the palette's row, puts a closed pane or tab back as it was
+  (#4763).
+- **New keyring items are stored under `purlis/`, and items under `charter/` are still read.** A
+  new keyring vault's items, and a newly stored 1Password identity, are written under `purlis/…`.
+  A vault or identity stored before the rename keeps working from its `charter/…` item, and the
+  check that an item is charter's own accepts exactly those two prefixes. 1Password items charter
+  writes are tagged `purlis` (RN-4, #1261).
+- **One list: the Inbox holds what the Alerts drawer and the band under the tab strip held.**
+  Every line that stood under the tab strip, two at a time, is now a Notice in the project's
+  Inbox, after what asks for you and before what happened, every one listed with its ways out.
+  The alerts are Notices there too: this project's and this machine's whole, and one line for
+  each other open project that has some, which opens that project's Inbox. The status line's
+  Alerts button is its Notices button, counting them and opening the Inbox. A Notice that
+  answers what you just did (a refusal, an Undo, a saved record) or the summary of a time away
+  brings the Inbox on screen (#1695).
+- **Work a chat needs an answer from has one route, `purlis dispatch`.** A chat told to
+  dispatch to a persona could run a reporting handoff instead, because the handoff skill
+  taught `--report` as the way to get an answer and `--persona` for another persona. The
+  handoff skill, the persona skill, `purlis docs show handoff`, `purlis handoff --help` and
+  the briefing of a chat the app started (as where such work goes, not as a reason to give
+  work away) now say one thing in the same words: work a chat
+  needs an answer from, for its own persona or another, is `purlis dispatch` (with `--in
+  workspace:<name>` when it must run elsewhere), and a handoff is fire-and-forget. The
+  refusals that named `purlis handoff <workspace> --persona <name>` as the way to dispatch to
+  a persona (a vault a chat may not use, `purlis persona use` inside a chat) name `purlis
+  dispatch --to <name>` (#1515).
+- **The command line is `purlis`, and `charter` still runs it.** The app ships `purlis` beside
+  itself with `charter` as an alias for the rename's window, and **Install `charter` command in
+  PATH** now links both names; the `.deb` installs both. Every guard that recognises charter's
+  own command recognises `purlis` too (RN-3, #1255).
+- **The product's environment variables are now `PURLIS_*`, and `CHARTER_*` still works.** Every
+  variable that steers a command, set by you, by the app for a chat, or by a harness
+  (`PURLIS_ROOT`, `PURLIS_HOME`, `PURLIS_WORKSPACE`, `PURLIS_CONFIG_HOME`, `PURLIS_DATA_HOME`,
+  `PURLIS_LOG_DIR` and the rest), is read under its `PURLIS_` name first. Its `CHARTER_` name is
+  read when the `PURLIS_` one is not set. Chats and extensions are given both names until 1.0,
+  so hooks and scripts that read the old name keep working. A harness profile may set neither.
+  A variable that chooses what a command acts on is refused rather than guessed when both names
+  are set to different values. Those variables are the project, its state, the workspace, the
+  worktrees, the persona, and the config and data homes. The refusal says to set both
+  names to the same value (`PURLIS_ROOT=<x> CHARTER_ROOT=<x> charter …`). So a single name
+  typed in front of a command inside a chat tells you what to type, instead of acting on the
+  chat's own project (RN-2d, #1260).
+- **Purlis is the default theme.** A new install, and any project, workspace or machine where
+  nobody chose a theme, now draws Purlis: the lavender dark from the designer's foundation, in
+  IBM Plex Sans and JetBrains Mono with Lucide's icons. When your system asks for more contrast,
+  it draws Purlis's high-contrast dark. A dark, light or "Follow the system" pick now draws
+  Purlis too: `purlis-dark` (and `charter-dark`) draw Purlis's dark, `purlis-light` (and
+  `charter-light`) its light, and `system` follows the system with your own `theme.json`, or
+  else with Purlis. No file is rewritten. Settings › Theme no longer offers `purlis-dark` and
+  `purlis-light`, and labels a file that still holds one. To keep the green look purlis had
+  until now, choose **Purlis Classic** (`purlis-classic`). Purlis is no longer marked Preview,
+  and a new theme draft extends Purlis (#3034).
+- **A sandboxed Claude Code chat takes its settings from purlis and from you, not from files
+  in the project.** At each start of a sandboxed Claude Code chat, full sandbox or floor, purlis
+  reads the project's `.claude/settings.json` and `.claude/settings.local.json`. They are loaded
+  as they are while they hold only deny and ask rules, plugins, model, output style, theme,
+  and the entries purlis's own `init` writes.
+  If they hold anything else, or cannot be read, the chat starts on your own Claude Code
+  settings and purlis's. The project's deny and ask rules still apply. The chat's tab names
+  the keys that were not applied, and says that the project's CLAUDE.md, rules, skills, agents
+  and commands are not loaded in that chat either. A chat with no sandbox is unchanged.
+  Commands and the Edit tool in a sandboxed chat do not write your own Claude Code settings
+  files, at the floor or with the sandbox fully on.
+- **Search and Changes are views on the left, and the bottom panel is gone.** ⌘⇧F (Ctrl+Shift+F
+  elsewhere) shows the Search view on the left side instead of opening a Search tab, searching
+  the branch, workspace or project you are on and keeping what you typed. ⌃⇧G shows the Changes
+  view: each repo's branch, uncommitted files, branches and pipeline, which the bottom panel
+  showed. Its icon counts the uncommitted files, also while the side is put away. The terminals
+  now have the window's whole height, and the status line has two toggles, Navigation and
+  Attention. A layout file that still places the bottom panel is read without it (#1676).
+- **The app is purlis now: `purlis.app`, bundle identifier `dev.purlis.app`.** At its first launch
+  the app moves its log folder from `dev.charter.app` to `dev.purlis.app` before it writes a log
+  there, and holds its keychain items again under the new identity without asking: a vault whose
+  items macOS would ask about keeps working and waits for **Finish moving**, which asks once per
+  secret. Nothing moves while another charter is running, and purlis does not start while the
+  old app still runs. macOS treats the renamed app as a new one, so it asks again for permission
+  to show notifications. An install that updated itself keeps the folder name `charter.app`; a
+  fresh `purlis.app` replaces it, and the old `charter.app` can be deleted. On Linux the
+  one-per-user lock and the D-Bus name follow the new identifier, and the `.deb` is the `purlis`
+  package, which replaces the `charter` package. Updates, the release assets
+  (`purlis-macos-arm64.dmg`, `purlis-linux-x86_64.deb`, …), About's links and `charter report`
+  use `purlis/purlis`; installed builds still find new releases through GitHub's redirect from the
+  old address (RN-9, #1267).
+- **Every chat now runs at least at the floor** (#2071). In a project that has not turned the
+  sandbox on, a chat reaches every host and writes every folder but what the floor holds, so
+  it works much as its harness does unsandboxed. It still cannot read a vault or purlis's own keys, cannot write
+  what a later program runs (git hooks and config, `.claude` settings, editor tasks), and
+  cannot write a folder on your `PATH` or your harness's own program; a refused install raises
+  the usual block Notice. A project with `[sandbox] mode = "on"` keeps the full sandbox. Each
+  chat's tab shows its level: full sandbox, floor, or no sandbox.
+- **A local project in the config home moves to the data home at the next launch.** It moves in
+  one rename, with a link left at the old place until its clones' worktrees, the chats it
+  reopens and the projects this machine remembers all name the new one, so nothing is lost and
+  its approval and pins go with it. A launch that stops halfway is finished by the next one. One
+  that something still works in (a terminal, an editor, another purlis) is left where it is: the
+  app's log and the project's doctor say so, and the move is made at a launch when nothing works
+  in it. A worktree outside the project keeps the link, and the log names the
+  `git worktree repair` to run (#1670).
+- **A Claude Code conversation from a chat that ran in the old place does not come back by
+  Resume.** Claude Code keeps a conversation under the folder its chat ran in, and that folder
+  has a new name. The conversation's file is not touched (it stays in `~/.claude/projects/`);
+  Resume starts the chat fresh with its session record in its briefing, as for any conversation
+  the harness cannot find (#1670).
+- **The window's forge calls use your purlis sign-in, so `gh` and `glab` are optional.** Once
+  you are signed in to a host in Settings › You › Accounts, the workspace repo picker, the
+  Doctor's discover, the save button and the workspace's LIVE switch (and the pull or merge
+  request they open), and the workspace panel's request and CI column ask that forge over HTTPS
+  with your sign-in, read from the keychain for each request. A host with no purlis account
+  still uses `gh` or `glab` when they are installed; when they are not, the message says to
+  sign in under Settings › You › Accounts. Chats, `purlis` commands and saves nobody pressed for
+  never use the sign-in (#1816).
 - **purlis runs far fewer git processes in your repos while it is idle.** Auto-save, the
   title bar's save indicator, the Saving tab and the alerts used to each run `git status` and
   its friends on their own timers — about ten git processes every two seconds per project, and
@@ -387,124 +538,207 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   git keeps it (`git update-index --no-untracked-cache` removes it, and setting
   `core.untrackedCache` yourself, to anything, stops purlis asking for it).
 
+### Deprecated
+
+- **The charter names stop working at 1.0.** Until then purlis reads its old names and writes
+  only the new ones. From 1.0 it stops reading them: the `charter` command (run `purlis`), the
+  `CHARTER_*` environment variables (set `PURLIS_*`), a project's committed files under their
+  charter names (`purlis doctor --fix rename-plane` moves them), this machine's local state under
+  its charter names, such as `.charter/`, `charter.local.toml` and the config and data homes
+  (`purlis migrate` moves them), and keychain items under `charter/` (the same migration copies
+  them to `purlis/`). The removal waits past 1.0 while `purlis doctor` still sees an old name in
+  a project you opened, so run it before you update: it names every old name it finds. A
+  migration waits until nothing named charter or purlis is running, and going back to a build
+  from before the rename on the same machine needs `purlis migrate --undo` first. A project
+  `rename-plane` moved is no project at all to a teammate on a build from before the
+  compatibility check, so update every teammate before you move a shared project. Every
+  version's notes say this until 1.0 (ADR 0091).
+
+### Removed
+
+- **Settings › Chats list › Rows.** A row is always one line. A layout file that still says
+  `chats.lines` is read as if it did not (#1675).
+- **A pressed task no longer becomes an ordinary tab.** It did, for good, and its close button
+  read as ending the session. A task whose session has no tab in the window (the session was
+  closed and left it running) still opens in a tab of its own. The "no tab" badge on a task's
+  row is gone: no task has one (#1486).
+- **`purlis browser install` is retired.** A chat purlis starts drives a real browser with
+  purlis's own browser tools, which the `browser` skill teaches, so purlis no longer generates
+  Playwright's page-driving pages into a project. Running the command writes nothing and says
+  what to use instead. Pages it generated before stay where they are (#2575).
+- **The separate Project settings page.** Its forms are the Project level's groups in Settings,
+  and its Raw TOML view is Edit as TOML. Project settings… on a project's menu and in the
+  palette opens Settings at the Project level. A Project settings tab left open by an earlier
+  version comes back as that too (SE-19, #1169).
+- **The two icons at the bottom left that put a side away.** They did what each side's own
+  strip of icons already does: press the open view to put the side away, and any view to bring
+  it back. ⌘B and ⌥⌘B (Ctrl+B and Ctrl+Alt+B off a Mac) and the palette's rows do the same.
+- **Persona sub-agents are retired. After updating, run `purlis doctor --fix persona-agents` in
+  each project, then save.** purlis no longer generates `.claude/agents/<persona>.md`, and
+  `purlis persona sync-agents` (with its `--approve-mcp`) is gone: the word is still recognised
+  and answers with one sentence that says what replaced it. The fix removes the files purlis
+  generated, where git tracks them and they have no uncommitted change, and leaves and names
+  every other file. It prints everything it changed, makes no commit, runs only by name, and
+  changes nothing on a second run. Until it is run, Claude Code still lists each generated
+  file as an agent type; a call to one is refused, and each chat is told so at its start. A
+  project's own `CLAUDE.md`, README, charters and scripts may still say `sync-agents` or
+  `subagent_type`: search for both (#1451).
+- **A persona whose `model:` named a model now runs on the asking chat's profile.** `model:
+  opus`, `sonnet` or `haiku` picked the generated sub-agent's model, and nothing reads it now,
+  so that persona's chats run on the model of the chat that dispatched them, which may cost
+  more or less. Name the profile a persona's chats start on with `profile:`. The fix and
+  `purlis persona lint` say this for each persona it applies to. A `model:` that is the name of
+  a profile the project carries is rewritten to `profile:` (#1451).
+- **`agent-tools:`, `skills:` and `memory:` are read by nothing.** A
+  persona chat has every tool of its harness, so a persona that listed no editing tool could
+  not edit files as a sub-agent and can as a chat. Nothing asks before two persona chats write
+  in one tree; `dispatch-isolation: worktree` now gives a dispatched chat a worktree of its own
+  instead (#1453). `purlis persona lint` and the fix say what widened for each persona and leave
+  the lines. To keep a persona from a tool, name it in `disallowed-tools:`. The hooks no longer
+  log a returned sub-agent or a message to one in the dispatch log (#1451).
+- **purlis no longer turns other harnesses' plugins on or off per project.** A plugin brings
+  hooks, MCP servers, subagents and code as well as skills, and each harness handles those its
+  own way, so which plugins load is now the harness's own settings' to say. The Plugins group in
+  Settings, the plugin rows in the Skill studio and `[harness_plugins]` are gone. purlis's own
+  plugin loads as before on all three harnesses, and `purlis plugin install` stays. The Skill
+  studio still lists the skills a plugin brings, read-only, naming the plugin (ADR 0050, #3467).
+- **The old overlay and menu classes are gone.** `.ui-menu`, `.ui-menu-item`, `.ui-popover` and
+  `.ui-overlay-arrow`, which nothing in the window had worn since the menu, popover and tooltip
+  families replaced them, are no longer drawn. A theme that targeted them reached nothing already;
+  the families' parts are what a theme reaches (#3365).
+- **Search no longer has a view tab.** The left side's Search view is the only place a search
+  is shown (#1701).
+- **The explorer no longer lists the chats a chat started in other workspaces under its row.**
+  The Chats list is the one tree of who asked whom (#1490).
+
 ### Fixed
 
-- **A chat on a pool's runner has its hooks recorded.** Each line a runner chat's hook sends
-  is now written once, in the runner's own event log, and the hook is told it was taken. Before,
-  the runner refused the line, so it was recorded in no event log and the hook kept a copy
-  (#3304).
-
-- **`purlis doctor` names `purlis persona optimize` for a persona's memory.** Its memory
-  indexes row said curating a persona's memory from the CLI was "not in this version yet",
-  although `purlis persona optimize` has shipped. It now names that command, as it names
-  `purlis workspace optimize` for a workspace (HY-12).
-- **A memory or session record written by an agent shows up in its panel straight away.**
-  Before, a workspace's or persona's `memory/`, and the session records in `sessions/`, reached
-  the Memory, Personas and Sessions panels only when something else in the project changed.
-  Each panel now reads again only for the kind of change it draws, so a todo closed in one
-  workspace no longer re-reads another workspace's panels. Saving a memory re-reads only the
-  panels and views that show it. When auto-save commits, pushes or fetches, only the save state
-  and the alerts read again, where the whole window used to. A fetch or save that brings
-  others' changes into your files still reads everything again (FD-10, #933).
-- **`purlis guard ask` never turns a command opencode denies into one it asks about.** opencode
-  goes by the last rule that matches a command, so a rule added after `"*": "deny"` used to win
-  over it, and a rule for a command that was denied exactly used to replace the deny. Now a
-  denied command stays denied, and the command says so. Claude Code was never affected: there a
-  deny always wins.
-- **The first run checks `glab` as well as `gh`.** Under **On this machine**, the first window
-  now says whether GitLab's `glab` is installed and signed in, beside GitHub's `gh`. If it is
-  installed but not signed in, **Sign in to GitLab** opens a shell tab running `glab auth login`.
-
-- **purlis opened from the Finder or the Dock can hold two hundred chats.** macOS starts such
-  an app with room for only 256 open files, and each chat needs several, so the app could run
-  out well short of two hundred. It now raises its own limit as it starts, to 10,240 or the
-  system's hard limit if that is lower, and never lowers a limit it was given (#683).
-- **`charter statusline --watch` says it cannot watch instead of drawing one frame.** It has
-  no repaint yet, and one frame followed by exit 0 looked like a watch that had stopped. It now
-  exits 1 with the reason and points you to `charter statusline` run once per turn (#574).
-- **Two GitLab pipeline states are no longer read as unknown.** A pipeline that is
-  `waiting_for_callback` now shows as pending and counts as running, and auto-merge waits for it
-  instead of saying there is nothing to wait for. A pipeline that is `canceling` shows as
-  canceled and did not pass. GitLab lists both in its pipelines API (#711).
-- **The status line no longer shows a GitLab fork's merge request as the branch's own.** When a
-  fork had an open merge request from a branch of the same name, the status line could name it.
-  It now names only a merge request from the project itself, as `purlis change show` already
-  did (#711).
-- **Linux no longer waits half a minute for a desktop portal that cannot start.** Before GTK
-  starts, purlis asks the session bus to start the portal and gives it 300 ms. If the bus is
-  still silent, purlis restarts itself without the session bus, and the window comes up in
-  under 2 s where it used to take 26–31 s. For that run there is no tray icon and no desktop
-  notifications, and a second launch is refused rather than handed over. A per-user lock keeps
-  that refusal in place without the bus. Cold start is now measured in CI on X and on i3, and
-  every launch is held to the limit (#24).
-- **A run without the session bus says so in the window, and chats keep the bus.** The line at
-  the top names what is off (the tray icon, notifications, a keyring vault from the window,
-  handing a second launch over). purlis asks the bus again after 5, 15 and 45 s, and when the
-  portal answers the line offers **Restart with the full desktop integration**, asking first
-  about any chat that could be mid-turn; purlis never restarts by itself. Chats, and the
-  programs purlis starts itself, get the session bus purlis was given rather than the one it
-  turned off, so a keyring that git or a CLI uses through D-Bus keeps working. On i3 and other
-  X11 sessions with no session bus, purlis now starts on the bus the X display holds, as GTK
-  would, so notifications reach a notification daemon started from the window manager's config
-  (#746).
-- **The guard that stops a live substitution in `purlis change create` or `drop` no longer
-  says `purlis change` is missing.** It has shipped since 0.4.0; what is not in this version
-  yet is `purlis change push`, which will write the `why` into request bodies (#571).
-- **A heredoc `cat` reads inside a quoted command substitution is read as data.**
-  `x="$(cat <<'EOF' … EOF)"` no longer has `purlis handoff` in its body refused as a handoff a
-  shell runs. The guard now reads the program that opens a heredoc inside `"$( … )"` as the
-  command in the substitution, and still refuses the body when either that command or the one
-  the substitution stands in runs it: a shell (anywhere in that command's words), `ssh`, `su`,
-  `runuser`, `script`, `source` or `.`, a program it cannot name, or the substitution standing
-  in the program's place, prefixes included. A live substitution in a body two shells read
-  differently is searched too (#488).
+- **A slow machine or runner no longer fails a chat's start.** The dialog says "Starting the session
+  host…" for as long as it takes, Cancel works throughout, and it shows an error only when the host
+  has actually failed. A chat that comes up after you cancel is closed.
+- **A clone and a removal at the same moment no longer lose a workspace's repo.** Cloning a repo
+  into a workspace and removing another from it both rewrite the workspace's `workspace.json`.
+  When the two ran at once, from the window and a terminal for example, the later write could put
+  back the list the earlier one had changed, so a repo it had just recorded or removed came back
+  or went missing. Each now waits for the other (#1249).
+- **Two writes to one keyring vault never lose each other's secret.** A `secret set`, a
+  `secret delete` and the move of an item under purlis's access rule now take the vault's own
+  lock, so a write that lands while another is in progress, or while an item is being moved,
+  waits for it instead of being overwritten with an older value. The wait is bounded: a writer
+  still held up after ten seconds is refused and writes nothing (#1180).
+- **A paste in a chat no longer quits purlis on macOS.** When macOS raised an error of its own
+  while it handled a key (seen on Cmd+V under macOS 27), purlis quit with "purlis quit
+  unexpectedly". macOS now reports the error and purlis keeps running. A fault in purlis itself
+  still ends the app, as before.
+- **Quitting while a launch is still putting chats back keeps every chat** (#3114). A chat whose
+  start finished just as purlis quit could drop out of the record of open chats, and the next
+  launch did not put it back. It is now kept as a chat still to start, in its place on the strip
+  and in front if it was.
+- **A request-mode save no longer blocks for good after the plane's history is rewritten.** When
+  the save branch on the remote holds only commits the plane already has under new shas (the same
+  changes, rewritten with new dates), the save pushes over it instead of saying it "has commits
+  this clone did not push there". A commit on it that the plane does not have still blocks the
+  save.
+- **A message to or from a dispatched task is no longer lost when the app does not answer.**
+  `tell`, `note`, `ask` and `answer`, and their tools, are queued and delivered, in order and
+  once, when the app next hears from the chat; the sender is told the message is queued, not
+  yet delivered, and `purlis dispatch list` shows each message as queued, delivered or
+  undeliverable, with why (#3902).
+- **Plain-file and reference vaults no longer look empty after your project's state folder
+  moves.** A vault records its file as `.charter/vaults/<name>.json`, and moving the state folder
+  to `.purlis/` left that record pointing at nothing, so the vault read as empty and the next
+  `secret set` could start a second file. A vault file under the state folder is now read and
+  written in the folder the project has, under either name, with nothing to rewrite. A vault file
+  that is missing after values were written to it is now refused with its path, instead of being
+  read as an empty vault (#1285).
+- **A project whose chats hang as they start no longer holds up every other project's chats at a
+  launch.** One project's chats take all the places a launch starts chats in but one, so the
+  other projects' chats come back at once instead of one project at a time, minutes apart. A
+  launch now starts three or four chats at once, by the machine's cores (#4986).
+- **An older runner's chats' conversations are no longer lost when it had already stopped.** After
+  an update or a Replace, a runner that had stopped first, for a suspend or because its container
+  was removed outside purlis, was removed with its home and every conversation its chats left
+  there. Now purlis looks in that home first: where it holds a conversation, the runner is kept,
+  and Devices offers Bring back conversations, which puts them in the pool's runner's home where
+  their harness resumes them and then removes the old runner, or Discard…, which asks twice. A home with no conversation goes as before.
+  opencode's conversations are kept but not brought back. Replace no longer keeps a runner already
+  stopped whose home holds none.
+- **purlis no longer makes macOS ask whether it may "access data from other apps" for a
+  1Password vault read through a service-account token.** The 1Password CLI read the
+  1Password app's settings from that app's container on every run; purlis now tells it not
+  to when the run signs in with a service-account token (#1654).
+- **Typing into a chat no longer freezes the window while its session host is slow.** A pane's
+  keys, paste, mouse, resizes and its view going on and off screen used to wait for the session
+  host's answer before the window could draw again, for up to 30 seconds on a host that was busy
+  or coming up. Each chat now has a queue of its own: what you send goes in at once, reaches the
+  chat in the order you sent it, and other chats and the window carry on meanwhile. When it
+  cannot reach the chat, because its runner is reconnecting or the host refused it, the chat's
+  pane says so with the reason (#4734).
 
 ### Security
 
-- **The floor guard refuses more ways an unattended agent could merge.** When nobody is
-  watching (`bypassPermissions`), a forge API call to a merge endpoint, a setting that makes a
-  pull or merge request merge on its own later (auto-merge, a merge queue or train), an alias
-  that stands for a held command or the start of one, and the same commands inside a script a
-  shell runs or a command substitution are refused, as `gh pr merge` already was. A forge API call whose effect on a merge
-  purlis cannot read is refused too. Reads, opening a request and ordinary pushes are
-  unchanged, and attended use is untouched (#866).
+- **After purlis fills a secret into a page, that browser reaches only the page's site until the
+  page is left or closed.** A route change inside the page keeps the hold, and the filled field
+  can't be copied, cut or dragged out meanwhile. Going back to the page brings it back empty
+  (#5117).
+- **If you run two versions of purlis on one project:** a version from before this change that
+  rewrites this machine's record (`app/sandbox.json`) drops the grants you limited to a
+  workspace and what you accepted of the project's. Nothing widens: those dispatches ask
+  again (#1505).
+- **A Docker pool runner made before this version keeps working, but its chats' servers do not
+  listen** (unix sockets included) until you remove the runner and add it again. A Kubernetes
+  runner's chats listen nowhere yet (#3413).
+- **A task never starts with its permission prompts off.** A chat running with them off starts
+  its tasks in auto mode, where Claude Code's classifier still judges every tool call, and
+  purlis's sandbox and guards still apply (#3787).
+- **The git purlis runs starts no program a repository's own config names.** A repository's
+  config can name a filter, a diff or merge driver, a signer, an editor, a trailer's command, or
+  what a remote starts at the other end. purlis's own git turned off only the repository's hooks
+  and fsmonitor. Now it turns off every one of these that a repository sets. Your own global and
+  system config is not affected, and the standard Git LFS filter still runs. Where turning a
+  program off cannot leave the command working, purlis stops instead: a merge that needs the
+  repository's merge driver stops on a conflict, a signed save in a repository that names its own
+  signer is refused, and a fetch or push in a repository that names a remote's program is not
+  run (#1805).
+- **A vault's token is given to purlis itself and is kept in the system keyring alone.** A
+  vault set up this way binds no environment variable, so there is no export for a chat's
+  shell to read. The keyring record now also pins the item a vault keeps its secrets in.
+  `vault add --token-stdin` refuses inside a chat before it reads anything (#1527, ADR 0047's
+  2026-10-09 amendment).
+- **An administrator's policy locks sandbox values, and the strictest wins.** purlis reads this
+  machine's `/etc/purlis/policy.json`, only where root owns it and its folder and no one else can
+  write either (never a link), and no chat may write its folder. It can fix the Internet access
+  presets and the hosts any level may add (a project's forges included), and forbid your own
+  hosts, a persona's own hosts, a person's opt-out, and folders granted to a chat. A policy that
+  forbids the opt-out requires the sandbox in every project on that machine. Each locked value
+  shows "Locked by policy" and who set it in Settings › Sandbox, with no control; the new-chat
+  picker, a block's Notice and a held persona's Notice offer nothing policy forbids and still
+  say why and who to ask. A policy file, or its folder, that purlis cannot trust or read locks
+  everything it could lock but the presets (#1343).
+- **A sandboxed chat can no longer author or edit a project's skills at all.** In every
+  harness, a sandboxed chat may never write `.claude/skills/`, `.agents/`, or opencode's
+  `tui.json` and `tui.jsonc`, at any depth. These join the other harness config it already may
+  not write. Each of them can make a later chat, run outside the sandbox, start code (#1057).
+- **A sandboxed Claude Code chat can no longer read or write what waits to be told to another
+  chat.** A dispatched chat's report, and purlis's own word on a dispatch you were asked
+  about, wait in the project's state folder until the chat they are for takes its next turn.
+  That folder is now denied, for reading and writing, to a sandboxed chat of a harness whose
+  hooks run outside its sandbox: a chat could have written a line there that another chat
+  would have read in purlis's voice. purlis's hooks deliver, outside the sandbox.
+- **On Codex and opencode that folder is still readable and writable by a chat.** Their
+  sandbox is a wrap around the whole harness, so the hooks that deliver run inside it and
+  must reach the folder. What holds there is the check each file gets as it is read. The
+  denial reaches them once delivery moves onto the hook socket (#1457).
 - **An unattended agent cannot print the forge token or read other stored secrets.** The CLIs'
   token commands, the auth-status and config reads that show the token, git's credential fill,
   and commands that read the OS keychain or a password store are refused when nobody is
   watching, since a run holding a secret could act where no guard sees it. Attended use is
   untouched (#866).
-- **A guard that cannot answer refuses the call.** The tool-call guards run with a deep stack and
-  a deadline inside the harness's own hook timeout, and the floor bounds how deep it reads a command inside a command, so a line
-  built to exhaust them is refused instead of slipping through when the hook dies (#866).
-- **The handoff guard finds a handoff in a shell's script past the shell's options**, including
-  options that take a value (#866).
-- **The hook channel reads only your own user's connections.** Besides each chat's token, the
-  app now checks which user is on the other end of its hook socket, and closes a connection
-  from any other user before reading it. The socket's private directory already kept other
-  users out; this still holds if that directory's permissions are ever wrong (FD-6, #645).
-
-## [0.4.2] - 2026-09-30
-
-0.4.2 is a hardening release: the release pipeline runs only the code it pinned, a chat starts from an allowlisted environment instead of the app's whole one, a plane save scans every file it commits for secrets, plane trust covers the tools a persona is granted, and hook calls are authenticated per chat.
-
-### Security
-
-- **The release runs only the code it pinned.** Every GitHub Action in purlis's workflows is
-  pinned to a commit rather than a tag, and the release jobs that hold the signing keys restore
-  no build cache (ADR 0042).
 - **A chat starts from an allowlisted environment.** A chat is no longer given the app's whole
   environment minus a few names: it gets a keep-list (`PATH`, `HOME`, the locale, the proxies,
   `XDG_*`, `CHARTER_*` and the like), the variables its harness declares, and whatever the plane's
   `charter.local.toml` lists under `[chat_env] pass`. Cloud, forge and model-provider credentials
   pass only when listed by exact name.
-- **A plane save scans every file it commits.** `purlis save` reads every staged file for
-  secrets, not only memory and refs, and also catches a bare token by its forge's prefix. A hit
-  names the path and line, never the value; a binary or over-10-MiB file outside memory and refs
-  is named as not scanned.
-- **Plane trust covers persona tool grants.** Each persona's `tools:`, with a digest of any
-  `bin/` script a tool names, is part of the approval, and a grant that changed since asks again
-  before it runs without a prompt. Old per-session tool ceilings are removed when a plane opens
-  (ADR 0035).
 - **Hook calls are authenticated per chat.** Each chat gets its own token when it starts, and the
   hook channel accepts a call only with that chat's token.
 
@@ -1841,8 +2075,8 @@ and every settings group that it would have changed says so.
 - No program purlis starts can hold a chat's terminal open after the chat ends.
   ([#105](https://github.com/diazoxide/charter/pull/105))
 
-[Unreleased]: https://github.com/diazoxide/charter/compare/v0.4.2...HEAD
-[0.4.2]: https://github.com/diazoxide/charter/releases/tag/v0.4.2
+[Unreleased]: https://github.com/purlis/purlis/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/purlis/purlis/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/diazoxide/charter/releases/tag/v0.4.1
 [0.4.0]: https://github.com/diazoxide/charter/releases/tag/v0.4.0
 [0.3.0]: https://github.com/diazoxide/charter/releases/tag/v0.3.0
