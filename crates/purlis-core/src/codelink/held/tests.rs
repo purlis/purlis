@@ -1515,11 +1515,19 @@ fn too_many_files_of_its_users_own_where_it_may_not_write_are_said() {
     if the_runners_user() == 0 {
         return;
     }
+    use std::os::unix::fs::PermissionsExt;
     let (_dir, root, home, _) = a_runners_root();
     std::fs::create_dir_all(root.join("etc")).unwrap();
     for n in 0..3 {
         std::fs::write(root.join(format!("etc/{n}.conf")), "the image's\n").unwrap();
     }
+    // One it may not write, so the folder can't be recorded in place of its files (#5112).
+    std::fs::write(root.join("etc/shut.conf"), "the image's\n").unwrap();
+    std::fs::set_permissions(
+        root.join("etc/shut.conf"),
+        std::fs::Permissions::from_mode(0o444),
+    )
+    .unwrap();
     let _shut = Shut::folders(
         &root,
         &[
@@ -1533,18 +1541,159 @@ fn too_many_files_of_its_users_own_where_it_may_not_write_are_said() {
         ],
     );
     let since = std::time::SystemTime::now();
+    // As another user's image: the test's own files are another's to the walk.
     let beyond = Beyond {
         root: &root,
-        owner: the_runners_user(),
+        owner: the_runners_user().wrapping_add(1),
     };
 
-    let found = writable_bounded(beyond, std::slice::from_ref(&home), since, 100, 2, false);
+    let found = writable_bounded(beyond, std::slice::from_ref(&home), since, 100, 2, true);
 
     assert!(!found.whole(), "{found:?}");
     let said = outside_with(&home, None, &[], Some(since), Some((beyond, &found)));
     assert!(says(&said, "more than 2 files"), "{said:?}");
-    let whole = writable_bounded(beyond, std::slice::from_ref(&home), since, 100, 10, false);
+    let whole = writable_bounded(beyond, std::slice::from_ref(&home), since, 100, 10, true);
     assert!(whole.whole(), "{whole:?}");
+}
+
+/// A root as an image with its files open to the runner's user and its folders shut: `files` are
+/// written, then each folder of `folders` and those above them are shut.
+#[cfg(unix)]
+fn an_image_of_open_files(root: &Path, files: &[String], folders: &[&str]) -> Shut {
+    for file in files {
+        let at = root.join(file);
+        std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+        std::fs::write(at, "as the image had it\n").unwrap();
+    }
+    let mut shut = vec!["", "usr", "usr/share", "usr/share/doc", "var", "var/lib"];
+    shut.extend_from_slice(folders);
+    Shut::folders(root, &shut)
+}
+
+/// **More files it may change than it records, all in one folder it may not write, are looked
+/// through whole** (#5112): the folder is recorded once and its files looked at at each check, so
+/// the look can be kept, and a change to any one of them keeps the runner.
+#[cfg(unix)]
+#[test]
+fn more_files_it_may_change_than_the_bound_in_one_folder_are_looked_through_whole() {
+    if the_runners_user() == 0 {
+        return;
+    }
+    let (_dir, root, home, _) = a_runners_root();
+    let files: Vec<String> = (0..5).map(|n| format!("opt/app/{n}.conf")).collect();
+    let _shut = an_image_of_open_files(&root, &files, &["opt", "opt/app"]);
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let since = std::time::SystemTime::now();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let beyond = Beyond {
+        root: &root,
+        owner: the_runners_user().wrapping_add(1),
+    };
+
+    let found = writable_bounded(
+        beyond,
+        std::slice::from_ref(&home),
+        since,
+        MOST_IMAGE_FOLDERS,
+        2,
+        true,
+    );
+
+    assert!(found.whole(), "{found:?}");
+    let look = || outside_with(&home, None, &[], Some(since), Some((beyond, &found)));
+    assert_eq!(look(), Vec::<String>::new());
+
+    std::fs::write(root.join("opt/app/3.conf"), "as the task left it\n").unwrap();
+    let said = look();
+    assert!(says(&said, "/opt/app/3.conf"), "{said:?}");
+    assert!(!says(&said, "/opt/app/2.conf"), "{said:?}");
+}
+
+/// **A folder recorded holds its one bound with the files** (#5112): each is one more thing kept,
+/// so more of them than the bound are said and not whole, and what it keeps stays bounded.
+#[cfg(unix)]
+#[test]
+fn more_such_folders_than_the_bound_are_said() {
+    if the_runners_user() == 0 {
+        return;
+    }
+    let (_dir, root, home, _) = a_runners_root();
+    let files: Vec<String> = (0..4).map(|n| format!("opt/{n}/a.conf")).collect();
+    let _shut = an_image_of_open_files(&root, &files, &["opt", "opt/0", "opt/1", "opt/2", "opt/3"]);
+    let since = std::time::SystemTime::now();
+    let beyond = Beyond {
+        root: &root,
+        owner: the_runners_user().wrapping_add(1),
+    };
+
+    let found = writable_bounded(beyond, std::slice::from_ref(&home), since, 100, 2, true);
+
+    assert!(!found.whole(), "{found:?}");
+    let whole = writable_bounded(beyond, std::slice::from_ref(&home), since, 100, 10, true);
+    assert!(whole.whole(), "{whole:?}");
+}
+
+/// **A link another user owns does not stop a folder being recorded** (#5112): its user can't
+/// change one, so it is not a file the folder's "every file" is about, and an image's folders
+/// often hold them.
+#[cfg(unix)]
+#[test]
+fn a_link_of_anothers_does_not_stop_a_folder_being_recorded() {
+    if the_runners_user() == 0 {
+        return;
+    }
+    let (_dir, root, home, _) = a_runners_root();
+    let files: Vec<String> = (0..3).map(|n| format!("opt/{n}.conf")).collect();
+    for file in &files {
+        std::fs::create_dir_all(root.join("opt")).unwrap();
+        std::fs::write(root.join(file), "as the image had it\n").unwrap();
+    }
+    std::os::unix::fs::symlink("0.conf", root.join("opt/link")).unwrap();
+    let _shut = an_image_of_open_files(&root, &[], &["opt"]);
+    let since = std::time::SystemTime::now();
+    let beyond = Beyond {
+        root: &root,
+        owner: the_runners_user().wrapping_add(1),
+    };
+
+    let found = writable_bounded(beyond, std::slice::from_ref(&home), since, 100, 2, true);
+
+    assert!(found.whole(), "{found:?}");
+}
+
+/// **A folder recorded is looked at by the same rules as the walk that found it** (#5112): a
+/// hidden file of a program's own in `/root` stays left out, and a folder within is its own.
+#[cfg(unix)]
+#[test]
+fn a_recorded_folder_leaves_out_what_the_walk_left_out_and_looks_at_its_folders_apart() {
+    if the_runners_user() == 0 {
+        return;
+    }
+    let (_dir, root, home, _) = a_runners_root();
+    let files = [
+        "root/.tool".to_owned(),
+        "root/a.conf".to_owned(),
+        "root/within/b.conf".to_owned(),
+    ];
+    let _shut = an_image_of_open_files(&root, &files, &["root", "root/within"]);
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let since = std::time::SystemTime::now();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let beyond = Beyond {
+        root: &root,
+        owner: the_runners_user().wrapping_add(1),
+    };
+    let found = writable_bounded(beyond, std::slice::from_ref(&home), since, 100, 10, true);
+    assert!(found.whole(), "{found:?}");
+    let look = || outside_with(&home, None, &[], Some(since), Some((beyond, &found)));
+
+    std::fs::write(root.join("root/.tool"), "a program's own\n").unwrap();
+    assert_eq!(look(), Vec::<String>::new());
+
+    std::fs::write(root.join("root/within/b.conf"), "as the task left it\n").unwrap();
+    let said = look();
+    assert!(says(&said, "/root/within/b.conf"), "{said:?}");
+    assert!(!says(&said, "/root/a.conf"), "{said:?}");
 }
 
 /// **A file another user owns that the runner's user may write, where it may not write in the
