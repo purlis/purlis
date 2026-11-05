@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793870029494,
+  "lastUpdate": 1793873692185,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -39942,6 +39942,48 @@ window.BENCHMARK_DATA = {
             "value": 102.1839935,
             "unit": "ms",
             "extra": "median of 5 runs: 101.331, 101.705, 102.184, 102.563, 103.343 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "7f57f8ecb1c15bc4cf6c4d375b55f6952b78dc1f",
+          "message": "L10 is judged on a real Mac, and CI guards its median (#4351) (#5275)\n\nThe person's ruling of 2026-11-05. On macOS CI each harness's median must stay under 800 ms, and the p95 is still said but not judged. Linux has no limit yet. Anywhere CI is not true the 300 ms bar judges as before.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQ7CQ2QWW7W99KZZ8DR168\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-05T08:44:19Z",
+          "tree_id": "35e9c52501ecce98a83bf340739c4b65e8cd2ea7",
+          "url": "https://github.com/purlis/purlis/commit/7f57f8ecb1c15bc4cf6c4d375b55f6952b78dc1f"
+        },
+        "date": 1793873688380,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5537625,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.538, 0.544, 0.554, 0.554, 0.555 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4323335,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.210, 16.409, 16.432, 16.490, 16.522 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.24285049999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.778, 100.971, 101.243, 101.495, 102.330 ms"
           }
         ]
       }
