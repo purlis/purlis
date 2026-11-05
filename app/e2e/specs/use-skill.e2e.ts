@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { focusedChat, openChatList, pressMenuPath, ROW } from "../menus.js";
+import { focusedChat, openChatList, pressMenuPath, ROW, SUB } from "../menus.js";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { showView } from "../opening.js";
@@ -188,7 +188,7 @@ describe("Use skill…", function () {
     await browser.keys(["Escape"]);
     // The foot's warning presses this same row, and is drawn only while the set needs the person.
     await openChatList();
-    await pressMenuPath(ROW.skills);
+    await pressMenuPath(SUB.open, ROW.skills);
     // The one answer to what the chat gets: the sidebar's Skills view, on this chat, with its
     // budget under whose set it is. Use skill… does not open.
     const view = await $('[data-testid="skills-view"]');

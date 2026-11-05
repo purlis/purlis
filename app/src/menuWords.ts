@@ -98,7 +98,7 @@ export const SAID = {
 
 /** The rows that open a submenu, and what the submenu's own tooltip says. */
 export const SUBMENU = {
-  open: { said: "Open", tip: "Each opens in a tab of its own." },
+  open: { said: "Open", tip: "Each shows something of this chat, and changes nothing it runs." },
   ask: {
     said: "Ask",
     tip: "A task starts as the persona you pick, and its report comes back to this chat.",

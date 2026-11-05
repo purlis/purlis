@@ -242,10 +242,9 @@ describe("a chat's list, and a tab's menu", () => {
     const sub = await measured();
     if (sub === null) throw new Error("the submenu closed");
 
-    // The harness's card, which the pane foot's harness presses (#5204), then what it reads.
-    const [card, ...reads] = sub.rows.map((row) => row.name);
-    expect(card).toMatch(/^What .+ can do here$/);
-    expect(reads).toEqual([ROW.activity, ROW.network]);
+    // What the pane foot presses (#5204), then what it reads, whatever else the chat has.
+    expect(sub.rows.map((row) => row.name).slice(-2)).toEqual([ROW.activity, ROW.network]);
+    expect(sub.rows.map((row) => row.name)).toContain(ROW.skills);
     expect(sub.top).toBeGreaterThanOrEqual(0);
     expect(sub.bottom).toBeLessThanOrEqual(sub.window);
     expect(sub.right).toBeLessThanOrEqual(sub.across);

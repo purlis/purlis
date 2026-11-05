@@ -343,7 +343,6 @@ describe("a menu on screen", () => {
       "Ask",
       // Where it is drawn, by the keys (#4764).
       "Place…",
-      "Focus workspace beta",
       "Open",
       "Restart",
       "Stop",
