@@ -2028,12 +2028,7 @@ fn adopting_into_a_plane_whose_workspaces_folder_leads_out_of_it_refuses_rather_
     std::os::unix::fs::symlink(&outside, root.join("workspaces")).unwrap();
     let source = dir.path().join("api");
     std::fs::create_dir_all(&source).unwrap();
-    let init = std::process::Command::new("git")
-        .args(["init", "-q", "-b", "main"])
-        .current_dir(&source)
-        .status()
-        .unwrap();
-    assert!(init.success());
+    git(&source, &["init", "-q", "-b", "main"]);
 
     let refused = adopt_as_workspace(&root, &source, chrono::Utc::now())
         .expect_err("no workspace can be made through a link out of the plane");
