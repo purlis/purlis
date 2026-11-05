@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793881111211,
+  "lastUpdate": 1793883627295,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -40110,6 +40110,48 @@ window.BENCHMARK_DATA = {
             "value": 101.93152599999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.526, 101.716, 101.932, 102.142, 102.506 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a68943fcb1c6b7dc157b95fb9bc07ed47cd51eb3",
+          "message": "The rest of the pane foot: its parts, each kind of pane, and a narrow pane's drops (#5204, #5205, #5206) (#5279)\n\n* The rest of the pane foot, each part a shortcut (#5204)\n\nWhere the chat came from, what the Skill studio started it for, its work item, its skills warning and its sandbox move from the head to the foot. Each part that can be pressed runs a row of the chat's list, and the rows it needs and the list lacked are added to it and the palette. The foot is a group named for its chat, after the terminal in Tab order.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N01PFHZSK60GARDAQS5KJ0\nPurlis-Persona: steward\n\n* The pane foot for each kind of pane (#5205)\n\nA task's foot says the task and names the chat that asked. An ended chat keeps its foot, its gauge frozen at its last values, greyed and marked ended, though the core has let go of a chat closed on purpose. A folded pane, a view, an empty pane, a shell and a one-job program draw none; a pane that unfolds has its foot back; a tab window draws the same.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N01PFHZSK60GARDAQS5KJ0\nPurlis-Persona: steward\n\n* A narrow pane drops parts from its head and its foot (#5206)\n\nThe foot drops cache, shrinks the skills warning to its sign, drops where it came from, then the workspace, at widths measured on the default theme with the longest case: 520, 450, 400 and 270 px. The head's order loses its workspace step, and the head's actions join the pane's model, so Split down's drop comes from one place. A view's and a task's grouping get their window tests.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N01PFHZSK60GARDAQS5KJ0\nPurlis-Persona: steward\n\n* The pane foot: what the two-axis review found (#5204, #5205, #5206)\n\nAn ended chat's foot keeps what it knew when its pane is drawn anew, as a tab comes back or a side unfolds. A skills warning or studio chip with no row is its words alone. Handed-off chats with a path of one keep their from. The skills warning draws no icon in an inline button: its sign is a word, and a narrow pane's is an icon button. The foot's stories walk the keyboard and wait for what they picture, and stale comments moved with their chips.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N01PFHZSK60GARDAQS5KJ0\nPurlis-Persona: steward\n\n* The foot's stories name their rows as the catalogue does; the second ADR 0111 says whose amendments its folder holds\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N01PFHZSK60GARDAQS5KJ0\nPurlis-Persona: steward\n\n* The pane's head and foot record is ADR 0112: the other record keeps 0111\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N01PFHZSK60GARDAQS5KJ0\nPurlis-Persona: steward\n\n* The foot's stories walk from the terminal and leave no focus in their pictures; the band's story reaches the bell from the control after it\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N01PFHZSK60GARDAQS5KJ0\nPurlis-Persona: steward\n\n* A narrow pane's warning sign draws no ground at rest, and the band's and studio chip's stories picture their controls at rest\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N01PFHZSK60GARDAQS5KJ0\nPurlis-Persona: steward\n\n* The pane's record stays ADR 0111: main gave the other record 0112\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N01PFHZSK60GARDAQS5KJ0\nPurlis-Persona: steward\n\n* Baselines of the foot's, the band's and the studio chip's stories, and the band's Actions story pictures its controls under the keyboard\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N01PFHZSK60GARDAQS5KJ0\nPurlis-Persona: steward\n\n* Baselines of the band's Actions story\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N01PFHZSK60GARDAQS5KJ0\nPurlis-Persona: steward\n\n* Skills and Focus workspace sit beside Open in a chat's list, since neither opens a tab; the scenarios say so\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6N01PFHZSK60GARDAQS5KJ0\nPurlis-Persona: steward\n\n* The foot's rows fold into a chat's Open: its list stays at ten rows\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6N01PFHZSK60GARDAQS5KJ0\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-05T12:24:36Z",
+          "tree_id": "1ded951624457c74b2154706ab7d8f8e2358c4d1",
+          "url": "https://github.com/purlis/purlis/commit/a68943fcb1c6b7dc157b95fb9bc07ed47cd51eb3"
+        },
+        "date": 1793883621969,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6328595,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.596, 0.620, 0.633, 0.640, 0.650 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.637777999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.552, 16.615, 16.638, 16.642, 16.670 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.401218,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.908, 102.178, 102.401, 102.669, 102.752 ms"
           }
         ]
       }
