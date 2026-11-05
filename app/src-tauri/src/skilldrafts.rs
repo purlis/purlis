@@ -29,6 +29,7 @@ use serde::Serialize;
 use specta::Type;
 
 use purlis_core::hookwire::{Answer, ProposeAsk};
+use purlis_core::reopen::{StudioJob, StudioWork};
 use purlis_core::skills::verbs::drafts;
 
 use crate::curation::{ChatTyped, Curating, StartRefused};
@@ -55,6 +56,8 @@ pub fn drafted(held: &Held, ask: &ProposeAsk) -> Option<Answer> {
     }
     Some(match drafts::take(root, ask.chat, &file, &ask.change) {
         Ok(_) => {
+            // A studio chat's job is done once its draft came, for good (#5185).
+            held.chats().studio_job_done(ask.chat);
             // The studio and the chat's tab read the drafts again when the asks move.
             held.chats().asks_may_have_moved();
             Answer::Said {
@@ -64,6 +67,48 @@ pub fn drafted(held: &Held, ask: &ProposeAsk) -> Option<Answer> {
         }
         Err(why) => Answer::No { why },
     })
+}
+
+/// **What the Skill studio started a chat for** (#5185), as the window reads it off the chat:
+/// its header's chip, the skill page's running line and its Runs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct StudioLink {
+    /// The skill, by its name: `None` for a new skill's draft.
+    pub skill: Option<String>,
+    pub level: SkillLevel,
+    pub job: StudioJobKind,
+    /// Whether the chat wrote its draft: once true, never running again.
+    pub done: bool,
+}
+
+/// The studio's jobs a chat is started for: [`StudioWork`], by the record's words.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum StudioJobKind {
+    Draft,
+    TriggerTests,
+    OutcomeEvals,
+    Checks,
+    Improve,
+    Redo,
+}
+
+impl From<&StudioJob> for StudioLink {
+    fn from(job: &StudioJob) -> StudioLink {
+        StudioLink {
+            skill: job.skill.clone(),
+            level: (&job.level).into(),
+            job: match job.job {
+                StudioWork::Draft => StudioJobKind::Draft,
+                StudioWork::TriggerTests => StudioJobKind::TriggerTests,
+                StudioWork::OutcomeEvals => StudioJobKind::OutcomeEvals,
+                StudioWork::Checks => StudioJobKind::Checks,
+                StudioWork::Improve => StudioJobKind::Improve,
+                StudioWork::Redo => StudioJobKind::Redo,
+            },
+            done: job.done,
+        }
+    }
 }
 
 /// One draft skill, as the studio lists it.
@@ -292,8 +337,8 @@ pub(crate) async fn skill_draft_reject(
     .await
 }
 
-/// **"Ask a chat to draft a skill"** (decision 13): a chat where `level`'s skills are reached
-/// from (the project's root, or the workspace's folder), on the project's default profile, with
+/// **"Ask a chat to draft a skill"** (decision 13): a chat where `level`'s skills live (#5184: the
+/// project's root, the workspace's folder, or as the persona), on the project's default profile, with
 /// the core's prompt typed and never sent, ending with `what` the skill should do where New
 /// skill… asked it (S4, #3684).
 #[tauri::command]
@@ -311,18 +356,26 @@ pub(crate) async fn skill_draft_chat(
         crate::skillchange::flag_on()?;
         let root = held.root().to_path_buf();
         let level: purlis_core::skills::verbs::Level = (&level).into();
-        let cwd = where_level_is_reached(&root, &level)?;
+        let (cwd, persona) = where_the_skill_lives(&root, &level)?;
         let (profile, _) = crate::curation::default_profile(&root, "no chat was opened")?;
+        let asked = drafts::asking(&level, &what);
         open(
             &held,
             ChatTyped {
                 profile,
-                persona: None,
+                persona,
                 cwd,
                 label: "Draft a skill".to_owned(),
-                prompt: drafts::asking(&level, &what),
+                prompt: asked.sentence.clone(),
+                skill: Some(asked),
                 then_a_space: false,
                 starts_runs: None,
+                studio: Some(StudioJob {
+                    skill: None,
+                    level: level.clone(),
+                    job: StudioWork::Draft,
+                    done: false,
+                }),
             },
             purlis_core::engine::Size { columns, rows },
         )
@@ -351,7 +404,7 @@ pub(crate) async fn skill_trigger_tests_chat(
         let prompt = drafts::asking_for_trigger_tests(held.root(), &level, &name)?;
         open_on_a_skill(
             &held,
-            &level,
+            on_a_skill(&level, &name, StudioWork::TriggerTests),
             format!("Trigger tests of {name}"),
             prompt,
             purlis_core::engine::Size { columns, rows },
@@ -380,7 +433,7 @@ pub(crate) async fn skill_outcome_evals_chat(
         let prompt = drafts::asking_for_outcome_evals(held.root(), &level, &name)?;
         open_on_a_skill(
             &held,
-            &level,
+            on_a_skill(&level, &name, StudioWork::OutcomeEvals),
             format!("Outcome evals of {name}"),
             prompt,
             purlis_core::engine::Size { columns, rows },
@@ -410,7 +463,7 @@ pub(crate) async fn skill_checks_chat(
         let prompt = drafts::asking_for_checks(held.root(), &level, &name)?;
         open_on_a_skill(
             &held,
-            &level,
+            on_a_skill(&level, &name, StudioWork::Checks),
             format!("Checks of {name}"),
             prompt,
             purlis_core::engine::Size { columns, rows },
@@ -440,7 +493,7 @@ pub(crate) async fn skill_improve_chat(
         let prompt = drafts::improving_from_runs(held.root(), &level, &name)?;
         open_on_a_skill(
             &held,
-            &level,
+            on_a_skill(&level, &name, StudioWork::Improve),
             format!("Improve {name}"),
             prompt,
             purlis_core::engine::Size { columns, rows },
@@ -449,28 +502,44 @@ pub(crate) async fn skill_improve_chat(
     .await
 }
 
-/// A chat where `level`'s skills are reached from, on the project's default profile, with `prompt`
-/// typed and never sent.
+/// The job `work` on the skill `name` at `level`, not done yet.
+fn on_a_skill(
+    level: &purlis_core::skills::verbs::Level,
+    name: &str,
+    work: StudioWork,
+) -> StudioJob {
+    StudioJob {
+        skill: Some(name.to_owned()),
+        level: level.clone(),
+        job: work,
+        done: false,
+    }
+}
+
+/// A chat where the skill of `job` lives, on the project's default profile, with `prompt` typed
+/// and never sent, and `job` on its record (#5185).
 fn open_on_a_skill(
     held: &Arc<Held>,
-    level: &purlis_core::skills::verbs::Level,
+    job: StudioJob,
     label: String,
-    prompt: String,
+    skill: purlis_core::skillprompt::SkillPrompt,
     size: purlis_core::engine::Size,
 ) -> Result<Curating, StartRefused> {
     let root = held.root();
-    let cwd = where_level_is_reached(root, level)?;
+    let (cwd, persona) = where_the_skill_lives(root, &job.level)?;
     let (profile, _) = crate::curation::default_profile(root, "no chat was opened")?;
     open(
         held,
         ChatTyped {
             profile,
-            persona: None,
+            persona,
             cwd,
             label,
-            prompt,
+            prompt: skill.sentence.clone(),
+            skill: Some(skill),
             then_a_space: false,
             starts_runs: None,
+            studio: Some(job),
         },
         size,
     )
@@ -505,6 +574,7 @@ pub(crate) async fn skill_draft_try(
         let draft = drafts::one(&root, &id)?;
         let profile = try_profile(&held, &draft, profile)?;
         let tried = drafts::try_out(&root, &id)?;
+        let asked = drafts::trying(&root, &tried, &draft.name);
         let started = open(
             &held,
             ChatTyped {
@@ -512,9 +582,11 @@ pub(crate) async fn skill_draft_try(
                 persona: None,
                 cwd: tried.piece.clone(),
                 label: format!("Try {}", draft.name),
-                prompt: drafts::trying(&draft.name),
+                prompt: asked.sentence.clone(),
+                skill: Some(asked),
                 then_a_space: false,
                 starts_runs: None,
+                studio: None,
             },
             purlis_core::engine::Size { columns, rows },
         );
@@ -581,7 +653,7 @@ pub(crate) fn skill_draft_redo_in(
     crate::references::typed_or_copied(
         &held,
         session,
-        drafts::redoing(&draft.level, &draft.name, &stale_of(&draft), true),
+        drafts::redoing_in_its_chat(&draft.level, &draft.name, &stale_of(&draft)),
         REDO_COPIED,
         &|text| clipboard.put_text(text),
     )
@@ -626,18 +698,26 @@ pub(crate) async fn skill_draft_redo(
         crate::skillchange::flag_on()?;
         let root = held.root().to_path_buf();
         let draft = drafts::one(&root, &id)?;
-        let cwd = where_level_is_reached(&root, &draft.level)?;
+        let (cwd, persona) = where_the_skill_lives(&root, &draft.level)?;
         let (profile, _) = crate::curation::default_profile(&root, "no chat was opened")?;
+        let asked = drafts::redoing(&draft.level, &draft.name, &stale_of(&draft));
         open(
             &held,
             ChatTyped {
                 profile,
-                persona: None,
+                persona,
                 cwd,
                 label: format!("Redo {}", draft.name),
-                prompt: drafts::redoing(&draft.level, &draft.name, &stale_of(&draft), false),
+                prompt: asked.sentence.clone(),
+                skill: Some(asked),
                 then_a_space: false,
                 starts_runs: None,
+                studio: Some(StudioJob {
+                    skill: Some(draft.name.clone()),
+                    level: draft.level.clone(),
+                    job: StudioWork::Redo,
+                    done: false,
+                }),
             },
             purlis_core::engine::Size { columns, rows },
         )
@@ -645,19 +725,29 @@ pub(crate) async fn skill_draft_redo(
     .await
 }
 
-/// Where a chat that writes `level`'s skills starts: the project's root, or its workspace's
-/// folder.
-fn where_level_is_reached(
+/// **Where a chat the studio starts for a skill of `level` starts** (#5184): where the skill
+/// lives. A project's skill at the project's root, a workspace's in its workspace's folder, and a
+/// persona's at the project's root as that persona, the only chats its skills reach. The folder,
+/// and the persona it runs as.
+fn where_the_skill_lives(
     root: &std::path::Path,
     level: &purlis_core::skills::verbs::Level,
-) -> Result<std::path::PathBuf, String> {
+) -> Result<(std::path::PathBuf, Option<String>), String> {
+    if let Some(persona) = level.at.persona() {
+        return Ok((root.to_path_buf(), Some(persona.to_owned())));
+    }
     match level.at.workspace() {
-        None => Ok(root.to_path_buf()),
-        Some(ws) => Ok(purlis_core::workspaces::Plane::open(root)
-            .workspace(ws)
-            .map_err(|_| format!("this project has no workspace {ws:?}, so no chat was opened"))?
-            .dir()
-            .to_path_buf()),
+        None => Ok((root.to_path_buf(), None)),
+        Some(ws) => Ok((
+            purlis_core::workspaces::Plane::open(root)
+                .workspace(ws)
+                .map_err(|_| {
+                    format!("this project has no workspace {ws:?}, so no chat was opened")
+                })?
+                .dir()
+                .to_path_buf(),
+            None,
+        )),
     }
 }
 
@@ -670,6 +760,7 @@ fn open(
 ) -> Result<Curating, StartRefused> {
     let root = held.root().to_path_buf();
     let (label, cwd, profile) = (chat.label.clone(), chat.cwd.clone(), chat.profile.clone());
+    let persona = chat.persona.clone();
     let typed =
         crate::curation::start_typed(held, chat, size, crate::curation::when_typed, |why| {
             format!("{why}, so nothing was typed and no chat was opened.")
@@ -679,7 +770,7 @@ fn open(
         session: typed.session,
         name: typed.name,
         label,
-        persona: None,
+        persona,
         harness: typed.ready.declaration().map(|d| d.name.clone()),
         workspace: purlis_core::workspaces::Plane::open(&root).workspace_of(&cwd),
     })
@@ -800,6 +891,65 @@ mod tests {
         noted_long_ago(plane.path(), CHAT);
         sweep(plane.path(), &none_open, &skills_now);
         assert_eq!(skills_now.forgotten(), 1);
+    }
+
+    #[test]
+    fn a_project_skills_chat_starts_at_the_projects_root_as_no_persona() {
+        // #5184: a studio chat starts where the skill lives.
+        let plane = a_plane();
+
+        let at = where_the_skill_lives(plane.path(), &purlis_core::skills::verbs::Level::project())
+            .expect("a place");
+
+        assert_eq!(at, (plane.path().to_path_buf(), None));
+    }
+
+    #[test]
+    fn a_workspace_skills_chat_starts_in_its_workspaces_folder() {
+        let plane = a_plane();
+
+        let at = where_the_skill_lives(
+            plane.path(),
+            &purlis_core::skills::verbs::Level::workspace("ops"),
+        )
+        .expect("a place");
+
+        assert_eq!(at, (plane.path().join("workspaces/ops"), None));
+    }
+
+    #[test]
+    fn a_persona_skills_chat_starts_at_the_projects_root_as_that_persona() {
+        // #5184: a persona's skills reach only the chats that run as it, so its chat is one.
+        let plane = a_plane();
+
+        let at = where_the_skill_lives(
+            plane.path(),
+            &purlis_core::skills::verbs::Level::persona("steward"),
+        )
+        .expect("a place");
+
+        assert_eq!(at, (plane.path().to_path_buf(), Some("steward".to_owned())));
+    }
+
+    #[test]
+    fn the_window_reads_a_studio_chats_skill_level_and_job_off_its_record() {
+        // #5185: what the chat's chip and the skill page's line are drawn from.
+        let link = StudioLink::from(&StudioJob {
+            skill: Some("test-design".to_owned()),
+            level: purlis_core::skills::verbs::Level::workspace("purlis-demo"),
+            job: StudioWork::OutcomeEvals,
+            done: false,
+        });
+
+        assert_eq!(
+            serde_json::to_value(link).expect("json"),
+            serde_json::json!({
+                "skill": "test-design",
+                "level": {"at": "workspace", "name": "purlis-demo", "local": false},
+                "job": "outcome-evals",
+                "done": false,
+            })
+        );
     }
 
     /// Makes the record of `id` look as if it was written long ago, past the sweep's grace.

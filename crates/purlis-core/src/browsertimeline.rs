@@ -221,6 +221,22 @@ pub fn signed_in(browser: &str, login: &str, at: u64) -> Happened {
     )
 }
 
+/// **purlis opened `browser` for login `login`, which is kept for later reuse, and `left` stays
+/// open** (#5121, SF-7): why the login isn't in the browser the person was watching, and that the
+/// other one is theirs to close.
+pub fn opened_to_keep(browser: &str, login: &str, left: &str, at: u64) -> Happened {
+    plain(
+        browser,
+        By::Purlis,
+        &format!(
+            "purlis opened {browser} for {}, which is kept for later and opens in a browser of its \
+             own. {left} is still open: close it if you no longer need it",
+            cut_to(login, MOST_TARGET_CHARS)
+        ),
+        at,
+    )
+}
+
 /// **purlis filled vault key `key`, or the 2FA code its seed made, into field `target` of
 /// `browser`, on site `origin`** (#5115, #5118, #5119, SF-8): the key's name, the field and the
 /// site it went to, never a value.
@@ -319,7 +335,8 @@ fn did(act: &Act, signed_in: bool) -> Option<String> {
         | Act::Pages
         | Act::Downloads
         | Act::WaitForText { .. }
-        | Act::DescribeField { .. } => return None,
+        | Act::DescribeField { .. }
+        | Act::AsksToSignIn => return None,
         Act::Open { address: to } | Act::FindLoginForm { address: to } => {
             format!("Opened {}", address(to))
         }

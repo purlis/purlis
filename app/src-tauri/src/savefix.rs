@@ -279,6 +279,8 @@ fn start(
             prompt: purlis_core::savefix::prompt(trouble),
             then_a_space: false,
             starts_runs: None,
+            studio: None,
+            skill: None,
         },
         size,
         SentFor::FixASave,

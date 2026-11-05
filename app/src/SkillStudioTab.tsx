@@ -46,13 +46,13 @@ import { DraftPage, DraftsList } from "./SkillStudioDrafts";
 import { DeletedList, DeletedPage } from "./SkillStudioDeleted";
 import { DRAFT_WITH_A_CHAT, NEW_SKILL_MENU } from "./SkillStarts";
 import { NewSkillDialog } from "./NewSkillDialog";
-import { askDraft, askSkillChat, useSkillDraftsRead } from "./skillDraftAsks";
+import { askDraft, askSkillChat, draftLevel, useSkillDraftsRead } from "./skillDraftAsks";
 import { SkillSourcesPage } from "./SkillSources";
 import { ExportDialog, SkillPublishPage } from "./SkillPublish";
 import { NotRead, ReadingRows } from "./SkillPanels";
 import { Select } from "./ui/select/Select";
 import { Choice } from "./settings/components";
-import { labelOf, levelFrom, levelOf, levelsFor, sameLevel } from "./skillChanges";
+import { askAChat, labelOf, levelFrom, levelOf, levelsFor, sameLevel } from "./skillChanges";
 import { DeleteDialog, MoveDialog, RenameDialog } from "./SkillChangeDialogs";
 import {
   SkillPage,
@@ -157,21 +157,32 @@ function searchKeeps(skill: StudioSkill, query: string): boolean {
   return `${skill.name}\n${skill.description}`.toLowerCase().includes(typed);
 }
 
-/** **How many of the Library's rows its first frame draws** (#4351): a tall window's worth at the
- *  usual row height. Two hundred rows took a third of a second to lay out, in which the tab showed
- *  none of them. */
-const FIRST_ROWS = 40;
+/** A Library row's height at its least, near enough: a line for its name and one under it. A row
+ *  drawn smaller than this only leaves the foot of the list to the next frame. */
+const ROW_PX = 40;
+/** The fewest rows a screen is, so a window that gives no height still fills in a few frames. */
+const LEAST_ROWS = 20;
+/** The most rows a screen is, however tall the window: what one frame can build and stay quick. */
+const MOST_ROWS = 40;
+
+/** **How many of the Library's rows make a screen, and so its first frame** (#4351): what the
+ *  window's height can show. Two hundred rows took a third of a second to lay out, in which the
+ *  tab showed none of them, and each row past what shows still delays the first frame. */
+function rowsThatFit(): number {
+  return Math.min(MOST_ROWS, Math.max(LEAST_ROWS, Math.ceil(window.innerHeight / ROW_PX)));
+}
 
 /**
  * **The Library's rows, a screen a frame** (#4351): the first screen at once, then one more
  * screen after each frame has painted, so the tab shows a list at once and no frame waits on the
- * rest. Built in one go, the other hundred and sixty of two hundred held the next frame for a
- * quarter of a second: React Aria builds a collection's rows without yielding. Mounted with the
+ * rest. Built in one go, the rest of two hundred held the next frame for a quarter of a second:
+ * React Aria builds a collection's rows without yielding. Mounted with the
  * list and keyed by scope, so each list it draws starts from the top.
  *
  * The chosen row is drawn on the first frame, with every row before it, wherever the list has
  * it. What is drawn never shrinks while the list stands, so a row drawn stays drawn, and a press,
- * the keyboard and the search box work on the rows there while the rest come.
+ * the keyboard and the search box work on the rows there while the rest come. A screen's size is
+ * read once, as the list is mounted: a window taller than it has the rest a frame on.
  */
 function LibraryRows({
   rows,
@@ -183,24 +194,25 @@ function LibraryRows({
   /** The chosen row's id, drawn at once wherever it is. */
   chosen: string | undefined;
 }) {
+  const [rowsPerScreen] = useState(rowsThatFit);
   const [screens, setScreens] = useState(1);
   const at = chosen === undefined ? -1 : rows.findIndex((one) => skillRowId(one) === chosen);
-  const needed = Math.max(screens, Math.ceil((at + 1) / FIRST_ROWS));
+  const needed = Math.max(screens, Math.ceil((at + 1) / rowsPerScreen));
   // Adjusted as it is drawn (React's state set while rendering), so the chosen row's frame has it.
   if (needed !== screens) setScreens(needed);
-  const drawn = Math.min(rows.length, needed * FIRST_ROWS);
+  const drawn = Math.min(rows.length, needed * rowsPerScreen);
   const more = drawn < rows.length;
   useEffect(() => {
     if (!more) return;
     return afterPaint(() => startTransition(() => setScreens((was) => was + 1)));
   }, [more, screens]);
   // A screen at a time, each kept as it was drawn, so a screen added draws its own rows alone.
-  return Array.from({ length: Math.ceil(drawn / FIRST_ROWS) }, (_, n) => (
+  return Array.from({ length: Math.ceil(drawn / rowsPerScreen) }, (_, n) => (
     <LibraryScreen
       key={n}
       rows={rows}
-      from={n * FIRST_ROWS}
-      to={Math.min(drawn, (n + 1) * FIRST_ROWS)}
+      from={n * rowsPerScreen}
+      to={Math.min(drawn, (n + 1) * rowsPerScreen)}
       row={row}
     />
   ));
@@ -985,7 +997,9 @@ export function SkillStudioTab({
       isDisabled={studio === undefined}
       onPress={() => studio !== undefined && askDraft(plane, scope, studio.levels)}
     >
-      {DRAFT_WITH_A_CHAT}
+      {studio === undefined
+        ? DRAFT_WITH_A_CHAT
+        : askAChat(draftLevel(scope, studio.levels), "draft a skill")}
     </Button>
   );
   // What is chosen on Harness skills (#3692): a program's own skill, by its place's id.

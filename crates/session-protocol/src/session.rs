@@ -469,20 +469,32 @@ use crate::view::{Limits, Views};
 /// the engine checking the field's own frame against the approved origin at that moment. A host
 /// before 1.72 refuses both, so nothing is filled.
 ///
-/// 1.73 lets a page holding a filled secret leave for another site (#5230, the person's rulings
+/// 1.73 reads whether a browser's page asks to sign in (`asks_to_sign_in`, #5121, spec #5100): an
+/// act no chat's tool sends, which a window sends before it reads a login's values, so a browser
+/// that holds the login answers "already logged in" with no vault opened. A host before 1.73
+/// refuses it, and the login goes as it always did. And a login a chat chose starts clean on its
+/// own site, which a host before 1.73 doesn't do, so no such login is sent to one.
+///
+/// 1.74 lets a page holding a filled secret leave for another site (#5230, the person's rulings
 /// SF-14 and SF-15): `fill_secret` may carry `also`, the other origins the key is approved for,
 /// where a form on the page may be sent, and a browser's reach may carry `answered`, the sites the
-/// person allowed when its chat asked. A host before 1.73 ignores both, and holds the browser to
+/// person allowed when its chat asked. A host before 1.74 ignores both, and holds the browser to
 /// the fill's site as before.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 73,
+    minor: 74,
 };
 
 /// The version that first fills a secret into a field (#5115): no fill is sent to a host before.
 pub const KNOWS_SECRET_FILL: Version = Version {
     major: 1,
     minor: 72,
+};
+
+/// The version that first says whether a page asks to sign in (#5121): not asked of a host before.
+pub const KNOWS_ASKS_TO_SIGN_IN: Version = Version {
+    major: 1,
+    minor: 73,
 };
 
 /// The version that is first told a runner's programs are not known (#4684).

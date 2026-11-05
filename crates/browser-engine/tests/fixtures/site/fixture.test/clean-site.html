@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>A site</title></head>
+<body>
+  <h1 id="said">Sign in</h1>
+  <form id="form" action="account.html" method="get">
+    <label><span id="label">Password</span> <input type="password" name="password" id="password"></label>
+    <button type="submit">Go</button>
+  </form>
+  <script>
+    // To an earlier session it's a settings page, whose field keeps what's put in it there.
+    if (document.cookie.includes('earlier=') || document.cookie.includes('wider=')) {
+      document.getElementById('said').textContent = 'Settings';
+      document.getElementById('label').textContent = 'Token';
+      document.getElementById('form').addEventListener('submit', (event) => {
+        event.preventDefault();
+        document.getElementById('password').remove();
+        document.getElementById('said').textContent = 'Kept for the earlier session';
+      });
+    }
+  </script>
+</body></html>

@@ -203,17 +203,17 @@ describe("a pane's notices, minimised (the default)", () => {
     expect([...top.children].map((one) => one.getAttribute("data-scope") ?? one.className)).toEqual(
       ["pane-head", "notice-row"],
     );
-    // A fixed slot, after the chat's ⋯ and right before the splits and the close (#4760), and
-    // outside the cluster of them that is drawn only under the pointer or the keyboard
-    // (`.pane-doing`, `App.css`): the bell and its count are always on screen.
+    // A fixed slot, before the chat's ⋯ and the splits and the close (#5203), and outside the
+    // cluster of them that is drawn only under the pointer or the keyboard (`.pane-doing`,
+    // `App.css`): the bell and its count are always on screen.
     // (Its polite announcement is an unseen line beside it, `.sr-only`.)
     const actions = [...(frame().querySelector(".pane-actions")?.children ?? [])].filter(
       (one) => !one.classList.contains("sr-only"),
     );
-    // The chat's ⋯ (#4753) is before it, a chat's part of the head (#4760).
-    expect(actions[0]).toHaveAccessibleName(/^More for /);
-    expect(actions[1]).toHaveClass("pane-bell-slot");
-    expect(actions[1]).toContainElement(bell());
+    // The chat's ⋯ (#4753) is after it and ends the chat's part of the head (#5203).
+    expect(actions[0]).toHaveClass("pane-bell-slot");
+    expect(actions[0]).toContainElement(bell());
+    expect(actions[1]).toHaveAccessibleName(/^More for /);
     expect(bell().closest(".pane-doing")).toBeNull();
     expect(actions[2]).toHaveClass("pane-doing");
     const doing = [...actions[2].querySelectorAll("button")].map((one) =>
@@ -320,5 +320,37 @@ describe("a full band", () => {
     const band = within(frame()).getByRole("region", { name: "Pane notices" });
     expect(within(band).getByText("6 notices, 4 waiting on you")).toBeTruthy();
     expect(within(band).getByRole("button", { name: "Dismiss all 2" })).toBeTruthy();
+  });
+});
+
+/** Chat 4 is a task, and its question has reached the person: an ask of its own pane. */
+const QUESTION: Shown = {
+  session: 4,
+  ask: "task-question:4:1",
+  says: "Which branch?\nSay why.\n\n- **main**\n- the fork",
+  options: [],
+  source: "task-question",
+  chain: ["steward 1", "claude 4"],
+  answer: { via: "task-question", why: "no-reply", from: "steward 1", note: null },
+  since: 10,
+};
+
+describe("a task's question in the band (#5213)", () => {
+  it("is drawn in the band under the pane's head, and stands while the band is minimised", async () => {
+    await aPane({ asks: [QUESTION], failed: [] });
+
+    const band = await within(frame()).findByRole("region", { name: "Pane notices" });
+    const quiz = within(band).getByRole("group", { name: "claude 4 asks" });
+    const top = frame().querySelector(".pane-top") as HTMLElement;
+    const head = top.querySelector(":scope > .pane-head") as HTMLElement;
+    // Under the head: the head comes first in the pane's top, and the quiz is in the band.
+    expect(head.compareDocumentPosition(quiz) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(bell()).toHaveAttribute("aria-expanded", "false");
+    expect(quiz).toBeVisible();
+    // Its lines are the task's, never a mark for a line break, and its markdown is drawn.
+    expect(quiz).not.toHaveTextContent(/⟦U\+|\*\*/);
+    expect(quiz.querySelector("br")).not.toBeNull();
+    expect(within(quiz).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(quiz).getByText("main").tagName).toBe("STRONG");
   });
 });

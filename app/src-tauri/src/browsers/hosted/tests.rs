@@ -1591,3 +1591,16 @@ fn a_host_before_secret_fill_is_sent_no_field_read_and_no_fill() {
     assert!(refused.contains("nothing was filled"), "{refused}");
     assert_eq!(super::fills_secrets(KNOWS_SECRET_FILL), Ok(()));
 }
+
+/// #5121: a host before 1.73 isn't asked whether a page asks to sign in.
+#[test]
+fn a_host_before_1_73_is_not_asked_whether_a_page_asks_to_sign_in() {
+    use purlis_session_protocol::session::KNOWS_ASKS_TO_SIGN_IN;
+    use purlis_session_protocol::version::Version;
+    let before = Version {
+        minor: KNOWS_ASKS_TO_SIGN_IN.minor - 1,
+        ..KNOWS_ASKS_TO_SIGN_IN
+    };
+    assert!(!super::says_asks_to_sign_in(before));
+    assert!(super::says_asks_to_sign_in(KNOWS_ASKS_TO_SIGN_IN));
+}

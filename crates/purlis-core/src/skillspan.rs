@@ -23,7 +23,7 @@
 //! - **by the prompt**, everywhere else: the run opens with the next prompt where a line of that
 //!   prompt holds the typed text ([`PromptMarks`]), and the next prompt drops it either way.
 //!
-//! One held longer than [`HELD_FOR_MS`] is dropped unopened, and so is every one held for a chat
+//! One held longer than [`HELD_FOR_MS`] is dropped unopened, unless it [`Typed::waits`], and so is every one held for a chat
 //! whose session ends.
 //!
 //! **A prompt a curation action typed, or a trigger sent** (SK-20, #2783; decision 60), is held
@@ -121,6 +121,22 @@ pub struct Typed {
     /// prompt that holds it holds. Never the text itself.
     pub text: u64,
     pub confirmed: Confirmed,
+    /// What its run says started it: Use skill…, or the action that typed a direct start
+    /// ([`crate::skillprompt::SkillPrompt::run_held`]). Absent in a record from before it.
+    #[serde(default = "use_skill", skip_serializing_if = "is_use_skill")]
+    pub started_by: StartedBy,
+    /// Whether it waits for its prompt however long the person reads it, as a prompt purlis put
+    /// in a chat that just started does, and is never dropped for [`HELD_FOR_MS`].
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub waits: bool,
+}
+
+fn use_skill() -> StartedBy {
+    StartedBy::UseSkill
+}
+
+fn is_use_skill(by: &StartedBy) -> bool {
+    *by == StartedBy::UseSkill
 }
 
 /// Which skill and run, and never the digest of the text typed: a debug dump of one says
@@ -274,7 +290,7 @@ impl PromptMarks {
 
     /// The digest of `prompt`'s lead: the first [`Self::SPAN`] words of its first line, the
     /// first stretch [`Self::of`] marks of a prompt that begins with it, however long the rest.
-    fn lead(prompt: &str, salt: &PromptSalt) -> u64 {
+    pub(crate) fn lead(prompt: &str, salt: &PromptSalt) -> u64 {
         let first = prompt.lines().next().unwrap_or_default();
         let lead: Vec<&str> = first.split_whitespace().take(Self::SPAN).collect();
         Self::digest(&lead.join(" "), salt)
@@ -516,14 +532,15 @@ impl Tracker {
         self.open_typed(key, &one.typed, at_ms, tokens())
     }
 
-    /// Drops every skill held for the chat keyed `key` longer than [`HELD_FOR_MS`].
+    /// Drops every skill held for the chat keyed `key` longer than [`HELD_FOR_MS`], but one that
+    /// [`Typed::waits`].
     fn expire(&mut self, key: &str, at_ms: u64) {
         if let Some(held) = self.typed.get_mut(key) {
-            held.retain(|one| at_ms.saturating_sub(one.at_ms) <= HELD_FOR_MS);
+            held.retain(|one| one.typed.waits || at_ms.saturating_sub(one.at_ms) <= HELD_FOR_MS);
         }
     }
 
-    /// Opens the run of typed skill `typed`, started by Use skill….
+    /// Opens the run of typed skill `typed`, started by what it says.
     fn open_typed(
         &mut self,
         key: &str,
@@ -542,7 +559,7 @@ impl Tracker {
                 Start {
                     skill: &typed.skill,
                     id: &id,
-                    started_by: StartedBy::UseSkill,
+                    started_by: typed.started_by,
                     whose: &whose,
                     at_ms,
                     tokens,

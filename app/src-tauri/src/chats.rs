@@ -162,6 +162,8 @@ pub struct Open {
     pub from: Option<purlis_core::reopen::HandedFrom>,
     /// Whether the window draws it as a tab: [`purlis_core::reopen::Chat::has_tab`].
     pub tab: bool,
+    /// Whether the person has yet to look at it (#4759): [`purlis_core::reopen::Chat::unseen`].
+    pub unseen: bool,
     /// The chat its tab shows in place of it, where the person switched the tab to one
     /// (#1486): [`purlis_core::reopen::Chat::shows`].
     pub shows: Option<u32>,
@@ -182,6 +184,8 @@ pub struct Open {
     /// it was opened from and gone when its program exits. Never recorded
     /// ([`Chats::start_one_job`]), and no sidebar row.
     pub one_job: bool,
+    /// What the Skill studio started it for (#5185): [`purlis_core::reopen::Chat::studio`].
+    pub studio: Option<purlis_core::reopen::StudioJob>,
 }
 
 /// Who an open chat is beyond this launch, and the directory it works in.
@@ -1016,6 +1020,14 @@ impl OlderSandbox {
     pub fn sessions(&self) -> Vec<u32> {
         self.chats.iter().map(|one| one.session).collect()
     }
+}
+
+/// **Why one open chat runs at its level** (#5207), in the core's words
+/// ([`purlis_core::sandbox::level_why`]): what its sandbox mark and its block's Notice say.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct LevelWhy {
+    pub session: u32,
+    pub why: String,
 }
 
 /// One chat still running under an older sandbox ([`OlderSandbox`]).
@@ -3796,6 +3808,77 @@ impl Chats {
         Some(OlderSandbox { chats })
     }
 
+    /// **Why each open chat runs at its level** (#5207): each harness chat, by session, with
+    /// what its next start would be, read as [`Self::on_older_sandbox`] reads it: its own
+    /// [`level_as_of`], and [`made_of`] for a start of this chat again. It only reads.
+    ///
+    /// These have no answer, since anything said of them would be false: a chat whose mark
+    /// already says why it runs with no sandbox ([`Open::floorless`]); any chat on a system with
+    /// no backend, where no level holds it; a chat held by a sandbox this window has no compile
+    /// of (one its host composed, or reattached under a sandbox that changed), whose run no
+    /// reason here describes; and any chat where the project's manifest cannot be read, where a
+    /// start is refused.
+    ///
+    /// Each distinct start is read once per ask, as in [`Self::on_older_sandbox`] (#2157): the
+    /// window asks whenever a chat opens or closes, and on every focus.
+    pub fn level_whys(&self) -> Vec<LevelWhy> {
+        purlis_core::profiles::git_asked_once(|| {
+            self.level_whys_on(&purlis_core::sandbox::Machine::this())
+        })
+    }
+
+    /// [`Self::level_whys`], on `machine`.
+    fn level_whys_on(&self, machine: &purlis_core::sandbox::Machine) -> Vec<LevelWhy> {
+        use purlis_core::sandbox::personal::Choice;
+        use purlis_core::sandbox::{Level, Made, level_why};
+        if !machine.os.has_backend() {
+            return Vec::new();
+        }
+        // Read out first, one lock at a time: the answers read the project's files.
+        let floorless = lock(&self.floorless).clone();
+        let running: Vec<_> = lock(&self.open)
+            .iter()
+            .filter(|(session, one)| one.harness.is_some() && !floorless.contains_key(session))
+            .filter_map(|(session, one)| {
+                let level = match one.confines.as_ref().map(|confines| confines.level) {
+                    Some(Level::Full) => Choice::On,
+                    Some(Level::Floor) => Choice::Floor,
+                    None if one.chat.unsandboxed => Choice::Off,
+                    None => return None,
+                };
+                Some((*session, one.chat.clone(), level))
+            })
+            .collect();
+        let locks = purlis_core::sandbox::policy::Locks::of(&self.project);
+        type Start = (Option<String>, Made);
+        let mut read: Vec<(Start, Option<level_why::NextStart>)> = Vec::new();
+        let mut whys = Vec::new();
+        for (session, chat, level) in running {
+            let start = (
+                level_as_of(&chat).map(str::to_owned),
+                made_of(&chat, Why::Relaunch),
+            );
+            let known = read
+                .iter()
+                .find(|(one, _)| *one == start)
+                .map(|(_, next)| next.clone());
+            let next = known.unwrap_or_else(|| {
+                let next =
+                    level_why::next_start(&self.project, start.0.as_deref(), &locks, &start.1);
+                read.push((start, next.clone()));
+                next
+            });
+            if let Some(next) = next {
+                whys.push(LevelWhy {
+                    session,
+                    why: next.said(level),
+                });
+            }
+        }
+        whys.sort_unstable_by_key(|one| one.session);
+        whys
+    }
+
     /// **The open chats whose skills changed since they started** (#2770, ADR 0099 §5), by
     /// session: the plane skills each would get now differ from those it started with, in a way
     /// its harness does not take in by itself ([`Harness::skills_reload`]). Its tab offers a
@@ -5181,6 +5264,11 @@ impl Chats {
         // written down for the next launch to resume it.
         // And no longer as a chat a workspace rename left without its conversation: it has
         // said so once, at this start, and is under a conversation of its own now.
+        let opted_out = if reattaching {
+            chat.unsandboxed
+        } else {
+            unsandboxed.is_some()
+        };
         let under = Chat {
             resume: conversation
                 .as_deref()
@@ -5188,11 +5276,12 @@ impl Chats {
             renamed_from: None,
             // What this run started under, for the next run's audit and the session record —
             // never read as an opt-out by any start. A chat reattached runs as it started.
-            unsandboxed: if reattaching {
-                chat.unsandboxed
-            } else {
-                unsandboxed.is_some()
-            },
+            unsandboxed: opted_out,
+            // And a run with no sandbox and no opt-out says so, for what runs below it, which has
+            // only the record to ask. Read from the run's own record, this start's or its host's
+            // on a reattach: a runner's chat has no sandbox of this window's, and is confined.
+            no_sandbox: matches!(ran, Some(purlis_session_protocol::session::RunSandbox::Off))
+                && !opted_out,
             identity,
             // The Skill studio's flag this start took (#3466): what its record keeps, and what
             // a later reattach of it takes.
@@ -5590,6 +5679,32 @@ impl Chats {
         self.lay_out(held.with_window(window, report))
     }
 
+    /// **Every announced chat now on screen has been looked at** (#4759): its row's "new" mark
+    /// goes, in the record too, so a relaunch does not bring it back. Asked after the window
+    /// reports a layout and after one of its windows comes back on screen, the two ways a chat
+    /// comes on screen ([`Self::looked_at`]). Answers whether any mark went, so the caller
+    /// tells the window its rows changed only then.
+    pub fn mark_seen(&self) -> bool {
+        let on_screen = self.looked_at();
+        let seen = {
+            let mut open = lock(&self.open);
+            let mut seen = false;
+            for number in on_screen {
+                if let Some(one) = open.get_mut(&number)
+                    && one.chat.unseen
+                {
+                    one.chat.unseen = false;
+                    seen = true;
+                }
+            }
+            seen
+        };
+        if seen {
+            self.write_it_down();
+        }
+        seen
+    }
+
     /// **Window `window` went away from the screen or came back** (#4768): minimised or hidden,
     /// or shown again. A chat on screen only there is not looked at while it is away. Answers
     /// whether that changed anything, so a caller looks at held tasks again only then.
@@ -5710,6 +5825,23 @@ impl Chats {
         drop(open);
         self.write_it_down();
         Ok(label)
+    }
+
+    /// **Marks the Skill studio's job of chat `session` done** (#5185): its draft came. Kept on
+    /// its record, so the chat stays done across a relaunch, and once the draft is accepted or
+    /// discarded. Nothing for a chat the studio did not start, or one already done.
+    pub fn studio_job_done(&self, session: u32) {
+        let mut open = lock(&self.open);
+        let Some(job) = open
+            .get_mut(&session)
+            .and_then(|one| one.chat.studio.as_mut())
+            .filter(|job| !job.done)
+        else {
+            return;
+        };
+        job.done = true;
+        drop(open);
+        self.write_it_down();
     }
 
     /// The name `session` is shown under — the one it was given, or its default — or `None`
@@ -6789,12 +6921,14 @@ impl Chats {
                     label: chat.label.clone(),
                     from: chat.from.clone(),
                     tab: chat.has_tab(),
+                    unseen: chat.unseen,
                     shows: chat.shows,
                     beside: chat.beside,
                     sandbox: running.confines.as_ref().map(|confines| confines.level),
                     floorless: floorless.get(&session).cloned(),
                     untaken: untaken.get(&session).cloned(),
                     one_job: is_a_one_job(chat, &one_jobs),
+                    studio: chat.studio.clone(),
                 })
             })
             .collect()
@@ -7373,6 +7507,7 @@ impl Chats {
                 label: one.chat.label.clone(),
                 from: one.chat.from.clone(),
                 tab: one.chat.has_tab(),
+                unseen: one.chat.unseen,
                 shows: one.chat.shows,
                 beside: one.chat.beside,
                 // How it is sandboxed is its start's to say.
@@ -7381,6 +7516,7 @@ impl Chats {
                 untaken: None,
                 // A one-job program is never recorded, so a launch puts none back.
                 one_job: false,
+                studio: one.chat.studio.clone(),
             })
             .collect()
     }

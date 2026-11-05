@@ -1391,6 +1391,7 @@ one labelled section at the end of `App.css`.
 | a popover or menu opening                  | fades in a quarter-rem out of its anchored side, `enter` | says what opened it; hangs off Radix's popper wrapper, so the next popover gets it                      |
 | a dialog and its scrim                     | fade, no movement, `enter`                               | a question should appear where the eye already is                                                       |
 | a region brought back                      | fades in, `enter`                                        | only its opacity; see below                                                                             |
+| a reply strip taking or leaving the caret  | its height, ground, divider and hint move together, `swap` | the person's ruling on #5214: it makes room for the words as they start, and gives it back only when left empty; the one part that also moves as it closes |
 | a running pipeline                         | spins, `spin`                                            | _still happening_, which amber alone cannot say                                                         |
 | a queued pipeline                          | a clock that breathes, `breathe`                         | alive and not working; a spinner would claim work being done                                            |
 | a pipeline that finishes on screen         | its new mark grows into place once, `settle`             | the answer arriving                                                                                     |
@@ -1767,11 +1768,13 @@ the focus rings, #2867):
   `-strip`, `-head`, `-tabs`, `strip-*`, the three strips, `.pane-chips`, the status line; not
   a chart's bar or a side's column) and the rows of controls a strip or a pane's top line draws
   as part of itself (`.pane-task-ends`, `.tab-tasks`, and the top line's chips). **The pane's
-  top line is one height** (#2484): every chip on it (the breadcrumb, Brief, the gauge, the
-  harness, where the chat came from, its work item: `PANE_LINE_CHIPS`) is set to
+  head and foot are each one height** (#2484, #5202): every chip on the pane line (the
+  breadcrumb, where the chat came from, its work item, its skills: `PANE_LINE_CHIPS`) and on the
+  pane foot (harness · workspace, the harness, the gauge: `PANE_FOOT_CHIPS`) is set to
   `--size-chrome`, and the guard fails a chip that is not. A strip's part is the strip's height
-  even when it is a button. The guard reads what `LayoutPanes.tsx` draws in the line, so a new
-  chip fails until it is listed and held. A height that is its content's or its
+  even when it is a button. The guard reads what `LayoutPanes.tsx` draws in each row (the head's
+  `.pane-chips`, the foot's `PaneFootStart` and `PaneFootEnd`), so a new chip fails until it is
+  listed and held, and a chip drawn on the other row than its own fails too. A height that is its content's or its
   container's (`auto`, `100%`) passes. Heights are held where a rule declares one: a control
   with no declared height (one its padding makes tall) is not checked, and a custom property is
   held by its value, not by the scope it is declared in. The exceptions are named with their

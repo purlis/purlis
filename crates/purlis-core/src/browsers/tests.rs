@@ -769,6 +769,88 @@ fn a_fill_holds_its_other_approved_sites_too_and_its_judge_says_where_it_may_lea
     ));
 }
 
+/// #5121: a login that needs another site than the one a page holding a filled secret holds the
+/// browser to runs nothing and says why, and one of that very site goes ahead.
+#[cfg(unix)]
+#[test]
+fn a_login_of_another_site_is_refused_while_a_page_holding_a_secret_holds_the_browser() {
+    use crate::sandbox::browser_reach::{Lane, LoginSites, ReachProxy, Site};
+
+    let reach = BrowserReach::default();
+    let sites = std::sync::Arc::new(super::judge::SiteJudge::of(&reach).unwrap());
+    let (listed, _) = reach_of(Some(&reach)).unwrap();
+    let proxy = std::sync::Arc::new(
+        ReachProxy::bound_by(Lane::of(listed), sites.new_sites(), sites.bound().clone()).unwrap(),
+    );
+    let held = Site::of("dash.example.test", 443);
+    proxy.hold_for_fill(&held).expect("held");
+    let run = |at: &LoginSites| {
+        let mut ran = false;
+        let done = super::performed(
+            &sites,
+            &proxy,
+            at,
+            "https://any.example.test",
+            Duration::from_secs(60),
+            |_| ran = true,
+        );
+        (done, ran)
+    };
+
+    let (done, ran) = run(&LoginSites::page(Site::of("shop.example.test", 443)));
+    assert!(!ran, "nothing ran");
+    let why = done.expect_err("refused");
+    assert!(why.contains("dash.example.test"), "{why}");
+    assert!(why.contains("nothing was filled"), "{why}");
+
+    let (done, ran) = run(&LoginSites::page(held));
+    assert!(done.is_ok() && ran, "that very site goes ahead");
+}
+
+/// #5121: a login counts as signed in, for a later call, only where it answered with the browser
+/// held to its page.
+#[test]
+fn a_login_counts_as_signed_in_only_where_it_answered_and_holds_the_browser_to_its_page() {
+    use crate::sandbox::browser_reach::Site;
+    let page = Site::of("shop.example.test", 443);
+    let other = Site::of("other.example.test", 443);
+    assert!(super::counts_as_signed_in(true, Some(&page), &page));
+    assert!(
+        !super::counts_as_signed_in(false, Some(&page), &page),
+        "it failed"
+    );
+    assert!(
+        !super::counts_as_signed_in(true, None, &page),
+        "nothing bound"
+    );
+    assert!(
+        !super::counts_as_signed_in(true, Some(&other), &page),
+        "another's"
+    );
+}
+
+/// #5121: only a login that went through counts: one merely tried may have bound nothing.
+#[test]
+fn a_browser_knows_only_the_logins_that_went_through_in_it_by_their_identities() {
+    let home = tempfile::tempdir().unwrap();
+    let mut keeping = super::Keeping::new(home.path(), home.path());
+    keeping.tried(None);
+    assert!(!keeping.went_through(Some("one")), "tried, no more");
+    keeping.goes_through(None);
+    assert!(!keeping.went_through(None), "no identity: nothing to know");
+    keeping.goes_through(Some("one"));
+    assert!(keeping.went_through(Some("one")));
+    assert!(!keeping.went_through(Some("two")), "another login");
+    keeping.only_goes_through(Some("two"));
+    assert!(
+        !keeping.went_through(Some("one")),
+        "another login ran since"
+    );
+    keeping.goes_through(Some("two"));
+    keeping.did_not_hold(Some("two"));
+    assert!(!keeping.went_through(Some("two")), "it failed since");
+}
+
 /// #5152, the person's ruling of 2026-11-04 (amending #4995's of 2026-11-03): a login whose form
 /// is on another site, performed through a real reach proxy and judge, reaches the form's site
 /// from its bind for the browser's life, and keeps the agent off it once its page is back on the

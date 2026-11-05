@@ -11,7 +11,7 @@ import {
   type Started,
 } from "../started.js";
 import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
-import { openedSince } from "../reach.js";
+import { untilTheStripIsBare } from "../reach.js";
 
 /**
  * **A task's own tab draws a minimise and no close, and a task beside its session is two panes
@@ -212,12 +212,11 @@ describe("a task in a tab of its own, and beside its session", () => {
   before(() => windowAt(WINDOW_1280));
   after(() => theWindowHoldsTheRail());
 
-  let wereAlreadyOpen: string[] = [];
   let mine: Started | undefined;
   let asker = -1;
 
   before(async () => {
-    wereAlreadyOpen = await tabNames();
+    await untilTheStripIsBare("task-own-tab");
     mine = await startAChat();
     asker = mine.session;
     await untilShows(READY);
@@ -249,10 +248,7 @@ describe("a task in a tab of its own, and beside its session", () => {
       console.warn("task-own-tab: the pretended task was not taken away", trouble);
     }
     await endChatsStartedHere([mine]);
-    await browser.waitUntil(
-      async () => openedSince(wereAlreadyOpen, await tabNames()).length === 0,
-      { timeout: 20_000, timeoutMsg: "the task-own-tab spec left a chat open behind it" },
-    );
+    await untilTheStripIsBare("task-own-tab");
   });
 
   it("draws a minimise at the end of the task's own tab, and no close", async () => {

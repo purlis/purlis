@@ -21,6 +21,7 @@ import {
   MOST_LINES,
   type UpdateRow,
   type Updates,
+  REPLY_HINT,
 } from "./Inbox";
 import { AnswerOpener } from "./AnswerPanel";
 import { Notice } from "./Notice";
@@ -236,7 +237,31 @@ describe("the asks, grouped by chat", () => {
     draw([question]);
 
     expect(screen.getByText("Which host?")).toBeTruthy();
-    expect(screen.getByText("steward 6 passed this on. Its note: Your call.")).toBeTruthy();
+    expect(screen.getByText("steward 6 passed this on. Its note:")).toBeTruthy();
+    expect(screen.getByText("Your call.")).toBeTruthy();
+  });
+
+  it("draws a task's question and its asking chat's note as a chat's text (#5214)", () => {
+    const question: Shown = {
+      session: 9,
+      ask: "task-question:9:4",
+      says: "Which **host**?\n- prod\n- staging",
+      options: [],
+      source: "task-question",
+      chain: ["steward 6", "check prod"],
+      answer: { via: "task-question", why: "passed-on", from: "steward 6", note: "Ask *ops*." },
+    };
+    core();
+    draw([question]);
+
+    const card = screen.getByRole("listitem", { name: /Which host/ });
+    expect(within(card).getByText("host").tagName).toBe("STRONG");
+    expect(
+      within(card)
+        .getAllByRole("listitem")
+        .map((one) => one.textContent),
+    ).toEqual(["prod", "staging"]);
+    expect(within(card).getByText("ops").tagName).toBe("EM");
   });
 
   it("opens the Answer form on a task's question, for the task that asked (ADR 0107)", async () => {
@@ -282,9 +307,9 @@ describe("the asks, grouped by chat", () => {
     expect(screen.getByRole("heading", { name: "<b>steward</b> 3" })).toBeTruthy();
     // The only buttons are the answers it offers, and Go to chat.
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Go to chat",
       "Allow",
       "Deny",
-      "Go to chat",
     ]);
   });
 
@@ -320,8 +345,8 @@ describe("the asks, grouped by chat", () => {
     // What is drawn is not what would run, so nothing that lets it run is offered here
     // (`hooked::shown_in_full`'s rule): Deny, and the chat's own pane, which shows it whole.
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "Deny",
       "Go to chat",
+      "Deny",
     ]);
   });
 
@@ -336,8 +361,8 @@ describe("the asks, grouped by chat", () => {
     expect(mark).toHaveClass("invisible-char");
     expect(screen.getByText(hiddenSaid("⟦U+00A0⟧"))).toBeTruthy();
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "Deny",
       "Go to chat",
+      "Deny",
     ]);
   });
 
@@ -402,8 +427,8 @@ describe("the asks, grouped by chat", () => {
     expect(document.querySelector(".ask-lines")).not.toHaveClass("inbox-clamped");
     expect(screen.getByText("Allow is not offered. It runs over 2 lines.")).toBeTruthy();
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "Deny",
       "Go to chat",
+      "Deny",
     ]);
   });
 
@@ -484,9 +509,9 @@ describe("the asks, grouped by chat", () => {
     draw([permission(3, "lb", ["steward 3"], "Run a command: echo ⟦U+27E6⟧U+00A0⟧")]);
     expect(screen.queryByText(/Allow is not offered/)).toBeNull();
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Go to chat",
       "Allow",
       "Deny",
-      "Go to chat",
     ]);
   });
 
@@ -496,9 +521,9 @@ describe("the asks, grouped by chat", () => {
     draw([permission(3, "n", ["steward 3"], nfd)]);
     expect(screen.getByText(nfd)).toBeTruthy();
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Go to chat",
       "Allow",
       "Deny",
-      "Go to chat",
     ]);
   });
 
@@ -820,7 +845,7 @@ describe("answering in place", () => {
       screen.getByRole("textbox", { name: "Reply to steward 6" }),
       "Yes, ship it",
     );
-    await userEvent.click(screen.getByRole("button", { name: "Send reply" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Send reply to / }));
     await waitFor(() =>
       expect(calls).toContainEqual({
         cmd: "send_input",
@@ -843,12 +868,95 @@ describe("answering in place", () => {
     const said = "I checked both branches.\nWhich should I use, main or dev?";
     draw([{ ...QUESTION, last_message: said }]);
 
-    const card = screen.getByRole("listitem", { name: "Waiting on your reply", description: said });
+    const card = screen.getByRole("listitem", {
+      name: "Waiting on your reply",
+      description: /I checked both branches\.\s*Which should I use, main or dev\?/,
+    });
+    // Its line break is kept, as a chat's text is drawn (#5214).
     const words = within(card).getByText(/I checked both branches/);
-    expect(words.textContent).toBe(said);
+    expect(words.querySelector("br")).not.toBeNull();
+    expect(words.textContent).toContain("Which should I use, main or dev?");
     expect(words.className).not.toContain("inbox-clamped");
     expect(within(card).getAllByText("Waiting on your reply")).toHaveLength(1);
     expect(within(card).getByRole("textbox", { name: "Reply to steward 6" })).toBeTruthy();
+  });
+
+  it("draws what a chat said as its markdown, and never loads a picture it names (#5214)", () => {
+    core();
+    draw([
+      {
+        ...QUESTION,
+        last_message:
+          "Done:\n\n- **tests** pass\n- see [the run](https://ci.example/1)\n\n![graph](https://x.example/g.png)",
+      },
+    ]);
+
+    const card = screen.getByRole("listitem", { name: "Waiting on your reply" });
+    expect(within(card).getByText("tests").tagName).toBe("STRONG");
+    expect(within(card).getByRole("link", { name: "the run" })).toBeTruthy();
+    expect(within(card).getByText("(ci.example)")).toBeTruthy();
+    expect(card.querySelector("img, [src]")).toBeNull();
+    expect(within(card).getByText("graph")).toBeTruthy();
+  });
+
+  it("folds a long message behind Show all, reached by ↓ past the head and before the reply (#5214)", async () => {
+    core();
+    const long = Array.from({ length: 9 }, (_, at) => `Line ${at + 1}`).join("\n");
+    draw([{ ...QUESTION, last_message: long }]);
+
+    const show = screen.getByRole("button", { name: "Show all · 9 lines" });
+    expect(show).toHaveAttribute("aria-expanded", "false");
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Go to chat steward 6" }),
+    );
+    await userEvent.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(show);
+    await userEvent.keyboard("{Enter}");
+    expect(screen.getByRole("button", { name: "Show less" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    await userEvent.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(
+      screen.getByRole("textbox", { name: "Reply to steward 6" }),
+    );
+  });
+
+  it("draws the card's head in the pane band's style, Send its one button (#5214)", () => {
+    core();
+    const ignored = vi.fn();
+    draw([{ ...QUESTION, last_message: "Which branch?" }], { onIgnore: ignored });
+
+    const card = screen.getByRole("listitem", { name: "Waiting on your reply" });
+    const head = card.querySelector(".inbox-ask-head") as HTMLElement;
+    expect(within(head).getByText("steward 6")).toBeTruthy();
+    expect(within(head).getByText("Waiting on your reply")).toBeTruthy();
+    // Go to chat, a quiet link, and the queue's Ignore, a ×, in the head.
+    expect(within(head).getByRole("button", { name: "Go to chat steward 6" })).toHaveAttribute(
+      "data-variant",
+      "quiet-link",
+    );
+    expect(
+      within(head).getByRole("button", { name: "Ignore steward 6 until it asks again" }),
+    ).toBeTruthy();
+    expect(within(card).queryByRole("button", { name: "Ignore" })).toBeNull();
+    // The send is the card's one button, inside the reply strip at its foot.
+    const strip = card.querySelector('[data-scope="textarea"][data-foot-strip]') as HTMLElement;
+    expect(within(strip).getByRole("button", { name: /^Send reply to / })).toBeTruthy();
+    expect(strip).toBe(card.querySelector(".inbox-reply")?.querySelector("[data-foot-strip]"));
+    expect(card.querySelectorAll('[data-scope="button"][data-variant="primary"]')).toHaveLength(0);
+  });
+
+  it("presses Ignore from the head's ×", async () => {
+    core();
+    const ignored = vi.fn();
+    draw([{ ...QUESTION, last_message: "Which branch?" }], { onIgnore: ignored });
+    await userEvent.click(
+      screen.getByRole("button", { name: "Ignore steward 6 until it asks again" }),
+    );
+    expect(ignored).toHaveBeenCalledWith(6);
   });
 
   it("says once that a chat waiting on a reply has no message to show", () => {
@@ -875,16 +983,16 @@ describe("answering in place", () => {
     ).toBeTruthy();
   });
 
-  it("reaches a reply box from its card with one Tab and ↓, past the message", async () => {
+  it("reaches a reply box from its card with one Tab and ↓, past its head and the message", async () => {
     core();
     draw([{ ...QUESTION, last_message: "Which branch?" }]);
     await userEvent.tab();
     expect(document.activeElement).toBe(document.querySelector("li.inbox-ask"));
-    await userEvent.keyboard("{ArrowDown}");
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}");
     expect(document.activeElement).toBe(
       screen.getByRole("textbox", { name: "Reply to steward 6" }),
     );
-    await userEvent.keyboard("{ArrowUp}");
+    await userEvent.keyboard("{ArrowUp}{ArrowUp}");
     expect(document.activeElement).toBe(document.querySelector("li.inbox-ask"));
     await userEvent.tab({ shift: true });
     expect(document.querySelector("li.inbox-ask")?.contains(document.activeElement)).toBe(false);
@@ -909,10 +1017,90 @@ describe("answering in place", () => {
     expect(screen.queryByText(NO_MESSAGE)).toBeNull();
   });
 
-  it("sends nothing for an empty reply", () => {
+  it("sends nothing for an empty reply: its send is inert, and Enter in it sends nothing", async () => {
+    const calls = core({ asks_waiting: { asks: [QUESTION] } });
+    draw([QUESTION]);
+    const send = screen.getByRole("button", { name: /^Send reply to / });
+    expect(send).toHaveAttribute("aria-disabled", "true");
+    expect(send).toHaveAttribute("data-variant", "quiet");
+    await userEvent.click(send);
+    await userEvent.type(screen.getByRole("textbox", { name: "Reply to steward 6" }), "   {Enter}");
+    expect(calls.map((one) => one.cmd)).not.toContain("asks_waiting");
+    expect(calls.map((one) => one.cmd)).not.toContain("send_input");
+  });
+
+  it("keeps the reply strip at the card's foot, one line at rest, two holding the caret, its hint only then (#5214)", async () => {
+    core();
+    draw([{ ...QUESTION, last_message: "Which branch?" }]);
+    const box = screen.getByRole("textbox", { name: "Reply to steward 6" });
+    const strip = box.closest("[data-foot-strip]") as HTMLElement;
+    expect(box).toHaveAttribute("placeholder", "Reply to steward 6…");
+    expect(strip).toHaveAttribute("data-rows", "1");
+    const hint = within(strip).getByText(REPLY_HINT);
+    expect(hint).not.toHaveAttribute("data-shown");
+    // Heard as the box's description, whether or not it is seen.
+    expect(box).toHaveAccessibleDescription(REPLY_HINT);
+
+    act(() => box.focus());
+    expect(strip).toHaveAttribute("data-rows", "2");
+    expect(hint).toHaveAttribute("data-shown");
+
+    act(() => box.blur());
+    expect(strip).toHaveAttribute("data-rows", "1");
+    expect(hint).not.toHaveAttribute("data-shown");
+  });
+
+  it("sends on Enter, and starts a new line on Shift+Enter, growing to four lines (#5214)", async () => {
+    const calls = core({ asks_waiting: { asks: [QUESTION] } });
+    draw([QUESTION]);
+    const box = screen.getByRole("textbox", { name: "Reply to steward 6" });
+    const strip = box.closest("[data-foot-strip]") as HTMLElement;
+    await userEvent.type(box, "one{Shift>}{Enter}{/Shift}two{Shift>}{Enter}{/Shift}three");
+    expect((box as HTMLTextAreaElement).value).toBe("one\ntwo\nthree");
+    expect(strip).toHaveAttribute("data-rows", "3");
+    expect(calls.map((one) => one.cmd)).not.toContain("send_input");
+    expect(screen.getByRole("button", { name: /^Send reply to / })).toHaveAttribute(
+      "data-variant",
+      "primary",
+    );
+    await userEvent.type(box, "{Shift>}{Enter}{/Shift}four{Shift>}{Enter}{/Shift}five");
+    expect(strip).toHaveAttribute("data-rows", "4");
+
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "send_input",
+        args: { plane: PLANE, session: 6, text: replyBytes("one\ntwo\nthree\nfour\nfive") },
+      }),
+    );
+    await waitFor(() => expect((box as HTMLTextAreaElement).value).toBe(""));
+  });
+
+  it("leaves the reply for its card on Esc, keeping what was typed (#5214)", async () => {
+    core();
+    const { props } = draw([QUESTION]);
+    const box = screen.getByRole("textbox", { name: "Reply to steward 6" });
+    await userEvent.type(box, "half a thought");
+    await userEvent.keyboard("{Escape}");
+    expect(document.activeElement).toBe(document.querySelector("li.inbox-ask"));
+    expect((box as HTMLTextAreaElement).value).toBe("half a thought");
+    expect(props.onLeave).not.toHaveBeenCalled();
+  });
+
+  it("moves the caret between a reply's lines on ↑ and ↓, and leaves it from its first line (#5214)", async () => {
     core();
     draw([QUESTION]);
-    expect(screen.getByRole("button", { name: "Send reply" })).toHaveProperty("disabled", true);
+    const box = screen.getByRole("textbox", { name: "Reply to steward 6" }) as HTMLTextAreaElement;
+    await userEvent.type(box, "abc{Shift>}{Enter}{/Shift}de");
+    await userEvent.keyboard("{ArrowUp}");
+    expect(document.activeElement).toBe(box);
+    expect(box.selectionStart).toBe(2);
+    await userEvent.keyboard("{ArrowDown}");
+    expect(box.selectionStart).toBe(6);
+    await userEvent.keyboard("{Home}");
+    expect(box.selectionStart).toBe(4);
+    await userEvent.keyboard("{ArrowUp}{ArrowUp}");
+    expect(document.activeElement).not.toBe(box);
   });
 
   it("names a prompt waiting in a harness's terminal, with only the way to it", () => {
@@ -930,7 +1118,7 @@ describe("the train 43 review (#1700)", () => {
     const calls = core({ asks_waiting: { asks: [] } });
     draw([QUESTION]);
     await userEvent.type(screen.getByRole("textbox", { name: "Reply to steward 6" }), "Yes");
-    await userEvent.click(screen.getByRole("button", { name: "Send reply" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Send reply to / }));
 
     expect(await screen.findByText(MOVED_ON)).toBeTruthy();
     expect(calls.map((one) => one.cmd)).not.toContain("send_input");
@@ -1005,7 +1193,7 @@ describe("the keyboard after an answer (#1700)", () => {
     draw([QUESTION]);
     const box = screen.getByRole("textbox", { name: "Reply to steward 6" });
     await userEvent.type(box, "Yes");
-    await userEvent.click(screen.getByRole("button", { name: "Send reply" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Send reply to / }));
 
     await waitFor(() => expect(calls.map((one) => one.cmd)).toContain("send_input"));
     expect(box).toHaveFocus();
@@ -1015,7 +1203,7 @@ describe("the keyboard after an answer (#1700)", () => {
     const calls = core({ asks_waiting: new Error("the project is not open") });
     draw([QUESTION]);
     await userEvent.type(screen.getByRole("textbox", { name: "Reply to steward 6" }), "Yes");
-    await userEvent.click(screen.getByRole("button", { name: "Send reply" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Send reply to / }));
 
     expect(await screen.findByText(NOT_CHECKED)).toBeTruthy();
     expect(calls.map((one) => one.cmd)).not.toContain("send_input");
@@ -1436,12 +1624,14 @@ describe("the keyboard (I-11)", () => {
     const [first, second] = screen.getAllByRole("listitem");
     act(() => first.focus());
     await userEvent.keyboard("{ArrowDown}");
+    expect(document.activeElement?.textContent).toBe("Go to chat");
+    await userEvent.keyboard("{ArrowDown}");
     expect(document.activeElement?.textContent).toBe("Allow");
-    await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}");
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}");
     expect(document.activeElement).toBe(second);
     await userEvent.keyboard("{ArrowUp}");
-    expect(document.activeElement?.textContent).toBe("Go to chat");
-    await userEvent.keyboard("{ArrowUp}{ArrowUp}{Enter}");
+    expect(document.activeElement?.textContent).toBe("Deny");
+    await userEvent.keyboard("{ArrowUp}{Enter}");
     await waitFor(() =>
       expect(calls.find((one) => one.cmd === "answer_ask")?.args).toMatchObject({
         ask: "k1",
@@ -1458,7 +1648,8 @@ describe("the keyboard (I-11)", () => {
     expect(stops).toEqual([screen.getAllByRole("listitem")[0]]);
     act(() => (stops[0] as HTMLElement).focus());
     await userEvent.keyboard("{End}");
-    expect(document.activeElement).toHaveAccessibleName("Go to chat steward 5");
+    expect(document.activeElement?.textContent).toBe("Deny");
+    expect(screen.getAllByRole("listitem")[1].contains(document.activeElement)).toBe(true);
     await userEvent.keyboard("{Home}");
     expect(document.activeElement).toBe(screen.getAllByRole("listitem")[0]);
   });
@@ -1499,7 +1690,7 @@ describe("where a notification lands (#1694)", () => {
     expect(document.activeElement).toBe(within(group).getAllByRole("listitem")[0]);
     // From there the keys go on as from any ask.
     await userEvent.keyboard("{ArrowDown}");
-    expect(document.activeElement?.textContent).toBe("Allow");
+    expect(document.activeElement?.textContent).toBe("Go to chat");
   });
 
   it("is nowhere for a chat with nothing left in the Inbox", () => {
@@ -1817,5 +2008,106 @@ describe("a secret fill (#5115)", () => {
     expect(screen.getByTestId("fill-site-site")).toHaveTextContent("dash.example.test");
     expect(screen.getByTestId("fill-site")).toHaveTextContent("labels API key");
     expect(screen.getByRole("button", { name: "Allow once" })).toBeInTheDocument();
+  });
+});
+
+describe("a secret ask's Remember (#5240)", () => {
+  const ask = (remember: boolean): Shown => ({
+    session: 7,
+    ask: "secret:3",
+    says: "Needs STRIPE_KEY (not declared by this persona) from devops's vault team",
+    options: [
+      { id: "fill", label: "Fill", allows: true, preselected: null },
+      { id: "keep", label: "Not now", allows: false, preselected: null },
+    ],
+    source: "secret",
+    chain: ["steward 7"],
+    answer: { via: "secret", id: 3 },
+    secret: {
+      persona: "devops",
+      vault: "team",
+      key: "STRIPE_KEY",
+      declared: false,
+      waiting: 1,
+      remember: remember
+        ? {
+            file: "personas/devops/persona.md",
+            need: true,
+            purpose: "charge https://shop.example/",
+            vault: null,
+          }
+        : null,
+    },
+  });
+  const REMEMBER = { name: "Remember this need for the persona" };
+  const fill = async (user: ReturnType<typeof userEvent.setup>) => {
+    read();
+    await user.type(screen.getByLabelText("Value of STRIPE_KEY"), "s3cret");
+    await user.click(screen.getByRole("button", { name: "Fill" }));
+  };
+  const answered = (asked: { cmd: string; args: unknown }[]) =>
+    asked.find((one) => one.cmd === "answer_secret_ask")?.args;
+
+  it("fills and remembers nothing, unticked", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const asked = core();
+    draw([ask(true)]);
+    await fill(user);
+    await waitFor(() =>
+      expect(answered(asked)).toEqual({
+        plane: PLANE,
+        id: 3,
+        value: "s3cret",
+        vault: null,
+        key: null,
+        remember: null,
+      }),
+    );
+  });
+
+  it("sends the purpose as the person edited it, ticked", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const asked = core();
+    draw([ask(true)]);
+    await user.click(screen.getByRole("checkbox", REMEMBER));
+    const purpose = screen.getByRole("textbox", { name: "What STRIPE_KEY is for" });
+    expect(purpose).toHaveValue("charge https://shop.example/");
+    await user.clear(purpose);
+    await user.type(purpose, "test cards");
+    await fill(user);
+    await waitFor(() =>
+      expect(answered(asked)).toMatchObject({ value: "s3cret", remember: "test cards" }),
+    );
+  });
+
+  it("asks for a purpose before it fills, ticked with none, and keeps the value typed", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const asked = core();
+    draw([ask(true)]);
+    await user.click(screen.getByRole("checkbox", REMEMBER));
+    await user.clear(screen.getByRole("textbox", { name: "What STRIPE_KEY is for" }));
+    await fill(user);
+    expect(await screen.findByText(/Say what STRIPE_KEY is for/)).toBeInTheDocument();
+    expect(answered(asked)).toBeUndefined();
+    expect(screen.getByLabelText("Value of STRIPE_KEY")).toHaveValue("s3cret");
+  });
+
+  it("sends no purpose on Not now, even ticked", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const asked = core();
+    draw([ask(true)]);
+    await user.click(screen.getByRole("checkbox", REMEMBER));
+    read();
+    await user.click(screen.getByRole("button", { name: "Not now" }));
+    await waitFor(() =>
+      expect(answered(asked)).toEqual({
+        plane: PLANE,
+        id: 3,
+        value: null,
+        vault: null,
+        key: null,
+        remember: null,
+      }),
+    );
   });
 });

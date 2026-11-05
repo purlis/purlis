@@ -19,4 +19,4 @@ Amends [A filled page holds its browser to its site](2026-11-04-a-filled-page-ho
   it.
 - Browsers on runners behave the same (SF-12). The fill carries the other origins its key is
   approved for (`also`), and a browser's reach the sites the person allowed when asked (`answered`),
-  both in protocol 1.73.
+  both in protocol 1.74.

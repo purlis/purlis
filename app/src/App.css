@@ -732,8 +732,9 @@ body {
   min-height: 0;
 }
 
-/* The chat at a glance: its breadcrumb, its skills, the harness, where it came from, its work
-   item and its gauge. One row, in the pane's header (`PaneHead`). */
+/* **The pane line**: the chat at a glance, its breadcrumb, its skills, where it came from and its
+   work item. One row, in the pane head (`PaneHead`); harness · workspace and the gauge are
+   on the pane foot (#5202). */
 .pane-chips {
   display: flex;
   flex: none;
@@ -742,9 +743,9 @@ body {
   max-width: 100%;
 }
 
-/* **The line's words are one height** (#2484): each chip that is words (the breadcrumb, the
-   gauge, where a chat came from, its work item) is the chrome height. Its buttons (Brief, the
-   harness, the skills, a task's ways) are the family's small size, which the family draws a step
+/* **The line's words are one height** (#2484): each chip that is words (the breadcrumb, where a
+   chat came from, its work item) is the chrome height. Its buttons (Brief, the skills, a task's
+   ways) are the family's small size, which the family draws a step
    taller and which wins over this; the line centres both, so nothing stands off its middle. The
    heights guard holds every chip here (`PANE_LINE_CHIPS`). */
 .pane-chips
@@ -754,16 +755,23 @@ body {
     .tab-sandbox,
     .pane-state-mark,
     .pane-wrapping,
-    .pane-where,
     .pane-task-ends,
     .pane-crumbs,
     .pane-brief,
-    .chat-gauge,
-    .pane-harness,
     .pane-from,
     .pane-work-item,
-    .pane-skills
+    .pane-skills,
+    .pane-studio,
+    .pane-head-where
   ) {
+  height: var(--size-chrome);
+}
+
+/* **The pane foot's chips are under the same rule** (#5202, spec #5191 story 43): harness ·
+   workspace and the gauge are the chrome height, inside a foot the tab
+   strip's height, so no theme makes them taller than the line. The heights guard holds every
+   chip here (`PANE_FOOT_CHIPS`). */
+.pane-foot > * > :is(.pane-where, .chat-gauge) {
   height: var(--size-chrome);
 }
 
@@ -901,33 +909,23 @@ body {
    its own, and the operator saw the cost at once: *"context usage component position is not
    absolute and its changing harness container sizes"* — a pane with a gauge was a row shorter
    than its neighbour without one. It floated over the terminal after that, and covered its
-   first line. Now it is on the pane's header (#3142), which every chat's pane has with a gauge or
-   without, so the terminal keeps the same rows whether or not charter has usage for it.
+   first line, then sat on the pane's header (#3142). Now it is at the end of the pane foot
+   (#5202), a row every chat's pane has with a gauge or without, so the terminal keeps the same
+   rows whether or not charter has usage for it.
 
-   **A chat's `ctx`/`cache` gauge** (`app/src/ChatGauge.tsx`): small, last on the header's line.
-   **It does not place itself**: the header does (`.pane-head`, `paneFrame.css`, which also draws
-   it as words on the pane's fill). It is always drawn, and never takes the controls' hover
-   rule. */
+   **A chat's `ctx`/`cache` gauge** (`app/src/ChatGauge.tsx`): its labelled numbers in a row.
+   **It does not place itself**: the foot does (`ui/pane-foot/pane-foot.css`), which draws each
+   number. It is always drawn, and never takes the controls' hover rule. */
 .chat-gauge {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: 0 var(--space-2);
-  font-size: var(--font-size-xs);
-  font-variant-numeric: tabular-nums;
+  /* The foot's end's, which a theme's `pane-foot.end.gap` sets. */
+  gap: inherit;
   white-space: nowrap;
-  color: var(--text-secondary);
-  background: var(--surface-raised);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-}
-
-.gauge-label {
-  color: var(--text-muted);
 }
 
 /* **Where a handed-off chat came from** (charter-app#258): `↳ from steward 3 · ops`, beside the
-   gauge in the chat's own corner, and quiet — it is a note about the chat's origin, read once,
+   line's other details, and quiet — it is a note about the chat's origin, read once,
    not a status. The gauge's box so the two read as one strip, never a border of its own colour.
    Clipped rather than wrapped: a corner that grew a second line would cover the terminal. */
 .pane-from {
@@ -960,6 +958,14 @@ body {
    the Skills view, drawn by the button family (ghost, or warning-soft while something in the set
    needs the person). Its place on the line only: it never pushes the line wider than it is. */
 .pane-chips > .pane-skills {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* **What the Skill studio started a chat for** (`StudioChatChip`, #5185): the skill and the job,
+   which opens the skill's page, drawn by the button family. Its place on the line only: it gives
+   way before the line grows wider than the pane. */
+.pane-chips > .pane-studio {
   flex: 0 1 auto;
   min-width: 0;
 }
@@ -1539,14 +1545,13 @@ body {
   white-space: nowrap;
 }
 
-/* **A task's report on the band of a pane left on it as it ended** (#4757, `EndedBand.tsx`):
-   text, every character, wrapped and never cut, in a box of its own that scrolls. */
+/* **A task's report on the band of a pane left on it as it ended** (#4757, `EndedBand.tsx`): a
+   chat's text (`ChatText`, #5214), folded past six lines; opened, in a box that scrolls. */
 .ended-report {
   max-width: 100%;
   max-height: 30vh;
   margin: var(--space-2) 0 0;
   overflow: auto;
-  white-space: pre-wrap;
 }
 
 /* **A runner chat's change, whole, in its own tab** (#2046): every line as it would be written,
@@ -2090,20 +2095,26 @@ body {
   color: var(--state-waiting);
 }
 
+/* The line a Secret need's Remember writes (#5240): its key beside the box for its purpose. */
+.secret-need-line {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.secret-need-line-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.secret-need-line-row > :last-child {
+  flex: 1 1 12rem;
+}
+
 .login-site-line {
   overflow-wrap: anywhere;
-}
-
-.gauge-ok {
-  color: var(--state-success);
-}
-
-.gauge-warn {
-  color: var(--state-waiting);
-}
-
-.gauge-bad {
-  color: var(--state-failed);
 }
 
 /* **A pane's own controls, in its top right corner** — the operator: *"harnesses panes should
@@ -2152,30 +2163,6 @@ body {
   visibility: visible;
   opacity: 0;
   pointer-events: none;
-}
-
-/* The trend: a bar per turn, filled in the tone its class names — the same three tokens the
-   numbers use, so a green 98% and its bar can never be two greens. */
-.gauge-trend {
-  width: 3rem;
-  height: 0.75rem;
-  align-self: center;
-}
-
-.gauge-trend .gauge-ok {
-  fill: var(--state-success);
-}
-
-.gauge-trend .gauge-warn {
-  fill: var(--state-waiting);
-}
-
-.gauge-trend .gauge-bad {
-  fill: var(--state-failed);
-}
-
-.gauge-trend .gauge-unknown {
-  fill: var(--text-muted);
 }
 
 /* The handle between two panes: thin, and easier to hit than it looks. Its box, which straddles
@@ -2590,7 +2577,8 @@ body {
 .inbox-ask + .inbox-ask {
   margin-top: var(--space-2);
 }
-/* **An ask card's top row** (R132): the chat's name, then the workspace at the row's end. */
+/* **An ask card's top row** (R132): the chat's name, then the workspace at the row's end. The
+   task question card's (`TaskQuiz.tsx`). */
 .inbox-ask-top {
   display: flex;
   gap: var(--space-4);
@@ -2622,6 +2610,96 @@ body {
 .inbox-ask > .inbox-says > .inbox-kind,
 .inbox-ask > .inbox-says > .inbox-primary {
   grid-row: 2;
+}
+/* **An ask card's head, one row in the pane band's style** (#5214): its kind's mark, the chat's
+   name over its status line (what it waits on in the waiting amber, then how long and where,
+   quiet), and at its end Go to chat and the ×. */
+.inbox-card {
+  --inbox-card-indent: calc(1em + var(--space-3));
+}
+.inbox-ask-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: center;
+  min-width: 0;
+}
+.inbox-ask-head > .inbox-kind {
+  grid-area: auto;
+}
+.inbox-ask-title {
+  display: grid;
+  min-width: 0;
+}
+.inbox-ask-title > .inbox-who {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inbox-ask-sub {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  white-space: nowrap;
+}
+.inbox-ask-sub > .inbox-meta {
+  flex: none;
+  justify-content: flex-start;
+}
+.inbox-ask-sub > .inbox-meta > .inbox-source {
+  color: var(--state-waiting);
+}
+.inbox-ask-sub > .inbox-meta-dot {
+  flex: none;
+  white-space: pre;
+}
+.inbox-ask-sub > .inbox-where {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.inbox-ask-end {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+/* Its words, under the name, past the mark. */
+.inbox-card > .inbox-says {
+  display: block;
+  padding-inline-start: var(--inbox-card-indent);
+}
+/* **A chat's own words on a card** (#5214): the card's smaller size in the secondary tier, its
+   bold in the primary words. They wear no text role, so these rules are the words' own. */
+.inbox-card .inbox-chat-text,
+.inbox-card .inbox-said,
+.inbox-card .inbox-note {
+  color: var(--text-secondary);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-regular);
+}
+.inbox-card .inbox-said,
+.inbox-card .inbox-note,
+.inbox-card > .inbox-secondary {
+  padding-inline-start: var(--inbox-card-indent);
+}
+.inbox-card :is(.inbox-chat-text, .inbox-said, .inbox-note) strong {
+  color: var(--text-primary);
+}
+/* The reply strip runs to the card's edges and sits at its foot (#5214). */
+.inbox-card:has(> .inbox-reply) {
+  overflow: hidden;
+}
+.inbox-card > .inbox-reply {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-inline: calc(var(--space-5) * -1);
+  margin-block-end: calc(var(--space-4) * -1);
+}
+.inbox-reply > .inbox-refused {
+  margin: 0;
+  padding: 0 var(--space-5) var(--space-2);
 }
 
 /* **A row's words, in three ranks** (qw359, `InboxRow.tsx`): its kind's mark and what needs you
@@ -2662,15 +2740,10 @@ body {
   line-clamp: 2;
   overflow: hidden;
 }
-/* What a chat said, over the lines it wrote (#4550). Never clamped: a report's bound is the cap,
-   and the list scrolls. */
+/* What a chat said, over the lines it wrote (#4550), as a chat's text is drawn (`ChatText`,
+   #5214): folded past six lines, never cut. */
 .inbox-said {
   margin: 0;
-  white-space: pre-wrap;
-}
-/* Its mark stays by its first line, however many it runs over. */
-.inbox-says:has(> .inbox-said) > .inbox-kind {
-  align-self: start;
 }
 /* A command over several lines, one per line (#3502). */
 .ask-lines {
@@ -2722,14 +2795,10 @@ body {
 /* The answers are the shared row whose buttons wrap their words (`ButtonRow`, #1855): an
    answer's label is the source's, and in a narrow sidebar a long one must wrap, not widen the
    Inbox (inbox-long-ask.state.e2e). */
-.inbox-answers,
-.inbox-reply {
+.inbox-answers {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-3);
-}
-.inbox-reply > .inbox-reply-box {
-  flex: 1 1 8rem;
 }
 /* An edit's change (#1146): each in the light editor's merge view, one under another, its box
    scrolling within a share of the window so the answers under it stay near. */
@@ -5367,6 +5436,81 @@ body {
   color: var(--markdown-heading);
 }
 
+/* **What a chat wrote** (`ChatText.tsx`, #5214): its markdown under the safe subset, in the
+   words' own size. Its link, code and code block take a markdown render's own colours
+   from `.release-notes`, which its body wears, so each colour is read in one place; its spacing
+   is its own. A heading is bold words, no larger. */
+.chat-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.chat-text-body {
+  min-width: 0;
+  inline-size: 100%;
+  overflow-wrap: anywhere;
+}
+.chat-text-body > :first-child {
+  margin-block-start: 0;
+}
+.chat-text-body > :last-child {
+  margin-block-end: 0;
+}
+.chat-text-body :is(p, ul, ol, pre, table) {
+  margin: 0 0 var(--space-2);
+}
+.chat-text-body :is(ul, ol) {
+  padding-inline-start: var(--space-6);
+}
+/* Its own markers, whatever a list item around it says (an Inbox card is an `li` with none). */
+.chat-text-body ul {
+  list-style: disc;
+}
+.chat-text-body ol {
+  list-style: decimal;
+}
+.chat-text-body li {
+  margin: 0;
+}
+.chat-text-body li + li {
+  margin-block-start: var(--space-1);
+}
+.chat-text-body code {
+  font-family: var(--font-mono);
+}
+.chat-text-body pre {
+  overflow-x: auto;
+  padding: var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-sunken);
+}
+/* Where a link goes, quiet beside its words. */
+.chat-text-host {
+  color: var(--text-secondary);
+}
+/* A table scrolls across in its own box rather than widening the card. */
+.chat-text-body table {
+  display: block;
+  max-inline-size: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+.chat-text-body :is(th, td) {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-subtle);
+  text-align: start;
+}
+/* **Folded** past six lines (#5214): cut at six of its lines, the last of them fading out. The
+   rest is still in the page, for a screen reader. */
+.chat-text-body[data-folded="true"] {
+  max-block-size: 6lh;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, currentcolor calc(100% - 2lh), transparent);
+}
+
 /* =====================================================================================
    THE PANEL CONTRIBUTION CONTRACT — charter-app#191
    =====================================================================================
@@ -6064,14 +6208,11 @@ nav.piece-files-head {
   margin: var(--space-2) 0;
 }
 
-/* The task's own words, as text: line breaks kept, a long word broken. */
+/* The task's own words, a chat's text (`ChatText`, which keeps their lines), marked as theirs. */
 .answer-asked {
-  margin: 0;
   padding-inline-start: var(--space-3);
   border-inline-start: 2px solid var(--border-subtle);
   color: var(--text-primary);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
 }
 
 .answer-text {
@@ -8192,6 +8333,20 @@ nav.piece-files-head {
   color: var(--text-secondary);
 }
 
+/* **A studio chat at work on a skill** (#5185): its lines above the tabs, the Runs tab's section
+   of the chats the studio started, and the Grades card's running job in place of its button. */
+.skill-page-studio-chats,
+.skill-page-studio-started,
+.skill-checks-running {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.skill-checks-running {
+  align-items: flex-start;
+}
+
 .skill-checks-drafted {
   display: flex;
   flex-direction: column;
@@ -8872,4 +9027,30 @@ nav.piece-files-head {
   padding: var(--space-3) var(--space-4);
   border-inline-start: 2px solid;
   font-size: var(--font-size-sm);
+}
+
+/* **A chat row's Place…** (#4764): under the pointer only, over the row's end on the row's own
+   ground, so nothing on the row moves as it comes and goes. The keyboard's way is ⌘⇧M. */
+.chats-section .chat-row-place {
+  display: none;
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  align-items: center;
+  padding-inline: var(--space-2);
+  color: var(--text-secondary);
+  background-color: var(--surface-hover);
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .chats-section .chat:hover .chat-row-place {
+    display: flex;
+  }
+}
+
+.chats-section .chat-row-place > svg {
+  flex: none;
+  inline-size: var(--ui-tree-step);
+  block-size: var(--ui-tree-step);
 }

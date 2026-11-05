@@ -20,6 +20,7 @@ import {
   KEPT_FOR_MS,
   KIND_SAID,
   LIVE,
+  arrivedUpdates,
   awayUpdates,
   browserAskUpdates,
   doctorUpdates,
@@ -122,6 +123,35 @@ describe("each source, said as updates", () => {
       [1, "Resumed its conversation"],
       [2, "Came back as a new chat: its conversation was gone"],
     ]);
+  });
+
+  it("makes an announced chat the person has not looked at an update, keyed by its id (#4759)", () => {
+    const chat = (
+      session: number,
+      unseen: boolean | null,
+      from: { name: string; task: boolean } | null,
+      cant_report_asks: boolean | null = null,
+    ) => ({ session, id: `id-${session}`, unseen, from, cant_report_asks }) as unknown as OpenChat;
+    const said = arrivedUpdates(
+      [
+        chat(1, true, { name: "steward 3", task: false }),
+        chat(2, true, { name: "steward 3", task: true }, true),
+        chat(3, null, { name: "steward 3", task: false }),
+        chat(4, true, null),
+      ],
+      (session) => `chat ${session}`,
+      NOW,
+    );
+    expect(said.map((one) => [one.key, one.kind, one.session, one.says])).toEqual([
+      ["arrived:id-1", "arrived", 1, "chat 1 arrived from steward 3"],
+      [
+        "arrived:id-2",
+        "arrived",
+        2,
+        "chat 2 arrived from steward 3. It can't report asks, so look at it from time to time.",
+      ],
+    ]);
+    expect(KIND_SAID.arrived).toBe("Arrived");
   });
 
   it("makes a block that is no host ask a sandbox update, and leaves a host ask to the asks", () => {

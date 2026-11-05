@@ -51,6 +51,7 @@ import {
   type ReactNode,
   type Ref,
   type RefCallback,
+  type RefObject,
 } from "react";
 import {
   Group,
@@ -181,6 +182,17 @@ export interface TextAreaProps extends Omit<Common<HTMLTextAreaElement>, "value"
   rows?: number;
   /** As tall as its lines, and never dragged: a list of entries (DS-10). */
   grows?: boolean;
+  /**
+   * **A strip** (#5214): the reply at a card's foot, edge to edge under a divider, with no box of
+   * its own. One line tall at rest; two while it holds the caret, and up to
+   * {@link STRIP_MOST_ROWS} as its lines need; one again once it is left empty. The height moves
+   * at the theme's pace.
+   */
+  strip?: boolean;
+  /** A strip's hint, small at its foot, shown only while it holds the caret. */
+  hint?: string;
+  /** What stands at a strip's end, inside it: its send button. */
+  end?: ReactNode;
   inputRef?: Ref<HTMLTextAreaElement>;
   /** The element typed in, as a group that wraps the field (`asChild`) asks for it. */
   ref?: Ref<HTMLTextAreaElement>;
@@ -890,28 +902,115 @@ export function TextField(props: TextFieldProps) {
   );
 }
 
+/** The most lines a strip grows to before it scrolls (#5214). */
+export const STRIP_MOST_ROWS = 4;
+
+/**
+ * **How many lines a strip is tall** (#5214): one at rest, two once it holds the caret or holds
+ * words, and as many as its words take (`drawn`, its lines as laid out) up to
+ * {@link STRIP_MOST_ROWS}.
+ */
+export function stripRows(value: string, holds: boolean, drawn: number): number {
+  if (!holds && value.trim() === "") return 1;
+  const lines = Math.max(value.split("\n").length, drawn);
+  return Math.min(STRIP_MOST_ROWS, Math.max(2, lines));
+}
+
+/** The lines `element`'s words take as laid out: measured at no height, its own transition
+ *  held, then given back its height at once. 0 where nothing is laid out. */
+function linesLaidOut(element: HTMLTextAreaElement): number {
+  const line = Number.parseFloat(getComputedStyle(element).lineHeight);
+  if (!(line > 0)) return 0;
+  const { style } = element;
+  const { transition, blockSize } = style;
+  style.transition = "none";
+  style.blockSize = "0px";
+  const height = element.scrollHeight;
+  style.blockSize = blockSize;
+  void element.offsetHeight;
+  style.transition = transition;
+  return height > 0 ? Math.round(height / line) : 0;
+}
+
+/** The lines a strip's words take as laid out, measured with no height of its own: 0 where
+ *  nothing is laid out (a test's page). */
+function useStripLines(
+  box: RefObject<HTMLTextAreaElement | null> | undefined,
+  value: string,
+  holds: boolean,
+): number {
+  const [lines, setLines] = useState(0);
+  useLayoutEffect(() => {
+    const element = box?.current;
+    if (element == null) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- what it measures is its own layout, read before the paint
+    setLines(linesLaidOut(element));
+  }, [box, value, holds]);
+  return lines;
+}
+
 /** **A field for lines**: an answer, one entry per line. */
 export function TextArea(given: TextAreaProps) {
   const { described: props, reason } = useReason(given);
-  const { rows, grows = false, inputRef, ref } = props;
+  const { rows, grows = false, inputRef, ref, strip = false, hint, end } = props;
   const box = useRef<HTMLTextAreaElement>(null);
   const element = useCallback(() => box.current, []);
   const { said, left } = useInline(props.value, props.validate, props.error, element);
   const refs = useMemo(() => joined(box, inputRef, ref), [inputRef, ref]);
-  const errorId = `${useId()}-error`;
+  const own = useId();
+  const errorId = `${own}-error`;
+  const hintId = `${own}-hint`;
   const error = refusable(props) ? <ErrorLine id={errorId} said={said} /> : null;
+  const [holds, setHolds] = useState(false);
+  const drawn = useStripLines(strip ? box : undefined, props.value, holds);
+  const inner = elementProps(props, left);
+  const field = fieldProps(props, said, errorId);
   return (
-    <AriaTextField {...fieldProps(props, said, errorId)}>
+    <AriaTextField
+      {...field}
+      aria-describedby={
+        strip && hint !== undefined
+          ? [field["aria-describedby"], hintId].filter(Boolean).join(" ")
+          : field["aria-describedby"]
+      }
+    >
       <Around label={props.label} help={props.help} error={error}>
         <Group
           data-scope="textarea"
           data-part="root"
+          data-foot-strip={strip ? "" : undefined}
           data-grows={grows ? "" : undefined}
+          data-rows={strip ? stripRows(props.value, holds, drawn) : undefined}
           onMouseDown={intoTheBox}
         >
           <Tooltip tip={props.tooltip}>
-            <AriaTextArea {...elementProps(props, left)} ref={refs} rows={rows} />
+            <AriaTextArea
+              {...inner}
+              onFocus={(event) => {
+                setHolds(true);
+                inner.onFocus?.(event);
+              }}
+              onBlur={(event) => {
+                setHolds(false);
+                inner.onBlur(event);
+              }}
+              ref={refs}
+              rows={strip ? 1 : rows}
+            />
           </Tooltip>
+          {strip && hint !== undefined && (
+            // Heard as the box's description whenever it is reached; seen only while it
+            // holds the caret.
+            <span
+              data-scope="textarea"
+              data-part="hint"
+              id={hintId}
+              data-shown={holds || undefined}
+            >
+              {hint}
+            </span>
+          )}
+          {strip && end}
         </Group>
         {reason}
       </Around>

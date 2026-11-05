@@ -215,13 +215,13 @@ export const GATES = {
   "browser-engine":
     "^(crates/browser-engine/|Cargo\\.lock$|rust-toolchain\\.toml$)",
   "confinement":
-    "^(crates/studio-probe/|\\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|confined|egress|reach|wrapper|hosts|localport|door)(\\.rs|/)|crates/purlis-core/src/hookwire/serve(\\.rs|/)|crates/purlis-cli/src/listen/|crates/purlis-core/tests/it/a_sandboxed_chat_listens_nowhere_under_seatbelt\\.rs|Cargo\\.lock$|rust-toolchain\\.toml$)",
+    "^(crates/studio-probe/|\\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|confined|egress|reach|wrapper|hosts|localport|door)(\\.rs|/)|crates/purlis-core/src/hookwire/serve(\\.rs|/)|crates/purlis-core/src/secrets/(brokered|keyhold)(\\.rs|/)|crates/purlis-cli/src/listen/|crates/purlis-core/tests/it/a_sandboxed_chat_listens_nowhere_under_seatbelt\\.rs|Cargo\\.lock$|rust-toolchain\\.toml$)",
   "parity":
     "^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|pools|codelink|session)[^/]*(\\.rs$|/)|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\\.rs$|/)|runner-image/|tests/parity/|Cargo\\.lock$|rust-toolchain\\.toml$|\\.github/workflows/ci\\.yml$)",
   // No step of its own greps this one: the job's steps are the scenario legs'. What the Skill
   // studio's outcome bars measure, and the suite and its stand-ins (#4343).
   "outcome-bars":
-    "^(app/src/(Skill|UseSkill|skill|chatSkill|personaSkills)|app/src/ui/list/|app/src-tauri/src/(skill|useskill|personaskills)|crates/skills/|crates/purlis-core/src/(skills|skillspan|skilltools|skilluse)(\\.rs|/)|crates/fake-harness/|app/e2e/(outcomeBars|harness\\.ts|wdio\\.outcome\\.conf|specs/skill-outcome-bars)|tools/quiet-runner\\.mjs$|Cargo\\.toml$|\\.github/workflows/ci\\.yml$)",
+    "^(app/src/(Skill|UseSkill|skill|chatSkill|personaSkills)|app/src/ui/list/|app/src-tauri/src/(skill|useskill|personaskills)|crates/skills/|crates/purlis-core/src/(skills|skillspan|skilltools|skilluse)(\\.rs|/)|crates/fake-harness/|app/e2e/(outcomeBars|harness\\.ts|wdio\\.outcome\\.conf|specs/skill-outcome-bars)|Cargo\\.toml$|\\.github/workflows/ci\\.yml$)",
   // No step of its own greps this one either: Pool setup's walk in the window on Docker (#4985),
   // what it presses and the pools and runner image it makes.
   "pool-setup":

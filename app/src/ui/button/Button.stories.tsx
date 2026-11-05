@@ -304,6 +304,12 @@ export const Link: Story = {
   args: { variant: "link", label: "Open its settings" },
   play: pressedByTheKeyboard,
 };
+/** The quiet link (#5214): a card's way on beside its one answer, Go to chat in an Inbox card's
+ *  head. No box, quiet words; underlined under the pointer and the keyboard. */
+export const QuietLink: Story = {
+  args: { variant: "quiet-link", size: "sm", label: "Go to chat" },
+  play: pressedByTheKeyboard,
+};
 export const Small: Story = { args: { size: "sm", label: "Copy" }, play: pressedByTheKeyboard };
 export const Large: Story = { args: { size: "lg", label: "Filter" }, play: pressedByTheKeyboard };
 

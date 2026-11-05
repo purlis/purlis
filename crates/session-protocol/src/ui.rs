@@ -387,10 +387,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // And the change whole, for its own tab (PC-7): what the configuration file holds is the
     // person's to read, never a chat's through the UI's link.
     "proposed_change",
-    // The Secret need offers the person dismissed, and offering one again (#5159): the
-    // person's own answers, read and undone in the vault view. No chat lifts its own dismissal.
-    "dismissed_secret_needs",
-    "offer_secret_need_again",
+    // Remembering a key as a persona's Secret need from the vault view (#5240): a committed line
+    // the person read, which no chat writes for them.
+    "secret_need_personas",
+    "remember_secret_need",
     // Remove and Dismiss on the Notice of the old `[harness_plugins]` keys (#3467): Remove holds
     // purlis's own proposed change for the person to apply, and the answer is the person's.
     "remove_old_harness_plugins",
@@ -657,6 +657,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // (#2071, ADR 0096 §7): the window's alone, as the record they read and write is.
     "sandbox_levels_waiting",
     "confirm_sandbox_level",
+    // Why each open chat runs at its level (#5207): it says which levels wait, and the Confirm
+    // it names is the window's alone.
+    "chats_level_why",
     // A browser started, watched and ended (#2012): a program started as the person, in their
     // own window. Chats get browser tools of their own later (#2013).
     "open_browser",

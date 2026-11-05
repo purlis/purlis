@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useState } from "react";
+import { X } from "lucide-react";
 import type { PlaneId, ReachedWhy, Shown } from "./bindings";
 import { answerHowSaid, useAnswerQuestion } from "./AnswerQuestion";
+import { ChatText } from "./ChatText";
 import { KindMark, useNow } from "./InboxRow";
 import { agoSaid } from "./inboxRules";
 import { Count } from "./ui/badge/Badge";
-import { Button } from "./ui/button/Button";
+import { Button, IconButton } from "./ui/button/Button";
 import { Card } from "./ui/card/Card";
 import { Form, TextArea } from "./ui/field/Field";
 import { Tooltip } from "./ui/tooltip/Tooltip";
@@ -23,9 +25,12 @@ export const QUIZ_WHY: Record<ReachedWhy, (chat: string) => string> = {
 export const moreSaid = (count: number) => `${count} more`;
 export const moreSaidFully = (count: number) =>
   `${count} more ${count === 1 ? "question waits" : "questions wait"} after this`;
+/** What the quiz's close says it does (#5213): the question is put away here, not answered. */
+export const CLOSE_QUIZ = "Close question";
+export const closeQuizSaid = "Close here. It stays in the Inbox until you answer it.";
 
 /**
- * **A task question, drawn as a quiz at the top of a pane** (#4565, spec #4551, the reviewed
+ * **A task question, drawn as a quiz in a pane's notices band** (#4565, spec #4551, the reviewed
  * prototype on `prototype/task-question-surfaces`): who asks, in the task's own words, why it
  * reached the person, the asking chat's note marked as its own, how long it has waited, a box for
  * the answer and, away from the task's own pane, Open task.
@@ -36,7 +41,10 @@ export const moreSaidFully = (count: number) =>
  * - **It is one item everywhere**: it reads the asks registry's item, the same the ✋ and the
  *   Inbox read, and the answer goes the one path a task's question is answered by
  *   (`answer_task_question`). One answer clears it from every surface.
- * - **The words are data**: a chat's question and note are text nodes, never markup.
+ * - **A question and its note are a chat's text** (`ChatText`, #5214): over the lines they were
+ *   written on (#5213), in markdown under the safe subset, as the Inbox draws them.
+ * - **It closes** (#5213): Close puts the quiz away from this pane and answers nothing, so the
+ *   question stays in the Inbox and on the ✋ until it is answered.
  */
 export function TaskQuiz({
   plane,
@@ -47,6 +55,7 @@ export function TaskQuiz({
   onOpenTask,
   onAnswered,
   onTyped,
+  onClose,
 }: {
   plane: PlaneId;
   /** The question, as the asks registry lists it (`source: "task-question"`). */
@@ -62,6 +71,8 @@ export function TaskQuiz({
   onAnswered: () => void;
   /** What is in the box, as it changes: kept by the band, should an agent answer first. */
   onTyped?: (text: string) => void;
+  /** Put away from this pane, unanswered. Without it the quiz has no close. */
+  onClose?: () => void;
 }) {
   const read = useNow();
   const now = given ?? read;
@@ -106,22 +117,30 @@ export function TaskQuiz({
             </Tooltip>
           )}
           {age !== undefined && <span className="ui-text-meta">{age}</span>}
+          {onClose !== undefined && (
+            <IconButton
+              size="sm"
+              variant="ghost"
+              aria-label={CLOSE_QUIZ}
+              tooltip={closeQuizSaid}
+              onPress={onClose}
+              icon={<X aria-hidden="true" />}
+            />
+          )}
         </span>
       </p>
-      <p className="inbox-says">
+      <div className="inbox-says">
         <KindMark kind="reply" />
-        <span className="inbox-primary ui-text-body ui-text-strong" id={`${ids}-asked`}>
-          {ask.says}
-        </span>
-      </p>
+        <ChatText id={`${ids}-asked`} className="inbox-primary" text={ask.says} />
+      </div>
       {why !== undefined && (
         <>
           <p className="task-quiz-why ui-text-secondary">{QUIZ_WHY[why.why](why.from)}</p>
           {why.note !== null && (
-            <p className="task-quiz-note">
+            <div className="task-quiz-note">
               <span className="task-quiz-note-who ui-text-meta">{`${why.from}'s note`}</span>
-              <span className="ui-text-secondary">{why.note}</span>
-            </p>
+              <ChatText className="task-quiz-note-words" text={why.note} />
+            </div>
           )}
         </>
       )}

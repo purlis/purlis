@@ -222,6 +222,9 @@ export type Said = {
   /** **The one workspace it is about**, where it is about a whole workspace (a workspace made):
    *  its notice hangs from that workspace's chip in the title bar (`noticePlace.ts`, #3648). */
   workspace?: string;
+  /** **The chat whose arrival it announces** (#4759), by session: a handoff, or a task that
+   *  can't report asks, started in `workspace` in no pane. */
+  arrived?: number;
   /** The clones it says failed, where it does (#4394). */
   notCloned?: NotCloned;
 };
@@ -409,6 +412,8 @@ export type Does =
    * window as its front tab. The core moves it, and each window draws its share.
    */
   | { verb: "moveToWindow"; tab: number; pane: boolean; to: number | null }
+  /** Place… (#4764): picks a chat or a tab up for placement mode, the keyboard's drag. */
+  | { verb: "place"; source: PlacedFrom }
   /** Focus this pane in a split (#4765): zooms the focused pane, or brings the split back. */
   | { verb: "zoomPane" }
   /** Undo (#4763, #4765): the window's last layout change put back, once. */
@@ -437,9 +442,9 @@ export type Does =
   /** Sends a task back out of its own tab or its pane (#1489): the minimise. **It ends
    *  nothing**, so it is never asked about, and it is not a close. */
   | { verb: "sendBack"; session: number }
-  /** Opens the menu of the chats that live in a tab: its session's and its tasks' (#1487).
-   *  It shows nothing by itself: a row of that menu does. */
-  | { verb: "showTabTasks"; tab: number }
+  /** Opens the menu of the tasks chat `session` asked for (#5058, ruled on #4699), under the
+   *  focused pane. It shows nothing by itself: a row of that menu does, in that pane. */
+  | { verb: "showChatTasks"; session: number }
   /** Opens the Brief panel of a task (#1494): the brief it was sent, read back from its
    *  dispatch record. It reads, and changes nothing. */
   | { verb: "showBrief"; session: number }
@@ -1092,6 +1097,8 @@ export type Doing = {
   /** Moves `tab`, or its focused pane, to another window of the project, or a new one when
    *  `to` is null (#4768). Answers the core's refusal, where it refused. */
   moveToWindow: (tab: number, pane: boolean, to: number | null) => Promise<Ran>;
+  /** Picks `source` up for placement mode (#4764), as its grip, its row or ⌘⇧M would. */
+  place: (source: PlacedFrom) => void;
   /** Zooms the focused pane of the tab in front, or brings its split back (#4765). */
   zoomPane: () => void;
   /** Puts the last layout change back (#4763, #4765): a drop, a split or Tile all. */
@@ -1114,8 +1121,8 @@ export type Doing = {
   beside: (session: number) => void;
   /** Takes a task's own tab or pane away. The task goes on, in its session's tab. */
   sendBack: (session: number) => void;
-  /** Opens the menu of that tab's chats, with the keyboard on the chat it shows. */
-  showTabTasks: (tab: number) => void;
+  /** Opens the menu of the tasks chat `session` asked for, with the keyboard on the first. */
+  showChatTasks: (session: number) => void;
   /** Opens the Brief panel of the task chat `session` (#1494). It reads and changes nothing
    *  by itself, so it answers no `Ran`. */
   showBrief: (session: number) => void;
@@ -1660,6 +1667,16 @@ export const TOGGLE_PANEL_ID = "view.toggle:panel";
 export const FOCUS_MODE_ID = "focus.toggle";
 /** What Focus this pane's row says while it would zoom or hide (#4765). */
 export const FOCUS_THIS_PANE = "Focus this pane";
+/** What a Place… row picks up (#4764): a chat, by its number, or a tab. A pane's own route is
+ *  its grip. */
+export type PlacedFrom = { kind: "chat"; session: number } | { kind: "tab"; tab: number };
+/** Place…'s row for chat `session` (#4764). */
+export const placeChatId = (session: number) => `chat.place:${session}`;
+/** Place…'s row for tab `tab` (#4764). */
+export const placeTabId = (tab: number) => `tab.place:${tab}`;
+/** What a Place… row says it does (#4764). */
+export const PLACE_NOTE =
+  "Picked up to place with the keys: the arrows choose a side, Tab the next pane, Enter drops.";
 /** Tile all's row for tab `tab` (#4765). */
 export function tileAllId(tab: number): string {
   return `tab.tile:${tab}`;
@@ -2248,6 +2265,22 @@ export function catalogue(now: Now): Offer[] {
     offers.push({ ...move(PANE_TO_NEW_WINDOW, "Move this pane to new window", null) });
     for (const to of windows)
       offers.push(move(paneToWindowId(to), `Move this pane to ${windowNamed(to)}`, to));
+  }
+
+  // **Place…** (#4764): the keyboard's drag of a tab, from its right-click, onto the strip or
+  // another tab's pane. The palette lists the tab in front's alone, as Close other tabs'.
+  for (const tab of now.tabs.order) {
+    const name = now.tabs.byId[tab].name;
+    offers.push({
+      ...can(
+        placeTabId(tab),
+        `Place tab ${name}…`,
+        { verb: "place", source: { kind: "tab", tab } },
+        name,
+      ),
+      note: PLACE_NOTE,
+      ...(tab === now.tabs.inFront ? {} : { menuOnly: true as const }),
+    });
   }
 
   // **Undo** (#4763, #4765): the window's last layout change, while nothing has changed since.
@@ -3486,6 +3519,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return DID;
     case "moveToWindow":
       return doing.moveToWindow(does.tab, does.pane, does.to);
+    case "place":
+      doing.place(does.source);
+      return DID;
     case "zoomPane":
       doing.zoomPane();
       return DID;
@@ -3520,8 +3556,8 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
     case "sendBack":
       doing.sendBack(does.session);
       return DID;
-    case "showTabTasks":
-      doing.showTabTasks(does.tab);
+    case "showChatTasks":
+      doing.showChatTasks(does.session);
       return DID;
     case "showBrief":
       doing.showBrief(does.session);
@@ -4348,6 +4384,18 @@ function chatRows(now: Now): Offer[] {
       can(renameId(session), `Rename chat ${name}…`, { verb: "renameChat", session }, name),
     );
 
+    // **Place…** (#4764): the keyboard's drag of the chat, as its row's drag is the pointer's.
+    // Every chat's, as Rename is; ⌘⇧M on its row or its pane does the same.
+    offers.push({
+      ...can(
+        placeChatId(session),
+        `Place chat ${name}…`,
+        { verb: "place", source: { kind: "chat", session } },
+        name,
+      ),
+      note: PLACE_NOTE,
+    });
+
     // **Use skill…** (#2775), behind the Skill studio's flag. It opens a picker and types
     // nothing until a skill is picked, so it sits above the line; the key registry's
     // `chat.useSkill` presses the focused chat's.
@@ -5156,7 +5204,8 @@ export const PANE_BACK_ID = "pane.back";
  * the tab a chat no longer has.
  *
  * The tasks are those of the chat the focused pane shows, whichever chat that is: its tasks
- * running or finished. They open the tab's task menu, which lists them under that chat.
+ * running or finished. They open a menu of that chat's own tasks and nothing else's, and the
+ * one picked is shown in the focused pane, as a press shows a chat (#5058).
  */
 function tabChatRows(now: Now): Offer[] {
   const mac = onAMac();
@@ -5191,8 +5240,8 @@ function tabChatRows(now: Now): Offer[] {
   return [
     hasTasks
       ? {
-          ...can(TAB_TASKS_ID, titles.tasks, { verb: "showTabTasks", tab: front.id }),
-          note: `${name} and the tasks it asked for, to switch between. ${taskKeySaid("menu", mac)}.`,
+          ...can(TAB_TASKS_ID, titles.tasks, { verb: "showChatTasks", session: shown }),
+          note: `The tasks ${name} asked for, to show in this pane. ${taskKeySaid("menu", mac)}.`,
         }
       : cannot(TAB_TASKS_ID, titles.tasks, `${name} has no tasks.`),
     backRow(now, front, titles.back, mac),
@@ -5467,6 +5516,8 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
           ownTabId(at),
           besideId(at),
           backId(at),
+          // Where it is drawn, by the keys (#4764).
+          placeChatId(at),
           briefId(at),
           activityId(at),
           networkId(at),
@@ -5496,6 +5547,7 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
         above: [
           `tab.pin:${what.tab}`,
           tileAllId(what.tab),
+          placeTabId(what.tab),
           `tab.keep:${what.tab}`,
           // Move to window ▸ follows it, one row per window (`menuModel`, `toWindowRows`).
           toNewWindowId(what.tab),

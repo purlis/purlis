@@ -739,6 +739,7 @@ pub fn call_of(act: Act) -> Result<drive::Call, String> {
         Act::FindLoginForm { address: to } => Call::FindLoginForm {
             address: address(&to)?,
         },
+        Act::AsksToSignIn => Call::AsksToSignIn,
         Act::DescribeField { target: on } => Call::DescribeField {
             target: Ref::new(on),
         },
@@ -880,6 +881,7 @@ pub fn browsed(answer: drive::Answer, most: usize) -> Browsed {
         drive::Content::Pages(pages) => out.pages = pages.into_iter().map(said).collect(),
         drive::Content::Seen(seen) => out.seen = Some(seen),
         drive::Content::Field(field) => out.field = Some(field_said(field)),
+        drive::Content::AsksToSignIn(asks) => out.asks_to_sign_in = Some(asks),
         drive::Content::Image(png) => match drive::fit::to_fit(&png, most) {
             Ok(fitted) => {
                 if fitted.halved > 0 {
@@ -1057,7 +1059,7 @@ pub const SIGN_IN_WITHIN: Duration = Duration::from_secs(120);
 /// connection it carried before ended. The agent acts on the form's site's pages during the
 /// login's sign-in alone: until the login's page is back on its page's origin, the login fails,
 /// or `within` has passed ([`Holder`]). Refused, running nothing, for a browser that holds
-/// another page's login already.
+/// another page's login already, or that a page holding a filled secret holds to another site.
 pub fn performed<T>(
     sites: &Arc<judge::SiteJudge>,
     proxy: &Arc<ReachProxy>,
@@ -1066,6 +1068,18 @@ pub fn performed<T>(
     within: Duration,
     run: impl FnOnce(&Arc<Holder>) -> T,
 ) -> Result<T, String> {
+    // A page holding a secret purlis filled holds the browser to that site alone (#5117), so a
+    // login that needs another would only wait on a page that can't load (#5121).
+    if let Some(held) = sites.bound().held_for_fill()
+        && at.all().iter().any(|site| *site != held)
+    {
+        return Err(format!(
+            "this browser reaches only {held} while a page in it holds a secret purlis filled \
+             there, so nothing was filled on {origin}: once that page loads another of its own \
+             pages or is closed, call browser_login again, or log in from a new browser with \
+             browser_new"
+        ));
+    }
     if let Some(held) = sites.bound().page()
         && held != at.page
     {
@@ -1087,6 +1101,13 @@ pub fn performed<T>(
     let done = run(&holder);
     sites.done_logging_in();
     Ok(done)
+}
+
+/// **Whether a login that answered counts as signed in, for a later call of it** (#5121): only
+/// where the browser is held to the login's page. A login that answered with the browser held to
+/// nothing bound nothing, so its page's asking for nothing says nothing of a session.
+fn counts_as_signed_in(answered: bool, held_to: Option<&Site>, page: &Site) -> bool {
+    answered && held_to == Some(page)
 }
 
 /// **What holds a browser to a login purlis performs in it** (#2016, #4995), handed to its
@@ -1422,6 +1443,9 @@ struct Keeping {
     /// The kept login of each login tried in it, `None` for one that keeps none (#2693): it
     /// keeps a login only where every one tried was that one.
     tried: Vec<Option<wire::KeptLogin>>,
+    /// The identity of each login that went through in it, with the browser held to its page
+    /// (#5121): one of these again fills nothing where its page asks for nothing.
+    went_through: Vec<String>,
 }
 
 /// The store `kept` names.
@@ -1442,6 +1466,7 @@ impl Keeping {
             began: std::time::SystemTime::now(),
             fresh: Arc::new(std::sync::atomic::AtomicBool::new(true)),
             tried: Vec::new(),
+            went_through: Vec::new(),
         }
     }
 
@@ -1468,6 +1493,32 @@ impl Keeping {
         let keep = keep.cloned();
         if !self.tried.contains(&keep) {
             self.tried.push(keep);
+        }
+    }
+
+    /// Whether a login of `identity` went through in this browser (#5121).
+    fn went_through(&self, identity: Option<&str>) -> bool {
+        identity.is_some_and(|identity| self.went_through.iter().any(|one| one == identity))
+    }
+
+    /// A login of `identity` runs now: no other counts as having gone through from here (#5121).
+    fn only_goes_through(&mut self, identity: Option<&str>) {
+        self.went_through
+            .retain(|one| Some(one.as_str()) == identity);
+    }
+
+    /// A login that went through in it failed since: it counts no more (#5121).
+    fn did_not_hold(&mut self, identity: Option<&str>) {
+        self.went_through
+            .retain(|one| Some(one.as_str()) != identity);
+    }
+
+    /// A login of `identity` went through, and left the browser held to its page (#5121).
+    fn goes_through(&mut self, identity: Option<&str>) {
+        if let Some(identity) = identity
+            && !self.went_through(Some(identity))
+        {
+            self.went_through.push(identity.to_owned());
         }
     }
 
@@ -1966,14 +2017,6 @@ impl Screen for EngineScreen {
 
     fn log_in(&self, asked: &wire::LogIn) -> Result<LoginEnded, NotActed> {
         let (mut login, at) = login_of(asked).map_err(NotActed::Refused)?;
-        // Opened from this very kept login, a page that asks for nothing is signed in already.
-        // Tried from here, whatever comes of it (#2693).
-        let opened_from = {
-            let mut keeping = self.keeping.lock().unwrap_or_else(PoisonError::into_inner);
-            keeping.tried(asked.keep.as_ref());
-            keeping.opened_from.clone()
-        };
-        login.only_if_asked = asked.keep.is_some() && opened_from == asked.keep;
         let Some(sites) = &self.sites else {
             return Err(NotActed::Refused(
                 "this browser was started with no reach, so purlis logs nothing in to it"
@@ -1985,22 +2028,46 @@ impl Screen for EngineScreen {
             let held = held.as_ref().ok_or(NotActed::Ended)?;
             (Arc::clone(&held.browser), Arc::clone(&held.proxy))
         };
-        let (ended, signing_in) = performed(
-            sites,
-            &proxy,
-            &at,
-            &login.origin,
-            SIGN_IN_WITHIN,
-            |holder| {
+        let origin = login.origin.clone();
+        let (ended, signing_in) =
+            performed(sites, &proxy, &at, &origin, SIGN_IN_WITHIN, |holder| {
+                // Opened from this very kept login, a page that asks for nothing is signed in
+                // already. Tried from here, whatever comes of it (#2693), and only a login that
+                // may run: one refused leaves what the browser keeps as it is (#5121).
+                let (opened_from, again) = {
+                    let mut keeping = self.keeping.lock().unwrap_or_else(PoisonError::into_inner);
+                    keeping.tried(asked.keep.as_ref());
+                    // The site is signed in as whichever login went last.
+                    keeping.only_goes_through(asked.identity.as_deref());
+                    let again = keeping.went_through(asked.identity.as_deref());
+                    (keeping.opened_from.clone(), again)
+                };
+                // And having gone through in it before, it may be signed in with it already (#5121).
+                login.only_if_asked = again || (asked.keep.is_some() && opened_from == asked.keep);
                 let ended = browser.log_in(&login, Arc::clone(holder) as Arc<dyn drive::Hold>);
                 // A login with nothing left to finish on its form's site signs in no more
                 // (#4995); one the person took over is theirs to finish meanwhile.
                 holder.answered(&ended);
                 (ended, holder.signing_in())
-            },
-        )
-        .map_err(NotActed::Refused)?;
+            })
+            .map_err(NotActed::Refused)?;
         let ended = ended.map_err(not_acted)?;
+        // Only where the browser is held to its page: nothing else counts as signed in (#5121).
+        if counts_as_signed_in(
+            ended.outcome.is_ok(),
+            sites.bound().page().as_ref(),
+            &at.page,
+        ) {
+            self.keeping
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .goes_through(asked.identity.as_deref());
+        } else if ended.outcome.is_err() {
+            self.keeping
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .did_not_hold(asked.identity.as_deref());
+        }
         let (fills_on, page) = (login.origin.clone(), login.back_to.clone());
         drop(login);
         let mut outcome = ended

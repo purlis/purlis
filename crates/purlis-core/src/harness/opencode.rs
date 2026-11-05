@@ -164,6 +164,12 @@ impl HarnessAdapter for Opencode {
         slash_with_words(&head, skill.given)
     }
 
+    /// Every skill of a chat's set is in its `skills.paths`, or is one it found itself, and each
+    /// of them is a slash command.
+    fn own_start_reaches(&self, _origin: crate::skills::Origin) -> bool {
+        true
+    }
+
     /// opencode 1.18.33 puts every skill in its system prompt with no limit at all, so purlis's
     /// budget is the only one its chats have (ADR 0102 §1), and no description is cut. A
     /// manual-only skill is handed without its description, which keeps it out of the listing

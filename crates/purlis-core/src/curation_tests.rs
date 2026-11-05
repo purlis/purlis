@@ -823,12 +823,14 @@ fn each_builtin_prompt_reads_whole_in_every_harness_it_can_be_typed_into() {
                 if harness.ready_to_type().is_none() {
                     continue;
                 }
-                assert_eq!(
-                    harness.why_drawn_as_a_placeholder(&pasted(&action.prompt)),
-                    None,
-                    "{} on {kind:?}",
-                    builtin.id
-                );
+                for typed in [action.prompt.clone(), action.prompt_on(Some(harness))] {
+                    assert_eq!(
+                        harness.why_drawn_as_a_placeholder(&pasted(&typed)),
+                        None,
+                        "{} on {kind:?}",
+                        builtin.id
+                    );
+                }
             }
         }
     }
@@ -1161,5 +1163,52 @@ fn persona_lint_renders_each_kind_s_own_name_and_path() {
     );
     for message in said {
         assert!(message.contains("this one is 1001"), "{message}");
+    }
+}
+
+/// #5186: each of purlis's own starts its skill on a harness that can, and keeps its sentence on
+/// one that only lists the skill or that purlis has no adapter for. A persona's own stays its words.
+#[test]
+fn a_builtins_prompt_is_its_harnesss_start_of_its_skill_and_a_personas_stays_as_written() {
+    use crate::harness::Harness;
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::create_dir_all(root.join("personas/ops/curation")).unwrap();
+    std::fs::write(
+        root.join("personas/ops/persona.md"),
+        "---\nname: ops\n---\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("personas/ops/curation/tidy.md"),
+        "---\nlabel: Tidy\non: persona\n---\nUse the mine skill on {subject.name}.\n",
+    )
+    .unwrap();
+    let got = resolve(root, &persona("ops")).unwrap();
+    let compact = got
+        .actions
+        .iter()
+        .find(|a| a.id == "charter/compact")
+        .unwrap();
+    let sentence = "Use the purlis-compact skill to compact and improve the persona ops.";
+    assert_eq!(compact.prompt, sentence);
+    assert_eq!(
+        compact.prompt_on(Some(Harness::ClaudeCode)),
+        "/purlis:purlis-compact compact and improve the persona ops"
+    );
+    assert_eq!(
+        compact.prompt_on(Some(Harness::Opencode)),
+        "/purlis-compact compact and improve the persona ops"
+    );
+    assert_eq!(compact.prompt_on(Some(Harness::Codex)), sentence);
+    assert_eq!(compact.prompt_on(None), sentence);
+    if let Some(mine) = got.actions.iter().find(|a| a.id == "ops/tidy") {
+        assert_eq!(
+            mine.prompt_on(Some(Harness::ClaudeCode)),
+            mine.prompt,
+            "a persona's own is never rewritten"
+        );
+    } else {
+        panic!("the persona's action is offered: {:?}", got.warnings);
     }
 }
