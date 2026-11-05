@@ -1722,16 +1722,6 @@ pub fn kept_off_said(site: &str, asks_to_sign_in: bool) -> String {
     )
 }
 
-/// What a chat is told where the page an act answered with is on `site`, the site its browser's
-/// login signs in on (#5152).
-fn on_kept_off_said(site: &str) -> String {
-    format!(
-        "this page is on {site}, the site this browser signs in on: you may not read or act on it \
-         outside a sign-in. Go back, or navigate to the login's own site; if it asks to sign in \
-         again, call browser_login"
-    )
-}
-
 /// A running browser and its reach proxy, which lives exactly as long as it.
 struct Held {
     browser: Arc<Browser>,
@@ -1997,39 +1987,12 @@ impl Screen for EngineScreen {
         // The call waits on the engine: it is made outside the lock, so frames and a stop are
         // never held up behind it.
         let browser = self.with(Arc::clone);
-        let mut answered = browser
+        browser
             .map_or(Err(drive::Refusal::Ended), |browser| {
                 browser.call_at(epoch, &id, call)
             })
             .map(|answer| browsed(answer, MOST_SCREENSHOT_BYTES))
-            .map_err(not_acted)?;
-        // A page it answers with on the site its login signs in on (#5152): the chat is told
-        // it may not act there, and what to do, and is given its origin alone, no title.
-        let kept_off = self.sites.as_ref().and_then(|sites| {
-            let page = answered.page.as_ref()?;
-            kept_off_at(sites.bound(), &page.address)
-        });
-        if let Some(sites) = &self.sites {
-            for page in answered
-                .page
-                .iter_mut()
-                .chain(answered.opened.iter_mut())
-                .chain(answered.pages.iter_mut())
-            {
-                if kept_off_at(sites.bound(), &page.address).is_some() {
-                    page.address = wire::origin_of(&page.address).unwrap_or_default();
-                    page.title.clear();
-                }
-            }
-        }
-        if let Some(site) = kept_off {
-            let said = on_kept_off_said(&site);
-            answered.note = Some(match answered.note.take() {
-                Some(note) => format!("{note}; {said}"),
-                None => said,
-            });
-        }
-        Ok(answered)
+            .map_err(not_acted)
     }
 
     fn log_in(&self, asked: &wire::LogIn) -> Result<LoginEnded, NotActed> {

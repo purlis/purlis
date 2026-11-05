@@ -15,6 +15,8 @@
 //! - **Only whole.** A part of a text is never taken out, among text the chat wrote, because that
 //!   would tell it which part it was (D-5115-13). A text shorter than [`SHORTEST_SCRUBBED`] is not
 //!   taken out at all, in any form: it would take ordinary words out of the page.
+//! - **A string too much to read is said as blanked, whole** ([`MOST_READ`], [`MOST_LOOKED_AT`]):
+//!   a page can write what would take many seconds to read, and answers wait on it.
 
 use base64::Engine as _;
 use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
@@ -35,6 +37,13 @@ const SHORTEST_INSIDE_BASE64: usize = 6;
 /// (`leaving::carries_value`).
 const MOST_ENCODINGS: usize = 16;
 
+/// The most characters of a string's readings, added up, held to read it: each takes some 24 bytes.
+const MOST_READ: usize = 16_000_000;
+
+/// The most characters of a string's readings, added up, looked through for all it is looked
+/// through for.
+const MOST_LOOKED_AT: usize = 2_000_000_000;
+
 /// What stands where a text was taken out.
 const SAID: &str = "(blanked)";
 
@@ -42,7 +51,13 @@ const SAID: &str = "(blanked)";
 type Needle = Zeroizing<Vec<char>>;
 
 fn needle(text: &str) -> Needle {
-    Zeroizing::new(text.chars().flat_map(char::to_lowercase).collect())
+    Zeroizing::new(text.chars().flat_map(folded).collect())
+}
+
+/// `c` as it is compared, whichever case it was written in: through upper case first, so a `ß`
+/// reads as the `SS` it is capitalised to, and a final `ς` as the `Σ`.
+fn folded(c: char) -> impl Iterator<Item = char> {
+    c.to_uppercase().flat_map(char::to_lowercase)
 }
 
 /// What is taken out of an answer: texts kept out in each of their [`forms`], and the texts groups
@@ -71,7 +86,7 @@ impl Scrub {
 
     /// Whether `text` holds any text kept out.
     pub(crate) fn holds(&self, text: &str) -> bool {
-        self.text(text) != text
+        holds_in_a_reading(text, &self.exact, false) || holds_in_a_reading(text, &self.loose, true)
     }
 }
 
@@ -97,7 +112,7 @@ fn loose_needles(loose: &[&str]) -> Vec<Needle> {
             Zeroizing::new(
                 text.chars()
                     .filter(|c| !separates(*c))
-                    .flat_map(char::to_lowercase)
+                    .flat_map(folded)
                     .collect::<Vec<char>>(),
             )
         })
@@ -132,6 +147,7 @@ fn forms(text: &str) -> Vec<Zeroizing<String>> {
         Zeroizing::new(URL_SAFE.encode(bytes)),
         Zeroizing::new(URL_SAFE_NO_PAD.encode(bytes)),
     ];
+    all.extend(escaped_in_latin1(text));
     for before in 0..3 {
         let inside = inside_base64(bytes, before);
         if inside.chars().count() >= SHORTEST_INSIDE_BASE64 {
@@ -146,6 +162,24 @@ fn forms(text: &str) -> Vec<Zeroizing<String>> {
         }
     }
     seen
+}
+
+/// **`text` as a form on a page in Latin-1 writes it into an address**, where it is another spelling
+/// than UTF-8's: each of its marked letters as the escape of its one byte. `None` where it has no
+/// such letter, or one Latin-1 has not.
+pub(crate) fn escaped_in_latin1(text: &str) -> Option<Zeroizing<String>> {
+    if text.is_ascii() || text.chars().any(|c| u32::from(c) > 0xff) {
+        return None;
+    }
+    let mut out = Zeroizing::new(String::with_capacity(text.len() * 3));
+    for c in text.chars() {
+        if c.is_ascii() {
+            out.push(c);
+        } else {
+            out.push_str(&format!("%{:02x}", u32::from(c)));
+        }
+    }
+    Some(out)
 }
 
 /// The characters of the base64 of a larger text that `bytes` alone decide, `before` bytes (of the
@@ -253,14 +287,22 @@ fn matched_from(read: &[Read], start: usize, needle: &[char], loose: bool) -> Op
     let mut matched = 0;
     while matched < needle.len() {
         let one = read.get(at)?;
-        if loose && matched > 0 && (separates(one.character) || one.space_too) {
+        // A `+` is a separator only where the text kept out has no `+` here.
+        if loose
+            && matched > 0
+            && (separates(one.character) || one.space_too)
+            && one.character != needle[matched]
+        {
             at += 1;
             continue;
         }
-        if one.space_too && needle[matched] == ' ' {
+        // Either of a space and a `+` may have been read as the other, by whoever wrote this.
+        if (one.space_too && needle[matched] == ' ')
+            || (one.character == ' ' && needle[matched] == '+')
+        {
             matched += 1;
         } else {
-            for lower in one.character.to_lowercase() {
+            for lower in folded(one.character) {
                 if needle.get(matched) != Some(&lower) {
                     return None;
                 }
@@ -296,80 +338,84 @@ fn replaced(text: &str, read: &[Read], needle: &[char], loose: bool) -> Option<S
     })
 }
 
-/// `text` read as written, then with each layer of its encoding read in turn: `at` the layer
-/// asked for, or `None` past the last there is.
-fn read_at_layer(text: &str, layer: usize) -> Option<Vec<Read>> {
-    let mut read = read_as_written(text);
-    for _ in 0..layer {
-        read = read_one_layer(&read)?;
-    }
-    Some(read)
-}
-
-/// `text` with `needle` taken out of each reading of it. One pass of each, so what stands in its
-/// place is never looked into again for long, whatever the needle is.
-fn taken_out_of_every_reading(mut text: String, needle: &[char], loose: bool) -> String {
-    let mut read = Some(read_as_written(&text));
-    let mut layer = 0;
-    while let Some(reading) = read {
-        let reading = match replaced(&text, &reading, needle, loose) {
-            Some(out) => {
-                text = out;
-                match read_at_layer(&text, layer) {
-                    Some(again) => again,
-                    None => break,
-                }
-            }
-            None => reading,
+/// Each reading of `text`: as written, then with each layer of its encoding read in turn. `None`
+/// once they come to more characters than `most`.
+fn readings(text: &str, most: usize) -> Option<Vec<Vec<Read>>> {
+    let mut all = vec![read_as_written(text)];
+    let mut read = all[0].len();
+    while all.len() <= MOST_ENCODINGS {
+        let Some(next) = all.last().and_then(|last| read_one_layer(last)) else {
+            break;
         };
-        layer += 1;
-        read = (layer <= MOST_ENCODINGS)
-            .then(|| read_one_layer(&reading))
-            .flatten();
-    }
-    text
-}
-
-/// `text` with each of `needles` taken out.
-fn taken_out(mut text: String, needles: &[Needle], loose: bool) -> String {
-    for needle in needles {
-        text = taken_out_of_every_reading(text, needle, loose);
-    }
-    text
-}
-
-/// Whether any reading of `text` holds `needle`.
-fn holds_in_a_reading(text: &str, needle: &[char]) -> bool {
-    let mut read = Some(read_as_written(text));
-    let mut layer = 0;
-    while let Some(reading) = read {
-        if replaced(text, &reading, needle, false).is_some() {
-            return true;
+        read += next.len();
+        if read > most {
+            return None;
         }
-        layer += 1;
-        read = (layer <= MOST_ENCODINGS)
-            .then(|| read_one_layer(&reading))
-            .flatten();
+        all.push(next);
     }
-    false
+    (read <= most).then_some(all)
+}
+
+/// The readings of `text` to look through for `needles`, or `None` where that would take past the
+/// limits: such a text is said as holding what is kept out.
+fn readings_for(text: &str, needles: usize) -> Option<Vec<Vec<Read>>> {
+    let all = readings(text, MOST_READ)?;
+    let read: usize = all.iter().map(Vec::len).sum();
+    (read.saturating_mul(needles) <= MOST_LOOKED_AT).then_some(all)
+}
+
+/// `text` with each of `needles` taken out of each reading of it. One pass of each, so what stands
+/// in its place is never looked into again for long, whatever the needle is.
+fn taken_out(mut text: String, needles: &[Needle], loose: bool) -> String {
+    if needles.is_empty() {
+        return text;
+    }
+    let Some(mut all) = readings_for(&text, needles.len()) else {
+        return SAID.to_owned();
+    };
+    for needle in needles {
+        let mut layer = 0;
+        while let Some(reading) = all.get(layer) {
+            if let Some(out) = replaced(&text, reading, needle, loose) {
+                text = out;
+                all = readings(&text, usize::MAX).unwrap_or_default();
+            }
+            layer += 1;
+        }
+    }
+    text
+}
+
+/// Whether any reading of `text` holds any of `needles`.
+fn holds_in_a_reading(text: &str, needles: &[Needle], loose: bool) -> bool {
+    if needles.is_empty() {
+        return false;
+    }
+    let Some(all) = readings_for(text, needles.len()) else {
+        return true;
+    };
+    needles.iter().any(|needle| {
+        all.iter().any(|reading| {
+            (0..reading.len()).any(|at| matched_from(reading, at, needle, loose).is_some())
+        })
+    })
 }
 
 /// Whether `text` holds any of `blanked` (at least [`SHORTEST_SCRUBBED`] characters) in any
 /// reading of it, ignoring case.
 pub(crate) fn holds_any(text: &str, blanked: &[&str]) -> bool {
-    blanked
+    let needles: Vec<Needle> = blanked
         .iter()
         .filter(|one| one.chars().count() >= SHORTEST_SCRUBBED)
-        .any(|one| holds_in_a_reading(text, &needle(one)))
+        .map(|one| needle(one))
+        .collect();
+    holds_in_a_reading(text, &needles, false)
 }
 
-/// Whether `text` holds any of `loose`, ignoring case and any spaces or dashes between its
-/// characters.
+/// Whether any reading of `text` holds any of `loose`, ignoring case and any spaces or dashes
+/// between its characters.
 pub(crate) fn holds_loosely(text: &str, loose: &[&str]) -> bool {
-    let written = read_as_written(text);
-    loose_needles(loose)
-        .iter()
-        .any(|one| replaced(text, &written, one, true).is_some())
+    holds_in_a_reading(text, &loose_needles(loose), true)
 }
 
 #[cfg(test)]
