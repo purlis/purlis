@@ -104,10 +104,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "its key are the way on",
   },
   "ui/notice/Notice.tsx": {
-    count: 1,
+    count: 3,
     why:
-      "the notice family's message part, the live region of a card Notice (#3344): drawn live " +
-      "only by `Notice.tsx`, which this guard holds as the one way to draw a standing line",
+      "the notice family's message part, the live region of a card Notice (#3344), its said " +
+      "part, the live region of a Notices centre card, and its chat-words part, the one place " +
+      "in that region it is switched off, for a fold's own words (#5217): drawn live only by " +
+      "`Notice.tsx`, which this guard holds as the one way to draw a standing line",
   },
   "AddVision.tsx": {
     count: 1,

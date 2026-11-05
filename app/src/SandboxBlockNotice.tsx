@@ -214,6 +214,7 @@ export function SandboxBlockNotice({
         at="pane"
         tone="news"
         label="Sandbox block"
+        consent
         fixes={[{ label: "Show what you can do", onPress: takeUp, busy: taking }]}
         onDismiss={onDismiss}
       >
@@ -225,6 +226,7 @@ export function SandboxBlockNotice({
         at="pane"
         tone="news"
         label="Sandbox block"
+        consent
         onDismiss={onDismiss}
       >
         {line}
@@ -306,6 +308,7 @@ export function SandboxBlockNotice({
       at="pane"
       tone="trouble"
       label="Sandbox block"
+      consent
       fixes={
         filed === undefined
           ? [{ label: "Report…", onPress: report, opens: { id, open: draft !== undefined } }]
@@ -750,6 +753,7 @@ function AllowNotice({
         at="pane"
         tone="trouble"
         label="Sandbox block"
+        consent
         fixes={[{ label: "Restart this chat", onPress: restartThis, busy }]}
         onDismiss={onDismiss}
       >
@@ -767,7 +771,14 @@ function AllowNotice({
     );
   if (block.offer === "brokered")
     return (
-      <Notice cause={cause} at="pane" tone="trouble" label="Sandbox block" onDismiss={onDismiss}>
+      <Notice
+        cause={cause}
+        at="pane"
+        tone="trouble"
+        label="Sandbox block"
+        consent
+        onDismiss={onDismiss}
+      >
         The sandbox blocked {block.said}. purlis never allows that to a chat. {block.route}
         {behind}
       </Notice>
@@ -789,7 +800,14 @@ function AllowNotice({
     );
     // Policy forbids starting without the sandbox, and a socket may still be chosen (#1884).
     return chooseIt === undefined ? (
-      <Notice cause={cause} at="pane" tone="trouble" label="Sandbox block" onDismiss={onDismiss}>
+      <Notice
+        cause={cause}
+        at="pane"
+        tone="trouble"
+        label="Sandbox block"
+        consent
+        onDismiss={onDismiss}
+      >
         {says}
       </Notice>
     ) : (
@@ -798,6 +816,7 @@ function AllowNotice({
         at="pane"
         tone="trouble"
         label="Sandbox block"
+        consent
         fixes={[chooseIt]}
         onDismiss={onDismiss}
         under={chooseUnder}
@@ -819,6 +838,7 @@ function AllowNotice({
         at="pane"
         tone="trouble"
         label="Sandbox block"
+        consent
         fixes={chooseIt === undefined ? [startWithout] : [chooseIt, startWithout]}
         onDismiss={onDismiss}
         under={chooseUnder}
@@ -841,7 +861,14 @@ function AllowNotice({
   }
   if (!isGrantedOffer(block.offer))
     return (
-      <Notice cause={cause} at="pane" tone="trouble" label="Sandbox block" onDismiss={onDismiss}>
+      <Notice
+        cause={cause}
+        at="pane"
+        tone="trouble"
+        label="Sandbox block"
+        consent
+        onDismiss={onDismiss}
+      >
         The sandbox blocked {block.said}.{behind}
       </Notice>
     );
@@ -1034,6 +1061,7 @@ function AllowNotice({
       at="pane"
       tone="trouble"
       label="Sandbox block"
+      consent
       fixes={fixes}
       under={under}
     >

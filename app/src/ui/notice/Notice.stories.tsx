@@ -8,9 +8,9 @@
  * (`docs/component-stories.md`).
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { expect, waitFor } from "storybook/test";
-import { Notice, NoticeList, NoticePaneRow } from "../../Notice";
+import { Notice, NoticeList, NoticeOf, NoticePaneRow } from "../../Notice";
 import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 
 /** A pane: its row of Notices above the terminal's place. */
@@ -77,7 +77,7 @@ export const InAPane: Story = {
   },
 };
 
-/** The Inbox's list: trouble first, then news, a separator between two rows. */
+/** The Inbox's list: trouble first, then news, each a card of its own (#5217). */
 export const InTheInbox: Story = {
   render: () => (
     <div
@@ -104,7 +104,11 @@ export const InTheInbox: Story = {
   ),
   play: async ({ canvas, userEvent }) => {
     await waitFor(() => expect(canvas.getAllByRole("status")).toHaveLength(2));
-    // Trouble is listed first, whatever order the two were written in.
+    // Trouble is listed first, whatever order the two were written in: its × in its head, then
+    // its answer under its words.
+    await userEvent.tab();
+    await expect(canvas.getByRole("button", { name: "Dismiss" })).toHaveFocus();
+    expectFocusInSight();
     await userEvent.tab();
     await expect(canvas.getByRole("button", { name: "Try again" })).toHaveFocus();
     expectFocusInSight();
@@ -231,4 +235,140 @@ export const NeedsADecision: Story = {
     );
     expectFocusInSight();
   },
+};
+
+/** The Notices centre as the Inbox draws it: as wide as the right sidebar. */
+const inTheCentre = (notice: ReactNode) => (
+  <div style={{ inlineSize: "22rem" }}>
+    <NoticeList>{notice}</NoticeList>
+  </div>
+);
+
+/** **A note of a chat in no pane, in the Notices centre** (#4759, #5217): whose it is, its state and age
+ *  beneath, Go to chat a quiet link and its ×, and its one answer the primary button. */
+export const CentreNote: Story = {
+  render: () =>
+    inTheCentre(
+      <NoticeOf.Provider value={{ whose: "steward 4", onGo: () => undefined }}>
+        <Notice
+          cause="mcp-failed:4:github"
+          at="pane"
+          tone="trouble"
+          fixes={[{ label: "Retry", onPress: () => undefined }]}
+          link={{ label: "See its settings", onPress: () => undefined }}
+          onDismiss={() => undefined}
+        >
+          MCP server github could not start, twice, so its tools are not in steward 4.
+        </Notice>
+      </NoticeOf.Provider>,
+    ),
+  play: async ({ canvas: card, userEvent }) => {
+    const go = await card.findByRole("button", { name: "Go to chat steward 4" });
+    await userEvent.tab();
+    await expect(go).toHaveFocus();
+    expectFocusInSight();
+    await userEvent.tab();
+    await expect(card.getByRole("button", { name: "Dismiss" })).toHaveFocus();
+    expectFocusInSight();
+    await userEvent.tab();
+    await expect(card.getByRole("button", { name: "Retry" })).toHaveFocus();
+    expectFocusInSight();
+    await userEvent.tab();
+    await expect(card.getByRole("button", { name: "See its settings" })).toHaveFocus();
+    expectFocusInSight();
+    // The picture is of the card at rest, never of a way the keyboard is on.
+    (document.activeElement as HTMLElement).blur();
+  },
+};
+
+/** **A note with no name of its own, and a plain one with no way but its ×** (#5217). */
+export const CentreNoteAlone: Story = {
+  render: () =>
+    inTheCentre(
+      <>
+        <Notice
+          cause="pin-forgotten:ide"
+          fixes={[{ label: "Undo", onPress: () => undefined }]}
+          onDismiss={() => undefined}
+        >
+          Forgot the pin to ide.
+        </Notice>
+        <Notice cause="chat-fresh:7" label="Started fresh" onDismiss={() => undefined}>
+          This chat started fresh: its harness kept no conversation.
+        </Notice>
+      </>,
+    ),
+};
+
+/** **An arrival card in the Notices centre** (#4759, #5217): Go to chat a quiet link in its head,
+ *  and no primary button, since it asks nothing. */
+export const CentreArrival: Story = {
+  render: () =>
+    inTheCentre(
+      <Notice
+        cause="result:chat.arrived:1"
+        title="steward 6 arrived from steward 4"
+        quiet
+        fixes={[{ label: "Go to it", onPress: () => undefined, primary: true, go: true }]}
+        onDismiss={() => undefined}
+      >
+        {undefined}
+      </Notice>,
+    ),
+};
+
+/** **A sandbox block in the Notices centre** (ADR 0097 §6, #5217): its full waiting edge, Allow
+ *  beside Keep blocked at equal weight, no primary button, and what opens more a quiet link. */
+export const CentreSandboxBlock: Story = {
+  render: () =>
+    inTheCentre(
+      <NoticeOf.Provider value={{ whose: "steward 4", onGo: () => undefined }}>
+        <Notice
+          cause="sandbox-blocked:4:network:connect:chat"
+          at="pane"
+          label="Sandbox block"
+          consent
+          fixes={[
+            { label: "Allow for this chat", onPress: () => undefined, allows: true },
+            { label: "Keep blocked", onPress: () => undefined },
+            {
+              label: "Show the request",
+              onPress: () => undefined,
+              opens: { id: "the-request", open: false },
+            },
+          ]}
+          onDismiss={() => undefined}
+        >
+          The sandbox blocked a connection to api.github.com.
+        </Notice>
+      </NoticeOf.Provider>,
+    ),
+};
+
+/** **A chat's own words on a card** (#5217): markdown under the safe subset, folded past six
+ *  lines, with purlis's sentence above them in plain words. */
+export const CentreChatWords: Story = {
+  render: () =>
+    inTheCentre(
+      <NoticeOf.Provider value={{ whose: "steward 4", onGo: () => undefined }}>
+        <Notice
+          cause="passed-on:4"
+          at="pane"
+          label="Passed on"
+          chatWords={[
+            "**Read this first.** The login fails on the second try:",
+            "",
+            "- the token is `expired`",
+            "- the retry reuses it",
+            "- the session is lost",
+            "- nothing is logged",
+            "- the user sees a blank page",
+            "- the next launch is fine",
+          ].join("\n")}
+          onDismiss={() => undefined}
+        >
+          steward 4 passed this on.
+        </Notice>
+      </NoticeOf.Provider>,
+    ),
 };

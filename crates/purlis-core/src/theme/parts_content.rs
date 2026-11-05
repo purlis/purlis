@@ -189,6 +189,12 @@ pub(super) const NOTICE: Family = Family {
             description: "A card's title (#3478), over what it says: its colour, size and weight.",
             properties: &[Prop::Text, Prop::FontSize, Prop::FontWeight],
         },
+        Part {
+            name: "sub",
+            since: super::NEXT,
+            description: "A Notices centre card's state and age, under its title (#5217).",
+            properties: &[Prop::Text, Prop::FontSize],
+        },
     ],
     variants: &[
         Variant {

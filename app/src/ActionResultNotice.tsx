@@ -69,6 +69,7 @@ export function ActionResultNotice({
     label: way.label,
     onPress: way.onPress,
     primary: way.primary,
+    go: way.go,
   }));
   if (details !== undefined)
     fixes.push({

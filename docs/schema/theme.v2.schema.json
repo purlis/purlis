@@ -6359,6 +6359,30 @@
         "notice.title.attention.font-weight": {
           "$ref": "#/$defs/part-font-weight"
         },
+        "notice.sub.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.sub.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "notice.sub.news.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.sub.news.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "notice.sub.trouble.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.sub.trouble.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "notice.sub.attention.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.sub.attention.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
         "option-card.root.fill": {
           "$ref": "#/$defs/part-fill"
         },
