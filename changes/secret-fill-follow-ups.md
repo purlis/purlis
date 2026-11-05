@@ -8,3 +8,4 @@
 - Secret fill: a site whose name holds a login's user name stays visible to asks, and can be filled, once that value has been filled on that site.
 - A page on the site a browser signs in on is told as one even where its address holds a value kept out.
 - More spellings of a kept value are taken out of what a chat reads: letters whose capitals are spelled differently, a Latin-1 address, and a `+` read as a space.
+- Secret fill: no fill goes to a browser run by an older purlis on a runner or host. The chat is told to update it.

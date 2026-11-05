@@ -496,7 +496,15 @@ pub const KNOWS_CLEAN_LOGINS: Version = Version {
     minor: 75,
 };
 
-/// The version that first fills a secret into a field (#5115): no fill is sent to a host before.
+/// The version a fill is first sent to: from here a host takes a filled value out of every string
+/// it answers a chat with, and holds a page's related windows with it. No fill is sent to a host
+/// before, nor a field read for one.
+pub const KNOWS_FILLS_KEPT_OUT: Version = Version {
+    major: 1,
+    minor: 75,
+};
+
+/// The version that first fills a secret into a field (#5115).
 pub const KNOWS_SECRET_FILL: Version = Version {
     major: 1,
     minor: 72,
