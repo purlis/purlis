@@ -370,7 +370,7 @@ export const HeadAtEveryWidth: Story = {
               key={`${width}-${alone}`}
               className="pane-frame pane-headed"
               data-testid="measured-head"
-              style={{ inlineSize: width, blockSize: "auto" }}
+              style={{ inlineSize: width, blockSize: 48 }}
             >
               <Head kind="chat" width={width} longest alone={alone} />
             </div>

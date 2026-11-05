@@ -427,11 +427,11 @@ describe("moving a task to a tab of its own", () => {
       (button) => button.getAttribute("aria-label") ?? button.textContent ?? "",
     );
     expect(said.filter((name) => /\b(end|close|stop)\b/i.test(name))).toEqual([]);
-    // Its pane has the same minimise where a session's pane has its close.
+    // Its pane has no minimise of its own, being its tab's only one: the tab's does it (#5318).
     expect(screen.queryByRole("button", { name: "Close this pane" })).toBeNull();
-    expect(
-      screen.getAllByRole("button", { name: "Send talk back into steward 1's tab" }),
-    ).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "Send talk back into steward 1's tab" })).toEqual([
+      minimise,
+    ]);
     // The session's tab keeps the one close on the strip.
     expect(ender("steward 1")?.getAttribute("aria-label")).toBe("Close steward 1");
     expect(ender("steward 1")?.hasAttribute("data-minimise")).toBe(false);
@@ -1020,9 +1020,9 @@ describe("a session's pane goes: its tasks' own tabs stay where they are, by eve
     );
   }
 
-  it("a close of the session's pane, which ends nothing (#4756)", async () => {
+  it("a close of the session's only pane, by its tab's ×, which ends nothing (#4756, #5318)", async () => {
     const held = await withTalkInItsTab({ running: ["talk"] });
-    await userEvent.click(screen.getByRole("button", { name: "Close this pane" }));
+    await userEvent.click(screen.getByRole("button", { name: "Close steward 1" }));
     expect(screen.queryByRole("alertdialog")).toBeNull();
     await talkStays(held);
     expect(commandsOf(held.asked, "close_session")).toEqual([]);

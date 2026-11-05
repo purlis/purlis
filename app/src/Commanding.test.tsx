@@ -508,12 +508,7 @@ describe("one list, two surfaces", () => {
     const rows = rowTitles();
 
     await userEvent.keyboard("{Escape}");
-    for (const words of [
-      "New tab",
-      "Split right",
-      "Split down",
-      "Close steward 1",
-    ]) {
+    for (const words of ["New tab", "Split right", "Split down", "Close steward 1"]) {
       expect(rows).toContain(words);
       expect(screen.getByRole("button", { name: words })).toBeInTheDocument();
     }
