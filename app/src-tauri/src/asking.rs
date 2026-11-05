@@ -176,6 +176,8 @@ pub struct RunShown {
     pub not_its_vault: bool,
     /// The chat's command, its words made inert.
     pub command: String,
+    /// The folder it starts in.
+    pub cwd: String,
     /// What Always allow would write, where it is offered (#5245).
     #[specta(optional)]
     pub always: Option<AlwaysShown>,
@@ -2128,9 +2130,12 @@ pub fn run_grant(
             line: line.text,
             by_env: line.by_env,
         });
+    let locked = locks
+        .refuses_run_grant(&open.persona, &bound.program_name())
+        .is_some()
+        || (open.not_its_vault && locks.forbids_vault_grants());
     let says = format!(
-        "{} wants to run {} with {} from vault {}. Allow once runs this exact command, and Allow for \
-         this chat runs it with any arguments until the chat ends, in this chat's own sandbox",
+        "{} wants to run {} with {} from vault {}, in this chat's own sandbox",
         open.persona,
         bound.program.display(),
         open.keys().join(", "),
@@ -2152,7 +2157,8 @@ pub fn run_grant(
         ]
         .into_iter()
         // Policy's `allow-scopes` (#1666) holds for these as for every Allow.
-        .filter(|(_, _, level, offered)| *offered && locks.keeps_scope(*level))
+        // And a lock that came since it was raised leaves only Don't allow.
+        .filter(|(_, _, level, offered)| *offered && locks.keeps_scope(*level) && !locked)
         .map(|(id, label, _, _)| Offered {
             id: id.to_owned(),
             label: label.to_owned(),
@@ -2186,6 +2192,7 @@ pub fn run_grant(
             caution: open.caution.clone(),
             not_its_vault: open.not_its_vault,
             command: open.command.clone(),
+            cwd: bound.cwd.display().to_string(),
             always,
         }),
     }
@@ -2921,7 +2928,6 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
             .iter()
             .map(|wait| secret_fill(wait, waiting.locks)),
     );
-    // A runner chat whose declared tool waits on the person's Allow for its pool (#2047).
     // A chat whose brokered run names a program its persona does not declare (ADR 0112).
     asks.extend(
         waiting
@@ -2929,6 +2935,7 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
             .iter()
             .map(|open| run_grant(open, waiting.locks)),
     );
+    // A runner chat whose declared tool waits on the person's Allow for its pool (#2047).
     asks.extend(waiting.pool_tools.iter().map(pool_tool));
     // A chat whose brokered run missed a key waits on the person to fill it (#5068).
     asks.extend(

@@ -2466,19 +2466,10 @@ fn held_for_the_project(root: &std::path::Path, port: u16) -> bool {
 /// The separator of a grant's id: no host or folder purlis grants holds it.
 const SEP: char = '\u{1f}';
 
-/// **Every grant in force for the project at `root`** (#1348): each open chat's (a closed
-/// chat's ended with it, D-1348-1), yours (hosts and folders), and the project's own hosts.
 /// What a Run grant lets its chat run, as the Granted list says it: never its arguments, which
 /// are the chat's words.
 fn run_grant_target(bound: &purlis_core::secrets::ask::run::Bound) -> String {
-    let mut keys: Vec<&str> = bound
-        .env
-        .iter()
-        .chain(&bound.file)
-        .filter_map(|spec| spec.split_once('=').map(|(_, key)| key))
-        .collect();
-    keys.sort_unstable();
-    keys.dedup();
+    let keys = purlis_core::secrets::ask::run::keys_of(bound);
     format!(
         "{} with {} from vault {}",
         bound.program.display(),
@@ -2546,6 +2537,8 @@ fn revoke_run_grant(held: &crate::planes::Held, number: u32) -> Result<(), Strin
     Ok(())
 }
 
+/// **Every grant in force for the project at `root`** (#1348): each open chat's (a closed
+/// chat's ended with it, D-1348-1), yours (hosts and folders), and the project's own hosts.
 fn grants_of(
     root: &std::path::Path,
     chats: &crate::chats::Chats,

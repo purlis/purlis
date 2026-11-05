@@ -16,6 +16,7 @@ function run(over: Partial<RunShown> = {}): RunShown {
     every_host: false,
     not_its_vault: false,
     command: "curl https://api.example.com",
+    cwd: "/work",
     ...over,
   };
 }
@@ -70,6 +71,12 @@ describe("RunGrantFacts", () => {
     const said = screen.getByTestId("run-grant-not-its-vault").textContent;
     expect(said).toContain("for that alone");
     expect(said).toContain("every chat as devops");
+  });
+
+  it("says on every notice what any program can do, and where it starts", () => {
+    render(<RunGrantFacts run={run()} />);
+    expect(screen.getByTestId("run-grant-reach").textContent).toContain("can run others");
+    expect(screen.getByTestId("run-grant").textContent).toContain("/work");
   });
 
   it("carries the caution where the program is a general-purpose one", () => {

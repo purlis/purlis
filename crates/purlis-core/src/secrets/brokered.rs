@@ -726,12 +726,24 @@ fn run_grant_locked(
     let persona = asker.persona.as_deref().unwrap_or_default();
     let named = command_name(&command[0]);
     locks.refuses_run_grant(persona, &named).or_else(|| {
+        // Policy's `allow-scopes` may leave no scope a Run grant can be given at.
+        use crate::sandbox::grant::Level;
+        if ![Level::Once, Level::Chat, Level::Project]
+            .into_iter()
+            .any(|level| locks.keeps_scope(level))
+        {
+            return Some(format!(
+                "Policy removes every scope a program could be allowed at with a vault's keys, so \
+                 {named} needs to be declared as a tool of {persona}'s. {}",
+                locks.locked_by()
+            ));
+        }
         let undeclared = locks.forbids_undeclared_secret_asks()
             && keys_named(wanted)
                 .any(|key| super::needs::declared(&asker.root, persona, key).is_none());
         undeclared.then(|| {
             format!(
-                "policy turns off asks for a secret {persona} does not declare, so {named} needs \
+                "Policy turns off asks for a secret {persona} does not declare, so {named} needs \
                  to be declared as a tool of {persona}'s. {}",
                 locks.locked_by()
             )
@@ -827,64 +839,57 @@ fn run_granted(
     // Every tool line written for this persona, in force or not: a teammate's is no ask.
     let (written_lines, _) = tools::declared_and_allowed_here(&asker.root, persona);
     let listed = written_lines.as_slice();
+    let asked = tools::Asked {
+        vault: &wanted.vault,
+        env: &wanted.env,
+        file: &wanted.file,
+        dotenv: &wanted.dotenv,
+        program: &command[0],
+    };
+    let writes = chat_writes(asker, confines);
+    // A tool's own program, or one a teammate declared, is held as it always was: refused in the
+    // words it always was, with nothing asked. Only a grant the person gave is another matter,
+    // since Always allow declares a program as it grants it.
+    let is_a_tool = tools::is_declared(&confines.tools, listed, &command[0]);
+    let locked = run_grant_locked(asker, wanted, command, &locks);
+    if is_a_tool && (locked.is_some() || tools::limits_its_arguments(listed, &command[0])) {
+        return Err((1, why));
+    }
     // Policy first (#5243): whatever was given before, nothing runs under a Run grant while it
-    // locks them, and nobody is offered an Allow. A key the command misses can still be stored.
-    if let Some(locked) = run_grant_locked(asker, wanted, command, &locks) {
-        let named = command_name(&command[0]);
+    // locks them, and nobody is offered an Allow. A key the command misses can still be stored,
+    // whichever lock holds, for any program that could have been allowed without it.
+    if let Some(locked) = locked {
         missing
             .asks
-            .refused_run_by_policy(asker.chat, &named, &wanted.vault);
-        let may_fill = tools::for_run_grant(
-            &asker.root,
-            persona,
-            &tools::Asked {
-                vault: &wanted.vault,
-                env: &wanted.env,
-                file: &wanted.file,
-                dotenv: &wanted.dotenv,
-                program: &command[0],
-            },
-            listed,
-            &locks,
-            &chat_writes(asker, confines),
-        )
-        .is_ok();
+            .refused_run_by_policy(asker.chat, &command_name(&command[0]), &wanted.vault);
+        let unlocked = crate::sandbox::policy::Locks::none();
+        let may_fill =
+            tools::for_run_grant(&asker.root, persona, &asked, listed, &unlocked, &writes).is_ok();
         if may_fill && !not_its_vault {
             fill_what_it_misses(asker, confines, wanted, missing, &locked, say)?;
         }
         return Err((1, locked));
     }
-    let ready = tools::for_run_grant(
-        &asker.root,
-        persona,
-        &tools::Asked {
-            vault: &wanted.vault,
-            env: &wanted.env,
-            file: &wanted.file,
-            dotenv: &wanted.dotenv,
-            program: &command[0],
-        },
-        listed,
-        &locks,
-        &chat_writes(asker, confines),
-    )
-    .map_err(|refused| (1, format!("{why} ({refused})")))?;
+    let refused = |said: String| {
+        if is_a_tool {
+            (1, why.clone())
+        } else {
+            (1, said)
+        }
+    };
+    let ready = tools::for_run_grant(&asker.root, persona, &asked, listed, &locks, &writes)
+        .map_err(|refused_as| refused(format!("{why} ({refused_as})")))?;
     // A command its run would refuse is not offered.
-    tools::allows(&ready, &command[1..]).map_err(|refused| (1, refused))?;
-    if let Some(folder) = asker.folder.as_deref().filter(|folder| folder.is_dir()) {
-        let start_in = wanted
-            .cwd
-            .as_deref()
-            .filter(|cwd| cwd.is_absolute() && cwd.is_dir())
-            .unwrap_or(folder);
-        tools::reads_held_repository(
-            &ready,
-            &command[1..],
-            start_in,
-            &asker.root,
-            &chat_writes(asker, confines),
-        )
-        .map_err(|refused| (1, refused))?;
+    tools::allows(&ready, &command[1..]).map_err(refused)?;
+    let folder = asker.folder.as_deref().filter(|folder| folder.is_dir());
+    let start_in = wanted
+        .cwd
+        .as_deref()
+        .filter(|cwd| cwd.is_absolute() && cwd.is_dir())
+        .or(folder);
+    if let Some(start_in) = start_in {
+        tools::reads_held_repository(&ready, &command[1..], start_in, &asker.root, &writes)
+            .map_err(refused)?;
     }
     let mut env = wanted.env.clone();
     let mut file = wanted.file.clone();
@@ -892,33 +897,43 @@ fn run_granted(
     file.sort();
     let bound = Bound {
         chat: asker.chat,
+        name: command_name(&command[0]),
         program: ready.program.clone(),
         vault: wanted.vault.clone(),
         env,
         file,
+        cwd: start_in.map(Path::to_path_buf).unwrap_or_default(),
         args: command[1..].to_vec(),
     };
-    // A tool's own program, or one a teammate declared, is held as it always was. A grant the
-    // person gave is another matter: Always allow declares it as it grants it.
-    let is_a_tool = tools::is_declared(&confines.tools, listed, &command[0]);
-    let shown = command_shown(command);
-    if !is_a_tool && shown.chars().count() > MOST_COMMAND_SHOWN {
-        return Err((
-            1,
-            format!(
-                "{why} (this command is too long to show the person whole, so purlis did not \
-                 ask: shorten it)"
-            ),
-        ));
+    if is_a_tool {
+        return if missing.asks.granted(&bound) {
+            Ok(ready)
+        } else {
+            Err((1, why))
+        };
     }
-    // What the person reads is what runs: a stretch the mask would hide could hide a host.
-    if !is_a_tool && crate::dispatchrecord::masked(&shown) != shown {
-        return Err((
-            1,
-            "this command holds what reads as a credential, so purlis did not show it to the \
-             person or run it: hand a credential by --file or --env"
-                .to_owned(),
-        ));
+    let shown = command_shown(command);
+    // What the person reads must be what runs, so these go unshown. A grant for any arguments was
+    // given without them, and shows nothing.
+    if !missing.asks.covers(&bound) {
+        if shown.chars().count() > MOST_COMMAND_SHOWN {
+            return Err((
+                1,
+                format!(
+                    "{why} (this command is too long to show the person whole, so purlis did not \
+                     ask: shorten it)"
+                ),
+            ));
+        }
+        // A stretch the mask would hide could hide a host.
+        if crate::dispatchrecord::masked(&shown) != shown {
+            return Err((
+                1,
+                "this command holds what reads as a credential, so purlis did not show it to the \
+                 person or run it: hand a credential by --file or --env"
+                    .to_owned(),
+            ));
+        }
     }
     let need = RunNeed {
         bound,
@@ -932,13 +947,6 @@ fn run_granted(
         caution: tools::caution_here(&ready.tool),
         command: shown,
     };
-    if is_a_tool {
-        return if missing.asks.granted(&need.bound) {
-            Ok(ready)
-        } else {
-            Err((1, why))
-        };
-    }
     let held = missing
         .asks
         .allowed_or_held(need, missing.within, &mut |line: &str| {
@@ -2658,6 +2666,7 @@ pub(crate) fn serve_recorded(
     {
         return refuse(&mut *writer, 1, why.clone());
     }
+    let armed_as_a_tool = declared.is_ok();
     let its_tool = match declared {
         // A browser login is purlis's to perform in the chat's own browser (#2016): run as a
         // command, it runs nothing.
@@ -2712,6 +2721,9 @@ pub(crate) fn serve_recorded(
             Err(why) => return refuse(&mut *writer, 1, why),
         }
     }
+    // A person allowed what they read, and a chat's stdin is not in that: a run under a grant has
+    // none. A program told to read its settings from there reads nothing.
+    let under_a_grant = its_tool.is_some() && !armed_as_a_tool;
     // A vault opened by a Run grant is read, never filled: storing in it is its persona's.
     let missing = missing.filter(|_| vault_refused.is_none());
     // At most a few at once per chat: each holds a proxy, a temp directory and a process group.
@@ -3172,7 +3184,7 @@ pub(crate) fn serve_recorded(
         .current_dir(start_in)
         .env_clear()
         .envs(start_with.0.iter().map(|(k, v)| (k, v)))
-        .stdin(if wanted.stdin {
+        .stdin(if wanted.stdin && !under_a_grant {
             std::process::Stdio::piped()
         } else {
             std::process::Stdio::null()

@@ -9,10 +9,12 @@ use crate::sandbox::tools;
 fn bound(env: &[&str], file: &[&str]) -> Bound {
     Bound {
         chat: 1,
+        name: "printenv".into(),
         program: "/usr/bin/printenv".into(),
         vault: "team".into(),
         env: env.iter().map(|one| (*one).to_owned()).collect(),
         file: file.iter().map(|one| (*one).to_owned()).collect(),
+        cwd: "/work".into(),
         args: vec!["--these-never-appear".into()],
     }
 }
@@ -210,7 +212,7 @@ fn a_write_that_fails_says_why_and_leaves_the_file_as_it_was() {
     let broken = "[sandbox\nnot toml";
     let tmp = project(broken);
     let why = write(tmp.path(), "devops", &bound(&[], &["V=TOKEN"])).unwrap_err();
-    assert!(why.contains("charter.toml"), "{why}");
+    assert!(why.contains("not valid TOML"), "{why}");
     assert_eq!(manifest(tmp.path()), broken);
 }
 

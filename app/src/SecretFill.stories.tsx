@@ -50,6 +50,23 @@ const secret = {
   waiting: 1,
 };
 
+/** #5243: under policy's lock no Allow is offered, says why, and a key can still be filled. */
+export const NoAllowUnderPolicy: Story = {
+  args: {
+    secret: {
+      ...secret,
+      tool: null,
+      no_allow:
+        "Policy turns off allowing a program with a vault's keys, so curl needs to be declared as a tool of devops's. Locked by policy, set by Platform team in /etc/purlis/policy.json.",
+    },
+    box: null,
+  },
+  play: async ({ canvas }) => {
+    await expect(canvas.getByTestId("secret-no-allow")).toHaveTextContent("Policy turns off");
+    await expect(canvas.getByLabelText("Value of KUBECONFIG")).toBeVisible();
+  },
+};
+
 /** #5068: a key a declared tool's run missed, with the box its value is typed in. */
 export const ForATool: Story = {
   args: { secret, box: null },

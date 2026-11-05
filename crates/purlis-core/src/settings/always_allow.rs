@@ -100,7 +100,7 @@ pub fn line_of(bound: &Bound) -> Option<Line> {
 fn added(text: &str, persona: &str, line: &Line) -> Result<String, String> {
     let mut doc: toml_edit::DocumentMut = text.parse().map_err(|e: toml_edit::TomlError| {
         format!(
-            "charter.toml is not valid TOML ({}), so nothing was written",
+            "the project's file is not valid TOML ({}), so nothing was written",
             crate::shown::short(e.message())
         )
     })?;
@@ -114,9 +114,7 @@ fn added(text: &str, persona: &str, line: &Line) -> Result<String, String> {
         .map_err(|_| "the line reads as no tool, so nothing was written")?;
     value.decor_mut().set_prefix(" ");
     let not_a_table = || {
-        format!(
-            "charter.toml's [sandbox.personas.{persona}] is not a table, so nothing was written"
-        )
+        format!("the project's [sandbox.personas.{persona}] is not a table, so nothing was written")
     };
     let mut inline = false;
     let mut at: &mut dyn toml_edit::TableLike = doc.as_table_mut();
@@ -180,9 +178,9 @@ pub fn write(root: &Path, persona: &str, bound: &Bound) -> Result<Written, Strin
     let waits = !nothing_waits(root, &base, persona);
     let after = added(&base, persona, &line)?;
     let declared = |text: &str| {
-        crate::sandbox::Plane::of(Some(text))
-            .said()
-            .policy_or_unset()
+        let said = crate::sandbox::Plane::of(Some(text)).said();
+        said.policy
+            .or(said.unset)
             .and_then(|policy| persona::of(&policy.personas, Some(persona)).cloned())
     };
     let as_written = declared(&after)
@@ -215,5 +213,4 @@ pub fn write(root: &Path, persona: &str, bound: &Bound) -> Result<Written, Strin
 }
 
 #[cfg(test)]
-#[path = "always_allow_tests.rs"]
 mod tests;

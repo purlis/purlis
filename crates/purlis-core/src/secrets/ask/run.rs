@@ -53,6 +53,9 @@ pub const MOST_OPEN_PER_CHAT: usize = 3;
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Bound {
     pub chat: u32,
+    /// The name it was asked for by, which a program of several names goes by.
+    #[serde(default)]
+    pub name: String,
     /// The program as it runs: found by the app and with its links resolved, where no chat
     /// writes ([`crate::sandbox::tools::for_run_grant`]).
     pub program: PathBuf,
@@ -61,6 +64,10 @@ pub struct Bound {
     pub env: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub file: Vec<String>,
+    /// Where it starts. Part of what Allow once names, and shown; a grant for the chat is for any
+    /// folder, as it is for any arguments, since the chat's folders are all one to it.
+    #[serde(default)]
+    pub cwd: PathBuf,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub args: Vec<String>,
 }
@@ -71,12 +78,14 @@ impl Bound {
     fn same_but_args(&self, other: &Self) -> bool {
         (
             &self.chat,
+            &self.name,
             &self.program,
             &self.vault,
             &self.env,
             &self.file,
         ) == (
             &other.chat,
+            &other.name,
             &other.program,
             &other.vault,
             &other.env,
@@ -144,7 +153,7 @@ impl OpenRun {
 }
 
 /// Each key `bound` hands over, once, sorted.
-fn keys_of(bound: &Bound) -> Vec<String> {
+pub fn keys_of(bound: &Bound) -> Vec<String> {
     let mut keys: Vec<String> = bound
         .env
         .iter()
@@ -309,15 +318,20 @@ pub(super) struct Runs {
 }
 
 impl Runs {
-    /// Takes what covers `bound`, where a grant does: Allow once goes as it is taken.
-    fn take(&mut self, bound: &Bound) -> bool {
-        let Some(at) = self.given.iter().position(|given| {
+    /// Where the grant that covers `bound` is held, if one does.
+    fn covers(&self, bound: &Bound) -> Option<usize> {
+        self.given.iter().position(|given| {
             if given.once {
                 given.bound == *bound
             } else {
                 given.bound.same_but_args(bound)
             }
-        }) else {
+        })
+    }
+
+    /// Takes what covers `bound`, where a grant does: Allow once goes as it is taken.
+    fn take(&mut self, bound: &Bound) -> bool {
+        let Some(at) = self.covers(bound) else {
             return false;
         };
         if self.given[at].once {
@@ -548,6 +562,11 @@ impl Asks {
         );
     }
 
+    /// **Whether a grant covers `bound`**, with nothing asked and nothing used up.
+    pub fn covers(&self, bound: &Bound) -> bool {
+        self.inner().runs.covers(bound).is_some()
+    }
+
     /// **Whether a grant covers `bound`**, with nothing asked: Allow once goes as it is taken.
     pub fn granted(&self, bound: &Bound) -> bool {
         self.inner().runs.take(bound)
@@ -614,7 +633,7 @@ impl Asks {
         }
         let mut inner = self.inner();
         let Some(at) = inner.runs.open.iter().position(|asked| asked.open.id == id) else {
-            return Err(format!("secret ask {id} is no longer open"));
+            return Err("This ask has already been answered, or its chat has closed.".to_owned());
         };
         let asked = inner.runs.open.remove(at);
         let bound = asked.open.bound.clone();
@@ -665,16 +684,26 @@ impl Asks {
                     once: false,
                     at: now_secs(),
                 });
-                Answer::Allowed {
-                    scope: if answer == RunAnswer::Always {
-                        Scope::Project
-                    } else {
-                        Scope::Chat
-                    },
-                }
+                // Always allow too: this chat is what it promises the chat, since each machine
+                // and every other chat stands on its own Allow.
+                Answer::Allowed { scope: Scope::Chat }
             }
             RunAnswer::Refuse => {
-                for waiter in asked.waiters {
+                // Not asked again of this program and vault: its other commands open now close too.
+                let mut refused = asked.waiters;
+                let mut at = 0;
+                while at < inner.runs.open.len() {
+                    let one = &inner.runs.open[at].open.bound;
+                    if one.chat == bound.chat
+                        && one.program == bound.program
+                        && one.vault == bound.vault
+                    {
+                        refused.extend(inner.runs.open.remove(at).waiters);
+                    } else {
+                        at += 1;
+                    }
+                }
+                for waiter in refused {
                     held |= reach(RunSettled::Refused, waiter);
                 }
                 inner

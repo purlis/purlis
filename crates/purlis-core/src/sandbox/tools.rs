@@ -1640,7 +1640,126 @@ pub fn is_declared(armed: &[Ready], listed: &[Tool], program: &str) -> bool {
     let named = Path::new(program)
         .file_name()
         .map_or_else(|| program.to_owned(), |n| n.to_string_lossy().into_owned());
-    armed.iter().any(|ready| names(ready, program)) || listed.iter().any(|tool| tool.name == named)
+    // Whatever its case: macOS finds `CURL` as `curl`, and no spelling escapes a line.
+    armed
+        .iter()
+        .any(|ready| names(ready, program) || ready.tool.name.eq_ignore_ascii_case(&named))
+        || listed
+            .iter()
+            .any(|tool| tool.name.eq_ignore_ascii_case(&named))
+}
+
+/// Whether a line written for `program` limits its arguments, which no grant for any arguments may
+/// then go past (#5245): a teammate's narrowing holds from the chat's next run.
+pub fn limits_its_arguments(listed: &[Tool], program: &str) -> bool {
+    let named = Path::new(program)
+        .file_name()
+        .map_or_else(|| program.to_owned(), |n| n.to_string_lossy().into_owned());
+    listed
+        .iter()
+        .any(|tool| tool.name.eq_ignore_ascii_case(&named) && tool.args.is_some())
+}
+
+/// **Programs no Run grant is offered for, though a declared tool may be one** (ADR 0112, #5239):
+/// each runs other programs as its arguments, its files or its prompt say, which [`REFUSED_NAMES`]
+/// keeps off every tool. A person who declares one chose it in a reviewed line; a person asked in a
+/// notice by a chat should not be asked. Not a complete list: every Run grant's notice says a
+/// program may run others.
+const NOT_FOR_A_RUN_GRANT: &[&str] = &[
+    // run what their arguments name
+    "find",
+    "gfind",
+    "fd",
+    "apply",
+    "lockf",
+    "taskset",
+    "ionice",
+    "unshare",
+    "nsenter",
+    "pkexec",
+    "at",
+    "batch",
+    "crontab",
+    "rlwrap",
+    "ssh-agent",
+    "xcrun",
+    "toybox",
+    "git-upload-pack",
+    "git-receive-pack",
+    // build and run what their files say, files a chat writes
+    "make",
+    "gmake",
+    "bmake",
+    "cmake",
+    "ninja",
+    "rake",
+    "ant",
+    "mvn",
+    "gradle",
+    "bazel",
+    "just",
+    "npm",
+    "npx",
+    "yarn",
+    "pnpm",
+    "corepack",
+    "pip",
+    "pip3",
+    "pipx",
+    "uv",
+    "uvx",
+    "poetry",
+    "gem",
+    "bundle",
+    "cargo",
+    "rustc",
+    "rustup",
+    "go",
+    "gcc",
+    "g++",
+    "cc",
+    "c++",
+    "clang",
+    "clang++",
+    "ld",
+    "docker",
+    "podman",
+    "nerdctl",
+    "swift",
+    "java",
+    "javac",
+    "dotnet",
+    // drive a program, or run commands from their own prompt
+    "gdb",
+    "lldb",
+    "strace",
+    "ltrace",
+    "dtrace",
+    "dtruss",
+    "vi",
+    "vim",
+    "nvim",
+    "view",
+    "ex",
+    "emacs",
+    "nano",
+    "ed",
+    "less",
+    "more",
+    "man",
+    "ftp",
+    "sqlite3",
+    "tcpdump",
+];
+
+/// Whether `program`'s spelling is the one its folder holds: macOS finds `CURL` for `curl`, and a
+/// grant bound to a spelling the person never sees elsewhere would escape every check by name.
+fn spelled_as_it_is_held(program: &Path) -> bool {
+    let (Some(parent), Some(name)) = (program.parent(), program.file_name()) else {
+        return false;
+    };
+    std::fs::read_dir(parent)
+        .is_ok_and(|mut entries| entries.any(|one| one.is_ok_and(|one| one.file_name() == name)))
 }
 
 /// **The program and values a chat's command names, as a Run grant would hand them** (ADR 0112,
@@ -1671,6 +1790,12 @@ pub fn for_run_grant(
     if let Some(why) = refused_name(&name) {
         return Err(why);
     }
+    if NOT_FOR_A_RUN_GRANT.contains(&name.to_ascii_lowercase().as_str()) {
+        return Err(format!(
+            "{name} runs other programs as it is told, so purlis does not offer to allow it: \
+             declare what it's for as a tool, with the arguments it takes"
+        ));
+    }
     if !asked.dotenv.is_empty() {
         return Err(format!(
             "--dotenv names no variable, so {name} can't be allowed with it: hand each key with              --file VARIABLE=key or --env VARIABLE=key"
@@ -1684,6 +1809,11 @@ pub fn for_run_grant(
             };
             if let Some(why) = refused_var(var) {
                 return Err(why);
+            }
+            if loads_code(var) {
+                return Err(format!(
+                    "{var} steers what a program loads, so purlis does not offer to hand it a value"
+                ));
             }
             if !crate::secrets::needs::is_key(key) {
                 return Err(format!(
@@ -1761,6 +1891,12 @@ pub fn for_run_grant(
         return Err(format!(
             "{} is not the {name} purlis finds outside the folders a chat may write: name it {name}",
             crate::shown::one_line(asked.program, 120)
+        ));
+    }
+    if !spelled_as_it_is_held(&ready.program) {
+        return Err(format!(
+            "{name} is not how its folder spells it, so purlis did not ask: name the program as \
+             it is spelled"
         ));
     }
     Ok(ready)

@@ -937,3 +937,177 @@ fn a_key_a_vault_opened_by_a_grant_lacks_is_never_asked_for() {
     let frames = answered(root, want, &asks, RunAnswer::Once);
     assert!(asks.open().is_empty(), "no Fill: {frames:?}");
 }
+
+// ----------------------------------------------------------------------------------------
+// What the reviews found
+
+#[test]
+fn a_program_that_runs_others_as_it_is_told_is_offered_no_run_grant() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    for name in ["find", "make", "vim"] {
+        let mut want = printenv(project.path(), &["."]);
+        want.command[0] = name.to_owned();
+        let frames = run_with(
+            &the_chat(project.path()),
+            want,
+            &asks,
+            Duration::from_secs(60),
+        );
+        assert_eq!(refusal(&frames).1, 1, "{frames:?}");
+        assert!(asks.open_runs().is_empty(), "{name}");
+    }
+}
+
+#[test]
+fn the_tools_lock_still_lets_a_missing_key_be_filled() {
+    let _policy = Policy::says(r#"{"sandbox": {"persona-tools": false}}"#);
+    let project = project();
+    let asks = Asks::new(project.path());
+    let mut want = printenv(project.path(), &["X"]);
+    want.env = vec!["X=NOT_THERE_YET".into()];
+    run_with(&the_chat(project.path()), want, &asks, Duration::ZERO);
+    assert_eq!(asks.open().len(), 1, "Fill");
+    assert!(asks.open_runs().is_empty(), "no Allow");
+}
+
+#[test]
+fn dont_allow_closes_that_programs_other_open_asks_and_their_commands_hear_it() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    let chat = the_chat(project.path());
+    run_with(
+        &chat,
+        printenv(project.path(), &["X"]),
+        &asks,
+        Duration::ZERO,
+    );
+    run_with(
+        &chat,
+        printenv(project.path(), &["Y"]),
+        &asks,
+        Duration::ZERO,
+    );
+    assert_eq!(asks.open_runs().len(), 2);
+    asks.answer_run(asks.open_runs()[0].id, RunAnswer::Refuse, window())
+        .unwrap();
+    assert!(asks.open_runs().is_empty());
+}
+
+#[test]
+fn a_declared_tool_refused_under_a_lock_hears_what_it_always_heard_and_no_policy_is_recorded() {
+    let project = project();
+    std::fs::write(
+        project.path().join("charter.toml"),
+        "[sandbox]\nmode = \"on\"\n[sandbox.personas.devops]\ntools = { printenv = { vault = \"team\", as = \"X env\", key = \"TOKEN\" } }\n",
+    )
+    .unwrap();
+    let asks = Asks::new(project.path());
+    let steps = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let seen = std::sync::Arc::clone(&steps);
+    asks.telling(std::sync::Arc::new(move |chat, step| {
+        seen.lock().unwrap().push((chat, step));
+    }));
+    let unlocked = run_with(
+        &the_chat(project.path()),
+        printenv(project.path(), &["X"]),
+        &asks,
+        Duration::from_secs(60),
+    );
+    let _policy = Policy::says(r#"{"sandbox": {"run-grants": false}}"#);
+    let locked = run_with(
+        &the_chat(project.path()),
+        printenv(project.path(), &["X"]),
+        &asks,
+        Duration::from_secs(60),
+    );
+    assert_eq!(refusal(&unlocked), refusal(&locked));
+    assert!(steps.lock().unwrap().is_empty());
+}
+
+#[test]
+fn a_grant_for_any_arguments_runs_a_command_too_long_to_have_been_shown() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    answered(
+        project.path(),
+        printenv(project.path(), &["X"]),
+        &asks,
+        RunAnswer::ForChat,
+    );
+    let long = "x".repeat(MOST_COMMAND_SHOWN + 1);
+    let frames = run_with(
+        &the_chat(project.path()),
+        printenv(project.path(), &[&long]),
+        &asks,
+        Duration::ZERO,
+    );
+    assert!(!format!("{frames:?}").contains("too long"), "{frames:?}");
+}
+
+#[test]
+fn a_run_under_a_grant_has_no_input_from_the_chat() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    let mut want = printenv(project.path(), &[]);
+    want.command[0] = "cat".into();
+    want.stdin = true;
+    // `cat` would wait for ever on an asker's input held open; here it has none.
+    let frames = answered(project.path(), want, &asks, RunAnswer::Once);
+    assert!(
+        !matches!(frames.last(), Some(Frame::Refused { code, .. }) if *code == WAITING_ON_THE_PERSON),
+        "{frames:?}"
+    );
+}
+
+#[test]
+fn allow_once_is_for_the_folder_it_named() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    let chat = the_chat(project.path());
+    answered(
+        project.path(),
+        printenv(project.path(), &["X"]),
+        &asks,
+        RunAnswer::Once,
+    );
+    run_with(
+        &chat,
+        printenv(project.path(), &["X"]),
+        &asks,
+        Duration::ZERO,
+    );
+    let first = asks.open_runs()[0].id;
+    asks.answer_run(first, RunAnswer::Once, window()).unwrap();
+    let mut elsewhere = printenv(project.path(), &["X"]);
+    elsewhere.cwd = Some(project.path().to_path_buf());
+    let frames = run_with(&chat, elsewhere, &asks, Duration::ZERO);
+    assert_eq!(refusal(&frames).1, WAITING_ON_THE_PERSON, "{frames:?}");
+}
+
+#[test]
+fn a_chat_can_spell_no_grant_past_a_refused_variable_or_a_line_by_its_case() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    let mut steers = printenv(project.path(), &["X"]);
+    steers.env = vec!["NODE_OPTIONS=TOKEN".into()];
+    let frames = run_with(
+        &the_chat(project.path()),
+        steers,
+        &asks,
+        Duration::from_secs(60),
+    );
+    assert_eq!(refusal(&frames).1, 1, "{frames:?}");
+    assert!(asks.open_runs().is_empty());
+    // On a file system that ignores case, `PRINTENV` finds `printenv`, and is no spelling of it.
+    let mut shouted = printenv(project.path(), &["X"]);
+    shouted.command[0] = "PRINTENV".into();
+    let frames = run_with(
+        &the_chat(project.path()),
+        shouted,
+        &asks,
+        Duration::from_secs(60),
+    );
+    assert_eq!(refusal(&frames).1, 1, "{frames:?}");
+    assert!(asks.open_runs().is_empty());
+}

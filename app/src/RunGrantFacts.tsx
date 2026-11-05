@@ -33,7 +33,7 @@ export function RunGrantFacts({ run }: { run: RunShown }) {
       </ul>
       <p className="ui-text-meta" data-testid="run-grant-hosts">
         {run.every_host ? (
-          "It can reach every host: this chat's sandbox holds it to none."
+          "It can reach every host: this chat's sandbox doesn't limit them."
         ) : run.hosts.length === 0 ? (
           "It can reach no host."
         ) : (
@@ -49,15 +49,23 @@ export function RunGrantFacts({ run }: { run: RunShown }) {
         )}
       </p>
       {run.caution != null && <p className="ui-text-meta">{run.caution}</p>}
-      <p className="ui-text-meta">The chat's command, in its own words:</p>
+      <p className="ui-text-meta" data-testid="run-grant-reach">
+        A program can run others and read files this chat wrote, and can leave what it's handed
+        where this chat reads it. Allow it only if you trust this chat with these values.
+      </p>
+      <p className="ui-text-meta">
+        The chat's command, in its own words, started in <code>{run.cwd}</code>, with no input from
+        the chat:
+      </p>
       <pre className="whitespace-pre-wrap break-all" data-testid="run-grant-command">
         {run.command}
       </pre>
       {run.always != null && (
         <>
           <p className="ui-text-meta">
-            Always allow adds this line to {run.persona}'s tools in <code>charter.toml</code>, which
-            teammates each allow for themselves:
+            Always allow adds this line to {run.persona}'s tools in the project's committed file.
+            Every chat as {run.persona} on this machine can then run it with any arguments, once
+            nothing else of {run.persona}'s waits on you. Teammates each allow it for themselves:
           </p>
           <pre className="whitespace-pre-wrap break-all" data-testid="run-grant-always">
             {run.always.line}

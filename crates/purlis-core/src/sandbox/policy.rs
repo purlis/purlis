@@ -715,7 +715,7 @@ impl Locks {
     pub fn refuses_run_grant(&self, persona: &str, program: &str) -> Option<String> {
         if self.no_run_grants {
             return Some(format!(
-                "policy turns off allowing a program with a vault's keys, so {program} needs to \
+                "Policy turns off allowing a program with a vault's keys, so {program} needs to \
                  be declared as a tool of {persona}'s. {}",
                 self.locked_by()
             ));

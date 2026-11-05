@@ -135,7 +135,7 @@ pub fn run_grant_answered(
         .into_iter()
         .find(|open| open.id == id)
     else {
-        return Err(format!("secret ask {id} is no longer open"));
+        return Err("This ask has already been answered, or its chat has closed.".to_owned());
     };
     // Policy holds here as it holds at the run: it may have come to lock this since it was shown.
     if answer != RunAnswer::Refuse {
@@ -174,9 +174,7 @@ pub fn run_grant_answered(
     // Written before any grant: a write that fails says why, the ask stays open, and nothing is
     // given. Where the person had allowed all of the persona's list, the Allow moves with the line.
     if answer == RunAnswer::Always {
-        let written =
-            purlis_core::settings::always_allow::write(held.root(), &open.persona, &open.bound);
-        let written = match written {
+        let written = match declare_the_tool(held, &open) {
             Ok(written) => written,
             Err(why) => {
                 let taken_back = Audited::revoked_always(&open.bound);
@@ -193,24 +191,10 @@ pub fn run_grant_answered(
         };
         // Always allow alone gives the persona the vault, audited as any such Allow is. The line
         // is written by now, so a failure here leaves the usual refused vault's Notice to ask.
-        if let Some(grant) = written.vault {
-            let target = grant.target();
-            let kept = held.audit_then_record(network)(
-                Some(open.bound.chat),
-                &purlis_core::sandbox::grant::Audited {
-                    granted: true,
-                    what: purlis_core::sandbox::local::VAULT,
-                    target: &target,
-                    level: purlis_core::sandbox::grant::Level::You,
-                },
-            )
-            .and_then(|()| {
-                purlis_core::sandbox::local::grant_vault(held.root(), &grant.vault, &grant.persona)
-                    .map_err(|why| why.to_string())
-            });
-            if let Err(why) = kept {
-                tracing::warn!("purlis: Always allow did not give the persona the vault ({why})");
-            }
+        if let Some(grant) = written.vault
+            && let Err(why) = give_the_vault(held, network, open.bound.chat, &grant)
+        {
+            tracing::warn!("purlis: Always allow did not give the persona the vault ({why})");
         }
         if let Some(shown) = written.allow
             && let Err(why) = crate::sandboxing::allow_shown(
@@ -231,6 +215,34 @@ pub fn run_grant_answered(
     let answered = answered?;
     told_each(held, &answered.nudge, &answered.told);
     Ok(())
+}
+
+/// **Writes the line Always allow showed to the persona's tools** (#5245).
+fn declare_the_tool(
+    held: &crate::planes::Held,
+    open: &purlis_core::secrets::ask::run::OpenRun,
+) -> Result<purlis_core::settings::always_allow::Written, String> {
+    purlis_core::settings::always_allow::write(held.root(), &open.persona, &open.bound)
+}
+
+/// **Gives the persona the vault Always allow named** (ADR 0112), audited first.
+fn give_the_vault(
+    held: &crate::planes::Held,
+    network: Option<&purlis_core::sandboxblock::record::Record>,
+    chat: u32,
+    grant: &purlis_core::sandbox::local::VaultGrant,
+) -> Result<(), String> {
+    use purlis_core::sandbox::{grant::Audited, grant::Level, local};
+    held.audit_then_record(network)(
+        Some(chat),
+        &Audited {
+            granted: true,
+            what: local::VAULT,
+            target: &grant.target(),
+            level: Level::You,
+        },
+    )?;
+    local::grant_vault(held.root(), &grant.vault, &grant.persona).map_err(|why| why.to_string())
 }
 
 /// **One vault's entries a Secret ask's picker offers** (#5073): the vault, the keys a link may

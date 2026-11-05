@@ -560,11 +560,6 @@ pub struct Said {
 }
 
 impl Said {
-    /// What it says of the sandbox, whether or not it turned it on.
-    pub fn policy_or_unset(self) -> Option<Policy> {
-        self.policy.or(self.unset)
-    }
-
     /// The sandbox policy in force under `locks` ([`Plane::in_force`]): its own where it turned
     /// the sandbox on, or what it says with the mode on where policy requires the sandbox.
     pub fn in_force(self, locks: &policy::Locks) -> Option<Policy> {

@@ -10824,6 +10824,8 @@ export type RunShown = {
 	not_its_vault: boolean,
 	/**  The chat's command, its words made inert. */
 	command: string,
+	/**  The folder it starts in. */
+	cwd: string,
 	/**  What Always allow would write, where it is offered (#5245). */
 	always?: AlwaysShown | null,
 };

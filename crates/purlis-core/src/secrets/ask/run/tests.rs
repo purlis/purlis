@@ -13,10 +13,12 @@ fn window() -> Answerer {
 fn bound(chat: u32, args: &[&str]) -> Bound {
     Bound {
         chat,
+        name: "curl".into(),
         program: "/usr/bin/curl".into(),
         vault: "team".into(),
         env: vec!["T=TOKEN".into()],
         file: Vec::new(),
+        cwd: "/work".into(),
         args: args.iter().map(|arg| (*arg).to_owned()).collect(),
     }
 }
@@ -102,7 +104,7 @@ fn allow_once_outlives_the_wait_is_good_for_one_run_of_that_command_and_nudges()
         "used"
     );
     let other = asks.answer_run(99, RunAnswer::Once, window()).unwrap_err();
-    assert!(other.contains("no longer open"), "{other}");
+    assert!(other.contains("already been answered"), "{other}");
 }
 
 #[test]

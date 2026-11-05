@@ -3476,10 +3476,12 @@ fn every_name_of_the_macs_lookup_socket_is_refused_and_listed_as_reaching_no_cha
 fn a_run_grant_reads_as_its_program_keys_and_vault_and_never_its_arguments() {
     let bound = purlis_core::secrets::ask::run::Bound {
         chat: 2,
+        name: "curl".to_owned(),
         program: "/usr/bin/curl".into(),
         vault: "team".to_owned(),
         env: vec!["T=TOKEN".to_owned()],
         file: vec!["F=config".to_owned(), "G=TOKEN".to_owned()],
+        cwd: "/work".into(),
         args: vec!["--secret-looking-argument".to_owned()],
     };
     assert_eq!(

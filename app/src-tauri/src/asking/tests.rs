@@ -265,10 +265,12 @@ fn a_run_grant_shows_the_apps_facts_apart_from_the_chats_inert_command() {
         persona: "devops".to_owned(),
         bound: Bound {
             chat: 3,
+            name: "kubectl".to_owned(),
             program: "/usr/bin/kubectl".into(),
             vault: "team".to_owned(),
             env: vec!["KUBE=TOKEN".to_owned()],
             file: vec!["KUBECONFIG=config".to_owned()],
+            cwd: "/work".into(),
             args: vec!["get".to_owned(), "pods".to_owned()],
         },
         hosts: Hosts::Listed(vec!["k8s.example.test".to_owned()]),
