@@ -1731,6 +1731,24 @@ fn only_the_exact_mark_the_app_sets_reads_as_a_sandboxed_chat() {
 }
 
 #[test]
+fn a_sandboxed_chat_is_told_its_level_is_the_person_s_and_to_ask_for_the_reason_shown() {
+    // #5207: the chat named only Start without the sandbox, so it told a person who had turned
+    // their level down that nothing else existed.
+    for said in [
+        "Settings › Project › Sandbox › Your level",
+        "the person's alone",
+        "you cannot lower it, so never suggest you can",
+        "write it in a file for them to confirm",
+        "never ask them to lower it",
+        "do not guess why",
+        "read the reason on this chat's sandbox mark",
+        "a restart applies the level",
+    ] {
+        assert!(SANDBOXED_NOTE.contains(said), "{said}");
+    }
+}
+
+#[test]
 fn a_sandboxed_chat_is_told_a_blocked_socket_or_service_may_get_a_notice_the_person_decides() {
     // ADR 0093 (D-sock-5): a local socket or a system service a chat's sandbox refused may raise
     // a Notice the person can answer. The chat names the socket or the service, says the person

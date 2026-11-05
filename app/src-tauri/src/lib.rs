@@ -2668,6 +2668,20 @@ async fn chats_on_older_sandbox(
         .map_err(|err| format!("purlis could not read the chats' sandbox: {err}"))
 }
 
+/// **Why each open chat of the project runs at its level** (#5207): what its sandbox mark and a
+/// block's Notice say. A read. On a blocking thread: it reads the project's files.
+#[tauri::command]
+#[specta::specta]
+async fn chats_level_why(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<Vec<chats::LevelWhy>, String> {
+    let held = planes.held(&plane)?;
+    tauri::async_runtime::spawn_blocking(move || held.chats().level_whys())
+        .await
+        .map_err(|err| format!("purlis could not read the chats' levels: {err}"))
+}
+
 /// **Starts chat `session` again without the sandbox** (#1342): the person's choice on a block's
 /// Notice that purlis grants nothing for, for this one chat's next run, on its conversation.
 /// Audited as any opt-out is (`trust.sandbox.off`) and never inherited: a later start of the
