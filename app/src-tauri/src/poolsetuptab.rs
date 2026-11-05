@@ -403,7 +403,7 @@ pub async fn pool_setup_sizes(
 
 /// **What Sign-ins' button runs, by hand, for the profiles ticked** (#4718, #5174, Q30): `adding`
 /// recorded on pool `pool`, each of `taking_off` taken off it, then each of `signing_in` signed in
-/// there, as the core spells it. None where the button would run nothing. It only reads.
+/// there, as the core spells it. None where the button would run nothing. It only spells.
 #[tauri::command]
 #[specta::specta]
 pub async fn pool_setup_sign_ins_by_hand(
