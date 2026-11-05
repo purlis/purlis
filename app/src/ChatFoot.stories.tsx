@@ -284,7 +284,7 @@ const meta = {
   component: Foot,
   play: async (context) => walked(context),
   beforeEach: () => {
-    mockIPC((cmd) => (cmd === "skill_studio_on" ? true : cmd === "skill_drafts" ? [] : null));
+    mockIPC((cmd) => (cmd === "skill_drafts" ? [] : null));
   },
 } satisfies Meta<typeof Foot>;
 
