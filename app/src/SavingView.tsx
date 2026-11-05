@@ -723,6 +723,28 @@ function ModeQuestion({ plane, branch }: { plane: PlaneId; branch: string }) {
 }
 
 /**
+ * **The title bar's save indicator while the project's standing is still coming** (#5325): a
+ * mark of its own, so a slow `git status` is seen to be slow and holds up nothing else. It opens
+ * the Saving tab as the indicator does, which says the same.
+ */
+export function SaveReading({ onOpen }: { onOpen: () => void }) {
+  return (
+    <span className="save-indicator" data-stage="reading">
+      <StatusItem
+        variant="pill"
+        aria-label="Saving: reading the project"
+        tooltip="Reading the project"
+        onPress={onOpen}
+        data-testid="save-indicator-reading"
+        icon={<LoaderCircle aria-hidden="true" className="spinning" />}
+      >
+        <span className="save-indicator-words">Reading…</span>
+      </StatusItem>
+    </span>
+  );
+}
+
+/**
  * **The title bar's save indicator** (charter-app#294): the stage of the project in front, as
  * a button that opens its Saving tab, and — while there is anything to take — a save button
  * beside it. Both are `<button tabIndex={0}>`: the tag is what the drag handler stops at, and

@@ -13,7 +13,7 @@ import {
   type ReactNode,
 } from "react";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
-import { Send, X } from "lucide-react";
+import { LoaderCircle, Send, X } from "lucide-react";
 import { useTabStop } from "./roving";
 import { RestartEndsLine } from "./RestartEnds";
 import {
@@ -180,6 +180,7 @@ export function Inbox({
   personaOf,
   updates,
   notices,
+  reading,
   windowLines,
   onNotices,
   onNoticeAnswer,
@@ -222,6 +223,8 @@ export function Inbox({
   updates?: Updates;
   /** The project's Notices (#1695): every `Notice` drawn in it is listed here, in its order. */
   notices?: ReactNode;
+  /** What is still being read that may list a Notice here, in words, one line each (#5325). */
+  reading?: readonly string[];
   /** How many Notices the list holds that the status line counts (`countsInStatusBar`). */
   onNotices?: (count: number) => void;
   /** A Notice answering the person's own press arrived (`ANSWERS`, D-1695-3). */
@@ -496,13 +499,26 @@ export function Inbox({
             <section
               className="inbox-notices"
               aria-label={NOTICES}
-              hidden={noticed === 0 && windowLinesCount === 0 && resultsCount === 0}
+              hidden={
+                noticed === 0 &&
+                windowLinesCount === 0 &&
+                resultsCount === 0 &&
+                (reading === undefined || reading.length === 0)
+              }
               ref={noticesAt}
             >
               <PanelSectionTitle level={3} className="inbox-chain">
                 {NOTICES}
               </PanelSectionTitle>
               <NothingDone said={noticesSaid} />
+              {/* What may yet list a Notice here, each with its own mark (#5325): not read yet
+                  is not nothing to say. */}
+              {reading?.map((said) => (
+                <p key={said} className="pending" aria-busy="true">
+                  <LoaderCircle className="node-icon spinning" aria-hidden="true" />
+                  {said}
+                </p>
+              ))}
               {/* The window's own lines, listed first: the window draws its one list here. */}
               {placeWindowLines !== undefined && (
                 <div className="inbox-window-lines" ref={placeWindowLines} />

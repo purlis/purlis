@@ -94,9 +94,13 @@ export const SAVING_REREAD_MS = 10_000;
  */
 export function usePlaneSaving(plane: PlaneId | undefined): {
   saving: PlaneSaving | undefined;
+  /** Whether a read of this project has answered, however it answered: the title bar marks the
+   *  read until then (#5325), and a refused read is not one still on its way. */
+  read: boolean;
   reread: () => void;
 } {
   const [saving, setSaving] = useState<{ plane: PlaneId; standing: PlaneSaving }>();
+  const [answeredFor, setAnsweredFor] = useState<PlaneId>();
   const [asked, setAsked] = useState(0);
   const changed = usePlaneChanged(plane === undefined ? [] : [plane], GIT);
 
@@ -110,7 +114,10 @@ export function usePlaneSaving(plane: PlaneId | undefined): {
         if (!gone && answer.status === "ok" && typeof answer.data?.stage === "string")
           setSaving({ plane, standing: answer.data });
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => {
+        if (!gone) setAnsweredFor(plane);
+      });
     return () => {
       gone = true;
     };
@@ -133,7 +140,11 @@ export function usePlaneSaving(plane: PlaneId | undefined): {
 
   const reread = useCallback(() => setAsked((n) => n + 1), []);
   // Another project's answer is not this one's: drawn only for the project it was read for.
-  return { saving: saving?.plane === plane ? saving?.standing : undefined, reread };
+  return {
+    saving: saving?.plane === plane ? saving?.standing : undefined,
+    read: answeredFor === plane,
+    reread,
+  };
 }
 
 /** How close a focus and a beat (the show's read among them) must be to count as one return

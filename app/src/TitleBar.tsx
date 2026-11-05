@@ -4,7 +4,7 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { SandboxMark, type SandboxSaid } from "./SandboxMark";
 import { commands, type PlaneSaving, type RepoSaving, type TitleBarRoom } from "./bindings";
-import { SaveIndicator } from "./SavingView";
+import { SaveIndicator, SaveReading } from "./SavingView";
 import { AboutCharter } from "./About";
 import { type Ending } from "./QuitWarning";
 import { UpdateItem, type Updates } from "./Updates";
@@ -94,6 +94,7 @@ export function TitleBar({
   chats,
   needing,
   save,
+  saveReading,
   sandbox,
 }: {
   /**
@@ -162,6 +163,8 @@ export function TitleBar({
     /** Why its save is off: a read-only project's sentence (#826). */
     off?: string;
   };
+  /** The project in front's save standing is still being read (#5325): its Saving tab's way in. */
+  saveReading?: { onOpen: () => void };
 }) {
   return (
     <header
@@ -187,6 +190,7 @@ export function TitleBar({
         {/* The project in front's unsaved work: about the project, not the app, and the one
             thing on the bar the operator acts on as often as a chat that asks. */}
         {save && <SaveIndicator {...save} />}
+        {!save && saveReading && <SaveReading {...saveReading} />}
         {/* The level of the chat in front, beside the project's save: about that chat. */}
         {sandbox && (
           <span className="title-bar-sandbox" data-testid="title-sandbox">

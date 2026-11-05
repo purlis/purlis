@@ -1114,7 +1114,7 @@ export const PlaneView = memo(function PlaneView({
   const [stopsEnded, setStopsEnded] = useState(0);
   /** This project's save standing (charter-app#302): every project reads its own, so the project
    *  strip can mark the ones with unsaved work and the title bar can show the one in front. */
-  const { saving } = usePlaneSaving(plane);
+  const { saving, read: savingRead } = usePlaneSaving(plane);
   /** The workspace whose LIVE/LOCAL confirmation is open (charter-app#301). */
   const [liveAsk, setLiveAsk] = useState<string>();
   /** The repo the "Remove from workspace" question is about, while it is open (#1228). */
@@ -10266,6 +10266,7 @@ export const PlaneView = memo(function PlaneView({
       workspace: ofWorkspace,
       colour: colourWithHue(sidebar?.workspaces.find((ws) => ws.name === ofWorkspace)?.colour),
       saving,
+      savingRead,
       readOnly: readOnlySaid,
       // The level of the chat in front, for the title bar (#2071).
       sandbox: tabs.inFront === undefined ? null : sandboxOf(chatOf(tabs, tabs.inFront)),
@@ -10303,6 +10304,7 @@ export const PlaneView = memo(function PlaneView({
       run,
       sandboxOf,
       saving,
+      savingRead,
       settled,
       sidebar,
       tabs,
@@ -10742,6 +10744,11 @@ export const PlaneView = memo(function PlaneView({
    * other way. A refused action's line has Dismiss, and goes by itself when that action next
    * succeeds (NO-4).
    */
+  /** What may yet list a Notice in the Inbox, each with its own mark there (#5325). */
+  const inboxReading = [
+    ...(staleClones.reading ? ["Checking repos for a stale branch or address…"] : []),
+    ...(alerts?.reading.at === "reading" ? ["Reading the alerts…"] : []),
+  ];
   const standing = (
     <>
       {trouble && (
@@ -11287,6 +11294,7 @@ export const PlaneView = memo(function PlaneView({
                       }}
                       updates={inboxUpdates}
                       notices={standing}
+                      reading={inboxReading}
                       onNotices={setNoticesListed}
                       onNoticeAnswer={inboxOnScreen}
                       elsewhere={elsewhere}

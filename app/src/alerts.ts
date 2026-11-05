@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { commands, type PlaneAlerts, type PlaneId } from "./bindings";
 import { GIT, usePlaneChanged } from "./planeChanged";
+import { STILL_LOADING_AFTER } from "./projectLoads";
 import { RETURN_FOLD_MS } from "./saving";
 import { everyWhileShown } from "./whileShown";
 
@@ -39,13 +40,27 @@ export const REREAD_EVERY_MS = 60_000;
  *
  * **A reading is never replaced by "reading…"** once there has been one: the Inbox keeps
  * drawing the last answer while the next is on its way, rather than blanking every minute.
+ *
+ * **Asked once for a restore, not once per project that joins** (#5325): while `settling`,
+ * nothing is asked, since each ask walks every project held. A project that never answers does
+ * not keep the others' alerts away: after {@link STILL_LOADING_AFTER} the reading is asked anyway.
  */
-export function useAlerts(planes: readonly PlaneId[]): {
+export function useAlerts(
+  planes: readonly PlaneId[],
+  settling = false,
+): {
   reading: AlertsReading;
   reread: () => void;
 } {
   const [reading, setReading] = useState<AlertsReading>({ at: "reading" });
   const [asked, setAsked] = useState(0);
+  const [waited, setWaited] = useState(false);
+  useEffect(() => {
+    if (!settling) return;
+    const enough = setTimeout(() => setWaited(true), STILL_LOADING_AFTER);
+    return () => clearTimeout(enough);
+  }, [settling]);
+  const held = settling && !waited;
   const holding = planes.join("\n");
   const changesOnDisk = usePlaneChanged(planes, GIT);
 
@@ -53,6 +68,7 @@ export function useAlerts(planes: readonly PlaneId[]): {
   // state set inside the callback — so an answer that lands after a newer ask began, or after
   // the window let go, sets nothing.
   useEffect(() => {
+    if (held) return;
     let gone = false;
     void commands
       .alertsEverywhere()
@@ -69,7 +85,7 @@ export function useAlerts(planes: readonly PlaneId[]): {
     return () => {
       gone = true;
     };
-  }, [holding, asked, changesOnDisk]);
+  }, [holding, asked, changesOnDisk, held]);
 
   // One read on return (#1392, D-1392-6), as `useRereads` in `saving.ts`: coming back to the
   // window both shows it and focuses it, and a focus or a beat within RETURN_FOLD_MS of the

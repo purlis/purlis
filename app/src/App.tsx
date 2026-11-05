@@ -525,7 +525,7 @@ function App() {
    * its own as Notices and names each other project that has some (#1695): the Alerts drawer
    * that listed them all folded into the Inbox (spec #1688, I-4).
    */
-  const { reading: alertsRead, reread: rereadAlerts } = useAlerts(planes);
+  const { reading: alertsRead, reread: rereadAlerts } = useAlerts(planes, restoring);
 
   /**
    * The panels approved extensions contribute to every project's side region.
@@ -2694,6 +2694,11 @@ function App() {
           quiet: everyQuiet,
           onInbox: pressHand,
         }}
+        saveReading={
+          inFront !== undefined && saving === undefined && reports[inFront]?.savingRead !== true
+            ? { onOpen: () => windowDoes.openSaving(inFront) }
+            : undefined
+        }
         save={
           inFront !== undefined && saving !== undefined
             ? {
