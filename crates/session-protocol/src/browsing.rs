@@ -318,7 +318,7 @@ pub struct FillSecret {
     /// alone, which a host that doesn't read it holds every fill to as well.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub multi_line: bool,
-    /// **The other origins this key is approved for** (1.74, #5230, SF-15): a form on the page may
+    /// **The other origins this key is approved for** (1.73, #5230, SF-15): a form on the page may
     /// be sent there, and to no other site. Absent, none, which a host that doesn't read it holds
     /// every fill to as well.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -370,7 +370,7 @@ pub struct BrowserReach {
     pub withdrawn: Vec<u16>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub open_web: bool,
-    /// **The sites the person allowed when this browser's chat asked** (1.74, #5230, SF-14), each
+    /// **The sites the person allowed when this browser's chat asked** (1.73, #5230, SF-14), each
     /// as `host:port`: a page holding a secret may leave for one by its server's redirect, as it
     /// may for a site the browser was on. Absent, none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -716,7 +716,7 @@ mod fill_tests {
     }
 
     #[test]
-    fn a_reach_of_1_73_names_no_site_the_person_allowed_when_asked() {
+    fn a_reach_of_1_72_names_no_site_the_person_allowed_when_asked() {
         let reach: BrowserReach = serde_json::from_str(r#"{"open_web":true}"#).expect("reads");
         assert!(reach.answered.is_empty());
         let said = serde_json::to_string(&BrowserReach {

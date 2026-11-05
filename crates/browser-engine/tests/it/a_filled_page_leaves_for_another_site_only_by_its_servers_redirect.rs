@@ -411,8 +411,13 @@ fn a_load_that_fails_ends_the_hold_and_shows_purlis_s_own_page() {
     click(&browser, "button \"Send and fail\"");
 
     holder.released_within_ten_seconds();
-    assert!(sees(&browser, "Page not loaded"), "purlis's own page");
+    let shown = sees(&browser, "Page not loaded");
     let read = snapshot(&browser);
+    assert!(shown, "purlis's own page: {} lines", read.lines().count());
+    assert!(
+        !read.contains("didn't send") && !read.contains("ERR_"),
+        "{read}"
+    );
     assert!(!read.contains("hangs-up"), "{read}");
     let start = Instant::now();
     while !site.held_to().lock().unwrap().is_empty() {

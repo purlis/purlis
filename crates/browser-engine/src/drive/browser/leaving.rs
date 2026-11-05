@@ -256,10 +256,9 @@ impl Inner {
                 }
             }
             Leave::Failed(target) => {
-                self.replace(
+                self.show_own(
                     &target,
-                    &said_as_a_page("Page not loaded", "That page did not load."),
-                    None,
+                    said_as_a_page("Page not loaded", "That page did not load."),
                 );
                 self.done_leaving(&target);
             }
