@@ -905,3 +905,161 @@ fn the_record_is_in_the_folder_every_harness_denies_a_chat_writing() {
         arrived::dir(&fix.plane).display()
     );
 }
+
+/// Where a chat's sandbox doesn't refuse a write to a name already there, what the name holds is
+/// told when it changes, once, for a file and for what a folder holds. The same bytes written
+/// again say nothing.
+#[test]
+fn a_name_whose_contents_change_is_told_where_the_look_is_asked_to_weigh_them() {
+    let at = Fixture::new();
+    file(&at.folder.join("sub/.envrc"), "old");
+    file(&at.folder.join("sub/.vscode/tasks.json"), "old");
+    let watched = Watched {
+        contents: true,
+        ..at.watched()
+    };
+    arrived::begin(&at.plane, CHAT, None, &watched).expect("a record");
+    assert!(at.look().is_empty());
+
+    file(&at.folder.join("sub/.envrc"), "old");
+    file(&at.folder.join("sub/.vscode/tasks.json"), "old");
+    assert!(at.look().is_empty(), "the same bytes are the same file");
+
+    file(&at.folder.join("sub/.envrc"), "new");
+    assert_eq!(at.look(), ["sub/.envrc"]);
+    file(&at.folder.join("sub/.vscode/tasks.json"), "new");
+    assert_eq!(at.look(), ["sub/.vscode"]);
+    assert!(at.look().is_empty(), "each path once");
+}
+
+/// A repository's attributes choose the filters and drivers its config runs, so a new
+/// `.git/info/attributes` says a repository is no longer what it was.
+#[test]
+fn a_repositorys_attributes_changing_is_told() {
+    let at = Fixture::new();
+    git(&at.folder, &["init", "-q"]);
+    at.begin();
+    assert!(at.look().is_empty());
+    file(&at.folder.join(".git/info/attributes"), "* filter=x");
+    assert_eq!(at.look(), [".git"]);
+}
+
+/// A chat that writes a `.git` can make a repository vouch for what it likes, so a name whose
+/// contents changed is told whatever a remote-tracking branch says of it.
+#[test]
+fn no_branch_vouches_for_a_name_whose_contents_changed() {
+    let at = Fixture::new();
+    git(&at.folder, &["init", "-q"]);
+    file(&at.folder.join("sub/.envrc"), "old");
+    git(&at.folder, &["add", "-A"]);
+    git(&at.folder, &["commit", "-q", "-m", "first"]);
+    let watched = Watched {
+        contents: true,
+        ..at.watched()
+    };
+    arrived::begin(&at.plane, CHAT, None, &watched).expect("a record");
+    assert!(at.look().is_empty());
+
+    file(&at.folder.join("sub/.envrc"), "new");
+    git(&at.folder, &["add", "-A"]);
+    git(&at.folder, &["commit", "-q", "-m", "second"]);
+    git(
+        &at.folder,
+        &["update-ref", "refs/remotes/origin/main", "HEAD"],
+    );
+    assert!(at.look().contains(&"sub/.envrc".to_owned()));
+}
+
+/// Put away, a name stays away only while it holds what it held: changed again, it is told again.
+#[test]
+fn a_name_put_away_and_changed_again_is_told_again() {
+    let at = Fixture::new();
+    file(&at.folder.join("sub/.envrc"), "old");
+    let watched = Watched {
+        contents: true,
+        ..at.watched()
+    };
+    arrived::begin(&at.plane, CHAT, None, &watched).expect("a record");
+    file(&at.folder.join("sub/.envrc"), "new");
+    assert_eq!(at.look(), ["sub/.envrc"]);
+    arrived::put_away(&at.plane, CHAT).expect("put away");
+    assert!(at.look().is_empty());
+    file(&at.folder.join("sub/.envrc"), "newer");
+    assert_eq!(at.look(), ["sub/.envrc"]);
+}
+
+/// A chat begun before contents were weighed says nothing of what it holds now, and is told what
+/// changes from here on.
+#[test]
+fn a_chat_begun_before_contents_were_weighed_is_told_from_its_next_look() {
+    let at = Fixture::new();
+    file(&at.folder.join("sub/.envrc"), "old");
+    at.begin();
+    let watched = Watched {
+        contents: true,
+        ..at.watched()
+    };
+    arrived::begin(&at.plane, CHAT, None, &watched).expect("the same record");
+    assert!(at.look().is_empty());
+    file(&at.folder.join("sub/.envrc"), "new");
+    assert_eq!(at.look(), ["sub/.envrc"]);
+}
+
+/// What holds too much to weigh, or a folder in it that can't be read, is said: never taken for
+/// unchanged.
+#[cfg(unix)]
+#[test]
+fn a_name_too_big_or_unreadable_to_weigh_is_said() {
+    use std::os::unix::fs::PermissionsExt;
+    let at = Fixture::new();
+    for n in 0..2_001 {
+        file(&at.folder.join(format!("big/.vscode/{n}")), "x");
+    }
+    let locked = at.folder.join("shut/.vscode/locked");
+    file(&locked.join("x"), "x");
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).expect("shut");
+    let watched = Watched {
+        contents: true,
+        ..at.watched()
+    };
+    arrived::begin(&at.plane, CHAT, None, &watched).expect("a record");
+    let looked = at.look_of();
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o700)).expect("open again");
+    assert!(looked.cut_short, "the look says it is incomplete");
+    assert!(
+        looked
+            .unread
+            .iter()
+            .any(|path| path.ends_with("big/.vscode"))
+    );
+    assert!(
+        looked
+            .unread
+            .iter()
+            .any(|path| path.ends_with("shut/.vscode/locked"))
+    );
+}
+
+/// A link or a pipe put at a name is neither followed nor waited on.
+#[cfg(unix)]
+#[test]
+fn only_a_regular_file_is_read_and_nothing_waits() {
+    let at = Fixture::new();
+    let plain = at.folder.join("plain");
+    file(&plain, "words");
+    let link = at.folder.join("link");
+    std::os::unix::fs::symlink(&plain, &link).expect("a link");
+    let pipe = at.folder.join("pipe");
+    let mut mkfifo = std::process::Command::new("mkfifo");
+    mkfifo.arg(&pipe);
+    let made = crate::forklock::status(&mut mkfifo).expect("mkfifo runs");
+    assert!(made.success());
+
+    assert_eq!(
+        super::arrived::read_regular(&plain, 3).as_deref(),
+        Some(&b"wor"[..]),
+        "and no more than asked"
+    );
+    assert_eq!(super::arrived::read_regular(&link, 64), None);
+    assert_eq!(super::arrived::read_regular(&pipe, 64), None);
+}
