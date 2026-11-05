@@ -4549,7 +4549,8 @@ pub fn run() {
                     })
                 })
                 // A vault a chat was refused for its persona: the window shows the ways
-                // forward as a Notice on the chat's tab (#1430).
+                // forward as a Notice on the chat's tab (#1430), and it is an ask in the
+                // Inbox (#5160), so a notification may say it.
                 .telling_vault_refusals({
                     let window = app.handle().clone();
                     std::sync::Arc::new(move |told: vaultroute::VaultRefused| {
@@ -4559,6 +4560,7 @@ pub fn run() {
                             vaultroute::REFUSED,
                             &told,
                         );
+                        asknotify::poke(&window, &told.plane);
                     })
                 })
                 // An Ask about a chat's browser that ended with the browser: the Inbox keeps

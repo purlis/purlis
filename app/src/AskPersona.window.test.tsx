@@ -17,7 +17,7 @@ import { chatList, openSubmenus, pressMenuPath } from "./menus.testkit";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import App from "./App";
-import { askOfDispatch } from "./test-asks";
+import { askOfDispatch, askOfVault } from "./test-asks";
 import type { AskOffer, DispatchPending, VaultRefused } from "./bindings";
 import { forgetDismissals } from "./dismissals";
 import { aTabForEachChat } from "./laidOut.testkit";
@@ -177,7 +177,14 @@ function core(now: Core) {
       if (cmd === "dispatch_grants_needed") return now.dispatches ?? [];
       // The asks registry lists each held dispatch, which its Notice draws from (#1695).
       if (cmd === "asks_waiting")
-        return { plane: PLANE, asks: (now.dispatches ?? []).map((one) => askOfDispatch(one)) };
+        return {
+          plane: PLANE,
+          asks: [
+            ...(now.dispatches ?? []).map((one) => askOfDispatch(one)),
+            // And each vault refused, which its Notice draws from too (#5160).
+            ...(now.refusals ?? []).map((one) => askOfVault(one)),
+          ],
+        };
       if (cmd === "task_folder_shared") {
         const place = (args as { place: string | null }).place ?? "here";
         return now.shared?.[place] ?? null;

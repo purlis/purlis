@@ -84,14 +84,16 @@ pub const AT_MOST_PER_CHAT: usize = 5;
 /// a relaunch starts with none, and the chat's next try raises it again.
 #[derive(Debug, Default)]
 pub struct Refusals {
-    held: Mutex<Vec<(u32, NotTagged)>>,
+    /// Each chat's refusal, with when it was first heard, in seconds since 1970: what orders
+    /// its ask in the Inbox (#5160).
+    held: Mutex<Vec<(u32, NotTagged, u64)>>,
     /// What each chat is told once its turn ends ([`reported`]): the lines of an Allow made
     /// while it was mid-turn, oldest first.
     queued: Mutex<Vec<(u32, String)>>,
 }
 
 impl Refusals {
-    fn lock(&self) -> std::sync::MutexGuard<'_, Vec<(u32, NotTagged)>> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, Vec<(u32, NotTagged, u64)>> {
         self.held.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
@@ -101,14 +103,14 @@ impl Refusals {
         let mut held = self.lock();
         if held
             .iter()
-            .any(|(chat, one)| *chat == session && one.vault == not.vault)
+            .any(|(chat, one, _)| *chat == session && one.vault == not.vault)
         {
             return false;
         }
-        held.push((session, not));
-        let mine = held.iter().filter(|(chat, _)| *chat == session).count();
+        held.push((session, not, now_secs()));
+        let mine = held.iter().filter(|(chat, ..)| *chat == session).count();
         if mine > AT_MOST_PER_CHAT
-            && let Some(oldest) = held.iter().position(|(chat, _)| *chat == session)
+            && let Some(oldest) = held.iter().position(|(chat, ..)| *chat == session)
         {
             held.remove(oldest);
         }
@@ -119,22 +121,28 @@ impl Refusals {
     pub fn of(&self, session: u32) -> Vec<NotTagged> {
         self.lock()
             .iter()
-            .filter(|(chat, _)| *chat == session)
-            .map(|(_, one)| one.clone())
+            .filter(|(chat, ..)| *chat == session)
+            .map(|(_, one, _)| one.clone())
             .collect()
+    }
+
+    /// **Every chat's refusals**, oldest first, each with when it was first heard: what the
+    /// asks registry lists (#5160).
+    pub fn every(&self) -> Vec<(u32, NotTagged, u64)> {
+        self.lock().clone()
     }
 
     /// Whether chat `session` holds a refusal of `vault`.
     pub fn holds(&self, session: u32, vault: &str) -> bool {
         self.lock()
             .iter()
-            .any(|(chat, one)| *chat == session && one.vault == vault)
+            .any(|(chat, one, _)| *chat == session && one.vault == vault)
     }
 
     /// Puts chat `session`'s refusal of `vault` away: answered, or kept blocked.
     pub fn put_away(&self, session: u32, vault: &str) {
         self.lock()
-            .retain(|(chat, one)| !(*chat == session && one.vault == vault));
+            .retain(|(chat, one, _)| !(*chat == session && one.vault == vault));
     }
 
     /// Puts away every chat's refusal of `vault` for `persona`: an Allow for that pair answered
@@ -142,7 +150,7 @@ impl Refusals {
     /// Answers the chats whose refusal it put away.
     pub fn put_away_cured(&self, persona: &str, vault: &str) -> Vec<u32> {
         let mut cured = Vec::new();
-        self.lock().retain(|(chat, one)| {
+        self.lock().retain(|(chat, one, _)| {
             let answered = one.vault == vault && one.persona == persona;
             if answered {
                 cured.push(*chat);
@@ -155,7 +163,7 @@ impl Refusals {
     /// Chat `session` is closed: its refusals and anything queued for it go with it, so none
     /// outlives its chat or reaches a later chat dealt the same number.
     pub fn forget(&self, session: u32) {
-        self.lock().retain(|(chat, _)| *chat != session);
+        self.lock().retain(|(chat, ..)| *chat != session);
         self.queue().retain(|(chat, _)| *chat != session);
     }
 
@@ -313,7 +321,7 @@ pub fn sent_as(text: &str) -> String {
 
 /// `not` as the window shows it for chat `session` of `plane`, with what policy says of Allow
 /// now.
-fn shown(plane: &PlaneId, session: u32, not: NotTagged) -> VaultRefused {
+pub fn shown(plane: &PlaneId, session: u32, not: NotTagged) -> VaultRefused {
     VaultRefused {
         login: brokered::login_with(plane.root(), &not.persona, &not.vault),
         locked: sandbox::policy::Locks::of(plane.root()).vault_grants_refused(),
@@ -417,7 +425,7 @@ fn allow(
     if !refusals.holds(session, vault) {
         return Err(
             "purlis allowed nothing: the chat was not refused that vault. A vault is allowed \
-             from the notice its refusal raises."
+             from the ask its refusal raises."
                 .to_owned(),
         );
     }

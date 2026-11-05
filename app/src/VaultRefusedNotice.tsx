@@ -1,8 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useContext, useId, useState } from "react";
-import { commands, type PlaneId } from "./bindings";
+import { useContext, useId, useMemo, useState } from "react";
+import { commands, type PlaneId, type Shown } from "./bindings";
+import { asksMoved } from "./asks";
 import { useAskPersona } from "./AskPersona";
 import { useDispatchesHeld } from "./dispatchesHeld";
 import { Notice, NoticeOf, type NoticeAction } from "./Notice";
@@ -65,6 +66,8 @@ export function VaultRefusedNotice({
   session,
   requestHere = true,
   onShowInbox,
+  asks,
+  onWay,
 }: {
   plane: PlaneId;
   session: number;
@@ -76,6 +79,14 @@ export function VaultRefusedNotice({
   requestHere?: boolean;
   /** Opens the project's Inbox. */
   onShowInbox?: () => void;
+  /**
+   * **This chat's vault asks the registry lists for its pane** (#5160): the Inbox's own, so the
+   * Notice draws a refusal only while the Inbox lists it too. Nothing before the first read,
+   * when it draws what the core holds.
+   */
+  asks?: readonly Shown[];
+  /** An answer of its ask's was taken here: the label pressed, and that ask (#1700). */
+  onWay?: (answer: string, ask: Shown) => void;
 }) {
   const id = useId();
   /** "this chat" on its own pane; "it" where its path is said first (#1538). */
@@ -84,7 +95,14 @@ export function VaultRefusedNotice({
   const Self = offScreen ? "It" : "This chat";
   const that = offScreen ? "that chat" : "this chat";
   const That = offScreen ? "That chat" : "This chat";
-  const { refused, heard, read } = useVaultRefusals(plane, session);
+  const { refused: held, heard, read } = useVaultRefusals(plane, session);
+  const refused = useMemo(() => {
+    if (asks === undefined) return held;
+    const listed = new Set(
+      asks.flatMap((ask) => (ask.answer.via === "vault" ? [ask.answer.vault] : [])),
+    );
+    return held.filter((one) => listed.has(one.vault));
+  }, [asks, held]);
   /** What the last press answered, and the persona it was for, said until it is put away. */
   const [answered, setAnswered] = useState<{ persona: string; said: string }>();
   const [said, setSaid] = useState<string>();
@@ -137,26 +155,39 @@ export function VaultRefusedNotice({
   const behind =
     more > 0 ? ` ${more} more ${more === 1 ? "vault" : "vaults"} behind this one.` : "";
 
-  const press = (ask: () => Promise<Answer>) => {
+  /** The ask the registry lists for this refusal, whose words its answers are drawn in (#1700).
+   *  The Notice's own stand only until the registry is first read. */
+  const itsAsk = asks?.find((ask) => ask.answer.via === "vault" && ask.answer.vault === vault);
+  const labelOf = (option: string, before: string) =>
+    itsAsk?.options.find((one) => one.id === option)?.label ?? before;
+
+  const press = (ask: () => Promise<Answer>, label?: string) => {
     if (busy) return;
     setBusy(true);
     setSaid(undefined);
     void ask()
       .then((done) => {
         if (done.status === "error") setSaid(done.error);
-        else if (done.data !== null) setAnswered({ persona, said: done.data.said });
-        // Whatever the press answered, the Notice draws what the core holds now (qw385).
+        else {
+          if (done.data !== null) setAnswered({ persona, said: done.data.said });
+          if (label !== undefined && itsAsk !== undefined) onWay?.(label, itsAsk);
+        }
+        // Whatever the press answered, the Notice draws what the core holds now (qw385), and
+        // so does the Inbox, which lists it too (#5160).
         read();
+        asksMoved(plane);
       })
       .catch((err: unknown) => setSaid(`purlis could not do that: ${String(err)}`))
       .finally(() => setBusy(false));
   };
 
   // Allow only where policy leaves it open; Keep blocked always.
+  const keepSaid = labelOf("keep", "Keep blocked");
   const keep: NoticeAction = {
-    label: "Keep blocked",
-    onPress: () => press(() => commands.keepVaultBlocked(plane, session, vault, null)),
+    label: keepSaid,
+    onPress: () => press(() => commands.keepVaultBlocked(plane, session, vault, null), keepSaid),
   };
+  const allowSaid = labelOf("allow", `Allow ${persona} to use this vault`);
   // Ask the vault's own persona, where the project defines it: the dialog, and nothing typed
   // for you (see above). Policy that forbids Allow does not forbid this; what it does forbid
   // of dispatch, the dialog's answer says.
@@ -194,8 +225,9 @@ export function VaultRefusedNotice({
     newest.locked === null
       ? [
           {
-            label: `Allow ${persona} to use this vault`,
-            onPress: () => press(() => commands.allowRefusedVault(plane, session, vault)),
+            label: allowSaid,
+            onPress: () =>
+              press(() => commands.allowRefusedVault(plane, session, vault), allowSaid),
             allows: true,
           },
           ...dispatchTo,
