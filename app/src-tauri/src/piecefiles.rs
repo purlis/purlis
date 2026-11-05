@@ -397,7 +397,7 @@ pub struct WhatChanged {
     /// What a discard of a hunk here is checked against (`null` for a file past what is drawn).
     pub stamp: Option<String>,
     /// The branch's check results as this file shows them (ADR 0114).
-    pub checks: CheckResults,
+    pub checks: Box<CheckResults>,
 }
 
 /// How much a check result matters, in SARIF's words.
@@ -668,7 +668,7 @@ pub(crate) fn what_changed_shown(shown: files::WhatChanged) -> WhatChanged {
         base: shown.base,
         diff,
         stamp: shown.stamp,
-        checks: (*shown.checks).into(),
+        checks: Box::new((*shown.checks).into()),
     }
 }
 
