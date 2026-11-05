@@ -214,11 +214,6 @@ pub fn install_named(
         }
         landing.push(name);
         verbs::free_at(plane, level, name, name)?;
-        if held.lock.skills.iter().any(|one| one.is(level, name)) {
-            return Err(format!(
-                "the {level} skills already have {name} installed: update it instead"
-            ));
-        }
         paths_fit(&parts, name, files)?;
         let (files, recorded) = match renamed {
             Some(_) => {
@@ -232,6 +227,10 @@ pub fn install_named(
     }
     let mut written = Written::none(plane, parts.clone());
     let mut lock = held.lock.clone();
+    // An entry whose skill is gone was a deleted skill's (#5331), and the new copy takes its
+    // place: `free_at` above refused any name that is really there.
+    lock.skills
+        .retain(|one| !(one.level.0 == *level && landing.contains(&one.name.as_str())));
     let mut made: Vec<PathBuf> = Vec::new();
     for (skill, name, files, recorded, renamed) in &copies {
         let writes: Vec<write::File<'_>> = files

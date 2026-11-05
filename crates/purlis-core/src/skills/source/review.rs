@@ -175,7 +175,7 @@ impl Review {
 }
 
 /// `sha256:` and the hex digest of `bytes`.
-pub(super) fn sha256(bytes: &[u8]) -> String {
+pub(crate) fn sha256(bytes: &[u8]) -> String {
     use sha2::Digest as _;
     format!(
         "sha256:{}",

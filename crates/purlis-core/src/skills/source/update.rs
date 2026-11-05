@@ -124,6 +124,12 @@ fn edited(plane: &Path, locked: &Locked) -> Option<Vec<String>> {
     Some(changed)
 }
 
+/// **Whether the copy `locked` installed was edited here since**: one that cannot be read counts,
+/// so nothing is taken for untouched that was not read.
+pub fn edited_since_install(plane: &Path, locked: &Locked) -> bool {
+    edited(plane, locked).is_none_or(|changed| !changed.is_empty())
+}
+
 /// **What the pinned-copy check digests of the file at `path` of `locked`**: its bytes, with the
 /// name line of a `SKILL.md` left out where it was installed under a new name, so that name is
 /// never read as an edit (ADR 0100, amended 2026-11-01).

@@ -21,7 +21,7 @@ import {
 } from "./bindings";
 import { counted } from "./dispatches";
 import { Notice } from "./Notice";
-import { Held, useRead } from "./SkillSources";
+import { Held, useRead } from "./SkillRead";
 import { NotRead, ReadingRows } from "./SkillPanels";
 import { Choice, SettingRow } from "./settings/components";
 import { Badge } from "./ui/badge/Badge";

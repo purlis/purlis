@@ -6,7 +6,7 @@
  * Each asserts what a person sees, from the page, never a component's internals.
  */
 
-import { waitFor } from "storybook/test";
+import { userEvent, waitFor } from "storybook/test";
 import { cellInTest } from "../.storybook/matrix";
 
 /** The global the screenshot gate puts its picture-taker on (`.storybook/screenshots.setup.ts`),
@@ -381,4 +381,14 @@ function describe(element: Element): string {
   const name = element.getAttribute("aria-label") ?? element.textContent?.trim().slice(0, 40);
   const role = element.getAttribute("role") ?? element.tagName.toLowerCase();
   return name ? `the ${role} "${name}"` : `a ${role}`;
+}
+
+/** Tab, until the keyboard is inside `target`, at most `steps` times. */
+export async function tabInto(target: () => Element | null, steps = 30): Promise<void> {
+  for (let step = 0; step < steps; step++) {
+    const into = target();
+    if (into !== null && into.contains(document.activeElement)) return;
+    await userEvent.tab();
+  }
+  await untilFocusWithin(target, "the keyboard reaches it by Tab");
 }

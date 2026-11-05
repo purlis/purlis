@@ -114,6 +114,17 @@ impl Locked {
         self.name == name && self.level.0 == *level
     }
 
+    /// Whether its copy is there: a file's being there, read without parsing it or following a
+    /// link, as this is asked of every entry each time the Library is read.
+    fn is_there(&self, plane: &Path) -> bool {
+        self.level.0.dir(plane).is_some_and(|dir| {
+            dir.join(&self.name)
+                .join(purlis_skills::FILE)
+                .symlink_metadata()
+                .is_ok()
+        })
+    }
+
     /// Its name at its source.
     pub fn at_source(&self) -> &str {
         self.source_name.as_deref().unwrap_or(&self.name)
@@ -202,13 +213,21 @@ pub fn read(plane: &Path, kept: Kept) -> Result<Read, String> {
 }
 
 /// **Every installed skill** both lockfiles hold. One that cannot be read holds none, and the
-/// sentence that says why is answered beside the rest.
+/// sentence that says why is answered beside the rest. **An entry whose skill is gone is a
+/// deleted skill's** (#5331): its pin stays for a Restore, and it is not installed, so it is left
+/// out.
 pub fn every(plane: &Path) -> (Vec<(Kept, Locked)>, Vec<String>) {
     let mut skills = Vec::new();
     let mut said = Vec::new();
     for kept in [Kept::Shared, Kept::Local] {
         match read(plane, kept) {
-            Ok(read) => skills.extend(read.lock.skills.into_iter().map(|one| (kept, one))),
+            Ok(read) => skills.extend(
+                read.lock
+                    .skills
+                    .into_iter()
+                    .filter(|one| one.is_there(plane))
+                    .map(|one| (kept, one)),
+            ),
             Err(why) => said.push(why),
         }
     }

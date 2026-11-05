@@ -702,6 +702,13 @@ pub const WINDOW_ONLY: &[&str] = &[
     // studio opens (SK-35, #3013): the person's window alone, as Delete is.
     "skill_deletes_cut_short",
     "skill_restore",
+    // Several skills as one commit (#5331), and what is read to review them: the person's own
+    // press in their window, as Delete and a turn-off are. A chat may only propose one.
+    "skill_source_installed",
+    "skill_set_review",
+    "skill_set_delete",
+    "skill_set_restore",
+    "skill_set_turn",
     "skill_grant",
     "skill_turn",
     // A skill pinned or unpinned for a workspace's or a persona's chats (SK-15d, #3232): one

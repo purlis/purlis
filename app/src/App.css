@@ -8244,6 +8244,15 @@ nav.piece-files-head {
 }
 
 /* The Library's search box and chips, under its lead line, wrapping where the list is narrow. */
+/* Skills deleted together (#5331): set in under their group's row, and apart from what follows. */
+.skill-deleted-set {
+  margin-block-end: var(--space-3);
+}
+
+.skill-deleted-member {
+  margin-inline-start: var(--space-4);
+}
+
 .skill-library-tools {
   display: flex;
   flex-wrap: wrap;

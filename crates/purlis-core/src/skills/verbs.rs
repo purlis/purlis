@@ -38,6 +38,7 @@ use crate::repocmd::{Say, Sink};
 use purlis_skills::{Unmoved, move_skill};
 
 pub mod drafts;
+pub mod set;
 
 /// Where a level is: the project's root, one workspace or one persona.
 pub use purlis_skills::Whose;
@@ -1207,9 +1208,28 @@ pub struct Deleted {
     kept: Kept,
     /// When it was deleted, in seconds since the epoch.
     pub at: u64,
+    /// The set it was deleted with (#5331): what the Deleted page groups it by.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub set: Option<DeleteSet>,
+}
+
+/// **A set of skills deleted as one change** (#5331), as a commit's trailers or a kept delete's
+/// `from` file say it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DeleteSet {
+    /// What every skill of the set shares.
+    pub id: String,
+    /// What it was deleted from, in words, where it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
 }
 
 impl Deleted {
+    /// Its folder's name, which it comes back under.
+    fn folder_name(&self) -> &str {
+        &self.folder
+    }
+
     /// Where it can be restored from.
     pub fn kept(&self) -> &Kept {
         &self.kept
@@ -1681,26 +1701,53 @@ fn finished_or_undone(cx: &mut Ctx<'_>, level: &Level, folder: &str) -> Option<E
 /// Moves the skill's `folder`, and the file beside it, at `level` into a new folder of this
 /// machine's [`DELETED_DIR`] with a `from` naming its level, and answers that folder's name.
 fn keep_here(plane: &Path, level: &Level, folder: &Path) -> Result<String, Unmoved> {
+    let stamp = ms_since_epoch(std::time::SystemTime::now());
+    let from_level = level.rel().unwrap_or_default();
+    keep_stamped(plane, folder, stamp, &format!("{from_level}\n"))
+}
+
+/// [`keep_here`], as one of `set`: its `from` says the set on a second line, and `stamp` is its
+/// own, so two copies of one folder name at two levels are kept apart.
+fn keep_in_set(
+    plane: &Path,
+    level: &Level,
+    folder: &Path,
+    stamp: u128,
+    set: &DeleteSet,
+) -> Result<String, Unmoved> {
+    let from_level = level.rel().unwrap_or_default();
+    let from = set.from.as_deref().unwrap_or_default();
+    let text = format!("{from_level}\n{}\t{from}\n", set.id);
+    keep_stamped(plane, folder, stamp, &text)
+}
+
+/// The set a kept delete's `from` text names on its second line, if it does.
+fn set_in_from(text: &str) -> Option<DeleteSet> {
+    let (id, from) = text.lines().nth(1)?.split_once('\t')?;
+    (!id.is_empty()).then(|| DeleteSet {
+        id: id.to_owned(),
+        from: (!from.is_empty()).then(|| from.to_owned()),
+    })
+}
+
+/// Moves the skill's `folder`, and the file beside it, into `<stamp>-<folder>` of this machine's
+/// [`DELETED_DIR`] with `from_text` as its `from`, and answers that folder's name.
+fn keep_stamped(
+    plane: &Path,
+    folder: &Path,
+    stamp: u128,
+    from_text: &str,
+) -> Result<String, Unmoved> {
     let state = crate::plane::state_dir(plane);
     let folder_is = folder_name(folder);
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|at| at.as_millis())
-        .unwrap_or_default();
     let kept = format!("{stamp}-{folder_is}");
-    let from_level = level.rel().unwrap_or_default();
     // Private to the person, as every folder in the state directory is (`plane-format.md`).
     crate::profiletrust::private_dir(&state).map_err(|why| Unmoved::Nothing(why.to_string()))?;
     store::made(&state, &[DELETED_DIR], true).map_err(|why| Unmoved::Nothing(why.to_string()))?;
     store::made(&state, &[DELETED_DIR, &kept], false)
         .map_err(|why| Unmoved::Nothing(why.to_string()))?;
-    store::write_new(
-        &state,
-        &[DELETED_DIR, &kept],
-        KEPT_FROM,
-        &format!("{from_level}\n"),
-    )
-    .map_err(|why| Unmoved::Nothing(why.to_string()))?;
+    store::write_new(&state, &[DELETED_DIR, &kept], KEPT_FROM, from_text)
+        .map_err(|why| Unmoved::Nothing(why.to_string()))?;
     let into = state.join(DELETED_DIR).join(&kept).join(&folder_is);
     // The folder and the file beside it go together, or neither does (SK-48).
     match move_skill(plane, folder, &state, &into, usize::MAX) {
@@ -1762,12 +1809,17 @@ fn deleted_with_text(plane: &Path) -> Vec<(Deleted, String)> {
         if past(stamp, now_ms, KEPT_HERE_FOR) {
             continue;
         }
-        let Some(level) = Level::of_rel(from.trim()) else {
+        let Some(level) = from
+            .lines()
+            .next()
+            .and_then(|line| Level::of_rel(line.trim()))
+        else {
             continue;
         };
         let Some(name) = name_in(&text) else {
             continue;
         };
+        let set = set_in_from(&from);
         // A file beside its folder left in the project (a delete that could not move it) takes
         // its place only where the kept skill has one of its own to bring back over it.
         let toml_kept = beside(&state.join(DELETED_DIR).join(&kept).join(&folder))
@@ -1784,17 +1836,23 @@ fn deleted_with_text(plane: &Path) -> Vec<(Deleted, String)> {
                 folder,
                 kept: Kept(Source::Here(kept)),
                 at,
+                set,
             },
             text,
         ));
     }
     let globs = shared_globs();
+    let format = format!(
+        "--format=%x01%H%x1f%ct%x1f%(trailers:key={},valueonly,separator=%x2C)%x1f%(trailers:key={},valueonly,separator=%x2C)",
+        set::SET_TRAILER,
+        set::FROM_TRAILER
+    );
     let mut args = vec![
         "log",
         "--diff-filter=D",
         "--name-only",
         "-z",
-        "--format=%x01%H %ct",
+        &format,
         "-n",
         "200",
         "--",
@@ -1803,15 +1861,29 @@ fn deleted_with_text(plane: &Path) -> Vec<(Deleted, String)> {
     let log = git(plane, &args).unwrap_or_default();
     let mut seen: Vec<String> = Vec::new();
     for record in log.split('\u{1}').filter(|one| !one.trim().is_empty()) {
+        // The most is counted by whole commits: a set deleted together is listed whole, so it
+        // can come back whole (#5331).
+        if out.len() >= MOST_DELETED {
+            break;
+        }
         let mut fields = record.split(['\0', '\n']).filter(|one| !one.is_empty());
         let Some(head) = fields.next() else {
             continue;
         };
-        let (sha, at) = head.split_once(' ').unwrap_or((head, "0"));
+        let mut parts = head.split('\u{1f}');
+        let sha = parts.next().unwrap_or_default();
+        let at = parts.next().unwrap_or("0");
+        let set = parts
+            .next()
+            .filter(|id| !id.is_empty())
+            .map(|id| DeleteSet {
+                id: id.to_owned(),
+                from: parts
+                    .next()
+                    .filter(|from| !from.is_empty())
+                    .map(str::to_owned),
+            });
         for path in fields {
-            if out.len() >= MOST_DELETED {
-                break;
-            }
             let Some(folder_rel) = path.strip_suffix("/SKILL.md") else {
                 continue;
             };
@@ -1845,6 +1917,7 @@ fn deleted_with_text(plane: &Path) -> Vec<(Deleted, String)> {
                     folder: folder.to_owned(),
                     kept: Kept(Source::Commit(sha.to_owned())),
                     at: at.trim().parse().unwrap_or(0),
+                    set: set.clone(),
                 },
                 text,
             ));
@@ -1947,34 +2020,7 @@ pub fn restore(
     let folder = dir.join(&deleted.folder);
     let folder_rel = rel(plane, &folder);
     let toml_rel = rel(plane, &beside(&folder));
-    let mut toml_there = false;
-    match &deleted.kept.0 {
-        Source::Commit(sha) => {
-            let source = format!("--source={sha}^");
-            let folder_spec = literally(&folder_rel);
-            let toml_spec = literally(&toml_rel);
-            let mut args = vec!["restore", source.as_str(), "--worktree", "--", &folder_spec];
-            toml_there = git(plane, &["cat-file", "-e", &format!("{sha}^:{toml_rel}")]).is_ok();
-            if toml_there {
-                args.push(&toml_spec);
-            }
-            git(plane, &args).map_err(|why| format!("{name} was not restored: {why}"))?;
-        }
-        Source::Here(kept) => {
-            let state = crate::plane::state_dir(plane);
-            let from = state.join(DELETED_DIR).join(kept).join(&deleted.folder);
-            // The folder and the file beside it come back together, or neither does (SK-48).
-            move_skill(&state, &from, plane, &folder, deleted.level.depth()).map_err(
-                |unmoved| match unmoved {
-                    Unmoved::Nothing(why) => format!("{name} was not restored: {why}"),
-                    // It left the kept folder and could not go back (SK-45): say so.
-                    Unmoved::Stranded(what) => {
-                        format!("{name} was restored only in part: {what}")
-                    }
-                },
-            )?;
-        }
-    }
+    let toml_there = bring_back(plane, deleted, &folder)?;
     let mut touched = vec![folder_rel.clone(), toml_rel];
     let landed = match under {
         None => folder.clone(),
@@ -1996,13 +2042,7 @@ pub fn restore(
         },
     };
     if let Source::Here(kept) = &deleted.kept.0 {
-        // Its `from` and the folder it kept, now empty, and nothing else.
-        store::put_away(
-            &crate::plane::state_dir(plane),
-            DELETED_DIR,
-            kept,
-            KEPT_FROM,
-        );
+        kept_emptied(plane, kept);
     }
     let Some(new) = under else {
         // The folder git brought back is another than the one deleted, and the one its earlier
@@ -2030,6 +2070,54 @@ pub fn restore(
     ));
     cx.commit(&touched, &format!("skill restore {name} as {new}"));
     Ok(landed)
+}
+
+/// **Puts the deleted skill's files back at `folder`**: from the commit that removed it, or from
+/// this machine's [`DELETED_DIR`]. Answers whether the file beside it came back from a commit, as
+/// [`taken_back`] asks.
+fn bring_back(plane: &Path, deleted: &Deleted, folder: &Path) -> Result<bool, String> {
+    let name = &deleted.name;
+    match &deleted.kept.0 {
+        Source::Commit(sha) => {
+            let folder_rel = rel(plane, folder);
+            let toml_rel = rel(plane, &beside(folder));
+            let source = format!("--source={sha}^");
+            let folder_spec = literally(&folder_rel);
+            let toml_spec = literally(&toml_rel);
+            let mut args = vec!["restore", source.as_str(), "--worktree", "--", &folder_spec];
+            let toml_there = git(plane, &["cat-file", "-e", &format!("{sha}^:{toml_rel}")]).is_ok();
+            if toml_there {
+                args.push(&toml_spec);
+            }
+            git(plane, &args).map_err(|why| format!("{name} was not restored: {why}"))?;
+            Ok(toml_there)
+        }
+        Source::Here(kept) => {
+            let state = crate::plane::state_dir(plane);
+            let from = state.join(DELETED_DIR).join(kept).join(&deleted.folder);
+            // The folder and the file beside it come back together, or neither does (SK-48).
+            move_skill(&state, &from, plane, folder, deleted.level.depth()).map_err(|unmoved| {
+                match unmoved {
+                    Unmoved::Nothing(why) => format!("{name} was not restored: {why}"),
+                    // It left the kept folder and could not go back (SK-45): say so.
+                    Unmoved::Stranded(what) => {
+                        format!("{name} was restored only in part: {what}")
+                    }
+                }
+            })?;
+            Ok(false)
+        }
+    }
+}
+
+/// A kept delete's `from` and the folder it kept, now empty, and nothing else.
+fn kept_emptied(plane: &Path, kept: &str) {
+    store::put_away(
+        &crate::plane::state_dir(plane),
+        DELETED_DIR,
+        kept,
+        KEPT_FROM,
+    );
 }
 
 /// The skill `name` just restored to `folder`, named `new`: its `SKILL.md`'s `name:` rewritten,
