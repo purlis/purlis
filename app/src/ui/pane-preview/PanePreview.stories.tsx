@@ -19,10 +19,28 @@ import {
   PanePreviewWords,
 } from "./PanePreview";
 
-const TERMINAL = "❯ cargo test -p purlis-core\n   Compiling purlis-core\n    Finished in 4.2s\n❯ ";
-
 const WIDTH = 640;
 const HEIGHT = 240;
+
+/** A terminal's lines, as bars: its text is on a canvas, so what dims here is drawn the same way,
+ *  with no words for a contrast gate to read. */
+function TerminalLines() {
+  return (
+    <div style={{ padding: "var(--space-4)" }}>
+      {["60%", "85%", "40%", "70%"].map((width) => (
+        <div
+          key={width}
+          style={{
+            width,
+            height: "var(--space-2)",
+            marginBlockEnd: "var(--space-2)",
+            backgroundColor: "var(--terminal-foreground)",
+          }}
+        />
+      ))}
+    </div>
+  );
+}
 
 /** A pane as the window draws it, at a box in the room, doing what a drag has it do. */
 function Pane({
@@ -48,9 +66,8 @@ function Pane({
           <span className="pane-name">{name}</span>
         </div>
       </div>
-      {/* A terminal's text, which it draws on a canvas: no reader is given it. */}
-      <div className="pane-body" aria-hidden="true">
-        <pre style={{ margin: 0 }}>{TERMINAL}</pre>
+      <div className="pane-body">
+        <TerminalLines />
       </div>
     </div>
   );
