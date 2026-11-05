@@ -13,11 +13,13 @@ what it does not.
 2. **Anything item 1 doesn't state is detected, not refused**, by the look below, within its
    bounds. Earlier text of this ADR and of `SECURITY.md` that reads as a guarantee of more than
    item 1 is narrowed to this.
-3. **A temp folder or a cache home is not held by these names, and stays that way.** Earlier text
-   that reads as if class 5 held them is narrowed too. Tests and tools build repositories and
-   manifests in temp folders all the time, and git can't start one under such a denial.
-   `tools/seatbelt-case.sh` asserts that a repository and a manifest can still be made there, so a
-   later change doesn't take that away. Neither is a folder this look walks.
+3. **At the full sandbox, a temp folder or a cache home is not held by these names, and stays that
+   way.** Earlier text that reads as if class 5 held them is narrowed too. Tests and tools build
+   repositories and manifests in temp folders all the time, and git can't start one under such a
+   denial. **At the floor on macOS they are held there too**: every folder is written, so the
+   names are held in every folder (#2071), and a chat can't start a repository or write a manifest
+   in its temp folder. `tools/seatbelt-case.sh` asserts both answers, so neither changes unnoticed.
+   Neither is a folder this look walks.
 
 ## The second look
 
