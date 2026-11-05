@@ -102,6 +102,7 @@ const split = (a: LaidNode, b: LaidNode): LaidNode => ({
 const ONE_PANE = laidOut({ kind: "chat", chat: 4 });
 const SPLIT = laidOut(split({ kind: "chat", chat: 4 }, { kind: "chat", chat: 5 }));
 const WITH_EMPTY = laidOut(split({ kind: "chat", chat: 4 }, { kind: "empty" }));
+const TWO_EMPTY = laidOut(split({ kind: "empty" }, { kind: "empty" }));
 
 function core(laid: LaidOut) {
   mockIPC(
@@ -183,6 +184,16 @@ const WAYS: [string, () => Promise<void>][] = [
     },
   ],
   [
+    "the keyboard, through the palette",
+    async () => {
+      await userEvent.keyboard("{F2}");
+      await screen.findByRole("dialog", { name: "Command palette" });
+      await userEvent.keyboard("New chat");
+      await screen.findByRole("option", { name: /^New chat(?! at| in)/ });
+      await userEvent.keyboard("{Enter}");
+    },
+  ],
+  [
     "the palette",
     async () => {
       await userEvent.keyboard("{F2}");
@@ -229,16 +240,17 @@ describe("a new chat (#5289)", () => {
     });
   });
 
-  it("fills the empty pane whose own New chat was pressed", async () => {
-    await drawn(WITH_EMPTY, [4]);
+  it("fills the empty pane whose own New chat was pressed, of two", async () => {
+    await drawn(TWO_EMPTY, []);
+    const [left, right] = screen.getAllByTestId("empty-pane");
 
-    await userEvent.click(
-      within(screen.getByTestId("empty-pane")).getByRole("button", { name: "New chat" }),
-    );
+    await userEvent.click(within(right).getByRole("button", { name: "New chat" }));
     await startIt();
 
-    await waitFor(() => expect(onScreen()).toEqual([4, STARTED]));
+    await waitFor(() => expect(onScreen()).toEqual([STARTED]));
     expect(tabCount()).toBe(1);
+    expect(left.isConnected).toBe(true);
+    expect(screen.getAllByTestId("empty-pane")).toEqual([left]);
   });
 });
 
@@ -260,7 +272,7 @@ describe("a pressed chat (#5289)", () => {
 
     await waitFor(() => expect(onScreen()).toEqual([6]));
     expect(tabCount()).toBe(1);
-    expect(row(tree, "steward 4")).toBeTruthy();
+    expect(row(tree, "steward 4").getAttribute("aria-current")).toBeNull();
   });
 
   it("off screen, in a split, opens a tab, and the split survives", async () => {

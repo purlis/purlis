@@ -41,8 +41,8 @@ import { archiveTitle } from "./memories";
  * list you read, the strip is a surface you aim at, and the boundary is whether the thing
  * moves under your hand.
  *
- * **A press shows a chat in the focused pane** (#4757): `press` is the one way a pane is given
- * a chat, and `back` the way to the one it showed before. Who asked whom is the core's, handed
+ * **One rule says where a chat opens** (#5289): `opensAt`, which `press` and `openNew` land by,
+ * and `back` is the way to the chat a pane showed before. Who asked whom is the core's, handed
  * in as `AskedBy`. A tab switched to a task in its chat's place (`Tab.shows`, #1486) is only
  * what a record from before layouts were kept puts back, until #4758's upgrade reads those.
  *
@@ -431,8 +431,8 @@ export type Tabs = {
   splits?: Readonly<Record<string, number>>;
   /**
    * **When each pane was last the one with the keyboard**, by pane (#4757): bigger is more
-   * recent. What a press reads when the focused pane holds a view, to find the pane the person
-   * used last that shows a chat or nothing ({@link press}). Stamped by {@link noteUsed}.
+   * recent. What a press reads with a view alone in the front tab, to find the pane the person
+   * used last that could take it ({@link opensAt}). Stamped by {@link noteUsed}.
    */
   used?: Readonly<Record<number, number>>;
   /** **The last layout change, which Undo and ⌘Z put back** (#4763), while the tabs are still
@@ -493,7 +493,7 @@ export function openEmptyTab(tabs: Tabs, workspace: string): Tabs {
 /**
  * **The number a chat the window starts now is named with** (#4758): one more than the chats it
  * has named. Not the next tab's, as when every chat opened a tab: every strip keeps a tab, so a
- * fresh window's empty tab is tab 1, and a chat that takes the focused pane opens none, so two
+ * fresh window's empty tab is tab 1, and a chat that fills an empty pane opens none, so two
  * chats would share a number. A window put back from a layout counts from its tabs, as before.
  */
 export function newChatNumber(tabs: Tabs): number {
@@ -1527,24 +1527,26 @@ type Lands = { how: "goes-to" | "fills" | "shows"; at: PaneAt };
  * - **A pressed chat off screen** fills an empty pane of the front tab. In a one-pane tab it
  *   shows there, and the chat it replaces keeps running in the list. In a split it gets a tab of
  *   its own, so the layout survives.
- * - **A view or a one-job program is never replaced.** Alone in the front tab, the press goes to
- *   the pane used last on the strip that a press could take (spec #4750 story 5), or else to a
- *   tab of its own.
+ * - **A view or a one-job program is never replaced.** With a view alone in the front tab, the
+ *   press goes to the pane used last on the strip that a press could take (spec #4750 story 5),
+ *   or else to a tab of its own. With a program alone there, it goes to a tab of its own.
  */
-export function opensAt(tabs: Tabs, opening: Opening, at: Pressing): Opens {
-  if (opening.kind === "new") return newChatOpensAt(tabs, opening, at);
+export function opensAt(tabs: Tabs, opening: Opening, pressing: Pressing): Opens {
+  if (opening.kind === "new") return newChatOpensAt(tabs, opening, pressing);
   const on = whereShown(tabs, opening.session);
   if (on !== undefined) return { how: "goes-to", at: on };
   if (opening.into !== undefined) return { how: "shows", at: opening.into };
-  const strip = at.filedIn(opening.session);
-  const front = frontOn(tabs, strip, at);
+  const strip = pressing.filedIn(opening.session);
+  const front = frontOn(tabs, strip, pressing);
   if (front === undefined) return { how: "new-tab" };
   const here = takenBy(tabs, front);
   if (here !== undefined) return here;
-  if (panes(tabs.byId[front].layout).length > 1) return { how: "new-tab" };
+  // A split keeps its layout, and a lone program is no reason to replace a chat elsewhere.
+  const [only, ...others] = contents(tabs.byId[front].layout);
+  if (others.length > 0 || isOneJob(only.content)) return { how: "new-tab" };
   // Stable, so panes never used keep the strip's order.
   const used = tabs.used ?? {};
-  const [last] = tabsIn(tabs, strip, at.filedIn)
+  const [last] = tabsIn(tabs, strip, pressing.filedIn)
     .flatMap((id) => {
       const opens = takenBy(tabs, id);
       return opens === undefined ? [] : [opens];
@@ -1557,7 +1559,7 @@ export function opensAt(tabs: Tabs, opening: Opening, at: Pressing): Opens {
 function newChatOpensAt(
   tabs: Tabs,
   { strip, asked }: Extract<Opening, { kind: "new" }>,
-  at: Pressing,
+  pressing: Pressing,
 ): Opens {
   const stillEmpty =
     asked !== undefined &&
@@ -1566,16 +1568,16 @@ function newChatOpensAt(
       (one) => one.pane === asked.pane && one.content.kind === "empty",
     );
   if (stillEmpty) return { how: "fills", at: asked };
-  const front = strip === undefined ? tabs.inFront : frontOn(tabs, strip, at);
+  const front = strip === undefined ? tabs.inFront : frontOn(tabs, strip, pressing);
   const empty = front === undefined ? undefined : emptyPaneOf(tabs, front);
   return empty === undefined ? { how: "new-tab" } : { how: "fills", at: empty };
 }
 
 /** The tab a press reads on `workspace`'s strip: the one in front of the window where that is on
  *  the strip, else the one last left in front, else its first. None on a strip with no tabs. */
-function frontOn(tabs: Tabs, workspace: string, at: Pressing): number | undefined {
-  const here = tabsIn(tabs, workspace, at.filedIn);
-  const remembered = at.frontOf(workspace);
+function frontOn(tabs: Tabs, workspace: string, pressing: Pressing): number | undefined {
+  const here = tabsIn(tabs, workspace, pressing.filedIn);
+  const remembered = pressing.frontOf(workspace);
   if (tabs.inFront !== undefined && here.includes(tabs.inFront)) return tabs.inFront;
   return remembered !== undefined && here.includes(remembered) ? remembered : here[0];
 }
@@ -1623,12 +1625,12 @@ export function noteUsed(tabs: Tabs): Tabs {
  * A tab whose pane is given a chat keeps its strip ({@link Tab.workspace}), and a tab whose
  * first pane is given one is named after it, as a tab opened on it would be.
  */
-export function press(tabs: Tabs, chat: PressedChat, at: Pressing, into?: PaneAt): Press {
+export function press(tabs: Tabs, chat: PressedChat, pressing: Pressing, into?: PaneAt): Press {
   return opened(
     tabs,
     chat,
-    at,
-    opensAt(tabs, { kind: "pressed", session: chat.session, into }, at),
+    pressing,
+    opensAt(tabs, { kind: "pressed", session: chat.session, into }, pressing),
   );
 }
 
@@ -1640,23 +1642,23 @@ export function press(tabs: Tabs, chat: PressedChat, at: Pressing, into?: PaneAt
 export function openNew(
   tabs: Tabs,
   chat: PressedChat,
-  at: Pressing,
+  pressing: Pressing,
   { named = false, asked }: { named?: boolean; asked?: PaneAt } = {},
 ): Press {
-  const strip = named ? at.filedIn(chat.session) : undefined;
-  return opened(tabs, chat, at, opensAt(tabs, { kind: "new", strip, asked }, at));
+  const strip = named ? pressing.filedIn(chat.session) : undefined;
+  return opened(tabs, chat, pressing, opensAt(tabs, { kind: "new", strip, asked }, pressing));
 }
 
 /** `chat` where `opens` says, stamped as used, and the strip in front now. */
-function opened(tabs: Tabs, chat: PressedChat, at: Pressing, opens: Opens): Press {
+function opened(tabs: Tabs, chat: PressedChat, pressing: Pressing, opens: Opens): Press {
   const next =
     opens.how === "new-tab"
       ? openTab(tabs, chat.session, chat.chat, chat.who ?? null, chat.label ?? null)
       : opens.how === "goes-to"
         ? focusAt(tabs, opens.at)
-        : showChatAt(tabs, opens.at, chat, at.filedIn);
+        : showChatAt(tabs, opens.at, chat, pressing.filedIn);
   const used = noteUsed(next);
-  return { tabs: used, workspace: stripInFront(used, at.filedIn) };
+  return { tabs: used, workspace: stripInFront(used, pressing.filedIn) };
 }
 
 /** The strip of the tab in front, which the window draws, or none with nothing in front. */

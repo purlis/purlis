@@ -304,8 +304,8 @@ describe("the palette reaching what the window can do", () => {
     core();
     render(<App />);
     await openAChat();
-    // A started chat takes the focused pane (#4758), so the second one gets a tab of its own
-    // from the strip's `+` first.
+    // A started chat fills an empty pane (#5289), so the second one is given one first, by the
+    // strip's `+`.
     await userEvent.click(within(stripNamed("Tabs")).getByRole("button", { name: "New tab" }));
     await openAChat();
     expect(screen.getAllByTestId("pane").map((pane) => pane.textContent)).toEqual(["session 2"]);

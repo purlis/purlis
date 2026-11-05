@@ -1073,9 +1073,10 @@ _Avoid_: tab bar, scroller
 
 **Tab** (on a workspace's strip):
 A layout of **panes**, kept as a tree: each split holds two parts, side by side or one above
-the other, and each pane holds a chat, a view or nothing. A tab is made only when the person
-asks for one: the strip's `+` (a tab with an empty pane), **Open in new tab** on a chat, or
-opening a view. A chat never gets a tab by starting, by a dispatch or by a handoff, and a
+the other, and each pane holds a chat, a view or nothing. A tab is made when the person asks for
+one: the strip's `+` (a tab with an empty pane), **Open in new tab** on a chat, or opening a
+view. It is made too when a chat the person opens has nowhere to go that replaces nothing they
+built (the rule under **Pane**). A chat never gets a tab by a dispatch or by a handoff, and a
 launch draws only the tabs the record keeps. A tab knows which strip it is on. Closing it ends
 no chat: its chats keep running in the sidebar (ADR 0043 as amended, #4587, #4758).
 _Avoid_: chat tab, session tab (a chat is not a tab), layout (unqualified), project tab or
@@ -1083,12 +1084,12 @@ workspace tab (those are other strips' tabs)
 
 **Pane**:
 One place in a tab's layout, holding a chat, a view or nothing. **One rule says where a chat
-opens** (`opensAt`): **New chat** fills an empty pane of the front tab, or else gets a new tab,
+opens**: **New chat** fills an empty pane of the front tab, or else gets a new tab,
 and replaces nothing. Picking a chat in the sidebar or the palette fills an empty pane of the
 front tab; in a one-pane tab it shows there, and in a split it gets a new tab, so the layout
 survives. A chat already in a pane is jumped to, never shown twice. A view or a one-job program
-is never replaced: alone in the front tab, the pick goes to the most recently used pane on the
-strip that it could take, or a new tab. Closing a pane clears it,
+is never replaced: with a view alone in the front tab, the pick goes to the most recently used
+pane on the strip that it could take, or a new tab; with a program alone there, a new tab. Closing a pane clears it,
 and its chat keeps running in the sidebar.
 _Avoid_: tile, frame, terminal (a pane may hold a view), split (that is two panes and the line
 between them)
@@ -1115,7 +1116,7 @@ _Avoid_: footer, status bar, gauge row
 **Empty pane**:
 A pane that holds nothing. It says "Nothing in this pane", how many chats are running in the
 workspace, and offers **New chat**. A strip's last tab keeps one when its last pane closes, so
-a focused pane always exists for `+` and a sidebar pick. In a plane with no workspace it says
+a strip always has a pane for a sidebar pick. In a plane with no workspace it says
 "No workspaces yet" and offers **Create a workspace**.
 _Avoid_: blank tab, empty window
 

@@ -295,7 +295,6 @@ import {
   openEmptyTab,
   openNew,
   opensAt,
-  openTab,
   openView,
   offerView,
   harnessSetupTitle,
@@ -4554,13 +4553,11 @@ export const PlaneView = memo(function PlaneView({
    * through here: a row of the Chats list and of the explorer, the hand on a row above it, the
    * title bar's list, the palette, a needs-you Go, a name in a pane's breadcrumb.
    *
-   * **A press shows the chat in the focused pane** (`tabs.press`): a chat on screen in a pane
-   * is jumped to, never shown twice; otherwise the focused pane of its workspace's front tab
-   * shows it, or, where that pane holds a view, the pane used last that shows a chat or
-   * nothing. A task lands like any chat. **The chat the pane showed before keeps running**,
-   * and the pane remembers it for ⌘⇧H. No tab is added, save where the chat's strip has no
-   * pane but views. `into` is the pane a breadcrumb was pressed in, which walks up its chain
-   * in that same pane.
+   * **A press opens by the one rule** (`tabs.opensAt`, #5289): a chat on screen in a pane is
+   * jumped to, never shown twice; otherwise it fills an empty pane of its workspace's front tab,
+   * shows in a one-pane tab, or gets a tab of its own, so a split survives. A task lands like
+   * any chat. **A chat a pane showed before keeps running**, and the pane remembers it for ⌘⇧H.
+   * `into` is the pane a breadcrumb was pressed in, which walks up its chain in that same pane.
    *
    * The new layout is told in the same call (`change`), so a task pressed onto is held from
    * that moment. A chat listed because its Smart close stopped (SI-8f) has been looked at, so
@@ -4590,7 +4587,7 @@ export const PlaneView = memo(function PlaneView({
   /** **A pane of this window was used** (#5108): pressed in, or typed in. Said to the core while
    *  the project has another window, so a press on a chat in no pane, in whichever window, goes
    *  to the most recently used pane across them (`press_elsewhere`). A project of one window
-   *  says nothing: its press goes to its focused pane, as it always has. A pane's focus is no
+   *  says nothing: its press opens by the one rule there. A pane's focus is no
    *  use of it: the window coming forward hands focus back to the pane that last had it, so a
    *  press on a sidebar row would always be this window's. **Said once until the window has been
    *  away**: no other window's pane can be used while this one keeps the focus. */
@@ -6957,15 +6954,23 @@ export const PlaneView = memo(function PlaneView({
       if (said.status === "error") return;
       const chat = said.data;
       noteStarted(chat);
-      if (was !== undefined) forgetEndedFiled(was);
-      change((tabs) =>
-        was === undefined
-          ? openTab(tabs, chat.session, chat.name, whoOf(chat.persona, chat.harness), chat.label)
-          : replaceSession(tabs, was, chat.session),
-      );
+      if (was === undefined)
+        showResumed(
+          {
+            session: chat.session,
+            chat: chat.name,
+            who: whoOf(chat.persona, chat.harness),
+            label: chat.label,
+          },
+          filedFor(chat.cwd, focused),
+        );
+      else {
+        forgetEndedFiled(was);
+        change((tabs) => replaceSession(tabs, was, chat.session));
+      }
       rereadFinished();
     },
-    [change, forgetEndedFiled, noteStarted, plane, rereadFinished],
+    [change, focused, forgetEndedFiled, noteStarted, plane, rereadFinished, showResumed],
   );
 
   /**

@@ -19,6 +19,7 @@ import {
   press,
   type Pressing,
   selectTab,
+  setPinned,
   type Tabs,
   type ViewRef,
   workspaceOf,
@@ -229,6 +230,13 @@ describe("where a chat opens (#5289)", () => {
       });
     });
 
+    it("gets a new tab with a lone one-job program in front, and touches no other tab", () => {
+      const job = openOneJob(noTabs(), 5, "vim");
+      const tabs = selectTab(noteUsed(openTab(job, 1, "1", "steward")), job.inFront as number);
+
+      expect(opensAt(tabs, { kind: "pressed", session: 3 }, pressing()).how).toBe("new-tab");
+    });
+
     it("gets a new tab where the tab used last is a split, so that layout survives", () => {
       const tabs = noteUsed(
         openView(noteUsed(beside(onePane(), session(2))), PERSONA, "steward", "ops"),
@@ -303,6 +311,16 @@ describe("what opening leaves (#5289)", () => {
     expect(next.order).toHaveLength(2);
     expect(contentsOf(next, 1)).toEqual(contentsOf(tabs, 1));
     expect(focusedChat(next)).toBe(3);
+  });
+
+  it("a press off screen in a pinned split opens a tab, and the pin stays on the split", () => {
+    const tabs = setPinned(beside(onePane(), session(2)), 1, true);
+
+    const { tabs: next } = press(tabs, pressed(3), pressing());
+
+    expect(next.order).toHaveLength(2);
+    expect(contentsOf(next, 1)).toEqual(contentsOf(tabs, 1));
+    expect(next.byId[1].pinned).toBe(true);
   });
 
   it("a press off screen in one pane shows there, and remembers the chat it replaced", () => {
