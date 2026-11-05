@@ -7,6 +7,8 @@ one needs you.**
 [![Latest release](https://img.shields.io/github/v/release/purlis/purlis)](https://github.com/purlis/purlis/releases/latest)
 [![Licence: Apache-2.0](https://img.shields.io/badge/licence-Apache--2.0-blue)](LICENSE)
 
+![The purlis window: a workspace's chats listed on the left, a Claude Code chat in the middle, the Inbox on the right with a chat waiting on a reply, and the workspace's repos, branches and memory below.](docs/images/purlis-window.png)
+
 purlis is a desktop app for people who work with coding agents all day. Claude Code, Codex and
 opencode chats run side by side, each in its own tab, each in the workspace and repo it works
 on. The window tells you which chat is waiting for you, so you stop checking terminals.
