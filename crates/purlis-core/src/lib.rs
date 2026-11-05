@@ -210,6 +210,7 @@ pub mod removalask;
 pub mod renamelocal;
 pub mod reopen;
 pub mod repocmd;
+pub mod repofolder;
 pub mod repoinstructions;
 pub mod repolist;
 pub mod report;
