@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793905947927,
+  "lastUpdate": 1793907593063,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -40404,6 +40404,48 @@ window.BENCHMARK_DATA = {
             "value": 102.939667,
             "unit": "ms",
             "extra": "median of 5 runs: 100.929, 101.932, 102.940, 103.770, 104.125 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "95f189db90ccedfee4ffa50e0ae88f2402c1b40d",
+          "message": "A chat in a branch folder leaves the clone's git to the app, which keeps its own record of an update (#5399)\n\n* A chat in a branch folder leaves the clone's git to the app\n\nA Claude Code chat started in a branch folder purlis cut no longer writes its clone's .git; the app commits, updates and pushes, and purlis worktree update --fetch-only fetches and moves nothing else. A sandboxed chat resumes a rebase stopped in a clone with its own git. The app keeps its notes of an update under the project's state. A push's scan leaves out what the remote just said it has, and the app's git reads no replacement objects.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NVXBA7AQ2W40QMCJV6F8YK\nPurlis-Persona: steward\n\n* A stopped merge's note is kept with the update's others\n\nThe note of a merge purlis started moves to the project's state too, and a merge holding an autostash is not one purlis started.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NVXBA7AQ2W40QMCJV6F8YK\nPurlis-Persona: steward\n\n* The refs/replace test names its own committer\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NVXBA7AQ2W40QMCJV6F8YK\nPurlis-Persona: steward\n\n* A resume reads a rebase's state as bytes and takes only its own kind, and a push asks the remote where its branch is\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NVXBA7AQ2W40QMCJV6F8YK\nPurlis-Persona: steward\n\n* The app's clone fetches leave FETCH_HEAD alone\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NVXBA7AQ2W40QMCJV6F8YK\nPurlis-Persona: steward\n\n* Every removal of a branch folder takes purlis's notes of its updates with it\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NVXBA7AQ2W40QMCJV6F8YK\nPurlis-Persona: steward\n\n* A block in a clone's git folder names the app's verbs, never a grant\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NVXBA7AQ2W40QMCJV6F8YK\nPurlis-Persona: steward\n\n* Word the amendment by what a chat does\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NVXBA7AQ2W40QMCJV6F8YK\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-05T19:00:01Z",
+          "tree_id": "7bec951e78f09a2b58d9a2d42e5498b352a830a7",
+          "url": "https://github.com/purlis/purlis/commit/95f189db90ccedfee4ffa50e0ae88f2402c1b40d"
+        },
+        "date": 1793907588897,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5373570000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.527, 0.532, 0.537, 0.541, 0.552 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.359092,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.949, 16.159, 16.359, 16.384, 16.455 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.187501,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.319, 100.884, 101.188, 101.240, 103.112 ms"
           }
         ]
       }
