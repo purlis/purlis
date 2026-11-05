@@ -274,6 +274,10 @@ let watchingAny = false;
 /** The newest `files_watch` this window has sent, answered or not. */
 let newestWatch: Promise<unknown> = Promise.resolve();
 
+/** The `files_watch` to be sent once the trees changing now have each told their share, or
+ *  `undefined` when none waits. */
+let toSend: Promise<unknown> | undefined;
+
 /**
  * Tells the core what this window watches now that `owner`'s open folders are `folders`, and
  * settles `true` once that is watched, or `false` when {@link WATCH_WAIT_MS} passed first.
@@ -289,14 +293,23 @@ let newestWatch: Promise<unknown> = Promise.resolve();
 function watchFor(owner: symbol, folders: BranchFolder[]): Promise<boolean> {
   if (folders.length === 0) watchedBy.delete(owner);
   else watchedBy.set(owner, folders);
-  const union = new Map<string, BranchFolder>();
-  for (const one of [...watchedBy.values()].flat()) {
-    union.set(`${one.plane}\0${one.workspace}\0${folderKey(one)}`, one);
+  // **Sent once for every tree that changed together** (#5375): a project switch hides one
+  // project's trees and shows another's in one commit, and the core keeps one set a window, so
+  // their union goes once, as the commit's effects end, rather than once a tree.
+  if (toSend === undefined) {
+    toSend = Promise.resolve().then(() => {
+      toSend = undefined;
+      const union = new Map<string, BranchFolder>();
+      for (const one of [...watchedBy.values()].flat()) {
+        union.set(`${one.plane}\0${one.workspace}\0${folderKey(one)}`, one);
+      }
+      const all = [...union.values()].slice(0, WATCHED);
+      if (all.length === 0 && !watchingAny) return undefined;
+      watchingAny = all.length > 0;
+      return commands.filesWatch(all).catch(() => undefined);
+    });
+    newestWatch = toSend;
   }
-  const all = [...union.values()].slice(0, WATCHED);
-  if (all.length === 0 && !watchingAny) return newest();
-  watchingAny = all.length > 0;
-  newestWatch = commands.filesWatch(all).catch(() => undefined);
   return newest();
 }
 

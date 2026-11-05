@@ -267,6 +267,10 @@ export const OneRepo: Story = {
 export const SeveralRepos: Story = {
   args: { repos: ["purlis", "theme-lab", "k8s-operator"] },
   play: async ({ canvas, userEvent }) => {
+    // `purlis` is in `repos/`, closed with several repos (#5375); `theme-lab` an old clone at
+    // the top.
+    await canvas.findByRole("row", { name: /^theme-lab/ });
+    await userEvent.click(canvas.getByRole("row", { name: /^repos/ }));
     const purlis = await canvas.findByRole("row", { name: /^purlis/ });
     await waitFor(() => expect(purlis).toHaveAccessibleName(/3 changes/));
     // *Selected* is the workspace's own files (#5375), and opening a repo's row leaves it so
@@ -320,7 +324,7 @@ export const WorkspaceFolder: Story = {
 export const FilterAllRepos: Story = {
   args: { repos: ["purlis", "theme-lab", "k8s-operator"] },
   play: async ({ canvas, userEvent }) => {
-    await canvas.findByRole("row", { name: /^purlis/ });
+    await canvas.findByRole("row", { name: /^theme-lab/ });
     await userEvent.click(canvas.getByRole("radio", { name: "All repos" }));
     await userEvent.type(canvas.getByRole("searchbox", { name: "Filter files" }), "tit");
     const found = await canvas.findByRole("grid", { name: "Files found" });
