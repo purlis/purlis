@@ -2803,6 +2803,12 @@ pub(crate) fn serve_recorded(
     // A person allowed what they read, and a chat's stdin is not in that: a run under a grant has
     // none. A program told to read its settings from there reads nothing.
     let under_a_grant = its_tool.is_some() && !armed_as_a_tool;
+    // What policy is asked about again, should the run wait on a key: only its keys are read.
+    let locked_since = under_a_grant.then(|| Wanted {
+        env: wanted.env.clone(),
+        file: wanted.file.clone(),
+        ..Wanted::default()
+    });
     // A vault opened by a Run grant is read, never filled: storing in it is its persona's.
     let missing = missing.filter(|_| vault_refused.is_none());
     // At most a few at once per chat: each holds a proxy, a temp directory and a process group.
@@ -3091,6 +3097,18 @@ pub(crate) fn serve_recorded(
                     super::ask::Held::Filled { vault, key: stored }
                         if vault == wanted.vault && stored == key =>
                     {
+                        // Policy may have come to lock them while it waited, and the value that
+                        // was stored stays stored.
+                        if let Some(locked) = locked_since.as_ref().filter(|_| false).and_then(|keys| {
+                            run_grant_locked(
+                                asker,
+                                keys,
+                                &command,
+                                &crate::sandbox::policy::Locks::of(&asker.root),
+                            )
+                        }) {
+                            return refuse(&mut *writer, 1, locked);
+                        }
                         filled.push(key);
                     }
                     // Stored where this run does not read it: said, so the chat runs it again

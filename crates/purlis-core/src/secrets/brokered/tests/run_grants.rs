@@ -1308,3 +1308,101 @@ fn a_grant_for_the_chat_stops_where_policy_leaves_it_no_scope() {
     assert!(refusal(&frames).0.contains("Policy"), "{frames:?}");
     assert!(asks.open_runs().is_empty(), "{frames:?}");
 }
+
+/// Policy holds at the last moment a run could still be stopped: storing a value stays possible
+/// under a lock, and the run it was waiting for doesn't go on with it.
+#[test]
+fn a_lock_set_while_a_fill_waits_stops_the_run_the_value_was_for() {
+    let project = project();
+    let root = project.path();
+    let asks = Asks::new(root);
+    let mut want = printenv(root, &["X"]);
+    want.env = vec!["X=NOT_THERE_YET".into()];
+    let frames = std::thread::scope(|scope| {
+        let run = scope.spawn(|| {
+            crate::sandbox::tools::SEARCH_HERE
+                .with(|dirs| *dirs.borrow_mut() = Some(vec!["/usr/bin".into(), "/bin".into()]));
+            let wire = Wire::default();
+            let (reader, _keep) = held_open();
+            serve_asking(
+                &the_chat(root),
+                want,
+                reader,
+                Box::new(wire.clone()),
+                Wrap::Unwrapped,
+                Missing {
+                    asks: &asks,
+                    within: Duration::from_secs(60),
+                    // Policy comes to lock them once the Fill is up, on the run's own thread.
+                    moved: &|| {
+                        if !asks.open().is_empty() {
+                            crate::sandbox::policy::set_for_this_test(
+                                crate::sandbox::policy::Locks::parse(
+                                    r#"{"sandbox": {"run-grants": false}}"#,
+                                    Path::new("/etc/purlis/policy.json"),
+                                ),
+                            );
+                        }
+                    },
+                    run_gate: None,
+                },
+            );
+            let bytes = wire.0.lock().unwrap().clone();
+            String::from_utf8(bytes)
+                .unwrap()
+                .lines()
+                .map(|line| serde_json::from_str(line).expect("every line is a frame"))
+                .collect::<Vec<Frame>>()
+        });
+        let open = open_ask(&asks, || run.is_finished());
+        asks.answer_run(open.id, RunAnswer::Once, window()).unwrap();
+        let id = loop {
+            if let Some(one) = asks.open().first() {
+                break one.id;
+            }
+            assert!(
+                !run.is_finished(),
+                "the run ended without asking for its key"
+            );
+            std::thread::yield_now();
+        };
+        asks.answer(
+            &Ctx::new(root, Env::of(&[])),
+            id,
+            crate::secrets::ask::Answer::Fill("fr3sh-v4lue".to_owned().into()),
+            window(),
+        )
+        .unwrap();
+        run.join().unwrap()
+    });
+    assert!(refusal(&frames).0.contains("olicy"), "{frames:?}");
+    assert!(
+        !frames
+            .iter()
+            .any(|frame| matches!(frame, Frame::Exit { .. })),
+        "nothing ran: {frames:?}"
+    );
+}
+
+#[test]
+fn a_variable_name_longer_than_a_person_reads_is_not_offered() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    let mut want = printenv(project.path(), &["X"]);
+    want.env = vec![format!("{}=TOKEN", "A".repeat(65))];
+    let frames = run_with(&the_chat(project.path()), want, &asks, Duration::ZERO);
+    assert_eq!(refusal(&frames).1, 1, "{frames:?}");
+    assert!(asks.open_runs().is_empty(), "{frames:?}");
+}
+
+#[test]
+fn programs_that_keep_running_what_they_are_told_are_not_offered() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    for program in ["git", "screen", "tmux", "m4"] {
+        let mut want = printenv(project.path(), &[]);
+        want.command = vec![program.to_owned(), "--version".to_owned()];
+        run_with(&the_chat(project.path()), want, &asks, Duration::ZERO);
+        assert!(asks.open_runs().is_empty(), "{program}");
+    }
+}

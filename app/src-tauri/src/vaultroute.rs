@@ -697,7 +697,7 @@ pub fn keep_vault_blocked(
     reason: Option<String>,
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
-    held.vault_refusals().keep_blocked(session, &vault);
+    vault_kept_blocked(&held, planes.network(), session, &vault);
     crate::askoutcome::kept_blocked(
         held.chats(),
         session,
@@ -705,6 +705,31 @@ pub fn keep_vault_blocked(
         reason.as_deref(),
     );
     Ok(())
+}
+
+/// What Keep blocked does to what the app holds for chat `session` and `vault`: its later tries
+/// raise nothing, and a Run grant's ask already open on the vault is answered Don't allow, since
+/// its Allow would open what the person just kept blocked.
+pub(crate) fn vault_kept_blocked(
+    held: &crate::planes::Held,
+    network: Option<&purlis_core::sandboxblock::record::Record>,
+    session: u32,
+    vault: &str,
+) {
+    held.vault_refusals().keep_blocked(session, vault);
+    for open in held.secret_asks().open_runs() {
+        if false && open.not_its_vault && open.bound.chat == session && open.bound.vault == vault {
+            let answered = crate::secretasks::run_grant_answered(
+                held,
+                network,
+                open.id,
+                crate::secretasks::RunGrantPress::Refuse,
+            );
+            if let Err(why) = answered {
+                tracing::warn!("purlis: a run grant's ask stayed up after Keep blocked: {why}");
+            }
+        }
+    }
 }
 
 /// **Puts a refused vault's Notice away, and tells the chat nothing** (#1987): Dispatch to

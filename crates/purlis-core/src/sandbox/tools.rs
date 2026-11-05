@@ -1684,8 +1684,12 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "ssh-agent",
     "xcrun",
     "toybox",
+    "git",
     "git-upload-pack",
     "git-receive-pack",
+    "screen",
+    "tmux",
+    "m4",
     // build and run what their files say, files a chat writes
     "make",
     "gmake",
@@ -1826,6 +1830,12 @@ pub fn for_run_grant(
             if let Some(why) = refused_var(var) {
                 return Err(why);
             }
+            if var.len() > MOST_VARIABLE_SHOWN {
+                return Err(format!(
+                    "a variable's name can be at most {MOST_VARIABLE_SHOWN} characters for the \
+                     person to read it, so purlis did not ask: use a shorter one"
+                ));
+            }
             if loads_code(var) {
                 return Err(format!(
                     "{var} steers what a program loads, so purlis does not offer to hand it a value"
@@ -1921,6 +1931,9 @@ pub fn for_run_grant(
     }
     Ok(ready)
 }
+
+/// The longest variable name a person is asked to allow: it is drawn among the app's own facts.
+const MOST_VARIABLE_SHOWN: usize = 64;
 
 /// Whether `name` is on [`NOT_FOR_A_RUN_GRANT`], as itself or as a build of it (`vim.basic`).
 fn not_for_a_run_grant(name: &str) -> bool {

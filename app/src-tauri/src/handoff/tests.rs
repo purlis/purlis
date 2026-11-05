@@ -12829,7 +12829,7 @@ fn a_chat_refused_after_keep_blocked_cannot_bring_the_vaults_allow_back() {
     run_on_team(&held, &id, chat, "python3");
     assert_eq!(inbox_of_a_run(&held), [AskSource::Vault]);
 
-    held.vault_refusals().keep_blocked(chat, "team");
+    crate::vaultroute::vault_kept_blocked(&held, None, chat, "team");
     assert_eq!(inbox_of_a_run(&held), []);
     run_on_team(&held, &id, chat, "python3");
     assert_eq!(inbox_of_a_run(&held), [], "its next try raises nothing");
@@ -12843,4 +12843,42 @@ fn a_chat_refused_after_keep_blocked_cannot_bring_the_vaults_allow_back() {
     let another = a_chat_as(&held, &plane.root, Some("ops"), &plane.root);
     run_on_team(&held, &id, another, "python3");
     assert_eq!(inbox_of_a_run(&held), [AskSource::Vault]);
+}
+
+/// A Run grant's ask already open on the vault goes too: its Always allow would give the persona
+/// the vault the person just kept blocked. Its command hears no, and goes on no further.
+#[cfg(unix)]
+#[test]
+fn keep_blocked_closes_a_run_grants_ask_already_open_on_that_vault() {
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let chat = a_chat_refused_vault_team(&plane, &held);
+
+    std::thread::scope(|scope| {
+        let run = scope.spawn(|| run_on_team(&held, &id, chat, "curl"));
+        while held.secret_asks().open_runs().is_empty() {
+            assert!(!run.is_finished(), "the run ended without asking");
+            std::thread::yield_now();
+        }
+        run_on_team(&held, &id, chat, "python3");
+        crate::vaultroute::vault_kept_blocked(&held, None, chat, "team");
+        assert_eq!(inbox_of_a_run(&held), []);
+        // Answered so the test ends either way; the assert above is what failed if it stayed.
+        for open in held.secret_asks().open_runs() {
+            held.secret_asks()
+                .answer_run(
+                    open.id,
+                    purlis_core::secrets::ask::run::RunAnswer::Refuse,
+                    purlis_core::harness::asks::Answerer::admitted(
+                        purlis_core::harness::asks::Admitted::LocalUi,
+                    )
+                    .expect("the window"),
+                )
+                .expect("answered");
+        }
+        run.join().expect("it ends");
+    });
 }
