@@ -406,6 +406,7 @@ fn the_person_is_asked_only_of_a_profile_and_a_pool_this_machine_has() {
         no_forget,
         no_keep,
         |_, _, _| Err("you said no".to_owned()),
+        no_take_off,
     );
     assert_eq!(
         no,
