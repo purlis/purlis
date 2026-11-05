@@ -46,6 +46,34 @@ document.head.append(still);
 /** The test running now, and whether its picture has been taken. */
 let running: { context: TestContext; taken: boolean } | undefined;
 
+
+// TEMPORARY probe for #5402: which system family the classic stacks resolve to, per file.
+const PROBE_FAMILIES = [
+  "var(--font-mono)", "var(--font-ui)", "monospace", "Monospace", "sans-serif", "ui-monospace", "Menlo", "Consolas",
+  "Liberation Mono", "DejaVu Sans Mono", "FreeMono", "Nimbus Mono PS", "Noto Sans Mono", "Noto Mono",
+  "WenQuanYi Zen Hei Mono", "IPAGothic", "Unifont", "Liberation Sans", "DejaVu Sans", "Arial", "Helvetica",
+];
+let probed = false;
+function probe(id: string, cell: string): void {
+  if (probed && !id.startsWith("chattext")) return;
+  probed = true;
+  const out: Record<string, string> = {};
+  for (const family of PROBE_FAMILIES)
+    for (const weight of [400, 700]) {
+      const span = document.createElement("span");
+      span.textContent = "07e0ff5 mmmiii WWW";
+      span.style.cssText = `position:absolute;left:-9999px;top:0;white-space:pre;font-size:100px;font-synthesis:none;font-weight:${weight};font-family:${family}`;
+      document.body.append(span);
+      const box = span.getBoundingClientRect();
+      out[`${family}@${weight}`] = `${box.width.toFixed(1)}x${box.height.toFixed(1)}`;
+      span.remove();
+    }
+  const code = document.querySelector("[data-story-frame] code");
+  console.warn(
+    `[probe5402] ${cell} ${id} lang=${document.documentElement.lang} nav=${navigator.language} code=${code ? getComputedStyle(code).fontFamily : "-"} ${JSON.stringify(out)}`,
+  );
+}
+
 /** Compares the story's picture with its baseline. */
 async function picture(context: TestContext): Promise<void> {
   const story = (context as unknown as Ran).story;
@@ -57,6 +85,7 @@ async function picture(context: TestContext): Promise<void> {
   if (!frame) throw new Error(`story ${story.id} drew no [data-story-frame] to take a picture of`);
   const cell = cellInTest();
   if (!cell) throw new Error(`story ${story.id} ran in no cell of the matrix (cell.setup.ts)`);
+  if (cell.theme === "purlis-classic") probe(story.id, cell.name);
   // In the theme's own fonts: every face it asked for made, then laid out.
   await facesLoaded();
   await document.fonts.ready;
