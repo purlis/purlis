@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793867081959,
+  "lastUpdate": 1793870029494,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -39900,6 +39900,48 @@ window.BENCHMARK_DATA = {
             "value": 102.180114,
             "unit": "ms",
             "extra": "median of 5 runs: 102.013, 102.107, 102.180, 102.438, 102.823 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "0dbdb0b2acb623a6ccb68ab8b96462aed73328de",
+          "message": "Runners: a fresh runner's proof looks through a folder of files its user may change whole (#5112) (#5300)\n\n* Runners: a test that more files than the bound in one folder are looked through whole (#5112)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N8V4F35XYCWAHKQVPW544T\nPurlis-Persona: steward\n\n* Runners: a folder of files its user may change is recorded once, so a large image is looked through whole (#5112)\n\nWhere the runner's user may change every file in a folder it may not write, that folder is kept in place of its files and they are looked at at each check, by the rules the walk went by. A folder kept counts as one against MOST_OWN_FILES. A link another user owns does not stop it: the user can't change one.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N8V4F35XYCWAHKQVPW544T\nPurlis-Persona: steward\n\n* Runners: review of the recorded folder: a test for what its user owns, a failed ownership read makes a place, ADR 0078 amended (#5112)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N8V4F35XYCWAHKQVPW544T\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-05T08:37:18Z",
+          "tree_id": "115e70c723d7376598232c1df3ec625e901067b1",
+          "url": "https://github.com/purlis/purlis/commit/0dbdb0b2acb623a6ccb68ab8b96462aed73328de"
+        },
+        "date": 1793870025200,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6848605000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.668, 0.679, 0.685, 0.685, 0.690 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.342352500000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.256, 16.320, 16.342, 16.464, 16.822 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.1839935,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.331, 101.705, 102.184, 102.563, 103.343 ms"
           }
         ]
       }
