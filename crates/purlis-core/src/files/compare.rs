@@ -421,7 +421,7 @@ pub enum TurnChanged {
     Changed {
         chat: String,
         number: u32,
-        shown: WhatChanged,
+        shown: Box<WhatChanged>,
     },
 }
 
@@ -468,7 +468,7 @@ pub(super) fn latest_turn_changed_here(
             Shown::Changed(shown) => TurnChanged::Changed {
                 chat: latest.chat,
                 number: latest.number,
-                shown,
+                shown: Box::new(shown),
             },
             Shown::NotListed { .. } => TurnChanged::NotChanged {
                 number: latest.number,

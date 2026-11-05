@@ -78,6 +78,7 @@ describe("the latest turn beside against base (#5405)", () => {
         hunks: [{ oldStart: 2, oldLines: 0, newStart: 3, newLines: 1 }],
       }),
       base: "the start of turn 3",
+      stamp: null,
     },
   };
 
@@ -97,6 +98,17 @@ describe("the latest turn beside against base (#5405)", () => {
       ]),
     );
     expect(asked).toEqual(["what_changed", "latest_turn_changed"]);
+  });
+
+  it("offers no Discard on a turn's hunks, which a discard would take for the base's", async () => {
+    coreWithTurns({ ...whole, stamp: "drawn" }, ofTheTurn);
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
+    expect(await screen.findByRole("button", { name: /^Discard the change/ })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("radio", { name: "Latest turn" }));
+
+    await screen.findByText("against the start of turn 3");
+    expect(screen.queryByRole("button", { name: /^Discard/ })).toBeNull();
   });
 
   it("goes back to the branch's whole change by the arrow keys", async () => {

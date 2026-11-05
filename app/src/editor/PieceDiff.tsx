@@ -164,7 +164,7 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
         if (told.kind === "busy") setWarning({ ...ask, kind: "busy", chats: told.chats });
         else if (told.kind === "stale") setWarning({ ...ask, kind: "stale" });
         else {
-          if (told.now !== null) 
+          if (told.now !== null)
             setRead({ asked, moved, comparedTo, read: { kind: "read", shown: told.now } });
           else setAsked((n) => n + 1);
           if (told.unrecorded !== null)

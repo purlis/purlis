@@ -1622,6 +1622,8 @@ fn the_latest_turn_on_the_branch_answers_one_files_diff() {
         panic!("src/lib.rs is what the second turn changed");
     };
     assert_eq!((chat.as_str(), number), (CHAT, 2));
+    // A discard puts a hunk back as the base has it, so a turn's hunks are not its to take.
+    assert_eq!(shown.stamp, None);
     let (start, end) = (turn_ref(2, "start"), turn_ref(2, "end"));
     let FileDiff::Text { hunks, .. } = shown.diff else {
         panic!("not text")

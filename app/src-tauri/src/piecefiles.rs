@@ -480,7 +480,7 @@ fn latest_turn_changed_of(
         files::TurnChanged::NotChanged { number } => TurnChanged::NotChanged { number },
         files::TurnChanged::Changed { number, shown, .. } => TurnChanged::Changed {
             number,
-            shown: what_changed_shown(shown),
+            shown: what_changed_shown(*shown),
         },
     })
 }
