@@ -331,3 +331,216 @@ describe("the most recently used pane across the project's windows (#5108)", () 
     await waitFor(() => expect(shape(said().at(-1))).toEqual([[0, [3]]]));
   });
 });
+
+/**
+ * **A chat shown only in a tab window says its notes there alone** (#5225, from #4759). The window
+ * showing the chat owns what it has to say, on its pane's band, where the person is reading it.
+ * The project window's Notices centre keeps only the chats no window shows.
+ */
+describe("a note of a chat shown only in a tab window (#5225)", () => {
+  const SAID = "Its browsers ended with it.";
+  const LAID: LaidOut = { strip: null, tabs: [tab(0, true, 1), tab(1, true, 2)] };
+  /** The tab window closed: its chat in front in the project window. */
+  const BACK: LaidOut = { strip: null, tabs: [tab(0, false, 1), tab(0, true, 2)] };
+  const says = (session: number) => ({ plane: ONE, session, note: SAID });
+  /** How many times this window says it: on a pane's band or in the Notices centre. */
+  const saidHere = () => screen.queryAllByText(SAID).length;
+  const windowOf = async (tabWindow: number | undefined, session: number) => {
+    mockWindows(tabWindow === undefined ? "main" : "window-1");
+    const wire = core({ tabWindow, layout: LAID, chats: [1, 2], inNoTab: [3] });
+    render(<App />);
+    await screen.findByText(`session ${session}`);
+    return wire;
+  };
+
+  it("is said once across the two windows, by the tab window that shows it", async () => {
+    const project = await windowOf(undefined, 1);
+    project.fire("chat-browsers-ended", says(2));
+    // Heard, as the same project's chat with no pane anywhere is: its note is listed.
+    project.fire("chat-browsers-ended", says(3));
+    await waitFor(() => expect(saidHere()).toBe(1));
+    const here = screen.getByText(SAID);
+    expect(here.closest("[data-cause]")?.textContent).toContain("3");
+    cleanup();
+    clearMocks();
+
+    const shows = await windowOf(1, 2);
+    shows.fire("chat-browsers-ended", says(2));
+    await waitFor(() => expect(saidHere()).toBe(1));
+    expect(screen.getByText(SAID).closest('[data-placement="pane"]')).not.toBeNull();
+  });
+
+  it("lists no chat of the project in a tab window's own window, which has no Notices centre", async () => {
+    const shows = await windowOf(1, 2);
+    shows.fire("chat-browsers-ended", says(3));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(saidHere()).toBe(0);
+  });
+
+  it("goes from the Notices centre as a tab window comes to show its chat, and comes back as it stops", async () => {
+    const project = await windowOf(undefined, 1);
+    project.fire("chat-browsers-ended", says(3));
+    await waitFor(() => expect(saidHere()).toBe(1));
+
+    // The tab window's own report: a press there landed chat 3 in its pane.
+    project.fire("layout-reported", {
+      plane: ONE,
+      layout: { strip: null, tabs: [tab(0, true, 1), tab(1, true, 3)] },
+    });
+    await waitFor(() => expect(saidHere()).toBe(0));
+
+    project.fire("layout-reported", { plane: ONE, layout: LAID });
+    await waitFor(() => expect(saidHere()).toBe(1));
+  });
+
+  it("cleared where it stands, is cleared in every window of the project", async () => {
+    const user = userEvent.setup();
+    const shows = await windowOf(1, 2);
+    shows.fire("chat-browsers-ended", says(2));
+    const said = await screen.findByText(SAID);
+    const band = said.closest('[data-placement="pane"]') as HTMLElement;
+    await user.click(within(band).getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(saidHere()).toBe(0));
+    // Told to the other windows.
+    const told = shows
+      .sent("plugin:event|emit")
+      .map((one) => one.args as { event: string; payload: unknown })
+      .filter((one) => one.event === "note-cleared");
+    expect(told).toEqual([
+      {
+        event: "note-cleared",
+        payload: { plane: ONE, session: 2, note: { kind: "start" }, from: "window-1" },
+      },
+    ]);
+    cleanup();
+    clearMocks();
+
+    // The project window held it too, off screen, and hears that: it does not say it again when
+    // the chat comes back to it.
+    const project = await windowOf(undefined, 1);
+    project.fire("chat-browsers-ended", says(2));
+    project.fire("note-cleared", told[0].payload);
+    project.fire(LAYOUT_MOVED, { plane: ONE, layout: BACK });
+    await screen.findByText("session 2");
+    expect(saidHere()).toBe(0);
+  });
+
+  it("nobody having cleared it, says it again on the chat's pane as the chat comes back", async () => {
+    const project = await windowOf(undefined, 1);
+    project.fire("chat-browsers-ended", says(2));
+    expect(saidHere()).toBe(0);
+    project.fire(LAYOUT_MOVED, { plane: ONE, layout: BACK });
+    await screen.findByText("session 2");
+    await waitFor(() => expect(saidHere()).toBe(1));
+  });
+
+  /** What this window told the other windows, of one event. */
+  const told = (wire: ReturnType<typeof core>, event: string) =>
+    wire
+      .sent("plugin:event|emit")
+      .map((one) => one.args as { event: string; payload: unknown })
+      .filter((one) => one.event === event)
+      .map((one) => one.payload);
+
+  it("is handed to the window that comes to show its chat, what this one held before", async () => {
+    const project = await windowOf(undefined, 1);
+    project.fire("chat-browsers-ended", says(3));
+    await waitFor(() => expect(saidHere()).toBe(1));
+
+    project.fire("layout-reported", {
+      plane: ONE,
+      layout: { strip: null, tabs: [tab(0, true, 1), tab(1, true, 3)] },
+    });
+    await waitFor(() => expect(saidHere()).toBe(0));
+    await waitFor(() =>
+      expect(told(project, "notes-handed")).toEqual([
+        {
+          plane: ONE,
+          session: 3,
+          from: "main",
+          start: { notes: [SAID], agentsMd: [] },
+          blocks: [],
+        },
+      ]),
+    );
+  });
+
+  it("is said on the band of the window it was handed to, once, however often it is handed", async () => {
+    const shows = await windowOf(1, 2);
+    const handed = {
+      plane: ONE,
+      session: 2,
+      from: "main",
+      start: { notes: [SAID], agentsMd: [] },
+      blocks: [],
+    };
+    shows.fire("notes-handed", handed);
+    shows.fire("notes-handed", handed);
+    await waitFor(() => expect(saidHere()).toBe(1));
+    expect(screen.getByText(SAID).closest('[data-placement="pane"]')).not.toBeNull();
+    expect(screen.getByText(SAID).textContent).toBe(SAID);
+  });
+
+  it("is asked for by a tab window as it first draws, and handed by the window holding it", async () => {
+    const shows = await windowOf(1, 2);
+    await waitFor(() =>
+      expect(told(shows, "notes-asked")).toEqual([{ plane: ONE, from: "window-1" }]),
+    );
+    cleanup();
+    clearMocks();
+
+    const project = await windowOf(undefined, 1);
+    project.fire("chat-browsers-ended", says(2));
+    await waitFor(() => expect(told(project, "notes-handed")).toHaveLength(1));
+    project.fire("notes-asked", { plane: ONE, from: "window-1" });
+    await waitFor(() => expect(told(project, "notes-handed").length).toBeGreaterThan(1));
+  });
+
+  it("a block cleared in another window is let go here, and the core is told once, by that window", async () => {
+    const block = {
+      plane: ONE,
+      session: 2,
+      operation: "write",
+      kind: "path",
+      ours: false,
+      harness: null,
+      said: "a write",
+      offer: "host",
+      target: "api.example.com",
+      levels: ["chat"],
+      route: null,
+      held: false,
+      ruled: null,
+    };
+    const project = await windowOf(undefined, 1);
+    project.fire("chat-sandbox-blocked", block);
+    project.fire("note-cleared", {
+      plane: ONE,
+      session: 2,
+      note: { kind: "block", block },
+      from: "window-1",
+    });
+    project.fire(LAYOUT_MOVED, { plane: ONE, layout: BACK });
+    await screen.findByText("session 2");
+    expect(screen.queryByText(/The sandbox blocked a write/)).toBeNull();
+    expect(project.sent("forget_sandbox_block")).toEqual([]);
+  });
+
+  it("a note cleared in another project's window stays here", async () => {
+    const project = await windowOf(undefined, 1);
+    project.fire("chat-browsers-ended", says(3));
+    await waitFor(() => expect(saidHere()).toBe(1));
+    project.fire("note-cleared", {
+      plane: "/home/dev/two",
+      session: 3,
+      note: { kind: "start" },
+      from: "window-1",
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(saidHere()).toBe(1);
+  });
+});

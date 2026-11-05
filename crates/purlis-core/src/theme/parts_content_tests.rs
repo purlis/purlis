@@ -87,7 +87,7 @@ fn the_content_families_are_in_the_manifest_since_next() {
     assert_eq!(
         of("notice"),
         (
-            named(&["root", "message", "whose", "mark", "title"]),
+            named(&["root", "message", "whose", "mark", "title", "sub", "chat-words"]),
             vec![("news".into(), true), ("trouble".into(), true), ("attention".into(), true)]
         )
     );
@@ -537,24 +537,25 @@ fn the_separator_s_colour_reaches_every_line_between_groups() {
 }
 
 #[test]
-fn the_card_s_ground_and_edge_width_reach_the_inbox_s_list_of_notices() {
-    // The list is a card of rows (#3177): a theme's card with no hairline draws the list with
-    // none, on the card's ground. Only the list in the Inbox and on the page, never its band.
+fn the_card_s_ground_reaches_a_notices_centre_card_and_its_edge_width_the_list_on_the_page() {
+    // On the page the list is a card of rows (#3177): a theme's card with no hairline draws it
+    // with none, on the card's ground. In the Notices centre each plain Notice is a card of its
+    // own and takes the ground, and its outline stays, since it says its kind and a consent's
+    // says it asks (#5217, ADR 0097 §6). Never the list's band.
     let list = "[data-scope=\"notice-list\"][data-part=\"root\"]";
     let sheet = sheet_of(json!({ "card.root.border-width": 0, "card.root.fill": "surface.base" }));
     let rules: Vec<&str> = sheet.lines().filter(|line| line.contains(list)).collect();
     assert_eq!(rules.len(), 2, "{sheet}");
+    assert!(rules.iter().all(|one| one.contains("data-at=\"page\"")));
+    let edge = rules.iter().find(|one| one.contains("border-width"));
     assert!(
-        rules
-            .iter()
-            .all(|one| one.contains("data-at=\"inbox\"") && one.contains("data-at=\"page\""))
-    );
-    assert!(
-        rules.iter().any(|one| one.contains("border-width")),
+        edge.is_some_and(|one| !one.contains("data-at=\"inbox\"")),
         "{rules:?}"
     );
+    let ground = rules.iter().find(|one| one.contains("var(--surface-base)"));
     assert!(
-        rules.iter().any(|one| one.contains("var(--surface-base)")),
+        ground.is_some_and(|one| one.contains("data-at=\"inbox\"")
+            && one.contains("[data-variant=\"news\"]")),
         "{rules:?}"
     );
     // Only a ground the Notices' words are measured on reaches the list: a card on the danger

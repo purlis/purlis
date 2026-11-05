@@ -12,7 +12,7 @@ import { moved } from "../familyLint.js";
 
 const noticeFamily = moved({
   description: "A Notice is drawn by the shared notice family",
-  scopes: ["notice", "notice-list", "notice-row"],
+  scopes: ["notice", "notice-card", "notice-list", "notice-row"],
   classes: [
     "notice",
     "notice-*",

@@ -19,8 +19,9 @@
  *   no theme's (`purlis_core::theme::parts`): Allow keeps its own look on it, and purlis speaking
  *   wherever the window draws its edge keeps its waiting edge. A chat pane's band draws its
  *   Notices as washed cards with their mark and no edge (`paneFrame.css`, #3142).
- * - **The Inbox's list** (`NoticeListBox`, `data-scope="notice-list"`) is one box of rows with a
- *   separator between them; **a pane's row** (`NoticeRow`, `NoticeStack`,
+ * - **The Inbox's list** (`NoticeListBox`, `data-scope="notice-list"`) is, in the Notices centre,
+ *   a stack of cards in the Inbox card's style (`layout="head"`, #5217), and elsewhere one box of
+ *   rows with a separator between them; **a pane's row** (`NoticeRow`, `NoticeStack`,
  *   `data-scope="notice-row"`) stands above the terminal and takes the height it leaves. Both are
  *   layout, drawn here and themed through the Notices they hold.
  */
@@ -43,13 +44,18 @@ export function NoticeBox({
   opened,
   asks,
   waits = false,
+  consent = false,
   layout,
   children,
 }: {
   /** **`card`** (#3344, the sidebar-views prototype's Q3 A): its mark at the start, its title
    *  with its × at the top right, its sentence, its ways on a row of their own and what a way
-   *  out opened inside it. Without, the line. */
-  layout?: "card";
+   *  out opened inside it. Without, the line. **`head`** (#5217): the Notices centre's, a
+   *  one-line head over its sentence and its ways. */
+  layout?: "card" | "head";
+  /** **It waits on the person's consent** (ADR 0097 §6): in the Notices centre it keeps its full
+   *  waiting edge, where any other Notice's outline is softer (#5217). */
+  consent?: boolean;
   tone: NoticeTone;
   placement: NoticePlacement;
   /** A way out opened something under the line: in a pane the box takes a sentence's width. */
@@ -70,6 +76,7 @@ export function NoticeBox({
       data-opened={opened ? "" : undefined}
       data-asks={asks ? "" : undefined}
       data-waits={waits ? "" : undefined}
+      data-consent={consent ? "" : undefined}
       data-layout={layout}
     >
       {children}
@@ -112,6 +119,76 @@ export function NoticeMark({ tone, running = false }: { tone: NoticeTone; runnin
     <span data-scope="notice" data-part="mark" aria-hidden="true">
       {running ? <LoaderCircle className="spinning" /> : <Mark />}
     </span>
+  );
+}
+
+/** **A Notices centre card's head** (#5217): its mark, its title with its state and age under
+ *  it, and at its end Go to chat and its ×. */
+export function NoticeHead({
+  mark,
+  title,
+  sub,
+  end,
+}: {
+  mark: ReactNode;
+  title: ReactNode;
+  /** What stands under the title: its state, where the title does not say it, and its age. */
+  sub: ReactNode;
+  end?: ReactNode;
+}) {
+  return (
+    <div data-scope="notice" data-part="head">
+      {mark}
+      <span data-scope="notice" data-part="heading">
+        {title}
+        {/* Its age changes every minute: nothing to read the whole card out again for. */}
+        <span data-scope="notice" data-part="sub" aria-live="off">
+          {sub}
+        </span>
+      </span>
+      {end !== undefined && (
+        <span data-scope="notice" data-part="end">
+          {end}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** **A Notices centre card's live words** (#5217): all it says with its ways, so a test and a
+ *  screen reader find them as they do a line's, and never what a way out opened. */
+export function NoticeSaid({
+  children,
+  label,
+  cause,
+  live,
+}: {
+  children: ReactNode;
+  label?: string;
+  cause: string;
+  /** Off for a copy of a Notice already said (a result kept under Results). */
+  live: boolean;
+}) {
+  return (
+    <div
+      data-scope="notice-card"
+      data-part="said"
+      role={live ? "status" : undefined}
+      aria-label={live ? label : undefined}
+      data-cause={cause}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** **A chat's own words on a Notices centre card** (#5217), through `ChatText`. Their fold's words
+ *  change as it opens, which is nothing to read the whole card out again for. */
+export function NoticeChatWords({ children }: { children: ReactNode }) {
+  return (
+    <div data-scope="notice" data-part="chat-words" aria-live="off">
+      {children}
+    </div>
   );
 }
 

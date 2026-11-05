@@ -55,6 +55,34 @@ async function until(state: string): Promise<void> {
   }
 }
 
+/** The summary's band, the sentence and every box each of its links is drawn in. */
+async function measured() {
+  return browser.execute((which: string) => {
+    const line = document.querySelector<HTMLElement>(which);
+    if (!line) throw new Error("the summary went before it was measured");
+    const band = line.getBoundingClientRect();
+    // The sentence, as the Notice sets it beside its ways out.
+    const body = line.querySelector<HTMLElement>("[data-scope=notice][data-part=message]");
+    const text = body?.getBoundingClientRect();
+    // Every box each link is drawn in: a link that wraps is drawn in more than one.
+    const links = [...line.querySelectorAll<HTMLElement>(".away-part")].map((link) =>
+      [...link.getClientRects()].map((box) => ({ left: box.left, right: box.right })),
+    );
+    // The rows the sentence takes: one top per row its words are set on.
+    const range = document.createRange();
+    if (body) range.selectNodeContents(body);
+    const rows = new Set([...range.getClientRects()].map((box) => Math.round(box.top))).size;
+    return {
+      band: { left: band.left, right: band.right },
+      text: text ? { left: text.left, right: text.right } : null,
+      links,
+      rows,
+      sideways: line.scrollWidth - line.clientWidth,
+      page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    };
+  }, SUMMARY);
+}
+
 describe("the away summary in a narrow window (#1551)", () => {
   let was = { width: 0, height: 0 };
 
@@ -124,30 +152,7 @@ describe("the away summary in a narrow window (#1551)", () => {
       expect.stringContaining("While you were away: 1 chat waiting on you"),
     );
 
-    const seen = await browser.execute((which: string) => {
-      const line = document.querySelector<HTMLElement>(which);
-      if (!line) throw new Error("the summary went before it was measured");
-      const band = line.getBoundingClientRect();
-      // The sentence, as the Notice sets it beside its ways out.
-      const body = line.querySelector<HTMLElement>("[data-scope=notice][data-part=message]");
-      const text = body?.getBoundingClientRect();
-      // Every box each link is drawn in: a link that wraps is drawn in more than one.
-      const links = [...line.querySelectorAll<HTMLElement>(".away-part")].map((link) =>
-        [...link.getClientRects()].map((box) => ({ left: box.left, right: box.right })),
-      );
-      // The rows the sentence takes: one top per row its words are set on.
-      const range = document.createRange();
-      if (body) range.selectNodeContents(body);
-      const rows = new Set([...range.getClientRects()].map((box) => Math.round(box.top))).size;
-      return {
-        band: { left: band.left, right: band.right },
-        text: text ? { left: text.left, right: text.right } : null,
-        links,
-        rows,
-        sideways: line.scrollWidth - line.clientWidth,
-        page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-      };
-    }, SUMMARY);
+    const seen = await measured();
 
     // The case this is about: the band is narrower than the sentence, so it wraps.
     expect(seen.rows).toBeGreaterThan(1);
@@ -165,5 +170,48 @@ describe("the away summary in a narrow window (#1551)", () => {
     expect(seen.text?.right ?? Infinity).toBeLessThanOrEqual(seen.band.right + 0.5);
     expect(seen.sideways).toBeLessThanOrEqual(0);
     expect(seen.page).toBeLessThanOrEqual(0);
+  });
+
+  // How much room the side leaves at 1024 px is the runner's fonts' and scrollbars' to say: a link
+  // that overran its band on macOS's WebKit fitted on Linux's (#5217). So this asks for it on every
+  // runner: the sentence is given less room than its widest link takes.
+  it("breaks a link wider than the room the sentence has, inside the sentence", async () => {
+    const before = await measured();
+    const widest = Math.max(...before.links.flat().map((box) => box.right - box.left));
+    const room = (before.text?.right ?? 0) - (before.text?.left ?? 0);
+    const given = widest - 20;
+    await browser.execute(
+      (panel: string, less: number) => {
+        const view = document.querySelector<HTMLElement>(panel);
+        if (!view) throw new Error("the Inbox went before it was narrowed");
+        const width = view.getBoundingClientRect().width - less;
+        view.style.boxSizing = "border-box";
+        view.style.width = `${width}px`;
+        view.style.maxWidth = `${width}px`;
+      },
+      INBOX,
+      room - given,
+    );
+    try {
+      const seen = await measured();
+      // The case this is about: the sentence really has less room than the link took.
+      expect(seen.text).not.toBeNull();
+      const right = seen.text?.right ?? Infinity;
+      expect(right - (seen.text?.left ?? 0)).toBeLessThanOrEqual(given + 0.5);
+      for (const boxes of seen.links) {
+        for (const box of boxes) {
+          expect(box.left).toBeGreaterThanOrEqual((seen.text?.left ?? 0) - 0.5);
+          expect(box.right).toBeLessThanOrEqual(right + 0.5);
+        }
+      }
+      expect(seen.sideways).toBeLessThanOrEqual(0);
+    } finally {
+      await browser.execute((panel: string) => {
+        const view = document.querySelector<HTMLElement>(panel);
+        view?.style.removeProperty("box-sizing");
+        view?.style.removeProperty("width");
+        view?.style.removeProperty("max-width");
+      }, INBOX);
+    }
   });
 });

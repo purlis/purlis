@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { LaidNode, LaidOut } from "./bindings";
-import { type Reopening, tabsOf } from "./laidOut";
+import { chatsOf, type Reopening, tabsOf } from "./laidOut";
+import type { StartNotes } from "./ChatNotices";
+import type { HeldBlock } from "./sandboxBlocks";
 import {
   type Content,
   type FiledIn,
@@ -25,6 +27,53 @@ import {
 
 /** The event the core sends a project's every window after tabs moved between them. */
 export const LAYOUT_MOVED = "layout-moved";
+
+/** **The event a tab window's own report sends every window of the project** (#5225): the same
+ *  layout, for what each window shows. Nothing moved, so no window draws anything from it. */
+export const LAYOUT_REPORTED = "layout-reported";
+
+/** The event a window sends every window as a note of a chat is cleared in it (#5225): each may
+ *  hold the note, for the chat coming back to it, and none says it again. */
+export const NOTE_CLEARED = "note-cleared";
+
+/** What {@link NOTE_CLEARED} carries: which chat's note, by the state that holds it. */
+export type NoteCleared = {
+  plane: string;
+  session: number;
+  note: { kind: "start" | "by-hand" | "restart" } | { kind: "block"; block: HeldBlock };
+  /** The window it was cleared in, which hears it too. */
+  from: string;
+};
+
+/** **The event a window sends as it comes to hold notes of a chat another window shows** (#5225):
+ *  that window may have heard none of them, having shown the chat only since. */
+export const NOTES_HANDED = "notes-handed";
+
+/** What {@link NOTES_HANDED} carries: the notes a window holds in its own state. */
+export type NotesHanded = {
+  plane: string;
+  session: number;
+  start?: StartNotes;
+  blocks: readonly HeldBlock[];
+  /** The window that holds them, which hears it too. */
+  from: string;
+};
+
+/** **The event a tab window sends as it first draws** (#5225): it was not listening as its chats
+ *  moved to it, so each window hands over again what it holds of them. */
+export const NOTES_ASKED = "notes-asked";
+
+/** What {@link NOTES_ASKED} carries. */
+export type NotesAsked = { plane: string; from: string };
+
+/** `held`, with what was handed over added: each line and each file once. */
+export function withStartHanded(held: StartNotes | undefined, handed: StartNotes): StartNotes {
+  if (held === undefined) return handed;
+  return {
+    notes: [...new Set([...held.notes, ...handed.notes])],
+    agentsMd: held.agentsMd.length > 0 ? held.agentsMd : handed.agentsMd,
+  };
+}
 
 /** The event a window is sent to show a chat: a press in another window of the project landed
  *  on it (`press_elsewhere`), on a chat it has in a pane, or on a chat in no pane where its
@@ -56,6 +105,13 @@ function laidShows(node: LaidNode): string[] {
     return [`view:${viewKey({ from: node.view.from, view: node.view.view, key: node.view.key })}`];
   return [];
 }
+
+/**
+ * **The chats the project's other windows show** (#5225), as a layout says it: what `window` has
+ * to say of those is theirs to say, on their panes.
+ */
+export const chatsElsewhere = (laid: LaidOut, window: number): ReadonlySet<number> =>
+  new Set(laid.tabs.filter((one) => one.window !== window).flatMap((one) => chatsOf(one.tree)));
 
 /**
  * **What window `window` holds once the core moved tabs between the project's windows**: each

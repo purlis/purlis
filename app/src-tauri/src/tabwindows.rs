@@ -32,6 +32,11 @@ use crate::planes::{PlaneId, Planes, Showing, TabWindow, WrittenBehind};
 /// window draws its own share of the layout it carries ([`LayoutMoved`]).
 pub const LAYOUT_MOVED: &str = "layout-moved";
 
+/// **What a tab window reporting its layout tells the project's other windows** (#5225): what it
+/// shows now. Nothing moved, so none draws anything from it: a chat it shows says its notes on
+/// its pane there, and the project window's Notices centre lets them go.
+pub const LAYOUT_REPORTED: &str = "layout-reported";
+
 /// What [`LAYOUT_MOVED`] carries: the project, and every tab of it as the core holds them now.
 #[derive(Debug, Clone, serde::Serialize, specta::Type)]
 pub(crate) struct LayoutMoved {
@@ -267,15 +272,33 @@ fn open_tab_window<R: Runtime>(
     Ok(label)
 }
 
+/// Tells every window of `plane` what a tab window's report left each showing ([`LAYOUT_REPORTED`]).
+pub(crate) fn tell_reported<R: Runtime>(
+    app: &AppHandle<R>,
+    plane: &PlaneId,
+    held: &crate::planes::Held,
+) {
+    tell_layout(app, plane, held, LAYOUT_REPORTED);
+}
+
 /// Tells every window of `plane` what each holds now.
 fn tell_moved<R: Runtime>(app: &AppHandle<R>, plane: &PlaneId, held: &crate::planes::Held) {
+    tell_layout(app, plane, held, LAYOUT_MOVED);
+}
+
+fn tell_layout<R: Runtime>(
+    app: &AppHandle<R>,
+    plane: &PlaneId,
+    held: &crate::planes::Held,
+    event: &str,
+) {
     let Some(layout) = held.chats().layout() else {
         return;
     };
     crate::windows::emit_for_plane(
         app,
         plane,
-        LAYOUT_MOVED,
+        event,
         LayoutMoved {
             plane: plane.clone(),
             layout: layout.into(),
