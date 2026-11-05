@@ -921,8 +921,15 @@ pub fn look(root: &Path, caller: &forge::Caller, say: Sink) -> Result<Looked, St
     let bring_in = settled == prsave::Settled::Open
         && (plane.mode.value == Some(Mode::Pr)
             || prsave::known_merging(root).is_some_and(|m| m.state == MergeState::CannotMerge));
+    // What the settle above did is the look's answer whatever this comes to: a target that could
+    // not be fetched is said, and the next look tries again.
     let (brought, said) = if bring_in {
-        prsave::bring_in_for_a_look(root, &plane, &branch, caller, say)?
+        prsave::bring_in_for_a_look(root, &plane, &branch, caller, say).unwrap_or_else(|why| {
+            say(Say::Info(
+                format!("{branch} on the remote was not looked at: {why}").into(),
+            ));
+            (false, false)
+        })
     } else {
         (false, false)
     };
@@ -2902,7 +2909,7 @@ impl Default for Attempt {
 }
 
 /// Bring an existing plane's managed merge rules up to this build's, so a plane scaffolded before
-/// a rule was added takes it with its next whole save (#5338). `.gitattributes` is committed, so
+/// a rule was added takes it with its next whole save (#5338). A rule a newer build added stays. `.gitattributes` is committed, so
 /// it reaches the plane's other machines by the save it lands in. Only a block already there:
 /// `init` and `reinit` are what add one. A file it may not write is left, as a chat's sandbox
 /// holds it: the window's own save takes it, and nothing depends on the rules arriving first,
@@ -2918,7 +2925,7 @@ fn refresh_merge_rules(root: &Path) {
     {
         return;
     }
-    let _ = crate::scaffold::ensure_gitattributes(&path);
+    let _ = crate::scaffold::refresh_gitattributes(&path);
 }
 
 /// The most lines the journal keeps. The Saving view shows the newest fifty.

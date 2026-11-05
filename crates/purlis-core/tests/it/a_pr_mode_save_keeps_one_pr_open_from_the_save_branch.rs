@@ -1488,7 +1488,8 @@ mod pr_saves {
     }
 
     /// **The app's look brings a moved target in**, with no save, in `pr` mode too: nothing
-    /// else will touch a plane nobody is writing in.
+    /// else will touch a plane nobody is writing in. Only where the request needs it: a target
+    /// that moved with nothing to settle is left, and the request keeps its head.
     #[test]
     fn a_look_at_a_pr_plane_brings_a_moved_target_in_and_pushes_it() {
         purlis_core::unsteered!();
@@ -1496,13 +1497,23 @@ mod pr_saves {
             return;
         }
         let plane = plane_with_a_workspace("moved-target-look.test", "pr");
-        plane.opened("work.md", 12);
+        plane.lookup(None);
+        plane.created(12, &["first of mine"]);
+        let (code, said) = save_a_record(&plane, "20261101-100000", "first of mine");
+        assert_eq!(code, 0, "{said}");
+        let head = plane.head();
+
         plane.their_commit("theirs.md", "theirs");
+        plane.state(12, true);
+        look(&plane);
+        assert_eq!(plane.head(), head, "a request that merges as it is is left");
+
+        their_record(&plane, "20261102-100000", "theirs");
         // Once by the look, and once by the push it makes.
         plane.state(12, true);
         plane.state(12, true);
         plane.lookup(Some(12));
-        plane.updated(12, &["work.md", "Bring release into this machine's saves"]);
+        plane.updated(12, &["Bring release into this machine's saves"]);
 
         let found = look(&plane);
 

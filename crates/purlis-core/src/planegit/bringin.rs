@@ -57,6 +57,26 @@ const SUBJECT: &str = "into this machine's saves";
 /// What stands in for the pointer while a `workspace.md` is merged.
 const SET_ASIDE: &str = "purlis sets this line aside while it merges";
 
+/// What stands in for the managed block while a `.gitattributes` is merged, so it keeps its place.
+const RULES_SET_ASIDE: &str = "# purlis sets its merge rules aside while it merges";
+
+/// When [`bring_in`] makes a commit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum When<'a> {
+    /// Only where the forge's own merge would stop or come out wrong: a conflict, or a file
+    /// purlis generates that the line merge stitches. A request that merges as it is is left, so
+    /// a moving target does not add a merge commit, and a new head, to every save (a repository
+    /// that keeps its history linear refuses those).
+    Needed,
+    /// Whenever the target moved: the forge says the request cannot merge as it is.
+    Moved,
+    /// The request at this commit merged, and what was committed since is carried onto the
+    /// target as one commit, with that commit as the merge base and the target its one parent.
+    /// A request merged by rebase or squash is in the target as copies, and a merge with the
+    /// plane's history would bring the originals back beside them.
+    MergedAt(&'a str),
+}
+
 /// What [`bring_in`] came to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum BroughtIn {
@@ -74,7 +94,7 @@ pub(super) enum BroughtIn {
 
 /// **Bring the remote-tracking target into the plane**, as far as it can go by itself. `target`
 /// is the branch, already fetched; the plane is on it.
-pub(super) fn bring_in(root: &Path, target: &str, sign: bool) -> BroughtIn {
+pub(super) fn bring_in(root: &Path, target: &str, sign: bool, when: When) -> BroughtIn {
     let theirs = format!("refs/remotes/origin/{target}");
     let behind = count(root, &format!("HEAD..{theirs}")).unwrap_or(0);
     if behind == 0 {
@@ -87,14 +107,21 @@ pub(super) fn bring_in(root: &Path, target: &str, sign: bool) -> BroughtIn {
         // Nothing of its own: there is nothing to merge, and no commit to make.
         theirs.clone()
     } else {
-        let plan = match plan(root, &theirs) {
+        let base = match when {
+            When::MergedAt(head) => Some(head),
+            When::Needed | When::Moved => None,
+        };
+        let plan = match plan(root, &theirs, base) {
             Ok(plan) => plan,
             Err(why) => return BroughtIn::Failed(why),
         };
+        if when == When::Needed && !plan.needed(root) {
+            return BroughtIn::Nothing;
+        }
         if !plan.person.is_empty() {
             return BroughtIn::Conflict(plan.person);
         }
-        match commit(root, &plan, &theirs, target, sign) {
+        match commit(root, &plan, &theirs, target, sign, base.is_some()) {
             Ok(commit) => commit,
             Err(why) => return BroughtIn::Failed(why),
         }
@@ -123,6 +150,8 @@ pub(super) fn bring_in(root: &Path, target: &str, sign: bool) -> BroughtIn {
 pub(super) struct Plan {
     /// The tree git's merge wrote, conflict markers included in any file it could not settle.
     tree: String,
+    /// Whether git's merge left any file in conflict.
+    conflicted: bool,
     /// The files to write over it, as plane-relative paths.
     pub(super) settled: BTreeMap<String, String>,
     /// The files left in conflict that a person wrote, sorted.
@@ -188,22 +217,32 @@ fn sources_in(paths: &BTreeSet<String>) -> BTreeSet<Generated> {
     out
 }
 
-/// Work out the merge of HEAD and `theirs`: nothing in the plane changes (objects aside).
-pub(super) fn plan(root: &Path, theirs: &str) -> Result<Plan, String> {
-    let merged = git::run(
-        root,
-        &[
-            "merge-tree",
-            "--write-tree",
-            "-z",
-            "--name-only",
-            "--no-messages",
-            "HEAD",
-            theirs,
-        ],
-        WRITE,
-    )
-    .map_err(|unavailable| unavailable.to_string())?;
+impl Plan {
+    /// Whether the forge's own merge would stop or come out wrong: git's merge left a conflict,
+    /// or what purlis generates, written from the merged sources, is not what it wrote.
+    fn needed(&self, root: &Path) -> bool {
+        self.conflicted
+            || self
+                .settled
+                .iter()
+                .any(|(path, text)| blob(root, &self.tree, path).as_deref() != Some(text.as_str()))
+    }
+}
+
+/// Work out the merge of HEAD and `theirs`, from `base` where it is given and from where the two
+/// histories meet otherwise: nothing in the plane changes (objects aside).
+pub(super) fn plan(root: &Path, theirs: &str, base: Option<&str>) -> Result<Plan, String> {
+    let given = base.map(|base| format!("--merge-base={base}"));
+    let mut args = vec![
+        "merge-tree",
+        "--write-tree",
+        "-z",
+        "--name-only",
+        "--no-messages",
+    ];
+    args.extend(given.as_deref());
+    args.extend(["HEAD", theirs]);
+    let merged = git::run(root, &args, WRITE).map_err(|unavailable| unavailable.to_string())?;
     // 0 is clean and 1 is conflicts: anything else is git refusing, with no tree.
     if !matches!(merged.code, Some(0 | 1)) {
         return Err(tail(&merged));
@@ -216,11 +255,14 @@ pub(super) fn plan(root: &Path, theirs: &str) -> Result<Plan, String> {
         .to_owned();
     let conflicted: BTreeSet<String> = fields.map(str::to_owned).collect();
 
-    let base = git::run(root, &["merge-base", "HEAD", theirs], git::READ)
-        .ok()
-        .filter(git::Run::ok)
-        .map(|run| run.line().trim().to_owned())
-        .ok_or("the two histories have no commit in common")?;
+    let base = match base {
+        Some(base) => base.to_owned(),
+        None => git::run(root, &["merge-base", "HEAD", theirs], git::READ)
+            .ok()
+            .filter(git::Run::ok)
+            .map(|run| run.line().trim().to_owned())
+            .ok_or("the two histories have no commit in common")?,
+    };
     let ours_touched = sources_in(&changed(root, &base, "HEAD")?);
     let theirs_touched = sources_in(&changed(root, &base, theirs)?);
     let mut rebuild: BTreeSet<Generated> = ours_touched
@@ -230,6 +272,7 @@ pub(super) fn plan(root: &Path, theirs: &str) -> Result<Plan, String> {
 
     let mut plan = Plan {
         tree,
+        conflicted: !conflicted.is_empty(),
         settled: BTreeMap::new(),
         person: Vec::new(),
         marked: BTreeMap::new(),
@@ -252,15 +295,18 @@ pub(super) fn plan(root: &Path, theirs: &str) -> Result<Plan, String> {
                 rebuild.insert(Generated::Sessions(Some(ws)));
             }
             Some(Generated::Rules) => {
-                match merged_apart(
-                    root,
-                    path,
-                    &base,
-                    theirs,
-                    crate::scaffold::without_merge_rules,
-                )? {
+                match merged_apart(root, path, &base, theirs, |text| {
+                    crate::scaffold::rules_set_aside(text, RULES_SET_ASIDE)
+                })? {
                     Apart::Clean(text) => {
-                        let with = crate::scaffold::with_merge_rules(&text, root);
+                        // A rule the remote's block holds that this build does not write stays,
+                        // as a newer build's would: the remote's is the later word. The block
+                        // keeps the place it had.
+                        let kept = blob(root, theirs, path)
+                            .map(|text| crate::scaffold::rules_in(&text))
+                            .unwrap_or_default();
+                        let with =
+                            crate::scaffold::rules_put_back(&text, RULES_SET_ASIDE, root, &kept);
                         plan.settled.insert(path.clone(), with);
                     }
                     Apart::Marked(_) | Apart::NoFile => plan.person.push(path.clone()),
@@ -356,8 +402,26 @@ fn merged_apart(
         write("base", &old)?,
         write("theirs", &new)?,
     );
-    let run = git::run(root, &["merge-file", "-p", &ours, &old, &new], WRITE)
-        .map_err(|unavailable| unavailable.to_string())?;
+    // Labelled as a person reads them, not by the temporary files' paths.
+    let target = theirs.strip_prefix("refs/remotes/").unwrap_or(theirs);
+    let run = git::run(
+        root,
+        &[
+            "merge-file",
+            "-p",
+            "-L",
+            "HEAD",
+            "-L",
+            "merge base",
+            "-L",
+            target,
+            &ours,
+            &old,
+            &new,
+        ],
+        WRITE,
+    )
+    .map_err(|unavailable| unavailable.to_string())?;
     // Its exit code is the number of conflicts left; past 127 it is git failing.
     Ok(match run.code {
         Some(0) => Apart::Clean(run.out),
@@ -483,26 +547,27 @@ fn tree_of(root: &Path, plan: &Plan) -> Result<String, String> {
     Ok(in_index(&["write-tree"])?.line().trim().to_owned())
 }
 
-/// The merge commit `plan` comes to, with HEAD and `theirs` as its parents.
+/// The commit `plan` comes to: a merge, with HEAD and `theirs` as its parents, or, `carried`,
+/// what HEAD added since the merge base on top of `theirs` alone ([`When::MergedAt`]).
 fn commit(
     root: &Path,
     plan: &Plan,
     theirs: &str,
     target: &str,
     sign: bool,
+    carried: bool,
 ) -> Result<String, String> {
     let tree = tree_of(root, plan)?;
-    let subject = format!("Bring {target} {SUBJECT}");
-    let mut args = vec![
-        "commit-tree",
-        &tree,
-        "-p",
-        "HEAD",
-        "-p",
-        theirs,
-        "-m",
-        &subject,
-    ];
+    let subject = if carried {
+        format!("Carry this machine's newer saves onto {target}")
+    } else {
+        format!("Bring {target} {SUBJECT}")
+    };
+    let mut args = vec!["commit-tree", &tree];
+    if !carried {
+        args.extend(["-p", "HEAD"]);
+    }
+    args.extend(["-p", theirs, "-m", &subject]);
     if sign {
         args.push("-S");
     }

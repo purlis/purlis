@@ -26,12 +26,24 @@ in what a person wrote changes nothing. That conflict stops the save and is reco
 the index's lines and not the files. A union rule alone would keep them unconflicted and out of
 order, so the rules serve only git run by hand or a plain rebase.
 
+**Only where the request needs it.** A save and a look bring the target in only where git's merge
+here stops, or comes out wrong in a file purlis generates, or where the forge has said the request
+cannot merge as it is. A request that merges as it is is left: a moving target does not add a merge
+commit and a new head to every save, and a repository that keeps its history linear can still
+take it.
+
+**A merged request's newer saves are carried, not merged.** Once a request merged by rebase or
+squash, the target holds copies of its commits. Where the saves made since will not replay one by
+one, they go onto the target as one commit, worked out with the request's commit as the merge base
+and the target as its one parent, so the originals never come back beside their copies.
+
 **In `pr-merge`, a look brings the target in only for a request the forge says cannot merge.** Each
 new head starts the wait for its checks again, so a busy target could otherwise keep a clean
 request from ever merging, and its merge brings the target in anyway. In `pr`, a look brings it
-in whenever it moved; nothing there restarts a wait purlis depends on. A save brings it in either
-way, since it pushes a new head regardless.
+in whenever the request needs it; nothing there restarts a wait purlis depends on.
 
 **Existing planes** take the new rules with their next whole save, which rewrites a block already
-in `.gitattributes` and commits it; `reinit` adds a block to a plane with none. The rebuilds do
+in `.gitattributes` and commits it; `reinit` adds a block to a plane with none. A save keeps a rule
+in the block that its build does not write, as a newer build's would, so machines on two builds
+never write the file back and forth; only `init` and `reinit` drop a rule no build writes. The rebuilds do
 not depend on the rules, so nothing waits for them.

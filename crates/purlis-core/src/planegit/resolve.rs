@@ -201,7 +201,8 @@ pub fn start(root: &Path, say: Sink) -> Settled {
 /// everything purlis generates already settled.
 fn start_merge(root: &Path, branch: &str, theirs: &str, sign: bool, say: Sink) -> Settled {
     say(Say::Info(format!("Merging `{branch}` in …").into()));
-    match bringin::bring_in(root, branch, sign) {
+    // The person asked for it: brought in whenever it moved, needed or not.
+    match bringin::bring_in(root, branch, sign, bringin::When::Moved) {
         BroughtIn::Nothing | BroughtIn::Moved(_) => {
             forget_replayed_push(root);
             return Settled::Replayed;
@@ -215,7 +216,7 @@ fn start_merge(root: &Path, branch: &str, theirs: &str, sign: bool, say: Sink) -
         }
         BroughtIn::Conflict(_) => {}
     }
-    let plan = match bringin::plan(root, theirs) {
+    let plan = match bringin::plan(root, theirs, None) {
         Ok(plan) => plan,
         Err(why) => {
             return Settled::Refused(format!(

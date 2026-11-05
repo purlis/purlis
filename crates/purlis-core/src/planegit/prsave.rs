@@ -652,11 +652,22 @@ fn fetch_target(root: &Path, https: &str, helper: &str, target: &str) -> bool {
     .is_ok_and(|run| run.ok())
 }
 
+/// When a save or a look brings a moved target in: where the request needs it, or whenever it
+/// moved once the forge has said the request cannot merge as it is (its own merge may stop where
+/// git's here does not).
+fn when_for(root: &Path) -> super::bringin::When<'static> {
+    if known_merging(root).is_some_and(|m| m.state == MergeState::CannotMerge) {
+        super::bringin::When::Moved
+    } else {
+        super::bringin::When::Needed
+    }
+}
+
 /// Bring the fetched target in, and say what it came to. `Ok` is whether the plane moved; the
 /// line of commits it stands on is pushed either way. `Err` is a conflict in what a person wrote,
 /// as the record that stops the save.
 fn brought_in(root: &Path, target: &str, sign: bool, say: Sink) -> Result<bool, Box<PushResult>> {
-    match super::bringin::bring_in(root, target, sign) {
+    match super::bringin::bring_in(root, target, sign, when_for(root)) {
         BroughtIn::Nothing => Ok(false),
         BroughtIn::Moved(commits) => {
             say(Say::Done(
@@ -711,7 +722,7 @@ pub(super) fn bring_in_for_a_look(
     if !fetch_target(root, &https, &helper, target) {
         return Ok((false, false));
     }
-    match super::bringin::bring_in(root, target, plane.sign.value) {
+    match super::bringin::bring_in(root, target, plane.sign.value, when_for(root)) {
         BroughtIn::Nothing | BroughtIn::Waiting(_) | BroughtIn::Failed(_) => Ok((false, false)),
         BroughtIn::Moved(_) => {
             let _ = push(root, plane, plane.sign.value, caller, say);
@@ -1265,7 +1276,12 @@ pub(super) fn settle(
             };
             // The newer commits would not replay, one by one: what they wrote may still merge,
             // whole, with what purlis generates rebuilt (#5338).
-            match super::bringin::bring_in(root, target, sign) {
+            match super::bringin::bring_in(
+                root,
+                target,
+                sign,
+                super::bringin::When::MergedAt(&head),
+            ) {
                 BroughtIn::Moved(_) | BroughtIn::Nothing => {}
                 BroughtIn::Waiting(why) => return Settled::Waiting(why),
                 BroughtIn::Conflict(conflicts) => {
