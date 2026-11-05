@@ -4,7 +4,7 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { SandboxMark, type SandboxSaid } from "./SandboxMark";
 import { commands, type PlaneSaving, type RepoSaving, type TitleBarRoom } from "./bindings";
-import { SaveIndicator, SaveReading } from "./SavingView";
+import { SaveIndicator } from "./SavingView";
 import { AboutCharter } from "./About";
 import { type Ending } from "./QuitWarning";
 import { UpdateItem, type Updates } from "./Updates";
@@ -189,8 +189,12 @@ export function TitleBar({
         {updates && <UpdateItem updates={updates} chats={chats} />}
         {/* The project in front's unsaved work: about the project, not the app, and the one
             thing on the bar the operator acts on as often as a chat that asks. */}
-        {save && <SaveIndicator {...save} />}
-        {!save && saveReading && <SaveReading {...saveReading} />}
+        {/* One slot from reading to read, so its button is one element throughout (#5325). */}
+        {save ? (
+          <SaveIndicator {...save} />
+        ) : (
+          saveReading && <SaveIndicator reading onOpen={saveReading.onOpen} />
+        )}
         {/* The level of the chat in front, beside the project's save: about that chat. */}
         {sandbox && (
           <span className="title-bar-sandbox" data-testid="title-sandbox">
