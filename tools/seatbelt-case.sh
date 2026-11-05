@@ -164,8 +164,8 @@ others_held() {
 
 # What a chat's temp folder and its project do with the names a program run later loads: a
 # repository and a manifest are made in the temp folder as ever, and a write of a name in the
-# project's own folder, at any depth, is refused. `$1`, `what`. A name written there that the
-# sandbox let through is said as a notice where `$3` is `notice`, and is wrong otherwise.
+# project's own folder, at any depth, is refused, which is asked where `$3` is `expect`. `$1`,
+# `what`.
 temp_and_folder_in() {
   p=$1
   what=$2
@@ -175,14 +175,11 @@ temp_and_folder_in() {
   expect "$(here "mkdir -p '$t/repo' && git init -q '$t/repo' && $g commit -q --allow-empty -m probe")" yes "$what: git makes a repository and commits in the temp folder"
   expect "$(here "touch '$t/repo/purlis.toml'")" yes "$what: a manifest is written in the temp folder"
   # Each name new to the project, at its root and in its own folders at depth.
-  for name in .envrc .mcp.json sub/.envrc sub/.mcp.json sub/deep/.vscode/tasks.json sub/deep/.husky/pre-commit .githooks/pre-commit; do
-    answer=$(here "mkdir -p \"\$(dirname '$p/$name')\" && echo x > '$p/$name'")
-    if [ "$depth" = notice ]; then
-      echo "::notice::seatbelt-case: $what: a new $name in the project: written $answer"
-    else
-      expect "$answer" no "$what: a new $name in the project is written"
-    fi
-  done
+  if [ "$depth" = expect ]; then
+    for name in .envrc .mcp.json sub/.envrc sub/.mcp.json sub/deep/.vscode/tasks.json sub/deep/.husky/pre-commit .githooks/pre-commit; do
+      expect "$(here "mkdir -p \"\$(dirname '$p/$name')\" && echo x > '$p/$name'")" no "$what: a new $name in the project is written"
+    done
+  fi
   # What the test's look is to find.
   mkdir -p "$t/brought/.git/hooks" 2>/dev/null || :
   echo x > "$t/brought/.git/hooks/pre-commit" 2>/dev/null || :
@@ -200,7 +197,7 @@ if [ "${1-}" = --repositories-here ]; then
   fi
   git_held_in "$2" "$3" here
   others_held "$3"
-  temp_and_folder_in "$2" "$3" notice
+  temp_and_folder_in "$2" "$3" temp-only
   echo "seatbelt-case: $3: $checks checks, $wrong wrong"
   exit "$failed"
 fi

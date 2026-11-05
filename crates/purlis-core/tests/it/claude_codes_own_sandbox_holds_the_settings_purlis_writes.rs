@@ -60,8 +60,7 @@ const SCRIPT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tools/seatbelt-
 const PROBES: usize = 34;
 
 /// The probes `--repositories-here` asserts, as it is run on Linux: the repositories' thirteen,
-/// four of the other harnesses' default sign-ins, and two of a chat's temp folder at work. What
-/// names new to the project answer there is said as notices for now.
+/// four of the other harnesses' default sign-ins, and two of a chat's temp folder at work.
 const REPOSITORY_PROBES: usize = 19;
 
 /// The id of the stand-in's one Bash call.
@@ -483,22 +482,14 @@ fn claude_codes_own_sandbox_holds_the_settings_purlis_writes() {
         };
         sandbox::arrived::begin(&root, CHAT, Some("probes"), &watched).expect("the record");
         let result = probed(program, &home, &tmp, &root, &file, &sources, &what);
-        // Each wrong answer as the script wrote it, so the run's annotations name it, and each
-        // notice.
-        for line in result
-            .lines()
-            .filter(|line| line.starts_with("::error::") || line.starts_with("::notice::"))
-        {
+        // Each wrong answer as the script wrote it, so the run's annotations name it.
+        for line in result.lines().filter(|line| line.starts_with("::error::")) {
             println!("{line}");
         }
         // What the probes left in the project is told at the turn's end.
         let landed = root.join("brought/.git/hooks/pre-commit").exists();
         if cfg!(target_os = "macos") {
             assert!(landed, "{what}: nothing to look for:\n{result}");
-        } else {
-            println!(
-                "::notice::seatbelt-case: {what}: a repository new to the project: there {landed}"
-            );
         }
         let looked = sandbox::arrived::look(&root, CHAT, None)
             .expect("a look")
