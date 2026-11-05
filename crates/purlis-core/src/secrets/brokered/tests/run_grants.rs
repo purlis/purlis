@@ -1475,3 +1475,42 @@ fn a_granted_run_takes_none_of_the_chats_hosts_ports_or_certificate_authorities(
     let frames = answered(project.path(), want, &asks, RunAnswer::Once);
     assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
 }
+
+/// A browser's key is the same key however it is reached: through a link the person made either
+/// way, and in any case, as a provider may read it.
+#[test]
+fn a_browsers_key_reached_through_a_link_or_in_another_case_is_never_offered_to_a_program() {
+    let project = project();
+    let root = project.path();
+    std::fs::write(
+        root.join("charter.toml"),
+        r#"[sandbox]
+open = "off"
+[sandbox.personas.ops]
+tools = { shop = { vault = "other", browser = "https://shop.example.test/login", key = "pw-link" } }
+[sandbox.personas.qa]
+tools = { pay = { vault = "other", key = "token", fill = "https://pay.example.test" } }
+"#,
+    )
+    .unwrap();
+    let ctx = Ctx::new(root, Env::of(&[]));
+    std::fs::create_dir_all(&ctx.state).unwrap();
+    std::fs::write(
+        crate::secrets::links::path(&ctx),
+        r#"{"links": {"other": {"pw-link": {"vault": "team", "key": "TOKEN"}}}}"#,
+    )
+    .unwrap();
+    let asks = Asks::new(root);
+    // `team`'s TOKEN is what the login's linked entry reads; `other`'s TOKEN is the fill line's
+    // `token` in another case.
+    for want in [printenv(root, &["X"]), on_another_vault(root)] {
+        let vault = want.vault.clone();
+        let frames = run_with(&the_chat(root), want, &asks, Duration::ZERO);
+        assert_eq!(refusal(&frames).1, 1, "{vault}: {frames:?}");
+        assert!(
+            refusal(&frames).0.contains("fills in a browser"),
+            "{vault}: {frames:?}"
+        );
+        assert!(asks.open_runs().is_empty(), "{vault} asked nobody");
+    }
+}

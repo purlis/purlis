@@ -118,6 +118,43 @@ pub fn origins_of_lines(ctx: &Ctx, persona: Option<&str>, vault: &str, key: &str
 /// through a linked entry either way, so a link to a card's key, or a card's mark on a link, is
 /// a card's too. Where the file can't be read, or a link can't be, every key is a card's.
 fn a_cards(ctx: &Ctx, vault: &str, key: &str) -> bool {
+    held_by_lines(ctx, vault, key, |tool| {
+        if tool
+            .get(fill::CARD_KEY)
+            .is_some_and(|card| card.as_bool() != Some(false))
+        {
+            vec!["key"]
+        } else {
+            Vec::new()
+        }
+    })
+}
+
+/// **Whether `key` of `vault` is one purlis fills in a browser itself** (ADR 0112, #5265): a key
+/// any persona's browser login names, its password's or its user name's, or any persona's
+/// secret-fill line, so no program is offered it. Read as [`a_cards`] reads, failing closed: as
+/// written, in any case, and through a linked entry either way.
+pub fn a_browsers(ctx: &Ctx, vault: &str, key: &str) -> bool {
+    held_by_lines(ctx, vault, key, |tool| {
+        if tool.contains_key(crate::sandbox::tools::login::KEY) {
+            vec!["key", crate::sandbox::tools::login::USER_KEY]
+        } else if tool.contains_key("fill") {
+            vec!["key"]
+        } else {
+            Vec::new()
+        }
+    })
+}
+
+/// Whether `key` of `vault` is one that a tool line of any persona's names under one of the keys
+/// `names` picks for it, read from the project's file as written; true where the file or a link
+/// can't be read.
+fn held_by_lines(
+    ctx: &Ctx,
+    vault: &str,
+    key: &str,
+    names: impl Fn(&toml::Table) -> Vec<&'static str>,
+) -> bool {
     let file = match std::fs::read_to_string(crate::names::manifest(&ctx.root)) {
         Ok(file) => file,
         Err(why) if why.kind() == std::io::ErrorKind::NotFound => return false,
@@ -135,15 +172,14 @@ fn a_cards(ctx: &Ctx, vault: &str, key: &str) -> bool {
         .filter_map(|persona| persona.get(crate::sandbox::tools::KEY)?.as_table())
         .flat_map(|tools| tools.values())
         .filter_map(toml::Value::as_table)
-        .filter(|tool| {
-            tool.get(fill::CARD_KEY)
-                .is_some_and(|card| card.as_bool() != Some(false))
-        })
-        .filter_map(|tool| {
-            Some((
-                tool.get("vault")?.as_str()?.trim().to_owned(),
-                tool.get("key")?.as_str()?.trim().to_owned(),
-            ))
+        .flat_map(|tool| {
+            let vault = tool.get("vault").and_then(toml::Value::as_str);
+            names(tool).into_iter().filter_map(move |name| {
+                Some((
+                    vault?.trim().to_owned(),
+                    tool.get(name)?.as_str()?.trim().to_owned(),
+                ))
+            })
         })
         .collect();
     if marked.is_empty() {

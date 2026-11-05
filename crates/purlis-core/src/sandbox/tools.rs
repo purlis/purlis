@@ -1791,9 +1791,10 @@ fn spelled_as_it_is_held(program: &Path) -> bool {
 /// - one found only where a chat writes, or not at all ([`resolve_beside`]);
 /// - a `--dotenv`, which names no variable; a variable that steers what runs ([`refused_var`]);
 ///   a key no Secret ask takes;
-/// - a key a `mint` line names ([`mint::raw`]), or one that `listed` or any persona's line hands
-///   only to a browser login or a secret-fill line: purlis fills those on one origin itself, and no
-///   program is handed them, whoever's vault it is asked of.
+/// - a key a `mint` line names ([`mint::raw`]), or one that `listed` hands only to a browser login
+///   or a secret-fill line: purlis fills those on one origin itself, and no program is handed them.
+///   The gate holds every persona's such key too, through a link and in any case
+///   ([`crate::secretfill::a_browsers`]).
 pub fn for_run_grant(
     root: &Path,
     persona: &str,
@@ -1822,7 +1823,6 @@ pub fn for_run_grant(
             "--dotenv names no variable, so {name} can't be allowed with it: hand each key with              --file VARIABLE=key or --env VARIABLE=key"
         ));
     }
-    let every_line = every_personas_lines(root);
     let mut values = Vec::new();
     for (specs, handed) in [(asked.file, Handed::File), (asked.env, Handed::Env)] {
         for spec in specs {
@@ -1862,14 +1862,10 @@ pub fn for_run_grant(
                         || (tool.login.is_some()
                             && tool.values.iter().any(|value| value.key == key)))
             };
-            if listed
-                .iter()
-                .chain(&every_line)
-                .any(only_a_browser_fills_it)
-            {
+            if listed.iter().any(only_a_browser_fills_it) {
                 return Err(format!(
                     "{key} in vault {} is one purlis fills in a browser itself, on the one site \
-                     a persona declares, so no program is handed it",
+                     {persona} declares, so no program is handed it",
                     asked.vault
                 ));
             }
@@ -1936,22 +1932,6 @@ pub fn for_run_grant(
         ));
     }
     Ok(ready)
-}
-
-/// Every tool line the project at `root` writes, for any persona, in force or not: a login
-/// another persona declares is still purlis's to fill.
-fn every_personas_lines(root: &Path) -> Vec<Tool> {
-    let said = super::Plane::read(root).said();
-    said.policy
-        .or(said.unset)
-        .map(|policy| {
-            policy
-                .personas
-                .into_values()
-                .flat_map(|grants| grants.tools)
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 /// The longest variable name a person is asked to allow: it is drawn among the app's own facts.

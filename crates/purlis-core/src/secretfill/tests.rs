@@ -117,3 +117,36 @@ fn a_link_to_a_cards_key_is_a_cards_and_so_is_a_key_a_marked_link_reads() {
     );
     assert!(!lines_in(dir.path(), "prod", "other").card);
 }
+
+#[test]
+fn a_key_any_personas_browser_login_or_fill_line_holds_is_a_browsers_through_a_link_and_in_any_case()
+ {
+    let dir = project(
+        "[sandbox]\nmode = \"on\"\n[sandbox.personas.ops.tools.shop]\nvault = \"qa\"\nbrowser = \"https://shop.example.test/login\"\nkey = \"shop-pw\"\nuser = \"shop-user\"\n[sandbox.personas.qa.tools.dash]\nvault = \"qa\"\nkey = \"dash-api-key\"\nfill = \"https://dash.example.test\"\n[sandbox.personas.qa.tools.kubectl]\nvault = \"qa\"\nenv = { KUBECONFIG = \"kubeconfig\" }\n",
+    );
+    let ctx = Ctx::new(dir.path(), Env::of(&[]));
+    std::fs::create_dir_all(&ctx.state).expect("a state folder");
+    std::fs::write(
+        crate::secrets::links::path(&ctx),
+        r#"{"links": {"prod": {"pw": {"vault": "qa", "key": "shop-pw"}}}}"#,
+    )
+    .expect("a links index");
+    for (vault, key) in [
+        ("qa", "shop-pw"),
+        ("qa", "shop-user"),
+        ("qa", "dash-api-key"),
+        ("QA", "Dash-Api-Key"),
+        ("prod", "pw"),
+    ] {
+        assert!(a_browsers(&ctx, vault, key), "{vault}/{key}");
+    }
+    assert!(!a_browsers(&ctx, "qa", "kubeconfig"));
+    assert!(!a_browsers(&ctx, "prod", "other"));
+    // A file that can't be read as settings makes every key a browser's.
+    let dir = project("[sandbox\n");
+    assert!(a_browsers(
+        &Ctx::new(dir.path(), Env::of(&[])),
+        "qa",
+        "kubeconfig"
+    ));
+}

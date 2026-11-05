@@ -807,6 +807,43 @@ fn fill_what_it_misses(
     Ok(())
 }
 
+/// **[`crate::sandbox::tools::for_run_grant`], and no key a browser is handed** (#5265): a key any
+/// persona's browser login or secret-fill line holds, or a `mint` line marks, is offered to no
+/// program, through a link the person made either way and in any case, since a provider may read
+/// a key in any case ([`crate::secretfill::a_browsers`]). A settings file that can't be read
+/// offers nothing.
+fn grantable(
+    asker: &Asker,
+    persona: &str,
+    asked: &crate::sandbox::tools::Asked<'_>,
+    listed: &[crate::sandbox::tools::Tool],
+    locks: &crate::sandbox::policy::Locks,
+    writes: &[PathBuf],
+) -> Result<crate::sandbox::tools::Ready, String> {
+    use crate::sandbox::tools::{self, mint};
+    let ready = tools::for_run_grant(&asker.root, persona, asked, listed, locks, writes)?;
+    let ctx = reading_for(asker);
+    let Some(marked) = mint::marked(&asker.root) else {
+        return Err(mint::unreadable_said());
+    };
+    for value in &ready.tool.values {
+        let (vault, key) = (asked.vault, value.key.as_str());
+        if marked
+            .iter()
+            .any(|(one, named)| one.eq_ignore_ascii_case(vault) && named.eq_ignore_ascii_case(key))
+        {
+            return Err(mint::refused_said(vault, key));
+        }
+        if crate::secretfill::a_browsers(&ctx, vault, key) {
+            return Err(format!(
+                "{key} in vault {vault} is one purlis fills in a browser itself, on the one site a \
+                 persona declares, so no program is handed it"
+            ));
+        }
+    }
+    Ok(ready)
+}
+
 /// **Whether `wanted`'s command runs under a Run grant** (ADR 0112, #5239): the program its words
 /// name, as the app resolves it where no chat writes, once the person allowed it. Asked only for
 /// a program that is no declared tool, and refused with no notice for one no tool may be
@@ -868,8 +905,7 @@ fn run_granted(
             .asks
             .refused_run_by_policy(asker.chat, &command_name(&command[0]), &wanted.vault);
         let unlocked = crate::sandbox::policy::Locks::none();
-        let may_fill =
-            tools::for_run_grant(&asker.root, persona, &asked, listed, &unlocked, &writes).is_ok();
+        let may_fill = grantable(asker, persona, &asked, listed, &unlocked, &writes).is_ok();
         if may_fill && !not_its_vault {
             fill_what_it_misses(asker, confines, wanted, missing, &locked, say)?;
         }
@@ -882,7 +918,7 @@ fn run_granted(
             (1, said)
         }
     };
-    let ready = tools::for_run_grant(&asker.root, persona, &asked, listed, &locks, &writes)
+    let ready = grantable(asker, persona, &asked, listed, &locks, &writes)
         .map_err(|refused_as| refused(format!("{why} ({refused_as})")))?;
     // A command its run would refuse is not offered.
     tools::allows(&ready, &command[1..]).map_err(refused)?;
