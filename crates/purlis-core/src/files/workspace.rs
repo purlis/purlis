@@ -210,7 +210,7 @@ impl Files {
     /// Whether `name`, at the top, is a repo's or the branches' folders.
     fn is_outside(&self, name: &str) -> bool {
         let lower = name.to_lowercase();
-        self.outside.iter().any(|one| *one == lower)
+        self.outside.contains(&lower)
     }
 
     /// `relative`, judged, resolved as the disk spells it and required to be that very path: no
