@@ -2073,9 +2073,20 @@ pub enum UpdateStep {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         base: Option<String>,
     },
-    /// Stage the files a stopped rebase named, once resolved, and go on.
+    /// Fetch, bring the base up to its remote where it may be, and merge it into the branch
+    /// (#5253): no commit is rewritten, so a plain push follows. **A step of its own, never a
+    /// field of [`Self::Start`]**: an app that does not know it answers nothing, where one that
+    /// does not know a field would drop it and rebase.
+    Merge {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        base: Option<String>,
+        /// A conflicted screenshot baseline takes the base's copy ([`crate::pieceupdate`]).
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        take_base_baselines: bool,
+    },
+    /// Stage the files a stopped rebase or merge named, once resolved, and go on.
     Continue,
-    /// Put the branch back where it was before the rebase began.
+    /// Put the branch back where it was before the rebase or merge began.
     Abort,
 }
 

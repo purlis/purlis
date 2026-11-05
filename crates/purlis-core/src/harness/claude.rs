@@ -1293,7 +1293,7 @@ pub const READ_ALLOW: [&str; 14] = [
 ///   command's arguments: the harness matches the line as written and the shell strips its
 ///   quotes, so `ws todo "forget" <slug>` would run `forget` under a rule meant for text (the
 ///   dispatcher's decision on #3841).
-/// - `worktree update` (with `--continue` or `--abort`), `push` (the folder's own branch, never
+/// - `worktree update` (with `--merge`, `--continue` or `--abort`), `push` (the folder's own branch, never
 ///   its base; ruled by name), `done`, `abandon` and `list`: each acts on the folder the chat
 ///   stands in. `add` names a workspace and is written per chat.
 /// - `worktree remove` (#3879, ruled 2026-10-29): the app removes a branch folder of the

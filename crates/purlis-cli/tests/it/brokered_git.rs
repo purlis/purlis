@@ -604,6 +604,36 @@ fn a_sandboxed_chats_update_and_push_of_its_branch_folder_are_run_by_the_app() {
         err(&ran)
     );
 
+    // #5253: the merge is the app's to run too, told apart from a rebase on the wire.
+    let ran = run(&["worktree", "update", "--merge", "--take-base-baselines"]);
+    assert!(ran.status.success(), "{}", err(&ran));
+    let Ok(Ask::Git(git)) = asked.recv_timeout(Duration::from_secs(5)) else {
+        panic!("the app was not asked to merge: {}", err(&ran));
+    };
+    assert_eq!(
+        git.work,
+        GitWork::WorktreeUpdate {
+            repo: "widget".to_owned(),
+            piece: "p1".to_owned(),
+            step: hookwire::UpdateStep::Merge {
+                base: None,
+                take_base_baselines: true,
+            },
+        }
+    );
+    assert!(
+        err(&ran).contains("already has everything on main"),
+        "{}",
+        err(&ran)
+    );
+    // Which files take the base's copy is only ever said of a merge.
+    let ran = run(&["worktree", "update", "--take-base-baselines"]);
+    assert!(!ran.status.success(), "{}", err(&ran));
+    assert!(
+        asked.recv_timeout(Duration::from_millis(200)).is_err(),
+        "the app was asked to rebase on a line that asked for a merge's option"
+    );
+
     // #3831: standing in the clone itself, the update is the clone's, and the app runs it.
     let clone = root.join("workspaces/alpha/widget");
     let ran = support::purlis()
