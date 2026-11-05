@@ -273,6 +273,14 @@ impl Browser {
         if self.frame_now(&at) != Some((document, Some(origin.to_owned()))) {
             return Err(changed(target, origin));
         }
+        // A window related to the page could read the field from its own document.
+        if lock(&self.inner.state).related_on_site(&at.page, origin) {
+            return Err(not_filled(format!(
+                "another window on {origin} is related to this page: it opened the page, or the \
+                 page opened it, and it could read the field, so nothing was filled. Open the \
+                 form with browser_open, in a page of its own, and fill it there"
+            )));
+        }
         // The browser reaches only this site while the page lives, from before the value goes in
         // (#5117): where it can't be held, nothing goes in.
         self.inner
@@ -307,7 +315,8 @@ impl Browser {
              read. While this page is open, the browser reaches only {origin}, and you press no \
              key and type or choose nothing in it: click the page's own button to send the \
              form. Its form goes to another site only by a redirect from {origin}'s own server. \
-             Once the page loads another document or is closed, it reaches as before",
+             Once the page loads another document or is closed, any window it opened or that \
+             opened it closes too, and the browser reaches as before",
             fill.key
         ));
         Ok(answer)

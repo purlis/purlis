@@ -10,8 +10,9 @@
 //! - **The redirect the ruling lets go** (SF-14): a main-frame document redirected from the fill's
 //!   site, in a chain begun by the form the field was filled in. An address that holds the value
 //!   is refused ([`carries_value`]). Otherwise [`FillHold::may_leave_for`] says whether it goes on
-//!   by itself, asks the person once, or is refused. The page stays until it may go: then the page
-//!   holding the value goes first, the hold ends, and the browser goes to the address.
+//!   by itself, which it does only to the site the chain leading to this sign-in began from, asks
+//!   the person once, or is refused. The page stays until it may go: then the page holding the
+//!   value goes first, the hold ends, and the browser goes to the address.
 //! - **A form sent to another site** (SF-15): sent only where [`FillHold::approved_for`] says the
 //!   key is approved for that site too. Refused, it is said in the answer and on a page of purlis's
 //!   own the person sees.
@@ -19,8 +20,12 @@
 //!
 //! A load in a browser that has held a value doesn't rest on the engine's own page for a load that
 //! failed: purlis's own page stands in for it.
+//!
+//! **The hold follows related windows** (the person's ruling of 2026-11-05): a fill is refused
+//! while a window on its site is related to its page, and any other related window closes when the
+//! page is done with the value. The hold ends only once they are gone. Nothing here stops a script
+//! on the approved site keeping the value in that site's own storage or workers.
 
-use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
@@ -28,7 +33,7 @@ use std::time::{Duration, Instant};
 use base64::Engine as _;
 use serde_json::json;
 
-use super::{Browser, Held, Inner, Paused, State, login};
+use super::{Browser, FollowUp, HashSet, Held, Inner, Paused, State, login, site};
 use crate::drive::{FillHold, Leaving, Refusal, lock};
 
 /// **The address of purlis's own page**: on a name that is never a site, and answered by the driver.
@@ -45,9 +50,6 @@ const A_READ_WAITS: Duration = Duration::from_secs(10);
 
 /// The most a browser says of its refused moves in one answer: a page may try without end.
 const MOST_SAID: usize = 8;
-
-/// The most sites a browser remembers having been on: past them, a new one asks.
-const MOST_SITES_BEEN_ON: usize = 4096;
 
 /// **What a page holding a secret purlis filled filled, and where** (#5230): what the hold of it
 /// is judged by.
@@ -149,7 +151,7 @@ impl State {
         };
         let on: Vec<&super::PageHeld> = holds
             .iter()
-            .filter(|one| Some(&one.target) == target.as_ref())
+            .filter(|one| !one.left && Some(&one.target) == target.as_ref())
             .collect();
         let hop = self
             .documents
@@ -202,13 +204,42 @@ impl State {
         })
     }
 
-    /// **`address` is a site this browser was on.**
-    pub(super) fn was_on(&mut self, address: &str) {
-        if self.been_on.len() < MOST_SITES_BEEN_ON
-            && let Some(origin) = login::origin_of(address)
-        {
-            self.been_on.insert(origin);
+    /// **The windows related to `target`'s**, itself among them: each that opened another, or
+    /// was opened by one, where a script in one can reach the other, and so on from there. A window
+    /// gone still links those it opened.
+    pub(super) fn family_of(&self, target: &str) -> HashSet<String> {
+        let mut family = HashSet::from([target.to_owned()]);
+        loop {
+            let before = family.len();
+            for page in &self.pages {
+                if let Some(opener) = page.opener.as_ref().filter(|_| page.opener_linked)
+                    && (family.contains(&page.target) || family.contains(opener))
+                {
+                    family.insert(page.target.clone());
+                    family.insert(opener.clone());
+                }
+            }
+            if family.len() == before {
+                return family;
+            }
         }
+    }
+
+    /// **Whether a window related to `target`'s is on `origin`'s site, so it could read a field
+    /// there.** A window on no site, as a blank one is, takes its site from who opened it, and may
+    /// be on this one.
+    pub(super) fn related_on_site(&self, target: &str, origin: &str) -> bool {
+        let here = site(origin);
+        self.family_of(target)
+            .iter()
+            .filter(|one| *one != target)
+            .filter_map(|one| self.page(one))
+            .any(|page| {
+                let own = page.site();
+                own.is_none()
+                    || own == here
+                    || page.frames.values().any(|frame| site(&frame.url) == here)
+            })
     }
 
     /// Keeps `said` for the next answer of the agent's, once, and only so many.
@@ -302,7 +333,7 @@ impl Inner {
             ));
             return;
         }
-        match first.hold.may_leave_for(whole, first.been_on_at(whole)) {
+        match first.hold.may_leave_for(whole, first.began_at(whole)) {
             Leaving::Go => self.replace(target, "about:blank", Some(whole)),
             Leaving::Ask { site } => {
                 lock(&self.leaving_asked).insert(target.to_owned(), whole.to_owned());
@@ -340,7 +371,7 @@ impl Inner {
                 lock(&self.leaving_asked).remove(&target);
                 continue;
             };
-            if first.hold.may_leave_for(&whole, first.been_on_at(&whole)) == Leaving::Go {
+            if first.hold.may_leave_for(&whole, first.began_at(&whole)) == Leaving::Go {
                 lock(&self.leaving_asked).remove(&target);
                 self.replace(&target, "about:blank", Some(&whole));
             }
@@ -351,13 +382,13 @@ impl Inner {
     fn held_on(&self, target: &str) -> Vec<HeldNow> {
         lock(&self.fill_holds)
             .iter()
-            .filter(|one| one.target == target)
+            .filter(|one| !one.left && one.target == target)
             .map(|one| HeldNow {
                 hold: Arc::clone(&one.hold),
                 origin: one.filled.origin.clone(),
                 key: one.filled.key.clone(),
                 value: one.filled.value.clone(),
-                been_on: Arc::clone(&one.been_on),
+                chain_began: one.chain_began.clone(),
             })
             .collect()
     }
@@ -444,6 +475,79 @@ impl Inner {
         self.changed.notify_all();
     }
 
+    /// **A window opened by `opener`** joins the family of any hold `opener` is in, and closes at
+    /// once where that hold's page is done with the value.
+    pub(super) fn window_opened(&self, target: &str, opener: &str) -> Vec<FollowUp> {
+        let mut closes = Vec::new();
+        for held in lock(&self.fill_holds).iter_mut() {
+            if held.family.contains(opener) {
+                held.family.insert(target.to_owned());
+                if held.left {
+                    closes.push(FollowUp::Close(target.to_owned()));
+                }
+            }
+        }
+        closes
+    }
+
+    /// **Page `target` is closed, or shows another document in its main frame** (#5117): a hold of
+    /// a secret filled into it closes the windows related to it, and every hold whose page is done
+    /// and whose related windows are gone is over, once. Answers what closes them.
+    pub(super) fn page_left(&self, target: &str) -> Vec<FollowUp> {
+        let mut closes: Vec<String> = Vec::new();
+        let mut over: Vec<super::PageHeld> = Vec::new();
+        let its_own_stands = {
+            let mut state = lock(&self.state);
+            let mut holds = lock(&self.fill_holds);
+            for held in holds.iter_mut() {
+                if held.target != target || held.left {
+                    continue;
+                }
+                held.left = true;
+                for one in &held.family {
+                    if one != target && state.page(one).is_some() && !closes.contains(one) {
+                        closes.push(one.clone());
+                    }
+                }
+            }
+            for held in std::mem::take(&mut *holds) {
+                let waits = held
+                    .family
+                    .iter()
+                    .any(|one| *one != held.target && state.page(one).is_some());
+                if held.left && !waits {
+                    over.push(held);
+                } else {
+                    holds.push(held);
+                }
+            }
+            if !closes.is_empty() {
+                state.say_of_leaving(format!(
+                    "purlis closed {} other {} related to the page that held the secret: {}                      could have read it. The browser reaches as before once {} gone",
+                    closes.len(),
+                    if closes.len() == 1 { "window" } else { "windows" },
+                    if closes.len() == 1 { "it" } else { "they" },
+                    if closes.len() == 1 { "it is" } else { "they are" },
+                ));
+            }
+            holds.iter().any(|held| held.target == target)
+        };
+        let mut by_page: Vec<(String, Vec<super::PageHeld>)> = Vec::new();
+        for held in over {
+            match by_page.iter_mut().find(|(page, _)| *page == held.target) {
+                Some((_, holds)) => holds.push(held),
+                None => by_page.push((held.target.clone(), vec![held])),
+            }
+        }
+        if !its_own_stands && !by_page.iter().any(|(page, _)| page == target) {
+            by_page.push((target.to_owned(), Vec::new()));
+        }
+        for (page, gone) in by_page {
+            self.released(&page, gone);
+        }
+        closes.into_iter().map(FollowUp::Close).collect()
+    }
+
     /// **The holds of page `target` that just went are told so**: each stands as ending until it
     /// is over, and whoever waits to leave the page hears once all of them are.
     pub(super) fn released(&self, target: &str, gone: Vec<super::PageHeld>) {
@@ -483,12 +587,13 @@ struct HeldNow {
     origin: String,
     key: String,
     value: zeroize::Zeroizing<String>,
-    been_on: Arc<HashSet<String>>,
+    chain_began: Option<String>,
 }
 
 impl HeldNow {
-    fn been_on_at(&self, address: &str) -> bool {
-        login::origin_of(address).is_some_and(|origin| self.been_on.contains(&origin))
+    /// Whether `address` is on the origin the chain leading to this page began at.
+    fn began_at(&self, address: &str) -> bool {
+        login::origin_of(address).is_some_and(|origin| self.chain_began.as_ref() == Some(&origin))
     }
 }
 

@@ -476,6 +476,144 @@ fn a_route_change_or_a_frames_document_keeps_the_hold_and_a_new_page_document_en
     assert_eq!(holding.told(), ["held, 0 written", "released"]);
 }
 
+/// A window opens at `url`, opened by `opener`, and the driver knows of it.
+fn a_window_opens(
+    browser: &crate::drive::Browser,
+    engine: &Engine,
+    target: &str,
+    url: &str,
+    opener: &str,
+    linked: bool,
+) {
+    engine.emit(
+        "Target.targetCreated",
+        json!({"targetInfo": {
+            "targetId": target, "type": "page", "title": "", "url": url, "attached": false,
+            "openerId": opener, "canAccessOpener": linked,
+        }}),
+        None,
+    );
+    wait_for("the window is known", || {
+        super::super::super::lock(&browser.inner.state)
+            .page(target)
+            .is_some()
+    });
+}
+
+fn closes_asked_for(engine: &Engine) -> Vec<String> {
+    engine
+        .sent("Target.closeTarget")
+        .iter()
+        .filter_map(|sent| sent.params["targetId"].as_str().map(str::to_owned))
+        .collect()
+}
+
+fn a_window_ends(engine: &Engine, target: &str) {
+    engine.emit(
+        "Target.targetDestroyed",
+        json!({ "targetId": target }),
+        None,
+    );
+}
+
+#[test]
+fn a_fill_is_refused_while_a_related_window_is_on_its_site_or_on_none() {
+    for url in ["http://fixture.test/more.html", "about:blank"] {
+        let (browser, engine) = browser();
+        as_fields(&engine, "one_line", Twist::None);
+        let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
+        a_window_opens(&browser, &engine, "PAGE-2", url, "PAGE-1", true);
+        let holding = Arc::new(Holding::default());
+
+        let filled = browser.fill_secret(
+            browser.epoch(),
+            &fill_of(secret, "http://fixture.test"),
+            Arc::clone(&holding) as Arc<dyn FillHold>,
+        );
+
+        match filled {
+            Err(Refusal::NotFilled(why)) => {
+                assert!(why.contains("related to this page"), "{why}");
+                assert!(why.contains("nothing was filled"), "{why}");
+            }
+            other => panic!("refused otherwise: {}", ended_as(&other)),
+        }
+        assert_eq!(inserted(&engine), 0, "{url}");
+        assert!(holding.told().is_empty(), "{url} is held for nothing");
+    }
+}
+
+#[test]
+fn a_fill_goes_in_beside_a_window_on_another_site_or_one_with_no_link_to_it() {
+    for (url, linked) in [
+        ("http://other.test/more.html", true),
+        ("http://fixture.test/more.html", false),
+    ] {
+        let (browser, engine) = browser();
+        as_fields(&engine, "one_line", Twist::None);
+        let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
+        a_window_opens(&browser, &engine, "PAGE-2", url, "PAGE-1", linked);
+
+        let filled = filling(&browser, &fill_of(secret, "http://fixture.test"));
+
+        assert!(filled.is_ok(), "{url}: {}", ended_as(&filled));
+        assert_eq!(written(&engine), [VALUE], "{url}");
+    }
+}
+
+#[test]
+fn a_hold_ends_only_once_its_related_windows_are_gone() {
+    let holding = Arc::new(Holding::default());
+    let (browser, engine) = filled_under(&holding);
+    a_window_opens(&browser, &engine, "PAGE-2", "about:blank", "PAGE-1", true);
+    a_window_opens(&browser, &engine, "PAGE-3", "about:blank", "PAGE-2", true);
+    a_window_opens(&browser, &engine, "PAGE-4", "about:blank", "PAGE-1", false);
+
+    main_frame_loads(&engine, "http://fixture.test/next.html");
+
+    wait_for("the related windows are closed", || {
+        let closes = closes_asked_for(&engine);
+        closes.contains(&"PAGE-2".to_owned()) && closes.contains(&"PAGE-3".to_owned())
+    });
+    assert!(
+        !closes_asked_for(&engine).contains(&"PAGE-4".to_owned()),
+        "a window with no link to it stays"
+    );
+    assert_eq!(holding.told(), ["held, 0 written"], "still held");
+
+    a_window_ends(&engine, "PAGE-2");
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    assert_eq!(holding.told(), ["held, 0 written"], "one is left");
+
+    a_window_ends(&engine, "PAGE-3");
+    wait_for("the hold is released", || {
+        holding.told() == ["held, 0 written", "released"]
+    });
+}
+
+#[test]
+fn a_window_opened_as_a_hold_ends_closes_too_and_the_hold_waits_for_it() {
+    let holding = Arc::new(Holding::default());
+    let (browser, engine) = filled_under(&holding);
+    a_window_opens(&browser, &engine, "PAGE-2", "about:blank", "PAGE-1", true);
+    main_frame_loads(&engine, "http://fixture.test/next.html");
+    wait_for("the window is closed", || {
+        closes_asked_for(&engine).contains(&"PAGE-2".to_owned())
+    });
+
+    a_window_opens(&browser, &engine, "PAGE-3", "about:blank", "PAGE-2", true);
+    a_window_ends(&engine, "PAGE-2");
+
+    wait_for("the later window is closed", || {
+        closes_asked_for(&engine).contains(&"PAGE-3".to_owned())
+    });
+    assert_eq!(holding.told(), ["held, 0 written"], "still held");
+    a_window_ends(&engine, "PAGE-3");
+    wait_for("the hold is released", || {
+        holding.told() == ["held, 0 written", "released"]
+    });
+}
+
 #[test]
 fn a_closed_page_ends_the_hold() {
     let holding = Arc::new(Holding::default());

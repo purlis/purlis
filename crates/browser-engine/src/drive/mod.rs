@@ -203,14 +203,15 @@ pub trait Hold: Send + Sync {
 /// (#5117; the person's ruling SF-3 and decision SF-9 on #5096): the caller's.
 /// [`FillHold::hold`] is told once every check of the fill has passed and just before the value
 /// goes in; where it cannot hold, nothing goes in. [`FillHold::released`] is told once, when the
-/// page the field is on loads another document in its main frame or is closed. A route change
-/// that loads no document keeps the hold, and so does any change in a frame inside the page.
+/// page the field is on has loaded another document in its main frame or closed, and every window
+/// related to it has closed. A route change that loads no document keeps the hold, and so does any
+/// change in a frame inside the page.
 pub trait FillHold: Send + Sync {
     /// Holds the browser to the fill's site from now, or why it cannot.
     fn hold(&self) -> Result<(), String>;
 
     /// **The page holding the value is gone**: a new document in its main frame, or its tab
-    /// closed. Told at most once, after [`Self::hold`] answered, and on the thread that reads the
+    /// closed, and its related windows with it. Told at most once, after [`Self::hold`] answered, and on the thread that reads the
     /// engine's events, so it must not wait on the browser.
     fn released(&self);
 
@@ -222,11 +223,11 @@ pub trait FillHold: Send + Sync {
     }
 
     /// **Whether a redirect from the fill's site's own server, after a form sent there, may take
-    /// the page to `address`** (#5230, SF-14), `been_on` saying the browser was on that site
-    /// before the fill. Refused unless its caller says otherwise. Told on a thread that may wait
-    /// on no browser.
-    fn may_leave_for(&self, address: &str, been_on: bool) -> Leaving {
-        let _ = (address, been_on);
+    /// the page to `address`** (#5230, SF-14), `chain_began` saying the chain leading to this
+    /// sign-in began on that site. Refused unless its caller says otherwise. Told on a thread that
+    /// may wait on no browser.
+    fn may_leave_for(&self, address: &str, chain_began: bool) -> Leaving {
+        let _ = (address, chain_began);
         Leaving::No {
             why: "this browser's page holds a secret purlis filled, and it leaves for no other \
                   site"
