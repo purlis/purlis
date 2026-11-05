@@ -171,9 +171,12 @@ describe("Explorer, repos as folders (#3343)", () => {
     expect(await within(tree()).findByRole("row", { name: /^README\.md/ })).toBeInTheDocument();
     const head = screen.getByRole("heading", { name: "alpha" }).parentElement as HTMLElement;
     expect(head).toHaveTextContent("svc · main");
-    // One repo: no scope to switch, and the note says the filter covers all of it.
+    // One repo: no scope to switch, and the note says the filter covers it and the workspace's
+    // own files (#5375).
     expect(screen.queryByRole("radiogroup", { name: "Filter the files of" })).toBeNull();
-    expect(screen.getByText(/One repo, so the filter covers all of it/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/One repo, so the filter covers it and the workspace's files/),
+    ).toBeInTheDocument();
   });
 
   it("draws several repos as closed rows with their changes and branch, opening in place", async () => {
@@ -273,6 +276,10 @@ describe("Explorer, repos as folders (#3343)", () => {
   it("opens Search on the filter's scope: Branch for the selected repo, Workspace for all", async () => {
     core();
     const { onSearchContents } = draw(["svc", "web"]);
+    // Nothing pressed, *Selected* is the workspace's own files (#5375), which content search
+    // does not read: the link waits for a repo.
+    expect(screen.queryByRole("button", { name: /Search contents in Branch/ })).toBeNull();
+    await userEvent.click(within(tree()).getByRole("row", { name: /^svc/ }));
 
     await userEvent.click(screen.getByRole("button", { name: /Search contents in Branch/ }));
     expect(onSearchContents).toHaveBeenLastCalledWith(
@@ -347,7 +354,7 @@ describe("Explorer, repos as folders (#3343)", () => {
     const box = screen.getByRole("searchbox", { name: "Filter files" });
     await userEvent.type(box, "main");
     const found = await screen.findByRole("grid", { name: "Files found" });
-    await within(found).findByRole("row", { name: /^svc-main\.rs/ });
+    await within(found).findByRole("row", { name: /main\.rs/ });
 
     await userEvent.keyboard("{ArrowDown}");
 

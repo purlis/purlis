@@ -3375,6 +3375,12 @@ export const commands = {
 	 *  itself, and for one inside a workspace's repo.
 	 */
 	planeFile: (plane: PlaneId, path: string) => typedError<PieceFile, string>(__TAURI_INVOKE("plane_file", { plane, path })),
+	workspaceTree: (plane: PlaneId, workspace: string, folder: string) => typedError<WorkspaceListing_Serialize, string>(__TAURI_INVOKE("workspace_tree", { plane, workspace, folder })),
+	/**
+	 *  One file of a workspace's own files, by its path in the workspace's folder, and whether purlis
+	 *  keeps it. Refused for a path that leaves the folder or is a repo's, and through a link.
+	 */
+	workspaceFile: (plane: PlaneId, workspace: string, path: string) => typedError<WorkspaceFile, string>(__TAURI_INVOKE("workspace_file", { plane, workspace, path })),
 	/**
 	 *  What a branch changed against the branch it was cut from, committed or not, file by file and
 	 *  rolled up onto its folders: the explorer's markers and its "Changed only" (FM-4).
@@ -8055,6 +8061,12 @@ export type FileScope =
 /**  Every branch of one workspace of a project, `near` first (FM-8). */
 { kind: "workspace"; plane: PlaneId; workspace: string; near: NearBranch | null } | 
 /**
+ *  **A workspace's folder as Explorer shows it** (#5375): its own files, then each of its
+ *  repos' own folders, and no branch folder. The filter's one scope in a workspace of one
+ *  repo, which covers the workspace files and that repo.
+ */
+{ kind: "workspace-folder"; plane: PlaneId; workspace: string } | 
+/**
  *  Every branch of one project, `near` first: the branch the window's focus is on, so the
  *  nearest of equal hits leads.
  */
@@ -8357,6 +8369,16 @@ export type FolderEntry_Deserialize = {
 	 *  workspace's tab, and never a folder that opens here. Left out everywhere else.
 	 */
 	workspace: string | null,
+	/**
+	 *  In a workspace's own files (#5375), whether purlis keeps it: marked *managed*, and
+	 *  opened read-only. Left out where it is not.
+	 */
+	managed: boolean,
+	/**
+	 *  In a workspace's own files, whether it is a dotfile, drawn only with Show hidden. Left
+	 *  out where it is not.
+	 */
+	hidden: boolean,
 };
 
 /**  One entry of a branch's folder, as the explorer's tree draws it (FM-1). */
@@ -8373,6 +8395,16 @@ export type FolderEntry_Serialize = {
 	 *  workspace's tab, and never a folder that opens here. Left out everywhere else.
 	 */
 	workspace?: string | null,
+	/**
+	 *  In a workspace's own files (#5375), whether purlis keeps it: marked *managed*, and
+	 *  opened read-only. Left out where it is not.
+	 */
+	managed?: boolean,
+	/**
+	 *  In a workspace's own files, whether it is a dotfile, drawn only with Show hidden. Left
+	 *  out where it is not.
+	 */
+	hidden?: boolean,
 };
 
 /**  One folder of a branch, one level deep: its first entries, and how many more it holds. */
@@ -10712,6 +10744,11 @@ export type OwnBranch = {
 	 */
 	left: LeftBranch | null,
 };
+
+/**  A managed workspace file's own view (#5375). */
+export type OwnFileView = "memory" | "todos" | "sessions" | 
+/**  `workspace.md`'s vision, which has an editor of its own. */
+"vision";
 
 /**
  *  **What a chat waits on of its own, as the window is sent it** (#3878,
@@ -17457,6 +17494,60 @@ export type WithAskingChat = {
 export type WithoutSandbox = {
 	/**  What the person typed as the reason, or null. */
 	reason: string | null,
+};
+
+/**  A file of a workspace's own files, as the light editor draws it, and whether purlis keeps it. */
+export type WorkspaceFile = {
+	file: PieceFile,
+	/**  Whether purlis keeps it: opened read-only. */
+	managed: boolean,
+	/**  The view of its own a managed file has, where the window has one. */
+	view: OwnFileView | null,
+};
+
+/**
+ *  One folder of a workspace's own files (#5375), one level deep, as [`branch_tree`] answers a
+ *  branch's: everything in the workspace's folder but its repos and their branches' folders, each
+ *  entry saying whether purlis keeps it and whether it is hidden. At the top, the workspace's
+ *  repos, each with where it is. `""` is the workspace's folder.
+ */
+export type WorkspaceListing = WorkspaceListing_Serialize | WorkspaceListing_Deserialize;
+
+/**
+ *  One folder of a workspace's own files (#5375), one level deep, as [`branch_tree`] answers a
+ *  branch's: everything in the workspace's folder but its repos and their branches' folders, each
+ *  entry saying whether purlis keeps it and whether it is hidden. At the top, the workspace's
+ *  repos, each with where it is. `""` is the workspace's folder.
+ */
+export type WorkspaceListing_Deserialize = {
+	/**  Folders first, then files, each in the order a person reads names; at most 5,000. */
+	entries: FolderEntry_Deserialize[],
+	/**  How many entries past those are not listed. */
+	more: number,
+	/**  At the top, the workspace's repos by name; none below it. */
+	repos: WorkspaceRepo[],
+};
+
+/**
+ *  One folder of a workspace's own files (#5375), one level deep, as [`branch_tree`] answers a
+ *  branch's: everything in the workspace's folder but its repos and their branches' folders, each
+ *  entry saying whether purlis keeps it and whether it is hidden. At the top, the workspace's
+ *  repos, each with where it is. `""` is the workspace's folder.
+ */
+export type WorkspaceListing_Serialize = {
+	/**  Folders first, then files, each in the order a person reads names; at most 5,000. */
+	entries: FolderEntry_Serialize[],
+	/**  How many entries past those are not listed. */
+	more: number,
+	/**  At the top, the workspace's repos by name; none below it. */
+	repos: WorkspaceRepo[],
+};
+
+/**  One repo of a workspace, where its folder's top holds it. */
+export type WorkspaceRepo = {
+	name: string,
+	/**  In `repos/`, or at the top as a clone made before structure version 6 (ADR 0114). */
+	inside_repos: boolean,
 };
 
 /**

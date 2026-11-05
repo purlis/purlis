@@ -35,12 +35,30 @@ export function isPlaneRoot(place: Place): boolean {
   return place.workspace === "" && place.repo === "" && place.piece === null;
 }
 
+/**
+ * **A workspace's own files, as a place** (#5375): its folder but its repos and their branches'
+ * folders, named by the workspace and no repo. The core reads them through commands of their
+ * own (`workspace_tree`, `workspace_file`); every other command that names a workspace and no
+ * repo routes to the same reader.
+ */
+export function workspaceFiles(workspace: string): Place {
+  return { workspace, repo: "", piece: null };
+}
+
+/** Whether `place` is {@link workspaceFiles}: a workspace and no repo. */
+export function isWorkspaceFiles(place: Place): boolean {
+  return place.workspace !== "" && place.repo === "" && place.piece === null;
+}
+
 /** What the plane root is called on screen (CONTEXT.md). */
 const PLANE_ROOT_NAME = "Plane root";
 
 /** What the place is called on screen: its branch folder's name, or the repo's. */
 export function placeName(place: Place): string {
-  return isPlaneRoot(place) ? PLANE_ROOT_NAME : (place.piece ?? place.repo);
+  if (isPlaneRoot(place)) return PLANE_ROOT_NAME;
+  // A workspace's own files are called by the workspace (#5375).
+  if (isWorkspaceFiles(place)) return place.workspace;
+  return place.piece ?? place.repo;
 }
 
 /** The place's part of a key. */
@@ -109,7 +127,9 @@ export function pieceOf(view: ViewRef): { place: Place; path?: string } | undefi
     return view.key === "" ? undefined : { place: PLANE_ROOT, path: view.key };
   if (view.from !== null || (view.view !== FILES && view.view !== FILE)) return undefined;
   const [workspace, repo, piece, ...rest] = view.key.split("/");
-  if (!workspace || !repo || piece === undefined) return undefined;
+  if (!workspace || piece === undefined) return undefined;
+  // No repo is a workspace's own files (#5375), which have no piece either.
+  if (!repo && piece !== "") return undefined;
   const place = { workspace, repo, piece: piece === "" ? null : piece };
   if (view.view === FILES) return rest.length === 0 ? { place } : undefined;
   const path = rest.join("/");

@@ -9,9 +9,10 @@ import {
   type FilesUnwatched,
   type FolderEntry,
   type PlaneId,
+  type WorkspaceRepo,
 } from "./bindings";
 import { listen } from "./here";
-import { isPlaneRoot } from "./pieceViews";
+import { isPlaneRoot, isWorkspaceFiles } from "./pieceViews";
 import { useProjectShown } from "./projectShown";
 
 /**
@@ -61,6 +62,8 @@ export type BranchFolderRef = {
 export type FolderRead = {
   entries?: FolderEntry[];
   more?: number;
+  /** At the top of a workspace's own files (#5375), its repos, each where it is on disk. */
+  repos?: WorkspaceRepo[];
   trouble?: string;
   unwatched?: boolean;
   refused?: boolean;
@@ -110,15 +113,22 @@ export function useBranchFolders(
           return { workspace, reads };
         });
       };
-      const asked = isPlaneRoot({ workspace, repo: ref.repo, piece: ref.piece })
+      const place = { workspace, repo: ref.repo, piece: ref.piece };
+      // A workspace's own folder (#5375) is read by its own command, which says its repos too.
+      const asked: Promise<
+        | { status: "ok"; data: { entries: FolderEntry[]; more: number; repos?: WorkspaceRepo[] } }
+        | { status: "error"; error: string }
+      > = isPlaneRoot(place)
         ? commands.planeTree(plane, ref.folder)
-        : commands.branchTree(plane, workspace, ref.repo, ref.piece, ref.folder);
+        : isWorkspaceFiles(place)
+          ? commands.workspaceTree(plane, workspace, ref.folder)
+          : commands.branchTree(plane, workspace, ref.repo, ref.piece, ref.folder);
       void asked
         .then((said) =>
           told(
             said.status === "error"
               ? { trouble: said.error }
-              : { entries: said.data.entries, more: said.data.more },
+              : { entries: said.data.entries, more: said.data.more, repos: said.data.repos },
           ),
         )
         .catch((err: unknown) => told({ trouble: String(err) }));
