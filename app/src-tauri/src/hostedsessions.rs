@@ -2047,6 +2047,38 @@ impl HostLink {
         }
     }
 
+    /// How long a fresh runner's proof waits for its list (#5312): the host's limit for looking
+    /// through every file of its image the task could have changed, on top of the wait for any
+    /// answer. Never for a call that may run under a lock the window's commands wait on.
+    pub(crate) fn proof_within(&self) -> Duration {
+        let answer = if self.pool.is_some() {
+            use purlis_core::poollimits::LimitId::AnswerWait;
+            Duration::from_secs(self.limits().in_force(AnswerWait))
+        } else {
+            ANSWER_WITHIN
+        };
+        purlis_core::codelink::held::LOOK_WITHIN + answer
+    }
+
+    /// [`Self::repos_held`], waiting at most `within`, and said why where that ran out.
+    pub(crate) fn repos_held_within(&self, within: Duration) -> Result<Option<ReposHeld>, String> {
+        if self.version() < session::KNOWS_REPOS_HELD {
+            return Ok(None);
+        }
+        match self.call_timed(Command::ReposHeld, within) {
+            Some(Ok(Answer::ReposHeld { repos, unread })) => Ok(Some((repos, unread))),
+            Some(Ok(_)) => Err("the runner did not say which repositories it holds".to_owned()),
+            Some(Err(refused)) => Err(refused.why),
+            // Only this machine's own clock says the wait ran out.
+            None => Err(format!(
+                "it did not answer within {} seconds, the longest purlis waits for one check, so \
+                 purlis can't tell all its work is here. {}",
+                within.as_secs(),
+                purlis_core::codelink::held::WHAT_HELPS_A_CHECK
+            )),
+        }
+    }
+
     /// Whether the host names where each clone it holds came from (1.54, #3985), so a clone it
     /// made comes back with its remote.
     pub(crate) fn names_clone_origins(&self) -> bool {

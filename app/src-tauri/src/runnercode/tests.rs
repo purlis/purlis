@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 
-use purlis_host::Hosting;
+use purlis_host::{Code as _, Hosting};
 use purlis_host::standin::StandIns;
 
 use crate::host::{Named, SessionHost};
@@ -520,6 +520,89 @@ fn a_fresh_runners_work_is_proved_home_and_a_commit_on_no_branch_keeps_it() {
     assert!(
         missing.iter().any(|why| why.contains("HEAD")),
         "{missing:?}"
+    );
+}
+
+/// A runner that takes its time over a list of what it holds, as the look through a very large
+/// image can.
+struct SlowToList;
+
+impl purlis_host::Code for SlowToList {
+    fn take(
+        &self,
+        project: &Path,
+        repo: &str,
+        bundle: Option<&Path>,
+        refs: &[purlis_session_protocol::session::CodeRef],
+        checkout: Option<&str>,
+    ) -> Result<
+        Vec<purlis_session_protocol::session::CodeRef>,
+        purlis_session_protocol::session::Refusal,
+    > {
+        purlis_host::MovesNoCode.take(project, repo, bundle, refs, checkout)
+    }
+
+    fn give(
+        &self,
+        project: &Path,
+        repo: &str,
+        have: &[String],
+        into: &Path,
+    ) -> Result<
+        (Vec<purlis_session_protocol::session::CodeRef>, bool),
+        purlis_session_protocol::session::Refusal,
+    > {
+        purlis_host::MovesNoCode.give(project, repo, have, into)
+    }
+
+    fn repos_held(
+        &self,
+        _projects: &Path,
+    ) -> Result<
+        (Vec<purlis_session_protocol::session::RepoHeld>, Vec<String>),
+        purlis_session_protocol::session::Refusal,
+    > {
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        Ok((Vec::new(), Vec::new()))
+    }
+}
+
+/// **A runner that does not finish its list in time is said in plain words** (#5312): what ran
+/// out, by this machine's clock, and what helps. It proves nothing, so the runner stays.
+#[test]
+fn a_check_the_runner_does_not_finish_in_time_says_why_and_what_helps() {
+    let world = World::new();
+    let runner = Hosting::running_with(
+        crate::sessionhost::Composes::as_the_tests_ship(),
+        StandIns::default(),
+    )
+    .keeping_projects_in(world.projects.clone())
+    .moving_code_with(SlowToList);
+    let connection = crate::hostedsessions::tests::in_memory_with_a_runner(
+        runner.clone(),
+        runner,
+        &world._runtime,
+    )
+    .to_a_pool(FRESH);
+    let link = connection
+        .of_project(&world.root, std::time::Duration::from_secs(30))
+        .expect("a link to the runner");
+
+    let said = crate::runnercode::not_home_within(
+        &link,
+        "project",
+        &world.root,
+        FRESH,
+        std::time::Duration::from_millis(100),
+    );
+
+    assert_eq!(said.len(), 1, "{said:?}");
+    assert!(
+        said[0].contains("did not answer within")
+            && said[0].contains("purlis can't tell")
+            && said[0].contains("Fetch again")
+            && said[0].contains("smaller image"),
+        "{said:?}"
     );
 }
 

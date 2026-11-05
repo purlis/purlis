@@ -1612,6 +1612,8 @@ impl purlis_host::Code for Moves {
         (Vec<purlis_host::protocol::session::RepoHeld>, Vec<String>),
         purlis_host::protocol::session::Refusal,
     > {
+        // One limit for the whole look, however it divides (#5312).
+        let until = std::time::Instant::now() + held::LOOK_WITHIN;
         let (repos, mut unread) = held::repos_held(projects);
         // **And what a task kept outside them** (#4781), in the runner's home, purlis's data home
         // (#5029) and, where it is looked through, the rest of its file system (#4933): every
@@ -1684,13 +1686,13 @@ impl purlis_host::Code for Moves {
                                 found.clone()
                             }
                             _ => {
-                                let found = held::writable(beyond, &skip, since);
+                                let found = held::writable_until(beyond, &skip, since, until);
                                 *cached = found.whole().then(|| found.clone());
                                 found
                             }
                         }
                     });
-                    unread.extend(held::outside_with(
+                    unread.extend(held::outside_until(
                         &home,
                         data.as_deref().map(|data| held::DataHome {
                             data,
@@ -1700,6 +1702,7 @@ impl purlis_host::Code for Moves {
                         &kept,
                         Some(since),
                         beyond.zip(found.as_ref()),
+                        until,
                     ));
                 }
                 None => unread.push(

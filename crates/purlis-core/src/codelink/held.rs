@@ -477,33 +477,6 @@ pub struct DataHome<'a> {
     pub listed: &'a [std::path::PathBuf],
 }
 
-/// How long one check of what a runner holds may look through its files (#5312).
-pub const LOOK_WITHIN: std::time::Duration = std::time::Duration::from_secs(300);
-
-/// [`outside_with`], stopping at `until`.
-#[cfg(unix)]
-pub fn outside_until(
-    home: &Path,
-    data: Option<DataHome<'_>>,
-    skip: &[std::path::PathBuf],
-    since: Option<std::time::SystemTime>,
-    beyond: Option<(Beyond<'_>, &Writable)>,
-    _until: std::time::Instant,
-) -> Vec<String> {
-    outside_with(home, data, skip, since, beyond)
-}
-
-/// [`writable`], stopping at `until`.
-#[cfg(unix)]
-pub fn writable_until(
-    beyond: Beyond<'_>,
-    skip: &[std::path::PathBuf],
-    since: std::time::SystemTime,
-    _until: std::time::Instant,
-) -> Writable {
-    writable(beyond, skip, since)
-}
-
 /// **What a task keeps on its runner outside every repository** (#4781, #4933, #5029, #5030), in
 /// sentences: each file changed since `since` in the runner's `home` ([`outside_the_projects`]);
 /// in purlis's data home, but what purlis keeps there itself ([`PURLIS_KEEPS`]), the mark of the
@@ -520,11 +493,25 @@ pub fn outside_with(
     since: Option<std::time::SystemTime>,
     beyond: Option<(Beyond<'_>, &Writable)>,
 ) -> Vec<String> {
-    outside_within(home, data, skip, since, beyond, MOST_FOLDERS)
+    let until = std::time::Instant::now() + LOOK_WITHIN;
+    outside_until(home, data, skip, since, beyond, until)
+}
+
+/// [`outside_with`], stopping at `until` (#5312), which is said and keeps the runner.
+#[cfg(unix)]
+pub fn outside_until(
+    home: &Path,
+    data: Option<DataHome<'_>>,
+    skip: &[std::path::PathBuf],
+    since: Option<std::time::SystemTime>,
+    beyond: Option<(Beyond<'_>, &Writable)>,
+    until: std::time::Instant,
+) -> Vec<String> {
+    outside_bounded(home, data, skip, since, beyond, MOST_FOLDERS, until)
 }
 
 /// [`outside_with`], looking through no more than `most` folders.
-#[cfg(unix)]
+#[cfg(all(unix, test))]
 fn outside_within(
     home: &Path,
     data: Option<DataHome<'_>>,
@@ -533,10 +520,27 @@ fn outside_within(
     beyond: Option<(Beyond<'_>, &Writable)>,
     most: usize,
 ) -> Vec<String> {
+    let until = std::time::Instant::now() + LOOK_WITHIN;
+    outside_bounded(home, data, skip, since, beyond, most, until)
+}
+
+/// [`outside_within`], stopping at `until`.
+#[cfg(unix)]
+fn outside_bounded(
+    home: &Path,
+    data: Option<DataHome<'_>>,
+    skip: &[std::path::PathBuf],
+    since: Option<std::time::SystemTime>,
+    beyond: Option<(Beyond<'_>, &Writable)>,
+    most: usize,
+    until: std::time::Instant,
+) -> Vec<String> {
     let Some(since) = since else {
         return Vec::new();
     };
-    let mut outside = Outside::new(most);
+    let mut outside = Outside::new(most, until);
+    // Said once, whichever look ran out.
+    outside.ran_out = beyond.is_some_and(|(_, found)| found.ran_out);
     // The data home, wherever it is, is looked through by its own rules, so never by another's.
     let data = data.filter(|data| data.data != home);
     let mut skip = skip.to_vec();
@@ -589,6 +593,9 @@ fn outside_within(
             }
         }
         for file in &found.files {
+            if outside.out_of_time() {
+                break;
+            }
             let at = beyond.root.join(file);
             match rustix::fs::statat(rustix::fs::CWD, &at, rustix::fs::AtFlags::SYMLINK_NOFOLLOW) {
                 Ok(stat) => {
@@ -605,6 +612,9 @@ fn outside_within(
             }
         }
         for folder in &found.folders {
+            if outside.out_of_time() {
+                break;
+            }
             outside.look_in(
                 beyond.root,
                 folder,
@@ -618,6 +628,33 @@ fn outside_within(
         }
     }
     outside.sentences()
+}
+
+/// **The longest one check of a runner looks through its files** (#5312): since #5112 what a check
+/// looks at follows the size of the image, and a sweep asks again every minute, so without it
+/// looks of a very large image would pile up on the runner. What ran out is said, and keeps the
+/// runner as anything not looked through does.
+///
+/// Measured on 2026-11-05 on a CI runner running the rest of the tests, a debug build, with its
+/// caches dropped: an image of 1,000,000 files in 5,000 folders took 14 to 18 seconds for the first
+/// look and 20 to 29 for a check, and with them warm about 5 for either. So this holds about six
+/// million such files on that disk, and a million on one six times slower. Stated, not measured:
+/// no real cluster's disk was timed.
+pub const LOOK_WITHIN: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// What helps where a check ran out of time (#5312): a look warms the runner's file system, and
+/// what the first one finds is kept once it is whole, so a second is quicker.
+pub const WHAT_HELPS_A_CHECK: &str =
+    "Fetch again, as a second look is often quicker, or give this pool a smaller image";
+
+/// What a check that ran out of time says.
+#[cfg(unix)]
+fn ran_out_of_time() -> String {
+    format!(
+        "the runner ran out of time looking through its files, after {} minutes, the most one \
+         check takes, so purlis can't tell all its work is here. {WHAT_HELPS_A_CHECK}",
+        LOOK_WITHIN.as_secs() / 60
+    )
 }
 
 /// The most folders a runner's file system is looked through, once for each host, to find where
@@ -645,6 +682,8 @@ pub struct Writable {
     /// Folders it may not write, each holding only files it may change (#5112).
     folders: Vec<String>,
     said: Vec<String>,
+    /// Whether it stopped at the check's limit of time (#5312), which a check says once.
+    ran_out: bool,
 }
 
 impl Writable {
@@ -657,7 +696,7 @@ impl Writable {
     /// nothing, which an error that passes (`EIO`, a lack of memory) could otherwise make last
     /// as long as the host.
     pub fn whole(&self) -> bool {
-        self.said.is_empty()
+        self.said.is_empty() && !self.ran_out
     }
 }
 
@@ -680,11 +719,31 @@ pub fn writable(
     skip: &[std::path::PathBuf],
     since: std::time::SystemTime,
 ) -> Writable {
-    writable_within(beyond, skip, since, MOST_IMAGE_FOLDERS)
+    writable_until(beyond, skip, since, std::time::Instant::now() + LOOK_WITHIN)
+}
+
+/// [`writable`], stopping at `until` (#5312): what it found then is not [whole](Writable::whole),
+/// so it is not kept, and the next check looks again.
+#[cfg(unix)]
+pub fn writable_until(
+    beyond: Beyond<'_>,
+    skip: &[std::path::PathBuf],
+    since: std::time::SystemTime,
+    until: std::time::Instant,
+) -> Writable {
+    finds_writable(
+        beyond,
+        skip,
+        since,
+        MOST_IMAGE_FOLDERS,
+        MOST_OWN_FILES,
+        true,
+        until,
+    )
 }
 
 /// [`writable`], looking through no more than `most` folders.
-#[cfg(unix)]
+#[cfg(all(unix, test))]
 fn writable_within(
     beyond: Beyond<'_>,
     skip: &[std::path::PathBuf],
@@ -697,7 +756,7 @@ fn writable_within(
 /// [`writable_within`], keeping no more than `most_files` files and folders of them, with
 /// `owned_is_a_place` false only for a test: there a folder the test's own user owns stands for
 /// an image's, shut to the runner's user, since only root could make one another user owns.
-#[cfg(unix)]
+#[cfg(all(unix, test))]
 fn writable_bounded(
     beyond: Beyond<'_>,
     skip: &[std::path::PathBuf],
@@ -706,7 +765,30 @@ fn writable_bounded(
     most_files: usize,
     owned_is_a_place: bool,
 ) -> Writable {
-    let mut outside = Outside::new(most);
+    let until = std::time::Instant::now() + LOOK_WITHIN;
+    finds_writable(
+        beyond,
+        skip,
+        since,
+        most,
+        most_files,
+        owned_is_a_place,
+        until,
+    )
+}
+
+/// [`writable_bounded`], stopping at `until`.
+#[cfg(unix)]
+fn finds_writable(
+    beyond: Beyond<'_>,
+    skip: &[std::path::PathBuf],
+    since: std::time::SystemTime,
+    most: usize,
+    most_files: usize,
+    owned_is_a_place: bool,
+    until: std::time::Instant,
+) -> Writable {
+    let mut outside = Outside::new(most, until);
     outside.most_files = most_files;
     outside.owned_is_a_place = owned_is_a_place;
     outside.finding = Some(Writable::default());
@@ -721,6 +803,7 @@ fn writable_bounded(
     let mut found = outside.finding.take().unwrap_or_default();
     found.since = Some(since);
     found.skip = skip.to_vec();
+    found.ran_out = std::mem::take(&mut outside.ran_out);
     found.said = outside.sentences();
     found
 }
@@ -841,11 +924,15 @@ struct Outside {
     owned_is_a_place: bool,
     /// Where the walk only finds the places its user may write ([`writable`]), what it found.
     finding: Option<Writable>,
+    /// When the check's time is up (#5312).
+    until: std::time::Instant,
+    /// Whether it ran out, so nothing more is looked at.
+    ran_out: bool,
 }
 
 #[cfg(unix)]
 impl Outside {
-    fn new(most: usize) -> Outside {
+    fn new(most: usize, until: std::time::Instant) -> Outside {
         Outside {
             named: std::collections::BTreeSet::new(),
             found: 0,
@@ -856,7 +943,16 @@ impl Outside {
             most_files: MOST_OWN_FILES,
             owned_is_a_place: true,
             finding: None,
+            until,
+            ran_out: false,
         }
+    }
+
+    /// Whether the check's time is up. Asked of each thing looked at: reading the clock costs far
+    /// less than the file system call it comes before.
+    fn out_of_time(&mut self) -> bool {
+        self.ran_out = self.ran_out || std::time::Instant::now() >= self.until;
+        self.ran_out
     }
 
     fn say(&mut self, sentence: String) {
@@ -876,8 +972,8 @@ impl Outside {
     }
 
     /// Looks through the folder at `start` in `base` (`base` itself where it is empty) by
-    /// `rules`, naming each path from `base`: false where it stopped at its most folders, so
-    /// nothing more is looked through.
+    /// `rules`, naming each path from `base`: false where it stopped at its most folders or at
+    /// the check's limit of time, so nothing more is looked through.
     fn walk(
         &mut self,
         base: &Path,
@@ -934,6 +1030,9 @@ impl Outside {
             said_unread,
         }) = stack.pop()
         {
+            if self.out_of_time() {
+                return false;
+            }
             let shown_dir = rules.shown(&rel);
             // A folder its user can't read is said unless it is another's, unchanged since, that
             // the user can neither write in nor pass through: that holds nothing of a task's not
@@ -1001,6 +1100,9 @@ impl Outside {
             let mut more_than_fit = false;
             let mut one_it_may_not_change = false;
             while let Some(entry) = dir.read() {
+                if self.out_of_time() {
+                    return false;
+                }
                 let entry = match entry {
                     Ok(entry) => entry,
                     Err(e) => {
@@ -1164,6 +1266,9 @@ impl Outside {
         };
         let hidden_left_out = rules.hidden_left_out(rel);
         while let Some(entry) = dir.read() {
+            if self.out_of_time() {
+                return;
+            }
             let entry = match entry {
                 Ok(entry) => entry,
                 Err(e) => {
@@ -1241,6 +1346,11 @@ impl Outside {
                     }
                 ),
             );
+        }
+        // First, since the window names only the first few, and it says why all the rest may not
+        // be all there is.
+        if self.ran_out {
+            self.said.insert(0, ran_out_of_time());
         }
         marked(self.said)
     }
