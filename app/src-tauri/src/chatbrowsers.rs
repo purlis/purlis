@@ -227,6 +227,9 @@ struct Chat {
     /// A browser opened for a kept login with another left behind, until the person's timeline
     /// has said so (#5121): the one opened, the login and the one left.
     left_behind: Option<(String, String, String)>,
+    /// A browser it never used that purlis closed for a kept login, until the person's timeline
+    /// has said so (#5296): the one closed and the login.
+    closed_unused: Option<(String, String)>,
     /// Its identity (ADR 0066), as the app's record of it says: what a window that comes back
     /// matches its browsers' notes by (#2025).
     id: Option<String>,
@@ -293,6 +296,7 @@ impl Default for Chat {
         Chat {
             apart: Vec::new(),
             left_behind: None,
+            closed_unused: None,
             id: None,
             posture: Posture::Unasked,
             since: 0,
@@ -354,8 +358,35 @@ impl Chat {
                 .count()
     }
 
+    /// **The browser a kept login opening elsewhere closes** (#5296): the one the chat would have
+    /// used, where it made that and never used it, and at the project's limit, any it made and
+    /// never used. Never one with any act of the chat's or the person's in it, nor one the person
+    /// pinned.
+    fn to_close_for_a_kept_login(&self, at_the_limit: bool) -> Option<String> {
+        let never_used = |program: &str| {
+            self.apart.iter().any(|one| one == program)
+                && !self.ended.iter().any(|one| one == program)
+                && !self.pinned.iter().any(|one| one == program)
+        };
+        let current = self
+            .current
+            .as_deref()
+            .filter(|name| self.program(name).is_some_and(|one| never_used(&one)));
+        match current {
+            Some(name) => Some(name.to_owned()),
+            None if at_the_limit => self
+                .browsers
+                .iter()
+                .rev()
+                .find(|(_, program)| never_used(program))
+                .map(|(name, _)| name.clone()),
+            None => None,
+        }
+    }
+
     fn drop_browser(&mut self, name: &str) {
         if let Some(program) = self.program(name) {
+            self.apart.retain(|one| *one != program);
             self.ended.retain(|one| *one != program);
             self.used.remove(&program);
             self.pinned.retain(|one| *one != program);
@@ -747,6 +778,8 @@ pub enum EndWhy {
     StopAll,
     /// It could not be given the chat it was handed to's reach.
     NotHandedOver,
+    /// Its chat never used it, and a login kept for reuse opened in a browser of its own (#5296).
+    NeverUsed,
 }
 
 impl EndWhy {
@@ -755,7 +788,7 @@ impl EndWhy {
     /// (`crate::browsers::stop_every_browser`).
     fn closer(self) -> Option<Closer> {
         match self {
-            EndWhy::ClosedByItsChat | EndWhy::ChatEnded => Some(Closer::Chat),
+            EndWhy::ClosedByItsChat | EndWhy::ChatEnded | EndWhy::NeverUsed => Some(Closer::Chat),
             EndWhy::Unused { .. } => Some(Closer::Idle),
             // The person's own act ended it: they narrowed its reach, or handed it on.
             EndWhy::ReachNarrowed | EndWhy::NotHandedOver => Some(Closer::Person),
@@ -772,6 +805,12 @@ impl std::fmt::Display for EndWhy {
             EndWhy::Unused { minutes } => write!(f, "it went unused for {minutes} minutes"),
             EndWhy::ReachNarrowed => write!(f, "what its chat may reach was narrowed"),
             EndWhy::StopAll => write!(f, "the person stopped every browser"),
+            EndWhy::NeverUsed => {
+                write!(
+                    f,
+                    "its chat never used it, and a kept login opened elsewhere"
+                )
+            }
             EndWhy::NotHandedOver => {
                 write!(
                     f,
@@ -965,6 +1004,7 @@ impl ChatBrowsers {
             self.relisted();
         }
         if by_the_person {
+            self.no_longer_unused(program);
             let mut typed = self
                 .person_typed
                 .lock()
@@ -974,6 +1014,14 @@ impl ChatBrowsers {
             }
         }
         self.touched(program, now);
+    }
+
+    /// **`program` is no longer a browser its chat made and never used** (#5296): the person took
+    /// it over, or the chat asked them about it, which no later call of the chat's undoes.
+    pub fn no_longer_unused(&self, program: &str) {
+        for chat in self.lock().values_mut() {
+            chat.apart.retain(|one| one != program);
+        }
     }
 
     /// **Stops each chat's browser unused for the idle time** (#2023), at `now`: one neither
@@ -1187,6 +1235,126 @@ impl ChatBrowsers {
             .rev()
             .find(|(_, program)| !chat.ended.contains(program) && holds(program))
             .map(|(name, _)| name.clone())
+    }
+
+    /// **The browser of `chat`'s a login `declared`, as `read`, goes to as one holding it**
+    /// (#5121): where that login went through, or its store was opened. Never one where it was
+    /// merely tried, or a refusal would keep bringing the chat back to it.
+    fn holding_login(
+        &self,
+        chat: &Chat,
+        persona: &Option<String>,
+        declared: &str,
+        read: &LoginRead,
+    ) -> Option<String> {
+        self.holding(chat, !read.opens, &|program| {
+            let same = |one: &Option<String>, login: &str, identity: &str| {
+                one == persona && login == declared && identity == read.identity
+            };
+            self.logged_in
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .get(program)
+                .is_some_and(|sessions| {
+                    sessions
+                        .iter()
+                        .any(|one| same(&one.persona, &one.login, &one.identity))
+                })
+                || (read.opens
+                    && self
+                        .logins_held
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .get(program)
+                        .is_some_and(|logins| {
+                            logins
+                                .iter()
+                                .any(|one| same(&one.persona, &one.login, &one.identity))
+                        }))
+        })
+    }
+
+    /// **What each of `chat`'s running browsers holds, as a refusal at the limit lists it**
+    /// (#5296): the login it last held, who has it, and the site of the page its last answer
+    /// showed. Never its address, which may hold a value, nor any other chat's.
+    fn own_browsers(&self, chat: &Chat) -> Vec<purlis_core::browserlimits::OwnBrowser> {
+        use purlis_core::browserlimits::{OwnBrowser, Shows};
+        let held = self
+            .logins_held
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let person = self
+            .person_drives
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        chat.browsers
+            .iter()
+            .filter(|(_, program)| !chat.ended.contains(program) && program.is_empty())
+            .map(|(name, program)| OwnBrowser {
+                name: name.clone(),
+                login: held
+                    .get(program)
+                    .and_then(|logins| logins.last())
+                    .map(|one| one.login.clone()),
+                shows: match self.address_of(program) {
+                    Some(address) if address.starts_with("chrome-error://") => Shows::ErrorPage,
+                    Some(address) => purlis_core::browsers::judge::site_of(&address)
+                        .map_or(Shows::Nothing, |(host, port)| {
+                            Shows::Site(Site::of(&host, port).to_string())
+                        }),
+                    None => Shows::Nothing,
+                },
+                person_has_it: person.contains(program),
+            })
+            .collect()
+    }
+
+    /// **Closes the browser a kept login `browse` takes the place of** (#5296), before the login
+    /// opens from its store: see [`Chat::to_close_for_a_kept_login`]. Closed first, so a project
+    /// at its limit has the room. Answers what its answer says of that.
+    fn close_for_a_kept_login(
+        &self,
+        driver: Option<&Arc<dyn Driver>>,
+        browse: &BrowseAsk,
+        read: Option<&ReadLogin>,
+        persona: &Option<String>,
+    ) -> Option<String> {
+        let (Browsing::LogIn { login, .. }, None, Some(driver), Some(Ok(read))) =
+            (&browse.asked, &browse.browser, driver, read)
+        else {
+            return None;
+        };
+        if !read.opens || browse.chat != u32::MAX {
+            return None;
+        }
+        let (closing, name) = {
+            let mut chats = self.lock();
+            let open =
+                self.endings().browsers.len() + chats.values().map(Chat::running).sum::<usize>();
+            let at_the_limit = open >= (self.limits)().per_project;
+            let chat = chats.get_mut(&browse.chat)?;
+            if !matches!(chat.posture, Posture::Allowed { .. })
+                || self.holding_login(chat, persona, login, read).is_some()
+            {
+                return None;
+            }
+            let name = chat.to_close_for_a_kept_login(at_the_limit)?;
+            let program = chat.program(&name)?;
+            chat.drop_browser(&name);
+            chat.closed_unused = Some((name.clone(), login.clone()));
+            self.relisted();
+            let closing = [ChatBrowser {
+                session: browse.chat,
+                name: name.clone(),
+                program,
+                unended: false,
+                ..ChatBrowser::default()
+            }];
+            self.letting_go(&closing);
+            (closing, name)
+        };
+        let ended = self.end_now(Some(driver), &closing, EndWhy::NeverUsed);
+        Some(closed_unused_said(&name, login, ended.unended > 0))
     }
 
     /// **Records what login `session` left in `program`** (#5121): its session where it `answered`,
@@ -1447,6 +1615,19 @@ impl ChatBrowsers {
         let (opened, login, left) = self.lock().get_mut(&session)?.left_behind.take()?;
         Some(purlis_core::browsertimeline::opened_to_keep(
             &opened, &login, &left, at,
+        ))
+    }
+
+    /// **The moment of the person's timeline that says a browser never used was closed** (#5296),
+    /// once.
+    pub fn closed_unused_moment(
+        &self,
+        session: u32,
+        at: u64,
+    ) -> Option<purlis_core::browsertimeline::Happened> {
+        let (closed, login) = self.lock().get_mut(&session)?.closed_unused.take()?;
+        Some(purlis_core::browsertimeline::closed_unused(
+            &closed, &login, at,
         ))
     }
 
@@ -2127,8 +2308,13 @@ impl ChatBrowsers {
                 ));
             }
             if running >= per_project {
+                let own = self.own_browsers(chat);
                 return Err(not_followed(
-                    &purlis_core::browserlimits::project_full_said(per_project),
+                    &purlis_core::browserlimits::project_full_said(
+                        per_project,
+                        &own,
+                        running.saturating_sub(own.len()),
+                    ),
                 ));
             }
             chat.following += 1;
@@ -2776,6 +2962,8 @@ impl ChatBrowsers {
             }
             _ => None,
         };
+        // Before the call is said of the browser it would have used, which it no longer has.
+        let closed = self.close_for_a_kept_login(driver, browse, read.as_ref(), &persona.persona);
         let before = self
             .program_named(browse.chat, browse.browser.as_deref())
             .map(|program| CalledOn {
@@ -2786,6 +2974,19 @@ impl ChatBrowsers {
             driver, root, pool, browse, reach, persona, read, fills, folder, now,
         );
         self.say_called(browse, before, &answer);
+        // Whatever became of the login, the browser closed for it is said (#5296).
+        if let Some(said) = closed {
+            match &mut answer {
+                Answer::Browsed { browsed, .. } => {
+                    browsed.note = Some(match browsed.note.take() {
+                        Some(note) => format!("{said}. {note}"),
+                        None => said,
+                    });
+                }
+                Answer::No { why } => *why = format!("{said}. {why}"),
+                _ => {}
+            }
+        }
         // What the browser held back for the person says so first (#2018).
         if let Answer::Browsed { browsed, .. } = &mut answer
             && !browsed.asked.is_empty()
@@ -2961,7 +3162,13 @@ impl ChatBrowsers {
                 identity: kept.identity.clone(),
             });
             if elsewhere + chat.running() >= per_project {
-                return Err(purlis_core::browserlimits::project_full_said(per_project));
+                let own = self.own_browsers(chat);
+                let others = (elsewhere + chat.running()).saturating_sub(own.len());
+                return Err(purlis_core::browserlimits::project_full_said(
+                    per_project,
+                    &own,
+                    others,
+                ));
             }
             let program = driver
                 .start(
@@ -3139,33 +3346,7 @@ impl ChatBrowsers {
         let mut left_behind = None;
         let named = match &act {
             Doing::LogIn(declared, read) if browse.browser.is_none() => {
-                // A login that went through there, or a store opened there: never one merely
-                // tried, or a refusal would keep bringing the chat back to it.
-                let holding = self.holding(chat, !read.opens, &|program| {
-                    let same = |persona: &Option<String>, login: &str, identity: &str| {
-                        *persona == persona_now && login == declared && identity == read.identity
-                    };
-                    self.logged_in
-                        .lock()
-                        .unwrap_or_else(PoisonError::into_inner)
-                        .get(program)
-                        .is_some_and(|sessions| {
-                            sessions
-                                .iter()
-                                .any(|one| same(&one.persona, &one.login, &one.identity))
-                        })
-                        || (read.opens
-                            && self
-                                .logins_held
-                                .lock()
-                                .unwrap_or_else(PoisonError::into_inner)
-                                .get(program)
-                                .is_some_and(|logins| {
-                                    logins
-                                        .iter()
-                                        .any(|one| same(&one.persona, &one.login, &one.identity))
-                                }))
-                });
+                let holding = self.holding_login(chat, &persona_now, declared, read);
                 match holding {
                     Some(name) => Some(name),
                     None if read.opens => {
@@ -3582,6 +3763,22 @@ fn kept_apart_said(opened: &str, login: &str, left: &str) -> String {
     )
 }
 
+/// **What the chat is told of the browser `closed` that a kept `login` took the place of**
+/// (#5296), or that purlis still works to end.
+fn closed_unused_said(closed: &str, login: &str, unended: bool) -> String {
+    let why = format!(
+        "{login} is kept for later reuse and opens from what is kept in a browser of its own"
+    );
+    if unended {
+        format!(
+            "this chat opened browser {closed} and never used it, and {why}, so purlis let go of \
+             it: it could not end it yet, and keeps trying"
+        )
+    } else {
+        format!("purlis closed browser {closed}, which this chat opened and never used: {why}")
+    }
+}
+
 /// What the chat is told of a login browser `name` already holds (#5121, SF-7): nothing was read
 /// from any vault, and nothing was typed.
 fn already_logged_in_said(name: &str, login: &str, reaches: &str) -> String {
@@ -3801,6 +3998,10 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
         held.chats().asks_may_have_moved();
     }
     if let Some(happened) = timeline_of(held.browsers(), browse, &answer, now) {
+        keep_in_timeline(held, browse.chat, happened);
+    }
+    // A browser closed for a kept login says so in the person's view too (#5296).
+    if let Some(happened) = held.browsers().closed_unused_moment(browse.chat, now) {
         keep_in_timeline(held, browse.chat, happened);
     }
     // A login that went into a new browser says why in the person's view too (#5121).

@@ -167,11 +167,75 @@ pub fn budget_for(total: Option<u64>) -> usize {
     usize::try_from((class_gib(total) / GIB_PER_BROWSER).max(1)).unwrap_or(usize::MAX)
 }
 
-/// What a chat's browser past the project's limit of `most` is refused with.
-pub fn project_full_said(most: usize) -> String {
+/// **What one of a chat's own browsers shows, as a refusal at the limit says it** (#5296).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Shows {
+    /// No page it can name.
+    Nothing,
+    /// The engine's own page for a load that failed.
+    ErrorPage,
+    /// A page of this site: a site alone, as an address may hold a value.
+    Site(String),
+}
+
+/// **One of a chat's own browsers, as a refusal at the limit names it** (#5296), so the chat or
+/// the person can close the right one: by names and sites, never a value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OwnBrowser {
+    /// What the chat calls it.
+    pub name: String,
+    /// The login it was last signed in with, where it holds one.
+    pub login: Option<String>,
+    pub shows: Shows,
+    /// The person drives it now.
+    pub person_has_it: bool,
+}
+
+impl std::fmt::Display for OwnBrowser {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut holds = Vec::new();
+        if self.person_has_it {
+            holds.push("the person has taken it over".to_owned());
+        }
+        if let Some(login) = &self.login {
+            holds.push(format!("holds login {login}"));
+        }
+        match &self.shows {
+            Shows::Site(site) => holds.push(format!("on {site}")),
+            Shows::ErrorPage => holds.push("on an error page".to_owned()),
+            Shows::Nothing if holds.is_empty() => holds.push("empty".to_owned()),
+            Shows::Nothing => {}
+        }
+        write!(f, "{} ({})", self.name, holds.join(", "))
+    }
+}
+
+/// What a chat's browser past the project's limit of `most` is refused with (#5296): its `own`
+/// browsers and what each holds, and the `others` of the project's counted, never named.
+pub fn project_full_said(most: usize, own: &[OwnBrowser], others: usize) -> String {
+    let whose = if own.is_empty() {
+        "None of them is this chat's: ask the person to close one or to raise the limit, or go on \
+         without one"
+            .to_owned()
+    } else {
+        let listed = own
+            .iter()
+            .map(OwnBrowser::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+        let rest = match others {
+            0 => String::new(),
+            1 => "; 1 more is another chat's".to_owned(),
+            more => format!("; {more} more are other chats'"),
+        };
+        format!(
+            "This chat's: {listed}{rest}. Close one of this chat's with browser_close first, or \
+             go on without one"
+        )
+    };
     format!(
-        "this project's chats have {} open, the most a project holds at once ({SETTING} sets it): \
-         close one of this chat's with browser_close first, or go on without one",
+        "this project's chats have {} open, the most a project holds at once ({SETTING} sets \
+         it). {whose}",
         browsers(most)
     )
 }
