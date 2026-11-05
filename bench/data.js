@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793852406944,
+  "lastUpdate": 1793855181422,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -39690,6 +39690,48 @@ window.BENCHMARK_DATA = {
             "value": 102.30551249999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.417, 101.846, 102.306, 102.329, 103.323 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "7e38e852bfbd236a4892a35f7a94d6913d2bbe21",
+          "message": "Browser login: a preset of secret fill, in the browser you're watching (#5121) (#5229)\n\n* Browser login: a preset of secret fill, in the named or current browser (#5121)\n\nbrowser_login no longer opens a new browser for a login the person allowed. It goes into the browser the chat names or uses. A browser holding a session of the same login answers already logged in, after a read of its page that opens no vault, and is logged in again where the page asks. A new browser opens only for a login kept for later reuse, saying why and offering to close the one left behind. The engine's login gains the fill rules it lacked: spelled values kept out, one-line fields only, copy, cut and drag stopped.\n\nSession protocol 1.73: asks_to_sign_in, an act no chat's tool sends.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M3X96MHP8D60KXQF8FPJ5H\nPurlis-Persona: steward\n\n* Browser login: the review's fixes (#5121)\n\nThe login fills only the page purlis made for it. A later call counts as signed in only where the login answered with the browser held to its page. The password check reads a field as before; only a box named for the user is ruled out. The stops go on before the last check. The person's take-over is judged on the browser the login would go to. A kept login that fails says it moved, and opens no copy of its store. What the page read brought is told. A runner's opt-in must stand.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M3X96MHP8D60KXQF8FPJ5H\nPurlis-Persona: steward\n\n* Red proof, temporary: each guard of #5121 taken out, the tests left\n\nReverted by the next commit; the pair cancels out in a squash. CI shows which test goes red for each rule.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M3X96MHP8D60KXQF8FPJ5H\nPurlis-Persona: steward\n\n* Restore the guards after the red proof; a real test of the spelled value (#5121)\n\nOne check of a chat's posture was doubled, so taking it out showed nothing: the other stays. The spelled-value test now reads a page that echoes what its address carries.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M3X96MHP8D60KXQF8FPJ5H\nPurlis-Persona: steward\n\n* Red proof, temporary: the three guards the first proof could not show\n\nReverted by the next commit.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M3X96MHP8D60KXQF8FPJ5H\nPurlis-Persona: steward\n\n* Restore the guards after the second red proof; only a login that may run counts as tried (#5121)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M3X96MHP8D60KXQF8FPJ5H\nPurlis-Persona: steward\n\n* Browser login: the re-review's fixes (#5121)\n\nAny login that runs ends the sessions of every other in that browser. Already logged in is said only on a page of the login's own site, and asking is read with more of what a name field looks like. A login goes back only to a browser it went through in, and the chat's current browser moves only once it has. A browser holding another site's login says so before anyone is asked. A login page that went elsewhere isn't taken for one signed in, and a login that fails counts no more. The docs say what is now so.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M3X96MHP8D60KXQF8FPJ5H\nPurlis-Persona: steward\n\n* Red proof, temporary: the re-review's guards taken out, the tests left\n\nReverted by the next commit.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M3X96MHP8D60KXQF8FPJ5H\nPurlis-Persona: steward\n\n* Restore the guards after the third red proof (#5121)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M3X96MHP8D60KXQF8FPJ5H\nPurlis-Persona: steward\n\n* Browser login: a login allowed on a notice starts clean on its own site (#5121)\n\nThe person's ruling of 2026-11-05. Other sites and declared logins stay as they are, and a host before 1.73 isn't sent such a login.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M3X96MHP8D60KXQF8FPJ5H\nPurlis-Persona: steward\n\n* Red proof, temporary: the clean start taken out, the tests left\n\nReverted by a later commit.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M3X96MHP8D60KXQF8FPJ5H\nPurlis-Persona: steward\n\n* Browser login: the clean start blanks its site's pages first; restore after the red proof (#5121)\n\nEvery page showing the login's sites goes blank before they're cleared, so none is left to put back what goes. The reload is told by its main frame's document. A runner chat's login counts as on this machine, and a notice's allow is its persona's alone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M3X96MHP8D60KXQF8FPJ5H\nPurlis-Persona: steward\n\n* Red proof, temporary: the clean start's inner guards taken out, the tests left\n\nReverted by the next commit.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M3X96MHP8D60KXQF8FPJ5H\nPurlis-Persona: steward\n\n* Restore the clean start's guards after the red proof (#5121)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M3X96MHP8D60KXQF8FPJ5H\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-05T04:38:48Z",
+          "tree_id": "aea6b3e783d6ee6649e096da450dd74dc9acdf0a",
+          "url": "https://github.com/purlis/purlis/commit/7e38e852bfbd236a4892a35f7a94d6913d2bbe21"
+        },
+        "date": 1793855175741,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6855295,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.665, 0.678, 0.686, 0.704, 0.710 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6415475,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.491, 16.612, 16.642, 16.700, 16.722 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.6096235,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.537, 102.583, 102.610, 102.781, 102.946 ms"
           }
         ]
       }
