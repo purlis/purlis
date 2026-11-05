@@ -1077,7 +1077,6 @@ pub(crate) async fn skill_budget_set(
     use purlis_core::skills::budget_setting::{Level, write};
     let held = planes.held(&plane)?;
     crate::off_the_window("changing the skill budget", move || {
-        flag_on()?;
         write(
             held.root(),
             Level::of(workspace.as_deref()),
@@ -1111,7 +1110,6 @@ pub(crate) async fn skill_budget_preview(
 ) -> Result<crate::skillstudio::SkillBudgetPreview, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("working out a skill budget", move || {
-        flag_on()?;
         let built_in =
             crate::bundled_plugin_here().and_then(|one| purlis_core::skills::in_bundle(&one));
         Ok(purlis_core::skills::budget_setting::preview(
