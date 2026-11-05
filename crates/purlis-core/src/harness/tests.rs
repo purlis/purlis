@@ -2060,18 +2060,3 @@ fn opencode_is_the_kind_and_the_command_of_the_same_harness() {
         "{said}"
     );
 }
-
-#[test]
-fn a_harness_reports_asks_by_what_its_card_says_about_waiting_not_by_any_gap_in_it() {
-    // opencode says when it waits, whatever else its card lacks (its helpers are not shown).
-    assert!(Harness::Opencode.unreported().is_some());
-    assert!(Harness::reports_asks(Some(Harness::Opencode)));
-    assert!(Harness::reports_asks(Some(Harness::ClaudeCode)));
-    // Codex says only when it stops for an approval, so its card answers no.
-    assert!(!Harness::reports_asks(Some(Harness::Codex)));
-}
-
-#[test]
-fn a_program_with_no_adapter_cannot_report_asks() {
-    assert!(!Harness::reports_asks(None));
-}

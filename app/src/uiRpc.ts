@@ -7874,7 +7874,7 @@ export type OpenChat = {
 	/**
 	 *  `true` where it can't tell the person it needs them (#4759): its harness's card says no
 	 *  to hooks or to reporting a wait, or it has no adapter
-	 *  ([`Harness::reports_asks`]). A task that started so keeps the faint hand on its row.
+	 *  ([`purlis_core::harness_card::reports_asks`]). A task that started so keeps the faint hand on its row.
 	 *  `null` where it can.
 	 */
 	cant_report_asks?: boolean | null,

@@ -122,12 +122,13 @@ pub struct Arrived {
     pub harness: Option<String>,
     /// **Whether it can't tell the person it needs them** (#4759): its harness's card says no
     /// to hooks or to reporting a wait, or it has no adapter at all
-    /// ([`purlis_core::harness::Harness::reports_asks`]). A task on one is announced as a handoff
+    /// ([`purlis_core::harness_card::reports_asks`]). A task on one is announced as a handoff
     /// is, and the asking chat is told the person must look at it.
     pub cant_report_asks: bool,
     /// **Whether the window announces it** (#4759, [`Chat::announced`]): a handoff, or a task
-    /// that can't report asks, that the person did not start themselves. The same answer its record's `unseen` starts from, so the chip card, the Inbox Update and
-    /// the row's "new" mark come together or not at all.
+    /// that can't report asks, that the person did not start themselves. The same answer its
+    /// record's `unseen` starts from, so the chip card, the Inbox Update and the row's "new" mark
+    /// come together or not at all.
     pub announced: bool,
 }
 
@@ -1900,7 +1901,7 @@ fn start_on(
             )
         })?;
     // Whether it can say when it needs the person, and so whether it is announced (#4759).
-    let cant_report_asks = !purlis_core::harness::Harness::reports_asks(ready.harness);
+    let cant_report_asks = !purlis_core::harness_card::reports_asks(ready.declaration());
     let announced = Chat::announced(&opening.from, opening.by_person, cant_report_asks);
     let chat = Chat {
         program: ready.program.clone(),

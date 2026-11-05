@@ -315,8 +315,8 @@ pub struct Chat {
 impl Chat {
     /// **Whether a chat another chat started is announced to the person** (#4759, ADR 0090 as
     /// amended 2026-11-02): a handoff always, since the person reads it themselves; a task only
-    /// on a harness that can't say when it needs them (`cannot_report`), since any other task is
-    /// its asking chat's to read. A task the person asked for themselves is never announced:
+    /// where it can't say when it needs them (`cannot_report`: its harness's card says so, or it
+    /// has no adapter), since any other task is its asking chat's to read. A task the person asked for themselves is never announced:
     /// they started it.
     pub fn announced(from: &HandedFrom, by_person: bool, cannot_report: bool) -> bool {
         !by_person && (from.mode == Mode::Handoff || cannot_report)

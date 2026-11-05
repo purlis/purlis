@@ -609,23 +609,6 @@ impl Harness {
             .and_then(|(_, said)| said.as_deref())
     }
 
-    /// **Whether a chat on `harness` can tell the person it needs them** (#4759): what its card
-    /// says about hooks and about reporting a wait ([`crate::harness_card::Card::reports_asks`]),
-    /// not whether the card has a gap of any kind, as [`Self::unreported`] says. `None` is a
-    /// program purlis has no adapter for, which arms no hook and so reports nothing.
-    pub fn reports_asks(harness: Option<Self>) -> bool {
-        static REPORTS: LazyLock<Vec<(Harness, bool)>> = LazyLock::new(|| {
-            Harness::ALL
-                .iter()
-                .map(|&harness| {
-                    let reports = crate::harness_card::built_in_card(harness).reports_asks();
-                    (harness, reports)
-                })
-                .collect()
-        });
-        harness.is_some_and(|harness| REPORTS.contains(&(harness, true)))
-    }
-
     /// This harness's own words for what its chats cannot tell purlis
     /// ([`Self::unreported`]): a clause for a *no* of its card, said only while the card says
     /// it, and the facts of its adapter no card line holds. Each was measured on the version

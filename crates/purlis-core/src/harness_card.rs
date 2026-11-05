@@ -486,6 +486,13 @@ pub fn named(root: &Path, kind: &str) -> Option<Card> {
     harness_declaration::read(root).get(kind).map(of)
 }
 
+/// **Whether a chat on `declaration` can tell the person it needs them** (#4759): what the card
+/// of the harness it started on says ([`Card::reports_asks`]), a replacement's lines over the
+/// built-in's. `None`, a chat on no harness, can't.
+pub fn reports_asks(declaration: Option<&Declaration>) -> bool {
+    declaration.is_some_and(|declaration| of(declaration).reports_asks())
+}
+
 /// The card of a built-in harness, which needs no project to read: charter ships a declaration
 /// for each one ([`harness_declaration::builtins`]), and a test holds them together.
 pub fn built_in_card(harness: Harness) -> Card {
