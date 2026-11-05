@@ -252,3 +252,143 @@ fn a_level_comes_from_the_rule_when_the_result_has_none_and_a_pass_has_no_severi
     assert_eq!(read[0].diagnostics[0].severity, Severity::Note);
     assert_eq!(read[0].diagnostics[1].severity, Severity::None);
 }
+
+mod the_store {
+    use super::*;
+    use crate::support;
+    use purlis_core::checks::{branch_named, read_sets, report, store_path};
+    use purlis_core::files::Branch;
+
+    fn sarif_file(dir: &std::path::Path, name: &str, text: &[u8]) -> std::path::PathBuf {
+        let file = dir.join(name);
+        std::fs::write(&file, text).unwrap();
+        file
+    }
+
+    fn a_tool(name: &str, message: &str) -> Vec<u8> {
+        format!(
+            r#"{{"version":"2.1.0","runs":[{{"tool":{{"driver":{{"name":"{name}"}}}},
+            "results":[{{"message":{{"text":"{message}"}}}}]}}]}}"#
+        )
+        .into_bytes()
+    }
+
+    fn head_of(at: &std::path::Path) -> String {
+        let out = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(at)
+            .output()
+            .unwrap();
+        String::from_utf8(out.stdout).unwrap().trim().to_owned()
+    }
+
+    #[test]
+    fn a_report_records_each_tool_with_the_head_it_was_reported_for() {
+        purlis_core::unsteered!();
+        let f = support::plane_with_clone("thing");
+        let cut = purlis_core::worktree::add(&f.plane, &f.ws, &f.repo, "feature", None).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let file = sarif_file(
+            dir.path(),
+            "out.sarif",
+            &fixture("codeql-2.27.4-actions.sarif"),
+        );
+        let branch = Branch::piece(&f.ws, &f.repo, "feature");
+        let done = report(&f.plane, branch, &file, chrono::Utc::now()).unwrap();
+        assert_eq!(done.tools, [("CodeQL".to_owned(), 3)]);
+        assert_eq!(done.branch, "feature");
+        let head = head_of(&cut.path);
+        assert_eq!(done.head.as_deref(), Some(head.as_str()));
+        let sets = read_sets(&f.plane, &f.ws, &f.repo, Some("feature")).unwrap();
+        assert_eq!(sets[0].head.as_deref(), Some(head.as_str()));
+        assert_eq!(sets[0].diagnostics.len(), 3);
+    }
+
+    #[test]
+    fn a_second_tool_is_kept_beside_the_first_and_the_same_tool_replaces_its_own() {
+        purlis_core::unsteered!();
+        let f = support::plane_with_clone("thing");
+        purlis_core::worktree::add(&f.plane, &f.ws, &f.repo, "feature", None).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let branch = Branch::piece(&f.ws, &f.repo, "feature");
+        for (tool, message) in [("eslint", "old"), ("clippy", "kept"), ("eslint", "new")] {
+            let file = sarif_file(dir.path(), "out.sarif", &a_tool(tool, message));
+            report(&f.plane, branch, &file, chrono::Utc::now()).unwrap();
+        }
+        let sets = read_sets(&f.plane, &f.ws, &f.repo, Some("feature")).unwrap();
+        let said: Vec<(&str, &str)> = sets
+            .iter()
+            .map(|set| (set.tool.as_str(), set.diagnostics[0].message.as_str()))
+            .collect();
+        assert_eq!(said, [("clippy", "kept"), ("eslint", "new")]);
+    }
+
+    #[test]
+    fn invalid_sarif_is_refused_saying_what_to_do_and_leaves_the_record_alone() {
+        purlis_core::unsteered!();
+        let f = support::plane_with_clone("thing");
+        purlis_core::worktree::add(&f.plane, &f.ws, &f.repo, "feature", None).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let branch = Branch::piece(&f.ws, &f.repo, "feature");
+        let good = sarif_file(dir.path(), "good.sarif", &a_tool("eslint", "kept"));
+        report(&f.plane, branch, &good, chrono::Utc::now()).unwrap();
+        let bad = sarif_file(
+            dir.path(),
+            "bad.sarif",
+            &fixture("malformed/wrong-version.sarif"),
+        );
+        let why = report(&f.plane, branch, &bad, chrono::Utc::now()).unwrap_err();
+        assert!(why.contains("bad.sarif"), "{why}");
+        assert!(why.contains("2.0.0"), "{why}");
+        assert!(why.contains("Have the tool write SARIF 2.1.0"), "{why}");
+        let sets = read_sets(&f.plane, &f.ws, &f.repo, Some("feature")).unwrap();
+        assert_eq!(sets[0].diagnostics[0].message, "kept");
+    }
+
+    #[test]
+    fn a_branch_is_found_by_its_name_in_a_piece_or_in_the_clone() {
+        purlis_core::unsteered!();
+        let f = support::plane_with_clone("thing");
+        purlis_core::worktree::add(&f.plane, &f.ws, &f.repo, "feature", None).unwrap();
+        assert_eq!(
+            branch_named(&f.plane, &f.ws, None, "feature").unwrap(),
+            (f.repo.clone(), Some("feature".to_owned()))
+        );
+        let on_clone = String::from_utf8(
+            std::process::Command::new("git")
+                .args(["symbolic-ref", "--short", "HEAD"])
+                .current_dir(f.plane.join("workspaces").join(&f.ws).join(&f.repo))
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .unwrap();
+        assert_eq!(
+            branch_named(&f.plane, &f.ws, None, on_clone.trim()).unwrap(),
+            (f.repo.clone(), None)
+        );
+        let why = branch_named(&f.plane, &f.ws, None, "nowhere").unwrap_err();
+        assert!(
+            why.contains("nowhere") && why.contains("purlis worktree list"),
+            "{why}"
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_link_at_the_record_is_refused_and_never_written_through() {
+        purlis_core::unsteered!();
+        let f = support::plane_with_clone("thing");
+        purlis_core::worktree::add(&f.plane, &f.ws, &f.repo, "feature", None).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let elsewhere = dir.path().join("elsewhere.json");
+        std::fs::write(&elsewhere, "untouched").unwrap();
+        let record = store_path(&f.plane, &f.ws, &f.repo, Some("feature"));
+        std::fs::create_dir_all(record.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, &record).unwrap();
+        let file = sarif_file(dir.path(), "out.sarif", &a_tool("eslint", "m"));
+        let branch = Branch::piece(&f.ws, &f.repo, "feature");
+        assert!(report(&f.plane, branch, &file, chrono::Utc::now()).is_err());
+        assert_eq!(std::fs::read_to_string(&elsewhere).unwrap(), "untouched");
+    }
+}

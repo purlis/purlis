@@ -1,14 +1,23 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! A branch's check results, read from SARIF 2.1.0 and placed on a comparison (ADR 0114, #5407).
+//! A branch's check results, read from SARIF 2.1.0, kept per branch folder, and placed on a
+//! comparison (ADR 0114, #5407).
+//!
+//! **purlis runs no check here and has no parser for any one tool.** `purlis check report` hands a
+//! SARIF file over; the store (`docs/plane-format.md`) keeps what each tool last said, with the
+//! commit the branch was at; [`on_file`] places it on one file's hunks. Every result lands in one of
+//! its three lists, so nothing a tool said is dropped.
 
-use std::path::Path;
+use std::io::Read;
+use std::path::{Path, PathBuf};
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_sarif::sarif;
 
-use crate::files::Hunk;
+use crate::files::{Branch, Hunk};
+use crate::worktree::git;
 
 /// The one SARIF version purlis reads.
 pub const VERSION: &str = "2.1.0";
@@ -215,6 +224,242 @@ fn decoded(uri: &str) -> String {
     percent_encoding::percent_decode_str(uri)
         .decode_utf8_lossy()
         .into_owned()
+}
+
+/// The largest SARIF file purlis reads. A report is results, so this is many thousands of them, and
+/// past it the app is not asked to hold a file a chat named.
+pub const MOST_SARIF_BYTES: u64 = 32 * 1024 * 1024;
+
+/// The folder under the workspace's `pieces/` that holds the results.
+const STORE_DIR: &str = "checks";
+
+/// Where a branch folder's results are kept. The clone's own record is beside the piece folder,
+/// as [`crate::pieces::seen_path`]'s is, so no piece's name can collide with it.
+pub fn store_path(plane: &Path, ws: &str, repo: &str, piece: Option<&str>) -> PathBuf {
+    let base = crate::pieces::dir_for(plane, ws).join(STORE_DIR);
+    match piece {
+        None => base.join(format!("{repo}.json")),
+        Some(piece) => base.join(repo).join(format!("{piece}.json")),
+    }
+}
+
+/// The record's one shape on disk.
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct Record {
+    sets: Vec<Set>,
+}
+
+/// What a branch folder's results are, or why they cannot be read. None reported is none.
+pub fn read_sets(
+    plane: &Path,
+    ws: &str,
+    repo: &str,
+    piece: Option<&str>,
+) -> Result<Vec<Set>, String> {
+    let path = store_path(plane, ws, repo, piece);
+    crate::contain::writable(plane, &path).map_err(|e| e.to_string())?;
+    let text = match std::fs::read(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(format!("purlis could not read {}: {e}", path.display())),
+    };
+    serde_json::from_slice::<Record>(&text)
+        .map(|record| record.sets)
+        .map_err(|e| {
+            format!(
+                "purlis could not read {} ({e}): delete it, and report the results again",
+                path.display()
+            )
+        })
+}
+
+/// What [`report`] recorded.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reported {
+    /// The record.
+    pub path: PathBuf,
+    pub branch: String,
+    pub head: Option<String>,
+    /// Each tool, with how many results it has.
+    pub tools: Vec<(String, usize)>,
+}
+
+/// Records the SARIF file at `file` as `branch`'s results, at the commit the branch is at now. A
+/// file that is not SARIF 2.1.0 is refused, saying what is wrong and what to do, and the record is
+/// left as it was.
+pub fn report(
+    plane: &Path,
+    branch: Branch<'_>,
+    file: &Path,
+    now: DateTime<Utc>,
+) -> Result<Reported, String> {
+    let piece = branch.piece;
+    let folder = crate::files::folder(plane, branch, "").map_err(|e| e.to_string())?;
+    let refused = |why: String| {
+        format!(
+            "{} was not recorded: {why}. Have the tool write SARIF {VERSION}, then report it again",
+            file.display()
+        )
+    };
+    let bytes = bounded(file).map_err(&refused)?;
+    let results = read_sarif(&bytes, Some(&folder)).map_err(&refused)?;
+    if results.is_empty() {
+        return Err(refused("it holds no run, so no tool's results".to_owned()));
+    }
+    let head = line_of(&folder, &["rev-parse", "--verify", "--quiet", "HEAD"]);
+    let name = line_of(&folder, &["symbolic-ref", "--short", "--quiet", "HEAD"])
+        .unwrap_or_else(|| "(detached)".to_owned());
+    let path = store_path(plane, branch.ws, branch.repo, piece);
+    let stamp = now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let mut fresh: Vec<Set> = Vec::new();
+    for one in results {
+        // A file may hold several runs of one tool: together they are what it said.
+        if let Some(same) = fresh.iter_mut().find(|set| set.tool == one.tool) {
+            same.diagnostics.extend(one.diagnostics);
+        } else {
+            fresh.push(Set {
+                tool: one.tool,
+                branch: name.clone(),
+                head: head.clone(),
+                reported_at: stamp.clone(),
+                diagnostics: one.diagnostics,
+            });
+        }
+    }
+    let tools = fresh
+        .iter()
+        .map(|set| (set.tool.clone(), set.diagnostics.len()))
+        .collect();
+    let held = crate::piececlaim::locked(plane, branch.ws)?;
+    let mut sets = read_sets(plane, branch.ws, branch.repo, piece)?;
+    sets.retain(|kept| !fresh.iter().any(|set| set.tool == kept.tool));
+    sets.extend(fresh);
+    written(plane, branch.ws, &path, &Record { sets })?;
+    drop(held);
+    Ok(Reported {
+        path,
+        branch: name,
+        head,
+        tools,
+    })
+}
+
+/// The record put in place whole, through the workspace's folder held by descriptor: a link at the
+/// record, or at a folder down to it, is refused and never written through.
+fn written(plane: &Path, ws: &str, path: &Path, record: &Record) -> Result<(), String> {
+    crate::contain::writable(plane, path).map_err(|e| e.to_string())?;
+    let mut text = serde_json::to_vec_pretty(record).map_err(|e| e.to_string())?;
+    text.push(b'\n');
+    let said = |e: std::io::Error| format!("purlis could not write {}: {e}", path.display());
+    #[cfg(unix)]
+    {
+        let (held, name) = crate::held::files::made_for(plane, ws, path).map_err(said)?;
+        crate::held::files::replace(&held, &name, &text, path).map_err(said)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = ws;
+        let dir = path.parent().ok_or_else(|| "no folder".to_owned())?;
+        std::fs::create_dir_all(dir).map_err(said)?;
+        crate::rewrite::replace(dir, path, &text, crate::rewrite::Mode::Kept).map_err(said)
+    }
+}
+
+/// One line of git's answer in `folder`, through the hardened runner; `None` where it has none.
+fn line_of(folder: &Path, args: &[&str]) -> Option<String> {
+    let run = git::run(folder, args, git::READ).ok()?;
+    run.ok()
+        .then(|| run.out.trim().to_owned())
+        .filter(|line| !line.is_empty())
+}
+
+/// The file's bytes, up to [`MOST_SARIF_BYTES`]. Only a plain file: the app reads this for a chat,
+/// and a FIFO at the path must not hold it.
+fn bounded(file: &Path) -> Result<Vec<u8>, String> {
+    let mut open = std::fs::OpenOptions::new();
+    open.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        open.custom_flags(libc::O_NONBLOCK | libc::O_CLOEXEC);
+    }
+    let opened = open
+        .open(file)
+        .map_err(|e| format!("it cannot be read ({e})"))?;
+    let meta = opened
+        .metadata()
+        .map_err(|e| format!("it cannot be read ({e})"))?;
+    if !meta.is_file() {
+        return Err("it is not a file".to_owned());
+    }
+    if meta.len() > MOST_SARIF_BYTES {
+        return Err(format!(
+            "it is {} bytes, and purlis reads at most {MOST_SARIF_BYTES}",
+            meta.len()
+        ));
+    }
+    let mut bytes = Vec::new();
+    opened
+        .take(MOST_SARIF_BYTES)
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("it cannot be read ({e})"))?;
+    Ok(bytes)
+}
+
+/// The folder of the branch called `name` in workspace `ws`: `(repo, piece)`, with no piece for a
+/// clone that has it checked out. Asked of `repo` alone when one is named, else of each clone; a
+/// name two clones have is refused, asking which.
+pub fn branch_named(
+    plane: &Path,
+    ws: &str,
+    repo: Option<&str>,
+    name: &str,
+) -> Result<(String, Option<String>), String> {
+    let repos = match repo {
+        Some(repo) => vec![repo.to_owned()],
+        None => clones_of(plane, ws),
+    };
+    let mut found = Vec::new();
+    for repo in &repos {
+        if let Some(piece) = crate::worktree::list(plane, ws, repo)
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .find(|piece| piece.branch.as_deref() == Some(name))
+        {
+            found.push((repo.clone(), Some(piece.piece)));
+            continue;
+        }
+        let clone = plane.join("workspaces").join(ws).join(repo);
+        if line_of(&clone, &["symbolic-ref", "--short", "--quiet", "HEAD"]).as_deref() == Some(name)
+        {
+            found.push((repo.clone(), None));
+        }
+    }
+    let mut found = found.into_iter();
+    match (found.next(), found.next()) {
+        (Some(only), None) => Ok(only),
+        (Some(_), Some(_)) => Err(format!(
+            "two repos of workspace '{ws}' have a branch '{name}': name one with --repo"
+        )),
+        (None, _) => Err(format!(
+            "no folder of workspace '{ws}' has the branch '{name}' checked out: run `purlis worktree list` to see them, and report it for one of those"
+        )),
+    }
+}
+
+/// The clones of workspace `ws`, by name.
+fn clones_of(plane: &Path, ws: &str) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(plane.join("workspaces").join(ws)) else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = entries
+        .flatten()
+        .filter(|entry| crate::worktree::is_own_git_dir(&entry.path().join(".git")))
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| crate::contain::repo_name_ok(name))
+        .collect();
+    names.sort();
+    names
 }
 
 /// A result placed on one file of a comparison.

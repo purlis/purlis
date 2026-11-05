@@ -228,6 +228,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`workspaces/<ws>/changes/log/pending/<device>.jsonl` — pending landings](#workspaceswschangeslogpendingdevicejsonl--pending-landings)
   - [`workspaces/<ws>/pieces/<device>.jsonl` — the piece claim log](#workspaceswspiecesdevicejsonl--the-piece-claim-log)
   - [`workspaces/<ws>/pieces/seen/<repo>.json` and `pieces/seen/<repo>/<piece>.json`](#workspaceswspiecesseenrepojson-and-piecesseenrepopiecejson)
+  - [`workspaces/<ws>/pieces/checks/<repo>.json` and `pieces/checks/<repo>/<piece>.json` — a branch's check results](#workspaceswspieceschecksrepojson-and-piecescheckrepopiecejson--a-branchs-check-results)
   - [`workspaces/<ws>/.charter-structure` — the layout stamp](#workspaceswscharter-structure--the-layout-stamp)
   - [`workspaces/<ws>/.charter-generated` — the harness-layer ownership marker](#workspaceswscharter-generated--the-harness-layer-ownership-marker)
   - [`workspaces/<ws>/.claude/settings.json` — the generated harness layer](#workspaceswsclaudesettingsjson--the-generated-harness-layer)
@@ -2628,6 +2629,30 @@ alike.
   (`PRESENCE_KEEP`, `charter/pieces.py:225`). purlis (#434) replaces the record whole
   (temp beside, fsync, rename) and refuses one that is a symlink; `Path.write_text` truncated
   it in place and followed a link.
+
+### `workspaces/<ws>/pieces/checks/<repo>.json` and `pieces/checks/<repo>/<piece>.json` — a branch's check results
+
+- **Format:** one JSON object, **replaced whole** at each report.
+- **Status:** stable — written by `purlis check report` and read by the window, which are different
+  processes (ADR 0114, #5407).
+- **Tier:** Clone state — never committed; what a tool last reported for a folder's branch. purlis
+  cannot rebuild it, since it runs no check: deleting it loses the results until they are reported again.
+- **Written by:** `checks::report` (`crates/purlis-core/src/checks.rs`), from `purlis check report`,
+  which in a chat the app started hands the write to the app (`Write::CheckReport`).
+- **Read by:** `checks::read_sets`, for "What changed" in one file.
+- **Git:** never committed (under `pieces/`).
+- **Encoding details:** a clone's own record is `checks/<repo>.json` and a piece's is
+  `checks/<repo>/<piece>.json`, placed as `pieces/seen/` is, so a piece named like anything cannot
+  collide with the clone's record. The object is `{"sets": [...]}`, one set per tool: a report
+  replaces the set of each tool it names and keeps the others. A set has `tool` (SARIF's
+  `tool.driver.name`), `branch`, `head` (the full commit the branch was at when it was reported, or
+  `null` for a branch with no commit), `reported_at` (UTC ISO seconds) and `diagnostics`. A
+  diagnostic has `severity` (SARIF's `error`, `warning`, `note` or `none`) and `message`, and, when
+  the result gave them, `path`, `line`, `end_line` and `rule`. `path` is relative to the folder
+  where it could be placed there and otherwise as the tool spelled it, and it is absent for a result
+  that names no file. A set whose `head` is not the branch's head now is drawn out of date. The write
+  holds `pieces/.claims.lock`, so two reports at once keep both tools' sets. A link at the record,
+  or at a folder down to it, is refused and never written through.
 
 ### `workspaces/<ws>/.charter-structure` — the layout stamp
 
