@@ -24,8 +24,9 @@ import { themeInForce } from "./theme/inForce.testkit";
  * one project that took 20 s to open while the others took about a second. The window's own
  * work costs nothing on that clock, so what is held is what the window waits on, the same on
  * every machine. What its own work costs in frames is the release run's (ADR 0086, L11), since
- * jsdom's milliseconds are not a window's; what the core holds the window's thread for is held
- * in the core (`off_the_main_thread/tests.rs`, `a_launch_restoring_three_projects_…`).
+ * jsdom's milliseconds are not a window's. The 200 ms stall, the window's thread held, and the
+ * 100 ms answer of a project already open are held in the core, where both happen
+ * (`src-tauri/src/off_the_main_thread/tests/startup.rs`).
  */
 
 vi.mock("./SessionPane", () => ({
