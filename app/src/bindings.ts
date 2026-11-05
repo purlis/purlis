@@ -1580,6 +1580,11 @@ export const commands = {
 	chats: OnOlderSandbox[],
 } | null, string>(__TAURI_INVOKE("chats_on_older_sandbox", { plane })),
 	/**
+	 *  **Why each open chat of the project runs at its level** (#5207): what its sandbox mark and a
+	 *  block's Notice say. A read. On a blocking thread: it reads the project's files.
+	 */
+	chatsLevelWhy: (plane: PlaneId) => typedError<LevelWhy[], string>(__TAURI_INVOKE("chats_level_why", { plane })),
+	/**
 	 *  **Starts chat `session` again without the sandbox** (#1342): the person's choice on a block's
 	 *  Notice that purlis grants nothing for, for this one chat's next run, on its conversation.
 	 *  Audited as any opt-out is (`trust.sandbox.off`) and never inherited: a later start of the
@@ -9459,6 +9464,15 @@ export type LevelWaiting = {
 };
 
 /**
+ *  **Why one open chat runs at its level** (#5207), in the core's words
+ *  ([`purlis_core::sandbox::level_why`]): what its sandbox mark and its block's Notice say.
+ */
+export type LevelWhy = {
+	session: number,
+	why: string,
+};
+
+/**
  *  **Why something the window asked of a pool did not happen** (spec #4275): the core's
  *  sentence, and what to raise where a pool's limit refused it, which comes with the refusal as
  *  data.
@@ -10414,6 +10428,13 @@ export type OpenChat = {
 	persona: string | null,
 	/**  What its harness cannot tell charter, said on the chat — none where it tells all. */
 	unreported: string | null,
+	/**
+	 *  `true` where it can't tell the person it needs them (#4759): its harness's card says no
+	 *  to hooks or to reporting a wait, or it has no adapter
+	 *  ([`purlis_core::harness_card::reports_asks`]). A task that started so keeps the faint hand on its row.
+	 *  `null` where it can.
+	 */
+	cant_report_asks?: boolean | null,
 	/**  Its harness's card at a glance, which its header draws (HP-19) — none for a shell. */
 	card: HarnessGlance | null,
 	/**
@@ -10449,6 +10470,12 @@ export type OpenChat = {
 	 *  skill's page, and the skill page's line while it runs. `null` for every other chat.
 	 */
 	studio?: StudioLink | null,
+	/**
+	 *  `true` for a chat another chat started and announced that the person has not looked at
+	 *  yet (#4759): a handoff, or a task that can't report asks. Its sidebar row
+	 *  says "new" until it has been on screen. `null` for every other chat.
+	 */
+	unseen?: boolean | null,
 };
 
 /**  One group of **Open hosts**: a preset's, or the project's own. */
@@ -16572,7 +16599,12 @@ export type UpdateKind =
 /**  A task ended with its question unanswered (#4556). */
 "question-closed" | 
 /**  A task's question could not be taken its route (#4557). */
-"question-failed";
+"question-failed" | 
+/**
+ *  A chat another chat started arrived in no pane, and was announced (#4759): a handoff,
+ *  or a task that can't report asks.
+ */
+"arrived";
 
 /**  An update the window derived from its source, to be noted. */
 export type UpdateNoted = {

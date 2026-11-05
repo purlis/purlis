@@ -49,6 +49,12 @@ pub enum Act {
     DescribeField {
         target: String,
     },
+    /// **Whether the page the browser shows asks to sign in now** (1.73, #5121): whether its own
+    /// document shows a password field, or a field that says it's for a user name. Nothing is
+    /// typed, nothing moves, and no value is read for it. The answer's
+    /// [`Browsed::asks_to_sign_in`] says; one that can't be read says it does. No browser tool of
+    /// a chat's sends it.
+    AsksToSignIn,
     /// Sends a page to `address`.
     Navigate {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -193,6 +199,7 @@ impl Act {
                 | Act::Pages
                 | Act::Screenshot { .. }
                 | Act::Downloads
+                | Act::AsksToSignIn
         )
     }
 }
@@ -274,6 +281,9 @@ pub struct Browsed {
     /// The field [`Act::DescribeField`] read (1.72, #5115).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub field: Option<FieldSaid>,
+    /// What [`Act::AsksToSignIn`] read (1.73, #5121).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asks_to_sign_in: Option<bool>,
 }
 
 /// **A field a secret may go into, as the engine reads it** (1.72, #5115): never what it holds.
@@ -467,8 +477,8 @@ pub struct LogIn {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity: Option<String>,
     /// **A chat chose this page and these keys** (#4595): a user name goes only into a field
-    /// that says it's one, or beside a password field. A host that doesn't read this fills as it
-    /// always has, on the same origin.
+    /// that says it's one, or beside a password field, and from 1.73 (#5121) the login starts
+    /// clean on its own site. It isn't sent to a host before 1.73.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub suggested: bool,
     /// **The origin of the login's form, where it isn't the page's own** (1.70, #4995): the one

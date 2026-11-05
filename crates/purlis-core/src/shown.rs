@@ -145,6 +145,17 @@ pub fn line(value: &str) -> String {
     one_line(value, DISPLAY_LIMIT)
 }
 
+/// **`value` as prose, over as many lines as it holds** (#5213): [`one_line`]'s rule for every
+/// character a reader does not see, except a line end and a tab, which are the text's own
+/// layout and stay as themselves ([`purlis_unicode::Breaks::Kept`]). A Windows line end is one
+/// line end. Never clipped: a question a task asks is read whole.
+///
+/// For a field drawn as text over several lines, never for one line of a report or a table
+/// cell, where a line end writes a second line: those want [`one_line`].
+pub fn prose(value: &str) -> String {
+    purlis_unicode::marked(&value.replace("\r\n", "\n"), purlis_unicode::Breaks::Kept)
+}
+
 /// What a caller passes as [`one_line`]'s `limit` to mean **do not clip**
 /// (`charter/contain.py:184`) — for a field whose whole point is that the reader gets all of
 /// it. Those want the escaping and not the budget above it.

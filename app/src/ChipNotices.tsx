@@ -273,7 +273,14 @@ export function useChipNotices({
       // project in front (a repo taken in from the opener) stays up on the first project that
       // comes.
       const about = aboutOf(said);
-      open = "workspace" in about ? about.workspace : "project" in about ? AT_STATUS : undefined;
+      open =
+        "workspace" in about
+          ? about.workspace
+          : "arrived" in about
+            ? about.arrived
+            : "project" in about
+              ? AT_STATUS
+              : undefined;
       openIn = plane;
       chipped = false;
     } else if (up.in === undefined && up.on === undefined && plane !== undefined) {

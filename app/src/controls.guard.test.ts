@@ -476,32 +476,47 @@ const STRIP =
 /** Named like a strip and not one: a chart's bar and the two columns down a side. */
 const NOT_A_STRIP = new Set(["chart-bar", "state-bar", "activity-bar"]);
 
-/** The chips on a pane's top line (#2484): the breadcrumb, the gauge, the harness, where a
- *  handed-off chat came from, its work item and its skills (#2775); and since the pane head names
- *  its chat (#4760), its persona icon, its name, its sandbox (`SandboxMark`'s own class, which
- *  the tab wore first), its state, its wrapping-up mark, "harness · workspace" and a task's end
- *  asked there. Brief is the state button's, in the pane's actions (#4760). Each is as tall as the line, the chrome height, so
- *  the line is one height. */
+/** **The chips of the pane line**, the head's row (#2484): the breadcrumb, where a handed-off
+ *  chat came from, its work item and its skills (#2775); and since the pane head names its chat
+ *  (#4760), its persona icon, its name, its sandbox (`SandboxMark`'s own class, which the tab
+ *  wore first), its state, its wrapping-up mark and a task's end asked there. Brief is the state
+ *  button's, in the pane's actions (#4760); harness · workspace and the gauge are the foot's
+ *  (`PANE_FOOT_CHIPS`, #5202), but for `pane-head-where`, that part on the head of a pane that has
+ *  no foot, a shell's or a one-job program's (spec #5191), a chip of its own so the foot's cannot
+ *  drift up. Each is as tall as the line, the chrome height, so the line
+ *  is one height. */
 export const PANE_LINE_CHIPS = [
   "pane-persona",
   "pane-name",
   "tab-sandbox",
   "pane-state-mark",
   "pane-wrapping",
-  "pane-where",
   "pane-task-ends",
   "pane-crumbs",
-  "chat-gauge",
-  "pane-harness",
   "pane-from",
   "pane-work-item",
   "pane-skills",
   "pane-studio",
+  "pane-head-where",
 ];
 
+/** **The chips of the pane foot** (#5202, spec #5191 stories 43 and 44): harness · workspace and
+ *  the gauge. Held at the head's chips' height, inside a foot the tab strip's height, and read off
+ *  the foot's own groups, so a chip cannot drift back onto the head's line, nor a head's chip onto
+ *  the foot, unnoticed. */
+export const PANE_FOOT_CHIPS = ["pane-where", "chat-gauge"];
+
 /** What is drawn as part of a strip or a pane's top line, as tall as it is: the ways to end a
- *  pane's task (#1488), the chip a tab wears for its tasks (#1487) and the top line's chips. */
-const STRIP_PARTS = new Set(["pane-task-ends", "tab-tasks", ...PANE_LINE_CHIPS]);
+ *  pane's task (#1488), the chip a tab wears for its tasks (#1487) and the chips of the pane's
+ *  head and foot. */
+const STRIP_PARTS = new Set([
+  "pane-task-ends",
+  "tab-tasks",
+  // The harness's button: inside harness · workspace, a chip of either line.
+  "pane-harness",
+  ...PANE_LINE_CHIPS,
+  ...PANE_FOOT_CHIPS,
+]);
 
 const HEIGHT_PROPERTY = /^(?:min-)?(?:height|block-size)$/;
 
@@ -775,9 +790,13 @@ function heightsByFile(planted: Readonly<Record<string, string>> = {}): Map<stri
   return new Map([...byFile].filter(([, found]) => found.length > 0));
 }
 
-/** The top line's chips (`PANE_LINE_CHIPS`) that no rule in `css` sets `height:
+/** The chips of `row` (`PANE_LINE_CHIPS` unless named) that no rule in `css` sets `height:
  *  var(--size-chrome)` on, as a chip of the line: a strip's part, or a control inside a strip. */
-export function chipsNotChromeTall(css: string, controls: ReadonlySet<string>): string[] {
+export function chipsNotChromeTall(
+  css: string,
+  controls: ReadonlySet<string>,
+  row: readonly string[] = PANE_LINE_CHIPS,
+): string[] {
   const tall = new Set<string>();
   for (const { context, property, value } of declarations(css)) {
     if (property !== "height" || value !== "var(--size-chrome)") continue;
@@ -788,28 +807,51 @@ export function chipsNotChromeTall(css: string, controls: ReadonlySet<string>): 
       for (const name of partsOf(subject).classes) tall.add(name);
     }
   }
-  return PANE_LINE_CHIPS.filter((chip) => !tall.has(chip));
+  return row.filter((chip) => !tall.has(chip));
 }
 
-/** The components the pane's top line draws a chip with, and the chip each draws. */
-const LINE_CHIP_COMPONENTS: Record<string, string> = {
-  SandboxMark: "tab-sandbox",
-  TaskEndAsked: "pane-task-ends",
-  PaneCrumbs: "pane-crumbs",
-  ChatGauge: "chat-gauge",
-  HarnessChip: "pane-harness",
-  SkillsChip: "pane-skills",
-  StudioChatChip: "pane-studio",
+/** **A row of a pane's chips** (#5202): which tags open it, the chips it may hold, and the
+ *  components that draw one of them. */
+export type ChipRow = {
+  name: string;
+  opens: (tag: { name: string; text: string }) => boolean;
+  chips: readonly string[];
+  components: Readonly<Record<string, string>>;
+};
+
+/** **The pane line**: the head's `<div className="pane-chips">`. */
+export const HEAD_ROW: ChipRow = {
+  name: "the pane line",
+  opens: (tag) => classWords(classNameOf(tag.text)).includes("pane-chips"),
+  chips: PANE_LINE_CHIPS,
+  components: {
+    SandboxMark: "tab-sandbox",
+    TaskEndAsked: "pane-task-ends",
+    PaneCrumbs: "pane-crumbs",
+    SkillsChip: "pane-skills",
+    StudioChatChip: "pane-studio",
+  },
+};
+
+/** **The pane foot**: its two groups, `<PaneFootStart>` and `<PaneFootEnd>` (`ui/pane-foot`). */
+export const FOOT_ROW: ChipRow = {
+  name: "the pane foot",
+  opens: (tag) => tag.name === "PaneFootStart" || tag.name === "PaneFootEnd",
+  chips: PANE_FOOT_CHIPS,
+  components: { ChatGauge: "chat-gauge" },
 };
 
 /** A component that draws its one child as itself (`asChild`): the line reads through it. */
 const LINE_WRAPPERS = new Set(["Menued"]);
 
-/** What each `<div className="pane-chips">` in a component's source holds: each element drawn
- *  straight in it (through `LINE_WRAPPERS` and fragments), as a chip of `PANE_LINE_CHIPS` or,
- *  for one that is not, as `<Name className>`. A tag written inside another's props
- *  (`state={<StateShown />}`) is not a child. */
-export function lineChildren(source: string): { chips: string[]; unlisted: string[] } {
+/** What each opening of `row` in a component's source holds (the pane line's `<div
+ *  className="pane-chips">` unless named): each element drawn straight in it (through
+ *  `LINE_WRAPPERS` and fragments), as a chip of the row's or, for one that is not, as `<Name
+ *  className>`. A tag written inside another's props (`state={<StateShown />}`) is not a child. */
+export function lineChildren(
+  source: string,
+  row: ChipRow = HEAD_ROW,
+): { chips: string[]; unlisted: string[] } {
   const text = withoutComments(source, "ts");
   const opens = openingTags(text, /./);
   const closes = [...text.matchAll(/<\/([A-Za-z][\w.]*)\s*>/g)].map((hit) => ({
@@ -818,9 +860,7 @@ export function lineChildren(source: string): { chips: string[]; unlisted: strin
   }));
   const chips: string[] = [];
   const unlisted: string[] = [];
-  for (const line of opens.filter((tag) =>
-    classWords(classNameOf(tag.text)).includes("pane-chips"),
-  )) {
+  for (const line of opens.filter((tag) => row.opens(tag))) {
     type Event = { index: number; close?: string; tag?: (typeof opens)[number] };
     const after = line.index + line.text.length;
     let reach = after;
@@ -856,9 +896,8 @@ export function lineChildren(source: string): { chips: string[]; unlisted: strin
       }
       if (depth === 0) {
         const own = classWords(classNameOf(tag.text));
-        const chip =
-          LINE_CHIP_COMPONENTS[tag.name] ?? own.find((word) => PANE_LINE_CHIPS.includes(word));
-        if (chip !== undefined && PANE_LINE_CHIPS.includes(chip)) chips.push(chip);
+        const chip = row.components[tag.name] ?? own.find((word) => row.chips.includes(word));
+        if (chip !== undefined && row.chips.includes(chip)) chips.push(chip);
         else unlisted.push(`<${tag.name} ${own.join(" ")}>`.replace(" >", ">"));
       }
       if (!closed) depth++;
@@ -1139,27 +1178,67 @@ export const plantedTall = { minBlockSize: 32 };
     expect(controlClasses(tsx)).toEqual(["closer", "task-end", "pick", "wide"]);
   });
 
-  it("holds every chip on a pane's top line at the chrome height (#2484)", () => {
-    const css = readFileSync(join(SRC, "App.css"), "utf8");
-    const controls = new Set(
-      sourceFiles(isView).flatMap((file) => controlClasses(readFileSync(join(SRC, file), "utf8"))),
-    );
-    expect(chipsNotChromeTall(css, controls)).toEqual([]);
-    // Each chip is one a component draws, so the list does not outlive the line.
-    const views = sourceFiles(isView).map((file) => readFileSync(join(SRC, file), "utf8"));
-    for (const chip of PANE_LINE_CHIPS) expect(drawn(chip, views), chip).toBe(true);
-    // And each component named for a chip draws it.
-    for (const [name, chip] of Object.entries(LINE_CHIP_COMPONENTS)) {
-      const own = views.find((text) => new RegExp(`function ${name}\\b`).test(text));
-      expect(own !== undefined && drawn(chip, [own]), `${name} draws .${chip}`).toBe(true);
+  it.each([HEAD_ROW, FOOT_ROW])(
+    "holds every chip of $name at the chrome height (#2484, #5202)",
+    (row) => {
+      const css = readFileSync(join(SRC, "App.css"), "utf8");
+      const controls = new Set(
+        sourceFiles(isView).flatMap((file) =>
+          controlClasses(readFileSync(join(SRC, file), "utf8")),
+        ),
+      );
+      expect(chipsNotChromeTall(css, controls, row.chips)).toEqual([]);
+      // Each chip is one a component draws, so the list does not outlive the line.
+      const views = sourceFiles(isView).map((file) => readFileSync(join(SRC, file), "utf8"));
+      for (const chip of row.chips) expect(drawn(chip, views), chip).toBe(true);
+      // And each component named for a chip draws it.
+      for (const [name, chip] of Object.entries(row.components)) {
+        const own = views.find((text) => new RegExp(`function ${name}\\b`).test(text));
+        expect(own !== undefined && drawn(chip, [own]), `${name} draws .${chip}`).toBe(true);
+      }
+    },
+  );
+
+  it.each([HEAD_ROW, FOOT_ROW])(
+    "reads every child of $name, and fails one that is not its listed chip",
+    (row) => {
+      const source = readFileSync(join(SRC, "LayoutPanes.tsx"), "utf8");
+      const { chips, unlisted } = lineChildren(source, row);
+      expect(unlisted).toEqual([]);
+      expect(new Set(chips)).toEqual(new Set(row.chips));
+    },
+  );
+
+  it("pins each chip to its own row: none is listed on both, and harness · workspace and the gauge are the foot's (#5202)", () => {
+    expect(PANE_LINE_CHIPS.filter((chip) => PANE_FOOT_CHIPS.includes(chip))).toEqual([]);
+    for (const chip of ["pane-where", "chat-gauge"]) {
+      expect(PANE_FOOT_CHIPS).toContain(chip);
+      expect(PANE_LINE_CHIPS).not.toContain(chip);
     }
   });
 
-  it("reads every child of the pane's top line, and fails one that is not a listed chip", () => {
-    const source = readFileSync(join(SRC, "LayoutPanes.tsx"), "utf8");
-    const { chips, unlisted } = lineChildren(source);
-    expect(unlisted).toEqual([]);
-    expect(new Set(chips)).toEqual(new Set(PANE_LINE_CHIPS));
+  it("fails a chip drawn on the other row than its own", () => {
+    const planted = `
+      <div className="pane-chips">
+        <span className="pane-name">x</span>
+        <ChatGauge usage={u} />
+      </div>
+      <PaneFoot>
+        <PaneFootStart><span className="pane-where">h</span><PaneCrumbs crumbs={c} /></PaneFootStart>
+        <PaneFootEnd><ChatGauge usage={u} /></PaneFootEnd>
+      </PaneFoot>
+    `;
+    expect(lineChildren(planted, HEAD_ROW)).toEqual({
+      chips: ["pane-name"],
+      unlisted: ["<ChatGauge>"],
+    });
+    expect(lineChildren(planted, FOOT_ROW)).toEqual({
+      chips: ["pane-where", "chat-gauge"],
+      unlisted: ["<PaneCrumbs>"],
+    });
+  });
+
+  it("reads through wrappers and fragments, and not into props", () => {
     const planted = `
       <div className="pane-chips">
         {a && (<Menued on={x}><PaneCrumbs crumbs={c} state={<StateShown shown={s} />} /></Menued>)}
@@ -1180,8 +1259,15 @@ export const plantedTall = { minBlockSize: 32 };
   it("fails a top-line chip with no chrome height, and one held off it", () => {
     const controls = new Set(["pane-harness", "pane-skills"]);
     expect(
-      chipsNotChromeTall(".pane-chips > .chat-gauge { height: var(--size-chrome); }", controls),
-    ).toEqual(PANE_LINE_CHIPS.filter((chip) => chip !== "chat-gauge"));
+      chipsNotChromeTall(".pane-chips > .pane-from { height: var(--size-chrome); }", controls),
+    ).toEqual(PANE_LINE_CHIPS.filter((chip) => chip !== "pane-from"));
+    expect(
+      chipsNotChromeTall(
+        ".pane-foot > * > .chat-gauge { height: var(--size-chrome); }",
+        controls,
+        PANE_FOOT_CHIPS,
+      ),
+    ).toEqual(["pane-where"]);
     // A chip off the chrome height fails, a button chip as any other.
     expect(cssHeights(".pane-from { min-height: 1.25rem; }", controls)).toEqual([
       ".pane-from | min-height: 1.25rem (a strip)",

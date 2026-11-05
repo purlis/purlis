@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { $, $$, browser, expect } from "@wdio/globals";
 import { harnessRowsDrawn, openThePicker } from "../opening.js";
 import { ask } from "../switching.js";
+import { SETTINGS_GROUPS, openProjectSettings } from "../settingsTab.js";
 
 /**
  * **A harness the project declares in `harnesses/<name>.toml`** (ADR 0073), in the built app:
@@ -62,33 +63,7 @@ const DIGEST = `sha256:${createHash("sha256").update(DECLARATION, "utf8").digest
 
 const DIALOG = '[role="dialog"][aria-labelledby="start-chat"]';
 const TABS = '[data-strip="Tabs"]';
-const PALETTE = '[role="dialog"][aria-label="Command palette"]';
-const GROUPS = 'nav[aria-label="Groups"]';
 const ROW = `[data-setting="project.harness.declared.${NAME}"]`;
-
-/** Opens Settings at the Project level through the palette, as the operator does. */
-async function openProjectSettings(): Promise<void> {
-  await browser.keys(["F2"]);
-  await $(PALETTE).waitForDisplayed({ timeout: 20_000 });
-  const box = await $("#palette-query");
-  await browser.waitUntil(async () => box.isFocused(), {
-    timeout: 10_000,
-    timeoutMsg: "the palette did not take the keyboard when it opened",
-  });
-  await box.addValue("Project settings");
-  await browser.waitUntil(
-    async () =>
-      browser.execute(
-        () =>
-          document
-            .querySelector('[role="option"][aria-selected="true"] .palette-title')
-            ?.textContent?.startsWith("Project settings") ?? false,
-      ),
-    { timeout: 10_000, timeoutMsg: "the palette did not offer Project settings…" },
-  );
-  await browser.keys(["Enter"]);
-  await $(GROUPS).waitForDisplayed({ timeout: 20_000 });
-}
 
 /** Closes the Settings tab, if one is open. */
 async function closeSettings(): Promise<void> {
@@ -228,7 +203,7 @@ describe("a harness the project declares", function () {
 
   it("is listed in Settings read-only, with Open file (#1389)", async () => {
     await openProjectSettings();
-    await $(GROUPS).$("button=Harness & profiles").click();
+    await $(SETTINGS_GROUPS).$("button=Harness & profiles").click();
 
     const row = await $(ROW);
     await row.waitForDisplayed({

@@ -659,6 +659,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // (#2071, ADR 0096 §7): the window's alone, as the record they read and write is.
     "sandbox_levels_waiting",
     "confirm_sandbox_level",
+    // Why each open chat runs at its level (#5207): it says which levels wait, and the Confirm
+    // it names is the window's alone.
+    "chats_level_why",
     // A browser started, watched and ended (#2012): a program started as the person, in their
     // own window. Chats get browser tools of their own later (#2013).
     "open_browser",

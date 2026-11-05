@@ -325,8 +325,8 @@ about half the pane, and inside it the stack is never wider or taller than the p
 the ways out go under it when they do not fit beside it, and the stack scrolls (#1481). Every
 change of the row's height refits the terminal, which resizes the chat's pty and redraws its
 harness; minimised, a note arriving changes only the bell's count. The
-chat at a glance (the gauge, the harness, the breadcrumb) is the header's line, never over the
-terminal. `Notice.pane.test.tsx` and `PaneBand.test.tsx` hold the shape and the rules, and
+chat at a glance (its name, its state, the breadcrumb) is the pane line, and harness · workspace and
+the gauge are the pane foot, neither over the terminal. `Notice.pane.test.tsx` and `PaneBand.test.tsx` hold the shape and the rules, and
 `pane-notices.e2e.ts` and `pane-warnings.e2e.ts` measure them, with no Notice over the terminal in a narrow pane and a
 wide one. Everything the window draws is ordered inside `#root`, which is one stacking
 context, so no `z-index` in the window is over a dialog or a menu: those are portaled to the
@@ -903,6 +903,31 @@ error (Get project's clone progress is still off, until it moves).
   release's manifest version).
 - **Stories hold it** (`Meter.stories.tsx`): the latest grade's three bars, a running grade's
   progress that moves, and one going with no end known.
+
+## The pane foot family
+
+**The line under a chat's terminal is the pane foot family** (`app/src/ui/pane-foot/`, #5202,
+spec #5191, ADR 0111): `PaneFoot`, holding its `PaneFootStart` (harness · workspace) and its
+`PaneFootEnd` (the gauge); `PaneFootSeparator`, the `·` between two parts; and `PaneFootGauge`, a
+labelled number, `ctx 62%`, with its fill as a thin bar under it where it has one. No screen
+writes `data-scope="pane-foot"`: `purlis/pane-foot-family` is an error.
+
+- **Look A** (the person's pick on the prototype): parts joined by `·`, muted words, a gauge's
+  value a step up in the secondary tier and in figures of one width, on the terminal's fill with
+  no ground or line of its own.
+- **The tab strip's height at the density in force** (a control's height and 3/14 rem, the sum a
+  tab is drawn at), so a compact appearance makes it compact. It is drawn whether or not the
+  gauge is known yet, so the terminal never moves when the first usage arrives.
+- **The bar is a mark**: its number says the value, so the track is hidden from a reader and the
+  value is never told by its length or colour alone (WCAG 1.4.1). Its fill is in the core's tone
+  for the value (`ok`, `warn`, `bad`), as is a warning on a number with no bar (`cache`), which its
+  tooltip says in words too. In forced colours the fill is the system's highlight on a track
+  edged in the words' colour.
+- **Drawn by its parts** (ADR 0103): `root`, `start`, `end`, `separator`, `gauge`, `label`,
+  `value`, `track` and `fill`, in `pane-foot.css`; a theme's parts reach the same attributes
+  (`pane-foot.*`, the next release's manifest version).
+- **Its chips are held like the head's**: `PANE_FOOT_CHIPS` in `controls.guard.test.ts`, read off
+  `PaneFootStart` and `PaneFootEnd`, each at the chrome height.
 
 ## The disclosure family
 

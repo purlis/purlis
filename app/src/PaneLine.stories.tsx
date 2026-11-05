@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **The head of a pane showing a task, drawn by the button family** (#3129, #4760): at its start
- * the task's path and "harness · workspace", the harness its card's button; at its end two
- * groups (#5203, spec #5191): the chat's actions, its one state button (Brief, on a task), the
- * bell and ⋯ last, then, after a thin divider, the pane's splits, and no close, as a pane
- * showing a task of its session draws none. The controls are the window's own (`PaneHead`,
+ * **The head of a pane showing a task, drawn by the button family** (#3129, #4760), **and its
+ * foot** (#5202): at the head's start the task's path; at its end two groups (#5203, spec #5191):
+ * the chat's actions, its one state button (Brief, on a task), the bell and ⋯ last, then, after a
+ * thin divider, the pane's splits, and no close, as a pane showing a task of its session draws
+ * none. Under the terminal, the pane foot says "harness · workspace", the harness its card's
+ * button, and the task's gauge. The controls are the window's own (`PaneHead`,
  * `PaneActions`, `BriefButton`, `HarnessChip`); the path stands in as its words, since the real
  * one (`PaneCrumbs`) reads the chats' store, and `PaneCrumbs.test.tsx` holds its shape. No
  * control on the head takes a border in Purlis, and each is reached by Tab with its ring in
@@ -19,7 +20,9 @@ import { expect, waitFor, within } from "storybook/test";
 import { catalogued, type Offer } from "./actions";
 import { BriefButton, BriefOpener, type BriefAsk } from "./Brief";
 import { HarnessChip } from "./HarnessCard";
+import { ChatGauge } from "./ChatGauge";
 import { PaneActions, PaneBellOf, PaneHead } from "./LayoutPanes";
+import { PaneFoot, PaneFootEnd, PaneFootSeparator, PaneFootStart } from "./ui/pane-foot/PaneFoot";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
 
 const SESSION = 7;
@@ -68,7 +71,7 @@ function PaneLine() {
   return (
     <div style={{ display: "grid", gap: "var(--space-3)", inlineSize: 760 }}>
       {/* A pane's size is its layout's (`container-type: size`), so the story gives it one. */}
-      <div className="pane-frame pane-headed" style={{ blockSize: 160 }}>
+      <div className="pane-frame pane-headed" style={{ blockSize: 180 }}>
         <div className="pane-top">
           <BriefOpener value={(of: BriefAsk) => setSaid(`Brief of ${of.name}`)}>
             <PaneHead
@@ -91,19 +94,6 @@ function PaneLine() {
             >
               <div className="pane-chips">
                 <span className="pane-crumbs">steward 2 › fix-login</span>
-                <span className="pane-where">
-                  <HarnessChip
-                    glance={{
-                      name: "claude",
-                      title: "Claude Code",
-                      label: "What Claude Code can do here",
-                      lines: [],
-                      cannot_type: null,
-                    }}
-                    onOpen={pressed("Harness card")}
-                  />
-                  {" · alpha"}
-                </span>
               </div>
             </PaneHead>
           </BriefOpener>
@@ -114,6 +104,36 @@ function PaneLine() {
         <div className="pane-body">
           <div className="pane focused" />
         </div>
+        {/* **The pane foot** (#5202, look A): where the task runs, and its gauge. */}
+        <PaneFoot className="pane-foot">
+          <PaneFootStart>
+            <span className="pane-where">
+              <HarnessChip
+                glance={{
+                  name: "claude",
+                  title: "Claude Code",
+                  label: "What Claude Code can do here",
+                  lines: [],
+                  cannot_type: null,
+                }}
+                onOpen={pressed("Harness card")}
+              />
+              <PaneFootSeparator />
+              alpha
+            </span>
+          </PaneFootStart>
+          <PaneFootEnd>
+            <ChatGauge
+              usage={{
+                context: { value: 62, tone: "ok" },
+                cache: { value: 91, tone: "ok" },
+                rebuilds: null,
+                turns: [],
+                cold: null,
+              }}
+            />
+          </PaneFootEnd>
+        </PaneFoot>
       </div>
       <p role="status" style={{ margin: 0 }}>
         {said}
@@ -130,10 +150,11 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 /**
- * **The task's head**: Tab reaches the harness, Brief, the bell, ⋯ and the two splits, in the
- * order they are drawn, each with its ring in sight; Enter presses each. ⋯ ends the chat's
- * actions and a thin divider parts them from the splits (#5203). ⋯ lists the task's two ways to
- * end it, the unavailable Close now saying why. The picture is the head at rest.
+ * **The task's head and foot**: Tab reaches Brief, the bell, ⋯ and the two splits, in the order
+ * they are drawn, then the foot's harness, each with its ring in sight; Enter presses each. ⋯ ends
+ * the chat's actions and a thin divider parts them from the splits (#5203). ⋯ lists the task's two
+ * ways to end it, the unavailable Close now saying why. The picture is the head and the foot at
+ * rest.
  */
 export const ATasksLine: Story = {
   play: async ({ canvas, canvasElement, userEvent }) => {
@@ -144,12 +165,6 @@ export const ATasksLine: Story = {
     const more = canvas.getByRole("button", { name: /^More for / });
     const right = canvas.getByRole("button", { name: "Split right" });
     const down = canvas.getByRole("button", { name: "Split down" });
-
-    await userEvent.tab();
-    await expect(harness).toHaveFocus();
-    expectFocusInSight();
-    await userEvent.keyboard("{Enter}");
-    await waitFor(() => expect(status).toHaveTextContent("Harness card"));
 
     await userEvent.tab();
     await expect(brief).toHaveFocus();
@@ -200,6 +215,13 @@ export const ATasksLine: Story = {
     await userEvent.tab();
     await expect(down).toHaveFocus();
     expectFocusInSight();
+
+    // The foot follows the terminal: the harness is the next stop after the head (#5202).
+    await userEvent.tab();
+    await expect(harness).toHaveFocus();
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(status).toHaveTextContent("Harness card"));
 
     (document.activeElement as HTMLElement | null)?.blur();
   },

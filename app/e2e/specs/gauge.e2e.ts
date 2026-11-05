@@ -209,39 +209,37 @@ describe("a chat's context gauge", () => {
     });
     expect((await gauges()).join(" ")).toContain("cache 90%");
 
-    // 4. **Where it is drawn** (#3142, #4760): on the pane's header, a row of its own between
-    // the band and the terminal, last of the chat at a glance. It floated over the terminal
-    // before and covered its first line; for one build (#207) it had a row of its own that only
-    // a pane with a gauge had, and the operator saw what that cost: "its changing harness
-    // container sizes". Since #4760 the head names its chat first (its name, its state,
-    // "harness · workspace"), so the gauge is no longer near the frame's left edge: what is
-    // measured is that it is inside the head, after the chat's name, before the pane's own
-    // controls, and the terminal starts under it. No named helpers inside `execute`: the
-    // spec's bundler wraps them in a `__name` the page does not have.
+    // 4. **Where it is drawn** (#3142, #4760, #5202): at the end of the pane foot, a row of its
+    // own under the terminal that every chat's pane has, gauge or none. It floated over the
+    // terminal before and covered its first line; for one build (#207) it had a row of its own
+    // that only a pane with a gauge had, and the operator saw what that cost: "its changing
+    // harness container sizes"; then it sat on the pane's head. Since #5202 it is the foot's:
+    // what is measured is that it is inside the foot, the foot is under the terminal, and the
+    // gauge is after harness · workspace. No named helpers inside `execute`: the spec's bundler
+    // wraps them in a `__name` the page does not have.
     const placed = await browser.execute(() => {
       const gauge = document.querySelector('[data-testid="chat-gauge"]');
       const frame = gauge?.closest(".pane-frame");
-      const head = gauge?.closest(".pane-head");
+      const foot = gauge?.closest('[data-scope="pane-foot"][data-part="root"]');
       const term = frame?.querySelector(".xterm-screen");
-      const name = head?.querySelector(".pane-name");
-      const actions = head?.querySelector(".pane-actions");
-      if (!gauge || !frame || !head || !term || !name || !actions) return null;
+      const where = foot?.querySelector(".pane-where");
+      if (!gauge || !frame || !foot || !term || !where) return null;
       const g = gauge.getBoundingClientRect();
-      const h = head.getBoundingClientRect();
+      const f = foot.getBoundingClientRect();
       const t = term.getBoundingClientRect();
       return {
-        inHead: g.top >= h.top - 1 && g.bottom <= h.bottom + 1,
-        termUnderHead: t.top >= h.bottom - 1,
-        afterTheName: g.left >= name.getBoundingClientRect().right - 1,
-        beforeTheActions: g.right <= actions.getBoundingClientRect().left + 1,
+        inFoot: g.top >= f.top - 1 && g.bottom <= f.bottom + 1,
+        footUnderTerm: f.top >= t.bottom - 1,
+        afterWhere: g.left >= where.getBoundingClientRect().right - 1,
+        notInHead: gauge.closest(".pane-head") === null,
       };
     });
     expect(placed).not.toBeNull();
     if (placed) {
-      expect(placed.inHead).toBe(true);
-      expect(placed.termUnderHead).toBe(true);
-      expect(placed.afterTheName).toBe(true);
-      expect(placed.beforeTheActions).toBe(true);
+      expect(placed.inFoot).toBe(true);
+      expect(placed.footUnderTerm).toBe(true);
+      expect(placed.afterWhere).toBe(true);
+      expect(placed.notInHead).toBe(true);
     }
 
     // **No `stop` here, deliberately.** A `stop` puts the chat in the needs-you queue, and

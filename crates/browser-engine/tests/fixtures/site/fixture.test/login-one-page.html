@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Sign in on one page</title>
+<style> body { margin: 0; font: 24px sans-serif; } input, button { display: block; margin: 8px; font: 24px sans-serif; } </style></head>
+<body>
+  <h1 id="said">Sign in</h1>
+  <form id="form">
+    <label>Remember <input type="checkbox" name="user-remember" id="remember"></label>
+    <label>User <input name="user" id="user"></label>
+    <label id="password-label">Password <input type="password" name="password" id="password"></label>
+    <button type="submit">Sign in</button>
+  </form>
+  <button id="try" type="button">Try to take the name</button>
+  <p id="tried"></p>
+  <script>
+    // A page of one document: signed in, its password field goes, its user-name field stays,
+    // and it says how much that field holds, and tries to copy, cut and drag it when asked.
+    const user = document.getElementById('user');
+    document.getElementById('form').addEventListener('submit', (event) => {
+      event.preventDefault();
+      document.getElementById('password-label').remove();
+      document.getElementById('said').textContent = 'Signed in as ' + user.value.length + ' characters';
+    });
+    document.getElementById('try').addEventListener('click', () => {
+      const said = [];
+      for (const kind of ['copy', 'cut', 'dragstart']) {
+        let heard = false;
+        const hear = () => { heard = true; };
+        document.addEventListener(kind, hear);
+        const event = kind === 'dragstart'
+          ? new DragEvent(kind, { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() })
+          : new ClipboardEvent(kind, { bubbles: true, cancelable: true, clipboardData: new DataTransfer() });
+        const went = user.dispatchEvent(event);
+        document.removeEventListener(kind, hear);
+        said.push(kind + (went || heard ? ' went' : ' stopped'));
+      }
+      let heard = false;
+      const hear = () => { heard = true; };
+      document.addEventListener('copy', hear);
+      user.focus();
+      user.select();
+      document.execCommand('copy');
+      document.removeEventListener('copy', hear);
+      said.push('trusted copy ' + (heard ? 'went' : 'stopped'));
+      document.getElementById('tried').textContent = 'Tried: ' + said.join(', ');
+    });
+  </script>
+</body></html>

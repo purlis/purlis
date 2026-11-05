@@ -16,8 +16,9 @@
 //!   is. Where it isn't what was typed, or a warning now applies, the notice is drawn again and
 //!   takes another press.
 //! - **Once and this chat write nothing** ([`Grants`]): they're held here, for that chat and its
-//!   persona, keep no sealed login, and go with the chat. Each fills in a new browser of its own,
-//!   so nothing the chat did in another browser is there when the password goes in.
+//!   persona, keep no sealed login, and go with the chat. Each fills in the browser the chat names
+//!   or uses (#5121, the person's ruling SF-7 on #5096, which ends the new browser of its own):
+//!   what the chat did there before doesn't matter, as the value is kept out of all it reads.
 //! - **Always writes the one line and allows it here**, only where the persona's list was already
 //!   seen ([`purlis_core::sandbox::persona::list_seen_in`]), so its Allow carries nothing nobody
 //!   was shown. `sandbox.proposed-changes = "off"` holds it, and the line is shown first.
@@ -85,6 +86,8 @@ struct Inner {
     /// Every login allowed from a notice since purlis started, used up or closed too: where a key
     /// went counts for a warning whatever became of the grant.
     filled: Vec<Tool>,
+    /// The same, by the persona each was allowed for (#5121).
+    from_notices: Vec<(String, Tool)>,
 }
 
 /// What a chat is told while the person is being asked about another of its logins.
@@ -203,6 +206,7 @@ impl Grants {
             .grants
             .retain(|one| !(one.session == wait.session && one.tool.name == tool.name));
         inner.filled.push(tool.clone());
+        inner.from_notices.push((persona.to_owned(), tool.clone()));
         inner.grants.push(Grant {
             session: wait.session,
             persona: persona.to_owned(),
@@ -273,6 +277,19 @@ impl Grants {
     /// Every login allowed from a notice, for what a warning counts as declared.
     fn held(&self) -> Vec<Tool> {
         self.lock().filled.clone()
+    }
+
+    /// Whether `persona`'s login `name` on page `address` was allowed from a notice since purlis
+    /// started, Always too (#5121). Another's login of that name and page is its own.
+    pub fn allowed_from_a_notice(&self, persona: Option<&str>, name: &str, address: &str) -> bool {
+        self.lock().from_notices.iter().any(|(whose, tool)| {
+            persona == Some(whose.as_str())
+                && tool.name == name
+                && tool
+                    .login
+                    .as_ref()
+                    .is_some_and(|login| login.url == address)
+        })
     }
 
     /// Chat `session` closed: what it waited on and was allowed go with it, so nothing reaches a

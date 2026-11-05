@@ -1,0 +1,22 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The pane foot in forced colours** (#5202, #3387): what `theme/forced-colors.css` says of the
+   window, said of this family's own parts, in the system's palette alone. Forced colours take a
+   fill away, so `ctx`'s bar keeps its own: the fill in the system's highlight on a track edged in
+   the words' colour. Its words are drawn in the system's words' colour. */
+
+@media (forced-colors: active) {
+  [data-scope="pane-foot"]:is([data-part="track"], [data-part="fill"]) {
+    forced-color-adjust: none;
+  }
+
+  [data-scope="pane-foot"][data-part="track"] {
+    border: 1px solid CanvasText;
+    background-color: Canvas;
+  }
+
+  [data-scope="pane-foot"][data-part="fill"] {
+    background-color: Highlight;
+  }
+}

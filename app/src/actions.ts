@@ -222,6 +222,9 @@ export type Said = {
   /** **The one workspace it is about**, where it is about a whole workspace (a workspace made):
    *  its notice hangs from that workspace's chip in the title bar (`noticePlace.ts`, #3648). */
   workspace?: string;
+  /** **The chat whose arrival it announces** (#4759), by session: a handoff, or a task that
+   *  can't report asks, started in `workspace` in no pane. */
+  arrived?: number;
   /** The clones it says failed, where it does (#4394). */
   notCloned?: NotCloned;
 };

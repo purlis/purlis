@@ -30,6 +30,8 @@ import { findByTip, getByTip, tipOf } from "./ui/tooltip/tooltip.testkit";
 import { heard } from "./frame.testkit";
 import { aBatchOf } from "./chatEvents.testkit";
 import { CHAT_EVENTS } from "./chatEvents";
+import { CHANGE, FIRST_LINE } from "./QuizBand";
+import { CLOSE_QUIZ } from "./TaskQuiz";
 
 /**
  * **The Chats section, against the whole window** (#1447): every running chat of the project
@@ -1636,6 +1638,56 @@ describe("a chat's state, as a word and a shape (#1484)", () => {
     // Answered elsewhere: gone from the pane with the registry's next list.
     await question(2, "gone");
     await waitFor(() => expect(screen.queryByTestId("task-quiz")).toBeNull());
+  });
+
+  const aQuizAtTheTop = async () => {
+    const { move, question } = core([
+      chat(1, "alpha"),
+      chat(2, "alpha", { label: "talk", from: tabbed() }),
+    ]);
+    render(<App />);
+    const tree = await section();
+    await waitFor(() => expect(shape(tree)).toHaveLength(2));
+    move(2, "running", 10);
+    await question(2, "reached");
+    return screen.findByTestId("task-quiz");
+  };
+
+  /** The note folds into the pane's bell while the window's notices are minimised, so open it. */
+  const theNote = async () => {
+    const quiz = await aQuizAtTheTop();
+    const pane = quiz.closest(".pane-frame") as HTMLElement;
+    fireEvent.click(within(pane).getByRole("button", { name: /^Pane notices:/ }));
+    return (await within(pane).findByText(FIRST_LINE)).closest(
+      '[data-scope="notice"][data-part="root"]',
+    ) as HTMLElement;
+  };
+
+  it("says once where a task's questions come, and its Change opens Settings at Where you answer (#5213)", async () => {
+    const note = await theNote();
+    expect(within(note).queryByRole("button", { name: /each session|keep this/i })).toBeNull();
+
+    fireEvent.click(within(note).getByRole("button", { name: CHANGE }));
+
+    expect(await screen.findByText("Where you answer")).toBeVisible();
+  });
+
+  it("puts the note about where questions come away for good with its × (#5213)", async () => {
+    const note = await theNote();
+
+    fireEvent.click(within(note).getByRole("button", { name: "Dismiss" }));
+
+    await waitFor(() => expect(screen.queryByText(FIRST_LINE)).toBeNull());
+    expect(screen.getByTestId("task-quiz")).toBeTruthy();
+  });
+
+  it("closes a question from this pane only: it still waits in the count and the Inbox's (#5213)", async () => {
+    const quiz = await aQuizAtTheTop();
+
+    fireEvent.click(within(quiz).getByRole("button", { name: CLOSE_QUIZ }));
+
+    await waitFor(() => expect(screen.queryByTestId("task-quiz")).toBeNull());
+    expect(await screen.findByRole("button", { name: "1 thing waits on you" })).toBeTruthy();
   });
 
   it("says how many questions are with their asking chat on a folded row, and draws no hand for them", async () => {

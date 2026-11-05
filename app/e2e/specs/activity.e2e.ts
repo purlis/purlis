@@ -6,7 +6,7 @@ import { openChatList, pressMenuPath, ROW, SUB } from "../menus.js";
 import { READY } from "../harness.js";
 import { bringChatForward, endChatsStartedHere, startAChat, type Started } from "../started.js";
 import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
-import { openedSince } from "../reach.js";
+import { untilTheStripIsBare } from "../reach.js";
 
 /**
  * **A chat's Activity tab, measured in the real WebView** (#1457, the follow-ups of #1495).
@@ -151,16 +151,6 @@ const LINES: Line[] = [
     files: ["src/app.rs"],
   }),
 ];
-
-async function tabNames(): Promise<string[]> {
-  return browser.execute(
-    (strip: string) =>
-      [...(document.querySelector(strip)?.querySelectorAll('[role="tab"]') ?? [])].map(
-        (tab) => tab.querySelector(".tab-name")?.textContent ?? "",
-      ),
-    STRIP,
-  );
-}
 
 async function untilShows(text: string): Promise<void> {
   await browser.waitUntil(
@@ -334,11 +324,10 @@ describe("a chat's Activity tab", () => {
   before(() => windowAt(WINDOW_1280));
   after(() => theWindowHoldsTheRail());
 
-  let wereAlreadyOpen: string[] = [];
   let mine: Started | undefined;
 
   before(async () => {
-    wereAlreadyOpen = await tabNames();
+    await untilTheStripIsBare("activity");
     mine = await startAChat();
     await untilShows(READY);
     await openActivityOf(mine.session);
@@ -359,10 +348,7 @@ describe("a chat's Activity tab", () => {
       console.warn("activity: the Activity tab was not closed", trouble);
     }
     await endChatsStartedHere([mine]);
-    await browser.waitUntil(
-      async () => openedSince(wereAlreadyOpen, await tabNames()).length === 0,
-      { timeout: 20_000, timeoutMsg: "the activity spec left a tab open behind it" },
-    );
+    await untilTheStripIsBare("activity");
   });
 
   it("sets a task's lines in under the chat that asked, one step a level", async () => {

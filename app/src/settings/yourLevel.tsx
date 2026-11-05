@@ -12,6 +12,7 @@ import {
 } from "../bindings";
 import { inTheWindow } from "../personaHostsAllow";
 import type { RowIds } from "./components";
+import { sandboxCommandReturned } from "../sandboxAsked";
 import { key, textAt, type Control } from "./fileControls";
 import type { LiveSetting } from "./groups";
 import { Button } from "../ui/button/Button";
@@ -191,6 +192,9 @@ function Waiting({ plane, ids, text }: { plane: PlaneId; ids: RowIds; text: stri
       .finally(() => {
         setBusy(false);
         read();
+        // Confirm writes only the record outside the project, which no watcher reports: what the
+        // window says of a chat's level asks again (#5207).
+        sandboxCommandReturned();
       });
   };
   return (

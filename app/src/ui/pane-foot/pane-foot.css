@@ -1,0 +1,110 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The pane foot's default** (#5202, spec #5191, look A; ADR 0103, ADR 0104): the quiet line
+   under a chat's terminal (`ui/pane-foot/PaneFoot.tsx`), keyed on the wrapper's attributes alone;
+   `purlis_core::theme::parts` holds a copy of its colours.
+
+   One line on the terminal's own fill, with no ground, edge or line of its own: harness ·
+   workspace at its start, cut short before anything else is, and the gauge at its end, which
+   never gives way. Its words are the muted tier, a gauge's value a step up in the secondary one,
+   in figures of one width, so a number that changes moves nothing beside it. `ctx`'s fill is a
+   thin bar under its number, in the core's tone for it: the same three state tokens the numbers
+   were drawn in, so the bar and the tone can never be two colours.
+
+   **The tab strip's height at the density in force**: a control's height and 3/14 rem, the sum a
+   tab is drawn at (`ui/tabs/tabs.css`), so a compact appearance makes the foot compact too.
+
+   **In the `components` layer** (`styles.css`). Only tokens. */
+
+[data-scope="pane-foot"][data-part="root"] {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  box-sizing: border-box;
+  min-inline-size: 0;
+  block-size: calc(var(--size-control) + calc(3rem / 14));
+  padding-block: 0;
+  padding-inline: var(--space-5) var(--space-3);
+  border: 0;
+  background-color: transparent;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+[data-scope="pane-foot"][data-part="start"] {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--space-3);
+  min-inline-size: 0;
+  overflow: hidden;
+}
+
+[data-scope="pane-foot"][data-part="end"] {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-4);
+  margin-inline-start: auto;
+}
+
+[data-scope="pane-foot"][data-part="separator"] {
+  flex: none;
+  color: var(--text-muted);
+}
+
+/* A gauge: its label and value on one line, and for `ctx` its bar under both. */
+[data-scope="pane-foot"][data-part="gauge"] {
+  display: inline-grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  column-gap: var(--space-2);
+  row-gap: var(--space-1);
+  font-variant-numeric: tabular-nums;
+}
+
+[data-scope="pane-foot"][data-part="label"] {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+
+[data-scope="pane-foot"][data-part="value"] {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+/* A number with no bar of its own says a warning itself: `cache`. */
+[data-scope="pane-foot"][data-part="value"][data-tone="warn"] {
+  color: var(--state-waiting);
+}
+
+[data-scope="pane-foot"][data-part="value"][data-tone="bad"] {
+  color: var(--state-failed);
+}
+
+[data-scope="pane-foot"][data-part="track"] {
+  grid-column: 1 / -1;
+  display: block;
+  block-size: var(--space-1);
+  border-radius: var(--radius-full);
+  background-color: var(--border-subtle);
+  overflow: hidden;
+}
+
+[data-scope="pane-foot"][data-part="fill"] {
+  display: block;
+  block-size: 100%;
+  background-color: var(--state-success);
+}
+
+[data-scope="pane-foot"][data-part="fill"][data-tone="warn"] {
+  background-color: var(--state-waiting);
+}
+
+[data-scope="pane-foot"][data-part="fill"][data-tone="bad"] {
+  background-color: var(--state-failed);
+}

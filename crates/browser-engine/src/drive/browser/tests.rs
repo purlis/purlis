@@ -621,6 +621,7 @@ impl Engine {
             }
             "Page.getNavigationHistory" => Ok(super::lock(&self.model).history.clone()),
             "Page.navigate" => Ok(json!({"frameId":"PAGE-1","loaderId":"LOADER-9"})),
+            "Storage.getCookies" => Ok(json!({ "cookies": [] })),
             _ => Ok(json!({})),
         }
     }

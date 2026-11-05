@@ -2605,7 +2605,7 @@ function App() {
               // while the project has that workspace.
               openOf={(one) => {
                 const place = placeOfSaid(one, chipsInFront);
-                if (place.at !== "centre") return undefined;
+                if (place.at !== "centre" || !("open" in place)) return undefined;
                 // Only to a workspace the project still has: one removed or renamed since has
                 // no way there, and a way that does nothing is no way (#3651's review).
                 if (workspacesInFront?.names.includes(place.open) !== true) return undefined;

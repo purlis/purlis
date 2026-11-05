@@ -1937,6 +1937,59 @@ fn a_task_chat_comes_back_a_task_with_no_tab_until_the_person_opened_it() {
     assert!(back[1].has_tab(), "the tab the person opened comes back");
 }
 
+// ----- an announced chat keeps its "new" mark until it is looked at (#4759) ----------
+
+#[test]
+fn a_chat_the_person_has_not_looked_at_comes_back_unseen_and_one_they_have_writes_nothing() {
+    let plane = tempfile::tempdir().unwrap();
+    let unseen = Chat {
+        from: Some(handed()),
+        unseen: true,
+        ..claude("3", None)
+    };
+    let seen = Chat {
+        unseen: false,
+        ..unseen.clone()
+    };
+    write(
+        plane.path(),
+        &Record {
+            chats: vec![unseen, seen],
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let back = read(plane.path()).chats;
+    assert!(back[0].unseen, "its row says new across a relaunch");
+    assert!(!back[1].unseen);
+    let text = std::fs::read_to_string(plane.path().join(".charter/app/reopen.json")).unwrap();
+    assert_eq!(text.matches("\"unseen\"").count(), 1, "{text}");
+}
+
+#[test]
+fn a_handoff_is_announced_and_a_task_only_where_its_harness_cannot_report_asks() {
+    let handoff = handed();
+    let task = HandedFrom {
+        mode: Mode::Task,
+        ..handed()
+    };
+    assert!(Chat::announced(&handoff, false, false), "a handoff, always");
+    assert!(Chat::announced(&handoff, false, true));
+    assert!(
+        !Chat::announced(&task, false, false),
+        "its asking chat reads it"
+    );
+    assert!(
+        Chat::announced(&task, false, true),
+        "it can't say when it needs the person"
+    );
+    assert!(
+        !Chat::announced(&task, true, true),
+        "the person asked for it themselves"
+    );
+}
+
 #[test]
 fn what_a_sessions_tab_shows_comes_back_and_a_tab_on_its_own_chat_writes_nothing_of_it() {
     let plane = tempfile::tempdir().unwrap();

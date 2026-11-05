@@ -348,7 +348,15 @@
   margin-inline-start: 0;
 }
 
-.pane-chips > .pane-where {
+/* **Harness · workspace, on the pane foot** (#5202): cut short at its end before the gauge
+   gives way, in the foot's muted tier. */
+.pane-foot .pane-where {
+  /* The foot's start's, which a theme's `pane-foot.start.gap` sets. */
+  gap: inherit;
+}
+
+/* And on the head of a pane with no foot, a shell's or a one-job program's (spec #5191). */
+:is(.pane-foot .pane-where, .pane-chips > .pane-head-where) {
   display: inline-flex;
   align-items: center;
   flex: 0 1 auto;
@@ -420,37 +428,31 @@
    the text floor, while the engine measures their colour solid. The stories' faded-words gate
    (`.storybook/faded.setup.ts`, #3790) measures words as drawn, opacity included, so a fade
    brought back here or on any box above them fails it. */
-.pane-head > .pane-chips > :is(.chat-gauge, .pane-from, .pane-work-item, .pane-crumbs) {
+.pane-head > .pane-chips > :is(.pane-from, .pane-work-item, .pane-crumbs) {
   border-color: transparent;
   background-color: transparent;
 }
 
-/* **The harness's name keeps the header's tier** (#2914, the operator's ruling of 2026-10-22):
-   muted, primary on the pane of a split that has the keyboard, and under the pointer or the
-   keyboard. **Interim, until the quiet ghost variant (#3214)**: the family's ghost draws primary
-   words, so these rules out-rank its variant (0,3,0) by specificity, naming the button's own
-   attributes, never by where they are written. */
-.pane-head > .pane-chips > .pane-harness[data-scope="button"][data-variant="ghost"] {
+/* **The harness's name keeps the foot's tier** (#2914, the operator's ruling of 2026-10-22;
+   on the foot since #5202): muted, primary on the pane of a split that has the keyboard, and
+   under the pointer or the keyboard. **Interim, until the quiet ghost variant (#3214)**: the
+   family's ghost draws primary words, so these rules out-rank its variant (0,3,0) by
+   specificity, naming the button's own attributes, never by where they are written. */
+:is(.pane-foot, .pane-head) .pane-harness[data-scope="button"][data-variant="ghost"] {
   color: var(--text-muted);
 }
 
 [data-scope="panel"][data-variant="content"]
   [data-group]
   .pane-frame[data-focused]
-  .pane-head
-  > .pane-chips
-  > .pane-harness[data-scope="button"][data-variant="ghost"],
-.pane-head
-  > .pane-chips
-  > .pane-harness[data-scope="button"][data-variant="ghost"]:is(
+  :is(.pane-foot, .pane-head)
+  .pane-harness[data-scope="button"][data-variant="ghost"],
+:is(.pane-foot, .pane-head)
+  .pane-harness[data-scope="button"][data-variant="ghost"]:is(
     [data-hovered],
     [data-focus-visible]
   ) {
   color: var(--text-primary);
-}
-
-.pane-head > .pane-chips > .chat-gauge {
-  color: var(--text-muted);
 }
 
 /* **A pane's actions** (`PaneActions`, shared with a view's pane, #3147, #5203): the chat's
@@ -765,25 +767,16 @@
 }
 
 /* ---------------------------------------------------------------------------------------------
-   A task's question, at the top of the pane (#4565).
+   A task's question, in the pane's notices band (#4565, #5213).
    --------------------------------------------------------------------------------------------- */
 
-/* **Above the Notices, in the same runway**: the line that offers where you answer, then the
-   quiz, the band's width. Past the band's room it scrolls inside it, so Send is always reachable
-   and the terminal below keeps its input where it was. */
-.quiz-band {
-  display: flex;
-  flex: 0 1 auto;
-  flex-direction: column;
-  gap: var(--space-2);
-  min-block-size: 0;
-  overflow-y: auto;
-  padding: var(--space-4) var(--space-4) 0;
-}
-
-/* Each keeps its own height, so a short pane scrolls the band and never squeezes the line over
-   the quiz. */
-.quiz-band > * {
+/* **One box of the band's stack, first under the head**: it keeps its own height, as every
+   warning does, so past the band's room the stack scrolls and Send is always reachable, and the
+   terminal below keeps its input where it was. */
+.pane-top
+  > :is(.pane-notice-row, [data-scope="notice-row"][data-part="root"])
+  > :is(.pane-notices, [data-scope="notice-row"][data-part="stack"])
+  > .quiz-band-quiz {
   flex: none;
 }
 
@@ -838,6 +831,11 @@
   padding-inline-start: var(--space-3);
   border-inline-start: 2px solid var(--border-strong);
   font-size: var(--font-size-sm);
+}
+
+.task-quiz-note-words {
+  flex: 1;
+  color: var(--text-secondary);
 }
 
 .task-quiz-note-who {

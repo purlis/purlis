@@ -191,6 +191,41 @@ export async function closeTheViewTabsOpenedSince(before: readonly string[]): Pr
     });
 }
 
+/**
+ * **The strip in front holds nothing but its kept empty tab, if that** (#5131): what a spec file
+ * that counts on an exact strip waits for as it begins and as it ends. Every file closes what it
+ * opens, and `tabsLeft.ts` fails one that does not, so there is nothing to tolerate. Tabs a file
+ * before this one is still closing get the moment they take.
+ */
+export async function untilTheStripIsBare(spec: string): Promise<void> {
+  let left: string[] = [];
+  await browser
+    .waitUntil(
+      async () => {
+        left = openedSince([], await tabNames());
+        return left.length === 0;
+      },
+      { timeout: 20_000, interval: 250 },
+    )
+    .catch(() => {
+      throw new Error(`${spec}: the strip should be bare, and holds ${left.join(", ")}`);
+    });
+}
+
+/**
+ * **This `describe` closes the view tabs it opens** (#5111, #5131): writes down the strip before
+ * its specs and closes what is new after them, by {@link closeTheViewTabsOpenedSince}. A `before`
+ * and an `after` registered where it is called, and hooks run in the order they are registered,
+ * so call it below any `after` that has to come first, such as one ending the file's chats.
+ */
+export function closesTheTabsItOpens(): void {
+  let wereOpen: string[] = [];
+  before(async () => {
+    wereOpen = await tabNames();
+  });
+  after(() => closeTheViewTabsOpenedSince(wereOpen));
+}
+
 /** Every workspace of the project in front, as the title bar's ⌄ lists them (#2916): the plane
  *  root first (`Plane root`), the one in front `selected`. */
 export async function workspaceTabs(): Promise<{ name: string; selected: boolean }[]> {

@@ -85,6 +85,9 @@ pub enum Kind {
     QuestionClosed,
     /// A task's question could not be taken its route (#4557).
     QuestionFailed,
+    /// A chat another chat started arrived in no pane, and was announced (#4759): a handoff,
+    /// or a task that can't report asks.
+    Arrived,
 }
 
 /// One update, as it is kept.

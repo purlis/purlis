@@ -256,6 +256,7 @@ macro_rules! app_commands {
                 what_a_restart_ends,
                 restart_chat,
                 chats_on_older_sandbox,
+                chats_level_why,
                 restart_chat_without_sandbox,
                 move_chat,
                 move_chat_now,

@@ -95,7 +95,14 @@ below. Then, from a chat the app started:
    harness's own argv (`claude "<message>"`, `codex "<message>"`), never typed into its pane.
 5. The chat starts in the target workspace's sidebar and **takes no pane and no tab**, so
    nothing you are reading moves, and the window is not raised. It is shown in a pane when you
-   pick it.
+   pick it. **You are told it arrived** (#4759): a card hangs from that workspace's chip,
+   `<chat> arrived from <asking chat>`, with Go to it, or it is listed in the Notices centre
+   where the workspace has no chip. The card takes no keyboard, and hiding it leaves a dot.
+   The Inbox gets an Update, which the ✋ does not count, since a handoff asks nothing, and its
+   row says "new" until it has been on screen. A task is not announced, since its asking chat
+   reads it, unless its harness can't report asks: then it is announced the same way, its row
+   keeps a faint hand, and the dispatch's reply tells the asking chat that you must look at it.
+   A chat you started yourself is never announced.
 6. The command records a todo in the target workspace: the brief's first line, and which chat
    and workspace handed it off. The rest of the brief is not in it, because a LIVE workspace
    commits its todos and a brief never reaches a committed file. If an open todo there is
@@ -328,8 +335,9 @@ BRIEF
   `held for the person` and names the pool, and exits 0; you approve or refuse it in the window.
   Approve decides it then as any dispatch is decided, so it may still wait on a grant or a limit.
 - **Where there is no grant, you are asked once, and the task waits for your answer.** Nothing
-  starts. A Notice on the asking chat's tab says who wants to dispatch to whom and shows the
-  brief, and the command says `held for the person` and exits 0: the dispatch is accepted and
+  starts. You are asked in the Inbox, and on the asking chat's pane when it is on screen, who
+  wants to dispatch to whom, with the brief, and the command says `held for the person` and
+  exits 0: the dispatch is accepted and
   waiting, not refused. **Allow** starts it then, on the brief you read, and it is judged
   against the limits again at that moment. **Keep blocked** starts nothing and makes no grant,
   and holds for that chat's life: the same chat dispatching across the same pair again is
@@ -1130,9 +1138,9 @@ chat:
 
 **Nobody approves the brief.** A brief is a request from another chat, never your word: the
 new chat is told who asked, applies its own charter and its own guards, and every command of
-its that asks you still asks you, in that chat. The brief is the first message in that chat,
-it is kept in the dispatch's record, and the Notice for a first grant shows it in full. Nothing
-in a brief approves anything.
+its that asks you still asks you, in the Inbox and on its pane when it is on screen. The brief
+is the chat's first message, it is kept in the dispatch's record, and the Notice for a first
+grant shows it in full. Nothing in a brief approves anything.
 
 **Your harness's permission prompt is no part of this.** The consent for a handoff used to
 be the harness's own prompt, raised by an `ask` rule `purlis init` wrote for

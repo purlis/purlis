@@ -24,12 +24,15 @@ import { placementFor } from "./ui/tooltip/Tooltip";
  * **A chat's pane head, against the whole window** (#4760, spec #4750 stories 54, 55, 60 and
  * 61; the accepted prototype `prototype/pane-chat-actions`, variant A).
  *
- * The head shows the chat at a glance (its name, its state, "harness · workspace" and its
- * sandbox) and then, at its end, two groups (#5203, spec #5191): the chat's actions, its one
- * state button, the bell and ⋯ last, then, after a thin divider, the pane's controls, Split
- * right, Split down and Close last. Its right-click is the chat's list, then the pane's rows. A
- * narrow pane drops its parts in the ruled order (`paneHead.ts`), and the bell, ⋯, Split right
- * and Close never go.
+ * The head shows the chat at a glance (its name, its state and its sandbox) and then, at its
+ * end, two groups (#5203, spec #5191): the chat's actions, its one state button, the bell and ⋯
+ * last, then, after a thin divider, the pane's controls, Split right, Split down and Close last.
+ * Its right-click is the chat's list, then the pane's rows. A narrow pane drops its parts in the
+ * ruled order (`paneHead.ts`), and the bell, ⋯, Split right and Close never go.
+ *
+ * **The pane foot** (#5202, spec #5191, look A), under the terminal, says where the chat runs,
+ * harness · workspace, and its gauge: `ctx` with its fill as a thin bar under the number, then
+ * `cache`. They left the head, with the row of gauge bars.
  */
 
 /** What the stand-in terminal was asked to do from its pane's head (#4760). */
@@ -57,6 +60,7 @@ vi.mock("./SessionPane", async () => {
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
 
 afterEach(() => {
+  usage = null;
   cleanup();
   clearMocks();
   vi.unstubAllGlobals();
@@ -86,6 +90,9 @@ const CHAT = {
   browser_sites: null,
 };
 
+/** A plain shell in the same place: no harness and no profile (`isShell`). */
+const SHELL = { ...CHAT, name: "zsh", harness: null, profile: null };
+
 /** Chat 4 mid-turn, then waiting for you: what the board says as its turn runs and ends. */
 const RUNNING: Moved = {
   plane: PLANE,
@@ -101,21 +108,25 @@ const RUNNING: Moved = {
 } as unknown as Moved;
 const WAITING = { ...RUNNING, state: "waiting", moved_at: 2, sequence: 2 } as Moved;
 
-function core() {
+/** What the core says of chat 4's usage: none by default, as before its first turn. */
+let usage: unknown = null;
+
+function core(chat: typeof CHAT | typeof SHELL = CHAT, listed: Promise<void> = Promise.resolve()) {
   mockIPC(
     (cmd) => {
+      if (cmd === "chat_usage") return usage;
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
-      if (cmd === "opened_chats") return [CHAT];
+      if (cmd === "opened_chats") return [chat];
       // The chat in a tab of its own on alpha, as the stored layout keeps it (#4758).
-      if (cmd === "reopened_layout") return aTabForEachChat([CHAT], () => "alpha");
+      if (cmd === "reopened_layout") return aTabForEachChat([chat], () => "alpha");
       if (cmd === "plane_sidebar")
-        return {
+        return listed.then(() => ({
           root: PLANE,
           personas: [],
           persona: null,
           unfiled: [],
-          workspaces: [{ name: "alpha", path: ALPHA, vision: "", todos: [], chats: [CHAT] }],
-        };
+          workspaces: [{ name: "alpha", path: ALPHA, vision: "", todos: [], chats: [chat] }],
+        }));
       if (cmd === "chat_states") return [];
       if (cmd === "chats_that_would_not_start") return [];
       if (cmd === "running_sessions") return [];
@@ -129,8 +140,8 @@ function core() {
   );
 }
 
-async function aPane() {
-  core();
+async function aPane(chat: typeof CHAT | typeof SHELL = CHAT) {
+  core(chat);
   render(<App />);
   await screen.findByTestId("pane");
   await act(async () => {
@@ -143,6 +154,8 @@ const NAME = "claude claude 4";
 
 const frame = () => screen.getByTestId("pane").closest(".pane-frame") as HTMLElement;
 const head = () => frame().querySelector(".pane-head") as HTMLElement;
+const foot = () =>
+  frame().querySelector('[data-scope="pane-foot"][data-part="root"]') as HTMLElement;
 /** The head's controls, start to end, by their names: what a screen reader tabs through. */
 const controls = () =>
   [...head().querySelectorAll(".pane-actions button")].map(
@@ -150,7 +163,7 @@ const controls = () =>
   );
 
 describe("a chat's pane head", () => {
-  it("names the chat, says its harness · workspace and its sandbox", async () => {
+  it("names the chat and says its sandbox, and leaves harness · workspace to the foot", async () => {
     await aPane();
 
     await waitFor(() => expect(within(head()).getByText(NAME)).toHaveClass("pane-name"));
@@ -158,7 +171,8 @@ describe("a chat's pane head", () => {
     const line = head().querySelector(".pane-chips") as HTMLElement;
     expect(line.firstElementChild).toHaveClass("pane-persona");
     expect(line.firstElementChild?.querySelector(".chat-persona")).not.toBeNull();
-    expect(head().querySelector(".pane-where")).toHaveTextContent(/^claude · alpha$/);
+    expect(head().querySelector(".pane-where")).toBeNull();
+    expect(within(head()).queryByText("alpha")).toBeNull();
     // The badge moved from the tab to the head (#4760): named for a screen reader.
     expect(within(head()).getByRole("img", { name: "floor" })).toBeInTheDocument();
     const strip = document.querySelector('[data-strip="Tabs"]') as HTMLElement;
@@ -356,29 +370,132 @@ describe("a narrow pane's head", () => {
   it("keeps every part in a pane 520px wide", async () => {
     await aPaneOf(520);
 
-    expect(head().querySelector(".pane-where")).not.toBeNull();
     expect(within(head()).getByRole("img", { name: "floor" })).toBeInTheDocument();
     expect(controls()).toContain("Split down");
   });
 
-  it("drops harness · workspace first, and the bell, ⋯, Split right and Close stay", async () => {
+  it("drops the sandbox first, and the bell, ⋯, Split right and Close stay", async () => {
     await aPaneOf(500);
 
-    expect(head().querySelector(".pane-where")).toBeNull();
-    // The sandbox goes with it: it says how the chat runs, as "harness · workspace" does.
     expect(within(head()).queryByRole("img", { name: "floor" })).toBeNull();
     expect(controls()).toContain("Split down");
+    // Harness · workspace is the foot's, which drops nothing here (#5206 orders its drops).
+    expect(foot().querySelector(".pane-where")).toHaveTextContent(/^claude\s*·\s*alpha$/);
   });
 
   it("drops Split down last, and still keeps the bell, ⋯, Split right and Close", async () => {
     await aPaneOf(280);
 
-    expect(head().querySelector(".pane-where")).toBeNull();
+    expect(within(head()).queryByRole("img", { name: "floor" })).toBeNull();
     const [bell, more, right, close, ...rest] = controls();
     expect(bell).toMatch(/^Pane notices:/);
     expect(more).toBe(`More for ${NAME}`);
     expect(right).toBe("Split right");
     expect(close).toBeTruthy();
     expect(rest).toEqual([]);
+  });
+});
+
+describe("a chat's pane foot (#5202)", () => {
+  const USAGE = {
+    context: { value: 62, tone: "ok" },
+    cache: { value: 91, tone: "ok" },
+    rebuilds: null,
+    turns: [
+      { cache: { value: 90, tone: "ok" }, context: null, written: null },
+      { cache: { value: 91, tone: "ok" }, context: null, written: null },
+    ],
+    cold: null,
+  };
+
+  it("is drawn under the terminal, last in the pane, so Tab reaches it after the terminal", async () => {
+    await aPane();
+
+    await waitFor(() => expect(foot()).not.toBeNull());
+    expect(frame().lastElementChild).toBe(foot());
+    const body = frame().querySelector(".pane-body") as HTMLElement;
+    expect(body.compareDocumentPosition(foot()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(head().contains(foot())).toBe(false);
+  });
+
+  it("says harness · workspace at its start", async () => {
+    await aPane();
+
+    await waitFor(() =>
+      expect(foot().querySelector(".pane-where")).toHaveTextContent(/^claude\s*·\s*alpha$/),
+    );
+    expect(foot().querySelector('[data-part="start"] .pane-where')).not.toBeNull();
+  });
+
+  it("is drawn before the chat's first usage arrives, with no gauge, so the terminal never moves for it", async () => {
+    await aPane();
+
+    await waitFor(() => expect(foot()).not.toBeNull());
+    expect(within(foot()).queryByTestId("chat-gauge")).toBeNull();
+    expect(foot().querySelector('[data-part="end"]')).not.toBeNull();
+  });
+
+  it("ends with ctx, its fill a bar under its number, then cache; the head has neither, and no row of bars is drawn", async () => {
+    usage = USAGE;
+    await aPane();
+
+    const gauge = await within(foot()).findByTestId("chat-gauge");
+    expect(gauge.closest('[data-part="end"]')).not.toBeNull();
+    const parts = [...gauge.querySelectorAll('[data-part="gauge"]')].map((one) =>
+      one.textContent?.replace(/\s+/g, " ").trim(),
+    );
+    expect(parts).toEqual(["ctx 62%", "cache 91%"]);
+    const fill = gauge.querySelector('[data-part="fill"]') as HTMLElement;
+    expect(fill.closest('[data-part="gauge"]')?.textContent).toContain("ctx");
+    expect(fill.style.inlineSize).toBe("62%");
+    expect(head().querySelector(".chat-gauge")).toBeNull();
+    expect(within(head()).queryByText("ctx")).toBeNull();
+    expect(document.querySelector('[data-testid="gauge-trend"]')).toBeNull();
+  });
+
+  it("is drawn on no shell's pane, whose head keeps its workspace (spec #5191, Out of Scope)", async () => {
+    await aPane(SHELL);
+
+    await waitFor(() =>
+      expect(head().querySelector(".pane-head-where")).toHaveTextContent("alpha"),
+    );
+    expect(foot()).toBeNull();
+  });
+
+  /** The window with the plane's listing held back, and what lets it through. */
+  async function beforeTheListing(chat: typeof CHAT | typeof SHELL) {
+    let list = () => {};
+    core(
+      chat,
+      new Promise<void>((resolve) => {
+        list = resolve;
+      }),
+    );
+    render(<App />);
+    await screen.findByTestId("pane");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    return () => act(async () => list());
+  }
+
+  it("is there from a chat's first frame, so its terminal gets one size from the start (story 46)", async () => {
+    const listed = await beforeTheListing(CHAT);
+    const reserved = foot();
+    expect(reserved).not.toBeNull();
+
+    await listed();
+    // The listing fills the foot in: the same line, and nothing rows the terminal again.
+    await waitFor(() => expect(reserved.querySelector(".pane-where")).not.toBeNull());
+    expect(foot()).toBe(reserved);
+  });
+
+  it("is never drawn on a shell, listed or not, as the open chats say what it is (story 20)", async () => {
+    const listed = await beforeTheListing(SHELL);
+    expect(foot()).toBeNull();
+
+    await listed();
+    await waitFor(() => expect(head().querySelector(".pane-head-where")).not.toBeNull());
+    expect(foot()).toBeNull();
   });
 });

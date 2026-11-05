@@ -4,7 +4,8 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
-import { closeTheViewTabsOpenedSince, tabNames } from "../reach.js";
+import { closesTheTabsItOpens } from "../reach.js";
+import { SETTINGS_GROUPS, openProjectSettings } from "../settingsTab.js";
 
 /**
  * **Settings › Forges adds and removes a `[[forge]]` block**, in the built app (ST-3, #1227).
@@ -23,7 +24,6 @@ import { closeTheViewTabsOpenedSince, tabNames } from "../reach.js";
  * and a Settings tab this spec opened is closed.
  */
 
-const PALETTE = '[role="dialog"][aria-label="Command palette"]';
 const HOST = "git.st3-e2e.invalid";
 const OWNER = "st3-e2e";
 
@@ -35,40 +35,13 @@ async function planeRoot(): Promise<string> {
   return ((await said.getAttribute("data-directory")) ?? "").trim();
 }
 
-/** Opens Settings at the Project level through the palette, as the operator does. */
-async function openProjectSettings(): Promise<void> {
-  await browser.keys(["F2"]);
-  await $(PALETTE).waitForDisplayed({ timeout: 20_000 });
-  const box = await $("#palette-query");
-  await browser.waitUntil(async () => box.isFocused(), {
-    timeout: 10_000,
-    timeoutMsg: "the palette did not take the keyboard when it opened",
-  });
-  await box.addValue("Project settings");
-  await browser.waitUntil(
-    async () =>
-      browser.execute(
-        () =>
-          document
-            .querySelector('[role="option"][aria-selected="true"] .palette-title')
-            ?.textContent?.startsWith("Project settings") ?? false,
-      ),
-    { timeout: 10_000, timeoutMsg: "the palette did not offer Project settings…" },
-  );
-  await browser.keys(["Enter"]);
-  await $('nav[aria-label="Groups"]').waitForDisplayed({ timeout: 20_000 });
-}
-
 describe("Settings › Forges", () => {
   let file = "";
   let original: string | null = null;
-  /** The tabs on the strip before this spec, so its `after` closes only what it opened. */
-  let wereOpen: string[] = [];
 
   before(async () => {
     file = join(await planeRoot(), "charter.toml");
     original = existsSync(file) ? readFileSync(file, "utf8") : null;
-    wereOpen = await tabNames();
   });
 
   after(async () => {
@@ -80,13 +53,13 @@ describe("Settings › Forges", () => {
         if (now !== null) rmSync(file);
       } else if (now !== original) writeFileSync(file, original);
     }
-    // The Settings tab it opened, by its own ×, waited for until the strip is as it was (#5111).
-    await closeTheViewTabsOpenedSince(wereOpen);
   });
+
+  closesTheTabsItOpens();
 
   it("adds a forge that lands in charter.toml, and removes it again", async () => {
     await openProjectSettings();
-    await $('nav[aria-label="Groups"]').$("button=Forges").click();
+    await $(SETTINGS_GROUPS).$("button=Forges").click();
 
     await $("button=Add forge").click();
     const form = await $('form[aria-label="New forge"]');

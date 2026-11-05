@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
@@ -79,6 +79,12 @@ function stepTheFrames(): { next: () => Promise<void>; all: () => Promise<void> 
   };
   letHeldFramesGo = all;
   return { next, all };
+}
+
+/** The window this test draws in is `height` px tall, until it ends. */
+function windowOfHeight(height: number): void {
+  const tall = vi.spyOn(window, "innerHeight", "get").mockReturnValue(height);
+  onTestFinished(() => tall.mockRestore());
 }
 
 /** The frames held by the test running, for `afterEach` to let go if it did not. */
@@ -197,16 +203,41 @@ describe("the Skill studio", () => {
   });
 
   it("builds the rest of the Library's rows a screen a frame, so no frame waits on them all (#4351)", async () => {
+    windowOfHeight(900);
+    answering(studio(crowd(200).map((name) => skill(name))));
+    const frames = stepTheFrames();
+    renderStudio();
+    await screen.findByTestId("skill-crowd-000");
+    expect(skillRows()).toBe(23);
+
+    await frames.next();
+    expect(skillRows()).toBe(46);
+    await frames.next();
+    expect(skillRows()).toBe(69);
+
+    await frames.all();
+    expect(skillRows()).toBe(200);
+  });
+
+  it("draws no more than 40 rows on a very tall window's first frame, and still fills the Library (#4351)", async () => {
+    windowOfHeight(2160);
     answering(studio(crowd(200).map((name) => skill(name))));
     const frames = stepTheFrames();
     renderStudio();
     await screen.findByTestId("skill-crowd-000");
     expect(skillRows()).toBe(40);
 
-    await frames.next();
-    expect(skillRows()).toBe(80);
-    await frames.next();
-    expect(skillRows()).toBe(120);
+    await frames.all();
+    expect(skillRows()).toBe(200);
+  });
+
+  it("still fills the Library in a window that says it has no height (#4351)", async () => {
+    windowOfHeight(0);
+    answering(studio(crowd(200).map((name) => skill(name))));
+    const frames = stepTheFrames();
+    renderStudio();
+    await screen.findByTestId("skill-crowd-000");
+    expect(skillRows()).toBe(20);
 
     await frames.all();
     expect(skillRows()).toBe(200);

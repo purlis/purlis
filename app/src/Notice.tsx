@@ -217,6 +217,14 @@ export const NoticeOf = createContext<{
   task?: boolean;
 } | null>(null);
 
+/**
+ * **A pane's Notices, said in the Notices centre instead** (#4759, spec #4750): what a chat in
+ * no pane has to say has no band to stand on, so its Notices are drawn as the centre's lines,
+ * each saying whose it is and with Go to it ({@link NoticeOf}). The value is told, by cause,
+ * when one comes and goes, so the chat's row can say it has something to read.
+ */
+export const NoticeInCentre = createContext<((cause: string, held: boolean) => void) | null>(null);
+
 /** What an attention Notice says first to a reader, as its mark says it to the eye (#3678). */
 const NEEDS_A_DECISION = "Needs a decision: ";
 
@@ -224,11 +232,12 @@ const NEEDS_A_DECISION = "Needs a decision: ";
 const TONE_ORDER: Record<NoticeTone, number> = { trouble: 0, attention: 1, news: 2 };
 
 export function Notice(props: NoticeProps) {
+  const centre = useContext(NoticeInCentre);
   const {
     cause,
     tone = "news",
     running = false,
-    at = "inbox",
+    at: askedAt = "inbox",
     label,
     persona,
     children,
@@ -236,6 +245,9 @@ export function Notice(props: NoticeProps) {
     title,
     quiet,
   } = props;
+  // A pane's Notice of a chat in no pane is the Notices centre's line (#4759).
+  const inCentre = centre !== null && askedAt === "pane";
+  const at = inCentre ? "inbox" : askedAt;
   const { fixes, link, copy, dismissSays } = props as Ways;
   // **An ask in a pane is answered, never put away** (#4754): it has no Dismiss beside an answer.
   const waits =
@@ -247,8 +259,9 @@ export function Notice(props: NoticeProps) {
   const provided = useContext(NoticeOf);
   // A granting way out waits for the list it is drawn in to say it has settled (#1695).
   const mayAct = useContext(NoticeWayGuard);
-  // Only on a pane: a Notice a pane's chat sends to the Inbox is the project's.
-  const of = at === "pane" ? provided : null;
+  // Only on a pane, or a pane's said in the centre: a Notice a pane's chat sends to the Inbox
+  // is the project's.
+  const of = askedAt === "pane" ? provided : null;
   const stacked = list !== null && at === "inbox";
   const id = useId();
   // Where this Notice is drawn when the Inbox lists it: an element of its own, which the list
@@ -258,6 +271,12 @@ export function Notice(props: NoticeProps) {
     () => (stacked ? list.register(id, { cause, tone, host }) : undefined),
     [list, cause, host, id, stacked, tone],
   );
+  // Its chat's row is told it has something to read while it stands (#4759).
+  useLayoutEffect(() => {
+    if (centre === null || askedAt !== "pane") return undefined;
+    centre(cause, true);
+    return () => centre(cause, false);
+  }, [centre, cause, askedAt]);
   // The line is a row of its ways out that wraps (`ButtonRow`, #1855), every one small. Its box is
   // the notice family's root: in a pane the box itself, in the Inbox the list's row, and alone
   // (a Notice on a Settings page) the inline surface.

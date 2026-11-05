@@ -6851,6 +6851,60 @@
         "page-tabs.panel.padding": {
           "$ref": "#/$defs/part-padding"
         },
+        "pane-foot.root.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "pane-foot.root.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "pane-foot.root.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "pane-foot.root.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "pane-foot.root.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "pane-foot.root.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "pane-foot.root.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "pane-foot.start.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "pane-foot.end.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "pane-foot.separator.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "pane-foot.gauge.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "pane-foot.label.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "pane-foot.label.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "pane-foot.value.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "pane-foot.value.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "pane-foot.track.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "pane-foot.track.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "pane-foot.fill.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
         "panel.root.fill": {
           "$ref": "#/$defs/part-fill"
         },

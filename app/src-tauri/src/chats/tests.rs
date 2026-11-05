@@ -5388,6 +5388,46 @@ fn a_chat_pin_is_read_once_from_a_record_with_no_tabs_and_then_the_tab_holds_it(
     chats.end_all();
 }
 
+// ----- an announced chat's "new" mark (#4759) -----
+
+#[test]
+fn an_announced_chat_stays_new_until_a_layout_puts_it_on_screen_and_then_the_record_drops_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let record = Record {
+        chats: vec![
+            Chat {
+                number: Some(3),
+                active: true,
+                ..chat(&a_claude(dir.path()), "ide.3", None)
+            },
+            Chat {
+                number: Some(4),
+                unseen: true,
+                ..chat(&a_claude(dir.path()), "ide.4", None)
+            },
+        ],
+        ..Record::default()
+    };
+    chats.put_back(&record, SIZE);
+
+    // On no screen: it stays new, and nothing is said.
+    chats
+        .lay_out(on_ops(vec![front_tab(Node::chat(3))]))
+        .unwrap();
+    assert!(!chats.mark_seen(), "nothing new is on screen");
+    assert!(chats.record().chats[1].unseen, "still new");
+
+    // The person picks it: on screen, so looked at, once.
+    chats
+        .lay_out(on_ops(vec![front_tab(Node::chat(4))]))
+        .unwrap();
+    assert!(chats.mark_seen(), "its mark went");
+    assert!(!chats.record().chats[1].unseen, "and the record keeps that");
+    assert!(!chats.mark_seen(), "said once");
+    chats.end_all();
+}
+
 // ----- every tab as a tree of panes (#4751) -----
 
 /// A tab on `ops`'s strip in the project window, in front, holding `tree`, its first pane
@@ -10257,4 +10297,59 @@ fn a_chat_the_studio_did_not_start_has_no_job_to_be_done() {
 
     assert_eq!(chats.record().chats[0].studio, None);
     let _ = chats.close(session);
+}
+
+/// #5207: a running chat keeps the level it started with, so its reason says a restart applies
+/// the level you changed, and stops saying so once it is at that level.
+#[test]
+fn why_a_chat_runs_at_its_level_says_a_restart_applies_a_level_changed_since_it_started() {
+    let plane = a_sandboxed_plane();
+    let chats = restartable_chats_of(plane.path(), Pretend::default());
+    let session = chats
+        .start(&a_resumable_chat_in(plane.path()), SIZE)
+        .expect("starts");
+    let said = |chats: &Chats| {
+        let whys = chats.level_whys_on(&a_machine());
+        assert_eq!(whys.len(), 1, "{whys:?}");
+        assert_eq!(whys[0].session, session);
+        whys[0].why.clone()
+    };
+    assert!(
+        said(&chats).contains("You have not chosen a level here"),
+        "{}",
+        said(&chats)
+    );
+    assert!(!said(&chats).contains("Restart chat"), "{}", said(&chats));
+
+    std::fs::write(
+        plane.path().join(purlis_core::profiles::LOCAL_FILE),
+        "[sandbox]\nlevel = \"off\"\n",
+    )
+    .expect("the local file");
+    purlis_core::sandbox::personal::set_by_you(
+        plane.path(),
+        None,
+        Some(purlis_core::sandbox::personal::Choice::Off),
+    )
+    .expect("confirmed");
+    let now = said(&chats);
+    assert!(
+        now.starts_with(
+            "This chat started with the full sandbox, and its next start has no sandbox. \
+             Restart chat applies it. This is the level you chose"
+        ),
+        "{now}"
+    );
+    // A chat held by a sandbox this window has no compile of: no reason here describes its run.
+    let held = chats.confines_of(session);
+    chats.runs_as_recorded(session, None, None);
+    assert_eq!(chats.level_whys_on(&a_machine()), Vec::new());
+    chats.runs_as_recorded(session, held, None);
+    assert!(said(&chats).starts_with("This chat started with"));
+    // On a system with no backend, no level holds a chat, so no reason is said.
+    let windows = purlis_core::sandbox::Machine {
+        os: purlis_core::sandbox::Os::Windows,
+        ..a_machine()
+    };
+    assert_eq!(chats.level_whys_on(&windows), Vec::new());
 }
