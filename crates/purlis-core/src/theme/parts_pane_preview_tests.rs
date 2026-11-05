@@ -24,6 +24,6 @@ fn the_pane_preview_is_in_the_manifest_since_next() {
         .collect();
     assert_eq!(
         names,
-        ["arriving", "name", "size", "refused", "held", "words"]
+        ["arriving", "name", "line", "size", "refused", "held", "words"]
     );
 }

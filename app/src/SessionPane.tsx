@@ -264,7 +264,7 @@ export function SessionPane({
     // a kept terminal is fitted to the pane it is put back in.
     const refit = () => live.fit();
     // What a drag reckons the size this terminal would take from (`panePreview.gridIn`).
-    const unsaid = terminalInPane(where, () => ownCells(pane));
+    const unmeasured = terminalInPane(where, () => ownCells(pane));
     let unqueue = () => {};
     const watching = new ResizeObserver(() => {
       unqueue = afterTheSlide(refit);
@@ -273,7 +273,7 @@ export function SessionPane({
 
     return () => {
       where.removeEventListener("mousedown", pastTheProgram, true);
-      unsaid();
+      unmeasured();
       wheeling.dispose();
       undrawn();
       watching.disconnect();

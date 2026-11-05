@@ -51,6 +51,12 @@ pub(super) const PANE_PREVIEW: Family = Family {
             properties: &[Prop::Text, Prop::FontSize, Prop::Padding],
         },
         Part {
+            name: "line",
+            since: super::NEXT,
+            description: "On the strip, the line where a tab would go.",
+            properties: &[Prop::Fill],
+        },
+        Part {
             name: "size",
             since: super::NEXT,
             description: "The columns and rows a terminal will take, on the pane that will change.",

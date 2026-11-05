@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useLayoutEffect, useMemo, useSyncExternalStore } from "react";
-import { HeldPanes, type PaneBase, PANES_ROOM } from "./paneHeld";
+import { cellsIn, HeldPanes, type PaneBase, PANES_ROOM } from "./paneHeld";
 import {
   type Box,
   type DropContext,
@@ -13,12 +13,13 @@ import {
   type Source,
   type Target,
 } from "./paneDrop";
-import { gridIn, planOf, type TerminalCells, wouldBe } from "./panePreview";
+import { gridIn, planOf, sameSize, type TerminalCells, wouldBe } from "./panePreview";
 import { layoutShown, type Layout, panes, type Tabs } from "./tabs";
 import { zoomedLayout } from "./tiling";
 import {
   PanePreviewArriving,
   PanePreviewHeld,
+  PanePreviewLine,
   PanePreviewRefused,
   PanePreviewSize,
   PanePreviewWords,
@@ -57,19 +58,35 @@ function shownIn(tabs: Tabs): { front: number; layout: Layout } | undefined {
     : { front, layout: zoomedLayout(tabs, front, layout) };
 }
 
+const measuredAs = (shown: ReturnType<typeof shownIn>) =>
+  shown === undefined ? "" : `${shown.front}:${placesOf(shown.layout)}`;
+
 /** How far from the pointer the label and the words sit. */
 const heldAt = (x: number, y: number) => ({ left: x + 14, top: y + 12 });
+/** The words stay in the window, however near its end the pointer is (`pane-preview.css`). */
 const wordsAt = (x: number, y: number) => ({
-  left: Math.min(x + 14, window.innerWidth - 350),
+  left: `min(${x + 14}px, calc(100vw - var(--pane-preview-words-room)))`,
   top: y + 40,
 });
+
+/**
+ * What a zone depends on in a tree: which panes, in which splits, at which shares. A chat shown in
+ * a pane's place draws another tree of the same panes, which is no reason to measure anything.
+ */
+function placesOf(layout: Layout | undefined): string {
+  if (layout === undefined) return "";
+  if (layout.kind === "pane") return String(layout.pane);
+  const [a, b] = layout.children;
+  return `${layout.direction}${layout.share ?? ""}(${placesOf(a)} ${placesOf(b)})`;
+}
 
 /** **The drag in progress**, read by its layer and written by the pointer's half. */
 export class PaneDragStore {
   private state: Dragging | undefined;
   private readonly heard = new Set<() => void>();
-  private readonly held = new HeldPanes();
-  private measuredFor: Layout | undefined;
+  readonly held = new HeldPanes();
+  /** What was measured: the tab in front, and the places of its panes. */
+  private measuredFor = "";
   private at = { x: 0, y: 0 };
   /** The elements that follow the pointer, while they are drawn. */
   private heldLabel: HTMLElement | null = null;
@@ -99,7 +116,7 @@ export class PaneDragStore {
     document.documentElement.dataset.paneDragging = "";
     this.at = { x, y };
     const shown = shownIn(tabs);
-    this.measuredFor = shown?.layout;
+    this.measuredFor = measuredAs(shown);
     this.set({ source, base: shown === undefined ? undefined : this.held.measure(shown.front) });
   }
 
@@ -107,13 +124,13 @@ export class PaneDragStore {
   retake(tabs: Tabs) {
     const shown = shownIn(tabs);
     if (this.state === undefined || shown === undefined) return;
-    this.measuredFor = shown.layout;
+    this.measuredFor = measuredAs(shown);
     this.set({ ...this.state, base: this.held.measure(shown.front) });
   }
 
   /** Whether `tabs` draws what was measured. */
-  measuredIs(layout: Layout | undefined) {
-    return this.measuredFor === layout;
+  measuredIs(tabs: Tabs) {
+    return this.measuredFor === measuredAs(shownIn(tabs));
   }
 
   /** The pointer moved: what follows it goes with it, and nothing else is drawn for it. */
@@ -141,11 +158,6 @@ export class PaneDragStore {
     if (this.state !== undefined) this.set({ ...this.state, over });
   }
 
-  /** Writes the preview on the panes. */
-  draw(...args: Parameters<HeldPanes["draw"]>) {
-    this.held.draw(...args);
-  }
-
   /** **The drag is over**: everything it wrote is taken off, in this very event. */
   stop() {
     const root = document.documentElement.dataset;
@@ -153,16 +165,19 @@ export class PaneDragStore {
     delete root.panePreviewing;
     delete root.paneRefused;
     this.held.letGo();
-    this.measuredFor = undefined;
+    this.measuredFor = "";
     if (this.state !== undefined) this.set(undefined);
   }
 }
 
-const sameBox = (a: Size, b: Size) => a.width === b.width && a.height === b.height;
-
 /** The cells a pane with no terminal yet would have: those of a terminal on screen. */
-const anyCells = (base: PaneBase): TerminalCells | undefined =>
-  base.terminals.values().next().value;
+function anyCells(base: PaneBase): TerminalCells | undefined {
+  for (const seat of base.terminals.values()) {
+    const cells = cellsIn(seat);
+    if (cells !== undefined) return cells;
+  }
+  return undefined;
+}
 
 export function PaneDragLayer({
   store,
@@ -184,9 +199,8 @@ export function PaneDragLayer({
   // **The zones stay on the layout from the drag's start**: retaken only when what is drawn is
   // another tree, a tab brought forward or a pane closing, and when the room itself changes.
   useLayoutEffect(() => {
-    if (!dragging || store.measuredIs(layout)) return;
-    store.retake(tabs);
-  }, [dragging, layout, store, tabs]);
+    if (dragging && !store.measuredIs(tabs)) store.retake(tabs);
+  }, [dragging, store, tabs]);
   const room = dragging ? document.querySelector(`[${PANES_ROOM}]`) : null;
   useLayoutEffect(() => {
     if (room === null || typeof ResizeObserver === "undefined") return;
@@ -227,7 +241,7 @@ export function PaneDragLayer({
 
   useLayoutEffect(() => {
     if (!dragging || base === undefined || front === undefined) return;
-    store.draw(front, base, plan, { held });
+    store.held.draw(front, base, plan, held);
     const root = document.documentElement.dataset;
     if (plan === undefined) delete root.panePreviewing;
     else root.panePreviewing = "";
@@ -243,33 +257,20 @@ export function PaneDragLayer({
     refused && over?.target.kind === "pane" ? base?.zones.get(over.target.pane) : undefined;
   return (
     <>
-      {over?.line !== undefined && (
-        <div
-          className="pane-drop-preview"
-          data-line=""
-          data-refused={refused || undefined}
-          aria-hidden="true"
-          style={{
-            left: over.line.left,
-            top: over.line.top,
-            width: over.line.width,
-            height: over.line.height,
-          }}
-        />
-      )}
+      {over?.line !== undefined && <PanePreviewLine box={over.line} refused={refused} />}
       {refusedZone !== undefined && <PanePreviewRefused box={refusedZone} />}
       {plan?.arriving.map(({ pane, box, content }) => (
         <PanePreviewArriving key={pane} box={box} name={ctx.name(content)} />
       ))}
-      {plan?.rails.map(({ box, as, panes: folded }) => (
-        <PanePreviewArriving key={folded.join(" ")} box={box} as={as} />
+      {plan?.rails.map(({ box, panes: folded }) => (
+        <PanePreviewArriving key={folded.join(" ")} box={box} />
       ))}
       {plan !== undefined &&
         base !== undefined &&
         [...plan.frames].map(([pane, box]) => {
-          const cells = base.terminals.get(pane);
+          const cells = cellsIn(base.terminals.get(pane));
           const from = base.zones.get(pane);
-          if (cells === undefined || from === undefined || sameBox(from, box)) return null;
+          if (cells === undefined || from === undefined || sameSize(from, box)) return null;
           return <PanePreviewSize key={pane} box={box} {...gridIn(box, cells)} />;
         })}
       {plan !== undefined &&

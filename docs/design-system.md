@@ -1416,6 +1416,8 @@ one labelled section at the end of `App.css`.
 | a chat's state mark                        | colour, shape and ring morph, `settle`                   | the state changing, rather than blinking                                                                |
 | a chat that starts waiting on you          | its ring knocks twice, `settle`                          | the one signal this app exists for, arriving                                                            |
 | the same, on a row of a list               | its hand knocks twice, `settle`                          | a row's mark is the hand and has no ring; only on the change, as the ring                               |
+| a pane a drag makes room with              | glides and resizes to where the drop would leave it, `enter`, while the drag lasts | the result, seen before the drop (ADR 0113) |
+| a pane about to be, in a drag              | fades in at its box, `enter`                             | what the drop would make     |
 | a row of the Chats list that was asked for | the hovered row's band for a moment, faded in once, `settle` | where a press elsewhere went; the band is there, still, under reduced motion                            |
 
 **Nothing animates because it mounted.** A mark that animates on a change has to tell a change
@@ -1427,7 +1429,8 @@ animates what it is told arrived.
 
 Left still, on purpose:
 
-- **The terminal, always.** It is the product and it is what the operator is reading.
+- **The terminal, always.** It is the product and it is what the operator is reading. A pane a drag
+  moves carries its terminal, whose grid and text stay as they are until the drop (ADR 0113).
 - **A region's size.** A slot that grew over time would refit xterm on every frame of it, which
   is terminal output moving; a region arrives at its full size and only fades.
 - **A tab's width or position.** A tab that slides under the pointer breaks aiming (`tabs.ts`);

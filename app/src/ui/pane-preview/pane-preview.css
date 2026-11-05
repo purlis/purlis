@@ -52,6 +52,15 @@
   white-space: nowrap;
 }
 
+/* **Where a tab would go**: a line on the strip. */
+[data-scope="pane-preview"][data-part="line"] {
+  background-color: var(--accent-base);
+}
+
+[data-scope="pane-preview"][data-part="line"][data-refused] {
+  background-color: var(--danger-base);
+}
+
 /* **The size a terminal will take**: in the pane's top corner, under its head. */
 [data-scope="pane-preview"][data-part="size"] {
   padding: var(--space-1) var(--space-2);
@@ -73,7 +82,12 @@
   border-radius: var(--radius-sm);
 }
 
-/* **What is held** and **what letting go would do**, by the pointer. */
+/* **What is held** and **what letting go would do**, by the pointer. The words are never wider than
+   the room they keep from the window's end (`paneDragLayer.tsx`). */
+:root {
+  --pane-preview-words-room: 25rem;
+}
+
 [data-scope="pane-preview"][data-part="held"] {
   overflow: hidden;
   max-inline-size: 32rem;
@@ -89,7 +103,7 @@
 }
 
 [data-scope="pane-preview"][data-part="words"] {
-  max-inline-size: 32rem;
+  max-inline-size: 24rem;
   padding: var(--space-1) var(--space-2);
   border: var(--panel-border-width) solid var(--border-subtle);
   border-radius: var(--radius-sm);

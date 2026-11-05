@@ -13,6 +13,7 @@ import type { CSSProperties, ReactNode } from "react";
 import {
   PanePreviewArriving,
   PanePreviewHeld,
+  PanePreviewLine,
   PanePreviewRefused,
   PanePreviewSize,
   PanePreviewWords,
@@ -199,10 +200,7 @@ export const Folds: Story = {
         height={HEIGHT}
         doing="moved"
       />
-      <PanePreviewArriving
-        box={{ left: WIDTH - 40, top: 0, width: 40, height: HEIGHT }}
-        as="rail"
-      />
+      <PanePreviewArriving box={{ left: WIDTH - 40, top: 0, width: 40, height: HEIGHT }} />
     </Room>
   ),
 };
@@ -219,6 +217,20 @@ export const Refused: Story = {
       <PanePreviewWords at={{ left: 20, top: 150 }} refused>
         Too narrow: a pane here would be under about 40 columns. Drop it on a wider pane.
       </PanePreviewWords>
+    </Room>
+  ),
+};
+
+/** On the strip: the panes stay put, and a line says where the tab would go. */
+export const OnTheStrip: Story = {
+  play: still,
+  render: () => (
+    <Room>
+      <Pane name="copy-past-crash" {...LEFT} />
+      <Pane name="codeql-issues" {...RIGHT} doing="lifted" />
+      <PanePreviewLine box={{ left: 120, top: 0, width: 2, height: 32 }} />
+      <PanePreviewHeld at={{ left: 130, top: 40 }}>codeql-issues</PanePreviewHeld>
+      <PanePreviewWords at={{ left: 130, top: 70 }}>A new tab with codeql-issues.</PanePreviewWords>
     </Room>
   ),
 };

@@ -701,10 +701,9 @@
   cursor: no-drop;
 }
 
-/* **On the strip, the line where the new tab goes** (#4583), and in placement mode what the place
-   the keyboard is on would take, until it draws what a drag draws (#5293): the half of the pane
-   the source would take, or the whole pane for a swap, over the terminal. A refused place is
-   dashed, in the danger colour. */
+/* **In placement mode, what the place the keyboard is on would take** (#4583), until it draws what
+   a drag draws (#5293): the half of the pane the source would take, or the whole pane for a swap,
+   over the terminal. A refused place is dashed, in the danger colour. */
 .pane-drop-preview {
   position: fixed;
   z-index: 4;
@@ -718,11 +717,6 @@
   border-style: dashed;
   border-color: var(--danger-base);
   background-color: var(--danger-wash);
-}
-
-.pane-drop-preview[data-line] {
-  border: none;
-  background-color: var(--accent-base);
 }
 
 /* ---------------------------------------------------------------------------------------------

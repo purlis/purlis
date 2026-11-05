@@ -172,3 +172,16 @@ export function gridIn(box: Size, cells: TerminalCells): Grid {
     rows: Math.max(LEAST.rows, Math.floor((box.height - cells.aroundHeight) / cells.height)),
   };
 }
+
+/**
+ * **Whether two lengths are the same on screen.** A layout measures in fractions and a share is
+ * reckoned to the pixel, so a pane the drop leaves alone may differ by less than a pixel or two:
+ * it neither moves nor is labelled for it.
+ */
+export function nearly(a: number, b: number): boolean {
+  return Math.abs(a - b) < 2;
+}
+
+/** Whether a pane of `a` and one of `b` are the same size on screen. */
+export const sameSize = (a: Size, b: Size) =>
+  nearly(a.width, b.width) && nearly(a.height, b.height);

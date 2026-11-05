@@ -6929,6 +6929,9 @@
         "pane-preview.name.padding": {
           "$ref": "#/$defs/part-padding"
         },
+        "pane-preview.line.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
         "pane-preview.size.fill": {
           "$ref": "#/$defs/part-fill"
         },

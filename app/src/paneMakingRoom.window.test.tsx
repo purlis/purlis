@@ -54,10 +54,12 @@ function start(): Tabs {
 }
 
 function Terminal() {
-  const hold = useCallback((at: HTMLDivElement | null) => {
-    if (at !== null) terminalInPane(at, () => CELLS);
+  // In a passive effect, as `SessionPane` does: after a tab brought forward has been measured.
+  const at = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (at.current !== null) return terminalInPane(at.current, () => CELLS);
   }, []);
-  return <div ref={hold} {...{ [TERMINAL_HOLDER]: "" }} data-testid="holder" />;
+  return <div ref={at} {...{ [TERMINAL_HOLDER]: "" }} data-testid="holder" />;
 }
 
 function Window({
@@ -126,6 +128,7 @@ function Window({
               >
                 <Terminal />
               </div>
+              <button type="button">{`Close ${content.kind === "session" ? content.session : "empty"}`}</button>
             </div>
           );
         })}
@@ -146,10 +149,15 @@ const boxOf = (el: Element) => {
   return { left, top, width, height };
 };
 
+/** How far off a whole pixel a pane measures, as a fractional layout has it. */
+let measuredOff = 0;
+
 beforeEach(() => {
+  measuredOff = 0;
   vi.useFakeTimers();
   vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
     let { left: x, top: y, width, height } = boxOf(this);
+    if (this.hasAttribute("data-drop-pane")) width += measuredOff;
     if (this.getAttribute(TERMINAL_HOLDER) !== null && width === 0) {
       ({ left: x, top: y, width, height } = boxOf(this.parentElement as Element));
     }
@@ -291,7 +299,7 @@ describe("the panes move to where a drop would leave them (#5291)", () => {
     settle();
     expect(drawn(1)).toEqual(LEFT_HALF);
     expect(drawn(3)).toEqual(RIGHT_HALF);
-    expect(document.querySelector(".pane-drop-preview[data-line]")).not.toBeNull();
+    expect(part("line")).not.toBeNull();
   });
 
   it("dims a pane as it is picked up, and its row picks up the pane a chat is on screen in", () => {
@@ -344,6 +352,20 @@ describe("the panes move to where a drop would leave them (#5291)", () => {
     expect(held.style.left).toBe("114px");
     fireEvent.pointerMove(document, at(140, 900));
     expect(held.style.left).toBe("154px");
+  });
+});
+
+describe("a pane the drop leaves alone (#5291)", () => {
+  it("stays where it is, with no label, though the layout measures off a whole pixel", () => {
+    measuredOff = 0.4;
+    shown();
+    fireEvent.pointerDown(screen.getByText("chat 7"), at(10, 705));
+    fireEvent.pointerMove(document, at(1590, 340));
+    settle();
+    expect(frame(1).style.transform).toBe("");
+    expect(frame(1).style.width).toBe("");
+    // Chat 3, made room in, and the chat arriving.
+    expect(allParts("size")).toHaveLength(2);
   });
 });
 
@@ -418,6 +440,30 @@ describe("the zones stay on the layout from the drag's start (#5291)", () => {
     settle();
     expect(screen.getByText("chat 3 right of chat 4.")).toBeTruthy();
     expect(drawn(4)).toEqual(LEFT_HALF);
+    // Its terminal said how it sits only after it was measured, as a pane just drawn does.
+    expect(allParts("size").map((one) => one.textContent)).toEqual(["80 × 27", "80 × 27"]);
+  });
+
+  it("measures nothing again for a change that leaves the same panes in the same places", () => {
+    const window = shown();
+    const front = window.tabs().order[0];
+    const one = contentsOf(window.tabs(), front)[0].pane;
+    fireEvent.pointerDown(head(3), at(900, 50));
+    fireEvent.pointerMove(document, at(60, 300));
+    settle();
+    const measures = vi.mocked(Element.prototype.getBoundingClientRect);
+    measures.mockClear();
+    // What a pane shows in place of its chat draws another tree, of the same panes.
+    act(
+      () =>
+        void window.change((t) => ({
+          ...t,
+          byId: { ...t.byId, [front]: { ...t.byId[front], shows: { [one]: 9 } } },
+        })),
+    );
+    expect(
+      measures.mock.contexts.filter((on) => (on as Element).hasAttribute("data-drop-pane")),
+    ).toEqual([]);
   });
 
   it("says a target that closed has closed, and the preview goes back", () => {
@@ -509,6 +555,19 @@ describe("cancelling restores exactly (#5291)", () => {
     expect(window.tabs().inFront).toBe(second);
     fireEvent.keyDown(document, { key: "Escape" });
     expect(window.tabs().inFront).toBe(first);
+  });
+
+  it("gives the keyboard to the focused pane when what had it has gone", () => {
+    const window = shown();
+    const [, second] = window.tabs().order;
+    screen.getByText("Close 3").focus();
+    fireEvent.pointerDown(head(3), at(900, 50));
+    fireEvent.pointerMove(document, at(60, 300));
+    settle();
+    act(() => void window.change((t) => selectTab(t, second)));
+    fireEvent.keyDown(document, { key: "Escape" });
+    act(() => vi.advanceTimersByTime(1));
+    expect(document.activeElement).toBe(screen.getByText("Close 3"));
   });
 
   it("puts the focused pane back, when the press focused the pane it took", () => {

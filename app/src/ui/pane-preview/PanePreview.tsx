@@ -6,7 +6,8 @@
  * imports these and never writes `data-scope="pane-preview"` (`purlis/pane-preview-family`).
  *
  * - **`PanePreviewArriving`**: a pane the drop would make, or one with no frame on screen: a chat
- *   from the list, or a side that would fold (`as` a rail or a bar).
+ *   from the list, or a side that would fold, with no name.
+ * - **`PanePreviewLine`**: on the strip, the line where a tab would go.
  * - **`PanePreviewSize`**: the columns and rows a terminal will take, on the pane that will change.
  * - **`PanePreviewRefused`**: the mark on the pane a refused place means.
  * - **`PanePreviewHeld`**: what is held, following the pointer.
@@ -31,30 +32,29 @@ const placed = (box: PreviewBox): CSSProperties => ({
   height: box.height,
 });
 
-/** **A pane about to be**, at the box it would take, with its name, or as a side folded small. */
-export function PanePreviewArriving({
-  box,
-  name,
-  as = "pane",
-}: {
-  box: PreviewBox;
-  name?: string;
-  as?: "pane" | "rail" | "bar";
-}) {
+/** **A pane about to be**, at the box it would take, with its name, or a side folded small. */
+export function PanePreviewArriving({ box, name }: { box: PreviewBox; name?: string }) {
   return (
-    <div
-      data-scope="pane-preview"
-      data-part="arriving"
-      data-variant={as}
-      aria-hidden="true"
-      style={placed(box)}
-    >
+    <div data-scope="pane-preview" data-part="arriving" aria-hidden="true" style={placed(box)}>
       {name !== undefined && (
         <span data-scope="pane-preview" data-part="name">
           {name}
         </span>
       )}
     </div>
+  );
+}
+
+/** **Where a tab would go**: a line at `box`, on the strip. */
+export function PanePreviewLine({ box, refused = false }: { box: PreviewBox; refused?: boolean }) {
+  return (
+    <div
+      data-scope="pane-preview"
+      data-part="line"
+      data-refused={refused || undefined}
+      aria-hidden="true"
+      style={placed(box)}
+    />
   );
 }
 
@@ -94,7 +94,7 @@ export function PanePreviewHeld({
   ref,
 }: {
   children: ReactNode;
-  at: { left: number; top: number };
+  at: { left: number | string; top: number };
   ref?: Ref<HTMLDivElement>;
 }) {
   return (
@@ -113,7 +113,7 @@ export function PanePreviewWords({
 }: {
   children: ReactNode;
   refused?: boolean;
-  at: { left: number; top: number };
+  at: { left: number | string; top: number };
   ref?: Ref<HTMLDivElement>;
 }) {
   return (

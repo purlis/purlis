@@ -25,7 +25,7 @@ import {
 import { keySaid, pressed } from "./keys/registry";
 import { Notice } from "./Notice";
 import { type Over, PaneDragLayer, PaneDragStore } from "./paneDragLayer";
-import { PANE, TAB } from "./paneHeld";
+import { boxOfRect, PANE, TAB } from "./paneHeld";
 import { REGION_CHROME } from "./RegionFrame";
 import {
   type Box,
@@ -307,13 +307,13 @@ export function usePaneDrag({
         // After a tab brought back has taken the keyboard, as it does when it is drawn.
         const { keyboard } = was;
         window.setTimeout(() => {
-          if (
-            keyboard instanceof HTMLElement &&
-            keyboard.isConnected &&
-            keyboard !== document.body &&
-            document.activeElement !== keyboard
-          )
-            keyboard.focus();
+          if (!(keyboard instanceof HTMLElement) || keyboard === document.body) return;
+          // What had it may have gone with a tab brought forward: the pane it was on takes it.
+          const to =
+            keyboard.isConnected || front === undefined || focused === undefined
+              ? keyboard
+              : gripOf(front, focused);
+          if (to?.isConnected === true && document.activeElement !== to) to.focus();
         }, 0);
         setSaid(said);
       };
@@ -324,13 +324,13 @@ export function usePaneDrag({
       };
       /** A cancel before the pointer comes up: its click, when it does, is the drag's too. */
       const swallowLaterClick = () => {
-        const came = () => {
-          window.removeEventListener("pointerdown", next, true);
+        const cameUp = () => {
+          window.removeEventListener("pointerdown", pressedAgain, true);
           swallowClick();
         };
-        const next = () => window.removeEventListener("pointerup", came, true);
-        window.addEventListener("pointerup", came, { capture: true, once: true });
-        window.addEventListener("pointerdown", next, { capture: true, once: true });
+        const pressedAgain = () => window.removeEventListener("pointerup", cameUp, true);
+        window.addEventListener("pointerup", cameUp, { capture: true, once: true });
+        window.addEventListener("pointerdown", pressedAgain, { capture: true, once: true });
       };
       const move = (at: PointerEvent) => {
         if (!live) {
@@ -362,8 +362,8 @@ export function usePaneDrag({
           if (tab !== undefined)
             held = { tab, timer: window.setTimeout(() => now.current.onHoldTab(tab), HOLD_MS) };
         }
-        const going = waiting === undefined ? store.get()?.over : waiting.over;
-        if (placeKey(over) === placeKey(going)) return;
+        const latest = waiting === undefined ? store.get()?.over : waiting.over;
+        if (placeKey(over) === placeKey(latest)) return;
         if (waiting !== undefined) window.clearTimeout(waiting.timer);
         waiting = {
           over,
@@ -722,13 +722,6 @@ function focusedPane(tabs: Tabs): { tab: number; pane: number } | undefined {
   const pane = front === undefined ? undefined : tabs.byId[front]?.focused;
   return front === undefined || pane === undefined ? undefined : { tab: front, pane };
 }
-
-const boxOfRect = (r: DOMRect): Box => ({
-  left: r.left,
-  top: r.top,
-  width: r.width,
-  height: r.height,
-});
 
 /** A target's key, as its button is marked: its pane and place, or the strip. */
 function targetKey(target: Target): string {

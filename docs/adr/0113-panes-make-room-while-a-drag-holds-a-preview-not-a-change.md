@@ -30,8 +30,8 @@ chat replaced what the focused pane showed, even in a tab the person had split (
   of the pin is the one change it hears. A label reckons the size each will take from the would-be
   box and the terminal's own cell, as its fit reckons it.
 - **Drop zones stay on the layout from the drag's start.** They are measured once, and retaken only
-  when what the tab in front draws changes or the room does, so panes making room can't move a zone
-  under the pointer.
+  when another tab comes to the front, a pane comes or goes under the drag, or the room changes, so
+  panes making room can't move a zone under the pointer.
 - **Stickiness, a wait and a duration.** A place holds about 3% past its line, a target changes
   after about 70 ms, and the panes take `duration.enter`, none under reduced motion. Each is a
   starting value: a measured one replaces it without a new decision.
@@ -66,11 +66,16 @@ chat replaced what the focused pane showed, even in a tab the person had split (
     the person opens can get one.
   - **"A press's target" in the layout model**, "otherwise the focused pane, unless it holds a view",
     gives way to `opensAt`.
+  - **ADR 0038 and ADR 0061** say the same in their amendments of 2026-11-02, and each has an
+    amendment of 2026-11-05 for it; so does ADR 0043's "a press on a chat" line.
   - **Kept:** story 4 (a press never replaces a view), a reopen of a finished task landing by the
     press rule, and story 87 (⌘⇧J's pick shows in this pane), a breadcrumb, ⌘⇧H and a drop, which
     name their own pane.
 
 ## What it costs
+
+- **The motion's in `docs/design-system.md`'s table,** and "the terminal is left still" still holds
+  for what it shows: its frame moves, and its grid and its text don't.
 
 - **A pane's frame leaves the boxes of its layout during a drag,** so those boxes clip nothing while
   it lasts. That is one rule in `paneFrame.css`, and the library's own inline `overflow` is why it

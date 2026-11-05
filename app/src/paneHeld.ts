@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { Box } from "./paneDrop";
-import type { Gaps, Plan, TerminalCells } from "./panePreview";
+import { type Gaps, nearly, type Plan, sameSize, type TerminalCells } from "./panePreview";
 
 /**
  * **The real panes while a drag holds them** (#5291): measured once as it starts, moved to where
@@ -59,10 +59,31 @@ export type PaneBase = {
   /** Where each pane is drawn, by its number: the drop zones, which stay on this layout. */
   zones: Map<number, Box>;
   /** How each pane's terminal sits in it, by the pane's number. */
-  terminals: Map<number, TerminalCells>;
+  terminals: Map<number, TerminalSeat>;
 };
 
-const boxOfRect = (r: DOMRect): Box => ({
+/** A pane's terminal: where it says its cells, and all the pane draws around what it has. */
+export type TerminalSeat = { holder: Element; aroundWidth: number; aroundHeight: number };
+
+/**
+ * **How a terminal sits in its pane, as it says now.** Read when asked for and not as the window is
+ * measured: a pane just drawn, on a tab brought forward, has its terminal a moment after.
+ */
+export function cellsIn(seat: TerminalSeat | undefined): TerminalCells | undefined {
+  const own = seat === undefined ? undefined : readers.get(seat.holder)?.();
+  return seat === undefined || own === undefined
+    ? undefined
+    : {
+        width: own.width,
+        height: own.height,
+        aroundWidth: seat.aroundWidth + own.extraWidth,
+        aroundHeight: seat.aroundHeight + own.extraHeight,
+      };
+}
+
+/** Its sides as plain values: a `DOMRect` keeps them on its prototype, so a spread of one has no
+ *  box (#5284). */
+export const boxOfRect = (r: DOMRect): Box => ({
   left: r.left,
   top: r.top,
   width: r.width,
@@ -83,12 +104,11 @@ function pixelsOf(length: string): number {
   return width;
 }
 
-/** Takes what the preview wrote off a frame. */
-function clearFrame(frame: HTMLElement) {
+/** Leaves a frame where the layout has it. */
+function unmove(frame: HTMLElement) {
   frame.style.removeProperty("transform");
   frame.style.removeProperty("width");
   frame.style.removeProperty("height");
-  frame.removeAttribute(PREVIEW);
 }
 
 function pin(element: HTMLElement, sides: "both" | "height", pinned: Set<HTMLElement>) {
@@ -113,7 +133,7 @@ export class HeldPanes {
   measure(front: number): PaneBase {
     this.clearWritten(true);
     const zones = new Map<number, Box>();
-    const terminals = new Map<number, TerminalCells>();
+    const terminals = new Map<number, TerminalSeat>();
     const frames = framesOf(front);
     for (const frame of frames) {
       const pane = Number(frame.getAttribute(PANE));
@@ -121,16 +141,13 @@ export class HeldPanes {
       if (box.width === 0 || box.height === 0) continue;
       zones.set(pane, box);
       const holder = frame.querySelector<HTMLElement>(`[${TERMINAL_HOLDER}]`);
-      const own = holder === null ? undefined : readers.get(holder)?.();
-      if (holder !== null && own !== undefined) {
+      if (holder !== null) {
         // The body is what a terminal has: its holder may be pinned at another size.
-        const body = frame.querySelector(".pane-body") ?? holder;
-        const room = body.getBoundingClientRect();
+        const room = (frame.querySelector(".pane-body") ?? holder).getBoundingClientRect();
         terminals.set(pane, {
-          width: own.width,
-          height: own.height,
-          aroundWidth: box.width - room.width + own.extraWidth,
-          aroundHeight: box.height - room.height + own.extraHeight,
+          holder,
+          aroundWidth: box.width - room.width,
+          aroundHeight: box.height - room.height,
         });
       }
     }
@@ -154,42 +171,33 @@ export class HeldPanes {
 
   /**
    * **Draws the preview on the frames of tab `front`**: each moved to its box, or, with no plan,
-   * where it is, with `lifted` dimmed. `moved` is the pane that is being moved.
+   * where it is. `held` is the pane being moved, which dims where it is until it has a place.
    */
-  draw(front: number, base: PaneBase, plan: Plan | undefined, marks: { held?: number }) {
+  draw(front: number, base: PaneBase, plan: Plan | undefined, held: number | undefined) {
     for (const frame of framesOf(front)) {
       const pane = Number(frame.getAttribute(PANE));
       const from = base.zones.get(pane);
       const box = plan?.frames.get(pane);
       this.written.add(frame);
-      if (box !== undefined && from !== undefined) {
-        const still =
-          box.left === from.left &&
-          box.top === from.top &&
-          box.width === from.width &&
-          box.height === from.height;
-        if (still) {
-          frame.style.removeProperty("transform");
-          frame.style.removeProperty("width");
-          frame.style.removeProperty("height");
-        } else {
-          frame.style.transform = `translate(${box.left - from.left}px, ${box.top - from.top}px)`;
-          frame.style.width = `${box.width}px`;
-          frame.style.height = `${box.height}px`;
-        }
+      if (
+        box === undefined ||
+        from === undefined ||
+        (nearly(box.left, from.left) && nearly(box.top, from.top) && sameSize(box, from))
+      ) {
+        unmove(frame);
       } else {
-        frame.style.removeProperty("transform");
-        frame.style.removeProperty("width");
-        frame.style.removeProperty("height");
+        frame.style.transform = `translate(${box.left - from.left}px, ${box.top - from.top}px)`;
+        frame.style.width = `${box.width}px`;
+        frame.style.height = `${box.height}px`;
       }
       const doing =
         plan === undefined
-          ? pane === marks.held
+          ? pane === held
             ? "lifted"
             : undefined
           : plan.gone.includes(pane)
             ? "gone"
-            : pane === marks.held
+            : pane === held
               ? "moved"
               : undefined;
       if (doing === undefined) frame.removeAttribute(PREVIEW);
@@ -212,7 +220,8 @@ export class HeldPanes {
   private clearWritten(atOnce: boolean) {
     for (const frame of this.written) {
       if (atOnce) frame.style.transition = "none";
-      clearFrame(frame);
+      unmove(frame);
+      frame.removeAttribute(PREVIEW);
     }
     if (atOnce) {
       // Read so the frames are laid out where they belong before their motion is theirs again.
