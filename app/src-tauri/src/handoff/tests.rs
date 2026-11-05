@@ -12725,3 +12725,116 @@ fn a_chats_dispatch_naming_a_pool_on_a_machine_that_keeps_none_is_refused() {
     );
     assert!(held.runner_dispatches().every().is_empty());
 }
+
+/// A chat as `ops`, on a project with a vault no persona is tagged for.
+fn a_chat_refused_vault_team(plane: &Plane, held: &Held) -> u32 {
+    std::fs::write(
+        plane.root.join("vaults.json"),
+        r#"{"vaults": {"team": {"provider": "plain-file", "config": {"file": "t.json"}}}}"#,
+    )
+    .expect("a registry");
+    a_chat_as(held, &plane.root, Some("ops"), &plane.root)
+}
+
+/// `program` run through the app's own way in, with `TOKEN` from vault `team`.
+fn run_on_team(held: &Held, id: &PlaneId, chat: u32, program: &str) {
+    use purlis_core::secrets::brokered::{Ask, Wanted};
+    crate::vaults::run_brokered(
+        held,
+        id,
+        &|_| {},
+        &|_| {},
+        Ask {
+            chat,
+            secret_exec: Wanted {
+                vault: "team".to_owned(),
+                command: vec![program.to_owned(), "--version".to_owned()],
+                env: vec!["TOKEN=TOKEN".to_owned()],
+                ..Wanted::default()
+            },
+            ..Ask::default()
+        },
+        Box::new(std::io::Cursor::new(Vec::new())),
+        Box::new(std::io::sink()),
+        Arc::new(|_| {}),
+    );
+}
+
+/// The Inbox's asks about a Run grant or a refused vault, as the person reads them.
+fn inbox_of_a_run(held: &Held) -> Vec<crate::asking::AskSource> {
+    use crate::asking::AskSource;
+    crate::asking::every_ask(held)
+        .asks
+        .into_iter()
+        .map(|ask| ask.source)
+        .filter(|source| matches!(source, AskSource::RunGrant | AskSource::Vault))
+        .collect()
+}
+
+/// ADR 0112: one run, one ask. The persona-wide Allow is not offered beside a Run grant's, while
+/// the run waits or after the person's Don't allow, however often the chat tries again.
+#[cfg(unix)]
+#[test]
+fn a_run_the_gate_asks_about_is_one_ask_in_the_inbox_and_dont_allow_leaves_none() {
+    use crate::asking::AskSource;
+    use purlis_core::harness::asks::{Admitted, Answerer};
+    use purlis_core::secrets::ask::run::RunAnswer;
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let chat = a_chat_refused_vault_team(&plane, &held);
+
+    std::thread::scope(|scope| {
+        let run = scope.spawn(|| run_on_team(&held, &id, chat, "curl"));
+        let open = loop {
+            if let Some(open) = held.secret_asks().open_runs().into_iter().next() {
+                break open;
+            }
+            assert!(!run.is_finished(), "the run ended without asking");
+            std::thread::yield_now();
+        };
+        assert!(open.not_its_vault);
+        assert_eq!(inbox_of_a_run(&held), [AskSource::RunGrant]);
+        let window = Answerer::admitted(Admitted::LocalUi).expect("the window");
+        held.secret_asks()
+            .answer_run(open.id, RunAnswer::Refuse, window)
+            .expect("answered");
+        run.join().expect("it ends");
+    });
+    assert_eq!(
+        inbox_of_a_run(&held),
+        [],
+        "nothing stays up after Don't allow"
+    );
+
+    run_on_team(&held, &id, chat, "curl");
+    assert_eq!(inbox_of_a_run(&held), [], "and trying again raises nothing");
+}
+
+/// A program no Run grant may be keeps the vault's own ask, and Keep blocked ends it for that chat:
+/// its next try can't bring the persona-wide Allow back, and another chat's is its own.
+#[cfg(unix)]
+#[test]
+fn a_chat_refused_after_keep_blocked_cannot_bring_the_vaults_allow_back() {
+    use crate::asking::AskSource;
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let chat = a_chat_refused_vault_team(&plane, &held);
+
+    run_on_team(&held, &id, chat, "python3");
+    assert_eq!(inbox_of_a_run(&held), [AskSource::Vault]);
+
+    held.vault_refusals().keep_blocked(chat, "team");
+    assert_eq!(inbox_of_a_run(&held), []);
+    run_on_team(&held, &id, chat, "python3");
+    assert_eq!(inbox_of_a_run(&held), [], "its next try raises nothing");
+
+    let another = a_chat_as(&held, &plane.root, Some("ops"), &plane.root);
+    run_on_team(&held, &id, another, "python3");
+    assert_eq!(inbox_of_a_run(&held), [AskSource::Vault]);
+}

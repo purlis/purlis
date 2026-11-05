@@ -144,9 +144,10 @@ fn count(ctx: &Ctx, v: &Vault) -> Option<u32> {
 ///
 /// **A chat that is still starting is waited for** ([`the_askers_record`], qw381).
 ///
-/// A vault the chat's persona is not tagged for is refused by the core, and noted here first
-/// for the Notice on the chat's tab (#1430, `crate::vaultroute`): from the same record of the
-/// chat, never from the line.
+/// A vault the chat's persona is not tagged for is refused by the core, and noted here once the
+/// run is over for the Notice on the chat's tab (#1430, `crate::vaultroute`): from the same record
+/// of the chat, never from the line. A run the Run grant gate took is not noted, since its one ask
+/// is that gate's (ADR 0112).
 ///
 /// Each host the run's sandbox refuses is told to `blocked` as the asking chat's block, so its
 /// tab's Notice offers Allow as for a block of the chat's own command.
@@ -240,14 +241,6 @@ pub(crate) fn run_brokered(
         // The harness the app started it on, for a block of the run's own Notice (#1353).
         harness: open.harness,
     };
-    crate::vaultroute::refused(
-        plane,
-        held.vault_refusals(),
-        &asker,
-        held.chats().started_unsandboxed(ask.chat),
-        &ask.secret_exec.vault,
-        refused,
-    );
     // Each connection the run makes is the chat's, in the network record (#1667).
     let reached = held.chats().reached_for(ask.chat, asker.persona.clone());
     let vault = ask.secret_exec.vault.clone();
@@ -263,10 +256,12 @@ pub(crate) fn run_brokered(
     };
     // A key its vault holds no value under is asked of the person, and the run waits until
     // just before its harness would kill it (#5068, #5071, ADR 0109).
+    let run_asked = std::sync::atomic::AtomicBool::new(false);
     let missing = brokered::Missing {
         asks: held.secret_asks(),
         within: purlis_core::secrets::ask::holds_for(asker.harness),
         moved: &|| held.chats().asks_may_have_moved(),
+        run_asked: Some(&run_asked),
     };
     brokered::serve_recording(
         &asker,
@@ -277,6 +272,16 @@ pub(crate) fn run_brokered(
         reached,
         missing,
     );
+    if !run_asked.load(std::sync::atomic::Ordering::Relaxed) {
+        crate::vaultroute::refused(
+            plane,
+            held.vault_refusals(),
+            &asker,
+            held.chats().started_unsandboxed(ask.chat),
+            &vault,
+            refused,
+        );
+    }
     let (Some(start), Some(seen), Some(persona)) = (start, seen, asker.persona) else {
         return;
     };

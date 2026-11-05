@@ -905,8 +905,12 @@ fn run_granted(
         cwd: start_in.map(Path::to_path_buf).unwrap_or_default(),
         args: command[1..].to_vec(),
     };
+    let took_the_run = || {
+        let _ = missing.run_asked;
+    };
     if is_a_tool {
         return if missing.asks.granted(&bound) {
+            took_the_run();
             Ok(ready)
         } else {
             Err((1, why))
@@ -947,6 +951,7 @@ fn run_granted(
         caution: tools::caution_here(&ready.tool),
         command: shown,
     };
+    took_the_run();
     let held = missing
         .asks
         .allowed_or_held(need, missing.within, &mut |line: &str| {
@@ -1522,6 +1527,10 @@ pub struct Missing<'a> {
     pub within: Duration,
     /// Told once an ask is raised or joined, so the window lists it.
     pub moved: &'a (dyn Fn() + Sync),
+    /// Set when the Run grant gate takes the run: it asks, a grant covers it, or the person's
+    /// Don't allow stands. That is the run's one ask, so the app raises no vault ask beside it
+    /// (ADR 0112).
+    pub run_asked: Option<&'a std::sync::atomic::AtomicBool>,
 }
 
 impl Missing<'_> {

@@ -27,6 +27,7 @@ fn run_with(asker: &Asker, wanted: Wanted, asks: &Asks, within: Duration) -> Vec
             asks,
             within,
             moved: &|| {},
+            run_asked: None,
         },
     );
     let bytes = wire.0.lock().unwrap().clone();
@@ -1169,4 +1170,53 @@ fn a_declared_tool_off_the_reviewed_list_runs_as_it_always_did() {
     let frames = run_with(&chat, want, &asks, Duration::from_secs(60));
     assert!(asks.open_runs().is_empty(), "{frames:?}");
     assert!(!format!("{frames:?}").contains("reviewed"), "{frames:?}");
+}
+
+/// Whether the gate took `want`'s run, heard as the app hears it, with a person who says no.
+fn the_gate_took(root: &Path, want: Wanted, asks: &Asks) -> bool {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    crate::sandbox::tools::SEARCH_HERE
+        .with(|dirs| *dirs.borrow_mut() = Some(vec!["/usr/bin".into(), "/bin".into()]));
+    let run_asked = AtomicBool::new(false);
+    let (reader, _keep) = held_open();
+    serve_asking(
+        &the_chat(root),
+        want,
+        reader,
+        Box::new(Wire::default()),
+        Wrap::Unwrapped,
+        Missing {
+            asks,
+            within: Duration::ZERO,
+            moved: &|| {},
+            run_asked: Some(&run_asked),
+        },
+    );
+    run_asked.load(Ordering::Relaxed)
+}
+
+#[test]
+fn the_gate_says_it_took_a_run_it_asks_about_and_a_run_it_remembers_refused() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    let root = project.path();
+    assert!(the_gate_took(root, curl_on_another_vault(root), &asks));
+    let open = asks.open_runs().into_iter().next().expect("it asked");
+    asks.answer_run(open.id, RunAnswer::Refuse, window())
+        .unwrap();
+    assert!(
+        the_gate_took(root, curl_on_another_vault(root), &asks),
+        "a Don't allow stands, and asks nothing else"
+    );
+}
+
+#[test]
+fn the_gate_takes_no_run_it_has_no_allow_for() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    let root = project.path();
+    let mut interpreter = curl_on_another_vault(root);
+    interpreter.command = vec!["python3".into(), "-c".into(), "print(1)".into()];
+    assert!(!the_gate_took(root, interpreter, &asks));
+    assert!(asks.open_runs().is_empty());
 }
