@@ -130,7 +130,7 @@ const SIGNAL_MARKS: readonly Token[] = ["markdown.link", "chart.1"];
 function OverPurlis() {
   const root = getComputedStyle(document.documentElement);
   const value = (token: Token) => root.getPropertyValue(property(token)).trim();
-  const accent = value("state.success");
+  const accent = value("terminal.ansi.blue");
   // Each ground turned toward the accent, or the theme's own where that would bring it nearer
   // the waiting or danger wash (`vocabulary::follow_kin`).
   const followed = (ground: Token) => {
@@ -142,13 +142,16 @@ function OverPurlis() {
   // Each turned the same way, or its kin as drawn where the theme draws it as its kin
   // (`vocabulary::follow_kin`), or where turning would bring it nearer a colour than the rules
   // the engine hands this theme allow and than the theme's own is (`vocabulary::holds_as_apart`).
-  const held = (token: Token) => {
+  const held = (token: Token): string => {
     const kin = DRAWN_IN_THE_ACCENT[token];
-    // Drawn as its kin, it is that kin as drawn here, turned or not (#5157).
-    if (kin !== undefined && value(kin) === value(token))
-      return (ACCENT_GROUNDS as readonly Token[]).includes(kin) ? followed(kin) : value(kin);
+    // Drawn as its kin, it is that kin as drawn here, turned or not (#5157). The fill under the
+    // pointer is drawn as the active tab, which no accent turns, so it keeps the fill's hue.
+    if (kin !== undefined && value(kin) === value(token)) {
+      if ((ACCENT_GROUNDS as readonly Token[]).includes(kin)) return followed(kin);
+      return token === "accent.fill-hover" ? toward(value(token), held("accent.fill")) : value(kin);
+    }
     // What the theme draws as its accent is the accent given (#5157). The engine also passes over
-    // a colour that would lose a contrast (`check::keeps_contrast`); a success green loses none here.
+    // a colour that would lose a contrast (`check::keeps_contrast`); this blue loses none here.
     const turned = value(token) === value("accent.base") ? accent : toward(value(token), accent);
     const holds = (colour: string) =>
       inForce()
@@ -159,7 +162,8 @@ function OverPurlis() {
           return oklabDistance(colour, from) >= Math.min(rule.distance, was);
         });
     if (holds(turned)) return turned;
-    // A mark that would read as a state there takes the accent's own colour (#5157).
+    // A mark that would read as a state there takes the accent's own colour (#5157). Where that
+    // reads as one too the engine nudges it clear (`tint::nudged`), which this blue never needs.
     return SIGNAL_MARKS.includes(token) && holds(accent) ? accent : value(token);
   };
   const drawn = {
@@ -212,10 +216,9 @@ function OverPurlis() {
  * not on Purlis's lavender. Each ground is the theme's turned to the accent's hue at the
  * luminance and alpha it had (`tint::toward`), so every contrast on it is where the theme put it,
  * and stays the theme's where turning would bring it nearer the waiting or danger wash.
- * The link follows the accent too where it can stay 0.1 from every state colour (#5157); this
- * accent is the success green, so the link stays the theme's and never reads as success.
- * The tokens are set here as the engine resolves them, from a green the theme already holds
- * (`state.success`) and the cell's own grounds, by the window's own arithmetic (`tint.ts`'
+ * The link follows the accent too, staying 0.1 from every state colour (#5157).
+ * The tokens are set here as the engine resolves them, from a blue the theme already holds
+ * (`terminal.ansi.blue`) and the cell's own grounds, by the window's own arithmetic (`tint.ts`'
  * `toward`, held to the engine's by the shared fixture), so no colour is written outside a theme
  * file; no story picks a theme of its own.
  */

@@ -1688,7 +1688,7 @@ fn ratio_by<'v>(value: &dyn Fn(&str) -> &'v str, pair: &Pair) -> Option<f64> {
 /// a colour out, and a hard floor broken refuses the whole theme (#5157).
 pub(super) fn keeps_contrast<'v>(
     token: &str,
-    colour: &'v str,
+    colour: &str,
     is: &dyn Fn(&str) -> &'v str,
     was: &dyn Fn(&str) -> &'v str,
 ) -> bool {

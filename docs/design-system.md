@@ -478,18 +478,25 @@ asked for), whatever the system's appearance. Where its values come from:
   way, so the white words keep their 4.5:1 on the fill and the ring its 3:1; one that would come
   nearer the waiting or danger colour than 0.1, and nearer than Purlis's own, stays Purlis's
   (`vocabulary::holds_as_apart`). One the parent draws as its accent (the ring and the edge, in
-  Purlis and Purlis Classic) is the accent given, so what the parent draws alike stays alike: a
-  base16 import's edge is its ring (#5157). Where the accent itself would lose a contrast the
-  parent kept, it turns to the accent's hue at the parent's lightness instead
+  Purlis and Purlis Classic) is the accent given, so what the parent draws alike stays alike: an
+  edge the parent draws as its ring is the ring as drawn, so a base16 import's edge is its ring
+  even where the import tunes its accent away from it (#5157), and a ring that follows an accent
+  holds the edge's pairs too, so the two never part. Where the accent itself would lose a contrast
+  the parent kept, it turns to the accent's hue at the parent's lightness instead
   (`check::keeps_contrast`): a theme's accent has no person layer to leave a colour out, and a
   hard floor broken refuses the theme. A fill the parent draws as its surface (Purlis
-  Classic) follows the surface as it is drawn, turned or not (#5157). **So do the accent's marks**
-  (#5157, `tint::SIGNAL_MARKS`): the link and `chart.1` turn the same way, each only where it
-  stays 0.1 from every state colour, or no nearer than the theme's own. A mark that would read
-  as a state there takes the accent's own colour: a teal at Purlis's link's lightness is within
-  0.1 of its success green, so a teal accent's link is the teal itself. Where neither holds, as
-  with a teal too near success in Purlis light (`#0b6359`, 0.07 from it), the mark stays the
-  theme's. `tab.active` stays Purlis's: it is a grey ground there, with nothing
+  Classic) follows the surface as it is drawn, turned or not, and under the pointer it turns to
+  that fill's hue (#5157). **So do the accent's marks** (#5157, `tint::SIGNAL_MARKS`): the link and
+  `chart.1` turn the same way, each 0.1 from every state colour and at its contrast floors, or no
+  nearer and no lower than the theme's own, and `chart.1` 0.1 from each other series
+  (`vocabulary::SERIES_APART`), or no nearer than the theme's first was. A mark that can't do so
+  turned takes the accent's own colour. **A mark does not go back to the theme's colour while one
+  in the accent's family can hold:** where neither holds it takes the colour nearest the accent
+  that does (`tint::nudged`), its hue within 30° and its lightness moved as far as it must be. A
+  teal at Purlis's link's lightness is within 0.1 of its success green, and `#2dd4bf` is too, so
+  over Purlis dark its link is that teal nudged just clear. Should no such colour exist, the mark
+  stays the theme's; none of 4,000 accents sampled over the four Purlis appearances did. A person's
+  accent the layer leaves out takes all that followed it out too, through every hop. `tab.active` stays Purlis's: it is a grey ground there, with nothing
   of the accent to turn. Section labels are tracked at
   .05em in every theme. Purlis Classic draws as it did: each new token is the value of the one
   that drew it before, and its parts keep its 9px rail buttons, its 5px title-bar chips and its

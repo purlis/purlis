@@ -136,11 +136,14 @@ impl Layer {
         let mut given = self.colours.clone();
         // What is drawn only because it follows a colour of the person's, and that colour.
         let following = follow_kin(&mut given, &theme.values);
+        // The colour of the person's it comes from, through every hop: the primary's fill follows
+        // the surface, which follows the accent.
         let source = |token: &'static str| {
-            following
-                .iter()
-                .find(|(kin, _)| *kin == token)
-                .map(|(_, drew)| *drew)
+            let mut at = token;
+            while let Some((_, drew)) = following.iter().find(|(kin, _)| *kin == at) {
+                at = drew;
+            }
+            (at != token).then_some(at)
         };
         for (token, colour) in given {
             drawn.values.insert(token, colour);
@@ -197,7 +200,7 @@ impl Layer {
             ));
             let theirs = theme.value(out).to_owned();
             drawn.values.insert(out, theirs);
-            for (kin, _) in following.iter().filter(|(_, drew)| *drew == out) {
+            for (kin, _) in following.iter().filter(|(kin, _)| source(kin) == Some(out)) {
                 drawn.values.insert(*kin, theme.value(kin).to_owned());
             }
         }

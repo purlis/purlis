@@ -179,8 +179,8 @@ fn a_ring_the_theme_gives_is_its_own() {
 fn a_fill_the_parent_draws_as_its_surface_follows_the_surface_as_turned_not_as_written() {
     // Purlis Classic's primary is filled with its surface (#3177's KIN): an accent given over it
     // alone turns the surface (#4666), and the fill is that turned surface, sharing its hue
-    // (#5157), not Classic's teal beside a red surface. The fill under the pointer is Classic's
-    // active tab, which no accent turns; the ring and the edge turn.
+    // (#5157), not Classic's teal beside a red surface. The fill under the pointer turns with it;
+    // the ring and the edge turn.
     for classic in built_ins() {
         for accent in [
             if light(classic) { DARK_TEAL } else { TEAL },
@@ -204,10 +204,20 @@ fn a_fill_the_parent_draws_as_its_surface_follows_the_surface_as_turned_not_as_w
                 theme.value("accent.surface"),
                 "{id}"
             );
-            assert_eq!(
-                theme.value("accent.fill-hover"),
-                classic.value("accent.fill-hover"),
-                "{id}"
+            // Under the pointer the fill keeps the hue it had at rest, at the lightness the
+            // parent gave it, as the wash under the pointer does.
+            let hover = theme.value("accent.fill-hover");
+            assert!(
+                degrees_apart(hue(hover), hue(theme.value("accent.fill"))) < 12.0,
+                "{id}: fill {} hover {hover}",
+                theme.value("accent.fill")
+            );
+            assert!(
+                (tint::luminance_of(hover).unwrap()
+                    - tint::luminance_of(classic.value("accent.fill-hover")).unwrap())
+                .abs()
+                    < 0.005,
+                "{id}: hover {hover}"
             );
             for edge in ["focus.ring", "list.selected-edge"] {
                 assert_eq!(theme.value(edge), accent, "{id} {edge}");
@@ -227,10 +237,11 @@ fn a_given_blue_turns_the_link_and_the_first_chart_colour_and_keeps_them_from_th
         for mark in tint::SIGNAL_MARKS {
             let (was, now) = (theme.value(mark), drawn.value(mark));
             let id = format!("{} {mark}: {was} → {now}", theme.id);
+            // As its accent, or as near as the other series let it be (#5157).
             if was == theme.value("accent.base") {
-                assert_eq!(now, given, "{id}");
+                assert!(apart(now, &given) < 0.1, "{id}");
             }
-            assert!(degrees_apart(hue(now), hue(&given)) < 6.0, "{id}");
+            assert!(degrees_apart(hue(now), hue(&given)) < FAMILY, "{id}");
             for state in tint::SIGNALS {
                 assert!(
                     apart(now, drawn.value(state)) >= 0.1,
@@ -258,7 +269,8 @@ fn a_given_teal_draws_a_teal_link_and_first_chart_colour_clear_of_the_states() {
         for mark in tint::SIGNAL_MARKS {
             let now = drawn.value(mark);
             let id = format!("{} {mark}: {now}", theme.id);
-            assert_eq!(now, given, "{id}");
+            // The teal itself, or as near as the other series let it be (#5157).
+            assert!(apart(now, given) < 0.05, "{id}");
             for state in tint::SIGNALS {
                 assert!(apart(now, drawn.value(state)) >= 0.1, "{id} from {state}");
             }
@@ -266,31 +278,279 @@ fn a_given_teal_draws_a_teal_link_and_first_chart_colour_clear_of_the_states() {
     }
 }
 
+/// The most a nudged mark's hue may be from the accent's, in degrees, with what showing it on the
+/// screen can move it by.
+const FAMILY: f64 = 34.0;
+
+/// Whether `mark`, as `drawn` draws it for `accent`, is in the accent's family, clear of every
+/// state colour and at its contrast floors: what a mark must be, unless nothing can be (#5157).
+fn mark_problem(
+    theme: &ResolvedTheme,
+    drawn: &ResolvedTheme,
+    mark: &str,
+    accent: &str,
+) -> Option<String> {
+    let now = drawn.value(mark);
+    let [_, a, b] = oklab_of(accent).unwrap();
+    // A grey has no hue of its own to stay near, and an accent of the parent's own hue may draw
+    // the parent's colour and be in its family all the same.
+    let grey = a.hypot(b) <= 0.04;
+    if grey && now == theme.value(mark) && now != accent {
+        return Some(format!("{now} is the parent's"));
+    }
+    if !grey && degrees_apart(hue(now), hue(accent)) > FAMILY {
+        return Some(format!("{now} left the family of {accent}"));
+    }
+    for state in tint::SIGNALS {
+        let near = apart(now, drawn.value(state));
+        if near < 0.1 {
+            return Some(format!("{now} is {near} from {state}"));
+        }
+    }
+    for pair in PAIRS.iter().filter(|pair| pair.front == mark) {
+        let (Some(was), Some(is)) = (ratio(theme, pair), ratio(drawn, pair)) else {
+            continue;
+        };
+        if is < was.min(pair.floor) {
+            return Some(format!(
+                "{now} on {} is {is}, floor {}",
+                pair.back, pair.floor
+            ));
+        }
+    }
+    None
+}
+
+/// `theme` with `accent` given as a theme gives it, with no person's layer to leave it out.
+fn given_accent(theme: &ResolvedTheme, accent: &str) -> ResolvedTheme {
+    let mut given = std::collections::BTreeMap::new();
+    given.insert("accent.base", accent.to_owned());
+    super::vocabulary::follow_kin(&mut given, &theme.values);
+    let mut drawn = theme.clone();
+    drawn.values.extend(given);
+    drawn
+}
+
 #[test]
-fn a_teal_itself_too_near_success_keeps_the_link_and_first_chart_colour_as_they_were() {
-    // In Purlis light this teal is the accent, but within 0.1 of success as a link: both marks
-    // stay Purlis's, so a link is never read as a state (#4921), and the accent is still the teal.
-    let theme = purlis()
-        .appearances
-        .iter()
-        .find(|one| one.id == "light")
-        .expect("Purlis light");
-    assert!(apart(DARK_TEAL, theme.value("state.success")) < 0.1);
-    let drawn = with_accent(theme, DARK_TEAL);
-    assert_eq!(drawn.value("accent.base"), DARK_TEAL);
-    for mark in tint::SIGNAL_MARKS {
-        assert_eq!(drawn.value(mark), theme.value(mark), "{mark}");
+fn a_mark_too_near_a_state_stays_in_the_accent_s_family_nudged_just_clear() {
+    // The person's ruling on #5157: a link or a first chart colour does not fall back to the
+    // parent's lavender. Each case took it, before.
+    let cases = [
+        ("dark", "#2dd4bf"),
+        ("dark-high-contrast", "#2dd4bf"),
+        ("light", DARK_TEAL),
+        ("dark", "#0d9488"),
+    ];
+    for (id, accent) in cases {
+        let theme = purlis()
+            .appearances
+            .iter()
+            .find(|one| one.id == id)
+            .unwrap();
+        let drawn = given_accent(theme, accent);
+        for mark in tint::SIGNAL_MARKS {
+            let problem = mark_problem(theme, &drawn, mark, accent);
+            assert!(problem.is_none(), "{id} {accent} {mark}: {problem:?}");
+            // Just far enough: nearer the accent than a hop past the rule would be.
+            assert!(
+                apart(drawn.value(mark), accent) < 0.2,
+                "{id} {accent} {mark}: {} is far from it",
+                drawn.value(mark)
+            );
+        }
+    }
+    // A person's accent the layer keeps takes the same road.
+    for (id, accent) in &cases[..3] {
+        let theme = purlis()
+            .appearances
+            .iter()
+            .find(|one| one.id == *id)
+            .unwrap();
+        let drawn = with_accent(theme, accent);
+        assert_eq!(drawn.value("accent.base"), *accent, "{id}");
+        for mark in tint::SIGNAL_MARKS {
+            let problem = mark_problem(theme, &drawn, mark, accent);
+            assert!(problem.is_none(), "{id} {accent} {mark}: {problem:?}");
+        }
     }
 }
 
 #[test]
-fn an_accent_the_colour_of_success_leaves_the_link_and_first_chart_colour_as_they_were() {
-    // Neither the link turned nor the accent itself can stand apart from success: both marks stay
-    // the theme's, so a link is never read as a state (#4921).
+fn an_accent_the_colour_of_success_draws_its_marks_clear_of_success() {
     for theme in &purlis().appearances {
-        let drawn = with_accent(theme, theme.value("state.success"));
+        let accent = theme.value("state.success");
+        let drawn = given_accent(theme, accent);
         for mark in tint::SIGNAL_MARKS {
-            assert_eq!(drawn.value(mark), theme.value(mark), "{} {mark}", theme.id);
+            let problem = mark_problem(theme, &drawn, mark, accent);
+            assert!(problem.is_none(), "{} {mark}: {problem:?}", theme.id);
+        }
+    }
+}
+
+#[test]
+fn across_a_grid_of_accents_every_purlis_appearance_keeps_its_marks_in_the_family() {
+    // Every accent a theme could give, and every one a person's layer keeps, in all four
+    // appearances. Nothing falls back: a nudge can always meet the 0.1 and the floor.
+    let steps = [0x10, 0x40, 0x70, 0xa0, 0xd0, 0xf0];
+    let mut wrong = Vec::new();
+    for theme in &purlis().appearances {
+        for r in steps {
+            for g in steps {
+                for b in steps {
+                    let accent = format!("#{r:02x}{g:02x}{b:02x}");
+                    let by_theme = given_accent(theme, &accent);
+                    let by_person = with_accent(theme, &accent);
+                    let mut drawings = vec![by_theme];
+                    if by_person.value("accent.base") == accent {
+                        drawings.push(by_person);
+                    }
+                    for drawn in &drawings {
+                        for mark in tint::SIGNAL_MARKS {
+                            if let Some(problem) = mark_problem(theme, drawn, mark, &accent) {
+                                wrong.push(format!("{} {accent} {mark}: {problem}", theme.id));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "{} wrong: {:#?}",
+        wrong.len(),
+        &wrong[..wrong.len().min(40)]
+    );
+}
+
+#[test]
+fn an_accent_a_person_s_layer_leaves_out_takes_everything_that_followed_it_out_too() {
+    // The fill follows the surface, which follows the accent: leaving the accent out reverts the
+    // whole chain, not one hop of it (#5157).
+    let classic_dark = built_ins().iter().find(|one| !light(one)).unwrap();
+    let (person, _) = Person::read(Some(&json!({ "colours": { "accent.base": "#0000ff" } })));
+    let (drawn, said) = person.layer().over(classic_dark);
+    assert!(
+        said.iter().any(|one| one.said.contains("accent.base")),
+        "{said:?}"
+    );
+    assert_eq!(
+        drawn.value("accent.fill"),
+        classic_dark.value("accent.fill")
+    );
+
+    let steps = [0x00, 0x40, 0x80, 0xc0, 0xff];
+    for theme in purlis().appearances.iter().chain(built_ins()) {
+        for r in steps {
+            for g in steps {
+                for b in steps {
+                    let accent = format!("#{r:02x}{g:02x}{b:02x}");
+                    let drawn = with_accent(theme, &accent);
+                    if drawn.value("accent.base") != theme.value("accent.base") {
+                        continue;
+                    }
+                    for token in DRAWN_IN_THE_ACCENT
+                        .into_iter()
+                        .chain(tint::SIGNAL_MARKS)
+                        .chain(super::vocabulary::ACCENT_GROUNDS)
+                        .chain([super::vocabulary::ACCENT_WORDS, "accent.fill-edge"])
+                    {
+                        assert_eq!(
+                            drawn.value(token),
+                            theme.value(token),
+                            "{} {} {accent} left out, {token} stayed",
+                            theme.name,
+                            theme.id
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn a_ring_and_an_edge_the_parent_draws_alike_stay_alike_under_a_plain_accent() {
+    // The edge has a pair the ring has not (the palette's aimed row), so the two used to part over
+    // #007fff on Classic light. Whatever colour they take, they take it together.
+    let steps = [0x00, 0x40, 0x7f, 0xc0, 0xff];
+    for theme in purlis().appearances.iter().chain(built_ins()) {
+        assert_eq!(theme.value("focus.ring"), theme.value("list.selected-edge"));
+        for r in steps {
+            for g in steps {
+                for b in steps {
+                    let accent = format!("#{r:02x}{g:02x}{b:02x}");
+                    let drawn = given_accent(theme, &accent);
+                    assert_eq!(
+                        drawn.value("list.selected-edge"),
+                        drawn.value("focus.ring"),
+                        "{} {} {accent}",
+                        theme.name,
+                        theme.id
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn the_primary_s_fill_under_the_pointer_keeps_the_fill_s_hue() {
+    // #abc over Classic dark drew fill #202c3b and, under the pointer, teal #1f3530.
+    let classic = built_ins().iter().find(|one| !light(one)).unwrap();
+    let drawn = given_accent(classic, "#aabbcc");
+    let (fill, hover) = (drawn.value("accent.fill"), drawn.value("accent.fill-hover"));
+    assert!(
+        degrees_apart(hue(fill), hue(hover)) < 12.0,
+        "fill {fill} hover {hover}"
+    );
+}
+
+/// The series a first chart colour stands beside.
+const SERIES: [&str; 7] = [
+    "chart.2", "chart.3", "chart.4", "chart.5", "chart.6", "chart.7", "chart.8",
+];
+
+#[test]
+fn the_first_chart_colour_stays_distinct_from_the_other_series() {
+    // Each of these drew chart.1 on, or nearly on, chart.2.
+    let purlis_dark = purlis()
+        .appearances
+        .iter()
+        .find(|one| one.id == "dark")
+        .unwrap();
+    let classic_light = built_ins().iter().find(|one| light(one)).unwrap();
+    for (theme, accent) in [(purlis_dark, "#92c4f2"), (classic_light, "#007fbf")] {
+        let drawn = given_accent(theme, accent);
+        for series in SERIES {
+            let was = apart(theme.value("chart.1"), theme.value(series));
+            let is = apart(drawn.value("chart.1"), drawn.value(series));
+            assert!(
+                is >= was.min(super::vocabulary::SERIES_APART),
+                "{accent}: chart.1 {} is {is} from {series}, {was} as written",
+                drawn.value("chart.1")
+            );
+        }
+    }
+    let steps = [0x10, 0x50, 0x90, 0xd0];
+    for theme in purlis().appearances.iter().chain(built_ins()) {
+        for r in steps {
+            for g in steps {
+                for b in steps {
+                    let accent = format!("#{r:02x}{g:02x}{b:02x}");
+                    let drawn = given_accent(theme, &accent);
+                    for series in SERIES {
+                        let was = apart(theme.value("chart.1"), theme.value(series));
+                        let is = apart(drawn.value("chart.1"), drawn.value(series));
+                        assert!(
+                            is >= was.min(super::vocabulary::SERIES_APART),
+                            "{} {} {accent}: {is} from {series}",
+                            theme.name,
+                            theme.id
+                        );
+                    }
+                }
+            }
         }
     }
 }

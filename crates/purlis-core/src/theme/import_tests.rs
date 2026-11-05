@@ -167,6 +167,44 @@ fn a_base16_scheme_s_selected_edge_is_its_ring_as_purlis_classic_draws_them_alik
 }
 
 #[test]
+fn a_base16_scheme_s_selected_edge_is_its_ring_whatever_its_base0d_on_either_ground() {
+    // A walk tunes the accent past what it tunes the ring, so the two can part; the edge Classic
+    // draws as the ring stays the ring (#5157).
+    let dark = String::from_utf8_lossy(HARBOR).to_string();
+    let mut light = dark.clone();
+    for (from, to) in [
+        ("1b2024", "fafafa"),
+        ("232a2f", "f0f0f0"),
+        ("2e373d", "e5e5e6"),
+        ("5c6a73", "a0a1a7"),
+        ("8a9aa4", "696c77"),
+        ("c7d3da", "383a42"),
+        ("dce5ea", "202227"),
+        ("f0f5f7", "090a0b"),
+    ] {
+        light = light.replace(from, to);
+    }
+    for (ground, base0ds) in [
+        (&dark, ["268bd2", "4078f2", "0d9488"]),
+        (&light, ["268bd2", "4078f2", "98c379"]),
+    ] {
+        for base0d in base0ds {
+            let scheme = ground.replace("61afef", base0d);
+            let imported =
+                import(SourceKind::Base16, "scheme.yaml", scheme.as_bytes()).expect("imported");
+            let theme = drawn(&imported);
+            let one = theme.first();
+            assert_eq!(
+                one.value("list.selected-edge"),
+                one.value("focus.ring"),
+                "{base0d} on {}",
+                one.value("surface.base")
+            );
+        }
+    }
+}
+
+#[test]
 fn a_base16_scheme_s_unused_colour_and_its_author_are_listed() {
     let imported = import(SourceKind::Base16, "harbor.yaml", HARBOR).expect("imported");
 
