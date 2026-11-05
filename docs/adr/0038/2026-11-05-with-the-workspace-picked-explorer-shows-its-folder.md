@@ -1,7 +1,7 @@
 # Amended (2026-11-05): with the workspace picked, Explorer shows the workspace's folder
 
 From the operator's grill of the workspace-files feature, alongside
-[ADR 0113](../0113-a-workspaces-repos-live-in-repos-and-both-layouts-are-read.md) and ADR 0081's
+[ADR 0114](../0114-a-workspaces-repos-live-in-repos-and-both-layouts-are-read.md) and ADR 0081's
 amendment of the same day. It changes what #3343's *Explorer opens straight to the files* opens
 to, keeps its promise, and adds no fold and no icon.
 

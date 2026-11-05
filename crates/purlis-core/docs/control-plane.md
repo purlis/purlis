@@ -207,7 +207,7 @@ create <name>` gives it one.
 
 ### The directory you are in decides the workspace
 
-A workspace's trees live at paths that name it — `workspaces/<ws>/repos/<repo>/` (or `workspaces/<ws>/<repo>/` for a clone made before structure version 6, ADR 0113) for a fleet
+A workspace's trees live at paths that name it — `workspaces/<ws>/repos/<repo>/` (or `workspaces/<ws>/<repo>/` for a clone made before structure version 6, ADR 0114) for a fleet
 clone, `<worktrees-root>/<ws>/<repo>/<piece>/` for a worktree — so **being inside one is
 the answer**, ahead of any pointer:
 
