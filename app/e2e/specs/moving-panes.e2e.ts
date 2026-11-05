@@ -10,9 +10,9 @@ import { openedSince } from "../reach.js";
 
 /**
  * **A pane dragged in the real window** (#5291): the panes make room, a terminal keeps its grid
- * until the drop, is told its size once then, and a cancel leaves nothing behind. jsdom lays
- * nothing out, so where a frame lands, what its terminal takes and what the program is told are
- * asked here, of real panes, a real xterm and the real core.
+ * until the drop, changes it once then, and a cancel leaves nothing behind. jsdom lays
+ * nothing out, so where a frame lands, and what its terminal takes are
+ * asked here, of real panes and a real xterm.
  *
  * **The pointer's events are dispatched in the page.** Everything from there is the window's own
  * (its listeners, its layout, its observers); how a real pointer feels is a check on hardware
@@ -21,12 +21,16 @@ import { openedSince } from "../reach.js";
 
 type Box = { left: number; top: number; width: number; height: number };
 
-type Pane = { frame: Box; grid: { width: number; rows: number } };
+type Pane = { frame: Box; grid: Grid };
+
+/** A terminal's grid as it draws it. `xterm` tells its program a size as its grid changes, and only
+ *  then (`SessionPane`'s `onResize`), and the IPC is not a thing a spec can listen on. */
+type Grid = { width: number; columns: number; rows: number };
 
 declare global {
   interface Window {
-    /** Each size the window told the core since {@link listenForSizes}. */
-    __toldSizes?: { session: number; columns: number; rows: number }[];
+    /** Each change of a terminal's grid since {@link listenForGrids}, by its chat's number. */
+    __gridChanges?: { session: number; width: number; height: number }[];
   }
 }
 
@@ -37,13 +41,16 @@ async function panesNow(): Promise<Record<number, Pane>> {
     for (const pane of document.querySelectorAll('[data-testid="pane"]')) {
       const frame = pane.closest(".pane-frame")?.getBoundingClientRect();
       if (frame === undefined) continue;
-      const rows = pane.querySelector(".xterm-rows")?.children.length ?? 0;
       const screen = pane.querySelector(".xterm-screen")?.getBoundingClientRect();
+      const measure = pane.querySelector(".xterm-char-measure-element");
+      const cell =
+        (measure?.getBoundingClientRect().width ?? 0) / (measure?.textContent?.length || 1);
       out[Number(pane.getAttribute("data-session"))] = {
         frame: { left: frame.left, top: frame.top, width: frame.width, height: frame.height },
         grid: {
           width: screen?.width ?? 0,
-          rows,
+          columns: cell > 0 && screen !== undefined ? Math.round(screen.width / cell) : 0,
+          rows: pane.querySelector(".xterm-rows")?.children.length ?? 0,
         },
       };
     }
@@ -51,35 +58,30 @@ async function panesNow(): Promise<Record<number, Pane>> {
   });
 }
 
-/** From here on, every size told to the core is written down, as the window sends it. */
-async function listenForSizes(): Promise<void> {
+/** From here on, every change of a terminal's grid is written down, the frame it is drawn in. */
+async function listenForGrids(): Promise<void> {
   await browser.execute(() => {
-    window.__toldSizes = [];
-    const internals = (
-      window as unknown as {
-        __TAURI_INTERNALS__: {
-          invoke: (cmd: string, args?: unknown, options?: unknown) => unknown;
-        };
-      }
-    ).__TAURI_INTERNALS__;
-    const real = internals.invoke;
-    internals.invoke = (cmd, args, options) => {
-      if (cmd === "resize_session") {
-        const { session, columns, rows } = args as {
-          session: number;
-          columns: number;
-          rows: number;
-        };
-        window.__toldSizes?.push({ session, columns, rows });
-      }
-      return real(cmd, args, options);
-    };
+    window.__gridChanges = [];
+    for (const pane of document.querySelectorAll('[data-testid="pane"]')) {
+      const screen = pane.querySelector(".xterm-screen");
+      if (screen === null) continue;
+      const session = Number(pane.getAttribute("data-session"));
+      const box = screen.getBoundingClientRect();
+      let was = `${box.width}×${box.height}`;
+      new ResizeObserver(() => {
+        const { width, height } = screen.getBoundingClientRect();
+        const now = `${width}×${height}`;
+        if (now === was) return;
+        was = now;
+        window.__gridChanges?.push({ session, width, height });
+      }).observe(screen);
+    }
   });
 }
 
-const toldSizes = () =>
-  browser.execute(() => window.__toldSizes ?? []) as Promise<
-    { session: number; columns: number; rows: number }[]
+const gridChanges = () =>
+  browser.execute(() => window.__gridChanges ?? []) as Promise<
+    { session: number; width: number; height: number }[]
   >;
 
 /** A press on chat `session`'s head, and a move far enough to pick it up. */
@@ -168,7 +170,7 @@ describe("a pane dragged in the window", () => {
     const byPlace = Object.entries(natural).sort(([, a], [, b]) => a.frame.left - b.frame.left);
     left = Number(byPlace[0][0]);
     right = Number(byPlace[1][0]);
-    await listenForSizes();
+    await listenForGrids();
   });
 
   after(async () => {
@@ -179,7 +181,7 @@ describe("a pane dragged in the window", () => {
     });
   });
 
-  it("moves the panes to the result before the drop, and tells no terminal anything", async () => {
+  it("moves the panes to the result before the drop, and changes no terminal's grid", async () => {
     const target = natural[left].frame;
     await pickUp(right);
     // Sampled through a sweep around the pane's edges, to say what the motion costs.
@@ -221,10 +223,10 @@ describe("a pane dragged in the window", () => {
       };
     });
     console.log(`moving-panes: during a sweep ${JSON.stringify(long)}`);
-    expect(await toldSizes()).toEqual([]);
+    expect(await gridChanges()).toEqual([]);
   });
 
-  it("puts everything back on Esc, and still tells no terminal anything", async () => {
+  it("puts everything back on Esc, and changes no terminal's grid", async () => {
     await browser.execute(() =>
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
     );
@@ -235,17 +237,17 @@ describe("a pane dragged in the window", () => {
       expect(Math.round(back[session].frame.width)).toBe(Math.round(natural[session].frame.width));
       expect(back[session].grid).toEqual(natural[session].grid);
     }
-    expect(await toldSizes()).toEqual([]);
+    expect(await gridChanges()).toEqual([]);
     expect(await labels()).toEqual([]);
   });
 
-  it("lands where it said it would, and tells each terminal its size once on the drop", async () => {
+  it("lands where it said it would, and changes each terminal's grid once on the drop", async () => {
     const target = natural[left].frame;
     await pickUp(right);
     await moveTo(target.left + target.width / 2, target.top + 4);
     const promised = await panesNow();
     const said = await labels();
-    expect(await toldSizes()).toEqual([]);
+    expect(await gridChanges()).toEqual([]);
     await browser.execute(
       (x: number, y: number) => {
         window.dispatchEvent(new PointerEvent("pointerup", { clientX: x, clientY: y }));
@@ -253,14 +255,14 @@ describe("a pane dragged in the window", () => {
       target.left + target.width / 2,
       target.top + 4,
     );
-    await browser.waitUntil(async () => (await toldSizes()).length >= 2, {
+    await browser.waitUntil(async () => (await gridChanges()).length >= 2, {
       timeout: 10_000,
-      timeoutMsg: "a terminal was never told its size after the drop",
+      timeoutMsg: "a terminal's grid never changed after the drop",
     });
     await browser.pause(1_000);
-    const told = await toldSizes();
+    const told = await gridChanges();
     console.log(
-      `moving-panes: told ${JSON.stringify(told)}; the labels said ${JSON.stringify(said)}`,
+      `moving-panes: changed ${JSON.stringify(told)}; the labels said ${JSON.stringify(said)}`,
     );
     const dropped = await panesNow();
     // Once each: the layout's one change is the one the observer heard.
@@ -277,9 +279,9 @@ describe("a pane dragged in the window", () => {
         2,
       );
     }
-    // What the label said is what the program was told.
+    // What the label said is what the terminal took.
     expect(said.slice().sort()).toEqual(
-      told.map(({ columns, rows }) => `${columns} × ${rows}`).sort(),
+      [left, right].map((one) => `${dropped[one].grid.columns} × ${dropped[one].grid.rows}`).sort(),
     );
   });
 });
