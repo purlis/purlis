@@ -252,7 +252,7 @@ pub fn of(ctx: &Ctx, vault: &str, key: &str, value: &str) -> Mark {
         return Mark::None;
     };
     match fingerprint::seal_with_the_key_there(ctx, PURPOSE, &[value]) {
-        Some(_) => Mark::Holds,
+        Some(_) if !sealed.is_empty() => Mark::Holds,
         _ => Mark::Holds,
     }
 }
