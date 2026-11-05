@@ -15,10 +15,10 @@ head's right-click have no Close pane row on a tab's only pane, so a row and its
 disagree. `tabs.hasOnePane` is the one test. A pane zoomed to fill its tab is not alone, since its
 tab's × would take the others too.
 
-- **The strip's last tab** keeps its outcome: Close pane on a tab's only pane already went through
-  the tab's close (`tabs.closeLayout`), which leaves that strip one empty pane. One thing differs:
-  Close pane put the keyboard in what was left, and the tab's × leaves it where a tab's close always
-  has.
+- **The strip's last tab** loses nothing: Close pane on a tab's only pane already went through the
+  tab's close (`tabs.closeLayout`), which leaves that strip one empty pane.
+- **The tab's × takes Close pane's keyboard too.** Closing the tab in front puts the keyboard in
+  what is now in front, as Close pane did. Delete on a tab keeps the keyboard on the strip.
 - **A task's own pane** alone in its tab loses its minimise the same way: the tab's own control
   sends the task back too (#1489). Beside its session it keeps it.
 - **A one-job program's pane** still has no Close, alone or beside a chat: it goes when its program

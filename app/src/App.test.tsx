@@ -41,6 +41,19 @@ vi.mock("./SessionPane", () => ({
   ),
 }));
 
+/** Which chats the window has owed the keyboard, the terminal itself being stubbed above. */
+const keyboardGiven = vi.hoisted(() => [] as number[]);
+vi.mock("./paneKeyboard", async (original) => {
+  const real = await original<typeof import("./paneKeyboard")>();
+  return {
+    ...real,
+    giveKeyboardTo: (plane: string, session: number) => {
+      keyboardGiven.push(session);
+      real.giveKeyboardTo(plane, session);
+    },
+  };
+});
+
 /** The app as `main.tsx` renders it: in StrictMode, which runs effects and state updates
  *  twice, so anything that opens or ends a session twice shows up here. */
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
@@ -716,6 +729,31 @@ describe("App", () => {
 
       expect(await screen.findByText("Nothing in this pane")).toBeInTheDocument();
       expect(tabs()).toHaveLength(1);
+    });
+
+    it("leaves the keyboard in the empty pane the strip's last tab keeps, after the tab's ×", async () => {
+      core();
+      render(<App />);
+      await openAChat();
+
+      await userEvent.click(screen.getByRole("button", { name: "Close steward 1" }));
+
+      const empty = await screen.findByTestId("empty-pane");
+      await waitFor(() => expect(empty).toContainElement(document.activeElement as HTMLElement));
+    });
+
+    it("puts the keyboard in the tab now in front, after the front tab's ×", async () => {
+      core();
+      render(<App />);
+      await openAChat();
+      await openAChat();
+
+      keyboardGiven.length = 0;
+
+      await userEvent.click(screen.getByRole("button", { name: "Close steward 2" }));
+
+      await waitFor(() => expect(panes()).toEqual(["session 1"]));
+      expect(keyboardGiven).toEqual([1]);
     });
 
     it("is not on an empty pane alone in its tab, whose two splits are", async () => {

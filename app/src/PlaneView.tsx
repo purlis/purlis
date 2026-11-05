@@ -4518,6 +4518,21 @@ export const PlaneView = memo(function PlaneView({
   );
 
   /**
+   * **The tab's own close, as a person presses it** (#5318): closing the tab in front puts the
+   * keyboard in what is now in front, as Close pane does, since a tab's only pane has no Close. A
+   * tab that has the keyboard itself (Delete on it) keeps the strip's, which stays where it is.
+   */
+  const closeFromItsControl = useCallback(
+    (id: number) => {
+      const wasInFront = now.current.inFront === id;
+      const onItsTab = document.activeElement?.matches('[role="tab"]') === true;
+      close(id);
+      if (wasInFront && !onItsTab) keyboardInto(now.current);
+    },
+    [close, keyboardInto],
+  );
+
+  /**
    * Brings a tab to the front — **and the workspace it is on with it**.
    *
    * The strip shows one workspace's chats, so bringing a chat forward from somewhere else
@@ -8334,7 +8349,7 @@ export const PlaneView = memo(function PlaneView({
       place: placeFrom,
       zoomPane,
       undoLayout: undoLayoutIn,
-      closeTab: close,
+      closeTab: closeFromItsControl,
       // Each as its own close (#4762): the chats asked about once, by the row, before this.
       closeOtherTabs: (closing) => {
         for (const tab of closing) close(tab);
@@ -8493,6 +8508,7 @@ export const PlaneView = memo(function PlaneView({
       bringToFront,
       cancelSmartClose,
       close,
+      closeFromItsControl,
       splitTab,
       closePane,
       tileAllIn,
