@@ -1417,6 +1417,9 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "worktree_done",
     "worktree_list",
     "worktree_of_chat",
+    // Each branch folder's state, asked once `worktree_list` has named them (#5321): a read,
+    // served as the list is.
+    "worktree_states",
     "write_layout",
 ];
 

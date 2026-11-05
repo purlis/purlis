@@ -481,6 +481,7 @@ fn app_running_git(root: &Path) -> (tauri::App<MockRuntime>, PlaneId) {
         .invoke_handler(tauri::generate_handler![
             crate::worktrees::worktree_of_chat,
             crate::worktrees::worktree_list,
+            crate::worktrees::worktree_states,
             crate::worktrees::worktree_remove,
             crate::worktrees::worktree_done,
             crate::worktrees::worktree_merge,
@@ -536,6 +537,10 @@ fn the_git_commands(plane: &PlaneId, root: &Path) -> Vec<(&'static str, Value)> 
         ),
         (
             "worktree_list",
+            json!({ "plane": plane, "workspace": "alpha", "repo": "thing" }),
+        ),
+        (
+            "worktree_states",
             json!({ "plane": plane, "workspace": "alpha", "repo": "thing" }),
         ),
         ("worktree_remove", remove),

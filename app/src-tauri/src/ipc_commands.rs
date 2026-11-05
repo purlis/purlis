@@ -490,6 +490,7 @@ macro_rules! app_commands {
                 cancel_chat_start,
                 worktrees::worktree_of_chat,
                 worktrees::worktree_list,
+                worktrees::worktree_states,
                 worktrees::worktree_add,
                 worktrees::worktree_remove,
                 worktrees::worktree_merge,

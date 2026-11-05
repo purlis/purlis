@@ -112,6 +112,60 @@ describe("the focused workspace's panels", () => {
     expect(result.current.pieces.svc).toHaveLength(2);
   });
 
+  it("names a clone's branch folders before their state is read, then fills each state in", async () => {
+    // #5321: the list's first answer is names alone, each folder's state still coming, and the
+    // states follow in their own answer, which the store asks for once the names are in.
+    let read: (states: unknown) => void = () => undefined;
+    const states = new Promise((done) => {
+      read = done;
+    });
+    core((cmd, args) => {
+      if (cmd === "worktree_list")
+        return args.repo === "svc"
+          ? [piece("one", { reading: true }), piece("two", { reading: true })]
+          : [];
+      if (cmd === "worktree_states") return args.repo === "svc" ? states : Promise.resolve([]);
+      return ORDINARY(cmd, args);
+    });
+    const { result } = renderHook(() => useWorkspaceState(PLANE, "alpha"));
+
+    await waitFor(() =>
+      expect(result.current.pieces.svc?.map((one) => [one.piece, one.reading])).toEqual([
+        ["one", true],
+        ["two", true],
+      ]),
+    );
+
+    await act(async () => {
+      read([piece("one", { uncommitted: 0 }), piece("two", { uncommitted: 3 })]);
+      await states;
+    });
+
+    await waitFor(() =>
+      expect(
+        result.current.pieces.svc?.map((one) => [one.piece, one.reading, one.uncommitted]),
+      ).toEqual([
+        ["one", undefined, 0],
+        ["two", undefined, 3],
+      ]),
+    );
+  });
+
+  it("says why a folder's state is unknown when reading the states is refused", async () => {
+    // Never left "reading" for ever, and never drawn as clean (#1476).
+    core((cmd, args) => {
+      if (cmd === "worktree_list")
+        return args.repo === "svc" ? [piece("one", { reading: true })] : [];
+      if (cmd === "worktree_states") throw new Error("git is gone");
+      return ORDINARY(cmd, args);
+    });
+    const { result } = renderHook(() => useWorkspaceState(PLANE, "alpha"));
+
+    await waitFor(() => expect(result.current.pieces.svc?.[0]?.unread).toMatch(/git is gone/));
+    expect(result.current.pieces.svc?.[0]?.reading).toBeUndefined();
+    expect(result.current.pieces.svc?.[0]?.uncommitted).toBeUndefined();
+  });
+
   it("asks git for the pieces once per clone, however often the window renders", async () => {
     // **The measurement #133 asked for, kept as a bound rather than a millisecond.** Every
     // one of these is a `git worktree list` subprocess in the core, so the thing worth
