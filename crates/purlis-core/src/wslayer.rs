@@ -682,7 +682,7 @@ pub fn wire(plane: &Path, dir: &Path) -> Vec<Row> {
     // The checkouts come AFTER the directory's own rows, which is charter's order too: its
     // `wire_harnesses` materialises the workspace directory, then extends with each guest
     // tree's rows.
-    let (trees, unlisted) = guest_trees(dir);
+    let (trees, unlisted) = guest_trees(plane, dir);
     for tree in trees {
         rows.extend(guest_rows(plane, dir, &tree));
     }
@@ -838,16 +838,18 @@ pub fn checkout_row(dir: &Path, rel: &str) -> Option<(PathBuf, String)> {
 ///
 /// A listing git cannot give is NAMED rather than passed over in silence (charter#1072): a
 /// worktree nobody can see is not a worktree that is fine.
-pub fn guest_trees(dir: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
-    let children = checkouts(dir);
+pub fn guest_trees(plane: &Path, dir: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    let children = checkouts(plane, dir);
     let (mut pieces, unlisted) = pieces(dir, &children);
     let mut all = children;
     all.append(&mut pieces);
     (all, unlisted)
 }
 
-/// Every checkout directly inside the workspace directory that charter is a GUEST in — a
-/// clone or a linked worktree, each a git root of its own.
+/// Every checkout the workspace directory `dir` of `plane` holds that charter is a GUEST in — a
+/// clone or a linked worktree, each a git root of its own, in `repos/` or at the root
+/// ([`crate::repofolder::holdings`], #5371): every row it walked, of any kind, so a folder at the
+/// root beside a repo of its name in `repos/` is wired too, being a git root all the same.
 ///
 /// `.git` is a DIRECTORY in a clone and a FILE reading `gitdir: <path>` in a linked worktree,
 /// and both count: this asks "where would a chat's cwd be cut off from the plane's layer",
@@ -858,13 +860,17 @@ pub fn guest_trees(dir: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
 /// unreadable `worktrees/`, a `gitdir:` that points nowhere — is not a checkout charter can
 /// wire. Measured on the differential: with `worktrees/` at mode 000 the shallower test
 /// reported that worktree `blocked` where charter passes over it.
-pub fn checkouts(dir: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(dir) else {
+pub fn checkouts(plane: &Path, dir: &Path) -> Vec<PathBuf> {
+    let Some(ws) = dir.file_name().and_then(|name| name.to_str()) else {
         return Vec::new();
     };
-    let mut out: Vec<PathBuf> = entries
+    let Ok(walked) = crate::repofolder::holdings(plane, ws) else {
+        return Vec::new();
+    };
+    let mut out: Vec<PathBuf> = [walked.repos, walked.shadowed, walked.others]
+        .into_iter()
         .flatten()
-        .map(|e| e.path())
+        .map(|row| row.repo.path)
         .filter(|p| crate::guest::git_dir(p).is_some())
         .collect();
     out.sort();

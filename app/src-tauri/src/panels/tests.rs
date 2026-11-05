@@ -6,22 +6,34 @@ use std::path::PathBuf;
 
 /// A plane with one workspace holding one clone, and nothing fetched for it.
 fn plane_with_a_clone() -> (tempfile::TempDir, PathBuf) {
+    plane_with_a_clone_at("svc")
+}
+
+/// [`plane_with_a_clone`], with the clone `svc` at `below` the workspace's folder: `svc` at its
+/// root, or `repos/svc` (ADR 0114).
+fn plane_with_a_clone_at(below: &str) -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().expect("a plane");
     let root = std::fs::canonicalize(dir.path()).expect("a resolved plane");
     std::fs::write(root.join("charter.toml"), "").expect("a manifest");
-    std::fs::create_dir_all(root.join("workspaces/alpha/svc/.git")).expect("a clone");
-    std::fs::write(
-        root.join("workspaces/alpha/svc/.git/HEAD"),
-        "ref: refs/heads/main\n",
-    )
-    .expect("a HEAD");
+    let clone = root.join("workspaces/alpha").join(below);
+    std::fs::create_dir_all(clone.join(".git")).expect("a clone");
+    std::fs::write(clone.join(".git/HEAD"), "ref: refs/heads/main\n").expect("a HEAD");
     (dir, root)
 }
 
+/// The two places the clone `svc` may be, below the workspace's folder.
+const LAYOUTS: [&str; 2] = ["svc", "repos/svc"];
+
 #[test]
 fn what_came_back_from_a_pool_stays_in_changes_once_the_workspace_has_left_it() {
-    let (_plane, root) = plane_with_a_clone();
-    let clone = root.join("workspaces/alpha/svc");
+    for below in LAYOUTS {
+        what_came_back_from_a_pool_stays_in_changes_at(below);
+    }
+}
+
+fn what_came_back_from_a_pool_stays_in_changes_at(below: &str) {
+    let (_plane, root) = plane_with_a_clone_at(below);
+    let clone = root.join("workspaces/alpha").join(below);
     std::fs::remove_dir_all(clone.join(".git")).expect("the stand-in goes");
     let git = |args: &[&str]| {
         let ran = purlis_core::forklock::output(
@@ -58,7 +70,7 @@ fn what_came_back_from_a_pool_stays_in_changes_once_the_workspace_has_left_it() 
         .iter()
         .map(|on| (on.pool.as_str(), on.branch.as_str()))
         .collect();
-    assert_eq!(shown, vec![("old-pool", "fix")]);
+    assert_eq!(shown, vec![("old-pool", "fix")], "{below}");
 }
 
 // ---- served from the plane's model (FD-10c) ---------------------------------------------
@@ -788,6 +800,26 @@ fn a_clone_comes_with_the_path_the_core_checked_so_the_window_never_joins_one() 
         drawn.paths.get("svc").map(String::as_str),
         Some(
             root.join("workspaces/alpha/svc")
+                .display()
+                .to_string()
+                .as_str()
+        ),
+    );
+}
+
+#[test]
+fn a_clone_in_repos_comes_with_its_path_there() {
+    // ADR 0114: a clone made from structure version 6 on is in `repos/`, and the window starts a
+    // chat in it only from the path the core checked.
+    let (_plane, root) = plane_with_a_clone_at("repos/svc");
+
+    let drawn = of(&root, "alpha").expect("the panels draw");
+
+    assert_eq!(drawn.repos, vec!["svc".to_string()]);
+    assert_eq!(
+        drawn.paths.get("svc").map(String::as_str),
+        Some(
+            root.join("workspaces/alpha/repos/svc")
                 .display()
                 .to_string()
                 .as_str()

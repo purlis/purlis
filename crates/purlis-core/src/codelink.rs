@@ -279,11 +279,13 @@ pub fn repo_in(project: &Path, repo: &str) -> Result<PathBuf, Refused> {
 }
 
 /// **The clones `project` holds in `workspace`** (1.51, #3811): the folder name of each
-/// repository in the workspace's folder, sorted. Only a folder reached through no link, with a
-/// name a repository's folder may have ([`repo_in`]) and not one the workspace keeps for its own
-/// ([`crate::contain::workspace_keeps`]), that is a repository on a branch with a commit. None where the
-/// workspace has no folder. Refused for a name no workspace has, and for a workspace reached
-/// through a link.
+/// repository the workspace holds, in `repos/` or at its root ([`crate::repofolder::holdings`],
+/// #5371), sorted. Only a folder reached through no link, with a name a repository's folder may
+/// have ([`repo_in`]) and not one the workspace keeps for its own
+/// ([`crate::contain::workspace_keeps`]), that is a repository on a branch with a commit: a repo,
+/// or a linked worktree beside them, as before. Each is at
+/// [`crate::repofolder::folder`] of its name. None where the workspace has no folder. Refused for
+/// a name no workspace has, and for a workspace reached through a link.
 pub fn clones_in(project: &Path, workspace: &str) -> Result<Vec<String>, Refused> {
     if !crate::contain::workspace_name_ok(workspace) {
         return Err(not_allowed(format!(
@@ -309,24 +311,28 @@ pub fn clones_in(project: &Path, workspace: &str) -> Result<Vec<String>, Refused
             }
         }
     }
-    let entries = std::fs::read_dir(&folder).map_err(|e| {
-        Refused::Git(format!(
-            "workspace {workspace}'s folder could not be read: {e}"
-        ))
+    let walked = crate::repofolder::holdings(project, workspace).map_err(|e| match e {
+        crate::repofolder::Trouble::Outside(_) => not_allowed(format!(
+            "workspace {workspace} is not a folder in the project, so no clone of it was named"
+        )),
+        crate::repofolder::Trouble::Unreadable { why, .. } => Refused::Git(format!(
+            "workspace {workspace}'s folder could not be read: {why}"
+        )),
     })?;
-    let mut clones: Vec<String> = entries
-        .filter_map(Result::ok)
-        // `file_type` does not follow a link.
-        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
-        .filter_map(|entry| entry.file_name().into_string().ok())
-        .filter(|name| crate::contain::repo_name_ok(name))
-        .filter(|name| !crate::contain::workspace_keeps(name))
-        .filter(|name| a_repository(&folder.join(name)))
+    let linked = walked.others.iter().filter(|row| {
+        row.git == crate::repofolder::Git::File && crate::repofolder::name_ok(&row.repo.name)
+    });
+    let mut clones: Vec<String> = walked
+        .repos
+        .iter()
+        .chain(linked)
         // Only one whose work a move can give: on a branch with a commit ([`work_of`]). One
         // on no branch, or none yet, stays where it is, as before 1.51.
-        .filter(|name| current_branch(&folder.join(name)).is_some())
+        .filter(|row| current_branch(&row.repo.path).is_some())
+        .map(|row| row.repo.name.clone())
         .collect();
     clones.sort();
+    clones.dedup();
     Ok(clones)
 }
 
@@ -367,21 +373,24 @@ pub fn origins_in(
     let Ok(clones) = clones_in(project, workspace) else {
         return std::collections::BTreeMap::new();
     };
-    let folder = project.join("workspaces").join(workspace);
     clones
         .into_iter()
         .filter(|clone| repos.contains(clone))
+        .filter_map(|clone| {
+            let folder = crate::repofolder::folder(project, workspace, &clone).ok()?;
+            Some((clone, folder))
+        })
         // Only a clone's own `.git` folder, and its own config file in it: never one reached
         // through a link, named by a `.git` file or shared through `commondir`, which would
         // read another repository's configuration.
-        .filter(|clone| {
-            let git = folder.join(clone).join(".git");
+        .filter(|(_, folder)| {
+            let git = folder.join(".git");
             std::fs::symlink_metadata(&git).is_ok_and(|meta| meta.is_dir())
                 && std::fs::symlink_metadata(git.join("config")).is_ok_and(|meta| meta.is_file())
         })
-        .filter_map(|clone| {
+        .filter_map(|(clone, folder)| {
             let ran = run(
-                &folder.join(&clone),
+                &folder,
                 &[
                     "config",
                     "--file",

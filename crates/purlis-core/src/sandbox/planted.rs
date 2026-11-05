@@ -120,10 +120,11 @@ pub fn git_folder_pins(folders: &[PathBuf]) -> Vec<PathBuf> {
 }
 
 /// The folders below `folder` that purlis itself runs git in, read without a bound: `folder`
-/// itself, each clone of each workspace (`workspaces/<ws>/<clone>`, as [`crate::repos::clones`]
-/// lists them) and each branch folder (`workspaces/<ws>/.worktrees/<repo>/<piece>`). Each
-/// level is read whole and no link is followed, so nothing else in the plane, however much it
-/// holds, keeps one of these from being found.
+/// itself, each folder with a `.git` each workspace holds, in `repos/` or at its root, as
+/// [`crate::repofolder::holdings`] walks them (#5371), and each branch folder
+/// (`workspaces/<ws>/.worktrees/<repo>/<piece>`). Each level is read whole and no link is
+/// followed, so nothing else in the plane, however much it holds, keeps one of these from being
+/// found.
 pub fn clones_purlis_works_in(folder: &Path) -> Vec<PathBuf> {
     // The directories in `dir`, never a link to one; none where `dir` is itself a link.
     let folders_in = |dir: &Path| -> Vec<PathBuf> {
@@ -143,7 +144,17 @@ pub fn clones_purlis_works_in(folder: &Path) -> Vec<PathBuf> {
     };
     let mut found = vec![folder.to_path_buf()];
     for workspace in folders_in(&folder.join(super::WORKSPACES)) {
-        found.extend(folders_in(&workspace));
+        let walked = workspace
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(|ws| crate::repofolder::holdings(folder, ws).ok())
+            .unwrap_or_default();
+        found.extend(
+            [walked.repos, walked.shadowed, walked.others]
+                .into_iter()
+                .flatten()
+                .map(|row| row.repo.path),
+        );
         for repo in folders_in(&workspace.join(".worktrees")) {
             found.extend(folders_in(&repo));
         }
