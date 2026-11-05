@@ -1467,6 +1467,17 @@ pub fn fill_value(
     let Some(value) = read_for_fill(asker, vault, key)? else {
         return Ok(None);
     };
+    goes_into_a_page(&value, vault, key)?;
+    Ok(Some(value))
+}
+
+/// **The rules for a value that goes into a page**, a fill's and a login's alike (#5272): no private
+/// key, and no 2FA seed. Why not, in words that hold none of it.
+fn goes_into_a_page(
+    value: &purlis_session_protocol::browsing::Secret,
+    vault: &str,
+    key: &str,
+) -> Result<(), String> {
     if crate::sandbox::tools::mint::a_private_key(value.expose()) {
         return Err(format!(
             "{key} in vault '{vault}' is a private key, so purlis filled nothing"
@@ -1475,11 +1486,11 @@ pub fn fill_value(
     if super::totp::looks_like_a_seed(value.expose()) {
         return Err(format!(
             "{key} in vault '{vault}' looks like a 2FA seed, so purlis filled nothing: a seed \
-             never goes into a page. Call browser_fill_secret again with `code` to fill the code \
-             it makes"
+             never goes into a page. Call browser_fill_secret with `code` to fill the code it \
+             makes"
         ));
     }
-    Ok(Some(value))
+    Ok(())
 }
 
 /// **The 2FA code the seed under `key` in `vault` makes now, for a fill the person allowed**
@@ -1584,13 +1595,11 @@ fn read_login(
     let identity = identity_of_ready(asker, name, ready)?;
     let user = user_key.map(read).transpose()?;
     let password = read(pass_key)?;
-    // The `mint` mark is by a name in a vault, and one item may have two: no private key is filled
-    // on a page, whoever declared it, and Always may have saved the line that names it.
-    if std::iter::once(&password)
-        .chain(user.as_ref())
-        .any(|value| crate::sandbox::tools::mint::a_private_key(value.expose()))
-    {
-        return Err(format!("{name} is a private key, so purlis filled nothing"));
+    // A login's values follow a fill's rules (#5272), whoever declared it: the `mint` mark is by a
+    // name in a vault, and one item may have two, and Always may have saved the line that names it.
+    goes_into_a_page(&password, vault, pass_key)?;
+    if let (Some(user), Some(user_key)) = (&user, user_key) {
+        goes_into_a_page(user, vault, user_key)?;
     }
     Ok((
         LogIn {
