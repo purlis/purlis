@@ -13,7 +13,8 @@
 //! of the header's, and `/big-export` and `/big-stream`, [`BIG`] bytes sent slowly, with their
 //! size stated up front and not. `/verify-code` is a site's 2FA verifier (#5118): it holds
 //! [`TWO_FACTOR_SEED`] on its server, as a site does, and accepts the code it makes now, a step
-//! either side.
+//! either side. `/stays-open`, with anything after it, answers only after [`STAYS_OPEN`]: a
+//! request still open when the call that set it off answers (#5310).
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -53,6 +54,9 @@ pub fn unix_now() -> u64 {
 
 /// How long `/slow-data` takes to answer.
 pub const SLOW: Duration = Duration::from_millis(1500);
+
+/// How long `/stays-open` takes to answer: longer than a test that reads its page waits.
+pub const STAYS_OPEN: Duration = Duration::from_secs(30);
 
 /// The name `/export`'s `Content-Disposition` gives the report, which its address does not.
 pub const EXPORTED_AS: &str = "q3-report.csv";
@@ -250,6 +254,11 @@ fn answer(
     let (host, path) = rest.split_once('/').unwrap_or((rest, ""));
     let query = path.split_once('?').map_or("", |(_, query)| query);
     let path = path.split(['?', '#']).next().unwrap_or("");
+    if path == "stays-open" || path.starts_with("stays-open/") {
+        thread::sleep(STAYS_OPEN);
+        let _ = respond(&mut out, "200 OK", "application/json", &[], b"{}");
+        return;
+    }
     match path {
         // A site's 2FA verifier (#5118): the code the seed makes now, a step either side.
         "verify-code" => {
