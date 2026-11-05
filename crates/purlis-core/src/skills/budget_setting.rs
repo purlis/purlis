@@ -221,7 +221,7 @@ pub fn in_force(root: &Path, workspace: Option<&str>, harness: Harness) -> InFor
     let project = the_projects(root);
     let here = workspace.map(|name| the_workspaces(root, name));
     let default = harness.skill_budget();
-    let number = |pick: fn(Set) -> Option<usize>, default: usize| {
+    let number = |pick: Pick, default: usize| {
         let at_project = pick(project.on(harness));
         let at_workspace = here.as_ref().and_then(|written| pick(written.on(harness)));
         let (in_force, from, whose_every) = match (at_workspace, at_project) {
@@ -285,13 +285,15 @@ fn integer(number: usize) -> Result<Value, String> {
         .map_err(|_| format!("{number} is too large to write down, so nothing changed"))
 }
 
+/// Which of a [`Set`]'s two numbers.
+type Pick = fn(Set) -> Option<usize>;
+
 /// **What makes `harness` come to `wanted` at a level that writes `written`**, one key at a time.
 /// A number written for every program stops being one where `harness` leaves it: each other
 /// program that had it gets it as its own, so nothing moves for them.
 fn edits_for(written: &Levels, harness: Harness, wanted: Set) -> Result<Vec<Edit>, String> {
     let mut edits = Vec::new();
-    let keys: [(&str, fn(Set) -> Option<usize>); 2] =
-        [(SKILLS_KEY, |set| set.skills), (CHARS_KEY, |set| set.chars)];
+    let keys: [(&str, Pick); 2] = [(SKILLS_KEY, |set| set.skills), (CHARS_KEY, |set| set.chars)];
     for (key, pick) in keys {
         let number = pick(wanted);
         if number == pick(written.on(harness)) {
