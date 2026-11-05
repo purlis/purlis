@@ -54,7 +54,7 @@
 //! (`[sandbox.personas.<p>] tools`), armed as the chat started (allowed on this machine with the
 //! persona's hosts, D-PE-ruling-1, its program found where no chat writes), asked for with
 //! exactly that tool's vault and hand-over ([`crate::sandbox::tools::declared`]), or a program the
-//! person allowed under a Run grant ([`run_granted`], ADR 0111). Anything else
+//! person allowed under a Run grant ([`run_granted`], ADR 0112). Anything else
 //! is refused with a sentence naming the tool to declare. The run is of the tool's program by
 //! its absolute path, from a `PATH` without the folders the chat may write, and without the
 //! chat's variables that make a program load code ([`crate::sandbox::tools::loads_code`]): it
@@ -694,7 +694,7 @@ pub fn forwarded(_ctx: &Ctx, _req: &Request, _command: &[String], _io: &mut dyn 
 /// runs past this is not offered, so no host is pushed out of what they read.
 pub const MOST_COMMAND_SHOWN: usize = 2000;
 
-/// **A chat's command as the person reads it** (ADR 0111): each word a shell word, every byte
+/// **A chat's command as the person reads it** (ADR 0112): each word a shell word, every byte
 /// outside printable ASCII spelled out ([`crate::shown::shell_word`]), so no control character,
 /// direction override or lookalike letter changes what it seems to say. Inert, and told apart
 /// from the app's facts wherever it is drawn.
@@ -795,7 +795,7 @@ fn fill_what_it_misses(
     Ok(())
 }
 
-/// **Whether `wanted`'s command runs under a Run grant** (ADR 0111, #5239): the program its words
+/// **Whether `wanted`'s command runs under a Run grant** (ADR 0112, #5239): the program its words
 /// name, as the app resolves it where no chat writes, once the person allowed it. Asked only for
 /// a program that is no declared tool, and refused with no notice for one no tool may be
 /// ([`crate::sandbox::tools::for_run_grant`]), and for any `why`, which is what the chat was to
@@ -807,6 +807,7 @@ fn run_granted(
     wanted: &Wanted,
     command: &[String],
     missing: &Missing<'_>,
+    not_its_vault: bool,
     why: String,
     say: &mut dyn FnMut(&str),
 ) -> Result<crate::sandbox::tools::Ready, (i32, String)> {
@@ -848,7 +849,7 @@ fn run_granted(
             &chat_writes(asker, confines),
         )
         .is_ok();
-        if may_fill {
+        if may_fill && !not_its_vault {
             fill_what_it_misses(asker, confines, wanted, missing, &locked, say)?;
         }
         return Err((1, locked));
@@ -921,6 +922,7 @@ fn run_granted(
     }
     let need = RunNeed {
         bound,
+        not_its_vault,
         persona: persona.to_owned(),
         hosts: if confines.level == crate::sandbox::Level::Floor {
             Hosts::Every
@@ -2608,12 +2610,13 @@ pub(crate) fn serve_recorded(
     // from there (#1516).
     let ctx = ctx.chat(confines, asker.folder.as_deref());
     // Values its desktop sent were authorised there, where the vault is (#2047): a runner holds
-    // no vault to authorise against.
-    if handed.is_none()
-        && let Err(why) = authorise(&ctx, asker.persona.as_deref(), &wanted.vault)
-    {
-        return refuse(&mut *writer, 1, why);
-    }
+    // no vault to authorise against. A vault the persona may not use may yet be opened by a Run
+    // grant, for that grant's scope alone: judged once the command is, below.
+    let vault_refused = if handed.is_none() {
+        authorise(&ctx, asker.persona.as_deref(), &wanted.vault).err()
+    } else {
+        None
+    };
     // A sandboxed chat runs only its persona's declared tools with a vault (D-PE-ruling-2, the
     // operator's ruling of 2026-10-12): exactly a tool its start armed, allowed on this machine,
     // with that tool's vault and hand-over. The run is of the tool's own program, by the
@@ -2631,7 +2634,7 @@ pub(crate) fn serve_recorded(
     // [`crate::sandbox::tools::a_run_starts_from`]'s: those its approved entry sets, with the
     // values the person approved (#3441).
     let mut its_entry_sets: Vec<(String, String)> = Vec::new();
-    let its_tool = match crate::sandbox::tools::declared(
+    let declared = crate::sandbox::tools::declared(
         &confines.tools,
         &listed,
         persona,
@@ -2642,7 +2645,20 @@ pub(crate) fn serve_recorded(
             dotenv: &wanted.dotenv,
             program: &command[0],
         },
-    ) {
+    );
+    // Only a run a person can allow gets past a vault its persona may not use: never a declared
+    // tool's or a server's, and never where policy locks a vault to its persona (ADR 0112).
+    if let Some(why) = &vault_refused
+        && (declared.is_ok()
+            || missing.is_none()
+            || wanted.mcp.is_some()
+            || not_tagged(&ctx, asker.persona.as_deref(), &wanted.vault).is_none()
+            || crate::sandbox::policy::Locks::of(&asker.root).forbids_vault_grants()
+            || an_approved_server(&asker.root, persona, &wanted, &command).is_some())
+    {
+        return refuse(&mut *writer, 1, why.clone());
+    }
+    let its_tool = match declared {
         // A browser login is purlis's to perform in the chat's own browser (#2016): run as a
         // command, it runs nothing.
         Ok(ready) if ready.tool.login.is_some() => {
@@ -2657,7 +2673,7 @@ pub(crate) fn serve_recorded(
                 its_entry_sets = sets;
                 None
             }
-            // No tool: the person may allow this program, here and now (ADR 0111, #5239), where
+            // No tool: the person may allow this program, here and now (ADR 0112, #5239), where
             // somebody is there to be asked. A runner's values were sent for a tool it declared.
             None => match missing.filter(|_| handed.is_none()) {
                 None => return refuse(&mut *writer, 1, why),
@@ -2665,7 +2681,18 @@ pub(crate) fn serve_recorded(
                     let mut say = |line: &str| {
                         let _ = send(&mut *writer, &Frame::Note(line.to_owned()));
                     };
-                    match run_granted(asker, confines, &wanted, &command, missing, why, &mut say) {
+                    let not_its_vault = vault_refused.is_some();
+                    let why = vault_refused.clone().unwrap_or(why);
+                    match run_granted(
+                        asker,
+                        confines,
+                        &wanted,
+                        &command,
+                        missing,
+                        not_its_vault,
+                        why,
+                        &mut say,
+                    ) {
                         Ok(ready) => Some(ready),
                         Err((code, why)) => return refuse(&mut *writer, code, why),
                     }
@@ -2685,6 +2712,8 @@ pub(crate) fn serve_recorded(
             Err(why) => return refuse(&mut *writer, 1, why),
         }
     }
+    // A vault opened by a Run grant is read, never filled: storing in it is its persona's.
+    let missing = missing.filter(|_| vault_refused.is_none());
     // At most a few at once per chat: each holds a proxy, a temp directory and a process group.
     let Some(_slot) = Slot::take(&asker.root, asker.chat) else {
         return refuse(

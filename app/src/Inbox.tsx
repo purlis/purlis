@@ -1005,7 +1005,7 @@ function Ask({
             />
           </Stop>
         )}
-        {/* What a program would receive, and from whom each word comes (ADR 0111). */}
+        {/* What a program would receive, and from whom each word comes (ADR 0112). */}
         {ask.run != null && <RunGrantFacts run={ask.run} />}
         {/* What a secret fill puts where (#5115): words to read, nothing to reach. */}
         {ask.fill != null && <SecretFillSite fill={ask.fill} />}

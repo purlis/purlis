@@ -229,3 +229,40 @@ fn a_chat_with_no_persona_writes_nothing() {
     assert!(write(tmp.path(), "", &bound(&[], &["V=TOKEN"])).is_err());
     assert_eq!(manifest(tmp.path()), ON);
 }
+
+#[test]
+fn always_allow_alone_names_the_vault_to_give_and_gives_nothing_itself() {
+    let tmp = project(ON);
+    std::fs::write(
+        tmp.path().join("vaults.json"),
+        serde_json::json!({ "vaults": {
+            "team": {"provider": "plain-file", "config": {"file": "t.json"}, "persona": "devops"},
+            "other": {"provider": "plain-file", "config": {"file": "o.json"}},
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    let mut elsewhere = bound(&[], &["V=TOKEN"]);
+    elsewhere.vault = "other".into();
+    let written = write(tmp.path(), "devops", &elsewhere).unwrap();
+    assert_eq!(written.vault.expect("not its vault").vault, "other");
+    assert!(
+        crate::sandbox::local::granted_vaults(tmp.path()).is_empty(),
+        "the caller keeps it, audited"
+    );
+}
+
+#[test]
+fn a_vault_the_persona_may_use_is_not_given_again() {
+    let tmp = project(ON);
+    std::fs::write(
+        tmp.path().join("vaults.json"),
+        serde_json::json!({ "vaults": {
+            "team": {"provider": "plain-file", "config": {"file": "t.json"}, "persona": "devops"},
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    let written = write(tmp.path(), "devops", &bound(&[], &["V=TOKEN"])).unwrap();
+    assert_eq!(written.vault, None);
+}

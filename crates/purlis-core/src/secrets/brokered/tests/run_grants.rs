@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **A Run grant** (ADR 0111, #5239): a `secret exec` line in, a run or a notice out.
+//! **A Run grant** (ADR 0112, #5239): a `secret exec` line in, a run or a notice out.
 
 use super::*;
 use crate::secrets::ask::Asks;
@@ -791,4 +791,149 @@ fn always_allow_runs_the_waiting_command_and_later_ones_with_no_restart_though_i
         asks.open_runs().is_empty(),
         "and nobody is asked: it is listed"
     );
+}
+
+// ----------------------------------------------------------------------------------------
+// A vault the persona may not use (the operator's ruling on ADR 0112)
+
+/// `printenv X` with vault `other`, which is tagged for nobody.
+fn on_another_vault(root: &Path) -> Wanted {
+    let mut want = printenv(root, &["X"]);
+    want.vault = "other".into();
+    want
+}
+
+/// Whether `frames` end with `other` refused for what its persona may use.
+fn vault_was_refused(frames: &[Frame]) -> bool {
+    format!("{frames:?}").contains("did not open it")
+}
+
+fn no_vault_was_kept(root: &Path) {
+    assert!(
+        crate::sandbox::local::granted_vaults(root).is_empty(),
+        "nothing lasting was written"
+    );
+    let ctx = Ctx::new(root, Env::of(&[]));
+    assert!(authorise(&ctx, Some("devops"), "other").is_err());
+}
+
+#[test]
+fn allow_once_opens_a_vault_for_that_command_alone_and_writes_nothing_lasting() {
+    let project = project();
+    let root = project.path();
+    let asks = Asks::new(root);
+    let chat = the_chat(root);
+    let frames = answered(root, on_another_vault(root), &asks, RunAnswer::Once);
+    assert!(
+        !vault_was_refused(&frames),
+        "the gate admits it: {frames:?}"
+    );
+    no_vault_was_kept(root);
+    // This chat's next differing command has no vault access: it asks.
+    let mut differing = on_another_vault(root);
+    differing.command.push("HOME".into());
+    let next = run_with(&chat, differing, &asks, Duration::ZERO);
+    assert_eq!(refusal(&next).1, WAITING_ON_THE_PERSON, "{next:?}");
+    // Nor does its same command again: Allow once went with its run.
+    let again = run_with(&chat, on_another_vault(root), &asks, Duration::ZERO);
+    assert_eq!(refusal(&again).1, WAITING_ON_THE_PERSON, "{again:?}");
+}
+
+#[test]
+fn another_chat_of_the_persona_has_no_vault_access_from_this_chats_grant() {
+    let project = project();
+    let root = project.path();
+    let asks = Asks::new(root);
+    answered(root, on_another_vault(root), &asks, RunAnswer::ForChat);
+    let mut other = the_chat(root);
+    other.chat = 99;
+    let frames = run_with(&other, on_another_vault(root), &asks, Duration::ZERO);
+    assert_eq!(refusal(&frames).1, WAITING_ON_THE_PERSON, "{frames:?}");
+    no_vault_was_kept(root);
+}
+
+#[test]
+fn revoking_a_chat_grant_ends_its_use_of_the_vault() {
+    let project = project();
+    let root = project.path();
+    let asks = Asks::new(root);
+    let chat = the_chat(root);
+    answered(root, on_another_vault(root), &asks, RunAnswer::ForChat);
+    let id = asks.given_runs()[0].id;
+    asks.revoke_run(id, window()).unwrap();
+    let frames = run_with(&chat, on_another_vault(root), &asks, Duration::ZERO);
+    assert_eq!(refusal(&frames).1, WAITING_ON_THE_PERSON, "{frames:?}");
+    no_vault_was_kept(root);
+}
+
+#[test]
+fn the_notice_says_the_vault_is_not_the_personas_and_the_persona_hears_otherwise_on_its_own() {
+    let project = project();
+    let root = project.path();
+    let asks = Asks::new(root);
+    run_with(
+        &the_chat(root),
+        on_another_vault(root),
+        &asks,
+        Duration::ZERO,
+    );
+    assert!(asks.open_runs()[0].not_its_vault);
+    let asks = Asks::new(root);
+    run_with(
+        &the_chat(root),
+        printenv(root, &["X"]),
+        &asks,
+        Duration::ZERO,
+    );
+    assert!(!asks.open_runs()[0].not_its_vault);
+}
+
+#[test]
+fn a_declared_tool_is_never_let_past_a_vault_its_persona_may_not_use() {
+    let project = project();
+    let root = project.path();
+    let asks = Asks::new(root);
+    let (chat, want) = as_tool(the_chat(root), on_another_vault(root));
+    let frames = run_with(&chat, want, &asks, Duration::from_secs(60));
+    assert!(vault_was_refused(&frames), "{frames:?}");
+    assert!(asks.open_runs().is_empty());
+}
+
+#[test]
+fn no_persona_an_unknown_vault_and_policys_vault_lock_open_nothing_and_ask_nothing() {
+    let project = project();
+    let root = project.path();
+    let asks = Asks::new(root);
+    let no_persona = asker(root, None);
+    let frames = run_with(
+        &no_persona,
+        on_another_vault(root),
+        &asks,
+        Duration::from_secs(60),
+    );
+    assert_eq!(refusal(&frames).1, 1, "{frames:?}");
+    let mut unknown = printenv(root, &["X"]);
+    unknown.vault = "nowhere".into();
+    let frames = run_with(&the_chat(root), unknown, &asks, Duration::from_secs(60));
+    assert_eq!(refusal(&frames).1, 1, "{frames:?}");
+    let _policy = Policy::says(r#"{"sandbox": {"vault-grants": false}}"#);
+    let frames = run_with(
+        &the_chat(root),
+        on_another_vault(root),
+        &asks,
+        Duration::from_secs(60),
+    );
+    assert!(vault_was_refused(&frames), "{frames:?}");
+    assert!(asks.open_runs().is_empty());
+}
+
+#[test]
+fn a_key_a_vault_opened_by_a_grant_lacks_is_never_asked_for() {
+    let project = project();
+    let root = project.path();
+    let asks = Asks::new(root);
+    let mut want = on_another_vault(root);
+    want.env = vec!["X=NOT_THERE".into()];
+    let frames = answered(root, want, &asks, RunAnswer::Once);
+    assert!(asks.open().is_empty(), "no Fill: {frames:?}");
 }

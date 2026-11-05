@@ -1634,7 +1634,7 @@ pub fn declared<'a>(
 
 /// Whether `program`, as a chat named it, is a tool of its persona's in any standing: armed for
 /// the chat, or listed by the project now though not armed. Such a program is never one a Run
-/// grant is asked for (ADR 0111): a declared tool behaves exactly as before, and one a teammate
+/// grant is asked for (ADR 0112): a declared tool behaves exactly as before, and one a teammate
 /// declared runs nothing here until this machine's own Allow.
 pub fn is_declared(armed: &[Ready], listed: &[Tool], program: &str) -> bool {
     let named = Path::new(program)
@@ -1643,7 +1643,7 @@ pub fn is_declared(armed: &[Ready], listed: &[Tool], program: &str) -> bool {
     armed.iter().any(|ready| names(ready, program)) || listed.iter().any(|tool| tool.name == named)
 }
 
-/// **The program and values a chat's command names, as a Run grant would hand them** (ADR 0111,
+/// **The program and values a chat's command names, as a Run grant would hand them** (ADR 0112,
 /// #5239): read as a declared tool is, by the same refusals, so nothing a tool may not be is
 /// offered to the person. `written` is every folder the asking chat may write. Refused, with a
 /// sentence and with nothing asked:

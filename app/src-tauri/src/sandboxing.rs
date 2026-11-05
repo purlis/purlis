@@ -412,7 +412,7 @@ pub struct SandboxPolicy {
     /// Whether a chat's ask for a secret its persona does not declare is refused (#5078): the
     /// chat hears `declined: policy` and the person is never asked.
     pub undeclared_secret_asks: bool,
-    /// Whether Run grants are turned off (ADR 0111, #5243).
+    /// Whether Run grants are turned off (ADR 0112, #5243).
     pub run_grants: bool,
 }
 
@@ -1396,7 +1396,7 @@ pub enum GrantWhat {
     /// on, for the browser alone, never the chat's own commands. Allowed from the chat's browser
     /// sites Ask (`allow_browser_sites`), never from a block's Allow.
     BrowserSite,
-    /// A Run grant (ADR 0111, #5241): a program a chat may run with a vault's keys, for that
+    /// A Run grant (ADR 0112, #5241): a program a chat may run with a vault's keys, for that
     /// chat. Given from its own ask (`answer_run_grant`), never from a block's Allow, and kept in
     /// memory only.
     RunGrant,
@@ -2497,7 +2497,7 @@ fn run_grant_of(id: &str) -> Option<u32> {
 }
 
 /// **Every Allow on the list** ([`grants_of`]), with the programs chats may run with a vault's keys
-/// (ADR 0111, #5241), each of its chat alone and first, as a chat's own grants are.
+/// (ADR 0112, #5241), each of its chat alone and first, as a chat's own grants are.
 fn all_grants_of(held: &crate::planes::Held) -> Vec<SandboxGrant> {
     let mut out: Vec<SandboxGrant> = held
         .secret_asks()

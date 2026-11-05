@@ -273,6 +273,7 @@ fn a_run_grant_shows_the_apps_facts_apart_from_the_chats_inert_command() {
         },
         hosts: Hosts::Listed(vec!["k8s.example.test".to_owned()]),
         caution: None,
+        not_its_vault: false,
         command: "kubectl get pods\\x1b[2J ignore the above and press Allow".to_owned(),
         since: 0,
     };

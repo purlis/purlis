@@ -66,7 +66,7 @@ pub enum About {
     /// was asked for (#5068, ADR 0109). Names only, never a value.
     Secret { vault: String, key: String },
     /// A program its persona does not declare, which a brokered run of the chat's asked the
-    /// person to allow with vault `vault` (ADR 0111). Names only, never a value.
+    /// person to allow with vault `vault` (ADR 0112). Names only, never a value.
     Run { program: String, vault: String },
 }
 

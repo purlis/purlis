@@ -24,6 +24,7 @@ fn bound(chat: u32, args: &[&str]) -> Bound {
 fn need(bound: Bound) -> RunNeed {
     RunNeed {
         command: format!("curl {}", bound.args.join(" ")),
+        not_its_vault: false,
         bound,
         persona: "devops".into(),
         hosts: Hosts::Listed(vec!["api.example.com".into()]),

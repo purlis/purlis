@@ -14,6 +14,7 @@ function run(over: Partial<RunShown> = {}): RunShown {
     values: [{ var: "TOKEN_FILE", key: "TOKEN", in_a_file: true }],
     hosts: ["api.example.com:443"],
     every_host: false,
+    not_its_vault: false,
     command: "curl https://api.example.com",
     ...over,
   };
@@ -62,6 +63,13 @@ describe("RunGrantFacts", () => {
     expect(screen.queryByTestId("run-grant-env-advice")).toBeNull();
     rerender(<RunGrantFacts run={run()} />);
     expect(screen.queryByTestId("run-grant-always")).toBeNull();
+  });
+
+  it("says when the vault isn't one the persona can use, and what each scope does with it", () => {
+    render(<RunGrantFacts run={run({ not_its_vault: true })} />);
+    const said = screen.getByTestId("run-grant-not-its-vault").textContent;
+    expect(said).toContain("for that alone");
+    expect(said).toContain("every chat as devops");
   });
 
   it("carries the caution where the program is a general-purpose one", () => {

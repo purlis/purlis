@@ -3142,7 +3142,7 @@ impl Hooks {
         )
     }
 
-    /// **Records a Run grant given, taken back or not allowed** (ADR 0111, #5241), under the chat
+    /// **Records a Run grant given, taken back or not allowed** (ADR 0112, #5241), under the chat
     /// it is of: before it takes effect, so no grant is made unrecorded.
     pub fn record_run_grant(
         &self,

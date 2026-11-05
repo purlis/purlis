@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **A Run grant, and the ask that raises one** (ADR 0111, spec #5235, #5239): the person's
+//! **A Run grant, and the ask that raises one** (ADR 0112, spec #5235, #5239): the person's
 //! allowance, given in the window, for one program a persona does not declare to receive the keys
 //! its command names, from one vault.
 //!
@@ -20,6 +20,10 @@
 //!   It is listed with Allow once's not yet used ([`Asks::given_runs`]), and taken back from the
 //!   next run ([`Asks::revoke_run`]): a run already going is not stopped, since it holds its
 //!   values by then.
+//! - **The vault comes with the grant, for its scope alone** (the operator's ruling on ADR 0112).
+//!   A run covered by one may read a vault its persona may not otherwise use. Nothing is written
+//!   for that, so another chat, a differing command and a revoked grant all stand as before. Only
+//!   Always allow gives the persona the vault, as an Allow of its own.
 //! - **Don't allow is remembered for the chat, the program and the vault**, as a decline is: that
 //!   chat is told so at once from then on, whatever the arguments, and nothing is asked. What the
 //!   chat was given of them goes with it.
@@ -103,6 +107,9 @@ pub enum Hosts {
 /// ([`crate::secrets::brokered::command_shown`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunNeed {
+    /// **The vault is not one the persona may use** (ADR 0112): an Allow opens it for that grant's
+    /// scope alone, and only Always allow gives it to the persona.
+    pub not_its_vault: bool,
     pub bound: Bound,
     pub persona: String,
     pub hosts: Hosts,
@@ -115,6 +122,9 @@ pub struct RunNeed {
 /// **An open ask to allow a program, as the window shows it**: names only, never a value.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct OpenRun {
+    /// The vault is not one the persona may use ([`RunNeed::not_its_vault`]).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub not_its_vault: bool,
     pub id: u32,
     pub persona: String,
     pub bound: Bound,
@@ -408,6 +418,7 @@ impl Asks {
         say: &mut dyn FnMut(&str),
     ) -> RunHeld {
         let RunNeed {
+            not_its_vault,
             bound,
             persona,
             hosts,
@@ -460,6 +471,7 @@ impl Asks {
                 let id = inner.next;
                 inner.runs.open.push(RunAsked {
                     open: OpenRun {
+                        not_its_vault,
                         id,
                         persona,
                         bound: bound.clone(),
@@ -512,7 +524,7 @@ impl Asks {
         }
     }
 
-    /// **Records that policy refused a run of `program`** (ADR 0111, #5243): closed words in the
+    /// **Records that policy refused a run of `program`** (ADR 0112, #5243): closed words in the
     /// event log, and the names in the chat's own trace.
     pub fn refused_run_by_policy(&self, chat: u32, program: &str, vault: &str) {
         crate::trace::record_values(

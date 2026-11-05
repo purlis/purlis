@@ -83,7 +83,7 @@ pub async fn link_secret_ask(
     .await
 }
 
-/// **What the person pressed on an ask to allow a program** (ADR 0111).
+/// **What the person pressed on an ask to allow a program** (ADR 0112).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum RunGrantPress {
@@ -97,7 +97,7 @@ pub enum RunGrantPress {
     Refuse,
 }
 
-/// **The person answers the ask to allow a program `id`** (ADR 0111, #5239): the run that waits
+/// **The person answers the ask to allow a program `id`** (ADR 0112, #5239): the run that waits
 /// on it goes on, or hears it was not allowed, and a chat whose command stopped waiting is nudged.
 #[tauri::command]
 #[specta::specta]
@@ -152,6 +152,11 @@ pub fn run_grant_answered(
         if let Some(why) = locks.scope_removed(level) {
             return Err(why);
         }
+        if open.not_its_vault
+            && let Some(why) = locks.vault_grants_refused()
+        {
+            return Err(why);
+        }
     }
     let audited = held.hooks().record_run_grant(
         held.root(),
@@ -186,6 +191,27 @@ pub fn run_grant_answered(
                 ));
             }
         };
+        // Always allow alone gives the persona the vault, audited as any such Allow is. The line
+        // is written by now, so a failure here leaves the usual refused vault's Notice to ask.
+        if let Some(grant) = written.vault {
+            let target = grant.target();
+            let kept = held.audit_then_record(network)(
+                Some(open.bound.chat),
+                &purlis_core::sandbox::grant::Audited {
+                    granted: true,
+                    what: purlis_core::sandbox::local::VAULT,
+                    target: &target,
+                    level: purlis_core::sandbox::grant::Level::You,
+                },
+            )
+            .and_then(|()| {
+                purlis_core::sandbox::local::grant_vault(held.root(), &grant.vault, &grant.persona)
+                    .map_err(|why| why.to_string())
+            });
+            if let Err(why) = kept {
+                tracing::warn!("purlis: Always allow did not give the persona the vault ({why})");
+            }
+        }
         if let Some(shown) = written.allow
             && let Err(why) = crate::sandboxing::allow_shown(
                 held.root(),

@@ -143,7 +143,7 @@ pub struct Shown {
     /// is typed in. Absent for any other ask.
     #[specta(optional)]
     pub secret: Option<SecretShown>,
-    /// **The program a run asks the person to allow** (ADR 0111, #5239): the app's facts, kept
+    /// **The program a run asks the person to allow** (ADR 0112, #5239): the app's facts, kept
     /// apart from the chat's command. Absent for any other ask.
     #[specta(optional)]
     pub run: Option<RunShown>,
@@ -153,7 +153,7 @@ pub struct Shown {
     pub fill: Option<FillShown>,
 }
 
-/// **An ask to allow a program, as its row draws it** (ADR 0111, #5239). Every field is the app's
+/// **An ask to allow a program, as its row draws it** (ADR 0112, #5239). Every field is the app's
 /// own record of the run but [`Self::command`], which is the chat's words made inert: spelled so
 /// no character in them changes what they seem to say, and drawn as the chat's. Names only: no
 /// value is ever here.
@@ -172,6 +172,8 @@ pub struct RunShown {
     /// T-4's sentence, where the program is a general-purpose one.
     #[specta(optional)]
     pub caution: Option<String>,
+    /// The vault is not one the persona may use: an Allow opens it for that grant's scope alone.
+    pub not_its_vault: bool,
     /// The chat's command, its words made inert.
     pub command: String,
     /// What Always allow would write, where it is offered (#5245).
@@ -219,7 +221,7 @@ pub struct SecretShown {
     pub declared_purpose: Option<String>,
     /// How many chats wait on it.
     pub waiting: u32,
-    /// **Why the run that missed it is offered no Allow** (ADR 0111, #5243): the app's own words.
+    /// **Why the run that missed it is offered no Allow** (ADR 0112, #5243): the app's own words.
     #[specta(optional)]
     pub no_allow: Option<String>,
     /// **The chat says its value doesn't work** (#5075): the chat's own words, drawn as the
@@ -410,7 +412,7 @@ pub enum AskSource {
     /// A secret a chat asks purlis to fill into a field of its browser (#5115): an Allow lets
     /// purlis put that one key into that field, on that one origin, once.
     SecretFill,
-    /// A brokered run of a program its persona does not declare (ADR 0111, #5239): an Allow is a
+    /// A brokered run of a program its persona does not declare (ADR 0112, #5239): an Allow is a
     /// Run grant, and Don't allow is remembered for that chat, program and vault.
     RunGrant,
 }
@@ -499,7 +501,7 @@ pub enum AnswerPath {
     /// `answer_secret_fill` at the press an option names, on held fill `id`, for the notice
     /// whose digest is `shown` (#5115).
     SecretFill { id: u32, shown: String },
-    /// `answer_run_grant` on the ask `id`, at the press an option names (ADR 0111).
+    /// `answer_run_grant` on the ask `id`, at the press an option names (ADR 0112).
     RunGrant { id: u32 },
     /// Nothing the window can send: the person answers in the chat.
     InItsPane,
@@ -2079,19 +2081,19 @@ pub fn secret_ask(open: &purlis_core::secrets::ask::Open, may_remember: bool) ->
     }
 }
 
-/// The key of the ask to allow a program `id` (ADR 0111).
+/// The key of the ask to allow a program `id` (ADR 0112).
 fn run_grant_key(id: u32) -> String {
     format!("run-grant:{id}")
 }
 
-/// The id of Allow once on a Run grant's ask (ADR 0111).
+/// The id of Allow once on a Run grant's ask (ADR 0112).
 pub const RUN_ALLOW_ONCE: &str = "allow-once";
 /// The Allow of an ask to allow a program that holds for the chat (#5241).
 pub const RUN_ALLOW_CHAT: &str = "allow-chat";
 /// The Allow of an ask to allow a program that declares it as the persona's tool (#5245).
 pub const RUN_ALLOW_ALWAYS: &str = "allow-always";
 
-/// **The Run grant adapter** (ADR 0111, #5239): a chat's brokered run names a program its persona
+/// **The Run grant adapter** (ADR 0112, #5239): a chat's brokered run names a program its persona
 /// does not declare. Every word of the line is purlis's, and every name the app's; the chat's
 /// command is never in it, and is drawn apart ([`RunShown::command`]). Allow once comes first, the
 /// narrowest and the one a keyboard reaches first.
@@ -2127,11 +2129,11 @@ pub fn run_grant(
             by_env: line.by_env,
         });
     let says = format!(
-        "Wants to run {} with {} from {}'s vault {}. Allow once runs this exact command, and Allow for \
+        "{} wants to run {} with {} from vault {}. Allow once runs this exact command, and Allow for \
          this chat runs it with any arguments until the chat ends, in this chat's own sandbox",
+        open.persona,
         bound.program.display(),
         open.keys().join(", "),
-        open.persona,
         bound.vault,
     );
     Shown {
@@ -2182,6 +2184,7 @@ pub fn run_grant(
             hosts,
             every_host,
             caution: open.caution.clone(),
+            not_its_vault: open.not_its_vault,
             command: open.command.clone(),
             always,
         }),
@@ -2775,7 +2778,7 @@ pub type HoldEnds<'a> = dyn Fn(u32, &str, Option<u32>) -> Option<u32> + 'a;
 /// **What waits in one project, read from each source as it stands** (#1690): the inputs of
 /// [`derive`], so the registry's rules are tested without a running project.
 pub struct Waiting<'a> {
-    /// The programs chats' brokered runs ask the person to allow (ADR 0111).
+    /// The programs chats' brokered runs ask the person to allow (ADR 0112).
     pub run_grants: Vec<purlis_core::secrets::ask::run::OpenRun>,
     /// The permission asks its chats' hooks hold open (HP-6).
     pub permissions: Vec<Raised>,
@@ -2919,7 +2922,7 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
             .map(|wait| secret_fill(wait, waiting.locks)),
     );
     // A runner chat whose declared tool waits on the person's Allow for its pool (#2047).
-    // A chat whose brokered run names a program its persona does not declare (ADR 0111).
+    // A chat whose brokered run names a program its persona does not declare (ADR 0112).
     asks.extend(
         waiting
             .run_grants

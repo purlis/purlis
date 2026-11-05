@@ -473,7 +473,7 @@ export async function answerTaken(
           return commands.answerSecretAsk(plane, path.id, null, null, null, null);
         break;
       case "run-grant":
-        // A program a chat's brokered run names that its persona doesn't declare (ADR 0111): an
+        // A program a chat's brokered run names that its persona doesn't declare (ADR 0112): an
         // Allow is a Run grant for that chat, and the command that waits goes on at once.
         if (option === "allow-once") return commands.answerRunGrant(plane, path.id, "once");
         if (option === "allow-chat") return commands.answerRunGrant(plane, path.id, "chat");

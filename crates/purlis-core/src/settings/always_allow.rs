@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **Always allow: a Run grant made a declared tool** (ADR 0111, spec #5235, #5245). The person
+//! **Always allow: a Run grant made a declared tool** (ADR 0112, spec #5235, #5245). The person
 //! reads the exact line ([`line_of`]), derived from the command that waits, and the click writes
 //! exactly that to `charter.toml` under the persona ([`write`]). Teammates get it through the usual
 //! Notice, and a machine runs nothing of it until its own Allow.
@@ -38,6 +38,9 @@ pub struct Written {
     /// **The persona's list, to Allow**, where the person had allowed all of it before this line.
     /// `None` where anything else of it waits on their Allow, which this approves nothing of.
     pub allow: Option<persona::Shown>,
+    /// **The vault to give the persona**, where it may not use it yet (ADR 0112): Always allow
+    /// alone does. Kept by the caller, which audits it first.
+    pub vault: Option<crate::sandbox::local::VaultGrant>,
 }
 
 /// `text` as a TOML string.
@@ -201,7 +204,14 @@ pub fn write(root: &Path, persona: &str, bound: &Bound) -> Result<Written, Strin
         .flatten()
         // Allowed only if the line is in it: a tool policy holds out is no change to allow.
         .filter(|one| one.tools.iter().any(|tool| tool.name == line.name));
-    Ok(Written { allow })
+    let ctx = crate::secrets::Ctx::new(root, crate::secrets::Env::from_process());
+    let vault = crate::secrets::brokered::not_tagged(&ctx, Some(persona), &bound.vault).map(|_| {
+        crate::sandbox::local::VaultGrant {
+            vault: bound.vault.clone(),
+            persona: persona.to_owned(),
+        }
+    });
+    Ok(Written { allow, vault })
 }
 
 #[cfg(test)]

@@ -4,7 +4,7 @@
 import type { RunShown } from "./bindings";
 
 /**
- * **What a Run grant would let happen** (ADR 0111, #5239): the program's full path, the keys and
+ * **What a Run grant would let happen** (ADR 0112, #5239): the program's full path, the keys and
  * the hosts, each from the app, then the chat's command, apart and said to be the chat's. The
  * command is plain text, wrapped, already spelled by the core so that no character in it changes
  * what it seems to say. Words to read, nothing to reach. A plain body for now: the ask's own part
@@ -15,8 +15,14 @@ export function RunGrantFacts({ run }: { run: RunShown }) {
     <div data-testid="run-grant">
       <p className="ui-text-meta">
         Runs <code data-testid="run-grant-program">{run.program}</code>, in this chat's own sandbox,
-        with {run.persona}'s vault <code>{run.vault}</code>:
+        with vault <code>{run.vault}</code>:
       </p>
+      {run.not_its_vault && (
+        <p className="ui-text-meta" data-testid="run-grant-not-its-vault">
+          {run.persona} can't use this vault otherwise. Allow once and Allow for this chat open it
+          for that alone. Always allow also lets every chat as {run.persona} use it on this machine.
+        </p>
+      )}
       <ul className="ui-text-meta">
         {run.values.map((one) => (
           <li key={one.var}>

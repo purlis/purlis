@@ -742,7 +742,7 @@ function declaredGroups(
                     ),
                   ]
                 : []),
-              // Run grants (ADR 0111, #5243).
+              // Run grants (ADR 0112, #5243).
               ...(read.sandbox.policy.run_grants
                 ? [
                     lockedRow(

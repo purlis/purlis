@@ -774,7 +774,7 @@ export const commands = {
 	 */
 	answerSecretAsk: (plane: PlaneId, id: number, value: string | null, vault: string | null, key: string | null, remember: string | null) => typedError<null, string>(__TAURI_INVOKE("answer_secret_ask", { plane, id, value, vault, key, remember })),
 	/**
-	 *  **The person answers the ask to allow a program `id`** (ADR 0111, #5239): the run that waits
+	 *  **The person answers the ask to allow a program `id`** (ADR 0112, #5239): the run that waits
 	 *  on it goes on, or hears it was not allowed, and a chat whose command stopped waiting is nudged.
 	 */
 	answerRunGrant: (plane: PlaneId, id: number, press: RunGrantPress) => typedError<null, string>(__TAURI_INVOKE("answer_run_grant", { plane, id, press })),
@@ -5353,7 +5353,7 @@ export type AnswerPath =
  *  whose digest is `shown` (#5115).
  */
 { via: "secret-fill"; id: number; shown: string } | 
-/**  `answer_run_grant` on the ask `id`, at the press an option names (ADR 0111). */
+/**  `answer_run_grant` on the ask `id`, at the press an option names (ADR 0112). */
 { via: "run-grant"; id: number } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
@@ -5548,7 +5548,7 @@ export type AskSource =
  */
 "secret-fill" | 
 /**
- *  A brokered run of a program its persona does not declare (ADR 0111, #5239): an Allow is a
+ *  A brokered run of a program its persona does not declare (ADR 0112, #5239): an Allow is a
  *  Run grant, and Don't allow is remembered for that chat, program and vault.
  */
 "run-grant";
@@ -8833,7 +8833,7 @@ export type GrantWhat =
  */
 "browser-site" | 
 /**
- *  A Run grant (ADR 0111, #5241): a program a chat may run with a vault's keys, for that
+ *  A Run grant (ADR 0112, #5241): a program a chat may run with a vault's keys, for that
  *  chat. Given from its own ask (`answer_run_grant`), never from a block's Allow, and kept in
  *  memory only.
  */
@@ -13310,7 +13310,7 @@ export type RunEndedOnARunner = {
 	device: string,
 };
 
-/**  **What the person pressed on an ask to allow a program** (ADR 0111). */
+/**  **What the person pressed on an ask to allow a program** (ADR 0112). */
 export type RunGrantPress = 
 /**  One run of exactly this command. */
 "once" | 
@@ -13322,7 +13322,7 @@ export type RunGrantPress =
 "refuse";
 
 /**
- *  **An ask to allow a program, as its row draws it** (ADR 0111, #5239). Every field is the app's
+ *  **An ask to allow a program, as its row draws it** (ADR 0112, #5239). Every field is the app's
  *  own record of the run but [`Self::command`], which is the chat's words made inert: spelled so
  *  no character in them changes what they seem to say, and drawn as the chat's. Names only: no
  *  value is ever here.
@@ -13340,6 +13340,8 @@ export type RunShown = {
 	every_host: boolean,
 	/**  T-4's sentence, where the program is a general-purpose one. */
 	caution?: string | null,
+	/**  The vault is not one the persona may use: an Allow opens it for that grant's scope alone. */
+	not_its_vault: boolean,
 	/**  The chat's command, its words made inert. */
 	command: string,
 	/**  What Always allow would write, where it is offered (#5245). */
@@ -13692,7 +13694,7 @@ export type SandboxPolicy = {
 	 *  chat hears `declined: policy` and the person is never asked.
 	 */
 	undeclared_secret_asks: boolean,
-	/**  Whether Run grants are turned off (ADR 0111, #5243). */
+	/**  Whether Run grants are turned off (ADR 0112, #5243). */
 	run_grants: boolean,
 };
 
@@ -14139,7 +14141,7 @@ export type SecretShown = {
 	declared_purpose?: string | null,
 	/**  How many chats wait on it. */
 	waiting: number,
-	/**  **Why the run that missed it is offered no Allow** (ADR 0111, #5243): the app's own words. */
+	/**  **Why the run that missed it is offered no Allow** (ADR 0112, #5243): the app's own words. */
 	no_allow?: string | null,
 	/**
 	 *  **The chat says its value doesn't work** (#5075): the chat's own words, drawn as the
@@ -14536,7 +14538,7 @@ export type Shown = {
 	 */
 	secret?: SecretShown | null,
 	/**
-	 *  **The program a run asks the person to allow** (ADR 0111, #5239): the app's facts, kept
+	 *  **The program a run asks the person to allow** (ADR 0112, #5239): the app's facts, kept
 	 *  apart from the chat's command. Absent for any other ask.
 	 */
 	run?: RunShown | null,

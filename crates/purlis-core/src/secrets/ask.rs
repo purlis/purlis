@@ -103,7 +103,7 @@ pub struct Need {
     /// Why the key is asked for though the vault has it (#5075): the chat says its value doesn't
     /// work, or it is a link whose entry is gone. None for a key the vault doesn't hold.
     pub reason: Option<Reason>,
-    /// **Why the run that missed it is offered no Allow** (ADR 0111, #5243): the app's own words
+    /// **Why the run that missed it is offered no Allow** (ADR 0112, #5243): the app's own words
     /// on what policy locks, said on the notice, where a Fill is still offered.
     pub no_allow: Option<String>,
 }
@@ -377,7 +377,7 @@ struct Inner {
     open: HashMap<(String, String), Asked>,
     /// Each chat's declines, by vault and key, for the chat's life.
     declined: HashSet<(u32, String, String)>,
-    /// The asks to allow a program, and the Run grants given ([`run`], ADR 0111).
+    /// The asks to allow a program, and the Run grants given ([`run`], ADR 0112).
     runs: run::Runs,
 }
 

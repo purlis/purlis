@@ -104,7 +104,7 @@
 //!   does not declare as a Secret need (#5078, ADR 0109): the chat hears `declined: policy` and
 //!   the person is never asked. A declared key is asked as before, and a key the vault holds
 //!   already still answers filled.
-//! - `run-grants`: `false` turns Run grants off (ADR 0111, #5243): a chat's `secret exec` of a
+//! - `run-grants`: `false` turns Run grants off (ADR 0112, #5243): a chat's `secret exec` of a
 //!   program its persona does not declare raises no Allow and uses no grant given before, and the
 //!   chat hears why. A key that command misses can still be filled. `persona-tools` `false` has the
 //!   same effect. Absent is allowed.
@@ -208,7 +208,7 @@ pub struct Locks {
     no_proposed_changes: bool,
     /// Whether a Secret ask for a key the persona does not declare is refused (#5078).
     no_undeclared_secret_asks: bool,
-    /// Whether Run grants are turned off (ADR 0111, #5243).
+    /// Whether Run grants are turned off (ADR 0112, #5243).
     no_run_grants: bool,
     /// The scopes an Allow may keep anything at, where the policy fixes them (#1666): `machine`
     /// among them only where the policy names it (ruling C3).
@@ -704,12 +704,12 @@ impl Locks {
         self.no_undeclared_secret_asks
     }
 
-    /// Whether policy turns Run grants off (ADR 0111, #5243).
+    /// Whether policy turns Run grants off (ADR 0112, #5243).
     pub fn forbids_run_grants(&self) -> bool {
         self.no_run_grants
     }
 
-    /// **Why policy refuses a Run grant for `program`** (ADR 0111, #5243): the lock on Run grants,
+    /// **Why policy refuses a Run grant for `program`** (ADR 0112, #5243): the lock on Run grants,
     /// or the lock on a persona's tools, which a program under a grant would be one in all but
     /// name. `None` where neither is set.
     pub fn refuses_run_grant(&self, persona: &str, program: &str) -> Option<String> {
