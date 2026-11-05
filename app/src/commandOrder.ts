@@ -45,6 +45,7 @@ export const LANES = {
     ],
     changes: [
       "answerSandboxOffer",
+      "answerRunGrant",
       "addSandboxHost",
       "removeSandboxHost",
       "confirmSandboxHost",
