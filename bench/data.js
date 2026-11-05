@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793857669182,
+  "lastUpdate": 1793861624785,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -39774,6 +39774,48 @@ window.BENCHMARK_DATA = {
             "value": 101.7670225,
             "unit": "ms",
             "extra": "median of 5 runs: 100.622, 100.904, 101.767, 101.990, 102.223 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "bce092dd6ffe009b941a673714bcad43ab934932",
+          "message": "The outcome bars no longer wait for the macOS runner to settle (#4351) (#5274)\n\nThe person's ruling of 2026-11-05: Spotlight stays off and what is busy is still logged, by plain ps. Waiting brought L10 no gain and cost about 80 s a job.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6AQ7CQ2QWW7W99KZZ8DR168\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-05T05:59:49Z",
+          "tree_id": "69b37cde7401b104e46570f48a922860a8e6c8d8",
+          "url": "https://github.com/purlis/purlis/commit/bce092dd6ffe009b941a673714bcad43ab934932"
+        },
+        "date": 1793861620756,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6893425,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.681, 0.687, 0.689, 0.690, 0.702 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.548367,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.470, 16.545, 16.548, 16.556, 16.581 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.37976549999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.768, 101.254, 101.380, 102.746, 102.758 ms"
           }
         ]
       }
