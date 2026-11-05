@@ -69,6 +69,17 @@
   margin: 0 0 var(--space-2);
 }
 
+/* **A link in what it says breaks with its words** (#1551, #5217): a family button holds its words
+   on one line, and the sentence may have less room than the link takes (the away summary's, in
+   the Inbox at the side of a narrow window). It stays one box, and its words wrap inside it. */
+[data-scope="notice"][data-part="message"]
+  [data-scope="button"][data-part="root"][data-variant="link"] {
+  max-inline-size: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: start;
+}
+
 /* ---------------------------------------------------------------------------------------------
    In a pane (#1481, #1647): one box, never taller than the pane. The box may shrink in the stack,
    the line and its answers never do, and what a way out opened gives way first. The sentence has
