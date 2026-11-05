@@ -250,7 +250,8 @@ export function useClosedStudioChats(plane: string, open: string): readonly Clos
     void commands
       .studioChatsClosed(plane)
       .then((answer) => {
-        if (live && answer.status === "ok") setClosed(answer.data);
+        // Only a list is drawn: an answer that is not one (an older core's) is none.
+        if (live && answer.status === "ok" && Array.isArray(answer.data)) setClosed(answer.data);
       })
       .catch(() => undefined);
     return () => {
