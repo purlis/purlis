@@ -17,9 +17,10 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     Ctx, DeleteSet, Deleted, Deleting, Level, Source, Unmoved, Whose, after_edit_dropped, beside,
-    bring_back, deleted, find, git, head, keep_kept_as, kept_emptied, pending_in, put_back, rel,
+    bring_back, deleted, find, git, head, keep_in_set, kept_emptied, pending_in, put_back, rel,
     specs_of, taken_back, tracked, unstage,
 };
+use crate::counts::counted;
 use crate::settings::Which;
 use crate::skills::LINKED_PLUGIN;
 use crate::skills::source::{self, Remote, lock};
@@ -60,8 +61,9 @@ pub struct ReviewedMember {
 pub struct Naming {
     pub namer: String,
     pub named: String,
-    /// The skill the set could take in, so nothing is left naming what is not there.
-    pub add: Member,
+    /// The copy named: what the review offers to keep out of a delete or a turn-off, or to take
+    /// into a turn-on. Never the namer: the offer does not widen a delete.
+    pub member: Member,
 }
 
 /// What a set's review says before anything is written.
@@ -207,20 +209,20 @@ fn left_naming(plane: &Path, act: Act, going: &[&Member], workspace: Option<&str
             continue;
         }
         for (level, name, text) in &stays {
-            let add = Member {
+            let namer = Member {
                 level: level.clone(),
                 name: name.clone(),
             };
-            // Only what the workspace could turn off too is left naming it there.
+            // Only what is on in the workspace is left naming it there.
             let counts = act == Act::Delete
                 || workspace
                     .zip(off.as_ref())
-                    .is_some_and(|(ws, off)| reaches(plane, &add, ws) && !off.contains(name));
+                    .is_some_and(|(ws, off)| reaches(plane, &namer, ws) && !off.contains(name));
             if counts && names_skill(text, &member.name) {
                 names.push(Naming {
                     namer: name.clone(),
                     named: member.name.clone(),
-                    add,
+                    member: (*member).clone(),
                 });
             }
         }
@@ -246,7 +248,7 @@ fn naming_what_stays_off(plane: &Path, going: &[&Member], workspace: Option<&str
                 names.push(Naming {
                     namer: member.name.clone(),
                     named: one.clone(),
-                    add: Member {
+                    member: Member {
                         level: Level::project(),
                         name: one.clone(),
                     },
@@ -275,6 +277,12 @@ struct Going<'a> {
     tracked: bool,
 }
 
+/// The file `member`'s copy reads from, as a chat that started with it holds it.
+pub fn copy_file(plane: &Path, member: &Member) -> Option<PathBuf> {
+    let folder = member.level.named(plane, &member.name)?;
+    Some(folder.join(purlis_skills::FILE))
+}
+
 /// Those kept on this machine by a delete under way, put back: what could not be, in words.
 fn kept_ones_back(plane: &Path, kept: &[(&Going<'_>, String)]) -> Vec<String> {
     let state = crate::plane::state_dir(plane);
@@ -301,7 +309,7 @@ fn nothing_deleted(why: &str, left: &[String]) -> String {
         format!("{why}, so no skill was deleted")
     } else {
         format!(
-            "{why}, and {} could not be put back: each is in this machine's deleted skills",
+            "{why}, and {} could not be put back: Deleted lists any skill among them",
             left.join(", ")
         )
     }
@@ -356,13 +364,25 @@ pub fn delete_set(
         .chain(source_file)
         .collect();
     let commits_now = crate::planegit::paths_unsaved(plane, &paths).is_none();
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|at| at.as_millis())
-        .unwrap_or_default();
+    let stamp = super::ms_since_epoch(std::time::SystemTime::now());
     let set = DeleteSet {
         id: stamp.to_string(),
         from: from.map(one_line).filter(|text| !text.is_empty()),
+    };
+    // The source goes first, while nothing else has moved: a refusal here changes nothing, and
+    // every failure after it puts it back with the skills.
+    let taken_out = match remove_source {
+        Some(remote) => source::listed::take_out(plane, remote)?,
+        None => None,
+    };
+    let put_all_back = |kept: &[(&Going<'_>, String)]| -> Vec<String> {
+        let mut left = kept_ones_back(plane, kept);
+        if let Some((source, which)) = &taken_out
+            && let Err(why) = source::listed::put_in(plane, source, *which)
+        {
+            left.push(format!("the source {source} ({why})"));
+        }
+        left
     };
     // Those no commit can keep are moved first: a move is what can be taken back.
     let mut kept: Vec<(&Going<'_>, String)> = Vec::new();
@@ -371,10 +391,10 @@ pub fn delete_set(
             continue;
         }
         let order = u128::try_from(at).unwrap_or(0);
-        match keep_kept_as(plane, &one.member.level, &one.folder, stamp + order, &set) {
+        match keep_in_set(plane, &one.member.level, &one.folder, stamp + order, &set) {
             Ok(name) => kept.push((one, name)),
             Err(Unmoved::Nothing(why) | Unmoved::Stranded(why)) => {
-                let left = kept_ones_back(plane, &kept);
+                let left = put_all_back(&kept);
                 return Err(nothing_deleted(
                     &format!("{} could not be deleted ({why})", one.member.name),
                     &left,
@@ -392,7 +412,7 @@ pub fn delete_set(
             Ok(note) => notes.push(note),
             Err(why) => {
                 notes.into_iter().for_each(Deleting::end);
-                let left = kept_ones_back(plane, &kept);
+                let left = put_all_back(&kept);
                 return Err(nothing_deleted(
                     &format!("{} could not be deleted ({why})", one.member.name),
                     &left,
@@ -411,7 +431,7 @@ pub fn delete_set(
             unstage(plane, &specs);
             let back = put_back(plane, &specs);
             notes.into_iter().for_each(Deleting::end);
-            let mut left = kept_ones_back(plane, &kept);
+            let mut left = put_all_back(&kept);
             if !back {
                 left.push("those git holds".to_owned());
             }
@@ -419,10 +439,6 @@ pub fn delete_set(
         }
         unstage(plane, &specs);
     }
-    let taken_out = match remove_source {
-        Some(remote) => source::listed::take_out(plane, remote)?,
-        None => None,
-    };
     let count = members.len();
     let (subject, trailers) = match &set.from {
         Some(label) => (
@@ -442,10 +458,7 @@ pub fn delete_set(
     if commits_now && committing && head(plane) == before {
         unstage(plane, &specs);
         let back = put_back(plane, &specs);
-        if let Some((source, which)) = &taken_out {
-            let _ = source::listed::put_in(plane, source, *which);
-        }
-        let mut left = kept_ones_back(plane, &kept);
+        let mut left = put_all_back(&kept);
         if back {
             notes.into_iter().for_each(Deleting::end);
         } else {
@@ -460,7 +473,8 @@ pub fn delete_set(
         after_edit_dropped(cx, &one.member.level, &one.member.name);
     }
     cx.done(format!(
-        "{count} skills are deleted; Bring all back returns them"
+        "{} deleted; Bring all back returns them",
+        counted(count, "skill", "skills")
     ));
     Ok(deleted(plane)
         .into_iter()
@@ -552,10 +566,12 @@ pub fn restore_set(
         cx.commit(&paths, &format!("skill restore {count}"));
     }
     if commits_now && head(plane) == before {
-        if let Some((source, _)) = source {
-            let _ = source::listed::take_out(plane, &source.remote);
+        let mut left = undo(&back);
+        if let Some((source, _)) = source
+            && let Err(why) = source::listed::take_out(plane, &source.remote)
+        {
+            left.push(format!("the source {source} ({why})"));
         }
-        let left = undo(&back);
         return Err(say_none("its commit could not be made".to_owned(), &left));
     }
     for (one, _, _) in &back {
@@ -567,7 +583,7 @@ pub fn restore_set(
             cx.warn(why);
         }
     }
-    cx.done(format!("{count} skills are back"));
+    cx.done(format!("{} back", counted(count, "skill", "skills")));
     Ok(())
 }
 
@@ -631,7 +647,10 @@ pub fn turn_set(
             "its commit could not be made, so no skill was turned {state}"
         ));
     }
-    cx.done(format!("{count} skills are {state} in {workspace}"));
+    cx.done(format!(
+        "{} turned {state} in {workspace}",
+        counted(count, "skill", "skills")
+    ));
     Ok(changed)
 }
 

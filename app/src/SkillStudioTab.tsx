@@ -145,7 +145,7 @@ function SourceTag({ label, onPress }: { label: string; onPress: (label: string)
     <Button
       size="sm"
       variant="ghost"
-      aria-label={`Show only ${label}`}
+      tooltip="Show only this source"
       data-testid="skill-source-tag"
       onPress={() => onPress(label)}
     >

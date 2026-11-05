@@ -7,6 +7,7 @@ import { commands, type DeletedSkill } from "./bindings";
 import { counted } from "./dispatches";
 import { Field, SettingRow } from "./settings/components";
 import { NAME_RESERVED, copyNameOf, isReservedName } from "./SkillCopy";
+import { BUSY } from "./SkillRead";
 import { Badge } from "./ui/badge/Badge";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Disclosure } from "./ui/disclosure/Disclosure";
@@ -141,7 +142,7 @@ export function DeletedList({
                     none
                       ? "Their names belong to purlis now: bring each back on its own."
                       : busy
-                        ? "Another change is being made."
+                        ? BUSY
                         : undefined
                   }
                   onPress={() => onBringAllBack?.(one)}

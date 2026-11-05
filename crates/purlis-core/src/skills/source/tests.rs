@@ -2020,7 +2020,10 @@ fn a_deleted_skill_can_be_installed_again_and_leaves_one_entry() {
         .iter()
         .find(|one| one.skill.name == "lint")
         .unwrap();
-    assert!(lint.installed.is_empty(), "a deleted skill is not installed");
+    assert!(
+        lint.installed.is_empty(),
+        "a deleted skill is not installed"
+    );
 
     let again = whole(review_set(root, &source, &named, &Level::project()).unwrap());
     let (made, _) = on(root, |cx| {

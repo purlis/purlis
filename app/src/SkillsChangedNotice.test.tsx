@@ -97,6 +97,20 @@ describe("a chat whose skills changed since it started", () => {
     expect(await screen.findByRole("status", { name: /Skills changed/ })).toBeInTheDocument();
   });
 
+  it("offers again when a change is undone and then made again (#5331)", async () => {
+    const one = { ...UPDATED, skills: true, skills_gone: ["grilling"] };
+    let now: PlaneUpdated[] = [one];
+    core(() => now);
+    render(<SkillsChangedNotice plane="p" session={7} onRestart={() => undefined} />);
+    const notice = await screen.findByRole("status", { name: /Skills changed/ });
+    await userEvent.setup().click(within(notice).getByRole("button", { name: /Dismiss/ }));
+    now = [];
+    await planeChanged();
+    now = [one];
+    await planeChanged();
+    expect(await screen.findByRole("status", { name: /Skills changed/ })).toBeInTheDocument();
+  });
+
   it("says nothing to a chat whose instructions alone changed", async () => {
     core([{ ...UPDATED, files: ["CLAUDE.md"] }]);
     render(<SkillsChangedNotice plane="p" session={7} onRestart={() => undefined} />);

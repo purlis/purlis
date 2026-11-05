@@ -83,9 +83,10 @@ impl Stamp {
         Stamp(rows)
     }
 
-    /// Whether a skill of this name is among those stamped.
-    pub fn holds(&self, name: &str) -> bool {
-        self.0.iter().any(|row| row.name == name)
+    /// Whether the skill whose `SKILL.md` is at `path` is among those stamped: that copy, since
+    /// two levels can hold one name.
+    pub fn holds(&self, path: &std::path::Path) -> bool {
+        self.0.iter().any(|row| row.path == path)
     }
 
     /// **What changed from this stamp to `now`, by skill name** (#3694, S8): the skills a chat

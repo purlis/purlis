@@ -282,8 +282,16 @@ pub fn take_out(plane: &Path, remote: &Remote) -> Result<Option<(Source, Which)>
         list.len() != before
     };
     edit(plane, listed.which, without)?;
-    if listed.which == Which::Shared {
-        edit(plane, Which::Local, without)?;
+    if listed.which == Which::Shared
+        && let Err(why) = edit(plane, Which::Local, without)
+    {
+        // All or nothing: the shared table goes back as it was taken out.
+        let folder = listed.source.folder.as_deref();
+        edit(plane, Which::Shared, |list| {
+            list.push(table_of(remote, folder, None));
+            true
+        })?;
+        return Err(why);
     }
     Ok(Some((listed.source, listed.which)))
 }

@@ -17,7 +17,7 @@ import { PROJECT } from "./skillChanges";
 import { memberKey } from "./SkillSetReview";
 import { studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
-import { expectFocusInSight, untilFocusWithin } from "./stories.testkit";
+import { expectFocusInSight, tabInto, untilFocusWithin } from "./stories.testkit";
 
 const commit = (c: string) => ({ id: c.repeat(40), short: c.repeat(7) });
 
@@ -85,7 +85,7 @@ const SET_REVIEW = ({ members }: { members: { name: string }[] }) => ({
     {
       namer: "to-spec",
       named: "brainstorming",
-      add: { level: PROJECT, name: "to-spec", label: "project" },
+      member: { level: PROJECT, name: "brainstorming", label: "project" },
     },
   ],
   open_chats: 2,
@@ -566,16 +566,6 @@ export const InstallAllThere: Story = {
   },
 };
 
-/** Tab, until the keyboard is inside `target`, at most `steps` times. */
-async function tabInto(target: () => Element | null, steps = 30): Promise<void> {
-  for (let step = 0; step < steps; step++) {
-    const into = target();
-    if (into !== null && into.contains(document.activeElement)) return;
-    await userEvent.tab();
-  }
-  await untilFocusWithin(target, "the keyboard reaches it by Tab");
-}
-
 /** **Delete all…, the skills to tick** (#5331): each under its level, only the current level's
  *  ticked, and one changed since install left unticked and marked. */
 export const DeleteAllChoose: Story = {
@@ -615,10 +605,10 @@ export const DeleteAllReview: Story = {
     );
     await expect(within(review).getByTestId("set-cannot-writing-plans")).toBeVisible();
     await expect(within(review).getByTestId("set-left-out-systematic-debugging")).toBeVisible();
-    const also = within(warning).getByRole("button", { name: "Also delete to-spec" });
-    await tabInto(() => also);
+    const keep = within(warning).getByRole("button", { name: "Keep brainstorming" });
+    await tabInto(() => keep);
     expectFocusInSight();
-    await expect(within(review).getByRole("button", { name: "Delete 1 skill" })).toBeVisible();
+    await expect(within(review).getByRole("button", { name: "Delete" })).toBeVisible();
   },
 };
 
@@ -636,8 +626,59 @@ export const TurnAllOffReview: Story = {
   },
   play: async ({ canvas }) => {
     const review = await canvas.findByTestId("set-review");
-    await within(review).findByTestId("set-going-list");
-    await expect(within(review).getByRole("button", { name: /^Turn off/ })).toBeVisible();
+    const going = await within(review).findByTestId("set-going-list");
+    await expect(within(review).getByRole("button", { name: "Turn off" })).toBeVisible();
+    // A skill's box is reached and unticked by the keyboard, and goes to Left out.
+    await tabInto(() => going);
+    expectFocusInSight();
+    await userEvent.keyboard(" ");
+    await within(review).findByTestId("set-left-out-brainstorming");
+  },
+};
+
+/** **Turn all on…, the one review** (#5331): one that stays off is named, with its offer to come
+ *  too. */
+export const TurnAllOnReview: Story = {
+  args: {
+    at: {
+      at: "set-review",
+      act: "turn-on",
+      source: SOURCE,
+      label: SUPERPOWERS.label,
+      members: COPIES.slice(0, 1).map((one) => one.member),
+      ticked: COPIES.slice(0, 1).map((one) => memberKey(one.member)),
+    },
+  },
+  play: async ({ canvas }) => {
+    const review = await canvas.findByTestId("set-review");
+    const warning = await within(review).findByTestId("set-names-to-spec-brainstorming");
+    await expect(warning).toHaveTextContent("which stays off.");
+    const also = within(warning).getByRole("button", { name: "Also turn on brainstorming" });
+    await tabInto(() => also);
+    expectFocusInSight();
+    await expect(within(review).getByRole("button", { name: "Turn on" })).toBeVisible();
+  },
+};
+
+/** **Remove source…, with its one choice** (#5331): it keeps the skills until the choice is ticked,
+ *  which says what comes next and leads to the same review. Esc closes it. */
+export const RemoveSourceAlsoDeleting: Story = {
+  args: { at: { at: "source", source: SOURCE, label: SUPERPOWERS.label } },
+  play: async ({ canvas }) => {
+    const page = await canvas.findByTestId("skill-source-page");
+    const remove = await within(page).findByRole("button", { name: "Remove source…" });
+    await tabInto(() => remove);
+    await userEvent.keyboard("{Enter}");
+    const dialog = await within(document.body).findByRole("dialog");
+    const choice = await within(dialog).findByRole("checkbox", {
+      name: /^Also delete the 4 skills installed from it/,
+    });
+    await tabInto(() => choice);
+    expectFocusInSight();
+    await userEvent.keyboard(" ");
+    await expect(choice).toBeChecked();
+    await expect(dialog).toHaveTextContent("You review the skills next.");
+    await expect(within(dialog).getByRole("button", { name: "Review" })).toBeVisible();
   },
 };
 

@@ -1,5 +1,3 @@
-    lock.skills
-        .retain(|one| !(one.level.0 == *level && landing.contains(&one.name.as_str())));
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
@@ -231,6 +229,8 @@ pub fn install_named(
     let mut lock = held.lock.clone();
     // An entry whose skill is gone was a deleted skill's (#5331), and the new copy takes its
     // place: `free_at` above refused any name that is really there.
+    lock.skills
+        .retain(|one| !(one.level.0 == *level && landing.contains(&one.name.as_str())));
     let mut made: Vec<PathBuf> = Vec::new();
     for (skill, name, files, recorded, renamed) in &copies {
         let writes: Vec<write::File<'_>> = files

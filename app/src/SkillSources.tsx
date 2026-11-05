@@ -35,10 +35,11 @@ import { nameProblem } from "./SkillChangeDialogs";
 import { GrantPicker } from "./SkillLevelPickers";
 import { capitalised } from "./saving";
 import { TextField } from "./ui/field/Field";
-import { NotRead, ReadingRows } from "./SkillPanels";
+import { BUSY, Held, reading, useRead, type Read } from "./SkillRead";
+import { NotRead } from "./SkillPanels";
 import { sourceKey, type SourcesAt } from "./skillStudio";
-import type { Change as StudioChange, Said } from "./SkillPage";
-import { SetChoosePage, SetReviewPage, memberKey } from "./SkillSetReview";
+import type { Change as StudioChange } from "./SkillPage";
+import { SetChoosePage, SetReviewPage, applySet, memberKey, setTitle } from "./SkillSetReview";
 import { Badge } from "./ui/badge/Badge";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Card, CardTitle } from "./ui/card/Card";
@@ -91,28 +92,6 @@ import { ReviewPage } from "./ui/review-page/ReviewPage";
 /** One change's answer, as the core's commands give it. */
 type Answer = { status: "ok"; data: SkillChanged } | { status: "error"; error: string };
 
-/** A read that may fail: what it answered, or why it could not. */
-type Read<T> = { data: T; refused?: undefined } | { data?: undefined; refused: string };
-
-/** Asks `run`, and answers what it read or why it failed, never throwing. */
-async function reading<T>(
-  run: () => Promise<{ status: "ok"; data: T } | { status: "error"; error: string }>,
-): Promise<Read<T>> {
-  try {
-    const answer = await run();
-    return answer.status === "ok" ? { data: answer.data } : { refused: answer.error };
-  } catch (err) {
-    return { refused: String(err) };
-  }
-}
-
-/** What a change to several skills is called, with the source it is from (#5331). */
-const SET_TITLE: Record<SkillSetAct, string> = {
-  delete: "Delete all from",
-  "turn-off": "Turn all off from",
-  "turn-on": "Turn all on from",
-};
-
 /** The copies `act` lists: each deleted, or each that `act` would change in the workspace, once
  *  by name, as a workspace turns a name. */
 function copiesFor(act: SkillSetAct, copies: readonly InstalledCopy[]): InstalledCopy[] {
@@ -126,16 +105,6 @@ function copiesFor(act: SkillSetAct, copies: readonly InstalledCopy[]): Installe
   });
 }
 
-/** What the studio says after a change to several skills. */
-function saidOf(label: string, text: string, notes: readonly string[], undo?: () => void): Said {
-  return {
-    tone: "news",
-    label,
-    text: [text, ...notes].join(" "),
-    ...(undo === undefined ? {} : { undo }),
-  };
-}
-
 /** Who can browse a source, as Add source asks and a source's row says. */
 const WHO: Record<SkillSource["kept"], string> = {
   shared: "The whole project",
@@ -145,9 +114,6 @@ const WHO: Record<SkillSource["kept"], string> = {
 /** What the Sources page says it holds, under its name. */
 export const SOURCES_LEAD =
   "A source is a git repository of skills. An install copies a skill into this project, pinned to the commit you reviewed.";
-
-/** What an action that cannot be pressed says while another change is being made. */
-const BUSY = "Another change is being made.";
 
 /** The update offered for `name` from the source `key`, if there is one. */
 function offerFor(updates: SkillUpdates | undefined, key: string, name: string) {
@@ -266,34 +232,6 @@ function checkedOf(checked: readonly SourceChecked[], source: SkillSource) {
   return checked.find((one) => sourceKey(one.remote) === key);
 }
 
-/** **A read in place**: rows held while it is asked, why it failed with Try again, or what it
- *  read, without hiding the rest of the page. */
-export function Held<T>({
-  read,
-  what,
-  again,
-  children,
-}: {
-  read: Read<T> | undefined;
-  /** What is read, as the sentences name it: "this project's skill sources". */
-  what: string;
-  again: () => void;
-  children: (data: T) => ReactNode;
-}) {
-  if (read === undefined) return <ReadingRows what={what} testid="skill-sources-reading" />;
-  if (read.refused !== undefined)
-    return (
-      <NotRead
-        what={what}
-        why={read.refused}
-        onAgain={again}
-        testid="skill-sources-unread"
-        size="sm"
-      />
-    );
-  return <>{children(read.data)}</>;
-}
-
 /**
  * **What the Sources page shows at `at`**: Sources itself, a source's page, or a review. Each is
  * a step of the tab's history, so back and forward walk them; a change made on one goes on to
@@ -355,89 +293,6 @@ export function SkillSourcesPage({
           return answer;
         }),
       then,
-    );
-  };
-  /** **The change a set's review asks** (#5331): one commit, and one Undo right after. */
-  const applySet = (
-    act: SkillSetAct,
-    source: SkillSource,
-    members: SkillSetMember[],
-    to: SourcesAt | undefined,
-    removesSource: boolean,
-  ) => {
-    const count = counted(members.length, "skill", "skills");
-    if (act === "delete") {
-      let ids: string[] = [];
-      const removed = removesSource ? source : null;
-      changeThen(
-        "The skills were not deleted",
-        () =>
-          commands
-            .skillSetDelete(plane, members, source.label, removed?.remote ?? null)
-            .then((answer) => {
-              if (answer.status === "ok") ids = answer.data.deleted;
-              return answer;
-            }),
-        to,
-        async (notes) =>
-          saidOf(
-            "Skills deleted",
-            `${count} deleted. They stay in Deleted for 30 days.`,
-            notes,
-            () =>
-              change(
-                "The delete was not undone",
-                () => commands.skillSetRestore(plane, ids, removed),
-                async (undone) => saidOf("Delete undone", `${count} back.`, undone),
-              ),
-          ),
-      );
-      return;
-    }
-    if (workspace === null) return;
-    const on = act === "turn-on";
-    const state = on ? "on" : "off";
-    const undoState = on ? "off" : "on";
-    let turned: string[] = [];
-    changeThen(
-      `The skills were not turned ${state}`,
-      () =>
-        commands
-          .skillSetTurn(
-            plane,
-            workspace,
-            members.map((one) => one.name),
-            on,
-          )
-          .then((answer) => {
-            if (answer.status === "ok") turned = answer.data.changed;
-            return answer;
-          }),
-      to,
-      async (notes) =>
-        saidOf(
-          `Skills turned ${state}`,
-          `${counted(turned.length, "skill", "skills")} turned ${state} in ${workspace}.`,
-          notes,
-          () =>
-            change(
-              "The change was not undone",
-              () =>
-                commands
-                  .skillSetTurn(plane, workspace, turned, !on)
-                  .then((answer) =>
-                    answer.status === "ok"
-                      ? { status: "ok" as const, data: { notes: answer.data.notes } }
-                      : answer,
-                  ),
-              async (undone) =>
-                saidOf(
-                  "Change undone",
-                  `${counted(turned.length, "skill", "skills")} turned ${undoState} in ${workspace}.`,
-                  undone,
-                ),
-            ),
-        ),
     );
   };
   const sources = read.sources?.data ?? [];
@@ -522,7 +377,7 @@ export function SkillSourcesPage({
         key={`${at.act}\u0000${at.ticked.join("\u0001")}`}
         plane={plane}
         act={at.act}
-        title={`${SET_TITLE[at.act]} ${sourceAt.label}`}
+        title={setTitle(at.act, sourceAt.label)}
         named={at.members}
         ticked={at.ticked}
         workspace={workspace}
@@ -542,13 +397,17 @@ export function SkillSourcesPage({
           )
         }
         onApply={(members) =>
-          applySet(
-            at.act,
-            sourceAt,
+          applySet({
+            plane,
+            act: at.act,
             members,
-            at.removesSource === true ? undefined : toSource(at),
-            at.removesSource === true,
-          )
+            from: sourceAt.label,
+            removes: at.removesSource === true ? sourceAt : null,
+            workspace,
+            change: (label, run, then) =>
+              changeThen(label, run, at.removesSource === true ? undefined : toSource(at), then),
+            undo: change,
+          })
         }
       />
     );
@@ -1124,7 +983,11 @@ function SourcePage({
             size="sm"
             isDisabled={busy}
             tooltip={busy ? BUSY : undefined}
-            onPress={() => setRemoving(true)}
+            onPress={() => {
+              // Keeping the skills is what it starts from, each time it opens.
+              setAlsoDeleting(false);
+              setRemoving(true);
+            }}
           >
             Remove source…
           </Button>
@@ -1234,7 +1097,11 @@ function SourcePage({
       {removing && (
         <Dialog
           title={`Remove ${source.label}?`}
-          description="Skills you installed from it stay, pinned where they are; they just stop being offered its updates."
+          description={
+            alsoDeleting
+              ? "You review the skills next. Nothing is deleted or removed until you press Delete there."
+              : "Skills you installed from it stay, pinned where they are; they just stop being offered its updates."
+          }
           onClose={() => setRemoving(false)}
           data-testid="skill-source-remove"
           main={
@@ -1315,7 +1182,7 @@ function SetChooseRead({
     `${sourceKey(source.remote)}\u0000${changed}\u0000${workspace ?? ""}`,
     () => commands.skillSourceInstalled(plane, source.remote, workspace),
   );
-  const title = `${SET_TITLE[act]} ${source.label}`;
+  const title = setTitle(act, source.label);
   return !Array.isArray(read?.data) ? (
     <Held read={read} what={source.label} again={again}>
       {() => null}
@@ -1331,32 +1198,6 @@ function SetChooseRead({
       onReview={onReview}
     />
   );
-}
-
-/** **A read for a page**: asked each time its `key` is another, or when asked again. */
-export function useRead<T>(
-  key: string | undefined,
-  run: () => Promise<{ status: "ok"; data: T } | { status: "error"; error: string }>,
-) {
-  const [asked, setAsked] = useState(0);
-  const [held, setHeld] = useState<{ key: string; read: Read<T> }>();
-  const now = key === undefined ? undefined : `${key}\u0000${asked}`;
-  useEffect(() => {
-    if (now === undefined) return;
-    let live = true;
-    void reading(run).then((read) => {
-      if (live) setHeld({ key: now, read });
-    });
-    return () => {
-      live = false;
-    };
-    // Read again for another key only: `run` is a new function each draw.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [now]);
-  return {
-    read: held !== undefined && held.key === now ? held.read : undefined,
-    again: () => setAsked((n) => n + 1),
-  };
 }
 
 /** The mark of a risky item and of a risky file: in the waiting tone, never a colour alone. */

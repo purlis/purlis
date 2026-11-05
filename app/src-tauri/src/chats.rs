@@ -3992,18 +3992,20 @@ impl Chats {
         changed
     }
 
-    /// **How many open chats started with one of `names`** and keep it until they restart
-    /// (#5331), by what each started with. A chat whose harness takes in a change by itself holds
-    /// no stamp and is not counted: nothing waits for its restart.
-    pub fn open_using(&self, names: &[&str]) -> u32 {
+    /// **How many open chats started with one of the copies at `files`** and keep it until they
+    /// restart (#5331), by what each started with, in `workspace` alone where one is named: a
+    /// turn changes no chat elsewhere. A chat whose harness takes in a change by itself holds no
+    /// stamp and is not counted: nothing waits for its restart.
+    pub fn open_using(&self, files: &[std::path::PathBuf], workspace: Option<&str>) -> u32 {
         let open = lock(&self.open);
         let using = open
             .values()
+            .filter(|running| workspace.is_none() || running.workspace.as_deref() == workspace)
             .filter(|running| {
                 running
                     .skills
                     .as_ref()
-                    .is_some_and(|stamp| names.iter().any(|name| stamp.holds(name)))
+                    .is_some_and(|stamp| files.iter().any(|file| stamp.holds(file)))
             })
             .count();
         u32::try_from(using).unwrap_or(u32::MAX)

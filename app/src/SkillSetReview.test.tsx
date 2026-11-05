@@ -163,7 +163,7 @@ describe("Delete all… on a source's page", () => {
     await within(list).findByTestId("set-project-grilling");
     await user.click(within(list).getByRole("button", { name: "Review 2 skills" }));
     const review = await screen.findByTestId("set-review");
-    await user.click(await within(review).findByRole("button", { name: "Delete 2 skills" }));
+    await user.click(await within(review).findByRole("button", { name: "Delete" }));
     await waitFor(() => expect(asks(asked, "skill_set_delete")).toHaveLength(1));
     const [ask] = asks(asked, "skill_set_delete");
     expect((ask?.args.members as { name: string }[]).map((one) => one.name)).toEqual([
@@ -203,23 +203,22 @@ describe("the one review", () => {
     return { asked, user, page: await screen.findByTestId("set-review") };
   }
 
-  it("warns of a skill left naming one that goes, without blocking, and takes it in when asked", async () => {
+  it("warns of a skill left naming one that goes, without blocking, and keeps it when asked", async () => {
     const { asked, user, page } = await review({
-      names: [{ namer: "to-spec", named: "grilling", add: member("to-spec") }],
+      names: [{ namer: "to-spec", named: "grilling", member: member("grilling") }],
     });
     const warning = await within(page).findByTestId("set-names-to-spec-grilling");
     expect(warning).toHaveTextContent("to-spec names grilling, which you're deleting.");
-    expect(within(page).getByRole("button", { name: "Delete 2 skills" })).not.toHaveAttribute(
+    expect(within(page).getByRole("button", { name: "Delete" })).not.toHaveAttribute(
       "aria-disabled",
       "true",
     );
-    await user.click(within(warning).getByRole("button", { name: "Also delete to-spec" }));
+    await user.click(within(warning).getByRole("button", { name: "Keep grilling" }));
     await waitFor(() => {
       const last = asks(asked, "skill_set_review").at(-1);
-      expect((last?.args.members as { name: string }[]).map((one) => one.name)).toContain(
-        "to-spec",
-      );
+      expect((last?.args.members as { name: string }[]).map((one) => one.name)).toEqual(["review"]);
     });
+    expect(asks(asked, "skill_set_delete")).toHaveLength(0);
   });
 
   it("says how many open chats use them, and nothing where none does", async () => {
@@ -251,7 +250,7 @@ describe("the one review", () => {
     expect(await within(page).findByTestId("set-cannot-review")).toHaveTextContent(
       "It holds changes.",
     );
-    await user.click(within(page).getByRole("button", { name: "Delete 1 skill" }));
+    await user.click(within(page).getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(asks(asked, "skill_set_delete")).toHaveLength(1));
     expect(
       (asks(asked, "skill_set_delete")[0]?.args.members as { name: string }[]).map(
@@ -273,7 +272,20 @@ describe("Remove source…", () => {
         name: "Also delete the 4 skills installed from it",
       }),
     ).not.toBeChecked();
-    await user.click(within(dialog).getByRole("button", { name: "Remove source" }));
+    // Ticked and closed, it starts from keeping them the next time it opens.
+    await user.click(
+      within(dialog).getByRole("checkbox", { name: "Also delete the 4 skills installed from it" }),
+    );
+    expect(dialog).toHaveTextContent("You review the skills next.");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await user.click(await ready(page, "Remove source…"));
+    const again = await screen.findByRole("dialog");
+    expect(
+      await within(again).findByRole("checkbox", {
+        name: "Also delete the 4 skills installed from it",
+      }),
+    ).not.toBeChecked();
+    await user.click(within(again).getByRole("button", { name: "Remove source" }));
     await waitFor(() => expect(asks(asked, "skill_source_remove")).toHaveLength(1));
     expect(asks(asked, "skill_set_delete")).toHaveLength(0);
   });
@@ -293,7 +305,7 @@ describe("Remove source…", () => {
     const review = await screen.findByTestId("set-review");
     // The changed one starts left out, and can be ticked again.
     expect(await within(review).findByTestId("set-left-out-tdd")).toBeInTheDocument();
-    await user.click(await within(review).findByRole("button", { name: "Delete 3 skills" }));
+    await user.click(await within(review).findByRole("button", { name: "Delete" }));
     await waitFor(() => expect(asks(asked, "skill_set_delete")).toHaveLength(1));
     expect(asks(asked, "skill_set_delete")[0]?.args.removeSource).toEqual(SOURCE.remote);
     expect(asks(asked, "skill_source_remove")).toHaveLength(0);
@@ -327,7 +339,7 @@ describe("Turn all off… and on…", () => {
     expect(within(list).queryByTestId("set-project-review")).not.toBeInTheDocument();
     await user.click(within(list).getByRole("button", { name: "Review 2 skills" }));
     const review = await screen.findByTestId("set-review");
-    await user.click(await within(review).findByRole("button", { name: "Turn off 2 skills" }));
+    await user.click(await within(review).findByRole("button", { name: "Turn off" }));
     await waitFor(() => expect(asks(asked, "skill_set_turn")).toHaveLength(1));
     expect(asks(asked, "skill_set_turn")[0]?.args).toMatchObject({
       workspace: "ops",
@@ -357,7 +369,7 @@ describe("the Library's Source filter", () => {
     renderStudioAt({ page: "library", scope: AT_THE_ROOT });
     const row = await screen.findByTestId("skill-grilling");
     expect(screen.getByTestId("skill-mine")).toBeInTheDocument();
-    await user.click(within(row).getByRole("button", { name: "Show only acme-skills" }));
+    await user.click(within(row).getByRole("button", { name: "acme-skills" }));
     await waitFor(() => expect(screen.queryByTestId("skill-mine")).toBeNull());
     expect(screen.queryByTestId("skill-deploy")).toBeNull();
     expect(screen.getByTestId("skill-grilling")).toBeInTheDocument();

@@ -50,6 +50,8 @@ export function SkillsChangedNotice({
     void planeUpdatedAt(plane, changes).then((all) => {
       if (gone) return;
       const mine = all.find((one) => one.session === session && one.skills);
+      // Back as it started (an Undo): the same change made again is news again.
+      if (mine === undefined) setPutAway(undefined);
       setChanged(
         mine === undefined
           ? undefined

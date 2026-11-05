@@ -16,7 +16,7 @@ import { STORY_HISTORY as HISTORY, StudioInPanel } from "./skillStudioStory.test
 import { AT_THE_ROOT } from "./skillStudio";
 import { studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
-import { expectFocusInSight, untilFocusWithin } from "./stories.testkit";
+import { expectFocusInSight, tabInto, untilFocusWithin, untilFocused } from "./stories.testkit";
 
 /** The prototype's three deleted skills. */
 const DELETED: DeletedSkill[] = [
@@ -96,16 +96,6 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** Tab, until the keyboard is inside `target`, at most `steps` times. */
-async function tabInto(target: () => Element | null, steps = 30): Promise<void> {
-  for (let step = 0; step < steps; step++) {
-    const into = target();
-    if (into !== null && into.contains(document.activeElement)) return;
-    await userEvent.tab();
-  }
-  await untilFocusWithin(target, "the keyboard reaches it by Tab");
-}
-
 /** **Wide: the list, and the one chosen beside it**, its last text opened. */
 export const Wide: Story = {
   play: async ({ canvas }) => {
@@ -159,9 +149,13 @@ export const Group: Story = {
     const group = await canvas.findByTestId(`deleted-group-${SET.id}`);
     await expect(group).toHaveTextContent("3 skills from mattpocock-skills, 5 Nov");
     const all = within(group).getByRole("button", { name: /Bring all back/ });
-    await tabInto(() => canvas.getByRole("grid", { name: "Deleted skills" }));
-    await waitFor(() => expect(all).toBeVisible());
     await canvas.findByRole("button", { name: "Bring back grilling" });
+    // Into the list, up to the group's own row, and across to what it holds.
+    await tabInto(() => canvas.getByRole("grid", { name: "Deleted skills" }));
+    await userEvent.keyboard("{ArrowUp}");
+    await untilFocusWithin(() => group, "the group's own row");
+    await userEvent.keyboard("{ArrowRight}");
+    await untilFocused(() => all, "Bring all back");
     expectFocusInSight();
   },
 };

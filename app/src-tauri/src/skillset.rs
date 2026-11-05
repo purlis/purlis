@@ -83,8 +83,9 @@ pub struct SkillSetReviewed {
 pub struct SkillSetNaming {
     pub namer: String,
     pub named: String,
-    /// The skill the set could take in, so nothing is left naming what is not there.
-    pub add: SkillSetMember,
+    /// The copy named: what the review offers to keep out of a delete or a turn-off, or to take
+    /// into a turn-on.
+    pub member: SkillSetMember,
 }
 
 /// What a set's review says before anything is written.
@@ -155,7 +156,16 @@ pub(crate) async fn skill_set_review(
         flag_on()?;
         let members: Vec<set::Member> = members.iter().map(SkillSetMember::core).collect();
         let review = set::review_set(held.root(), act.into(), &members, workspace.as_deref());
-        let names: Vec<&str> = members.iter().map(|one| one.name.as_str()).collect();
+        // Those the review keeps: one taken out of it changes in no chat.
+        let files: Vec<std::path::PathBuf> = review
+            .skills
+            .iter()
+            .filter(|one| one.cannot.is_none())
+            .filter_map(|one| set::copy_file(held.root(), &one.member))
+            .collect();
+        let turning = (act != SkillSetAct::Delete)
+            .then_some(workspace.as_deref())
+            .flatten();
         Ok(SkillSetReview {
             skills: review
                 .skills
@@ -172,10 +182,10 @@ pub(crate) async fn skill_set_review(
                 .map(|one| SkillSetNaming {
                     namer: one.namer.clone(),
                     named: one.named.clone(),
-                    add: (&one.add).into(),
+                    member: (&one.member).into(),
                 })
                 .collect(),
-            open_chats: held.chats().open_using(&names),
+            open_chats: held.chats().open_using(&files, turning),
         })
     })
     .await

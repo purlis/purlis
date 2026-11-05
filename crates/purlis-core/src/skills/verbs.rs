@@ -1701,17 +1701,14 @@ fn finished_or_undone(cx: &mut Ctx<'_>, level: &Level, folder: &str) -> Option<E
 /// Moves the skill's `folder`, and the file beside it, at `level` into a new folder of this
 /// machine's [`DELETED_DIR`] with a `from` naming its level, and answers that folder's name.
 fn keep_here(plane: &Path, level: &Level, folder: &Path) -> Result<String, Unmoved> {
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|at| at.as_millis())
-        .unwrap_or_default();
+    let stamp = ms_since_epoch(std::time::SystemTime::now());
     let from_level = level.rel().unwrap_or_default();
     keep_stamped(plane, folder, stamp, &format!("{from_level}\n"))
 }
 
 /// [`keep_here`], as one of `set`: its `from` says the set on a second line, and `stamp` is its
 /// own, so two copies of one folder name at two levels are kept apart.
-fn keep_kept_as(
+fn keep_in_set(
     plane: &Path,
     level: &Level,
     folder: &Path,

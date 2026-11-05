@@ -6,13 +6,15 @@ import {
   commands,
   type InstalledCopy,
   type SkillLevel,
+  type SkillSource,
   type SkillSetAct,
   type SkillSetMember,
   type SkillSetReview as Review,
 } from "./bindings";
 import { counted } from "./dispatches";
 import { sameLevel } from "./skillChanges";
-import { Held, useRead } from "./SkillSources";
+import type { Change, Said } from "./SkillPage";
+import { BUSY, Held, useRead } from "./SkillRead";
 import { Badge } from "./ui/badge/Badge";
 import { Button } from "./ui/button/Button";
 import { Checkbox } from "./ui/choice/Checkbox";
@@ -29,66 +31,147 @@ import { ReviewPage } from "./ui/review-page/ReviewPage";
  * - **The list** ({@link SetChoosePage}): each skill under its level's name. What starts ticked is
  *   {@link startsTicked}'s.
  * - **The review** ({@link SetReviewPage}): each skill, with its box; the warning for a skill left
- *   naming one that goes, which does not block and offers to take that skill in too; how many open
- *   chats keep them until they restart; and each skill that cannot apply, taken out with its
+ *   naming one that goes, which does not block and offers to keep the skill it names; how many
+ *   open chats keep them until they restart; and each skill that cannot apply, taken out with its
  *   reason before anything is written.
  */
 
-/** What a set's words are, by what is asked of it. */
+/** What a page says of a set before anything is ticked. */
+const TICK_ONE = "Tick at least one skill.";
+
+/** What a set's words are, by what is asked of it: the one place they are written. */
 const WORDS: Record<
   SkillSetAct,
   {
-    /** On its main action: "Delete 3 skills". */
+    /** On its main action and each skill's box: "Delete". */
     verb: string;
+    /** In the page's title: "Delete all from". */
+    title: string;
     /** After a name: "which you're deleting". */
     doing: string;
-    /** On the warning's offer: "Also delete to-spec". */
-    also: string;
-    /** On the box of each skill. */
-    box: string;
     /** At the foot, before the main action. */
     summary: string;
-    /** What stands in the way when none is left. */
-    none: string;
+    /** What the change does, after how many skills it holds. */
+    does: (workspace: string | null) => string;
   }
 > = {
   delete: {
     verb: "Delete",
+    title: "Delete all from",
     doing: "which you're deleting",
-    also: "Also delete",
-    box: "Delete",
     summary: "Nothing is deleted until you press Delete.",
-    none: "Tick at least one skill.",
+    does: () => "go to Deleted for 30 days, as one change, and Undo is offered right after.",
   },
   "turn-off": {
     verb: "Turn off",
+    title: "Turn all off from",
     doing: "which you're turning off",
-    also: "Also turn off",
-    box: "Turn off",
     summary: "Nothing is turned off until you press Turn off.",
-    none: "Tick at least one skill.",
+    does: (workspace) =>
+      `turn off in ${workspace ?? "this workspace"} as one change, and Undo is offered right after.`,
   },
   "turn-on": {
     verb: "Turn on",
+    title: "Turn all on from",
     doing: "which stays off",
-    also: "Also turn on",
-    box: "Turn on",
     summary: "Nothing is turned on until you press Turn on.",
-    none: "Tick at least one skill.",
+    does: (workspace) =>
+      `turn on in ${workspace ?? "this workspace"} as one change, and Undo is offered right after.`,
   },
 };
 
-/** What the review's lead says happens. */
-function leadOf(act: SkillSetAct, workspace: string | null, alsoRemoves: string | undefined) {
-  const where = workspace === null ? "" : ` in ${workspace}`;
-  switch (act) {
-    case "delete":
-      return `They go to Deleted for 30 days, as one commit, and Undo is offered right after.${alsoRemoves === undefined ? "" : ` ${alsoRemoves} stops being a source in the same commit.`}`;
-    case "turn-off":
-      return `They turn off${where} as one commit, and Undo is offered right after.`;
-    case "turn-on":
-      return `They turn on${where} as one commit, and Undo is offered right after.`;
+/** What a page of `act` on what came from `from` is named. */
+export function setTitle(act: SkillSetAct, from: string): string {
+  return `${WORDS[act].title} ${from}`;
+}
+
+/** What the studio says after a change to several skills. */
+function saidOf(label: string, text: string, notes: readonly string[], undo?: () => void): Said {
+  return {
+    tone: "news",
+    label,
+    text: [text, ...notes].join(" "),
+    ...(undo === undefined ? {} : { undo }),
+  };
+}
+
+/**
+ * **The change a review asks** (#5331): one commit, and one Undo right after. `change` makes it,
+ * and goes on from the page it was made on; `undo` makes its Undo, from wherever the person is.
+ */
+export function applySet({
+  plane,
+  act,
+  members,
+  from,
+  removes,
+  workspace,
+  change,
+  undo,
+}: {
+  plane: string;
+  act: SkillSetAct;
+  members: readonly SkillSetMember[];
+  /** What the group is said to be from, in Deleted. */
+  from: string | null;
+  /** The source the same commit takes out, which its Undo puts back. */
+  removes: SkillSource | null;
+  workspace: string | null;
+  change: Change;
+  undo: Change;
+}) {
+  const count = counted(members.length, "skill", "skills");
+  if (act === "delete") {
+    let ids: string[] = [];
+    change(
+      "The skills were not deleted",
+      () =>
+        commands
+          .skillSetDelete(plane, [...members], from, removes?.remote ?? null)
+          .then((answer) => {
+            if (answer.status === "ok") ids = answer.data.deleted;
+            return answer;
+          }),
+      async (notes) =>
+        saidOf("Skills deleted", `${count} deleted. They stay in Deleted for 30 days.`, notes, () =>
+          undo(
+            "The delete was not undone",
+            () => commands.skillSetRestore(plane, ids, removes),
+            async (undone) => saidOf("Delete undone", `${count} back.`, undone),
+          ),
+        ),
+    );
+    return;
   }
+  if (workspace === null) return;
+  const on = act === "turn-on";
+  const state = on ? "on" : "off";
+  let turned: string[] = [];
+  const saidTurned = (to: string) =>
+    `${counted(turned.length, "skill", "skills")} turned ${to} in ${workspace}.`;
+  change(
+    `The skills were not turned ${state}`,
+    () =>
+      commands
+        .skillSetTurn(
+          plane,
+          workspace,
+          members.map((one) => one.name),
+          on,
+        )
+        .then((answer) => {
+          if (answer.status === "ok") turned = answer.data.changed;
+          return answer;
+        }),
+    async (notes) =>
+      saidOf(`Skills turned ${state}`, saidTurned(state), notes, () =>
+        undo(
+          "The change was not undone",
+          () => commands.skillSetTurn(plane, workspace, turned, !on),
+          async (undone) => saidOf("Change undone", saidTurned(on ? "off" : "on"), undone),
+        ),
+      ),
+  );
 }
 
 /** A skill of a set's own key among the set: no two share a level and a name. */
@@ -158,8 +241,9 @@ export function SetChoosePage({
       main={{
         children: count === 0 ? "Review" : `Review ${counted(count, "skill", "skills")}`,
         byReturn: false,
+        reserve: [`Review ${counted(copies.length, "skill", "skills")}`, "Review"],
         isDisabled: count === 0,
-        tooltip: count === 0 ? words.none : undefined,
+        tooltip: count === 0 ? TICK_ONE : undefined,
         onPress: () =>
           onReview(
             copies.map((one) => one.member),
@@ -197,7 +281,7 @@ export function SetChoosePage({
                 <RowLead>
                   <Checkbox
                     slot="selection"
-                    aria-label={`${words.box} ${copy.member.name}, ${label}`}
+                    aria-label={`${words.verb} ${copy.member.name}, ${label}`}
                   />
                 </RowLead>
                 <RowLabel>
@@ -259,7 +343,7 @@ export function SetReviewPage({
     (one) => !cannot.some((other) => memberKey(other.member) === memberKey(one)),
   );
   const leftOut = all.filter((one) => !keys.has(memberKey(one)));
-  const set = (key: string, on: boolean) =>
+  const tick = (key: string, on: boolean) =>
     setKeys((was) => {
       const next = new Set(was);
       if (on) next.add(key);
@@ -268,7 +352,7 @@ export function SetReviewPage({
     });
   const why =
     going.length === 0
-      ? words.none
+      ? TICK_ONE
       : read === undefined
         ? "The review is being read."
         : review === undefined
@@ -276,9 +360,8 @@ export function SetReviewPage({
           : can.length === 0
             ? "None of these can change."
             : busy
-              ? "Another change is being made."
+              ? BUSY
               : undefined;
-  const main = `${words.verb} ${counted(can.length, "skill", "skills")}`;
   return (
     <ReviewPage
       label={title}
@@ -286,7 +369,7 @@ export function SetReviewPage({
       summary={words.summary}
       onCancel={onCancel}
       main={{
-        children: main,
+        children: words.verb,
         ...(act === "delete" ? { variant: "danger" as const } : { byReturn: false }),
         isDisabled: why !== undefined,
         tooltip: why,
@@ -295,7 +378,8 @@ export function SetReviewPage({
     >
       <h2 className="ui-text-strong">{title}</h2>
       <p className="honest" data-testid="set-review-lead">
-        {leadOf(act, workspace, alsoRemoves)}
+        {counted(can.length, "skill", "skills")} in this change. They {words.does(workspace)}
+        {alsoRemoves !== undefined && ` ${alsoRemoves} stops being a source in the same change.`}
       </p>
       {going.length > 0 && (
         <Held read={read} what="the review of these skills" again={again}>
@@ -320,14 +404,18 @@ export function SetReviewPage({
                     size="sm"
                     isDisabled={busy}
                     onPress={() => {
-                      const key = memberKey(one.add);
-                      setAll((was) =>
-                        was.some((other) => memberKey(other) === key) ? was : [...was, one.add],
-                      );
-                      set(key, true);
+                      const key = memberKey(one.member);
+                      if (act === "turn-on") {
+                        setAll((was) =>
+                          was.some((other) => memberKey(other) === key)
+                            ? was
+                            : [...was, one.member],
+                        );
+                        tick(key, true);
+                      } else tick(key, false);
                     }}
                   >
-                    {words.also} {one.add.name}
+                    {act === "turn-on" ? `Also turn on ${one.named}` : `Keep ${one.named}`}
                   </Button>
                 </div>
               ))}
@@ -348,11 +436,11 @@ export function SetReviewPage({
                         key={key}
                         isSelected
                         isDisabled={busy}
-                        onChange={() => set(key, false)}
+                        onChange={() => tick(key, false)}
                         data-testid={`set-keep-${one.member.name}`}
                         description={one.changed ? "Changed since install" : undefined}
                       >
-                        {words.box} {one.member.name} ({one.member.label})
+                        {words.verb} {one.member.name} ({one.member.label})
                       </Checkbox>
                     );
                   })}
@@ -387,10 +475,10 @@ export function SetReviewPage({
               key={memberKey(one)}
               isSelected={false}
               isDisabled={busy}
-              onChange={() => set(memberKey(one), true)}
+              onChange={() => tick(memberKey(one), true)}
               data-testid={`set-left-out-${one.name}`}
             >
-              {words.box} {one.name} ({one.label})
+              {words.verb} {one.name} ({one.label})
             </Checkbox>
           ))}
         </section>

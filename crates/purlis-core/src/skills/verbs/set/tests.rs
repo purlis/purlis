@@ -433,7 +433,11 @@ fn the_review_warns_of_a_skill_left_naming_one_that_goes_and_says_what_could_com
     let one = &review.names[0];
     assert_eq!(one.namer, "to-spec");
     assert_eq!(one.named, "grilling");
-    assert_eq!(one.add, project("to-spec"), "the skill the set can take in");
+    assert_eq!(
+        one.member,
+        project("grilling"),
+        "the offer keeps what goes, and never widens the delete"
+    );
     // Added, nothing is left naming it.
     let both = review_set(
         root,

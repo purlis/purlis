@@ -15291,8 +15291,11 @@ export type SkillSetMember = {
 export type SkillSetNaming = {
 	namer: string,
 	named: string,
-	/**  The skill the set could take in, so nothing is left naming what is not there. */
-	add: SkillSetMember,
+	/**
+	 *  The copy named: what the review offers to keep out of a delete or a turn-off, or to take
+	 *  into a turn-on.
+	 */
+	member: SkillSetMember,
 };
 
 /**  What a set's review says before anything is written. */
