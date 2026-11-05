@@ -464,6 +464,17 @@ fn pages_open(browser: &Browser) -> usize {
     }
 }
 
+/// The page the agent is on now.
+fn current_page(browser: &Browser) -> PageId {
+    match call(browser, Call::Pages).content {
+        Content::Pages(pages) => {
+            let current = pages.into_iter().find(|page| page.current);
+            current.expect("a current page").id
+        }
+        other => panic!("not pages: {other:?}"),
+    }
+}
+
 /// A site an earlier load showed, in this page or another, is no part of this sign-in's chain.
 #[test]
 fn a_site_an_earlier_load_showed_asks() {
@@ -572,11 +583,8 @@ fn a_window_the_page_opened_is_gone_before_the_hold_ends() {
     the_app_sends_it_to_sign_in(&browser, OTHER);
     let holder = Holder::on(&site, None);
     filled(&browser, &holder);
-    let form = call(&browser, Call::Pages);
-    let Content::Pages(pages) = form.content else {
-        panic!("not pages");
-    };
-    let form = pages[0].id.clone();
+    let form = current_page(&browser);
+    let before = pages_open(&browser);
     let opened = click(&browser, "button \"Open a window\"");
     assert_eq!(opened.opened.len(), 1, "the window opened");
     call(&browser, Call::SwitchPage { page: form });
@@ -586,7 +594,7 @@ fn a_window_the_page_opened_is_gone_before_the_hold_ends() {
     assert!(sees(&browser, "Landed on the other site"), "it landed");
     holder.released_within_ten_seconds();
     std::thread::sleep(Duration::from_millis(1500));
-    assert_eq!(pages_open(&browser), 1, "the window closed");
+    assert_eq!(pages_open(&browser), before, "the window closed");
     assert!(
         !site.was_sent("GET other.test/from-a-window"),
         "nothing it was set to send went"
@@ -600,10 +608,7 @@ fn a_fill_is_refused_beside_a_window_the_page_opened() {
         return;
     };
     the_app_sends_it_to_sign_in(&browser, OTHER);
-    let Content::Pages(pages) = call(&browser, Call::Pages).content else {
-        panic!("not pages");
-    };
-    let form = pages[0].id.clone();
+    let form = current_page(&browser);
     click(&browser, "button \"Open a window\"");
     call(&browser, Call::SwitchPage { page: form });
     let holder = Holder::on(&site, None);
@@ -633,6 +638,7 @@ fn the_window_that_opened_the_page_is_gone_before_the_hold_ends() {
         return;
     };
     opened(&browser, "http://other.test/opens-sign-in.html");
+    let before = pages_open(&browser);
     let window = click(&browser, "button \"Sign in in a window\"");
     assert_eq!(window.opened.len(), 1, "the window opened");
     assert!(sees(&browser, "API key"), "the form is open");
@@ -644,5 +650,9 @@ fn the_window_that_opened_the_page_is_gone_before_the_hold_ends() {
     assert!(sees(&browser, "Landed on the other site"), "it landed");
     holder.released_within_ten_seconds();
     assert_eq!(holder.said(), ["held", "released"], "nobody was asked");
-    assert_eq!(pages_open(&browser), 1, "its opener closed");
+    assert_eq!(
+        pages_open(&browser),
+        before,
+        "its opener closed, and the window is left"
+    );
 }

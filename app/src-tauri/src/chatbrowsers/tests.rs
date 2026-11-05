@@ -166,10 +166,12 @@ impl Driver for Hosted {
             asks_to_sign_in: asks_to_sign_in.flatten(),
             field,
             settled: true,
-            asked: if signs_in {
-                self.asks_on_the_read.lock().unwrap().clone()
-            } else {
-                self.asks.lock().unwrap().clone()
+            asked: {
+                let mut asked = self.asks.lock().unwrap().clone();
+                if signs_in {
+                    asked.extend(self.asks_on_the_read.lock().unwrap().iter().cloned());
+                }
+                asked
             },
             page: self.at.lock().unwrap().clone().map(|address| {
                 purlis_session_protocol::browsing::PageSaid {
