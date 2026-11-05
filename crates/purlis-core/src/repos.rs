@@ -23,23 +23,14 @@
 //! answers the same way (`charter/workspace.py:clones`), and the plane root itself is
 //! deliberately never a row (ADR 0008): it is the plane, not a repo you work in.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::contain;
+use crate::repofolder::{self, Git, Layout};
+pub use crate::repofolder::{Repo, Trouble};
 use crate::workspaces::Plane;
-use crate::worktree::confine::{self, Outside};
+use crate::worktree::confine;
 use crate::worktree::git;
-
-/// One clone under a workspace.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Repo {
-    /// The directory's name, which is how charter addresses the clone.
-    pub name: String,
-    /// The path that was **checked**, which is the one a caller hands to git. Returning the
-    /// checked path rather than letting the caller rebuild it is `within_workspace`'s own
-    /// rule: a string checked and a different string used is how a link gets laundered.
-    pub path: PathBuf,
-}
 
 /// What a workspace's directory holds, and what charter would not look at.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -50,60 +41,30 @@ pub struct Clones {
     pub refused: Vec<(String, String)>,
 }
 
-/// charter could not look at the workspace at all.
-#[derive(Debug, thiserror::Error)]
-pub enum Trouble {
-    #[error(transparent)]
-    Outside(#[from] Outside),
-    #[error("could not read workspace '{ws}' ({why})")]
-    Unreadable { ws: String, why: String },
-}
-
 /// The clones directly under `workspaces/<ws>`, sorted, with what was refused beside them.
+///
+/// A reading of [`repofolder::holdings`], the one walk of a workspace. Only its root for now: a
+/// repo in `repos/` joins this list with the migration of the scanners (#5371), which is then
+/// this function's filter going away. A repository in a name the workspace keeps is a clone here,
+/// as it has always been.
 pub fn clones(plane: &Path, ws: &str) -> Result<Clones, Trouble> {
     // The workspace directory is the anchor, and it is asked for rather than assumed: a
     // committed `workspaces/<legal-name> -> elsewhere` travels to every machine that clones
-    // the plane, and everything below it would then be judged against the wrong place.
-    let dir = confine::workspace_dir(plane, ws)?;
-    let reader = std::fs::read_dir(&dir).map_err(|why| Trouble::Unreadable {
-        ws: ws.to_string(),
-        why: why.to_string(),
-    })?;
-    let mut names: Vec<String> = reader
-        .filter_map(Result::ok)
-        .map(|entry| entry.file_name().to_string_lossy().into_owned())
-        .collect();
-    names.sort();
-
+    // the plane, and everything below it would then be judged against the wrong place. A
+    // workspace with no folder is an error here, which the walk would read as empty.
+    confine::workspace_dir(plane, ws)?;
+    let walked = repofolder::holdings(plane, ws)?;
     let mut found = Clones::default();
-    for name in names {
-        // charter's own directories under a workspace all start with a dot — `.worktrees`,
-        // `.claude`, `.purlis-generated` — and none of them is a repo.
-        if name.starts_with('.') {
-            continue;
-        }
-        if !contain::repo_name_ok(&name) {
-            found.refused.push((
-                name.clone(),
-                format!("'{name}' is not a name purlis will take for a repo"),
-            ));
-            continue;
-        }
-        // The path git would be pointed at, gated as **itself** and never as its parent: a
-        // link AT `workspaces/<ws>/<repo>` redirects the read while the directory above it
-        // is perfectly ordinary, so a check on the parent sees nothing to object to.
-        let path = match confine::within_workspace(plane, ws, &dir.join(&name)) {
-            Ok(checked) => checked,
-            Err(why) => {
-                found.refused.push((name, why.to_string()));
-                continue;
-            }
-        };
-        match git_at(&path) {
-            Git::Directory => found.repos.push(Repo { name, path }),
-            // A linked worktree, or a directory that is not a repository at all. Neither is a
-            // mistake and neither is a clone, so neither is worth a line in the panel.
-            Git::NotAClone => {}
+    for row in [walked.repos, walked.shadowed, walked.others]
+        .into_iter()
+        .flatten()
+        .filter(|row| row.layout == Layout::Root)
+    {
+        let name = row.repo.name.clone();
+        match row.git {
+            Git::Directory => found.repos.push(row.repo),
+            // A linked worktree. Neither a mistake nor a clone, so not worth a line in the panel.
+            Git::File => {}
             // Said, not dropped. A repo that quietly disappears from the panel reads as "this
             // workspace has one fewer repo", which is the same class of lie as a blank CI
             // cell — and the operator is the only one who can tell whether the link is theirs.
@@ -117,6 +78,15 @@ pub fn clones(plane: &Path, ws: &str) -> Result<Clones, Trouble> {
             )),
         }
     }
+    found.refused.extend(
+        walked
+            .refused
+            .into_iter()
+            .filter(|said| said.layout == Layout::Root)
+            .map(|said| (said.name, said.why)),
+    );
+    found.repos.sort_by(|a, b| a.name.cmp(&b.name));
+    found.refused.sort();
     Ok(found)
 }
 
@@ -133,37 +103,10 @@ pub fn clone_at(plane: &Path, ws: &str, name: &str) -> Option<Repo> {
     }
     let dir = confine::workspace_dir(plane, ws).ok()?;
     let path = confine::within_workspace(plane, ws, &dir.join(name)).ok()?;
-    matches!(git_at(&path), Git::Directory).then(|| Repo {
+    matches!(repofolder::git_of(&path), Ok(Some(Git::Directory))).then(|| Repo {
         name: name.to_string(),
         path,
     })
-}
-
-/// What sits where a clone's `.git` would be.
-///
-/// Three answers and not two, for the same reason `state_of` has three: "not a clone" and
-/// "a clone charter will not touch" are different facts, and only one of them is worth
-/// telling the operator about.
-enum Git {
-    /// A directory — which is how git draws the line. A linked worktree's `.git` is a FILE
-    /// holding `gitdir:`, so this admits clones and nothing else.
-    Directory,
-    /// A gitfile, or nothing at all. An ordinary shape, and not a clone.
-    NotAClone,
-    /// A link. Charter refuses it and says so.
-    Link,
-}
-
-/// Asked with `symlink_metadata`, so a `.git` that is a *link* to a directory elsewhere is
-/// seen as the link it is. Python asks `is_dir()`, which follows it — and the whole point of
-/// gating the repo path is not to then run git against a repository outside the boundary
-/// that was just checked. A `.git` charter created is never a link.
-fn git_at(path: &Path) -> Git {
-    match std::fs::symlink_metadata(path.join(".git")) {
-        Ok(found) if found.file_type().is_symlink() => Git::Link,
-        Ok(found) if found.is_dir() => Git::Directory,
-        _ => Git::NotAClone,
-    }
 }
 
 /// The repos `workspace.json` names, in the order it lists them.
