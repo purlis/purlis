@@ -1406,6 +1406,10 @@ fn a_handoff_opens_a_chat_on_the_asking_chats_profile_with_the_brief_as_its_firs
             workspace: Some("alpha".to_owned()),
             persona: None,
             harness: Some("claude".to_owned()),
+            // Claude's hooks say when it waits, so it is announced as a handoff and no more.
+            unreported: None,
+            // A chat started it, as a handoff: the window announces it.
+            announced: true,
         }],
         "the window is told, so the tab lands on alpha's strip"
     );
@@ -12105,6 +12109,10 @@ mod carried_from_runners;
 
 /// A task started fresh is handed its brief again, or not started at all (#1609).
 mod started_fresh;
+
+/// A task on a harness purlis has no hooks into: its asking chat is told the person must look
+/// at it (#4759).
+mod cant_report_asks;
 
 /// A persona chat coming to wait on the person counts once on its record, heard at the
 /// hook seam (#1457).

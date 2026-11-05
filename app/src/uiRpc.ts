@@ -7906,6 +7906,12 @@ export type OpenChat = {
 	 *  skill's page, and the skill page's line while it runs. `null` for every other chat.
 	 */
 	studio?: StudioLink | null,
+	/**
+	 *  `true` for a chat another chat started and announced that the person has not looked at
+	 *  yet (#4759): a handoff, or a task on a harness purlis has no hooks into. Its sidebar row
+	 *  says "new" until it has been on screen. `null` for every other chat.
+	 */
+	unseen?: boolean | null,
 };
 
 /**  One group of **Open hosts**: a preset's, or the project's own. */
@@ -13972,7 +13978,12 @@ export type UpdateKind =
 /**  A task ended with its question unanswered (#4556). */
 "question-closed" | 
 /**  A task's question could not be taken its route (#4557). */
-"question-failed";
+"question-failed" | 
+/**
+ *  A chat another chat started arrived in no pane, and was announced (#4759): a handoff,
+ *  or a task on a harness purlis has no hooks into.
+ */
+"arrived";
 
 /**  An update the window derived from its source, to be noted. */
 export type UpdateNoted = {

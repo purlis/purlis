@@ -12,6 +12,8 @@
  * - a finding of the doctor: its report ({@link doctorUpdates});
  * - a chat that came back, resumed or fresh: the chats a launch or a Resume put back
  *   ({@link resumeUpdates});
+ * - a chat another chat started, announced and not looked at yet: a handoff, or a task that
+ *   can't report asks (#4759) ({@link arrivedUpdates});
  * - a sandbox change that asks nothing: a block that is no host ask ({@link sandboxUpdates});
  * - a dispatch refused while nobody was there (#1507): the away list ({@link awayUpdates});
  * - a Smart close that stopped without its record (SI-8f) ({@link smartCloseUpdates});
@@ -31,6 +33,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { awaySaid } from "./AwayRefusals";
+import { arrivedTitle, CANT_REPORT_WORDS } from "./actionResult";
+import { cantReportAsks } from "./chatsTree";
 import {
   commands,
   type AskEnded,
@@ -82,6 +86,7 @@ export const KIND_SAID: Record<UpdateKind, string> = {
   "browser-ask-ended": "Browser ended",
   "question-closed": "Question closed",
   "question-failed": "Question not routed",
+  arrived: "Arrived",
 };
 
 /**
@@ -150,6 +155,35 @@ export function resumeUpdates(chats: Iterable<OpenChat>, now: number): UpdateNot
         chat.resumed !== null
           ? "Resumed its conversation"
           : `Came back as a new chat: ${chat.fresh}`,
+    });
+  }
+  return out;
+}
+
+/**
+ * **A chat another chat started, announced** (#4759, spec #4750 story 26): a handoff, or a task
+ * on a harness purlis has no hooks into, which started in no pane. One update per chat the core
+ * says the person has not looked at yet (`unseen`), keyed by the chat's id, so noting it again
+ * is the same update, and it stands for its day once the chat has been looked at. **It asks
+ * nothing**, so the ✋ never counts it: the ✋ counts the asks registry alone.
+ */
+export function arrivedUpdates(
+  chats: Iterable<OpenChat>,
+  nameOf: (session: number) => string,
+  now: number,
+): UpdateNoted[] {
+  const out: UpdateNoted[] = [];
+  for (const chat of chats) {
+    if (chat.unseen !== true || chat.from === null) continue;
+    const name = nameOf(chat.session);
+    const title = arrivedTitle(name, chat.from.name);
+    out.push({
+      key: `arrived:${chat.id ?? chat.session}`,
+      kind: "arrived",
+      at: secondsOf(now),
+      session: chat.session,
+      chain: [name],
+      says: cantReportAsks(chat.from, chat.unreported) ? `${title}. ${CANT_REPORT_WORDS}` : title,
     });
   }
   return out;
