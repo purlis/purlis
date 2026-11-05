@@ -4,7 +4,6 @@
 import { useEffect } from "react";
 import { commands, type PlaneId } from "./bindings";
 import { failuresSeenBy, type ChatStates } from "./chatState";
-import { useProjectShown } from "./projectShown";
 
 /**
  * **What failed has been seen once its chat is on screen and focused** (#5340): `session` is the
@@ -20,8 +19,10 @@ export function useFailuresSeen(
   plane: PlaneId,
   session: number | undefined,
   failedTasks: ChatStates["failedTasks"],
+  /** Whether this project is the one in front. Handed in: the view that calls this draws the
+   *  provider of `useProjectShown`, so that hook would answer for the project above it. */
+  shown: boolean,
 ): void {
-  const shown = useProjectShown();
   useEffect(() => {
     if (!shown || session === undefined) return;
     const seen = failuresSeenBy({ failedTasks }, session);

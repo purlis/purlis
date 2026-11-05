@@ -13,7 +13,17 @@ import { moved } from "../familyLint.js";
 const chatMarkFamily = moved({
   description: "A chat's mark is the shared ChatMark family",
   scopes: ["chat-mark"],
-  classes: ["chat-persona", "state-dot", "tab-persona"],
+  classes: [
+    "chat-persona",
+    "state-dot",
+    "tab-persona",
+    "state",
+    "state-unknown",
+    "state-running",
+    "state-waiting",
+    "state-done",
+    "state-failed",
+  ],
   message: "a chat's mark: draw it as `<ChatMark>` from `ui/chat-mark/ChatMark` (#5340).",
 });
 

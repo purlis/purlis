@@ -108,7 +108,13 @@ export function EndingList({ chats }: { chats: readonly Ending[] }) {
 
 /** What a chat about to end is doing: its board's word on the one mark (#5340). */
 function EndingState({ state }: { state: State }) {
-  const shown = shownState({ board: state, needsYou: false, task: null, harness: null });
+  // All this list knows is the board's word, and a turn that ended waits on the person.
+  const shown = shownState({
+    board: state,
+    needsYou: state === "waiting",
+    task: null,
+    harness: null,
+  });
   if (shown === undefined) return null;
   return (
     <Tooltip tip={shown.word}>

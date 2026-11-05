@@ -20,7 +20,13 @@ const PLACES: readonly { name: string; size: string; ground: string }[] = [
     size: "calc(var(--space-6) + var(--space-2))",
     ground: "--panel-fill",
   },
-  { name: "A tab", size: "var(--space-6)", ground: "--surface-base" },
+  {
+    name: "The chosen row",
+    size: "calc(var(--space-6) + var(--space-2))",
+    ground: "--list-selected",
+  },
+  { name: "A tab", size: "var(--space-6)", ground: "--surface-deep" },
+  { name: "The chosen tab", size: "var(--space-6)", ground: "--terminal-background" },
   { name: "A pane's head", size: "var(--space-6)", ground: "--terminal-background" },
   { name: "A folded pane's rail", size: "var(--space-6)", ground: "--surface-raised" },
 ];

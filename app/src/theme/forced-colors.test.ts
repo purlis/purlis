@@ -219,7 +219,7 @@ describe("forced colours", () => {
         expect(drawn(selector).get(property), `${selector} { ${property} }`).toBe(value);
   });
 
-  it("keep a chat's mark in the words' colour on the window's ground, its glyph telling its state", () => {
+  it("keep a chat's mark in the words' colour on the window's ground", () => {
     const badge = '[data-scope="chat-mark"][data-part="badge"]';
     expect(drawn(badge).get("forced-color-adjust")).toBe("none");
     expect(drawn(badge).get("background-color")).toBe("Canvas");

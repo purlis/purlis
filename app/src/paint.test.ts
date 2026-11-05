@@ -11,9 +11,8 @@ import { describe, expect, it } from "vitest";
  * A project with fifty chats lists fifty rows in its Chats list, each with a state mark, and the
  * same marks sit on its tabs. On CI's software-rendered WebViews those rows were most of what
  * the first switch into such a project cost: an `opacity` below 1 gives each element its own
- * transparency layer to paint and blend, a row's layer held its mark's layer inside it, and a
- * dashed round border is stroked dash by dash. So the dimming is mixed into the colour instead,
- * and the ring that says `unknown` is two solid arcs rather than a dashed circle.
+ * transparency layer to paint and blend, and a row's layer held its mark's layer inside it. So
+ * the dimming is mixed into the colour instead. The mark's own sheet is held the same way.
  *
  * jsdom computes no stylesheet, so this reads the rules as text, as `overscroll.test.ts` does —
  * **every** rule whose selector list names one of these, wherever it is in the file and however
@@ -24,6 +23,16 @@ describe("a chat's row and its mark", () => {
     /\/\*[\s\S]*?\*\//g,
     "",
   );
+  const markSheet = readFileSync(
+    join(process.cwd(), "src/ui/chat-mark/chat-mark.css"),
+    "utf8",
+  ).replace(/\/\*[\s\S]*?\*\//g, "");
+
+  it("draws its mark with no layer of its own", () => {
+    expect(markSheet).not.toMatch(/(^|[;\s{])opacity\s*:/);
+    expect(markSheet).not.toMatch(/filter\s*:/);
+    expect(markSheet).not.toMatch(/dashed/);
+  });
 
   /** Every innermost `selectors { declarations }` in the file. */
   const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selectors, body]) => ({

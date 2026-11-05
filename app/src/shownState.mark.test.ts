@@ -144,3 +144,19 @@ describe("what looking at a chat sees (#5340)", () => {
     expect(asksThePerson(states, 3)).toBe(false);
   });
 });
+
+describe("a task's record says its program has ended, so nothing live is true of it (#5340)", () => {
+  it("is working only once the person has run a reported task again", () => {
+    expect(shownState(chat({ board: "running", task: report({}) }))?.mark).toBe("working");
+  });
+
+  it("has ended with no report of its own, whatever the board last heard", () => {
+    expect(shownState(chat({ board: "running", task: report({ report: "failed" }) }))?.mark).toBe(
+      "ended",
+    );
+  });
+
+  it("has ended at its report, though tasks below it still work", () => {
+    expect(shownState(chat({ task: report({}), ...AT_WORK_BELOW }))?.mark).toBe("ended");
+  });
+});

@@ -48,7 +48,7 @@
 }
 
 /* Each state's colour, on the glyph only (a shape as well, `ChatMark`). Idle and ended stay the
-   root rule's muted grey. */
+   badge's muted grey. */
 [data-scope="chat-mark"][data-part="root"][data-variant="needs"] [data-part="badge"] {
   color: var(--needs-you-base);
 }

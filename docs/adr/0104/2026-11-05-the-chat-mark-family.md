@@ -8,4 +8,4 @@
 
 **"Until seen" stores nothing.** It reads the core's own record of failures nobody has looked at (`failedTasks`). A chat on screen, in the focused pane, in a window with the keyboard, has been looked at, and the core is told through `task_failure_seen`. The failure's item in the Inbox goes at the same moment, since it is the same record.
 
-**A line that says a state beside its word keeps `StateShown`** (a finished row, the ended band, the breadcrumb, the tasks menu): its finer shapes say how a task ended (#1488), which the one state does not.
+**A line that says how a task ended keeps `StateShown`'s finer shapes** (a finished row, the ended band, the breadcrumb, the tasks menu, #1488), which the one state does not say. A line that says a chat's state now (the pane's head, the explorer) draws that state's glyph, so it never disagrees with the mark beside it.

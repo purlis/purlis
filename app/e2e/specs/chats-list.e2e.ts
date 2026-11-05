@@ -148,8 +148,8 @@ async function measured(): Promise<Measured | null> {
       words: [...section.querySelectorAll<HTMLElement>(".finished-name .shown-state .shape")].map(
         (mark) => seen(mark, mark.closest(".shown-state")?.getAttribute("data-state") ?? ""),
       ),
-      // A chat's row leads with its persona's mark, its state on it (#3342): the mark is what
-      // must be whole, and a done chat's wears no dot.
+      // A chat's row leads with its persona's mark, its state on it (#3342, #5340): the mark is
+      // what must be whole.
       // The persona's mark itself, and not the box around it with the dot that stands past its
       // corner.
       marks: [

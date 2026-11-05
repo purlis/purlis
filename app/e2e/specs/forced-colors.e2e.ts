@@ -149,7 +149,7 @@ describe("forced colours", () => {
         '<span data-p="needs-activity" data-scope="activity" data-part="count" data-tone="needs-you">2</span>',
         '<button data-p="danger" type="button" data-scope="button" data-part="root" data-variant="danger" data-size="md">end</button>',
         '<p data-p="trouble" class="trouble">trouble</p>',
-        '<span data-p="mark" data-scope="chat-mark" data-part="badge" data-variant="working"></span>',
+        '<span data-p="mark" data-scope="chat-mark" data-part="badge"></span>',
         '<label data-scope="switch" data-part="root" data-selected="true"><span data-p="switch-on" data-scope="switch" data-part="track"><span data-p="thumb-on" data-scope="switch" data-part="thumb"></span></span></label>',
         '<label data-scope="switch" data-part="root"><span data-p="switch-off" data-scope="switch" data-part="track"><span data-p="thumb-off" data-scope="switch" data-part="thumb"></span></span></label>',
         '<div data-p="dialog" role="dialog" aria-label="probe">dialog</div>',

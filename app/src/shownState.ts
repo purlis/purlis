@@ -81,6 +81,17 @@ export type Shown = Said & {
   mark: MarkState | null;
 };
 
+/** **Each state's shape and colour, where a line says it beside its word** (the pane's head, the
+ *  explorer: `ChatRows.ChatShownState`), so a chat wears one glyph in one place. */
+export const MARK_SAID: Readonly<Record<MarkState, { shape: ShownShape; token: Token }>> = {
+  needs: { shape: "hand", token: "needs-you.base" },
+  failed: { shape: "cross", token: "state.failed" },
+  working: { shape: "ring", token: "state.running" },
+  waiting: { shape: "hourglass", token: "state.running" },
+  idle: { shape: "pause", token: "text.muted" },
+  ended: { shape: "dash", token: "text.muted" },
+};
+
 /** Which of the one states each word stands for. Everything a program has finished is `ended`:
  *  the word says which way, and what is below it is `failed` only until it has been seen. */
 const MARK_OF_KIND: Readonly<Record<ShownKind, MarkState | null>> = {
@@ -317,7 +328,8 @@ const BY_THE_PERSON: ReadonlyMap<string, Said> = new Map([
  * **The order, whole** (#1491, #5340): needs you; a failed task not yet seen; a sent report
  * (working while a turn runs, else how it ended); a report written in its place; a program that
  * ended; asking its asker; waiting on its tasks; waiting on its own work; idle; working; not
- * known. A program that has ended waits on nothing, so its tasks at work leave it `ended`.
+ * known. **A record of how it ended is a program that has ended** (a task ends at its report), so
+ * `working` and `waiting` are not true of it: its tasks at work leave it `ended`.
  */
 export function shownState(facts: Facts): Shown | undefined {
   const said = saidOf(facts);

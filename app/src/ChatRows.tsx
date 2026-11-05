@@ -18,7 +18,7 @@ import { contentsOf, panesOf, shownIn, type Tabs } from "./tabs";
 import type { TabFace } from "./tabFace";
 import { ChatPersonaState, sameShown, useShownState, type ShownOf } from "./ChatPersonaState";
 import { ViewMark } from "./Views";
-import { shownState, type RowFacts, type Shown } from "./shownState";
+import { MARK_SAID, shownState, type RowFacts, type Shown } from "./shownState";
 import { StateShown } from "./StateShown";
 import { needsSaid } from "./tabTasks";
 import { Tooltip } from "./ui/tooltip/Tooltip";
@@ -50,9 +50,10 @@ export const ChatShownState = memo(function ChatShownState({
   markOnly?: boolean;
 }) {
   const shown = useShownState(of);
-  return shown === undefined ? null : (
-    <StateShown shown={shown} changed={changed} markOnly={markOnly} />
-  );
+  if (shown === undefined) return null;
+  // The one state's glyph (#5340), so this line never disagrees with the mark beside it.
+  const said = shown.mark === null ? shown : { ...shown, ...MARK_SAID[shown.mark] };
+  return <StateShown shown={said} changed={changed} markOnly={markOnly} />;
 });
 
 /**
@@ -281,8 +282,9 @@ function SplitMore({ more, zoomed }: { more: number; zoomed?: true }) {
   );
 }
 
-/** The states a persona's row tells, the strongest first (#3341): the person is asked for, then
- *  a question or a wait is open, then something is at work. A persona at rest tells none. */
+/** The states a persona's row tells, the strongest first (#3341, #5340): the person is asked for,
+ *  a task failed unseen, then a question or a wait is open, then something is at work. A persona
+ *  at rest tells none. */
 const AT_WORK: readonly Shown["kind"][] = [
   "needs-you",
   "task-failed",

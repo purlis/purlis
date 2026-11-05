@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **The chat mark family** (#5340, spec #5339): a chat's mark, declared once here and once in its
-//! wrapper, `app/src/ui/chat-mark/ChatMark.tsx`, whose stylesheet (`chat-mark.css`) draws the
-//! defaults [`mark_look`] holds a copy of.
+//! wrapper, `app/src/ui/chat-mark/ChatMark.tsx`, whose stylesheet (`chat-mark.css`) draws each
+//! state's colour from its token ([`mark_look`] says why that is not a copy here).
 //!
 //! The one mark on a chat's tab, its row in the list, its pane's head and a folded pane's rail.
 //! Its parts are its root, who the chat runs as, the badge on the corner and the state's word,
@@ -82,8 +82,15 @@ pub(super) const CHAT_MARK: Family = Family {
             consent: None,
         },
     ],
-    // A row's panel, a tab's strip and a pane's head stand on these.
-    grounds: &["surface.base", "surface.raised"],
+    // A row at rest, hovered and chosen; a tab at rest and chosen; a pane's head; a folded rail.
+    grounds: &[
+        "surface.deep",
+        "surface.base",
+        "surface.raised",
+        "surface.hover",
+        "list.selected",
+        "terminal.background",
+    ],
     keeps_size: &[],
     sized_apart: &[],
     height: None,
