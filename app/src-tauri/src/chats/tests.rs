@@ -6307,6 +6307,28 @@ fn an_unsandboxed_run_reattached_after_the_sandbox_was_turned_on_is_judged_uncon
     );
 }
 
+/// A chat reattached says what its host says of its run, whatever its record said before.
+#[test]
+fn a_reattached_run_records_its_hosts_word_on_whether_it_has_a_sandbox() {
+    use purlis_session_protocol::session::RunSandbox;
+    for (recorded, ran, says) in [
+        (false, RunSandbox::Off, true),
+        (true, RunSandbox::By("seatbelt".to_owned()), false),
+    ] {
+        let plane = a_sandboxed_plane();
+        let host = Pretend::default();
+        host.leaves_running_in(3, None, Some(ran.clone()));
+        let chats = restartable_chats_of(plane.path(), host.clone());
+        let chat = Chat {
+            no_sandbox: recorded,
+            ..a_resumable_chat_in(plane.path())
+        };
+        chats.put_back(&left_running_in(plane.path(), chat), SIZE);
+        assert_eq!(host.reattached(), [3]);
+        assert_eq!(chats.record().chats[0].no_sandbox, says, "{ran:?}");
+    }
+}
+
 /// #2636: a chat whose host keeps no record of how its run started (a host before it kept
 /// one) is judged sandboxed, and offered a restart.
 #[test]
@@ -8199,6 +8221,48 @@ fn a_person_lifted_it() -> purlis_core::sandbox::Lifted {
 }
 
 #[test]
+fn a_run_with_no_sandbox_and_no_opt_out_says_so_in_the_record_and_an_opt_out_does_not() {
+    let on_a_host = || Chats::on_host(Box::new(|_| {}), Box::new(Pretend::default()), no_project());
+    let chat = Chat {
+        persona: Some("steward".to_owned()),
+        ..chat("/bin/sh", "c", None)
+    };
+    let chats = on_a_host();
+    let session = chats
+        .start_ready(&chat, &a_shell_ready(), SIZE)
+        .expect("starts");
+    assert!(chats.record().chats[0].no_sandbox);
+    assert!(!chats.record().chats[0].unsandboxed, "it is no opt-out");
+    let _ = chats.close(session);
+
+    let mut chats = on_a_host();
+    let _said = saying(&mut chats);
+    let ready = purlis_core::start::Ready {
+        harness: Some(Harness::ClaudeCode),
+        unsandboxed: Some(a_person_lifted_it()),
+        ..a_shell_ready()
+    };
+    let session = chats.start_ready(&chat, &ready, SIZE).expect("starts");
+    assert!(!chats.record().chats[0].no_sandbox);
+    assert!(chats.record().chats[0].unsandboxed);
+    let _ = chats.close(session);
+}
+
+/// A runner's chat runs in the sandbox the runner compiles for it, though this window has none.
+#[test]
+fn a_harness_chat_on_a_runner_is_not_recorded_as_a_run_with_no_sandbox() {
+    let host = Pretend::default();
+    host.on_a_runner();
+    let chats = Chats::on_host(Box::new(|_| {}), Box::new(host.clone()), no_project());
+    let session = chats
+        .start_ready(&on_the_profile_work(), &a_harness_ready(None), SIZE)
+        .expect("it starts on the runner");
+    assert!(!chats.record().chats[0].no_sandbox);
+    assert!(!chats.record().chats[0].unsandboxed);
+    let _ = chats.close(session);
+}
+
+#[test]
 fn a_chat_started_without_the_sandbox_is_audited_off_as_its_run_begins_and_counted_once_up() {
     let mut chats = Chats::new();
     let said = saying(&mut chats);
@@ -8261,6 +8325,10 @@ fn a_chat_whose_last_run_was_unsandboxed_is_audited_back_on_when_it_starts_sandb
         "a relaunch is never counted as a new chat"
     );
     assert!(!chats.record().chats[0].unsandboxed);
+    assert!(
+        !chats.record().chats[0].no_sandbox,
+        "it runs in the sandbox it compiled"
+    );
 }
 
 #[test]

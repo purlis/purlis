@@ -5183,6 +5183,11 @@ impl Chats {
         // written down for the next launch to resume it.
         // And no longer as a chat a workspace rename left without its conversation: it has
         // said so once, at this start, and is under a conversation of its own now.
+        let opted_out = if reattaching {
+            chat.unsandboxed
+        } else {
+            unsandboxed.is_some()
+        };
         let under = Chat {
             resume: conversation
                 .as_deref()
@@ -5190,11 +5195,12 @@ impl Chats {
             renamed_from: None,
             // What this run started under, for the next run's audit and the session record —
             // never read as an opt-out by any start. A chat reattached runs as it started.
-            unsandboxed: if reattaching {
-                chat.unsandboxed
-            } else {
-                unsandboxed.is_some()
-            },
+            unsandboxed: opted_out,
+            // And a run with no sandbox and no opt-out says so, for what runs below it, which has
+            // only the record to ask. Read from the run's own record, this start's or its host's
+            // on a reattach: a runner's chat has no sandbox of this window's, and is confined.
+            no_sandbox: matches!(ran, Some(purlis_session_protocol::session::RunSandbox::Off))
+                && !opted_out,
             identity,
             // The Skill studio's flag this start took (#3466): what its record keeps, and what
             // a later reattach of it takes.

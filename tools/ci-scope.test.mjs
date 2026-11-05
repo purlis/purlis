@@ -950,6 +950,8 @@ test("a job that only asks whether it is needed is not started on a pull request
   yes("crates/purlis-cli/src/listen/mod.rs", "listen-shim");
   yes("crates/browser-engine/src/lib.rs", "browser-engine");
   yes("crates/studio-probe/src/lib.rs", "confinement");
+  yes("crates/purlis-core/src/secrets/brokered/tests.rs", "confinement");
+  yes("crates/purlis-core/src/secrets/keyhold.rs", "confinement");
   yes("crates/host/src/lib.rs", "parity");
   yes("crates/session-protocol/src/lib.rs", "bench");
   yes("Cargo.lock", "bench");

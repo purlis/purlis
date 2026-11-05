@@ -302,6 +302,12 @@ jobs:
           cargo build --locked -p purlis-linux-sandbox --bin sandbox-probe
           PURLIS_SANDBOX_PROBE=$PWD/target/debug/sandbox-probe tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci \
             -E 'package(purlis-core) & binary(it) & test(/a_runners_chat_reaches_neither_its_link_key_nor_what_holds_it::/)'
+          # A brokered `secret exec` child under purlis's own wrap: the network through its proxy alone.
+          # Red unless the test really ran and passed: it leaves a marker only then.
+          rm -rf target/tests-that-really-ran
+          PURLIS_SANDBOX_PROBE=$PWD/target/debug/sandbox-probe tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci \
+            -E 'package(purlis-core) & kind(lib) & test(=secrets::brokered::tests::under_purlis_wrap_a_brokered_child_reaches_the_network_only_through_its_proxy)'
+          test -f target/tests-that-really-ran/brokered-network-under-purlis-wrap || { echo "::error::the brokered network test did not really run"; exit 1; }
           # Again with the pod's hand-over folder really mounted, in memory as a pod's is, so the row
           # that denies it compiles and is tried (#4329). It goes as the step ends: no other test
           # expects this machine to have one.
@@ -1433,7 +1439,7 @@ jobs:
           BASE: ${{ steps.base.outputs.sha }}
         run: |
           changed=$(git diff --name-only "$BASE" HEAD)
-          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|confined|egress|reach|wrapper|hosts|localport|door)(\.rs|/)|crates/purlis-core/src/hookwire/serve(\.rs|/)|crates/purlis-cli/src/listen/|crates/purlis-core/tests/it/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
+          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|confined|egress|reach|wrapper|hosts|localport|door)(\.rs|/)|crates/purlis-core/src/hookwire/serve(\.rs|/)|crates/purlis-core/src/secrets/(brokered|keyhold)(\.rs|/)|crates/purlis-cli/src/listen/|crates/purlis-core/tests/it/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::the studio confinement has not changed; not run"
@@ -1467,6 +1473,24 @@ jobs:
       - name: A chat's server behind its door, confined by Seatbelt
         if: steps.scope.outputs.run == 'true'
         run: tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- sandbox::localport::tests::under_seatbelt
+      # A brokered `secret exec` child under its run's real profile: the network through its
+      # proxy alone, never a direct connection to this Mac or past it.
+      - name: A brokered run reaches the network only through its proxy, confined by Seatbelt
+        if: steps.scope.outputs.run == 'true'
+        run: tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- secrets::brokered::tests::under_seatbelt_a_brokered_child_reaches_the_network_only_through_its_proxy
+      # The Keychain's own rule a held item rests on (V90a), in a keychain of the test's own:
+      # read by the program that made it, and silently by no other.
+      - name: A held keychain item is read silently by no other program
+        if: steps.scope.outputs.run == 'true'
+        env:
+          PURLIS_TEST_THROWAWAY_KEYCHAIN: "1"
+        # Red unless each test really ran and passed: it leaves a marker only then.
+        run: |
+          rm -rf target/tests-that-really-ran
+          tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- secrets::keyhold::held_by_the_keychain::
+          for ran in held-item-read-by-no-other-program item-another-program-holds-refused; do
+            test -f "target/tests-that-really-ran/$ran" || { echo "::error::$ran did not really run"; exit 1; }
+          done
       # Which of the confined profile's parts the probe needs to start, each tried on its own.
       # What Seatbelt refused while the probe ran, from the system's log, for a red run's reader.
       - name: What the sandbox refused

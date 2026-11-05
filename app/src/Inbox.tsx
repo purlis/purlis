@@ -287,7 +287,8 @@ export function Inbox({
   /** This project's name, as its tab says it: said on a row only among other projects'. */
   const project = elsewhere?.waitingHere?.find((one) => one.plane === plane)?.project;
   const whereOf = (session: number): string => {
-    const filed = workspaceOf?.(session);
+    // Session 0 is no chat's (a change purlis holds, a sign-in): it is filed nowhere (#5240).
+    const filed = session === 0 ? undefined : workspaceOf?.(session);
     return [
       scope === "all" ? project : undefined,
       filed === undefined ? undefined : (workspaceNamed?.(filed) ?? filed),
@@ -869,6 +870,8 @@ function Ask({
   const [secretPick, setSecretPick] = useState<VaultEntry>();
   /** Which way the person fills a Secret ask: Fill with nothing picked says so (#5073). */
   const [secretFillWith, setSecretFillWith] = useState<FillWith>("value");
+  /** The purpose of the line Fill writes, while Remember is ticked (#5240). */
+  const [secretRemember, setSecretRemember] = useState<string>();
   const who = chainSaid(ask.chain);
   const key = askKey(ask);
   const openAnswer = useOpenAnswer();
@@ -907,6 +910,15 @@ function Ask({
       setSaid("Pick an entry first, or choose New value.");
       return;
     }
+    if (
+      ask.secret?.remember?.need === true &&
+      option.allows &&
+      secretRemember !== undefined &&
+      secretRemember.trim() === ""
+    ) {
+      setSaid(`Say what ${ask.secret.key} is for, or untick Remember.`);
+      return;
+    }
     setBusy(true);
     setSaid(undefined);
     // A Secret ask's value is read from its box as Fill is pressed, and the box emptied.
@@ -920,6 +932,7 @@ function Ask({
       option.id === "keep" ? reason : undefined,
       given,
       linked,
+      ask.secret != null && option.allows ? secretRemember : undefined,
     )
       .then(({ refused, live, opened }) => {
         if (refused !== undefined) {
@@ -984,6 +997,8 @@ function Ask({
               picked={secretPick}
               onPicked={setSecretPick}
               onFillWith={setSecretFillWith}
+              remember={secretRemember}
+              onRemember={setSecretRemember}
             />
           </Stop>
         )}

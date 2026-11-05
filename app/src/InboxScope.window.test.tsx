@@ -255,6 +255,22 @@ describe("what a row is made of", () => {
   const row = (session: number) =>
     part(document, `.inbox-chat[data-session="${session}"] li.inbox-ask`);
 
+  it("draws a change purlis holds as purlis's, with the chat behind it, filed nowhere (#5240)", () => {
+    const held: Shown = {
+      session: 0,
+      ask: "proposal:3",
+      says: "Proposes a change to personas/devops/persona.md, which only you apply",
+      options: [{ id: "dismiss", label: "Dismiss", allows: false, preselected: null }],
+      source: "proposed-change",
+      chain: ["purlis", "billing work"],
+      answer: { via: "proposed-change", id: 3, path: "personas/devops/persona.md" },
+    };
+    draw([held], { ...strip(ROOT), workspaceOf: () => ROOT });
+    expect(chats()).toEqual(["purlis › billing work"]);
+    expect(document.body.textContent).not.toContain("chat 0");
+    expect(document.body.textContent).not.toContain("Plane root");
+  });
+
   it("has one primary line, a secondary line of where, and a trailing kind and age", () => {
     draw([{ ...permission(3, "a"), since: Date.now() / 1000 - 5 * 60 }, question(9)], {
       ...strip("alpha"),

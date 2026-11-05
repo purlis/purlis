@@ -95,8 +95,8 @@ pub struct Need {
     /// with a quiet "not declared by this persona" tag (#5072).
     pub declared: Option<String>,
     /// **The persona names no vault** (`vault: none`, or nothing at all, #5076): the ask is for
-    /// a vault named after it, made at the first fill, and the fill offers a proposed change
-    /// setting the persona's `vault`.
+    /// a vault named after it, made at the first fill, and Remember sets the persona's `vault`
+    /// (#5240).
     pub names_no_vault: bool,
     /// Why the key is asked for though the vault has it (#5075): the chat says its value doesn't
     /// work, or it is a link whose entry is gone. None for a key the vault doesn't hold.
@@ -285,16 +285,15 @@ pub struct Answered {
     pub filled: bool,
     /// The persona the ask was raised for.
     pub persona: String,
-    /// Whether the persona declares the asked key as a Secret need: a fill of one it does not
-    /// is offered to the person as a proposed change adding it (#5076).
+    /// Whether the persona declares the asked key as a Secret need: Remember adds one it does
+    /// not (#5240).
     pub declared: bool,
-    /// The chat's words for what the key is for, where one said.
-    pub purpose: Option<String>,
-    /// The persona names no vault: a fill is offered as a proposed change setting its
-    /// `vault` to [`Self::vault`] (#5076).
+    /// The persona names no vault: Remember sets its `vault` to [`Self::vault`] (#5240).
     pub names_no_vault: bool,
     /// The vault was made by this fill, on the default provider (#5076).
     pub made_vault: bool,
+    /// The first chat that asked, where one did: named on anything held from this answer (#5240).
+    pub asker: Option<u32>,
     pub nudge: Vec<u32>,
     pub told: crate::askoutcome::Outcome,
 }
@@ -1313,9 +1312,9 @@ impl Asks {
             filled,
             persona: asked.persona,
             declared: asked.declared.is_some(),
-            purpose: asked.purpose,
             names_no_vault: asked.names_no_vault,
             made_vault,
+            asker: chats.first().copied(),
             nudge,
             told,
         })

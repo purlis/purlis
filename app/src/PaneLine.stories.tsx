@@ -3,8 +3,9 @@
 
 /**
  * **The head of a pane showing a task, drawn by the button family** (#3129, #4760): at its start
- * the task's path and "harness · workspace", the harness its card's button; at its end the one
- * state button (Brief, on a task), the chat's ⋯ and the pane's splits, and no close, as a pane
+ * the task's path and "harness · workspace", the harness its card's button; at its end two
+ * groups (#5203, spec #5191): the chat's actions, its one state button (Brief, on a task), the
+ * bell and ⋯ last, then, after a thin divider, the pane's splits, and no close, as a pane
  * showing a task of its session draws none. The controls are the window's own (`PaneHead`,
  * `PaneActions`, `BriefButton`, `HarnessChip`); the path stands in as its words, since the real
  * one (`PaneCrumbs`) reads the chats' store, and `PaneCrumbs.test.tsx` holds its shape. No
@@ -18,8 +19,8 @@ import { expect, waitFor, within } from "storybook/test";
 import { catalogued, type Offer } from "./actions";
 import { BriefButton, BriefOpener, type BriefAsk } from "./Brief";
 import { HarnessChip } from "./HarnessCard";
-import { PaneActions, PaneHead } from "./LayoutPanes";
-import { expectFocusInSight } from "./stories.testkit";
+import { PaneActions, PaneBellOf, PaneHead } from "./LayoutPanes";
+import { expectFocusInSight, untilFocused } from "./stories.testkit";
 
 const SESSION = 7;
 
@@ -72,17 +73,20 @@ function PaneLine() {
           <BriefOpener value={(of: BriefAsk) => setSaid(`Brief of ${of.name}`)}>
             <PaneHead
               doing={
-                <PaneActions
-                  pane={1}
-                  // Its one state button: Brief, on a task (`PaneStateButton` draws this one).
-                  state={<BriefButton of={{ name: "fix-login", chat: SESSION }} word="Brief" />}
-                  chat={{ session: SESSION, offers: LIST }}
-                  offerFor={(id) => SPLITS.find((offer) => offer.id === id)}
-                  closeOf={() => undefined}
-                  onPaneDoes={(_pane, offer) => setSaid(offer?.title ?? "")}
-                  // A pane showing a task of its session draws no close (#1486).
-                  task
-                />
+                // The bell, with nothing to hold: a chat's pane always draws it (#4754).
+                <PaneBellOf.Provider value={{ notes: 0, trouble: 0, asks: 0 }}>
+                  <PaneActions
+                    pane={1}
+                    // Its one state button: Brief, on a task (`PaneStateButton` draws this one).
+                    state={<BriefButton of={{ name: "fix-login", chat: SESSION }} word="Brief" />}
+                    chat={{ session: SESSION, offers: LIST }}
+                    offerFor={(id) => SPLITS.find((offer) => offer.id === id)}
+                    closeOf={() => undefined}
+                    onPaneDoes={(_pane, offer) => setSaid(offer?.title ?? "")}
+                    // A pane showing a task of its session draws no close (#1486).
+                    task
+                  />
+                </PaneBellOf.Provider>
               }
             >
               <div className="pane-chips">
@@ -126,15 +130,17 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 /**
- * **The task's head**: Tab reaches the harness, Brief, ⋯ and the two splits, in that order, each
- * with its ring in sight; Enter presses each. ⋯ lists the task's two ways to end it, the
- * unavailable Close now saying why. The picture is the head at rest.
+ * **The task's head**: Tab reaches the harness, Brief, the bell, ⋯ and the two splits, in the
+ * order they are drawn, each with its ring in sight; Enter presses each. ⋯ ends the chat's
+ * actions and a thin divider parts them from the splits (#5203). ⋯ lists the task's two ways to
+ * end it, the unavailable Close now saying why. The picture is the head at rest.
  */
 export const ATasksLine: Story = {
-  play: async ({ canvas, userEvent }) => {
+  play: async ({ canvas, canvasElement, userEvent }) => {
     const status = canvas.getByRole("status");
     const harness = canvas.getByRole("button", { name: "What Claude Code can do here" });
     const brief = canvas.getByRole("button", { name: "Brief of fix-login" });
+    const bell = canvas.getByRole("button", { name: /^Pane notices:/ });
     const more = canvas.getByRole("button", { name: /^More for / });
     const right = canvas.getByRole("button", { name: "Split right" });
     const down = canvas.getByRole("button", { name: "Split down" });
@@ -153,6 +159,10 @@ export const ATasksLine: Story = {
     await waitFor(() => expect(status).toHaveTextContent("Brief of fix-login"));
 
     await userEvent.tab();
+    await expect(bell).toHaveFocus();
+    expectFocusInSight();
+
+    await userEvent.tab();
     await expect(more).toHaveFocus();
     expectFocusInSight();
     await userEvent.keyboard("{Enter}");
@@ -165,9 +175,25 @@ export const ATasksLine: Story = {
     await waitFor(() => expect(status).toHaveTextContent("Stop and get its report"));
     // The press closes the list, as a person's does: the story ends on the head, not the menu.
     await waitFor(() => expect(document.querySelector('[role="menu"]')).toBeNull());
+    // And the keyboard back on ⋯: the menu hands it back a frame later whenever nothing holds it,
+    // which, left to race the blur below, could draw ⋯ focused with its tip in the picture.
+    await untilFocused(() => more, "the closed menu hands the keyboard back to ⋯");
 
     right.focus();
     await expect(right).toHaveFocus();
+    // Drawn left to right as Tab takes them: Brief, the bell, ⋯, the divider, then the splits.
+    const box = (one: Element) => one.getBoundingClientRect();
+    const line = canvasElement.querySelector('.pane-actions [data-scope="separator"]') as Element;
+    await expect(line).not.toBeNull();
+    await expect(box(brief).right).toBeLessThan(box(bell).left);
+    await expect(box(bell).right).toBeLessThan(box(more).left);
+    await expect(box(more).right).toBeLessThan(box(line).left);
+    await expect(box(line).right).toBeLessThan(box(right).left);
+    await expect(box(line).width).toBeGreaterThan(0);
+    await expect(box(line).height).toBeLessThan(box(right).height);
+    // Centred on the marks it parts, not at the top of their row.
+    const middle = (one: Element) => box(one).top + box(one).height / 2;
+    await expect(Math.abs(middle(line) - middle(right))).toBeLessThanOrEqual(1);
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(status).toHaveTextContent("Split right"));
 

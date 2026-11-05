@@ -4,7 +4,14 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import type { Shown } from "./bindings";
-import { agoSaid, forgetInbox, onItsPane, useAnswered, useAnsweredWhenGone } from "./inboxRules";
+import {
+  agoSaid,
+  byChat,
+  forgetInbox,
+  onItsPane,
+  useAnswered,
+  useAnsweredWhenGone,
+} from "./inboxRules";
 
 /**
  * **A chat's pane draws at most two of its asks** (spec #1688, #1695): its in-context copy of
@@ -123,5 +130,24 @@ describe("how long ago a row says it has waited (qw359)", () => {
     expect(agoSaid(Number.MAX_SAFE_INTEGER, now)).toBeUndefined();
     expect(agoSaid(Number.NaN, now)).toBeUndefined();
     expect(agoSaid(now + 90_000, now)).toBe("now");
+  });
+});
+
+describe("the head of what is no chat's (#5240)", () => {
+  const ask = (name: string, chain: string[]): Shown => ({
+    session: 0,
+    ask: name,
+    says: name,
+    options: [],
+    source: "proposed-change",
+    chain,
+    answer: { via: "proposed-change", id: 1, path: "p" },
+  });
+
+  it("names the one chat behind it, and purlis alone where they differ", () => {
+    const age = () => [0, 0] as const;
+    const one = ask("a", ["purlis", "billing"]);
+    expect(byChat([one], age)[0].chain).toEqual(["purlis", "billing"]);
+    expect(byChat([one, ask("b", ["purlis", "shop"])], age)[0].chain).toEqual(["purlis"]);
   });
 });

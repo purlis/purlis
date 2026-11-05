@@ -3,6 +3,8 @@
 
 import { useEffect, useState, type Ref } from "react";
 import type { SecretShown } from "./bindings";
+import { SecretNeedLine } from "./SecretNeedLine";
+import { Checkbox } from "./ui/choice/Checkbox";
 import { Segment, SegmentedControl } from "./ui/choice/Radio";
 import { TextField } from "./ui/field/Field";
 import { VaultEntryPicker, type VaultEntries, type VaultEntry } from "./VaultEntryPicker";
@@ -16,8 +18,10 @@ export type FillWith = "value" | "entry";
  * the value is never in React's state or the page's markup; Fill reads it from `box`. **Use an
  * entry I have**: a picker over the person's vaults, grouped by vault with a filter on top (the
  * operator's ruling on #5070), whose pick the key comes to read as a Linked entry, never a copy.
- * The chat hears filled or declined and the key's name, never the value and never the entry. A
- * plain body for now: the ask's own part family replaces it (#5080).
+ * The chat hears filled or declined and the key's name, never the value and never the entry.
+ * Where Fill could also write to the persona, an unticked **Remember this need for the persona**
+ * shows the exact line once ticked (#5240, spec #5235). A plain body for now: the ask's own part
+ * family replaces it (#5080).
  */
 export function SecretFill({
   secret,
@@ -26,6 +30,8 @@ export function SecretFill({
   picked,
   onPicked,
   onFillWith,
+  remember,
+  onRemember,
 }: {
   secret: SecretShown;
   box: Ref<HTMLInputElement>;
@@ -37,6 +43,9 @@ export function SecretFill({
   onPicked: (entry: VaultEntry | undefined) => void;
   /** Which way the person chose, so Fill knows whether a pick is missing. */
   onFillWith?: (to: FillWith) => void;
+  /** The purpose of the line Fill writes, while Remember is ticked; `undefined` unticked. */
+  remember?: string;
+  onRemember?: (to: string | undefined) => void;
 }) {
   const [fillWith, setFillWith] = useState<FillWith>("value");
   const listed = useEntries(fillWith === "entry" ? entries : undefined);
@@ -109,6 +118,28 @@ export function SecretFill({
                     }`
                   : "The value isn't copied: the key reads the entry, so a rotation reaches it.")}
           </p>
+        </>
+      )}
+      {secret.remember != null && (
+        <>
+          <Checkbox
+            isSelected={remember !== undefined}
+            onChange={(ticked) =>
+              onRemember?.(ticked ? (secret.remember?.purpose ?? "") : undefined)
+            }
+          >
+            Remember this need for the persona
+          </Checkbox>
+          {remember !== undefined && (
+            <SecretNeedLine
+              secretKey={secret.key}
+              file={secret.remember.file}
+              need={secret.remember.need}
+              vault={secret.remember.vault}
+              purpose={remember}
+              onPurpose={(to) => onRemember?.(to)}
+            />
+          )}
         </>
       )}
     </div>

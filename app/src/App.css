@@ -2098,6 +2098,24 @@ body {
   color: var(--state-waiting);
 }
 
+/* The line a Secret need's Remember writes (#5240): its key beside the box for its purpose. */
+.secret-need-line {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.secret-need-line-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.secret-need-line-row > :last-child {
+  flex: 1 1 12rem;
+}
+
 .login-site-line {
   overflow-wrap: anywhere;
 }

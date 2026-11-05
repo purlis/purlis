@@ -466,8 +466,8 @@ export const commands = {
 	applyProposedChange: __WINDOW_ONLY_RESULT,
 	proposedChange: __WINDOW_ONLY_RESULT,
 	dismissProposedChange: __WINDOW_ONLY_RESULT,
-	dismissedSecretNeeds: __WINDOW_ONLY_RESULT,
-	offerSecretNeedAgain: __WINDOW_ONLY_RESULT,
+	secretNeedPersonas: __WINDOW_ONLY_RESULT,
+	rememberSecretNeed: __WINDOW_ONLY_RESULT,
 	removeOldHarnessPlugins: __WINDOW_ONLY_RESULT,
 	dismissOldHarnessPlugins: __WINDOW_ONLY_RESULT,
 	/**  The servers chat `session` could not start and the person has not put away, oldest first. */
@@ -4375,12 +4375,6 @@ export type DiskHeld =
 /**  It was not read within the time a second read of it waits ([`WAITS_AT_MOST`]). */
 { state: "unanswered" };
 
-/**  One Secret need offer the person dismissed (#5159): the persona and the key, names only. */
-export type DismissedNeed = {
-	persona: string,
-	key: string,
-};
-
 /**  Why a grant the person accepted before waits for a yes again. */
 export type DispatchAgain = 
 /**  A commit of the project's history took it out, and the file holds it again. */
@@ -7490,6 +7484,20 @@ export type NeedFix =
 
 /**  **What kind of decision an item is**, in the order the page groups them. */
 export type NeedKind = "review" | "clash" | "problem" | "pins" | "tidy-up";
+
+/**
+ *  **One persona the vault view may remember a need for** (#5240): names only, read from no
+ *  vault.
+ */
+export type NeedPersona = {
+	persona: string,
+	/**  The file the line goes in, relative to the project. */
+	file: string,
+	/**  The keys it declares already: a row of one of them offers it nothing. */
+	declares: string[],
+	/**  It names no vault, so a `vault:` line goes with the need. */
+	names_no_vault: boolean,
+};
 
 /**
  *  **A profile's command waiting on the operator's approval** (ADR 0022), as a waiting chat's
@@ -11505,6 +11513,18 @@ export type SecretFilled = {
 	code: boolean,
 };
 
+/**  **The line a Secret ask's Remember writes** (#5240): shown whole before it is ticked for. */
+export type SecretNeedShown = {
+	/**  The file it goes in, relative to the project. */
+	file: string,
+	/**  The persona does not declare the key, so a `secret-need.<key>` line goes in. */
+	need: boolean,
+	/**  The chat's words for it, for the person to edit: empty where it said none. */
+	purpose: string,
+	/**  The vault a `vault:` line names, where the persona names none. */
+	vault?: string | null,
+};
+
 /**
  *  **A Secret ask, as its row draws it** (#5068, ADR 0109): the persona, the vault and the key
  *  its chats miss, and how many wait on it. Names only: no value is ever here.
@@ -11544,6 +11564,11 @@ export type SecretShown = {
 	reads?: SecretEntryShown | null,
 	/**  The entry a broken link read, which is gone (#5075). */
 	gone?: SecretEntryShown | null,
+	/**
+	 *  **What *Remember this need for the persona* would write** (#5240, spec #5235), where it
+	 *  would write anything and may.
+	 */
+	remember?: SecretNeedShown | null,
 };
 
 /**
