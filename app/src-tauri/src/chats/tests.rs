@@ -10459,8 +10459,12 @@ fn a_chat_the_studio_did_not_start_has_no_job_to_be_done() {
 /// chat is kept for its skill's Runs once it closes.
 #[test]
 fn a_studio_chat_finishes_as_its_program_ends_and_stays_on_runs_once_closed() {
+    // A project of its own that leaves the sandbox off, as `no_project` is: its app state
+    // holds this test's chats alone.
     let plane = tempfile::tempdir().unwrap();
-    std::fs::write(plane.path().join("charter.toml"), "schema = 1\n").unwrap();
+    std::fs::write(plane.path().join(purlis_core::plane::MANIFEST), "").unwrap();
+    // The program lives outside the project, as a sandboxed project asks.
+    let programs = tempfile::tempdir().unwrap();
     let chats = chats_of(plane.path());
     let studio = purlis_core::reopen::StudioJob::new(
         Some("deploy".to_owned()),
@@ -10472,7 +10476,7 @@ fn a_studio_chat_finishes_as_its_program_ends_and_stays_on_runs_once_closed() {
         .start(
             &Chat {
                 studio: Some(studio),
-                ..chat(&a_claude(plane.path()), "3", None)
+                ..chat(&a_claude(programs.path()), "3", None)
             },
             SIZE,
         )
@@ -10502,11 +10506,14 @@ fn a_studio_chat_finishes_as_its_program_ends_and_stays_on_runs_once_closed() {
 /// #5248: a chat the studio did not start is not kept for Runs.
 #[test]
 fn a_chat_the_studio_did_not_start_is_not_kept_for_runs() {
+    // A project of its own that leaves the sandbox off, as `no_project` is: its app state
+    // holds this test's chats alone.
     let plane = tempfile::tempdir().unwrap();
-    std::fs::write(plane.path().join("charter.toml"), "schema = 1\n").unwrap();
+    std::fs::write(plane.path().join(purlis_core::plane::MANIFEST), "").unwrap();
+    let programs = tempfile::tempdir().unwrap();
     let chats = chats_of(plane.path());
     let session = chats
-        .start(&chat(&a_claude(plane.path()), "3", None), SIZE)
+        .start(&chat(&a_claude(programs.path()), "3", None), SIZE)
         .unwrap();
 
     chats.close(session).unwrap();
