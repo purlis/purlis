@@ -191,6 +191,7 @@ fn refusal_kept_out(refusal: Refusal, scrub: &Scrub) -> Refusal {
         Refusal::Engine(why) => Refusal::Engine(text(why)),
         Refusal::Withheld(why) => Refusal::Withheld(text(why)),
         Refusal::NotLoggedIn(why) => Refusal::NotLoggedIn(text(why)),
+        Refusal::NoFormOnCleanLoad(why) => Refusal::NoFormOnCleanLoad(text(why)),
         Refusal::NotFilled(why) => Refusal::NotFilled(text(why)),
         said_back @ (Refusal::NoSuchPage(_)
         | Refusal::NoSuchRef(_)

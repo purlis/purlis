@@ -1592,6 +1592,19 @@ fn a_host_before_secret_fill_is_sent_no_field_read_and_no_fill() {
     assert_eq!(super::fills_secrets(KNOWS_SECRET_FILL), Ok(()));
 }
 
+/// #5272: no login goes to a host before 1.75, which would leave a declared login's site as it is.
+#[test]
+fn a_host_before_1_75_is_sent_no_login() {
+    use purlis_session_protocol::session::KNOWS_CLEAN_LOGINS;
+    use purlis_session_protocol::version::Version;
+    let before = Version {
+        minor: KNOWS_CLEAN_LOGINS.minor - 1,
+        ..KNOWS_CLEAN_LOGINS
+    };
+    assert!(!super::starts_logins_clean(before));
+    assert!(super::starts_logins_clean(KNOWS_CLEAN_LOGINS));
+}
+
 /// #5121: a host before 1.73 isn't asked whether a page asks to sign in.
 #[test]
 fn a_host_before_1_73_is_not_asked_whether_a_page_asks_to_sign_in() {

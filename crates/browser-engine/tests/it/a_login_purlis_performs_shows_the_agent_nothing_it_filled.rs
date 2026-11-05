@@ -35,7 +35,16 @@ fn login_on(page: &str, origin: &str) -> Login {
         password: PASSWORD.to_owned().into(),
         only_if_asked: false,
         suggested: false,
+        clean_already: true,
         back_to: None,
+    }
+}
+
+/// A login in a browser that has held something: every one that fills starts clean (#5272).
+fn in_a_used_browser(page: &str) -> Login {
+    Login {
+        clean_already: false,
+        ..login_on(page, "http://fixture.test")
     }
 }
 
@@ -45,6 +54,7 @@ fn ended_as<T>(outcome: &Result<T, Refusal>) -> &'static str {
     match outcome {
         Ok(_) => "it answered",
         Err(Refusal::NotLoggedIn(_)) => "not logged in",
+        Err(Refusal::NoFormOnCleanLoad(_)) => "no form on the clean load",
         Err(Refusal::Ended) => "the browser ended",
         Err(_) => "another refusal",
     }
@@ -181,40 +191,77 @@ fn a_login_on_a_page_that_redefines_finding_and_focusing_a_field_goes_through() 
     assert!(!holds_a_value(&shown), "the account page shows no value");
 }
 
-/// #5121, the person's ruling: a login a chat chose starts clean on its own site, so what an earlier
-/// session there showed isn't what it fills.
+/// #5272, the person's ruling: every login starts clean on its own site, so what an earlier session
+/// there showed isn't what it fills, whoever chose the login.
 #[test]
-fn a_login_a_chat_chose_fills_the_form_of_a_site_with_no_earlier_session() {
+fn a_login_fills_the_form_of_a_site_with_no_earlier_session() {
+    for suggested in [false, true] {
+        let Some((browser, _data, _site)) = started() else {
+            return;
+        };
+        open(&browser, "clean-earlier-session.html");
+        assert!(
+            sees(&browser, "An earlier session"),
+            "{}",
+            snapshot(&browser)
+        );
+        let login = Login {
+            suggested,
+            ..in_a_used_browser("clean-site.html")
+        };
+        let ended = browser.log_in(&login, binds()).expect("the login runs");
+        assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+        assert!(sees(&browser, "Account"), "{}", snapshot(&browser));
+        assert!(!snapshot(&browser).contains("Kept for the earlier session"));
+    }
+}
+
+/// #5272: each of the stores an earlier session may be held in goes, a tab's own and the HTTP cache
+/// passed by: each fixture's page shows its settings to a session it finds in that store.
+#[test]
+fn a_login_finds_no_earlier_session_in_anything_its_site_stores() {
     let Some((browser, _data, _site)) = started() else {
         return;
     };
-    open(&browser, "clean-earlier-session.html");
-    assert!(
-        sees(&browser, "An earlier session"),
-        "{}",
-        snapshot(&browser)
-    );
-    let login = Login {
-        suggested: true,
-        ..login_on("clean-site.html", "http://fixture.test")
-    };
-    let ended = browser.log_in(&login, binds()).expect("the login runs");
+    open(&browser, "clean-stores-a-session.html");
+    assert!(sees(&browser, "Stored"), "{}", snapshot(&browser));
+    let ended = browser
+        .log_in(&in_a_used_browser("clean-stored-site.html"), binds())
+        .expect("the login runs");
     assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
     assert!(sees(&browser, "Account"), "{}", snapshot(&browser));
     assert!(!snapshot(&browser).contains("Kept for the earlier session"));
 }
 
-/// #5121: a page left open on the site goes blank with the clearing, and one of another stays.
+/// #5272: a page of an earlier session in the HTTP cache isn't what the login loads: the cache has no
+/// way to clear one site, so the login's page passes it by.
 #[test]
-fn a_login_a_chat_chose_leaves_no_page_of_its_site_open_and_others_where_they_are() {
+fn a_login_loads_past_a_page_of_an_earlier_session_in_the_http_cache() {
     let Some((browser, _data, _site)) = started() else {
         return;
     };
-    open(&browser, "clean-earlier-session.html");
-    let login = Login {
-        suggested: true,
-        ..login_on("clean-site.html", "http://fixture.test")
+    open(&browser, "cached-once");
+    assert!(sees(&browser, "Settings"), "{}", snapshot(&browser));
+    let ended = browser
+        .log_in(&in_a_used_browser("cached-once"), binds())
+        .expect("the login runs");
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    assert!(sees(&browser, "Account"), "{}", snapshot(&browser));
+    assert!(!snapshot(&browser).contains("Kept for the earlier session"));
+}
+
+/// #5272: a page left open on the site goes blank with the clearing, and another site keeps its
+/// pages and what it stores.
+#[test]
+fn a_login_leaves_no_page_of_its_site_open_and_others_as_they_are() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
     };
+    let other = WebAddress::parse("http://other.test/stores.html").unwrap();
+    call(&browser, Call::Open { address: other });
+    assert!(sees(&browser, "Stored here"), "{}", snapshot(&browser));
+    open(&browser, "clean-earlier-session.html");
+    let login = in_a_used_browser("clean-site.html");
     let ended = browser.log_in(&login, binds()).expect("the login runs");
     assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
     let pages = call(&browser, Call::Pages);
@@ -225,28 +272,89 @@ fn a_login_a_chat_chose_leaves_no_page_of_its_site_open_and_others_where_they_ar
         !pages.iter().any(|page| page.title == "An earlier session"),
         "the page of its site went blank"
     );
+    assert!(
+        pages.iter().any(|page| page.title == "Stored here"),
+        "the page of another stays"
+    );
+    // binds() holds nothing here, so the other site can be read again.
+    let other = WebAddress::parse("http://other.test/stores.html").unwrap();
+    call(&browser, Call::Open { address: other });
+    assert!(
+        sees(&browser, "Found from before"),
+        "{}",
+        snapshot(&browser)
+    );
 }
 
-/// #5121, the person's ruling: a declared login stays as it is, which is what the test above is
-/// measured against: this page shows its settings field to the earlier session.
+/// #5272: a page of another site can't put a session back while the login clears and fills: its timer
+/// waits for the login to answer, though the login's form takes longer than the timer to show.
 #[test]
-fn a_declared_login_leaves_an_earlier_session_where_it_is() {
+fn a_page_elsewhere_cannot_put_a_session_back_during_a_login() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    let later = WebAddress::parse("http://other.test/comes-back-late.html").unwrap();
+    call(&browser, Call::Open { address: later });
+    let login = in_a_used_browser("clean-late-site.html");
+    let ended = browser.log_in(&login, binds()).expect("the login runs");
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    assert!(sees(&browser, "Account"), "{}", snapshot(&browser));
+    assert!(!snapshot(&browser).contains("Kept for the earlier session"));
+    // And it runs again once the login has answered: its timer goes off.
+    let start = std::time::Instant::now();
+    loop {
+        let Content::Pages(pages) = call(&browser, Call::Pages).content else {
+            panic!("its pages");
+        };
+        if pages.iter().any(|page| page.title == "An earlier session") {
+            break;
+        }
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(20),
+            "held still still"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
+
+/// #5272: a page the clean load can't show its form on is said by its own kind, with nothing filled.
+#[test]
+fn a_login_page_with_no_form_for_a_clean_browser_is_said_by_its_own_kind() {
     let Some((browser, _data, _site)) = started() else {
         return;
     };
     open(&browser, "clean-earlier-session.html");
+    let ended = browser
+        .log_in(&in_a_used_browser("clean-earlier-session.html"), binds())
+        .expect("the login runs");
     assert!(
-        sees(&browser, "An earlier session"),
+        matches!(ended.outcome, Err(Refusal::NoFormOnCleanLoad(_))),
         "{}",
-        snapshot(&browser)
+        ended_as(&ended.outcome)
     );
-    let login = login_on("clean-site.html", "http://fixture.test");
+}
+
+/// #5272, #5310: what the no-form answer says leaves by the way every answer does. A user name that
+/// is a word of that sentence is taken out of it, as a site's name holding one would be.
+#[test]
+fn a_login_s_no_form_answer_holds_no_value_it_filled() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    open(&browser, "clean-earlier-session.html");
+    let login = Login {
+        user: Some("clearing".to_owned().into()),
+        ..in_a_used_browser("clean-earlier-session.html")
+    };
     let ended = browser.log_in(&login, binds()).expect("the login runs");
-    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let Err(Refusal::NoFormOnCleanLoad(why)) = &ended.outcome else {
+        panic!("{}", ended_as(&ended.outcome));
+    };
+    assert!(why.contains("no login form appeared"), "{why}");
+    assert!(!why.contains("clearing"), "{why}");
     assert!(
-        sees(&browser, "Kept for the earlier session"),
-        "{}",
-        snapshot(&browser)
+        why.contains("(blanked)"),
+        "the sentence no longer holds the word: {why}"
     );
 }
 

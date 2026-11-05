@@ -62,8 +62,10 @@ yours or the user's to take in that time. Outside it, a call on that host's page
 where the page asks to sign in again, call `browser_login` again. The login goes into the browser
 you name, or the one you're using. A browser that holds it, on a page of its site that asks for no sign-in, answers "already logged
 in" and nothing is filled. Where the page asks, or you're elsewhere, purlis looks on a page of its
-own, and may fill again. A login kept for later reuse opens in a browser of
-its own: the answer says why and which browser it left, and you close that one with `browser_close`
+own, and may fill again. Every login that fills starts clean on its own site: what that site
+stored in the browser goes first, and other sites are left as they are. A login kept for later
+reuse opens in a browser of its own, and so does one whose form doesn't appear on the clean load:
+the answer says why and which browser it left, and you close that one with `browser_close`
 if nothing in it is needed. A browser you opened with `browser_new` and never used is closed for you,
 and the answer says so. A project's browsers have a limit: the refusal lists yours, with what each
 holds, so you can close the right one. If the login is refused, tell the user the sentence: it names what to declare or

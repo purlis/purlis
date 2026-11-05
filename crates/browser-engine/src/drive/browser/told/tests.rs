@@ -136,6 +136,7 @@ fn what_a_page_or_the_engine_gave_a_refusal_has_the_value_taken_out_and_its_own_
         Refusal::Engine("net error at http://a.test/?q=hunter-5310".to_owned()),
         Refusal::NotFilled(VALUE.to_owned()),
         Refusal::NotLoggedIn(VALUE.to_owned()),
+        Refusal::NoFormOnCleanLoad(VALUE.to_owned()),
         Refusal::Withheld(VALUE.to_owned()),
         Refusal::Partly {
             done: VALUE.to_owned(),

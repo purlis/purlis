@@ -163,6 +163,10 @@ pub struct Login {
     /// A chat chose this page and these keys (#4595): the user name goes only into a field that
     /// says it's one, or beside a password field.
     pub suggested: bool,
+    /// **The browser has held nothing until this login** (#5272): nobody has acted in it, and it
+    /// opened from no kept login and tried no login before. Its first load is as clean as a
+    /// load can be, so nothing is cleared. Anything else starts clean on its own site.
+    pub clean_already: bool,
     /// **The page's own origin, where the form is on another** (#4995): a page that has gone
     /// back there since the login was submitted is a login that went through, and its holder is
     /// told ([`Hold::back`]). Nothing is ever filled on it.
@@ -941,6 +945,11 @@ pub enum Refusal {
     /// A login purlis performed did not go through (#2016), in words that name no value.
     #[error("{0}")]
     NotLoggedIn(String),
+    /// A login's site was cleared, and its form didn't appear on the load after (#5272): a
+    /// browser that has held nothing may show it where this one, held to the login, can't.
+    /// Nothing was filled.
+    #[error("{0}")]
+    NoFormOnCleanLoad(String),
     /// A secret purlis was to fill was not filled (#5115), in words that name no value.
     #[error("{0}")]
     NotFilled(String),

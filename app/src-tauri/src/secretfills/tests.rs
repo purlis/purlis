@@ -566,6 +566,50 @@ fn a_key_the_person_marked_as_no_seed_is_read_for_the_fill_they_allowed_and_a_ne
     assert!(read_now(&asker, &asked).is_err());
 }
 
+/// #5272: a login follows the same value rules as a fill, the person's mark included: what it holds
+/// counts for the value it sealed alone, and an authenticator's address goes in under no mark.
+#[test]
+fn a_login_reads_a_key_the_person_marked_as_no_seed_as_a_fill_does() {
+    use purlis_core::sandbox::tools::login::{Login, PASS_VAR};
+    use purlis_core::sandbox::tools::{Handed, Tool};
+    let (dir, asker) = vault_with_a_seed();
+    let tool = Tool {
+        login: Some(Login {
+            url: "https://shop.example.test/login".into(),
+            origin: "https://shop.example.test".into(),
+            form: None,
+        }),
+        ..Tool::one("shop-login", "qa", PASS_VAR, Handed::File, "app")
+    };
+    let holding = |value: &str| {
+        std::fs::write(
+            dir.path().join("q.json"),
+            serde_json::json!({ "app": value }).to_string(),
+        )
+        .expect("a vault");
+    };
+    let read = || brokered::granted_login(&asker, &tool, None);
+    holding("abcdefghijklmnop");
+    let refused = read().expect_err("no mark yet");
+    assert!(refused.contains("2FA seed"), "{refused}");
+
+    let ctx = purlis_core::secrets::Ctx::new(dir.path(), asker.env.clone());
+    // The window's own call makes the mark: this test stands for the person's press.
+    crate::vaults::mark_no_seed(&ctx, "qa", "app").expect("marked");
+    let (login, _) = read().expect("marked, it goes in");
+    assert_eq!(login.password.expose(), "abcdefghijklmnop");
+
+    holding("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ");
+    let refused = read().expect_err("the mark was for another value");
+    assert!(refused.contains("value has changed"), "{refused}");
+
+    let address = format!("my 2fa {}%3A//totp/shop?secret=JBSWY3DPEHPK3PXP", "otpauth");
+    holding(&address);
+    let refused = read().expect_err("no address goes in");
+    assert!(refused.contains("otpauth address"), "{refused}");
+    assert!(!refused.contains("JBSW"), "{refused}");
+}
+
 #[test]
 fn no_value_is_read_for_a_browser_the_person_has_taken_over() {
     let browsers = crate::chatbrowsers::ChatBrowsers::default();
