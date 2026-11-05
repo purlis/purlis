@@ -6,9 +6,8 @@ pushes for it, and read-only git works. `purlis worktree update --fetch-only` is
 refreshes what it knows of the remote. A worktree the person made elsewhere keeps its own git,
 since the app commits for none of those.
 
-A sandboxed chat at or above a clone writes that clone's git directory itself, so a rebase stopped
-there is resumed by its own git, inside its sandbox, and the app is asked only to put the branch
-where it belongs. Starting an update, a branch folder's `--continue` and `--abort`, and the
+For a sandboxed chat at or above a clone, a rebase stopped there goes on or back by the chat's own
+git, inside its sandbox, and the app is asked only to put the branch where it belongs. Starting an update, a branch folder's `--continue` and `--abort`, and the
 terminal do not change.
 
 What the app notes of an update is kept in the project's state (`app/worktree-updates/`), never in
