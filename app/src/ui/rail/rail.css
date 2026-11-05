@@ -53,6 +53,12 @@
   display: contents;
 }
 
+/* A row's Retry and Dismiss (#5324) hold their size as the list fills, as a project's button does:
+   the list scrolls, and a button given way to would go under the 24px a target is held to. */
+[data-part="list"][data-scope="rail"] > [data-scope="button"][data-part="root"] {
+  flex: none;
+}
+
 /* Something waits below the list's fold (N5): its count at the foot, in the badge's colours. */
 [data-part="below"][data-scope="rail"] {
   display: grid;
