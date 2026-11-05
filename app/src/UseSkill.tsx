@@ -527,7 +527,7 @@ export const SkillsChip = memo(function SkillsChip({
 const SIGN = "\u26A0\uFE0E";
 
 /** **What chat `session`'s set of skills needs the person for**, in words, or nothing while it
- *  needs nothing or the Skill studio is off: what its pane foot's warning says (#5204). */
+ *  needs nothing: what its pane foot's warning says (#5204). */
 export function useChatSkillsWarn(session: number): string | undefined {
   const said = useContext(ChatSkillSetsHere)[session];
   if (said === undefined) return undefined;
