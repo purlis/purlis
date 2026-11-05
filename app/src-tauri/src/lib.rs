@@ -149,6 +149,7 @@ mod poolsignin_confirm;
 mod pooltools;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod portal;
+mod projectready;
 mod projectsettings;
 mod proposals;
 mod readonly;
@@ -3343,6 +3344,9 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<reconnecting::ChatsReconnecting>()
         // What `fresh-runners-kept` carries (#4569).
         .typ::<freshkept::FreshRunnersKept>()
+        // What `project-ready` carries, and the event's name (#5322).
+        .typ::<projectready::ProjectReady>()
+        .constant("PROJECT_READY", projectready::EVENT)
         // What `projects_not_held` answers, read again on `projects-not-held` (#2846).
         .typ::<notheld::ProjectNotHeld>()
         // What `chat-stop` carries (#1448).
@@ -4676,6 +4680,19 @@ pub fn run() {
                             &window,
                             &told.plane.clone(),
                             freshkept::EVENT,
+                            &told,
+                        );
+                    })
+                })
+                // Each project put back, as it finishes opening: ready with how many of its
+                // chats came back, or failed with why (#5322).
+                .telling_project_ready({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |told: projectready::ProjectReady| {
+                        windows::emit_for_plane(
+                            &window,
+                            &told.plane.clone(),
+                            projectready::EVENT,
                             &told,
                         );
                     })

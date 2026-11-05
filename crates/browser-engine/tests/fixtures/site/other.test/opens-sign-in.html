@@ -1,0 +1,10 @@
+<!doctype html>
+<title>Opens sign in</title>
+<h1>Opens sign in</h1>
+<a href="http://auth.fixture.test/held-form.html">Sign in here</a>
+<button id="opens" type="button">Sign in in a window</button>
+<script>
+  document.getElementById('opens').addEventListener('click', () => {
+    window.open('http://auth.fixture.test/held-form.html');
+  });
+</script>

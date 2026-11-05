@@ -180,6 +180,40 @@ pub fn toward(under: &str, accent: &str) -> String {
     tint_hex_within(under, degrees(b.atan2(a)), a.hypot(b))
 }
 
+/// How far a mark's hue may be nudged from the accent's and stay in its family ([`nudged`]).
+const NUDGE_HUE: i32 = 30;
+
+/// **The colour nearest `accent` that `holds`** (#5157), its hue no more than [`NUDGE_HUE`] degrees
+/// off and its lightness anywhere, at the chroma it has, or the most the screen can show there.
+/// `None` when none holds. What a mark of the accent takes when the accent itself would read as a
+/// state ([`super::vocabulary::follow_kin`]). Only the engine asks it: the window is handed the
+/// answer, so `tint.ts` has no copy.
+pub fn nudged(accent: &str, holds: &dyn Fn(&str) -> bool) -> Option<String> {
+    let (rgb, alpha) = parse(accent)?;
+    let [lightness, a, b] = oklab(rgb);
+    let (chroma, hue) = (a.hypot(b), degrees(b.atan2(a)));
+    let mut steps: Vec<(f64, f64, f64)> = Vec::new();
+    for off_hue in (-NUDGE_HUE..=NUDGE_HUE).step_by(2) {
+        let off_hue = f64::from(off_hue);
+        let across = chroma * off_hue.to_radians();
+        for off_lightness in -100..=100 {
+            let off_lightness = f64::from(off_lightness) / 100.0;
+            let at = lightness + off_lightness;
+            if (0.0..=1.0).contains(&at) {
+                let far = off_lightness.hypot(across);
+                steps.push((far, at, hue + off_hue));
+            }
+        }
+    }
+    steps.sort_by(|one, other| one.0.total_cmp(&other.0));
+    steps.into_iter().find_map(|(_, at, hue)| {
+        let colour = shown(at, chroma, hue);
+        let [r, g, b] = rounded(colour, luminance(colour));
+        let one = format!("#{r:02x}{g:02x}{b:02x}{alpha}");
+        holds(&one).then_some(one)
+    })
+}
+
 /// One workspace colour's hue in a theme: a [`PALETTE`] name and its OKLCH hue in degrees.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub struct Hue {

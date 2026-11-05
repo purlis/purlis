@@ -949,6 +949,14 @@ impl Upstream {
                 ),
             });
         }
+        // A runner before 1.75 would leave a login's site as it is, or clear less (#5272): the
+        // window's version check is of its own host, not of this runner.
+        if let Some(why) = no_login_for(&command, self.client.version()) {
+            return Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why,
+            });
+        }
         let _in_flight = Counted::start(&self.calls);
         self.client.call(command).await.map_err(|why| refused(&why))
     }
@@ -1657,6 +1665,21 @@ impl session::Host for Relay {
             }),
         }
     }
+}
+
+/// Why a login isn't sent on to a runner of `version`: it starts no login clean (#5272).
+fn no_login_for(
+    command: &Command,
+    version: purlis_session_protocol::version::Version,
+) -> Option<String> {
+    (matches!(command, Command::LogIn { .. }) && version < session::KNOWS_CLEAN_LOGINS).then(|| {
+        format!(
+            "the runner this host relays to speaks session protocol {}.{}, which doesn't start a \
+             login clean on its site, so nothing was filled. Update purlis on the runner, then \
+             call browser_login again",
+            version.major, version.minor
+        )
+    })
 }
 
 #[cfg(test)]

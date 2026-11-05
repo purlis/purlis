@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **A studio chat's link, as the window draws it** (#5185): the chip in its header, the line
+ * **A studio chat's link, as the window draws it** (#5185): the chip on its pane foot, the line
  * above its skill's tabs while it runs, and the Runs tab's "Chats the studio started".
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -51,24 +51,33 @@ function drawn(value: StudioChatsLent, children: ReactNode) {
 }
 
 describe("a studio chat's chip (#5185)", () => {
-  it("names the skill and the job, and opens the skill's page", async () => {
+  it("names the skill and the job, and runs its row on a press", async () => {
     mockIPC((cmd) => (cmd === "skill_drafts" ? [] : null));
     const value = lent();
-    drawn(value, <StudioChatChip plane="p" session={7} />);
+    const open = vi.fn();
+    drawn(value, <StudioChatChip plane="p" session={7} onOpen={open} />);
 
     const chip = await screen.findByRole("button", { name: "test-design · writing outcome evals" });
     fireEvent.click(chip);
 
-    expect(value.openSkill).toHaveBeenCalledWith(EVALS);
+    expect(open).toHaveBeenCalled();
   });
 
   it("says what the job did once its draft waits", async () => {
     mockIPC((cmd) => (cmd === "skill_drafts" ? [draftOf(7)] : null));
-    drawn(lent(), <StudioChatChip plane="p" session={7} />);
+    drawn(lent(), <StudioChatChip plane="p" session={7} onOpen={vi.fn()} />);
 
     expect(
       await screen.findByRole("button", { name: "test-design · wrote outcome evals" }),
     ).toBeInTheDocument();
+  });
+
+  it("is its words alone with no row to run: nothing to press that does nothing", () => {
+    mockIPC((cmd) => (cmd === "skill_drafts" ? [] : null));
+    drawn(lent(), <StudioChatChip plane="p" session={7} />);
+
+    expect(screen.getByTestId("pane-studio").tagName).toBe("SPAN");
+    expect(screen.queryByRole("button")).toBeNull();
   });
 
   it("is not drawn on a chat the studio did not start", () => {

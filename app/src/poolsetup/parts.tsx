@@ -131,7 +131,7 @@ export function SeeWhat({
     >
       <div className="pool-setup-fold-body">
         <p className="pool-setup-does">{note}</p>
-        <CodeBlock label="Commands" text={text} />
+        {text !== "" && <CodeBlock label="Commands" text={text} />}
       </div>
     </Disclosure>
   );

@@ -313,6 +313,11 @@ mod hosted {
         version >= session::KNOWS_ASKS_TO_SIGN_IN
     }
 
+    /// **Whether a host of `version` starts every login clean on its own site** (#5272).
+    fn starts_logins_clean(version: purlis_session_protocol::version::Version) -> bool {
+        version >= session::KNOWS_CLEAN_LOGINS
+    }
+
     /// Why a host before 1.73 isn't asked (#5121): never told to a chat, whose login goes on.
     const TOO_OLD_TO_SAY: &str = "the purlis that runs this browser is too old to say whether a \
                                   page asks to sign in";
@@ -413,8 +418,8 @@ mod hosted {
             if let Some(why) = self.pool_of(program).and_then(|pool| self.untrusted(&pool)) {
                 return Err(Refused::Said(why));
             }
-            // A host before 1.73 doesn't start a chat's chosen login clean (#5121).
-            if login.suggested && !says_asks_to_sign_in(link.version()) {
+            // A host before 1.75 doesn't start every login clean, and clears less (#5272).
+            if !starts_logins_clean(link.version()) {
                 return Err(Refused::Said(
                     "the purlis that runs this browser is too old to start this login clean on \
                      its site, so nothing was filled. Update purlis where the browser runs, then \
@@ -455,6 +460,9 @@ mod hosted {
                         || refusal.code == session::BROWSER_ENDED =>
                 {
                     Err(Refused::Gone)
+                }
+                Err(refusal) if refusal.code == session::NO_LOGIN_FORM_ON_CLEAN_LOAD => {
+                    Err(Refused::NoFormOnCleanLoad(refusal.why))
                 }
                 Err(refusal) => Err(Refused::Said(refusal.why)),
             };
@@ -1945,6 +1953,7 @@ pub async fn take_over_browser(
     {
         let browsers = browsers(&app)?;
         crate::off_the_window("taking a browser over", move || {
+            crate::chatbrowsers::person_will_drive(&projects, &program);
             browsers.take_over(&program)?;
             crate::browserneedsyou::taken_over(&projects, &program);
             crate::chatbrowsers::person_drove(&projects, &program, true);

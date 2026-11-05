@@ -450,6 +450,8 @@ pub(crate) struct Reopening {
     wanted: usize,
     /// Whether the record was read: only then does a dispatch nothing brings back end (#1513).
     read: bool,
+    /// Why the record was refused, where it was: the project then says it failed (#5322).
+    refused: Option<String>,
 }
 
 impl Held {
@@ -1061,7 +1063,7 @@ impl Held {
     #[cfg(test)]
     pub(crate) fn reopen(&self, size: Size, record: Read, choice: Choice) {
         let begun = self.begin_reopen(record, choice);
-        self.finish_reopen(begun, size);
+        let _ = self.finish_reopen(begun, size);
     }
 
     /// The first half of [`Self::reopen`]: everything it decides from the record, and the
@@ -1073,6 +1075,7 @@ impl Held {
         // does a dispatch nothing brings back end (#1513). A record that could not be read
         // says nothing about which chats are gone.
         let read = record.is_ok();
+        let mut refused = None;
         // A record another clone or device wrote is a copy's or a move's (V43): a copy's chats
         // get ids of their own before any of them starts, and are written with them once
         // they are back, so no two clones ever hold one chat's id.
@@ -1114,6 +1117,11 @@ impl Held {
                      is reopened and nothing will be recorded until it is repaired",
                     self.root.display()
                 );
+                refused = Some(format!(
+                    "The record of what was open could not be read ({why}), so no chat was \
+                     put back. Repair or remove {}.",
+                    reopen::path(&self.root).display()
+                ));
                 reopen::Record::default()
             }
         };
@@ -1131,18 +1139,24 @@ impl Held {
             arrived,
             wanted,
             read,
+            refused,
         }
     }
 
     /// The second half of [`Self::reopen`]: starts the chats [`Self::begin_reopen`]
     /// registered and settles what the launch owes its tasks. It answers when every chat has
-    /// been tried.
-    pub(crate) fn finish_reopen(&self, reopening: Reopening, size: Size) {
+    /// been tried, with how that came out: what the window is told (#5322).
+    pub(crate) fn finish_reopen(
+        &self,
+        reopening: Reopening,
+        size: Size,
+    ) -> crate::projectready::ProjectOutcome {
         let Reopening {
             begun,
             arrived,
             wanted,
             read,
+            refused,
         } = reopening;
         // The project's app state follows where its record came from (#3718), before any chat
         // is put back, on this thread and outside the registry's lock: a move carries its
@@ -1177,6 +1191,13 @@ impl Held {
         // The limits' clock looks now, not at its next round: a session already past its
         // token limit says so at once (#1545).
         crate::overlimit::put_back(&self.id);
+        match refused {
+            Some(error) => crate::projectready::ProjectOutcome::Failed { error },
+            None => crate::projectready::ProjectOutcome::Ready {
+                back: u32::try_from(back).unwrap_or(u32::MAX),
+                wanted: u32::try_from(wanted).unwrap_or(u32::MAX),
+            },
+        }
     }
 
     /// Ends a chat and takes it off the board — the tab's ×, or ending its pane — and tells
@@ -2387,6 +2408,8 @@ pub struct Planes {
     reconnecting: crate::reconnecting::Teller,
     /// Told each plane's fresh runners kept since their work is not all here (#4569).
     fresh_kept: crate::freshkept::Teller,
+    /// Told each project put back as it finishes opening: ready, or failed (#5322).
+    ready: crate::projectready::Teller,
     /// Told each step of a smart close in any plane (ADR 0064).
     smart: crate::smartclose::Teller,
     /// Told each step of a stop in any plane (#1448).
@@ -2416,6 +2439,10 @@ pub struct Planes {
     /// Collects a plane's month-old per-session files as it opens (SC-7):
     /// [`purlis_core::retention::on_open`], or a test's stand-in.
     sweep: Sweep,
+    /// Called as an open builds the project it holds, after its sweep (#5320): a test's way to
+    /// make one project's opening slow.
+    #[cfg(test)]
+    building: Sweep,
     /// The projects an open is between its sweep and holding them (#1027), or a close between
     /// taking them out and having let go of them (#1949), so an open of one waits for it: see
     /// [`Planes::opening`].
@@ -2664,6 +2691,7 @@ impl Planes {
             lost_with_the_host: Arc::new(|_| {}),
             reconnecting: Arc::new(|_| {}),
             fresh_kept: Arc::new(|_| {}),
+            ready: Arc::new(|_| {}),
             smart: Arc::new(|_| {}),
             stops: Arc::new(|_| {}),
             activity: Arc::new(|_| {}),
@@ -2677,6 +2705,8 @@ impl Planes {
             sweep: Arc::new(|root| {
                 purlis_core::retention::on_open(root, std::time::SystemTime::now());
             }),
+            #[cfg(test)]
+            building: Arc::new(|_| {}),
             turns: Arc::default(),
             letting_go: Arc::default(),
             quit_waits: QUIT_WAITS_FOR_TURNS,
@@ -2741,6 +2771,14 @@ impl Planes {
     #[cfg(test)]
     pub(crate) fn sweeping_with(mut self, sweep: Sweep) -> Self {
         self.sweep = sweep;
+        self
+    }
+
+    /// Calls `building` with each plane it opens as it builds what it holds of it: for a test
+    /// that needs one project's opening to be slow (#5320).
+    #[cfg(test)]
+    pub(crate) fn building_with(mut self, building: Sweep) -> Self {
+        self.building = building;
         self
     }
 
@@ -3013,6 +3051,13 @@ impl Planes {
         self
     }
 
+    /// Tells `ready` each project put back as it finishes opening (#5322): ready, with how many
+    /// of its chats came back, or failed, with why none was put back.
+    pub fn telling_project_ready(mut self, ready: crate::projectready::Teller) -> Self {
+        self.ready = ready;
+        self
+    }
+
     /// Tells `smart` each step of a smart close in a plane this registry holds, so the window can
     /// draw the tab wrapping up and close it when its record lands (ADR 0064).
     pub fn telling_smart_close(mut self, smart: crate::smartclose::Teller) -> Self {
@@ -3099,18 +3144,20 @@ impl Planes {
         // waits for this one** ([`Self::opening`]): it then finds the plane held and sweeps
         // nothing, so no sweep ever runs beside a chat of a plane this app holds.
         let _opening = self.opening(&id);
-        if !self.map().contains_key(&id) {
-            (self.sweep)(&root);
-            // The app's own state an older purlis kept in the plane's state folder moves to the
-            // data home, once (#3718): before any chat is put back, so what arms them reads it
-            // there, and outside the registry's lock, as the sweep is.
-            let _ = purlis_core::appstate::move_out_of_the_plane(&root);
-        }
-
-        let mut open = self.map();
-        if let Some(already) = open.get(&id) {
+        if let Some(already) = self.map().get(&id) {
             return already.id.clone();
         }
+        (self.sweep)(&root);
+        // The app's own state an older purlis kept in the plane's state folder moves to the
+        // data home, once (#3718): before any chat is put back, so what arms them reads it
+        // there, and outside the registry's lock, as the sweep is.
+        let _ = purlis_core::appstate::move_out_of_the_plane(&root);
+        // **Everything from here to the insert is built outside the registry's lock too**
+        // (#5320): every command for every other project asks the registry for its plane first,
+        // so a lock held while this project is built made each of them wait on it. The turn
+        // taken above is what keeps a second open (or a close) of this root out meanwhile.
+        #[cfg(test)]
+        (self.building)(&root);
         // The credential files a brokered `secret exec` of this project left when the app was
         // stopped before it could remove them (#1407). Here, where no run of the project's can
         // be live: it is not open in this app.
@@ -3744,7 +3791,10 @@ impl Planes {
             }));
         }
         // A quit that began while this opened has let go of every project already, and nothing
-        // after it lets go of one (#1949): the project is let go of here, not held.
+        // after it lets go of one (#1949): the project is let go of here, not held. The flag is
+        // read under the registry's lock, which the quit's drain takes after setting it, so the
+        // project is either drained by the quit or let go of here.
+        let mut open = self.map();
         if self.letting_go.quitting() {
             drop(open);
             held.let_go(false);
@@ -3798,23 +3848,30 @@ impl Planes {
         //
         // **Nothing starts before the gate lets it** (#2004), on whichever thread starts them: a
         // gate that refuses leaves each chat registered and unstarted, and its record as it was.
+        //
+        // **And the window is told how it came out, once** (#5322): ready, with how many of its
+        // chats came back, or failed, with why none was put back.
         let gate = self.gate.clone();
-        let let_through = move |root: &Path| match &gate {
-            Some(gate) => gate()
-                .inspect_err(|why| {
+        let ready = Arc::clone(&self.ready);
+        let put_back = move |held: &Held, begun: Reopening| {
+            let outcome = match gate.as_ref().map_or(Ok(()), |gate| gate()) {
+                Ok(()) => held.finish_reopen(begun, STARTING),
+                Err(why) => {
                     tracing::warn!(
                         "purlis: plane {}: its chats are not put back: {why}",
-                        root.display()
+                        held.root().display()
                     );
-                })
-                .is_ok(),
-            None => true,
+                    crate::projectready::ProjectOutcome::Failed { error: why }
+                }
+            };
+            ready(crate::projectready::ProjectReady {
+                plane: held.id.clone(),
+                outcome,
+            });
         };
         if !self.restores_behind {
             let begun = held.begin_reopen(record, choice);
-            if let_through(held.root()) {
-                held.finish_reopen(begun, STARTING);
-            }
+            put_back(&held, begun);
             return;
         }
         let begun = held.begin_reopen(record, choice);
@@ -3822,23 +3879,19 @@ impl Planes {
         let begun = Mutex::new(Some(begun));
         let begun = Arc::new(begun);
         let taken = Arc::clone(&begun);
-        let through = let_through.clone();
+        let behind_put_back = put_back.clone();
         let spawned = std::thread::Builder::new()
             .name("purlis-restore".into())
             .spawn(move || {
                 let begun = taken.lock().unwrap_or_else(PoisonError::into_inner).take();
-                if let Some(begun) = begun
-                    && through(behind.root())
-                {
-                    behind.finish_reopen(begun, STARTING);
+                if let Some(begun) = begun {
+                    behind_put_back(&behind, begun);
                 }
             });
         if spawned.is_err() {
             let begun = begun.lock().unwrap_or_else(PoisonError::into_inner).take();
-            if let Some(begun) = begun
-                && let_through(held.root())
-            {
-                held.finish_reopen(begun, STARTING);
+            if let Some(begun) = begun {
+                put_back(&held, begun);
             }
         }
     }

@@ -23,7 +23,7 @@ use std::collections::HashSet;
 
 use serde_json::Value;
 
-use super::tree::{holds_any, holds_loosely};
+use super::scrub::{holds_any, holds_loosely};
 
 /// The styles read for each element laid out: an image in any of them is painted over, a filter
 /// (the one before last) may withhold the screenshot, and a reflection (the last) withholds it.

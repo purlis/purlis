@@ -6,12 +6,14 @@ import { join } from "node:path";
 import process from "node:process";
 import { $, $$, browser, expect } from "@wdio/globals";
 import { projectRoot } from "../acting.js";
+import { openChatList, pressMenuPath, ROW, SUB } from "../menus.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 import {
   OPENINGS,
   SKILLS_AT_THE_BAR,
   type Effort,
   harnessUnderTest,
+  openJudged,
   openVerdict,
   reasonProblem,
   useVerdict,
@@ -38,7 +40,9 @@ import { paneInFront, startAChat } from "../started.js";
  *   line, the two a persona's chat alone meets among them, is `purlis_skills`'s test
  *   (`every_reason_reads_as_one_line`).
  * - **The studio opens in under 300 ms with 200 skills**: from the press of the palette's row to
- *   the frame after the Library's first row is drawn (row L10 of the budgets of record).
+ *   the frame after the Library's first row is drawn (row L10 of the budgets of record). That
+ *   p95 is judged on a real machine, and always said; CI judges a coarser guard on the median
+ *   (`openJudged`, #4351).
  *
  * The same file runs on every harness: only the line a skill is typed as differs.
  */
@@ -117,9 +121,8 @@ async function typeInto(label: string, text: string, effort: Effort): Promise<vo
 
 /** The chat in front's Skills view, its Left out unfolded. */
 async function theSkillsViewUnfolded(): Promise<void> {
-  const chip = await $('[data-testid="pane-skills"]');
-  await chip.waitForDisplayed({ timeout: 20_000 });
-  await chip.click();
+  await openChatList();
+  await pressMenuPath(SUB.open, ROW.skills);
   await $('[data-testid="skills-view"]').waitForDisplayed({ timeout: 20_000 });
   const fold = await $('[data-fold="left-out:fold"]');
   await fold.waitForExist({
@@ -437,10 +440,14 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
       expect(problems).toEqual([]);
     });
 
-    it("opens the studio in under 300 ms", async () => {
-      const verdict = openVerdict(
-        await theOpenings((await tabNames()).filter((one) => one !== "Skill studio")),
+    it("opens the studio within what it is judged against here", async () => {
+      const openings = await theOpenings(
+        (await tabNames()).filter((one) => one !== "Skill studio"),
       );
+      // Only `CI=true`, what GitHub sets: anywhere else this is a real machine's run, and its bar.
+      const ci = process.env.CI === "true";
+      const verdict = openJudged(openings, { ci, platform: process.platform });
+      if (ci) report(`${openVerdict(openings).said}: said, not judged, on CI`);
       report(verdict.said);
       if (!verdict.met) throw new Error(`missed: ${verdict.said}`);
     });

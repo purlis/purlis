@@ -11,15 +11,15 @@ import {
   noTabs,
   openEmptyTab,
   openTab,
+  openNew,
   press,
-  startedInto,
   workspaceOf,
   type Tabs,
 } from "./tabs";
 
 /**
  * **The switch: a chat isn't a tab** (#4758). The strip's `+` opens a tab with one empty pane
- * (spec story 13), and a chat the person starts lands where a press would (story 12).
+ * (spec story 13). Where a chat the person starts goes is `tabs.opens.test.ts`.
  */
 
 const filedIn = (on: Record<number, string>) => (session: number) => on[session] ?? "ops";
@@ -99,17 +99,16 @@ describe("an empty tab of a workspace the plane no longer has (#4758)", () => {
   });
 });
 
-describe("a chat the person starts takes the focused pane (#4758; spec story 12)", () => {
-  it("lands in the + tab's empty pane, though the chat is filed on another strip", () => {
+describe("a chat the person starts in a + tab (#4758, #5289)", () => {
+  it("lands in its empty pane, though the chat is filed on another strip", () => {
     const before = openTab(noTabs(), 1, "1", "steward");
     const tabs = openEmptyTab(before, "ops");
     const plus = tabs.inFront ?? -1;
 
-    const landed = press(
+    const landed = openNew(
       tabs,
       { session: 2, chat: "2", who: "steward" },
       { filedIn: () => "alpha", frontOf: () => before.inFront },
-      startedInto(tabs),
     );
 
     expect(landed.tabs.inFront).toBe(plus);
@@ -117,9 +116,5 @@ describe("a chat the person starts takes the focused pane (#4758; spec story 12)
     expect(landed.tabs.byId[before.inFront ?? -1].layout).toMatchObject({
       content: { session: 1 },
     });
-  });
-
-  it("names no pane with no tab in front, so the start goes where a press would", () => {
-    expect(startedInto(noTabs())).toBeUndefined();
   });
 });

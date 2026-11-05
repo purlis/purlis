@@ -89,6 +89,8 @@ describe("a task's runner kept", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Discard for good" }));
     await waitFor(() => expect(asked).toContain("discard_fresh_runner"));
+    // A check of it may be under way, which takes minutes, and it goes only once that ends (#5312).
+    expect(await screen.findByText(/It goes once any check of it has ended/)).toBeTruthy();
   });
 
   it("says a runner its cluster lost, with Forget the runner", async () => {

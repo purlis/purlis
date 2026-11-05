@@ -819,6 +819,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_command",
     "pool_setup_create",
     "pool_setup_sign_ins_by_hand",
+    "pool_setup_move_runner",
     "pool_setup_sizes",
     "pool_setup_skip",
     "pool_setup_wake",
@@ -1418,6 +1419,9 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "worktree_done",
     "worktree_list",
     "worktree_of_chat",
+    // Each branch folder's state, asked once `worktree_list` has named them (#5321): a read,
+    // served as the list is.
+    "worktree_states",
     "write_layout",
 ];
 

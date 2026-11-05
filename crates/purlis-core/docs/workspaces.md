@@ -305,7 +305,7 @@ From a terminal or a chat, `purlis worktree` (alias `wt`):
 
     charter wt add <repo> <piece> [--base <branch>|HEAD] [-w <ws>]   # cut it; exit 2 if taken
     purlis worktree commit -m "<message>" [--all | <path>…]   # from a sandboxed chat inside the piece
-    purlis worktree update [--base <branch>] [--continue | --abort]   # from inside the piece
+    purlis worktree update [--base <branch>] [--merge [--take-base-baselines]] [--continue | --abort]   # from inside the piece
     purlis worktree push [--force-with-lease]   # from inside the piece
     charter wt done                          # from inside the piece: it is finished
     charter wt abandon "<why you stopped>"   # from inside the piece: it is given up
@@ -391,6 +391,14 @@ piece, these run in the app for a chat (and here from a terminal):
   marker, a submodule and a file marked for a content filter are refused there; finish those
   from your own terminal. For a sandboxed chat, an update that would write a file the chat's
   sandbox denies (an editor's tasks, a hook, an agent's settings) does not start, and names it.
+- `purlis worktree update --merge` brings the same base in as a merge instead (#5253). No commit
+  is rewritten, so where the branch is already pushed, a plain `purlis worktree push` follows.
+  It is refused, stops, goes on and goes back as the rebase does, and `--continue` and `--abort`
+  act only on a merge purlis started. With `--take-base-baselines`, a conflicted `.png` under a
+  `__screenshots__` folder takes the base's copy, or is removed where the base removed it, and
+  the merge goes on; CI redraws those. Every other conflict still stops. That is the one rule:
+  a chat cannot name other files to take, and no `-X theirs` is used. Nothing a repository
+  names runs: no hook, merge driver, filter, editor, signer or merge strategy.
 - `purlis worktree push` pushes the piece's own branch to its remote under its own name, after
   purlis's scan of what it would publish, never the branch the remote names its default.
   Where purlis's own `update` rewrote a branch that was already pushed, the push goes over the

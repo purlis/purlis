@@ -44,10 +44,16 @@
 //! that asks for nothing, in a browser already held to this login, is said to be logged in already. No
 //! sentence it answers carries a value.
 //!
-//! **A login a chat chose starts clean on its own site** (#5121, the person's ruling of 2026-11-05):
-//! once the browser is held to the login, and before anything is filled, every page showing those
-//! sites goes blank, the cookies they would be sent, a parent domain's too, and their service workers
-//! are gone, and the page is loaded again. Where that can't be done, nothing is filled. Other sites are left as they are.
+//! **Every login that fills starts clean on its own site** (#5272, the person's ruling of
+//! 2026-11-05): before the browser is held to the login, every page showing those sites goes blank
+//! and every other page is held still until the login answers, as nothing else could put back what
+//! goes. Once it's held, and before anything is filled, all they store is gone (the cookies they would be sent, a parent
+//! domain's too, their service workers, local storage, IndexedDB and caches), and the login's page
+//! loads in a new tab of its own, past the browser's HTTP cache, which has no way to clear one site.
+//! Where that can't be done, nothing is filled. Other sites are left as they are. A page that asks
+//! for nothing, in a browser holding this login, clears nothing, and a browser that has held nothing
+//! has nothing to clear ([`crate::drive::Login::clean_already`]). A form that doesn't appear on the
+//! clean load is [`Refusal::NoFormOnCleanLoad`], which leads to a new browser and to nothing else.
 //!
 //! **A login is a preset of secret fill** (#5121, the person's ruling SF-7 on #5096): a fill of the
 //! user name, a fill of the password and a press of submit, under the same rules as any fill. Each
@@ -69,7 +75,7 @@ use super::super::kept::Kept;
 use super::super::keys::key_events;
 use super::super::tree::NodeKey;
 use super::Browser;
-use super::fill::{GUARD_FIELD, spellings};
+use super::fill::GUARD_FIELD;
 use super::takeover::Carrying;
 use crate::drive::{Answer, Content, Driver, Hold, Login, Refusal, Why, lock};
 
@@ -162,6 +168,26 @@ pub struct LoginEnded {
     pub outcome: Result<Answer, Refusal>,
 }
 
+/// The pages held still while a login clears its sites and fills them, let go of as it's dropped.
+struct HeldStill<'a> {
+    browser: &'a Browser,
+    /// Each page, and its session: read then, as the person may have the browser by the time
+    /// they're let go of.
+    pages: Vec<(String, String)>,
+}
+
+impl Drop for HeldStill<'_> {
+    fn drop(&mut self) {
+        for (_, session) in &self.pages {
+            let _ = self.browser.devtools().call(
+                "Page.setWebLifecycleState",
+                json!({ "state": "active" }),
+                Some(session.as_str()),
+            );
+        }
+    }
+}
+
 /// A field of the login's page: the engine's handle on it, and the element it is.
 struct Found {
     object: String,
@@ -251,10 +277,12 @@ impl Browser {
             lease.driver = Driver::Agent;
             lock(&self.inner.state).refs.void();
         }
+        let ended = (lease.driver, lease.epoch);
+        drop(lease);
         Ok(LoginEnded {
-            driver: lease.driver,
-            epoch: lease.epoch,
-            outcome,
+            driver: ended.0,
+            epoch: ended.1,
+            outcome: self.kept_out(outcome),
         })
     }
 
@@ -263,12 +291,11 @@ impl Browser {
         let origin = login.origin.as_str();
         // What it fills is kept out before anything else, for the browser's life.
         let mut held = Kept::default();
-        let values: Vec<zeroize::Zeroizing<String>> = login
+        let values: Vec<&str> = login
             .user
             .iter()
             .map(|user| user.as_str())
             .chain(std::iter::once(login.password.as_str()))
-            .flat_map(spellings)
             .collect();
         held.run(&values);
         lock(&self.inner.state).keep_out_everywhere(&held);
@@ -277,19 +304,27 @@ impl Browser {
                 "purlis could not let this browser reach {origin} ({why}), so nothing was filled"
             ))
         })?;
-        let target = self.own_page_at(&login.address)?;
+        // What a browser that may hold an earlier session shows is no use, unless the login may
+        // be held already: it's not even loaded.
+        let target = if login.clean_already || login.only_if_asked {
+            self.own_page_at(&login.address)?
+        } else {
+            let target = self.own_blank_page()?;
+            lock(&self.inner.state).current = Some(target.clone());
+            target
+        };
         let within = self.inner.limits.login_within;
         let deadline = Instant::now() + within;
         // Whether the page shows its form: unknown (`None`) while it cannot be read.
-        let shows_form = |this: &Self| -> Result<Option<bool>, Refusal> {
-            if !this.on_origin(&target, origin) {
+        let shows_form = |this: &Self, page: &str| -> Result<Option<bool>, Refusal> {
+            if !this.on_origin(page, origin) {
                 return Ok(Some(false));
             }
-            let password = this.shows(&target, PASSWORD_FIELD)?;
+            let password = this.shows(page, PASSWORD_FIELD)?;
             if password == Some(true) || login.user.is_none() {
                 return Ok(password);
             }
-            Ok(match this.shows(&target, NAME_FIELD)? {
+            Ok(match this.shows(page, NAME_FIELD)? {
                 Some(true) => Some(true),
                 name => password.and(name),
             })
@@ -300,7 +335,7 @@ impl Browser {
         // that cannot be read. One whose form is on another origin (#5014) must stay on its own
         // page's origin for a fifth of the wait, as a page may send the browser to its form by
         // script once it has loaded.
-        if login.only_if_asked && shows_form(self)? == Some(false) {
+        if login.only_if_asked && shows_form(self, &target)? == Some(false) {
             let stays = match login.back_to {
                 Some(_) => within / 5,
                 None => LOOK_AGAIN,
@@ -312,7 +347,7 @@ impl Browser {
                 // A page that failed to load, or went elsewhere, says nothing of a session.
                 let on_its_page =
                     self.on_origin(&target, login.back_to.as_deref().unwrap_or(origin));
-                if !on_its_page || shows_form(self)? != Some(false) {
+                if !on_its_page || shows_form(self, &target)? != Some(false) {
                     asks_nothing = false;
                     break;
                 }
@@ -332,32 +367,27 @@ impl Browser {
                 return Ok(answer);
             }
         }
-        loop {
-            let shown = shows_form(self)?;
-            if shown == Some(true) {
-                break;
-            }
-            if Instant::now() >= deadline {
-                return Err(if shown.is_none() {
-                    not_logged_in(format!(
-                        "purlis could not read the login page on {origin} within {} seconds, so \
-                         nothing was filled",
-                        within.as_secs()
-                    ))
-                } else if self.on_origin(&target, origin) {
-                    not_logged_in(format!(
-                        "no login form appeared on {origin} within {} seconds, so nothing was \
-                         filled",
-                        within.as_secs()
-                    ))
-                } else {
-                    not_logged_in(format!(
-                        "the login page is not on {origin}, so nothing was filled"
-                    ))
-                });
-            }
-            self.pause(LOOK_AGAIN)?;
+        // A browser that has held nothing has its first load clean, so the form is looked for
+        // there, and it's held once one shows. One that may hold this login clears only for a form
+        // it sees: a page that can't be read, or that went elsewhere, says nothing of its session
+        // (#5272). Any other is held first, and looks only on the clean load: what it shows now is
+        // an earlier session's, whatever it shows.
+        if login.clean_already || login.only_if_asked {
+            self.wait_for_form(&target, origin, deadline, &|page| shows_form(self, page))?;
         }
+        // No page but the login's own runs while it's cleared and filled, or it could put back
+        // what goes. Let go of as the login answers, whatever it answers.
+        let mut still = if login.clean_already {
+            None
+        } else {
+            let not_cleared = |why: String| not_cleared(origin, &why);
+            self.blank_pages_of(&target, login).map_err(not_cleared)?;
+            let held = self.hold_still_all_but(&target).map_err(not_cleared)?;
+            if self.a_page_of_its_sites_besides(&target, login) {
+                return Err(not_cleared("a page of its came back".to_owned()));
+            }
+            Some(held)
+        };
         // From here on, the browser holds the login.
         hold.bind().map_err(|why| {
             not_logged_in(format!(
@@ -369,43 +399,19 @@ impl Browser {
         self.inner
             .copy_withheld
             .store(true, std::sync::atomic::Ordering::SeqCst);
-        // A login a chat chose starts clean on its own site (#5121), held already, and before
-        // anything watches this page leave, as it's loaded again.
-        if login.suggested {
-            // No document of those sites is left to put back what goes.
-            self.blank_pages_of(&target, login).map_err(|why| {
-                not_logged_in(format!(
-                    "purlis could not clear {origin} before the login ({why}), so nothing was \
-                     filled"
-                ))
-            })?;
-            self.clear_sites(&target, login).map_err(|why| {
-                not_logged_in(format!(
-                    "purlis could not clear {origin} before the login ({why}), so nothing was \
-                     filled"
-                ))
-            })?;
-            let before = self.main_document(&target);
-            let session = self.page_session(&target)?;
-            {
-                let _addressing = self.addressing(&target, Why::Addressed);
-                self.acting_on(&target, || self.navigate(&session, &login.address))?;
-            }
-            lock(&self.inner.state).current = Some(target.clone());
-            self.wait_until(within, 1, || {
-                Ok(self.main_document(&target) != before && shows_form(self)? == Some(true))
-            })
-            .map_err(|why| {
-                or_said(
-                    why,
-                    format!(
-                        "no login form appeared on {origin} within {} seconds of clearing it, so \
-                         nothing was filled: a login page that needs another site can't load it \
-                         once the browser is held to the login",
-                        within.as_secs()
-                    ),
-                )
-            })?;
+        // Every login that fills starts clean on its own site (#5272), held already, and before
+        // anything watches this page leave.
+        let target = if login.clean_already {
+            target
+        } else {
+            self.clean_load(&target, login, &|page| shows_form(self, page))?
+        };
+        // A page that opened since runs no more than the rest.
+        if let Some(held) = &mut still
+            && let Err(why) = self.hold_still_any_new(&target, held)
+        {
+            self.cache_back_on(&target);
+            return Err(not_cleared(origin, &why));
         }
         // Its holder is told once this page leaves the form's origin (#4995): back on the
         // login's page's, or anywhere else.
@@ -424,6 +430,7 @@ impl Browser {
                 Some(&session),
             );
         }
+        self.cache_back_on(&target);
         if done.is_err() {
             if self.cut() {
                 // The person took the browser over: what purlis filled is cleared as they hand
@@ -436,19 +443,171 @@ impl Browser {
         done
     }
 
+    /// Waits for `target`'s page to show its form until `deadline`, or says why it didn't.
+    fn wait_for_form(
+        &self,
+        target: &str,
+        origin: &str,
+        deadline: Instant,
+        shows_form: &dyn Fn(&str) -> Result<Option<bool>, Refusal>,
+    ) -> Result<(), Refusal> {
+        let within = self.inner.limits.login_within;
+        loop {
+            let shown = shows_form(target)?;
+            if shown == Some(true) {
+                return Ok(());
+            }
+            if Instant::now() >= deadline {
+                return Err(if shown.is_none() {
+                    not_logged_in(format!(
+                        "purlis could not read the login page on {origin} within {} seconds, so \
+                         nothing was filled",
+                        within.as_secs()
+                    ))
+                } else if self.on_origin(target, origin) {
+                    not_logged_in(format!(
+                        "no login form appeared on {origin} within {} seconds, so nothing was \
+                         filled",
+                        within.as_secs()
+                    ))
+                } else {
+                    not_logged_in(format!(
+                        "the login page is not on {origin}, so nothing was filled"
+                    ))
+                });
+            }
+            self.pause(LOOK_AGAIN)?;
+        }
+    }
+
+    /// **Clears the login's sites and loads its page on nothing of before** (module docs): the page
+    /// that shows the form, in a new tab. `opened` is the tab the login opened, and it goes: what a
+    /// tab holds for its own life can't be cleared by a site, and it loaded in the state cleared.
+    fn clean_load(
+        &self,
+        opened: &str,
+        login: &Login,
+        shows_form: &dyn Fn(&str) -> Result<Option<bool>, Refusal>,
+    ) -> Result<String, Refusal> {
+        let origin = login.origin.as_str();
+        let within = self.inner.limits.login_within;
+        let not_cleared = |why: String| not_cleared(origin, &why);
+        self.clear_sites(opened, login).map_err(not_cleared)?;
+        let target = self.own_blank_page()?;
+        let session = self.page_session(&target)?;
+        self.devtools()
+            .call(
+                "Network.setCacheDisabled",
+                json!({ "cacheDisabled": true }),
+                Some(&session),
+            )
+            .map_err(|_| not_cleared("its cache could not be passed by".to_owned()))?;
+        lock(&self.inner.state).current = Some(target.clone());
+        let _ = self
+            .devtools()
+            .call("Target.closeTarget", json!({ "targetId": opened }), None);
+        let loaded = {
+            let _addressing = self.addressing(&target, Why::Addressed);
+            self.acting_on(&target, || self.navigate(&session, &login.address))
+        }
+        .and_then(|_| self.wait_until(within, 1, || Ok(shows_form(&target)? == Some(true))))
+        .map_err(|why| match why {
+            Refusal::Unknown => Refusal::NoFormOnCleanLoad(format!(
+                "no login form appeared on {origin} within {} seconds of clearing it, so \
+                 nothing was filled",
+                within.as_secs()
+            )),
+            other => other,
+        });
+        if let Err(why) = loaded {
+            self.cache_back_on(&target);
+            return Err(why);
+        }
+        if self.a_page_of_its_sites_besides(&target, login) {
+            self.cache_back_on(&target);
+            return Err(not_cleared("a page of its came back".to_owned()));
+        }
+        Ok(target)
+    }
+
+    /// Whether `page` shows a document of the login's sites.
+    fn on_its_sites(&self, page: &str, login: &Login) -> bool {
+        self.document_origin(page).is_some_and(|here| {
+            here == login.origin || login.back_to.as_deref() == Some(here.as_str())
+        })
+    }
+
+    /// Whether any page but `target` shows a document of the login's sites.
+    fn a_page_of_its_sites_besides(&self, target: &str, login: &Login) -> bool {
+        self.targets()
+            .iter()
+            .any(|page| page != target && self.on_its_sites(page, login))
+    }
+
+    /// **Holds every page but `target` still** (module docs), for as long as what it answers lives.
+    /// One that won't is a failure, and those already held are let go of.
+    fn hold_still_all_but(&self, target: &str) -> Result<HeldStill<'_>, String> {
+        let mut still = HeldStill {
+            browser: self,
+            pages: Vec::new(),
+        };
+        self.hold_still_any_new(target, &mut still)?;
+        Ok(still)
+    }
+
+    /// Holds still every page but `target` that `still` doesn't hold yet, until none is left: its
+    /// loads stopped, as a load in flight would run on.
+    fn hold_still_any_new(&self, target: &str, still: &mut HeldStill<'_>) -> Result<(), String> {
+        let wont = |_| "a page of this browser would not hold still".to_owned();
+        loop {
+            let new: Vec<String> = self
+                .targets()
+                .into_iter()
+                .filter(|page| page != target && !still.pages.iter().any(|(held, _)| held == page))
+                .collect();
+            if new.is_empty() {
+                return Ok(());
+            }
+            for page in new {
+                let session = self.page_session(&page).map_err(|why| why.to_string())?;
+                let on = Some(session.as_str());
+                self.devtools()
+                    .call("Page.stopLoading", json!({}), on)
+                    .map_err(wont)?;
+                self.devtools()
+                    .call(
+                        "Page.setWebLifecycleState",
+                        json!({ "state": "frozen" }),
+                        on,
+                    )
+                    .map_err(wont)?;
+                still.pages.push((page, session));
+            }
+        }
+    }
+
+    /// Lets the HTTP cache serve `target`'s page again, whoever drives it now.
+    fn cache_back_on(&self, target: &str) {
+        let session = lock(&self.inner.state)
+            .page(target)
+            .and_then(|page| page.session.clone());
+        if let Some(session) = session {
+            let _ = self.devtools().call(
+                "Network.setCacheDisabled",
+                json!({ "cacheDisabled": false }),
+                Some(session.as_str()),
+            );
+        }
+    }
+
     /// **Sends every page showing a document of the login's sites to a blank one** (module docs),
     /// `target` too, and waits until none shows one: a page there could put back what's cleared.
     /// Pages of other sites are left as they are.
     fn blank_pages_of(&self, target: &str, login: &Login) -> Result<(), String> {
-        let on_its_sites = |this: &Self, page: &str| {
-            this.document_origin(page).is_some_and(|here| {
-                here == login.origin || login.back_to.as_deref() == Some(here.as_str())
-            })
-        };
         let pages: Vec<String> = self
             .targets()
             .into_iter()
-            .filter(|page| page == target || on_its_sites(self, page))
+            .filter(|page| page == target || self.on_its_sites(page, login))
             .collect();
         for page in &pages {
             let session = self.page_session(page).map_err(|why| why.to_string())?;
@@ -462,14 +621,14 @@ impl Browser {
                 .map_err(|_| "a page of its would not leave".to_owned())?;
         }
         self.wait_until(self.inner.limits.login_within, 1, || {
-            Ok(!pages.iter().any(|page| on_its_sites(self, page)))
+            Ok(!pages.iter().any(|page| self.on_its_sites(page, login)))
         })
         .map_err(|_| "a page of its would not leave".to_owned())
     }
 
-    /// **Clears what the login's sites hold** (module docs): the service workers of its origin and
-    /// of its page's where that's another's, and every cookie either would be sent. Read again
-    /// after: one that's still there is a failure.
+    /// **Clears what the login's sites hold** (module docs): all that its origin and its page's,
+    /// where that's another's, store, and every cookie either would be sent. Read again after: one
+    /// that's still there is a failure.
     fn clear_sites(&self, target: &str, login: &Login) -> Result<(), String> {
         let session = self.page_session(target).map_err(|why| why.to_string())?;
         let on = Some(session.as_str());
@@ -480,10 +639,10 @@ impl Browser {
             self.devtools()
                 .call(
                     "Storage.clearDataForOrigin",
-                    json!({ "origin": origin, "storageTypes": "service_workers" }),
+                    json!({ "origin": origin, "storageTypes": "all" }),
                     on,
                 )
-                .map_err(|_| format!("its service workers on {origin} did not go"))?;
+                .map_err(|_| format!("what {origin} stores did not go"))?;
         }
         let hosts: Vec<&str> = origins.iter().filter_map(|one| host_of(one)).collect();
         if hosts.len() != origins.len() {
@@ -1028,6 +1187,13 @@ pub(super) fn reaches(domain: &str, host: &str) -> bool {
         Some(parent) => host == parent || host.ends_with(&format!(".{parent}")),
         None => host == domain,
     }
+}
+
+/// What a login is refused with where `origin` couldn't be cleared for it.
+fn not_cleared(origin: &str, why: &str) -> Refusal {
+    not_logged_in(format!(
+        "purlis could not clear {origin} before the login ({why}), so nothing was filled"
+    ))
 }
 
 fn not_logged_in(why: String) -> Refusal {

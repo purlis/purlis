@@ -649,7 +649,8 @@ fn a_raised_limit_is_held_to_what_a_runner_before_1_64_stages() {
     kept.limits = Chosen::default().with(LimitId::ProfileFiles, Some(9000));
 
     let refused = for_a_runner_of(version(63), &kept).unwrap_err().said;
-    assert!(refused.contains("send less than 8192 files"), "{refused}");
+    assert!(refused.contains("takes at most 8192 files"), "{refused}");
+    assert!(refused.contains("older purlis"), "{refused}");
     assert!(!refused.contains("raise it"), "{refused}");
 
     let sent = for_a_runner_of(version(64), &kept).unwrap();

@@ -72,6 +72,58 @@ describe("the rail family (#2915)", () => {
     expect(tab).toHaveAccessibleDescription("2 waiting, saving is blocked");
   });
 
+  it("marks a project that is loading, busy and saying so, not by colour alone (#5323)", () => {
+    const { rerender } = render(
+      <Rail name="Projects" tabs={["a"]}>
+        <RailProject
+          id="a"
+          role="tab"
+          name="charter"
+          current={false}
+          load={{ loading: true, says: "Loading…" }}
+        />
+      </Rail>,
+    );
+    const tab = screen.getByRole("tab", { name: "charter" });
+    expect(tab.querySelector('[data-part="loading"]')).not.toBeNull();
+    expect(tab).toHaveAttribute("aria-busy", "true");
+    expect(tab).toHaveAccessibleDescription("Loading…");
+
+    // Back, with only some of its chats: no mark, and it says how many.
+    rerender(
+      <Rail name="Projects" tabs={["a"]}>
+        <RailProject
+          id="a"
+          role="tab"
+          name="charter"
+          current={false}
+          load={{ loading: false, says: "2 of 3 chats back" }}
+        />
+      </Rail>,
+    );
+    expect(tab.querySelector('[data-part="loading"]')).toBeNull();
+    expect(tab).not.toHaveAttribute("aria-busy");
+    expect(tab).toHaveAccessibleDescription("2 of 3 chats back");
+  });
+
+  it("says a project's load as its tooltip's second line (#5323)", async () => {
+    render(
+      <Rail name="Projects" tabs={["a"]}>
+        <RailProject
+          id="a"
+          role="tab"
+          name="charter"
+          current={false}
+          load={{ loading: true, says: "Still loading…" }}
+        />
+      </Rail>,
+    );
+    screen.getByRole("tab", { name: "charter" }).focus();
+    fireEvent.pointerEnter(screen.getByRole("tab", { name: "charter" }));
+    const tooltip = await screen.findByRole("tooltip", {}, { timeout: 2000 });
+    expect(tooltip.textContent).toBe("charterStill loading…");
+  });
+
   it("keeps a project's name first in its tooltip, its unsaved work the second line (S1)", async () => {
     render(
       <Rail name="Projects" tabs={["a"]}>

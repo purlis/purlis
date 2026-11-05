@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Search</title></head>
+<body>
+  <h1>Search</h1>
+  <label>Search for <input name="q" id="q"></label>
+  <p>Plain: <span id="plain"></span></p>
+  <p>Encoded: <span id="encoded"></span></p>
+  <p>Encoded twice: <span id="twice"></span></p>
+  <p>Lower hex: <span id="lower"></span></p>
+  <p>Form: <span id="form"></span></p>
+  <p>Base64: <span id="base64"></span></p>
+  <p>Base64 for an address: <span id="urlsafe"></span></p>
+  <p>Base64 of a larger text: <span id="inside"></span></p>
+  <p>Base64 of a larger text, shifted: <span id="shifted"></span></p>
+  <p>Base64 of a larger text, shifted again: <span id="again"></span></p>
+  <a id="link" href="/nowhere">A link</a>
+  <script>
+    // A page that sends and shows what its field holds everywhere it can, as an autocomplete
+    // does and more: in requests that stay open, its address, its title, its console, a
+    // download's name and its text, in each form a page commonly writes it.
+    const shown = (id, text) => { document.getElementById(id).textContent = text; };
+    const send = (address) => {
+      const request = new XMLHttpRequest();
+      request.open('GET', address);
+      request.send();
+    };
+    document.getElementById('q').addEventListener('input', (event) => {
+      const value = event.target.value;
+      const encoded = encodeURIComponent(value);
+      const form = new URLSearchParams({ q: value }).toString().slice(2);
+      send('/stays-open?q=' + encoded);
+      send('/stays-open/' + encoded);
+      history.replaceState(null, '', '?q=' + form);
+      document.title = 'Results for ' + value;
+      console.log(value);
+      console.error(encoded);
+      const save = document.createElement('a');
+      save.href = URL.createObjectURL(new Blob(['report']));
+      save.download = value + '.txt';
+      document.body.append(save);
+      save.click();
+      save.remove();
+      const base64 = btoa(value);
+      shown('plain', value);
+      shown('encoded', encoded);
+      shown('twice', encodeURIComponent(encoded));
+      shown('lower', encoded.replace(/%[0-9A-F]{2}/g, (hex) => hex.toLowerCase()));
+      shown('form', form);
+      shown('base64', base64);
+      shown('urlsafe', base64.replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', ''));
+      shown('inside', btoa('q=' + value + '&page=1'));
+      shown('shifted', btoa('qu=' + value + '&page=1'));
+      shown('again', btoa('que=' + value + '&page=1'));
+      document.getElementById('link').href = '/results/' + encoded;
+    });
+  </script>
+</body></html>

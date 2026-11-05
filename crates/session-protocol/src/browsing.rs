@@ -382,7 +382,7 @@ pub struct BrowserReach {
     pub open_web: bool,
     /// **The sites the person allowed when this browser's chat asked** (1.74, #5230, SF-14), each
     /// as `host:port`: a page holding a secret may leave for one by its server's redirect, as it
-    /// may for a site the browser was on. Absent, none.
+    /// may for the site its sign-in began from. Absent, none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub answered: Vec<String>,
 }
@@ -487,8 +487,8 @@ pub struct LogIn {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity: Option<String>,
     /// **A chat chose this page and these keys** (#4595): a user name goes only into a field
-    /// that says it's one, or beside a password field, and from 1.73 (#5121) the login starts
-    /// clean on its own site. It isn't sent to a host before 1.73.
+    /// that says it's one, or beside a password field. Every login starts clean on its own site
+    /// from 1.75 (#5272), whoever chose it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub suggested: bool,
     /// **The origin of the login's form, where it isn't the page's own** (1.70, #4995): the one

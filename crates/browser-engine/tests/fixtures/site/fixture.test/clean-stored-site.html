@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>A site</title></head>
+<body>
+  <h1 id="said">Reading</h1>
+  <form id="form" action="account.html" method="get" hidden>
+    <label><span id="label">Password</span> <input type="password" name="password" id="password"></label>
+    <button type="submit">Go</button>
+  </form>
+  <script>
+    // To a session found in anything it stores, it's a settings page.
+    (async () => {
+      let earlier = localStorage.getItem('session') !== null
+        || sessionStorage.getItem('session') !== null;
+      earlier = earlier || await new Promise((done) => {
+        const open = indexedDB.open('sessions', 1);
+        open.onupgradeneeded = () => open.result.createObjectStore('sessions');
+        open.onerror = () => done(false);
+        open.onsuccess = () => {
+          const got = open.result.transaction('sessions').objectStore('sessions').get('session');
+          got.onsuccess = () => { const found = got.result !== undefined; open.result.close(); done(found); };
+          got.onerror = () => done(false);
+        };
+      });
+      if (self.caches) {
+        earlier = earlier || await (await caches.open('sessions')).match('/session') !== undefined;
+      }
+      const form = document.getElementById('form');
+      document.getElementById('said').textContent = earlier ? 'Settings' : 'Sign in';
+      if (earlier) {
+        document.getElementById('label').textContent = 'Token';
+        form.addEventListener('submit', (event) => {
+          event.preventDefault();
+          document.getElementById('password').remove();
+          document.getElementById('said').textContent = 'Kept for the earlier session';
+        });
+      }
+      form.hidden = false;
+    })();
+  </script>
+</body></html>

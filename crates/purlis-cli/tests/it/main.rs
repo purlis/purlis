@@ -36,6 +36,7 @@ mod a_judge_is_refused_a_read_outside_its_folder;
 mod a_permission_prompt_is_answered_from_the_window;
 mod a_pools_limits_at_the_command_line;
 mod a_profile_recorded_on_a_pool_at_the_command_line;
+mod a_profile_taken_off_a_pool_at_the_command_line;
 mod a_project_charter_cannot_write_is_read_only;
 mod a_proposed_change_is_handed_to_the_app;
 mod a_refusal_names_the_kind_and_never_the_credential;

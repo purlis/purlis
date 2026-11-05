@@ -115,13 +115,14 @@ export interface ButtonProps
   children?: ReactNode;
 }
 
-/** The variants a button drawn inline takes: the ghosts, which draw no ground (#3264). */
-export type InlineVariant = Extract<ButtonVariant, "quiet" | "ghost">;
+/** The variants a button drawn inline takes: the ghosts, which draw no ground (#3264), and the
+ *  soft warning, whose ground an inline button leaves off, its words saying it (#5204). */
+export type InlineVariant = Extract<ButtonVariant, "quiet" | "ghost" | "warning-soft">;
 
 /**
  * **Words in a line of words** (#3264): as tall as the line, no box padding, cut to an ellipsis
  * where the line squeezes it (a breadcrumb's crumb). A target inline in text is exempt from the
- * target size (WCAG 2.5.8). **Only a ghost is drawn inline**: a button with a ground of its own
+ * target size (WCAG 2.5.8). **Only a ghost or a soft warning is drawn inline**: a button with a ground of its own
  * (the plain, the suggested, a danger answer) would have it tight against its letters, so any
  * other variant is a type error. Words only: an `IconButton` and a `ToggleButton` take no
  * `inline`.

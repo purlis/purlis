@@ -807,6 +807,46 @@ fn a_login_of_another_site_is_refused_while_a_page_holding_a_secret_holds_the_br
     assert!(done.is_ok() && ran, "that very site goes ahead");
 }
 
+/// #5272: only a browser with nothing behind it skips the clearing: an act of anyone's, a login tried
+/// or a kept login it opened from is something to clear.
+#[test]
+fn only_a_browser_with_nothing_behind_it_has_held_nothing() {
+    let home = tempfile::tempdir().unwrap();
+    let new = || super::Keeping::new(home.path(), home.path());
+    assert!(new().held_nothing());
+    let acted = new();
+    acted.browsed();
+    assert!(!acted.held_nothing(), "an act");
+    let mut tried = new();
+    tried.tried(None);
+    assert!(!tried.held_nothing(), "a login tried");
+    let mut opened = new();
+    opened.opened_from = Some(wire::KeptLogin {
+        profile: "p".into(),
+        persona: "q".into(),
+        login: "l".into(),
+        identity: "i".into(),
+        address: "https://shop.example.test/".into(),
+    });
+    assert!(!opened.held_nothing(), "a kept login");
+}
+
+/// #5272: what a host hands the engine is never "clean already" by itself: it's found out.
+#[test]
+fn a_logins_address_says_nothing_of_whether_it_is_clean_already() {
+    let (login, _) = super::login_of(&wire::LogIn {
+        address: "https://shop.example.test/login".to_owned(),
+        user: None,
+        password: wire::Secret::new("word".to_owned()),
+        keep: None,
+        identity: None,
+        suggested: false,
+        form: None,
+    })
+    .unwrap();
+    assert!(!login.clean_already);
+}
+
 /// #5121: a login counts as signed in, for a later call, only where it answered with the browser
 /// held to its page.
 #[test]
@@ -1306,6 +1346,31 @@ fn a_browser_opened_from_its_store_keeps_it_however_it_browsed_since() {
 
     assert_eq!(it.keep(&kept_login()), None);
     assert!(it.writes.is_some());
+}
+
+/// #5272: a browser whose login moved on writes nothing it cleared over its store, and leaves it for
+/// the new browser to keep.
+#[test]
+fn a_browser_whose_form_did_not_appear_on_its_clean_load_lets_go_of_its_store() {
+    let base = tempfile::tempdir().unwrap();
+    let home = base.path().join("data");
+    let keyring = std::sync::Arc::new(crate::secrets::keyring::FileStore::at(
+        base.path().join("keyring.json"),
+    ));
+    let folder = browsers_in(&home).join("opened");
+    let mut it = keeping(&home, &folder, &keyring);
+    it.open(&kept_login()).unwrap();
+    assert_eq!(it.keep(&kept_login()), None);
+    assert!(it.writes.is_some());
+
+    it.no_form_on_clean_load();
+
+    assert!(it.writes.is_none());
+    let next = browsers_in(&home).join("next");
+    let mut clean = keeping(&home, &next, &keyring);
+    clean.tried(Some(&kept_login()));
+    assert_eq!(clean.keep(&kept_login()), None, "the new browser keeps it");
+    assert!(clean.writes.is_some());
 }
 
 #[test]

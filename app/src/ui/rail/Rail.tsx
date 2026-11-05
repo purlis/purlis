@@ -87,6 +87,10 @@ export interface RailProjectProps extends Drawn {
   /** Its colour, a name of the theme's palette (`projectColour.ts`), and the tokens it draws
    *  in it: its monogram's and its ground's. Absent draws the accent. */
   colour?: { colour: string | undefined; tint: Record<string, string> };
+  /** How its load is going at a launch (#5323): `loading` draws the loading mark and marks it
+   *  busy; `says` is said as its description and its tooltip's second line ("Loading…", "Still
+   *  loading…", "2 of 3 chats back"). Absent, it is loaded and says nothing of it. */
+  load?: { loading: boolean; says?: string };
 }
 
 /**
@@ -101,12 +105,14 @@ export function RailProject({
   waiting = 0,
   unsaved,
   colour,
+  load,
   ref,
   style,
   ...handed
 }: RailProjectProps) {
   const marked = useMarked(handed, current);
   const said = [
+    load?.says,
     waiting > 0 ? `${waiting} waiting` : undefined,
     unsaved === undefined ? undefined : unsaved.blocked ? "saving is blocked" : "unsaved work",
   ].filter((one) => one !== undefined);
@@ -121,54 +127,64 @@ export function RailProject({
       .filter(Boolean)
       .join(" ") || undefined;
   return (
-    // Its name first, as an icon button's tooltip is, and what the Saving tab would say of its
-    // unsaved work as the second line (R89, S1). The two lines come from the tooltip family's
-    // icon-only rule (`Tooltip.tsx`: a button with no words of its own and an aria-label puts
-    // the label first and `tip` under it), so the button must keep showing no words of its own.
-    <Tooltip tip={unsaved?.says ?? name}>
-      <button
-        type="button"
-        {...marked}
-        ref={ref}
-        aria-label={name}
-        aria-describedby={describedBy}
-        data-scope="rail"
-        data-part="button"
-        data-variant="project"
-        data-colour={colour?.colour}
-        style={{ ...style, ...colour?.tint } as CSSProperties}
-      >
-        {said.length > 0 && (
-          <span id={saidId} hidden aria-hidden="true">
-            {said.join(", ")}
-          </span>
-        )}
-        {/* Drawn by the stylesheet from their attributes, so the button holds no words but its
-            name: its letters and its count are marks, and its name and description say them. */}
-        <span
+    <>
+      {/* Its description, beside the button and not in it: words inside it would be words of its
+        own to the tooltip family, which takes a tip they repeat as said already (#5323). */}
+      {said.length > 0 && (
+        <span id={saidId} hidden aria-hidden="true">
+          {said.join(", ")}
+        </span>
+      )}
+      {/* Its name first, as an icon button's tooltip is, and how its load is going or what the
+        Saving tab would say of its unsaved work as the second line (R89, S1, #5323). The two
+        lines come from the tooltip family's icon-only rule (`Tooltip.tsx`: a button with no
+        words of its own and an aria-label puts the label first and `tip` under it), so the
+        button must keep showing no words of its own. */}
+      <Tooltip tip={load?.says ?? unsaved?.says ?? name}>
+        <button
+          type="button"
+          {...marked}
+          ref={ref}
+          aria-label={name}
+          aria-describedby={describedBy}
+          aria-busy={load?.loading ? true : undefined}
           data-scope="rail"
-          data-part="monogram"
-          data-letters={monogramOf(name)}
-          aria-hidden="true"
-        />
-        {waiting > 0 && (
+          data-part="button"
+          data-variant="project"
+          data-colour={colour?.colour}
+          style={{ ...style, ...colour?.tint } as CSSProperties}
+        >
+          {/* Drawn by the stylesheet from their attributes, so the button holds no words but its
+            name: its letters and its count are marks, and its name and description say them. */}
           <span
             data-scope="rail"
-            data-part="badge"
-            data-count={waiting > 99 ? "99+" : String(waiting)}
+            data-part="monogram"
+            data-letters={monogramOf(name)}
             aria-hidden="true"
           />
-        )}
-        {unsaved !== undefined && (
-          <span
-            data-scope="rail"
-            data-part="unsaved"
-            data-blocked={unsaved.blocked ? "" : undefined}
-            aria-hidden="true"
-          />
-        )}
-      </button>
-    </Tooltip>
+          {/* Its loading mark (#5323): a dashed ring inside the button, which a shape tells apart
+            from the current one's solid ring and not its colour alone; its words are its
+            description's. */}
+          {load?.loading && <span data-scope="rail" data-part="loading" aria-hidden="true" />}
+          {waiting > 0 && (
+            <span
+              data-scope="rail"
+              data-part="badge"
+              data-count={waiting > 99 ? "99+" : String(waiting)}
+              aria-hidden="true"
+            />
+          )}
+          {unsaved !== undefined && (
+            <span
+              data-scope="rail"
+              data-part="unsaved"
+              data-blocked={unsaved.blocked ? "" : undefined}
+              aria-hidden="true"
+            />
+          )}
+        </button>
+      </Tooltip>
+    </>
   );
 }
 

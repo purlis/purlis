@@ -157,8 +157,9 @@ pub fn worktree_remove_args(args: &Map<String, Value>) -> Result<(String, String
     Ok((name("repo")?, name("piece")?, delete_branch))
 }
 
-/// What [`WORKTREE_UPDATE`] is asked to do: `start` (the default), `continue` or `abort`, and
-/// for a branch folder's start, the `base` branch.
+/// What [`WORKTREE_UPDATE`] is asked to do: `start` (the default), `merge`, `continue` or
+/// `abort`; for a branch folder's start or merge, the `base` branch; and for a merge, whether a
+/// conflicted screenshot baseline takes the base's copy.
 pub fn worktree_update_args(
     args: &Map<String, Value>,
 ) -> Result<crate::hookwire::UpdateStep, String> {
@@ -171,16 +172,28 @@ pub fn worktree_update_args(
     let step = match args.get("step") {
         None | Some(Value::Null) => "start",
         Some(Value::String(step)) => step.as_str(),
-        Some(_) => return Err("step is start, continue or abort".to_owned()),
+        Some(_) => return Err("step is start, merge, continue or abort".to_owned()),
     };
+    let take_base_baselines = match args.get("take_base_baselines") {
+        None | Some(Value::Null) => false,
+        Some(Value::Bool(take)) => *take,
+        Some(_) => return Err("take_base_baselines is true or false".to_owned()),
+    };
+    if take_base_baselines && step != "merge" {
+        return Err("take_base_baselines is taken only when a merge starts".to_owned());
+    }
     match (step, base) {
         ("start", base) => Ok(UpdateStep::Start { base }),
+        ("merge", base) => Ok(UpdateStep::Merge {
+            base,
+            take_base_baselines,
+        }),
         ("continue" | "abort", Some(_)) => {
             Err("base is taken only when an update starts".to_owned())
         }
         ("continue", None) => Ok(UpdateStep::Continue),
         ("abort", None) => Ok(UpdateStep::Abort),
-        _ => Err("step is start, continue or abort".to_owned()),
+        _ => Err("step is start, merge, continue or abort".to_owned()),
     }
 }
 
@@ -744,21 +757,29 @@ pub static TOOLS: [Tool; 29] = [
                       its base (a branch folder), or runs the window's Update (the root). \
                       Refused with uncommitted changes, or where it would overwrite a file that \
                       is not committed. A conflict stops it and names the files: resolve them, \
-                      then call it with step continue, or abort.",
+                      then call it with step continue, or abort. Step merge merges the base into \
+                      a branch folder instead of rebasing onto it, so no commit is rewritten and \
+                      a plain push follows.",
         schema: || {
             json!({
                 "type": "object",
                 "properties": {
                     "step": {
                         "type": "string",
-                        "enum": ["start", "continue", "abort"],
-                        "description": "start (the default), or continue or abort a rebase \
-                                        it stopped.",
+                        "enum": ["start", "merge", "continue", "abort"],
+                        "description": "start (the default) rebases; merge merges the base in \
+                                        (a branch folder only); continue or abort a rebase or \
+                                        merge it stopped.",
                     },
                     "base": {
                         "type": "string",
-                        "description": "A branch folder only, at start: the branch to rebase \
-                                        onto (default: the one it was cut from).",
+                        "description": "A branch folder only, at start or merge: the branch to \
+                                        bring in (default: the one it was cut from).",
+                    },
+                    "take_base_baselines": {
+                        "type": "boolean",
+                        "description": "At merge only: a conflicted .png under a __screenshots__ \
+                                        folder takes the base's copy. Nothing else does.",
                     },
                 },
                 "additionalProperties": false,

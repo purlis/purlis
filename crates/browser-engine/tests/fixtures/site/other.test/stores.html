@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Stored here</title></head>
+<body>
+  <h1 id="said"></h1>
+  <script>
+    // Another site's own store: what it found from before says it was left alone.
+    const found = localStorage.getItem('mine') !== null;
+    localStorage.setItem('mine', 'kept');
+    document.getElementById('said').textContent = found ? 'Found from before' : 'Stored here';
+    document.title = 'Stored here';
+  </script>
+</body></html>

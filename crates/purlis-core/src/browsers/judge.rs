@@ -32,9 +32,9 @@
 //!   web scheme) asks nothing: the proxy refuses or carries it by its own rules.
 //!
 //! - **A page holding a secret purlis filled leaves for another site by its server's redirect
-//!   alone** (#5230, SF-14): the driver stops it there and asks ([`SiteJudge::may_leave_for`]). A
-//!   site the browser was on before the fill goes on by itself, any other asks the person once,
-//!   and either must be in the usual reach.
+//!   alone** (#5230, SF-14): the driver stops it there and asks ([`SiteJudge::may_leave_for`]). The
+//!   site the chain leading to this sign-in began from goes on by itself, any other asks the person
+//!   once, and either must be in the usual reach.
 //!
 //! The proxy carries a site new to the project only where a request to it was judged here to
 //! go, or the person allowed it: what the driver does not hold reaches no other new site.
@@ -156,10 +156,10 @@ impl SiteJudge {
     }
 
     /// **Whether a filled page may leave for `address`'s site by its server's redirect** (#5230,
-    /// SF-14), `been_on` saying the browser was on it before the fill: by itself to such a site,
-    /// or one the person allowed when asked; any other asks once, and stays once asked. Never to
-    /// what the browser's usual reach refuses, or a login in it keeps it off.
-    pub fn may_leave_for(&self, address: &str, been_on: bool) -> Leaving {
+    /// SF-14), `chain_began` saying the chain leading to this sign-in began on it: by itself to
+    /// such a site, or one the person allowed when asked; any other asks once, and stays once
+    /// asked. Never to what the browser's usual reach refuses, or a login in it keeps it off.
+    pub fn may_leave_for(&self, address: &str, chain_began: bool) -> Leaving {
         let Some((host, port)) = site_of(address) else {
             return Leaving::No {
                 why: "purlis stopped this page leaving: the address its server named is no site \
@@ -190,7 +190,7 @@ impl SiteJudge {
                 };
             }
         };
-        if within && (been_on || now.answered.contains(&site)) {
+        if within && (chain_began || now.answered.contains(&site)) {
             if now.let_on.len() < MOST_LET_ON {
                 now.let_on.insert(site);
             }

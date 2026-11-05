@@ -6,10 +6,10 @@ import {
   closeChat,
   type Content,
   contentsOf,
+  focusedChat,
   insertPane,
   isOneJobPane,
   noTabs,
-  noteUsed,
   oneJobEnded,
   openOneJob,
   openTab,
@@ -107,17 +107,15 @@ describe("a one-job program", () => {
     expect(ended.order).toEqual([]);
   });
 
-  it("is never what a press replaces: the press goes to the pane used before it", () => {
-    const { tabs, id, second } = twoPanes();
-    // The window stamps the pane with the keyboard on every change: chat 2's, used last.
-    const opened = openOneJob(noteUsed(tabs), 9, "vim notes.md");
+  it("is never what a press replaces: its split survives and the chat gets a tab (#5289)", () => {
+    const { tabs, id } = twoPanes();
+    const opened = openOneJob(tabs, 9, "vim notes.md");
 
     const { tabs: pressed } = press(opened, { session: 5, chat: "5" }, pressing);
 
-    const shown = contentsOf(pressed, id).map((one) => one.content);
-    expect(shown).toContainEqual(expect.objectContaining({ session: 9 }));
-    expect(shown).toContainEqual(expect.objectContaining({ session: 5 }));
-    expect(pressed.byId[id].focused).toBe(second);
+    expect(contentsOf(pressed, id)).toEqual(contentsOf(opened, id));
+    expect(pressed.inFront).not.toBe(id);
+    expect(focusedChat(pressed)).toBe(5);
   });
 
   it("changes nothing for a session no pane shows", () => {

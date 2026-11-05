@@ -20,7 +20,7 @@ export const Asked: StoryObj<typeof PoolSignInConfirm> = {
     mockIPC(
       (cmd) =>
         cmd === "pool_sign_in_asked"
-          ? { id: 1, profile: "work", pool: "team", code: "A1B2C3" }
+          ? { id: 1, asks: "sign-in", profile: "work", pool: "team", code: "A1B2C3" }
           : null,
       { shouldMockEvents: true },
     );
@@ -34,6 +34,31 @@ export const Asked: StoryObj<typeof PoolSignInConfirm> = {
     await waitFor(() => expect(signIn).toBeEnabled(), { timeout: 4000 });
     await userEvent.tab();
     await untilFocused(() => signIn, "Tab reaches Sign in");
+    await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
+    await untilFocused(() => cancel, "Shift+Tab goes back to Cancel");
+  },
+};
+
+/** `purlis pool remove-profile` (#5174): the runner forgets it, and its sign-in with it. */
+export const TakingOff: StoryObj<typeof PoolSignInConfirm> = {
+  beforeEach: () => {
+    mockIPC(
+      (cmd) =>
+        cmd === "pool_sign_in_asked"
+          ? { id: 1, asks: "take-off", profile: "work", pool: "team", code: "A1B2C3" }
+          : null,
+      { shouldMockEvents: true },
+    );
+    return () => clearMocks();
+  },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement.ownerDocument.body);
+    const cancel = await page.findByRole("button", { name: "Cancel" });
+    await untilFocused(() => cancel, "It starts on Cancel");
+    const takeOff = page.getByRole("button", { name: "Take it off" });
+    await waitFor(() => expect(takeOff).toBeEnabled(), { timeout: 4000 });
+    await userEvent.tab();
+    await untilFocused(() => takeOff, "Tab reaches Take it off");
     await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
     await untilFocused(() => cancel, "Shift+Tab goes back to Cancel");
   },

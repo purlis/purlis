@@ -323,7 +323,7 @@ afterEach(() => {
 });
 
 /**
- * New chat in the empty pane in front (#4758): a chat takes the focused pane, so where a chat
+ * New chat in the empty pane in front (#4758): a chat fills an empty pane (#5289), so where a chat
  * shows already the strip's `+` opens a new tab first, and the chat gets a tab of its own as it
  * did when `+` started one. The sidebar's `+` is called New chat too, so the empty pane's is
  * asked for by where it is.

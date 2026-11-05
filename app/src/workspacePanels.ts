@@ -171,6 +171,8 @@ export class WorkspacePanels {
               piecesRefused: refused,
             };
           });
+          if (said.status === "ok" && (said.data ?? []).some((one) => one.reading))
+            this.#askStates(workspace, repo, mine);
         })
         .catch((err: unknown) => {
           if (!mine()) return;
@@ -180,6 +182,43 @@ export class WorkspacePanels {
           }));
         });
     }
+  }
+
+  /**
+   * Each of `repo`'s branch folders' state, once the list has named them (#5321): the list
+   * answers with names alone, as fast with sixty folders as with one, and this answer fills in
+   * what each folder has uncommitted. A refusal is said on every folder still being read, never
+   * left "reading" and never drawn as clean (#1476).
+   */
+  #askStates(workspace: string, repo: string, mine: () => boolean): void {
+    const fill = (read: (one: Piece) => Piece) =>
+      this.#change(workspace, (was) => ({
+        ...was,
+        pieces: {
+          ...was.pieces,
+          [repo]: (was.pieces[repo] ?? []).map((one) =>
+            one.reading ? { ...read(one), reading: undefined } : one,
+          ),
+        },
+      }));
+    const refused = (why: string) =>
+      fill((one) => ({ ...one, uncommitted: undefined, unread: why }));
+    void commands
+      .worktreeStates(this.#plane, workspace, repo)
+      .then((said) => {
+        if (!mine()) return;
+        if (said.status === "error") return refused(said.error);
+        const states = new Map((said.data ?? []).map((one) => [one.piece, one]));
+        fill((one) => {
+          const state = states.get(one.piece);
+          return state === undefined
+            ? one
+            : { ...one, uncommitted: state.uncommitted, unread: state.unread };
+        });
+      })
+      .catch((err: unknown) => {
+        if (mine()) refused(String(err));
+      });
   }
 
   #merge(workspace: string, what: Partial<Answer>): void {

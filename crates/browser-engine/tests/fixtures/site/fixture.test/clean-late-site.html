@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>A site</title></head>
+<body>
+  <h1 id="said">Reading</h1>
+  <form id="form" action="account.html" method="get" hidden>
+    <label><span id="label">Password</span> <input type="password" name="password" id="password"></label>
+    <button type="submit">Go</button>
+  </form>
+  <script>
+    // It reads its session only after a while, and to one it finds it's a settings page.
+    setTimeout(() => {
+      const form = document.getElementById('form');
+      const earlier = document.cookie.includes('earlier=') || document.cookie.includes('wider=');
+      document.getElementById('said').textContent = earlier ? 'Settings' : 'Sign in';
+      if (earlier) {
+        form.addEventListener('submit', (event) => {
+          event.preventDefault();
+          document.getElementById('password').remove();
+          document.getElementById('said').textContent = 'Kept for the earlier session';
+        });
+      }
+      form.hidden = false;
+    }, 3000);
+  </script>
+</body></html>

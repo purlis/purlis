@@ -601,7 +601,18 @@ fn fetch_whole_said(
 /// none only where the runner listed every repository it holds and this project has each one's
 /// every commit ([`codelink::held::not_home`]). A runner that cannot list them proves nothing.
 pub(crate) fn not_home(link: &HostLink, project: &str, root: &Path, runner: &str) -> Vec<String> {
-    let (repos, unread) = match link.repos_held() {
+    not_home_within(link, project, root, runner, link.proof_within())
+}
+
+/// [`not_home`], waiting at most `within` for the runner's list.
+pub(crate) fn not_home_within(
+    link: &HostLink,
+    project: &str,
+    root: &Path,
+    runner: &str,
+    within: std::time::Duration,
+) -> Vec<String> {
+    let (repos, unread) = match link.repos_held_within(within) {
         Ok(Some(held)) => held,
         Ok(None) => {
             return vec![format!(

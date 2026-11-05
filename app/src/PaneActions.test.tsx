@@ -5,7 +5,8 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { catalogued, type Offer } from "./actions";
-import { PaneActions, PaneBellOf } from "./LayoutPanes";
+import { PaneActions, PaneActionsOf, PaneBellOf } from "./LayoutPanes";
+import { paneLinesOf } from "./paneHead";
 
 /**
  * **The head's right side is two groups** (#5203, spec #5191, settled on the M70 prototype):
@@ -65,17 +66,20 @@ const before = (a: Element, b: Element) =>
 
 function draw({ chat, task = false }: { chat: boolean; task?: boolean }) {
   const { container } = render(
-    <PaneBellOf.Provider value={chat ? { notes: 0, trouble: 0, asks: 0 } : null}>
-      <PaneActions
-        pane={1}
-        state={chat ? <button type="button">Stop</button> : undefined}
-        chat={chat ? { session: SESSION, offers: LIST } : undefined}
-        offerFor={(id) => OFFERS[id]}
-        closeOf={() => CLOSE}
-        onPaneDoes={() => undefined}
-        task={task}
-      />
-    </PaneBellOf.Provider>,
+    <PaneActionsOf.Provider
+      value={paneLinesOf(chat ? "chat" : "view", undefined, { closes: !task }).actions}
+    >
+      <PaneBellOf.Provider value={chat ? { notes: 0, trouble: 0, asks: 0 } : null}>
+        <PaneActions
+          pane={1}
+          state={chat ? <button type="button">Stop</button> : undefined}
+          chat={chat ? { session: SESSION, offers: LIST } : undefined}
+          offerFor={(id) => OFFERS[id]}
+          closeOf={() => CLOSE}
+          onPaneDoes={() => undefined}
+        />
+      </PaneBellOf.Provider>
+    </PaneActionsOf.Provider>,
   );
   return container.querySelector(".pane-actions") as HTMLElement;
 }

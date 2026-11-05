@@ -1,9 +1,18 @@
 ## Install
 
+**From a terminal**, on macOS (Apple Silicon) or Linux (x86_64):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/purlis/purlis/main/install.sh | sh
+```
+
+On macOS this also avoids the first-launch refusal below, because a file `curl` downloads is
+not quarantined.
+
 **macOS** (Apple Silicon): download
 [`purlis-macos-arm64.dmg`](https://github.com/purlis/purlis/releases/download/__TAG__/purlis-macos-arm64.dmg),
-open it and drag **purlis** to Applications. The build is not notarized, so before the first
-launch, run this once in a terminal:
+open it and drag **purlis** to Applications. The build is signed ad hoc and not notarized, so
+before the first launch, run this once in a terminal:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/purlis.app

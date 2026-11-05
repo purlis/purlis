@@ -414,7 +414,7 @@ function deadlines(other) {
 
 test("the tool reads the commit from the notes the manifest job writes, and the version plan gives", () => {
   const manifest = job("manifest").map((line) => line.trim());
-  const notes = 'notes="charter $VERSION, a dev build of $SHA."';
+  const notes = 'notes="purlis $VERSION, a dev build of $SHA."';
   assert.ok(manifest.includes(notes), `the manifest job no longer writes ${notes}`);
   const sha = "0854cd21".padEnd(40, "f");
   const written = notes
