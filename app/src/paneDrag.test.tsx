@@ -53,7 +53,15 @@ function shape(layout: Layout): string {
 }
 
 /** What the window does with its tabs, as far as a drag reaches them. */
-function Window({ first, heard }: { first: Tabs; heard: (tabs: Tabs) => void }) {
+function Window({
+  first,
+  heard,
+  width = 800,
+}: {
+  first: Tabs;
+  heard: (tabs: Tabs) => void;
+  width?: number;
+}) {
   const [tabs, setTabs] = useState(first);
   const now = useRef(first);
   const change = useCallback(
@@ -84,8 +92,8 @@ function Window({ first, heard }: { first: Tabs; heard: (tabs: Tabs) => void }) 
         ))}
       </div>
       {panes.map(({ pane }, at) => (
-        <div key={pane} {...dropPane(front, pane)} data-box={`${at * 800},40,800,600`}>
-          <div {...{ [GRIP]: "" }} data-box={`${at * 800},40,800,20`}>
+        <div key={pane} {...dropPane(front, pane)} data-box={`${at * width},40,${width},600`}>
+          <div {...{ [GRIP]: "" }} data-box={`${at * width},40,${width},20`}>
             {`head ${pane}`}
           </div>
         </div>
@@ -116,7 +124,10 @@ const boxOf = (el: Element) => {
 
 beforeEach(() => {
   vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
-    return { ...boxOf(this), toJSON: () => ({}) } as DOMRect;
+    // A real one, as a browser measures: its sides are getters on its prototype, so a spread of
+    // it gives nothing, and no test here passes by reading a plain object (#5284).
+    const { left: x, top: y, width, height } = boxOf(this);
+    return DOMRect.fromRect({ x, y, width, height });
   });
   // The deepest element whose box holds the point.
   document.elementFromPoint = (x: number, y: number) => {
@@ -134,9 +145,9 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function shown(): { tabs: () => Tabs } {
+function shown(width?: number): { tabs: () => Tabs } {
   let last = start();
-  render(<Window first={last} heard={(tabs) => (last = tabs)} />);
+  render(<Window first={last} heard={(tabs) => (last = tabs)} width={width} />);
   return { tabs: () => last };
 }
 
@@ -194,22 +205,20 @@ describe("dragging a pane in the window (#4763)", () => {
   });
 
   it("draws a refused place with its reason, and drops nothing there", async () => {
-    const window = shown();
+    // Each half of a pane 400 wide would be under the floor.
+    const window = shown(400);
     const before = window.tabs();
     const front = before.order[0];
     const one = contentsOf(before, front)[0].pane;
-    fireEvent.pointerDown(head(contentsOf(before, front)[1].pane), at(900, 50));
-    // The pane's own head is its own place: dropping it on itself is refused.
-    fireEvent.pointerMove(document, at(1200, 340));
-    fireEvent.pointerMove(document, at(1500, 340));
-    const said = await screen.findByText("That's the pane being moved. Drop it on another pane.");
+    fireEvent.pointerDown(head(contentsOf(before, front)[1].pane), at(500, 50));
+    fireEvent.pointerMove(document, at(10, 340));
+    const why = "Too narrow: a pane here would be under about 40 columns. Drop it on a wider pane.";
+    const said = await screen.findByText(why);
     expect(said.hasAttribute("data-refused")).toBe(true);
-    fireEvent.pointerUp(document, at(1500, 340));
+    fireEvent.pointerUp(document, at(10, 340));
     expect(window.tabs()).toBe(before);
     expect(contentsOf(window.tabs(), front)[0].pane).toBe(one);
-    await waitFor(() =>
-      expect(heard()).toBe("Not dropped: That's the pane being moved. Drop it on another pane."),
-    );
+    await waitFor(() => expect(heard()).toBe(`Not dropped: ${why}`));
   });
 
   it("offers Undo after a drop, which puts the last layout back", async () => {
@@ -314,5 +323,76 @@ describe("dragging a pane in the window (#4763)", () => {
     expect(window.tabs().inFront).toBe(first);
     act(() => vi.advanceTimersByTime(1));
     expect(window.tabs().inFront).toBe(second);
+  });
+});
+
+describe("where a drag's preview is drawn (#5284)", () => {
+  const preview = () => document.querySelector<HTMLElement>(".pane-drop-preview");
+  const boxDrawn = () => {
+    const { left, top, width, height } = preview()?.style ?? {};
+    return { left, top, width, height };
+  };
+
+  it.each([
+    ["left", 810, 340, { left: "800px", top: "40px", width: "400px", height: "600px" }],
+    ["right", 1590, 340, { left: "1200px", top: "40px", width: "400px", height: "600px" }],
+    ["top", 1200, 50, { left: "800px", top: "40px", width: "800px", height: "300px" }],
+    ["bottom", 1200, 630, { left: "800px", top: "340px", width: "800px", height: "300px" }],
+    ["middle", 1200, 340, { left: "800px", top: "40px", width: "800px", height: "600px" }],
+  ])("draws a drop on a pane's %s over that part of the pane", (_, x, y, box) => {
+    const window = shown();
+    const front = window.tabs().order[0];
+    fireEvent.pointerDown(head(contentsOf(window.tabs(), front)[0].pane), at(100, 50));
+    fireEvent.pointerMove(document, at(x, y));
+    expect(preview()?.hasAttribute("data-refused")).toBe(false);
+    expect(boxDrawn()).toEqual(box);
+  });
+
+  it("draws a refused place dashed over the pane it refers to, never across the window's top", () => {
+    const window = shown(400);
+    const front = window.tabs().order[0];
+    fireEvent.pointerDown(head(contentsOf(window.tabs(), front)[0].pane), at(100, 50));
+    fireEvent.pointerMove(document, at(410, 340));
+    expect(preview()?.hasAttribute("data-refused")).toBe(true);
+    expect(boxDrawn()).toEqual({ left: "400px", top: "40px", width: "200px", height: "600px" });
+  });
+
+  it.each([
+    ["its edge", 10, 340],
+    ["its middle", 400, 340],
+  ])(
+    "draws no danger over the pane being moved, at %s, and letting go moves nothing",
+    (_, x, y) => {
+      const window = shown();
+      const before = window.tabs();
+      const front = before.order[0];
+      fireEvent.pointerDown(head(contentsOf(before, front)[0].pane), at(100, 50));
+      fireEvent.pointerMove(document, at(x, y));
+      expect(preview()).toBeNull();
+      const tip = screen.getByText("That's the pane being moved. Drop it on another pane.");
+      expect(tip.hasAttribute("data-refused")).toBe(false);
+      fireEvent.pointerUp(document, at(x, y));
+      expect(window.tabs()).toBe(before);
+      expect(preview()).toBeNull();
+    },
+  );
+
+  it("says a pane let go over itself was put back, and not that a drop was refused", async () => {
+    const window = shown();
+    const front = window.tabs().order[0];
+    fireEvent.pointerDown(head(contentsOf(window.tabs(), front)[0].pane), at(100, 50));
+    fireEvent.pointerMove(document, at(400, 340));
+    fireEvent.pointerUp(document, at(400, 340));
+    await waitFor(() => expect(heard()).toBe("Put back. Nothing moved."));
+  });
+
+  it("draws no danger over a pane of the tab being moved", () => {
+    const window = shown();
+    const [first] = window.tabs().order;
+    fireEvent.pointerDown(screen.getByText(`tab ${first}`), at(10, 10));
+    fireEvent.pointerMove(document, at(400, 340));
+    expect(preview()).toBeNull();
+    const tip = screen.getByText("That's the tab being moved. Drop it on a pane in another tab.");
+    expect(tip.hasAttribute("data-refused")).toBe(false);
   });
 });

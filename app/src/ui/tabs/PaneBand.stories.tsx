@@ -606,7 +606,9 @@ export const DismissAll: Story = {
     await userEvent.click(all);
     await waitFor(() => expect(rowsOf(canvasElement).warnings).toHaveLength(1));
     expect(canvas.getByRole("status", { name: "Vault" })).toBeVisible();
-    expect(bellOf(canvas)).toHaveAccessibleName("Pane notices: No notices, 1 asking");
+    await waitFor(() =>
+      expect(bellOf(canvas)).toHaveAccessibleName("Pane notices: No notices, 1 asking"),
+    );
     await untilFocused(
       () => canvas.getByRole("button", { name: "Minimise" }),
       "the keyboard stays on the band's head",

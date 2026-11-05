@@ -3357,6 +3357,11 @@ impl Planes {
                     // A persona chat that has just come to wait on the person's input: its
                     // dispatch needed them once more (#1452, #1457).
                     crate::dispatches::needed_you(&held, report.chat);
+                    // What a sandboxed chat's turn left in its folders is looked at once it has
+                    // ended, off this thread. A helper's end is no end of it.
+                    if report.event == purlis_core::state::Event::Stop && report.agent.is_none() {
+                        crate::arrived::turn_ended(&held, report.chat);
+                    }
                     // And whatever waited for this chat to move: the line that says its tasks
                     // reported (#1441).
                     crate::dispatched::heard(&held, report);

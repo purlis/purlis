@@ -83,6 +83,10 @@ pub(crate) enum AlertWay {
     /// takes the Notice back ([`put_away_left_messages`]), by `report`, the name purlis keeps
     /// it under.
     LeftMessages { report: String },
+    /// **What can run later and appeared in a sandboxed chat's folders** (ADR 0067 §5, amended
+    /// 2026-11-05): Put away takes the Notice back ([`put_away_arrived_files`]) by the `chat`'s
+    /// id, and the files stay where they are.
+    ArrivedFiles { chat: String },
 }
 
 /// The way out of one of the core's alerts.
@@ -336,6 +340,43 @@ pub async fn put_away_left_messages(
     .await
 }
 
+/// What the Inbox calls [`arrived_files`].
+pub(crate) const ARRIVED_FILES: &str = "files that can run later";
+
+/// **One Notice a chat, for what can run later and has appeared in its folders**
+/// ([`purlis_core::sandbox::arrived`]). Read from its record, so it is there after a restart.
+fn arrived_files(root: &Path) -> Vec<AlertRow> {
+    purlis_core::sandbox::arrived::told(root)
+        .into_iter()
+        .map(|told| AlertRow {
+            severity: "warn".to_owned(),
+            subject: ARRIVED_FILES.to_owned(),
+            detail: told.words(root),
+            workspaces: Vec::new(),
+            way: AlertWay::ArrivedFiles { chat: told.chat },
+        })
+        .collect()
+}
+
+/// **Put away on the Notice of what appeared in a chat's folders**: the person has read it. The
+/// files are not touched.
+#[tauri::command]
+#[specta::specta]
+pub async fn put_away_arrived_files(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: PlaneId,
+    chat: String,
+) -> Result<(), String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    crate::off_the_window(
+        "putting away what appeared in a chat's folders",
+        move || {
+            purlis_core::sandbox::arrived::put_away(&root, &chat).map_err(|why| why.to_string())
+        },
+    )
+    .await
+}
+
 /// Seconds since the epoch, as the journal writes them.
 fn now() -> f64 {
     std::time::SystemTime::now()
@@ -375,6 +416,7 @@ fn rows(root: &Path) -> (Vec<AlertRow>, Option<String>) {
             .chain(save_blocked(root, now()))
             .chain(requests_red(root))
             .chain(left_messages(root))
+            .chain(arrived_files(root))
             .collect(),
         reading.stopped,
     )

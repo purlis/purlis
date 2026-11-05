@@ -1701,7 +1701,8 @@ function showChatAt(tabs: Tabs, at: PaneAt, chat: PressedChat, filedIn: FiledIn)
   };
 }
 
-function sameContent(a: Content, b: Content): boolean {
+/** Whether two contents show the same thing. */
+export function sameContent(a: Content, b: Content): boolean {
   if (a.kind === "session" && b.kind === "session") return a.session === b.session;
   if (a.kind === "view" && b.kind === "view") return viewKey(a.view) === viewKey(b.view);
   return a.kind === "empty" && b.kind === "empty";
