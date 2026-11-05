@@ -10949,6 +10949,9 @@
         "view-frame.head.gap": {
           "$ref": "#/$defs/part-gap"
         },
+        "view-frame.heading.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
         "view-frame.header.fill": {
           "$ref": "#/$defs/part-fill"
         },

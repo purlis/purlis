@@ -8278,6 +8278,14 @@ nav.piece-files-head {
   padding: var(--space-4) var(--space-6);
 }
 
+/* **The Library's Select mode's page** (#5332, `prototype/library-select` variant B): each list
+   of names chosen under its heading, the names wrapping as they need. */
+.skill-select-names {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
 /* **A skill's page** (#3682): each tab's panel under the page tabs, and its Text as it is now,
    read only, wrapping so a long line never scrolls the page sideways. */
 .skill-page-panel {
