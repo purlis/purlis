@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793836870789,
+  "lastUpdate": 1793839243878,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -39438,6 +39438,48 @@ window.BENCHMARK_DATA = {
             "value": 101.0803775,
             "unit": "ms",
             "extra": "median of 5 runs: 100.071, 101.040, 101.080, 101.427, 102.357 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "cb4175b4fa1350ac49bb44d825aac74573d79840",
+          "message": "A chat's text as safe markdown, long messages fold, and the Inbox card's reply strip (#5214) (#5222)\n\n* ChatText: a chat's text as markdown under the safe subset, folding past six lines (#5214)\n\nOne component draws what a chat wrote: paragraphs and line breaks, lists, bold,\nitalics, code, tables, and headings no larger than bold words. Raw HTML is\ndropped (skipHtml), no picture is ever made (its alt text stands in), and a link\nshows its host and opens only on a press through the opener; anything but http\nor https is drawn as its words. Past six lines it folds behind\n\"Show all · N lines\".\n\nAdds remark-gfm (tables) and remark-breaks (a chat's own line breaks); the lock\ngains only their packages.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6KW4E4AQ9RXA6BA08ZSVP5P\nPurlis-Persona: steward\n\n* Inbox: a chat's words as ChatText, and Send the reply card's one button (#5214)\n\nThe message a chat waiting on a reply ended its turn on, the message under a\nreason it also waits for, a task's question and its asking chat's note are drawn\nby ChatText: markdown under the safe subset, folded past six lines, the fold a\nstop of the list's roving focus. A task question arrives one-lined from the core;\ntextOfLine turns its line-break marks back into line breaks.\n\nOn a card with a reply box, Send is the one primary button, and Go to chat and\nIgnore are quiet links under the box: a new Button variant, quiet-link.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6KW4E4AQ9RXA6BA08ZSVP5P\nPurlis-Persona: steward\n\n* Inbox card in the pane band's style, an always-present reply strip, EndedBand's report as ChatText (#5214)\n\nThe person's additions on #5214: the Inbox ask card's head is one row (its\nkind's mark, the chat, what it waits on, how long and where), with Go to chat as\na quiet link and the queue's Ignore as a ×. A chat's words on it are 13px in the\nsecondary tier, bold in the primary; the edge is a softer amber.\n\nThe reply is a strip at the card's foot (TextArea strip): no box, a divider,\none line at rest, two holding the caret, up to four with its lines, at the\ntheme's pace; its hint (a new textarea part) shows while it holds the caret.\nEnter sends, Shift+Enter starts a line, Esc leaves it for the card; the send is\nlucide's Send, inert and quiet while empty, the accent's with text.\n\nEndedBand's task report is drawn by ChatText. textOfLine is gone: the core\nsends a task question's real line breaks (#5213).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6KW4E4AQ9RXA6BA08ZSVP5P\nPurlis-Persona: steward\n\n* Theme parts tests for the quiet link and the textarea's hint (#5214)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6KW4E4AQ9RXA6BA08ZSVP5P\nPurlis-Persona: steward\n\n* ChatText: a folded message's links are out of the Tab order until it is opened (#5214)\n\nThe stories run found Tab landing on a link cut out of sight in a folded\nmessage. While folded, its links take tabindex -1 (still pressed, still read by\na screen reader, which has the whole text), so Tab reaches Show all; opened,\nthey are in the Tab order again.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6KW4E4AQ9RXA6BA08ZSVP5P\nPurlis-Persona: steward\n\n* ChatText takes a markdown render's colours from .release-notes, read in one place (#5214)\n\nsurfaces.test.ts holds each markdown token (link, code, code block, quote,\nheading) to one reader. ChatText's body now wears release-notes for those\ncolours instead of reading the tokens again; its spacing stays its own.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6KW4E4AQ9RXA6BA08ZSVP5P\nPurlis-Persona: steward\n\n* Stories' baselines from #5222's run, and a chat's lists keep their markers in an Inbox card (#5214)\n\nBaselines drawn by the pull request's stories run, for the stories it changed\n(ChatText, InboxReplyCard, EndedBand's TaskWithReport, Field's TextareaStrip),\nreviewed. A long message's list drew no bullets inside an Inbox card, an li with\nlist-style none that its lists inherited; ChatText's lists now draw their own\nmarkers. InboxReplyCard's ALongMessage pictures are left for the next run, which\ndraws them with the markers.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6KW4E4AQ9RXA6BA08ZSVP5P\nPurlis-Persona: steward\n\n* InboxReplyCard's remaining baselines, from #5222's stories run (#5214)\n\nA long message, with its list's markers, and the cells the last pull did not\ndraw. Reviewed. The run's other pictures are of stories this pull request does\nnot change, from main having moved, and are left out.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6KW4E4AQ9RXA6BA08ZSVP5P\nPurlis-Persona: steward\n\n* InboxReplyCard's last A long message baselines, from #5222's stories run (#5214)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6KW4E4AQ9RXA6BA08ZSVP5P\nPurlis-Persona: steward\n\n* Review of #5214: a link's host can't be hidden, the subset is exact, lines are counted as drawn (#5214)\n\nSpec axis:\n- A link's words no longer hide its host: only words that parse to the same host\n  do, and never an address with a user before its host. A capitalised scheme is a\n  link, opened as the normalised address.\n- The subset is exactly the ruling's (allowedElements): a quote or struck words are\n  their plain words; no rule, no checkbox.\n- N lines counts lines as laid out, not height over line height, so paragraph gaps,\n  code padding and table cells don't fold a short message.\n- The strip reaches the card's foot, placed by a margin (the padding rule lost to\n  the card's layer); a refused reply is inset.\n\nStandards axis:\n- data-strip is data-foot-strip: the old name took the tab strips' transition.\n- Stories for the quiet link and a refused strip; a row for the strip in the design\n  system's motion table.\n- Drop fold (no caller), a softened edge that never drew, dead rules, class hooks and\n  stale comments.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6KW4E4AQ9RXA6BA08ZSVP5P\nPurlis-Persona: steward\n\n* Field's refused strip story checks the box's description, as Refused does (#5214)\n\nA refused field's words describe its box; they are no alert.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6KW4E4AQ9RXA6BA08ZSVP5P\nPurlis-Persona: steward\n\n* Stories' baselines after the review and the rebase, from #5222's run (#5214)\n\nReviewed: ChatText's long message with its lines counted as drawn, InboxReplyCard\nwith the strip at the card's foot, EndedBand's report, and the new quiet link and\nrefused strip stories. All are of stories this pull request changes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6KW4E4AQ9RXA6BA08ZSVP5P\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-04T23:31:05Z",
+          "tree_id": "d9b91698e2ec2c6207657e8949251ade2b255934",
+          "url": "https://github.com/purlis/purlis/commit/cb4175b4fa1350ac49bb44d825aac74573d79840"
+        },
+        "date": 1793839239024,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5275545,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.524, 0.526, 0.528, 0.537, 0.537 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4288555,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.264, 16.324, 16.429, 16.429, 16.485 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.4595205,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.426, 100.488, 101.460, 101.622, 102.688 ms"
           }
         ]
       }
