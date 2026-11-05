@@ -424,19 +424,34 @@ pub async fn pool_setup_sign_ins_by_hand(
 
 /// **Moves pool `pool` to a runner on the current image, as the person pressed** (#5175): this
 /// version's image, as a new pool is offered it, made beside the old runner, which keeps its chats
-/// until they end ([`purlis_core::pools::follow`]). A pool of a team's own image is refused, and
-/// one on that image already says so. The window's alone.
+/// until they end ([`purlis_core::pools::follow`]). Whether there is such an image is read here,
+/// not as the step is measured, which reads no manifest. A pool of a team's own image is refused,
+/// and one on that image already says so. The window's alone.
 #[tauri::command]
 #[specta::specta]
 pub async fn pool_setup_move_runner(app: tauri::AppHandle, pool: String) -> Result<(), String> {
     #[cfg(unix)]
     {
+        use crate::dockerpools::RunnerImageOffered;
         let image = match crate::poolfollow::image_offered(&app).await? {
-            crate::dockerpools::RunnerImageOffered::Ours { image } => image,
-            _ => {
+            RunnerImageOffered::Ours { image } => image,
+            RunnerImageOffered::Newer { version, .. } => {
+                return Err(format!(
+                    "the pool stays on its runner, because the current runner image is for purlis \
+                     {version}. Update purlis, and new chats move to a runner of that version."
+                ));
+            }
+            RunnerImageOffered::NoneNamed => {
                 return Err(
-                    "this purlis names no runner image of its own, so the pool stays on its \
-                     runner"
+                    "the pool stays on its runner, because this version's release has no runner \
+                     image. Update purlis when a newer version is out."
+                        .to_owned(),
+                );
+            }
+            RunnerImageOffered::LocalBuild => {
+                return Err(
+                    "the pool stays on its runner, because a local build of purlis names no \
+                     runner image. Run a released purlis to move it."
                         .to_owned(),
                 );
             }
@@ -452,12 +467,12 @@ pub async fn pool_setup_move_runner(app: tauri::AppHandle, pool: String) -> Resu
                 &image,
                 &desktop,
             )
-            .map_err(|why| why.to_string())?
+            .map_err(|why| crate::dockerpools::refused_said(&why.to_string()))?
             {
                 Some(_) => Ok(()),
                 None => Err(format!(
-                    "pool {pool} is on this version's image already, and its runner is older than \
-                     this purlis expects"
+                    "pool {pool} is on this version's image already, so a new runner would be no \
+                     newer. Remove the pool in Settings › Pools and add it again."
                 )),
             }
         })

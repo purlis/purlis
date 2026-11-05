@@ -12,9 +12,9 @@ import {
 import {
   addProfileToPool,
   askProfiles,
+  moveRunnerToThisVersion,
   profilesHeld,
   removeProfileFromPool,
-  rereadPools,
   saveLimits,
   usePools,
 } from "../pools";
@@ -39,8 +39,9 @@ const sentence = (said: string) =>
 /** What helps where a runner's older purlis holds a profile and the window can't move it (#5175). */
 const OLDER_RUNNER_HELP: Record<"own-image" | "cluster", string> = {
   "own-image":
-    "Your team's image is never moved: build it from this version of purlis, then add the pool again.",
-  cluster: "Ask whoever looks after this pool's Pool in the cluster to move it to the current image.",
+    "purlis never moves your team's image: build it from this version of purlis, remove the pool, then add it again.",
+  cluster:
+    "Ask whoever looks after this pool in the cluster to put its runner on the current image.",
 };
 
 /** "1 profile", "2 profiles". */
@@ -363,13 +364,12 @@ export function SignInsStep({
     setMovingAsked(false);
     setMoving(true);
     setSaid(undefined);
-    const moved = await commands.poolSetupMoveRunner(pool);
+    const why = await moveRunnerToThisVersion(pool, plane);
     setMoving(false);
-    if (moved.status === "error") {
-      setSaid(moved.error);
+    if (why !== undefined) {
+      setSaid(why);
       return;
     }
-    await rereadPools();
     measure();
     changed();
   };

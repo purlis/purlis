@@ -110,7 +110,12 @@ describe("SignInsStep", () => {
       ...SIZES,
       profiles: [
         size("work", 212, true, [
-          { key: "profileSize", said: "it needs 212 MiB, over 128 MiB", raise_to: 256, older_runner: null },
+          {
+            key: "profileSize",
+            said: "it needs 212 MiB, over 128 MiB",
+            raise_to: 256,
+            older_runner: null,
+          },
         ]),
       ],
     };
@@ -140,7 +145,9 @@ describe("SignInsStep", () => {
         ...SIZES,
         profiles: [
           size("work", 42, true),
-          size("personal", 212, true, [{ key: "profileSize", said: "too big", raise_to: 256, older_runner: null }]),
+          size("personal", 212, true, [
+            { key: "profileSize", said: "too big", raise_to: 256, older_runner: null },
+          ]),
         ],
       }),
     });
@@ -332,7 +339,7 @@ describe("SignInsStep", () => {
       }),
     });
     draw();
-    expect(await screen.findByText(/build it from this version of purlis/)).toBeTruthy();
+    expect(await screen.findByText(/remove the pool, then add it again/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Replace the runner…" })).toBeNull();
   });
 

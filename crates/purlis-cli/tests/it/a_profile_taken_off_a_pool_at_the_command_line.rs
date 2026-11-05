@@ -233,6 +233,7 @@ fn pool_writes_use_the_same_in_a_chat_check_as_secret_setup() {
     for args in writes {
         let out = purlis(config, args, &[]);
         assert!(!out.status.success(), "{args:?}: {}", said(&out));
+        assert!(!said(&out).contains("could not tell"), "{}", said(&out));
         assert_eq!(std::fs::read(&file).unwrap(), before, "{args:?}");
     }
     assert_eq!(window.asked(), Vec::new());

@@ -3417,8 +3417,9 @@ export const commands = {
 	/**
 	 *  **Moves pool `pool` to a runner on the current image, as the person pressed** (#5175): this
 	 *  version's image, as a new pool is offered it, made beside the old runner, which keeps its chats
-	 *  until they end ([`purlis_core::pools::follow`]). A pool of a team's own image is refused, and
-	 *  one on that image already says so. The window's alone.
+	 *  until they end ([`purlis_core::pools::follow`]). Whether there is such an image is read here,
+	 *  not as the step is measured, which reads no manifest. A pool of a team's own image is refused,
+	 *  and one on that image already says so. The window's alone.
 	 */
 	poolSetupMoveRunner: (pool: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_move_runner", { pool })),
 	/**

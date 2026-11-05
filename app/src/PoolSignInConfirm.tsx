@@ -77,7 +77,8 @@ function useAsked(): [PoolSignInAsk | null, () => void] {
  * **A pool sign-in started from the command is confirmed here**, and so is a profile taken off a
  * pool from the command (#5174): `purlis profile sign-in --pool` and `purlis pool remove-profile`
  * wait for this answer. It starts on Cancel, so a Return meant for something else declines it,
- * and its yes is pressed or not taken (`variant: "grants"`), and only once nothing has been typed
+ * and its yes is pressed or not taken (`variant: "grants"`, or `"danger"` for taking one off, which
+ * Return never finds either), and only once nothing has been typed
  * for a moment. Escape declines too. It shows the code the command's terminal shows, to tell one
  * command from another. Each window draws it, and the question going takes it from all of them.
  * It arrives by itself, so it waits for a dialog already up to close (#4504); its two minutes run

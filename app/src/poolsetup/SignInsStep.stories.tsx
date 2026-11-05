@@ -167,7 +167,7 @@ export const OverWhatAnOlderRunnerTakes: Story = {
         over: [
           {
             key: "profileSize",
-            said: "it needs 212 MiB, over this pool's limit of 120 MiB (Most a profile may send: size), and this pool's runner runs an older purlis, which takes at most 120 MiB: make the runner again on the current image, or send less",
+            said: "it needs 212 MiB, and this pool's runner runs an older purlis, which takes at most 120 MiB (Most a profile may send: size): a runner on the current image takes more, or send less",
             raise_to: null,
             older_runner: "move",
           },

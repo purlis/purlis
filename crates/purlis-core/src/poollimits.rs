@@ -644,6 +644,15 @@ impl LimitHit {
                 ),
             };
         }
+        if self.older_runner {
+            return format!(
+                "it needs {}, and this pool's runner runs an older purlis, which takes at most {} \
+                 ({}): a runner on the current image takes more, or send less",
+                limit.unit.said(self.needed),
+                limit.unit.said(self.highest.unwrap_or(limit.most)),
+                limit.plain,
+            );
+        }
         let offer = match (self.suggested, self.runner_memory) {
             (Some(value), _) => format!(": raise it to {}", limit.unit.said(value)),
             (None, Some(memory)) => {
@@ -666,11 +675,6 @@ impl LimitHit {
             }
             (None, None) if self.by_team => format!(
                 ", and this pool allows at most {}: {TEAM_SET}, or send less",
-                limit.unit.said(self.highest.unwrap_or(limit.most))
-            ),
-            (None, None) if self.older_runner => format!(
-                ", and this pool's runner runs an older purlis, which takes at most {}: make the \
-                 runner again on the current image, or send less",
                 limit.unit.said(self.highest.unwrap_or(limit.most))
             ),
             (None, None) => format!(", more than this limit can be: send less than {}", {
@@ -1027,15 +1031,19 @@ impl Chosen {
             .filter(|(_, room)| !by_team && Some(*room) == highest && needed <= id.limit().most)
             .map(|(memory, _)| memory);
         let suggested = team_says.or(hit.suggested);
+        // Only a size, and only where a runner on the current image would take what is needed: the
+        // limit itself, the team and the runner's memory still hold one there.
+        let older_runner = id.limit().unit.step().is_some()
+            && suggested.is_none()
+            && older.is_some()
+            && older == highest
+            && needed <= id.limit().most
+            && team.is_none_or(|top| needed <= top)
+            && memory.is_none_or(|(_, room)| needed <= room);
         LimitHit {
             by_team,
             runner_memory,
-            // Only where nothing else holds it as low: a new runner would be held there too.
-            older_runner: suggested.is_none()
-                && older.is_some()
-                && older == highest
-                && team != highest
-                && memory.map(|(_, room)| room) != highest,
+            older_runner,
             memory_on_replace: runner_memory
                 .and(self.memory_waiting())
                 .filter(|pool| profile_room(*pool) >= needed),
@@ -1459,10 +1467,27 @@ mod tests {
         assert_eq!(hit.suggested, None);
         assert_eq!(
             hit.said(),
-            "it needs 212 MiB, over this pool's limit of 120 MiB (Most a profile may send: \
-             size), and this pool's runner runs an older purlis, which takes at most 120 MiB: \
-             make the runner again on the current image, or send less"
+            "it needs 212 MiB, and this pool's runner runs an older purlis, which takes at most \
+             120 MiB (Most a profile may send: size): a runner on the current image takes more, \
+             or send less"
         );
+    }
+
+    /// **#5175**: a new runner is offered only where it would take what is needed.
+    #[test]
+    fn a_hit_a_new_runner_would_not_hold_either_names_no_older_runner() {
+        let over_what_it_can_be = Chosen::default().hit(LimitId::ProfileSize, 120, 1500, Some(120));
+        assert!(!over_what_it_can_be.older_runner);
+        assert!(
+            over_what_it_can_be
+                .said()
+                .contains("send less than 120 MiB"),
+            "{}",
+            over_what_it_can_be.said()
+        );
+        // A wait has its own words, which say nothing of a runner's version.
+        let waited = Chosen::default().waited(LimitId::CodeSendTime, 10, Some(10));
+        assert!(!waited.older_runner);
     }
 
     /// **#5175**: where a value of the limit still helps, that is what it offers.

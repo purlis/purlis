@@ -250,7 +250,9 @@ fn by_hand_spells_no_word_that_isnt_a_name() {
     .unwrap();
     assert_eq!(
         see.text,
-        "purlis pool add-profile POOL PROFILE\npurlis profile sign-in PROFILE --pool POOL"
+        "purlis pool add-profile POOL PROFILE\n\
+         purlis pool remove-profile POOL PROFILE\n\
+         purlis profile sign-in PROFILE --pool POOL"
     );
 }
 

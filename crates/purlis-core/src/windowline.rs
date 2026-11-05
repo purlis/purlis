@@ -98,7 +98,7 @@ pub enum Answered {
 }
 
 /// **The window's answer to `asked`**: `forget` runs only for a name this machine, with its
-/// config home at `config`, no longer has among its profiles, so no line takes a live profile's
+/// config home at `config`, no longer has among its profiles, so a forget takes no live profile's
 /// sign-in off a runner; `keep` only for one it has, so no line puts anything else on one;
 /// `approve`, given the name, the pool and the code, only for a profile it has on a pool it has
 /// that may be signed in on, and a command reading these same files, so the person is asked only
