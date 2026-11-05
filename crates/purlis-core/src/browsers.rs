@@ -50,10 +50,12 @@
 //! - **Its secret fills** (#5115, #5117): the driver fills a vault value into one field
 //!   ([`drive::Browser::fill_secret`]), and just before the value goes in the browser's reach
 //!   proxy is held to the field's site ([`FillHolder`]) until the page holding it loads another
-//!   document in its main frame or is closed. Meanwhile an address the agent writes for another
-//!   site is refused before the driver hears of it, in words that say why ([`held_to_said`]), and
-//!   a click or Back that leads elsewhere, which only the proxy can refuse, answers with the same
-//!   reason ([`load_held_said`], #5150).
+//!   document, or an error page, in its main frame or is closed. Meanwhile an address the agent
+//!   writes for another site is refused before the driver hears of it, in words that say why
+//!   ([`held_to_said`]), and a click or Back that leads elsewhere answers with the same reason
+//!   ([`load_held_said`], #5150). A redirect from that site's own server, after a form sent there,
+//!   may take the page to another (#5230, SF-14, [`judge::SiteJudge::may_leave_for`]), and a form
+//!   may be sent to a site its key is also approved for (SF-15).
 //! - **Its driver** (#2014): the host's lease is the driver's own ([`drive::Browser::take_over`]),
 //!   each act made under the epoch the host checked; the person's input becomes the driver's own
 //!   event ([`input_of`]), and each frame names what it shows ([`aim_of`]).
@@ -1253,6 +1255,10 @@ impl drive::Hold for Holder {
 pub struct FillHolder {
     proxy: std::sync::Weak<ReachProxy>,
     site: Site,
+    /// The other sites the key is approved for (#5230, SF-15): a form may be sent there.
+    also: Vec<Site>,
+    /// What judges a filled page leaving for another site (#5230): where it has none, it stays.
+    sites: Option<std::sync::Weak<judge::SiteJudge>>,
     /// The hold it made, once it made one.
     number: Mutex<Option<u64>>,
 }
@@ -1266,8 +1272,24 @@ impl FillHolder {
         Ok(Self {
             proxy: Arc::downgrade(proxy),
             site: Site::of(&host, port),
+            also: Vec::new(),
+            sites: None,
             number: Mutex::new(None),
         })
+    }
+
+    /// This holder, reaching `origins` too, the other sites the key is approved for (#5230,
+    /// SF-15), and asking `sites` where a filled page may leave for. An origin that names no site
+    /// is none.
+    #[must_use]
+    pub fn judged_by(mut self, sites: Option<&Arc<judge::SiteJudge>>, origins: &[String]) -> Self {
+        self.also = origins
+            .iter()
+            .filter_map(|origin| judge::site_of(origin))
+            .map(|(host, port)| Site::of(&host, port))
+            .collect();
+        self.sites = sites.map(Arc::downgrade);
+        self
     }
 }
 
@@ -1277,12 +1299,16 @@ impl drive::FillHold for FillHolder {
             .proxy
             .upgrade()
             .ok_or_else(|| "the browser's reach proxy has stopped".to_owned())?;
-        let number = proxy.hold_for_fill(&self.site)?;
+        let number = proxy.hold_for_fill_also(&self.site, &self.also)?;
         *self.number.lock().unwrap_or_else(PoisonError::into_inner) = Some(number);
         Ok(())
     }
 
     fn released(&self) {
+        self.released_then(Box::new(|| {}));
+    }
+
+    fn released_then(&self, then: Box<dyn FnOnce() + Send>) {
         let number = self
             .number
             .lock()
@@ -1292,7 +1318,8 @@ impl drive::FillHold for FillHolder {
             return;
         };
         // The page that left may still send as it unloads, once the next document has come:
-        // it is let go a while after. Where no thread can time that, it is held on.
+        // it is let go a while after. Where no thread can time that, it is held on, and whoever
+        // waits to go on is never told.
         let proxy = self.proxy.clone();
         let _ = std::thread::Builder::new()
             .name("browser-fill-released".to_owned())
@@ -1301,7 +1328,30 @@ impl drive::FillHold for FillHolder {
                 if let Some(proxy) = proxy.upgrade() {
                     proxy.fill_released(number);
                 }
+                then();
             });
+    }
+
+    fn may_leave_for(&self, address: &str, been_on: bool) -> drive::Leaving {
+        match self.sites.as_ref().and_then(std::sync::Weak::upgrade) {
+            Some(sites) => sites.may_leave_for(address, been_on),
+            None => drive::Leaving::No {
+                why: format!(
+                    "purlis stopped this page leaving {}: this browser was started with no \
+                     reach, and the page stays where it was",
+                    self.site
+                ),
+            },
+        }
+    }
+
+    fn approved_for(&self, address: &str) -> bool {
+        // A key is approved for another site over https alone, and the host and port say no scheme.
+        address
+            .get(..6)
+            .is_some_and(|scheme| scheme.eq_ignore_ascii_case("https:"))
+            && judge::site_of(address)
+                .is_some_and(|(host, port)| self.also.contains(&Site::of(&host, port)))
     }
 }
 
@@ -1883,7 +1933,13 @@ impl Screen for EngineScreen {
 
     fn reach_now(&self, reach: &BrowserReach) -> Result<(), String> {
         match &self.sites {
-            Some(sites) => sites.reach_now(reach),
+            Some(sites) => {
+                sites.reach_now(reach)?;
+                // A filled page that waited on the person to leave goes on, where it now may
+                // (#5230).
+                self.with(|browser| browser.reach_changed());
+                Ok(())
+            }
             None => Err("this browser was started with no reach, and takes none".to_owned()),
         }
     }
@@ -2054,6 +2110,7 @@ impl Screen for EngineScreen {
 
     fn fill_secret(&self, epoch: u64, fill: &wire::FillSecret) -> Result<Browsed, NotActed> {
         self.browsed();
+        let also = fill.also.clone();
         let fill = drive::SecretFill {
             target: Ref::new(&fill.target),
             origin: fill.origin.clone(),
@@ -2071,7 +2128,9 @@ impl Screen for EngineScreen {
             return Err(NotActed::Ended);
         };
         // Held to the field's site while its page lives, from before the value goes in (#5117).
-        let hold = FillHolder::of(&proxy, &fill.origin).map_err(NotActed::Refused)?;
+        let hold = FillHolder::of(&proxy, &fill.origin)
+            .map_err(NotActed::Refused)?
+            .judged_by(self.sites.as_ref(), &also);
         browser
             .fill_secret(epoch, &fill, Arc::new(hold))
             .map(|answer| browsed(answer, MOST_SCREENSHOT_BYTES))

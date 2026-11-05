@@ -360,6 +360,9 @@ pub enum AskSource {
     /// A secret a chat asks purlis to fill into a field of its browser (#5115): an Allow lets
     /// purlis put that one key into that field, on that one origin, once.
     SecretFill,
+    /// A vault a chat was refused because its persona is not tagged for it (#1430, #5160): an
+    /// Allow lets that persona use it in this project on this machine.
+    Vault,
 }
 
 /// **The existing, checked path an ask is answered by** (#1690): the command the window
@@ -446,6 +449,10 @@ pub enum AnswerPath {
     /// `answer_secret_fill` at the press an option names, on held fill `id`, for the notice
     /// whose digest is `shown` (#5115).
     SecretFill { id: u32, shown: String },
+    /// The refused vault Notice's own commands, for chat [`Shown::session`]'s refusal of
+    /// `vault` (#5160): `allow_refused_vault` for Allow, the one grant its Notice makes, and
+    /// `keep_vault_blocked` for Keep blocked, with the person's reason.
+    Vault { vault: String },
     /// Nothing the window can send: the person answers in the chat.
     InItsPane,
 }
@@ -1845,6 +1852,85 @@ pub fn pool_tool(waits: &crate::pooltools::PoolToolWaits) -> Shown {
 /// The id of Allow on a pool tool Ask (#2047).
 pub const POOL_TOOL_ALLOW: &str = "allow";
 
+/// The key of chat `session`'s refusal of `vault`, unique in its project (#5160).
+fn vault_key(session: u32, vault: &str) -> String {
+    format!("vault:{session}:{vault}")
+}
+
+/// The id of Allow on a refused vault's ask (#5160): `allow_refused_vault`, the one grant its
+/// Notice makes, so no level is chosen.
+pub const VAULT_ALLOW: &str = "allow";
+
+/// **The refused vault adapter** (#1430, #5160): a vault chat `session` was refused because the
+/// persona it runs as is not tagged for it, held until the person answers. Allow lets that
+/// persona use the vault in this project on this machine, exactly as its Notice's Allow does,
+/// and is not offered where an administrator's policy forbids it; then Keep blocked. The names
+/// are the app's record and the registry's, and are data.
+pub fn vault_refused(one: &crate::vaultroute::VaultRefused) -> Shown {
+    let (persona, vault) = (&one.persona, &one.vault);
+    let tagged = one.tagged_for.as_deref().map_or_else(
+        || "tagged for no persona".to_owned(),
+        |them| format!("tagged for {them}"),
+    );
+    // What its Notice says beside its answers, since the row has these words alone. What Allow
+    // grants comes first after the reason: a line is cut at its width, and that must survive.
+    // Where policy took Allow away, the dispatch the chat was told of is the way forward.
+    let says = [
+        Some(format!(
+            "Runs as {persona}, and vault {vault} is {tagged}, so purlis did not open it"
+        )),
+        Some(one.locked.as_deref().map_or_else(
+            || {
+                format!(
+                    "Allow lets every chat opened as {persona} use it in this project on this \
+                     machine"
+                )
+            },
+            |why| why.trim_end_matches('.').to_owned(),
+        )),
+        one.login
+            .as_deref()
+            .map(|login| format!("It's for the browser login {login}")),
+        one.locked
+            .as_ref()
+            .and(one.dispatch_to.as_deref())
+            .map(|them| format!("purlis told the chat how to dispatch to {them}")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(". ");
+    let allow = one.locked.is_none().then(|| Offered {
+        id: VAULT_ALLOW.to_owned(),
+        label: format!("Allow {} to use this vault", said_inertly(persona)),
+        allows: true,
+        preselected: None,
+    });
+    Shown {
+        session: one.session,
+        ask: vault_key(one.session, vault),
+        says: said_inertly(&says),
+        options: allow
+            .into_iter()
+            .chain([refuses(KEEP, KEEP_SAID)])
+            .collect(),
+        source: AskSource::Vault,
+        chain: Vec::new(),
+        answer: AnswerPath::Vault {
+            vault: vault.clone(),
+        },
+        since: None,
+        held_until: None,
+        writes: None,
+        lines: None,
+        last_message: None,
+        login: None,
+        earlier_messages: None,
+        secret: None,
+        fill: None,
+    }
+}
+
 /// The key of Secret ask `id` (#5068).
 fn secret_key(id: u32) -> String {
     format!("secret:{id}")
@@ -2626,6 +2712,8 @@ pub struct Waiting<'a> {
     pub may_remember: &'a dyn Fn(&str) -> bool,
     /// The secret fills chats asked for that wait on the person (#5115).
     pub secret_fills: Vec<crate::secretfills::FillWait>,
+    /// The vaults chats were refused for their persona, as their Notice shows them (#5160).
+    pub vaults: Vec<crate::vaultroute::VaultRefused>,
     /// The administrator's policy, which the levels an Allow is offered at answer to.
     pub locks: &'a purlis_core::sandbox::policy::Locks,
     /// Whether a browser site for everyone in the project reaches a browser here: only where the
@@ -2770,6 +2858,13 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
             ask.held_until = Some(until);
         }
         Some(ask)
+    }));
+    // A vault a chat was refused (#5160): its command was refused, not held, so like a block
+    // it stands beside whatever the chat asks of its own.
+    asks.extend(waiting.vaults.iter().map(|one| {
+        let mut ask = vault_refused(one);
+        ask.since = (waiting.since)(&ask.ask);
+        ask
     }));
     for (at, ask) in asks.iter_mut().enumerate() {
         // A profile's Ask is about no chat: its chain is the profile, as its adapter said.
@@ -2957,6 +3052,15 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     for one in &secrets {
         since.insert(secret_key(one.id), one.since);
     }
+    let vaults: Vec<_> = held
+        .vault_refusals()
+        .every()
+        .into_iter()
+        .map(|(session, not, first)| {
+            since.insert(vault_key(session, &not.vault), first);
+            crate::vaultroute::shown(plane, session, not)
+        })
+        .collect();
     let declared = purlis_core::sandbox::services::declared(root);
     let tasks = held.tasks();
     let waiting = Waiting {
@@ -2969,6 +3073,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         secrets,
         may_remember: &may_remember,
         secret_fills,
+        vaults,
         sandbox_only,
         sign_ins,
         pool_sign_ins,

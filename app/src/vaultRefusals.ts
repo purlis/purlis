@@ -65,6 +65,15 @@ function readPlane(plane: PlaneId) {
     if (key.startsWith(prefix)) read(plane, Number(key.slice(prefix.length)));
 }
 
+/**
+ * **A refusal answered in the Inbox is read here too** (#5160): a refusal is an ask there, and
+ * its answer reads every chat of `plane` again through this, so the chat's own Notice draws what
+ * the core holds then, and never offers a press the Inbox already made.
+ */
+export function refusalsAnswered(plane: PlaneId): void {
+  readPlane(plane);
+}
+
 function subscribe(plane: PlaneId, session: number, changed: () => void): () => void {
   const key = keyOf(plane, session);
   let mine = held.get(key);

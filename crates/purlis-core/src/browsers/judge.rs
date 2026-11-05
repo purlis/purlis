@@ -31,6 +31,11 @@
 //! - **What is never a site** (this machine, a private or reserved address, an address of no
 //!   web scheme) asks nothing: the proxy refuses or carries it by its own rules.
 //!
+//! - **A page holding a secret purlis filled leaves for another site by its server's redirect
+//!   alone** (#5230, SF-14): the driver stops it there and asks ([`SiteJudge::may_leave_for`]). A
+//!   site the browser was on before the fill goes on by itself, any other asks the person once,
+//!   and either must be in the usual reach.
+//!
 //! The proxy carries a site new to the project only where a request to it was judged here to
 //! go, or the person allowed it: what the driver does not hold reaches no other new site.
 
@@ -38,7 +43,7 @@ use std::collections::HashSet;
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use purlis_browser_engine::drive::{Driver, Gate, Outbound, Why};
+use purlis_browser_engine::drive::{Driver, Gate, Leaving, Outbound, Why};
 use purlis_host::protocol::browsing::BrowserReach;
 
 use crate::sandbox::browser_reach::{Bound, Lane, NewSites, Refusal, Site, Verdict};
@@ -63,6 +68,10 @@ struct Now {
     let_on: HashSet<Site>,
     /// The site of the login purlis performs or performed in the browser (#2016).
     login: Vec<Site>,
+    /// The sites the person allowed when this browser's chat asked (#5230), as its window says.
+    answered: Vec<Site>,
+    /// The sites a filled page asked to leave for: each is asked about once (#5230).
+    asked_leaving: HashSet<Site>,
 }
 
 impl std::fmt::Debug for SiteJudge {
@@ -80,6 +89,8 @@ impl SiteJudge {
                 open_web: reach.open_web,
                 let_on: HashSet::new(),
                 login: Vec::new(),
+                answered: answered_in(reach),
+                asked_leaving: HashSet::new(),
             }),
             bound: Bound::default(),
             own: None,
@@ -140,7 +151,62 @@ impl SiteJudge {
         let mut now = self.lock();
         now.lane = lane;
         now.open_web = reach.open_web;
+        now.answered = answered_in(reach);
         Ok(())
+    }
+
+    /// **Whether a filled page may leave for `address`'s site by its server's redirect** (#5230,
+    /// SF-14), `been_on` saying the browser was on it before the fill: by itself to such a site,
+    /// or one the person allowed when asked; any other asks once, and stays once asked. Never to
+    /// what the browser's usual reach refuses, or a login in it keeps it off.
+    pub fn may_leave_for(&self, address: &str, been_on: bool) -> Leaving {
+        let Some((host, port)) = site_of(address) else {
+            return Leaving::No {
+                why: "purlis stopped this page leaving: the address its server named is no site \
+                      it can judge"
+                    .to_owned(),
+            };
+        };
+        let site = Site::of(&host, port);
+        if let Some(why) = self.bound.login_refuses(&host, port) {
+            return Leaving::No { why };
+        }
+        let tunnel = address
+            .get(..6)
+            .is_some_and(|scheme| scheme.eq_ignore_ascii_case("https:"));
+        let own = self.own();
+        let mut now = self.lock();
+        let within = match now.lane.decide_here(&host, port, tunnel, own.as_deref()) {
+            Verdict::Carry { .. } => true,
+            Verdict::Site { .. } => now.open_web || now.let_on.contains(&site),
+            // Only an Allow of that host and port would carry it.
+            Verdict::Refused(Refusal::Port) => false,
+            Verdict::Refused(_) => {
+                return Leaving::No {
+                    why: format!(
+                        "purlis stopped this page leaving for {site}: it is outside what this \
+                         browser reaches, and the page stays where it was"
+                    ),
+                };
+            }
+        };
+        if within && (been_on || now.answered.contains(&site)) {
+            if now.let_on.len() < MOST_LET_ON {
+                now.let_on.insert(site);
+            }
+            return Leaving::Go;
+        }
+        if now.asked_leaving.len() < MOST_LET_ON && now.asked_leaving.insert(site.clone()) {
+            return Leaving::Ask {
+                site: site.to_string(),
+            };
+        }
+        Leaving::No {
+            why: format!(
+                "purlis stopped this page leaving for {site}: the person was asked about that \
+                 site and has not allowed it, and the page stays where it was"
+            ),
+        }
     }
 
     /// **Whether `out` goes**, or the site the person is to be asked about (module docs).
@@ -206,6 +272,15 @@ impl SiteJudge {
                 )
             })
     }
+}
+
+/// The sites `reach` says the person allowed when asked: one that doesn't read counts for none.
+fn answered_in(reach: &BrowserReach) -> Vec<Site> {
+    reach
+        .answered
+        .iter()
+        .filter_map(|written| Site::parse(written).ok())
+        .collect()
 }
 
 /// `reach`'s listing, read as the chat's own reach reads it (`crate::browsers::reach_of`).

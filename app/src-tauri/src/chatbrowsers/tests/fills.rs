@@ -96,6 +96,7 @@ fn allowed_as(
         Ok(Allowed {
             value: Secret::new(VALUE.into()),
             multi_line,
+            also: vec!["https://other.example.test".into()],
         })
     }
 }
@@ -178,6 +179,7 @@ fn a_2fa_code_is_asked_for_as_one_and_only_what_the_vault_side_made_reaches_the_
         Ok(Allowed {
             value: Secret::new("287082".into()),
             multi_line: false,
+            also: Vec::new(),
         })
     };
 
@@ -516,6 +518,7 @@ fn a_browser_taken_over_while_the_person_is_asked_is_filled_nothing() {
         Ok(Allowed {
             value: Secret::new(VALUE.into()),
             multi_line: false,
+            also: Vec::new(),
         })
     };
 

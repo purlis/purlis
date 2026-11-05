@@ -13,7 +13,7 @@
 ## Checklist
 
 - [ ] Every commit is signed off (`Signed-off-by`, `git commit -s`), per the DCO in CONTRIBUTING.md.
-- [ ] What CI runs passes locally (README.md, "Develop").
+- [ ] What CI runs passes locally (docs/development.md, "Build and check").
 - [ ] Each acceptance line this pull request meets names the test that checks it, under "How it
       is tested", or says why it cannot have one.
 - [ ] A change to the window: a screenshot of the real window was looked at before calling it done (light and dark, narrow and wide where it matters), and is attached or described here. The app's tests draw no pixels.

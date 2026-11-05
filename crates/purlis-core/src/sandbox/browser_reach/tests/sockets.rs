@@ -491,6 +491,19 @@ fn a_filled_secret_holds_the_browser_to_its_site_until_its_page_is_gone() {
     let _ = refused.read_to_string(&mut said);
     assert!(said.starts_with("HTTP/1.1 403 Forbidden"), "{said}");
     assert!(said.contains("holds a secret purlis filled"), "{said}");
+    // A whole request is ended with no answer of the proxy's for the page to show.
+    let mut plain = to(&proxy);
+    plain
+        .write_all(
+            format!(
+                "GET http://127.0.0.1:{other_port}/ HTTP/1.1\r\nHost: 127.0.0.1:{other_port}\r\n\r\n"
+            )
+            .as_bytes(),
+        )
+        .expect("sent");
+    let mut said = String::new();
+    let _ = plain.read_to_string(&mut said);
+    assert_eq!(said, "", "no answer");
     assert!(nobody_connected(&other_site));
 
     assert!(proxy.fill_released(number));

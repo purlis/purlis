@@ -414,6 +414,7 @@ async fn a_browser_is_started_with_the_reach_the_window_gives_it() {
         never: Vec::new(),
         withdrawn: vec![5173],
         open_web: true,
+        answered: Vec::new(),
     };
 
     linked

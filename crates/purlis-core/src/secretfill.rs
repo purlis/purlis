@@ -92,6 +92,26 @@ pub fn lines(ctx: &Ctx, persona: Option<&str>, vault: &str, key: &str, origin: &
     Lines { always, card }
 }
 
+/// **The origins `persona`'s allowed lines fill `key` of `vault` on** (#5230, SF-15): none for a
+/// chat of no persona, or a card's key, which no line approves.
+pub fn origins_of_lines(ctx: &Ctx, persona: Option<&str>, vault: &str, key: &str) -> Vec<String> {
+    let Some(persona) = persona else {
+        return Vec::new();
+    };
+    if a_cards(ctx, vault, key) {
+        return Vec::new();
+    }
+    let (_, allowed) =
+        crate::sandbox::tools::declared_and_allowed_here(ctx.root.as_path(), persona);
+    allowed
+        .iter()
+        .filter(|tool| tool.vault == vault)
+        .filter_map(|tool| tool.fill.as_ref())
+        .filter(|fill| !fill.card && fill.key == key)
+        .map(|fill| fill.origin.clone())
+        .collect()
+}
+
 /// **Whether `key` of `vault` is marked a card's** (SF-4), failing closed: read from the
 /// project's file as written, so a line marked `card` that is otherwise faulty, or a project
 /// whose sandbox is off, still marks it; by any persona's line, on any origin, in any case; and

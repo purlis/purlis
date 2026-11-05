@@ -172,6 +172,7 @@ fn a_browser_reaches_what_its_chat_lists_and_a_new_site_only_on_the_open_web() {
         never: Vec::new(),
         withdrawn: Vec::new(),
         open_web: false,
+        answered: Vec::new(),
     };
 
     let (reach, new_sites) = reach_of(Some(&listed)).unwrap();
@@ -722,6 +723,50 @@ fn a_fill_holds_the_real_reach_proxy_to_its_site_until_its_page_is_gone() {
     assert_eq!(status(other_port), carried, "the browser reaches as before");
     holder.released();
     assert_eq!(status(other_port), carried);
+}
+
+/// #5230: a fill's holder asks the browser's judge where its page may leave for, is approved for
+/// the sites it was given, and holds the proxy to them too. These bind sockets, so run on CI.
+#[cfg(unix)]
+#[test]
+fn a_fill_holds_its_other_approved_sites_too_and_its_judge_says_where_it_may_leave_for() {
+    use purlis_browser_engine::drive::{FillHold, Leaving};
+
+    use crate::sandbox::browser_reach::{Lane, ReachProxy};
+
+    let reach = BrowserReach {
+        open_web: true,
+        ..BrowserReach::default()
+    };
+    let sites = std::sync::Arc::new(super::judge::SiteJudge::of(&reach).unwrap());
+    let (listed, _) = reach_of(Some(&reach)).unwrap();
+    let proxy = std::sync::Arc::new(
+        ReachProxy::bound_by(Lane::of(listed), sites.new_sites(), sites.bound().clone()).unwrap(),
+    );
+    let holder = super::FillHolder::of(&proxy, "https://auth.example.com")
+        .expect("a site")
+        .judged_by(Some(&sites), &["https://sso.example.com".to_owned()]);
+
+    holder.hold().expect("held");
+
+    assert!(sites.bound().lets("sso.example.com", 443));
+    assert!(!sites.bound().lets("elsewhere.example.com", 443));
+    assert!(holder.approved_for("https://sso.example.com/in"));
+    assert!(!holder.approved_for("https://elsewhere.example.com/in"));
+    assert!(!holder.approved_for("http://sso.example.com:443/in"));
+    assert_eq!(
+        holder.may_leave_for("https://app.example.com/?code=1", true),
+        Leaving::Go
+    );
+    assert!(matches!(
+        holder.may_leave_for("https://new.example.com/", false),
+        Leaving::Ask { .. }
+    ));
+    let unjudged = super::FillHolder::of(&proxy, "https://auth.example.com").expect("a site");
+    assert!(matches!(
+        unjudged.may_leave_for("https://app.example.com/", true),
+        Leaving::No { .. }
+    ));
 }
 
 /// #5121: a login that needs another site than the one a page holding a filled secret holds the
