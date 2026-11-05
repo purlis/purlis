@@ -414,7 +414,7 @@ function stateShown(name: string): string | null | undefined {
   const tab = within(stripNamed("Tabs"))
     .getAllByRole("tab")
     .find((one) => one.querySelector(".tab-name")?.textContent === name);
-  return tab?.querySelector("[data-state]")?.getAttribute("data-state");
+  return tab?.querySelector(".tab-said")?.getAttribute("aria-label");
 }
 
 describe("what the window is told about the chats", () => {
@@ -441,7 +441,7 @@ describe("what the window is told about the chats", () => {
 
     move(moving("/home/dev/plane", 7, "waiting", [7]));
 
-    await vi.waitFor(() => expect(stateShown("claude ide.7")).toBe("waiting"));
+    await vi.waitFor(() => expect(stateShown("claude ide.7")).toBe("needs you"));
   });
 
   it("leaves a chat alone when the move belongs to another plane", async () => {
@@ -461,8 +461,8 @@ describe("what the window is told about the chats", () => {
     move(moving("/home/dev/another-plane", 7, "waiting", [7]));
     move(moving("/home/dev/plane", 8, "running"));
 
-    await vi.waitFor(() => expect(stateShown("claude ide.8")).toBe("running"));
-    expect(stateShown("claude ide.7")).toBe("unknown");
+    await vi.waitFor(() => expect(stateShown("claude ide.8")).toBe("working"));
+    expect(stateShown("claude ide.7")).toBe("running (no detail from claude)");
   });
 });
 

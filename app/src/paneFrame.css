@@ -762,6 +762,7 @@
   gap: var(--space-1);
   /* No pane goes off screen: a rail too short (or a bar too narrow) for its panes scrolls. */
   overflow: auto;
+  --chat-mark-ground: var(--surface-raised);
   background-color: var(--surface-raised);
   border-radius: var(--radius-lg);
 }

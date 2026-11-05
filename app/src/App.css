@@ -1720,10 +1720,8 @@ body {
   height: 0.75rem;
 }
 
-/* **A tab wears its focused pane's chat's combined icon** (#4762, `chatPersona.css`): the tab's
-   own marks, its persona's or its shell's at the strip's mark size, with its state's mark on the
-   lower end corner, as the sidebar wears it. A chat with no persona wears the state mark alone,
-   where it stands. */
+/* **A tab wears its focused pane's chat's mark** (#4762, #5340, `ui/chat-mark`): the one its row
+   wears, at the strip's mark size. */
 .tabs .tab {
   /* Equal shares of the row up to 230px each (ADR 0039, amended 2026-11-02). */
   --most: calc(230rem / 14);
@@ -3538,7 +3536,7 @@ body {
   box-shadow: inset -1px 0 0 var(--list-selected-edge);
 }
 
-/* The icon's look is `chatPersona.css`'s (#4762): the row sets only its size and its grounds. */
+/* The mark's look is its family's (`ui/chat-mark`): the row sets only its size and its grounds. */
 .chats-section {
   --chat-mark-size: var(--chats-mark);
 }
@@ -4218,48 +4216,6 @@ body {
   margin: 0 0 var(--space-5);
   font-size: var(--font-size-sm);
   opacity: 0.8;
-}
-
-/* What a chat is doing. A mark, plus a shape per state: colour alone is no state at all to
-   anyone who cannot see it, and the accessible name carries the word either way. */
-.state {
-  display: inline-block;
-  width: 0.6rem;
-  height: 0.6rem;
-  margin-inline-start: var(--space-3);
-  border-radius: 50%;
-  vertical-align: middle;
-  flex: none;
-}
-/* **Dimmed in the colour, and a ring drawn solid** (#891). A mark is drawn once per chat, on its
-   tab and on its explorer row, and a project can hold fifty. An `opacity` below 1 gives each its
-   own transparency layer and a dashed round border is stroked dash by dash; on a software-rendered
-   WebView fifty of them were most of what the first switch into such a project cost. Unknown is
-   a ring broken into two arcs, so it is still told from done's whole ring by its shape. The plain
-   colour first, for a WebView without `color-mix`. */
-.state-unknown {
-  border: 1px solid;
-  border-color: currentcolor transparent;
-  border-color: color-mix(in srgb, currentcolor 50%, transparent) transparent;
-  background: none;
-}
-.state-running {
-  background: var(--state-running);
-}
-.state-waiting {
-  background: var(--state-waiting);
-  /* A ring, so waiting is told from running without colour. */
-  box-shadow: 0 0 0 2px var(--state-waiting-glow);
-}
-.state-done {
-  background: none;
-  border: 1px solid;
-  border-color: currentcolor;
-  border-color: color-mix(in srgb, currentcolor 45%, transparent);
-}
-.state-failed {
-  background: var(--state-failed);
-  border-radius: var(--radius-sm);
 }
 
 /* **A chat's state on a row: its mark, then its word** (#1484). Each state has a shape of its
@@ -6836,30 +6792,6 @@ nav.piece-files-head {
 
 [data-radix-popper-content-wrapper] > [data-side="right"] {
   --arrive-from: -0.25rem 0;
-}
-
-/* **A chat's state mark changing.** Its colour, its shape and its ring morph into the new state
-   over `settle` rather than cutting — a transition, so it only ever runs on a change and never
-   on a tab being drawn. */
-.state {
-  transition-property: background-color, border-color, border-radius, box-shadow, opacity;
-  transition-duration: var(--motion-duration-settle);
-  transition-timing-function: var(--motion-easing-standard);
-}
-
-/* **And a chat that has just started waiting on you knocks twice.** The ring swells and settles
-   back: the one signal this app exists for, arriving, is the one mark allowed to ask for the
-   eye. Only on the change (`ChatState`'s `arrived`) — a strip of chats that were already
-   waiting when it was drawn does not pulse, and a waiting chat never pulses again until it has
-   run and stopped. */
-@keyframes charter-call {
-  50% {
-    box-shadow: 0 0 0 5px var(--state-waiting-glow);
-  }
-}
-
-.state-waiting.arrived {
-  animation: charter-call var(--motion-duration-settle) var(--motion-easing-standard) 2;
 }
 
 /* The same knock on a row of a list (#1484), where the mark is the hand and has no ring to

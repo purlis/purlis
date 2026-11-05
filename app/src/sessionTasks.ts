@@ -21,13 +21,7 @@
  *   waiting on tasks, and the hand on a task rolls up instead.
  */
 import type { FinishedTask } from "./bindings";
-import {
-  failedUnseen,
-  failuresUnseenOf,
-  markOf,
-  ownWorkOf,
-  type ChatStates,
-} from "./chatState";
+import { failedUnseen, failuresUnseenOf, markOf, ownWorkOf, type ChatStates } from "./chatState";
 import type { ListedChat } from "./chatsTree";
 import { shownState, type RowFacts, type Shown } from "./shownState";
 import {

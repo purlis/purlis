@@ -7,8 +7,8 @@
  * A screen imports this and never draws its own (`purlis/chat-mark-family` in `lint.js`).
  *
  * - **Drawn by its parts.** The root carries `data-scope="chat-mark"`, `data-part="root"` and the
- *   chat's one state as `data-state`. `who` holds who the chat runs as, `badge` the state's glyph
- *   on its lower end corner with the state as its `data-variant`, and `word` the state's word.
+ *   chat's one state as its `data-variant`. `who` holds who the chat runs as, `badge` the state's
+ *   glyph on its lower end corner, and `word` the state's word.
  *   `chat-mark.css` draws the defaults, and a theme's parts reach the same attributes (ADR 0103).
  * - **A shape as well as a colour** (WCAG 1.4.1): {@link MARK_GLYPHS} draws each state its own.
  * - **`who` is its own part so a later control can stand in it** (#5290's grip): what stands there
@@ -18,15 +18,7 @@
  * - **A chat that starts needing you knocks twice** (`useArrived`): on that change only, and the
  *   motion comes off when it ends, so a row put back into the document does not play it again.
  */
-import {
-  Circle,
-  Hand,
-  Hourglass,
-  Minus,
-  Pause,
-  X,
-  type LucideIcon,
-} from "lucide-react";
+import { Circle, Hand, Hourglass, Minus, Pause, X, type LucideIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useArrived } from "../../lib/arrived";
 import type { MarkState } from "../../shownState";
@@ -68,7 +60,7 @@ export function ChatMark({ state, who, word, changed = false, className }: ChatM
     <span
       data-scope="chat-mark"
       data-part="root"
-      data-state={state ?? undefined}
+      data-variant={state ?? undefined}
       className={className}
     >
       {who !== undefined && (
@@ -80,7 +72,6 @@ export function ChatMark({ state, who, word, changed = false, className }: ChatM
         <span
           data-scope="chat-mark"
           data-part="badge"
-          data-variant={state ?? undefined}
           data-mark={state === "needs" ? "needs-you" : undefined}
           data-arrived={arrived && played !== state ? "" : undefined}
           onAnimationEnd={() => setPlayed(state)}
@@ -89,6 +80,8 @@ export function ChatMark({ state, who, word, changed = false, className }: ChatM
           <Glyph />
         </span>
       )}
+      {/* A space a screen reader is told, which the mark's flex does not draw. */}
+      {word !== undefined && " "}
       {word !== undefined && (
         <span data-scope="chat-mark" data-part="word" className="hidden-words">
           {word}

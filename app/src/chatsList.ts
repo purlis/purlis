@@ -11,13 +11,7 @@
  * answer redraws its own marks and no row (SC-3).
  */
 import type { FinishedTask } from "./bindings";
-import {
-  failedUnseen,
-  failuresUnseenOf,
-  markOf,
-  ownWorkOf,
-  type ChatStates,
-} from "./chatState";
+import { failedUnseen, failuresUnseenOf, markOf, ownWorkOf, type ChatStates } from "./chatState";
 import type { ChatRow, ListedChat } from "./chatsTree";
 import { shownOf } from "./finished";
 import { shownState, type Shown, type ShownKind } from "./shownState";

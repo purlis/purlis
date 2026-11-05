@@ -55,7 +55,7 @@ const CANCELLED: Said = {
 };
 
 /** A task that has ended and has a line. */
-function ended(key: string, asker: number, shown: Shown, more: Partial<Ended> = {}): Ended {
+function ended(key: string, asker: number, shown: Said, more: Partial<Ended> = {}): Ended {
   return {
     key,
     asker,

@@ -2,6 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
+import {
+  asksThePerson,
+  failedUnseen,
+  failuresSeenBy,
+  failuresUnseenOf,
+  nothingKnown,
+} from "./chatState";
 import { MARK_STATES, shownState, type Facts, type MarkState, type TaskFacts } from "./shownState";
 
 /**
@@ -35,7 +42,11 @@ const table: readonly [string, Partial<Facts>, MarkState | null][] = [
     { ownWork: { helpers: 1, workflows: 0, monitors: 0, shells: 0 } },
     "waiting",
   ],
-  ["it is asking the chat that asked it", { task: report({ report: "owed", asking: "a" }) }, "waiting"],
+  [
+    "it is asking the chat that asked it",
+    { task: report({ report: "owed", asking: "a" }) },
+    "waiting",
+  ],
   ["its turn ended and nothing is owed", {}, "idle"],
   ["its program ended", { board: "done" }, "ended"],
   ["its program ended badly and that has been seen", { board: "failed" }, "ended"],
@@ -91,5 +102,45 @@ describe("a chat's one state, first true wins (#5340)", () => {
   it("goes back to the chat's own word once the failure has been seen", () => {
     expect(shownState(chat({ failuresUnseen: 1 }))?.kind).toBe("task-failed");
     expect(shownState(chat({ failuresUnseen: 0 }))?.kind).toBe("idle");
+  });
+});
+
+describe("what looking at a chat sees (#5340)", () => {
+  const failedTasks = {
+    1: [
+      { id: "r-own-task", task: "build", chat: 2 },
+      { id: "r-gone", task: "lint", chat: null },
+    ],
+    5: [{ id: "r-other", task: "deploy", chat: 6 }],
+  };
+
+  it("sees every failure of the chat's own tasks", () => {
+    expect(failuresSeenBy({ failedTasks }, 1)).toEqual([
+      { asker: 1, id: "r-own-task" },
+      { asker: 1, id: "r-gone" },
+    ]);
+  });
+
+  it("sees a task's own failure, on the record of the chat that asked for it", () => {
+    expect(failuresSeenBy({ failedTasks }, 2)).toEqual([{ asker: 1, id: "r-own-task" }]);
+  });
+
+  it("sees nothing of another chat's", () => {
+    expect(failuresSeenBy({ failedTasks }, 3)).toEqual([]);
+  });
+
+  it("knows a chat as a failed task by its asker's record alone", () => {
+    const states = { ...nothingKnown, failedTasks };
+    expect(failedUnseen(states, 2)).toBe(true);
+    expect(failedUnseen(states, 1)).toBe(false);
+    expect(failuresUnseenOf(states, 1)).toBe(2);
+    expect(failuresUnseenOf(states, 2)).toBe(0);
+  });
+
+  it("asks for the person only when in the queue for more than what failed", () => {
+    const states = { ...nothingKnown, needsYou: [1, 2], onlyFailures: { 2: true as const } };
+    expect(asksThePerson(states, 1)).toBe(true);
+    expect(asksThePerson(states, 2)).toBe(false);
+    expect(asksThePerson(states, 3)).toBe(false);
   });
 });

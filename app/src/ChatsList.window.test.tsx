@@ -344,7 +344,8 @@ const over = (mark: Element | null) => {
 /** The chat drawn in the pane in front: a task is shown inside its session's tab (#1486). */
 const shownInFront = () => screen.getByTestId("pane").textContent;
 /** The word a row says its state in. */
-const word = (name: string) => row(name).querySelector(".shown-state .word")?.textContent;
+const word = (name: string) =>
+  row(name).querySelector('[data-scope="chat-mark"][data-part="word"]')?.textContent;
 const hiddenSaid = () => document.querySelector(".chats-hidden")?.textContent;
 /** The small count a folded row says of its tasks (#1675), as it is drawn. */
 const folded = (name: string) =>
@@ -545,25 +546,25 @@ describe("the order of the Chats list (V100-47)", () => {
 
   it("knocks once for a chat that starts needing the person, and not again when rows move past it", async () => {
     const { move } = await settled();
-    const state = (name: string) => row(name).querySelector(".shown-state");
+    const state = (name: string) => row(name).querySelector('[data-part="badge"]');
     move(2, "waiting", [3, 2]);
-    expect(state("steward 2")).toHaveClass("arrived");
+    expect(state("steward 2")).toHaveAttribute("data-arrived");
 
     // The knock plays, and is over.
-    over(row("steward 2").querySelector(".shown-state .shape"));
-    expect(state("steward 2")).not.toHaveClass("arrived");
+    over(state("steward 2"));
+    expect(state("steward 2")).not.toHaveAttribute("data-arrived");
 
     // Another session comes to need the person and is put above it: the row is moved in the
     // document, which would play a class left on it a second time.
     move(1, "waiting", [3, 2, 1]);
     expect(shape()).toEqual(["1 steward 1", "2 devops 4", "1 steward 2", "1 steward 3"]);
-    expect(state("steward 2")).not.toHaveClass("arrived");
+    expect(state("steward 2")).not.toHaveAttribute("data-arrived");
     expect(row("steward 2").isConnected).toBe(true);
 
     // It knocks again only when it starts needing the person again.
     move(2, "running", [3, 1]);
     move(2, "waiting", [3, 1, 2]);
-    expect(state("steward 2")).toHaveClass("arrived");
+    expect(state("steward 2")).toHaveAttribute("data-arrived");
   });
 
   it("groups the sessions by workspace where the person asked for that", async () => {
@@ -638,11 +639,13 @@ describe("the folds the Chats list makes by itself (V100-48)", () => {
 
     // Its row is drawn for the first time in that state, and it is still a change: the hand
     // knocks, as it would have on a row that was on screen.
-    expect(row("devops 3").querySelector(".shown-state")).toHaveClass("arrived");
+    expect(row("devops 3").querySelector('[data-part="badge"]')).toHaveAttribute("data-arrived");
     expect(word("devops 3")).toBe("needs you");
     // The task beside it is drawn again too, in the state it was folded away in: no motion
     // for a state nothing changed to.
-    expect(row("devops 2").querySelector(".shown-state")).not.toHaveClass("arrived");
+    expect(row("devops 2").querySelector('[data-part="badge"]')).not.toHaveAttribute(
+      "data-arrived",
+    );
   });
 
   it("keeps a session open over an open task that is blocked, and counts it when folded by hand", async () => {
@@ -996,9 +999,9 @@ describe("a row of the Chats list (V100-19, V100-50)", () => {
     expect(theTree().querySelector(".line.two")).toBeNull();
     const first = row("steward 1");
     // The persona's mark leads the row, with the state on it (#3342).
-    expect(first.querySelector(".ui-row-lead .chat-persona .persona-mark")).not.toBeNull();
+    expect(first.querySelector('.ui-row-lead [data-part="who"] .persona-mark')).not.toBeNull();
     expect(first.querySelector(".ui-row-label")?.textContent).toBe("steward 1");
-    expect(first.querySelector(".ui-row-lead .shown-state .word")?.textContent).toBe("working");
+    expect(first.querySelector('.ui-row-lead [data-part="word"]')?.textContent).toBe("working");
     expect((await cardOf(row("steward 1"))).facts.Workspace).toBe("alpha");
   });
 
@@ -1063,7 +1066,7 @@ describe("a chat's tab and its row wear one mark (#5340)", () => {
   const markIn = (holder: Element) => {
     const root = holder.querySelector('[data-scope="chat-mark"][data-part="root"]');
     return {
-      state: root?.getAttribute("data-state") ?? null,
+      state: root?.getAttribute("data-variant") ?? null,
       glyph:
         root
           ?.querySelector('[data-part="badge"] svg')
@@ -1074,7 +1077,10 @@ describe("a chat's tab and its row wear one mark (#5340)", () => {
     };
   };
 
-  const twoChats = () => [chat(1, "alpha"), chat(2, "alpha", { in_front: true })];
+  const twoChats = () => [
+    chat(1, "alpha", { in_front: false }),
+    chat(2, "alpha", { in_front: true }),
+  ];
   const pending: [string, State, number[], Partial<Moved>, string][] = [
     ["needs you", "waiting", [1], {}, "needs"],
     ["working", "running", [], {}, "working"],
@@ -1127,7 +1133,6 @@ describe("a chat's tab and its row wear one mark (#5340)", () => {
     await waitFor(() => expect(markIn(row("steward 1")).state).toBe("waiting"));
     expect(markIn(tabOf("steward 1"))).toEqual({ state: "waiting", glyph: "lucide-hourglass" });
     expect(markIn(row("steward 1"))).toEqual({ state: "waiting", glyph: "lucide-hourglass" });
-    expect(document.querySelector('[data-strip="Tabs"] .state-dot')).toBeNull();
   });
 
   it("keeps the mark on a pinned tab", async () => {
@@ -1166,9 +1171,10 @@ describe("a chat's tab and its row say one state word (#4935)", () => {
     if (found === undefined) throw new Error(`no tab named ${name}`);
     return found;
   };
-  /** What the tab says its chat is doing: its one `.state` mark's name, as the scenario specs
-   *  read it (`chat.state.e2e.ts`). */
-  const tabSays = (name: string) => tabOf(name).querySelector(".state")?.getAttribute("aria-label");
+  /** What the tab says its chat is doing: its one word, as the scenario specs read it
+   *  (`chat.state.e2e.ts`). */
+  const tabSays = (name: string) =>
+    tabOf(name).querySelector(".tab-said")?.getAttribute("aria-label");
 
   // Every state the board says, and the queue's word on the one that waits.
   const states: [string, State, number[]][] = [
@@ -1191,7 +1197,7 @@ describe("a chat's tab and its row say one state word (#4935)", () => {
 
     await waitFor(() => expect(word("steward 1")).toBeTruthy());
     expect(tabSays("steward 1")).toBe(word("steward 1"));
-    expect(tabOf("steward 1").querySelectorAll(".state")).toHaveLength(1);
+    expect(tabOf("steward 1").querySelectorAll(".tab-said")).toHaveLength(1);
   });
 
   it("says the same word on both for a session waiting on its own work", async () => {
@@ -1459,7 +1465,10 @@ describe("a failed task's mark lasts until its chat has been seen (#5340)", () =
   const seen = (asked: Ask) => asked("task_failure_seen");
 
   it("stays on a chat in a background tab, and the core is told nothing", async () => {
-    const { move, asked } = core([chat(1, "alpha"), chat(2, "alpha", { in_front: true })]);
+    const { move, asked } = core([
+      chat(1, "alpha", { in_front: false }),
+      chat(2, "alpha", { in_front: true }),
+    ]);
     render(<App />);
     await section();
     await waitFor(() => expect(row("steward 1")).toBeTruthy());
@@ -1467,10 +1476,9 @@ describe("a failed task's mark lasts until its chat has been seen (#5340)", () =
     move(1, "running", [1], FAILED);
 
     await waitFor(() =>
-      expect(row("steward 1").querySelector('[data-part="badge"]')).toHaveAttribute(
-        "data-variant",
-        "failed",
-      ),
+      expect(
+        row("steward 1").querySelector('[data-scope="chat-mark"][data-part="root"]'),
+      ).toHaveAttribute("data-variant", "failed"),
     );
     expect(seen(asked)).toEqual([]);
   });
@@ -1484,10 +1492,9 @@ describe("a failed task's mark lasts until its chat has been seen (#5340)", () =
 
     move(1, "running", [1], FAILED);
     await waitFor(() =>
-      expect(row("steward 1").querySelector('[data-part="badge"]')).toHaveAttribute(
-        "data-variant",
-        "failed",
-      ),
+      expect(
+        row("steward 1").querySelector('[data-scope="chat-mark"][data-part="root"]'),
+      ).toHaveAttribute("data-variant", "failed"),
     );
     expect(seen(asked)).toEqual([]);
 

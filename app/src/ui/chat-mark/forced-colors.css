@@ -2,16 +2,11 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 /* **The chat mark family in forced colours** (#5340, #3387): forced colours take the state's
-   colour away, and its shape stays what tells it (`ChatMark`). The ring around the badge keeps
-   the system's ground, and the states that ask for the eye the system's highlight. */
+   colour away, and its shape stays what tells it (`ChatMark`), on the system's ground. */
 @media (forced-colors: active) {
   [data-scope="chat-mark"][data-part="badge"] {
     forced-color-adjust: none;
     background-color: Canvas;
     color: CanvasText;
-  }
-
-  [data-scope="chat-mark"][data-part="badge"]:is([data-variant="needs"], [data-variant="failed"]) {
-    color: Highlight;
   }
 }

@@ -219,18 +219,12 @@ describe("forced colours", () => {
         expect(drawn(selector).get(property), `${selector} { ${property} }`).toBe(value);
   });
 
-  it("keep each state mark's shape, which tells the states apart without colour", () => {
-    for (const mark of [
-      ".state-running",
-      ".state-waiting",
-      ".state-failed",
-      ".explorer .touch-mark",
-    ]) {
-      expect(drawn(mark).get("forced-color-adjust"), mark).toBe("none");
-      expect(drawn(mark).get("background-color"), mark).toBe("CanvasText");
-    }
-    // Waiting is told from running by its ring.
-    expect(drawn(".state-waiting").get("box-shadow")).toMatch(/CanvasText/);
+  it("keep a chat's mark in the words' colour on the window's ground, its glyph telling its state", () => {
+    const badge = '[data-scope="chat-mark"][data-part="badge"]';
+    expect(drawn(badge).get("forced-color-adjust")).toBe("none");
+    expect(drawn(badge).get("background-color")).toBe("Canvas");
+    expect(drawn(badge).get("color")).toBe("CanvasText");
+    expect(drawn(".explorer .touch-mark").get("background-color")).toBe("CanvasText");
   });
 
   it("say what cannot be used", () => {

@@ -106,7 +106,7 @@ describe("forced colours", () => {
       rule.selector.includes('[role="tab"][aria-selected="true"]'),
     );
     expect(lower(tab?.style["background-color"])).toBe("selecteditem");
-    const mark = found.rules.find((rule) => rule.selector.includes(".state-running"));
+    const mark = found.rules.find((rule) => rule.selector.includes(".explorer .touch-mark"));
     expect(lower(mark?.style["background-color"])).toBe("canvastext");
   });
 
@@ -149,9 +149,7 @@ describe("forced colours", () => {
         '<span data-p="needs-activity" data-scope="activity" data-part="count" data-tone="needs-you">2</span>',
         '<button data-p="danger" type="button" data-scope="button" data-part="root" data-variant="danger" data-size="md">end</button>',
         '<p data-p="trouble" class="trouble">trouble</p>',
-        '<span data-p="running" class="state-running"></span>',
-        '<span data-p="waiting" class="state-waiting"></span>',
-        '<span data-p="failed" class="state-failed"></span>',
+        '<span data-p="mark" data-scope="chat-mark" data-part="badge" data-variant="working"></span>',
         '<label data-scope="switch" data-part="root" data-selected="true"><span data-p="switch-on" data-scope="switch" data-part="track"><span data-p="thumb-on" data-scope="switch" data-part="thumb"></span></span></label>',
         '<label data-scope="switch" data-part="root"><span data-p="switch-off" data-scope="switch" data-part="track"><span data-p="thumb-off" data-scope="switch" data-part="thumb"></span></span></label>',
         '<div data-p="dialog" role="dialog" aria-label="probe">dialog</div>',
@@ -283,11 +281,8 @@ describe("forced colours", () => {
           outlineOffset: "-2px",
         },
       });
-    // A state mark keeps its shape in CanvasText; waiting adds its ring.
-    for (const mark of ["running", "waiting", "failed"])
-      expect({ [mark]: drawn.after[mark]?.background }).toEqual({ [mark]: sys.CanvasText });
-    expect(drawn.after.waiting?.shadow).toContain(sys.Canvas);
-    expect(drawn.after.waiting?.shadow).toContain(sys.CanvasText);
+    // A chat's mark keeps the system's ground; its glyph tells its state.
+    expect(drawn.after.mark?.background).toBe(sys.Canvas);
     // A switch: on is filled in Highlight with its thumb in HighlightText; off has a CanvasText
     // thumb.
     expect(at("switch-on", "background")).toEqual({ background: sys.Highlight });

@@ -100,16 +100,14 @@ pub(super) const CHAT_MARK: Family = Family {
     under: &[],
 };
 
-/// **Each state's colour as `chat-mark.css` draws it**, on the glyph.
-pub(super) fn mark_look(variant: &str, _states: &[State]) -> Look {
+/// **The mark's words at rest**: it draws none of its own but the state's, which are heard and
+/// not seen. A badge's default colour is its state's token, drawn by `chat-mark.css` and held at
+/// 3:1 as a mark by the token floors, so a theme recolours every mark by that token. A theme that
+/// sets one state's badge here sets its text, which the engine holds as words.
+pub(super) fn mark_look(_variant: &str, _states: &[State]) -> Look {
     Look {
         fill: TRANSPARENT,
-        text: match variant {
-            "needs" => "needs-you.base",
-            "failed" => "state.failed",
-            "working" | "waiting" => "state.running",
-            _ => "text.muted",
-        },
+        text: "text.primary",
         border: TRANSPARENT,
     }
 }

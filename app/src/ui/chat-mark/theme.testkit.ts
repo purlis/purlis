@@ -6,10 +6,13 @@
 import type { FamilyTheme } from "../../theme/families.testkit";
 
 export default {
-  classless: [
-    // Its parts are spans the wrapper draws, each by its own attributes.
-    '[data-scope="chat-mark"][data-part="root"]',
-    '[data-scope="chat-mark"][data-part="who"]',
-    '[data-scope="chat-mark"][data-part="badge"]',
-  ],
+  forced: {
+    drawn: {
+      '[data-scope="chat-mark"][data-part="badge"]': {
+        "forced-color-adjust": "none",
+        "background-color": "Canvas",
+        color: "CanvasText",
+      },
+    },
+  },
 } satisfies FamilyTheme;

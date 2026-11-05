@@ -31,27 +31,18 @@ describe("a chat's row and its mark", () => {
     body,
   }));
 
-  /** The class tokens of one selector, exactly: `.state` is not `.state-bar`. */
+  /** The class tokens of one selector, exactly. */
   const classes = (selector: string) => new Set(selector.match(/\.[\w-]+/g) ?? []);
-  const MARKS = [
-    ".state",
-    ".state-unknown",
-    ".state-done",
-    ".state-running",
-    ".state-waiting",
-    ".state-failed",
-  ];
   /** Whether one selector of a list draws something there is one of per chat. */
   const perChat = (selector: string) => {
     const has = classes(selector);
-    return MARKS.some((mark) => has.has(mark)) || (has.has(".chats-section") && has.has(".chat"));
+    return has.has(".chats-section") && has.has(".chat");
   };
   const drawn = rules.filter((rule) => rule.selectors.split(",").some(perChat));
 
   it("finds the rules it is about", () => {
     const named = drawn.map((rule) => rule.selectors);
-    for (const selector of [".chats-section .chat", ".state", ".state-unknown", ".state-done"])
-      expect(named, selector).toContain(selector);
+    expect(named).toContain(".chats-section .chat");
   });
 
   it("is dimmed in its colour, never by a layer of its own", () => {
@@ -84,17 +75,5 @@ describe("a chat's row and its mark", () => {
         expect(plain, `${selectors}: a plain ${property} before the color-mix one`).toBe(true);
       });
     }
-    // And the two that are dimmed this way are dimmed this way.
-    for (const selector of [".state-unknown", ".state-done"])
-      expect(drawn.find((rule) => rule.selectors === selector)?.body, selector).toMatch(
-        /color-mix\(/,
-      );
-  });
-
-  it("still tells unknown from done by shape: a broken ring against a whole one", () => {
-    const body = (selector: string) =>
-      drawn.find((rule) => rule.selectors === selector)?.body ?? "";
-    expect(body(".state-unknown")).toMatch(/border-color:\s*color-mix\([^;]*\)\s+transparent\s*;/);
-    expect(body(".state-done")).not.toMatch(/transparent\s*;/);
   });
 });

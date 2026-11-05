@@ -34,7 +34,7 @@ import { tabPart } from "./ui/tabs/Tabs";
  * **One chat's state as a row says it, a mark and a word, which reads that chat's state
  * itself** (#1484, SC-3). The Chats list's row and the explorer's both draw this, from the same
  * facts through the one function (`useShownState`), so they say the same of a chat, and so does
- * its tab (`TabStateMark`, #4935).
+ * its tab (`TabStateWord`, #4935).
  *
  * Redrawn only when what it shows changes: a move redraws the moved chat's state and no row.
  * Held on plain values, so a row redrawn for its own reasons does not redraw it.
@@ -67,7 +67,8 @@ export const ChatShownState = memo(function ChatShownState({
 const TabStateWord = memo(function TabStateWord(of: ShownOf) {
   const shown = useShownState(of);
   if (shown === undefined) return null;
-  return <span className="tab-said hidden-words">{shown.word}</span>;
+  // A name and no text: a tab's text is its name (`.tab-name`), and this is heard after it.
+  return <span className="tab-said hidden-words" role="img" aria-label={shown.word} />;
 });
 
 /**

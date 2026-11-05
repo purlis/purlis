@@ -4824,8 +4824,9 @@ export const PlaneView = memo(function PlaneView({
     plane,
     tabs.inFront === undefined
       ? undefined
-      : shownIn(tabs, tabs.inFront).find((one) => one.pane === tabs.byId[tabs.inFront ?? -1]?.focused)
-          ?.session,
+      : shownIn(tabs, tabs.inFront).find(
+          (one) => one.pane === tabs.byId[tabs.inFront ?? -1]?.focused,
+        )?.session,
     failedTasks,
   );
   /** A finished row was opened to be read: where it is a failure its session is flagged for,
