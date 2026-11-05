@@ -128,6 +128,7 @@ fn discard_nth(f: &support::Fixture, path: &str, nth: usize) -> Discarded {
             path: path.into(),
             target: Target::Hunk(hunks[nth]),
             against: Against::Opened(stamp),
+            turn: None,
         },
     )
     .unwrap()
@@ -143,6 +144,7 @@ fn discard_whole(f: &support::Fixture, path: &str) -> Discarded {
             path: path.into(),
             target: Target::Whole,
             against: Against::Opened(stamp),
+            turn: None,
         },
     )
     .unwrap()
@@ -419,6 +421,7 @@ fn a_file_changed_on_disk_since_it_was_opened_is_stale_and_is_left_alone() {
             path: "ten.txt".into(),
             target: Target::Hunk(hunks[0]),
             against: Against::Opened(stamp),
+            turn: None,
         },
     )
     .unwrap();
@@ -454,6 +457,7 @@ fn overwrite_writes_what_was_opened_less_the_hunk_over_the_newer_file_and_merges
             against: Against::Overwrite {
                 head: Some(drawn.into()),
             },
+            turn: None,
         },
     )
     .unwrap();
@@ -480,6 +484,7 @@ fn overwrite_of_a_binary_file_restores_it_whatever_it_became() {
             path: "logo.bin".into(),
             target: Target::Whole,
             against: Against::Overwrite { head: None },
+            turn: None,
         },
     )
     .unwrap();
@@ -509,6 +514,7 @@ fn a_hunk_the_file_does_not_have_is_stale_and_writes_nothing() {
                 new_lines: 3,
             }),
             against: Against::Opened(stamp),
+            turn: None,
         },
     )
     .unwrap();
@@ -557,6 +563,7 @@ fn a_file_turned_into_a_link_is_refused_and_stays_a_link() {
             path: "file.txt".into(),
             target: Target::Whole,
             against: Against::Overwrite { head: None },
+            turn: None,
         },
     )
     .unwrap_err();
@@ -579,6 +586,7 @@ fn a_path_out_of_the_branch_or_into_git_is_refused_and_nothing_is_written() {
                 path: path.into(),
                 target: Target::Whole,
                 against: Against::Overwrite { head: None },
+                turn: None,
             },
         );
         assert!(refused.is_err(), "{path} was taken");
@@ -610,6 +618,7 @@ fn a_folder_swapped_for_a_link_is_never_written_through() {
             against: Against::Overwrite {
                 head: Some(String::new()),
             },
+            turn: None,
         },
     );
 
@@ -679,6 +688,7 @@ fn no_program_the_repos_config_names_runs_for_a_discard() {
             path: "filtered.txt".into(),
             target: Target::Hunk(hunks[0]),
             against: Against::Opened(stamp),
+            turn: None,
         },
     )
     .unwrap_err();

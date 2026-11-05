@@ -508,6 +508,7 @@ macro_rules! app_commands {
                 piecefiles::branch_ahead_behind,
                 piecefiles::what_changed,
                 humanedits::discard_hunk,
+                humanedits::undo_turn,
                 piecefiles::turn_changed,
                 filewatch::files_watch,
                 findfiles::find_files,

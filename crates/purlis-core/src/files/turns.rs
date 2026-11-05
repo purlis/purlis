@@ -40,6 +40,8 @@ const LONGEST_CHAT: usize = 64;
 enum Side {
     Start,
     End,
+    /// The mark an undone turn has (**Undo a turn**, #5411), at the turn's end.
+    Undone,
 }
 
 impl Side {
@@ -47,6 +49,7 @@ impl Side {
         match self {
             Self::Start => "start",
             Self::End => "end",
+            Self::Undone => "undone",
         }
     }
 }
@@ -190,6 +193,22 @@ pub fn forget(plane: &Path, ws: &str, repo: &str, chat: &str) -> Result<(), Refu
             "purlis could not remove the chat's turns: {}",
             String::from_utf8_lossy(&deleted.err).trim()
         )));
+    }
+    Ok(())
+}
+
+/// **Turn `number` of `chat` in `branch` is undone** (#5411): its `undone` ref is written at its
+/// end, so the turn offered next is the one before it ([`offered_on`]). The app writes it in the
+/// step that put the turn's files back, through the git runner.
+pub fn undone(plane: &Path, branch: Branch<'_>, chat: &str, number: u32) -> Result<(), Refused> {
+    checked(chat)?;
+    let folder = super::folder_of(plane, branch)?;
+    let end = reference(chat, number, Side::End);
+    let name = reference(chat, number, Side::Undone);
+    // The empty old value: written only where no mark is yet.
+    let written = ran(&folder, &["update-ref", &name, &end, ""])?;
+    if !written.ok() {
+        return Err(failed("mark the turn undone", &written));
     }
     Ok(())
 }
@@ -408,6 +427,26 @@ fn ended_on(repo: &gix::Repository, branch: &str) -> Vec<(i64, super::TurnKey)> 
         ));
     }
     ended
+}
+
+/// Whether turn `turn` has its `undone` mark.
+fn is_undone(repo: &gix::Repository, turn: &super::TurnKey) -> bool {
+    chat_ok(&turn.chat)
+        && repo
+            .find_reference(reference(&turn.chat, turn.number, Side::Undone).as_str())
+            .is_ok()
+}
+
+/// **The turn Undo is offered on** (#5411; ADR 0081 as amended 2026-11-05): the latest turn that
+/// ended on `branch` not yet undone, whichever chat's it was. Only that one, since undoing an older
+/// turn whose files a later one changed would need a merge.
+pub(super) fn offered_on(repo: &gix::Repository, branch: &str) -> Option<super::TurnKey> {
+    let mut ended = ended_on(repo, branch);
+    ended.sort_unstable_by_key(|(when, turn)| std::cmp::Reverse((*when, turn.number)));
+    ended
+        .into_iter()
+        .map(|(_, turn)| turn)
+        .find(|turn| !is_undone(repo, turn))
 }
 
 /// **The latest turn that ended on `branch`**, whichever chat's it was: the end state of the

@@ -2821,6 +2821,10 @@ The branch's state before and after turn `<n>` of a chat (N3, ADR 0084 §1's com
   program end, through `files::turns` and the git runner, with hooks and the repo's programs off.
   Only a chat whose folder is on this machine and in a workspace's repo records any, and only while
   the app holds its project: a turn that ends with no window open has no `end` until the next one.
+- **And `…/undone`, once the turn is undone** (**Undo a turn**, #5411): the same tier, and
+  pointing at the turn's `end`. It is written by the app in the step that puts the turn's files
+  back, and it is what makes the turn before it the one Undo is offered on next. A turn with it
+  is still compared, and goes with the chat's other refs.
 - **Removed** when the chat is removed: `turns::forget`.
 
 ### `workspaces/<ws>/themes/` — the workspace's theme folders

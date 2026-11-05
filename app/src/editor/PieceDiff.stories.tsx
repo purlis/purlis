@@ -29,6 +29,7 @@ const DRAWN: WhatChanged = {
     moreElsewhere: 0,
     trouble: null,
   },
+  sinceTurnEnded: false,
   diff: {
     kind: "text",
     base: "one\ntwo\nthree\nfour\n",

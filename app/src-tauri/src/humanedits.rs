@@ -14,13 +14,19 @@
 //! discard: the window is told it is not in the chat's history.
 //!
 //! **Told at the chat's next turn** ([`line_for`]), which every chat named in the edit is.
+//!
+//! **Undo a turn** (#5411; ADR 0081 as amended 2026-11-05) is the other edit made here: every file
+//! the latest turn not yet undone changed, put back as its start had it (`files::undo_turn`). Not
+//! idle **refuses** it, naming each chat and its state, and the check is made under the run's
+//! state lock in the same step as the write and its record ([`undo_in`]), as ADR 0081 §4 checks
+//! `place`: a turn heard beginning meanwhile waits for the undo, and then is told of it.
 
 use std::path::Path;
 
 use purlis_core::files::{self, Against, Branch, Discard, Discarded, Target};
 use purlis_core::humanedit::{self, HumanEdit};
 
-use crate::piecefiles::{GitHunk, WhatChanged, branch, placed_of, what_changed_shown};
+use crate::piecefiles::{GitHunk, TurnPick, WhatChanged, branch, placed_of, what_changed_shown};
 use crate::planes::{Held, PlaneId, Planes};
 
 /// What of the file's change a discard puts back.
@@ -84,6 +90,7 @@ pub async fn discard_hunk(
     target: DiscardTarget,
     against: DiscardAgainst,
     busy_too: bool,
+    turn: Option<TurnPick>,
 ) -> Result<DiscardAnswer, String> {
     let held = planes.held(&plane)?;
     tauri::async_runtime::spawn_blocking(move || {
@@ -98,6 +105,7 @@ pub async fn discard_hunk(
                 DiscardAgainst::Opened { stamp } => Against::Opened(stamp),
                 DiscardAgainst::Overwrite { head } => Against::Overwrite { head },
             },
+            turn: turn.map(|TurnPick { chat, number }| files::TurnKey { chat, number }),
         };
         discard_in(&held, at, &ask, busy_too)
     })
@@ -145,6 +153,86 @@ pub(crate) fn discard_in(
             })
         }
     }
+}
+
+/// What an undo came to.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum UndoAnswer {
+    /// Every file is back. `unrecorded` says why the log did not take it, `unmarked` why the turn
+    /// is not marked undone, if either.
+    Undone {
+        unrecorded: Option<String>,
+        unmarked: Option<String>,
+    },
+    /// Nothing was written: these chats are not idle, and an undo waits until they are.
+    Busy { chats: Vec<BusyChat> },
+}
+
+// Every file a turn changed put back as it was before the turn, without committing and without
+// moving a branch: Undo a turn, on the file diff's latest turn not yet undone (#5411). Refused
+// while the folder is not idle. Window only. Not a doc comment, because the generated bindings
+// carry those.
+#[tauri::command]
+#[specta::specta]
+pub async fn undo_turn(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    workspace: String,
+    repo: String,
+    piece: Option<String>,
+    turn: TurnPick,
+) -> Result<UndoAnswer, String> {
+    let held = planes.held(&plane)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let at = branch(&workspace, &repo, &piece);
+        let turn = files::TurnKey {
+            chat: turn.chat,
+            number: turn.number,
+        };
+        undo_in(&held, at, &turn)
+    })
+    .await
+    .map_err(|err| format!("the undo did not finish: {err}"))?
+}
+
+pub(crate) fn undo_in(
+    held: &Held,
+    at: Branch<'_>,
+    turn: &files::TurnKey,
+) -> Result<UndoAnswer, String> {
+    let root = held.root();
+    let reader = crate::reader();
+    let folder = placed_of(&reader, root, at, "")?.absolute;
+    let chats = crate::staleclones::chats_placed_in(held, &folder);
+    held.hooks().while_held(|glance| {
+        let busy: Vec<BusyChat> = chats
+            .iter()
+            .filter_map(|(number, name)| {
+                state_of(&glance(*number)).map(|state| BusyChat {
+                    name: name.clone(),
+                    state,
+                })
+            })
+            .collect();
+        if !busy.is_empty() {
+            return Ok(UndoAnswer::Busy { chats: busy });
+        }
+        let undone =
+            files::undo_turn(&reader, root, at, turn).map_err(|refused| refused.to_string())?;
+        let edit = HumanEdit {
+            chats: chats.iter().map(|(number, _)| *number).collect(),
+            chat_ids: chats
+                .iter()
+                .filter_map(|(number, _)| held.chats().id_of(*number))
+                .collect(),
+            ..undone.edit
+        };
+        Ok(UndoAnswer::Undone {
+            unrecorded: record(held, root, &edit).err(),
+            unmarked: undone.unmarked,
+        })
+    })
 }
 
 fn record(held: &Held, root: &Path, edit: &HumanEdit) -> Result<(), String> {
