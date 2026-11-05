@@ -625,6 +625,20 @@ fn a_window_opened_as_a_hold_ends_closes_too_and_the_hold_waits_for_it() {
 }
 
 #[test]
+fn an_act_that_addresses_a_page_ends_the_chain_it_was_on() {
+    let (browser, _engine) = browser();
+    let _ = snapshot(&browser, 1);
+    if let Some(page) = super::super::super::lock(&browser.inner.state).page_mut("PAGE-1") {
+        page.chain_began = Some("http://other.test".to_owned());
+    }
+
+    drop(browser.addressing("PAGE-1", crate::drive::Why::Addressed));
+
+    let state = super::super::super::lock(&browser.inner.state);
+    assert_eq!(state.page("PAGE-1").unwrap().chain_began, None);
+}
+
+#[test]
 fn a_chosen_load_that_shows_no_document_begins_no_chain() {
     let (browser, engine) = browser();
     let _ = snapshot(&browser, 1);

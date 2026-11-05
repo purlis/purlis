@@ -21,7 +21,8 @@ and [A filled page leaves by its server's redirect](2026-11-05-a-filled-page-lea
   page reaches, and closes with the rest.
 - **A redirect goes on by itself only to the site the chain leading to this sign-in began from**,
   in place of a site the browser was on before the fill. The chain begins at the last load chosen
-  by an address, written or gone back to, that showed a document. What a page does on from there, a link
+  by an address, written or gone back to, that showed a document, and an act that addresses a page
+  and comes to nothing leaves no chain, so the next redirect asks. What a page does on from there, a link
   or a server's redirect, stays in that chain, a window takes its opener's, and a site the chain
   only passed through is no part of its beginning. Any other site asks the person once, naming the
   site.

@@ -2709,6 +2709,11 @@ impl Browser {
         let mut state = lock(&self.inner.state);
         state.addressing = Some((target.to_owned(), why));
         state.addressing_seen = false;
+        // Whatever it was on the way to is over: only this act's load showing a document begins a
+        // chain again, so an act that comes to nothing leaves none (#5230).
+        if let Some(page) = state.page_mut(target) {
+            page.chain_began = None;
+        }
         drop(state);
         Addressing(&self.inner)
     }
