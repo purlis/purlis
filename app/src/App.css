@@ -9052,3 +9052,29 @@ nav.piece-files-head {
   border-inline-start: 2px solid;
   font-size: var(--font-size-sm);
 }
+
+/* **A chat row's Place…** (#4764): under the pointer only, over the row's end on the row's own
+   ground, so nothing on the row moves as it comes and goes. The keyboard's way is ⌘⇧M. */
+.chats-section .chat-row-place {
+  display: none;
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  align-items: center;
+  padding-inline: var(--space-2);
+  color: var(--text-secondary);
+  background-color: var(--surface-hover);
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .chats-section .chat:hover .chat-row-place {
+    display: flex;
+  }
+}
+
+.chats-section .chat-row-place > svg {
+  flex: none;
+  inline-size: var(--ui-tree-step);
+  block-size: var(--ui-tree-step);
+}
