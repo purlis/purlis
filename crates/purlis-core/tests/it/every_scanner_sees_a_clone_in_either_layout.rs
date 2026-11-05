@@ -199,3 +199,120 @@ fn a_chat_in_a_clone_in_either_layout_reads_that_clones_skills() {
         assert_eq!(names, ["api"], "{below}");
     }
 }
+
+/// A repository outside the plane, for a `.git` in the workspace to link to.
+fn a_repository_outside() -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = std::fs::canonicalize(dir.path()).unwrap();
+    support::git(&repo, &["init", "-q", "-b", "main", "."]);
+    (dir, repo)
+}
+
+#[test]
+fn a_link_where_a_clones_git_would_be_is_said_where_it_is() {
+    purlis_core::unsteered!();
+    for (below, said) in [("api", "'api/.git'"), ("repos/api", "'repos/api/.git'")] {
+        let f = support::plane_with_clone("web");
+        let linked = f.workspace().join(below);
+        std::fs::create_dir_all(&linked).unwrap();
+        std::os::unix::fs::symlink(f.clone.join(".git"), linked.join(".git")).unwrap();
+
+        let found = repos::clones(&f.plane, "alpha").unwrap();
+
+        let why = &found.refused.first().expect("the link is said").1;
+        assert!(why.starts_with(said), "{below}: {why}");
+    }
+}
+
+#[test]
+fn the_sandbox_holds_a_clone_at_the_root_in_a_name_purlis_refuses_and_one_in_repos() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("repos/api");
+    let odd = f.workspace().join("a b");
+    std::fs::create_dir_all(&odd).unwrap();
+    support::git(&odd, &["init", "-q", "-b", "main", "."]);
+
+    let held = sandbox::planted::clones_purlis_works_in(&f.plane);
+
+    assert!(held.contains(&odd), "{held:?}");
+    assert!(held.contains(&f.clone), "{held:?}");
+}
+
+#[test]
+fn the_sandbox_holds_a_clone_in_a_workspace_whose_name_purlis_refuses() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("api");
+    let odd = f.plane.join("workspaces/b c/web");
+    std::fs::create_dir_all(&odd).unwrap();
+    support::git(&odd, &["init", "-q", "-b", "main", "."]);
+
+    let held = sandbox::planted::clones_purlis_works_in(&f.plane);
+
+    assert!(held.contains(&odd), "{held:?}");
+}
+
+#[test]
+fn a_git_that_links_out_of_the_plane_gets_no_guest_exclude_block_in_either_layout() {
+    purlis_core::unsteered!();
+    for below in LAYOUTS {
+        let f = support::plane_with_clone("web");
+        f.give_the_plane_a_layer();
+        let (_keep, outside) = a_repository_outside();
+        let linked = f.workspace().join(below);
+        std::fs::create_dir_all(&linked).unwrap();
+        std::os::unix::fs::symlink(outside.join(".git"), linked.join(".git")).unwrap();
+
+        let rows = wslayer::wire(&f.plane, &f.workspace());
+
+        let exclude =
+            std::fs::read_to_string(outside.join(".git/info/exclude")).unwrap_or_default();
+        assert!(
+            !exclude.contains(guest::EXCLUDE_BEGIN),
+            "{below}: the exclude block went outside the plane: {rows:?}"
+        );
+        let ours = std::fs::read_to_string(f.clone.join(".git/info/exclude")).unwrap_or_default();
+        assert!(ours.contains(guest::EXCLUDE_BEGIN), "{below}: {rows:?}");
+    }
+}
+
+#[test]
+fn a_checkout_at_the_root_in_a_name_purlis_refuses_and_one_in_repos_both_get_the_exclude_block() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("repos/api");
+    f.give_the_plane_a_layer();
+    let odd = f.workspace().join("a b");
+    std::fs::create_dir_all(&odd).unwrap();
+    support::git(&odd, &["init", "-q", "-b", "main", "."]);
+
+    let rows = wslayer::wire(&f.plane, &f.workspace());
+
+    for checkout in [&odd, &f.clone] {
+        let exclude =
+            std::fs::read_to_string(checkout.join(".git/info/exclude")).unwrap_or_default();
+        assert!(
+            exclude.contains(guest::EXCLUDE_BEGIN),
+            "{}: {rows:?}",
+            checkout.display()
+        );
+    }
+}
+
+#[test]
+fn the_code_link_takes_a_linked_worktree_at_the_root_and_never_one_in_repos() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("api");
+    std::fs::create_dir_all(f.workspace().join("repos")).unwrap();
+    support::git(
+        &f.clone,
+        &["worktree", "add", "-q", "-b", "deep", "../repos/deep"],
+    );
+    support::git(
+        &f.clone,
+        &["worktree", "add", "-q", "-b", "side", "../side"],
+    );
+
+    assert_eq!(
+        codelink::clones_in(&f.plane, "alpha").unwrap(),
+        ["api", "side"]
+    );
+}

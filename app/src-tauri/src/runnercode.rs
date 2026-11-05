@@ -76,7 +76,7 @@ pub(crate) fn send(
     rel: &str,
     sent: &Sent,
 ) -> Result<(), String> {
-    let repo = folder_of(root, rel);
+    let repo = folder_of(root, rel)?;
     let leave_out = leave_out_of(root, rel)?;
     let have = lock(sent).get(rel).cloned().unwrap_or_default();
     let once = |have: &[String]| -> Result<(Vec<Ref>, Vec<String>), String> {
@@ -169,7 +169,7 @@ pub(crate) fn send_ahead(
     sent: &Sent,
 ) -> Result<(), String> {
     for rel in clones_of(root, workspace) {
-        let repo = folder_of(root, &rel);
+        let repo = folder_of(root, &rel)?;
         let Some(branch) = codelink::current_branch(&repo) else {
             continue;
         };
@@ -211,7 +211,7 @@ pub(crate) fn move_workspace_to(
     sent: &Sent,
 ) -> Result<(), String> {
     for rel in clones_of(root, workspace) {
-        let repo = folder_of(root, &rel);
+        let repo = folder_of(root, &rel)?;
         let leave_out = leave_out_of(root, &rel)?;
         let have = lock(sent).get(&rel).cloned().unwrap_or_default();
         let scratch = scratch()?;
@@ -270,7 +270,7 @@ pub(crate) fn move_workspace_back(
     }
     let mut came_back = crate::host::CameBack::default();
     for rel in here {
-        let repo = folder_of(root, &rel);
+        let repo = folder_of(root, &rel)?;
         let leave_out = leave_out_of(root, &rel)?;
         let scratch = scratch()?;
         let into = scratch.path().join("work.bundle");
@@ -440,15 +440,18 @@ fn clones_of(root: &Path, workspace: &str) -> Vec<String> {
 
 /// **The folder of the repository at `rel`** in the project at `root`: the project's own for an
 /// empty `rel`, else, for `workspaces/<workspace>/<repo>`, where that repo is in either layout
-/// ([`purlis_core::repofolder::folder`]). Anything else is joined as it stands, as before.
-fn folder_of(root: &Path, rel: &str) -> std::path::PathBuf {
+/// ([`purlis_core::repofolder::folder`]), refused where that is refused (a workspace reached
+/// through a link, a name no repo has) rather than joined by hand around it. Anything else is
+/// joined as it stands, as before.
+fn folder_of(root: &Path, rel: &str) -> Result<std::path::PathBuf, String> {
     if rel.is_empty() {
-        return root.to_path_buf();
+        return Ok(root.to_path_buf());
     }
     match rel.split('/').collect::<Vec<_>>().as_slice() {
-        ["workspaces", workspace, repo] => purlis_core::repofolder::folder(root, workspace, repo)
-            .unwrap_or_else(|_| root.join(rel)),
-        _ => root.join(rel),
+        ["workspaces", workspace, repo] => {
+            purlis_core::repofolder::folder(root, workspace, repo).map_err(|why| why.to_string())
+        }
+        _ => Ok(root.join(rel)),
     }
 }
 
@@ -506,7 +509,7 @@ fn fetch_clones(
                 link.fetch_code(project, rel, have, into)
                     .map(|(heads, wrote)| (core_refs(heads), wrote))
             };
-            let repo = folder_of(root, rel);
+            let repo = folder_of(root, rel)?;
             if left {
                 codelink::fetch_back_left(&repo, pool, beside, scratch.path(), through)
             } else if beside {
@@ -597,7 +600,9 @@ fn fetch_whole_said(
     );
     if failed.is_empty() {
         for rel in &here {
-            if let Err(why) = codelink::keep_only_whats_new(&folder_of(root, rel), runner) {
+            if let Err(why) = folder_of(root, rel).and_then(|repo| {
+                codelink::keep_only_whats_new(&repo, runner).map_err(|why| why.to_string())
+            }) {
                 // Only tidiness: every branch is here.
                 tracing::warn!("purlis: in {}: {why}", shown(rel));
             }

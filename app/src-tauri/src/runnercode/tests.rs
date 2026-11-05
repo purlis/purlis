@@ -678,3 +678,33 @@ fn a_program_that_has_not_ended_holds_its_runner_back() {
         "1 program of this project still runs on the runner, and could still commit"
     );
 }
+
+#[test]
+fn a_clone_whose_git_is_a_link_is_never_listed_for_a_runner() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    let ws = root.join("workspaces/alpha");
+    let real = ws.join("api");
+    std::fs::create_dir_all(&real).unwrap();
+    git(&real, &["init", "-q", "-b", "main", "."]);
+    let linked = ws.join("web");
+    std::fs::create_dir_all(&linked).unwrap();
+    std::os::unix::fs::symlink(real.join(".git"), linked.join(".git")).unwrap();
+
+    assert_eq!(super::clones_of(&root, "alpha"), ["workspaces/alpha/api"]);
+}
+
+#[test]
+fn a_clone_in_a_workspace_reached_through_a_link_is_refused_and_never_joined_by_hand() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    let elsewhere = root.join("elsewhere");
+    std::fs::create_dir_all(elsewhere.join("api")).unwrap();
+    std::fs::create_dir_all(root.join("workspaces")).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, root.join("workspaces/alpha")).unwrap();
+
+    let found = super::folder_of(&root, "workspaces/alpha/api");
+
+    assert!(found.is_err(), "{found:?}");
+    assert_eq!(super::folder_of(&root, "").unwrap(), root);
+}

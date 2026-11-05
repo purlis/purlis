@@ -70,10 +70,15 @@ pub fn clones(plane: &Path, ws: &str) -> Result<Clones, Trouble> {
     // is neither a mistake nor a clone, so not worth a line in the panel.
     for row in walked.others.iter().filter(|row| row.git == Git::Link) {
         let name = &row.repo.name;
+        // Where it is, so the operator looks in the right folder of the two.
+        let at = match row.layout {
+            Layout::Repos => format!("{}/{name}", repofolder::REPOS),
+            Layout::Root => name.clone(),
+        };
         found.refused.push((
             name.clone(),
             format!(
-                "'{name}/.git' is a symlink, and purlis will not run git through one: the \
+                "'{at}/.git' is a symlink, and purlis will not run git through one: the \
                  repository it acts on would not be the one inside this workspace. A `.git` \
                  purlis created is never a link"
             ),

@@ -283,7 +283,7 @@ pub fn repo_in(project: &Path, repo: &str) -> Result<PathBuf, Refused> {
 /// #5371), sorted. Only a folder reached through no link, with a name a repository's folder may
 /// have ([`repo_in`]) and not one the workspace keeps for its own
 /// ([`crate::contain::workspace_keeps`]), that is a repository on a branch with a commit: a repo,
-/// or a linked worktree beside them, as before. Each is at
+/// or a linked worktree at the root, as before. Each is at
 /// [`crate::repofolder::folder`] of its name. None where the workspace has no folder. Refused for
 /// a name no workspace has, and for a workspace reached through a link.
 pub fn clones_in(project: &Path, workspace: &str) -> Result<Vec<String>, Refused> {
@@ -319,8 +319,14 @@ pub fn clones_in(project: &Path, workspace: &str) -> Result<Vec<String>, Refused
             "workspace {workspace}'s folder could not be read: {why}"
         )),
     })?;
+    // A linked worktree only at the root, as before: one in `repos/` is not where
+    // [`crate::repofolder::folder`] of its name answers, so a move would act on another folder.
+    // Never a name twice either: a root folder beside a repo of its name in `repos/` is
+    // `shadowed`, not one of `others`.
     let linked = walked.others.iter().filter(|row| {
-        row.git == crate::repofolder::Git::File && crate::repofolder::name_ok(&row.repo.name)
+        row.git == crate::repofolder::Git::File
+            && row.layout == crate::repofolder::Layout::Root
+            && crate::repofolder::name_ok(&row.repo.name)
     });
     let mut clones: Vec<String> = walked
         .repos
@@ -332,7 +338,6 @@ pub fn clones_in(project: &Path, workspace: &str) -> Result<Vec<String>, Refused
         .map(|row| row.repo.name.clone())
         .collect();
     clones.sort();
-    clones.dedup();
     Ok(clones)
 }
 
