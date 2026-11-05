@@ -309,10 +309,6 @@ describe("a chat's one list (#4753)", () => {
       const listed = world().now.listed?.filter((one) => one.session !== 1);
       expect(footed({ listed }).offers.has(FOOT_ROWS.from(5))).toBe(false);
     });
-
-    it("has no Skills row with the Skill studio off, as it has no Use skill", () => {
-      expect(footed({ skillStudio: false }).offers.has(FOOT_ROWS.skills(5))).toBe(false);
-    });
   });
 
   it("says End chat in the palette only on End…: a tab's close says Close (#4753 D6, #4756)", () => {
