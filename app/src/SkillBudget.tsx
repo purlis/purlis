@@ -184,7 +184,7 @@ export function SkillBudgetTable({
               <TableCell heading="Change">
                 <Button
                   size="sm"
-                  className="skill-budget-press"
+                  className="skill-budget-press skill-budget-change-press"
                   aria-label={`Change ${one.program}'s skill budget`}
                   isDisabled={off}
                   tooltip={readOnly}

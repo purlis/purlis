@@ -8579,6 +8579,12 @@ nav.piece-files-head {
   inline-size: fit-content;
 }
 
+/* The grid's arrows land on Change…'s cell too, so that is a target as well: this keeps 24 CSS px of
+   it clear above the button, stacked and compact as well (WCAG 2.5.8). */
+.skill-budget-change-press {
+  margin-block-start: var(--space-4);
+}
+
 .skill-budget-cost {
   display: flex;
   flex-direction: column;
