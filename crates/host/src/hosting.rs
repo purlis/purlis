@@ -396,6 +396,10 @@ fn not_acted(not: crate::browsers::NotActed) -> Refusal {
             code: session::BROWSER_REFUSED.into(),
             why,
         },
+        crate::browsers::NotActed::NoFormOnCleanLoad(why) => Refusal {
+            code: session::NO_LOGIN_FORM_ON_CLEAN_LOAD.into(),
+            why,
+        },
     }
 }
 

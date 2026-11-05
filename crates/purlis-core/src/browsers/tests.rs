@@ -764,6 +764,46 @@ fn a_login_of_another_site_is_refused_while_a_page_holding_a_secret_holds_the_br
 
 /// #5121: a login counts as signed in, for a later call, only where it answered with the browser
 /// held to its page.
+/// #5272: only a browser with nothing behind it skips the clearing: an act of anyone's, a login tried
+/// or a kept login it opened from is something to clear.
+#[test]
+fn only_a_browser_with_nothing_behind_it_has_held_nothing() {
+    let home = tempfile::tempdir().unwrap();
+    let new = || super::Keeping::new(home.path(), home.path());
+    assert!(new().held_nothing());
+    let acted = new();
+    acted.browsed();
+    assert!(!acted.held_nothing(), "an act");
+    let mut tried = new();
+    tried.tried(None);
+    assert!(!tried.held_nothing(), "a login tried");
+    let mut opened = new();
+    opened.opened_from = Some(wire::KeptLogin {
+        profile: "p".into(),
+        persona: "q".into(),
+        login: "l".into(),
+        identity: "i".into(),
+        address: "https://shop.example.test/".into(),
+    });
+    assert!(!opened.held_nothing(), "a kept login");
+}
+
+/// #5272: what a host hands the engine is never "clean already" by itself: it's found out.
+#[test]
+fn a_logins_address_says_nothing_of_whether_it_is_clean_already() {
+    let (login, _) = super::login_of(&LogIn {
+        address: "https://shop.example.test/login".to_owned(),
+        user: None,
+        password: wire::Secret::new("word".to_owned()),
+        keep: None,
+        identity: None,
+        suggested: false,
+        form: None,
+    })
+    .unwrap();
+    assert!(!login.clean_already);
+}
+
 #[test]
 fn a_login_counts_as_signed_in_only_where_it_answered_and_holds_the_browser_to_its_page() {
     use crate::sandbox::browser_reach::Site;

@@ -1037,6 +1037,7 @@ pub fn login_of(login: &wire::LogIn) -> Result<(drive::Login, LoginSites), Strin
             password: zeroize::Zeroizing::new(login.password.expose().to_owned()),
             only_if_asked: false,
             suggested: login.suggested,
+            clean_already: false,
             back_to,
         },
         sites,
@@ -1428,6 +1429,14 @@ impl Keeping {
         self.fresh.store(false, std::sync::atomic::Ordering::SeqCst);
     }
 
+    /// **Whether it has held nothing so far** (#5272): no act, no input of the person's, no login
+    /// tried, and nothing opened from a kept login.
+    fn held_nothing(&self) -> bool {
+        self.fresh.load(std::sync::atomic::Ordering::SeqCst)
+            && self.opened_from.is_none()
+            && self.tried.is_empty()
+    }
+
     /// A login was tried in it, keeping `keep` (#2693), whatever came of it: it may have signed
     /// the browser in.
     fn tried(&mut self, keep: Option<&wire::KeptLogin>) {
@@ -1627,6 +1636,7 @@ fn not_acted(refusal: drive::Refusal) -> NotActed {
             site,
             asks_to_sign_in,
         } => NotActed::Refused(kept_off_said(&site, asks_to_sign_in)),
+        drive::Refusal::NoFormOnCleanLoad(why) => NotActed::NoFormOnCleanLoad(why),
         other => NotActed::Refused(other.to_string()),
     }
 }
@@ -1978,14 +1988,17 @@ impl Screen for EngineScreen {
                 // Opened from this very kept login, a page that asks for nothing is signed in
                 // already. Tried from here, whatever comes of it (#2693), and only a login that
                 // may run: one refused leaves what the browser keeps as it is (#5121).
-                let (opened_from, again) = {
+                let (opened_from, again, held_nothing) = {
                     let mut keeping = self.keeping.lock().unwrap_or_else(PoisonError::into_inner);
+                    let held_nothing = keeping.held_nothing();
                     keeping.tried(asked.keep.as_ref());
                     // The site is signed in as whichever login went last.
                     keeping.only_goes_through(asked.identity.as_deref());
                     let again = keeping.went_through(asked.identity.as_deref());
-                    (keeping.opened_from.clone(), again)
+                    (keeping.opened_from.clone(), again, held_nothing)
                 };
+                // A browser that has held nothing has nothing to clear (#5272).
+                login.clean_already = held_nothing;
                 // And having gone through in it before, it may be signed in with it already (#5121).
                 login.only_if_asked = again || (asked.keep.is_some() && opened_from == asked.keep);
                 let ended = browser.log_in(&login, Arc::clone(holder) as Arc<dyn drive::Hold>);

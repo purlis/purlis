@@ -287,7 +287,11 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
   browser goes to the declared page, fills them only while the page's document is on that
   page's origin, submits, waits for the password field to go, and hands the browser back. A
   browser that holds the login, on a page of its site that asks for no sign-in, answers "already
-  logged in", and nothing is filled. A
+  logged in", and nothing is filled. Every login that fills starts clean on its own site (#5272):
+  once the browser is held to the login, what that site stores in the browser is cleared, other
+  sites' left alone, and the page loads anew; a form that doesn't appear then leads to a new browser
+  that has held nothing, and the chat and the person are told why. A login's values follow the same
+  rules as a fill's. A
   login that does not go through has what it filled cleared, and the chat is told why. The chat
   never gets the values: they are kept out of every snapshot, find, wait and screenshot of every
   page of that browser for as long as it runs, and each field purlis filled is blanked, so a

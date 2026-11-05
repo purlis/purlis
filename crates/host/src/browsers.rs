@@ -312,6 +312,9 @@ pub enum NotActed {
     Ended,
     /// The driver refused it, or could not tell whether it acted, in words that say what to do.
     Refused(String),
+    /// A login's site was cleared, and its form didn't appear on the load after (#5272). Refused
+    /// `no_login_form_on_clean_load`, in words that say so. Nothing was filled.
+    NoFormOnCleanLoad(String),
 }
 
 /// What an act on a browser that has ended is refused with (#2013).

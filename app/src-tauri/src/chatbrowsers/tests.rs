@@ -42,6 +42,9 @@ struct Hosted {
     /// How many reads of a browser's pages, and how many logins, fail from now (#2022).
     pages_fail: Mutex<u32>,
     login_fails: Mutex<u32>,
+    /// How many logins, from now, find no form on their clean load (#5272), and where they did.
+    no_form_on_clean_load: Mutex<u32>,
+    tried_on_clean_load: Mutex<Vec<String>>,
     /// Where the page each act answers is, if anywhere (#2022).
     at: Mutex<Option<String>>,
     /// The device's budget, where the host says it is reached.
@@ -178,6 +181,17 @@ impl Driver for Hosted {
     }
 
     fn log_in(&self, program: &str, login: LogIn) -> Result<Browsed, Refused> {
+        if fails(&self.no_form_on_clean_load) {
+            self.tried_on_clean_load
+                .lock()
+                .unwrap()
+                .push(program.to_owned());
+            return Err(Refused::NoFormOnCleanLoad(
+                "no login form appeared on https://shop.example.test within 30 seconds of \
+                 clearing it, so nothing was filled"
+                    .into(),
+            ));
+        }
         if fails(&self.login_fails) {
             return Err(Refused::Said(
                 "the password field did not go within the time allowed".into(),

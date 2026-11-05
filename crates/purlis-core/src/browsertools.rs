@@ -981,8 +981,11 @@ pub const TOOLS: [Tool; 24] = [
                       persona's browser logins, by its name. purlis goes to the login's page, \
                       fills it from the vault and submits it: the login never reaches you. A \
                       browser that holds this login, on a page of its site that asks for no \
-                      sign-in, answers \"already logged in\" and nothing is filled. A login kept for later reuse opens in a browser of its \
-                      own, and the answer says why and which one it left. The answer also says \
+                      sign-in, answers \"already logged in\" and nothing is filled. Any other login \
+                      starts clean on its own site: what that site stored in the browser goes \
+                      first. A login kept \
+                      for later reuse opens in a browser of its own, and so does one whose form \
+                      doesn't appear on the clean load: the answer says why and which one it left. The answer also says \
                       which sites the browser then reaches; use browser_new for any other site. For a \
                       login your persona doesn't declare, also give site, vault and key (and \
                       user_key if the page asks for a user name): the person is asked, and the \

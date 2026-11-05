@@ -3118,6 +3118,16 @@ impl Browser {
     fn open_own(&self, address: &WebAddress) -> Result<(String, Answer), Refusal> {
         // The page starts empty and is sent to `address` once it is set up, so every event of
         // its load is seen.
+        let target = self.own_blank_page()?;
+        let session = self.page_session(&target)?;
+        lock(&self.inner.state).current = Some(target.clone());
+        let _addressing = self.addressing(&target, Why::Addressed);
+        let answer = self.acting_on(&target, || self.navigate(&session, address))?;
+        Ok((target, answer))
+    }
+
+    /// A new empty page, which no other page opened, once the engine has told of it.
+    pub(super) fn own_blank_page(&self) -> Result<String, Refusal> {
         let created = self
             .gated(|| {
                 self.devtools()
@@ -3149,11 +3159,7 @@ impl Browser {
             return Err(Refusal::PageUntold);
         }
         drop(state);
-        let session = self.page_session(&target)?;
-        lock(&self.inner.state).current = Some(target.clone());
-        let _addressing = self.addressing(&target, Why::Addressed);
-        let answer = self.acting_on(&target, || self.navigate(&session, address))?;
-        Ok((target, answer))
+        Ok(target)
     }
 
     /// Sends the page on `session` to `address`; a load that failed is said in the note.
