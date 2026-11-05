@@ -2509,6 +2509,33 @@ fn told_by_the_app_on_its_next_turn(root: &Path, app: &App, chat: u32) -> String
 }
 
 #[test]
+fn the_operators_edits_are_asked_of_the_app_as_a_turn_begins_and_told_as_its_one_line() {
+    let tmp = daily();
+    let root = root(&tmp);
+    let line = "The operator edited these files by hand since your last turn. Read them again \
+                before you change them: `src/lib.rs` in `svc`.";
+    let (app, _reading, asked) = an_app_answering_tasks(&tmp, move |what| match what {
+        What::HumanEdits => Answer::Task(Box::new(Answered::HumanEdits {
+            line: Some(line.to_owned()),
+        })),
+        _ => Answer::No {
+            why: "not asked in this test".to_owned(),
+        },
+    });
+
+    let told = told_by_the_app_on_its_next_turn(&root, &app, ASKING);
+
+    assert!(told.contains(line), "{told}");
+    // Asked once, as the chat's own: the token's chat is the one told.
+    let asks: Vec<_> = the_task_asks(&asked)
+        .into_iter()
+        .filter(|(_, ask)| ask.what == What::HumanEdits)
+        .collect();
+    assert_eq!(asks.len(), 1);
+    assert_eq!(asks[0].1.chat, ASKING);
+}
+
+#[test]
 fn what_the_person_said_is_asked_of_the_app_as_a_turn_begins_and_handed_over_once() {
     use dispatchtalk::PersonSaid;
     let tmp = daily();

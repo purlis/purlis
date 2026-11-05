@@ -256,6 +256,7 @@ pub(in super::super) fn discard_here(
             files: vec![EditedFile { path, lines }],
             busy: false,
             chats: Vec::new(),
+            chat_ids: Vec::new(),
         },
         now,
     })

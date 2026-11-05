@@ -12,11 +12,13 @@
 //! **One edit, one event** (`purlis_core::humanedit`), under the first chat working in the folder
 //! and naming them all. The write is done by then, so a log that refuses it does not undo the
 //! discard: the window is told it is not in the chat's history.
+//!
+//! **Told at the chat's next turn** ([`line_for`]), which every chat named in the edit is.
 
 use std::path::Path;
 
 use purlis_core::files::{self, Against, Branch, Discard, Discarded, Target};
-use purlis_core::humanedit::HumanEdit;
+use purlis_core::humanedit::{self, HumanEdit};
 
 use crate::piecefiles::{GitHunk, WhatChanged, branch, placed_of, what_changed_shown};
 use crate::planes::{Held, PlaneId, Planes};
@@ -103,7 +105,7 @@ pub async fn discard_hunk(
     .map_err(|err| format!("the discard did not finish: {err}"))?
 }
 
-fn discard_in(
+pub(crate) fn discard_in(
     held: &Held,
     at: Branch<'_>,
     ask: &Discard,
@@ -131,6 +133,10 @@ fn discard_in(
             let edit = HumanEdit {
                 busy: !busy.is_empty(),
                 chats: chats.iter().map(|(number, ..)| *number).collect(),
+                chat_ids: chats
+                    .iter()
+                    .filter_map(|(number, ..)| held.chats().id_of(*number))
+                    .collect(),
                 ..edit
             };
             Ok(DiscardAnswer::Discarded {
@@ -144,6 +150,21 @@ fn discard_in(
 fn record(held: &Held, root: &Path, edit: &HumanEdit) -> Result<(), String> {
     held.hooks()
         .record_human_edit(root, edit.chats.first().copied(), edit)
+}
+
+/// **The line chat `chat`'s turn is told of the operator's edits** (R8, V34a; ADR 0084 §8), read
+/// from the event log. A chat with no id, or a log that cannot be read, is told nothing: the
+/// turn goes on, and the reason is left for whoever reads the app's log.
+pub(crate) fn line_for(held: &Held, chat: u32) -> Option<String> {
+    let id = held.chats().id_of(chat)?;
+    let logs = held.hooks().event_log_dir()?;
+    match humanedit::since_last_turn(&logs, &id) {
+        Ok(edits) => humanedit::announcement(&edits),
+        Err(why) => {
+            tracing::warn!("purlis: the event log did not read for a turn's human edits ({why})");
+            None
+        }
+    }
 }
 
 /// How a sentence says a chat is not idle (ADR 0084 §8 names the chat and its state); `None` for

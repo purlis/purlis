@@ -846,6 +846,42 @@ pub fn read(dir: &Path) -> io::Result<Vec<Event>> {
     Ok(events)
 }
 
+/// **The events in the log in `dir`, newest first, until `take` has enough**: what a read of the
+/// recent past costs, where [`read`] costs the whole log. A file is read whole as it is come to,
+/// the live one before the list of sealed ones, so a seal between the two shows an event twice
+/// and never loses one.
+pub fn read_back(
+    dir: &Path,
+    mut take: impl FnMut(Event) -> std::ops::ControlFlow<()>,
+) -> io::Result<()> {
+    let mut read_one = |path: &Path| -> io::Result<std::ops::ControlFlow<()>> {
+        let text = match std::fs::read(path) {
+            Ok(text) => text,
+            Err(why) if why.kind() == io::ErrorKind::NotFound => {
+                return Ok(std::ops::ControlFlow::Continue(()));
+            }
+            Err(why) => return Err(why),
+        };
+        for line in text.rsplit(|byte| *byte == b'\n') {
+            if let Ok(event) = serde_json::from_slice::<Event>(line)
+                && take(event).is_break()
+            {
+                return Ok(std::ops::ControlFlow::Break(()));
+            }
+        }
+        Ok(std::ops::ControlFlow::Continue(()))
+    };
+    if read_one(&dir.join(FILE))?.is_break() {
+        return Ok(());
+    }
+    for (_, path) in segments(dir)?.into_iter().rev() {
+        if read_one(&path)?.is_break() {
+            return Ok(());
+        }
+    }
+    Ok(())
+}
+
 /// What a subscription hands its client: an event, or word that some were missed.
 #[derive(Debug, Clone, PartialEq)]
 #[allow(

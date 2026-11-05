@@ -138,6 +138,11 @@ pub enum What {
     /// (#1496): asked by the chat's own hook as its turn begins. It names no chat: what is
     /// handed over is what the app keeps for the chat whose token the line carries.
     FromThePerson,
+    /// **What the operator changed in this chat's folder since its last turn**, as the one line
+    /// that turn is told ([`crate::humanedit::announcement`], ADR 0084 §8): asked by the chat's
+    /// own hook as its turn begins. It names no chat: the chat is the one whose token the line
+    /// carries. Nothing says it was handed over: the prompt the hook reports next is what ends it.
+    HumanEdits,
     /// The turn has what the person said of the questions `numbers`
     /// ([`crate::dispatchtalk::PersonSaid::number`]): those need not be handed to a later turn
     /// too. **Said once the hook has printed them for its turn, and not before.** Unsaid, by a
@@ -237,6 +242,8 @@ pub enum Answered {
     FromThePerson {
         said: Vec<crate::dispatchtalk::PersonSaid>,
     },
+    /// The line this chat's turn is told of the operator's edits; none where there are none.
+    HumanEdits { line: Option<String> },
 }
 
 /// How a task's wait for the answer to its question ended.

@@ -3199,6 +3199,25 @@ impl Hooks {
             .map_err(|why| format!("the event log refused it ({why})"))
     }
 
+    /// **The folder this project's event log is read from**: the log this process holds, or,
+    /// where the session host holds it, this machine's. `None` where there is none.
+    pub fn event_log_dir(&self) -> Option<std::path::PathBuf> {
+        let events = self
+            .events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()?;
+        match events.held() {
+            Some(log) => Some(
+                log.lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .log_written_in()
+                    .to_path_buf(),
+            ),
+            None => crate::EVENT_LOG.get()?.as_ref().ok().cloned(),
+        }
+    }
+
     /// [`Hooks::record_dispatch_grant`] for one the person made on a refusal kept while nobody
     /// was there (#1507): the same event with no chat, whose body says `from: "away"`.
     pub fn record_dispatch_grant_from_away(

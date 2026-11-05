@@ -712,7 +712,8 @@ enum Command {
     /// `userpromptsubmit` keeps the session's heartbeat and adds, as `additionalContext`, the
     /// commitment gate — a prompt asking for work with a real fork in it is told to scout and
     /// ask before building; never on a lookup, never unattended, then quiet for three prompts —
-    /// and any report a chat this one handed work to has sent back.
+    /// any report a chat this one handed work to has sent back, and one line naming the files
+    /// the operator changed since the chat's last turn.
     ///
     /// `pretooluse` is the Bash guard and the persona tool gate, `pretooluse-read` the vault
     /// guard on Read/Grep, `pretooluse-edit` the state-directory guard on Write/Edit, and
