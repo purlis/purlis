@@ -196,6 +196,18 @@ pub struct DeletedSkill {
     /// Whether its name belongs to purlis now (it starts with `purlis-`),
     /// so it comes back only under a new name (#3729).
     pub reserved: bool,
+    /// The set it was deleted with (#5331): what the Deleted page groups it by.
+    pub set: Option<DeletedSet>,
+}
+
+/// A set of skills deleted as one change, as the Deleted page groups them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct DeletedSet {
+    pub id: String,
+    /// What it was deleted from, in words.
+    pub from: Option<String>,
+    /// When it was deleted, in seconds since the epoch.
+    pub at: u32,
 }
 
 /// A level a skill can be moved to or made at, and its words.
@@ -639,6 +651,11 @@ pub(crate) async fn skills_deleted(
                         .map_err(|_| format!("{} could not be listed to restore", one.name))?,
                     label: one.level.to_string(),
                     level: (&one.level).into(),
+                    set: one.set.map(|set| DeletedSet {
+                        id: set.id,
+                        from: set.from,
+                        at: u32::try_from(one.at).unwrap_or(u32::MAX),
+                    }),
                     name: one.name,
                 })
             })

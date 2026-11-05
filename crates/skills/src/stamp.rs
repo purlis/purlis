@@ -83,6 +83,11 @@ impl Stamp {
         Stamp(rows)
     }
 
+    /// Whether a skill of this name is among those stamped.
+    pub fn holds(&self, name: &str) -> bool {
+        self.0.iter().any(|row| row.name == name)
+    }
+
     /// **What changed from this stamp to `now`, by skill name** (#3694, S8): the skills a chat
     /// started at this one lacks, the ones it has that are gone, and the ones in both that
     /// changed (moved, described anew, or edited where its harness would not read the edit). Each

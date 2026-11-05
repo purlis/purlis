@@ -43,7 +43,12 @@ import { proposeOldKeysRemoval } from "./oldHarnessPlugins";
 import { GradingPage, gradingCrumbTo, gradingPath, type GradingGo } from "./SkillGrades";
 import { Notice } from "./Notice";
 import { DraftPage, DraftsList } from "./SkillStudioDrafts";
-import { DeletedList, DeletedPage } from "./SkillStudioDeleted";
+import {
+  DeletedList,
+  DeletedPage,
+  NAME_TAKEN_STAYS,
+  type DeletedGroup,
+} from "./SkillStudioDeleted";
 import { DRAFT_WITH_A_CHAT, NEW_SKILL_MENU } from "./SkillStarts";
 import { NewSkillDialog } from "./NewSkillDialog";
 import { askDraft, askSkillChat, draftLevel, useSkillDraftsRead } from "./skillDraftAsks";
@@ -112,6 +117,9 @@ type Doing =
   | { what: "delete"; skill: StudioSkill; level: SkillLevel; refused?: string }
   | { what: "export"; skill: StudioSkill; level: SkillLevel; refused?: string };
 
+/** What the path calls a change to several skills (#5331). */
+const SET_PATH = { delete: "Delete all", "turn-off": "Turn all off", "turn-on": "Turn all on" };
+
 /** **The path inside Sources** (#3687): the source, then the review, as the prototype names
  *  them. Pressing the source goes to its page, and Install all to its list of skills to tick
  *  (#4024); the last is where the person is. */
@@ -121,6 +129,8 @@ function sourcesPath(at: SourcesAt): Crumb[] {
   if (at.at === "source") return [source];
   if (at.at === "choose") return [source, choose];
   if (at.at === "install-all") return [source, choose, { id: at.at, label: "Review" }];
+  if (at.at === "set-choose") return [source, { id: at.at, label: SET_PATH[at.act] }];
+  if (at.at === "set-review") return [source, { id: at.at, label: `Review: ${SET_PATH[at.act]}` }];
   return [
     source,
     { id: at.at, label: `${at.at === "install" ? "Install" : "Update"} ${at.skill}` },
@@ -128,6 +138,21 @@ function sourcesPath(at: SourcesAt): Crumb[] {
 }
 
 // --- The Library's list ------------------------------------------------------------------------
+
+/** **A Library row's source, as a tag that narrows the list to it** (#5331). */
+function SourceTag({ label, onPress }: { label: string; onPress: (label: string) => void }) {
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      aria-label={`Show only ${label}`}
+      data-testid="skill-source-tag"
+      onPress={() => onPress(label)}
+    >
+      {label}
+    </Button>
+  );
+}
 
 /** **The Library's filter chips** (S2): each narrows the list, and none ticked shows all. */
 const CHIPS = [
@@ -148,6 +173,13 @@ function chipsKeep(skill: StudioSkill, chips: ReadonlySet<Chip>): boolean {
     kinds.some((one) => (one === "own" ? PINNABLE.has(skill.level) : skill.level === "built-in"));
   const state = states.length === 0 || states.some((one) => (one === "on") === skill.on);
   return kind && state;
+}
+
+/** The sources the Library's skills came from, each once, in name order (#5331). */
+function sourcesOf(skills: readonly StudioSkill[]): string[] {
+  return [
+    ...new Set(skills.map((skill) => skill.source_label).filter((one) => one !== null)),
+  ].sort();
 }
 
 /** Whether `skill` matches what is typed in the search box: its name or its description. */
@@ -382,6 +414,8 @@ export function SkillStudioTab({
   const [need, setNeed] = useState<string>();
   const [query, setQuery] = useState("");
   const [chips, setChips] = useState<ReadonlySet<Chip>>(new Set());
+  /** The source the Library is narrowed to (#5331), by its label; "" for every source. */
+  const [fromSource, setFromSource] = useState("");
   // Make my own copy (#3686): of the built-in `from`, or of one the person picks; and why the
   // core did not make the last one asked for.
   const [copying, setCopying] = useState<{ from?: string; refused?: string }>();
@@ -657,6 +691,49 @@ export function SkillStudioTab({
    *  a new name where its own is a built-in skill's now (#3729). */
   const bringBack = (id: string, under: string | null = null) =>
     change("The skill was not brought back", () => commands.skillRestore(plane, id, under));
+  /** **Bring all back** (#5331): those of a group that can come back, as one change, with one
+   *  Undo that deletes them again as the group they were. */
+  const bringAllBack = (group: DeletedGroup) => {
+    const back = group.skills.filter((skill) => !skill.reserved);
+    const ids = back.map((skill) => skill.id);
+    const stay = group.skills.filter((skill) => skill.reserved);
+    const staying =
+      stay.length === 0
+        ? []
+        : [`${stay.map((skill) => skill.name).join(", ")} ${NAME_TAKEN_STAYS}`];
+    change(
+      "The skills were not brought back",
+      () => commands.skillSetRestore(plane, ids, null),
+      async (notes) => ({
+        ...resultOf(
+          "Skills brought back",
+          `${counted(back.length, "skill is", "skills are")} back.`,
+          [...staying, ...notes],
+        ),
+        undo: () =>
+          change(
+            "The bring back was not undone",
+            () =>
+              commands.skillSetDelete(
+                plane,
+                back.map((skill) => ({
+                  level: skill.level,
+                  name: skill.name,
+                  label: skill.label,
+                })),
+                group.from,
+                null,
+              ),
+            async (undone) =>
+              resultOf(
+                "Bring back undone",
+                `${counted(back.length, "skill is", "skills are")} in Deleted again.`,
+                undone,
+              ),
+          ),
+      }),
+    );
+  };
   /** After a delete: Bring it back on the Notice, for the copy just deleted. */
   const restoreOffered = async (
     name: string,
@@ -1150,7 +1227,13 @@ export function SkillStudioTab({
   /** An item other than a skill is chosen on its page (a draft): narrow, it is drawn alone. */
   let itemChosen = false;
   if (page === "library") {
-    const shown = skills.filter((skill) => chipsKeep(skill, chips) && searchKeeps(skill, query));
+    const shown = skills.filter(
+      (skill) =>
+        chipsKeep(skill, chips) &&
+        searchKeeps(skill, query) &&
+        (fromSource === "" || skill.source_label === fromSource),
+    );
+    const sourceLabels = sourcesOf(skills);
     // The first row of a name is the copy the chat gets, or its only copy; each row after it is
     // a copy that one hides. Counted in the core's order, before the built-ins go to the end.
     const seen = new Map<string, number>();
@@ -1178,13 +1261,11 @@ export function SkillStudioTab({
           data-testid={testids.get(skillRowId(skill))}
           data-row={skillRowId(skill)}
         >
-          <RowLabel>
-            {skill.name}
-            {skill.source_label !== null && (
-              <span className="ui-text-secondary"> · {skill.source_label}</span>
-            )}
-          </RowLabel>
+          <RowLabel>{skill.name}</RowLabel>
           <RowTrail>
+            {skill.source_label !== null && (
+              <SourceTag label={skill.source_label} onPress={setFromSource} />
+            )}
             <Badge>{skill.label}</Badge>
             {mark !== undefined && <Badge variant={mark.variant}>{mark.said}</Badge>}
           </RowTrail>
@@ -1195,7 +1276,7 @@ export function SkillStudioTab({
         </ListRow>
       );
     };
-    const filtering = query.trim() !== "" || chips.size > 0;
+    const filtering = query.trim() !== "" || chips.size > 0 || fromSource !== "";
     list = (
       <>
         <ViewListHead
@@ -1227,6 +1308,21 @@ export function SkillStudioTab({
                 })
               }
             />
+            {(sourceLabels.length > 0 || fromSource !== "") && (
+              <Select
+                size="sm"
+                aria-label="Source"
+                data-testid="skill-library-source"
+                value={fromSource}
+                options={[
+                  { value: "", label: "Every source" },
+                  ...[...new Set([...sourceLabels, ...(fromSource === "" ? [] : [fromSource])])]
+                    .sort()
+                    .map((one) => ({ value: one, label: one })),
+                ]}
+                onValueChange={setFromSource}
+              />
+            )}
             {persona !== null && studio !== undefined && (
               /* The persona's own skills list (#2768): every skill choice is the studio's. A name
                  the studio lists has Add on its page; this takes one it does not. */
@@ -1256,6 +1352,7 @@ export function SkillStudioTab({
                       onPress={() => {
                         setQuery("");
                         setChips(new Set());
+                        setFromSource("");
                       }}
                     >
                       Show every skill
@@ -1541,6 +1638,7 @@ export function SkillStudioTab({
         busy={busy}
         change={change}
         changed={changed + done}
+        workspace={workspace}
       />
     ));
   } else if (page === "deleted") {
@@ -1560,7 +1658,9 @@ export function SkillStudioTab({
           <DeletedList
             deleted={deleted}
             chosen={one?.id}
+            busy={busy}
             onChoose={(id) => go({ page: "deleted", scope, item: id })}
+            onBringAllBack={bringAllBack}
           />
         ),
       ),

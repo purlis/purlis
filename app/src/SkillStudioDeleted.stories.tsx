@@ -28,6 +28,7 @@ const DELETED: DeletedSkill[] = [
     days_left: 27,
     in_history: true,
     reserved: false,
+    set: null,
   },
   {
     id: "g2",
@@ -37,6 +38,7 @@ const DELETED: DeletedSkill[] = [
     days_left: 12,
     in_history: true,
     reserved: false,
+    set: null,
   },
   {
     id: "g3",
@@ -46,6 +48,7 @@ const DELETED: DeletedSkill[] = [
     days_left: 3,
     in_history: false,
     reserved: false,
+    set: null,
   },
 ];
 
@@ -128,6 +131,37 @@ export const Narrow: Story = {
     await tabInto(() => canvas.getByRole("grid", { name: "Deleted skills" }));
     await userEvent.keyboard("{Enter}");
     await waitFor(() => canvas.getByRole("button", { name: "Back to Deleted" }));
+    expectFocusInSight();
+  },
+};
+
+/** The fourteen a bulk delete took, as one group (#5331). */
+const SET = { id: "1762300800000", from: "mattpocock-skills", at: 1762300800 };
+const GROUPED: DeletedSkill[] = [
+  ...["grilling", "tdd", "to-spec"].map((name) => ({
+    id: name,
+    name,
+    level: { at: "project", local: false } as const,
+    label: "project",
+    days_left: 30,
+    in_history: true,
+    reserved: false,
+    set: SET,
+  })),
+  ...DELETED,
+];
+
+/** **A set deleted together** (#5331): one group with Bring all back, reached by the keyboard, and
+ *  each skill of it still chosen on its own. */
+export const Group: Story = {
+  args: { deleted: GROUPED, item: "grilling" },
+  play: async ({ canvas }) => {
+    const group = await canvas.findByTestId(`deleted-group-${SET.id}`);
+    await expect(group).toHaveTextContent("3 skills from mattpocock-skills, 5 Nov");
+    const all = within(group).getByRole("button", { name: /Bring all back/ });
+    await tabInto(() => canvas.getByRole("grid", { name: "Deleted skills" }));
+    await waitFor(() => expect(all).toBeVisible());
+    await canvas.findByRole("button", { name: "Bring back grilling" });
     expectFocusInSight();
   },
 };

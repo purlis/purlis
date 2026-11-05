@@ -14,6 +14,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { STORY_HISTORY as HISTORY, StudioInPanel } from "./skillStudioStory.testkit";
 import { AT_THE_ROOT, sourceKey, type SourcesAt } from "./skillStudio";
 import { PROJECT } from "./skillChanges";
+import { memberKey } from "./SkillSetReview";
 import { studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
 import { expectFocusInSight, untilFocusWithin } from "./stories.testkit";
@@ -41,6 +42,54 @@ const PLATFORM = {
   kept: "local",
   label: "platform-skills",
 } as const;
+
+/** What is installed from the source, at two levels (#5331). */
+const COPIES = [
+  {
+    member: { level: PROJECT, name: "brainstorming", label: "project" },
+    changed: false,
+    on_here: null,
+  },
+  {
+    member: { level: PROJECT, name: "writing-plans", label: "project" },
+    changed: false,
+    on_here: null,
+  },
+  {
+    member: { level: PROJECT, name: "systematic-debugging", label: "project" },
+    changed: true,
+    on_here: null,
+  },
+  {
+    member: {
+      level: { at: "project", local: true } as const,
+      name: "brainstorming",
+      label: "local",
+    },
+    changed: false,
+    on_here: null,
+  },
+];
+
+/** The review of `members`: one taken out, one left naming another, two open chats. */
+const SET_REVIEW = ({ members }: { members: { name: string }[] }) => ({
+  skills: members.map((member) => ({
+    member,
+    changed: member.name === "systematic-debugging",
+    cannot:
+      member.name === "writing-plans"
+        ? "It holds changes that are not committed yet: save them first."
+        : null,
+  })),
+  names: [
+    {
+      namer: "to-spec",
+      named: "brainstorming",
+      add: { level: PROJECT, name: "to-spec", label: "project" },
+    },
+  ],
+  open_chats: 2,
+});
 
 const EMPTY = {
   scripts: [],
@@ -284,6 +333,10 @@ function core({ tooMuch = false }: { tooMuch?: boolean } = {}) {
           widenings: [],
           accepted: { commit: "8".repeat(40), skills: [] },
         };
+      case "skill_source_installed":
+        return COPIES;
+      case "skill_set_review":
+        return SET_REVIEW(args as { members: { name: string }[] });
       case "skill_deletes_cut_short":
         return { settled: [], unsettled: [] };
       default:
@@ -510,6 +563,81 @@ export const InstallAllThere: Story = {
     await expect(within(review).getByRole("button", { name: "Install" })).toBeVisible();
     // The picture shows the section, below the skill being installed.
     there.scrollIntoView({ block: "end" });
+  },
+};
+
+/** Tab, until the keyboard is inside `target`, at most `steps` times. */
+async function tabInto(target: () => Element | null, steps = 30): Promise<void> {
+  for (let step = 0; step < steps; step++) {
+    const into = target();
+    if (into !== null && into.contains(document.activeElement)) return;
+    await userEvent.tab();
+  }
+  await untilFocusWithin(target, "the keyboard reaches it by Tab");
+}
+
+/** **Delete all…, the skills to tick** (#5331): each under its level, only the current level's
+ *  ticked, and one changed since install left unticked and marked. */
+export const DeleteAllChoose: Story = {
+  args: { at: { at: "set-choose", act: "delete", source: SOURCE, label: SUPERPOWERS.label } },
+  play: async ({ canvas }) => {
+    const choose = await canvas.findByTestId("set-choose");
+    const row = await within(choose).findByTestId("set-project-systematic-debugging");
+    await expect(within(row).getByRole("checkbox")).not.toBeChecked();
+    await expect(row).toHaveTextContent("Changed since install");
+    const list = within(choose).getByRole("grid");
+    await tabInto(() => list);
+    await userEvent.keyboard(" ");
+    expectFocusInSight();
+    await expect(within(choose).getByRole("button", { name: /^Review/ })).toBeVisible();
+  },
+};
+
+/** **The one review** (#5331): the warning of a skill left naming one that goes, with its offer; how
+ *  many open chats keep them; one taken out with its reason; one left out; Delete at the foot. */
+export const DeleteAllReview: Story = {
+  args: {
+    at: {
+      at: "set-review",
+      act: "delete",
+      source: SOURCE,
+      label: SUPERPOWERS.label,
+      members: COPIES.map((one) => one.member),
+      ticked: COPIES.filter((one) => !one.changed).map((one) => memberKey(one.member)),
+    },
+  },
+  play: async ({ canvas }) => {
+    const review = await canvas.findByTestId("set-review");
+    const warning = await within(review).findByTestId("set-names-to-spec-brainstorming");
+    await expect(warning).toHaveTextContent("to-spec names brainstorming, which you're deleting.");
+    await expect(within(review).getByTestId("set-open-chats")).toHaveTextContent(
+      "2 open chats use these.",
+    );
+    await expect(within(review).getByTestId("set-cannot-writing-plans")).toBeVisible();
+    await expect(within(review).getByTestId("set-left-out-systematic-debugging")).toBeVisible();
+    const also = within(warning).getByRole("button", { name: "Also delete to-spec" });
+    await tabInto(() => also);
+    expectFocusInSight();
+    await expect(within(review).getByRole("button", { name: "Delete 1 skill" })).toBeVisible();
+  },
+};
+
+/** **Turn all off…, the one review** (#5331): the same page, in a workspace's words. */
+export const TurnAllOffReview: Story = {
+  args: {
+    at: {
+      at: "set-review",
+      act: "turn-off",
+      source: SOURCE,
+      label: SUPERPOWERS.label,
+      members: COPIES.slice(0, 2).map((one) => one.member),
+      ticked: COPIES.slice(0, 2).map((one) => memberKey(one.member)),
+    },
+  },
+  play: async ({ canvas }) => {
+    const review = await canvas.findByTestId("set-review");
+    await within(review).findByTestId("set-going-list");
+    await expect(within(review).getByRole("button", { name: /^Turn off/ })).toBeVisible();
   },
 };
 

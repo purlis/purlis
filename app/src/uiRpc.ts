@@ -1124,6 +1124,11 @@ export const commands = {
 	 */
 	skillDeletedText: (plane: PlaneId, id: string) => typedError<string, string>(__TAURI_INVOKE("skill_deleted_text", { plane, id })),
 	skillRestore: __WINDOW_ONLY_RESULT,
+	skillSourceInstalled: __WINDOW_ONLY_RESULT,
+	skillSetReview: __WINDOW_ONLY_RESULT,
+	skillSetDelete: __WINDOW_ONLY_RESULT,
+	skillSetRestore: __WINDOW_ONLY_RESULT,
+	skillSetTurn: __WINDOW_ONLY_RESULT,
 	skillGrant: __WINDOW_ONLY_RESULT,
 	skillTurn: __WINDOW_ONLY_RESULT,
 	skillPin: __WINDOW_ONLY_RESULT,
@@ -4328,6 +4333,15 @@ export type DeclaredHarness = {
 	acp: boolean,
 };
 
+/**  A set of skills deleted as one change, as the Deleted page groups them. */
+export type DeletedSet = {
+	id: string,
+	/**  What it was deleted from, in words. */
+	from: string | null,
+	/**  When it was deleted, in seconds since the epoch. */
+	at: number,
+};
+
 /**  A deleted skill Restore can bring back. */
 export type DeletedSkill = {
 	/**
@@ -4354,6 +4368,8 @@ export type DeletedSkill = {
 	 *  so it comes back only under a new name (#3729).
 	 */
 	reserved: boolean,
+	/**  The set it was deleted with (#5331): what the Deleted page groups it by. */
+	set: DeletedSet | null,
 };
 
 /**  What became of the skill deletes a crash or a quit cut short, one line each (SK-35, #3013). */
@@ -6704,6 +6720,15 @@ fits: string[];
 rest: string[]; why: string; 
 /**  Those named that the level holds already (#4153), left out of every part. */
 there: string[] };
+
+/**  A copy installed from a source that is still there. */
+export type InstalledCopy = {
+	member: SkillSetMember,
+	/**  Whether it was edited here since it was installed. */
+	changed: boolean,
+	/**  Whether it is on in the workspace asked of; none where that workspace cannot turn it. */
+	on_here: boolean | null,
+};
 
 /**
  *  What has contributed what to this window — ADR 0041's item 2, and the thing every
@@ -12678,6 +12703,54 @@ export type SkillRouting = {
 	 *  one. Optional in the window's type, as most routers never are.
 	 */
 	last_prompt?: SkillPromptRouting | null,
+};
+
+/**  What is asked of a set. */
+export type SkillSetAct = "delete" | "turn-off" | "turn-on";
+
+/**  What a set's delete did, and what an Undo hands back. */
+export type SkillSetDeleted = {
+	notes: string[],
+	/**  Each deleted skill's id, as the Deleted page lists it. */
+	deleted: string[],
+};
+
+/**  One skill of a set: its level and name, and its level as a person reads it. */
+export type SkillSetMember = {
+	level: SkillLevel,
+	name: string,
+	label: string,
+};
+
+/**  A skill that stays naming one that goes. */
+export type SkillSetNaming = {
+	namer: string,
+	named: string,
+	/**  The skill the set could take in, so nothing is left naming what is not there. */
+	add: SkillSetMember,
+};
+
+/**  What a set's review says before anything is written. */
+export type SkillSetReview = {
+	skills: SkillSetReviewed[],
+	names: SkillSetNaming[],
+	/**  How many open chats started with one of these and keep it until they restart. */
+	open_chats: number,
+};
+
+/**  One skill as a set's review shows it. */
+export type SkillSetReviewed = {
+	member: SkillSetMember,
+	changed: boolean,
+	/**  Why it cannot be part of this change: the review takes it out before anything is written. */
+	cannot: string | null,
+};
+
+/**  What a set's turn did, and what an Undo turns back. */
+export type SkillSetTurned = {
+	notes: string[],
+	/**  Those it changed: one that already was so is not among them. */
+	changed: string[],
 };
 
 /**  A skill source as the studio shows and adds one. */

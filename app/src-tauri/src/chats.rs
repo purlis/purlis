@@ -3992,6 +3992,23 @@ impl Chats {
         changed
     }
 
+    /// **How many open chats started with one of `names`** and keep it until they restart
+    /// (#5331), by what each started with. A chat whose harness takes in a change by itself holds
+    /// no stamp and is not counted: nothing waits for its restart.
+    pub fn open_using(&self, names: &[&str]) -> u32 {
+        let open = lock(&self.open);
+        let using = open
+            .values()
+            .filter(|running| {
+                running
+                    .skills
+                    .as_ref()
+                    .is_some_and(|stamp| names.iter().any(|name| stamp.holds(name)))
+            })
+            .count();
+        u32::try_from(using).unwrap_or(u32::MAX)
+    }
+
     /// The chats owed a restart (#1342, #1428): what the window drives once each one's turn
     /// has ended, read again whenever the window is drawn anew.
     pub fn owed_restarts(&self) -> Vec<u32> {

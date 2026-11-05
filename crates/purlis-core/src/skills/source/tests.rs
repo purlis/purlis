@@ -1996,6 +1996,42 @@ fn whole_and_there(set: SetReview) -> (Review, Vec<String>) {
     }
 }
 
+/// #5331: a deleted skill's pin stays for a Restore, and it is not installed: its source offers it
+/// again, and the new install takes the old entry's place instead of adding a second.
+#[test]
+fn a_deleted_skill_can_be_installed_again_and_leaves_one_entry() {
+    let remote = three_skills();
+    let tmp = plane();
+    let root = tmp.path();
+    let source = remote.source();
+    let named = ["lint".to_owned()];
+    let first = whole(review_set(root, &source, &named, &Level::project()).unwrap());
+    let (made, _) = on(root, |cx| {
+        install(cx, &source, &Level::project(), &first.accepted(), None)
+    });
+    made.unwrap();
+    let (deleted, _) = on(root, |cx| {
+        crate::skills::verbs::delete(cx, &Level::project(), "lint")
+    });
+    deleted.unwrap();
+    let offered = browse(root, &source).unwrap();
+    let lint = offered
+        .skills
+        .iter()
+        .find(|one| one.skill.name == "lint")
+        .unwrap();
+    assert!(lint.installed.is_empty(), "a deleted skill is not installed");
+
+    let again = whole(review_set(root, &source, &named, &Level::project()).unwrap());
+    let (made, _) = on(root, |cx| {
+        install(cx, &source, &Level::project(), &again.accepted(), None)
+    });
+    made.unwrap();
+    let held = lock::read(root, lock::Kept::Shared).unwrap();
+    let entries = held.lock.skills.iter().filter(|one| one.name == "lint");
+    assert_eq!(entries.count(), 1);
+}
+
 #[test]
 fn a_set_of_skills_installs_through_one_review_and_one_change() {
     let remote = three_skills();

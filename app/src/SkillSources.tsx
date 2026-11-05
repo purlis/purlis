@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Plus, RotateCw } from "lucide-react";
 import {
   commands,
+  type InstalledCopy,
   type InstallReview,
   type InstallSetReview,
   type OfferedSkill,
@@ -18,6 +19,8 @@ import {
   type SourceChecked,
   type SkillUpdateOffer,
   type SkillRename,
+  type SkillSetAct,
+  type SkillSetMember,
   type SkillUpdates,
   type SkillWidening,
   type StudioLevel,
@@ -34,6 +37,8 @@ import { capitalised } from "./saving";
 import { TextField } from "./ui/field/Field";
 import { NotRead, ReadingRows } from "./SkillPanels";
 import { sourceKey, type SourcesAt } from "./skillStudio";
+import type { Change as StudioChange, Said } from "./SkillPage";
+import { SetChoosePage, SetReviewPage, memberKey } from "./SkillSetReview";
 import { Badge } from "./ui/badge/Badge";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Card, CardTitle } from "./ui/card/Card";
@@ -62,7 +67,9 @@ import { ReviewPage } from "./ui/review-page/ReviewPage";
  *   the repository and who can browse it, with its branch, its folder and its sign-in under More.
  * - **A source's page**: its skills at its newest commit, each marked Installed, Update
  *   available, or with what its files do ("runs a script", "reaches 1 host"), with Check for
- *   updates and Remove source…, which keeps every skill installed from it.
+ *   updates and Remove source…, which keeps every skill installed from it unless its one choice
+ *   says to delete them too, through the same review as Delete all… (#5331). Delete all… and Turn
+ *   all off… or on… are `SkillSetReview`'s two pages.
  * - **The install review**: the pinned commit, what each skill adds with the risky items marked,
  *   each file one click away under its own mark, and where it lands, with Install at the foot. At
  *   the project level it is granted there too, the root's until the person picks another, and
@@ -97,6 +104,36 @@ async function reading<T>(
   } catch (err) {
     return { refused: String(err) };
   }
+}
+
+/** What a change to several skills is called, with the source it is from (#5331). */
+const SET_TITLE: Record<SkillSetAct, string> = {
+  delete: "Delete all from",
+  "turn-off": "Turn all off from",
+  "turn-on": "Turn all on from",
+};
+
+/** The copies `act` lists: each deleted, or each that `act` would change in the workspace, once
+ *  by name, as a workspace turns a name. */
+function copiesFor(act: SkillSetAct, copies: readonly InstalledCopy[]): InstalledCopy[] {
+  if (act === "delete") return [...copies];
+  const wanted = act === "turn-on" ? false : true;
+  const seen = new Set<string>();
+  return copies.filter((one) => {
+    if (one.on_here !== wanted || seen.has(one.member.name)) return false;
+    seen.add(one.member.name);
+    return true;
+  });
+}
+
+/** What the studio says after a change to several skills. */
+function saidOf(label: string, text: string, notes: readonly string[], undo?: () => void): Said {
+  return {
+    tone: "news",
+    label,
+    text: [text, ...notes].join(" "),
+    ...(undo === undefined ? {} : { undo }),
+  };
 }
 
 /** Who can browse a source, as Add source asks and a source's row says. */
@@ -275,8 +312,11 @@ export function SkillSourcesPage({
   busy,
   change,
   changed,
+  workspace = null,
 }: {
   plane: string;
+  /** The workspace the studio shows, which is what a skill is turned off or on in. */
+  workspace?: string | null;
   /** The page inside Sources, or none for Sources itself. */
   at: SourcesAt | undefined;
   /** Goes to a page inside Sources, or to Sources itself: a step of the tab's history. */
@@ -293,20 +333,111 @@ export function SkillSourcesPage({
   /** The level an install lands at unless the person picks another: where they came from. */
   start: SkillLevel;
   busy: boolean;
-  change: (label: string, run: () => Promise<Answer>) => void;
+  change: StudioChange;
   changed: number;
 }) {
   const read = useSourcesRead(plane, changed, at === undefined);
   const [adding, setAdding] = useState<{ offered?: OfferedSource }>();
   /** A change, and where the tab goes once it is made: only from the page it was made on, so a
    *  person who went on meanwhile is never pulled back. */
-  const changeThen = (label: string, run: () => Promise<Answer>, to?: SourcesAt) => {
+  const changeThen = (
+    label: string,
+    run: () => Promise<Answer>,
+    to?: SourcesAt,
+    then?: Parameters<StudioChange>[2],
+  ) => {
     const from = at;
-    change(label, () =>
-      run().then((answer) => {
-        if (answer.status === "ok" && stillAt(from)) onGo(to);
-        return answer;
-      }),
+    change(
+      label,
+      () =>
+        run().then((answer) => {
+          if (answer.status === "ok" && stillAt(from)) onGo(to);
+          return answer;
+        }),
+      then,
+    );
+  };
+  /** **The change a set's review asks** (#5331): one commit, and one Undo right after. */
+  const applySet = (
+    act: SkillSetAct,
+    source: SkillSource,
+    members: SkillSetMember[],
+    to: SourcesAt | undefined,
+    removesSource: boolean,
+  ) => {
+    const count = counted(members.length, "skill", "skills");
+    if (act === "delete") {
+      let ids: string[] = [];
+      const removed = removesSource ? source : null;
+      changeThen(
+        "The skills were not deleted",
+        () =>
+          commands
+            .skillSetDelete(plane, members, source.label, removed?.remote ?? null)
+            .then((answer) => {
+              if (answer.status === "ok") ids = answer.data.deleted;
+              return answer;
+            }),
+        to,
+        async (notes) =>
+          saidOf(
+            "Skills deleted",
+            `${count} deleted. They stay in Deleted for 30 days.`,
+            notes,
+            () =>
+              change(
+                "The delete was not undone",
+                () => commands.skillSetRestore(plane, ids, removed),
+                async (undone) => saidOf("Delete undone", `${count} back.`, undone),
+              ),
+          ),
+      );
+      return;
+    }
+    if (workspace === null) return;
+    const on = act === "turn-on";
+    const state = on ? "on" : "off";
+    const undoState = on ? "off" : "on";
+    let turned: string[] = [];
+    changeThen(
+      `The skills were not turned ${state}`,
+      () =>
+        commands
+          .skillSetTurn(
+            plane,
+            workspace,
+            members.map((one) => one.name),
+            on,
+          )
+          .then((answer) => {
+            if (answer.status === "ok") turned = answer.data.changed;
+            return answer;
+          }),
+      to,
+      async (notes) =>
+        saidOf(
+          `Skills turned ${state}`,
+          `${counted(turned.length, "skill", "skills")} turned ${state} in ${workspace}.`,
+          notes,
+          () =>
+            change(
+              "The change was not undone",
+              () =>
+                commands
+                  .skillSetTurn(plane, workspace, turned, !on)
+                  .then((answer) =>
+                    answer.status === "ok"
+                      ? { status: "ok" as const, data: { notes: answer.data.notes } }
+                      : answer,
+                  ),
+              async (undone) =>
+                saidOf(
+                  "Change undone",
+                  `${counted(turned.length, "skill", "skills")} turned ${undoState} in ${workspace}.`,
+                  undone,
+                ),
+            ),
+        ),
     );
   };
   const sources = read.sources?.data ?? [];
@@ -360,6 +491,66 @@ export function SkillSourcesPage({
           />
         )}
       </Held>
+    );
+  else if (at.at === "set-choose")
+    page = (
+      <SetChooseRead
+        plane={plane}
+        source={sourceAt}
+        act={at.act}
+        workspace={workspace}
+        level={start}
+        changed={changed}
+        kept={at.ticked}
+        onCancel={() => onGo(toSource(at))}
+        onReview={(members, ticked) =>
+          onGo({
+            at: "set-review",
+            act: at.act,
+            source: at.source,
+            label: at.label,
+            members,
+            ticked,
+          })
+        }
+      />
+    );
+  else if (at.at === "set-review")
+    page = (
+      <SetReviewPage
+        // A new set is a new review, and what was unticked in the last one is forgotten.
+        key={`${at.act}\u0000${at.ticked.join("\u0001")}`}
+        plane={plane}
+        act={at.act}
+        title={`${SET_TITLE[at.act]} ${sourceAt.label}`}
+        named={at.members}
+        ticked={at.ticked}
+        workspace={workspace}
+        {...(at.removesSource === true ? { alsoRemoves: sourceAt.label } : {})}
+        busy={busy}
+        onCancel={() =>
+          onGo(
+            at.removesSource === true
+              ? toSource(at)
+              : {
+                  at: "set-choose",
+                  act: at.act,
+                  source: at.source,
+                  label: at.label,
+                  ticked: at.ticked,
+                },
+          )
+        }
+        onApply={(members) =>
+          applySet(
+            at.act,
+            sourceAt,
+            members,
+            at.removesSource === true ? undefined : toSource(at),
+            at.removesSource === true,
+          )
+        }
+      />
     );
   else if (at.at === "choose")
     page = (
@@ -439,6 +630,7 @@ export function SkillSourcesPage({
             commands.skillSourceConfirm(plane, sourceAt.remote),
           )
         }
+        workspace={workspace}
         onRemove={() =>
           changeThen("The source was not removed", () =>
             commands.skillSourceRemove(plane, sourceAt.remote),
@@ -795,8 +987,11 @@ function SourcePage({
   onChecked,
   onConfirm,
   onRemove,
+  workspace,
 }: {
   plane: string;
+  /** The workspace the studio shows, which is what a skill is turned off or on in. */
+  workspace: string | null;
   source: SkillSource;
   updates: SkillUpdates | undefined;
   /** When the source was last checked, as recorded (#3840), until its browse here answers. */
@@ -814,8 +1009,36 @@ function SourcePage({
   const { read, again } = useRead(`${key}\u0000${changed}`, () =>
     commands.skillSourceBrowse(plane, source),
   );
+  const installed = useRead(`${key}\u0000${changed}\u0000${workspace ?? ""}`, () =>
+    commands.skillSourceInstalled(plane, source.remote, workspace),
+  ).read;
+  const copies = Array.isArray(installed?.data) ? installed.data : [];
   const [removing, setRemoving] = useState(false);
+  const [alsoDeleting, setAlsoDeleting] = useState(false);
   const now = useMinute();
+  /** Why a change to what is installed from it cannot be pressed: `none` when nothing can. */
+  const setWhy = (none: string, can: readonly InstalledCopy[]) =>
+    installed === undefined
+      ? "It is being read now."
+      : installed.data === undefined
+        ? "What is installed from it could not be read."
+        : can.length === 0
+          ? none
+          : busy
+            ? BUSY
+            : undefined;
+  const deleteWhy = setWhy("Nothing is installed from this source.", copies);
+  const turnNone =
+    workspace === null
+      ? "Open the studio on a workspace: a workspace turns a skill off or on."
+      : "No skill from this source can be turned off here.";
+  const turnOffWhy = setWhy(turnNone, copiesFor("turn-off", copies));
+  const turnOnWhy = setWhy(
+    workspace === null ? turnNone : "No skill from this source is off here.",
+    copiesFor("turn-on", copies),
+  );
+  const openSet = (act: SkillSetAct) =>
+    onGo({ at: "set-choose", act, source: key, label: source.label });
   const unconfirmed = updates?.unconfirmed.some((one) => sourceKey(one.remote) === key) === true;
   const at = (skill: string) => ({ source: key, label: source.label, skill });
   const offered = (skill: OfferedSkill) => offerFor(updates, key, skill.name);
@@ -860,6 +1083,30 @@ function SourcePage({
             onPress={() => onGo({ at: "choose", source: key, label: source.label })}
           >
             Install all…
+          </Button>
+          <Button
+            size="sm"
+            isDisabled={deleteWhy !== undefined}
+            tooltip={deleteWhy}
+            onPress={() => openSet("delete")}
+          >
+            Delete all…
+          </Button>
+          <Button
+            size="sm"
+            isDisabled={turnOffWhy !== undefined}
+            tooltip={turnOffWhy}
+            onPress={() => openSet("turn-off")}
+          >
+            Turn all off…
+          </Button>
+          <Button
+            size="sm"
+            isDisabled={turnOnWhy !== undefined}
+            tooltip={turnOnWhy}
+            onPress={() => openSet("turn-on")}
+          >
+            Turn all on…
           </Button>
           <Button
             size="sm"
@@ -990,23 +1237,101 @@ function SourcePage({
           description="Skills you installed from it stay, pinned where they are; they just stop being offered its updates."
           onClose={() => setRemoving(false)}
           data-testid="skill-source-remove"
-          main={{
-            children: "Remove source",
-            variant: "danger",
-            isDisabled: busy,
-            tooltip: busy ? BUSY : undefined,
-            onPress: () => {
-              setRemoving(false);
-              onRemove();
-            },
-          }}
-        />
+          main={
+            alsoDeleting
+              ? {
+                  children: "Review",
+                  byReturn: false,
+                  reserve: ["Remove source"],
+                  isDisabled: busy,
+                  tooltip: busy ? BUSY : undefined,
+                  onPress: () => {
+                    setRemoving(false);
+                    onGo({
+                      at: "set-review",
+                      act: "delete",
+                      source: key,
+                      label: source.label,
+                      members: copies.map((one) => one.member),
+                      // Everything from it, but for one changed since install: that starts left
+                      // out here, as on the list.
+                      ticked: copies
+                        .filter((one) => !one.changed)
+                        .map((one) => memberKey(one.member)),
+                      removesSource: true,
+                    });
+                  },
+                }
+              : {
+                  children: "Remove source",
+                  variant: "danger",
+                  reserve: ["Review"],
+                  isDisabled: busy,
+                  tooltip: busy ? BUSY : undefined,
+                  onPress: () => {
+                    setRemoving(false);
+                    onRemove();
+                  },
+                }
+          }
+        >
+          {copies.length > 0 && (
+            <Checkbox isSelected={alsoDeleting} onChange={setAlsoDeleting}>
+              Also delete the {counted(copies.length, "skill", "skills")} installed from it
+            </Checkbox>
+          )}
+        </Dialog>
       )}
     </div>
   );
 }
 
 // --- The reviews -------------------------------------------------------------------------------
+
+/** **The tick list of a change to what is installed from `source`** (#5331), read here so the
+ *  list itself holds no source. */
+function SetChooseRead({
+  plane,
+  source,
+  act,
+  workspace,
+  level,
+  changed,
+  kept,
+  onCancel,
+  onReview,
+}: {
+  plane: string;
+  source: SkillSource;
+  act: SkillSetAct;
+  workspace: string | null;
+  level: SkillLevel;
+  changed: number;
+  kept?: readonly string[];
+  onCancel: () => void;
+  onReview: (members: SkillSetMember[], ticked: string[]) => void;
+}) {
+  const { read, again } = useRead(
+    `${sourceKey(source.remote)}\u0000${changed}\u0000${workspace ?? ""}`,
+    () => commands.skillSourceInstalled(plane, source.remote, workspace),
+  );
+  const title = `${SET_TITLE[act]} ${source.label}`;
+  return !Array.isArray(read?.data) ? (
+    <Held read={read} what={source.label} again={again}>
+      {() => null}
+    </Held>
+  ) : (
+    <SetChoosePage
+      act={act}
+      title={title}
+      copies={copiesFor(act, read.data)}
+      level={level}
+      {...(kept === undefined ? {} : { kept })}
+      onCancel={onCancel}
+      onReview={onReview}
+    />
+  );
+}
 
 /** **A read for a page**: asked each time its `key` is another, or when asked again. */
 export function useRead<T>(

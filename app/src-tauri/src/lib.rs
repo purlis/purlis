@@ -98,6 +98,7 @@ mod skillgrade;
 mod skillhistory;
 mod skillpublish;
 mod skillrun;
+mod skillset;
 mod skillsources;
 mod skillstudio;
 mod slowlog;

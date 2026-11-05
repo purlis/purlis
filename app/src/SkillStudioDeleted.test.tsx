@@ -29,6 +29,7 @@ const gone = (name: string, over: Record<string, unknown> = {}) => ({
   days_left: 27,
   in_history: true,
   reserved: false,
+  set: null,
   ...over,
 });
 
@@ -185,5 +186,70 @@ describe("the Deleted page", () => {
     expect(await screen.findByTestId("skill-deleted-none")).toHaveTextContent(
       "Nothing deleted in the last 30 days.",
     );
+  });
+});
+
+describe("a set deleted together (#5331)", () => {
+  const SET = { id: "1762300800000", from: "acme-skills", at: 1762300800 };
+  const three = [
+    gone("grilling", { set: SET }),
+    gone("tdd", { set: SET }),
+    gone("review", { set: SET }),
+  ];
+
+  it("is one group with its count, source and day, and Bring all back asks for all of them", async () => {
+    const asked = core(three);
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "deleted");
+    const group = await screen.findByTestId(`deleted-group-${SET.id}`);
+    expect(group).toHaveTextContent("3 skills from acme-skills, 5 Nov");
+    await user.click(within(group).getByRole("button", { name: /Bring all back/ }));
+    await waitFor(() =>
+      expect(asked.find((one) => one.cmd === "skill_set_restore")?.args).toMatchObject({
+        ids: ["grilling-id", "tdd-id", "review-id"],
+        source: null,
+      }),
+    );
+  });
+
+  it("lets one skill of it come back alone", async () => {
+    const asked = core(three);
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "deleted");
+    const page = await openDeleted("tdd", user);
+    await user.click(within(page).getByRole("button", { name: "Bring back tdd" }));
+    await waitFor(() =>
+      expect(asked.find((one) => one.cmd === "skill_restore")?.args).toMatchObject({
+        id: "tdd-id",
+      }),
+    );
+    expect(asked.some((one) => one.cmd === "skill_set_restore")).toBe(false);
+  });
+
+  it("leaves one whose name became purlis's out of Bring all back, and says so", async () => {
+    const asked = core([
+      gone("grilling", { set: SET }),
+      gone("tdd", { set: SET }),
+      gone("purlis-review", { set: SET, reserved: true }),
+    ]);
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "deleted");
+    const group = await screen.findByTestId(`deleted-group-${SET.id}`);
+    await user.click(within(group).getByRole("button", { name: /Bring all back/ }));
+    await waitFor(() =>
+      expect(asked.find((one) => one.cmd === "skill_set_restore")?.args).toMatchObject({
+        ids: ["grilling-id", "tdd-id"],
+      }),
+    );
+    expect(await screen.findByRole("status", { name: /Skills brought back/ })).toHaveTextContent(
+      "purlis-review stayed in Deleted",
+    );
+  });
+
+  it("draws a skill on its own where one is left of the set", async () => {
+    core([gone("grilling", { set: SET }), gone("other")]);
+    renderStudio(AT_THE_ROOT, "deleted");
+    await screen.findByTestId("deleted-grilling");
+    expect(screen.queryByTestId(`deleted-group-${SET.id}`)).toBeNull();
   });
 });
