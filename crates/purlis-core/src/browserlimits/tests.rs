@@ -92,7 +92,7 @@ fn a_limit_is_set_on_this_machine_back_to_its_default_and_refused_out_of_its_bou
 
 #[test]
 fn a_refusal_names_the_setting_that_decides_it_and_opens_with_purlis_side() {
-    assert!(project_full_said(3).contains("Settings › This machine › Browsers"));
+    assert!(project_full_said(3, &[], 3).contains("Settings › This machine › Browsers"));
     let device = device_full_said(1);
     assert!(
         device.starts_with("purlis runs at most 1 browser at once"),
@@ -103,4 +103,83 @@ fn a_refusal_names_the_setting_that_decides_it_and_opens_with_purlis_side() {
         "{device}"
     );
     assert!(device_full_told(8).contains("raise the budget in Settings › This machine › Browsers"));
+}
+
+fn own(name: &str, login: Option<&str>, shows: Shows, person_has_it: bool) -> OwnBrowser {
+    OwnBrowser {
+        name: name.to_owned(),
+        login: login.map(str::to_owned),
+        shows,
+        person_has_it,
+    }
+}
+
+#[test]
+fn a_refusal_at_the_limit_says_what_each_of_the_chats_browsers_holds() {
+    let said = project_full_said(
+        4,
+        &[
+            own("b1", None, Shows::Nothing, false),
+            own("b2", None, Shows::ErrorPage, false),
+            own(
+                "b3",
+                Some("shop"),
+                Shows::Site("shop.test:443".into()),
+                false,
+            ),
+        ],
+        1,
+    );
+    assert!(said.contains("have 4 browsers open"), "{said}");
+    assert!(
+        said.contains(
+            "This chat's: b1 (empty), b2 (on an error page), \
+             b3 (holds login shop, on shop.test:443); 1 more is another chat's. \
+             Close one of this chat's with browser_close first"
+        ),
+        "{said}"
+    );
+}
+
+#[test]
+fn a_browser_the_person_has_is_said_as_theirs_and_not_as_empty() {
+    assert_eq!(
+        own("b1", None, Shows::Nothing, true).to_string(),
+        "b1 (the person has taken it over)"
+    );
+    assert_eq!(
+        own("b1", Some("shop"), Shows::Nothing, false).to_string(),
+        "b1 (holds login shop)",
+        "a browser holding a login isn't empty"
+    );
+}
+
+#[test]
+fn a_refusal_to_a_chat_with_no_browser_offers_it_no_close_of_its_own() {
+    let said = project_full_said(2, &[], 2);
+    assert!(said.contains("None of them is this chat's"), "{said}");
+    assert!(!said.contains("browser_close"), "{said}");
+}
+
+#[test]
+fn a_refusal_offers_no_close_of_what_the_person_has_or_of_what_is_ending_already() {
+    let said = project_full_said(
+        2,
+        &[
+            own("b1", None, Shows::Unread, true),
+            own("b2", None, Shows::Ending, false),
+        ],
+        0,
+    );
+    assert!(said.contains("b2 (purlis is still ending it)"), "{said}");
+    assert!(said.contains("ask the person"), "{said}");
+    assert!(!said.contains("browser_close"), "{said}");
+}
+
+#[test]
+fn a_browser_purlis_cannot_read_is_never_said_to_be_empty() {
+    assert_eq!(
+        own("b1", None, Shows::Unread, false).to_string(),
+        "b1 (no page purlis has read)"
+    );
 }

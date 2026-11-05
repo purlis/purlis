@@ -9,10 +9,19 @@
  * A bar here is the spec's number. A run that misses one fails, naming the bar and what it
  * measured, and the miss gets a ticket: the number does not move to fit (the operator's ruling of
  * 2026-10-31).
+ * The 300 ms bar is judged on a real Mac, and CI guards its median instead (the person's ruling of
+ * 2026-11-05, ADR 0086's amendment of that date).
  */
 
 /** Story 10: the studio opens in under 300 ms with 200 skills. */
 export const OPEN_BUDGET_MS = 300;
+/**
+ * **CI's guard on the same openings** (#4351, ADR 0086's amendment of 2026-11-05): the median a
+ * harness's openings stay under on macOS CI. Coarse on purpose: the same code's medians ran from
+ * 214 to 649 ms between runs, so this sits about a quarter above that worst, and it catches a
+ * return to the 880 to 2,300 ms of most runs before #4351's fixes, not a small slip.
+ */
+export const OPEN_GUARD_MEDIAN_MS = 800;
 /** Story 10's load. */
 export const SKILLS_AT_THE_BAR = 200;
 /** How many openings the p95 is of. */
@@ -57,10 +66,15 @@ export function useVerdict(windowMs: number, effort: Effort): Verdict & { totalM
   };
 }
 
+/** The openings, quickest first; there have to be some to judge. */
+function inOrder(samples: readonly number[]): number[] {
+  if (samples.length === 0) throw new Error("the studio's opening has no samples to judge");
+  return [...samples].sort((a, b) => a - b);
+}
+
 /** **The 300 ms bar**: the p95 of the openings, by nearest rank, as row L10 states it. */
 export function openVerdict(samples: readonly number[]): Verdict & { p95: number } {
-  if (samples.length === 0) throw new Error("the studio's opening has no samples to judge");
-  const ordered = [...samples].sort((a, b) => a - b);
+  const ordered = inOrder(samples);
   const p95 = ordered[Math.ceil(ordered.length * 0.95) - 1];
   return {
     met: p95 < OPEN_BUDGET_MS,
@@ -69,6 +83,32 @@ export function openVerdict(samples: readonly number[]): Verdict & { p95: number
       `the studio opening with ${SKILLS_AT_THE_BAR} skills: p95 ${Math.round(p95)} ms against ` +
       `${OPEN_BUDGET_MS} ms, over ${ordered.length} openings ` +
       `(${ordered.map((one) => Math.round(one)).join(", ")})`,
+  };
+}
+
+/** The middle of `samples`, or the mean of the two in the middle of an even count. */
+function medianOf(samples: readonly number[]): number {
+  const ordered = inOrder(samples);
+  const above = Math.floor(ordered.length / 2);
+  return ordered.length % 2 === 1 ? ordered[above] : (ordered[above - 1] + ordered[above]) / 2;
+}
+
+/**
+ * **What the openings are judged against where they were measured** (#4351): a real machine against
+ * the 300 ms bar, macOS CI against the median guard, and Linux CI against nothing yet, since no
+ * run there has measured the current code to set a limit from.
+ */
+export function openJudged(
+  samples: readonly number[],
+  { ci, platform }: { ci: boolean; platform: string },
+): Verdict {
+  if (!ci) return openVerdict(samples);
+  const median = medianOf(samples);
+  const what = `the studio opening with ${SKILLS_AT_THE_BAR} skills on CI: median ${median.toFixed(1)} ms`;
+  if (platform !== "darwin") return { met: true, said: `${what}, no limit on this platform yet` };
+  return {
+    met: median < OPEN_GUARD_MEDIAN_MS,
+    said: `${what} against the guard's ${OPEN_GUARD_MEDIAN_MS} ms, over ${samples.length} openings`,
   };
 }
 

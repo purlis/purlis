@@ -66,7 +66,9 @@ own, and may fill again. Every login that fills starts clean on its own site: wh
 stored in the browser goes first, and other sites are left as they are. A login kept for later
 reuse opens in a browser of its own, and so does one whose form doesn't appear on the clean load:
 the answer says why and which browser it left, and you close that one with `browser_close`
-if nothing in it is needed. If the login is refused, tell the user the sentence: it names what to declare or
+if nothing in it is needed. A browser you opened with `browser_new` and never used is closed for you,
+and the answer says so. A project's browsers have a limit: the refusal lists yours, with what each
+holds, so you can close the right one. If the login is refused, tell the user the sentence: it names what to declare or
 allow. A page with a captcha or a second factor does not log in this way; ask the user, or hand
 them the browser with `ask_operator` pointed at it.
 

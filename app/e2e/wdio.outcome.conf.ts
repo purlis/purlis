@@ -23,6 +23,8 @@ import { PANIC_LOG } from "./processes.js";
  * `npx tauri build --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json -- -p
  * purlis-app -p fake-harness -p purlis-cli --profile dev-release` and run with
  * `CHARTER_TARGET_DIR=<the checkout>/target/dev-release`; without it the run takes the debug build.
+ * The studio's opening is judged against its 300 ms bar, except with `CI=true`, where it is the
+ * median guard (`openJudged`).
  *
  * A run of its own, since the app keeps one process and one harness for a run, and the bars are
  * about one harness at a time; and a plane of its own, since two hundred skills would reach every
