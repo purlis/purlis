@@ -69,6 +69,8 @@ export function useStaleClones({
   const [said, setSaid] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState<string>();
   const [asked, setAsked] = useState(0);
+  // `true` from the first render, as `useDoctor`'s: the list is asked the moment the project opens.
+  const [reading, setReading] = useState(true);
   const focused = useWindowFocused();
   const moved = usePlaneChanged([plane], GIT);
 
@@ -85,7 +87,10 @@ export function useStaleClones({
         }
       })
       // A project whose repos cannot be read says nothing here.
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (live) setReading(false);
+      });
     return () => {
       live = false;
     };
@@ -155,7 +160,13 @@ export function useStaleClones({
         }),
     [stale, dismissed, busy, said, press, dismiss],
   );
-  return { lines, unread, unreadShown: unread.length > 0 && !dismissed.has(UNREAD), dismiss };
+  return {
+    lines,
+    unread,
+    unreadShown: unread.length > 0 && !dismissed.has(UNREAD),
+    reading,
+    dismiss,
+  };
 }
 
 /** **What the project's stale repos are**, read once and drawn in two places (#3650): the Inbox's
@@ -166,6 +177,8 @@ export type StaleClones = {
   /** What could not be read, said in the Inbox alone. */
   unread: readonly string[];
   unreadShown: boolean;
+  /** Whether the first read is still on its way: the Inbox marks it (#5325). */
+  reading: boolean;
   dismiss: (cause: string) => void;
 };
 

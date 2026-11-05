@@ -69,6 +69,8 @@ export type PlaneReport = {
   sandbox?: SandboxSaid | null;
   /** Where this project's unsaved work sits (charter-app#302), once read. */
   saving?: PlaneSaving;
+  /** Whether a read of {@link saving} has answered, however it answered (#5325). */
+  savingRead: boolean;
   /** Why this purlis opens it read-only, or undefined (#826): the title bar's save is off with
    *  it while the project is in front. */
   readOnly?: string;
