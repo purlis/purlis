@@ -165,6 +165,28 @@ pub fn run_grant_answered(
         {
             return Err(why);
         }
+        // A key may have come to be a browser login's while the notice was up: Always allow would
+        // declare the program a tool for it, which is never asked about again.
+        let keys: Vec<&str> = open
+            .bound
+            .env
+            .iter()
+            .chain(&open.bound.file)
+            .filter_map(|spec| spec.split_once('=').map(|(_, key)| key))
+            .collect();
+        let ctx =
+            purlis_core::secrets::Ctx::new(held.root(), purlis_core::secrets::Env::from_process());
+        if let Some(why) =
+            purlis_core::secrets::brokered::no_program_is_handed(&ctx, &open.bound.vault, &keys)
+        {
+            let mut said = why.chars();
+            let first = said.next().map(|c| c.to_uppercase().to_string());
+            return Err(format!(
+                "{}{}. Nothing was allowed.",
+                first.unwrap_or_default(),
+                said.as_str()
+            ));
+        }
     }
     let audited = held.hooks().record_run_grant(
         held.root(),

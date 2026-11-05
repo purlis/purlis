@@ -13,3 +13,10 @@ authorities (`PGHOST`, `MYSQL_HOST`, `REDIS_HOST`, `AWS_REGION`, `SSL_CERT_FILE`
 and the rest that a declared tool's run takes from the chat): the notice shows neither, so where
 the run connects and whom it trusts is said in the command, or is the program's default. A
 certificate authority set only in the chat's environment does not reach a granted run.
+
+No key a browser login or secret-fill line of any persona holds, or a `mint` line marks, is offered
+to a program, through a link either way and in any case. It is judged when the chat asks, when the
+person presses, and once they have, since a teammate's line can come in with a pull while the
+notice is up. Once Always allow has written its tool line, that line is a declared tool like any
+other: a login line added later for the same key doesn't stop it, as it never stopped a tool a
+person declared by hand. Removing the tool, or the grant in the Allowed list, does.

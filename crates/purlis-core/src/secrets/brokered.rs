@@ -820,28 +820,45 @@ fn grantable(
     locks: &crate::sandbox::policy::Locks,
     writes: &[PathBuf],
 ) -> Result<crate::sandbox::tools::Ready, String> {
-    use crate::sandbox::tools::{self, mint};
+    use crate::sandbox::tools;
     let ready = tools::for_run_grant(&asker.root, persona, asked, listed, locks, writes)?;
-    let ctx = reading_for(asker);
-    let Some(marked) = mint::marked(&asker.root) else {
-        return Err(mint::unreadable_said());
+    let keys: Vec<&str> = ready
+        .tool
+        .values
+        .iter()
+        .map(|value| value.key.as_str())
+        .collect();
+    match no_program_is_handed(&reading_for(asker), asked.vault, &keys) {
+        Some(why) => Err(why),
+        None => Ok(ready),
+    }
+}
+
+/// **Why no program may be handed one of `keys` of `vault`** (#5265), if one is a key that a
+/// browser login or secret-fill line of any persona holds, or a `mint` line marks, through a
+/// link the person made either way and in any case ([`crate::secretfill::a_browsers`]); or the
+/// project's settings file can't be read to tell. Judged before a person is asked, and again as
+/// they answer and once they have, since a line may come in with a pull while they read.
+pub fn no_program_is_handed(ctx: &Ctx, vault: &str, keys: &[&str]) -> Option<String> {
+    use crate::sandbox::tools::mint;
+    let Some(marked) = mint::marked(&ctx.root) else {
+        return Some(mint::unreadable_said());
     };
-    for value in &ready.tool.values {
-        let (vault, key) = (asked.vault, value.key.as_str());
+    for &key in keys {
         if marked
             .iter()
             .any(|(one, named)| one.eq_ignore_ascii_case(vault) && named.eq_ignore_ascii_case(key))
         {
-            return Err(mint::refused_said(vault, key));
+            return Some(mint::refused_said(vault, key));
         }
-        if crate::secretfill::a_browsers(&ctx, vault, key) {
-            return Err(format!(
+        if crate::secretfill::a_browsers(ctx, vault, key) {
+            return Some(format!(
                 "{key} in vault {vault} is one purlis fills in a browser itself, on the one site a \
                  persona declares, so no program is handed it"
             ));
         }
     }
-    Ok(ready)
+    None
 }
 
 /// **Whether `wanted`'s command runs under a Run grant** (ADR 0112, #5239): the program its words
@@ -1019,16 +1036,28 @@ fn run_granted(
             say(line);
         });
     match held {
-        // Policy may have come to lock them while it waited.
-        RunHeld::Allowed => match run_grant_locked(
-            asker,
-            wanted,
-            command,
-            &crate::sandbox::policy::Locks::of(&asker.root),
-        ) {
-            Some(locked) => Err((1, locked)),
-            None => Ok(ready),
-        },
+        // Policy may have come to lock them while it waited, and a line may have come to make
+        // a key a browser's.
+        RunHeld::Allowed => {
+            if let Some(locked) = run_grant_locked(
+                asker,
+                wanted,
+                command,
+                &crate::sandbox::policy::Locks::of(&asker.root),
+            ) {
+                return Err((1, locked));
+            }
+            let keys: Vec<&str> = ready
+                .tool
+                .values
+                .iter()
+                .map(|value| value.key.as_str())
+                .collect();
+            match no_program_is_handed(&reading_for(asker), &wanted.vault, &keys) {
+                Some(why) => Err((1, why)),
+                None => Ok(ready),
+            }
+        }
         RunHeld::Refused { line } => Err((1, line)),
         RunHeld::StillOpen { line } => Err((WAITING_ON_THE_PERSON, line)),
     }
