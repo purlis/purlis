@@ -475,6 +475,89 @@ fn a_preview_below_the_pins_warns_that_they_are_still_listed() {
 }
 
 #[test]
+fn a_preview_below_the_pins_says_one_pin_as_one() {
+    let dir = skills_in(
+        "",
+        r#"{"skills":{"pinned":["skill-00"]}}"#,
+        3,
+        "workspaces/alpha/skills",
+    );
+    let wanted = Set {
+        skills: Some(1),
+        chars: None,
+    };
+    let said = preview(
+        None,
+        dir.path(),
+        Some("alpha"),
+        None,
+        Harness::ClaudeCode,
+        wanted,
+    );
+    assert!(
+        said.over
+            .as_deref()
+            .is_some_and(|line| line.starts_with("1 pinned skill is still")),
+        "{said:?}"
+    );
+}
+
+#[test]
+fn a_preview_below_what_no_router_hides_still_names_the_pins() {
+    let built_in = tempfile::tempdir().unwrap();
+    for name in ["own-a", "own-b", "own-c"] {
+        let folder = built_in.path().join(name);
+        fs::create_dir_all(&folder).unwrap();
+        fs::write(
+            folder.join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: Ours.\n---\nDo it.\n"),
+        )
+        .unwrap();
+    }
+    let dir = skills_in(
+        "",
+        r#"{"skills":{"pinned":["skill-00","skill-01"]}}"#,
+        2,
+        "workspaces/alpha/skills",
+    );
+    let wanted = Set {
+        skills: Some(1),
+        chars: None,
+    };
+    let said = preview(
+        Some(built_in.path()),
+        dir.path(),
+        Some("alpha"),
+        None,
+        Harness::ClaudeCode,
+        wanted,
+    );
+    assert!(
+        said.over
+            .as_deref()
+            .is_some_and(|line| line.contains("2 pinned skills")),
+        "{said:?}"
+    );
+}
+
+#[test]
+fn raising_one_program_over_a_number_for_every_program_leaves_that_number_written() {
+    let dir = plane(PROJECT, "{}");
+    let wanted = Set {
+        skills: Some(100),
+        chars: Some(20_000),
+    };
+    write(dir.path(), Level::Project, Harness::ClaudeCode, wanted).unwrap();
+    let text = fs::read_to_string(dir.path().join("charter.toml")).unwrap();
+    assert!(
+        !text.contains("codex"),
+        "nothing moved for the others: {text}"
+    );
+    assert_eq!(budget_in(dir.path(), None, Harness::ClaudeCode).skills, 100);
+    assert_eq!(budget_in(dir.path(), None, Harness::Codex).skills, 80);
+}
+
+#[test]
 fn a_programs_number_changes_what_a_start_on_that_program_is_routed_by() {
     let dir = with_skills("[skills.budget.codex]\nskills = 2\n", "{}", 8);
     let at = crate::skills::PlaneSkills {

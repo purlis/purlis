@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { commands, type SkillBudgetPreview, type StudioBudget } from "./bindings";
 import { counted } from "./dispatches";
+import { capitalised } from "./saving";
 import { useReadOnlySaid } from "./ReadOnlyLine";
 import { Button } from "./ui/button/Button";
 import { Dialog } from "./ui/dialog/Dialog";
@@ -21,7 +22,7 @@ const NAMES_SAID = 5;
 
 /** What an invalid box says. There is no largest number: past a limit is a warning. */
 export const BUDGET_INVALID =
-  "Type a whole number of at least 1, or leave it empty for the default.";
+  "Type a whole number of at least 1, or leave it empty for the number below it.";
 
 /** What a chat does about a change, said where the change is made. */
 export const BUDGET_APPLIES =
@@ -46,14 +47,13 @@ function namesSaid(names: readonly string[]): string {
 /** **What the numbers typed would cost, a line each** (#5353): what new chats list and hide, which
  *  skills that moves, and about how many tokens that is per chat. */
 export function budgetCostSaid(preview: SkillBudgetPreview): string[] {
-  const tokens = Math.abs(preview.more_tokens).toLocaleString("en-US");
+  const moved = Math.abs(preview.more_tokens);
+  const tokens = `${moved.toLocaleString("en-US")} ${preview.more_tokens > 0 ? "more" : "fewer"} ${moved === 1 ? "token" : "tokens"}`;
   return [
     `New chats list ${counted(preview.listed, "skill", "skills")} and hide ${preview.hidden}.`,
     ...(preview.now_listed.length === 0 ? [] : [`Now listed: ${namesSaid(preview.now_listed)}.`]),
     ...(preview.now_hidden.length === 0 ? [] : [`Now hidden: ${namesSaid(preview.now_hidden)}.`]),
-    preview.more_tokens === 0
-      ? "No change in what each chat spends."
-      : `About ${tokens} ${preview.more_tokens > 0 ? "more" : "fewer"} tokens per chat.`,
+    preview.more_tokens === 0 ? "No change in what each chat spends." : `About ${tokens} per chat.`,
   ];
 }
 
@@ -85,9 +85,9 @@ export function writeBudgetTo(plane: string, level: BudgetLevel) {
   };
 }
 
-/** What a reset leaves of a program's numbers, as a sentence. */
+/** What a reset did, as a sentence: in a workspace, the project's number may stand after it. */
 function resetSaid(program: StudioBudget, what: string): string {
-  return `${program.program}'s ${what} is back to its default here. New chats get this.`;
+  return `This level no longer sets ${program.program}'s ${what}. New chats get the number below it.`;
 }
 
 /**
@@ -117,7 +117,7 @@ export function SkillBudgetTable({
   const open = budget.find((one) => one.key === changing);
   const here = level.workspace === null ? "this project" : "this workspace";
   const unavailable = (written: number | null) =>
-    readOnly ?? (written === null ? `${capitalFirst(here)} sets no number of its own.` : undefined);
+    readOnly ?? (written === null ? `${capitalised(here)} sets no number of its own.` : undefined);
   const reset = (write: BudgetWrite) => {
     setRefused(undefined);
     onWrite(write, { done: () => undefined, refused: setRefused });
@@ -141,7 +141,7 @@ export function SkillBudgetTable({
                   <Button
                     size="sm"
                     variant="ghost"
-                    aria-label={`Reset ${one.program}'s most skills to default`}
+                    aria-label={`Reset to default, ${one.program}'s most skills`}
                     isDisabled={off || one.skills_here === null}
                     tooltip={unavailable(one.skills_here)}
                     onPress={() =>
@@ -163,7 +163,7 @@ export function SkillBudgetTable({
                   <Button
                     size="sm"
                     variant="ghost"
-                    aria-label={`Reset ${one.program}'s most characters to default`}
+                    aria-label={`Reset to default, ${one.program}'s most characters`}
                     isDisabled={off || one.chars_here === null}
                     tooltip={unavailable(one.chars_here)}
                     onPress={() =>
@@ -213,10 +213,6 @@ export function SkillBudgetTable({
   );
 }
 
-function capitalFirst(text: string): string {
-  return text.charAt(0).toUpperCase() + text.slice(1);
-}
-
 /**
  * **Change…: one program's budget at this level** (#5353). Each box holds this level's number, or
  * nothing for the number below it. As it is typed the dialog says what new chats would list and
@@ -240,7 +236,7 @@ export function SkillBudgetChange({
 }) {
   const [skillsText, setSkillsText] = useState(program.skills_here?.toString() ?? "");
   const [charsText, setCharsText] = useState(program.chars_here?.toString() ?? "");
-  const [preview, setPreview] = useState<SkillBudgetPreview>();
+  const [worked, setPreview] = useState<SkillBudgetPreview>();
   const [problem, setProblem] = useState<string>();
   const [refused, setRefused] = useState<string>();
   const skills = budgetTyped(skillsText);
@@ -267,6 +263,8 @@ export function SkillBudgetChange({
       clearTimeout(asked);
     };
   }, [plane, level.workspace, level.persona, program.key, skills, chars]);
+  // What a box that holds no number would do is nothing to say.
+  const preview = valid && problem === undefined ? worked : undefined;
   const unchanged = skills === program.skills_here && chars === program.chars_here;
   const whose =
     level.workspace === null
@@ -316,8 +314,8 @@ export function SkillBudgetChange({
         validate={(typed) => (budgetTyped(typed) === undefined ? BUDGET_INVALID : undefined)}
       />
       <div className="skill-budget-cost" role="status" data-testid="skill-budget-cost">
-        {preview === undefined && problem === undefined && (
-          <p className="honest">Working it out…</p>
+        {valid && preview === undefined && problem === undefined && (
+          <p className="honest">Working out what this would do…</p>
         )}
         {problem !== undefined && <p className="honest">{problem}</p>}
         {preview !== undefined &&

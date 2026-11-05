@@ -190,6 +190,9 @@ export function chatSetBeside(said: ChatSkillsSaid): string[] {
   ];
 }
 
+/** What a link to where a chat's budget is changed does (#5353). */
+export const CHANGE_THE_SKILL_BUDGET = "Change the skill budget";
+
 /** **Where a chat's budget is changed** (#5353): its workspace's Routing, or the project's. There
  *  is no persona's level, so a chat as a persona still goes to its workspace's. */
 export function budgetScope(budget: SkillBudget): StudioScope {

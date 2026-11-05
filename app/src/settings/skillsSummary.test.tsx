@@ -132,6 +132,12 @@ describe("the summary line's need you (#3695)", () => {
 });
 
 describe("the skill budget's row (#4610, #5353)", () => {
+  it("is a row of the project's group, which Settings drops if it has no rows", () => {
+    expect(projectSkillsGroup("p").settings.map((one) => one.id)).toEqual([
+      "project.skills.budget.in-force",
+    ]);
+  });
+
   it("says each program's budget, and what a program would drop, in the core's words", async () => {
     const line = "Codex: at 15,000 characters this is past the 8,000 it holds.";
     mockIPC((command) => {
@@ -156,7 +162,7 @@ describe("the skill budget's row (#4610, #5353)", () => {
         };
       return null;
     });
-    const [inForce] = projectSkillsGroup("p").after ?? [];
+    const [inForce] = projectSkillsGroup("p").settings as LiveSetting[];
     render(<Line setting={inForce} />);
     await waitFor(() =>
       expect(screen.getByTestId("skill-budget-past-limit")).toHaveTextContent(line),

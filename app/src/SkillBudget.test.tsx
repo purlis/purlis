@@ -98,6 +98,9 @@ describe("a typed skill budget", () => {
       "About 91 more tokens per chat.",
     ]);
     expect(budgetCostSaid(NOTHING_MOVES)).toContain("No change in what each chat spends.");
+    expect(budgetCostSaid({ ...NOTHING_MOVES, more_tokens: 1 })).toContain(
+      "About 1 more token per chat.",
+    );
   });
 });
 
@@ -117,7 +120,7 @@ describe("the skill budget table", () => {
     const asked = faked();
     table();
     await userEvent.click(
-      screen.getByRole("button", { name: "Reset Claude Code's most skills to default" }),
+      screen.getByRole("button", { name: "Reset to default, Claude Code's most skills" }),
     );
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_budget_set")?.args).toMatchObject({
@@ -133,7 +136,7 @@ describe("the skill budget table", () => {
     faked();
     table();
     expect(
-      screen.getByRole("button", { name: "Reset Claude Code's most characters to default" }),
+      screen.getByRole("button", { name: "Reset to default, Claude Code's most characters" }),
     ).toHaveAttribute("aria-disabled", "true");
   });
 
@@ -144,7 +147,7 @@ describe("the skill budget table", () => {
     });
     table();
     await userEvent.click(
-      screen.getByRole("button", { name: "Reset Claude Code's most skills to default" }),
+      screen.getByRole("button", { name: "Reset to default, Claude Code's most skills" }),
     );
     expect(await screen.findByTestId("skill-budget-refused")).toHaveTextContent(
       "This project is read-only.",
@@ -223,6 +226,9 @@ describe("Change…", () => {
     await userEvent.type(box, "0");
     await userEvent.tab();
     expect(await dialog.findByText(BUDGET_INVALID)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(dialog.getByTestId("skill-budget-cost")).not.toHaveTextContent("New chats list"),
+    );
     expect(dialog.getByRole("button", { name: "Change budget" })).toBeDisabled();
   });
 

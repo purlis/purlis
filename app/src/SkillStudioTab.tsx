@@ -1609,6 +1609,7 @@ export function SkillStudioTab({
     const chats = router?.chats ?? [];
     const chat = routedChat;
     const by: SkillPinner | null = pinnerOf(scope);
+    const budgetWorkspace = scope.at === "workspace" ? scope.name : null;
     list = pageList(
       "When a chat's list of skills is over its budget, a router decides which it sees. The router is asked at a chat's start.",
       held(() =>
@@ -1634,7 +1635,7 @@ export function SkillStudioTab({
                   () => Promise.resolve({ tone: "news", label: "Router changed", text }),
                 )
               }
-              budgetWorkspace={scope.at === "workspace" ? scope.name : null}
+              budgetWorkspace={budgetWorkspace}
               onBudget={(write, told) =>
                 change(
                   "The skill budget was not changed",
@@ -1642,7 +1643,7 @@ export function SkillStudioTab({
                     commands
                       .skillBudgetSet(
                         plane,
-                        scope.at === "workspace" ? scope.name : null,
+                        budgetWorkspace,
                         write.program.key,
                         write.skills,
                         write.chars,

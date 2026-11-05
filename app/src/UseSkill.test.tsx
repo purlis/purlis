@@ -400,7 +400,7 @@ describe("the Skills chip on a chat's pane", () => {
       <ChatSkillSetsHere.Provider
         value={{
           4: {
-            budget: { ...BUDGET, workspace: "ops", most_skills: 60 },
+            budget: { ...BUDGET, workspace: "ops", most_skills: 60, manual: 0 },
             routing: null,
             missing: null,
             changed: null,
@@ -412,10 +412,16 @@ describe("the Skills chip on a chat's pane", () => {
     );
     const link = await screen.findByTestId("pane-skills-budget");
     expect(link).toHaveTextContent("of 60");
-    expect(link).toHaveAccessibleName("Of 60. Change the skill budget");
+    expect(link).toHaveAccessibleName("of 60. Change the skill budget");
     fireEvent.click(link);
     window.removeEventListener(SKILL_STUDIO_ASKED, listen);
     expect(asked).toEqual([{ plane: "p", scope: inWorkspace("ops"), page: "routing" }]);
+  });
+
+  it("never says more skills than its budget for manual-only ones, which are free (#5353)", async () => {
+    await chipOf(held({ budget: { ...BUDGET, skills: 58, manual: 4, most_skills: 60 } }));
+    expect(await screen.findByTestId("pane-skills")).toHaveTextContent("62 skills");
+    expect(screen.getByTestId("pane-skills-budget")).toHaveTextContent("58 listed of 60");
   });
 
   it("reads no chat for a telling of another project or of a chat not open (#4445)", async () => {

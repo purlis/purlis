@@ -23,7 +23,7 @@ A program's table is named by the word a profile's `kind` is written with, and i
 
 Settings keeps the numbers: the Routing page's and Settings' rows both write through `budget_setting::write`, to the project's `charter.toml` or the workspace's `workspace.json`.
 
-- **The window never writes a number for every program.** Those already written go on working. Where a write moves one program off such a number, the number becomes each other program's own, so nothing moves for them.
+- **The window never writes a number for every program.** Those already written go on working, and a program's own number stands over them. Where a reset or an empty box takes one program off such a number, the number becomes each other program's own, so nothing moves for them.
 - **Reset to default takes out what this level writes.** In a workspace the project's number then stands, if it has one: that is the default a workspace has. There is no way to say "the program's own, whatever the project says", since empty is how to say "the number below".
 - **A persona's scope in the studio writes the project's**, as there is no persona level. A chat's link goes to its workspace's Routing, whoever it runs as.
 
@@ -37,4 +37,6 @@ Settings keeps the numbers: the Routing page's and Settings' rows both write thr
 
 ## What a chat gets
 
-Every place that decides by a budget already asks `budget_in`, so a program's number reaches its own chats' routing, Claude Code's handed limit and the stamp a chat's restart offer compares. `charter.toml` and `workspace.json` are already among what moves that stamp.
+Every place that decides by a budget already asks `budget_in`, so a program's number reaches its own chats' routing and Claude Code's handed limit. A change to `charter.toml` or `workspace.json` already has each open chat's stamp read again, and the stamp is of the routed set, so **the restart offer comes only to a chat whose list the change would move**. Raising a number that hides nothing either way offers nothing.
+
+**An open chat keeps what it was handed, and its Skills view and pane say the numbers now**, as the 2026-11-02 record says of Use skill…: that view works a chat's set out as it is read, and it is what the stamp compares. So after a change the chip can read `of 100` for a chat handed 60, with the restart offer beside it.

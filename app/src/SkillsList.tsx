@@ -17,7 +17,7 @@ import { counted } from "./dispatches";
 import type { GroupDrawn } from "./menuModel";
 import { Groups } from "./Menus";
 import { OPEN_SKILL_STUDIO } from "./skillStudio";
-import type { ChatNeed } from "./chatSkillNeeds";
+import { CHANGE_THE_SKILL_BUDGET, type ChatNeed } from "./chatSkillNeeds";
 import type { PluginOffShown } from "./bindings";
 import {
   cardReasonOf,
@@ -216,7 +216,7 @@ export function SkillsList({
               inline
               variant="ghost"
               data-testid="skills-view-budget"
-              tooltip="Change the skill budget"
+              tooltip={CHANGE_THE_SKILL_BUDGET}
               onPress={onBudget}
             >
               {budgetSaid}

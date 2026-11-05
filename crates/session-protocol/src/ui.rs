@@ -1338,6 +1338,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "skill_persona_skills",
     "skill_revert_widens",
     // The router extensions Change… offers (#3692): read only.
+    // What a typed skill budget would do to new chats (#5353): read only.
     "skill_budget_preview",
     "skill_routers",
     "skill_runs",

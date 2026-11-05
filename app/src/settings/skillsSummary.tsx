@@ -24,8 +24,10 @@ export function workspaceSkillsGroup(plane: PlaneId, workspace: string): Setting
     id: "workspace.skills",
     label: "Skills",
     help: "The skills this workspace's chats get. They are chosen in the Skill studio.",
-    settings: [summarySetting(plane, workspace)],
-    after: [budgetInForce("workspace.skills.budget.in-force", plane, workspace)],
+    settings: [
+      summarySetting(plane, workspace),
+      budgetInForce("workspace.skills.budget.in-force", plane, workspace),
+    ],
     links: [{ label: OPEN_SKILL_STUDIO, action: `${SKILL_STUDIO_IN}${workspace}` }],
   };
 }
@@ -40,8 +42,8 @@ export function projectSkillsGroup(plane: PlaneId): SettingsGroup {
     id: "project.skills",
     label: "Skills",
     help: "How many skills a chat lists before the router moves the rest into an index skill. Pin a skill in the Skill studio to keep it listed.",
-    settings: [],
-    after: [budgetInForce("project.skills.budget.in-force", plane, null)],
+    // A row, not `after`: Settings offers no group without one.
+    settings: [budgetInForce("project.skills.budget.in-force", plane, null)],
   };
 }
 
@@ -64,6 +66,7 @@ function budgetInForce(id: string, plane: PlaneId, workspace: string | null): Li
         refused?: string;
         budget: readonly StudioBudget[];
         past: readonly string[];
+        extensionRouter: boolean;
       }>();
       const changed = usePlaneChanged([plane], SETTINGS);
       const [written, setWritten] = useState(0);
@@ -71,11 +74,13 @@ function budgetInForce(id: string, plane: PlaneId, workspace: string | null): Li
         let live = true;
         void commands.skillStudio(plane, workspace, null).then((answer) => {
           if (!live) return;
-          if (answer.status === "error") setSaid({ refused: answer.error, budget: [], past: [] });
+          if (answer.status === "error")
+            setSaid({ refused: answer.error, budget: [], past: [], extensionRouter: false });
           else if (answer.data.router !== null)
             setSaid({
               budget: answer.data.router.budget,
               past: answer.data.router.past_limits,
+              extensionRouter: answer.data.router.extension !== null,
             });
         });
         return () => {
@@ -92,6 +97,7 @@ function budgetInForce(id: string, plane: PlaneId, workspace: string | null): Li
                 plane={plane}
                 budget={said.budget}
                 level={level}
+                extensionRouter={said.extensionRouter}
                 onWrite={(one, told) =>
                   write(one, {
                     refused: told.refused,

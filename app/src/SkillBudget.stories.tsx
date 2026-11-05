@@ -10,6 +10,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { SkillBudgetPreview, StudioBudget } from "./bindings";
+import { ReadOnlySaid } from "./ReadOnlyLine";
 import { SkillBudgetTable } from "./SkillBudget";
 import { expectFocusInSight, untilFocused, untilFocusWithin } from "./stories.testkit";
 
@@ -70,20 +71,26 @@ const WARNS: SkillBudgetPreview = {
 function Budget({
   preview,
   extensionRouter,
+  refuses,
+  readOnly,
 }: {
   preview: SkillBudgetPreview;
   extensionRouter: boolean;
+  refuses?: string;
+  readOnly?: string;
 }) {
   clearMocks();
   mockIPC((cmd) => (cmd === "skill_budget_preview" ? preview : null));
   return (
-    <SkillBudgetTable
-      plane="p"
-      budget={BUDGET}
-      level={{ workspace: "smart-ide", persona: null }}
-      extensionRouter={extensionRouter}
-      onWrite={(_write, told) => told.done()}
-    />
+    <ReadOnlySaid.Provider value={readOnly}>
+      <SkillBudgetTable
+        plane="p"
+        budget={BUDGET}
+        level={{ workspace: "smart-ide", persona: null }}
+        extensionRouter={extensionRouter}
+        onWrite={(_write, told) => (refuses === undefined ? told.done() : told.refused(refuses))}
+      />
+    </ReadOnlySaid.Provider>
   );
 }
 
@@ -133,6 +140,7 @@ export const Table: Story = {
 
 /** **The cost, as it is typed**: what new chats would list, by name, and about how many tokens. */
 export const WhatItCosts: Story = {
+  parameters: { screenshot: "page" },
   play: async ({ canvas }) => {
     await userEvent.click(canvas.getByRole("button", { name: "Change opencode's skill budget" }));
     const dialog = await within(document.body).findByRole("dialog");
@@ -150,6 +158,7 @@ export const WhatItCosts: Story = {
 /** **Past what the program holds, and below the pins**: both warn, and neither stops the change. */
 export const ItWarns: Story = {
   args: { preview: WARNS, extensionRouter: true },
+  parameters: { screenshot: "page" },
   play: async ({ canvas }) => {
     await userEvent.click(canvas.getByRole("button", { name: "Change Codex's skill budget" }));
     const dialog = await within(document.body).findByRole("dialog");
@@ -163,12 +172,38 @@ export const ItWarns: Story = {
 
 /** **A box that holds no number**: it says so when it is left, and the change waits. */
 export const NotANumber: Story = {
+  parameters: { screenshot: "page" },
   play: async ({ canvas }) => {
     await userEvent.click(canvas.getByRole("button", { name: "Change opencode's skill budget" }));
     const dialog = await within(document.body).findByRole("dialog");
     await userEvent.keyboard("0");
     await userEvent.tab();
     await expect(await within(dialog).findByText(/whole number of at least 1/)).toBeVisible();
+    expectFocusInSight();
+  },
+};
+
+/** **Reset to default, by the keyboard, and the core's refusal said under the table.** */
+export const AResetRefused: Story = {
+  args: { refuses: "workspace.json changed on disk since this tab read it, so nothing was saved." },
+  play: async ({ canvas }) => {
+    const grid = canvas.getByRole("grid", { name: "Skill budget on each program" });
+    await userEvent.tab();
+    await untilFocusWithin(() => grid, "the keyboard reaches the table by Tab");
+    await arrowTo("Reset to default, Claude Code's most skills");
+    await userEvent.keyboard("{Enter}");
+    await expect(await canvas.findByTestId("skill-budget-refused")).toBeVisible();
+    expectFocusInSight();
+  },
+};
+
+/** **A read-only project**: every button stays a Tab stop that says why, and does nothing. */
+export const ReadOnly: Story = {
+  args: { readOnly: "This project is read-only here, so purlis writes none of its files." },
+  play: async ({ canvas }) => {
+    const change = canvas.getByRole("button", { name: "Change Codex's skill budget" });
+    await expect(change).toHaveAttribute("aria-disabled", "true");
+    await userEvent.tab();
     expectFocusInSight();
   },
 };

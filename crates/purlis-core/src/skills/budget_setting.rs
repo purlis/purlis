@@ -8,7 +8,7 @@
 //! ```toml
 //! [skills.budget]              # every program
 //! skills = 80
-//! [skills.budget.claude-code]  # this program, over that
+//! [skills.budget.claude]       # this program, over that
 //! skills = 100
 //! ```
 //!
@@ -67,12 +67,12 @@ fn laid_over(over: Set, set: Set) -> Set {
 
 /// **What one level writes**: its numbers for every program, and its own for each.
 #[derive(Debug, Clone, Default)]
-struct Levels {
+struct Writes {
     every: Set,
     own: Vec<(Harness, Set)>,
 }
 
-impl Levels {
+impl Writes {
     fn of(value: Option<&toml::Value>) -> Self {
         Self {
             every: set_of(value),
@@ -97,12 +97,12 @@ impl Levels {
 }
 
 /// What the project at `root` writes.
-fn the_projects(root: &Path) -> Levels {
+fn the_projects(root: &Path) -> Writes {
     let text = layer_text(root, Which::Shared);
     let shared = text
         .text()
         .and_then(|text| text.parse::<toml::Table>().ok());
-    Levels::of(
+    Writes::of(
         shared
             .as_ref()
             .and_then(|top| top.get(SKILLS))
@@ -111,9 +111,9 @@ fn the_projects(root: &Path) -> Levels {
 }
 
 /// What the workspace `workspace` of the project at `root` writes.
-fn the_workspaces(root: &Path, workspace: &str) -> Levels {
+fn the_workspaces(root: &Path, workspace: &str) -> Writes {
     let table = crate::settings::workspace::read(root, workspace);
-    Levels::of(
+    Writes::of(
         table
             .as_ref()
             .and_then(|top| top.get(SKILLS))
@@ -289,9 +289,10 @@ fn integer(number: usize) -> Result<Value, String> {
 type Pick = fn(Set) -> Option<usize>;
 
 /// **What makes `harness` come to `wanted` at a level that writes `written`**, one key at a time.
-/// A number written for every program stops being one where `harness` leaves it: each other
-/// program that had it gets it as its own, so nothing moves for them.
-fn edits_for(written: &Levels, harness: Harness, wanted: Set) -> Result<Vec<Edit>, String> {
+/// A number of its own stands over one written for every program, so only taking a number out
+/// touches that: it stops being one for every program, and each other program that had it gets it
+/// as its own, so nothing moves for them.
+fn edits_for(written: &Writes, harness: Harness, wanted: Set) -> Result<Vec<Edit>, String> {
     let mut edits = Vec::new();
     let keys: [(&str, Pick); 2] = [(SKILLS_KEY, |set| set.skills), (CHARS_KEY, |set| set.chars)];
     for (key, pick) in keys {
@@ -299,7 +300,7 @@ fn edits_for(written: &Levels, harness: Harness, wanted: Set) -> Result<Vec<Edit
         if number == pick(written.on(harness)) {
             continue;
         }
-        if let Some(every) = pick(written.every) {
+        if let Some(every) = pick(written.every).filter(|_| number.is_none()) {
             edits.push(Edit {
                 path: at(&[key]),
                 value: None,
@@ -460,16 +461,19 @@ pub fn preview(
     let more_chars = i64::try_from(then.spends(then_budget)).unwrap_or(i64::MAX)
         - i64::try_from(now.spends(now_budget)).unwrap_or(i64::MAX);
     let routing = then.routing.as_ref();
-    let over = routing.and_then(|routing| match routing.still_over? {
-        StillOver::Pins => Some(format!(
-            "{} are still listed, so a chat's list goes over this.",
-            crate::counts::counted(routing.pinned.len(), "pinned skill", "pinned skills"),
-        )),
-        StillOver::NotHideable => Some(
-            "purlis's own skills and the ones a program and its repos bring are still listed, \
-             so a chat's list goes over this."
-                .to_owned(),
-        ),
+    let over = routing.and_then(|routing| {
+        let pins = routing.pinned.len();
+        let pinned = crate::counts::counted(pins, "pinned skill", "pinned skills");
+        let own = "purlis's own skills and the ones a program and its repos bring";
+        let whole = match routing.still_over? {
+            StillOver::Pins if pins == 1 => format!("{pinned} is"),
+            StillOver::Pins => format!("{pinned} are"),
+            StillOver::NotHideable if pins == 0 => format!("{own} are"),
+            StillOver::NotHideable => format!("{pinned}, {own} are"),
+        };
+        Some(format!(
+            "{whole} still listed, so a chat's list goes over this."
+        ))
     });
     Preview {
         listed: listed_then.len(),
