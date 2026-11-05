@@ -314,6 +314,15 @@
   background-color: transparent;
 }
 
+/* And so does its icon alone, a line's words cut down to their sign (#5206): its hover keeps the
+   ground an icon button has under the pointer. */
+[data-scope="button"][data-part="root"][data-icon-only][data-variant="warning-soft"]:not(
+    [data-hovered],
+    [data-open]
+  ) {
+  background-color: transparent;
+}
+
 /* Under the pointer and the keyboard it is underlined in the primary words, as a link is, and
    draws no fill: a fill with no padding would sit tight against the letters. */
 [data-scope="button"][data-part="root"][data-inline]:is(

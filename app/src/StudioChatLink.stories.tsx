@@ -224,6 +224,9 @@ export const TheChatsChip: StoryObj<{ done: boolean; openSkill: (link: StudioLin
     expectFocusInSight();
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(args.openSkill).toHaveBeenCalledWith(LINK));
+    // The picture is of the chip at rest: neither its ring nor its tooltip.
+    chip.blur();
+    await waitFor(() => expect(document.querySelector('[role="tooltip"]')).toBeNull());
   },
 };
 
