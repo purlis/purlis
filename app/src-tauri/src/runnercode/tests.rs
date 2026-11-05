@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 
-use purlis_host::{Code as _, Hosting};
+use purlis_host::Hosting;
 use purlis_host::standin::StandIns;
 
 use crate::host::{Named, SessionHost};
@@ -588,6 +588,10 @@ fn a_check_the_runner_does_not_finish_in_time_says_why_and_what_helps() {
         .of_project(&world.root, std::time::Duration::from_secs(30))
         .expect("a link to the runner");
 
+    assert!(
+        link.proof_within() > purlis_core::codelink::held::LOOK_WITHIN,
+        "the window outwaits the runner's own limit, so the runner's words reach it"
+    );
     let said = crate::runnercode::not_home_within(
         &link,
         "project",

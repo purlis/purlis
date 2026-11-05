@@ -55,6 +55,12 @@ const MOST_STASHES: usize = 1000;
 /// named by its id, and what could not be looked through, in sentences. No link is followed, and
 /// nothing inside a repository's own git folder is looked through.
 pub fn repos_held(projects: &Path) -> (Vec<Held>, Vec<String>) {
+    repos_held_until(projects, std::time::Instant::now() + LOOK_WITHIN)
+}
+
+/// [`repos_held`], stopping at `until` (#5312): between folders and repositories, so one git call
+/// under way finishes first. What ran out is said, as it keeps the runner.
+pub fn repos_held_until(projects: &Path, until: std::time::Instant) -> (Vec<Held>, Vec<String>) {
     let mut held = Vec::new();
     let mut unread = Vec::new();
     let entries = match std::fs::read_dir(projects) {
@@ -90,6 +96,10 @@ pub fn repos_held(projects: &Path) -> (Vec<Held>, Vec<String>) {
         }
         let mut stack = vec![String::new()];
         while let Some(rel) = stack.pop() {
+            if std::time::Instant::now() >= until {
+                unread.push(ran_out_of_time());
+                return (held, unread);
+            }
             folders += 1;
             if folders > MOST_FOLDERS {
                 unread.push(format!(
@@ -592,37 +602,7 @@ fn outside_bounded(
                 break;
             }
         }
-        for file in &found.files {
-            if outside.out_of_time() {
-                break;
-            }
-            let at = beyond.root.join(file);
-            match rustix::fs::statat(rustix::fs::CWD, &at, rustix::fs::AtFlags::SYMLINK_NOFOLLOW) {
-                Ok(stat) => {
-                    let the_users = stat.st_uid == beyond.owner
-                        || (rustix::fs::FileType::from_raw_mode(stat.st_mode)
-                            == rustix::fs::FileType::RegularFile
-                            && may_write(rustix::fs::CWD, &at));
-                    if the_users && changed_at(&stat).is_none_or(|at| at >= since) {
-                        outside.found(format!("/{file}"));
-                    }
-                }
-                Err(rustix::io::Errno::NOENT) => {}
-                Err(e) => outside.say(format!("/{file} on the runner could not be read: {e}")),
-            }
-        }
-        for folder in &found.folders {
-            if outside.out_of_time() {
-                break;
-            }
-            outside.look_in(
-                beyond.root,
-                folder,
-                Rules::Beyond(beyond.owner),
-                &skip,
-                since,
-            );
-        }
+        outside.look_at_recorded(beyond, found, &skip, since);
         for said in &found.said {
             outside.say(said.clone());
         }
@@ -643,18 +623,29 @@ fn outside_bounded(
 pub const LOOK_WITHIN: std::time::Duration = std::time::Duration::from_secs(300);
 
 /// What helps where a check ran out of time (#5312): a look warms the runner's file system, and
-/// what the first one finds is kept once it is whole, so a second is quicker.
-pub const WHAT_HELPS_A_CHECK: &str =
-    "Fetch again, as a second look is often quicker, or give this pool a smaller image";
+/// what the first one finds is kept once it is whole, so a second is quicker. An image is set
+/// when a runner is made, so a smaller one helps only the next.
+pub const WHAT_HELPS_A_CHECK: &str = "Fetch again, as a second look is often quicker. If it keeps \
+     running out, the image or what the task saved holds too many files: use a smaller image for \
+     this pool's next runners, and discard this one once you no longer need what it holds";
 
 /// What a check that ran out of time says.
-#[cfg(unix)]
 fn ran_out_of_time() -> String {
     format!(
-        "the runner ran out of time looking through its files, after {} minutes, the most one \
-         check takes, so purlis can't tell all its work is here. {WHAT_HELPS_A_CHECK}",
+        "the runner ran out of time looking through its files, after {} minutes, the limit for \
+         one check, so purlis can't tell all its work is here. {WHAT_HELPS_A_CHECK}",
         LOOK_WITHIN.as_secs() / 60
     )
+}
+
+/// `said`, a check's sentences, with that it ran out of time first and once (#5312), wherever it
+/// ran out: the window names only the first few, and this says the rest may not be all there is.
+#[must_use]
+pub fn ran_out_first(said: Vec<String>) -> Vec<String> {
+    let ran_out = ran_out_of_time();
+    let (first, rest): (Vec<String>, Vec<String>) =
+        said.into_iter().partition(|one| *one == ran_out);
+    first.into_iter().take(1).chain(rest).collect()
 }
 
 /// The most folders a runner's file system is looked through, once for each host, to find where
@@ -1221,6 +1212,48 @@ impl Outside {
             }
         }
         true
+    }
+
+    /// Looks at each file and each folder of files [`writable`] recorded, until the check's time
+    /// is up.
+    fn look_at_recorded(
+        &mut self,
+        beyond: Beyond<'_>,
+        found: &Writable,
+        skip: &[std::path::PathBuf],
+        since: std::time::SystemTime,
+    ) {
+        for file in &found.files {
+            if self.out_of_time() {
+                return;
+            }
+            let at = beyond.root.join(file);
+            match rustix::fs::statat(rustix::fs::CWD, &at, rustix::fs::AtFlags::SYMLINK_NOFOLLOW) {
+                Ok(stat) => {
+                    let the_users = stat.st_uid == beyond.owner
+                        || (rustix::fs::FileType::from_raw_mode(stat.st_mode)
+                            == rustix::fs::FileType::RegularFile
+                            && may_write(rustix::fs::CWD, &at));
+                    if the_users && changed_at(&stat).is_none_or(|at| at >= since) {
+                        self.found(format!("/{file}"));
+                    }
+                }
+                Err(rustix::io::Errno::NOENT) => {}
+                Err(e) => self.say(format!("/{file} on the runner could not be read: {e}")),
+            }
+        }
+        for folder in &found.folders {
+            if self.out_of_time() {
+                return;
+            }
+            self.look_in(
+                beyond.root,
+                folder,
+                Rules::Beyond(beyond.owner),
+                skip,
+                since,
+            );
+        }
     }
 
     /// Looks at the files directly in the folder at `rel` in `base`, recorded by [`writable`] in

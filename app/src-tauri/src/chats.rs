@@ -974,6 +974,10 @@ pub struct Chats {
     fresh_starting: Arc<Mutex<std::collections::HashSet<String>>>,
     /// The chats whose fresh runner's work is on its way back now, by id (#4569).
     fresh_ending: Arc<Mutex<std::collections::HashSet<String>>>,
+    /// The chats whose kept runner the person discarded while a check of it may still run
+    /// (#5312): when that ends, the runner goes, whatever it found.
+    #[cfg(unix)]
+    fresh_discarded: Arc<Mutex<std::collections::HashSet<String>>>,
     /// When the fresh runners were last swept ([`Self::sweeps_fresh_runners`]).
     fresh_swept: Mutex<Option<std::time::Instant>>,
     /// **The fresh runners kept since their work is not all here**, by their chat's id (#4569):
@@ -1327,6 +1331,17 @@ fn tell_fresh_kept(
     }
 }
 
+/// **What a fresh runner's end comes to** (#4569, #5312): what is missing, and whether it is proved
+/// home. A runner the person discarded goes with what it holds, whatever a check under way found.
+#[cfg(unix)]
+fn ends_as(discarded: bool, missing: Vec<String>, going: Going) -> (Vec<String>, bool) {
+    if discarded {
+        (Vec::new(), false)
+    } else {
+        (missing, going == Going::OnProof)
+    }
+}
+
 /// The least time between two sweeps of a project's fresh runners (#4569).
 #[cfg(unix)]
 const FRESH_SWEPT_AT_MOST_EVERY: std::time::Duration = std::time::Duration::from_secs(60);
@@ -1504,6 +1519,8 @@ impl Chats {
             going: crate::goingaway::Going::default(),
             fresh_starting: Arc::default(),
             fresh_ending: Arc::default(),
+            #[cfg(unix)]
+            fresh_discarded: Arc::default(),
             fresh_swept: Mutex::new(None),
             fresh_kept: Arc::default(),
             fresh_told: Arc::default(),
@@ -1760,17 +1777,16 @@ impl Chats {
         }
         let config = config.clone();
         let (kept, told) = (Arc::clone(&self.fresh_kept), Arc::clone(&self.fresh_told));
+        let discarded = Arc::clone(&self.fresh_discarded);
         let (runner_named, workspace_named) = (runner.clone(), workspace.clone());
         self.sessions.take_back_fresh(
             &runner,
             (going == Going::OnProof).then_some(workspace.as_str()),
             Box::new(move |missing| {
-                let end = crate::clusterpools::fresh_runner_ended(
-                    &config,
-                    &ending.id,
-                    &missing,
-                    going == Going::OnProof,
-                );
+                let (missing, proved) =
+                    ends_as(lock(&discarded).remove(&ending.id), missing, going);
+                let end =
+                    crate::clusterpools::fresh_runner_ended(&config, &ending.id, &missing, proved);
                 let went = matches!(end, crate::clusterpools::FreshEnd::Went);
                 {
                     let mut kept = lock(&kept);
@@ -1833,8 +1849,13 @@ impl Chats {
             );
         }
         tracing::info!("purlis: the person discards chat {id}'s fresh runner and what it holds");
+        // A check under way can take minutes, and a sweep starts one about once a minute, so the
+        // press is kept for when it ends, never dropped (#5312).
         #[cfg(unix)]
-        self.fresh_runner_goes(id, Going::Discarded);
+        {
+            lock(&self.fresh_discarded).insert(id.to_owned());
+            self.fresh_runner_goes(id, Going::Discarded);
+        }
         Ok(())
     }
 

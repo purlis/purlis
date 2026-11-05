@@ -1614,7 +1614,7 @@ impl purlis_host::Code for Moves {
     > {
         // One limit for the whole look, however it divides (#5312).
         let until = std::time::Instant::now() + held::LOOK_WITHIN;
-        let (repos, mut unread) = held::repos_held(projects);
+        let (repos, mut unread) = held::repos_held_until(projects, until);
         // **And what a task kept outside them** (#4781), in the runner's home, purlis's data home
         // (#5029) and, where it is looked through, the rest of its file system (#4933): every
         // folder purlis keeps for itself is left out by name, wherever it is (#5028). Since the
@@ -1712,6 +1712,7 @@ impl purlis_host::Code for Moves {
                 ),
             },
         }
+        let unread = held::ran_out_first(unread);
         let repos = repos
             .into_iter()
             .map(|one| purlis_host::protocol::session::RepoHeld {

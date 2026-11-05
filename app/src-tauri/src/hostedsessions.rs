@@ -2071,9 +2071,9 @@ impl HostLink {
             Some(Err(refused)) => Err(refused.why),
             // Only this machine's own clock says the wait ran out.
             None => Err(format!(
-                "it did not answer within {} seconds, the longest purlis waits for one check, so \
-                 purlis can't tell all its work is here. {}",
-                within.as_secs(),
+                "it did not answer within {}, the longest purlis waits for one check, so purlis \
+                 can't tell all its work is here. {}",
+                purlis_core::poollimits::Unit::Minutes.said(within.as_secs().div_ceil(60)),
                 purlis_core::codelink::held::WHAT_HELPS_A_CHECK
             )),
         }

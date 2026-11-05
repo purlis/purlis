@@ -1723,12 +1723,24 @@ fn a_first_look_out_of_time_is_not_kept_and_is_said_once() {
 #[cfg(unix)]
 #[test]
 fn a_check_out_of_time_looks_at_no_recorded_file_or_folder() {
+    use std::os::unix::fs::PermissionsExt;
     if the_runners_user() == 0 {
         return;
     }
     let (_dir, root, home, _) = a_runners_root();
-    let files: Vec<String> = (0..3).map(|n| format!("opt/app/{n}.conf")).collect();
-    let _shut = an_image_of_open_files(&root, &files, &["opt", "opt/app"]);
+    let files: Vec<String> = [
+        "opt/app/1.conf",
+        "etc/tool/shared.conf",
+        "etc/tool/shut.conf",
+    ]
+    .map(str::to_owned)
+    .to_vec();
+    let _shut = an_image_of_open_files(&root, &files, &["opt", "opt/app", "etc", "etc/tool"]);
+    std::fs::set_permissions(
+        root.join("etc/tool/shut.conf"),
+        std::fs::Permissions::from_mode(0o444),
+    )
+    .unwrap();
     std::thread::sleep(std::time::Duration::from_millis(50));
     let since = std::time::SystemTime::now();
     std::thread::sleep(std::time::Duration::from_millis(50));
@@ -1738,19 +1750,53 @@ fn a_check_out_of_time_looks_at_no_recorded_file_or_folder() {
     };
     let found = writable(beyond, std::slice::from_ref(&home), since);
     assert!(found.whole(), "{found:?}");
-    std::fs::write(root.join("opt/app/1.conf"), "as the task left it\n").unwrap();
-
-    let in_time = outside_until(
-        &home,
-        None,
-        &[],
-        Some(since),
-        Some((beyond, &found)),
-        std::time::Instant::now() + LOOK_WITHIN,
+    assert!(
+        found
+            .files
+            .iter()
+            .any(|file| file == "etc/tool/shared.conf")
+            && found.folders.iter().any(|folder| folder == "opt/app"),
+        "one recorded alone, one by its folder: {found:?}"
     );
-    assert!(says(&in_time, "/opt/app/1.conf"), "{in_time:?}");
+    std::fs::write(root.join("opt/app/1.conf"), "as the task left it\n").unwrap();
+    std::fs::write(root.join("etc/tool/shared.conf"), "as the task left it\n").unwrap();
+    let looked = |until| {
+        let mut outside = Outside::new(MOST_FOLDERS, until);
+        outside.look_at_recorded(beyond, &found, std::slice::from_ref(&home), since);
+        outside.sentences()
+    };
 
-    let late = outside_until(
+    let in_time = looked(std::time::Instant::now() + LOOK_WITHIN);
+    assert!(
+        says(&in_time, "/opt/app/1.conf") && says(&in_time, "/etc/tool/shared.conf"),
+        "{in_time:?}"
+    );
+
+    let late = looked(std::time::Instant::now());
+    assert_eq!(times_out_of_time_is_said(&late), 1, "{late:?}");
+    assert!(
+        !says(&late, "/opt/app/1.conf") && !says(&late, "/etc/tool/shared.conf"),
+        "{late:?}"
+    );
+}
+
+/// **A first look that finished stays whole though the check after it ran out** (#5312), so the
+/// next check has only the rest to do.
+#[cfg(unix)]
+#[test]
+fn a_first_look_that_finished_stays_whole_when_its_check_runs_out() {
+    if the_runners_user() == 0 {
+        return;
+    }
+    let (_dir, root, home, _shut) = a_large_image(5);
+    let since = std::time::SystemTime::now();
+    let beyond = Beyond {
+        root: &root,
+        owner: the_runners_user().wrapping_add(1),
+    };
+    let found = writable(beyond, std::slice::from_ref(&home), since);
+
+    let said = outside_until(
         &home,
         None,
         &[],
@@ -1758,8 +1804,45 @@ fn a_check_out_of_time_looks_at_no_recorded_file_or_folder() {
         Some((beyond, &found)),
         std::time::Instant::now(),
     );
-    assert_eq!(times_out_of_time_is_said(&late), 1, "{late:?}");
-    assert!(!says(&late, "/opt/app/1.conf"), "{late:?}");
+
+    assert_eq!(times_out_of_time_is_said(&said), 1, "{said:?}");
+    assert!(found.whole(), "{found:?}");
+}
+
+/// **The projects are looked through within the same limit** (#5312): a look stopped there says so
+/// even where no program has started, when nothing after it would.
+#[test]
+fn a_look_through_the_projects_out_of_time_is_said() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join(PROJECT)).unwrap();
+
+    let (held, unread) = repos_held_until(dir.path(), std::time::Instant::now());
+
+    assert!(held.is_empty(), "{held:?}");
+    assert!(says(&unread, "ran out of time"), "{unread:?}");
+}
+
+/// **That a check ran out of time comes first and once** (#5312): the window names only the first
+/// few, and both the look through the projects and the walks after it may say it.
+#[test]
+fn a_check_that_ran_out_says_so_first_and_once() {
+    let ran_out = ran_out_of_time();
+    let said = ran_out_first(vec![
+        "a folder could not be read".to_owned(),
+        ran_out.clone(),
+        "another could not".to_owned(),
+        ran_out.clone(),
+    ]);
+    assert_eq!(
+        said,
+        [
+            ran_out,
+            "a folder could not be read".to_owned(),
+            "another could not".to_owned()
+        ]
+    );
+    let none = vec!["a folder could not be read".to_owned()];
+    assert_eq!(ran_out_first(none.clone()), none);
 }
 
 /// **A folder recorded holds its one bound with the files** (#5112): each is one more thing kept,
