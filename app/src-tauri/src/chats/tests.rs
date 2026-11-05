@@ -6974,6 +6974,102 @@ fn a_conversation_for_a_chat_that_is_not_open_invents_nothing() {
     assert_eq!(chats.record(), Record::default());
 }
 
+/// Chats of a plane that start with no sandbox: what is said of them is their conversations.
+fn unsandboxed_chats_of(plane: &std::path::Path) -> Chats {
+    let mut chats = Chats::on_host(
+        Box::new(|_| {}),
+        Box::new(Pretend::default()),
+        plane.to_path_buf(),
+    )
+    .deciding_by(Box::new(|_, _, _| Ok((None, None, None))));
+    chats.arming_with(crate::Shipped {
+        binary: crate::Shipped::default().binary,
+        plugin: crate::Shipped::default().plugin,
+        shims: None,
+        git_hooks: None,
+    });
+    chats
+}
+
+/// A chat on Codex in `plane`, whose harness chooses its own conversation and names it by a hook.
+fn a_codex_chat_in(plane: &std::path::Path) -> Chat {
+    Chat {
+        cwd: Some(plane.to_path_buf()),
+        ..chat(&standing("codex"), "restarted", None)
+    }
+}
+
+/// Each chat of `chats` names conversation `ID` as it starts, before it is listed as open.
+fn each_names_its_conversation_as_it_starts(chats: &std::sync::Arc<Chats>) {
+    let hears = std::sync::Arc::downgrade(chats);
+    chats.when_one_starts(Box::new(move |session, _, _, _| {
+        hears
+            .upgrade()
+            .expect("the chats")
+            .follow_conversation(session, ID, Some(OLD_RUN));
+    }));
+}
+
+/// **A harness can name its conversation before its start has returned** (#5170): its report is
+/// heard while the start still reads the plane's skills, before the chat is listed as open. The
+/// board adopts it and never tells it again, so a report dropped here left the chat with nothing
+/// to resume for good, and "send it a message and restart it again" was not true of it.
+#[test]
+fn a_conversation_named_while_the_chat_is_starting_is_the_one_a_restart_resumes() {
+    let plane = tempfile::tempdir().expect("a plane");
+    let chats = std::sync::Arc::new(unsandboxed_chats_of(plane.path()));
+    each_names_its_conversation_as_it_starts(&chats);
+
+    let session = chats
+        .start(&a_codex_chat_in(plane.path()), SIZE)
+        .expect("starts");
+
+    let record = chats.record();
+    assert_eq!(record.chats[0].resume, Some(SessionId::new(ID).unwrap()));
+    assert_eq!(record.chats[0].identity.run.as_deref(), Some(OLD_RUN));
+    chats.ask_restart(session).expect("asked");
+    let started = chats.restart(session, SIZE).expect("it has a conversation");
+    let _ = chats.close(started);
+    let _ = chats.close(session);
+}
+
+#[test]
+fn a_conversation_named_while_a_shell_tab_is_starting_resumes_nothing() {
+    let plane = tempfile::tempdir().expect("a plane");
+    let chats = std::sync::Arc::new(unsandboxed_chats_of(plane.path()));
+    each_names_its_conversation_as_it_starts(&chats);
+    let shell = Chat {
+        cwd: Some(plane.path().to_path_buf()),
+        ..chat("/bin/sh", "shell", None)
+    };
+
+    let session = chats.start(&shell, SIZE).expect("starts");
+
+    assert_eq!(chats.record().chats[0].resume, None);
+    let _ = chats.close(session);
+}
+
+/// A closed chat's last report comes late, and its number may be the next chat's.
+#[test]
+fn a_conversation_named_for_a_chat_that_has_closed_is_not_kept_for_a_later_start() {
+    let plane = tempfile::tempdir().expect("a plane");
+    let chats = unsandboxed_chats_of(plane.path());
+    let first = chats
+        .start(&a_codex_chat_in(plane.path()), SIZE)
+        .expect("starts");
+    chats.close(first).unwrap();
+
+    chats.follow_conversation(first, ID, None);
+
+    let next = Chat {
+        number: Some(first),
+        ..a_codex_chat_in(plane.path())
+    };
+    let again = chats.start(&next, SIZE).expect("starts");
+    assert_eq!(chats.record().chats[0].resume, None);
+    let _ = chats.close(again);
+}
+
 // ----- the model a chat's harness reported (#1021) -----
 
 fn session_start(chat: u32, conversation: &str, model: &str) -> purlis_core::hookwire::Report {

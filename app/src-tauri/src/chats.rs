@@ -262,6 +262,9 @@ pub type Recorder = Box<dyn Fn(&Record) + Send + Sync>;
 /// report about it.
 pub type Starting = Box<dyn Fn(u32, Option<Harness>, Option<String>, bool) + Send + Sync>;
 
+/// [`Chats::named_while_starting`]: each chat starting, and what its harness has named so far.
+type NamedWhileStarting = HashMap<u32, Option<(SessionId, Option<String>)>>;
+
 /// Told as each chat starts, BEFORE its program does, of the run the start begins: the chat's
 /// number, its id, the run's id, why it began and what it is (ADR 0066, #868), and whether its
 /// `run.started` is held until the start goes on. What the event log is told.
@@ -966,6 +969,13 @@ pub struct Chats {
     /// come before the chat is listed as open. Forgotten as each start is announced and as the
     /// chat closes, so a model never outlives the program it was reported for.
     models: Mutex<HashMap<u32, String>>,
+    /// **What a chat's harness named while its start was under way** (#5170), by the chat's
+    /// number, with the run a `/clear` began: an entry from the moment the start is announced, so
+    /// before its program runs, until the chat is listed as open and takes what it holds. The
+    /// board tells a conversation once, as it adopts it, so what is heard here is heard only here.
+    /// Taken under the lock of [`Self::open`], so a report lands in one or the other.
+    /// **In memory only.**
+    named_while_starting: Mutex<NamedWhileStarting>,
     /// The folders a discard is taking away now, and the folders chats are starting in
     /// (#1472): no chat starts in a folder that is going, and none goes while one starts there.
     /// **In memory only.**
@@ -1519,6 +1529,7 @@ impl Chats {
             dispatching: Mutex::new(()),
             reserved: Mutex::new(HashMap::new()),
             starting_as: Mutex::new(HashMap::new()),
+            named_while_starting: Mutex::new(HashMap::new()),
             stops_below: Mutex::new(std::collections::HashSet::new()),
             owed: Mutex::new(HashMap::new()),
             restarting: Mutex::new(std::collections::HashSet::new()),
@@ -5140,6 +5151,7 @@ impl Chats {
             announced.store(session, std::sync::atomic::Ordering::SeqCst);
             whose.store(session, std::sync::atomic::Ordering::SeqCst);
             lock(&self.starting_as).insert(session, chat.persona.clone());
+            lock(&self.named_while_starting).insert(session, None);
             untold.tell_untold();
             // A chat reattached is where it was: its state, its model and its run are as the
             // host kept them (#2006).
@@ -5315,6 +5327,7 @@ impl Chats {
             let announced = announced.load(std::sync::atomic::Ordering::SeqCst);
             if announced > 0 {
                 lock(&self.starting_as).remove(&announced);
+                lock(&self.named_while_starting).remove(&announced);
             }
             if announced > 0
                 && let Some(gone) = lock(&self.never_started).as_ref()
@@ -5401,7 +5414,21 @@ impl Chats {
         if let Some(start) = &mut own_start {
             start.made = false;
         }
-        lock(&self.open).insert(
+        let mut open = lock(&self.open);
+        // What its harness named since its program began, which is newer than what it started
+        // under. A shell tab keeps none, as `follow_conversation` keeps none for one that is open.
+        let mut under = under;
+        if let Some((id, run)) = lock(&self.named_while_starting)
+            .remove(&session)
+            .flatten()
+            .filter(|_| harness.is_some())
+        {
+            under.resume = Some(id);
+            if run.is_some() {
+                under.identity.run = run;
+            }
+        }
+        open.insert(
             session,
             Running {
                 chat: under,
@@ -5427,6 +5454,7 @@ impl Chats {
                 runs_as: runs_as.clone(),
             },
         );
+        drop(open);
         // Its routing record, after its run began (SK-15b), where its router was asked now. A chat
         // reattached began no run here: one that kept its start's routing is in its run's record
         // already (#3578), and one whose record kept none had its router asked again, an answer
@@ -5495,6 +5523,7 @@ impl Chats {
     /// Ends a chat. It is no longer one a quit would record.
     pub fn close(&self, session: u32) -> Result<(), String> {
         lock(&self.starting_as).remove(&session);
+        lock(&self.named_while_starting).remove(&session);
         lock(&self.untaken).remove(&session);
         lock(&self.ended).remove(&session);
         let gone = lock(&self.open).remove(&session);
@@ -6366,10 +6395,9 @@ impl Chats {
     /// Written down only when the record would change, for [`Self::lay_out`]'s reason. Nothing for
     /// a chat that runs no harness: a shell tab is resumed by nothing, whatever ran in it.
     ///
-    /// **A report that arrives before the chat is remembered here is not kept**, which no
-    /// harness charter starts can produce: Claude Code's first report names the id charter
-    /// chose, which moves nothing, and Codex and opencode name theirs inside the first turn,
-    /// long after the start returned.
+    /// **A report heard before the chat is listed as open is kept for it**
+    /// ([`Self::named_while_starting`], #5170): a harness reports at its own exec, which can come
+    /// while the start is still reading the plane's skills, and the board never tells it again.
     ///
     /// `run` is the run the host began when the move was a `/clear` (ADR 0066's `clear`): the
     /// chat's current run from now on, and so the one the record names.
@@ -6377,6 +6405,9 @@ impl Chats {
         let Ok(id) = SessionId::new(id) else { return };
         let mut open = lock(&self.open);
         let Some(one) = open.get_mut(&session) else {
+            if let Some(named) = lock(&self.named_while_starting).get_mut(&session) {
+                *named = Some((id, run.map(str::to_owned)));
+            }
             return;
         };
         if one.harness.is_none() {
