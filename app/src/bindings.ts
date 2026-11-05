@@ -1616,6 +1616,7 @@ export const commands = {
 	/**  The question waiting for the person's answer, if one is. */
 	poolSignInAsked: () => __TAURI_INVOKE<{
 	id: number,
+	asks: Asks,
 	profile: string,
 	pool: string,
 	/**  What the terminal of the command that asks shows. */
@@ -3410,14 +3411,22 @@ export const commands = {
 	 */
 	poolSetupCreate: (adding: PoolAdding) => typedError<PoolSetupCreated, string>(__TAURI_INVOKE("pool_setup_create", { adding })),
 	/**
-	 *  **What Sign-ins' button runs, by hand, for the profiles ticked** (#4718, Q30): `adding`
-	 *  recorded on pool `pool`, then each of `signing_in` signed in there, as the core spells it. None
-	 *  where the button would run nothing. It only spells.
+	 *  **What Sign-ins' button runs, by hand, for the profiles ticked** (#4718, #5174, Q30): `adding`
+	 *  recorded on pool `pool`, each of `taking_off` taken off it, then each of `signing_in` signed in
+	 *  there, as the core spells it. None where the button would run nothing. It only spells.
 	 */
-	poolSetupSignInsByHand: (pool: string, adding: string[], signingIn: string[]) => typedError<{
+	poolSetupSignInsByHand: (pool: string, adding: string[], takingOff: string[], signingIn: string[]) => typedError<{
 	note: string,
 	text: string,
-} | null, string>(__TAURI_INVOKE("pool_setup_sign_ins_by_hand", { pool, adding, signingIn })),
+} | null, string>(__TAURI_INVOKE("pool_setup_sign_ins_by_hand", { pool, adding, takingOff, signingIn })),
+	/**
+	 *  **Moves pool `pool` to a runner on the current image, as the person pressed** (#5175): this
+	 *  version's image, as a new pool is offered it, made beside the old runner, which keeps its chats
+	 *  until they end ([`purlis_core::pools::follow`]). Whether there is such an image is read here,
+	 *  not as the step is measured, which reads no manifest. A pool of a team's own image is refused,
+	 *  and one on that image already says so. The window's alone.
+	 */
+	poolSetupMoveRunner: (pool: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_move_runner", { pool })),
 	/**
 	 *  **This machine's profiles against pool `pool`'s limits**, the ones in use in `plane` marked:
 	 *  measured as a send measures them, with no file read, and held to what its runner takes where
@@ -5577,6 +5586,13 @@ export type Asking = {
 	 */
 	with_asking_chat: WithAskingChat[],
 };
+
+/**  Which command's question it is. */
+export type Asks = 
+/**  `purlis profile sign-in --pool`. */
+"sign-in" | 
+/**  `purlis pool remove-profile`: its runner forgets the profile, and its sign-in there. */
+"take-off";
 
 /**  What a chat's row says while it is at its task limit. */
 export type AtLimit = {
@@ -10259,6 +10275,15 @@ export type OldHome =
 /**  It could not be read, so it is kept, held, all the same. */
 "unread";
 
+/**  **What helps a profile over what a pool's older runner takes** (#5175): by what makes its image. */
+export type OlderRunner = 
+/**  A pool of purlis's own image: a new runner on the current image, which the window makes. */
+"move" | 
+/**  A pool of a team's own image, which purlis never moves: built anew, and the pool added again. */
+"own-image" | 
+/**  A cluster pool, whose image its Pool in the cluster names. */
+"cluster";
+
 /**
  *  The chats of a project still running under an older sandbox (#1428), for the Notice after
  *  a sandbox setting changes: those that run under a sandbox other than the one a start would
@@ -11761,6 +11786,8 @@ export type PoolSetupOver = {
 	said: string,
 	/**  What to raise it to, where a value would do. */
 	raise_to: number | null,
+	/**  What its runner's older purlis holds it to, and what helps, where only that does (#5175). */
+	older_runner: OlderRunner | null,
 };
 
 /**  One of this machine's profiles against a pool's limit (#4482). */
@@ -11840,6 +11867,7 @@ export type PoolSetupTried = {
 /**  What the person is asked. */
 export type PoolSignInAsk = {
 	id: number,
+	asks: Asks,
 	profile: string,
 	pool: string,
 	/**  What the terminal of the command that asks shows. */

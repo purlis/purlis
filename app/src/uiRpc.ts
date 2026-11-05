@@ -1713,6 +1713,7 @@ export const commands = {
 	poolSetupCommand: __WINDOW_ONLY_RESULT,
 	poolSetupCreate: __WINDOW_ONLY_RESULT,
 	poolSetupSignInsByHand: __WINDOW_ONLY_RESULT,
+	poolSetupMoveRunner: __WINDOW_ONLY_RESULT,
 	poolSetupSizes: __WINDOW_ONLY_RESULT,
 	poolSetupSkip: __WINDOW_ONLY_RESULT,
 	poolSetupWake: __WINDOW_ONLY_RESULT,
@@ -3051,6 +3052,13 @@ export type Asking = {
 	 */
 	with_asking_chat: WithAskingChat[],
 };
+
+/**  Which command's question it is. */
+export type Asks = 
+/**  `purlis profile sign-in --pool`. */
+"sign-in" | 
+/**  `purlis pool remove-profile`: its runner forgets the profile, and its sign-in there. */
+"take-off";
 
 /**  What a chat's row says while it is at its task limit. */
 export type AtLimit = {
@@ -7733,6 +7741,15 @@ export type OldHome =
 /**  It could not be read, so it is kept, held, all the same. */
 "unread";
 
+/**  **What helps a profile over what a pool's older runner takes** (#5175): by what makes its image. */
+export type OlderRunner = 
+/**  A pool of purlis's own image: a new runner on the current image, which the window makes. */
+"move" | 
+/**  A pool of a team's own image, which purlis never moves: built anew, and the pool added again. */
+"own-image" | 
+/**  A cluster pool, whose image its Pool in the cluster names. */
+"cluster";
+
 /**
  *  The chats of a project still running under an older sandbox (#1428), for the Notice after
  *  a sandbox setting changes: those that run under a sandbox other than the one a start would
@@ -9235,6 +9252,8 @@ export type PoolSetupOver = {
 	said: string,
 	/**  What to raise it to, where a value would do. */
 	raise_to: number | null,
+	/**  What its runner's older purlis holds it to, and what helps, where only that does (#5175). */
+	older_runner: OlderRunner | null,
 };
 
 /**  One of this machine's profiles against a pool's limit (#4482). */
@@ -9314,6 +9333,7 @@ export type PoolSetupTried = {
 /**  What the person is asked. */
 export type PoolSignInAsk = {
 	id: number,
+	asks: Asks,
 	profile: string,
 	pool: string,
 	/**  What the terminal of the command that asks shows. */

@@ -11,6 +11,7 @@ import {
   PoolSignInConfirm,
   SIGN_IN_ARMS_AFTER_MS,
 } from "./PoolSignInConfirm";
+import type { PoolSignInAsk } from "./bindings";
 import { Dialog } from "./ui/dialog/Dialog";
 
 afterEach(() => {
@@ -18,9 +19,15 @@ afterEach(() => {
   clearMocks();
 });
 
-const ASK = { id: 4, profile: "work", pool: "team", code: "A1B2C3" };
+const ASK: PoolSignInAsk = {
+  id: 4,
+  asks: "sign-in",
+  profile: "work",
+  pool: "team",
+  code: "A1B2C3",
+};
 
-function core(first: typeof ASK | null) {
+function core(first: PoolSignInAsk | null) {
   const state = { asked: first, answers: [] as unknown[] };
   mockIPC(
     (cmd, args) => {
@@ -37,6 +44,21 @@ function core(first: typeof ASK | null) {
 }
 
 describe("a pool sign-in confirmed in the window", () => {
+  it("asks of a profile taken off in those words, and answers the same way (#5174)", async () => {
+    const state = core({ ...ASK, asks: "take-off" });
+    render(<PoolSignInConfirm />);
+    expect(await screen.findByRole("alertdialog")).toBeTruthy();
+    expect(screen.getByText("Take work off team?")).toBeTruthy();
+    expect(screen.getByText(/its sign-in there with it/)).toBeTruthy();
+    expect(screen.getByText("A1B2C3")).toBeTruthy();
+    const yes = screen.getByRole("button", { name: "Take it off" });
+    await waitFor(() => expect((yes as HTMLButtonElement).disabled).toBe(false), {
+      timeout: SIGN_IN_ARMS_AFTER_MS + 2000,
+    });
+    await userEvent.click(yes);
+    expect(state.answers).toEqual([{ id: 4, yes: true }]);
+  });
+
   it("draws nothing while nothing is asked", async () => {
     const state = core(null);
     render(<PoolSignInConfirm />);

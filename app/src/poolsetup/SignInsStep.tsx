@@ -12,12 +12,13 @@ import {
 import {
   addProfileToPool,
   askProfiles,
+  moveRunnerToThisVersion,
   profilesHeld,
   removeProfileFromPool,
   saveLimits,
   usePools,
 } from "../pools";
-import { PoolLimits } from "../settings/PoolLimits";
+import { PoolLimits, ReplaceRunner } from "../settings/PoolLimits";
 import { DRIVEN, PoolProfiles } from "../settings/PoolProfiles";
 import { PoolSignIn } from "../settings/PoolSignIn";
 import { Badge } from "../ui/badge/Badge";
@@ -34,6 +35,14 @@ export const STAYS_ON_THE_RUNNER =
 /** The core's words as a sentence of their own. */
 const sentence = (said: string) =>
   `${said.charAt(0).toUpperCase()}${said.slice(1)}${said.endsWith(".") ? "" : "."}`;
+
+/** What helps where a runner's older purlis holds a profile and the window can't move it (#5175). */
+const OLDER_RUNNER_HELP: Record<"own-image" | "cluster", string> = {
+  "own-image":
+    "purlis never moves your team's image: build it from this version of purlis, remove the pool, then add it again.",
+  cluster:
+    "Ask whoever looks after this pool in the cluster to put its runner on the current image.",
+};
 
 /** "1 profile", "2 profiles". */
 const profiles = (n: number) => `${n} profile${n === 1 ? "" : "s"}`;
@@ -80,6 +89,9 @@ export function SignInsStep({
   const [lines, setLines] = useState(false);
   /** The rows drawn as a save began, held while it asks the runner again, so the step stays put. */
   const [heldRows, setHeldRows] = useState<Row[]>();
+  /** The dialog before the runner is moved to the current image, and the move itself (#5175). */
+  const [movingAsked, setMovingAsked] = useState(false);
+  const [moving, setMoving] = useState(false);
 
   const measure = useCallback(() => {
     void commands.poolSetupSizes(plane, pool).then((read) => {
@@ -125,14 +137,19 @@ export function SignInsStep({
     new Set((rows ?? []).filter((row) => row.kept || used.has(row.name)).map((row) => row.name));
   // What the button would run, by hand, as the core spells it for what is ticked (#4718, Q30).
   const adding = (rows ?? []).filter((row) => ticked.has(row.name) && !row.kept);
+  const takingOff = (rows ?? []).filter((row) => !ticked.has(row.name) && row.kept);
   const signing = (rows ?? []).filter((row) => ticked.has(row.name) && !row.signedIn);
-  const handKey = JSON.stringify([adding.map((row) => row.name), signing.map((row) => row.name)]);
+  const handKey = JSON.stringify([
+    adding.map((row) => row.name),
+    takingOff.map((row) => row.name),
+    signing.map((row) => row.name),
+  ]);
   /** Not asked yet, or what the core spelled: `null` where the button would run nothing. */
   const [byHand, setByHand] = useState<PoolSetupSee | null | undefined>(undefined);
   useEffect(() => {
-    const [add, sign] = JSON.parse(handKey) as [string[], string[]];
+    const [add, off, sign] = JSON.parse(handKey) as [string[], string[], string[]];
     let current = true;
-    void commands.poolSetupSignInsByHand(pool, add, sign).then((said) => {
+    void commands.poolSetupSignInsByHand(pool, add, off, sign).then((said) => {
       if (current) setByHand(said.status === "ok" ? said.data : undefined);
     });
     return () => {
@@ -343,6 +360,20 @@ export function SignInsStep({
     else if (!own) changed();
   };
 
+  const moveRunner = async () => {
+    setMovingAsked(false);
+    setMoving(true);
+    setSaid(undefined);
+    const why = await moveRunnerToThisVersion(pool, plane);
+    setMoving(false);
+    if (why !== undefined) {
+      setSaid(why);
+      return;
+    }
+    measure();
+    changed();
+  };
+
   const most = sizes.most_mib;
   if (lines)
     return (
@@ -419,13 +450,26 @@ export function SignInsStep({
                           {`Raise the limit to ${hit.raise_to}${hit.key === "profileSize" ? " MiB" : " files"}`}
                         </Button>
                       )}
+                      {hit.older_runner === "move" && (
+                        <Button
+                          variant="primary"
+                          isDisabled={moving}
+                          onPress={() => setMovingAsked(true)}
+                        >
+                          {moving ? "Replacing…" : "Replace the runner…"}
+                        </Button>
+                      )}
                       <Button variant="ghost" onPress={() => tick(row.name, false)}>
                         Leave this profile out
                       </Button>
                     </>
                   }
                 >
-                  {`${sentence(hit.said)} Raising the limit only changes this pool, and applies from the next send.`}
+                  {hit.older_runner === null
+                    ? `${sentence(hit.said)} Raising the limit only changes this pool, and applies from the next send.`
+                    : hit.older_runner === "move"
+                      ? sentence(hit.said)
+                      : `${sentence(hit.said)} ${OLDER_RUNNER_HELP[hit.older_runner]}`}
                 </Say>
               ))}
             </li>
@@ -433,6 +477,14 @@ export function SignInsStep({
         })}
       </ul>
       {told}
+      {movingAsked && (
+        <ReplaceRunner
+          pool={pool}
+          onCurrentImage
+          onCancel={() => setMovingAsked(false)}
+          onReplace={() => void moveRunner()}
+        />
+      )}
       {none && (
         <p className="pool-setup-does">Tick a profile for chats on {pool}, or skip this for now.</p>
       )}

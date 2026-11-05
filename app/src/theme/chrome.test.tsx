@@ -443,7 +443,7 @@ function dialogCore() {
   mockIPC((cmd) => {
     switch (cmd) {
       case "pool_sign_in_asked":
-        return { id: 1, profile: "work", pool: "team", code: "A1B2C3" };
+        return { id: 1, asks: "sign-in", profile: "work", pool: "team", code: "A1B2C3" };
       case "installed_extensions":
         return {
           extensions: [

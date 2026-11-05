@@ -1,14 +1,16 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **A pool sign-in started from the command is confirmed in the window.** `purlis profile sign-in
-//! --pool` asks over the window line (`purlis_core::windowline`), and the answer is the person's
-//! press in the dialog (`PoolSignInConfirm.tsx`), through commands only the window may call
-//! (`ui::WINDOW_ONLY`).
+//! **A pool sign-in started from the command is confirmed in the window**, and so is a profile
+//! taken off a pool from the command (#5174). `purlis profile sign-in --pool` and `purlis pool
+//! remove-profile` ask over the window line (`purlis_core::windowline`), and the answer is the
+//! person's press in the dialog (`PoolSignInConfirm.tsx`), through commands only the window may
+//! call (`ui::WINDOW_ONLY`).
 //!
 //! One waits at a time. It goes when the command hangs up, and after `THE_PERSON_HAS`, which is a
 //! no. Once one has ended without a yes, the next waits a moment, so no loop keeps the dialog up.
-//! A yes also lets the command keep that profile on that pool, once ([`take_the_yes`]).
+//! A yes to a sign-in also lets the command keep that profile on that pool, once
+//! ([`take_the_yes`]); a yes to taking one off lets nothing else through.
 #![cfg_attr(not(unix), allow(dead_code))]
 
 use std::sync::Mutex;
@@ -24,10 +26,21 @@ const A_YES_LASTS: Duration = Duration::from_secs(300);
 /// How often the wait looks at whether the command hung up.
 const LOOKS_EVERY: Duration = Duration::from_millis(250);
 
+/// Which command's question it is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum Asks {
+    /// `purlis profile sign-in --pool`.
+    SignIn,
+    /// `purlis pool remove-profile`: its runner forgets the profile, and its sign-in there.
+    TakeOff,
+}
+
 /// What the person is asked.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct PoolSignInAsk {
     pub id: u32,
+    pub asks: Asks,
     pub profile: String,
     pub pool: String,
     /// What the terminal of the command that asks shows.
@@ -75,6 +88,7 @@ struct Waits<'a> {
 /// the windows draw it, and says false where none can; `took_back` has them stop. Only a yes is
 /// `Ok`.
 fn asking(
+    asks: Asks,
     profile: &str,
     pool: &str,
     code: &str,
@@ -102,6 +116,7 @@ fn asking(
         slot.waiting = Some(Waiting {
             ask: PoolSignInAsk {
                 id,
+                asks,
                 profile: profile.to_owned(),
                 pool: purlis_core::shown::short(pool),
                 code: code.to_owned(),
@@ -130,7 +145,8 @@ fn asking(
     took_back();
     let yes = matches!(said, Ok(true));
     with_slot(|slot| {
-        slot.yes = yes.then(|| (profile.to_owned(), pool.to_owned(), Instant::now()));
+        slot.yes = (yes && asks == Asks::SignIn)
+            .then(|| (profile.to_owned(), pool.to_owned(), Instant::now()));
         slot.ended_without_a_yes = (!yes).then(Instant::now);
     });
     match said {
@@ -155,6 +171,7 @@ pub fn take_the_yes(profile: &str, pool: &str) -> bool {
 #[cfg(unix)]
 pub fn ask_the_person(
     app: &tauri::AppHandle,
+    asks: Asks,
     profile: &str,
     pool: &str,
     code: &str,
@@ -177,6 +194,7 @@ pub fn ask_the_person(
         let _ = app.emit(CHANGED, ());
     };
     asking(
+        asks,
         profile,
         pool,
         code,
@@ -226,6 +244,7 @@ mod tests {
     fn asked_in_a_thread() -> std::thread::JoinHandle<Result<Option<String>, String>> {
         std::thread::spawn(|| {
             asking(
+                Asks::SignIn,
                 "work",
                 "team",
                 "A1B2C3",
@@ -250,7 +269,7 @@ mod tests {
     fn only_the_answer_to_the_question_asked_counts_and_a_yes_lets_one_keep() {
         let soon = waits(Duration::from_millis(10), STAYS);
         let ask = |waits: &Waits<'_>, tell: fn() -> bool| {
-            asking("work", "team", "A1B2C3", waits, tell, || ())
+            asking(Asks::SignIn, "work", "team", "A1B2C3", waits, tell, || ())
         };
 
         // No window to ask in.
@@ -307,5 +326,23 @@ mod tests {
         assert!(asker.join().unwrap().is_ok());
         assert!(take_the_yes("work", "team"));
         assert!(!take_the_yes("work", "team"), "once");
+
+        // #5174: a yes to taking a profile off answers only that, so it lets no keep through.
+        let asker = std::thread::spawn(|| {
+            asking(
+                Asks::TakeOff,
+                "work",
+                "team",
+                "D4E5F6",
+                &waits(Duration::from_secs(30), STAYS),
+                || true,
+                || (),
+            )
+        });
+        let question = the_question();
+        assert_eq!(question.asks, Asks::TakeOff);
+        answer_pool_sign_in(question.id, true);
+        assert!(asker.join().unwrap().is_ok());
+        assert!(!take_the_yes("work", "team"), "no keep on this yes");
     }
 }

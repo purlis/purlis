@@ -529,6 +529,7 @@ macro_rules! app_commands {
                 poolsetuptab::pool_setup_command,
                 poolsetuptab::pool_setup_create,
                 poolsetuptab::pool_setup_sign_ins_by_hand,
+                poolsetuptab::pool_setup_move_runner,
                 poolsetuptab::pool_setup_sizes,
                 poolsetuptab::pool_setup_skip,
                 poolsetuptab::pool_setup_wake,

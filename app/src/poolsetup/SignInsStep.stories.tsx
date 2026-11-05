@@ -72,6 +72,7 @@ const OVER: PoolSetupSizes = {
           key: "profileSize",
           said: "it needs 212 MiB, over this pool's limit of 128 MiB",
           raise_to: 256,
+          older_runner: null,
         },
       ],
     },
@@ -82,13 +83,15 @@ const OVER: PoolSetupSizes = {
 
 /** What the core spells for the ticked profiles (#4718), as `poolsetup::signins::by_hand` does. */
 function byHand(args: unknown) {
-  const { pool, adding, signingIn } = args as {
+  const { pool, adding, takingOff, signingIn } = args as {
     pool: string;
     adding: string[];
+    takingOff: string[];
     signingIn: string[];
   };
   const lines = [
     ...(adding.length > 0 ? [`purlis pool add-profile ${pool} ${adding.join(" ")}`] : []),
+    ...takingOff.map((name) => `purlis pool remove-profile ${pool} ${name}`),
     ...signingIn.map((name) => `purlis profile sign-in ${name} --pool ${pool}`),
   ];
   if (lines.length === 0) return null;
@@ -150,6 +153,35 @@ export const OverItsLimit: Story = {
     const raise = await canvas.findByRole("button", { name: "Raise the limit to 256 MiB" });
     raise.focus();
     await expect(raise).toHaveFocus();
+    await expectFocusInSight();
+  },
+};
+
+/** A profile only a runner on the current image would take (#5175): no limit to raise. */
+export const OverWhatAnOlderRunnerTakes: Story = {
+  beforeEach: faked(PROFILES, {
+    ...OVER,
+    profiles: [
+      {
+        ...size("work", 212, true),
+        over: [
+          {
+            key: "profileSize",
+            said: "it needs 212 MiB, and this pool's runner runs an older purlis, which takes at most 120 MiB (Most a profile may send: size): a runner on the current image takes more, or send less",
+            raise_to: null,
+            older_runner: "move",
+          },
+        ],
+      },
+      size("personal", 18, true),
+      size("oss", 9, false),
+    ],
+  }),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const replace = await canvas.findByRole("button", { name: "Replace the runner…" });
+    replace.focus();
+    await expect(replace).toHaveFocus();
     await expectFocusInSight();
   },
 };
