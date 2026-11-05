@@ -25,7 +25,8 @@ person's work moves to a chat they will read themselves.
 
 **2. Will the operator read the new chat themselves?** Then it is a **handoff**: a bug to
 fix, a chore, a question for another workspace to own. It starts in that workspace's sidebar
-without taking a pane, and this chat hears nothing back.
+without taking a pane, and the operator is told it arrived: a card on that workspace's chip,
+an Update in the Inbox, and a "new" mark on its row. This chat hears nothing back.
 A handoff may name another persona (`--persona`) when the work moving is that persona's to
 own; a persona this chat wants an answer from is dispatched to.
 
@@ -136,7 +137,8 @@ The app decides a handoff, by the rules it decides a task by.
   the brief. It is in that workspace's sidebar and takes no pane until the operator picks it. To
   this chat's own persona, that is the answer, except on a pool's runner.
 - **`held for the person`**: the handoff is to another persona, and nobody has yet allowed this
-  pair. purlis is asking the operator, on this chat's tab, with the brief in front of them.
+  pair. purlis is asking the operator in the Inbox, and on this chat's pane when it is on
+  screen, with the brief in front of them.
   Nothing has opened. **Carry on with other work and do not hand it off again**: if they allow
   it, the chat opens then; if they keep it blocked, you are told on your next turn. Once a pair
   is allowed, later handoffs across it open at once.
@@ -182,7 +184,8 @@ is waiting, and the line under the stamp says how to report (`purlis dispatch re
 - **The harness follows the persona's profile.** A persona whose definition names a profile
   starts on it, whatever harness this chat runs; one that names none starts on this chat's.
 - **Nobody approves the brief.** The chat that receives it is told who asked, and every
-  command of its that asks the operator still asks, in its own tab.
+  command of its that asks the operator still asks them, in the Inbox and on its pane when it
+  is on screen.
 - A handed-off chat may hand off again, decided the same way. The project's depth limit holds
   the chain.
 

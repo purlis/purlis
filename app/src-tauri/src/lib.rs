@@ -821,6 +821,12 @@ struct OpenChat {
     persona: Option<String>,
     /// What its harness cannot tell charter, said on the chat — none where it tells all.
     unreported: Option<String>,
+    /// `true` where it can't tell the person it needs them (#4759): its harness's card says no
+    /// to hooks or to reporting a wait, or it has no adapter
+    /// ([`purlis_core::harness_card::reports_asks`]). A task that started so keeps the faint hand on its row.
+    /// `null` where it can.
+    #[specta(optional)]
+    cant_report_asks: Option<bool>,
     /// Its harness's card at a glance, which its header draws (HP-19) — none for a shell.
     card: Option<HarnessGlance>,
     /// Whether the operator pinned it (ADR 0039). It rides the plane's own app
@@ -847,6 +853,11 @@ struct OpenChat {
     /// skill's page, and the skill page's line while it runs. `null` for every other chat.
     #[specta(optional)]
     studio: Option<skilldrafts::StudioLink>,
+    /// `true` for a chat another chat started and announced that the person has not looked at
+    /// yet (#4759): a handoff, or a task that can't report asks. Its sidebar row
+    /// says "new" until it has been on screen. `null` for every other chat.
+    #[specta(optional)]
+    unseen: Option<bool>,
 }
 
 /// What the window is told of a chat a launch has still to start, beyond its tab.
@@ -2293,9 +2304,10 @@ fn opened_chats_of(held: &planes::Held) -> Vec<OpenChat> {
                     restoring: Some(RestoringChat {
                         workspace: open.workspace.clone(),
                     }),
-                    // How it comes back is its start's to say.
+                    // How it comes back is its start's to say, and so is what it runs on.
                     resumed: None,
                     fresh: None,
+                    cant_report_asks: None,
                     ..OpenChat::from(open)
                 }
             } else {
@@ -2976,6 +2988,12 @@ impl From<chats::Open> for OpenChat {
                 .harness
                 .and_then(Harness::unreported)
                 .map(str::to_owned),
+            cant_report_asks: (!purlis_core::harness_card::reports_asks(
+                open.declared
+                    .as_ref()
+                    .or_else(|| open.harness.map(Harness::declared)),
+            ))
+            .then_some(true),
             // The declaration it started on, a project's or this machine's (#1134, #968), else
             // the built-in's: a chat on a declared harness has its card's button too.
             card: open
@@ -3007,6 +3025,7 @@ impl From<chats::Open> for OpenChat {
             restoring: None,
             one_job: open.one_job.then_some(true),
             studio: open.studio.as_ref().map(skilldrafts::StudioLink::from),
+            unseen: open.unseen.then_some(true),
             resumed: match &open.how {
                 Reopened::Resumed(id) => Some(id.to_string()),
                 Reopened::Fresh(_) => None,

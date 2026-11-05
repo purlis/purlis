@@ -10387,6 +10387,13 @@ export type OpenChat = {
 	persona: string | null,
 	/**  What its harness cannot tell charter, said on the chat — none where it tells all. */
 	unreported: string | null,
+	/**
+	 *  `true` where it can't tell the person it needs them (#4759): its harness's card says no
+	 *  to hooks or to reporting a wait, or it has no adapter
+	 *  ([`purlis_core::harness_card::reports_asks`]). A task that started so keeps the faint hand on its row.
+	 *  `null` where it can.
+	 */
+	cant_report_asks?: boolean | null,
 	/**  Its harness's card at a glance, which its header draws (HP-19) — none for a shell. */
 	card: HarnessGlance | null,
 	/**
@@ -10422,6 +10429,12 @@ export type OpenChat = {
 	 *  skill's page, and the skill page's line while it runs. `null` for every other chat.
 	 */
 	studio?: StudioLink | null,
+	/**
+	 *  `true` for a chat another chat started and announced that the person has not looked at
+	 *  yet (#4759): a handoff, or a task that can't report asks. Its sidebar row
+	 *  says "new" until it has been on screen. `null` for every other chat.
+	 */
+	unseen?: boolean | null,
 };
 
 /**  One group of **Open hosts**: a preset's, or the project's own. */
@@ -16488,7 +16501,12 @@ export type UpdateKind =
 /**  A task ended with its question unanswered (#4556). */
 "question-closed" | 
 /**  A task's question could not be taken its route (#4557). */
-"question-failed";
+"question-failed" | 
+/**
+ *  A chat another chat started arrived in no pane, and was announced (#4759): a handoff,
+ *  or a task that can't report asks.
+ */
+"arrived";
 
 /**  An update the window derived from its source, to be noted. */
 export type UpdateNoted = {

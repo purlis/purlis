@@ -5388,6 +5388,46 @@ fn a_chat_pin_is_read_once_from_a_record_with_no_tabs_and_then_the_tab_holds_it(
     chats.end_all();
 }
 
+// ----- an announced chat's "new" mark (#4759) -----
+
+#[test]
+fn an_announced_chat_stays_new_until_a_layout_puts_it_on_screen_and_then_the_record_drops_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let record = Record {
+        chats: vec![
+            Chat {
+                number: Some(3),
+                active: true,
+                ..chat(&a_claude(dir.path()), "ide.3", None)
+            },
+            Chat {
+                number: Some(4),
+                unseen: true,
+                ..chat(&a_claude(dir.path()), "ide.4", None)
+            },
+        ],
+        ..Record::default()
+    };
+    chats.put_back(&record, SIZE);
+
+    // On no screen: it stays new, and nothing is said.
+    chats
+        .lay_out(on_ops(vec![front_tab(Node::chat(3))]))
+        .unwrap();
+    assert!(!chats.mark_seen(), "nothing new is on screen");
+    assert!(chats.record().chats[1].unseen, "still new");
+
+    // The person picks it: on screen, so looked at, once.
+    chats
+        .lay_out(on_ops(vec![front_tab(Node::chat(4))]))
+        .unwrap();
+    assert!(chats.mark_seen(), "its mark went");
+    assert!(!chats.record().chats[1].unseen, "and the record keeps that");
+    assert!(!chats.mark_seen(), "said once");
+    chats.end_all();
+}
+
 // ----- every tab as a tree of panes (#4751) -----
 
 /// A tab on `ops`'s strip in the project window, in front, holding `tree`, its first pane

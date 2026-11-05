@@ -162,6 +162,8 @@ pub struct Open {
     pub from: Option<purlis_core::reopen::HandedFrom>,
     /// Whether the window draws it as a tab: [`purlis_core::reopen::Chat::has_tab`].
     pub tab: bool,
+    /// Whether the person has yet to look at it (#4759): [`purlis_core::reopen::Chat::unseen`].
+    pub unseen: bool,
     /// The chat its tab shows in place of it, where the person switched the tab to one
     /// (#1486): [`purlis_core::reopen::Chat::shows`].
     pub shows: Option<u32>,
@@ -5598,6 +5600,32 @@ impl Chats {
         self.lay_out(held.with_window(window, report))
     }
 
+    /// **Every announced chat now on screen has been looked at** (#4759): its row's "new" mark
+    /// goes, in the record too, so a relaunch does not bring it back. Asked after the window
+    /// reports a layout and after one of its windows comes back on screen, the two ways a chat
+    /// comes on screen ([`Self::looked_at`]). Answers whether any mark went, so the caller
+    /// tells the window its rows changed only then.
+    pub fn mark_seen(&self) -> bool {
+        let on_screen = self.looked_at();
+        let seen = {
+            let mut open = lock(&self.open);
+            let mut seen = false;
+            for number in on_screen {
+                if let Some(one) = open.get_mut(&number)
+                    && one.chat.unseen
+                {
+                    one.chat.unseen = false;
+                    seen = true;
+                }
+            }
+            seen
+        };
+        if seen {
+            self.write_it_down();
+        }
+        seen
+    }
+
     /// **Window `window` went away from the screen or came back** (#4768): minimised or hidden,
     /// or shown again. A chat on screen only there is not looked at while it is away. Answers
     /// whether that changed anything, so a caller looks at held tasks again only then.
@@ -6814,6 +6842,7 @@ impl Chats {
                     label: chat.label.clone(),
                     from: chat.from.clone(),
                     tab: chat.has_tab(),
+                    unseen: chat.unseen,
                     shows: chat.shows,
                     beside: chat.beside,
                     sandbox: running.confines.as_ref().map(|confines| confines.level),
@@ -7399,6 +7428,7 @@ impl Chats {
                 label: one.chat.label.clone(),
                 from: one.chat.from.clone(),
                 tab: one.chat.has_tab(),
+                unseen: one.chat.unseen,
                 shows: one.chat.shows,
                 beside: one.chat.beside,
                 // How it is sandboxed is its start's to say.
