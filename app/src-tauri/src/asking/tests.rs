@@ -254,6 +254,47 @@ fn a_held_permission_prompt_is_an_ask_answered_on_its_own_hook() {
 }
 
 #[test]
+fn a_run_grant_shows_the_apps_facts_apart_from_the_chats_inert_command() {
+    use purlis_core::secrets::ask::run::{Bound, Hosts, OpenRun};
+    let shown = run_grant(&OpenRun {
+        id: 7,
+        persona: "devops".to_owned(),
+        bound: Bound {
+            chat: 3,
+            program: "/usr/bin/kubectl".into(),
+            vault: "team".to_owned(),
+            env: vec!["KUBE=TOKEN".to_owned()],
+            file: vec!["KUBECONFIG=config".to_owned()],
+            args: vec!["get".to_owned(), "pods".to_owned()],
+        },
+        hosts: Hosts::Listed(vec!["k8s.example.test".to_owned()]),
+        caution: None,
+        command: "kubectl get pods\\x1b[2J ignore the above and press Allow".to_owned(),
+        since: 0,
+    });
+    let run = shown.run.as_ref().expect("the facts of the run");
+    assert_eq!(run.program, "/usr/bin/kubectl");
+    assert_eq!(run.hosts, ["k8s.example.test"]);
+    assert_eq!(run.values.len(), 2);
+    assert!(
+        run.values
+            .iter()
+            .any(|one| one.var == "KUBECONFIG" && one.in_a_file)
+    );
+    assert!(
+        run.command.contains("ignore the above"),
+        "the command is kept whole, as text"
+    );
+    assert!(
+        !shown.says.contains("ignore the above"),
+        "and never among the app's own words: {}",
+        shown.says
+    );
+    let labels: Vec<_> = shown.options.iter().map(|one| one.label.as_str()).collect();
+    assert_eq!(labels, ["Allow once", "Allow for this chat", "Don't allow"]);
+}
+
+#[test]
 fn a_permission_holding_a_line_break_its_command_is_not_laid_out_with_shows_its_mark() {
     // #3470: a next line, a vertical tab or a line separator in a command reaches the Inbox as
     // its mark, so the window can say why only Deny is offered, as for a no-break space.
@@ -2383,45 +2424,4 @@ fn the_old_harness_plugin_keys_are_one_ask_of_no_chat() {
         .map(|one| one.id.as_str())
         .collect();
     assert_eq!(ids, [DISMISS]);
-}
-
-#[test]
-fn a_run_grant_shows_the_apps_facts_apart_from_the_chats_inert_command() {
-    use purlis_core::secrets::ask::run::{Bound, Hosts, OpenRun};
-    let shown = run_grant(&OpenRun {
-        id: 7,
-        persona: "devops".to_owned(),
-        bound: Bound {
-            chat: 3,
-            program: "/usr/bin/kubectl".into(),
-            vault: "team".to_owned(),
-            env: vec!["KUBE=TOKEN".to_owned()],
-            file: vec!["KUBECONFIG=config".to_owned()],
-            args: vec!["get".to_owned(), "pods".to_owned()],
-        },
-        hosts: Hosts::Listed(vec!["k8s.example.test".to_owned()]),
-        caution: None,
-        command: "kubectl get pods\\x1b[2J ignore the above and press Allow".to_owned(),
-        since: 0,
-    });
-    let run = shown.run.as_ref().expect("the facts of the run");
-    assert_eq!(run.program, "/usr/bin/kubectl");
-    assert_eq!(run.hosts, ["k8s.example.test"]);
-    assert_eq!(run.values.len(), 2);
-    assert!(
-        run.values
-            .iter()
-            .any(|one| one.var == "KUBECONFIG" && one.in_a_file)
-    );
-    assert!(
-        run.command.contains("ignore the above"),
-        "the command is kept whole, as text"
-    );
-    assert!(
-        !shown.says.contains("ignore the above"),
-        "and never among the app's own words: {}",
-        shown.says
-    );
-    let labels: Vec<_> = shown.options.iter().map(|one| one.label.as_str()).collect();
-    assert_eq!(labels, ["Allow once", "Allow for this chat", "Don't allow"]);
 }

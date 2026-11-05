@@ -17,6 +17,8 @@ use std::sync::Mutex;
 const TOKEN: &str = "s3cret-value";
 const KUBECONFIG: &str = "apiVersion: v1\nclusters: [k8s-s3cret]\n";
 
+mod run_grants;
+
 /// A project whose vault `team` is a plain file tagged for persona `devops`, beside a vault
 /// `other` tagged for nobody, and a folder `work` for the chat.
 fn project() -> tempfile::TempDir {
@@ -5654,5 +5656,3 @@ fn a_fill_reads_a_key_the_vault_holds_and_says_none_of_one_it_doesnt() {
             .is_none()
     );
 }
-
-mod run_grants;

@@ -2675,6 +2675,8 @@ pub type HoldEnds<'a> = dyn Fn(u32, &str, Option<u32>) -> Option<u32> + 'a;
 /// **What waits in one project, read from each source as it stands** (#1690): the inputs of
 /// [`derive`], so the registry's rules are tested without a running project.
 pub struct Waiting<'a> {
+    /// The programs chats' brokered runs ask the person to allow (ADR 0111).
+    pub run_grants: Vec<purlis_core::secrets::ask::run::OpenRun>,
     /// The permission asks its chats' hooks hold open (HP-6).
     pub permissions: Vec<Raised>,
     /// The needs-you queue: the chats the board says need the person.
@@ -2715,8 +2717,6 @@ pub struct Waiting<'a> {
     pub browser_logins: Vec<crate::loginasks::LoginWait>,
     /// The Secret asks chats' brokered runs wait on (#5068).
     pub secrets: Vec<purlis_core::secrets::ask::Open>,
-    /// The programs chats' brokered runs ask the person to allow (ADR 0111).
-    pub run_grants: Vec<purlis_core::secrets::ask::run::OpenRun>,
     /// The secret fills chats asked for that wait on the person (#5115).
     pub secret_fills: Vec<crate::secretfills::FillWait>,
     /// The administrator's policy, which the levels an Allow is offered at answer to.
@@ -2817,11 +2817,11 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
             .map(|wait| secret_fill(wait, waiting.locks)),
     );
     // A runner chat whose declared tool waits on the person's Allow for its pool (#2047).
+    // A chat whose brokered run names a program its persona does not declare (ADR 0111).
+    asks.extend(waiting.run_grants.iter().map(run_grant));
     asks.extend(waiting.pool_tools.iter().map(pool_tool));
     // A chat whose brokered run missed a key waits on the person to fill it (#5068).
     asks.extend(waiting.secrets.iter().map(secret_ask));
-    // A chat whose brokered run names a program its persona does not declare (ADR 0111).
-    asks.extend(waiting.run_grants.iter().map(run_grant));
     let said: std::collections::HashSet<u32> = asks.iter().map(|ask| ask.session).collect();
     // About no chat: a profile that waits to be signed in (#2035).
     let signing = asks.len();
@@ -3052,6 +3052,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     let declared = purlis_core::sandbox::services::declared(root);
     let tasks = held.tasks();
     let waiting = Waiting {
+        run_grants,
         browsers,
         needs_you,
         browser_sites,
@@ -3059,7 +3060,6 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         pool_tools,
         browser_logins,
         secrets,
-        run_grants,
         secret_fills,
         sandbox_only,
         sign_ins,
