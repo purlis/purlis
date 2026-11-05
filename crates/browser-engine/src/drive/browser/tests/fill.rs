@@ -576,6 +576,16 @@ fn a_hold_ends_only_once_its_related_windows_are_gone() {
         closes.contains(&"PAGE-2".to_owned()) && closes.contains(&"PAGE-3".to_owned())
     });
     assert!(
+        super::super::super::lock(&browser.inner.state)
+            .leaving_said
+            .iter()
+            .any(|said| said.contains(
+                "purlis closed 2 other windows related to the page that held the secret: they \
+                 could have read it."
+            )),
+        "the chat is told"
+    );
+    assert!(
         !closes_asked_for(&engine).contains(&"PAGE-4".to_owned()),
         "a window with no link to it stays"
     );
@@ -612,6 +622,29 @@ fn a_window_opened_as_a_hold_ends_closes_too_and_the_hold_waits_for_it() {
     wait_for("the hold is released", || {
         holding.told() == ["held, 0 written", "released"]
     });
+}
+
+#[test]
+fn a_chosen_load_that_shows_no_document_begins_no_chain() {
+    let (browser, engine) = browser();
+    let _ = snapshot(&browser, 1);
+    let began = |browser: &crate::drive::Browser| {
+        super::super::super::lock(&browser.inner.state)
+            .page("PAGE-1")
+            .and_then(|page| page.chain_began.clone())
+    };
+    let before = began(&browser);
+    if let Some(page) = super::super::super::lock(&browser.inner.state).page_mut("PAGE-1") {
+        page.chain_begins = Some(super::super::leaving::ChosenLoad {
+            origin: "http://other.test".to_owned(),
+            head: "http://other.test/stopped".to_owned(),
+        });
+    }
+
+    main_frame_loads(&engine, "about:blank");
+    let _ = snapshot(&browser, 2);
+
+    assert_eq!(began(&browser), before);
 }
 
 #[test]

@@ -16,10 +16,12 @@ and [A filled page leaves by its server's redirect](2026-11-05-a-filled-page-lea
   on but ending it.
 - **What the hold doesn't stop.** It can't stop a script on the approved site using that site's own
   storage or workers: such a script can keep what it reads there and send it from the same site
-  once the hold is over. Approving a key for a site trusts the scripts that site serves.
+  once the hold is over. Approving a key for a site trusts the scripts that site serves. A related
+  window that comes to that site during the hold can read the field too: it reaches only what the
+  page reaches, and closes with the rest.
 - **A redirect goes on by itself only to the site the chain leading to this sign-in began from**,
-  in place of a site the browser was on before the fill. The chain begins at the last load the chat
-  or the person chose by its address that showed a document. What a page does on from there, a link
+  in place of a site the browser was on before the fill. The chain begins at the last load chosen
+  by an address, written or gone back to, that showed a document. What a page does on from there, a link
   or a server's redirect, stays in that chain, a window takes its opener's, and a site the chain
   only passed through is no part of its beginning. Any other site asks the person once, naming the
   site.

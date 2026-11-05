@@ -511,22 +511,24 @@ fn a_site_its_chain_passed_through_asks() {
     assert_eq!(answer.asked, ["other.test"], "the answer names the site");
 }
 
-/// A load that failed begins no chain, though the chat wrote its address.
+/// Going back to the form begins its chain again: the site the chat had gone on to is no part of
+/// this sign-in.
 #[test]
-fn a_load_that_failed_begins_no_chain() {
+fn going_back_to_a_sign_in_begins_its_chain_again() {
     let Some((browser, _data, site)) = browser() else {
         return;
     };
     let first = opened(&browser, "http://auth.fixture.test/held-form.html");
     assert!(sees(&browser, "Sign in"), "the form is open");
-    let address = WebAddress::parse("http://other.test/hangs-up").unwrap();
-    let _ = browser.call(
-        &next_id(),
+    let address = WebAddress::parse("http://other.test/landed.html").unwrap();
+    call(
+        &browser,
         Call::Navigate {
             page: Some(page_of(&first)),
             address,
         },
     );
+    assert!(sees(&browser, "Landed on the other site"), "it went on");
     call(
         &browser,
         Call::Back {

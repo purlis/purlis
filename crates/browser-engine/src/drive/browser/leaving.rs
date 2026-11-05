@@ -84,6 +84,14 @@ impl FormSent {
     }
 }
 
+/// **A load chosen by an address**: the origin that address is on, and the address, which each
+/// document request of its chain names as its head.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct ChosenLoad {
+    pub(super) origin: String,
+    pub(super) head: String,
+}
+
 /// What a request is while a page holds a secret, where it isn't for the hold's own site.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Move {
@@ -204,6 +212,28 @@ impl State {
         })
     }
 
+    /// **Page `target`'s main frame shows a document at `address`** (#5230): a chain begins here
+    /// only where that document is the end of the load that was chosen. A load refused, stopped or
+    /// answered with nothing shows no document, and what shows meanwhile isn't it.
+    pub(super) fn load_shown(&mut self, target: &str, address: &str, failed: bool) {
+        let Some(load) = self.page(target).and_then(|page| page.chain_begins.clone()) else {
+            return;
+        };
+        let bare = super::without_fragment(address);
+        let its_end = self
+            .documents
+            .iter()
+            .any(|hop| hop.head == load.head && hop.address == bare);
+        if let Some(page) = self.page_mut(target) {
+            if failed {
+                page.chain_begins = None;
+            } else if its_end {
+                page.chain_begins = None;
+                page.chain_began = Some(load.origin);
+            }
+        }
+    }
+
     /// **The windows related to `target`'s**, itself among them: each that opened another, or
     /// was opened by one, where a script in one can reach the other, and so on from there. A window
     /// gone still links those it opened.
@@ -211,11 +241,9 @@ impl State {
         let mut family = HashSet::from([target.to_owned()]);
         loop {
             let before = family.len();
-            for page in &self.pages {
-                if let Some(opener) = page.opener.as_ref().filter(|_| page.opener_linked)
-                    && (family.contains(&page.target) || family.contains(opener))
-                {
-                    family.insert(page.target.clone());
+            for (window, opener) in &self.linked_openers {
+                if family.contains(window) || family.contains(opener) {
+                    family.insert(window.clone());
                     family.insert(opener.clone());
                 }
             }
@@ -496,42 +524,44 @@ impl Inner {
     pub(super) fn page_left(&self, target: &str) -> Vec<FollowUp> {
         let mut closes: Vec<String> = Vec::new();
         let mut over: Vec<super::PageHeld> = Vec::new();
-        let its_own_stands = {
-            let mut state = lock(&self.state);
-            let mut holds = lock(&self.fill_holds);
-            for held in holds.iter_mut() {
-                if held.target != target || held.left {
-                    continue;
-                }
-                held.left = true;
-                for one in &held.family {
-                    if one != target && state.page(one).is_some() && !closes.contains(one) {
-                        closes.push(one.clone());
+        let its_own_stands =
+            {
+                let mut state = lock(&self.state);
+                let mut holds = lock(&self.fill_holds);
+                for held in holds.iter_mut() {
+                    if held.target != target || held.left {
+                        continue;
+                    }
+                    held.left = true;
+                    for one in &held.family {
+                        if one != target && state.page(one).is_some() && !closes.contains(one) {
+                            closes.push(one.clone());
+                        }
                     }
                 }
-            }
-            for held in std::mem::take(&mut *holds) {
-                let waits = held
-                    .family
-                    .iter()
-                    .any(|one| *one != held.target && state.page(one).is_some());
-                if held.left && !waits {
-                    over.push(held);
-                } else {
-                    holds.push(held);
+                for held in std::mem::take(&mut *holds) {
+                    let waits = held
+                        .family
+                        .iter()
+                        .any(|one| *one != held.target && state.page(one).is_some());
+                    if held.left && !waits {
+                        over.push(held);
+                    } else {
+                        holds.push(held);
+                    }
                 }
-            }
-            if !closes.is_empty() {
-                state.say_of_leaving(format!(
-                    "purlis closed {} other {} related to the page that held the secret: {}                      could have read it. The browser reaches as before once {} gone",
+                if !closes.is_empty() {
+                    state.say_of_leaving(format!(
+                    "purlis closed {} other {} related to the page that held the secret: {} could \
+                     have read it. The browser reaches as before once {} gone",
                     closes.len(),
                     if closes.len() == 1 { "window" } else { "windows" },
                     if closes.len() == 1 { "it" } else { "they" },
                     if closes.len() == 1 { "it is" } else { "they are" },
                 ));
-            }
-            holds.iter().any(|held| held.target == target)
-        };
+                }
+                holds.iter().any(|held| held.target == target)
+            };
         let mut by_page: Vec<(String, Vec<super::PageHeld>)> = Vec::new();
         for held in over {
             match by_page.iter_mut().find(|(page, _)| *page == held.target) {

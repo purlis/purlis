@@ -114,10 +114,7 @@ fn a_site_asked_about_during_the_sign_in_read_reaches_the_person_where_the_login
     assert!(note.contains("asked the person"), "{note}");
     let waiting = browsers.sites_waiting();
     assert_eq!(waiting.len(), 1, "{waiting:?}");
-    assert_eq!(
-        waiting[0].sites,
-        [Site::parse("app.example.test:443").unwrap()]
-    );
+    assert_eq!(waiting[0].sites, [site("app.example.test:443")]);
     assert_eq!(logged_into(&hosted).len(), 2, "the login went on");
 }
 
@@ -125,11 +122,12 @@ fn a_site_asked_about_during_the_sign_in_read_reaches_the_person_where_the_login
 fn the_sign_in_read_keeps_the_sites_the_person_allowed() {
     let (browsers, hosted) = with_a_used_browser();
     called(&browsers, &hosted, &ask(3, log_in("shop-login")));
-    let site = Site::parse("app.example.test:443").unwrap();
+    let site = site("app.example.test:443");
     browsers.asked_about(3, std::slice::from_ref(&site), 1000);
     browsers
         .sites_answered(3, std::slice::from_ref(&site), false)
         .unwrap();
+    browsers.allowed_when_asked(3, std::slice::from_ref(&site));
     *hosted.asks_to_sign_in.lock().unwrap() = Some(false);
 
     called(&browsers, &hosted, &ask(3, log_in("shop-login")));

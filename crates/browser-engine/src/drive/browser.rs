@@ -909,12 +909,9 @@ struct Page {
     /// **It holds a secret and is leaving, or stands on what purlis replaces** (#5230): an answer
     /// and a read wait for how that ends.
     leaving: bool,
-    /// **Where the page that opened it can reach it by script, and it that page** (#5230): the
-    /// engine lists an opener for a window opened with no such link too.
-    opener_linked: bool,
-    /// **The origin the load it is on began at, where that load was chosen**, by an address the
-    /// agent wrote or by the person, until the load shows a document (#5230).
-    chain_begins: Option<String>,
+    /// **The load it is on, where that load was chosen by an address** the agent or the person
+    /// wrote or went back to, until that load shows a document (#5230).
+    chain_begins: Option<leaving::ChosenLoad>,
     /// **The origin the chain leading to what it shows began at** (#5230): the last chosen load
     /// that showed a document, or for a page another opened, that page's when it opened it. What
     /// a page holding a secret may leave for without the person being asked.
@@ -1063,6 +1060,9 @@ struct State {
     offered: VecDeque<String>,
     /// Each document request held lately: what a redirect from it is.
     documents: VecDeque<Hop>,
+    /// **The page that opened each window, where a script in one can reach the other** (#5230),
+    /// kept once either is gone: the engine lists an opener for a window with no such link too.
+    linked_openers: HashMap<String, String>,
     /// The request of the act [`Self::addressing`] marks has been seen (#5230).
     addressing_seen: bool,
     /// What a page leaving for another site, or kept from it, has to say in the next answer
@@ -4252,7 +4252,7 @@ impl Browser {
     fn keys_withheld(&self, target: &str) -> Result<(), Refusal> {
         let held = lock(&self.inner.fill_holds)
             .iter()
-            .any(|held| held.target == target);
+            .any(|held| !held.left && held.target == target);
         if held {
             return Err(Refusal::KeysWithheld);
         }
@@ -5653,12 +5653,19 @@ impl Inner {
                                     .pointer("/targetInfo/canAccessOpener")
                                     .and_then(Value::as_bool)
                                     != Some(false);
-                            if opener_linked && let Some(opener) = &opener {
-                                follow.extend(self.window_opened(&target, opener));
+                            // What opened it may be a frame in a page.
+                            let by = opener.as_deref().map(|opener| {
+                                state
+                                    .page_holding(opener)
+                                    .unwrap_or_else(|| opener.to_owned())
+                            });
+                            if opener_linked && let Some(by) = &by {
+                                state.linked_openers.insert(target.clone(), by.clone());
+                                follow.extend(self.window_opened(&target, by));
                             }
-                            let chain_began = opener
+                            let chain_began = by
                                 .as_deref()
-                                .and_then(|opener| state.page(opener))
+                                .and_then(|by| state.page(by))
                                 .and_then(|by| by.chain_began.clone());
                             let id = PageId(format!("p{}", state.pages_listed));
                             let kept = state.kept.clone();
@@ -5672,7 +5679,6 @@ impl Inner {
                                 scrubbed: kept,
                                 failed_load: None,
                                 leaving: false,
-                                opener_linked,
                                 chain_begins: None,
                                 chain_began,
                                 shows: 0,
@@ -5807,12 +5813,11 @@ impl Inner {
                                 // begins no chain.
                                 left.push(target.clone());
                                 let failed = params.pointer("/frame/unreachableUrl").is_some();
-                                if let Some(page) = state.page_mut(&target)
-                                    && let Some(began) = page.chain_begins.take()
-                                    && !failed
-                                {
-                                    page.chain_began = Some(began);
-                                }
+                                state.load_shown(
+                                    &target,
+                                    &text("/frame/url").unwrap_or_default(),
+                                    failed,
+                                );
                                 let held_one = self.copy_withheld.load(Ordering::SeqCst);
                                 let departing = lock(&self.departing).contains_key(&target);
                                 if let Some(page) = state.page_mut(&target) {
@@ -5928,7 +5933,7 @@ impl Inner {
                         let redirected_from = text("/redirectedRequestId");
                         let document = text("/resourceType").as_deref() == Some("Document");
                         // Read before the word of it is taken: a page's own link, script or form
-                        // is no load the person chose by its address (#5230).
+                        // is no load chosen by its address (#5230).
                         let page_asked = {
                             let bare = without_fragment(&address);
                             state
@@ -5974,20 +5979,28 @@ impl Inner {
                             Driver::Agent
                         };
                         // The first of a page's own chain says whether it was chosen (#5230): an
-                        // address the agent wrote is the first the call sends, and what the page
-                        // does while the call waits on it isn't.
-                        let chosen = (by == Driver::Person && !page_asked)
-                            || (why == Why::Addressed
-                                && document
-                                && redirected_from.is_none()
-                                && !std::mem::replace(&mut state.addressing_seen, true));
+                        // address written, or gone back to, is the first the call sends, and what
+                        // the page does while the call waits on it isn't.
+                        let addressed_here = state
+                            .addressing
+                            .as_ref()
+                            .is_some_and(|(page, _)| frame.as_deref() == Some(page.as_str()));
+                        let chosen = addressed_here
+                            && matches!(why, Why::Addressed | Why::Reads)
+                            && document
+                            && redirected_from.is_none()
+                            && !page_asked
+                            && !std::mem::replace(&mut state.addressing_seen, true);
                         if document
                             && redirected_from.is_none()
                             && let Some(page) =
                                 frame.as_deref().and_then(|frame| state.page_mut(frame))
                         {
                             page.chain_begins = if chosen {
-                                login::origin_of(&address)
+                                login::origin_of(&address).map(|origin| leaving::ChosenLoad {
+                                    origin,
+                                    head: address.clone(),
+                                })
                             } else {
                                 None
                             };

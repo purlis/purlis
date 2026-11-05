@@ -256,7 +256,7 @@ struct Chat {
     /// first began to wait (#2018).
     sites_asked: Vec<Site>,
     /// The sites the person allowed when this chat's browser asked (#5230): a filled page may
-    /// leave for one by its server's redirect, as for a site the browser was on.
+    /// leave for one by its server's redirect, as for the site its sign-in began from.
     sites_answered: Vec<Site>,
     /// **What a read before a login said, where the login goes on past it** (#5302): for the
     /// answer that login comes to.
@@ -1359,7 +1359,10 @@ impl ChatBrowsers {
             (None, None) => return,
         };
         if let Some(chat) = self.lock().get_mut(&session) {
-            chat.read_said = Some(said);
+            chat.read_said = Some(match chat.read_said.take() {
+                Some(earlier) => format!("{earlier}. {said}"),
+                None => said,
+            });
         }
     }
 
@@ -2503,7 +2506,7 @@ impl ChatBrowsers {
 
     /// **The person allowed `sites` when chat `session`'s browser asked**, at whatever level
     /// (#5230): a page in it holding a secret may leave for them by its server's redirect, as for
-    /// a site the browser was on. A site the chat's reach lists already is asked about too, so
+    /// the site its sign-in began from. A site the chat's reach lists already is asked about too, so
     /// this is told apart from what it lists.
     pub fn allowed_when_asked(&self, session: u32, sites: &[Site]) {
         let mut chats = self.lock();

@@ -276,9 +276,9 @@ impl Browser {
         // A window related to the page could read the field from its own document.
         if lock(&self.inner.state).related_on_site(&at.page, origin) {
             return Err(not_filled(format!(
-                "another window on {origin} is related to this page: it opened the page, or the \
-                 page opened it, and it could read the field, so nothing was filled. Open the \
-                 form with browser_open, in a page of its own, and fill it there"
+                "another window, on {origin} or on no site yet, is related to this page: it opened \
+                 the page, or the page opened it, and it could read the field, so nothing was \
+                 filled. Open the form with browser_open, in a page of its own, and fill it there"
             )));
         }
         // The browser reaches only this site while the page lives, from before the value goes in
