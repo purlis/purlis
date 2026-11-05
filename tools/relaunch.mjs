@@ -26,6 +26,10 @@
 // `restarted-to-update` word beside the machine store — and that the launch reading them says
 // so, with Reopen all as the answer in front, and spends the word.
 //
+// **And a chat the Skill studio started stays linked to its skill across a relaunch** (#5248):
+// a record holding a studio chat brings it back with the chip on its pane foot that names its
+// skill and its job, and the record the app writes again still holds the link and its start.
+//
 // **And the upgrade to chats in the session host** (#2004): the first launch runs its chats in
 // the window's own process, as every build before #2004 did (`PURLIS_CHATS_IN_THE_HOST=0`), and
 // every launch after it runs them in the session host, this build's default, so the second
@@ -48,10 +52,19 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { annotations, checkLine, linesWritten, stepTimer, stopLine } from "./relaunch-report.mjs";
+import {
+  annotations,
+  checkLine,
+  linesWritten,
+  stepTimer,
+  stopLine,
+} from "./relaunch-report.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
-const APP = join(process.env.CHARTER_TARGET_DIR ?? join(ROOT, "target", "debug"), "charter-app");
+const APP = join(
+  process.env.CHARTER_TARGET_DIR ?? join(ROOT, "target", "debug"),
+  "charter-app",
+);
 /** The conversation the chat is under. The stand-in harness only has to echo it back. */
 const CONVERSATION = "11111111-2222-4333-8444-555555555555";
 /**
@@ -91,7 +104,13 @@ let launch = { name: "before the first launch", timer: undefined };
 const stepsOf = ({ timer }) => timer?.summary() ?? "";
 function check(what, ok, detail = "") {
   console.log(checkLine(what, ok, detail));
-  if (!ok) failures.push({ launch: launch.name, what, detail, steps: stepsOf(launch) });
+  if (!ok)
+    failures.push({
+      launch: launch.name,
+      what,
+      detail,
+      steps: stepsOf(launch),
+    });
 }
 
 /**
@@ -174,7 +193,8 @@ async function webdriver(port, method, path, body) {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const { value } = await answer.json();
-  if (!answer.ok) throw new Error(`${method} ${path}: ${JSON.stringify(value)}`);
+  if (!answer.ok)
+    throw new Error(`${method} ${path}: ${JSON.stringify(value)}`);
   return value;
 }
 
@@ -189,17 +209,21 @@ const idOf = (element) => Object.values(element)[0];
  * question is up" — and what the question said, and the text of the control that had the
  * keyboard, which is the answer a stray Return would give.
  */
-function pressing(answer, argvFile, hold = 2_000) {
+function pressing(answer, argvFile, hold = 2_000, reading) {
   return async (port, until, steps) => {
     steps.step("waiting for the app's WebDriver server");
     let session;
     while (Date.now() < until && session === undefined) {
-      session = await webdriver(port, "POST", "/session", { capabilities: { alwaysMatch: {} } })
+      session = await webdriver(port, "POST", "/session", {
+        capabilities: { alwaysMatch: {} },
+      })
         .then((made) => made.sessionId)
         .catch(() => undefined);
-      if (session === undefined) await new Promise((tick) => setTimeout(tick, 250));
+      if (session === undefined)
+        await new Promise((tick) => setTimeout(tick, 250));
     }
-    if (session === undefined) throw new Error("the app's WebDriver server never answered");
+    if (session === undefined)
+      throw new Error("the app's WebDriver server never answered");
     steps.step("waiting for the launch's question");
     const buttons = async () =>
       webdriver(port, "POST", `/session/${session}/elements`, {
@@ -214,7 +238,11 @@ function pressing(answer, argvFile, hold = 2_000) {
     steps.step("reading the question");
     const startedWhileAsking = argvSeen(argvFile).length;
     const textOf = (element) =>
-      webdriver(port, "GET", `/session/${session}/element/${idOf(element)}/text`);
+      webdriver(
+        port,
+        "GET",
+        `/session/${session}/element/${idOf(element)}/text`,
+      );
     const said = await textOf(
       await webdriver(port, "POST", `/session/${session}/element`, {
         using: "css selector",
@@ -228,12 +256,57 @@ function pressing(answer, argvFile, hold = 2_000) {
       const text = await textOf(button);
       if (text.trim() === answer) {
         steps.step(`pressing ${answer}`);
-        await webdriver(port, "POST", `/session/${session}/element/${idOf(button)}/click`, {});
-        return { startedWhileAsking, said, focused: focused.trim() };
+        await webdriver(
+          port,
+          "POST",
+          `/session/${session}/element/${idOf(button)}/click`,
+          {},
+        );
+        const read =
+          reading === undefined
+            ? undefined
+            : await readingOnceDrawn(port, session, until, steps, reading);
+        return { startedWhileAsking, said, focused: focused.trim(), read };
       }
     }
     throw new Error(`the launch's question has no "${answer}" button`);
   };
+}
+
+/**
+ * The text of the first element `selector` finds once it holds `wanted`, or the last text it had
+ * (`undefined` where none was drawn) once `until` passes.
+ */
+async function readingOnceDrawn(
+  port,
+  session,
+  until,
+  steps,
+  { selector, wanted },
+) {
+  steps.step(`waiting for ${selector}`);
+  let text;
+  while (Date.now() < until) {
+    const found = await webdriver(
+      port,
+      "POST",
+      `/session/${session}/elements`,
+      {
+        using: "css selector",
+        value: selector,
+      },
+    );
+    if (found.length > 0) {
+      text = await webdriver(
+        port,
+        "GET",
+        `/session/${session}/element/${idOf(found[0])}/text`,
+      );
+      if (text.includes(wanted)) return text;
+    }
+    await new Promise((tick) => setTimeout(tick, 250));
+  }
+  return text;
 }
 
 /**
@@ -290,9 +363,15 @@ async function theAppRuns(name, plane, done, answer, extra = {}) {
       steps.step("waiting for what the launch should do");
     }
     while (Date.now() < until) {
-      if (refused) return { ok: false, output: `${output}\n(answering failed: ${refused})` };
-      if (done() && (!answer || answered)) return { ok: true, output, answered };
-      if (app.exitCode !== null) return { ok: false, output: `${output}\n(the app exited)` };
+      if (refused)
+        return {
+          ok: false,
+          output: `${output}\n(answering failed: ${refused})`,
+        };
+      if (done() && (!answer || answered))
+        return { ok: true, output, answered };
+      if (app.exitCode !== null)
+        return { ok: false, output: `${output}\n(the app exited)` };
       await new Promise((tick) => setTimeout(tick, 100));
     }
     return { ok: false, output, answered };
@@ -323,11 +402,18 @@ const SERVE_FOR_THE_WINDOW = "purlis-serve-for-the-window";
 
 /** The pids of the session hosts the app at `pid` started, as `ps` lists them now. */
 function hostsOf(pid) {
-  const listed = execFileSync("ps", ["-A", "-o", "pid=,ppid=,command="], { encoding: "utf8" });
+  const listed = execFileSync("ps", ["-A", "-o", "pid=,ppid=,command="], {
+    encoding: "utf8",
+  });
   return listed
     .split("\n")
     .map((line) => line.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/))
-    .filter((found) => found && Number(found[2]) === pid && found[3].includes(SERVE_FOR_THE_WINDOW))
+    .filter(
+      (found) =>
+        found &&
+        Number(found[2]) === pid &&
+        found[3].includes(SERVE_FOR_THE_WINDOW),
+    )
     .map((found) => Number(found[1]));
 }
 
@@ -410,7 +496,8 @@ const first = await theAppRuns(
 );
 check(
   "an ordinary relaunch does not say it followed an update",
-  first.answered?.said !== undefined && !first.answered.said.includes("install an update"),
+  first.answered?.said !== undefined &&
+    !first.answered.said.includes("install an update"),
   `the question said: ${JSON.stringify(first.answered?.said)}`,
 );
 check(
@@ -461,7 +548,9 @@ check(
 // loaded said the same tabs back.
 check(
   "the record still holds the view tab, so the next launch puts that back too",
-  written.views?.some((view) => view.view === "persona" && view.key === "steward") === true,
+  written.views?.some(
+    (view) => view.view === "persona" && view.key === "steward",
+  ) === true,
   `the record holds ${JSON.stringify(written.views)}`,
 );
 
@@ -495,7 +584,10 @@ check(
 // carry: the chat this script wrote has none, so the app deals it one and may not write that
 // down until something changes.
 const DEALT = 7;
-writeFileSync(record, JSON.stringify({ ...JSON.parse(readFileSync(record, "utf8")), dealt: DEALT }));
+writeFileSync(
+  record,
+  JSON.stringify({ ...JSON.parse(readFileSync(record, "utf8")), dealt: DEALT }),
+);
 const before = argvSeen(argvFile).length;
 const recordCleared = () => {
   try {
@@ -511,7 +603,11 @@ const third = await theAppRuns(
   recordCleared,
   pressing("Start fresh", argvFile, 0),
 );
-check("start fresh clears the record", third.ok, third.ok ? "" : `the app said:\n${third.output}`);
+check(
+  "start fresh clears the record",
+  third.ok,
+  third.ok ? "" : `the app said:\n${third.output}`,
+);
 check(
   "and starts no chat",
   argvSeen(argvFile).length === before,
@@ -561,7 +657,8 @@ const fourth = await theAppRuns(
 );
 check(
   "the launch after a restart to update says why it is asking",
-  fourth.answered?.said?.includes("purlis restarted to install an update.") === true,
+  fourth.answered?.said?.includes("purlis restarted to install an update.") ===
+    true,
   `the question said: ${JSON.stringify(fourth.answered?.said)}`,
 );
 check(
@@ -572,7 +669,9 @@ check(
 check(
   "and Reopen all resumes the chat the restart recorded",
   fourth.ok && argvSeen(argvFile).at(-1)?.includes(`--resume ${CONVERSATION}`),
-  fourth.ok ? `it was given: ${JSON.stringify(argvSeen(argvFile).at(-1) ?? "")}` : fourth.output,
+  fourth.ok
+    ? `it was given: ${JSON.stringify(argvSeen(argvFile).at(-1) ?? "")}`
+    : fourth.output,
 );
 check(
   "and the word of the restart is spent, so no later launch says it again",
@@ -581,5 +680,71 @@ check(
 );
 rmSync(RESTARTED, { force: true });
 
-console.log(failures.length === 0 ? "\nall good" : `\n${failures.length} failed`);
+// A chat the Skill studio started for test-design's outcome evals (#5248), as the app records
+// one (`chats[].studio`, docs/plane-format.md): the relaunch brings it back linked to its job.
+const STUDIO = {
+  job: "outcome-evals",
+  skill: "test-design",
+  at: "project",
+  started: "2026-11-04T17:31:00Z",
+};
+writeFileSync(
+  record,
+  JSON.stringify(
+    {
+      version: 1,
+      at: STAMPED,
+      chats: [
+        {
+          program: claude,
+          args: [],
+          cwd: plane,
+          name: "ide.8",
+          resume: CONVERSATION,
+          active: true,
+          studio: STUDIO,
+        },
+      ],
+    },
+    null,
+    2,
+  ),
+);
+const beforeStudio = argvSeen(argvFile).length;
+const fifth = await theAppRuns(
+  "the fifth launch, with a chat the Skill studio started",
+  plane,
+  () => argvSeen(argvFile).length > beforeStudio,
+  pressing("Reopen all sessions", argvFile, 0, {
+    selector: '[data-testid="pane-studio"]',
+    wanted: "test-design · writing outcome evals",
+  }),
+  { PURLIS_SKILL_STUDIO: "1" },
+);
+check(
+  "a studio chat comes back on its conversation",
+  fifth.ok && argvSeen(argvFile).at(-1)?.includes(`--resume ${CONVERSATION}`),
+  fifth.ok
+    ? `it was given: ${JSON.stringify(argvSeen(argvFile).at(-1) ?? "")}`
+    : fifth.output,
+);
+check(
+  "and its pane foot names its skill and its job, as before the relaunch",
+  fifth.answered?.read?.includes("test-design · writing outcome evals") ===
+    true,
+  `its foot said: ${JSON.stringify(fifth.answered?.read)}`,
+);
+const studioKept = JSON.parse(readFileSync(record, "utf8")).chats?.[0]?.studio;
+check(
+  "and the record the app wrote again still holds the link, with when it started",
+  studioKept?.job === STUDIO.job &&
+    studioKept?.skill === STUDIO.skill &&
+    studioKept?.at === STUDIO.at &&
+    studioKept?.started === STUDIO.started,
+  `the record holds ${JSON.stringify(studioKept)}`,
+);
+
+console.log(
+  failures.length === 0 ? "\nall good" : `\n${failures.length} failed`,
+);
 finish(failures.length === 0 ? 0 : 1);

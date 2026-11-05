@@ -2,15 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **A studio chat's link, as the window draws it** (#5185): the chip on its pane foot, the line
- * above its skill's tabs while it runs, and the Runs tab's "Chats the studio started".
+ * **A studio chat's link, as the window draws it** (#5185, #5248): the chip on its pane foot, the
+ * line above its skill's tabs while it runs, the Runs tab's "Chats the studio started", open and
+ * closed, and the Grades card's running job.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { ReactNode } from "react";
-import type { SkillDraft, StudioLink } from "./bindings";
+import type { ClosedStudioChat, SkillDraft, StudioLink } from "./bindings";
 import {
+  RunningJob,
   StudioChatChip,
   StudioChatLines,
   StudioChatsHere,
@@ -24,7 +26,27 @@ afterEach(() => {
 });
 
 const DEMO = { at: "workspace", name: "purlis-demo", local: false } as const;
-const EVALS: StudioLink = { skill: "test-design", level: DEMO, job: "outcome-evals", done: false };
+const EVALS: StudioLink = {
+  skill: "test-design",
+  level: DEMO,
+  job: "outcome-evals",
+  done: false,
+  started: null,
+  finished: null,
+};
+
+/** Chat 5, closed: it wrote test-design's checks, finished on 4 November at 17:42, local time. */
+const CLOSED: ClosedStudioChat = {
+  session: 5,
+  name: "checks chat",
+  closed: new Date(2026, 10, 4, 18, 0).toISOString(),
+  link: {
+    ...EVALS,
+    job: "checks",
+    done: true,
+    finished: new Date(2026, 10, 4, 17, 42).toISOString(),
+  },
+};
 
 const draftOf = (chat: number): SkillDraft => ({
   id: "d1",
@@ -43,6 +65,8 @@ function lent(): StudioChatsLent {
     chats: [{ session: 7, name: "chat 7", link: EVALS }],
     show: vi.fn(),
     openSkill: vi.fn(),
+    openDraft: vi.fn(),
+    stop: vi.fn(),
   };
 }
 
@@ -91,7 +115,7 @@ describe("a studio chat's chip (#5185)", () => {
 describe("a skill's page while a studio chat works on it (#5185)", () => {
   it("says the chat above the tabs while it runs, with Open chat", () => {
     const value = lent();
-    drawn(value, <StudioChatLines name="test-design" level={DEMO} drafts={[]} />);
+    drawn(value, <StudioChatLines plane="/p/purlis" name="test-design" level={DEMO} drafts={[]} />);
 
     expect(screen.getByTestId("studio-chat-running-7")).toHaveTextContent(
       "A chat at purlis-demo is writing outcome evals · running",
@@ -101,17 +125,29 @@ describe("a skill's page while a studio chat works on it (#5185)", () => {
   });
 
   it("says nothing above the tabs once its draft waits, or for another skill's chat", () => {
-    drawn(lent(), <StudioChatLines name="test-design" level={DEMO} drafts={[draftOf(7)]} />);
+    drawn(
+      lent(),
+      <StudioChatLines plane="/p/purlis" name="test-design" level={DEMO} drafts={[draftOf(7)]} />,
+    );
     expect(screen.queryByTestId("studio-chat-running-7")).toBeNull();
     cleanup();
 
-    drawn(lent(), <StudioChatLines name="deploy" level={DEMO} drafts={[]} />);
+    drawn(lent(), <StudioChatLines plane="/p/purlis" name="deploy" level={DEMO} drafts={[]} />);
     expect(screen.queryByTestId("skill-studio-chats-running")).toBeNull();
   });
 
   it("keeps the chat on Runs once it is done, with where its draft waits and Open chat", () => {
+    mockIPC((cmd) => (cmd === "studio_chats_closed" ? [] : null));
     const value = lent();
-    drawn(value, <StudioChatsStarted name="test-design" level={DEMO} drafts={[draftOf(7)]} />);
+    drawn(
+      value,
+      <StudioChatsStarted
+        plane="/p/purlis"
+        name="test-design"
+        level={DEMO}
+        drafts={[draftOf(7)]}
+      />,
+    );
 
     const started = screen.getByRole("region", { name: "Chats the studio started" });
     const row = within(started).getByTestId("studio-chat-7");
@@ -119,6 +155,82 @@ describe("a skill's page while a studio chat works on it (#5185)", () => {
     expect(row).toHaveTextContent("Finished");
     expect(row).toHaveTextContent("chat 7, at purlis-demo · its draft waits in Drafts");
     fireEvent.click(within(row).getByRole("button", { name: "Open chat" }));
+    expect(value.show).toHaveBeenCalledWith(7);
+  });
+
+  it("opens the draft a finished chat wrote, from its row on Runs (#5248)", () => {
+    mockIPC((cmd) => (cmd === "studio_chats_closed" ? [] : null));
+    const value = lent();
+    drawn(
+      value,
+      <StudioChatsStarted
+        plane="/p/purlis"
+        name="test-design"
+        level={DEMO}
+        drafts={[draftOf(7)]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Review draft" }));
+
+    expect(value.openDraft).toHaveBeenCalledWith(EVALS, "d1");
+  });
+
+  it("keeps a chat on Runs once it has closed, with when it finished and no Open chat (#5248)", async () => {
+    mockIPC((cmd) => (cmd === "studio_chats_closed" ? [CLOSED] : null));
+    const value = lent();
+    drawn(
+      value,
+      <StudioChatsStarted
+        plane="/p/purlis"
+        name="test-design"
+        level={DEMO}
+        drafts={[draftOf(5)]}
+      />,
+    );
+
+    const row = await screen.findByTestId("studio-chat-5");
+    expect(row).toHaveTextContent("Wrote checks");
+    expect(row).toHaveTextContent("Finished");
+    expect(row).toHaveTextContent(
+      "checks chat, at purlis-demo · finished 11-04 17:42 · its draft waits in Drafts",
+    );
+    expect(within(row).queryByRole("button", { name: "Open chat" })).toBeNull();
+    fireEvent.click(within(row).getByRole("button", { name: "Review draft" }));
+    expect(value.openDraft).toHaveBeenCalledWith(CLOSED.link, "d1");
+    // The open chat is listed first.
+    const rows = within(screen.getByRole("grid")).getAllByRole("row");
+    expect(rows.map((one) => one.dataset.testid)).toEqual(["studio-chat-7", "studio-chat-5"]);
+  });
+
+  it("lists on Runs a closed chat of this skill alone, and none still open (#5248)", async () => {
+    const other = { ...CLOSED, session: 6, link: { ...CLOSED.link, skill: "deploy" } };
+    const reopened = { ...CLOSED, session: 7 };
+    mockIPC((cmd) => (cmd === "studio_chats_closed" ? [other, reopened, CLOSED] : null));
+    drawn(
+      lent(),
+      <StudioChatsStarted plane="/p/purlis" name="test-design" level={DEMO} drafts={[]} />,
+    );
+
+    await screen.findByTestId("studio-chat-5");
+    expect(screen.queryByTestId("studio-chat-6")).toBeNull();
+    expect(screen.getAllByTestId("studio-chat-7")).toHaveLength(1);
+  });
+});
+
+describe("the Grades card's running job (#5185, #5248)", () => {
+  it("says how long the chat has run, with Open chat and Stop it", () => {
+    const value = lent();
+    const started = new Date(Date.now() - 2 * 60_000 - 5_000).toISOString();
+    const chat = { session: 7, name: "chat 7", link: { ...EVALS, started } };
+    drawn(value, <RunningJob plane="/p/purlis" chat={chat} />);
+
+    expect(screen.getByTestId("skill-checks-running-7")).toHaveTextContent(
+      "A chat at purlis-demo is writing outcome evals · running 2 min",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Stop it" }));
+    expect(value.stop).toHaveBeenCalledWith(7);
+    fireEvent.click(screen.getByRole("button", { name: "Open chat" }));
     expect(value.show).toHaveBeenCalledWith(7);
   });
 });

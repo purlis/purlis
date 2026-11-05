@@ -1180,7 +1180,7 @@ export function SkillStudioTab({
     >
       {studio === undefined
         ? DRAFT_WITH_A_CHAT
-        : askAChat(draftLevel(scope, studio.levels), "draft a skill")}
+        : askAChat(draftLevel(scope, studio.levels), "draft a skill", plane)}
     </Button>
   );
   // What is chosen on Harness skills (#3692): a program's own skill, by its place's id.

@@ -212,6 +212,8 @@ describe("a chat's one list (#4753)", () => {
                 level: { at: "project", local: false },
                 job: "draft",
                 done: false,
+                started: null,
+                finished: null,
               }
             : undefined,
         ...over,
