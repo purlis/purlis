@@ -3563,9 +3563,11 @@ fn a_turn_is_recorded_by_its_hooks_and_its_diff_is_what_it_edited() {
         git(&["diff", "--name-status", &start, &end]),
         "M\ta.txt\nA\tb.txt\n"
     );
-    let files::TurnChanged::Changed {
-        number: 1, shown, ..
-    } = files::latest_turn_changed(&crate::reader(), &target.root, at, "a.txt").expect("it reads")
+    let files::TurnChanged::Of {
+        number: 1,
+        file: files::InTurn::Changed(shown),
+        ..
+    } = files::turn_changed(&crate::reader(), &target.root, at, "a.txt", None).expect("it reads")
     else {
         panic!("a.txt is what the turn changed");
     };

@@ -362,19 +362,18 @@ fn failed(doing: &str, ran: &git::Run) -> Refused {
     ))
 }
 
-/// A turn, as the latest on a branch.
-pub(super) struct Latest {
-    pub chat: String,
-    pub number: u32,
-}
-
-/// **The latest turn that ended on `branch`**, whichever chat's it was: the end state of the
-/// newest date whose message names the branch, ties going to the higher number. Read by gitoxide
-/// in the bounded reader's child; a ref that is not one purlis wrote is passed over.
-pub(super) fn latest_of(repo: &gix::Repository, branch: &str) -> Option<Latest> {
-    let platform = repo.references().ok()?;
-    let mut best: Option<(i64, Latest)> = None;
-    for mut found in platform.prefixed(NAMESPACE).ok()?.flatten() {
+/// **Each turn that ended on `branch`**, whichever chat's it was, with its end's date: an end ref
+/// whose state's message names the branch. Read by gitoxide in the bounded reader's child; a ref
+/// that is not one purlis wrote is passed over.
+fn ended_on(repo: &gix::Repository, branch: &str) -> Vec<(i64, super::TurnKey)> {
+    let Ok(platform) = repo.references() else {
+        return Vec::new();
+    };
+    let Ok(prefixed) = platform.prefixed(NAMESPACE) else {
+        return Vec::new();
+    };
+    let mut ended = Vec::new();
+    for mut found in prefixed.flatten() {
         let name = found.name().as_bstr().to_string();
         let Some((chat, rest)) = name
             .strip_prefix(NAMESPACE)
@@ -400,20 +399,36 @@ pub(super) fn latest_of(repo: &gix::Repository, branch: &str) -> Option<Latest> 
             continue;
         }
         let when = commit.time().map_or(0, |time| time.seconds);
-        if best
-            .as_ref()
-            .is_none_or(|(at, one)| (when, number) > (*at, one.number))
-        {
-            best = Some((
-                when,
-                Latest {
-                    chat: chat.to_owned(),
-                    number,
-                },
-            ));
-        }
+        ended.push((
+            when,
+            super::TurnKey {
+                chat: chat.to_owned(),
+                number,
+            },
+        ));
     }
-    best.map(|(_, latest)| latest)
+    ended
+}
+
+/// **The latest turn that ended on `branch`**, whichever chat's it was: the end state of the
+/// newest date, ties going to the higher number.
+pub(super) fn latest_of(repo: &gix::Repository, branch: &str) -> Option<super::TurnKey> {
+    ended_on(repo, branch)
+        .into_iter()
+        .max_by_key(|(when, turn)| (*when, turn.number))
+        .map(|(_, turn)| turn)
+}
+
+/// **The turns of `chat` that ended on `branch`, newest first** (#5408): what the file diff's
+/// turn picker lists.
+pub(super) fn ended_of(repo: &gix::Repository, branch: &str, chat: &str) -> Vec<u32> {
+    let mut numbers: Vec<u32> = ended_on(repo, branch)
+        .into_iter()
+        .filter(|(_, turn)| turn.chat == chat)
+        .map(|(_, turn)| turn.number)
+        .collect();
+    numbers.sort_unstable_by(|a, b| b.cmp(a));
+    numbers
 }
 
 #[cfg(test)]

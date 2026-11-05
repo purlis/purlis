@@ -36,9 +36,10 @@
  * it are said to a screen reader as they come, and the merge view is named after the file and
  * what it is compared against.
  *
- * **Against base or the latest turn** (#5405): the same view of one file across the last turn that
- * ended on the branch ([`DiffAgainst`]), which the core reads from that turn's refs. No turn to
- * show, and a file the turn left alone, are each a sentence.
+ * **Against base or one turn** (#5405, #5408): the same view of one file across one turn that
+ * ended on the branch ([`DiffAgainst`]), which the core reads from that turn's refs. It opens on
+ * the latest turn, and the [`TurnPicker`] steps back through that chat's turns, newest first. No
+ * turn to show, a turn that changed no file, and a file the turn left alone are each a sentence.
  */
 import { Fragment, useEffect, useRef, useState } from "react";
 import { FileDiff as FileDiffMark, LoaderCircle } from "lucide-react";
@@ -50,11 +51,12 @@ import {
   type DiscardTarget,
   type PlaneId,
   type TurnChanged,
+  type TurnPick,
   type WhatChanged,
 } from "../bindings";
 import type { Place } from "../pieceViews";
 import { MergeViewer } from "./LightEditor";
-import { DiffAgainst, type Against } from "./DiffAgainst";
+import { DiffAgainst, TurnPicker, type Against } from "./DiffAgainst";
 import { sized, ToYourEditor } from "./PieceFiles";
 import { jumpTo } from "../fileJump";
 import { Notice } from "../Notice";
@@ -66,6 +68,9 @@ import { editorToolbar, ToolbarFile } from "../ui/tabs/Tabs";
 /** The comparison, as the tab draws it: being read, refused with the core's sentence, or read. */
 type Read =
   { kind: "reading" } | { kind: "refused"; why: string } | { kind: "read"; shown: WhatChanged };
+
+/** The turn a read was of, and the turns its chat has on the branch, newest first. */
+type OfTurn = { chat: string; number: number; turns: number[] };
 
 /** A discard the operator pressed, as it is asked again once they answer a warning. */
 type Asked = {
@@ -85,6 +90,18 @@ type Warning = (Asked & { kind: "busy"; chats: BusyChat[] }) | (Asked & { kind: 
 export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place; path: string }) {
   const [asked, setAsked] = useState(0);
   const [comparedTo, setComparedTo] = useState<Against>("base");
+  /** The turn picked, or `null` for the latest: what one turn opens on, each time it is chosen. */
+  const [pick, setPick] = useState<TurnPick | null>(null);
+  /** The turn last drawn, so the picker holds its place while the next one is read. */
+  const [ofTurn, setOfTurn] = useState<OfTurn>();
+  const compareTo = (next: Against) => {
+    if (next === "turn") {
+      setPick(null);
+      // The picker holds the newest it knows while the latest is read, never the turn left.
+      setOfTurn((was) => was && { ...was, number: was.turns[0] ?? was.number });
+    }
+    setComparedTo(next);
+  };
   /** How often the branch moved and was read again for it. */
   const [moved, setMoved] = useState(0);
   /** The last comparison told, with the asks and the moves it was read for. */
@@ -92,6 +109,7 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
     asked: number;
     moved: number;
     comparedTo: Against;
+    pick: TurnPick | null;
     read: Read;
   }>();
   /** The read in flight, and whether the branch moved during it. */
@@ -101,14 +119,21 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
   const [warning, setWarning] = useState<Warning>();
   /** What the last discard could not do, or could not record. */
   const [trouble, setTrouble] = useState<string>();
+  // The pick by its parts, so picking the turn already shown asks nothing again.
+  const pickedChat = pick?.chat ?? null;
+  const pickedNumber = pick?.number ?? null;
   useEffect(() => {
     let gone = false;
     const now = { again: false };
+    const pick =
+      pickedChat === null || pickedNumber === null
+        ? null
+        : { chat: pickedChat, number: pickedNumber };
     flight.current = now;
     const told = (got: Read) => {
       if (gone) return;
       flight.current = undefined;
-      setRead({ asked, moved, comparedTo, read: got });
+      setRead({ asked, moved, comparedTo, pick, read: got });
       if (now.again) setMoved((n) => n + 1);
     };
     const asking =
@@ -121,22 +146,43 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
                 : ({ kind: "read", shown: answer.data } as const),
             )
         : commands
-            .latestTurnChanged(plane, cut.workspace, cut.repo, cut.piece, path)
-            .then((answer) =>
-              answer.status === "error"
-                ? ({ kind: "refused", why: answer.error } as const)
-                : turnRead(answer.data, path),
-            );
+            .turnChanged(plane, cut.workspace, cut.repo, cut.piece, path, pick)
+            .then((answer): Read => {
+              if (answer.status === "error") return { kind: "refused", why: answer.error };
+              const turn = answer.data;
+              if (!gone)
+                setOfTurn(
+                  turn.kind === "of"
+                    ? { chat: turn.chat, number: turn.number, turns: turn.turns }
+                    : undefined,
+                );
+              return turnRead(turn, path);
+            });
     void asking.then(told).catch((err: unknown) => told({ kind: "refused", why: String(err) }));
     return () => {
       gone = true;
     };
-  }, [plane, cut.workspace, cut.repo, cut.piece, path, asked, moved, comparedTo]);
+  }, [
+    plane,
+    cut.workspace,
+    cut.repo,
+    cut.piece,
+    path,
+    asked,
+    moved,
+    comparedTo,
+    pickedChat,
+    pickedNumber,
+  ]);
   useBranchMoved(plane, cut, () => {
     if (flight.current !== undefined) flight.current.again = true;
     else setMoved((n) => n + 1);
   });
-  const current = read?.asked === asked && read.comparedTo === comparedTo;
+  const current =
+    read?.asked === asked &&
+    read.comparedTo === comparedTo &&
+    (comparedTo === "base" ||
+      (read.pick?.chat === pick?.chat && read.pick?.number === pick?.number));
   const now: Read = current ? read.read : { kind: "reading" };
   // The branch moved since the comparison drawn was read, and it is being read again behind it.
   const again = current && read.moved !== moved;
@@ -165,7 +211,7 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
         else if (told.kind === "stale") setWarning({ ...ask, kind: "stale" });
         else {
           if (told.now !== null)
-            setRead({ asked, moved, comparedTo, read: { kind: "read", shown: told.now } });
+            setRead({ asked, moved, comparedTo, pick, read: { kind: "read", shown: told.now } });
           else setAsked((n) => n + 1);
           if (told.unrecorded !== null)
             setTrouble(`Discarded, but it is not in the chat's history: ${told.unrecorded}`);
@@ -181,7 +227,17 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
         <ToolbarFile path={path} named={false} />
         {now.kind === "read" && <span>{against(now.shown)}</span>}
         <span className="piece-files-actions">
-          <DiffAgainst value={comparedTo} onChange={setComparedTo} />
+          <DiffAgainst value={comparedTo} onChange={compareTo} />
+          {comparedTo === "turn" && ofTurn !== undefined && (
+            <TurnPicker
+              turns={ofTurn.turns}
+              number={pick?.number ?? ofTurn.number}
+              onPick={(number) =>
+                // The newest is the latest, and follows a turn that ends after it.
+                setPick(number === ofTurn.turns[0] ? null : { chat: ofTurn.chat, number })
+              }
+            />
+          )}
           <ToYourEditor plane={plane} cut={cut} path={path} line={firstLine(now)} />
           <Button size="sm" onPress={() => setAsked((n) => n + 1)}>
             Compare again
@@ -255,16 +311,17 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
   );
 }
 
-/** What the core said of the latest turn, as the tab draws it. */
+/** What the core said of one turn, as the tab draws it. */
 function turnRead(turn: TurnChanged, path: string): Read {
   const name = path.slice(path.lastIndexOf("/") + 1);
-  switch (turn.kind) {
-    case "no-turn":
-      return { kind: "refused", why: turn.why };
-    case "not-changed":
+  if (turn.kind === "no-turn") return { kind: "refused", why: turn.why };
+  switch (turn.file.kind) {
+    case "nothing":
+      return { kind: "refused", why: `Turn ${turn.number} changed no file` };
+    case "not-this-file":
       return { kind: "refused", why: `Turn ${turn.number} did not change ${name}` };
     case "changed":
-      return { kind: "read", shown: turn.shown };
+      return { kind: "read", shown: turn.file.shown };
   }
 }
 

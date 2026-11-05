@@ -3335,8 +3335,14 @@ export const commands = {
 	 */
 	whatChanged: (plane: PlaneId, workspace: string, repo: string, piece: string | null, path: string) => typedError<WhatChanged, string>(__TAURI_INVOKE("what_changed", { plane, workspace, repo, piece, path })),
 	discardHunk: (plane: PlaneId, workspace: string, repo: string, piece: string | null, path: string, target: DiscardTarget, against: DiscardAgainst, busyToo: boolean) => typedError<DiscardAnswer, string>(__TAURI_INVOKE("discard_hunk", { plane, workspace, repo, piece, path, target, against, busyToo })),
-	/**  One file of a branch across the latest turn that ended there, or why there is none. */
-	latestTurnChanged: (plane: PlaneId, workspace: string, repo: string, piece: string | null, path: string) => typedError<TurnChanged, string>(__TAURI_INVOKE("latest_turn_changed", { plane, workspace, repo, piece, path })),
+	/**
+	 *  One file of a branch across a turn that ended there, the latest when `turn` is null, or why
+	 *  there is none.
+	 */
+	turnChanged: (plane: PlaneId, workspace: string, repo: string, piece: string | null, path: string, turn: {
+	chat: string,
+	number: number,
+} | null) => typedError<TurnChanged, string>(__TAURI_INVOKE("turn_changed", { plane, workspace, repo, piece, path, turn })),
 	/**
 	 *  The folders of branches this window's explorer has expanded, watched until it names others
 	 *  (FM-1). A folder that does not resolve — gone, or refused as the tree refuses it — is not
@@ -9219,6 +9225,15 @@ export type InForce = {
 	/**  `default`, `shared` or `local`. */
 	source: string,
 };
+
+/**  What one turn did to one file. */
+export type InTurn = 
+/**  The turn changed no file at all. */
+{ kind: "nothing" } | 
+/**  The turn changed other files and left this one as it found it. */
+{ kind: "not-this-file" } | 
+/**  The file, compared across the turn. */
+{ kind: "changed"; shown: WhatChanged };
 
 /**  One update, as the window draws it. */
 export type InboxUpdate = {
@@ -16563,14 +16578,21 @@ export type TodoView = {
 	body: string,
 };
 
-/**  One file across the latest turn on a branch: "Latest turn" in the file diff (#5405). */
+/**  One file across one turn on a branch: the file diff's turn picker (#5405, #5408). */
 export type TurnChanged = 
 /**  No turn to show, and why, in a sentence. */
 { kind: "no-turn"; why: string } | 
-/**  The latest turn left this file as it found it. */
-{ kind: "not-changed"; number: number } | 
-/**  The file, compared across the turn. */
-{ kind: "changed"; number: number; shown: WhatChanged };
+/**
+ *  The file across turn `number` of `chat`, and that chat's turns on the branch, newest
+ *  first: what the picker lists.
+ */
+{ kind: "of"; chat: string; number: number; turns: number[]; file: InTurn };
+
+/**  A turn the picker names: a chat's id and the turn's number. */
+export type TurnPick = {
+	chat: string,
+	number: number,
+};
 
 /**
  *  Why a vault read through an identity variable could not be read: the core's own sentence,

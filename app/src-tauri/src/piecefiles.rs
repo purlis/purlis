@@ -423,30 +423,55 @@ pub async fn what_changed(
     .map_err(|err| format!("comparing the file did not finish: {err}"))?
 }
 
-/// One file across the latest turn on a branch: "Latest turn" in the file diff (#5405).
+/// One file across one turn on a branch: the file diff's turn picker (#5405, #5408).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum TurnChanged {
     /// No turn to show, and why, in a sentence.
     NoTurn { why: String },
-    /// The latest turn left this file as it found it.
-    NotChanged { number: u32 },
-    /// The file, compared across the turn.
-    Changed { number: u32, shown: WhatChanged },
+    /// The file across turn `number` of `chat`, and that chat's turns on the branch, newest
+    /// first: what the picker lists.
+    Of {
+        chat: String,
+        number: u32,
+        turns: Vec<u32>,
+        file: InTurn,
+    },
 }
 
-/// One file of a branch across the latest turn that ended there, or why there is none.
+/// What one turn did to one file.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum InTurn {
+    /// The turn changed no file at all.
+    Nothing,
+    /// The turn changed other files and left this one as it found it.
+    NotThisFile,
+    /// The file, compared across the turn.
+    Changed { shown: WhatChanged },
+}
+
+/// A turn the picker names: a chat's id and the turn's number.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, specta::Type)]
+pub struct TurnPick {
+    pub chat: String,
+    pub number: u32,
+}
+
+/// One file of a branch across a turn that ended there, the latest when `turn` is null, or why
+/// there is none.
 // Read as `what_changed` reads. The sentence for no turn is the app's, since only the app knows
 // which chats work in the folder. Not a doc comment, because the generated bindings carry those.
 #[tauri::command]
 #[specta::specta]
-pub async fn latest_turn_changed(
+pub async fn turn_changed(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     workspace: String,
     repo: String,
     piece: Option<String>,
     path: String,
+    turn: Option<TurnPick>,
 ) -> Result<TurnChanged, String> {
     let held = planes.held(&plane)?;
     let root = held.root().to_path_buf();
@@ -454,10 +479,11 @@ pub async fn latest_turn_changed(
         .chats()
         .silent_about_turns_in(&root, &workspace, &repo, piece.as_deref());
     tauri::async_runtime::spawn_blocking(move || {
-        latest_turn_changed_of(
+        turn_changed_of(
             &root,
             branch(&workspace, &repo, &piece),
             &path,
+            turn,
             silent.as_deref(),
         )
     })
@@ -465,22 +491,36 @@ pub async fn latest_turn_changed(
     .map_err(|err| format!("comparing the file did not finish: {err}"))?
 }
 
-fn latest_turn_changed_of(
+fn turn_changed_of(
     plane: &Path,
     branch: Branch<'_>,
     path: &str,
+    turn: Option<TurnPick>,
     silent: Option<&str>,
 ) -> Result<TurnChanged, String> {
-    let read = files::latest_turn_changed(&crate::reader(), plane, branch, path)
+    let turn = turn.map(|TurnPick { chat, number }| files::TurnKey { chat, number });
+    let read = files::turn_changed(&crate::reader(), plane, branch, path, turn.as_ref())
         .map_err(|e| e.to_string())?;
     Ok(match read {
         files::TurnChanged::NoTurn => TurnChanged::NoTurn {
             why: no_turn_why(silent),
         },
-        files::TurnChanged::NotChanged { number } => TurnChanged::NotChanged { number },
-        files::TurnChanged::Changed { number, shown, .. } => TurnChanged::Changed {
+        files::TurnChanged::Of {
+            chat,
             number,
-            shown: what_changed_shown(*shown),
+            turns,
+            file,
+        } => TurnChanged::Of {
+            chat,
+            number,
+            turns,
+            file: match file {
+                files::InTurn::Nothing => InTurn::Nothing,
+                files::InTurn::NotThisFile => InTurn::NotThisFile,
+                files::InTurn::Changed(shown) => InTurn::Changed {
+                    shown: what_changed_shown(*shown),
+                },
+            },
         },
     })
 }

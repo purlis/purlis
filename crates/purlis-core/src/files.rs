@@ -61,9 +61,9 @@ pub use offered::{Ignored, Offered};
 mod compare;
 pub use compare::{
     Against, COUNTED, Compared, Comparison, Discard, Discarded, FileChange, FileDiff, Head, Hunk,
-    Lines, MemberCompared, Shown, Sides, Target, TurnChanged, WhatChanged, Whitespace, compare,
-    compare_change, compare_file, compare_file_with, compare_with, discard, latest_turn_changed,
-    line_hunks, what_changed,
+    InTurn, Lines, MemberCompared, Shown, Sides, Target, TurnChanged, TurnKey, WhatChanged,
+    Whitespace, compare, compare_change, compare_file, compare_file_with, compare_with, discard,
+    line_hunks, turn_changed, what_changed,
 };
 // A request's head, fetched under `refs/purlis/review/` for its review (RC-2's kind (f)).
 pub mod review_fetch;
