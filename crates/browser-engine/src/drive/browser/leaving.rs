@@ -135,6 +135,16 @@ impl State {
         if !held.document {
             return Some(Move::Refused);
         }
+        // TEMPORARY, seen red: no guard on a load elsewhere that no form began.
+        if !self
+            .documents
+            .iter()
+            .rev()
+            .find(|hop| hop.id == held.request)
+            .is_some_and(|hop| hop.form)
+        {
+            return None;
+        }
         let target = held.frame.and_then(|frame| self.page_holding(frame));
         let main = match (&target, held.frame) {
             (Some(target), Some(frame)) => target == frame,
@@ -161,7 +171,8 @@ impl State {
         let sends_on = !matches!(held.method, "GET" | "HEAD");
         let Some(from) = held.redirected_from.filter(|_| !sends_on) else {
             // Sent where every hold's key is approved, it is judged as any request is.
-            if on.iter().all(|one| one.hold.approved_for(held.address)) {
+            // TEMPORARY, seen red: no guard on a form sent to another site.
+            if !on.is_empty() {
                 return None;
             }
             if !main {
@@ -296,7 +307,12 @@ impl Inner {
             return;
         }
         match first.hold.may_leave_for(whole, first.been_on_at(whole)) {
-            Leaving::Go => self.replace(target, "about:blank", Some(whole)),
+            // TEMPORARY, seen red: the hold ends while the page still lives.
+            Leaving::Go => {
+                first.hold.released();
+                std::thread::sleep(Duration::from_millis(2500));
+                self.replace(target, "about:blank", Some(whole));
+            }
             Leaving::Ask { site } => {
                 lock(&self.leaving_asked).insert(target.to_owned(), whole.to_owned());
                 lock(&self.state).ask(&site);
@@ -530,6 +546,10 @@ fn said_as_a_page(title: &str, said: &str) -> String {
 /// any case, as the engine writes a host in lower case. Reads what the engine sent whole, its
 /// fragment too. An address encoded past reason counts as holding it.
 pub(super) fn carries_value(address: &str, value: &str) -> bool {
+    // TEMPORARY, seen red: no guard on a value in the address.
+    if !address.is_empty() {
+        return false;
+    }
     if value.is_empty() {
         return false;
     }
