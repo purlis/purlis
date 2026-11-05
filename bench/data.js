@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793883627295,
+  "lastUpdate": 1793886179415,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -40152,6 +40152,48 @@ window.BENCHMARK_DATA = {
             "value": 102.401218,
             "unit": "ms",
             "extra": "median of 5 runs: 101.908, 102.178, 102.401, 102.669, 102.752 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "d2612ee52f406c50d364420bb40ee4db7c1fd090",
+          "message": "A sandboxed chat can merge its base into a branch folder (#5253) (#5364)\n\n* A sandboxed chat can merge its base into a branch folder (#5253)\n\n`purlis worktree update --merge` has the app run the merge, so no commit is\nrewritten and a plain `purlis worktree push` follows. A conflict stops it and\nnames the files, with --continue and --abort. --take-base-baselines gives a\nconflicted .png under a __screenshots__ folder the base's copy; every other\nconflict still stops.\n\nThe app runs this outside the chat's sandbox, so it starts nothing the chat\ncould have written: the runner's holds, plus branch.<name>.mergeOptions, and\n-s ort given outright. Rename detection across a folder is off, so the judging\nreads every path the merge writes, and an abort is judged too.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6N83QZFBG0BJMM74Y162ZXK\nPurlis-Persona: steward\n\n* Name a merge's reach for clippy, and wrap the runner's doc (#5253)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6N83QZFBG0BJMM74Y162ZXK\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-05T12:47:39Z",
+          "tree_id": "4c400cb7d0dcdde7498ec798b85dd815d39b99fe",
+          "url": "https://github.com/purlis/purlis/commit/d2612ee52f406c50d364420bb40ee4db7c1fd090"
+        },
+        "date": 1793886174553,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6870594999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.666, 0.686, 0.687, 0.702, 0.702 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.510558500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.480, 16.509, 16.511, 16.647, 16.744 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.3379875,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.213, 102.242, 102.338, 102.826, 102.909 ms"
           }
         ]
       }
