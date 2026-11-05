@@ -791,7 +791,7 @@ fn only_a_browser_with_nothing_behind_it_has_held_nothing() {
 /// #5272: what a host hands the engine is never "clean already" by itself: it's found out.
 #[test]
 fn a_logins_address_says_nothing_of_whether_it_is_clean_already() {
-    let (login, _) = super::login_of(&LogIn {
+    let (login, _) = super::login_of(&wire::LogIn {
         address: "https://shop.example.test/login".to_owned(),
         user: None,
         password: wire::Secret::new("word".to_owned()),
