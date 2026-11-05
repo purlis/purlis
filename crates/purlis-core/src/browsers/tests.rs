@@ -29,6 +29,123 @@ fn each_browsers_data_folder_is_made_under_the_data_home_it_was_given() {
     );
 }
 
+// ---- An engine's age at a browser's start (#5413) ----
+
+mod an_engines_age_at_a_start {
+    use std::io;
+    use std::sync::Mutex;
+
+    use chrono::{DateTime, TimeDelta};
+    use purlis_browser_engine::install::{
+        EngineSettings, Engines, Fetch, Manifest, NoSigner, Platform, Refused,
+    };
+
+    use super::super::{engines_clock, prepared};
+
+    /// Answers nothing, as a read that met a 504 or no network, and keeps what it was asked.
+    #[derive(Default)]
+    struct Unreachable(Mutex<Vec<String>>);
+
+    impl Unreachable {
+        fn asked(&self) -> Vec<String> {
+            self.0.lock().unwrap().clone()
+        }
+    }
+
+    impl Fetch for Unreachable {
+        fn fetch(&self, url: &str) -> io::Result<Box<dyn io::Read + '_>> {
+            self.0.lock().unwrap().push(url.to_owned());
+            Err(io::Error::other(format!("{url} answered 504")))
+        }
+    }
+
+    /// What a start answered, and what each of its reads was asked.
+    struct Started {
+        answer: Result<(), Refused>,
+        manifests: Vec<String>,
+        archives: Vec<String>,
+    }
+
+    /// The start this build's pin gets `after` it was issued, neither read answering, on a
+    /// machine that has installed nothing.
+    fn started(after: TimeDelta) -> Started {
+        let home = tempfile::tempdir().unwrap();
+        let shipped = Manifest::shipped();
+        let now = shipped.issued + after;
+        let engines = Engines::new(home.path(), Platform::Linux64, shipped, Box::new(NoSigner));
+        let (manifests, archives) = (Unreachable::default(), Unreachable::default());
+        let answer = prepared(
+            &engines,
+            &EngineSettings::default(),
+            &manifests,
+            &archives,
+            now,
+        );
+        Started {
+            answer: answer.map(|_| ()),
+            manifests: manifests.asked(),
+            archives: archives.asked(),
+        }
+    }
+
+    #[test]
+    fn past_the_limit_with_no_manifest_to_read_the_shipped_engine_is_refused_for_its_age() {
+        let Started {
+            answer,
+            manifests,
+            archives,
+        } = started(TimeDelta::days(22));
+        let refused = answer.expect_err("an engine past the limit does not start");
+        assert!(
+            matches!(refused, Refused::Outdated { days: 22 }),
+            "{refused:?}"
+        );
+        assert_eq!(
+            refused.to_string(),
+            "The browser engine is 22 days behind, so it was not started. Update now, or allow \
+             an outdated engine in Settings."
+        );
+        assert_eq!(
+            manifests.len(),
+            1,
+            "the published manifest was tried first: {manifests:?}"
+        );
+        assert!(archives.is_empty(), "nothing downloaded: {archives:?}");
+    }
+
+    #[test]
+    fn on_the_day_its_pin_was_issued_a_start_reads_no_manifest() {
+        let Started {
+            answer,
+            manifests,
+            archives,
+        } = started(TimeDelta::zero());
+        assert!(
+            matches!(answer, Err(Refused::Download(_))),
+            "it went on to download the pinned engine: {answer:?}"
+        );
+        assert!(manifests.is_empty(), "no manifest read: {manifests:?}");
+        assert_eq!(archives.len(), 1, "{archives:?}");
+    }
+
+    #[test]
+    fn only_a_debug_build_takes_its_engines_clock_from_the_variable() {
+        let real = DateTime::parse_from_rfc3339("2030-01-01T00:00:00Z")
+            .unwrap()
+            .to_utc();
+        let asked = "2026-10-14T11:19:22Z";
+        let named = DateTime::parse_from_rfc3339(asked).unwrap().to_utc();
+        assert_eq!(engines_clock(true, Some(asked), real), named);
+        assert_eq!(
+            engines_clock(false, Some(asked), real),
+            real,
+            "a release build refuses by the real time, whatever its environment says"
+        );
+        assert_eq!(engines_clock(true, None, real), real);
+        assert_eq!(engines_clock(true, Some("soon"), real), real);
+    }
+}
+
 // ---- A chat's acts, its answers and its reach (#2013) ----
 
 use std::time::Duration;
