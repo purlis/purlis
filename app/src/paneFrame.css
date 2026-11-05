@@ -646,10 +646,65 @@
   cursor: grabbing;
 }
 
-/* **The result, drawn before the drop** (#4583): the half of the pane the source would take, or
-   the whole pane for a swap, over the terminal, which never sees the pointer while it is there.
-   Over every pane's own corner (`App.css`, up to 3), under what is opened over the window. A
-   refused place is dashed, in the danger colour, with its reason by the pointer. */
+/* **While a drag holds the panes** (#5291, `paneHeld.ts`): each frame goes to where the drop would
+   leave it by a transform and a size of its own, and none of the boxes it is in clips it there,
+   since they are still the layout's. Reduced motion makes it immediate, through the token. */
+:root[data-pane-dragging] .panes :is([data-group], [data-panel], [data-panel] > div) {
+  overflow: visible !important;
+}
+
+:root[data-pane-dragging] .panes .pane-frame {
+  transition-property: transform, width, height;
+  transition-duration: var(--motion-duration-enter);
+  transition-timing-function: var(--motion-easing-enter);
+}
+
+/* A terminal keeps the pixels it had, against the bottom of its body as it grows from the top, and
+   its frame clips or spaces it. A pane's top keeps its height, so a notice that arrives waits. */
+:root[data-pane-dragging] .panes .pane-body {
+  overflow: clip;
+}
+
+[data-pane-terminal][data-pane-pinned] {
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline-start: 0;
+}
+
+.pane-top[data-pane-pinned] {
+  max-block-size: none;
+  overflow: clip;
+}
+
+/* The pane picked up dims where it is; moved, it has the accent's edge, over the others. */
+.pane-frame[data-pane-preview="lifted"] {
+  opacity: 0.38;
+}
+
+.pane-frame[data-pane-preview="moved"] {
+  z-index: 1;
+  outline: var(--focus-ring-width) solid var(--accent-base);
+  outline-offset: calc(0px - var(--focus-ring-width));
+}
+
+.pane-frame[data-pane-preview="gone"] {
+  visibility: hidden;
+}
+
+/* The lines and rails of the layout as it stands are not the preview's. */
+:root[data-pane-previewing] .panes :is([data-separator], .pane-rail) {
+  visibility: hidden;
+}
+
+:root[data-pane-refused],
+:root[data-pane-refused] * {
+  cursor: no-drop;
+}
+
+/* **On the strip, the line where the new tab goes** (#4583), and in placement mode what the place
+   the keyboard is on would take, until it draws what a drag draws (#5293): the half of the pane
+   the source would take, or the whole pane for a swap, over the terminal. A refused place is
+   dashed, in the danger colour. */
 .pane-drop-preview {
   position: fixed;
   z-index: 4;
@@ -665,28 +720,9 @@
   background-color: var(--danger-wash);
 }
 
-/* On the strip, the line where the new tab goes. */
 .pane-drop-preview[data-line] {
   border: none;
   background-color: var(--accent-base);
-}
-
-.pane-drop-says {
-  position: fixed;
-  z-index: 4;
-  max-inline-size: 32rem;
-  padding: var(--space-1) var(--space-2);
-  border: var(--panel-border-width) solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  background-color: var(--surface-overlay);
-  box-shadow: var(--elevation-overlay);
-  color: var(--text-primary);
-  font-size: var(--font-size-sm);
-  pointer-events: none;
-}
-
-.pane-drop-says[data-refused] {
-  color: var(--danger-text);
 }
 
 /* ---------------------------------------------------------------------------------------------

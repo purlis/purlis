@@ -13,6 +13,7 @@ import {
 import { Channel } from "@tauri-apps/api/core";
 import { PaneTerminalAt } from "./paneTerminal";
 import { FitAddon } from "@xterm/addon-fit";
+import { type OwnCells, TERMINAL_HOLDER, terminalInPane } from "./paneHeld";
 import { afterTheSlide } from "./railSlide";
 import { SearchAddon } from "@xterm/addon-search";
 import { Terminal } from "@xterm/xterm";
@@ -262,6 +263,8 @@ export function SessionPane({
     // program is told one new size per hide or show. Heard as the pane is first watched too, so
     // a kept terminal is fitted to the pane it is put back in.
     const refit = () => live.fit();
+    // What a drag reckons the size this terminal would take from (`panePreview.gridIn`).
+    const unsaid = terminalInPane(where, () => ownCells(pane));
     let unqueue = () => {};
     const watching = new ResizeObserver(() => {
       unqueue = afterTheSlide(refit);
@@ -270,6 +273,7 @@ export function SessionPane({
 
     return () => {
       where.removeEventListener("mousedown", pastTheProgram, true);
+      unsaid();
       wheeling.dispose();
       undrawn();
       watching.disconnect();
@@ -311,6 +315,7 @@ export function SessionPane({
           // back from the chords a terminal encodes (`actions.CHAT_KEYBOARD`, charter-app#106).
           {...{ [CHAT_KEYBOARD]: "" }}
           data-session={session}
+          {...{ [TERMINAL_HOLDER]: "" }}
           onKeyDownCapture={leavesTheChat}
           onMouseDown={take}
           onClick={take}
@@ -329,6 +334,29 @@ export function SessionPane({
       {finding && <FindBar search={finding.search} asked={finding.asked} onClose={closeFind} />}
     </>
   );
+}
+
+/** The scrollbar's width a terminal's fit leaves out (`@xterm/addon-fit`), where it has no ruler. */
+const SCROLLBAR = 14;
+
+/**
+ * **A terminal's cell, and what its fit leaves out**, as `@xterm/addon-fit` reckons them: read from
+ * what is drawn, its screen over its grid, and none before it has been laid out.
+ */
+function ownCells(pane: Terminal): OwnCells | undefined {
+  const screen = pane.element?.querySelector(".xterm-screen")?.getBoundingClientRect();
+  if (pane.element === undefined || screen === undefined || screen.width === 0) return undefined;
+  const padding = getComputedStyle(pane.element);
+  const side = (name: string) => parseInt(padding.getPropertyValue(name)) || 0;
+  return {
+    width: screen.width / pane.cols,
+    height: screen.height / pane.rows,
+    extraWidth:
+      side("padding-left") +
+      side("padding-right") +
+      (pane.options.scrollback === 0 ? 0 : (pane.options.overviewRuler?.width ?? SCROLLBAR)),
+    extraHeight: side("padding-top") + side("padding-bottom"),
+  };
 }
 
 /** What a pane draws a terminal in, while one does: kept, a terminal has none. */

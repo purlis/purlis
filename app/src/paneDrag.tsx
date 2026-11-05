@@ -24,6 +24,8 @@ import {
 } from "lucide-react";
 import { keySaid, pressed } from "./keys/registry";
 import { Notice } from "./Notice";
+import { type Over, PaneDragLayer, PaneDragStore } from "./paneDragLayer";
+import { PANE, TAB } from "./paneHeld";
 import { REGION_CHROME } from "./RegionFrame";
 import {
   type Box,
@@ -33,7 +35,6 @@ import {
   type Place,
   placeAt,
   previewOf,
-  type Size,
   type Source,
   sourceName,
   type Target,
@@ -55,7 +56,7 @@ import {
 } from "./panePlacement";
 import { canUndoLayout, recorded, undoLayout } from "./layoutUndo";
 import { UNDO_MS } from "./MemoryEdits";
-import { contentsOf, type LayoutUndo, type Tabs } from "./tabs";
+import { contentsOf, focusPane, type LayoutUndo, selectTab, type Tabs } from "./tabs";
 import { Button, IconButton } from "./ui/button/Button";
 import { onTooltipEscape } from "./ui/tooltip/Tooltip";
 
@@ -73,9 +74,13 @@ import { onTooltipEscape } from "./ui/tooltip/Tooltip";
  * - a tab on the strip, {@link TAB}, once it is pulled down off the strip ({@link OFF_THE_STRIP}).
  *   Along the strip it is the strip's own drag, which reorders (SI-6).
  *
- * Esc cancels a drag. Holding over a tab for {@link HOLD_MS} brings it forward, so a pane can
- * land in another tab's layout. A refused place is drawn dashed, with its reason; what is dragged
- * over its own place draws nothing, since letting go there moves nothing (#5284).
+ * **While it drags, the panes make room** (#5291, `paneDragLayer.tsx`): what a drop would leave is
+ * drawn on the real panes, and the tabs don't change until the drop. Drop zones stay on the layout
+ * from the drag's start, a place holds a little past its line, and a target changes only once the
+ * pointer has stayed {@link TARGET_WAIT_MS}. Esc, a release on no place, the pointer being taken
+ * away and the window losing focus put everything back as it was, the front tab and the keyboard
+ * too. Holding over a tab for {@link HOLD_MS} brings it forward, so a pane can land in another tab's
+ * layout.
  *
  * **Placement mode** (#4764, `panePlacement.ts`) is every drag's route by keys and single presses
  * (WCAG 2.5.7): a press of a pane's grip ({@link PaneGrip}), Enter or Space on it, or ⌘⇧M on what
@@ -85,16 +90,13 @@ import { onTooltipEscape } from "./ui/tooltip/Tooltip";
  * a split or Tile all, and ⌘Z, which put back the same last change as the palette's row.
  */
 
-/** The pane a drop lands in: `data-drop-pane` holds its number, `data-drop-tab` its tab's. */
-export const PANE = "data-drop-pane";
+export { PANE, TAB };
 /** A pane's grip: its head, pressed outside its buttons. */
 export const GRIP = "data-pane-grip";
 /** A sidebar row a chat is dragged from, by its session. */
 export const CHAT_ROW = "data-drag-chat";
 /** The strip: a drop on it makes a tab. Its tabs carry {@link TAB}. */
 export const STRIP = "data-drop-strip";
-/** A tab on the strip, by its id. */
-export const TAB = "data-drop-tab";
 
 /** A pane's grip as a control (#4764): a press, Enter or Space picks the pane up for placement
  *  mode, and a drag from it moves the pane as a drag from the rest of its head does. */
@@ -139,18 +141,16 @@ const DRAG_FROM = 5;
 const OFF_THE_STRIP = 24;
 /** How long a drag holds over a tab before the tab comes forward (#4583). */
 export const HOLD_MS = 500;
+/**
+ * How long the pointer stays on a place before the preview takes it, so one crossing a pane on its
+ * way elsewhere shuffles nothing (#5291). A starting value: a measured one replaces it.
+ */
+export const TARGET_WAIT_MS = 70;
 
-/** What the drag is over now, and what dropping there would do. */
-type Over = {
-  target: Target;
-  verdict: Verdict;
-  /** Where the result is drawn: the half the source would take, or a line on the strip. */
-  box: Box;
-  /** The pane's size, for the floor the drop keeps; none on the strip. */
-  size?: Size;
-};
-
-type Dragging = { source: Source; x: number; y: number; over?: Over };
+/** What a place is, to tell whether the pointer has left it. */
+function placeKey(over: Over | undefined): string {
+  return over === undefined ? "" : targetKey(over.target);
+}
 
 export type PaneDragging = {
   /** The preview, the sentence by the pointer, and what a reader hears. */
@@ -191,7 +191,7 @@ export function usePaneDrag({
   /** Whether this window is the one in front, whose ⌘⇧M picks up what has the keyboard. */
   active?: boolean;
 }): PaneDragging {
-  const [dragging, setDragging] = useState<Dragging>();
+  const [store] = useState(() => new PaneDragStore());
   // What a reader is told, with a count, so the same words said twice are a new node, heard again
   // (a second refusal for the same reason).
   const [told, setSaid] = useReducer(
@@ -214,10 +214,12 @@ export function usePaneDrag({
     const timer = window.setTimeout(() => setLineGone(last), UNDO_MS);
     return () => window.clearTimeout(timer);
   }, [last]);
-  const now = useRef({ tabs, ctx, change, onHoldTab, chatNameOf, held, boxes });
+  const now = useRef({ tabs, ctx, change, onHoldTab, chatNameOf, held, boxes, active });
   useEffect(() => {
-    now.current = { tabs, ctx, change, onHoldTab, chatNameOf, held, boxes };
-  }, [tabs, ctx, change, onHoldTab, chatNameOf, held, boxes]);
+    now.current = { tabs, ctx, change, onHoldTab, chatNameOf, held, boxes, active };
+  }, [tabs, ctx, change, onHoldTab, chatNameOf, held, boxes, active]);
+  // A window that goes takes no drag with it.
+  useEffect(() => () => store.stop(), [store]);
 
   // The Undo goes once the layout moves on without it: it is drawn and heard only while it can
   // still put the last change back.
@@ -248,6 +250,8 @@ export function usePaneDrag({
 
   useEffect(() => {
     const down = (press: PointerEvent) => {
+      // A project kept behind the one in front has panes of its own numbers: this press is not its.
+      if (!now.current.active) return;
       if (press.button !== 0 || !(press.target instanceof Element)) return;
       const picked = pickedUp(press.target);
       if (picked === undefined) return;
@@ -259,8 +263,16 @@ export function usePaneDrag({
     let leavingTheStrip = false;
     const follow = (press: PointerEvent, picked: { source: Source; strip?: DOMRect }) => {
       const { source, strip } = picked;
+      // What a cancel puts back, as it was before this press: the press itself may focus a pane.
+      const was = (({ tabs }) => ({
+        front: tabs.inFront,
+        focused: tabs.inFront === undefined ? undefined : tabs.byId[tabs.inFront]?.focused,
+        keyboard: document.activeElement,
+      }))(now.current);
       let live = false;
       let held: { tab: number; timer: number } | undefined;
+      /** The place the pointer is on, while it waits to be the preview's. */
+      let waiting: { over: Over | undefined; timer: number } | undefined;
       const stopHolding = () => {
         if (held !== undefined) window.clearTimeout(held.timer);
         held = undefined;
@@ -268,10 +280,57 @@ export function usePaneDrag({
       const end = () => {
         window.removeEventListener("pointermove", move, true);
         window.removeEventListener("pointerup", up, true);
+        window.removeEventListener("pointercancel", taken, true);
         window.removeEventListener("keydown", esc, true);
+        window.removeEventListener("blur", lost);
         stopHolding();
-        delete document.documentElement.dataset.paneDragging;
-        setDragging(undefined);
+        if (waiting !== undefined) window.clearTimeout(waiting.timer);
+        waiting = undefined;
+        store.stop();
+      };
+      /** Ends it with nothing moved, and everything as it was before the press. */
+      const cancel = (said: string) => {
+        end();
+        if (!live) return;
+        const { tabs, change } = now.current;
+        const { front, focused } = was;
+        const tab = front === undefined ? undefined : tabs.byId[front];
+        if (
+          front !== undefined &&
+          tab !== undefined &&
+          (tabs.inFront !== front || tab.focused !== focused)
+        )
+          change((current) => {
+            const forward = selectTab(current, front);
+            return focused === undefined ? forward : focusPane(forward, focused);
+          });
+        // After a tab brought back has taken the keyboard, as it does when it is drawn.
+        const { keyboard } = was;
+        window.setTimeout(() => {
+          if (
+            keyboard instanceof HTMLElement &&
+            keyboard.isConnected &&
+            keyboard !== document.body &&
+            document.activeElement !== keyboard
+          )
+            keyboard.focus();
+        }, 0);
+        setSaid(said);
+      };
+      /** The click that ends a drag is the drag's, never a row's press. */
+      const swallowClick = () => {
+        window.addEventListener("click", swallow, { capture: true, once: true });
+        window.setTimeout(() => window.removeEventListener("click", swallow, true), 0);
+      };
+      /** A cancel before the pointer comes up: its click, when it does, is the drag's too. */
+      const swallowLaterClick = () => {
+        const came = () => {
+          window.removeEventListener("pointerdown", next, true);
+          swallowClick();
+        };
+        const next = () => window.removeEventListener("pointerup", came, true);
+        window.addEventListener("pointerup", came, { capture: true, once: true });
+        window.addEventListener("pointerdown", next, { capture: true, once: true });
       };
       const move = (at: PointerEvent) => {
         if (!live) {
@@ -292,38 +351,52 @@ export function usePaneDrag({
             document.removeEventListener("keydown", stopHere);
             leavingTheStrip = false;
           }
-          document.documentElement.dataset.paneDragging = "";
+          store.start(source, now.current.tabs, at.clientX, at.clientY);
           setSaid(`Dragging ${sourceName(now.current.tabs, source, now.current.ctx)}.`);
         }
-        const over = hit(at.clientX, at.clientY, source);
+        store.moveTo(at.clientX, at.clientY);
+        const over = hit(at.clientX, at.clientY);
         const tab = tabUnder(at.clientX, at.clientY);
         if (tab !== held?.tab) {
           stopHolding();
           if (tab !== undefined)
             held = { tab, timer: window.setTimeout(() => now.current.onHoldTab(tab), HOLD_MS) };
         }
-        setDragging({ source, x: at.clientX, y: at.clientY, over });
+        const going = waiting === undefined ? store.get()?.over : waiting.over;
+        if (placeKey(over) === placeKey(going)) return;
+        if (waiting !== undefined) window.clearTimeout(waiting.timer);
+        waiting = {
+          over,
+          timer: window.setTimeout(() => {
+            waiting = undefined;
+            store.overPlace(over);
+          }, TARGET_WAIT_MS),
+        };
       };
       const up = (at: PointerEvent) => {
-        end();
-        if (!live) return;
+        if (!live) {
+          end();
+          return;
+        }
+        // Before the drag lets go of what it measured.
+        const over = hit(at.clientX, at.clientY);
         dragEnded.current = true;
         window.setTimeout(() => (dragEnded.current = false), 0);
-        // The click that ends a drag is the drag's, never a row's press.
-        window.addEventListener("click", swallow, { capture: true, once: true });
-        window.setTimeout(() => window.removeEventListener("click", swallow, true), 0);
-        const over = hit(at.clientX, at.clientY, source);
+        swallowClick();
         if (over === undefined) {
-          setSaid("Not dropped: drop it on a pane or on the tab strip.");
+          cancel(PUT_BACK);
           return;
         }
-        if (!over.verdict.ok) {
-          setSaid(isOverItself(over.verdict) ? PUT_BACK : `Not dropped: ${over.verdict.why}`);
+        const { tabs, ctx, change } = now.current;
+        const verdict = judgeDrop(tabs, source, over.target, ctx, over.size);
+        if (!verdict.ok) {
+          cancel(isOverItself(verdict) ? PUT_BACK : `Not dropped: ${verdict.why}`);
           return;
         }
-        const did = over.verdict.did;
-        now.current.change((current) =>
-          recorded(current, dropOn(current, source, over.target, now.current.ctx, over.size), did),
+        end();
+        const did = verdict.did;
+        change((current) =>
+          recorded(current, dropOn(current, source, over.target, ctx, over.size), did),
         );
         setSaid(did);
       };
@@ -332,48 +405,59 @@ export function usePaneDrag({
         if (key.key !== "Escape" || leavingTheStrip) return;
         key.preventDefault();
         key.stopPropagation();
-        end();
-        if (live) setSaid(PUT_BACK);
+        if (live) swallowLaterClick();
+        cancel(PUT_BACK);
+      };
+      const taken = () => cancel(PUT_BACK);
+      const lost = () => {
+        if (live) swallowLaterClick();
+        cancel(PUT_BACK);
       };
       window.addEventListener("pointermove", move, true);
       window.addEventListener("pointerup", up, true);
+      window.addEventListener("pointercancel", taken, true);
       window.addEventListener("keydown", esc, true);
+      window.addEventListener("blur", lost);
     };
 
-    /** What dropping `source` at the point would do: in a pane, or on the strip. */
-    const hit = (x: number, y: number, source: Source): Over | undefined => {
-      const { tabs, ctx } = now.current;
+    /**
+     * **The place at the point**: on the strip, by what is drawn there; in a pane, by the zones
+     * measured as the drag started, never by where the panes are drawn now, so panes making room
+     * can't move a zone under the pointer. A place the pointer is already on holds past its line.
+     */
+    const hit = (x: number, y: number): Over | undefined => {
+      const { tabs } = now.current;
       const under = document.elementFromPoint(x, y);
-      if (!(under instanceof Element)) return undefined;
-      const strip = under.closest(`[${STRIP}]`);
-      if (strip !== null) {
+      const strip = under?.closest(`[${STRIP}]`);
+      if (strip != null) {
         const placed = stripPlace(strip, x, tabs);
         if (placed === undefined) return undefined;
-        const target: Target = { kind: "strip", at: placed.at };
-        return { target, verdict: judgeDrop(tabs, source, target, ctx), box: placed.line };
+        return { target: { kind: "strip", at: placed.at }, line: placed.line };
       }
-      const pane = under.closest(`[${PANE}]`);
-      if (!(pane instanceof HTMLElement)) return undefined;
-      const tab = Number(pane.getAttribute(TAB));
-      const number = Number(pane.getAttribute(PANE));
-      const r = pane.getBoundingClientRect();
-      if (r.width === 0 || r.height === 0) return undefined;
-      const place = placeAt((x - r.left) / r.width, (y - r.top) / r.height);
-      const target: Target = { kind: "pane", tab, pane: number, place };
-      const size = { width: r.width, height: r.height };
-      return {
-        target,
-        verdict: judgeDrop(tabs, source, target, ctx, size),
-        // Its sides as plain values: a `DOMRect` keeps them on its prototype, so a spread of one
-        // has no box (#5284).
-        box: previewOf(boxOfRect(r), place),
-        size,
-      };
+      const front = tabs.inFront;
+      const zones = store.get()?.base?.zones;
+      if (front === undefined || zones === undefined) return undefined;
+      const wasOn = store.get()?.over?.target;
+      for (const [pane, zone] of zones) {
+        const inside =
+          x >= zone.left &&
+          x < zone.left + zone.width &&
+          y >= zone.top &&
+          y < zone.top + zone.height;
+        if (!inside) continue;
+        const was = wasOn?.kind === "pane" && wasOn.pane === pane ? wasOn.place : undefined;
+        const place = placeAt((x - zone.left) / zone.width, (y - zone.top) / zone.height, was);
+        return {
+          target: { kind: "pane", tab: front, pane, place },
+          size: { width: zone.width, height: zone.height },
+        };
+      }
+      return undefined;
     };
 
     window.addEventListener("pointerdown", down, true);
     return () => window.removeEventListener("pointerdown", down, true);
-  }, []);
+  }, [store]);
 
   // --- Placement mode (#4764) ------------------------------------------------------------------
 
@@ -565,32 +649,7 @@ export function usePaneDrag({
   const layer = (
     <>
       {targets}
-      {dragging?.over !== undefined && !isOverItself(dragging.over.verdict) && (
-        <div
-          className="pane-drop-preview"
-          data-refused={!dragging.over.verdict.ok || undefined}
-          data-line={dragging.over.target.kind === "strip" || undefined}
-          aria-hidden="true"
-          style={{
-            left: dragging.over.box.left,
-            top: dragging.over.box.top,
-            width: dragging.over.box.width,
-            height: dragging.over.box.height,
-          }}
-        />
-      )}
-      {dragging?.over !== undefined && (
-        <div
-          className="pane-drop-says"
-          data-refused={
-            (!dragging.over.verdict.ok && !isOverItself(dragging.over.verdict)) || undefined
-          }
-          aria-hidden="true"
-          style={{ left: dragging.x + 14, top: dragging.y + 14 }}
-        >
-          {dragging.over.verdict.ok ? dragging.over.verdict.says : dragging.over.verdict.why}
-        </div>
-      )}
+      <PaneDragLayer store={store} tabs={tabs} ctx={ctx} />
       <div role="status" className="sr-only" data-pane-drag-said="">
         {told.said === "" ? null : <span key={told.n}>{told.said}</span>}
       </div>

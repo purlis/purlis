@@ -1,0 +1,96 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **What a drag draws over the panes** (#5291, spec #5288; ADR 0103, ADR 0104; the wrapper is
+   `ui/pane-preview/PanePreview.tsx`), keyed on its attributes alone; `purlis_core::theme::parts`
+   holds a copy of its colours.
+
+   Every part sits at a place the drag measured, over everything in the window's panes and under
+   what is opened over the window, and never takes the pointer. In the `components` layer
+   (`styles.css`). Only tokens. Motion reads its token, so reduced motion makes it immediate. */
+
+[data-scope="pane-preview"]:is(
+    [data-part="arriving"],
+    [data-part="size"],
+    [data-part="refused"],
+    [data-part="held"],
+    [data-part="words"]
+  ) {
+  position: fixed;
+  z-index: 4;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+/* **A pane about to be**: the terminal's fill, as a chat's pane is, and the accent's edge, as the
+   pane being moved has. It comes in on `duration.enter`; moved from place to place, it glides. */
+[data-scope="pane-preview"][data-part="arriving"] {
+  display: flex;
+  flex-direction: column;
+  overflow: clip;
+  border: var(--focus-ring-width) solid var(--accent-base);
+  border-radius: var(--radius-sm);
+  background-color: var(--terminal-background);
+  color: var(--terminal-foreground);
+  transition-property: left, top, width, height;
+  transition-duration: var(--motion-duration-enter);
+  transition-timing-function: var(--motion-easing-enter);
+  animation: pane-preview-arrives var(--motion-duration-enter) var(--motion-easing-enter);
+}
+
+@keyframes pane-preview-arrives {
+  from {
+    opacity: 0;
+  }
+}
+
+[data-scope="pane-preview"][data-part="name"] {
+  overflow: hidden;
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--font-size-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* **The size a terminal will take**: in the pane's top corner, under its head. */
+[data-scope="pane-preview"][data-part="size"] {
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-overlay);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+  transform: translate(calc(-100% - var(--space-2)), calc(var(--size-control) + var(--space-3)));
+  transition-property: left, top;
+  transition-duration: var(--motion-duration-enter);
+  transition-timing-function: var(--motion-easing-enter);
+}
+
+/* **The pane a refused place means**: its edge alone, so the layout is seen as it stays. */
+[data-scope="pane-preview"][data-part="refused"] {
+  border: var(--focus-ring-width) solid var(--danger-base);
+  border-radius: var(--radius-sm);
+}
+
+/* **What is held** and **what letting go would do**, by the pointer. */
+[data-scope="pane-preview"]:is([data-part="held"], [data-part="words"]) {
+  max-inline-size: 32rem;
+  padding: var(--space-1) var(--space-2);
+  border: var(--panel-border-width) solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-overlay);
+  box-shadow: var(--elevation-overlay);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+
+[data-scope="pane-preview"][data-part="held"] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-scope="pane-preview"][data-part="words"][data-refused] {
+  color: var(--danger-text);
+}
