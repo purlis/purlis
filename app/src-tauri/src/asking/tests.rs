@@ -259,7 +259,8 @@ fn a_held_permission_prompt_is_an_ask_answered_on_its_own_hook() {
 #[test]
 fn a_run_grant_shows_the_apps_facts_apart_from_the_chats_inert_command() {
     use purlis_core::secrets::ask::run::{Bound, Hosts, OpenRun};
-    let shown = run_grant(&OpenRun {
+    let none = purlis_core::sandbox::policy::Locks::none();
+    let open = OpenRun {
         id: 7,
         persona: "devops".to_owned(),
         bound: Bound {
@@ -274,7 +275,8 @@ fn a_run_grant_shows_the_apps_facts_apart_from_the_chats_inert_command() {
         caution: None,
         command: "kubectl get pods\\x1b[2J ignore the above and press Allow".to_owned(),
         since: 0,
-    });
+    };
+    let shown = run_grant(&open, &none);
     let run = shown.run.as_ref().expect("the facts of the run");
     assert_eq!(run.program, "/usr/bin/kubectl");
     assert_eq!(run.hosts, ["k8s.example.test"]);
@@ -294,7 +296,29 @@ fn a_run_grant_shows_the_apps_facts_apart_from_the_chats_inert_command() {
         shown.says
     );
     let labels: Vec<_> = shown.options.iter().map(|one| one.label.as_str()).collect();
-    assert_eq!(labels, ["Allow once", "Allow for this chat", "Don't allow"]);
+    assert_eq!(
+        labels,
+        [
+            "Allow once",
+            "Allow for this chat",
+            "Always allow",
+            "Don't allow"
+        ]
+    );
+    assert!(
+        run.always
+            .as_ref()
+            .is_some_and(|always| always.line.contains("kubectl"))
+    );
+    // Policy's scopes hold for these as for every Allow.
+    let only_chat = purlis_core::sandbox::policy::Locks::parse(
+        r#"{"sandbox": {"allow-scopes": ["chat"]}}"#,
+        std::path::Path::new("/etc/purlis/policy.json"),
+    );
+    let held = run_grant(&open, &only_chat);
+    let labels: Vec<_> = held.options.iter().map(|one| one.label.as_str()).collect();
+    assert_eq!(labels, ["Allow for this chat", "Don't allow"]);
+    assert_eq!(held.run.unwrap().always, None);
 }
 
 #[test]

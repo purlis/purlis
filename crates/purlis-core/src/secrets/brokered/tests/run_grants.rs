@@ -73,6 +73,22 @@ fn answered(root: &Path, want: Wanted, asks: &Asks, answer: RunAnswer) -> Vec<Fr
     })
 }
 
+/// [`answered`], with the answer made once the ask is open, as the window makes it.
+fn answered_with(
+    root: &Path,
+    want: Wanted,
+    asks: &Asks,
+    answer: impl FnOnce(&OpenRun) -> RunAnswer,
+) -> Vec<Frame> {
+    std::thread::scope(|scope| {
+        let run = scope.spawn(|| run_with(&the_chat(root), want, asks, Duration::from_secs(60)));
+        let open = open_ask(asks, || run.is_finished());
+        let answer = answer(&open);
+        asks.answer_run(open.id, answer, window()).unwrap();
+        run.join().unwrap()
+    })
+}
+
 fn refusal(frames: &[Frame]) -> (&str, i32) {
     match frames.last() {
         Some(Frame::Refused { why, code }) => (why, *code),
@@ -719,4 +735,60 @@ fn a_runner_chat_gets_no_run_grant_and_hears_to_declare_it_as_a_tool() {
     assert!(why.contains("declared tools"), "{why}");
     assert!(why.contains("tools = {"), "says how to declare it: {why}");
     assert!(asks.open_runs().is_empty(), "nobody was asked");
+}
+
+// ----------------------------------------------------------------------------------------
+// Always allow (#5245)
+
+#[test]
+fn always_allow_runs_the_waiting_command_and_later_ones_with_no_restart_though_it_is_listed_now() {
+    let project = project();
+    std::fs::create_dir_all(project.path().join("personas/devops")).unwrap();
+    std::fs::write(
+        project.path().join("personas/devops/persona.md"),
+        "---\nrole: Ops\n---\n",
+    )
+    .unwrap();
+    std::fs::write(
+        project.path().join("charter.toml"),
+        "[sandbox]\nmode = \"on\"\n",
+    )
+    .unwrap();
+    let asks = Asks::new(project.path());
+    let want = || printenv(project.path(), &["X"]);
+    let first = answered_with(project.path(), want(), &asks, |open: &OpenRun| {
+        crate::settings::always_allow::write(project.path(), "devops", &open.bound).unwrap();
+        RunAnswer::Always
+    });
+    assert!(
+        !matches!(first.last(), Some(Frame::Refused { code, .. }) if *code == WAITING_ON_THE_PERSON),
+        "{first:?}"
+    );
+    // The chat's start armed nothing, so the line in the file is what it is run as by its grant.
+    let (declared, _) = crate::sandbox::tools::declared_and_allowed_here(project.path(), "devops");
+    assert_eq!(declared[0].name, "printenv");
+    let again = run_with(
+        &the_chat(project.path()),
+        printenv(project.path(), &["HOME"]),
+        &asks,
+        Duration::ZERO,
+    );
+    assert!(
+        !matches!(again.last(), Some(Frame::Refused { code, .. }) if *code == WAITING_ON_THE_PERSON),
+        "{again:?}"
+    );
+    assert!(
+        !format!("{again:?}").contains("declared tools"),
+        "its grant carries it: {again:?}"
+    );
+    assert!(asks.open_runs().is_empty());
+    // Another chat of the same persona has no grant: it runs on the machine's Allow, not this.
+    let mut other = the_chat(project.path());
+    other.chat = 99;
+    let other = run_with(&other, want(), &asks, Duration::ZERO);
+    assert_eq!(refusal(&other).1, 1, "{other:?}");
+    assert!(
+        asks.open_runs().is_empty(),
+        "and nobody is asked: it is listed"
+    );
 }

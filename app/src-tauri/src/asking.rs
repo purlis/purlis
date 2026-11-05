@@ -174,6 +174,17 @@ pub struct RunShown {
     pub caution: Option<String>,
     /// The chat's command, its words made inert.
     pub command: String,
+    /// What Always allow would write, where it is offered (#5245).
+    #[specta(optional)]
+    pub always: Option<AlwaysShown>,
+}
+
+/// **What Always allow writes** ([`RunShown`], #5245): the exact line, and whether it hands a value
+/// by a variable as the command did, where a file is safer.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct AlwaysShown {
+    pub line: String,
+    pub by_env: bool,
 }
 
 /// One value a run asks to hand its program ([`RunShown`]).
@@ -2077,12 +2088,17 @@ fn run_grant_key(id: u32) -> String {
 pub const RUN_ALLOW_ONCE: &str = "allow-once";
 /// The Allow of an ask to allow a program that holds for the chat (#5241).
 pub const RUN_ALLOW_CHAT: &str = "allow-chat";
+/// The Allow of an ask to allow a program that declares it as the persona's tool (#5245).
+pub const RUN_ALLOW_ALWAYS: &str = "allow-always";
 
 /// **The Run grant adapter** (ADR 0111, #5239): a chat's brokered run names a program its persona
 /// does not declare. Every word of the line is purlis's, and every name the app's; the chat's
 /// command is never in it, and is drawn apart ([`RunShown::command`]). Allow once comes first, the
 /// narrowest and the one a keyboard reaches first.
-pub fn run_grant(open: &purlis_core::secrets::ask::run::OpenRun) -> Shown {
+pub fn run_grant(
+    open: &purlis_core::secrets::ask::run::OpenRun,
+    locks: &purlis_core::sandbox::policy::Locks,
+) -> Shown {
     use purlis_core::secrets::ask::run::Hosts;
     let bound = &open.bound;
     let values = |specs: &[String], in_a_file: bool| -> Vec<RunValueShown> {
@@ -2100,6 +2116,16 @@ pub fn run_grant(open: &purlis_core::secrets::ask::run::OpenRun) -> Shown {
         Hosts::Listed(hosts) => (hosts.clone(), false),
         Hosts::Every => (Vec::new(), true),
     };
+    use purlis_core::sandbox::grant::Level;
+    // Only for a persona, and only what would be written whole.
+    let always = (!open.persona.is_empty())
+        .then(|| purlis_core::settings::always_allow::line_of(bound))
+        .flatten()
+        .filter(|_| locks.keeps_scope(Level::Project))
+        .map(|line| AlwaysShown {
+            line: line.text,
+            by_env: line.by_env,
+        });
     let says = format!(
         "Wants to run {} with {} from {}'s vault {}. Allow once runs this exact command, and Allow for \
          this chat runs it with any arguments until the chat ends, in this chat's own sandbox",
@@ -2112,21 +2138,27 @@ pub fn run_grant(open: &purlis_core::secrets::ask::run::OpenRun) -> Shown {
         session: bound.chat,
         ask: run_grant_key(open.id),
         says: said_inertly(&says),
-        options: vec![
-            Offered {
-                id: RUN_ALLOW_ONCE.to_owned(),
-                label: "Allow once".to_owned(),
-                allows: true,
-                preselected: None,
-            },
-            Offered {
-                id: RUN_ALLOW_CHAT.to_owned(),
-                label: "Allow for this chat".to_owned(),
-                allows: true,
-                preselected: None,
-            },
-            refuses(KEEP, "Don't allow"),
-        ],
+        options: [
+            (RUN_ALLOW_ONCE, "Allow once", Level::Once, true),
+            (RUN_ALLOW_CHAT, "Allow for this chat", Level::Chat, true),
+            (
+                RUN_ALLOW_ALWAYS,
+                "Always allow",
+                Level::Project,
+                always.is_some(),
+            ),
+        ]
+        .into_iter()
+        // Policy's `allow-scopes` (#1666) holds for these as for every Allow.
+        .filter(|(_, _, level, offered)| *offered && locks.keeps_scope(*level))
+        .map(|(id, label, _, _)| Offered {
+            id: id.to_owned(),
+            label: label.to_owned(),
+            allows: true,
+            preselected: None,
+        })
+        .chain(std::iter::once(refuses(KEEP, "Don't allow")))
+        .collect(),
         source: AskSource::RunGrant,
         chain: Vec::new(),
         answer: AnswerPath::RunGrant { id: open.id },
@@ -2151,6 +2183,7 @@ pub fn run_grant(open: &purlis_core::secrets::ask::run::OpenRun) -> Shown {
             every_host,
             caution: open.caution.clone(),
             command: open.command.clone(),
+            always,
         }),
     }
 }
@@ -2887,7 +2920,12 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
     );
     // A runner chat whose declared tool waits on the person's Allow for its pool (#2047).
     // A chat whose brokered run names a program its persona does not declare (ADR 0111).
-    asks.extend(waiting.run_grants.iter().map(run_grant));
+    asks.extend(
+        waiting
+            .run_grants
+            .iter()
+            .map(|open| run_grant(open, waiting.locks)),
+    );
     asks.extend(waiting.pool_tools.iter().map(pool_tool));
     // A chat whose brokered run missed a key waits on the person to fill it (#5068).
     asks.extend(

@@ -153,6 +153,8 @@ pub enum RunAnswer {
     Once,
     /// This program with these variables and keys and any arguments, until the chat ends.
     ForChat,
+    /// As [`Self::ForChat`], the caller having declared it as the persona's tool (#5245).
+    Always,
     /// Don't allow: this chat is not asked about this program and vault again.
     Refuse,
 }
@@ -180,6 +182,7 @@ impl<'a> Audited<'a> {
         let (kind, level) = match answer {
             RunAnswer::Once => (GRANT_AUDITED, "once"),
             RunAnswer::ForChat => (GRANT_AUDITED, "chat"),
+            RunAnswer::Always => (GRANT_AUDITED, "project"),
             RunAnswer::Refuse => (REFUSE_AUDITED, "chat"),
         };
         Self { kind, level, bound }
@@ -190,6 +193,15 @@ impl<'a> Audited<'a> {
         Self {
             kind: REVOKE_AUDITED,
             level: if once { "once" } else { "chat" },
+            bound,
+        }
+    }
+
+    /// An Always allow audited as given whose line could not be written, so it gave nothing.
+    pub fn revoked_always(bound: &'a Bound) -> Self {
+        Self {
+            kind: REVOKE_AUDITED,
+            level: "project",
             bound,
         }
     }
@@ -619,7 +631,7 @@ impl Asks {
                 }
                 Answer::Allowed { scope: Scope::Once }
             }
-            RunAnswer::ForChat => {
+            RunAnswer::ForChat | RunAnswer::Always => {
                 // Every run holding on this ask goes on, and every other this grant covers.
                 let mut covered = asked.waiters;
                 let mut at = 0;
@@ -641,7 +653,13 @@ impl Asks {
                     once: false,
                     at: now_secs(),
                 });
-                Answer::Allowed { scope: Scope::Chat }
+                Answer::Allowed {
+                    scope: if answer == RunAnswer::Always {
+                        Scope::Project
+                    } else {
+                        Scope::Chat
+                    },
+                }
             }
             RunAnswer::Refuse => {
                 for waiter in asked.waiters {
@@ -686,6 +704,7 @@ impl Asks {
                     Value::from(match answer {
                         RunAnswer::Once => "allowed once",
                         RunAnswer::ForChat => "allowed for this chat",
+                        RunAnswer::Always => "always allowed",
                         RunAnswer::Refuse => "not allowed",
                     }),
                 ),

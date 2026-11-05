@@ -48,6 +48,22 @@ describe("RunGrantFacts", () => {
     expect(screen.getByTestId("run-grant-hosts").textContent).toContain("no host");
   });
 
+  it("shows the exact line Always allow writes, with the advice where a variable holds a value", () => {
+    const line = 'curl = { vault = "team", as = "T env", key = "TOKEN" }';
+    render(<RunGrantFacts run={run({ always: { line, by_env: true } })} />);
+    expect(screen.getByTestId("run-grant-always").textContent).toBe(line);
+    expect(screen.getByTestId("run-grant-env-advice").textContent).toContain("A file is safer");
+  });
+
+  it("gives no advice for a file, and shows no line where Always allow isn't offered", () => {
+    const { rerender } = render(
+      <RunGrantFacts run={run({ always: { line: "x", by_env: false } })} />,
+    );
+    expect(screen.queryByTestId("run-grant-env-advice")).toBeNull();
+    rerender(<RunGrantFacts run={run()} />);
+    expect(screen.queryByTestId("run-grant-always")).toBeNull();
+  });
+
   it("carries the caution where the program is a general-purpose one", () => {
     const caution = "curl can show the values it is handed in the chat's output.";
     render(<RunGrantFacts run={run({ caution })} />);

@@ -47,6 +47,23 @@ export function RunGrantFacts({ run }: { run: RunShown }) {
       <pre className="whitespace-pre-wrap break-all" data-testid="run-grant-command">
         {run.command}
       </pre>
+      {run.always != null && (
+        <>
+          <p className="ui-text-meta">
+            Always allow adds this line to {run.persona}'s tools in <code>charter.toml</code>, which
+            teammates each allow for themselves:
+          </p>
+          <pre className="whitespace-pre-wrap break-all" data-testid="run-grant-always">
+            {run.always.line}
+          </pre>
+          {run.always.by_env && (
+            <p className="ui-text-meta" data-testid="run-grant-env-advice">
+              This hands the value itself to a variable, as the command asked. A file is safer:
+              another program of yours can read a variable while this one runs.
+            </p>
+          )}
+        </>
+      )}
     </div>
   );
 }

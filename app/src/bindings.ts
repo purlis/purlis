@@ -5238,6 +5238,15 @@ export type Allowed = {
 };
 
 /**
+ *  **What Always allow writes** ([`RunShown`], #5245): the exact line, and whether it hands a value
+ *  by a variable as the command did, where a file is safer.
+ */
+export type AlwaysShown = {
+	line: string,
+	by_env: boolean,
+};
+
+/**
  *  **The existing, checked path an ask is answered by** (#1690): the command the window
  *  already answers that source with, and what that command is sent. The registry adds no route.
  */
@@ -13307,6 +13316,8 @@ export type RunGrantPress =
 "once" | 
 /**  This program with these variables and keys and any arguments, until the chat ends. */
 "chat" | 
+/**  As [`Self::Chat`], and write its line to the persona's tools (#5245). */
+"always" | 
 /**  Don't allow. */
 "refuse";
 
@@ -13331,6 +13342,8 @@ export type RunShown = {
 	caution?: string | null,
 	/**  The chat's command, its words made inert. */
 	command: string,
+	/**  What Always allow would write, where it is offered (#5245). */
+	always?: AlwaysShown | null,
 };
 
 /**  What started a skill run, as the Runs panel draws it. */

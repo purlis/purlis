@@ -91,6 +91,8 @@ pub enum RunGrantPress {
     Once,
     /// This program with these variables and keys and any arguments, until the chat ends.
     Chat,
+    /// As [`Self::Chat`], and write its line to the persona's tools (#5245).
+    Always,
     /// Don't allow.
     Refuse,
 }
@@ -106,8 +108,9 @@ pub async fn answer_run_grant(
     press: RunGrantPress,
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
+    let network = planes.network().cloned();
     crate::off_the_window("answering a run grant", move || {
-        run_grant_answered(&held, id, press)
+        run_grant_answered(&held, network.as_ref(), id, press)
     })
     .await
 }
@@ -115,6 +118,7 @@ pub async fn answer_run_grant(
 /// [`answer_run_grant`]'s work.
 pub fn run_grant_answered(
     held: &crate::planes::Held,
+    network: Option<&purlis_core::sandboxblock::record::Record>,
     id: u32,
     press: RunGrantPress,
 ) -> Result<(), String> {
@@ -122,6 +126,7 @@ pub fn run_grant_answered(
     let answer = match press {
         RunGrantPress::Once => RunAnswer::Once,
         RunGrantPress::Chat => RunAnswer::ForChat,
+        RunGrantPress::Always => RunAnswer::Always,
         RunGrantPress::Refuse => RunAnswer::Refuse,
     };
     let Some(open) = held
@@ -132,6 +137,22 @@ pub fn run_grant_answered(
     else {
         return Err(format!("secret ask {id} is no longer open"));
     };
+    // Policy holds here as it holds at the run: it may have come to lock this since it was shown.
+    if answer != RunAnswer::Refuse {
+        use purlis_core::sandbox::grant::Level;
+        let locks = purlis_core::sandbox::policy::Locks::of(held.root());
+        if let Some(why) = locks.refuses_run_grant(&open.persona, &open.bound.program_name()) {
+            return Err(why);
+        }
+        let level = match answer {
+            RunAnswer::Once => Level::Once,
+            RunAnswer::Always => Level::Project,
+            RunAnswer::ForChat | RunAnswer::Refuse => Level::Chat,
+        };
+        if let Some(why) = locks.scope_removed(level) {
+            return Err(why);
+        }
+    }
     let audited = held.hooks().record_run_grant(
         held.root(),
         open.bound.chat,
@@ -144,6 +165,38 @@ pub fn run_grant_answered(
             tracing::warn!("purlis: a run grant's Don't allow was not audited ({why})");
         }
         (_, Err(why)) => return Err(why),
+    }
+    // Written before any grant: a write that fails says why, the ask stays open, and nothing is
+    // given. Where the person had allowed all of the persona's list, the Allow moves with the line.
+    if answer == RunAnswer::Always {
+        let written =
+            purlis_core::settings::always_allow::write(held.root(), &open.persona, &open.bound);
+        let written = match written {
+            Ok(written) => written,
+            Err(why) => {
+                let taken_back = Audited::revoked_always(&open.bound);
+                if let Err(unrecorded) =
+                    held.hooks()
+                        .record_run_grant(held.root(), open.bound.chat, &taken_back)
+                {
+                    tracing::warn!("purlis: a failed Always allow was not audited ({unrecorded})");
+                }
+                return Err(format!(
+                    "purlis could not declare the tool, so nothing was allowed: {why}"
+                ));
+            }
+        };
+        if let Some(shown) = written.allow
+            && let Err(why) = crate::sandboxing::allow_shown(
+                held.root(),
+                &shown,
+                &held.audit_then_record(network),
+                crate::sandboxing::now_secs(),
+            )
+        {
+            // The line is written and the chat runs on its Run grant; the usual Notice asks.
+            tracing::warn!("purlis: the Allow did not move with the line ({why})");
+        }
     }
     let answered = held
         .secret_asks()
