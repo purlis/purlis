@@ -411,12 +411,12 @@ pub enum AskSource {
     /// A key a chat's brokered run found missing from its persona's vault (#5068, ADR 0109):
     /// answered by a value typed in the window, or Not now.
     Secret,
-    /// A secret a chat asks purlis to fill into a field of its browser (#5115): an Allow lets
-    /// purlis put that one key into that field, on that one origin, once.
-    SecretFill,
     /// A brokered run of a program its persona does not declare (ADR 0112, #5239): an Allow is a
     /// Run grant, and Don't allow is remembered for that chat, program and vault.
     RunGrant,
+    /// A secret a chat asks purlis to fill into a field of its browser (#5115): an Allow lets
+    /// purlis put that one key into that field, on that one origin, once.
+    SecretFill,
 }
 
 /// **The existing, checked path an ask is answered by** (#1690): the command the window
@@ -500,11 +500,11 @@ pub enum AnswerPath {
     /// `answer_secret_ask` on Secret ask `id` (#5068): Fill with the value typed in the ask's
     /// masked field, Not now with none.
     Secret { id: u32 },
+    /// `answer_run_grant` on the ask `id`, at the press an option names (ADR 0112).
+    RunGrant { id: u32 },
     /// `answer_secret_fill` at the press an option names, on held fill `id`, for the notice
     /// whose digest is `shown` (#5115).
     SecretFill { id: u32, shown: String },
-    /// `answer_run_grant` on the ask `id`, at the press an option names (ADR 0112).
-    RunGrant { id: u32 },
     /// Nothing the window can send: the person answers in the chat.
     InItsPane,
 }
@@ -3166,14 +3166,14 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     for one in &pool_tools {
         since.insert(pool_tool_key(one.session, one.run), one.since);
     }
+    let run_grants = held.secret_asks().open_runs();
+    for one in &run_grants {
+        since.insert(run_grant_key(one.id), one.since);
+    }
     let secrets = held.secret_asks().open();
     let may_remember = |persona: &str| crate::proposals::need_offerable(held.root(), persona);
     for one in &secrets {
         since.insert(secret_key(one.id), one.since);
-    }
-    let run_grants = held.secret_asks().open_runs();
-    for one in &run_grants {
-        since.insert(run_grant_key(one.id), one.since);
     }
     let declared = purlis_core::sandbox::services::declared(root);
     let tasks = held.tasks();

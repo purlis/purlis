@@ -563,8 +563,8 @@ export const ALLOW_OR_KEEP: ReadonlySet<Shown["source"]> = new Set<Shown["source
   "pool-login",
   "pool-tool",
   "browser-login",
-  "secret-fill",
   "run-grant",
+  "secret-fill",
 ]);
 
 /** What one ask's row offers, decided once for its stops and its drawing. */

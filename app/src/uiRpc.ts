@@ -2829,13 +2829,13 @@ export type AnswerPath =
  *  masked field, Not now with none.
  */
 { via: "secret"; id: number } | 
+/**  `answer_run_grant` on the ask `id`, at the press an option names (ADR 0112). */
+{ via: "run-grant"; id: number } | 
 /**
  *  `answer_secret_fill` at the press an option names, on held fill `id`, for the notice
  *  whose digest is `shown` (#5115).
  */
 { via: "secret-fill"; id: number; shown: string } | 
-/**  `answer_run_grant` on the ask `id`, at the press an option names (ADR 0112). */
-{ via: "run-grant"; id: number } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -3024,15 +3024,15 @@ export type AskSource =
  */
 "secret" | 
 /**
- *  A secret a chat asks purlis to fill into a field of its browser (#5115): an Allow lets
- *  purlis put that one key into that field, on that one origin, once.
- */
-"secret-fill" | 
-/**
  *  A brokered run of a program its persona does not declare (ADR 0112, #5239): an Allow is a
  *  Run grant, and Don't allow is remembered for that chat, program and vault.
  */
-"run-grant";
+"run-grant" | 
+/**
+ *  A secret a chat asks purlis to fill into a field of its browser (#5115): an Allow lets
+ *  purlis put that one key into that field, on that one origin, once.
+ */
+"secret-fill";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the

@@ -3124,6 +3124,23 @@ impl Hooks {
         }
     }
 
+    /// **Records a Run grant given, taken back or not allowed** (ADR 0112, #5241), under the chat
+    /// it is of: before it takes effect, so no grant is made unrecorded.
+    pub fn record_run_grant(
+        &self,
+        root: &Path,
+        chat: u32,
+        audited: &purlis_core::secrets::ask::run::Audited<'_>,
+    ) -> Result<(), String> {
+        self.audit(
+            root,
+            Some(chat),
+            audited.kind(),
+            audited.body(),
+            ("changed", "run grant"),
+        )
+    }
+
     /// **Audits a sandbox grant or revoke** (#1342) in the host's event log, under chat
     /// `number` where it came from one, and made durable before it answers. Refused where this
     /// machine has no event log open: a grant nobody recorded is never made.
@@ -3139,23 +3156,6 @@ impl Hooks {
             audited.kind(),
             audited.body(),
             ("changed", "sandbox grant"),
-        )
-    }
-
-    /// **Records a Run grant given, taken back or not allowed** (ADR 0112, #5241), under the chat
-    /// it is of: before it takes effect, so no grant is made unrecorded.
-    pub fn record_run_grant(
-        &self,
-        root: &Path,
-        chat: u32,
-        audited: &purlis_core::secrets::ask::run::Audited<'_>,
-    ) -> Result<(), String> {
-        self.audit(
-            root,
-            Some(chat),
-            audited.kind(),
-            audited.body(),
-            ("changed", "run grant"),
         )
     }
 
