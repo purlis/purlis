@@ -358,6 +358,7 @@ pub(crate) async fn skill_draft_chat(
         let level: purlis_core::skills::verbs::Level = (&level).into();
         let (cwd, persona) = where_the_skill_lives(&root, &level)?;
         let (profile, _) = crate::curation::default_profile(&root, "no chat was opened")?;
+        let asked = drafts::asking(&level, &what);
         open(
             &held,
             ChatTyped {
@@ -365,7 +366,8 @@ pub(crate) async fn skill_draft_chat(
                 persona,
                 cwd,
                 label: "Draft a skill".to_owned(),
-                prompt: drafts::asking(&level, &what),
+                prompt: asked.sentence.clone(),
+                skill: Some(asked),
                 then_a_space: false,
                 starts_runs: None,
                 studio: Some(StudioJob {
@@ -520,7 +522,7 @@ fn open_on_a_skill(
     held: &Arc<Held>,
     job: StudioJob,
     label: String,
-    prompt: String,
+    skill: purlis_core::skillprompt::SkillPrompt,
     size: purlis_core::engine::Size,
 ) -> Result<Curating, StartRefused> {
     let root = held.root();
@@ -533,7 +535,8 @@ fn open_on_a_skill(
             persona,
             cwd,
             label,
-            prompt,
+            prompt: skill.sentence.clone(),
+            skill: Some(skill),
             then_a_space: false,
             starts_runs: None,
             studio: Some(job),
@@ -571,6 +574,7 @@ pub(crate) async fn skill_draft_try(
         let draft = drafts::one(&root, &id)?;
         let profile = try_profile(&held, &draft, profile)?;
         let tried = drafts::try_out(&root, &id)?;
+        let asked = drafts::trying(&root, &tried, &draft.name);
         let started = open(
             &held,
             ChatTyped {
@@ -578,7 +582,8 @@ pub(crate) async fn skill_draft_try(
                 persona: None,
                 cwd: tried.piece.clone(),
                 label: format!("Try {}", draft.name),
-                prompt: drafts::trying(&draft.name),
+                prompt: asked.sentence.clone(),
+                skill: Some(asked),
                 then_a_space: false,
                 starts_runs: None,
                 studio: None,
@@ -648,7 +653,7 @@ pub(crate) fn skill_draft_redo_in(
     crate::references::typed_or_copied(
         &held,
         session,
-        drafts::redoing(&draft.level, &draft.name, &stale_of(&draft), true),
+        drafts::redoing_in_its_chat(&draft.level, &draft.name, &stale_of(&draft)),
         REDO_COPIED,
         &|text| clipboard.put_text(text),
     )
@@ -695,6 +700,7 @@ pub(crate) async fn skill_draft_redo(
         let draft = drafts::one(&root, &id)?;
         let (cwd, persona) = where_the_skill_lives(&root, &draft.level)?;
         let (profile, _) = crate::curation::default_profile(&root, "no chat was opened")?;
+        let asked = drafts::redoing(&draft.level, &draft.name, &stale_of(&draft));
         open(
             &held,
             ChatTyped {
@@ -702,7 +708,8 @@ pub(crate) async fn skill_draft_redo(
                 persona,
                 cwd,
                 label: format!("Redo {}", draft.name),
-                prompt: drafts::redoing(&draft.level, &draft.name, &stale_of(&draft), false),
+                prompt: asked.sentence.clone(),
+                skill: Some(asked),
                 then_a_space: false,
                 starts_runs: None,
                 studio: Some(StudioJob {

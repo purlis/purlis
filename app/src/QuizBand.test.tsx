@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { Shown } from "./bindings";
 import { QuestionsHere } from "./QuestionsHere";
+import { NoticePaneRow } from "./Notice";
 import { PAUSE_MS, QuizBand, QuizPlaces } from "./QuizBand";
 import { forgetThisLaunch } from "./regions";
 import { setWhereYouAnswer, whereYouAnswer } from "./whereYouAnswer";
@@ -36,21 +37,28 @@ const openSettings = vi.fn();
 /** Tasks 7 and 8 are at home in steward 4's tab (chat 4); task 21 in talk 2's (chat 20). */
 const topOf = (task: number) => (task === 7 || task === 8 ? 4 : task === 21 ? 20 : undefined);
 
+/** One pane's band per session, the quiz band first in it as a chat's pane draws it, the
+ *  band minimised or expanded by its bell (`minimised`). */
 function Pane({
   session,
   asks,
   pauseMs,
+  minimised = false,
 }: {
   session: number | number[];
   asks: Shown[];
   pauseMs?: number;
+  minimised?: boolean;
 }) {
+  const bell = { minimised, minimise: () => {}, onHolds: () => {}, focus: () => {} };
   return (
     <QuizPlaces.Provider value={{ topOf, openTask, openSettings }}>
       <QuestionsHere.Provider value={{ asks, with_asking_chat: [] }}>
         {(Array.isArray(session) ? session : [session]).map((one) => (
           <div key={one} data-testid={`pane-${one}`}>
-            <QuizBand plane={PLANE} session={one} pauseMs={pauseMs} />
+            <NoticePaneRow bell={bell}>
+              <QuizBand plane={PLANE} session={one} pauseMs={pauseMs} />
+            </NoticePaneRow>
           </div>
         ))}
       </QuestionsHere.Provider>
@@ -90,10 +98,14 @@ afterEach(() => {
   cleanup();
   clearMocks();
   openTask.mockReset();
+  openSettings.mockReset();
 });
 
 const quiz = () => screen.queryByRole("group", { name: "developer 7 asks" });
-const LINE = "Questions from tasks come to this tab, so you answer them in one place.";
+const LINE = "Questions from this chat's tasks now come here, so you answer them in one place.";
+/** The Notice whose words are `words`: its box in the band. */
+const noticeOf = (words: string | RegExp) =>
+  screen.getByText(words).closest('[data-scope="notice"][data-part="root"]') as HTMLElement;
 
 describe("where a task's question is drawn (#4565)", () => {
   it("draws it from the top by default, in the top's pane and the task's own", () => {
@@ -105,14 +117,25 @@ describe("where a task's question is drawn (#4565)", () => {
     expect(screen.queryByRole("button", { name: "Open task" })).not.toBeInTheDocument();
   });
 
-  it("offers the choice once, as a quiet line above the first question, and Keep this keeps it", async () => {
+  it("says once that questions come here, with Change to Settings, and its × keeps the setting for good (#5213)", async () => {
     const user = userEvent.setup();
     render(<Pane session={4} asks={[QUESTION]} />);
-    expect(screen.getByText(LINE)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Keep this" }));
+    // One way out to the setting and a ×: keeping it is the default and needs no button.
+    expect(
+      within(noticeOf(LINE))
+        .getAllByRole("button")
+        .map((button) => button.textContent || button.getAttribute("aria-label")),
+    ).toEqual(["Change", "Dismiss"]);
+    await user.click(screen.getByRole("button", { name: "Change" }));
+    expect(openSettings).toHaveBeenCalled();
+    expect(whereYouAnswer()).toEqual({ answer: "top", offered: false });
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(screen.queryByText(LINE)).not.toBeInTheDocument();
     expect(whereYouAnswer()).toEqual({ answer: "top", offered: true });
     expect(quiz()).toBeInTheDocument();
+    cleanup();
+    render(<Pane session={4} asks={[QUESTION]} />);
+    expect(screen.queryByText(LINE)).not.toBeInTheDocument();
   });
 
   it("offers nothing where no question has reached the person, nor once it was answered", () => {
@@ -124,17 +147,36 @@ describe("where a task's question is drawn (#4565)", () => {
     expect(screen.queryByText(LINE)).not.toBeInTheDocument();
   });
 
-  it("moves the question to its task's own tab on Answer from each session, and says how to go back", async () => {
+  it("closes a question in this pane only, answering nothing, and shows the next (#5213)", async () => {
+    setWhereYouAnswer({ offered: true });
     const user = userEvent.setup();
-    render(<Pane session={4} asks={[QUESTION]} />);
-    await user.click(screen.getByRole("button", { name: "Answer from each session" }));
-    expect(whereYouAnswer()).toEqual({ answer: "each", offered: true });
+    const second: Shown = {
+      ...QUESTION,
+      session: 8,
+      ask: "task-question:8:2",
+      chain: ["steward 4", "designer 8"],
+      since: (QUESTION.since ?? 0) + 60,
+    };
+    const { rerender } = render(<Pane session={4} asks={[QUESTION, second]} pauseMs={0} />);
+    await user.click(within(quiz() as HTMLElement).getByRole("button", { name: "Close question" }));
     expect(quiz()).not.toBeInTheDocument();
-    expect(screen.getByText(/Questions now wait in each task's tab/)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Open settings" }));
-    expect(openSettings).toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "Dismiss" }));
-    expect(screen.queryByText(/Questions now wait/)).not.toBeInTheDocument();
+    // Still the registry's: the next list holds it, and this pane leaves it closed.
+    rerender(<Pane session={4} asks={[QUESTION, second]} pauseMs={0} />);
+    expect(await screen.findByRole("group", { name: "designer 8 asks" })).toBeInTheDocument();
+    expect(quiz()).not.toBeInTheDocument();
+    // Closing told the core nothing, and left no line saying who answered.
+    expect(sent).toEqual([]);
+    expect(screen.queryByText(/told developer 7/)).not.toBeInTheDocument();
+  });
+
+  it("folds with the pane's notices: minimised, the quiz stands and the note folds into the bell (#5213)", async () => {
+    render(<Pane session={4} asks={[QUESTION]} minimised />);
+    await waitFor(() => expect(screen.getByText(LINE)).not.toBeVisible());
+    expect(quiz()).toBeVisible();
+    cleanup();
+    render(<Pane session={4} asks={[QUESTION]} />);
+    await waitFor(() => expect(screen.getByText(LINE)).toBeVisible());
+    expect(quiz()).toBeVisible();
   });
 
   it("applies a change of setting to an open question at once, and keeps it in its task's pane", () => {
@@ -246,7 +288,9 @@ describe("several questions at once (#4566)", () => {
     expect(screen.getByText('steward 4 told developer 7: "Per project."')).toBeInTheDocument();
     // Its ways out in the prototype's order: Go to task, Say otherwise, Dismiss.
     expect(
-      screen.getAllByRole("button").map((button) => button.textContent || button.ariaLabel),
+      within(noticeOf(/told developer 7/))
+        .getAllByRole("button")
+        .map((button) => button.textContent || button.ariaLabel),
     ).toEqual(["Go to task", "Say otherwise…", "Dismiss"]);
     await user.click(screen.getByRole("button", { name: "Go to task" }));
     expect(openTask).toHaveBeenCalledWith(7);
@@ -365,5 +409,10 @@ describe("several questions at once (#4566)", () => {
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Open task" }));
     expect(openTask).toHaveBeenCalledWith(7);
+
+    // It closes as a quiz does: from this pane, the registry keeping it (#5213).
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(screen.queryByText(/cannot draw/)).toBeNull());
+    expect(sent).toEqual([]);
   });
 });

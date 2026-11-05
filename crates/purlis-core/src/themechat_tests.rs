@@ -90,6 +90,10 @@ fn edit_with_a_chat_names_the_theme_by_the_id_the_list_gives_it_and_works_where_
         edit.prompt,
         "Use the purlis-theme skill to edit the theme \"project:dusk\" for the workspace web."
     );
+    assert_eq!(
+        edit.prompt_on(Some(crate::harness::Harness::ClaudeCode)),
+        "/purlis:purlis-theme edit the theme \"project:dusk\" for the workspace web"
+    );
     let new = chat(root, Some("web"), Asked::New).unwrap();
     assert_eq!(
         (&edit.cwd, &edit.runner, &edit.source),

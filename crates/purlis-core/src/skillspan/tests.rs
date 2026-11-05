@@ -39,6 +39,8 @@ fn typed(skill: &str, run: &str, text: &str, confirmed: Confirmed) -> Typed {
         level: None,
         text: PromptMarks::digest(text, &salt()),
         confirmed,
+        started_by: purlis_skills::runs::StartedBy::UseSkill,
+        waits: false,
     }
 }
 
@@ -456,4 +458,34 @@ fn a_debug_dump_of_a_prompt_held_says_what_put_it_there_and_nothing_of_the_promp
     let dumped = format!("{prompted:?}");
     assert!(dumped.contains("Curation"), "{dumped}");
     assert!(!dumped.contains(&prompted.lead.to_string()), "{dumped}");
+}
+
+/// #5186: a slash start calls no Skill tool, so the run of a prompt purlis filled in opens from what
+/// was held for it, says what asked for it, and waits however long the person reads first.
+#[test]
+fn a_direct_start_opens_its_run_as_what_typed_it_however_long_the_person_read() {
+    let mut tracker = Tracker::default();
+    let held = Typed {
+        started_by: StartedBy::Curation,
+        waits: true,
+        ..typed(
+            "purlis:purlis-compact",
+            "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+            "/purlis:purlis-compact compact and improve",
+            Confirmed::ByName,
+        )
+    };
+    tracker.typed("4", held, 0);
+    let at = HELD_FOR_MS * 3;
+    tracker.report(
+        "4",
+        &prompt("/purlis:purlis-compact compact and improve"),
+        at,
+        || None,
+    );
+    let run = tracker
+        .call("4", &named("purlis:purlis-compact"), at, || None)
+        .expect("the run opens");
+    assert_eq!(run.skill, "purlis:purlis-compact");
+    assert_eq!(run.started_by, StartedBy::Curation);
 }

@@ -250,6 +250,13 @@ pub trait HarnessAdapter: Sync {
     /// adapter says which version it measured and how.
     fn skill_start_text(&self, skill: &SkillToStart<'_>) -> String;
 
+    /// **Whether [`Self::skill_start_text`] reaches a skill from `origin` in this harness itself**
+    /// (#5186): that the harness knows the skill and starts it, and not only that its model may
+    /// read the text. What decides a prompt purlis fills in to run one skill
+    /// ([`crate::skillprompt::SkillPrompt`]). No default: each adapter says, from how it is
+    /// handed that origin's skills.
+    fn own_start_reaches(&self, origin: crate::skills::Origin) -> bool;
+
     /// **This harness's skill budget** (SK-12, ADR 0102 §1): how many skills, and how many
     /// characters of what is listed of them, one chat's listing may hold, set so the harness
     /// never has to cut anything itself. No default: each adapter says its harness's numbers.

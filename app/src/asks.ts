@@ -40,6 +40,7 @@ import { proposeOldKeysRemoval } from "./oldHarnessPlugins";
 import { askOpenRunnerWrite } from "./runnerWriteOpen";
 import { askOpenRunnerDispatch } from "./runnerDispatchOpen";
 import { askProfileSignIn } from "./settings/links";
+import { refusalsAnswered } from "./vaultRefusals";
 
 /**
  * The events after which a project's asks may read differently: its hooks' asks, a dispatch
@@ -50,6 +51,8 @@ export const ASKS_MAY_HAVE_MOVED = [
   ASKS_CHANGED,
   "dispatch-grant-needed",
   "chat-sandbox-blocked",
+  // A vault a chat was refused for its persona is an ask (#5160).
+  "chat-vault-refused",
 ] as const;
 
 /** How long the window waits for a burst of moves to settle before it reads a list again. */
@@ -268,6 +271,8 @@ export async function answerTaken(
   typed?: string,
   /** The entry a Secret ask is filled with, where the person picked one they keep (#5073). */
   picked?: { vault: string; key: string },
+  /** The purpose of the line a Secret ask's Fill writes, where Remember is ticked (#5240). */
+  remember?: string,
 ): Promise<{ refused: string | undefined; live: boolean; opened?: boolean }> {
   const path = ask.answer;
   if (path.via === "in-its-pane") return { refused: IN_ITS_CHAT, live: false };
@@ -455,11 +460,35 @@ export async function answerTaken(
         // tells them it was declined. The chat never hears the value.
         // An entry the person picked makes the key a Linked entry reading it, never a copy
         // (#5073); the chat hears filled and the key's name, never the entry.
+        // Remember, ticked, writes the line the person read once the value is stored (#5240).
         if (option === "fill" && picked !== undefined)
-          return commands.linkSecretAsk(plane, path.id, picked.vault, picked.key);
+          return commands.linkSecretAsk(plane, path.id, picked.vault, picked.key, remember ?? null);
         if (option === "fill")
-          return commands.answerSecretAsk(plane, path.id, typed ?? "", null, null);
-        if (option === "keep") return commands.answerSecretAsk(plane, path.id, null, null, null);
+          return commands.answerSecretAsk(
+            plane,
+            path.id,
+            typed ?? "",
+            null,
+            null,
+            remember ?? null,
+          );
+        if (option === "keep")
+          return commands.answerSecretAsk(plane, path.id, null, null, null, null);
+        break;
+      case "vault":
+        // A vault a chat was refused for its persona (#1430, #5160): its Notice's own two
+        // commands. Allow lets that persona use the vault in this project on this machine, the
+        // one grant the Notice makes; Keep blocked tells the chat not to retry, with the
+        // person's reason.
+        // Either way, the chat's own Notice reads what the core holds then.
+        if (option === "allow")
+          return commands
+            .allowRefusedVault(plane, ask.session, path.vault)
+            .finally(() => refusalsAnswered(plane));
+        if (option === "keep")
+          return commands
+            .keepVaultBlocked(plane, ask.session, path.vault, reason?.trim() || null)
+            .finally(() => refusalsAnswered(plane));
         break;
       case "take-over": {
         // A browser whose page needs the person (#2015): Take over takes the session host's

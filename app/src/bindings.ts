@@ -772,13 +772,13 @@ export const commands = {
 	 *  where the person chose either in place of the asked one (#5072), and the chats hear that
 	 *  name.
 	 */
-	answerSecretAsk: (plane: PlaneId, id: number, value: string | null, vault: string | null, key: string | null) => typedError<null, string>(__TAURI_INVOKE("answer_secret_ask", { plane, id, value, vault, key })),
+	answerSecretAsk: (plane: PlaneId, id: number, value: string | null, vault: string | null, key: string | null, remember: string | null) => typedError<null, string>(__TAURI_INVOKE("answer_secret_ask", { plane, id, value, vault, key, remember })),
 	/**
 	 *  **The person fills Secret ask `id` with an entry they keep** (#5073): the asked key becomes a
 	 *  Linked entry reading `key` in `vault`, never a copy, and every command that waits on it runs
 	 *  with that entry's value. The chat hears filled and the key's name, never the entry.
 	 */
-	linkSecretAsk: (plane: PlaneId, id: number, vault: string, key: string) => typedError<null, string>(__TAURI_INVOKE("link_secret_ask", { plane, id, vault, key })),
+	linkSecretAsk: (plane: PlaneId, id: number, vault: string, key: string, remember: string | null) => typedError<null, string>(__TAURI_INVOKE("link_secret_ask", { plane, id, vault, key, remember })),
 	/**
 	 *  **The entries the person could fill Secret ask `id` with** (#5073), vault by vault: every
 	 *  key of every vault that holds a value of its own, but the asked one. Names only.
@@ -886,17 +886,14 @@ export const commands = {
 	 *  Window-only.
 	 */
 	dismissProposedChange: (plane: PlaneId, id: number) => typedError<null, string>(__TAURI_INVOKE("dismiss_proposed_change", { plane, id })),
+	/**  **The personas a key in `vault` may be remembered for**, for its row's menu (#5240). */
+	secretNeedPersonas: (plane: PlaneId, vault: string) => typedError<NeedPersona[], string>(__TAURI_INVOKE("secret_need_personas", { plane, vault })),
 	/**
-	 *  **The Secret need offers dismissed on this machine that still hold** (#5159), for the vault
-	 *  view to offer each again.
+	 *  **Remember a key as a persona's Secret need** (#5240, spec #5235), on the person's press in the
+	 *  vault view: they read the line, with `purpose` as they edited it, so it is written there and
+	 *  then, with no proposal to apply. Window-only.
 	 */
-	dismissedSecretNeeds: (plane: PlaneId) => typedError<DismissedNeed[], string>(__TAURI_INVOKE("dismissed_secret_needs", { plane })),
-	/**
-	 *  **Offer a dismissed Secret need again** (#5159), on the person's press in the vault view:
-	 *  the dismissal is lifted, and the change adding `key` to `persona`'s needs is held for them
-	 *  to apply or dismiss. Window-only.
-	 */
-	offerSecretNeedAgain: (plane: PlaneId, persona: string, key: string) => typedError<null, string>(__TAURI_INVOKE("offer_secret_need_again", { plane, persona, key })),
+	rememberSecretNeed: (plane: PlaneId, vault: string, persona: string, key: string, purpose: string) => typedError<string, string>(__TAURI_INVOKE("remember_secret_need", { plane, vault, persona, key, purpose })),
 	/**
 	 *  **Remove** on the Ask: each file's change held for the person to apply, each with its
 	 *  file. Window-only: only the person proposes purlis's own change.
@@ -1577,6 +1574,11 @@ export const commands = {
 	/**  The chats, by session, lowest first. */
 	chats: OnOlderSandbox[],
 } | null, string>(__TAURI_INVOKE("chats_on_older_sandbox", { plane })),
+	/**
+	 *  **Why each open chat of the project runs at its level** (#5207): what its sandbox mark and a
+	 *  block's Notice say. A read. On a blocking thread: it reads the project's files.
+	 */
+	chatsLevelWhy: (plane: PlaneId) => typedError<LevelWhy[], string>(__TAURI_INVOKE("chats_level_why", { plane })),
 	/**
 	 *  **Starts chat `session` again without the sandbox** (#1342): the person's choice on a block's
 	 *  Notice that purlis grants nothing for, for this one chat's next run, on its conversation.
@@ -4192,6 +4194,10 @@ export const commands = {
 	vaultSecretRename: (plane: PlaneId, vault: string, from: string, to: string) => typedError<VaultContents, string>(__TAURI_INVOKE("vault_secret_rename", { plane, vault, from, to })),
 	/**  Delete a secret. No value crosses. */
 	vaultSecretDelete: (plane: PlaneId, vault: string, key: string) => typedError<VaultContents, string>(__TAURI_INVOKE("vault_secret_delete", { plane, vault, key })),
+	/**  Mark a key's value as no 2FA seed ([`mark_no_seed`]). No value crosses. */
+	vaultSecretMarkNoSeed: (plane: PlaneId, vault: string, key: string) => typedError<VaultContents, string>(__TAURI_INVOKE("vault_secret_mark_no_seed", { plane, vault, key })),
+	/**  Take the mark off a key ([`unmark_no_seed`]). No value crosses. */
+	vaultSecretUnmarkNoSeed: (plane: PlaneId, vault: string, key: string) => typedError<VaultContents, string>(__TAURI_INVOKE("vault_secret_unmark_no_seed", { plane, vault, key })),
 	/**
 	 *  Move a vault's identity token from the app's OWN environment into the keyring
 	 *  ([`move_identity`]). No value crosses to the window. Kept beside the paste path for an app
@@ -5342,6 +5348,12 @@ export type AnswerPath =
  *  whose digest is `shown` (#5115).
  */
 { via: "secret-fill"; id: number; shown: string } | 
+/**
+ *  The refused vault Notice's own commands, for chat [`Shown::session`]'s refusal of
+ *  `vault` (#5160): `allow_refused_vault` for Allow, the one grant its Notice makes, and
+ *  `keep_vault_blocked` for Keep blocked, with the person's reason.
+ */
+{ via: "vault"; vault: string } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -5533,7 +5545,12 @@ export type AskSource =
  *  A secret a chat asks purlis to fill into a field of its browser (#5115): an Allow lets
  *  purlis put that one key into that field, on that one origin, once.
  */
-"secret-fill";
+"secret-fill" | 
+/**
+ *  A vault a chat was refused because its persona is not tagged for it (#1430, #5160): an
+ *  Allow lets that persona use it in this project on this machine.
+ */
+"vault";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -6891,12 +6908,6 @@ export type DiskHeld =
 { state: "not_read"; why: string } | 
 /**  It was not read within the time a second read of it waits ([`WAITS_AT_MOST`]). */
 { state: "unanswered" };
-
-/**  One Secret need offer the person dismissed (#5159): the persona and the key, names only. */
-export type DismissedNeed = {
-	persona: string,
-	key: string,
-};
 
 /**  Why a grant the person accepted before waits for a yes again. */
 export type DispatchAgain = 
@@ -9441,6 +9452,15 @@ export type LevelWaiting = {
 };
 
 /**
+ *  **Why one open chat runs at its level** (#5207), in the core's words
+ *  ([`purlis_core::sandbox::level_why`]): what its sandbox mark and its block's Notice say.
+ */
+export type LevelWhy = {
+	session: number,
+	why: string,
+};
+
+/**
  *  **Why something the window asked of a pool did not happen** (spec #4275): the core's
  *  sentence, and what to raise where a pool's limit refused it, which comes with the refusal as
  *  data.
@@ -10009,6 +10029,20 @@ export type NeedFix =
 export type NeedKind = "review" | "clash" | "problem" | "pins" | "tidy-up";
 
 /**
+ *  **One persona the vault view may remember a need for** (#5240): names only, read from no
+ *  vault.
+ */
+export type NeedPersona = {
+	persona: string,
+	/**  The file the line goes in, relative to the project. */
+	file: string,
+	/**  The keys it declares already: a row of one of them offers it nothing. */
+	declares: string[],
+	/**  It names no vault, so a `vault:` line goes with the need. */
+	names_no_vault: boolean,
+};
+
+/**
  *  **A profile's command waiting on the operator's approval** (ADR 0022), as a waiting chat's
  *  Notice offers it (#1246): which profile, and the exact line the approval is for.
  * 
@@ -10382,6 +10416,13 @@ export type OpenChat = {
 	persona: string | null,
 	/**  What its harness cannot tell charter, said on the chat — none where it tells all. */
 	unreported: string | null,
+	/**
+	 *  `true` where it can't tell the person it needs them (#4759): its harness's card says no
+	 *  to hooks or to reporting a wait, or it has no adapter
+	 *  ([`purlis_core::harness_card::reports_asks`]). A task that started so keeps the faint hand on its row.
+	 *  `null` where it can.
+	 */
+	cant_report_asks?: boolean | null,
 	/**  Its harness's card at a glance, which its header draws (HP-19) — none for a shell. */
 	card: HarnessGlance | null,
 	/**
@@ -10417,6 +10458,12 @@ export type OpenChat = {
 	 *  skill's page, and the skill page's line while it runs. `null` for every other chat.
 	 */
 	studio?: StudioLink | null,
+	/**
+	 *  `true` for a chat another chat started and announced that the person has not looked at
+	 *  yet (#4759): a handoff, or a task that can't report asks. Its sidebar row
+	 *  says "new" until it has been on screen. `null` for every other chat.
+	 */
+	unseen?: boolean | null,
 };
 
 /**  One group of **Open hosts**: a preset's, or the project's own. */
@@ -14022,6 +14069,18 @@ export type SecretFilled = {
 	code: boolean,
 };
 
+/**  **The line a Secret ask's Remember writes** (#5240): shown whole before it is ticked for. */
+export type SecretNeedShown = {
+	/**  The file it goes in, relative to the project. */
+	file: string,
+	/**  The persona does not declare the key, so a `secret-need.<key>` line goes in. */
+	need: boolean,
+	/**  The chat's words for it, for the person to edit: empty where it said none. */
+	purpose: string,
+	/**  The vault a `vault:` line names, where the persona names none. */
+	vault?: string | null,
+};
+
 /**
  *  **A Secret ask, as its row draws it** (#5068, ADR 0109): the persona, the vault and the key
  *  its chats miss, and how many wait on it. Names only: no value is ever here.
@@ -14061,6 +14120,11 @@ export type SecretShown = {
 	reads?: SecretEntryShown | null,
 	/**  The entry a broken link read, which is gone (#5075). */
 	gone?: SecretEntryShown | null,
+	/**
+	 *  **What *Remember this need for the persona* would write** (#5240, spec #5235), where it
+	 *  would write anything and may.
+	 */
+	remember?: SecretNeedShown | null,
 };
 
 /**
@@ -16466,7 +16530,12 @@ export type UpdateKind =
 /**  A task ended with its question unanswered (#4556). */
 "question-closed" | 
 /**  A task's question could not be taken its route (#4557). */
-"question-failed";
+"question-failed" | 
+/**
+ *  A chat another chat started arrived in no pane, and was announced (#4759): a handoff,
+ *  or a task that can't report asks.
+ */
+"arrived";
 
 /**  An update the window derived from its source, to be noted. */
 export type UpdateNoted = {
@@ -16661,6 +16730,11 @@ export type VaultSecret = {
 	link: VaultLink | null,
 	/**  How many linked entries read it: what deleting it would break. */
 	linked_by: number,
+	/**
+	 *  Whether the person marked its value as no 2FA seed (#5237), by name: no value is read to
+	 *  say so, and the fill checks the mark against the value it reads.
+	 */
+	no_seed: boolean,
 };
 
 /**  One registered vault, as the Vaults panel lists it. */

@@ -6,7 +6,7 @@ import { READY } from "../harness.js";
 import { pressAndStart } from "../opening.js";
 import { roomForTwoPanes } from "../paneRoom.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
-import { openedSince } from "../reach.js";
+import { untilTheStripIsBare } from "../reach.js";
 
 /**
  * **A pane's breadcrumb fits its pane's one top line, measured** (#1486).
@@ -51,14 +51,6 @@ const LONG_PATH = [
 ];
 /** The longest state there is (`shownState`). */
 const LONGEST_STATE = "ended without a report";
-
-async function tabNames(): Promise<string[]> {
-  return browser.execute(() =>
-    [
-      ...(document.querySelector('[data-strip="Tabs"]')?.querySelectorAll('[role="tab"]') ?? []),
-    ].map((tab) => tab.querySelector(".tab-name")?.textContent ?? ""),
-  );
-}
 
 async function untilShows(index: number, text: string): Promise<void> {
   await browser.waitUntil(
@@ -472,14 +464,12 @@ async function scrolledSideways(pane: number): Promise<number[]> {
 }
 
 describe("a pane's breadcrumb, while its tab shows a task", () => {
-  /** The tabs that were already there: the strip is back to them once this file's chats end. */
-  let wereAlreadyOpen: string[] = [];
   /** The chats running when the file began, so only the ones it started are ended again. */
   let chatsBefore: Running = {};
   let was = { width: 1280, height: 800 };
 
   before(async () => {
-    wereAlreadyOpen = await tabNames();
+    await untilTheStripIsBare("pane-crumbs");
     chatsBefore = await chatsRunning();
     was = await browser.getWindowSize();
     await pressAndStart("New tab");
@@ -497,10 +487,7 @@ describe("a pane's breadcrumb, while its tab shows a task", () => {
     // Each chat this file started, by the number the core gave it (#1796): a tab's name may be
     // one an older chat has too.
     await endTheChatsStartedSince(chatsBefore);
-    await browser.waitUntil(
-      async () => openedSince(wereAlreadyOpen, await tabNames()).length === 0,
-      { timeout: 20_000, timeoutMsg: "the pane-crumbs spec left a chat open behind it" },
-    );
+    await untilTheStripIsBare("pane-crumbs");
   });
 
   /** Asks for a window of this size and waits until the page has stopped changing width. */
@@ -557,7 +544,7 @@ describe("a pane's breadcrumb, while its tab shows a task", () => {
   });
 
   // Each narrow pane twice: with the controls a pane showing a task draws (the chat's ⋯ and
-  // the two splits, #4753; ⋯ before the bell since #4760), and with the four every other pane
+  // the two splits, #4753; ⋯ after the bell since #5203), and with the four every other pane
   // draws. The line reserves what is there, measured, so
   // neither is a number this file or the stylesheet has to know.
   for (const [pane, task] of [
@@ -570,7 +557,7 @@ describe("a pane's breadcrumb, while its tab shows a task", () => {
       // 1024 px is the narrowest window purlis supports (ADR 0054), and with two panes side by
       // side each is a few hundred pixels.
       await windowIs(1024, 768);
-      // The splits: the chat's ⋯ is drawn before the bell since #4760, outside this cluster,
+      // The splits: the chat's ⋯ is drawn before the divider since #5203, outside this cluster,
       // and takes the same room from the line it took inside it.
       if (task) expect(await asATaskPane(pane)).toBe(2);
       else await untilReserved(pane);
@@ -807,8 +794,8 @@ describe("a pane's breadcrumb, while its tab shows a task", () => {
   // the breadcrumb, and five controls in the pane's corner taking room from the line.
   it("keeps the longest state whole in a narrow pane with Brief, two word buttons and five pane controls, by cutting everything else first", async () => {
     await windowIs(1024, 768);
-    // The splits, the close and the one added: the chat's ⋯ is drawn before the bell since
-    // #4760, outside this cluster, so the corner holds five controls as before.
+    // The splits, the close and the one added: the chat's ⋯ is drawn before the divider since
+    // #5203, outside this cluster, so the corner holds five controls as before.
     expect(await oneMoreControl(1)).toBe(4);
     expect(
       await draw(1, {

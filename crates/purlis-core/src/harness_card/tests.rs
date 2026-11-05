@@ -326,6 +326,41 @@ fn the_card_tab_draws_its_label_where_it_comes_from_and_a_row_per_line() {
 }
 
 #[test]
+fn a_harness_reports_asks_by_what_its_card_says_about_waiting_not_by_any_gap_in_it() {
+    let built_in = |harness: Harness| reports_asks(Some(harness.declared()));
+    // opencode says when it waits, whatever else its card lacks (its helpers are not shown).
+    assert!(Harness::Opencode.unreported().is_some());
+    assert!(built_in(Harness::Opencode));
+    assert!(built_in(Harness::ClaudeCode));
+    // Codex says only when it stops for an approval, so its card answers no.
+    assert!(!built_in(Harness::Codex));
+}
+
+#[test]
+fn a_program_with_no_adapter_cannot_report_asks_whatever_its_declaration_says() {
+    assert!(!reports_asks(None));
+    // GEMINI's own lines are its word; purlis arms hooks only through an adapter it ships.
+    let dir = project(&[("gemini.toml", GEMINI)]);
+    let declared = harness_declaration::read(dir.path());
+    assert!(!reports_asks(declared.get("gemini")));
+}
+
+#[test]
+fn a_local_replacement_of_a_built_in_reports_asks_by_its_own_lines() {
+    let replacing = |name: &str, answer: &str| {
+        let text = format!(
+            "[harnesses.{name}]\nprogram = \"{name}\"\n\
+             [harnesses.{name}.capabilities]\nreports_waiting = \"{answer}\"\n"
+        );
+        let dir = project(&[]);
+        let declared = harness_declaration::read_with(dir.path(), Ok(Some(text)));
+        reports_asks(declared.get(name))
+    };
+    assert!(!replacing("claude", "no: measured on 2.2.0"));
+    assert!(replacing("codex", "yes"));
+}
+
+#[test]
 fn a_harness_a_project_declares_says_where_and_has_no_sentence_of_charters() {
     let cards = read(project(&[("gemini.toml", GEMINI)]).path());
     let gemini = card_of(&cards, "gemini");

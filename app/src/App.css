@@ -732,8 +732,9 @@ body {
   min-height: 0;
 }
 
-/* The chat at a glance: its breadcrumb, its skills, the harness, where it came from, its work
-   item and its gauge. One row, in the pane's header (`PaneHead`). */
+/* **The pane line**: the chat at a glance, its breadcrumb, its skills, where it came from and its
+   work item. One row, in the pane head (`PaneHead`); harness · workspace and the gauge are
+   on the pane foot (#5202). */
 .pane-chips {
   display: flex;
   flex: none;
@@ -742,9 +743,9 @@ body {
   max-width: 100%;
 }
 
-/* **The line's words are one height** (#2484): each chip that is words (the breadcrumb, the
-   gauge, where a chat came from, its work item) is the chrome height. Its buttons (Brief, the
-   harness, the skills, a task's ways) are the family's small size, which the family draws a step
+/* **The line's words are one height** (#2484): each chip that is words (the breadcrumb, where a
+   chat came from, its work item) is the chrome height. Its buttons (Brief, the skills, a task's
+   ways) are the family's small size, which the family draws a step
    taller and which wins over this; the line centres both, so nothing stands off its middle. The
    heights guard holds every chip here (`PANE_LINE_CHIPS`). */
 .pane-chips
@@ -754,17 +755,23 @@ body {
     .tab-sandbox,
     .pane-state-mark,
     .pane-wrapping,
-    .pane-where,
     .pane-task-ends,
     .pane-crumbs,
     .pane-brief,
-    .chat-gauge,
-    .pane-harness,
     .pane-from,
     .pane-work-item,
     .pane-skills,
-    .pane-studio
+    .pane-studio,
+    .pane-head-where
   ) {
+  height: var(--size-chrome);
+}
+
+/* **The pane foot's chips are under the same rule** (#5202, spec #5191 story 43): harness ·
+   workspace and the gauge are the chrome height, inside a foot the tab
+   strip's height, so no theme makes them taller than the line. The heights guard holds every
+   chip here (`PANE_FOOT_CHIPS`). */
+.pane-foot > * > :is(.pane-where, .chat-gauge) {
   height: var(--size-chrome);
 }
 
@@ -902,33 +909,23 @@ body {
    its own, and the operator saw the cost at once: *"context usage component position is not
    absolute and its changing harness container sizes"* — a pane with a gauge was a row shorter
    than its neighbour without one. It floated over the terminal after that, and covered its
-   first line. Now it is on the pane's header (#3142), which every chat's pane has with a gauge or
-   without, so the terminal keeps the same rows whether or not charter has usage for it.
+   first line, then sat on the pane's header (#3142). Now it is at the end of the pane foot
+   (#5202), a row every chat's pane has with a gauge or without, so the terminal keeps the same
+   rows whether or not charter has usage for it.
 
-   **A chat's `ctx`/`cache` gauge** (`app/src/ChatGauge.tsx`): small, last on the header's line.
-   **It does not place itself**: the header does (`.pane-head`, `paneFrame.css`, which also draws
-   it as words on the pane's fill). It is always drawn, and never takes the controls' hover
-   rule. */
+   **A chat's `ctx`/`cache` gauge** (`app/src/ChatGauge.tsx`): its labelled numbers in a row.
+   **It does not place itself**: the foot does (`ui/pane-foot/pane-foot.css`), which draws each
+   number. It is always drawn, and never takes the controls' hover rule. */
 .chat-gauge {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: 0 var(--space-2);
-  font-size: var(--font-size-xs);
-  font-variant-numeric: tabular-nums;
+  /* The foot's end's, which a theme's `pane-foot.end.gap` sets. */
+  gap: inherit;
   white-space: nowrap;
-  color: var(--text-secondary);
-  background: var(--surface-raised);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-}
-
-.gauge-label {
-  color: var(--text-muted);
 }
 
 /* **Where a handed-off chat came from** (charter-app#258): `↳ from steward 3 · ops`, beside the
-   gauge in the chat's own corner, and quiet — it is a note about the chat's origin, read once,
+   line's other details, and quiet — it is a note about the chat's origin, read once,
    not a status. The gauge's box so the two read as one strip, never a border of its own colour.
    Clipped rather than wrapped: a corner that grew a second line would cover the terminal. */
 .pane-from {
@@ -2098,20 +2095,26 @@ body {
   color: var(--state-waiting);
 }
 
+/* The line a Secret need's Remember writes (#5240): its key beside the box for its purpose. */
+.secret-need-line {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.secret-need-line-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.secret-need-line-row > :last-child {
+  flex: 1 1 12rem;
+}
+
 .login-site-line {
   overflow-wrap: anywhere;
-}
-
-.gauge-ok {
-  color: var(--state-success);
-}
-
-.gauge-warn {
-  color: var(--state-waiting);
-}
-
-.gauge-bad {
-  color: var(--state-failed);
 }
 
 /* **A pane's own controls, in its top right corner** — the operator: *"harnesses panes should
@@ -2160,30 +2163,6 @@ body {
   visibility: visible;
   opacity: 0;
   pointer-events: none;
-}
-
-/* The trend: a bar per turn, filled in the tone its class names — the same three tokens the
-   numbers use, so a green 98% and its bar can never be two greens. */
-.gauge-trend {
-  width: 3rem;
-  height: 0.75rem;
-  align-self: center;
-}
-
-.gauge-trend .gauge-ok {
-  fill: var(--state-success);
-}
-
-.gauge-trend .gauge-warn {
-  fill: var(--state-waiting);
-}
-
-.gauge-trend .gauge-bad {
-  fill: var(--state-failed);
-}
-
-.gauge-trend .gauge-unknown {
-  fill: var(--text-muted);
 }
 
 /* The handle between two panes: thin, and easier to hit than it looks. Its box, which straddles
@@ -6229,14 +6208,11 @@ nav.piece-files-head {
   margin: var(--space-2) 0;
 }
 
-/* The task's own words, as text: line breaks kept, a long word broken. */
+/* The task's own words, a chat's text (`ChatText`, which keeps their lines), marked as theirs. */
 .answer-asked {
-  margin: 0;
   padding-inline-start: var(--space-3);
   border-inline-start: 2px solid var(--border-subtle);
   color: var(--text-primary);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
 }
 
 .answer-text {
@@ -9051,4 +9027,30 @@ nav.piece-files-head {
   padding: var(--space-3) var(--space-4);
   border-inline-start: 2px solid;
   font-size: var(--font-size-sm);
+}
+
+/* **A chat row's Place…** (#4764): under the pointer only, over the row's end on the row's own
+   ground, so nothing on the row moves as it comes and goes. The keyboard's way is ⌘⇧M. */
+.chats-section .chat-row-place {
+  display: none;
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  align-items: center;
+  padding-inline: var(--space-2);
+  color: var(--text-secondary);
+  background-color: var(--surface-hover);
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .chats-section .chat:hover .chat-row-place {
+    display: flex;
+  }
+}
+
+.chats-section .chat-row-place > svg {
+  flex: none;
+  inline-size: var(--ui-tree-step);
+  block-size: var(--ui-tree-step);
 }

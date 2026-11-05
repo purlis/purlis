@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useRef, useMemo, useState, useSyncExternalStore } from "react";
-import { commands, type OlderSandbox, type OnOlderSandbox, type PlaneId } from "./bindings";
+import {
+  commands,
+  type LevelWhy,
+  type OlderSandbox,
+  type OnOlderSandbox,
+  type PlaneId,
+} from "./bindings";
 import { stateOf, useChatsHere, useChatsSelect } from "./chatState";
 import { listen } from "./here";
 import { Notice } from "./Notice";
@@ -43,6 +49,34 @@ export function usePolicyBehind(plane: PlaneId, session: number): string | undef
     const one = lastAnswer.get(plane)?.chats.find((chat) => chat.session === session);
     return one?.policy ?? undefined;
   });
+}
+
+/** Each project's last answer to why its open chats run at their levels (#5207), by session. */
+const lastWhys = new Map<PlaneId, ReadonlyMap<number, string>>();
+const NO_WHYS: ReadonlyMap<number, string> = new Map();
+
+function keepWhys(plane: PlaneId, said: unknown) {
+  // An older core, or a stand-in, may send something else: then there is no reason to say.
+  const whys = Array.isArray(said) ? (said as readonly Partial<LevelWhy>[]) : [];
+  const shown = new Map<number, string>();
+  for (const one of whys) {
+    if (typeof one?.session === "number" && typeof one.why === "string")
+      shown.set(one.session, one.why);
+  }
+  // The same answer again leaves what was kept, so nothing draws again on every focus.
+  const kept = lastWhys.get(plane);
+  if (kept?.size === shown.size && [...shown].every(([at, why]) => kept.get(at) === why)) return;
+  lastWhys.set(plane, shown);
+  for (const told of answerWatchers) told();
+}
+
+/**
+ * **Why each open chat of `plane` runs at its level** (#5207), in the core's words, from the
+ * project's last answer: asked after `useOlderSandbox`'s, since the same things move both. What
+ * a chat's sandbox mark and a block's Notice say, with no second question to the core.
+ */
+export function useLevelWhys(plane: PlaneId): ReadonlyMap<number, string> {
+  return useSyncExternalStore(watchAnswers, () => lastWhys.get(plane) ?? NO_WHYS);
 }
 
 /**
@@ -106,6 +140,13 @@ export function useOlderSandbox(
         const now = answered(said.data);
         keepAnswer(plane, now);
         setOlder(now);
+      })
+      .catch(() => undefined)
+      // After it, never beside it: why a chat runs at its level is on a hover or a Notice, so it
+      // does not add to what a project coming to the front waits on (#5207).
+      .then(() => (gone ? undefined : commands.chatsLevelWhy(plane)))
+      .then((said) => {
+        if (!gone && said?.status === "ok") keepWhys(plane, said.data);
       })
       .catch(() => undefined);
     return () => {

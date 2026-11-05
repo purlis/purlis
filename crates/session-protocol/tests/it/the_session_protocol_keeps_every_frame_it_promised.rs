@@ -42,7 +42,8 @@
 //! (#4088, ids 183 and 184), 1.63's grade asked for from a terminal (#3241, ids 185 to 188),
 //! 1.68's runner whose programs are not known (#4684, id 189), 1.69's repositories a host
 //! holds (#4569, id 190), 1.71's terminal view attached with a page of its history (#4742,
-//! id 191), and 1.72's field described and secret filled (#5115, ids 192 and 193).
+//! id 191), 1.72's field described and secret filled (#5115, ids 192 and 193), and 1.73's read of
+//! whether a page asks to sign in (#5121, id 194).
 //! 1.35 adds no frame of the
 //! control lane: its origin frame is a browser view's bytes, held by
 //! `a_browser_views_bytes_are_whole_frames_however_they_are_cut.rs` (#2300). Each must read back

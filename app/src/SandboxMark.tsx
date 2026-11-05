@@ -45,8 +45,8 @@ export function SandboxMark({
 }) {
   if (level == null || !isLevel(level)) return null;
   const Icon = ICONS[level];
-  // Where the floor could not be applied here, the mark says why (#2071, Q2), on its title and
-  // to a screen reader: not as a Notice on the pane, which every such chat would carry.
+  // Why it runs at this level (#5207), or that the floor could not be applied here (#2071, Q2),
+  // on its title and to a screen reader: not as a Notice on the pane, which every chat would carry.
   const levelSaid = why ? `${SANDBOX_SAID[level]}: ${why}` : SANDBOX_SAID[level];
   // Its browser's own sites, apart from the level (#2364): the Network view lists them.
   const withSites =

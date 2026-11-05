@@ -16,6 +16,7 @@ import { OPEN_RUNNER_DISPATCH_ASK } from "./runnerDispatchOpen";
 import { PROFILE_SIGN_IN } from "./settings/links";
 import { useSandboxCommands } from "./sandboxAsked";
 import { onTheWire } from "./chatEvents.testkit";
+import { askOfVault } from "./test-asks";
 
 /**
  * The asks registry's window side (#1690): each ask is answered through the command its own
@@ -522,6 +523,41 @@ describe("answering through the path an ask names", () => {
     expect(result.current).toBeGreaterThan(before);
   });
 
+  it("allows a refused vault's persona, the one grant its Notice makes, or keeps it blocked with the reason (#5160)", async () => {
+    const calls = sent({ allow_refused_vault: { said: "Allowed." }, keep_vault_blocked: null });
+    const vault = askOfVault({
+      plane: PLANE,
+      session: 7,
+      vault: "devops",
+      persona: "steward",
+      tagged_for: "devops",
+      dispatch_to: null,
+      locked: null,
+    });
+    expect(await answerThrough(PLANE, vault, "allow")).toBeUndefined();
+    await answerTaken(PLANE, vault, "keep", "  not for this ");
+    expect(calls.map((one) => [one.cmd, one.args])).toEqual([
+      ["allow_refused_vault", { plane: PLANE, session: 7, vault: "devops" }],
+      ["keep_vault_blocked", { plane: PLANE, session: 7, vault: "devops", reason: "not for this" }],
+    ]);
+  });
+
+  it("sends no Allow for a refused vault whose grant policy locks (#5160)", async () => {
+    const calls = sent({ keep_vault_blocked: null });
+    const locked = askOfVault({
+      plane: PLANE,
+      session: 7,
+      vault: "devops",
+      persona: "steward",
+      tagged_for: "devops",
+      dispatch_to: null,
+      locked: "Locked by policy, set by IT.",
+    });
+    expect(await answerThrough(PLANE, locked, "allow")).toMatch(/not one of the answers/);
+    await answerTaken(PLANE, locked, "keep");
+    expect(calls.map((one) => one.cmd)).toEqual(["keep_vault_blocked"]);
+  });
+
   it("says the source's own sentence when the source refuses", async () => {
     sent({ allow_dispatch: new Error("Nothing was allowed: the question changed.") });
     expect(await answerThrough(PLANE, DISPATCH, "chat")).toBe(
@@ -675,5 +711,26 @@ describe("a runner chat's change to the project (#2046)", () => {
     window.removeEventListener(OPEN_RUNNER_WRITE_ASK, heard);
     expect(asked).toEqual([{ plane: PLANE, id: 3 }]);
     expect(calls).toEqual([]);
+  });
+});
+
+describe("a secret ask's Fill with an entry (#5240)", () => {
+  it("carries what Remember says, as a Fill with a value does", async () => {
+    const asked: Record<string, unknown>[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "link_secret_ask") asked.push(args as Record<string, unknown>);
+      return null;
+    });
+    const ask: Shown = {
+      session: 7,
+      ask: "secret:3",
+      says: "Needs KEY",
+      options: [{ id: "fill", label: "Fill", allows: true, preselected: null }],
+      source: "secret",
+      chain: ["steward 7"],
+      answer: { via: "secret", id: 3 },
+    };
+    await answerTaken("p", ask, "fill", undefined, "", { vault: "own", key: "STRIPE" }, "words");
+    expect(asked).toEqual([{ plane: "p", id: 3, vault: "own", key: "STRIPE", remember: "words" }]);
   });
 });

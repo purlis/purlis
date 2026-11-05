@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { useState } from "react";
+import type { SecretShown } from "./bindings";
 import { SecretFill } from "./SecretFill";
 import type { VaultEntries, VaultEntry } from "./VaultEntryPicker";
 import { selectNamed } from "./ui/select/select.testkit";
@@ -41,6 +42,99 @@ function Held({ onPicked }: { onPicked: (entry: VaultEntry | undefined) => void 
     />
   );
 }
+
+/** The fill of a key its persona does not declare, holding Remember as the Inbox row does. */
+function Remembering({
+  shown,
+  onRemember,
+}: {
+  shown: NonNullable<SecretShown["remember"]>;
+  onRemember: (purpose: string | undefined) => void;
+}) {
+  const [remember, setRemember] = useState<string>();
+  return (
+    <SecretFill
+      secret={{ ...secret, declared: false, remember: shown }}
+      box={null}
+      entries={() => Promise.resolve(KEPT)}
+      picked={undefined}
+      onPicked={() => {}}
+      remember={remember}
+      onRemember={(to) => {
+        setRemember(to);
+        onRemember(to);
+      }}
+    />
+  );
+}
+
+describe("remembering a need on a fill (#5240)", () => {
+  const shown = {
+    file: "personas/devops/persona.md",
+    need: true,
+    purpose: "the chat's words",
+    vault: "team",
+  };
+
+  it("is unticked, and shows no line until it is ticked", () => {
+    render(<Remembering shown={shown} onRemember={() => {}} />);
+    expect(
+      screen.getByRole("checkbox", { name: "Remember this need for the persona" }),
+    ).not.toBeChecked();
+    expect(screen.queryByText("secret-need.KUBECONFIG:")).toBeNull();
+    expect(screen.queryByText(/personas\/devops\/persona\.md/)).toBeNull();
+  });
+
+  it("shows the exact line once ticked, with the chat's words to edit and the vault line", async () => {
+    const user = userEvent.setup();
+    const said = vi.fn();
+    render(<Remembering shown={shown} onRemember={said} />);
+    await user.click(screen.getByRole("checkbox", { name: "Remember this need for the persona" }));
+
+    expect(said).toHaveBeenLastCalledWith("the chat's words");
+    expect(screen.getByText("secret-need.KUBECONFIG:")).toBeInTheDocument();
+    expect(screen.getByText("vault: team")).toBeInTheDocument();
+    expect(screen.getByText(/personas\/devops\/persona\.md/)).toBeInTheDocument();
+    const purpose = screen.getByRole("textbox", { name: "What KUBECONFIG is for" });
+    expect(purpose).toHaveValue("the chat's words");
+
+    await user.clear(purpose);
+    await user.type(purpose, "reach staging");
+    expect(said).toHaveBeenLastCalledWith("reach staging");
+  });
+
+  it("says nothing goes in once it is unticked again", async () => {
+    const user = userEvent.setup();
+    const said = vi.fn();
+    render(<Remembering shown={shown} onRemember={said} />);
+    const box = screen.getByRole("checkbox", { name: "Remember this need for the persona" });
+    await user.click(box);
+    await user.click(box);
+    expect(said).toHaveBeenLastCalledWith(undefined);
+    expect(screen.queryByText("secret-need.KUBECONFIG:")).toBeNull();
+  });
+
+  it("shows only the vault line for a key the persona declares", async () => {
+    const user = userEvent.setup();
+    render(<Remembering shown={{ ...shown, need: false }} onRemember={() => {}} />);
+    await user.click(screen.getByRole("checkbox", { name: "Remember this need for the persona" }));
+    expect(screen.getByText("vault: team")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "What KUBECONFIG is for" })).toBeNull();
+  });
+
+  it("offers nothing where nothing would be written", () => {
+    render(
+      <SecretFill
+        secret={secret}
+        box={null}
+        entries={() => Promise.resolve(KEPT)}
+        picked={undefined}
+        onPicked={() => {}}
+      />,
+    );
+    expect(screen.queryByRole("checkbox")).toBeNull();
+  });
+});
 
 describe("a secret ask's fill", () => {
   it("picks an entry by its vault and key, told apart where two vaults hold one name", async () => {

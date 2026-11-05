@@ -249,6 +249,11 @@ impl HarnessAdapter for ClaudeCode {
         slash_with_words(&head, skill.given)
     }
 
+    /// Every skill of a chat's set is handed to it as a plugin's, or is one it found itself.
+    fn own_start_reaches(&self, _origin: crate::skills::Origin) -> bool {
+        true
+    }
+
     /// **60 skills and 15,000 characters of whole lines** (ADR 0102 as amended 2026-11-02).
     /// Claude Code's own limit is 1% of the window, which purlis does not know at a chat's start,
     /// so it hands one instead ([`listing_limit`]). Past a limit Claude Code keeps

@@ -384,6 +384,8 @@ pub fn looked_at_again<R: Runtime>(window: &tauri::Window<R>) {
             && held.chats().window_away(number, away)
         {
             crate::dispatched::front_moved(&held);
+            // A window back on screen may show an announced chat for the first time (#4759).
+            crate::layout::seen_on_screen(&held);
         }
     }
 }

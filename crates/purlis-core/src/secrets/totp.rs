@@ -74,6 +74,26 @@ pub fn an_address(text: &str) -> bool {
         .is_some_and(|scheme| scheme.eq_ignore_ascii_case("otpauth://"))
 }
 
+/// **Whether `text` holds an authenticator's address anywhere** (#5237): `otpauth:` or its
+/// export's `otpauth-migration:`, whether its `:` is written plainly or escaped as in a link, in
+/// any case and wherever in the text it stands. Such a value is refused as a plain fill whatever
+/// the person's mark says, so this looks inside the text where [`looks_like_a_seed`] looks at its
+/// start: a label before the address changes nothing.
+pub fn holds_an_address(text: &str) -> bool {
+    [
+        "otpauth:",
+        "otpauth%3a",
+        "otpauth-migration:",
+        "otpauth-migration%3a",
+    ]
+    .iter()
+    .any(|scheme| {
+        text.as_bytes()
+            .windows(scheme.len())
+            .any(|at| at.eq_ignore_ascii_case(scheme.as_bytes()))
+    })
+}
+
 /// The fewest base32 characters a value is taken for a seed's by its look: 80 bits' worth.
 const FEWEST_CHARACTERS: usize = 16;
 

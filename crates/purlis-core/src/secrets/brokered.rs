@@ -323,13 +323,58 @@ pub enum Reader {
 /// chat's sandbox, as before. Resolving every chat's reads in the app is the rest of V16b
 /// (#1180).
 ///
-/// **A courtesy, not the boundary.** The mark it reads is the chat's environment, which the
-/// chat can change; what holds the item is the store's own rule (V90a) and the sandbox. This
-/// keeps purlis itself from raising a question on the chat's behalf, and says what to do.
+/// **Where the mark is gone, where the process runs decides** ([`super::setup::sandboxed_chat`]):
+/// below a chat's program whose record does not say it ran without the sandbox, it is a
+/// sandboxed chat all the same, and where this project's record or its ancestry cannot be read,
+/// it is refused with why. The person's terminal, an unsandboxed chat or shell tab, and the app
+/// read as before.
+///
+/// **A courtesy, not the boundary.** The mark and the records are what purlis can see, and a
+/// chat's process can leave its chat's ancestry; what holds the item is the store's own rule
+/// (V90a) and the sandbox. This keeps purlis itself from raising a question on the chat's
+/// behalf, and says what to do.
 pub fn refused_in_this_chat(ctx: &Ctx, vault: &registry::Vault, reader: Reader) -> Option<Markup> {
+    refused_where(ctx, vault, reader, &|| super::setup::sandboxed_chat(ctx))
+}
+
+/// [`refused_in_this_chat`], with where this process runs asked of `located` only when the
+/// environment carries no mark and the vault is the keyring's.
+pub(crate) fn refused_where(
+    ctx: &Ctx,
+    vault: &registry::Vault,
+    reader: Reader,
+    located: &dyn Fn() -> super::setup::Sandboxed,
+) -> Option<Markup> {
     let env = |name: &str| ctx.env.get(name);
-    if !crate::sandbox::chat_is_sandboxed_in(&env) || !super::keyring::holds_values_of(ctx, vault) {
+    if !super::keyring::holds_values_of(ctx, vault) {
         return None;
+    }
+    if !crate::sandbox::chat_is_sandboxed_in(&env) {
+        match located() {
+            super::setup::Sandboxed::No => return None,
+            super::setup::Sandboxed::Yes => {}
+            super::setup::Sandboxed::Unsure(doubt) => {
+                return Some(Markup::lines([
+                    Markup::from(format!(
+                        "vault '{}' is read from {}, and purlis cannot tell whether this runs \
+                         inside a sandboxed chat: {}. purlis does not read {} where it cannot \
+                         tell.",
+                        vault.name,
+                        super::keyring::STORE_NAME,
+                        crate::personas::one_line(&doubt),
+                        super::keyring::STORE_NAME,
+                    )),
+                    Markup::from(match reader {
+                        Reader::Exec => "  Run this again once that is cleared.",
+                        Reader::GetOrCp | Reader::Other => {
+                            "  In a chat, hand the value to a command with `purlis secret exec`, \
+                             which the app runs. Anywhere else, run this again once that is \
+                             cleared."
+                        }
+                    }),
+                ]));
+            }
+        }
     }
     let (why, next) = match reader {
         // The app runs no command for a chat on this system yet ([`NO_WRAP`]).
@@ -368,18 +413,34 @@ pub fn refused_in_this_chat(ctx: &Ctx, vault: &registry::Vault, reader: Reader) 
 ///
 /// Only inside a chat the app started sandboxed ([`crate::sandbox::chat_is_sandboxed_in`]): an
 /// unsandboxed chat reads its vault as the person does. A chat that claims to be sandboxed when
-/// it is not gets the stricter run, and one that hides it gets the vault's own refusal.
+/// it is not gets the stricter run. One that hides the mark but still names the app's socket
+/// and its number is sent there all the same where it runs below a sandboxed chat's program, or
+/// where purlis cannot tell ([`super::setup::sandboxed_chat`]), since the app judges by its own
+/// record; one that hides all of it gets the vault's own refusal ([`refused_in_this_chat`]).
 ///
 /// A persona's MCP server's start ([`super::mcpstart::server_in`]) is tried once more where the
 /// first run failed before the server spoke ([`started_server`]).
 #[cfg(unix)]
 pub fn forwarded(ctx: &Ctx, req: &Request, command: &[String], io: &mut dyn Io) -> Option<i32> {
+    forwarded_where(ctx, req, command, io, &|| super::setup::sandboxed_chat(ctx))
+}
+
+/// [`forwarded`], with where this process runs asked of `located` only when the environment
+/// names the app's socket and a chat but carries no mark.
+#[cfg(unix)]
+pub(crate) fn forwarded_where(
+    ctx: &Ctx,
+    req: &Request,
+    command: &[String],
+    io: &mut dyn Io,
+    located: &dyn Fn() -> super::setup::Sandboxed,
+) -> Option<i32> {
     let env = |name: &str| ctx.env.get(name);
-    if !crate::sandbox::chat_is_sandboxed_in(&env) {
-        return None;
-    }
     let socket = env(crate::hookwire::SOCKET_ENV).filter(|s| !s.is_empty())?;
     let chat = chat_number(&env)?;
+    if !crate::sandbox::chat_is_sandboxed_in(&env) && located() == super::setup::Sandboxed::No {
+        return None;
+    }
     let token = crate::hookwire::ChatToken::read(&env);
     let connect = || std::os::unix::net::UnixStream::connect(&socket).ok();
     if let Some(server) = super::mcpstart::server_in(&env) {
@@ -1395,9 +1456,11 @@ fn granted_ready(
 /// **The value of `key` in `vault`, for a secret fill the person allowed** (#5115): read for
 /// chat `asker` as a login the person allowed from its notice is ([`granted_login`]), since that
 /// press confirmed this vault and this key for one exact site. Refused, with a sentence and no
-/// value, for a private key, whoever asked: no private key is filled on a page; and for a value
-/// taken as a 2FA seed, an address or a bare secret, which goes into no page: its code does
-/// ([`fill_code`]). `None` where the vault holds no value under `key` (#5116).
+/// value, for a private key, whoever asked: no private key is filled on a page; for a value that
+/// holds an authenticator's address, whatever the person's mark says (#5237); and for a value
+/// taken as a 2FA seed by its look, unless the person marked this value as no seed
+/// ([`super::no_seed`]): a seed goes into no page, its code does ([`fill_code`]). `None` where
+/// the vault holds no value under `key` (#5116).
 pub fn fill_value(
     asker: &Asker,
     vault: &str,
@@ -1411,11 +1474,39 @@ pub fn fill_value(
             "{key} in vault '{vault}' is a private key, so purlis filled nothing"
         ));
     }
+    // The next step, said only where it would work.
+    let code = if super::totp::Seed::parse(value.expose()).is_ok() {
+        "Call browser_fill_secret again with `code` to fill the code it makes"
+    } else {
+        "purlis can't make a code from this value either"
+    };
+    if super::totp::holds_an_address(value.expose()) {
+        return Err(format!(
+            "{key} in vault '{vault}' holds an otpauth address, which carries a 2FA seed, so \
+             purlis filled nothing: a seed never goes into a page, and no mark changes that. {code}"
+        ));
+    }
     if super::totp::looks_like_a_seed(value.expose()) {
+        // The key is named once, up front: what the person has to do comes last, and has to
+        // survive what their view of the browser keeps of a long key's name.
+        let place = "in the window, open the vault's tab and open the menu on this key's row, or \
+                     on the row of the entry it reads if it is linked, and choose";
+        let then = match super::no_seed::of(&reading_for(asker), vault, key, value.expose()) {
+            super::no_seed::Mark::Holds => return Ok(Some(value)),
+            super::no_seed::Mark::None => format!(
+                "If its value is no seed, ask the person to mark it: {place} {}",
+                super::no_seed::MARK_WORDS
+            ),
+            super::no_seed::Mark::ValueChanged => format!(
+                "The person marked this key as no 2FA seed, and its value has changed since. If \
+                 this value is no seed either, ask them to mark it again: {place} {}, then {}",
+                super::no_seed::UNMARK_WORDS,
+                super::no_seed::MARK_WORDS
+            ),
+        };
         return Err(format!(
             "{key} in vault '{vault}' looks like a 2FA seed, so purlis filled nothing: a seed \
-             never goes into a page. Call browser_fill_secret again with `code` to fill the code \
-             it makes"
+             never goes into a page. {code}. A chat can't make this mark. {then}"
         ));
     }
     Ok(Some(value))
@@ -1442,6 +1533,16 @@ pub fn fill_code(
     )))
 }
 
+/// What a vault is read through for chat `asker`: the app's record of the chat.
+fn reading_for(asker: &Asker) -> Ctx {
+    match &asker.confines {
+        Some(confines) => {
+            Ctx::new(&asker.root, asker.env.clone()).chat(confines, asker.folder.as_deref())
+        }
+        None => Ctx::new(&asker.root, asker.env.clone()),
+    }
+}
+
 /// `key` of `vault`, read for chat `asker`'s fill: the value whole, `None` where the vault holds
 /// none under `key`, or why not, in words that hold none of it.
 fn read_for_fill(
@@ -1449,12 +1550,7 @@ fn read_for_fill(
     vault: &str,
     key: &str,
 ) -> Result<Option<purlis_session_protocol::browsing::Secret>, String> {
-    let ctx = match &asker.confines {
-        Some(confines) => {
-            Ctx::new(&asker.root, asker.env.clone()).chat(confines, asker.folder.as_deref())
-        }
-        None => Ctx::new(&asker.root, asker.env.clone()),
-    };
+    let ctx = reading_for(asker);
     let provider = cmd::provider(&ctx, vault).map_err(|e| e.message.to_string())?;
     match cmd::get_value(&ctx, &provider, key) {
         Ok(value) => Ok(Some(purlis_session_protocol::browsing::Secret::new(value))),

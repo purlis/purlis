@@ -997,16 +997,25 @@ describe("answering a task's question from the Activity tab (#1496)", () => {
     await waitFor(() => expect(answerControl(list)).toHaveFocus());
   });
 
-  it("draws the question as text in the form, never as markup", async () => {
-    const hostile = "<img src=x onerror=alert(1)> **Which** [host](https://example.com)?";
+  it("draws the question as a chat's text in the form: its markup never runs, and no picture loads (#5213)", async () => {
+    const hostile =
+      "<img src=x onerror=alert(1)> **Which** [host](https://example.com)? ![pixel](https://tracker.example/x.png) [bad](javascript:alert(2))";
     core({ lines: [LINES[0], { ...LINES[2], n: 1, asks: 5, text: hostile }] });
     render(<App />);
     const list = await opened();
 
     const form = await answering(list);
 
-    expect(within(form).getByText(hostile)).toBeInTheDocument();
-    expect(form.querySelector("img, a, strong")).toBeNull();
+    // Raw HTML is dropped, a picture is never made, and only the web address is a link.
+    expect(form.querySelector("img, [onerror]")).toBeNull();
+    expect(form.textContent).not.toContain("alert");
+    expect(
+      within(form)
+        .getAllByRole("link")
+        .map((link) => link.textContent),
+    ).toEqual(["host"]);
+    // What the safe subset draws (the ruling of 2026-11-04, #5214).
+    expect(within(form).getByText("Which").tagName).toBe("STRONG");
   });
 
   it("offers no Answer for a question the asking chat has answered", async () => {

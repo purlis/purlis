@@ -1006,6 +1006,7 @@ fn started_by_said(started: Option<purlis_skills::runs::StartedBy>) -> &'static 
         Some(StartedBy::Read) => "The chat read the skill",
         Some(StartedBy::McpLoad) => "The chat loaded it through purlis",
         Some(StartedBy::UseSkill) => "You, with Use skill…",
+        Some(StartedBy::Prefilled) => "You, with a prompt purlis typed",
         Some(StartedBy::Curation) => "A curation action",
         Some(StartedBy::Trigger) => "A trigger",
         Some(StartedBy::Grade) => "A grade",

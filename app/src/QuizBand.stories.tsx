@@ -6,13 +6,15 @@
  * `prototype/task-question-surfaces`, screenshots 10 to 15 and the closing line): one quiz at a
  * time with a pause before the next, the line a quiz leaves when an agent answered it first and
  * the person's later word, a question the window cannot draw, and the waiting strip and a quiz
- * stacked at the top of one pane. The pane's terminal and head are stand-ins.
+ * stacked at the top of one pane. The quiz is in the pane's notices band, under the head
+ * (#5213); the pane's terminal and head are stand-ins.
  */
 import { useEffect, useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 import type { Shown } from "./bindings";
+import { NoticePaneRow } from "./Notice";
 import { QuestionsHere } from "./QuestionsHere";
 import { QuizBand, QuizPlaces } from "./QuizBand";
 import { forgetThisLaunch } from "./regions";
@@ -97,8 +99,8 @@ function TerminalStandIn() {
 }
 
 /**
- * The steward's pane: the strip and the band at its top, a stand-in for its head under them,
- * and its terminal. The asks become `after` when the pretend core says so ({@link MOVE}).
+ * The steward's pane: the strip at its top, a stand-in for its head, the notices band under it
+ * with the quiz first in it, and its terminal. The asks become `after` when the pretend core says so ({@link MOVE}).
  */
 function StewardsPane({
   asks,
@@ -133,10 +135,12 @@ function StewardsPane({
         >
           <div className="pane-top" data-testid="pane-top">
             {strip && <WaitingStrip session={4} waiting={now} />}
-            <QuizBand plane="/plane" session={4} pauseMs={pauseMs} />
             <div className="pane-head" data-testid="pane-head">
               <span className="ui-text-meta">Claude Code · smart-ide</span>
             </div>
+            <NoticePaneRow>
+              <QuizBand plane="/plane" session={4} pauseMs={pauseMs} />
+            </NoticePaneRow>
           </div>
           <div className="pane-body">
             <TerminalStandIn />
@@ -200,7 +204,8 @@ export const PausesBeforeTheNext: Story = {
     box(canvasElement).focus();
     await untilFocused(() => box(canvasElement), "in the answer box");
     await userEvent.keyboard("Per project{Enter}");
-    await expect(await canvas.findByText("Sent to developer 7.")).toBeVisible();
+    const sent = await canvas.findByText("Sent to developer 7.");
+    await waitFor(() => expect(sent).toBeVisible());
     await expect(canvas.getByText("The next question comes in a moment.")).toBeVisible();
     await expect(canvas.queryByRole("button", { name: "Send" })).toBeNull();
     // Nothing of the next quiz is drawn under the pointer while the pause holds.
@@ -223,7 +228,8 @@ export const AnAgentAnsweredFirst: Story = {
     const line = await canvas.findByText(
       'steward 4 told developer 7: "Per project. The code is what customers are billed by."',
     );
-    await expect(line).toBeVisible();
+    // The band shows what it holds once it has read its stack again (`NoticePaneRow`).
+    await waitFor(() => expect(line).toBeVisible());
     await expect(canvas.queryByRole("group", { name: "developer 7 asks" })).toBeNull();
     const go = canvas.getByRole("button", { name: "Go to task" });
     go.focus();
@@ -278,11 +284,10 @@ export const WhatYouTypedIsKept: Story = {
     await userEvent.keyboard("Say when it closed, and keep it to one line");
     box(canvasElement).blur();
     theAgentAnswers();
-    await expect(
-      await canvas.findByText(
-        'steward 4 answered first: "Per project. The code is what customers are billed by." What you typed is still in the box.',
-      ),
-    ).toBeVisible();
+    const first = await canvas.findByText(
+      'steward 4 answered first: "Per project. The code is what customers are billed by." What you typed is still in the box.',
+    );
+    await waitFor(() => expect(first).toBeVisible());
     await expect(canvas.getByRole("textbox", { name: "What you want instead" })).toHaveValue(
       "Say when it closed, and keep it to one line",
     );
@@ -310,9 +315,10 @@ export const YourWordReplacesTheChats: Story = {
       "Per runner",
     );
     await userEvent.click(canvas.getByRole("button", { name: "Send" }));
-    await expect(
-      await canvas.findByText("developer 7 was told your word replaces steward 4's answer."),
-    ).toBeVisible();
+    const told = await canvas.findByText(
+      "developer 7 was told your word replaces steward 4's answer.",
+    );
+    await waitFor(() => expect(told).toBeVisible());
     const dismiss = canvas.getByRole("button", { name: "Dismiss" });
     dismiss.focus();
     await untilFocused(() => dismiss, "on Dismiss");
@@ -356,9 +362,9 @@ export const OneTheWindowCannotDrawAlone: Story = {
 
 /**
  * **The waiting strip and a quiz, stacked at the top of one pane** (from the rebase of #4955 onto
- * #4949): the strip first, then the quiz's band, then the pane's head. Together they stay within
- * the top's cap, about half the pane, and neither covers the head; Send stays reachable, the band
- * scrolling where it must. The picture is the three at rest.
+ * #4949): the strip first, then the pane's head, then the band with the quiz in it (#5213).
+ * Together they stay within the top's cap, about half the pane, and nothing covers the head; Send
+ * stays reachable, the band scrolling where it must. The picture is the three at rest.
  */
 export const StripAndQuizStacked: Story = {
   args: { asks: [STEWARD_WAITS, FIRST, SECOND], strip: true },
@@ -368,13 +374,13 @@ export const StripAndQuizStacked: Story = {
     await expect(canvas.getByRole("group", { name: "developer 7 asks" })).toBeVisible();
     const top = canvas.getByTestId("pane-top").getBoundingClientRect();
     const head = canvas.getByTestId("pane-head").getBoundingClientRect();
-    const band = canvasElement.querySelector(".quiz-band")?.getBoundingClientRect();
+    const band = canvas.getByRole("region", { name: "Pane notices" }).getBoundingClientRect();
     const pane = canvasElement.querySelector(".pane-frame")?.getBoundingClientRect();
-    // Within the top's cap, and the head whole under the band, inside the top.
+    // Within the top's cap, and the band under the head, whole, inside the top.
     await expect(top.height).toBeLessThanOrEqual((pane?.height ?? 0) * 0.46 + 1);
     await expect(head.height).toBeGreaterThan(0);
-    await expect(head.bottom).toBeLessThanOrEqual(top.bottom + 0.5);
-    await expect(band?.bottom ?? 0).toBeLessThanOrEqual(head.top + 0.5);
+    await expect(head.bottom).toBeLessThanOrEqual(band.top + 0.5);
+    await expect(band.bottom).toBeLessThanOrEqual(top.bottom + 0.5);
     await waitFor(() => expect(box(canvasElement)).toBeEnabled());
     const send = canvas.getByRole("button", { name: "Send" });
     send.focus();

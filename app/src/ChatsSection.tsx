@@ -1,10 +1,12 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { CHAT_ROW } from "./paneDrag";
+import { CHAT_ROW, PickUpHere } from "./paneDrag";
+import { keySaid } from "./keys/registry";
 import {
   memo,
   useCallback,
+  useContext,
   useEffect,
   useId,
   useMemo,
@@ -17,7 +19,7 @@ import {
 } from "react";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import { AnchoredPopover } from "./ui/popover/Popover";
-import { ChevronRight, Ellipsis, Hand, LayoutGrid, Plus, Search } from "lucide-react";
+import { Bell, ChevronRight, Ellipsis, Hand, LayoutGrid, Move, Plus, Search } from "lucide-react";
 import {
   BROWSERS_SHOW,
   besideId,
@@ -120,6 +122,20 @@ const HAND: CSSProperties = {
   height: "1em",
   color: `var(${property("needs-you.base")})`,
 };
+
+/** A row's quiet mark (#4759), the faint hand of a task that can't report asks or the bell of a
+ *  note in the Notices centre: at the words' size, in the row's quiet text colour
+ *  (`ui-text-secondary`), never the needs-you colour. */
+const QUIET_MARK: CSSProperties = { width: "1em", height: "1em" };
+
+/** What a row says of a chat it announced and the person has not looked at (#4759). */
+export const NEW_SAID = "new";
+
+/** What a row's mark for a note in the Notices centre says (#4759). */
+export const NOTED_SAID = "A notice about it is in the Notices centre";
+
+/** What the faint hand on a row says (#4759). */
+export const CANT_REPORT_SAID = "Can't report asks: look at it from time to time";
 
 /** No rows of the catalogue: what a section drawn on its own, in a test, offers. */
 const NO_OFFERS: Catalogued = new Map();
@@ -271,6 +287,7 @@ export function ChatsSection({
   wrapping,
   sandboxOf,
   besides,
+  noted,
   onOpen,
   offers = NO_OFFERS,
   onPress,
@@ -303,6 +320,8 @@ export function ChatsSection({
   /** The chats in the other panes of the tab in front (#4757): their rows are marked faintly,
    *  so a press that would jump to one is told before it is pressed. */
   besides?: ReadonlySet<number>;
+  /** The chats in no pane with a note in the Notices centre (#4759): their rows are marked. */
+  noted?: ReadonlySet<number>;
   /** A row was pressed: go to that chat. A task is shown inside its session's tab (#1486).
    *  The one way a row opens. */
   onOpen: (session: number) => void;
@@ -1095,9 +1114,12 @@ export function ChatsSection({
                       handedToName={handed?.[0].name ?? null}
                       handedMore={handed === undefined ? 0 : handed.length - 1}
                       askerWaiting={row.askerWaiting === true}
+                      unseen={row.unseen === true}
+                      cantReport={row.cantReport === true}
                       tab={row.tab}
                       current={row.session === front}
                       beside={besides?.has(row.session) ?? false}
+                      noted={noted?.has(row.session) ?? false}
                       open={open ?? null}
                       needs={lead === undefined ? null : lead}
                       askingUnder={askingUnder.get(row.session) ?? 0}
@@ -1319,6 +1341,9 @@ const Row = memo(function Row({
   handedToName,
   handedMore,
   askerWaiting,
+  unseen,
+  cantReport,
+  noted,
   tab,
   current,
   beside,
@@ -1376,6 +1401,12 @@ const Row = memo(function Row({
   handedMore: number;
   /** That chat waits to start after a launch, and has not closed (#1513). */
   askerWaiting: boolean;
+  /** Announced and not looked at yet (#4759): it says "new" until it has been on screen. */
+  unseen: boolean;
+  /** A task whose harness can't report asks (#4759): the faint hand stays on it. */
+  cantReport: boolean;
+  /** In no pane, with a note in the Notices centre (#4759): its row is marked. */
+  noted: boolean;
   tab: boolean;
   current: boolean;
   /** On screen in another pane of the tab in front (#4757): a press on it jumps there. */
@@ -1440,6 +1471,8 @@ const Row = memo(function Row({
   };
   /** The row itself, which takes the keyboard back when the second step is answered Keep. */
   const self = useRef<HTMLButtonElement>(null);
+  /** Placement mode's pick-up, for the row's Place… (#4764): it never changes. */
+  const pickUp = useContext(PickUpHere);
   // Asked once, as the row is drawn: whether its chat's state changed while it was not.
   const [changed] = useState(() => clock.missed(session));
   // A task's tokens, in its card (#1500): read as the pointer or the keyboard rests on the
@@ -1607,6 +1640,27 @@ const Row = memo(function Row({
             <span className="ui-row-lead">
               <ChatPersonaState persona={persona} {...state} changed={changed} />
             </span>
+            {/* **Place…** (#4764): the pointer's single press for what dragging the row does,
+                    placement mode's targets. As the twist, inside the row, which is a button, so
+                    no button itself and not in the accessibility tree, as its ⋯ is not: the
+                    keyboard's way to the same is its list's Place… (Shift+F10 on the row), as
+                    for the row's other actions, and ⌘⇧M on the row. Drawn under the pointer
+                    only, over the row's end. */}
+            {pickUp !== undefined && (
+              <Tooltip tip={`Place ${name}… (${keySaid("pane.place")})`}>
+                <span
+                  className="chat-row-place"
+                  aria-hidden="true"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    pickUp({ kind: "chat", session, chat: "" }, self.current);
+                  }}
+                >
+                  <Move aria-hidden="true" />
+                </span>
+              </Tooltip>
+            )}
             <span className="ui-row-trail" data-gives-way={questioned || undefined}>
               {open === false && (
                 <>
@@ -1618,6 +1672,42 @@ const Row = memo(function Row({
                 </>
               )}
               {stopping && <span className="stopping ui-text-meta">Stopping…</span>}
+              {/* **Not looked at yet** (#4759): a handoff, or a task that can't report asks,
+                  started in no pane and was announced; the row says so until it is on screen.
+                  Words, so the row is heard saying it. */}
+              {unseen && (
+                <span className="ui-text-meta" data-mark="new">
+                  {NEW_SAID}
+                </span>
+              )}
+              {/* **Can't report asks** (#4759, ADR 0090 as amended 2026-11-02): the title bar's
+                  faint hand, kept on the row of a task whose harness can't say when it waits. */}
+              {cantReport && (
+                <Tooltip tip={CANT_REPORT_SAID}>
+                  <span
+                    className="ui-text-secondary"
+                    data-mark="cant-report"
+                    role="img"
+                    aria-label={CANT_REPORT_SAID}
+                  >
+                    <Hand aria-hidden="true" style={QUIET_MARK} />
+                  </span>
+                </Tooltip>
+              )}
+              {/* **A note in the Notices centre** (#4759): a chat in no pane has no band, so what
+                  it says is listed there, and its row says it has something to read. */}
+              {noted && (
+                <Tooltip tip={NOTED_SAID}>
+                  <span
+                    className="ui-text-secondary"
+                    data-mark="noted"
+                    role="img"
+                    aria-label={NOTED_SAID}
+                  >
+                    <Bell aria-hidden="true" style={QUIET_MARK} />
+                  </span>
+                </Tooltip>
+              )}
               {/* **Wrapping up, and its sandbox** (#4760): the row says what the strip's chip
                   and the tab said before; Cancel smart close is first in its list. */}
               <WrappingUp held={wrapping} />

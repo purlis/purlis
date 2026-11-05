@@ -42,6 +42,9 @@ pub enum StartedBy {
     /// The person picked it in Use skill…, which typed it into the chat, and sent that prompt
     /// (SK-12): the run opens as the prompt does.
     UseSkill,
+    /// purlis typed a prompt that starts the skill directly, after the person pressed a button
+    /// that asks for it (the Skill studio, Try it, a theme chat; #5186), and the person sent it.
+    Prefilled,
     /// A curation action typed the prompt that started it, and the person sent it (SK-20): the
     /// harness started the skill in that prompt's turn, by whichever route it takes.
     Curation,
@@ -56,14 +59,15 @@ pub enum StartedBy {
 }
 
 impl StartedBy {
-    /// The word a run records: `skill-tool`, `read`, `mcp-load`, `use-skill`, `curation`,
-    /// `trigger`, `grade` or `unknown`.
+    /// The word a run records: `skill-tool`, `read`, `mcp-load`, `use-skill`, `prefilled`,
+    /// `curation`, `trigger`, `grade` or `unknown`.
     pub fn word(self) -> &'static str {
         match self {
             Self::SkillTool => "skill-tool",
             Self::Read => "read",
             Self::McpLoad => "mcp-load",
             Self::UseSkill => "use-skill",
+            Self::Prefilled => "prefilled",
             Self::Curation => "curation",
             Self::Trigger => "trigger",
             Self::Grade => "grade",
@@ -78,6 +82,7 @@ impl StartedBy {
             "read" => Self::Read,
             "mcp-load" => Self::McpLoad,
             "use-skill" => Self::UseSkill,
+            "prefilled" => Self::Prefilled,
             "curation" => Self::Curation,
             "trigger" => Self::Trigger,
             "grade" => Self::Grade,

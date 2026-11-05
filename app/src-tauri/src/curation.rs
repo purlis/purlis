@@ -228,7 +228,14 @@ fn offered(root: &Path, spec: &str) -> SubjectCurations {
         Ok((subject, resolution)) => SubjectCurations {
             subject: spec.to_owned(),
             name: name_of(root, &subject),
-            actions: resolution.actions.iter().map(drawn).collect(),
+            actions: {
+                let harness = curation::default_harness(root);
+                resolution
+                    .actions
+                    .iter()
+                    .map(|one| drawn(one, harness))
+                    .collect()
+            },
             left_out: resolution.warnings.into_iter().map(left_out).collect(),
             trouble: None,
         },
@@ -243,7 +250,7 @@ fn offered(root: &Path, spec: &str) -> SubjectCurations {
 }
 
 /// An action as the window draws it.
-fn drawn(action: &Resolved) -> CurationAction {
+fn drawn(action: &Resolved, harness: Option<purlis_core::harness::Harness>) -> CurationAction {
     CurationAction {
         id: action.id.clone(),
         label: action.label.clone(),
@@ -253,7 +260,7 @@ fn drawn(action: &Resolved) -> CurationAction {
         },
         runner: action.runner.clone(),
         cwd: action.cwd.display().to_string(),
-        prompt: action.prompt.clone(),
+        prompt: action.prompt_on(harness),
     }
 }
 
@@ -395,7 +402,8 @@ fn open(held: &Arc<Held>, spec: &str, action: &str, size: Size) -> Result<Curati
 /// as `shown`: a curation action's, or Settings › Theme's New theme and Edit with a chat
 /// ([`crate::themegallery::theme_chat`], #2333). `starts_runs` is what starts the skill runs
 /// its prompt's turn opens: a curation action, and none for a theme chat, which is no curation
-/// action (decision 60), so its runs are the harness's own pick. A refused start says the
+/// action (decision 60), so a run it starts directly is the person's, and any other the harness's
+/// own pick. A refused start says the
 /// approval its profile needs, where it needs one (#3968).
 pub(crate) fn open_chosen(
     held: &Arc<Held>,
@@ -418,6 +426,7 @@ pub(crate) fn open_chosen(
             then_a_space: false,
             starts_runs,
             studio: None,
+            skill: chosen.skill,
         },
         size,
         when_typed,
@@ -466,6 +475,9 @@ pub struct ChatTyped {
     /// What the Skill studio started it for, which its record keeps (#5185): `None` for every
     /// other chat.
     pub studio: Option<purlis_core::reopen::StudioJob>,
+    /// The one skill its prompt exists to start, where it does (#5186): what is typed is then
+    /// this, as the harness the start resolved takes it, in place of `prompt`.
+    pub skill: Option<purlis_core::skillprompt::SkillPrompt>,
 }
 
 /// A typed chat that started.
@@ -513,7 +525,7 @@ pub fn start_typed(
 /// the reference on the clipboard instead.
 pub fn start_typed_where_it_can_be(
     held: &Arc<Held>,
-    chat: ChatTyped,
+    mut chat: ChatTyped,
     size: Size,
     when: impl FnOnce(
         &str,
@@ -552,6 +564,9 @@ pub fn start_typed_where_it_can_be(
         .get(&chat.profile)
         .and_then(|profile| purlis_core::harness_card::named(&root, &profile.kind));
     let when = when(&chat.profile, ready.declaration(), card.as_ref())?;
+    if let Some(skill) = &chat.skill {
+        chat.prompt = skill.typed_on(ready.harness);
+    }
     let inside = if chat.then_a_space {
         format!("{} ", curation::pasted(&chat.prompt))
     } else {
@@ -608,6 +623,20 @@ pub fn start_typed_where_it_can_be(
                 "purlis: chat {session} started with no id, so its curation prompt starts no run"
             ),
         }
+    }
+    // A direct start calls no Skill tool, so nothing else would open its run (#5186).
+    if let (Some(skill), true) = (&chat.skill, when.is_some())
+        && let Some(forming) = held.chats().skills_of(session)
+        && let Some(salt) = forming.salt
+        && let Some(run) = skill.run_held(
+            ready.harness,
+            &salt,
+            forming.workspace,
+            chat.starts_runs
+                .unwrap_or(purlis_core::skills::runs::StartedBy::Prefilled),
+        )
+    {
+        held.hooks().skill_typed(&root, session, run);
     }
     if when == Some(ReadyToType::WhenRawAndQuiet) {
         type_when_raw_and_quiet(held, session);

@@ -29,6 +29,7 @@ function secret(key: string, over: Partial<VaultSecret> = {}): VaultSecret {
     updated: "2026-09-24T11:32:17Z",
     link: null,
     linked_by: 0,
+    no_seed: false,
     ...over,
   };
 }
@@ -58,10 +59,9 @@ type Asked = { cmd: string; args: Record<string, unknown> };
 function core(opened: VaultContents | Error, writes: Record<string, unknown> = {}): Asked[] {
   const asked: Asked[] = [];
   mockIPC((cmd, args) => {
-    // Which Secret need offers were dismissed (#5159) is names only, read from no vault: it is
+    // Which personas a key may be offered to (#5240) is names only, read from no vault: it is
     // not one of the vault's reads these tests count.
-    if (cmd !== "dismissed_secret_needs")
-      asked.push({ cmd, args: args as Record<string, unknown> });
+    if (cmd !== "secret_need_personas") asked.push({ cmd, args: args as Record<string, unknown> });
     const answer = cmd === "vault_open" ? opened : writes[cmd];
     if (answer === undefined) return null;
     if (answer instanceof Error) throw answer.message;
@@ -260,31 +260,84 @@ describe("a vault's tab", () => {
     noValueAnywhere(EDITED);
   });
 
-  it("offers a dismissed Secret need again from its key's row, and nothing on another (#5159)", async () => {
-    const asked = core(contents([secret("STRIPE_KEY"), secret("OTHER")]), {
-      dismissed_secret_needs: [{ persona: "devops", key: "STRIPE_KEY" }],
-    });
-    draw();
-    await userEvent.click(await screen.findByRole("button", { name: "More for OTHER" }));
-    await screen.findByRole("menuitem", { name: "Copy" });
-    expect(screen.queryByRole("menuitem", { name: /Secret need/ })).toBeNull();
-    await userEvent.keyboard("{Escape}");
+  describe("offering a key as a Secret need (#5240)", () => {
+    const PERSONAS = [
+      {
+        persona: "devops",
+        file: "personas/devops/persona.md",
+        declares: ["OTHER"],
+        names_no_vault: false,
+      },
+      { persona: "shop", file: "personas/shop/persona.md", declares: [], names_no_vault: true },
+    ];
 
-    await fromTheMenuOf("STRIPE_KEY", "Offer as a Secret need");
-    await userEvent.click(await screen.findByRole("menuitem", { name: "devops" }));
-    await waitFor(() =>
-      expect(screen.getByRole("status")).toHaveTextContent(
-        "A change adding STRIPE_KEY to devops's Secret needs waits in the Inbox",
-      ),
-    );
-    expect(asked.find((one) => one.cmd === "offer_secret_need_again")?.args).toEqual({
-      plane: PLANE,
-      persona: "devops",
-      key: "STRIPE_KEY",
+    it("lists on a key's row the personas that do not declare it, none where all do", async () => {
+      core(contents([secret("STRIPE_KEY"), secret("OTHER"), secret("LONE")]), {
+        secret_need_personas: [PERSONAS[0]],
+      });
+      draw();
+      await userEvent.click(await screen.findByRole("button", { name: "More for OTHER" }));
+      await screen.findByRole("menuitem", { name: "Copy" });
+      expect(screen.queryByRole("menuitem", { name: /Secret need/ })).toBeNull();
+      await userEvent.keyboard("{Escape}");
+
+      await fromTheMenuOf("STRIPE_KEY", "Offer as a Secret need");
+      expect(await screen.findByRole("menuitem", { name: "devops" })).toBeInTheDocument();
     });
-    await userEvent.click(await screen.findByRole("button", { name: "More for STRIPE_KEY" }));
-    await screen.findByRole("menuitem", { name: "Copy" });
-    expect(screen.queryByRole("menuitem", { name: /Secret need/ })).toBeNull();
+
+    it("shows the exact line to edit, and writes it directly on the person's press", async () => {
+      const asked = core(contents([secret("STRIPE_KEY")]), {
+        secret_need_personas: PERSONAS,
+        remember_secret_need: "Added STRIPE_KEY to shop's Secret needs. It rides your next save.",
+      });
+      draw();
+      await fromTheMenuOf("STRIPE_KEY", "Offer as a Secret need");
+      await userEvent.click(await screen.findByRole("menuitem", { name: "shop" }));
+
+      const dialog = await screen.findByRole("dialog", { name: "Remember STRIPE_KEY for shop" });
+      expect(within(dialog).getByText("secret-need.STRIPE_KEY:")).toBeInTheDocument();
+      expect(within(dialog).getByText("vault: ops")).toBeInTheDocument();
+      expect(within(dialog).getByText(/personas\/shop\/persona\.md/)).toBeInTheDocument();
+
+      await userEvent.type(
+        within(dialog).getByRole("textbox", { name: "What STRIPE_KEY is for" }),
+        "take payments",
+      );
+      await userEvent.click(within(dialog).getByRole("button", { name: "Add the line" }));
+
+      await waitFor(() =>
+        expect(screen.getByRole("status")).toHaveTextContent(
+          "Added STRIPE_KEY to shop's Secret needs",
+        ),
+      );
+      expect(asked.find((one) => one.cmd === "remember_secret_need")?.args).toEqual({
+        plane: PLANE,
+        vault: "ops",
+        persona: "shop",
+        key: "STRIPE_KEY",
+        purpose: "take payments",
+      });
+      expect(asked.some((one) => one.cmd === "offer_secret_need_again")).toBe(false);
+    });
+
+    it("keeps the dialog and says why where the line was not written", async () => {
+      core(contents([secret("STRIPE_KEY")]), {
+        secret_need_personas: PERSONAS,
+        remember_secret_need: new Error("it changed just now"),
+      });
+      draw();
+      await fromTheMenuOf("STRIPE_KEY", "Offer as a Secret need");
+      await userEvent.click(await screen.findByRole("menuitem", { name: "devops" }));
+      const dialog = await screen.findByRole("dialog", { name: "Remember STRIPE_KEY for devops" });
+      await userEvent.type(
+        within(dialog).getByRole("textbox", { name: "What STRIPE_KEY is for" }),
+        "take payments",
+      );
+      await userEvent.click(within(dialog).getByRole("button", { name: "Add the line" }));
+      await waitFor(() =>
+        expect(within(dialog).getByRole("alert")).toHaveTextContent("it changed just now"),
+      );
+    });
   });
 
   it("renames a secret from the row's menu", async () => {
@@ -357,6 +410,75 @@ describe("a vault's tab", () => {
     });
   });
 
+  it("marks a key as no 2FA seed only after asking, starting on Cancel (#5237)", async () => {
+    const asked = core(contents([secret("APP")]), {
+      vault_secret_mark_no_seed: contents([secret("APP", { no_seed: true })]),
+    });
+    draw();
+
+    await fromTheMenuOf("APP", "Mark as no 2FA seed…");
+    const asking = await screen.findByRole("alertdialog", { name: "Mark APP as no 2FA seed?" });
+    expect(asking).toHaveTextContent("a 16-letter app password");
+    expect(asking).toHaveTextContent("If the value changes, the mark goes.");
+    expect(within(asking).getByRole("button", { name: "Cancel" })).toHaveFocus();
+    await userEvent.click(within(asking).getByRole("button", { name: "Cancel" }));
+    expect(asked.some((one) => one.cmd === "vault_secret_mark_no_seed")).toBe(false);
+
+    await fromTheMenuOf("APP", "Mark as no 2FA seed…");
+    const again = await screen.findByRole("alertdialog");
+    await userEvent.click(within(again).getByRole("button", { name: "Mark as no 2FA seed" }));
+
+    await screen.findByText("Marked as no 2FA seed. Fills as a plain value.");
+    expect(asked.find((one) => one.cmd === "vault_secret_mark_no_seed")?.args).toEqual({
+      plane: PLANE,
+      vault: "ops",
+      key: "APP",
+    });
+  });
+
+  it("says in the dialog why a key could not be marked (#5237)", async () => {
+    core(contents([secret("APP")]), {
+      vault_secret_mark_no_seed: new Error("APP holds an otpauth address"),
+    });
+    draw();
+    await fromTheMenuOf("APP", "Mark as no 2FA seed…");
+    const asking = await screen.findByRole("alertdialog");
+    await userEvent.click(within(asking).getByRole("button", { name: "Mark as no 2FA seed" }));
+    expect(await within(asking).findByRole("alert")).toHaveTextContent(
+      "APP holds an otpauth address",
+    );
+    expect(screen.queryByText("Marked as no 2FA seed. Fills as a plain value.")).toBeNull();
+  });
+
+  it("offers no mark on a linked entry, whose value is another entry's (#5237)", async () => {
+    core(contents([secret("K", { link: { vault: "team", key: "STRIPE" } })]));
+    draw();
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    const row = screen.getByRole("row", { name: /^K/ });
+    row.focus();
+    await userEvent.keyboard("{Enter}");
+    const menu = await screen.findByRole("menu", { name: "K" });
+    expect(within(menu).queryByRole("menuitem", { name: "Mark as no 2FA seed…" })).toBeNull();
+  });
+
+  it("takes the mark off a marked key at once, with nothing to ask (#5237)", async () => {
+    const asked = core(contents([secret("APP", { no_seed: true })]), {
+      vault_secret_unmark_no_seed: contents([secret("APP")]),
+    });
+    draw();
+    await screen.findByText("Marked as no 2FA seed. Fills as a plain value.");
+    await fromTheMenuOf("APP", "Remove the no-seed mark");
+    await waitFor(() =>
+      expect(screen.queryByText("Marked as no 2FA seed. Fills as a plain value.")).toBeNull(),
+    );
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(asked.find((one) => one.cmd === "vault_secret_unmark_no_seed")?.args).toEqual({
+      plane: PLANE,
+      vault: "ops",
+      key: "APP",
+    });
+  });
+
   it("names the entry a linked entry reads under its name (#5069)", async () => {
     core(
       contents([
@@ -411,7 +533,7 @@ describe("a vault's tab", () => {
       within(menu)
         .getAllByRole("menuitem")
         .map((item) => item.textContent),
-    ).toEqual(["Edit value…", "Rename…", "Copy", "Delete…"]);
+    ).toEqual(["Edit value…", "Rename…", "Copy", "Mark as no 2FA seed…", "Delete…"]);
     // On its first row, as the menu button's does (charter-app#189).
     await waitFor(() =>
       expect(within(menu).getByRole("menuitem", { name: "Edit value…" })).toHaveFocus(),
@@ -647,8 +769,8 @@ describe("the note that a vault's items were moved", () => {
   function noting(opens: number): Asked[] {
     const asked: Asked[] = [];
     mockIPC((cmd, args) => {
-      // Names only, from no vault (#5159): not a read these tests count.
-      if (cmd === "dismissed_secret_needs") return [];
+      // Names only, from no vault (#5240): not a read these tests count.
+      if (cmd === "secret_need_personas") return [];
       asked.push({ cmd, args: args as Record<string, unknown> });
       if (cmd === "vault_secret_reveal") return REVEALED;
       if (cmd === "vault_secret_copy") return 1;
@@ -691,8 +813,8 @@ describe("the note that a vault's items were moved", () => {
   it("does not read a vault of another kind again after a reveal", async () => {
     const asked: Asked[] = [];
     mockIPC((cmd, args) => {
-      // Names only, from no vault (#5159): not a read these tests count.
-      if (cmd === "dismissed_secret_needs") return [];
+      // Names only, from no vault (#5240): not a read these tests count.
+      if (cmd === "secret_need_personas") return [];
       asked.push({ cmd, args: args as Record<string, unknown> });
       if (cmd === "vault_secret_reveal") return REVEALED;
       return cmd === "vault_open" ? contents([secret("DB_URL")], { provider: "plain-file" }) : null;

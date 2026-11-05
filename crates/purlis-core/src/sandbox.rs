@@ -1719,15 +1719,25 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         crate::secrets::fingerprint::key_path(&ctx),
         Access::ReadWrite,
     );
+    deny(
+        Class::Vaults,
+        crate::secrets::links::path(&ctx),
+        Access::ReadWrite,
+    );
     // …and under EVERY spelling of the state folder, there or not, as its other records are
     // below (RN-2a): which folder holds the vaults is decided by which are there.
     // The folder in use is one of the spellings unless `$PURLIS_HOME` moved it: named once.
     let in_use = [
         ctx.vaults_dir(),
         crate::secrets::fingerprint::key_path(&ctx),
+        crate::secrets::links::path(&ctx),
     ];
     for state in crate::names::STATE_DIR.spellings() {
-        for kept in ["vaults", crate::secrets::fingerprint::KEY_FILE] {
+        for kept in [
+            "vaults",
+            crate::secrets::fingerprint::KEY_FILE,
+            crate::secrets::links::FILE,
+        ] {
             let path = root.join(state).join(kept);
             if !in_use.contains(&path) {
                 deny(Class::Vaults, path, Access::ReadWrite);
@@ -6845,8 +6855,8 @@ impl Lifted {
                 .to_owned(),
             By::YourLevel(_) => "No sandbox — your setting. This chat runs without the sandbox \
                               because your level for this project, on this machine, is no \
-                              sandbox (Settings › Sandbox › Your level). Every chat it covers \
-                              starts this way until you change it."
+                              sandbox (Settings › Project › Sandbox › Your level). Every chat \
+                              it covers starts this way until you change it."
                 .to_owned(),
             // The Windows backend is M46, #565.
             By::NoBackend(os) => format!(
@@ -7453,6 +7463,7 @@ pub mod hosted;
 pub mod hosts;
 pub mod internal;
 pub mod kubeconfig;
+pub mod level_why;
 pub mod local;
 pub mod localport;
 pub mod nat64;

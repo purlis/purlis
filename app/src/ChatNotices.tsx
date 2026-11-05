@@ -112,8 +112,16 @@ export type Arrived = {
   /** The task name the handoff gave it, which its tab says instead (charter-app#258). */
   label?: string | null;
   /** The chat that started it, by name, and that chat's workspace; and, where the core says
-   *  (#1447), whether it arrives with a tab. */
-  from?: (HandedFrom & { tab?: boolean }) | null;
+   *  (#1447), whether it arrives with a tab, and whether it is a task, which owes that chat a
+   *  report. */
+  from?: (HandedFrom & { tab?: boolean; task?: boolean }) | null;
+  /** **Whether it can't tell the person it needs them** (#4759): the core's answer from its
+   *  harness's card, or `true` for a program with no adapter. A task like this is announced
+   *  like a handoff. */
+  cant_report_asks?: boolean;
+  /** **Whether it is announced** (#4759): a handoff, or a task that can't report asks, that the
+   *  person did not start. The core's answer, the one its row's "new" mark starts from. */
+  announced?: boolean;
 };
 
 /** A harness started by hand in a shell tab, as its banner needs it (ADR 0062). */
@@ -432,6 +440,8 @@ export function ChatNotices({
         session={session}
         requestHere={dispatchDrawn.length > 0}
         onShowInbox={onShowInbox}
+        asks={waiting === undefined ? undefined : drawn.filter((ask) => ask.source === "vault")}
+        onWay={onAnswer}
       />
       <McpFailedNotice plane={plane} session={session} onRestart={onRestart} />
       {/* What its pane sent that did not reach it (#4734). */}

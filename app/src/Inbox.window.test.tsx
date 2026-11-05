@@ -29,6 +29,7 @@ import { IN_ANOTHER_WINDOW, OTHER_PROJECTS, type Elsewhere } from "./InboxElsewh
 import type { Needing, Quiet } from "./NeedsYou";
 import { SETTLE_MS } from "./TaskBlocksNotice";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
+import { askOfVault } from "./test-asks";
 import { forgetInbox, replyBytes } from "./inboxRules";
 import { keepInboxScope } from "./inboxScope";
 import { forgetProjectViews } from "./projectViews";
@@ -732,6 +733,51 @@ describe("answering in place", () => {
           shown: HOST.answer.via === "sandbox-block" ? HOST.answer.shown : null,
           reason: null,
         },
+      }),
+    );
+  });
+
+  it("allows a refused vault's persona, or keeps it blocked with the reason, by its Notice's own commands (#5160)", async () => {
+    // A chat in no pane: the Inbox is where its refusal is answered.
+    const vault = askOfVault(
+      {
+        plane: PLANE,
+        session: 6,
+        vault: "devops",
+        persona: "steward",
+        tagged_for: "devops",
+        dispatch_to: null,
+        locked: null,
+      },
+      ["steward 6"],
+    );
+    const calls = core({ allow_refused_vault: { said: "Allowed." } });
+    draw([vault]);
+    expect(screen.getByText(vault.says)).toBeInTheDocument();
+    expect(vault.says).toContain(
+      "Allow lets every chat opened as steward use it in this project on this machine",
+    );
+    // A grant, told apart from Keep blocked at a glance, as the Notice's is (ADR 0097 §6).
+    expect(screen.getByRole("button", { name: "Allow steward to use this vault" })).toHaveAttribute(
+      "data-variant",
+      "grants",
+    );
+    await userEvent.type(
+      screen.getByRole("textbox", { name: /Why you keep it blocked/ }),
+      "ask devops instead",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Keep blocked" }));
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "keep_vault_blocked",
+        args: { plane: PLANE, session: 6, vault: "devops", reason: "ask devops instead" },
+      }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Allow steward to use this vault" }));
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "allow_refused_vault",
+        args: { plane: PLANE, session: 6, vault: "devops" },
       }),
     );
   });
@@ -2008,5 +2054,106 @@ describe("a secret fill (#5115)", () => {
     expect(screen.getByTestId("fill-site-site")).toHaveTextContent("dash.example.test");
     expect(screen.getByTestId("fill-site")).toHaveTextContent("labels API key");
     expect(screen.getByRole("button", { name: "Allow once" })).toBeInTheDocument();
+  });
+});
+
+describe("a secret ask's Remember (#5240)", () => {
+  const ask = (remember: boolean): Shown => ({
+    session: 7,
+    ask: "secret:3",
+    says: "Needs STRIPE_KEY (not declared by this persona) from devops's vault team",
+    options: [
+      { id: "fill", label: "Fill", allows: true, preselected: null },
+      { id: "keep", label: "Not now", allows: false, preselected: null },
+    ],
+    source: "secret",
+    chain: ["steward 7"],
+    answer: { via: "secret", id: 3 },
+    secret: {
+      persona: "devops",
+      vault: "team",
+      key: "STRIPE_KEY",
+      declared: false,
+      waiting: 1,
+      remember: remember
+        ? {
+            file: "personas/devops/persona.md",
+            need: true,
+            purpose: "charge https://shop.example/",
+            vault: null,
+          }
+        : null,
+    },
+  });
+  const REMEMBER = { name: "Remember this need for the persona" };
+  const fill = async (user: ReturnType<typeof userEvent.setup>) => {
+    read();
+    await user.type(screen.getByLabelText("Value of STRIPE_KEY"), "s3cret");
+    await user.click(screen.getByRole("button", { name: "Fill" }));
+  };
+  const answered = (asked: { cmd: string; args: unknown }[]) =>
+    asked.find((one) => one.cmd === "answer_secret_ask")?.args;
+
+  it("fills and remembers nothing, unticked", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const asked = core();
+    draw([ask(true)]);
+    await fill(user);
+    await waitFor(() =>
+      expect(answered(asked)).toEqual({
+        plane: PLANE,
+        id: 3,
+        value: "s3cret",
+        vault: null,
+        key: null,
+        remember: null,
+      }),
+    );
+  });
+
+  it("sends the purpose as the person edited it, ticked", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const asked = core();
+    draw([ask(true)]);
+    await user.click(screen.getByRole("checkbox", REMEMBER));
+    const purpose = screen.getByRole("textbox", { name: "What STRIPE_KEY is for" });
+    expect(purpose).toHaveValue("charge https://shop.example/");
+    await user.clear(purpose);
+    await user.type(purpose, "test cards");
+    await fill(user);
+    await waitFor(() =>
+      expect(answered(asked)).toMatchObject({ value: "s3cret", remember: "test cards" }),
+    );
+  });
+
+  it("asks for a purpose before it fills, ticked with none, and keeps the value typed", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const asked = core();
+    draw([ask(true)]);
+    await user.click(screen.getByRole("checkbox", REMEMBER));
+    await user.clear(screen.getByRole("textbox", { name: "What STRIPE_KEY is for" }));
+    await fill(user);
+    expect(await screen.findByText(/Say what STRIPE_KEY is for/)).toBeInTheDocument();
+    expect(answered(asked)).toBeUndefined();
+    expect(screen.getByLabelText("Value of STRIPE_KEY")).toHaveValue("s3cret");
+  });
+
+  it("sends no purpose on Not now, even ticked", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const asked = core();
+    draw([ask(true)]);
+    await user.click(screen.getByRole("checkbox", REMEMBER));
+    read();
+    await user.click(screen.getByRole("button", { name: "Not now" }));
+    await waitFor(() =>
+      expect(answered(asked)).toEqual({
+        plane: PLANE,
+        id: 3,
+        value: null,
+        vault: null,
+        key: null,
+        remember: null,
+      }),
+    );
   });
 });

@@ -18,6 +18,7 @@ import {
   windowSaid,
 } from "./actions";
 import { cardRowsFor } from "./cardLink";
+import { keySaid } from "./keys/registry";
 import { storeLabel } from "./memoryMoves";
 import { SAID, SUBMENU, WARNS } from "./menuWords";
 import { shellKeySaid } from "./shellKey";
@@ -210,6 +211,8 @@ const DRESS: Readonly<Record<string, Dress>> = {
   "needs.show": { said: SAID.show, slot: "first" },
   "chat.handed": { said: (offer) => `Go to ${offer.name ?? ""}`.trim(), slot: "open" },
   "chat.own": { said: SAID.ownTab, slot: "open" },
+  // Place… (#4764): where it is drawn, by the keys; ⌘⇧M does the same from the row.
+  "chat.place": { said: SAID.place, slot: "open", keys: () => keySaid("pane.place") },
   "chat.beside": { said: unnamed, slot: "open" },
   "chat.back": { said: unnamed, slot: "open" },
   "chat.brief": { said: SAID.brief, slot: "open" },
@@ -243,6 +246,8 @@ const DRESS: Readonly<Record<string, Dress>> = {
   // Into another window of the project (#4768); Move to window ▸ is folded by `toWindowRows`.
   "tab.newWindow": { said: SAID.tabToNewWindow, slot: "first" },
   "tab.keep": { said: SAID.keepOpen, slot: "first" },
+  // Place… (#4764): the tab's drag, by the keys; ⌘⇧M does the same from the tab.
+  "tab.place": { said: SAID.place, slot: "first", keys: () => keySaid("pane.place") },
   "tab.close": {
     said: unnamed,
     // A task's own tab keeps the close's id for its minimise (#1489), which sends it back and

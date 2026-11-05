@@ -12,6 +12,7 @@ use std::time::Duration;
 
 use serde_json::json;
 
+use super::super::fill::GUARD_FIELD;
 use super::super::login::{
     CLEAR_FIELD, FIELD_HAS_FOCUS, FIELD_LENGTH, FOCUS_FIELD, NAME_FIELD, PASSWORD_FIELD,
     SAYS_IT_IS_A_NAME, origin_of,
@@ -87,6 +88,18 @@ enum Twist {
     /// Submitted, the form sends the browser back to the site's own page on another origin, as
     /// a site that signs in on another host does (#4995).
     GoesBack,
+    /// The field can't be given the stops that keep its value from a copy or a drag (#5121).
+    Unguarded,
+    /// Another page opens a page of its own as purlis's opens (#5121).
+    PopupAsItOpens,
+    /// The login's page lands on another origin, asking for nothing there (#5121).
+    LandsElsewhere,
+    /// Its sites' cookies are in the browser, with those of others (#5121).
+    HoldsCookies,
+    /// Those cookies don't go when they're deleted (#5121).
+    CookiesStay,
+    /// Its service workers can't be cleared (#5121).
+    WorkersStay,
 }
 
 /// [`as_a_login_form`], with `twist`.
@@ -108,6 +121,7 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<A
     let seen = Arc::clone(&submitted);
     let typed = Arc::new(AtomicUsize::new(0));
     let reused = AtomicBool::new(false);
+    let loads = AtomicUsize::new(0);
     let navigated = |engine: &Engine, session: &str, loader: &str, url: &str| {
         let frame = session.trim_start_matches("S-");
         engine.emit(
@@ -121,8 +135,41 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<A
         let on = sent.session.as_deref().unwrap_or_default();
         match sent.method.as_str() {
             "Page.navigate" => {
-                navigated(engine, on, "LOADER-LOGIN", p["url"].as_str().unwrap_or_default());
-                Some(Ok(json!({ "frameId": on.trim_start_matches("S-"), "loaderId": "LOADER-LOGIN" })))
+                if twist == Twist::PopupAsItOpens {
+                    engine.emit(
+                        "Target.targetCreated",
+                        json!({"targetInfo":{"targetId":"PAGE-7","type":"page","title":"A popup","url":ADDRESS,"attached":false,"openerId":"PAGE-1"}}),
+                        None,
+                    );
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                let lands = if twist == Twist::LandsElsewhere {
+                    "http://elsewhere.test/"
+                } else {
+                    p["url"].as_str().unwrap_or_default()
+                };
+                let loader = format!("LOADER-LOGIN-{}", loads.fetch_add(1, Ordering::SeqCst));
+                navigated(engine, on, &loader, lands);
+                Some(Ok(json!({ "frameId": on.trim_start_matches("S-"), "loaderId": loader })))
+            }
+            "Storage.getCookies" if matches!(twist, Twist::HoldsCookies | Twist::CookiesStay) => {
+                let deleted = engine.sent("Network.deleteCookies").len();
+                Some(Ok(if deleted > 0 && twist == Twist::HoldsCookies {
+                    json!({ "cookies": [{ "name": "other", "domain": "other.test", "path": "/" }] })
+                } else {
+                    json!({ "cookies": [
+                        { "name": "own", "domain": "fixture.test", "path": "/deep" },
+                        { "name": "parent", "domain": ".fixture.test", "path": "/" },
+                        { "name": "under", "domain": "under.fixture.test", "path": "/" },
+                        { "name": "other", "domain": "other.test", "path": "/" }
+                    ] })
+                }))
+            }
+            "Storage.clearDataForOrigin" if twist == Twist::WorkersStay => {
+                Some(Err(crate::cdp::CallError::Engine {
+                    code: -32000,
+                    message: "not now".into(),
+                }))
             }
             "Input.insertText" => {
                 let text = p["text"].as_str().unwrap_or_default();
@@ -132,6 +179,14 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<A
                     std::thread::sleep(Duration::from_millis(50));
                 }
                 Some(Ok(json!({})))
+            }
+            "Runtime.callFunctionOn"
+                if p["functionDeclaration"] == GUARD_FIELD && twist == Twist::Unguarded =>
+            {
+                Some(Err(crate::cdp::CallError::Engine {
+                    code: -32000,
+                    message: "Cannot find context with specified id".into(),
+                }))
             }
             "Runtime.callFunctionOn" if p["functionDeclaration"] == FIELD_HAS_FOCUS => {
                 Some(if twist == Twist::Unread {
@@ -188,7 +243,7 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<A
                 ))
             }
             "Runtime.evaluate" if p["expression"] == PASSWORD_FIELD => {
-                Some(Ok(if matches!(twist, Twist::AsksNothing | Twist::PlainField)
+                Some(Ok(if matches!(twist, Twist::AsksNothing | Twist::PlainField | Twist::LandsElsewhere)
                     || (goes && seen.load(Ordering::SeqCst))
                 {
                     json!({ "result": { "type": "object", "subtype": "null", "value": null } })
@@ -1002,4 +1057,248 @@ fn a_kept_login_whose_page_sends_it_to_its_form_late_is_filled_there() {
     late.join().unwrap();
     assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
     assert_eq!(inserted(&engine), vec![FILLED.to_owned()]);
+}
+
+/// #5121, SF-7: a login's field gives nothing to a copy, a cut or a drag from before its value
+/// goes in, as any fill's does.
+#[test]
+fn a_logins_field_is_guarded_before_its_value_goes_in() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, true);
+    let ended = browser.log_in(&login_at(ORIGIN), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let guards: Vec<_> = engine
+        .sent("Runtime.callFunctionOn")
+        .into_iter()
+        .filter(|sent| sent.params["functionDeclaration"] == GUARD_FIELD)
+        .collect();
+    assert_eq!(guards.len(), 1, "the one field filled");
+    assert_eq!(guards[0].params["arguments"][0]["value"], FILLED);
+    assert!(
+        guards[0].params["objectId"].as_str().is_some(),
+        "run on the field, an object of purlis's own world"
+    );
+}
+
+/// #5121: where the field can't be guarded, its value doesn't go in.
+#[test]
+fn a_field_that_cannot_be_guarded_is_not_filled() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::Unguarded);
+    let ended = browser.log_in(&login_at(ORIGIN), holds()).unwrap();
+    assert!(
+        matches!(ended.outcome, Err(Refusal::NotLoggedIn(_))),
+        "{}",
+        ended_as(&ended.outcome)
+    );
+    assert!(inserted(&engine).is_empty(), "nothing went in");
+}
+
+/// #5121: from a login on, the agent copies and drags nothing in that browser, as after a fill.
+#[test]
+fn after_a_login_the_agent_copies_nothing_in_that_browser() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, true);
+    let ended = browser.log_in(&login_at(ORIGIN), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let copied = browser.call(
+        &id(2),
+        Call::Press {
+            page: None,
+            keys: vec!["Control+c".to_owned()],
+        },
+    );
+    assert_eq!(copied.err(), Some(Refusal::CopyWithheld));
+}
+
+/// #5121: a login that never reached a fill leaves the agent's copies alone.
+#[test]
+fn a_login_of_a_page_that_asks_nothing_withholds_no_copy() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::AsksNothing);
+    let login = Login {
+        only_if_asked: true,
+        ..login_at(ORIGIN)
+    };
+    let ended = browser.log_in(&login, holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let note = ended.outcome.ok().and_then(|answer| answer.note);
+    assert!(
+        note.unwrap_or_default().contains("already logged in"),
+        "the note says so"
+    );
+    let copied = browser.call(
+        &id(2),
+        Call::Press {
+            page: None,
+            keys: vec!["Control+c".to_owned()],
+        },
+    );
+    assert_ne!(copied.err(), Some(Refusal::CopyWithheld));
+}
+
+/// #5121: the page a login fills is the one purlis made, by what the engine said it made, though
+/// another tab opens one as it opens, which would have become the browser's current page.
+#[test]
+fn a_page_another_tab_opens_as_the_login_opens_is_not_the_one_filled() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::PopupAsItOpens);
+    let ended = browser.log_in(&login_at(ORIGIN), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let typed_on: Vec<_> = engine
+        .sent("Input.insertText")
+        .iter()
+        .map(|sent| sent.session.clone().unwrap_or_default())
+        .collect();
+    assert_eq!(typed_on, ["S-PAGE-2"]);
+}
+
+/// #5121: a page that went elsewhere asks for nothing, and says nothing of a session.
+#[test]
+fn a_login_page_that_went_elsewhere_is_not_taken_for_one_signed_in() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::LandsElsewhere);
+    let login = Login {
+        only_if_asked: true,
+        ..login_at(ORIGIN)
+    };
+    let ended = browser.log_in(&login, holds()).unwrap();
+    assert!(
+        matches!(ended.outcome, Err(Refusal::NotLoggedIn(_))),
+        "{}",
+        ended_as(&ended.outcome)
+    );
+    assert!(inserted(&engine).is_empty(), "nothing filled");
+}
+
+/// A login a chat chose, on `fixture.test`.
+fn chosen() -> Login {
+    Login {
+        suggested: true,
+        ..login_at(ORIGIN)
+    }
+}
+
+/// #5121, the person's ruling: a login a chat chose starts clean on its own site, with what its
+/// sites hold gone before anything is filled, and what other sites hold left alone.
+#[test]
+fn a_login_a_chat_chose_clears_its_own_site_before_anything_is_filled() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::HoldsCookies);
+    let ended = browser.log_in(&chosen(), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let deleted: Vec<_> = engine
+        .sent("Network.deleteCookies")
+        .iter()
+        .map(|sent| sent.params["name"].as_str().unwrap_or_default().to_owned())
+        .collect();
+    assert_eq!(deleted, ["own", "parent"], "others' are left alone");
+    let workers = engine.sent("Storage.clearDataForOrigin");
+    assert_eq!(workers.len(), 1);
+    assert_eq!(workers[0].params["storageTypes"], "service_workers");
+    assert_eq!(workers[0].params["origin"], ORIGIN);
+    let went: Vec<_> = engine
+        .sent("Page.navigate")
+        .iter()
+        .filter(|sent| sent.session.as_deref() == Some("S-PAGE-2"))
+        .map(|sent| sent.params["url"].as_str().unwrap_or_default().to_owned())
+        .collect();
+    assert_eq!(
+        went,
+        [ADDRESS, "about:blank", ADDRESS],
+        "its page goes blank, then loads again with nothing of before"
+    );
+    assert_eq!(inserted(&engine).len(), 1, "and only then filled");
+}
+
+#[test]
+fn a_cookie_that_will_not_go_fills_nothing() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::CookiesStay);
+    let ended = browser.log_in(&chosen(), holds()).unwrap();
+    assert!(
+        matches!(ended.outcome, Err(Refusal::NotLoggedIn(_))),
+        "{}",
+        ended_as(&ended.outcome)
+    );
+    assert!(inserted(&engine).is_empty(), "nothing filled");
+}
+
+#[test]
+fn a_service_worker_that_will_not_go_fills_nothing() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::WorkersStay);
+    let ended = browser.log_in(&chosen(), holds()).unwrap();
+    assert!(
+        matches!(ended.outcome, Err(Refusal::NotLoggedIn(_))),
+        "{}",
+        ended_as(&ended.outcome)
+    );
+    assert!(inserted(&engine).is_empty(), "nothing filled");
+}
+
+#[test]
+fn a_declared_login_clears_nothing() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::HoldsCookies);
+    let ended = browser.log_in(&login_at(ORIGIN), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    assert!(engine.sent("Network.deleteCookies").is_empty());
+    assert!(engine.sent("Storage.clearDataForOrigin").is_empty());
+}
+
+#[test]
+fn a_cookie_reaches_its_host_and_every_host_under_a_parent_domain_alone() {
+    use super::super::login::reaches;
+    assert!(reaches("app.example.test", "app.example.test"));
+    assert!(reaches(".example.test", "app.example.test"), "a parent's");
+    assert!(reaches(".app.example.test", "app.example.test"), "its own");
+    assert!(reaches(".EXAMPLE.test", "app.example.test"), "in any case");
+    assert!(
+        !reaches("example.test", "app.example.test"),
+        "a bare parent"
+    );
+    assert!(!reaches("other.example.test", "app.example.test"), "beside");
+    assert!(
+        !reaches("sub.app.example.test", "app.example.test"),
+        "under"
+    );
+    assert!(!reaches(".notexample.test", "app.example.test"), "alike");
+    assert!(!reaches(".ample.test", "app.example.test"), "alike");
+}
+
+/// #5121: a form on another host counts: its page's site is cleared with it.
+#[test]
+fn a_login_a_chat_chose_with_its_form_elsewhere_clears_both_sites() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::None);
+    let login = Login {
+        back_to: Some("https://app.example.test".to_owned()),
+        ..chosen()
+    };
+    let ended = browser.log_in(&login, holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let origins: Vec<_> = engine
+        .sent("Storage.clearDataForOrigin")
+        .iter()
+        .map(|sent| {
+            sent.params["origin"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned()
+        })
+        .collect();
+    assert_eq!(origins, [ORIGIN, "https://app.example.test"]);
+}
+
+#[test]
+fn a_host_is_read_from_an_origin_as_a_cookie_spells_it() {
+    use super::super::login::host_of;
+    assert_eq!(
+        host_of("https://app.example.test"),
+        Some("app.example.test")
+    );
+    assert_eq!(host_of("http://localhost:8080"), Some("localhost"));
+    assert_eq!(host_of("no-scheme"), None);
+    assert_eq!(host_of("https://"), None);
 }

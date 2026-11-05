@@ -30,6 +30,40 @@ function core(question: { task: string; asked: string; number: number; question:
 }
 
 describe("the form that answers a task's question", () => {
+  it("draws the question as a chat's text: its link opens on a press, its raw HTML is dropped (#5213)", async () => {
+    const urls: string[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "plugin:opener|open_url") urls.push((args as { url: string }).url);
+      return null;
+    });
+    const { container } = render(
+      <AnswerQuestion
+        plane={PLANE}
+        session={7}
+        task="talk"
+        number={9}
+        question={
+          'Which **host**?\nRead [the plan](https://example.com/plan).\n<script>alert(1)</script>\n\nBefore <b onclick="x()">tag</b>.'
+        }
+        onDone={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("host").tagName).toBe("STRONG");
+    expect(container.querySelector("br")).not.toBeNull();
+    expect(container.querySelector("b, script, img")).toBeNull();
+    expect(container.textContent).not.toContain("alert");
+    expect(screen.getByRole("textbox", { name: "Your answer" })).toHaveAccessibleDescription(
+      expect.stringContaining("Which host?"),
+    );
+    expect(urls).toEqual([]);
+
+    await userEvent.click(screen.getByRole("link", { name: "the plan" }));
+
+    expect(urls).toEqual(["https://example.com/plan"]);
+  });
+
   it("asks the core for the question where the surface gave none, and answers that one", async () => {
     const asked = core({ task: "talk", asked: "steward 3", number: 9, question: "Which host?" });
     const onDone = vi.fn();

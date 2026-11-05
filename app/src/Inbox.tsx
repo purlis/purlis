@@ -287,7 +287,8 @@ export function Inbox({
   /** This project's name, as its tab says it: said on a row only among other projects'. */
   const project = elsewhere?.waitingHere?.find((one) => one.plane === plane)?.project;
   const whereOf = (session: number): string => {
-    const filed = workspaceOf?.(session);
+    // Session 0 is no chat's (a change purlis holds, a sign-in): it is filed nowhere (#5240).
+    const filed = session === 0 ? undefined : workspaceOf?.(session);
     return [
       scope === "all" ? project : undefined,
       filed === undefined ? undefined : (workspaceNamed?.(filed) ?? filed),
@@ -547,7 +548,7 @@ export type WindowLines = {
 
 /**
  * **The asks whose answers are Allow and Keep blocked** (ADR 0097 §6): a permission prompt, a
- * sandbox's host, folder or local service, and a browser's sites. On these, each answer that
+ * sandbox's host, folder or local service, a browser's sites, and a refused vault. On these, each answer that
  * allows is drawn as the `grants` variant and every other in the plain style: equal in weight,
  * and told apart at a glance in every theme by the grant's edge and its open lock. A question's choices, a removal and a browser's reach are
  * answers of another kind and keep their own looks.
@@ -562,6 +563,7 @@ export const ALLOW_OR_KEEP: ReadonlySet<Shown["source"]> = new Set<Shown["source
   "pool-tool",
   "browser-login",
   "secret-fill",
+  "vault",
 ]);
 
 /** What one ask's row offers, decided once for its stops and its drawing. */
@@ -646,7 +648,8 @@ function shapeOf(
         ask.answer.via === "browser" ||
         ask.answer.via === "browser-sites" ||
         ask.answer.via === "browser-login" ||
-        ask.answer.via === "secret-fill") &&
+        ask.answer.via === "secret-fill" ||
+        ask.answer.via === "vault") &&
       ask.options.some((one) => one.id === "keep"),
     // A chat that only waits for the person's next word asks again at its next stop, so it
     // may be put away, as the queue always let it be. A decision never is.
@@ -812,6 +815,7 @@ const SOURCE_SAID: Record<Shown["source"], string> = {
   "pool-login": "Asks to log its browser in on a pool's runner",
   "pool-tool": "Asks to send a tool its vault values for a run on a pool's runner",
   secret: "Asks you for a secret its vault doesn't hold",
+  vault: "Refused a vault its persona isn't tagged for",
   "browser-login": "Asks to log its browser in to a site with vault credentials",
   "secret-fill": "Asks to put a vault secret into a field of its browser",
   terminal: "In its terminal",
@@ -869,6 +873,8 @@ function Ask({
   const [secretPick, setSecretPick] = useState<VaultEntry>();
   /** Which way the person fills a Secret ask: Fill with nothing picked says so (#5073). */
   const [secretFillWith, setSecretFillWith] = useState<FillWith>("value");
+  /** The purpose of the line Fill writes, while Remember is ticked (#5240). */
+  const [secretRemember, setSecretRemember] = useState<string>();
   const who = chainSaid(ask.chain);
   const key = askKey(ask);
   const openAnswer = useOpenAnswer();
@@ -907,6 +913,15 @@ function Ask({
       setSaid("Pick an entry first, or choose New value.");
       return;
     }
+    if (
+      ask.secret?.remember?.need === true &&
+      option.allows &&
+      secretRemember !== undefined &&
+      secretRemember.trim() === ""
+    ) {
+      setSaid(`Say what ${ask.secret.key} is for, or untick Remember.`);
+      return;
+    }
     setBusy(true);
     setSaid(undefined);
     // A Secret ask's value is read from its box as Fill is pressed, and the box emptied.
@@ -920,6 +935,7 @@ function Ask({
       option.id === "keep" ? reason : undefined,
       given,
       linked,
+      ask.secret != null && option.allows ? secretRemember : undefined,
     )
       .then(({ refused, live, opened }) => {
         if (refused !== undefined) {
@@ -984,6 +1000,8 @@ function Ask({
               picked={secretPick}
               onPicked={setSecretPick}
               onFillWith={setSecretFillWith}
+              remember={secretRemember}
+              onRemember={setSecretRemember}
             />
           </Stop>
         )}

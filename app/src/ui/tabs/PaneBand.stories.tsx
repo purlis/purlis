@@ -238,13 +238,6 @@ function Pane({
             >
               11 skills
             </Button>
-            <Button size="sm" variant="ghost" className="pane-harness">
-              Claude Code
-            </Button>
-            <span className="chat-gauge" data-testid="chat-gauge">
-              <span className="gauge-label">ctx</span> 5% <span className="gauge-label">cache</span>{" "}
-              100%
-            </span>
           </div>
         </PaneHead>
         <NoticePaneRow
@@ -564,7 +557,8 @@ export const BellBesideItsNeighbours: Story = {
       expect(boxes[i].left - boxes[i - 1].right, `gap before head button ${i}`).toBeGreaterThan(1);
     }
 
-    canvas.getByRole("button", { name: "Claude Code" }).focus();
+    // The last control before the actions: the harness that stood here is the foot's (#5202).
+    canvas.getByRole("button", { name: "11 skills" }).focus();
     await userEvent.tab();
     await untilFocused(() => bell, "Tab onto the bell");
     const tip = await within(document.body).findByRole("tooltip");
@@ -972,7 +966,7 @@ export const NarrowScrolled: Story = {
 
 /**
  * **The pane's actions** (`PaneActions`, shared with a view's pane, #3147): split side by side,
- * split stacked and close, one cluster at the pane's top right, drawn by the catalogue's own
+ * split stacked and close, after a divider from the chat's actions, at the pane's top right, drawn by the catalogue's own
  * rows. Hidden at rest in the pane with the keyboard, drawn once the keyboard is on them.
  */
 export const Actions: Story = {

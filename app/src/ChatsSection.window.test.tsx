@@ -30,6 +30,8 @@ import { findByTip, getByTip, tipOf } from "./ui/tooltip/tooltip.testkit";
 import { heard } from "./frame.testkit";
 import { aBatchOf } from "./chatEvents.testkit";
 import { CHAT_EVENTS } from "./chatEvents";
+import { CHANGE, FIRST_LINE } from "./QuizBand";
+import { CLOSE_QUIZ } from "./TaskQuiz";
 
 /**
  * **The Chats section, against the whole window** (#1447): every running chat of the project
@@ -1638,6 +1640,56 @@ describe("a chat's state, as a word and a shape (#1484)", () => {
     await waitFor(() => expect(screen.queryByTestId("task-quiz")).toBeNull());
   });
 
+  const aQuizAtTheTop = async () => {
+    const { move, question } = core([
+      chat(1, "alpha"),
+      chat(2, "alpha", { label: "talk", from: tabbed() }),
+    ]);
+    render(<App />);
+    const tree = await section();
+    await waitFor(() => expect(shape(tree)).toHaveLength(2));
+    move(2, "running", 10);
+    await question(2, "reached");
+    return screen.findByTestId("task-quiz");
+  };
+
+  /** The note folds into the pane's bell while the window's notices are minimised, so open it. */
+  const theNote = async () => {
+    const quiz = await aQuizAtTheTop();
+    const pane = quiz.closest(".pane-frame") as HTMLElement;
+    fireEvent.click(within(pane).getByRole("button", { name: /^Pane notices:/ }));
+    return (await within(pane).findByText(FIRST_LINE)).closest(
+      '[data-scope="notice"][data-part="root"]',
+    ) as HTMLElement;
+  };
+
+  it("says once where a task's questions come, and its Change opens Settings at Where you answer (#5213)", async () => {
+    const note = await theNote();
+    expect(within(note).queryByRole("button", { name: /each session|keep this/i })).toBeNull();
+
+    fireEvent.click(within(note).getByRole("button", { name: CHANGE }));
+
+    expect(await screen.findByText("Where you answer")).toBeVisible();
+  });
+
+  it("puts the note about where questions come away for good with its × (#5213)", async () => {
+    const note = await theNote();
+
+    fireEvent.click(within(note).getByRole("button", { name: "Dismiss" }));
+
+    await waitFor(() => expect(screen.queryByText(FIRST_LINE)).toBeNull());
+    expect(screen.getByTestId("task-quiz")).toBeTruthy();
+  });
+
+  it("closes a question from this pane only: it still waits in the count and the Inbox's (#5213)", async () => {
+    const quiz = await aQuizAtTheTop();
+
+    fireEvent.click(within(quiz).getByRole("button", { name: CLOSE_QUIZ }));
+
+    await waitFor(() => expect(screen.queryByTestId("task-quiz")).toBeNull());
+    expect(await screen.findByRole("button", { name: "1 thing waits on you" })).toBeTruthy();
+  });
+
   it("says how many questions are with their asking chat on a folded row, and draws no hand for them", async () => {
     const { move, question } = core([
       chat(1, "alpha"),
@@ -2268,6 +2320,75 @@ const threeTasks = () => [
   chat(4, "alpha", { persona: "devops", from: by(1, "task") }),
 ];
 
+describe("a chat's row places its chat (#4764)", () => {
+  it("picks its chat up for placement mode on a press of its Place…", async () => {
+    const { move } = core(threeTasks());
+    render(<App />);
+    const tree = await section();
+    await waitFor(() => expect(shape(tree)).toHaveLength(4));
+    move(3, "running", 13);
+    const one = row(tree, "devops 3");
+    const place = one.querySelector<HTMLElement>(".chat-row-place");
+    expect(place).not.toBeNull();
+    fireEvent.click(place as HTMLElement);
+    await waitFor(() =>
+      expect(document.querySelector("[data-pane-drag-said]")?.textContent).toMatch(
+        /^Picked up devops 3\. Arrow keys choose a side/,
+      ),
+    );
+    // Drawn and said where it is seen, never inside a section that hides itself (the Inbox's
+    // Notices hide with none to show, and once held this layer).
+    expect(document.querySelector("[data-pane-drag-said]")?.closest("[hidden]")).toBeNull();
+    // The keyboard is on placement mode's first target.
+    await waitFor(() => expect(document.activeElement).toHaveAttribute("data-place-target"));
+  });
+
+  it("picks its chat up from its list's Place…, which Shift+F10 opens, and Esc gives the row back the keyboard", async () => {
+    const { move } = core(threeTasks());
+    render(<App />);
+    const tree = await section();
+    await waitFor(() => expect(shape(tree)).toHaveLength(4));
+    move(3, "running", 13);
+    const one = row(tree, "devops 3");
+    // The row's own keyboard route to its list (D10): the ⋯ is the pointer's.
+    act(() => one.focus());
+    fireEvent.keyDown(one, { key: "F10", shiftKey: true });
+    await screen.findByRole("menu");
+    const place = menuRow("Place…");
+    // Its key, which does the same from the row, said at the row's end.
+    expect(place.textContent).toMatch(/(⌘⇧M|Ctrl\+Shift\+M)/);
+    await userEvent.click(place);
+    await waitFor(() => expect(placingSaid()).toMatch(/^Picked up devops 3\. Arrow keys/));
+    await waitFor(() => expect(document.activeElement).toHaveAttribute("data-place-target"));
+
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(placingSaid()).toBe("Put back. Nothing moved."));
+    expect(document.activeElement).toBe(row(tree, "devops 3"));
+  });
+});
+
+describe("a tab's menu places its tab (#4764)", () => {
+  it("picks the tab up from its right-click's Place…, offering the strip's new place", async () => {
+    core(threeDeep());
+    render(<App />);
+    const tree = await section();
+    await waitFor(() => expect(shape(tree)).toHaveLength(4));
+    const tab = within(strip()).getByRole("tab", { name: /^steward 1/ });
+    fireEvent.contextMenu(tab);
+    await screen.findByRole("menu");
+    await userEvent.click(menuRow("Place…"));
+    await waitFor(() => expect(placingSaid()).toMatch(/^Picked up steward 1\. Arrow keys/));
+    await waitFor(() => expect(document.activeElement).toHaveAttribute("data-place-target"));
+
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(placingSaid()).toBe("Put back. Nothing moved."));
+    expect(document.activeElement).toBe(within(strip()).getByRole("tab", { name: /^steward 1/ }));
+  });
+});
+
+/** What placement mode last told a reader (#4764). */
+const placingSaid = () => document.querySelector("[data-pane-drag-said]")?.textContent ?? "";
+
 describe("a chat's row is one line, with a hover card (#1675)", () => {
   it("draws its persona's badge with its state on it, and its name, and nothing more", async () => {
     const { move } = core(threeTasks());
@@ -2281,12 +2402,16 @@ describe("a chat's row is one line, with a hover card (#1675)", () => {
       // One line, and no second line: the name, then the state, which is drawn first and
       // heard after the name, then the persona's badge at the row's end (DS-11).
       expect(one.querySelector(".line.two")).toBeNull();
-      const parts = [...one.children].filter((part) => !part.matches(".ui-tree-twist"));
+      // The twist and Place… are the pointer's, out of the accessibility tree (#4764).
+      const parts = [...one.children].filter(
+        (part) => !part.matches(".ui-tree-twist, .chat-row-place"),
+      );
       expect(parts.map((part) => part.className)).toEqual([
         "ui-row-label session ui-text-body",
         "ui-row-lead",
         "ui-row-trail",
       ]);
+      expect(one.querySelector(".chat-row-place")).toHaveAttribute("aria-hidden", "true");
       expect(drawnAs(parts[1], "order")).toBe("-1");
       // The persona's mark leads, with the state on it, and both are said (#3342).
       expect(parts[1].children[0]).toHaveClass("chat-persona");

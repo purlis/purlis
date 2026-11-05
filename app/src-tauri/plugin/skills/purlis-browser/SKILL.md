@@ -59,8 +59,12 @@ the browser keeps reaching that host too, so the site's own redirects and token 
 but you may read or act on that host's pages only while it signs in: until the browser is back
 on the login's page, for two minutes at most. A step that host asks for after the password is
 yours or the user's to take in that time. Outside it, a call on that host's page is refused, and
-where the page asks to sign in again, call `browser_login` again. A login the person allowed from its
-notice opens in a browser of its own, so log in before you work in the site. If the login is refused, tell the user the sentence: it names what to declare or
+where the page asks to sign in again, call `browser_login` again. The login goes into the browser
+you name, or the one you're using. A browser that holds it, on a page of its site that asks for no sign-in, answers "already logged
+in" and nothing is filled. Where the page asks, or you're elsewhere, purlis looks on a page of its
+own, and may fill again. A login kept for later reuse opens in a browser of
+its own: the answer says why and which browser it left, and you close that one with `browser_close`
+if nothing in it is needed. If the login is refused, tell the user the sentence: it names what to declare or
 allow. A page with a captcha or a second factor does not log in this way; ask the user, or hand
 them the browser with `ask_operator` pointed at it.
 
@@ -86,7 +90,8 @@ same on a pool's runner.
 **A 2FA code comes from its seed**: name the key that holds the seed (an `otpauth://totp/`
 address or the base32 secret) and set `code` to true. purlis works the current code out from
 the seed as it fills, and only the code goes into the page; the seed never does. A seed asked for
-without `code` is refused.
+without `code` is refused. So is any value that looks like one, unless the person marked its key
+as no 2FA seed in the vault's tab, and a chat can't make that mark. Pass on what the refusal says.
 
 **In the user's own terminal**, `purlis secret exec --dotenv` resolves vault keys into one 0600
 temp file and points `PLAYWRIGHT_MCP_SECRETS_FILE` at it. You then refer to a secret **by

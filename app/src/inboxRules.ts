@@ -92,9 +92,21 @@ export function byChat(asks: readonly Shown[], age: (ask: Shown) => Age): ChatGr
   }
   return [...groups.entries()].map(([session, mine]) => ({
     session,
-    chain: mine[0].chain.length > 0 ? mine[0].chain : [`chat ${session}`],
+    chain: chainOfGroup(session, mine),
     asks: mine,
   }));
+}
+
+/**
+ * What a group is headed: its chat, by its first ask. Session 0 is no chat's, and its asks can
+ * come from different places (a change held from one chat, a sign-in), so where they differ the
+ * head says purlis alone and each row says its own (#5240).
+ */
+function chainOfGroup(session: number, mine: readonly Shown[]): readonly string[] {
+  const first = mine[0].chain;
+  if (first.length === 0) return [`chat ${session}`];
+  const differ = mine.some((ask) => ask.chain.join() !== first.join());
+  return session === 0 && differ ? ["purlis"] : first;
 }
 
 /** The sources whose asks a pane draws a Notice for: a reply is answered in the pane itself. */
@@ -110,6 +122,7 @@ const ON_A_PANE: ReadonlySet<Shown["source"]> = new Set([
   "runner-write",
   "runner-dispatch",
   "browser-login",
+  "vault",
 ]);
 
 /**

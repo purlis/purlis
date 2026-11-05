@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { GRIP_HANDLE } from "./paneDrag";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -16,7 +17,7 @@ import { chatList, openSubmenus, pressMenuPath } from "./menus.testkit";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import App from "./App";
-import { askOfDispatch } from "./test-asks";
+import { askOfDispatch, askOfVault } from "./test-asks";
 import type { AskOffer, DispatchPending, VaultRefused } from "./bindings";
 import { forgetDismissals } from "./dismissals";
 import { aTabForEachChat } from "./laidOut.testkit";
@@ -176,7 +177,14 @@ function core(now: Core) {
       if (cmd === "dispatch_grants_needed") return now.dispatches ?? [];
       // The asks registry lists each held dispatch, which its Notice draws from (#1695).
       if (cmd === "asks_waiting")
-        return { plane: PLANE, asks: (now.dispatches ?? []).map((one) => askOfDispatch(one)) };
+        return {
+          plane: PLANE,
+          asks: [
+            ...(now.dispatches ?? []).map((one) => askOfDispatch(one)),
+            // And each vault refused, which its Notice draws from too (#5160).
+            ...(now.refusals ?? []).map((one) => askOfVault(one)),
+          ],
+        };
       if (cmd === "task_folder_shared") {
         const place = (args as { place: string | null }).place ?? "here";
         return now.shared?.[place] ?? null;
@@ -463,14 +471,18 @@ describe("a refused vault, on a pane whose chat has already asked that persona",
     // The chat at a glance is the header's one line, and the Notices are not items of it: they
     // are the pane's band, above the header and the terminal, inside the pane (#1647, #3142).
     const head = document.querySelector(".pane-head");
-    expect([...(head?.children ?? [])].map((one) => one.className)).toEqual([
-      "pane-chips",
-      "pane-actions",
-    ]);
+    expect(
+      [...(head?.children ?? [])].map((one) =>
+        // Its grip first, which picks the pane up (#4764).
+        one.hasAttribute(GRIP_HANDLE) ? "grip" : one.className,
+      ),
+    ).toEqual(["grip", "pane-chips", "pane-actions"]);
     const frame = head?.closest(".pane-frame");
-    expect([...(frame?.children ?? [])].map((one) => one.className)).toEqual([
+    // The notices are never under the terminal: the pane foot there says only facts (#5202).
+    expect([...(frame?.children ?? [])].map((one) => one.classList[0])).toEqual([
       "pane-top",
       "pane-body",
+      "pane-foot",
     ]);
     expect(
       [...(frame?.firstElementChild?.children ?? [])].map(
