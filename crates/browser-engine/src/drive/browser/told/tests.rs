@@ -332,7 +332,7 @@ fn a_site_named_by_what_was_filled_elsewhere_stays_unsaid() {
 }
 
 #[test]
-fn what_the_person_typed_while_driving_hides_no_site() {
+fn what_the_person_typed_while_driving_hides_a_site_asked_about_and_takes_no_origin_from_a_fill() {
     let mut state = State::default();
     let mut typed = Kept::default();
     typed.run(&["https://", "github.com"]);
@@ -344,8 +344,24 @@ fn what_the_person_typed_while_driving_hides_no_site() {
         browser: state.kept.clone(),
         pages: Vec::new(),
     };
-    assert!(!keeping.holds_back("https://any.test"));
-    assert!(!keeping.holds_back("github.com:443"));
+    let told = keeping.answer(Answer {
+        asked: vec![
+            "github.com.evil.test:443".to_owned(),
+            "a.test:443".to_owned(),
+        ],
+        content: Content::Field(FieldInfo {
+            origin: Some("https://any.test".to_owned()),
+            label: String::new(),
+            kind: FieldKind::OneLine,
+        }),
+        ..answer()
+    });
+    assert_eq!(told.asked, ["a.test:443"]);
+    assert!(told.note.expect("said").contains("nobody is asked"));
+    let Content::Field(field) = told.content else {
+        panic!("a field");
+    };
+    assert_eq!(field.origin.as_deref(), Some("https://any.test"));
 }
 
 #[test]

@@ -242,6 +242,10 @@ fn what_a_screenshot_looks_for_leaves_a_short_text_alone() {
 #[test]
 fn a_letter_whose_capital_is_spelled_otherwise_is_found_in_either_case() {
     assert_eq!(
+        scrub_of(&["stra\u{df}e"]).text("a STRA\u{1e9e}E b"),
+        "a (blanked) b"
+    );
+    assert_eq!(
         scrub_of(&["stra\u{df}e"]).text("a STRASSE b"),
         "a (blanked) b"
     );
@@ -304,11 +308,12 @@ fn a_string_too_much_to_read_is_said_as_blanked_whole() {
     }
     let long = format!("{deep}{}", "x".repeat(2_000_000));
     let scrub = scrub_of(&["abc-value"]);
-    assert_eq!(scrub.text(&long), "(blanked)");
+    // Compared by hand: a failure must not print megabytes.
+    assert!(scrub.text(&long) == "(blanked)", "said at length");
     assert!(scrub.holds(&long));
     // And a long one that reads as it is stays.
     let plain = "x".repeat(2_000_000);
-    assert_eq!(scrub.text(&plain), plain);
+    assert!(scrub.text(&plain) == plain, "a plain long string changed");
 }
 
 #[test]

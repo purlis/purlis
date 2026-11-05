@@ -54,10 +54,12 @@ fn needle(text: &str) -> Needle {
     Zeroizing::new(text.chars().flat_map(folded).collect())
 }
 
-/// `c` as it is compared, whichever case it was written in: through upper case first, so a `ß`
-/// reads as the `SS` it is capitalised to, and a final `ς` as the `Σ`.
+/// `c` as it is compared, whichever case it was written in: lower, upper, then lower again, so a
+/// `ß` or a `ẞ` reads as the `SS` it is capitalised to, and a final `ς` as the `Σ`.
 fn folded(c: char) -> impl Iterator<Item = char> {
-    c.to_uppercase().flat_map(char::to_lowercase)
+    c.to_lowercase()
+        .flat_map(char::to_uppercase)
+        .flat_map(char::to_lowercase)
 }
 
 /// What is taken out of an answer: texts kept out in each of their [`forms`], and the texts groups

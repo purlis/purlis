@@ -1027,6 +1027,14 @@ fn once_the_filled_page_loads_another_document_its_keys_go_again() {
 }
 
 #[test]
+fn what_a_fill_goes_in_with_is_what_a_fields_origin_is_held_to() {
+    let holding = Arc::new(Holding::default());
+    let (browser, _engine) = filled_under(&holding);
+    let state = super::super::super::lock(&browser.inner.state);
+    assert!(crate::drive::scrub::Scrub::of(&state.filled).holds(VALUE));
+}
+
+#[test]
 fn a_window_takes_on_what_its_opener_keeps_and_what_a_page_kept_outlives_it() {
     let (browser, engine) = browser();
     let _ = snapshot(&browser, 1);

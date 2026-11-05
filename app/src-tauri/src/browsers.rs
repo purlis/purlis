@@ -367,7 +367,7 @@ mod hosted {
         ) -> Result<Browsed, crate::chatbrowsers::Refused> {
             use crate::chatbrowsers::Refused;
             let link = self.link_for(program).map_err(Refused::Said)?;
-            // A host before 1.72 reads no field for a secret fill (#5115).
+            // No field is read for a fill on a host too old to be sent one.
             if matches!(act, Act::DescribeField { .. }) {
                 fills_secrets(link.version()).map_err(Refused::Said)?;
             }

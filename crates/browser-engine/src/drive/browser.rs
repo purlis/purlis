@@ -1424,6 +1424,15 @@ impl State {
         every
     }
 
+    /// Page `target` goes from the list: what it kept stays kept from what is said beside the pages.
+    fn page_closes(&mut self, target: &str) {
+        if let Some(page) = self.page(target) {
+            let kept = page.scrubbed.clone();
+            self.closed_kept.take_in(&kept);
+        }
+        self.pages.retain(|p| p.target != target);
+    }
+
     /// Keeps `held` out of every later answer about every page, and every page opened later.
     fn keep_out_everywhere(&mut self, held: &Kept) {
         self.kept.take_in(held);
@@ -1849,11 +1858,7 @@ impl State {
         }
         self.document_origins.gone(target);
         self.document_origins.page_gone(target);
-        if let Some(page) = self.page(target) {
-            let kept = page.scrubbed.clone();
-            self.closed_kept.take_in(&kept);
-        }
-        self.pages.retain(|p| p.target != target);
+        self.page_closes(target);
     }
 }
 
@@ -5725,7 +5730,7 @@ impl Inner {
                             page.title = text("/targetInfo/title").unwrap_or_default();
                         }
                         if !may_stay_open(&url) {
-                            state.pages.retain(|p| p.target != target);
+                            state.page_closes(&target);
                             if state.current.as_deref() == Some(target.as_str()) {
                                 state.current = state.pages.last().map(|p| p.target.clone());
                             }

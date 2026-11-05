@@ -12,9 +12,11 @@
 //! typed on one page takes no ordinary words out of another. A window takes on what the page that
 //! opened it keeps, and what a page kept outlives it, in what is said beside the pages.
 //!
-//! **A site is said only where its name holds nothing purlis filled**, or only what went to that
-//! very site, or a site under it: such a name says nothing of the text that the site's own name
-//! did not. What the person typed is often part of a site's name, and doesn't hide it.
+//! **A site asked about is said only where its name holds nothing the browser keeps**, or only what
+//! was filled on that very site, or one it is under: such a name says nothing of the text that the
+//! site's own name did not. **A field's origin**, which the window alone reads and compares, is held
+//! to what purlis filled, by the same exception: what the person typed takes no origin from a fill.
+//! What they typed on one page alone hides no site.
 //!
 //! **What the chat wrote itself is said back as it wrote it** (a reference, a page's name, a key,
 //! an option). It holds nothing the chat did not have, and an echo with a guess blanked would tell
@@ -80,7 +82,7 @@ fn kept_off_told(mut answer: Answer, kept_off: &KeptOff) -> Answer {
 /// What is kept out, as a call is answered: of the whole browser, and of each page.
 struct Keeping {
     every: Scrub,
-    /// What purlis filled: what a site's name is held to (module docs).
+    /// What purlis filled: what a field's origin is held to (module docs).
     filled: Kept,
     /// Each text of `filled` that the name of the site it went to holds, with that site's host.
     named_by_their_sites: Vec<(zeroize::Zeroizing<String>, String)>,
@@ -119,9 +121,9 @@ impl State {
 }
 
 impl Keeping {
-    /// Whether `site`'s name holds something purlis filled that its own name doesn't account for
+    /// Whether `site`'s name holds something of `kept` that its own name doesn't account for
     /// (module docs).
-    fn holds_back(&self, site: &str) -> bool {
+    fn holds_back(&self, kept: &Kept, site: &str) -> bool {
         let host = host_of(site);
         let own: Vec<&str> = self
             .named_by_their_sites
@@ -129,7 +131,7 @@ impl Keeping {
             .filter(|(_, on)| host == *on || host.ends_with(&format!(".{on}")))
             .map(|(text, _)| text.as_str())
             .collect();
-        Scrub::of(&self.filled.without(&own)).holds(site)
+        Scrub::of(&kept.without(&own)).holds(site)
     }
 
     /// What is said of `page`: its own texts, or where it has gone, everything kept.
@@ -169,7 +171,10 @@ impl Keeping {
         } = answer;
         let every = &self.every;
         let field_origin = match &content {
-            Content::Field(field) => field.origin.clone().filter(|one| !self.holds_back(one)),
+            Content::Field(field) => field
+                .origin
+                .clone()
+                .filter(|one| !self.holds_back(&self.filled, one)),
             _ => None,
         };
         // Read by the window alone, which compares the page's origin with the field's.
@@ -191,7 +196,7 @@ impl Keeping {
             }) => Content::Field(FieldInfo {
                 // An origin is compared and approved exactly, so one that holds what purlis
                 // filled, past what its own name accounts for, is one the engine can't name, and
-                // nothing is filled on it.
+                // nothing is filled on it (module docs).
                 origin: origin.filter(|_| field_origin.is_some()),
                 label: every.text(&label),
                 kind,
@@ -205,7 +210,7 @@ impl Keeping {
         let told = asked.len();
         let asked: Vec<String> = asked
             .into_iter()
-            .filter(|site| !self.holds_back(site))
+            .filter(|site| !self.holds_back(&self.browser, site))
             .collect();
         note = note.map(|note| every.text(&note));
         if asked.len() < told {

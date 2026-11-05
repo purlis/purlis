@@ -483,7 +483,8 @@ use crate::view::{Limits, Views};
 ///
 /// 1.75 starts every login that fills clean on its own site (#5272), a declared one too, and
 /// clears all the site stores, so no login is sent to a host before. A form that doesn't appear
-/// on the load after is refused [`NO_LOGIN_FORM_ON_CLEAN_LOAD`].
+/// on the load after is refused [`NO_LOGIN_FORM_ON_CLEAN_LOAD`]. No fill is sent to a host before
+/// either, nor a field read for one ([`KNOWS_FILLS_KEPT_OUT`]).
 pub const VERSION: Version = Version {
     major: 1,
     minor: 75,
@@ -496,9 +497,9 @@ pub const KNOWS_CLEAN_LOGINS: Version = Version {
     minor: 75,
 };
 
-/// The version a fill is first sent to: from here a host takes a filled value out of every string
-/// it answers a chat with, and holds a page's related windows with it. No fill is sent to a host
-/// before, nor a field read for one.
+/// The version a fill is first sent to, the first certain to hold a page's related windows and to
+/// keep what is filled from the chat as this one does. No fill is sent to a host before, nor a
+/// field read for one, by a window or by a host that relays to a runner.
 pub const KNOWS_FILLS_KEPT_OUT: Version = Version {
     major: 1,
     minor: 75,
