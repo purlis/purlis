@@ -54,6 +54,18 @@ describe("the pane foot", () => {
     expect(fills.map((one) => one.style.inlineSize)).toEqual(["100%", "0%"]);
   });
 
+  it("colours a number with no bar only for a warning", () => {
+    const { container } = render(
+      <>
+        <PaneFootGauge label="cache" value="12%" tone="bad" />
+        <PaneFootGauge label="cache" value="91%" tone="ok" />
+      </>,
+    );
+    const values = [...container.querySelectorAll('[data-part="value"]')];
+    expect(values[0]).toHaveAttribute("data-tone", "bad");
+    expect(values[1]).not.toHaveAttribute("data-tone");
+  });
+
   it("draws no bar for a gauge without a fill", () => {
     const { container } = render(<PaneFootGauge label="cache" value="91%" />);
     expect(container.querySelector('[data-part="track"]')).toBeNull();

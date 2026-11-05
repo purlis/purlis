@@ -266,7 +266,7 @@ export function PaneFrame({
   const kind = paneKindOf({
     task: crumbs !== undefined,
     oneJob,
-    shell: head?.chat.shell === true,
+    shell: head?.chat.shell,
   });
   const lines = paneLinesOf(kind, width, {
     from: Boolean(from),
@@ -437,8 +437,8 @@ export function PaneFrame({
         <div className="pane-body">{children}</div>
       </PaneTerminalAt.Provider>
       {/* **The pane foot** (#5202, spec #5191, look A): under the terminal, where the chat runs
-          and how full it is. Drawn whether or not the gauge is known yet, so the terminal keeps
-          its rows when the first usage arrives; after it in the tab order, as it is drawn. */}
+          and how full it is. Drawn once the plane says this is a chat, and whether or not the
+          gauge is known yet, so the terminal keeps its rows when the first usage arrives; after it in the tab order, as it is drawn. */}
       {lines.foot !== null && (
         <PaneFoot className="pane-foot">
           <PaneFootStart>

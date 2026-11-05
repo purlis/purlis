@@ -111,7 +111,7 @@ const WAITING = { ...RUNNING, state: "waiting", moved_at: 2, sequence: 2 } as Mo
 /** What the core says of chat 4's usage: none by default, as before its first turn. */
 let usage: unknown = null;
 
-function core(chat: typeof CHAT | typeof SHELL = CHAT) {
+function core(chat: typeof CHAT | typeof SHELL = CHAT, listed: Promise<void> = Promise.resolve()) {
   mockIPC(
     (cmd) => {
       if (cmd === "chat_usage") return usage;
@@ -120,13 +120,13 @@ function core(chat: typeof CHAT | typeof SHELL = CHAT) {
       // The chat in a tab of its own on alpha, as the stored layout keeps it (#4758).
       if (cmd === "reopened_layout") return aTabForEachChat([chat], () => "alpha");
       if (cmd === "plane_sidebar")
-        return {
+        return listed.then(() => ({
           root: PLANE,
           personas: [],
           persona: null,
           unfiled: [],
           workspaces: [{ name: "alpha", path: ALPHA, vision: "", todos: [], chats: [chat] }],
-        };
+        }));
       if (cmd === "chat_states") return [];
       if (cmd === "chats_that_would_not_start") return [];
       if (cmd === "running_sessions") return [];
@@ -460,5 +460,24 @@ describe("a chat's pane foot (#5202)", () => {
       expect(head().querySelector(".pane-head-where")).toHaveTextContent("alpha"),
     );
     expect(foot()).toBeNull();
+  });
+
+  it("waits until the plane lists the pane's chat, so a shell never shows an empty strip (story 20)", async () => {
+    let list = () => {};
+    core(
+      CHAT,
+      new Promise<void>((resolve) => {
+        list = resolve;
+      }),
+    );
+    render(<App />);
+    await screen.findByTestId("pane");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(foot()).toBeNull();
+
+    await act(async () => list());
+    await waitFor(() => expect(foot()).not.toBeNull());
   });
 });

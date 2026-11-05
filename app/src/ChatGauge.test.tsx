@@ -37,12 +37,13 @@ const USAGE: ChatUsage = {
 };
 
 describe("the gauge, on the pane foot (#5202)", () => {
-  it("draws ctx, cache and the rebuilds as labelled numbers", () => {
+  it("draws two labelled numbers, ctx and cache, and the rebuilds only in its tooltip", () => {
     render(<ChatGauge usage={USAGE} />);
 
     const gauge = screen.getByTestId("chat-gauge");
-    expect(gauge.textContent?.replace(/\s+/g, " ")).toBe("ctx 83%cache 98%↻2 696k");
+    expect(gauge.textContent?.replace(/\s+/g, " ")).toBe("ctx 83%cache 98%");
     expect(tipOf(gauge)).toContain("context window 83% full");
+    expect(tipOf(gauge)).toContain("2 prompt-cache rebuilds, which is costly, 696k tokens");
   });
 
   it("carries ctx's fill as a thin bar under its number, in the core's tone, and no other bar", () => {
@@ -57,12 +58,26 @@ describe("the gauge, on the pane foot (#5202)", () => {
     expect(fills[0].closest('[data-part="gauge"]')?.textContent).toContain("ctx 83%");
   });
 
-  it("draws only the parts the pane's model answers, the rebuilds and a cold streak going with cache", () => {
-    render(<ChatGauge usage={{ ...USAGE, cold: 3 }} parts={["harness", "ctx"]} />);
-
-    expect(screen.getByTestId("chat-gauge").textContent?.replace(/\s+/g, " ").trim()).toBe(
-      "ctx 83%",
+  it("draws only the parts the pane's model answers, and its tooltip still says the rest", () => {
+    render(
+      <ChatGauge
+        usage={{ ...USAGE, cache: { value: 12, tone: "bad" } }}
+        parts={["harness", "ctx"]}
+      />,
     );
+
+    const gauge = screen.getByTestId("chat-gauge");
+    expect(gauge.textContent?.replace(/\s+/g, " ").trim()).toBe("ctx 83%");
+    expect(tipOf(gauge)).toContain("12% of the last turn's input served from cache, which is low");
+  });
+
+  it("keeps a low cache's tone on its number, and none on a good one", () => {
+    const { rerender } = render(
+      <ChatGauge usage={{ ...USAGE, cache: { value: 40, tone: "warn" } }} />,
+    );
+    expect(screen.getByText("40%")).toHaveAttribute("data-tone", "warn");
+    rerender(<ChatGauge usage={USAGE} />);
+    expect(screen.getByText("98%")).not.toHaveAttribute("data-tone");
   });
 
   it("draws no row of bars, however many turns are recorded", () => {
@@ -100,12 +115,14 @@ describe("the gauge, on the pane foot (#5202)", () => {
     expect(gauge.querySelector('[data-part="fill"]')).toBeNull();
   });
 
-  it("says a cold streak in words once the core says there is one", () => {
+  it("says a cold streak in words in its tooltip once the core says there is one, never on the line", () => {
     const { rerender } = render(<ChatGauge usage={USAGE} />);
-    expect(screen.getByTestId("chat-gauge").textContent).not.toContain("cold");
+    expect(tipOf(screen.getByTestId("chat-gauge"))).not.toContain("cold");
 
     rerender(<ChatGauge usage={{ ...USAGE, cold: 3 }} />);
-    expect(screen.getByTestId("chat-gauge").textContent?.replace(/\s+/g, " ")).toContain("cold 3");
+    const gauge = screen.getByTestId("chat-gauge");
+    expect(tipOf(gauge)).toContain("the cache has been cold 3 turns running");
+    expect(gauge.textContent).not.toContain("cold");
   });
 });
 

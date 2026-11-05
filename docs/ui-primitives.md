@@ -920,7 +920,8 @@ writes `data-scope="pane-foot"`: `purlis/pane-foot-family` is an error.
   gauge is known yet, so the terminal never moves when the first usage arrives.
 - **The bar is a mark**: its number says the value, so the track is hidden from a reader and the
   value is never told by its length or colour alone (WCAG 1.4.1). Its fill is in the core's tone
-  for the value (`ok`, `warn`, `bad`), and in forced colours the system's highlight on a track
+  for the value (`ok`, `warn`, `bad`), as is a warning on a number with no bar (`cache`), which its
+  tooltip says in words too. In forced colours the fill is the system's highlight on a track
   edged in the words' colour.
 - **Drawn by its parts** (ADR 0103): `root`, `start`, `end`, `separator`, `gauge`, `label`,
   `value`, `track` and `fill`, in `pane-foot.css`; a theme's parts reach the same attributes

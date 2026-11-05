@@ -14,6 +14,7 @@
  * - **`PaneFootGauge`**: one labelled number, `ctx 62%`, and for `ctx` its fill as a thin bar
  *   under the number, in the core's tone for it. The number says the value; the bar is a mark a
  *   reader is not given, so the value is never told by its colour or length alone (WCAG 1.4.1).
+ *   A number with no bar carries a warning tone itself.
  *
  * **Drawn by its parts** (ADR 0103): the `root`, its `start` and `end`, a `separator`, a `gauge`
  * with its `label`, `value`, `track` and the `fill` on it. `pane-foot.css` draws the family
@@ -75,20 +76,27 @@ export function PaneFootGauge({
   label,
   value,
   fill,
+  tone,
 }: {
-  /** Its name: `ctx`, `cache`, `↻2`. */
+  /** Its name: `ctx`, `cache`. */
   label: string;
-  /** Its value: `62%`, `696k`. */
+  /** Its value as figures: `62%`. */
   value: string;
   /** How full it is, from 0 to 100, and the core's tone for it: drawn as the bar. */
   fill?: { percent: number; tone: PaneFootTone };
+  /** The core's tone for a number with no bar: a warning colours it, and ok leaves it plain. */
+  tone?: PaneFootTone;
 }) {
   return (
     <span data-scope="pane-foot" data-part="gauge">
       <span data-scope="pane-foot" data-part="label">
         {label}
       </span>{" "}
-      <span data-scope="pane-foot" data-part="value">
+      <span
+        data-scope="pane-foot"
+        data-part="value"
+        data-tone={tone === undefined || tone === "ok" ? undefined : tone}
+      >
         {value}
       </span>
       {fill && (

@@ -77,6 +77,15 @@
   font-size: var(--font-size-xs);
 }
 
+/* A number with no bar of its own says a warning itself: `cache`. */
+[data-scope="pane-foot"][data-part="value"][data-tone="warn"] {
+  color: var(--state-waiting);
+}
+
+[data-scope="pane-foot"][data-part="value"][data-tone="bad"] {
+  color: var(--state-failed);
+}
+
 [data-scope="pane-foot"][data-part="track"] {
   grid-column: 1 / -1;
   display: block;

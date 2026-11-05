@@ -45,12 +45,12 @@ import { PaneFootGauge } from "./ui/pane-foot/PaneFoot";
  *
  * # What it draws
  *
- * The core's gauge, on the pane foot's end (look A, spec #5191): `ctx NN%` with its fill as a
- * thin bar under the number, in the tone the core's threshold gives it, so this and the frame's
- * panel can never colour one number two ways; `cache NN%`; and `↻N cost` when the prefix has
- * been rebuilt. **Nothing at all when nothing is known**, never `ctx 0%`. Once the cache has
- * been cold three turns running (`_cache_hint`'s rule, which Python only ever said in the live
- * footer) it says so in words: `cold 3`.
+ * The core's gauge, on the pane foot's end (look A, spec #5191): two labelled numbers, `ctx NN%`
+ * with its fill as a thin bar under it, and `cache NN%`, each in the tone the core's threshold
+ * gives it, so this and the frame's panel can never colour one number two ways. **Nothing at all
+ * when nothing is known**, never `ctx 0%`. Its tooltip says the rest in words: how many times the
+ * prefix was rebuilt and what that cost, and a streak of cold turns (`_cache_hint`'s rule, which
+ * Python only ever said in the live footer).
  *
  * **No trend.** ADR 0038 named "the token trend" as its own gap, and for a while a row of bars
  * stood beside the numbers, one per recorded turn. Spec #5191 took it away (story 15): the bar
@@ -146,8 +146,7 @@ function sameReading(a: ChatUsage | null, b: ChatUsage | null): boolean {
 }
 
 /** **The gauge itself, on the pane foot** (#5202, look A), or nothing: `ctx` with its fill as a
- *  thin bar under its number, then `cache`, then the rebuilds and a cold streak where the core
- *  says them. The separate row of bars, one per turn, is gone: one figure says what the number
+ *  thin bar under its number, then `cache`. The separate row of bars, one per turn, is gone: one figure says what the number
  *  and the row said twice. */
 export function ChatGauge({
   usage,
@@ -160,13 +159,22 @@ export function ChatGauge({
   if (usage === undefined) return null;
   const { rebuilds, cold } = usage;
   const context = parts.includes("ctx") ? usage.context : null;
-  // The rebuilds and a cold streak are the cache's own story, and go with it.
-  const cached = parts.includes("cache");
-  const cache = cached ? usage.cache : null;
+  const cache = parts.includes("cache") ? usage.cache : null;
+  if (context === null && cache === null) return null;
+  // **The whole story in words**, whatever the line has room for: a costly rebuild, a cold streak
+  // and a cache that has dropped from a narrow foot have no colour of their own here.
   const said = [
-    context && `context window ${context.value}% full`,
-    cache && `${cache.value}% of the last turn's input served from cache`,
-    cached && rebuilds && `${rebuilds.count} prompt-cache rebuilds, ${rebuilds.cost} tokens`,
+    usage.context && `context window ${usage.context.value}% full`,
+    usage.cache &&
+      `${usage.cache.value}% of the last turn's input served from cache${
+        usage.cache.tone === "ok" ? "" : ", which is low"
+      }`,
+    rebuilds &&
+      `${rebuilds.count} prompt-cache rebuilds${
+        rebuilds.tone === "ok" ? "" : ", which is costly"
+      }, ${rebuilds.cost} tokens`,
+    cold != null &&
+      `the cache has been cold ${cold} turns running: something keeps changing the prompt's prefix — a model or effort switch, an MCP server toggling, a /compact. /rewind keeps it; /compact rebuilds it`,
   ]
     .filter(Boolean)
     .join("; ");
@@ -182,17 +190,7 @@ export function ChatGauge({
             fill={{ percent: context.value, tone: context.tone }}
           />
         )}
-        {cache && <PaneFootGauge label="cache" value={`${cache.value}%`} />}
-        {cached && rebuilds && <PaneFootGauge label={`↻${rebuilds.count}`} value={rebuilds.cost} />}
-        {cached && cold != null && (
-          <Tooltip
-            tip={`The cache has been cold ${cold} turns running: something keeps changing the prompt's prefix — a model or effort switch, an MCP server toggling, a /compact. /rewind keeps it; /compact rebuilds it.`}
-          >
-            <span>
-              <PaneFootGauge label="cold" value={String(cold)} />
-            </span>
-          </Tooltip>
-        )}
+        {cache && <PaneFootGauge label="cache" value={`${cache.value}%`} tone={cache.tone} />}
       </span>
     </Tooltip>
   );

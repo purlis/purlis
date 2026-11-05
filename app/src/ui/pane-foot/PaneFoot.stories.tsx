@@ -33,7 +33,15 @@ function Pane({ children, width = 640 }: { children: ReactNode; width?: number }
 }
 
 /** A foot with harness · workspace and a gauge whose `ctx` is `ctx`% full in `tone`. */
-function Foot({ ctx, tone }: { ctx: number | null; tone: PaneFootTone }) {
+function Foot({
+  ctx,
+  tone,
+  cacheTone = "ok",
+}: {
+  ctx: number | null;
+  tone: PaneFootTone;
+  cacheTone?: PaneFootTone;
+}) {
   return (
     <Pane>
       <PaneFoot>
@@ -46,7 +54,11 @@ function Foot({ ctx, tone }: { ctx: number | null; tone: PaneFootTone }) {
           {ctx !== null && (
             <>
               <PaneFootGauge label="ctx" value={`${ctx}%`} fill={{ percent: ctx, tone }} />
-              <PaneFootGauge label="cache" value="91%" />
+              <PaneFootGauge
+                label="cache"
+                value={cacheTone === "ok" ? "91%" : "12%"}
+                tone={cacheTone}
+              />
             </>
           )}
         </PaneFootEnd>
@@ -79,6 +91,10 @@ export const NearlyFull: Story = { args: { ctx: 87, tone: "warn" } };
 
 /** **Full**: the bar in the failed tone. */
 export const Full: Story = { args: { ctx: 96, tone: "bad" } };
+
+/** **A cold cache**: its number says the warning itself, in each tone, as it has no bar. */
+export const ACacheLow: Story = { args: { cacheTone: "warn" } };
+export const ACacheVeryLow: Story = { args: { cacheTone: "bad" } };
 
 /** **Before the first usage**: the foot is there with no gauge, so the terminal never moves for
  *  it when one arrives. */
