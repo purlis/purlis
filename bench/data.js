@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793855181422,
+  "lastUpdate": 1793857669182,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -39732,6 +39732,48 @@ window.BENCHMARK_DATA = {
             "value": 102.6096235,
             "unit": "ms",
             "extra": "median of 5 runs: 101.537, 102.583, 102.610, 102.781, 102.946 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "145da77638684ed07ade15c13f182f3c7079fd73",
+          "message": "A sandboxed chat says why it runs at its level, and where to change it (#5207) (#5254)\n\n* A sandboxed chat says why it runs at its level, and where to change it (#5207)\n\nThe chat in #5207 named only Start without the sandbox, and the person could not tell why a level\nthey had turned down did not hold. sandbox::level_why answers why, reading your_level and its\ninputs so the rule stays written once; the sandbox mark and a block's Notice say it, with a restart\nnamed where the level changed since the chat started, and SANDBOXED_NOTE tells the chat the level\nis the person's alone and to ask for the reason shown. No level, grant or rule changes.\n\nRefs #5207\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M416ADKACZSNPJQ2RWYYEW\nPurlis-Persona: steward\n\n* Say a chat's reason only where it is true, and credit nobody with a chat's words (#5207)\n\nAnswers the adversarial review. A chat held by a sandbox this window has no compile of gets no\nreason, nor does one whose manifest a start is refused over, and a start that takes no level reads\nas for_start_at reads it, so an accepted team off no longer promises a restart that never lifts. A\nlevel only the file says is never called the person's, since a chat can write that file: its words\nsay so, and a stricter one is a reason of its own. chats_level_why is the window's alone, as the\nwaiting levels it reveals are. Confirm asks again, each distinct start is read once per ask, and\nthe note tells a chat never to ask for its level to be lowered.\n\nRefs #5207\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M416ADKACZSNPJQ2RWYYEW\nPurlis-Persona: steward\n\n* Finish the window-only move, say only what holds, and stay in a project switch's budget (#5207)\n\nAnswers the second review and CI. uiRpc.ts is generated again now chats_level_why is the window's\nalone. A level only the file says no longer claims to be stricter, since it can equal the project's\nown. The window asks why after the older-sandbox answer rather than beside it, so a project coming\nto the front waits on no more commands than it did.\n\nRefs #5207\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M416ADKACZSNPJQ2RWYYEW\nPurlis-Persona: steward\n\n* Hold that a failed first ask still says why a chat runs at its level (#5207)\n\nThe review's closing notes: the comment and the amendment say the reason is asked after the\nolder-sandbox answer, and a test holds that a failure of that answer does not cost the reason.\n\nRefs #5207\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M416ADKACZSNPJQ2RWYYEW\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-05T04:46:37Z",
+          "tree_id": "04dee842645fa678a12959c0a3384a0b01341c69",
+          "url": "https://github.com/purlis/purlis/commit/145da77638684ed07ade15c13f182f3c7079fd73"
+        },
+        "date": 1793857664280,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3431415,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.327, 0.329, 0.343, 0.346, 0.362 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.517716500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.140, 16.478, 16.518, 16.537, 16.666 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.7670225,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.622, 100.904, 101.767, 101.990, 102.223 ms"
           }
         ]
       }
