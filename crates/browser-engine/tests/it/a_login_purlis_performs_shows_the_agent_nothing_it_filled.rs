@@ -300,6 +300,21 @@ fn a_page_elsewhere_cannot_put_a_session_back_during_a_login() {
     assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
     assert!(sees(&browser, "Account"), "{}", snapshot(&browser));
     assert!(!snapshot(&browser).contains("Kept for the earlier session"));
+    // And it runs again once the login has answered: its timer goes off.
+    let start = std::time::Instant::now();
+    loop {
+        let Content::Pages(pages) = call(&browser, Call::Pages).content else {
+            panic!("its pages");
+        };
+        if pages.iter().any(|page| page.title == "An earlier session") {
+            break;
+        }
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(20),
+            "held still still"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
 }
 
 /// #5272: a page the clean load can't show its form on is said by its own kind, with nothing filled.

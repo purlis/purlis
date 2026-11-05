@@ -171,19 +171,19 @@ pub struct LoginEnded {
 /// The pages held still while a login clears its sites and fills them, let go of as it's dropped.
 struct HeldStill<'a> {
     browser: &'a Browser,
-    pages: Vec<String>,
+    /// Each page, and its session: read then, as the person may have the browser by the time
+    /// they're let go of.
+    pages: Vec<(String, String)>,
 }
 
 impl Drop for HeldStill<'_> {
     fn drop(&mut self) {
-        for page in &self.pages {
-            if let Ok(session) = self.browser.page_session(page) {
-                let _ = self.browser.devtools().call(
-                    "Page.setWebLifecycleState",
-                    json!({ "state": "active" }),
-                    Some(session.as_str()),
-                );
-            }
+        for (_, session) in &self.pages {
+            let _ = self.browser.devtools().call(
+                "Page.setWebLifecycleState",
+                json!({ "state": "active" }),
+                Some(session.as_str()),
+            );
         }
     }
 }
@@ -376,16 +376,16 @@ impl Browser {
         }
         // No page but the login's own runs while it's cleared and filled, or it could put back
         // what goes. Let go of as the login answers, whatever it answers.
-        let _still = if login.clean_already {
+        let mut still = if login.clean_already {
             None
         } else {
             let not_cleared = |why: String| not_cleared(origin, &why);
             self.blank_pages_of(&target, login).map_err(not_cleared)?;
-            let still = self.hold_still_all_but(&target).map_err(not_cleared)?;
+            let held = self.hold_still_all_but(&target).map_err(not_cleared)?;
             if self.a_page_of_its_sites_besides(&target, login) {
                 return Err(not_cleared("a page of its came back".to_owned()));
             }
-            Some(still)
+            Some(held)
         };
         // From here on, the browser holds the login.
         hold.bind().map_err(|why| {
@@ -405,6 +405,13 @@ impl Browser {
         } else {
             self.clean_load(&target, login, &|page| shows_form(self, page))?
         };
+        // A page that opened since runs no more than the rest.
+        if let Some(held) = &mut still
+            && let Err(why) = self.hold_still_any_new(&target, held)
+        {
+            self.cache_back_on(&target);
+            return Err(not_cleared(origin, &why));
+        }
         // Its holder is told once this page leaves the form's origin (#4995): back on the
         // login's page's, or anywhere else.
         if login.back_to.is_some() {
@@ -421,12 +428,8 @@ impl Browser {
                 json!({ "enabled": false }),
                 Some(&session),
             );
-            let _ = self.devtools().call(
-                "Network.setCacheDisabled",
-                json!({ "cacheDisabled": false }),
-                Some(&session),
-            );
         }
+        self.cache_back_on(&target);
         if done.is_err() {
             if self.cut() {
                 // The person took the browser over: what purlis filled is cleared as they hand
@@ -516,14 +519,11 @@ impl Browser {
             other => other,
         });
         if let Err(why) = loaded {
-            let _ = self.devtools().call(
-                "Network.setCacheDisabled",
-                json!({ "cacheDisabled": false }),
-                Some(&session),
-            );
+            self.cache_back_on(&target);
             return Err(why);
         }
         if self.a_page_of_its_sites_besides(&target, login) {
+            self.cache_back_on(&target);
             return Err(not_cleared("a page of its came back".to_owned()));
         }
         Ok(target)
@@ -550,21 +550,53 @@ impl Browser {
             browser: self,
             pages: Vec::new(),
         };
-        for page in self.targets() {
-            if page == target {
-                continue;
-            }
-            let session = self.page_session(&page).map_err(|why| why.to_string())?;
-            self.devtools()
-                .call(
-                    "Page.setWebLifecycleState",
-                    json!({ "state": "frozen" }),
-                    Some(session.as_str()),
-                )
-                .map_err(|_| "a page of this browser would not hold still".to_owned())?;
-            still.pages.push(page);
-        }
+        self.hold_still_any_new(target, &mut still)?;
         Ok(still)
+    }
+
+    /// Holds still every page but `target` that `still` doesn't hold yet, until none is left: its
+    /// loads stopped, as a load in flight would run on.
+    fn hold_still_any_new(&self, target: &str, still: &mut HeldStill<'_>) -> Result<(), String> {
+        let wont = |_| "a page of this browser would not hold still".to_owned();
+        loop {
+            let new: Vec<String> = self
+                .targets()
+                .into_iter()
+                .filter(|page| page != target && !still.pages.iter().any(|(held, _)| held == page))
+                .collect();
+            if new.is_empty() {
+                return Ok(());
+            }
+            for page in new {
+                let session = self.page_session(&page).map_err(|why| why.to_string())?;
+                let on = Some(session.as_str());
+                self.devtools()
+                    .call("Page.stopLoading", json!({}), on)
+                    .map_err(wont)?;
+                self.devtools()
+                    .call(
+                        "Page.setWebLifecycleState",
+                        json!({ "state": "frozen" }),
+                        on,
+                    )
+                    .map_err(wont)?;
+                still.pages.push((page, session));
+            }
+        }
+    }
+
+    /// Lets the HTTP cache serve `target`'s page again, whoever drives it now.
+    fn cache_back_on(&self, target: &str) {
+        let session = lock(&self.inner.state)
+            .page(target)
+            .and_then(|page| page.session.clone());
+        if let Some(session) = session {
+            let _ = self.devtools().call(
+                "Network.setCacheDisabled",
+                json!({ "cacheDisabled": false }),
+                Some(session.as_str()),
+            );
+        }
     }
 
     /// **Sends every page showing a document of the login's sites to a blank one** (module docs),

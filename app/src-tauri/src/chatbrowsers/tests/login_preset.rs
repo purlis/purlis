@@ -370,6 +370,23 @@ fn a_browser_opened_as_a_clean_load_failed_opens_no_other_on_a_later_call() {
     assert_eq!(started_browsers(&hosted), 2);
 }
 
+/// #5272: nor does the browser left behind, named again.
+#[test]
+fn a_browser_left_as_a_clean_load_failed_opens_no_other_when_named_again() {
+    let (browsers, hosted) = with_a_used_browser();
+    *hosted.no_form_on_clean_load.lock().unwrap() = 5;
+    called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    let again = BrowseAsk {
+        browser: Some("b1".to_owned()),
+        ..ask(3, log_in("shop-login"))
+    };
+    let answer = called(&browsers, &hosted, &again);
+
+    assert!(matches!(answer, Answer::No { .. }), "{answer:?}");
+    assert_eq!(started_browsers(&hosted), 2);
+}
+
 /// #5272: each browser left behind keeps its offer, in the answer and in the person's view.
 #[test]
 fn a_kept_login_with_no_form_on_its_clean_load_offers_to_close_both_browsers() {

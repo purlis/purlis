@@ -248,9 +248,9 @@ struct Chat {
     /// The browsers opened for a login with another left behind, until the person's timeline has
     /// said so (#5121, #5272).
     left_behind: Vec<LeftBehind>,
-    /// The browsers opened as a login's form didn't appear on its clean load (#5272): a login whose
-    /// form doesn't appear in one of these opens no other.
-    opened_clean: Vec<String>,
+    /// The browsers a login's form didn't appear in on its clean load, and the ones opened for it
+    /// then (#5272): a login whose form doesn't appear in one of these opens no other.
+    clean_load_tried: Vec<String>,
     /// Its identity (ADR 0066), as the app's record of it says: what a window that comes back
     /// matches its browsers' notes by (#2025).
     id: Option<String>,
@@ -320,7 +320,7 @@ impl Default for Chat {
         Chat {
             apart: Vec::new(),
             left_behind: Vec::new(),
-            opened_clean: Vec::new(),
+            clean_load_tried: Vec::new(),
             id: None,
             posture: Posture::Unasked,
             since: 0,
@@ -3392,11 +3392,11 @@ impl ChatBrowsers {
                 // nothing, once, and to nothing else (#5272): what that browser says is the answer,
                 // this call or a later one. The first try may have taken a while, so whether the
                 // login may still be filled is asked again.
-                let was_opened_clean = self
+                let tried_before = self
                     .lock()
                     .get(&browse.chat)
-                    .is_some_and(|chat| chat.opened_clean.contains(&program));
-                if let (Err(Refused::NoFormOnCleanLoad(why)), false) = (&done, was_opened_clean) {
+                    .is_some_and(|chat| chat.clean_load_tried.contains(&program));
+                if let (Err(Refused::NoFormOnCleanLoad(why)), false) = (&done, tried_before) {
                     let why = why.clone();
                     let locks = purlis_core::sandbox::policy::Locks::of(root);
                     let refused = locks
@@ -3441,7 +3441,8 @@ impl ChatBrowsers {
                         );
                     }
                     if let Some(chat) = self.lock().get_mut(&browse.chat) {
-                        chat.opened_clean.push(clean.clone());
+                        chat.clean_load_tried.push(program.clone());
+                        chat.clean_load_tried.push(clean.clone());
                         chat.left_behind.push(LeftBehind {
                             opened: opened.clone(),
                             login: declared.clone(),

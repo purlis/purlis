@@ -23,8 +23,8 @@ sign-in reach rules (#5099, as amended by #5152).
 - Any other browser is held first, then cleared, then loads the login's page. What it would have
   shown before isn't loaded: it would be an earlier session's. So it's held to the login's sites even
   where no form then appears, and the answer says so as it offers to close it.
-- Every other page of the browser is held still from before the hold until the login answers, as
-  the only thing that could put back what goes. One that won't hold still fills nothing.
+- Every other page of the browser has its loads stopped and is held still from before the hold until
+  the login answers, one that opens meanwhile too, as the only thing that could put back what goes. One that won't hold still fills nothing.
 - A login that may be held clears only for a form it sees. A page that can't be read, or that went
   elsewhere, says nothing of its session.
 - The clean load is in a new tab, since a tab keeps some of what its site stores for its own life, and
@@ -34,7 +34,7 @@ sign-in reach rules (#5099, as amended by #5152).
 - The clean load's failure is a refusal of its own at session protocol 1.75, not a sentence read back.
   No login goes to a host before 1.75, which would leave a declared login's site as it is or clear less.
 - One new browser, once. It tries the login as a first load does, and what it says is the answer, on
-  this call or a later one. It opens from nothing kept. The browser left lets go of the store it
+  this call or a later one, and the browser it left opens no other either. It opens from nothing kept. The browser left lets go of the store it
   opened from, and a kept login that goes through in the new one keeps its session as any fresh
   browser's does. What policy and the chat's browsing say are asked again before it opens.
 - A runner is held to 1.75 by the host that relays to it, as the window's check is of its own host.

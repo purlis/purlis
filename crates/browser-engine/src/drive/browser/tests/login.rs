@@ -105,6 +105,8 @@ enum Twist {
     PageComesBack,
     /// A page won't hold still (#5272).
     WontHoldStill,
+    /// A page opens as the clean load begins (#5272).
+    PopupOnCleanLoad,
 }
 
 /// [`as_a_login_form`], with `twist`.
@@ -164,6 +166,17 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<A
             {
                 navigated(engine, "S-PAGE-1", "LOADER-COMES-BACK", ADDRESS);
                 std::thread::sleep(Duration::from_millis(50));
+                Some(Ok(json!({})))
+            }
+            "Network.setCacheDisabled"
+                if twist == Twist::PopupOnCleanLoad && p["cacheDisabled"] == true =>
+            {
+                engine.emit(
+                    "Target.targetCreated",
+                    json!({"targetInfo":{"targetId":"PAGE-7","type":"page","title":"A popup","url":"http://elsewhere.test/","attached":false,"openerId":"PAGE-1"}}),
+                    None,
+                );
+                std::thread::sleep(Duration::from_millis(100));
                 Some(Ok(json!({})))
             }
             "Page.setWebLifecycleState" if twist == Twist::WontHoldStill => {
@@ -1340,6 +1353,77 @@ fn every_other_page_is_held_still_while_a_login_clears_and_fills() {
                 && sent.session.as_deref() == Some("S-PAGE-3")),
         "never the login's own"
     );
+}
+
+/// #5272: a load in flight would run on, whatever the page's scripts do.
+#[test]
+fn a_page_held_still_has_its_loads_stopped_first() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::None);
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let all = super::super::lock(&engine.sent).clone();
+    let on_the_page = |method: &str| {
+        all.iter()
+            .position(|sent| sent.method == method && sent.session.as_deref() == Some("S-PAGE-1"))
+            .unwrap_or_else(|| panic!("{method}"))
+    };
+    assert!(on_the_page("Page.stopLoading") < on_the_page("Page.setWebLifecycleState"));
+}
+
+/// #5272: the person taking the browser over doesn't leave its pages held still.
+#[test]
+fn a_login_the_person_cut_lets_every_other_page_go() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, false);
+    let _ = snapshot(&browser, 1);
+    let browser = Arc::new(browser);
+    let running = {
+        let browser = Arc::clone(&browser);
+        std::thread::spawn(move || browser.log_in(&in_a_used_browser(), holds()).unwrap())
+    };
+    let start = std::time::Instant::now();
+    while inserted(&engine).is_empty() {
+        assert!(start.elapsed() < Duration::from_secs(5), "never filled");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    browser.take_over();
+    let ended = running.join().unwrap();
+    assert!(matches!(ended.outcome, Err(Refusal::Interrupted)));
+    let states: Vec<_> = engine
+        .sent("Page.setWebLifecycleState")
+        .iter()
+        .filter(|sent| sent.session.as_deref() == Some("S-PAGE-1"))
+        .map(|sent| sent.params["state"].as_str().unwrap_or_default().to_owned())
+        .collect();
+    assert_eq!(states, ["frozen", "active"]);
+    let cache = engine.sent("Network.setCacheDisabled");
+    assert_eq!(cache.last().unwrap().params["cacheDisabled"], false);
+}
+
+/// #5272: a page that opens while the site is cleared is held still before anything is filled.
+#[test]
+fn a_page_opened_on_the_clean_load_is_held_still_before_the_fill() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::PopupOnCleanLoad);
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let all = super::super::lock(&engine.sent).clone();
+    let frozen = all
+        .iter()
+        .position(|sent| {
+            sent.method == "Page.setWebLifecycleState"
+                && sent.session.as_deref() == Some("S-PAGE-7")
+                && sent.params["state"] == "frozen"
+        })
+        .expect("held still");
+    let typed = all
+        .iter()
+        .position(|sent| sent.method == "Input.insertText")
+        .expect("filled");
+    assert!(frozen < typed);
 }
 
 #[test]
