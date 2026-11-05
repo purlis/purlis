@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793873692185,
+  "lastUpdate": 1793875532390,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -39984,6 +39984,48 @@ window.BENCHMARK_DATA = {
             "value": 101.24285049999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.778, 100.971, 101.243, 101.495, 102.330 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f0a4ea315e7ad50bd3317f15522b044c02ce94e5",
+          "message": "Browsers: the limit names what's open, and a kept login leaves no empty browser behind (#5296) (#5298)\n\n* Tests first: the limit names what's open, a kept login leaves no empty browser (#5296)\n\nThe behaviour is written but switched off in this commit, so CI shows the new tests red for the right reason. The next commit switches it on.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N8JXGKZZ52HYECKTV8GEN6\nPurlis-Persona: steward\n\n* Switch the behaviour on, and take the reviews' findings (#5296)\n\nidle takes the chats' lock before person_drives, as the refusal does. The refusal says empty only of a browser with nothing in it, offers no close of what the person has or what is still ending, and counts the chat's own ending browsers as its own. A take-over stops a browser being never used before the host hands it over.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N8JXGKZZ52HYECKTV8GEN6\nPurlis-Persona: steward\n\n* Guards off for one CI run, to see their tests fail (#5296)\n\nThe next commit restores them.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N8JXGKZZ52HYECKTV8GEN6\nPurlis-Persona: steward\n\n* Guards off, compiling this time (#5296)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N8JXGKZZ52HYECKTV8GEN6\nPurlis-Persona: steward\n\n* Guards back on (#5296)\n\nWith them off, every guard test failed, including the lock order's.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N8JXGKZZ52HYECKTV8GEN6\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-05T09:04:49Z",
+          "tree_id": "fd6498072c06a244a2af278819452b603afc9e50",
+          "url": "https://github.com/purlis/purlis/commit/f0a4ea315e7ad50bd3317f15522b044c02ce94e5"
+        },
+        "date": 1793875527353,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.545957,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.538, 0.539, 0.546, 0.551, 0.552 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2791575,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.028, 16.208, 16.279, 16.314, 16.484 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.2539455,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.923, 102.066, 102.254, 102.630, 102.755 ms"
           }
         ]
       }
