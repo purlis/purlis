@@ -1003,6 +1003,48 @@ pub fn judged_rebase_from(
     (!denied.is_empty()).then(|| said_writes("rebase", &denied, top))
 }
 
+/// The refusal a merge of exactly `onto` into exactly `head`, both commit ids, earns in the working
+/// tree at `top` (#5253), or `None`: what it can write differs between the two. A file only one
+/// side's rename would carry elsewhere is not in that difference, so the merge itself runs with
+/// that detection off (`pieceupdate::merge`). `head`'s own commits are not replayed, so unlike a
+/// rebase nothing else is written.
+pub fn judged_merge(
+    top: &str,
+    onto: &str,
+    head: &str,
+    place: &Place<'_>,
+    asks: &dyn Asks,
+) -> Option<String> {
+    let Some(paths) = asks.differ(top, head, onto) else {
+        return Some(said_unread("merge", NO_ANSWER));
+    };
+    let denies = Denies::of(top, place.root, place.chat_dir);
+    let mut denied = each_once(paths, &|path: &str| denies.path(path, asks));
+    if place.sparse
+        && let Some(out) = asks.left_out(top, &denied)
+        && !out.is_empty()
+    {
+        let out: std::collections::HashSet<String> = out.into_iter().collect();
+        denied.retain(|path| !out.contains(path));
+    }
+    (!denied.is_empty()).then(|| said_writes("merge", &denied, top))
+}
+
+/// The refusal an app-run `--abort` of a stopped merge earns for a sandboxed chat, or `None`: it
+/// writes each of `staged`, the paths where what is staged is not what the commit has, read by the
+/// caller, and a denied one is refused as the merge's own write would be.
+pub fn judged_merge_abort(
+    top: &str,
+    staged: Vec<String>,
+    root: &str,
+    chat_dir: &Path,
+    asks: &dyn Asks,
+) -> Option<String> {
+    let denies = Denies::of(top, root, Some(chat_dir));
+    let denied = each_once(staged, &|path: &str| denies.path(path, asks));
+    (!denied.is_empty()).then(|| said_writes("merge --abort", &denied, top))
+}
+
 /// The refusal an app-run cut earns for a sandboxed chat (qw387), or `None`: a new branch
 /// folder at `folder` checked out from `start` in the clone at `clone`, judged as the chat's
 /// own checkout of it would be. Every file of `start` is written there, so a denied path it

@@ -71,15 +71,23 @@ pub enum WorktreeCommand {
     /// back. Refused with uncommitted changes, or where it would overwrite a file on disk that
     /// is not committed. In a chat the app runs it.
     Update {
-        /// The branch to rebase onto, or a remote-tracking branch (`origin/main`), carrying
+        /// The branch to bring in, or a remote-tracking branch (`origin/main`); a rebase carries
         /// only the piece's own commits (default: the one the piece was cut from). A branch
         /// folder's only.
         #[arg(long, value_name = "BRANCH", conflicts_with_all = ["go_on", "abort"])]
         base: Option<String>,
-        /// Stage the files the stopped rebase named, once resolved, and go on.
+        /// Merge the base into the branch instead of rebasing onto it: no commit is rewritten,
+        /// so a plain push follows. A branch folder's only.
+        #[arg(long, conflicts_with_all = ["go_on", "abort"])]
+        merge: bool,
+        /// With `--merge`: a conflicted `.png` under a `__screenshots__` folder takes the base's
+        /// copy, since CI redraws those. Every other conflict still stops.
+        #[arg(long, requires = "merge")]
+        take_base_baselines: bool,
+        /// Stage the files the stopped rebase or merge named, once resolved, and go on.
         #[arg(long = "continue", conflicts_with = "abort")]
         go_on: bool,
-        /// Put the branch back where it was before the rebase.
+        /// Put the branch back where it was before the rebase or merge.
         #[arg(long)]
         abort: bool,
     },
@@ -233,10 +241,20 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
             paths,
             &mut say,
         ),
-        WorktreeCommand::Update { base, go_on, abort } => {
-            let step = match (go_on, abort) {
-                (true, _) => purlis_core::hookwire::UpdateStep::Continue,
-                (_, true) => purlis_core::hookwire::UpdateStep::Abort,
+        WorktreeCommand::Update {
+            base,
+            merge,
+            take_base_baselines,
+            go_on,
+            abort,
+        } => {
+            let step = match (go_on, abort, merge) {
+                (true, _, _) => purlis_core::hookwire::UpdateStep::Continue,
+                (_, true, _) => purlis_core::hookwire::UpdateStep::Abort,
+                (_, _, true) => purlis_core::hookwire::UpdateStep::Merge {
+                    base,
+                    take_base_baselines,
+                },
                 _ => purlis_core::hookwire::UpdateStep::Start { base },
             };
             update(here, &step, &who, &mut say)
@@ -489,7 +507,7 @@ const NOT_IN_A_FOLDER: &str = "not inside a branch folder or a workspace's clone
 /// What `update` says of a step the project root does not take: its update moves the project
 /// whole or puts it back, so nothing is left to go on with, and it has no base.
 const AT_THE_ROOT: &str = "at the project root, `purlis worktree update` takes no `--base`, \
-     `--continue` or `--abort`: the project is either updated whole or left exactly as it was";
+     `--merge`, `--continue` or `--abort`: the project is either updated whole or left exactly as it was";
 
 /// Whether `step` is one the project root takes: a plain start.
 fn root_takes(step: &purlis_core::hookwire::UpdateStep) -> bool {
