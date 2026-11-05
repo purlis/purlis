@@ -12082,6 +12082,9 @@ mod cancels;
 /// message (#1981).
 mod reports_from_last_message;
 
+// A human edit told at the chat's next turn (#5409).
+mod human_edits;
+
 /// Limits are shown where they bind, and a session's tasks can all be stopped at once
 /// (#1498).
 mod limits_where_they_bind;

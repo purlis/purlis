@@ -3444,6 +3444,7 @@ fn a_human_edit_is_one_event_in_the_log_of_its_file_and_lines_and_never_its_cont
         }],
         busy: false,
         chats: Vec::new(),
+        chat_ids: Vec::new(),
     };
 
     hooks
