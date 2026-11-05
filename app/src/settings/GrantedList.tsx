@@ -111,7 +111,7 @@ function Trouble({ said, onDismiss }: { said: string; onDismiss: () => void }) {
  * folder where it forbids writing) is kept and not in force: it says so, with the policy and
  * who set it, and is drawn locked, with Remove still there to take it away (#1431).
  */
-function AllowedRows({ plane, file, ids }: { plane: PlaneId; file: string; ids: RowIds }) {
+export function AllowedRows({ plane, file, ids }: { plane: PlaneId; file: string; ids: RowIds }) {
   const [grants, setGrants] = useState<readonly SandboxGrant[]>();
   const [said, setSaid] = useState<string>();
   /** Why a project host's Remove is off: the project is read-only (#1759). */
