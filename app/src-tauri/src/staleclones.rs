@@ -136,7 +136,7 @@ pub async fn fix_stale_clone(
 /// Whether a chat glanced as `glance` may be in a turn: running, asking something, stopped on a
 /// prompt in its terminal, waiting on work of its own (#3878), or not yet heard from. A chat
 /// whose turn ended with nothing in flight is not.
-fn mid_turn(glance: &crate::host::Glance) -> bool {
+pub(crate) fn mid_turn(glance: &crate::host::Glance) -> bool {
     use purlis_core::state::State;
     match glance.state {
         State::Running | State::Unknown => true,
@@ -147,17 +147,36 @@ fn mid_turn(glance: &crate::host::Glance) -> bool {
 
 /// The chats that may be mid-turn whose folder is the repo at `clone` or one inside it, by name.
 fn working_in(held: &crate::planes::Held, clone: &std::path::Path) -> Vec<String> {
+    chats_in(held, clone)
+        .into_iter()
+        .filter(|(_, _, glance)| mid_turn(glance))
+        .map(|(_, name, _)| name)
+        .collect()
+}
+
+/// Every open chat whose folder is `folder` or one inside it: its number, its name and how it
+/// stands now.
+pub(crate) fn chats_in(
+    held: &crate::planes::Held,
+    folder: &std::path::Path,
+) -> Vec<(u32, String, crate::host::Glance)> {
     held.chats()
         .open_now()
         .into_iter()
         .filter(|open| {
             open.cwd.as_deref().is_some_and(|cwd| {
-                cwd.starts_with(clone)
-                    || std::fs::canonicalize(cwd).is_ok_and(|real| real.starts_with(clone))
+                cwd.starts_with(folder)
+                    || std::fs::canonicalize(cwd).is_ok_and(|real| real.starts_with(folder))
             })
         })
-        .filter(|open| mid_turn(&held.board().glance(open.session)))
-        .map(|open| open.label.clone().unwrap_or(open.name))
+        .map(|open| {
+            let glance = held.board().glance(open.session);
+            (
+                open.session,
+                open.label.clone().unwrap_or(open.name),
+                glance,
+            )
+        })
         .collect()
 }
 

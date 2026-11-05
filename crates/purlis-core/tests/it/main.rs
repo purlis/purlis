@@ -68,6 +68,7 @@ mod a_cli_login_is_imported_only_when_asked;
 mod a_command_too_big_to_check_is_refused_before_it_is_read;
 mod a_comparison_matches_git_diff;
 mod a_cut_says_branch_in_the_window;
+mod a_discard_matches_git;
 mod a_dispatched_chat_works_in_a_worktree_of_its_own;
 mod a_docker_pool_runner_is_linked_through_docker_exec;
 mod a_doctor_finding_is_fixed_by_its_fix_id;
