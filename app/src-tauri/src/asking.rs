@@ -2121,8 +2121,10 @@ pub fn run_grant(
         Hosts::Every => (Vec::new(), true),
     };
     use purlis_core::sandbox::grant::Level;
+    // Wider than one command only for a program reviewed for any arguments (ADR 0112).
+    let reviewed = bound.reviewed_for_any_arguments();
     // Only for a persona, and only what would be written whole.
-    let always = (!open.persona.is_empty())
+    let always = (!open.persona.is_empty() && reviewed)
         .then(|| purlis_core::settings::always_allow::line_of(bound))
         .flatten()
         .filter(|_| locks.keeps_scope(Level::Project))
@@ -2147,7 +2149,7 @@ pub fn run_grant(
         says: said_inertly(&says),
         options: [
             (RUN_ALLOW_ONCE, "Allow once", Level::Once, true),
-            (RUN_ALLOW_CHAT, "Allow for this chat", Level::Chat, true),
+            (RUN_ALLOW_CHAT, "Allow for this chat", Level::Chat, reviewed),
             (
                 RUN_ALLOW_ALWAYS,
                 "Always allow",

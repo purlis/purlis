@@ -9,8 +9,8 @@ use crate::sandbox::tools;
 fn bound(env: &[&str], file: &[&str]) -> Bound {
     Bound {
         chat: 1,
-        name: "printenv".into(),
-        program: "/usr/bin/printenv".into(),
+        name: "curl".into(),
+        program: "/usr/bin/curl".into(),
         vault: "team".into(),
         env: env.iter().map(|one| (*one).to_owned()).collect(),
         file: file.iter().map(|one| (*one).to_owned()).collect(),
@@ -56,10 +56,10 @@ const ON: &str = "[sandbox]\nmode = \"on\"\n";
 #[test]
 fn the_line_holds_the_name_vault_key_and_hand_over_and_no_args() {
     let line = line_of(&bound(&[], &["KUBECONFIG=config"])).unwrap();
-    assert_eq!(line.name, "printenv");
+    assert_eq!(line.name, "curl");
     assert_eq!(
         line.text,
-        r#"printenv = { vault = "team", as = "KUBECONFIG file", key = "config" }"#
+        r#"curl = { vault = "team", as = "KUBECONFIG file", key = "config" }"#
     );
     assert!(!line.by_env);
     assert!(!line.text.contains("args"));
@@ -71,7 +71,7 @@ fn env_is_kept_where_the_command_used_it_and_says_so() {
     let line = line_of(&bound(&["T=TOKEN"], &[])).unwrap();
     assert_eq!(
         line.text,
-        r#"printenv = { vault = "team", as = "T env", key = "TOKEN" }"#
+        r#"curl = { vault = "team", as = "T env", key = "TOKEN" }"#
     );
     assert!(line.by_env);
 }
@@ -81,7 +81,7 @@ fn several_values_are_written_as_values_each_as_the_command_handed_it() {
     let line = line_of(&bound(&["A=KEY_A"], &["B=KEY_B"])).unwrap();
     assert_eq!(
         line.text,
-        r#"printenv = { vault = "team", values = { A = { key = "KEY_A", as = "env" }, B = { key = "KEY_B", as = "file" } } }"#
+        r#"curl = { vault = "team", values = { A = { key = "KEY_A", as = "env" }, B = { key = "KEY_B", as = "file" } } }"#
     );
 }
 
@@ -91,7 +91,7 @@ fn a_hostile_name_stays_a_string_and_cannot_add_a_key() {
     one.vault = "te\"am".into();
     let line = line_of(&one).unwrap();
     let parsed: toml::Table = line.text.parse().unwrap();
-    let tool = parsed["printenv"].as_table().unwrap();
+    let tool = parsed["curl"].as_table().unwrap();
     assert_eq!(tool["vault"].as_str(), Some("te\"am"));
     assert!(!tool.contains_key("args"));
 }
@@ -105,7 +105,7 @@ fn it_is_written_exactly_as_shown_and_reads_back_as_the_tool() {
     assert!(text.contains(&line_of(&one).unwrap().text), "{text}");
     let (declared, _) = tools::declared_and_allowed_here(tmp.path(), "devops");
     assert_eq!(declared.len(), 1);
-    assert_eq!(declared[0].name, "printenv");
+    assert_eq!(declared[0].name, "curl");
 }
 
 #[test]
@@ -134,7 +134,7 @@ fn it_joins_the_tools_a_persona_writes_inline_or_as_a_table() {
         write(tmp.path(), "devops", &one).unwrap();
         let (declared, _) = tools::declared_and_allowed_here(tmp.path(), "devops");
         assert!(
-            declared.iter().any(|tool| tool.name == "printenv"),
+            declared.iter().any(|tool| tool.name == "curl"),
             "{}",
             manifest(tmp.path())
         );
@@ -158,7 +158,7 @@ fn where_the_persona_was_fully_allowed_the_digest_moves_for_that_line_alone() {
         .expect("all of it was allowed, so this is too");
     assert_eq!(allow.hosts.len(), 1);
     assert_eq!(allow.tools.len(), 1);
-    assert_eq!(allow.tools[0].name, "printenv");
+    assert_eq!(allow.tools[0].name, "curl");
     // Until kept, the file's new line stands unallowed: nothing moved by itself.
     assert_eq!(allowed_digest(tmp.path(), "devops"), None);
     crate::sandbox::local::allow_persona_hosts(tmp.path(), "devops", &allow.digest).unwrap();
@@ -218,7 +218,7 @@ fn a_write_that_fails_says_why_and_leaves_the_file_as_it_was() {
 
 #[test]
 fn a_tool_of_that_name_already_there_is_refused_not_overwritten() {
-    let file = "[sandbox]\nmode = \"on\"\n[sandbox.personas.devops]\ntools = { printenv = { vault = \"other\", as = \"O file\", key = \"K\" } }\n";
+    let file = "[sandbox]\nmode = \"on\"\n[sandbox.personas.devops]\ntools = { curl = { vault = \"other\", as = \"O file\", key = \"K\" } }\n";
     let tmp = project(file);
     let why = write(tmp.path(), "devops", &bound(&[], &["V=TOKEN"])).unwrap_err();
     assert!(why.contains("already"), "{why}");
@@ -267,4 +267,15 @@ fn a_vault_the_persona_may_use_is_not_given_again() {
     .unwrap();
     let written = write(tmp.path(), "devops", &bound(&[], &["V=TOKEN"])).unwrap();
     assert_eq!(written.vault, None);
+}
+
+#[test]
+fn a_program_not_reviewed_is_never_written_and_the_file_stays_as_it_was() {
+    let tmp = project(ON);
+    let mut one = bound(&[], &["V=TOKEN"]);
+    one.name = "kubectl".into();
+    one.program = "/usr/bin/kubectl".into();
+    let why = write(tmp.path(), "devops", &one).unwrap_err();
+    assert!(why.contains("kubectl"), "{why}");
+    assert_eq!(manifest(tmp.path()), ON);
 }

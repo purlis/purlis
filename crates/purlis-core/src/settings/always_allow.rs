@@ -172,6 +172,13 @@ pub fn write(root: &Path, persona: &str, bound: &Bound) -> Result<Written, Strin
     if persona.is_empty() {
         return Err("this chat has no persona to declare a tool for".to_owned());
     }
+    // The person's ruling on ADR 0112: whatever asked, a line takes any arguments.
+    if !bound.reviewed_for_any_arguments() {
+        return Err(format!(
+            "purlis has not reviewed {} for any arguments, so nothing was written",
+            bound.program_name()
+        ));
+    }
     let line = line_of(bound).ok_or("the command reads as no tool, so nothing was written")?;
     let (there, base) = super::on_disk(root, Which::Shared)?;
     // Judged on what was read, before anything changes, so the two cannot disagree.

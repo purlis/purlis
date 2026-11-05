@@ -405,3 +405,38 @@ fn what_the_audit_says_names_the_program_keys_vault_scope_and_chat_and_nothing_o
         REFUSE_AUDITED
     );
 }
+
+#[test]
+fn only_a_program_reviewed_by_both_its_names_may_have_a_scope_wider_than_one_command() {
+    assert!(bound(1, &[]).reviewed_for_any_arguments());
+    let mut other = bound(1, &[]);
+    other.program = "/usr/bin/wget".into();
+    other.name = "wget".into();
+    assert!(
+        !other.reviewed_for_any_arguments(),
+        "wget's --use-askpass runs a command"
+    );
+    let mut linked = bound(1, &[]);
+    linked.program = "/opt/somewhere/sh".into();
+    assert!(
+        !linked.reviewed_for_any_arguments(),
+        "the name alone is not enough"
+    );
+    let mut spelled = bound(1, &[]);
+    spelled.name = "CURL".into();
+    assert!(!spelled.reviewed_for_any_arguments());
+}
+
+#[test]
+fn a_wider_answer_on_a_program_not_reviewed_is_refused_from_the_window_too() {
+    let asks = Asks::new(std::path::Path::new("/nowhere"));
+    let mut one = bound(1, &[]);
+    one.program = "/usr/bin/kubectl".into();
+    one.name = "kubectl".into();
+    stopped(&asks, one);
+    let id = asks.open_runs()[0].id;
+    assert!(asks.answer_run(id, RunAnswer::ForChat, window()).is_err());
+    assert!(asks.answer_run(id, RunAnswer::Always, window()).is_err());
+    assert_eq!(asks.open_runs().len(), 1);
+    assert!(asks.answer_run(id, RunAnswer::Refuse, window()).is_ok());
+}

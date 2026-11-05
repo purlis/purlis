@@ -64,7 +64,7 @@ export const HostileCommand: Story = {
   },
 };
 
-/** A vault the persona can't otherwise use, with Always allow's line and the advice on a variable. */
+/** A reviewed program on a vault the persona can't otherwise use, with Always allow's line and the advice on a variable. */
 export const AnotherVaultAlwaysByVariable: Story = {
   args: {
     run: {

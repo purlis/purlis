@@ -140,6 +140,14 @@ pub fn run_grant_answered(
     // Policy holds here as it holds at the run: it may have come to lock this since it was shown.
     if answer != RunAnswer::Refuse {
         use purlis_core::sandbox::grant::Level;
+        // Before any audit: nothing was given. The core holds to it again as it answers.
+        if answer != RunAnswer::Once && !open.bound.reviewed_for_any_arguments() {
+            return Err(format!(
+                "{} is allowed one exact command at a time: purlis has not reviewed it for any \
+                 arguments. Press Allow once, or declare it as a tool.",
+                open.bound.program_name()
+            ));
+        }
         let locks = purlis_core::sandbox::policy::Locks::of(held.root());
         if let Some(why) = locks.refuses_run_grant(&open.persona, &open.bound.program_name()) {
             return Err(why);

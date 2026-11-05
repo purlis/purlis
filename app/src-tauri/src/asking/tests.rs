@@ -265,8 +265,8 @@ fn a_run_grant_shows_the_apps_facts_apart_from_the_chats_inert_command() {
         persona: "devops".to_owned(),
         bound: Bound {
             chat: 3,
-            name: "kubectl".to_owned(),
-            program: "/usr/bin/kubectl".into(),
+            name: "curl".to_owned(),
+            program: "/usr/bin/curl".into(),
             vault: "team".to_owned(),
             env: vec!["KUBE=TOKEN".to_owned()],
             file: vec!["KUBECONFIG=config".to_owned()],
@@ -281,7 +281,7 @@ fn a_run_grant_shows_the_apps_facts_apart_from_the_chats_inert_command() {
     };
     let shown = run_grant(&open, &none);
     let run = shown.run.as_ref().expect("the facts of the run");
-    assert_eq!(run.program, "/usr/bin/kubectl");
+    assert_eq!(run.program, "/usr/bin/curl");
     assert_eq!(run.hosts, ["k8s.example.test"]);
     assert_eq!(run.values.len(), 2);
     assert!(
@@ -311,13 +311,25 @@ fn a_run_grant_shows_the_apps_facts_apart_from_the_chats_inert_command() {
     assert!(
         run.always
             .as_ref()
-            .is_some_and(|always| always.line.contains("kubectl"))
+            .is_some_and(|always| always.line.contains("curl"))
     );
     // Policy's scopes hold for these as for every Allow.
     let only_chat = purlis_core::sandbox::policy::Locks::parse(
         r#"{"sandbox": {"allow-scopes": ["chat"]}}"#,
         std::path::Path::new("/etc/purlis/policy.json"),
     );
+    // A program not reviewed is offered Allow once on the exact command alone.
+    let mut unreviewed = open.clone();
+    unreviewed.bound.name = "kubectl".to_owned();
+    unreviewed.bound.program = "/usr/bin/kubectl".into();
+    let narrow = run_grant(&unreviewed, &none);
+    let labels: Vec<_> = narrow
+        .options
+        .iter()
+        .map(|one| one.label.as_str())
+        .collect();
+    assert_eq!(labels, ["Allow once", "Don't allow"]);
+    assert_eq!(narrow.run.unwrap().always, None);
     let held = run_grant(&open, &only_chat);
     let labels: Vec<_> = held.options.iter().map(|one| one.label.as_str()).collect();
     assert_eq!(labels, ["Allow for this chat", "Don't allow"]);

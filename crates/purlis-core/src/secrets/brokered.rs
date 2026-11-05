@@ -728,9 +728,9 @@ fn run_grant_locked(
     locks.refuses_run_grant(persona, &named).or_else(|| {
         // Policy's `allow-scopes` may leave no scope a Run grant can be given at.
         use crate::sandbox::grant::Level;
-        if ![Level::Once, Level::Chat, Level::Project]
-            .into_iter()
-            .any(|level| locks.keeps_scope(level))
+        let reviewed = crate::sandbox::tools::reviewed_for_any_arguments(&named);
+        if !locks.keeps_scope(Level::Once)
+            && !(reviewed && (locks.keeps_scope(Level::Chat) || locks.keeps_scope(Level::Project)))
         {
             return Some(format!(
                 "Policy removes every scope a program could be allowed at with a vault's keys, so \

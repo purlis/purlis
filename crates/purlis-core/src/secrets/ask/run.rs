@@ -15,6 +15,9 @@
 //! - **One ask for one command of one chat.** The same command run again joins the open ask, and a
 //!   changed one asks again, up to [`MOST_OPEN_PER_CHAT`] open at once, so a chat cannot bury the
 //!   person in notices.
+//! - **Wider than one command only for a reviewed program** (the person's ruling on ADR 0112):
+//!   Allow for this chat and Always allow are refused here, as well as not offered, for a program
+//!   off [`crate::sandbox::tools::reviewed_for_any_arguments`]'s list.
 //! - **Allow for this chat (#5241) binds all of that but the arguments**: the same program and
 //!   the same variables and keys, with any arguments, for the chat's life. A key added asks again.
 //!   It is listed with Allow once's not yet used ([`Asks::given_runs`]), and taken back from the
@@ -73,6 +76,13 @@ pub struct Bound {
 }
 
 impl Bound {
+    /// **Whether a grant of any arguments may be given for it** (the person's ruling on ADR 0112):
+    /// by the name it was asked by and the program it resolved to, both on the reviewed list.
+    pub fn reviewed_for_any_arguments(&self) -> bool {
+        use crate::sandbox::tools::reviewed_for_any_arguments as reviewed;
+        reviewed(&self.name) && reviewed(&self.program_name())
+    }
+
     /// Whether it hands over the same values to the same program from the same vault in the same
     /// chat, whatever the arguments.
     fn same_but_args(&self, other: &Self) -> bool {
@@ -635,6 +645,15 @@ impl Asks {
         let Some(at) = inner.runs.open.iter().position(|asked| asked.open.id == id) else {
             return Err("This ask has already been answered, or its chat has closed.".to_owned());
         };
+        if matches!(answer, RunAnswer::ForChat | RunAnswer::Always)
+            && !inner.runs.open[at].open.bound.reviewed_for_any_arguments()
+        {
+            return Err(format!(
+                "{} is allowed one exact command at a time: purlis has not reviewed it for any \
+                 arguments. Press Allow once, or declare it as a tool.",
+                inner.runs.open[at].open.bound.program_name()
+            ));
+        }
         let asked = inner.runs.open.remove(at);
         let bound = asked.open.bound.clone();
         let mut held = false;

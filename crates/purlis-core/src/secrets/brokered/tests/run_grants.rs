@@ -47,6 +47,13 @@ fn printenv(root: &Path, args: &[&str]) -> Wanted {
     want
 }
 
+/// `curl`, the one program reviewed for a grant of any arguments so far.
+fn curl(root: &Path, args: &[&str]) -> Wanted {
+    let mut want = printenv(root, args);
+    want.command[0] = "curl".into();
+    want
+}
+
 fn the_chat(root: &Path) -> Asker {
     asker(root, Some("devops"))
 }
@@ -561,13 +568,13 @@ fn allow_for_this_chat_runs_the_program_with_other_arguments_and_no_more_asks() 
     let asks = Asks::new(project.path());
     answered(
         project.path(),
-        printenv(project.path(), &["X"]),
+        curl(project.path(), &["--version"]),
         &asks,
         RunAnswer::ForChat,
     );
     let other = run_with(
         &the_chat(project.path()),
-        printenv(project.path(), &["HOME"]),
+        curl(project.path(), &["--help"]),
         &asks,
         Duration::ZERO,
     );
@@ -631,14 +638,14 @@ fn the_lock_set_later_stops_a_grant_given_before_it() {
     let asks = Asks::new(project.path());
     answered(
         project.path(),
-        printenv(project.path(), &["X"]),
+        curl(project.path(), &["--version"]),
         &asks,
         RunAnswer::ForChat,
     );
     let _policy = Policy::says(r#"{"sandbox": {"run-grants": false}}"#);
     let frames = run_with(
         &the_chat(project.path()),
-        printenv(project.path(), &["X"]),
+        curl(project.path(), &["--version"]),
         &asks,
         Duration::ZERO,
     );
@@ -755,7 +762,7 @@ fn always_allow_runs_the_waiting_command_and_later_ones_with_no_restart_though_i
     )
     .unwrap();
     let asks = Asks::new(project.path());
-    let want = || printenv(project.path(), &["X"]);
+    let want = || curl(project.path(), &["--version"]);
     let first = answered_with(project.path(), want(), &asks, |open: &OpenRun| {
         crate::settings::always_allow::write(project.path(), "devops", &open.bound).unwrap();
         RunAnswer::Always
@@ -766,10 +773,10 @@ fn always_allow_runs_the_waiting_command_and_later_ones_with_no_restart_though_i
     );
     // The chat's start armed nothing, so the line in the file is what it is run as by its grant.
     let (declared, _) = crate::sandbox::tools::declared_and_allowed_here(project.path(), "devops");
-    assert_eq!(declared[0].name, "printenv");
+    assert_eq!(declared[0].name, "curl");
     let again = run_with(
         &the_chat(project.path()),
-        printenv(project.path(), &["HOME"]),
+        curl(project.path(), &["--help"]),
         &asks,
         Duration::ZERO,
     );
@@ -798,7 +805,14 @@ fn always_allow_runs_the_waiting_command_and_later_ones_with_no_restart_though_i
 
 /// `printenv X` with vault `other`, which is tagged for nobody.
 fn on_another_vault(root: &Path) -> Wanted {
-    let mut want = printenv(root, &["X"]);
+    let mut want = curl(root, &["--version"]);
+    want.vault = "other".into();
+    want
+}
+
+/// `curl --version` with vault `other`, which is tagged for nobody.
+fn curl_on_another_vault(root: &Path) -> Wanted {
+    let mut want = curl(root, &["--version"]);
     want.vault = "other".into();
     want
 }
@@ -844,10 +858,10 @@ fn another_chat_of_the_persona_has_no_vault_access_from_this_chats_grant() {
     let project = project();
     let root = project.path();
     let asks = Asks::new(root);
-    answered(root, on_another_vault(root), &asks, RunAnswer::ForChat);
+    answered(root, curl_on_another_vault(root), &asks, RunAnswer::ForChat);
     let mut other = the_chat(root);
     other.chat = 99;
-    let frames = run_with(&other, on_another_vault(root), &asks, Duration::ZERO);
+    let frames = run_with(&other, curl_on_another_vault(root), &asks, Duration::ZERO);
     assert_eq!(refusal(&frames).1, WAITING_ON_THE_PERSON, "{frames:?}");
     no_vault_was_kept(root);
 }
@@ -858,10 +872,10 @@ fn revoking_a_chat_grant_ends_its_use_of_the_vault() {
     let root = project.path();
     let asks = Asks::new(root);
     let chat = the_chat(root);
-    answered(root, on_another_vault(root), &asks, RunAnswer::ForChat);
+    answered(root, curl_on_another_vault(root), &asks, RunAnswer::ForChat);
     let id = asks.given_runs()[0].id;
     asks.revoke_run(id, window()).unwrap();
-    let frames = run_with(&chat, on_another_vault(root), &asks, Duration::ZERO);
+    let frames = run_with(&chat, curl_on_another_vault(root), &asks, Duration::ZERO);
     assert_eq!(refusal(&frames).1, WAITING_ON_THE_PERSON, "{frames:?}");
     no_vault_was_kept(root);
 }
@@ -1031,14 +1045,14 @@ fn a_grant_for_any_arguments_runs_a_command_too_long_to_have_been_shown() {
     let asks = Asks::new(project.path());
     answered(
         project.path(),
-        printenv(project.path(), &["X"]),
+        curl(project.path(), &["--version"]),
         &asks,
         RunAnswer::ForChat,
     );
     let long = "x".repeat(MOST_COMMAND_SHOWN + 1);
     let frames = run_with(
         &the_chat(project.path()),
-        printenv(project.path(), &[&long]),
+        curl(project.path(), &[&long]),
         &asks,
         Duration::ZERO,
     );
@@ -1110,4 +1124,49 @@ fn a_chat_can_spell_no_grant_past_a_refused_variable_or_a_line_by_its_case() {
     );
     assert_eq!(refusal(&frames).1, 1, "{frames:?}");
     assert!(asks.open_runs().is_empty());
+}
+
+// ----------------------------------------------------------------------------------------
+// The reviewed list (the person's ruling on ADR 0112)
+
+#[test]
+fn a_program_not_reviewed_cannot_be_given_a_wider_scope_and_its_ask_stays_open() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    let chat = the_chat(project.path());
+    run_with(
+        &chat,
+        printenv(project.path(), &["X"]),
+        &asks,
+        Duration::ZERO,
+    );
+    let id = asks.open_runs()[0].id;
+    for wider in [RunAnswer::ForChat, RunAnswer::Always] {
+        let why = asks.answer_run(id, wider, window()).unwrap_err();
+        assert!(why.contains("printenv"), "{why}");
+    }
+    assert_eq!(asks.open_runs().len(), 1, "still theirs to answer");
+    assert!(asks.given_runs().is_empty());
+    // And Allow once on the exact command works.
+    asks.answer_run(id, RunAnswer::Once, window()).unwrap();
+    let again = run_with(
+        &chat,
+        printenv(project.path(), &["X"]),
+        &asks,
+        Duration::ZERO,
+    );
+    assert!(
+        !matches!(again.last(), Some(Frame::Refused { code, .. }) if *code == WAITING_ON_THE_PERSON),
+        "{again:?}"
+    );
+}
+
+#[test]
+fn a_declared_tool_off_the_reviewed_list_runs_as_it_always_did() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    let (chat, want) = as_tool(the_chat(project.path()), printenv(project.path(), &["X"]));
+    let frames = run_with(&chat, want, &asks, Duration::from_secs(60));
+    assert!(asks.open_runs().is_empty(), "{frames:?}");
+    assert!(!format!("{frames:?}").contains("reviewed"), "{frames:?}");
 }

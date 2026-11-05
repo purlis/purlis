@@ -1752,6 +1752,19 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "tcpdump",
 ];
 
+/// **The programs a Run grant may be wider than one exact command for** (the person's ruling on
+/// ADR 0112): Allow for this chat and Always allow, which take any arguments, so the arguments are
+/// no longer read by anyone. Every other program [`for_run_grant`] takes gets Allow once alone.
+/// **Each addition is its own review of whether that program can run others.** `wget` is out as it
+/// stands: its `--use-askpass` runs a command. A program here can still print or send what it is
+/// handed, as its notice's caution says.
+const REVIEWED_FOR_ANY_ARGUMENTS: &[&str] = &["curl"];
+
+/// Whether `name` is a program a grant of any arguments may be given for, spelled exactly so.
+pub fn reviewed_for_any_arguments(name: &str) -> bool {
+    REVIEWED_FOR_ANY_ARGUMENTS.contains(&name)
+}
+
 /// Whether `program`'s spelling is the one its folder holds: macOS finds `CURL` for `curl`, and a
 /// grant bound to a spelling the person never sees elsewhere would escape every check by name.
 fn spelled_as_it_is_held(program: &Path) -> bool {
