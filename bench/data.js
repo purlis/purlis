@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793839243878,
+  "lastUpdate": 1793842172700,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -39480,6 +39480,48 @@ window.BENCHMARK_DATA = {
             "value": 101.4595205,
             "unit": "ms",
             "extra": "median of 5 runs: 100.426, 100.488, 101.460, 101.622, 102.688 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "8c149a663f0ef8f4fa4ec74a7c7e646585960f9c",
+          "message": "Keyring reads judged by where a chat runs; coverage of the Keychain's rule and a brokered run's network (#5255)\n\n* A keyring read in a chat is judged by where it runs too, and a test of the Keychain's rule\n\nHarden the keyring read in a sandboxed chat: besides the environment's mark, ask which chat this process runs below (the open-chats record and process ancestry). Below a chat whose record says no sandbox, or a plain shell tab, it reads as before; a doubt refuses and says why; the person's terminal and the app read as before. No socket holder is asked, so a read starts no program.\n\nTest coverage on macOS CI: an item made by the one call that holds it (keyhold::add_in), in a throwaway keychain, is read by its owner with dialogs off and by no other program silently.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6KGPA6ACTB7X0Y4J5Y2VHXS\nPurlis-Persona: steward\n\n* Test coverage: a brokered run's network under its real sandbox\n\nA brokered secret exec child, under the sandbox the run is really wrapped in (Seatbelt on macOS, purlis's own wrap on Linux, from the chat's Confines), asks a listed stand-in service directly with curl and a raw socket, and a non-loopback address on a web port and on the proxy's own port. It then reaches the service through its proxy. Run on CI on both systems.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6KGPA6ACTB7X0Y4J5Y2VHXS\nPurlis-Persona: steward\n\n* A run with no sandbox says so in its record, and the held-item tests run only where asked\n\nA start with no sandbox and no opt-out (the floor could not be applied, no sandbox compiled for the harness, a shell tab) records sandbox = \"none\", so a command below it reads the keyring as before. Older builds read the word as absent; it is not an opt-out.\n\nA doubt about where a secret exec runs goes to the app, which judges by its own record. The throwaway keychain tests run only where CI's step sets PURLIS_TEST_THROWAWAY_KEYCHAIN. A build of purlis-core alone skips the wrapped network test; the step that names the probe insists on it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6KGPA6ACTB7X0Y4J5Y2VHXS\nPurlis-Persona: steward\n\n* The record's no-sandbox word is read from the run's own record\n\nA runner's chat has no sandbox of this window's and is confined by the runner, so it is not a run with no sandbox; a reattached chat takes the host's record of its run. Tested on a runner, and seen to fail on the earlier reading.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6KGPA6ACTB7X0Y4J5Y2VHXS\nPurlis-Persona: steward\n\n* Test coverage: a reattached run records its host's word on its sandbox\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6KGPA6ACTB7X0Y4J5Y2VHXS\nPurlis-Persona: steward\n\n* A keyring read in a terminal is held to this project's record and its own ancestry\n\nWhere a process runs is read from every remembered project, and a chat any readable record names still counts. What makes the answer a doubt is this project's own record or the process's ancestry, so the person's own terminal keeps reading its keyring vaults. The stricter check that refuses a vault's token from a chat is unchanged.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6KGPA6ACTB7X0Y4J5Y2VHXS\nPurlis-Persona: steward\n\n* Test coverage: the steps for the keychain and wrapped network tests fail unless they really ran\n\nEach test leaves a marker under target/tests-that-really-ran once it has passed. Its CI step clears the folder first and fails without the marker, so a dropped variable or a Linux build with no probe is a red step rather than a green one with nothing tested.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6KGPA6ACTB7X0Y4J5Y2VHXS\nPurlis-Persona: steward\n\n* Say which doubts refuse a keyring read\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6KGPA6ACTB7X0Y4J5Y2VHXS\nPurlis-Persona: steward\n\n* Test coverage: the Keychain's refusal as CI's macOS runner gives it\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6KF18A31C2YQSGX9QH0RX0A\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-05T00:42:59Z",
+          "tree_id": "6c0e91c9c7160888b1c77a00cbb6f15cccc5fed6",
+          "url": "https://github.com/purlis/purlis/commit/8c149a663f0ef8f4fa4ec74a7c7e646585960f9c"
+        },
+        "date": 1793842167588,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6665570000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.651, 0.664, 0.667, 0.670, 0.694 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.390301,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.236, 16.296, 16.390, 16.563, 16.614 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.64027300000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.722, 101.556, 101.640, 102.171, 102.603 ms"
           }
         ]
       }
