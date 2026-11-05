@@ -1286,6 +1286,7 @@ fn a_runner_chats_browser_is_never_opened_from_a_kept_login() {
             Some("builds"),
             purlis_session_protocol::browsing::BrowserReach::default(),
             Some(purlis_session_protocol::browsing::KeptLogin {
+                form: None,
                 profile: "claude".into(),
                 persona: "steward".into(),
                 login: "shop-login".into(),

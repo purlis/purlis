@@ -390,6 +390,13 @@ impl Browsers for EngineBrowsers {
                 site_of_login(&kept.address)
             })
             .transpose()?;
+        // And its form's, where that is another (#5167): reached from its start, as a browser
+        // logged in afresh does.
+        let kept_form = kept
+            .and_then(|kept| kept.form.as_deref())
+            .map(site_of_login)
+            .transpose()?
+            .filter(|form| Some(form) != kept_site.as_ref());
         let platform = Platform::current()
             .ok_or_else(|| "no browser engine is made for this platform".to_owned())?;
         // Which engine (#2835): this machine's own Chrome where the person chose it, else the
@@ -418,10 +425,14 @@ impl Browsers for EngineBrowsers {
             .map_err(|why| format!("the browser's reach proxy did not start: {why}"))?;
         let mut keeping = Keeping::new(&home, data);
         if let (Some(kept), Some(site), Some(sites)) = (kept, &kept_site, &sites) {
-            // Its page's site alone: its form's site, where that is another, is reached once a
-            // login performed in it signs in there (#4995, #5152).
-            proxy.bind(&LoginSites::page(site.clone()))?;
-            sites.bound_to(site);
+            // Its page's site, and its form's where that is another (#5167), with no sign-in open:
+            // the agent is kept off the form's pages until a login performed in it signs in there
+            // (#4995, #5152).
+            let at = LoginSites {
+                page: site.clone(),
+                form: kept_form.clone(),
+            };
+            opened_from_kept(&proxy, sites, &at)?;
             keeping.open(kept)?;
         }
         // Its engine's log beside its folder, kept past its end (#2745).
@@ -1410,6 +1421,23 @@ fn made_private_and_unbacked(folders: &Path) -> Result<(), String> {
 }
 
 /// The site a kept login's page is on, as a login's is ([`login_of`]).
+/// **A browser opened from a kept login is held to `at`, its sites, from its start** (#2021,
+/// #5167): its page's, and its form's where that is another, as a browser logged in afresh is
+/// once its sign-in is over, so no sign-in is open and the agent is kept off the form's pages.
+fn opened_from_kept(
+    proxy: &ReachProxy,
+    sites: &judge::SiteJudge,
+    at: &LoginSites,
+) -> Result<(), String> {
+    if let Some(sign_in) = proxy.bind(at)? {
+        proxy.sign_in_over(sign_in);
+    }
+    for one in at.all() {
+        sites.bound_to(&one);
+    }
+    Ok(())
+}
+
 fn site_of_login(address: &str) -> Result<Site, String> {
     let origin = crate::sandbox::tools::login::origin_of(address)?;
     let (host, port) = judge::site_of(&origin)
@@ -2070,8 +2098,14 @@ impl Screen for EngineScreen {
                 holder.answered(&ended);
                 (ended, holder.signing_in())
             })
-            .map_err(NotActed::Refused)?;
-        let ended = ended.map_err(not_acted)?;
+            .map_err(NotActed::LoginNotRun)?;
+        // Refused by its lease before it began: another login runs, or the person drives it.
+        let ended = ended.map_err(|refusal| match refusal {
+            drive::Refusal::PersonDriving | drive::Refusal::PurlisDriving => {
+                NotActed::LoginNotRun(refusal.to_string())
+            }
+            other => not_acted(other),
+        })?;
         if matches!(ended.outcome, Err(drive::Refusal::NoFormOnCleanLoad(_))) {
             self.keeping
                 .lock()

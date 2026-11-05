@@ -49,7 +49,10 @@ export function LoginSite({
         </div>
       )}
       <p className="ui-text-meta">Opens</p>
-      <p className="login-site-domain ui-text-title">https://{login.domain}</p>
+      <p className="login-site-domain ui-text-title">
+        https://{login.domain}
+        {login.path === "/" ? "/" : ""}
+      </p>
       {login.path !== "/" && (
         <>
           <p className="ui-text-meta">On the page the chat chose, not the front page</p>

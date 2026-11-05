@@ -134,6 +134,7 @@ async fn a_browser_started_from_kept_logins_is_given_them_by_the_host() {
     let (hosting, browsers, _store, project) = hosted();
     let client = window(&hosting, project.path()).await;
     let kept = purlis_session_protocol::browsing::KeptLogin {
+        form: None,
         profile: "claude".into(),
         persona: "steward".into(),
         login: "shop-login".into(),

@@ -484,9 +484,15 @@ use crate::view::{Limits, Views};
 /// 1.75 starts every login that fills clean on its own site (#5272), a declared one too, and
 /// clears all the site stores, so no login is sent to a host before. A form that doesn't appear
 /// on the load after is refused [`NO_LOGIN_FORM_ON_CLEAN_LOAD`].
+///
+/// 1.76 says a login refused before it ran (#5251): [`LOGIN_NOT_RUN`], so a window keeps the
+/// person's Allow once, and what it knows of the browser's session, for a login that never began.
+/// A host before 1.76 refuses such a login [`BROWSER_REFUSED`], and the window spends both as it
+/// always did. And a kept login may name its form's origin (#5167), which a browser opened from it
+/// reaches from its start; a host before 1.76 ignores it.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 75,
+    minor: 76,
 };
 
 /// The version that first starts every login clean on its own site (#5272): no login is sent to
@@ -778,6 +784,10 @@ pub const PROGRAMS_NOT_KNOWN: &str = "programs_not_known";
 /// can't. Its `why` says so.
 pub const NO_LOGIN_FORM_ON_CLEAN_LOAD: &str = "no_login_form_on_clean_load";
 
+/// A login was refused before it ran (1.76, #5251): nothing was opened, cleared or filled in the
+/// browser, and what it held is as it was. Its `why` says why, and what to do.
+pub const LOGIN_NOT_RUN: &str = "login_not_run";
+
 /// Every refusal code this version says. A later minor may add one; a client treats one it
 /// does not know as a refusal and shows its `why`.
 pub const REFUSALS: &[&str] = &[
@@ -792,6 +802,7 @@ pub const REFUSALS: &[&str] = &[
     BROWSER_REFUSED,
     BROWSER_ENDED,
     NO_LOGIN_FORM_ON_CLEAN_LOAD,
+    LOGIN_NOT_RUN,
     TOO_LARGE,
     NOT_DRIVING,
     INPUT_MISSED,

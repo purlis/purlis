@@ -822,6 +822,7 @@ fn only_a_browser_with_nothing_behind_it_has_held_nothing() {
     assert!(!tried.held_nothing(), "a login tried");
     let mut opened = new();
     opened.opened_from = Some(wire::KeptLogin {
+        form: None,
         profile: "p".into(),
         persona: "q".into(),
         login: "l".into(),
@@ -1101,6 +1102,7 @@ fn a_login_whose_form_is_elsewhere_reaches_it_and_keeps_the_agent_off_it_once_si
 
 fn kept_login() -> wire::KeptLogin {
     wire::KeptLogin {
+        form: None,
         profile: "claude".into(),
         persona: "steward".into(),
         login: "shop-login".into(),
@@ -1192,6 +1194,7 @@ fn a_browser_opened_from_one_login_keeps_no_other() {
     let mut it = keeping(&home, &folder, &keyring);
     it.open(&kept_login()).unwrap();
     let other = wire::KeptLogin {
+        form: None,
         login: "mail-login".into(),
         ..kept_login()
     };
@@ -1232,6 +1235,7 @@ fn a_browser_in_which_another_login_was_tried_keeps_no_later_one() {
     ));
     let first = kept_login();
     let second = wire::KeptLogin {
+        form: None,
         login: "mail-login".into(),
         ..kept_login()
     };
@@ -1264,6 +1268,7 @@ fn a_browser_holding_one_logins_store_writes_nothing_back_once_another_login_is_
     ));
     let first = kept_login();
     let other = wire::KeptLogin {
+        form: None,
         login: "mail-login".into(),
         ..kept_login()
     };
@@ -1822,4 +1827,68 @@ fn a_save_the_host_makes_never_lands_in_what_purlis_keeps_from_the_projects_chat
         super::saved_file(&project, &download, &project, "saved.txt").expect("saved"),
         10
     );
+}
+
+/// #5167: a browser opened from a kept login whose form is on another site reaches that site from
+/// its start, as one logged in afresh does once its sign-in is over: the agent is kept off its
+/// pages, and every other site stays refused.
+#[test]
+fn a_browser_opened_from_a_kept_login_reaches_its_form_s_site_from_its_start() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::{TcpListener, TcpStream};
+
+    use crate::sandbox::browser_reach::{Lane, ReachProxy};
+
+    let server = || {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("a listener");
+        let port = listener.local_addr().expect("an address").port();
+        (listener, port)
+    };
+    let (_page_site, page_port) = server();
+    let (_form_site, form_port) = server();
+    let (_other_site, other_port) = server();
+    let reach = BrowserReach {
+        listed: [page_port, form_port, other_port]
+            .iter()
+            .flat_map(|port| crate::sandbox::localport::reach_entries(*port))
+            .map(|host| Listed {
+                host,
+                layer: Layer::Chat,
+            })
+            .collect(),
+        ..BrowserReach::default()
+    };
+    let sites = std::sync::Arc::new(super::judge::SiteJudge::of(&reach).unwrap());
+    let (listed, _) = reach_of(Some(&reach)).unwrap();
+    let proxy =
+        ReachProxy::bound_by(Lane::of(listed), sites.new_sites(), sites.bound().clone()).unwrap();
+    let status = |port: u16| -> String {
+        let mut stream = TcpStream::connect(proxy.address()).expect("the proxy");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(15)))
+            .unwrap();
+        stream
+            .write_all(format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\n\r\n").as_bytes())
+            .unwrap();
+        let mut line = String::new();
+        BufReader::new(stream).read_line(&mut line).unwrap();
+        line.trim_end().to_owned()
+    };
+    let form = Site::of("127.0.0.1", form_port);
+    let at = LoginSites {
+        page: Site::of("127.0.0.1", page_port),
+        form: Some(form.clone()),
+    };
+
+    super::opened_from_kept(&proxy, &sites, &at).expect("held");
+
+    assert_eq!(status(page_port), "HTTP/1.1 200 Connection established");
+    assert_eq!(status(form_port), "HTTP/1.1 200 Connection established");
+    assert_eq!(status(other_port), "HTTP/1.1 403 Forbidden");
+    assert_eq!(
+        proxy.bound().kept_off("127.0.0.1", form_port),
+        Some(form),
+        "no sign-in is open"
+    );
+    assert_eq!(proxy.bound().kept_off("127.0.0.1", page_port), None);
 }
