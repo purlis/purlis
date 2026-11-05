@@ -89,6 +89,8 @@
   padding-block: 0;
   padding-inline: var(--space-5) calc(var(--space-4) + var(--space-1));
   border-radius: var(--radius-control) var(--radius-control) 0 0;
+  /* What a chat's mark rings its badge in (`ui/chat-mark`): the window, behind a tab at rest. */
+  --chat-mark-ground: var(--surface-deep);
   background-color: transparent;
   color: var(--text-quiet);
   font-size: var(--font-size-md);
@@ -218,12 +220,14 @@
    the panel; a chat's joins its terminal and a file's its toolbar and code, each one surface
    (`terminal.background`, which the light editor draws its code on too). */
 [data-scope="tabs"][data-part="tab"][data-selected] {
+  --chat-mark-ground: var(--surface-raised);
   background-color: var(--surface-raised);
   color: var(--text-primary);
 }
 
 [data-scope="tabs"][data-part="tab"][data-variant="chat"][data-selected],
 [data-scope="tabs"][data-part="tab"][data-variant="file"][data-selected] {
+  --chat-mark-ground: var(--terminal-background);
   background-color: var(--terminal-background);
 }
 

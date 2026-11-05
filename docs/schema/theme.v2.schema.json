@@ -3326,6 +3326,27 @@
         "card-button.line.pick.disabled.text": {
           "$ref": "#/$defs/part-text"
         },
+        "chat-mark.badge.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "chat-mark.badge.needs.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "chat-mark.badge.failed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "chat-mark.badge.working.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "chat-mark.badge.waiting.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "chat-mark.badge.idle.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "chat-mark.badge.ended.text": {
+          "$ref": "#/$defs/part-text"
+        },
         "checkbox.root.fill": {
           "$ref": "#/$defs/part-fill"
         },

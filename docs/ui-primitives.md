@@ -932,6 +932,15 @@ Only the wrapper writes `data-scope="pane-preview"`: `purlis/pane-preview-family
   `pane-preview.css`; a theme's parts reach the same attributes (`pane-preview.*`, the next release's
   manifest version).
 
+## The chat mark family
+
+`ChatMark` (`app/src/ui/chat-mark`, ADR 0104 amended 2026-11-05, #5340) is a chat's mark on its tab, its row in the list, its pane's head and a folded pane's rail. A screen draws it through `ChatPersonaState`, which reads the chat's one state from `shownState`; `QuitWarning`'s list hands it a state directly.
+
+- **Props:** `state` (`needs`, `failed`, `working`, `waiting`, `idle`, `ended`, or nothing where none is known), `who`, `word`, `changed`.
+- **Parts:** `root` carries the state as its `data-variant`; `who`, `badge` and `word`. A glyph tells each state as well as its colour.
+- **The place sets** `--chat-mark-size` and `--chat-mark-ground`, nothing else.
+- **`who` is its own part** so a later control can stand in it (the grip, #5290), with the badge left beside it.
+
 ## The pane foot family
 
 **The line under a chat's terminal is the pane foot family** (`app/src/ui/pane-foot/`, #5202,

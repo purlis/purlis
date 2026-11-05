@@ -1,20 +1,31 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { memo } from "react";
+import { memo, type ReactNode } from "react";
 import { SquareTerminal } from "lucide-react";
-import { markOf, ownWorkOf, useChatsHere, useChatsSelect } from "./chatState";
+import {
+  asksThePerson,
+  failedUnseen,
+  failuresUnseenOf,
+  markOf,
+  ownWorkOf,
+  useChatsHere,
+  useChatsSelect,
+} from "./chatState";
 import { PersonaMark } from "./PersonaMark";
 import { shownState, type RowFacts, type Shown } from "./shownState";
-import { StateShown } from "./StateShown";
 import { useQuestionStanding } from "./QuestionsHere";
 import { tasksAtWorkOf } from "./sessionTasks";
 import { useTasksBelow } from "./TasksBelow";
+import { ChatMark } from "./ui/chat-mark/ChatMark";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** Whether two shown states say the same thing. */
 export function sameShown(one: Shown | undefined, other: Shown | undefined): boolean {
-  return one === other || (one?.kind === other?.kind && one?.word === other?.word);
+  return (
+    one === other ||
+    (one?.kind === other?.kind && one?.word === other?.word && one?.mark === other?.mark)
+  );
 }
 
 /** What a chat's shown state is read from beside the board: its row's facts (`RowFacts`), of
@@ -52,7 +63,9 @@ export function useShownState({
     (states) =>
       shownState({
         board: markOf(states, session, shell),
-        needsYou: states.needsYou.includes(session) || question?.level === "needs-you",
+        needsYou: asksThePerson(states, session) || question?.level === "needs-you",
+        failuresUnseen: failuresUnseenOf(states, session),
+        failedUnseen: failedUnseen(states, session),
         task:
           report === null
             ? null
@@ -66,18 +79,16 @@ export function useShownState({
 }
 
 /**
- * **Who a chat runs as, with its state on it** (#3342, the operator's ruling of 2026-10-26): the
- * persona's mark in the persona's colour, first on the chat's row. A chat that asks for the person
- * or is at work wears its state's own mark on the persona's corner, shape and colour (`App.css`
- * draws `StateShown`'s mark as that badge); a chat at rest wears none. A chat with no persona
- * wears the terminal's mark. Its tooltip and what a screen reader hears both say the two:
- * `steward, needs you`.
+ * **A chat's mark, read off the chat** (#3342, #5340): who it runs as, with its one state on the
+ * corner, drawn by the one family (`ui/chat-mark`) wherever a chat is drawn: its row in the list,
+ * its tab, its pane's head and a folded pane's rail. They read one function (`useShownState`), so
+ * none can say something the others do not. A chat with no persona wears the terminal's mark. Its
+ * tooltip and what a screen reader hears both say the two: `steward, needs you`.
  *
- * **Its look is shared** (#4762): `chatPersona.css` holds it, and the place it stands sets only
- * its size (`--chat-persona-size`) and the ground its badge is ringed in (`--chat-badge-ground`).
- * The sidebar's row draws this component. A tab on the strip wears the same look with its own
- * marks (`ChatRows.TabMarks`): its persona's or its shell's, and the board state's dot. The word
- * it says after its name is this one's (`useShownState`, #4935).
+ * **The place it stands sets only its size and the ground its badge is ringed in**
+ * (`--chat-mark-size`, `--chat-mark-ground`). `who` stands for the mark of someone else's kind: a
+ * task's own tab wears the task's (#1489). `heard={false}` is for a place that says the word after
+ * its name itself: a tab (`TabMarks`).
  */
 export const ChatPersonaState = memo(function ChatPersonaState({
   persona,
@@ -87,31 +98,42 @@ export const ChatPersonaState = memo(function ChatPersonaState({
   outcome = null,
   harness,
   changed = false,
+  who: standIn,
+  heard = true,
 }: ShownOf & {
   persona: string | null;
   changed?: boolean;
+  who?: ReactNode;
+  heard?: boolean;
 }) {
   const shown = useShownState({ session, shell, report, outcome, harness });
   const who = persona ?? "terminal";
   const said = shown === undefined ? who : `${who}, ${shown.word}`;
+  const drawn =
+    standIn ??
+    (persona === null ? (
+      <Tooltip tip={said}>
+        <SquareTerminal
+          className="node-icon"
+          data-mark={shell ? "shell" : undefined}
+          aria-hidden="true"
+        />
+      </Tooltip>
+    ) : (
+      <PersonaMark persona={persona} tip={said} />
+    ));
   return (
-    <span className="chat-persona" data-state={shown?.kind}>
-      {persona === null ? (
-        <Tooltip tip={said}>
-          <SquareTerminal className="node-icon" aria-hidden="true" />
-        </Tooltip>
-      ) : (
-        <PersonaMark persona={persona} tip={said} />
-      )}
-      {/* Heard after the chat's name, as the persona and then the state: the state's word is
-          `StateShown`'s, out of sight where it stands. */}
-      <span className="hidden-words">{shown === undefined ? who : `${who},`}</span>
-      {shown !== undefined && (
+    <ChatMark
+      state={shown?.mark}
+      changed={changed}
+      who={
         <>
-          {" "}
-          <StateShown shown={shown} changed={changed} markOnly />
+          {drawn}
+          {/* Heard after the chat's name, as the persona and then the state. */}
+          {heard && <span className="hidden-words">{shown === undefined ? who : `${who},`}</span>}
         </>
-      )}
-    </span>
+      }
+      word={heard ? shown?.word : undefined}
+    />
   );
 });

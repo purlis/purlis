@@ -329,8 +329,8 @@
 /* The chat's persona and state icon (`ChatPersonaState`, #4762): the tab's size, its badge
    ringed in the terminal's fill the head stands on. */
 .pane-chips > .pane-persona {
-  --chat-persona-size: var(--space-6);
-  --chat-badge-ground: var(--terminal-background);
+  --chat-mark-size: var(--space-6);
+  --chat-mark-ground: var(--terminal-background);
   display: inline-flex;
   flex: none;
   align-items: center;
@@ -762,6 +762,7 @@
   gap: var(--space-1);
   /* No pane goes off screen: a rail too short (or a bar too narrow) for its panes scrolls. */
   overflow: auto;
+  --chat-mark-ground: var(--surface-raised);
   background-color: var(--surface-raised);
   border-radius: var(--radius-lg);
 }

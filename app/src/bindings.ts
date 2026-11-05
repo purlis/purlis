@@ -10055,6 +10055,12 @@ export type Moved = {
 	 */
 	background_turn?: boolean | null,
 	/**
+	 *  **It is in the queue only for tasks of its that came to nothing** (#5340,
+	 *  `Board::needs_you_for_itself`, #1693): nothing of its own asks the person, so its mark
+	 *  says a task failed and not that it needs them. Absent otherwise.
+	 */
+	only_failures?: boolean | null,
+	/**
 	 *  Which snapshot of the board this is — bigger was taken later (charter-app#248).
 	 * 
 	 *  **What lets the window put its events back in order.** Every `Moved` is built under the
