@@ -188,7 +188,8 @@ function Foot({
   const [said, setSaid] = useState("Nothing pressed");
   const parts = paneLinesOf(kind, width, facts).foot ?? [];
   const rowOf = (part: keyof typeof FOOT_ROWS): FootPress => ({
-    title: FOOT_ROWS[part](SESSION),
+    // A row's title says what the part's words say, as the catalogue's do.
+    title: part === "workspace" ? "Focus workspace smart-ide" : FOOT_ROWS[part](SESSION),
     press: () => setSaid(FOOT_ROWS[part](SESSION)),
   });
   return (

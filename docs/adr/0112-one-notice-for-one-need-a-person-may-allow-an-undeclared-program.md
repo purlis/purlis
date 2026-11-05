@@ -80,3 +80,8 @@ file collected a line for every one-off key.
 - **A cool-off after repeated Don't allows**: each notice is still the person's click. Left for later.
 - **Keeping the proposal and fixing its label**: still an approval nobody asked for, and still a
   committed line per one-off key.
+
+## Its number
+
+Two records carry the number 0111. The amendments in [`0111/`](0111/) are the other's, `A chat's pane
+has a head and a foot`; this one has none yet.
