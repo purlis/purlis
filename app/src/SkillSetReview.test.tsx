@@ -260,6 +260,38 @@ describe("the one review", () => {
   });
 });
 
+describe("a review none of whose skills can change", () => {
+  it("says nothing is left, holds its main action, and names no section of nothing", async () => {
+    core(COPIES, {
+      skill_set_review: (given) => ({
+        skills: (given.members as { name: string }[]).map((one) => ({
+          member: one,
+          changed: false,
+          cannot: "It holds changes.",
+        })),
+        names: [],
+        open_chats: 0,
+      }),
+    });
+    const user = userEvent.setup();
+    const source = await sourcePage();
+    await user.click(await ready(source, "Delete all…"));
+    const list = await screen.findByTestId("set-choose");
+    await within(list).findByTestId("set-project-grilling");
+    await user.click(within(list).getByRole("button", { name: "Review 2 skills" }));
+    const page = await screen.findByTestId("set-review");
+    await within(page).findByTestId("set-cannot-grilling");
+    expect(within(page).getByTestId("set-review-lead")).toHaveTextContent(
+      "Nothing is left in this change.",
+    );
+    expect(within(page).queryByText("In this change")).toBeNull();
+    expect(within(page).getByRole("button", { name: "Delete" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+});
+
 describe("Remove source…", () => {
   it("keeps the skills by default", async () => {
     const asked = core();

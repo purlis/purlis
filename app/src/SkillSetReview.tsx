@@ -379,8 +379,12 @@ export function SetReviewPage({
     >
       <h2 className="ui-text-strong">{title}</h2>
       <p className="honest" data-testid="set-review-lead">
-        {counted(can.length, "skill", "skills")} in this change. {words.does(workspace)}
-        {alsoRemoves !== undefined && ` ${alsoRemoves} stops being a source in the same change.`}
+        {can.length === 0
+          ? "Nothing is left in this change."
+          : `${counted(can.length, "skill", "skills")} in this change. ${words.does(workspace)}`}
+        {can.length > 0 &&
+          alsoRemoves !== undefined &&
+          ` ${alsoRemoves} stops being a source in the same change.`}
       </p>
       {going.length > 0 && (
         <Held read={read} what="the review of these skills" again={again}>
@@ -423,32 +427,34 @@ export function SetReviewPage({
                   </ButtonRow>
                 </div>
               ))}
-              <section
-                aria-labelledby="set-going"
-                className="skill-review"
-                data-testid="set-going-list"
-              >
-                <h3 id="set-going" className="ui-text-small ui-text-strong">
-                  In this change
-                </h3>
-                {data.skills
-                  .filter((one) => one.cannot === null)
-                  .map((one) => {
-                    const key = memberKey(one.member);
-                    return (
-                      <Checkbox
-                        key={key}
-                        isSelected
-                        isDisabled={busy}
-                        onChange={() => tick(key, false)}
-                        data-testid={`set-keep-${one.member.name}`}
-                        description={one.changed ? "Changed since install" : undefined}
-                      >
-                        {words.verb} {one.member.name} ({one.member.label})
-                      </Checkbox>
-                    );
-                  })}
-              </section>
+              {can.length > 0 && (
+                <section
+                  aria-labelledby="set-going"
+                  className="skill-review"
+                  data-testid="set-going-list"
+                >
+                  <h3 id="set-going" className="ui-text-small ui-text-strong">
+                    In this change
+                  </h3>
+                  {data.skills
+                    .filter((one) => one.cannot === null)
+                    .map((one) => {
+                      const key = memberKey(one.member);
+                      return (
+                        <Checkbox
+                          key={key}
+                          isSelected
+                          isDisabled={busy}
+                          onChange={() => tick(key, false)}
+                          data-testid={`set-keep-${one.member.name}`}
+                          description={one.changed ? "Changed since install" : undefined}
+                        >
+                          {words.verb} {one.member.name} ({one.member.label})
+                        </Checkbox>
+                      );
+                    })}
+                </section>
+              )}
               {cannot.length > 0 && (
                 <section aria-labelledby="set-cannot" className="skill-review">
                   <h3 id="set-cannot" className="ui-text-small ui-text-strong">

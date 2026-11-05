@@ -76,25 +76,28 @@ const SET_REVIEW = ({ act, members }: { act: string; members: { name: string }[]
   skills: members.map((member) => ({
     member,
     changed: member.name === "systematic-debugging",
+    // What takes one out of a delete: a turn writes nothing of the skill's.
     cannot:
-      member.name === "writing-plans"
+      act === "delete" && member.name === "writing-plans"
         ? "It holds changes that are not committed yet: save them first."
         : null,
   })),
   names: [
-    act === "turn-on"
-      ? {
-          // One turned on names one that stays off, which is not among those ticked.
-          namer: "brainstorming",
-          named: "writing-plans",
-          member: { level: PROJECT, name: "writing-plans", label: "project" },
-        }
-      : {
-          namer: "to-spec",
-          named: "brainstorming",
-          member: { level: PROJECT, name: "brainstorming", label: "project" },
-        },
-  ],
+    act === "turn-off"
+      ? null
+      : act === "turn-on"
+        ? {
+            // One turned on names one that stays off, which is not among those ticked.
+            namer: "brainstorming",
+            named: "writing-plans",
+            member: { level: PROJECT, name: "writing-plans", label: "project" },
+          }
+        : {
+            namer: "to-spec",
+            named: "brainstorming",
+            member: { level: PROJECT, name: "brainstorming", label: "project" },
+          },
+  ].filter((one) => one !== null),
   open_chats: 2,
 });
 
