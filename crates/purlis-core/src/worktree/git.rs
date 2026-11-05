@@ -276,9 +276,11 @@ pub(crate) fn path_value(dirs: &[String]) -> String {
 /// module's link check never sees. So a submodule is read by its recorded commit only. What
 /// that costs: uncommitted work inside a submodule does not show in purlis. Plumbing diffs do
 /// not read `diff.ignoreSubmodules`, so they are given the option ([`PLUMBING_DIFFS`]).
-const NO_PROGRAMS: [&str; 7] = [
+const NO_PROGRAMS: [&str; 8] = [
     "core.hooksPath=/dev/null",
     "core.fsmonitor=false",
+    // What git names is what the commit holds: no replacement under `refs/replace/` is read.
+    "core.useReplaceRefs=false",
     "log.showSignature=false",
     "diff.ignoreSubmodules=dirty",
     "status.submoduleSummary=false",

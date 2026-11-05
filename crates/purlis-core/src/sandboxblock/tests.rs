@@ -1677,6 +1677,47 @@ fn a_refused_write_in_a_branch_folders_git_record_names_purlis_worktree_commit()
     }
 }
 
+#[test]
+fn a_write_to_a_clones_git_folder_names_the_app_and_never_a_grant() {
+    for path in [
+        "/Users/dev/plane/workspaces/alpha/repo/.git/objects/pack/tmp_pack_1",
+        "/Users/dev/plane/workspaces/alpha/repo/.git/refs/remotes/origin/main.lock",
+    ] {
+        let way = way_out(Path::new(path), Path::new(ROOT)).expect(path);
+        assert!(way.contains("--fetch-only"), "{way}");
+    }
+    // Not the folder's own files, nor a `.git` further down that is no clone's.
+    for path in [
+        "/Users/dev/plane/workspaces/alpha/repo/src/main.rs",
+        "/Users/dev/plane/workspaces/alpha/repo/vendor/x/.git/refs/heads/main",
+    ] {
+        assert_eq!(way_out(Path::new(path), Path::new(ROOT)), None, "{path}");
+    }
+}
+
+#[test]
+fn a_block_in_its_own_clones_git_folder_is_a_branch_folder_chats_own_to_retry() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = std::fs::canonicalize(dir.path()).unwrap();
+    let (clone, piece) = (base.join("repo"), base.join("piece"));
+    let record = clone.join(".git/worktrees/piece");
+    std::fs::create_dir_all(&record).unwrap();
+    std::fs::create_dir_all(&piece).unwrap();
+    std::fs::write(
+        piece.join(".git"),
+        format!("gitdir: {}\n", record.display()),
+    )
+    .unwrap();
+    std::fs::write(record.join("gitdir"), format!("{}/.git\n", piece.display())).unwrap();
+    let blocked = block(Operation::Write, Kind::ProjectFiles, false);
+    let in_git = clone.join(".git/objects/pack/tmp").display().to_string();
+    assert!(its_own_to_retry(&blocked, Some(&in_git), Some(&piece)));
+    let elsewhere = base.join("other/.git/objects/tmp").display().to_string();
+    assert!(!its_own_to_retry(&blocked, Some(&elsewhere), Some(&piece)));
+    let its_files = clone.join("src/a.rs").display().to_string();
+    assert!(!its_own_to_retry(&blocked, Some(&its_files), Some(&piece)));
+}
+
 /// ADR 0093 (D-sock-5): a failed command's output names the socket it was refused, as the
 /// sandbox's own line does, and the certificate check names its one service.
 #[test]

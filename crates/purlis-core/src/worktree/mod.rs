@@ -1055,11 +1055,22 @@ fn remove_as(
     let path = within_workspace(plane, ws, &path)?;
     let clone = clone_dir(plane, ws, repo)?;
 
+    // Asked while it is there: the folder's git directory goes with it.
+    let git_dir = git::run(&path, &["rev-parse", "--absolute-git-dir"], git::READ)
+        .ok()
+        .filter(git::Run::ok)
+        .map(|run| PathBuf::from(run.line().trim()))
+        .unwrap_or_else(|| clone.join(".git").join("worktrees").join(piece));
     let exists = path.symlink_metadata().is_ok();
-    if !exists {
-        return clear_stale(plane, ws, repo, piece, &clone);
+    let removed = if exists {
+        remove_present(&path, &clone, piece, force, delete_branch, branch_stays)
+    } else {
+        clear_stale(plane, ws, repo, piece, &clone)
+    };
+    if removed.is_ok() {
+        crate::pieceupdate::forget_notes(plane, &git_dir);
     }
-    remove_present(&path, &clone, piece, force, delete_branch, branch_stays)
+    removed
 }
 
 /// **Clears git's record of the folder of `piece`, where git itself finds that folder gone**,

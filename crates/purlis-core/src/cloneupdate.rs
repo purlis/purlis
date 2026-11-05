@@ -780,8 +780,10 @@ impl Denies {
     /// lets a chat create (`.claude`), where that folder is not there yet; or a manifest the
     /// chat's sandbox holds.
     pub fn path(&self, rel: &str, asks: &dyn Asks) -> bool {
-        let lower = rel.to_lowercase();
-        if crate::sandboxblock::is_planted(Path::new(&lower)) {
+        if [rel.to_lowercase(), folded(rel)]
+            .iter()
+            .any(|name| crate::sandboxblock::is_planted(Path::new(name)))
+        {
             return true;
         }
         let parts: Vec<&str> = rel.split('/').collect();
@@ -814,6 +816,16 @@ impl Denies {
         let rel = whole.strip_prefix(&self.top).unwrap_or(spelled);
         self.path(&rel.to_string_lossy(), asks)
     }
+}
+
+/// `name` as a case-folding disk may compare it: each letter taken to its upper case and back,
+/// so one with no lower case of its own (`ſ`, which such a disk takes for `s`) is told apart
+/// from nothing it would be stored as.
+fn folded(name: &str) -> String {
+    name.chars()
+        .flat_map(char::to_uppercase)
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 /// Whether a path is one a sentence repeats: short, and of the characters a file name is

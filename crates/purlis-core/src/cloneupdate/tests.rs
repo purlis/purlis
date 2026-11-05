@@ -2121,3 +2121,16 @@ fn on_a_repository_git_says_whether_it_has_a_commit_and_was_checked_out() {
     assert_eq!(Asked.head(&fresh), Head::Unborn);
     assert!(!Asked.has_index(&fresh));
 }
+
+#[test]
+fn a_name_is_folded_as_a_case_folding_disk_compares_it() {
+    assert_eq!(
+        folded(".claude/\u{17f}ettings.json"),
+        ".claude/settings.json"
+    );
+    assert_eq!(folded(".VSCODE/Tasks.JSON"), ".vscode/tasks.json");
+    assert_eq!(folded("\u{212a}ept"), "kept");
+    assert!(crate::sandboxblock::is_planted(Path::new(&folded(
+        ".claude/\u{17f}ettings.json"
+    ))));
+}

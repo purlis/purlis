@@ -495,7 +495,11 @@ fn a_lease_record_purlis_cannot_read_refuses_the_push_and_names_the_retry() {
     assert_eq!(update(&w, "p1", &start(None), &Reach::default()).0, 0);
     let published = forge_has(&w, "p1");
     let git_dir = PathBuf::from(out(&piece, &["rev-parse", "--absolute-git-dir"]));
-    let record = git_dir.join("purlis-updated");
+    assert!(
+        !git_dir.join("purlis-updated").exists(),
+        "kept out of the git directory"
+    );
+    let record = noted(&w, "purlis-updated");
     assert!(record.is_file(), "the update keeps its record");
 
     // As an earlier purlis wrote it, one line with no remote commit in it; then none at all.
@@ -881,6 +885,119 @@ fn a_clone_s_own_commits_are_rebased_onto_its_remote_and_a_conflict_goes_on_or_b
         out(&w.theirs, &["rev-parse", "HEAD"])
     );
     assert_eq!(out(&w.clone, &["branch", "--show-current"]), "main");
+}
+
+/// The one note called `file` that purlis keeps under the project's state.
+fn noted(w: &World, file: &str) -> PathBuf {
+    let notes = purlis_core::names::state(&w.plane).join("app/worktree-updates");
+    let found: Vec<PathBuf> = std::fs::read_dir(&notes)
+        .unwrap()
+        .map(|entry| entry.unwrap().path().join(file))
+        .filter(|path| path.is_file())
+        .collect();
+    assert_eq!(found.len(), 1, "{found:?}");
+    found.into_iter().next().unwrap()
+}
+
+#[test]
+fn a_rebase_stopped_in_a_clone_goes_on_and_back_by_a_sandboxed_chats_own_git() {
+    purlis_core::unsteered!();
+    let w = world();
+    write(&w.clone, "shared.txt", "a\nmine\nc\n");
+    git(&w.clone, &["commit", "-q", "-am", "mine"]);
+    let mine = out(&w.clone, &["rev-parse", "HEAD"]);
+    w.they_commit("shared.txt", "a\ntheirs\nc\n");
+    let chat = w.plane.join("workspaces").join(WS);
+    let reach = Reach {
+        hosts: None,
+        sandboxed_at: Some(&chat),
+    };
+
+    // Back: the app names the step while the rebase is stopped, and runs no resume of git's.
+    let (code, said) = update_clone(&w, &start(None), &reach);
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains("conflict in shared.txt"), "{said}");
+    assert!(said.contains("rebase --continue"), "{said}");
+    let (code, said) = update_clone(&w, &UpdateStep::Abort, &reach);
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains("git rebase --abort"), "{said}");
+    assert!(w.clone.join(".git/rebase-merge").is_dir());
+    git(&w.clone, &["rebase", "--abort"]);
+    let (code, said) = update_clone(&w, &UpdateStep::Abort, &reach);
+    assert_eq!(code, 0, "{said}");
+    assert_eq!(out(&w.clone, &["rev-parse", "HEAD"]), mine);
+    assert_eq!(out(&w.clone, &["branch", "--show-current"]), "main");
+
+    // On: the same, and the branch is moved to where the chat's own git finished.
+    let (code, said) = update_clone(&w, &start(None), &reach);
+    assert_eq!(code, 1, "{said}");
+    write(&w.clone, "shared.txt", "a\nboth\nc\n");
+    let (code, said) = update_clone(&w, &UpdateStep::Continue, &reach);
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains("rebase --continue"), "{said}");
+    git(&w.clone, &["add", "shared.txt"]);
+    git(&w.clone, &["-c", "core.editor=:", "rebase", "--continue"]);
+    let (code, said) = update_clone(&w, &UpdateStep::Continue, &reach);
+    assert_eq!(code, 0, "{said}");
+    assert_eq!(out(&w.clone, &["branch", "--show-current"]), "main");
+    assert_eq!(
+        out(&w.clone, &["rev-parse", "HEAD~1"]),
+        out(&w.theirs, &["rev-parse", "HEAD"])
+    );
+
+    // And with none stopped and no update under way, there is nothing to settle.
+    let (code, said) = update_clone(&w, &UpdateStep::Continue, &reach);
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains("no rebase is stopped"), "{said}");
+}
+
+#[test]
+fn a_folder_removed_takes_purlis_s_notes_of_its_updates_with_it() {
+    purlis_core::unsteered!();
+    let w = world();
+    let _piece = pushed_piece(&w, "p1");
+    w.they_commit("new.txt", "new\n");
+    assert_eq!(update(&w, "p1", &start(None), &Reach::default()).0, 0);
+    assert!(noted(&w, "purlis-updated").is_file());
+    let noted_at = noted(&w, "purlis-updated");
+
+    let removed = brokered(|| purlis_core::worktree::remove(&w.plane, WS, REPO, "p1", true, false));
+    assert!(removed.is_ok());
+    assert!(!noted_at.exists());
+}
+
+#[test]
+fn fetching_alone_moves_nothing_and_takes_a_folder_with_uncommitted_changes() {
+    purlis_core::unsteered!();
+    let w = world();
+    let (code, cut) = add(&w, "p1", None);
+    assert_eq!(code, 0, "{cut}");
+    let piece = w.piece("p1");
+    write(&piece, "shared.txt", "a\nunsaved\nc\n");
+    let head = out(&piece, &["rev-parse", "HEAD"]);
+    w.they_commit("new.txt", "new\n");
+    let theirs = out(&w.theirs, &["rev-parse", "HEAD"]);
+    assert_ne!(out(&piece, &["rev-parse", "origin/main"]), theirs);
+
+    let fetch_head = w.clone.join(".git/FETCH_HEAD");
+    let fetch_head_was = std::fs::read(&fetch_head).ok();
+    let (code, said) = update(&w, "p1", &UpdateStep::FetchOnly, &Reach::default());
+    assert_eq!(code, 0, "{said}");
+    assert_eq!(std::fs::read(&fetch_head).ok(), fetch_head_was);
+    assert_eq!(out(&piece, &["rev-parse", "origin/main"]), theirs);
+    assert_eq!(out(&piece, &["rev-parse", "HEAD"]), head);
+    assert_eq!(out(&piece, &["branch", "--show-current"]), "p1");
+    assert!(
+        std::fs::read_to_string(piece.join("shared.txt"))
+            .unwrap()
+            .contains("unsaved")
+    );
+
+    let moved = out(&w.clone, &["rev-parse", "origin/main"]);
+    w.they_commit("newer.txt", "newer\n");
+    let (code, said) = update_clone(&w, &UpdateStep::FetchOnly, &Reach::default());
+    assert_eq!(code, 0, "{said}");
+    assert_ne!(out(&w.clone, &["rev-parse", "origin/main"]), moved);
 }
 
 #[test]

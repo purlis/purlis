@@ -3318,6 +3318,29 @@ fn claude_settings_in(root: &Path, cwd: &Path) -> claude::Settings {
     settings
 }
 
+#[test]
+fn a_chat_in_a_branch_folder_purlis_cut_leaves_its_clones_git_folder_to_the_app() {
+    let plane = plane_saying(ON);
+    let root = plane.path().canonicalize().expect("real");
+    let workspace = root.join("workspaces/w");
+    let piece = workspace.join(".worktrees/repo/p1");
+    let inside = piece.join("src");
+    let clone = workspace.join("repo");
+    std::fs::create_dir_all(clone.join(".git")).unwrap();
+    std::fs::create_dir_all(&inside).unwrap();
+    let held = clone.join(".git");
+
+    for chat in [&piece, &inside] {
+        let settings = claude_settings_in(&root, chat);
+        assert!(claude_holds(&settings, &held), "{chat:?}");
+    }
+    // Standing in the clone, or above it, the chat keeps its own git.
+    for chat in [&clone, &workspace] {
+        let settings = claude_settings_in(&root, chat);
+        assert!(!claude_holds(&settings, &held), "{chat:?}");
+    }
+}
+
 /// Whether `settings` deny writing `path`, to Claude Code's sandbox and to its Edit tool.
 fn claude_holds(settings: &claude::Settings, path: &Path) -> bool {
     let path = path.display().to_string();

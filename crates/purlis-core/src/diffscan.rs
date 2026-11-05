@@ -603,6 +603,18 @@ fn is_nothing(oid: &str) -> bool {
 /// `Err` is input git did not write, a ref that is not a commit, or git failing to answer, all
 /// of which the caller refuses on.
 pub fn pushed(repo: &Path, remote: &str, url: &str, updates: &str) -> Result<Scan, String> {
+    pushed_knowing(repo, remote, url, updates, None)
+}
+
+/// [`pushed`], with what the remote has given as the commits it just said it has (`known`),
+/// where the caller asked it, in place of what this clone's remote-tracking branches say.
+pub fn pushed_knowing(
+    repo: &Path,
+    remote: &str,
+    url: &str,
+    updates: &str,
+    known: Option<&[String]>,
+) -> Result<Scan, String> {
     let commit_of = |oid: &str| {
         git::run_in_hook(
             repo,
@@ -661,9 +673,13 @@ pub fn pushed(repo: &Path, remote: &str, url: &str, updates: &str) -> Result<Sca
     range.extend(has);
     // git hands a push to a URL with no remote configured the URL twice, and a URL is no
     // remote-tracking namespace.
-    if remote != url {
-        range.push("--not".to_owned());
-        range.push(format!("--remotes={remote}"));
+    match known {
+        Some(known) => range.extend(known.iter().map(|id| format!("^{id}"))),
+        None if remote != url => {
+            range.push("--not".to_owned());
+            range.push(format!("--remotes={remote}"));
+        }
+        None => {}
     }
     let ask = |head: &[&str]| {
         let mut args: Vec<&str> = head.to_vec();
