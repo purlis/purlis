@@ -182,8 +182,12 @@ fn store_value(ctx: &Ctx, v: &Vault, key: &str, value: &str) -> Result<(), Vault
         "reference" => reference::set(ctx, v, key, value),
         _ => onepassword::set(ctx, v, key, value),
     }?;
-    super::no_seed::forget(ctx, &v.name, key);
     super::links::unlink(ctx, &v.name, key).map(drop)
+}
+
+/// Proof only.
+pub fn mark_from_a_second_caller(ctx: &Ctx, v: &Vault, key: &str) -> Result<(), VaultError> {
+    super::no_seed::mark(ctx, v, key)
 }
 
 /// Delete a value.

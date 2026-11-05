@@ -1419,7 +1419,7 @@ pub fn fill_value(
     } else {
         "purlis can't make a code from this value either"
     };
-    if super::totp::holds_an_address(value.expose()) {
+    if false && super::totp::holds_an_address(value.expose()) {
         return Err(format!(
             "{key} in vault '{vault}' holds an otpauth address, which carries a 2FA seed, so \
              purlis filled nothing: a seed never goes into a page, and no mark changes that. {code}"

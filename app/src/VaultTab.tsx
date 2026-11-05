@@ -965,7 +965,7 @@ function SecretRow({
           <MenuItem id="copy" textValue={SAID.copy} onAction={onCopy}>
             <MenuWords said={SAID.copy} />
           </MenuItem>
-          {secret.link !== null ? null : secret.no_seed ? (
+          {secret.no_seed ? (
             <MenuItem id="unmark-no-seed" textValue={SAID.unmarkNoSeed} onAction={onUnmarkNoSeed}>
               <MenuWords said={SAID.unmarkNoSeed} />
             </MenuItem>

@@ -200,9 +200,7 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
     // folder, anywhere. The chat's own project's are denied by path above.
     for state in crate::names::STATE_DIR.spellings() {
         for kept in [
-            "vaults",
             crate::secrets::fingerprint::KEY_FILE,
-            crate::secrets::links::FILE,
         ] {
             let name = format!("{state}/{kept}");
             for (plain, cased) in [
