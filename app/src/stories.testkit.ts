@@ -28,7 +28,7 @@ export async function pictureNow(): Promise<void> {
 /** The global the story tests put their window-sizer on (`.storybook/cell.setup.ts`). */
 export const WINDOW_GLOBAL = "__PURLIS_STORY_WINDOW__";
 
-/** The global the story tests put the engine's press on (`.storybook/pointer.setup.ts`). */
+/** The global the story tests put the engine's press on (`.storybook/at-rest.setup.ts`). */
 export const ENGINE_PRESS_GLOBAL = "__PURLIS_STORY_ENGINE_PRESS__";
 
 /**
@@ -41,7 +41,7 @@ export async function pressWithTheEnginesPointer(element: Element): Promise<bool
   const press = (globalThis as Record<string, unknown>)[ENGINE_PRESS_GLOBAL];
   if (typeof press !== "function") {
     if (cellInTest() !== undefined)
-      throw new Error("a story test has no engine's press (.storybook/pointer.setup.ts)");
+      throw new Error("a story test has no engine's press (.storybook/at-rest.setup.ts)");
     return false;
   }
   await (press as (element: Element) => Promise<void>)(element);

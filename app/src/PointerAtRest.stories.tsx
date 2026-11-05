@@ -3,7 +3,7 @@
 
 /**
  * **A story starts with nothing under the pointer, wherever the story before it left it** (#5063,
- * `.storybook/pointer.setup.ts`). The stories of a file run one after another on one page, and the
+ * `.storybook/at-rest.setup.ts`). The stories of a file run one after another on one page, and the
  * engine's own pointer stays where it last was: over a point the next story may draw on, whose
  * control would then be hovered (`:hover`, and React Aria's `data-hovered`) and drawn as it is
  * not when that story runs alone.

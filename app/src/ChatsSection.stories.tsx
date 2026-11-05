@@ -280,7 +280,7 @@ const drawn = () => new Promise((done) => requestAnimationFrame(() => requestAni
  * test cannot see. It waits on what it checks, never on the clock (#3951): the card is up
  * before the chat arrives, the list says it is held (`data-holding`, #4020) before the chat
  * arrives, and the hold's wait is over only when the story says so. The engine's own cursor is
- * out of the way (`.storybook/pointer.setup.ts`), so the story's pointer is the only one the list
+ * out of the way (`.storybook/at-rest.setup.ts`), so the story's pointer is the only one the list
  * hears (#4098).
  */
 export const HeldAcrossTheGapToTheCard: Story = {
