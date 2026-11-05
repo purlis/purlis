@@ -68,7 +68,7 @@ pub const MOST_TARGET_CHARS: usize = 200;
 
 /// The most of a refused fill's reason kept: enough for what the person has to do, which comes
 /// last in it (#5237).
-const MOST_WHY_CHARS: usize = 200;
+const MOST_WHY_CHARS: usize = 800;
 
 /// How young a chat's timeline is spared by a [`sweep`], whatever the record of open chats
 /// says: a chat that has only just started may not be in it yet.

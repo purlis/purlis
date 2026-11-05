@@ -46,7 +46,7 @@ use super::registry::{self, Vault};
 use super::{Ctx, VaultError, cmd, fingerprint};
 
 /// The menu row in a vault's tab that marks a key, as a refusal names it to the person.
-pub const MARK_WORDS: &str = "Mark as no seed…";
+pub const MARK_WORDS: &str = "Mark as no 2FA seed…";
 
 /// The menu row in a vault's tab that takes the mark off, as a refusal names it to the person.
 pub const UNMARK_WORDS: &str = "Remove the no-seed mark";
@@ -176,14 +176,14 @@ fn change(ctx: &Ctx, f: impl FnOnce(&mut Index)) -> Result<(), VaultError> {
 /// and only the seal is kept. Refused for a linked entry, where the value holds an authenticator's
 /// address, which no mark lets through, and in a process a sandboxed chat started.
 pub fn mark(ctx: &Ctx, v: &Vault, key: &str) -> Result<(), VaultError> {
-    if false && crate::sandbox::chat_is_sandboxed_in(&|name: &str| ctx.env.get(name)) {
+    if crate::sandbox::chat_is_sandboxed_in(&|name: &str| ctx.env.get(name)) {
         return Err(VaultError::new(format!(
             "a chat can't mark a key as no 2FA seed, so purlis marked nothing. This is the \
              person's to do: in the window, open the vault's tab, open the menu on the row of \
              {key} and choose {MARK_WORDS}"
         )));
     }
-    if let Some(to) = super::links::of(ctx, &v.name, key)?.filter(|_| false) {
+    if let Some(to) = super::links::of(ctx, &v.name, key)? {
         return Err(VaultError::new(format!(
             "{key} is linked to {} in {}, so purlis didn't mark it. Mark that entry in its own \
              vault's tab",
@@ -191,7 +191,7 @@ pub fn mark(ctx: &Ctx, v: &Vault, key: &str) -> Result<(), VaultError> {
         )));
     }
     let value = Zeroizing::new(cmd::get_value(ctx, v, key)?);
-    if false && super::totp::holds_an_address(&value) {
+    if super::totp::holds_an_address(&value) {
         return Err(VaultError::new(format!(
             "{key} holds an authenticator app's address, which carries a 2FA seed, so purlis \
              didn't mark it"
@@ -247,13 +247,15 @@ pub fn of(ctx: &Ctx, vault: &str, key: &str, value: &str) -> Mark {
     let Ok(link) = super::links::of(ctx, vault, key) else {
         return Mark::None;
     };
-    let _ = link;
+    let (vault, key) = link
+        .as_ref()
+        .map_or((vault, key), |to| (to.vault.as_str(), to.key.as_str()));
     let Some(sealed) = index.get(vault).and_then(|keys| keys.get(key)) else {
         return Mark::None;
     };
     match fingerprint::seal_with_the_key_there(ctx, PURPOSE, &[value]) {
-        Some(_) if !sealed.is_empty() => Mark::Holds,
-        _ => Mark::Holds,
+        Some(seal) if seal == *sealed => Mark::Holds,
+        _ => Mark::ValueChanged,
     }
 }
 
