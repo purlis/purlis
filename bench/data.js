@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793886179415,
+  "lastUpdate": 1793889096135,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -40194,6 +40194,48 @@ window.BENCHMARK_DATA = {
             "value": 102.3379875,
             "unit": "ms",
             "extra": "median of 5 runs: 102.213, 102.242, 102.338, 102.826, 102.909 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "168a13a9cf0f48c54d89c8df29507bfbeccbe0ec",
+          "message": "Runners and Pool setup: a fresh runner's check has a stated time limit; See what this does offers no line that would be refused (#5312, #5349) (#5351)\n\n* Runners: tests that a fresh runner's check has a time limit, and a temporary measure of a large image (#5312)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NMVYM0C2E2JZNFJZ2QZ21N\nPurlis-Persona: steward\n\n* Runners: a fresh runner's check has a stated time limit (#5312)\n\nOne check looks through a runner's files for at most 5 minutes, on the runner's clock, and the window waits that long plus its wait for any answer. Past it the check says why and what helps, and the runner stays. Removes the temporary measure: 1,000,000 files took 20 to 29 seconds cold and about 5 warm.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NMVYM0C2E2JZNFJZ2QZ21N\nPurlis-Persona: steward\n\n* Runners: review of a check's time limit: the projects share it, its sentence comes first, a Discard during a check is kept (#5312)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NMVYM0C2E2JZNFJZ2QZ21N\nPurlis-Persona: steward\n\n* Pool setup: tests that See what this does offers no remove-profile line on a pool that names none (#5349)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NMVYM0C2E2JZNFJZ2QZ21N\nPurlis-Persona: steward\n\n* Pool setup: the step's own spelling takes nothing off, so it names no such pool (#5349)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NMVYM0C2E2JZNFJZ2QZ21N\nPurlis-Persona: steward\n\n* Pool setup: See what this does says only the button takes a profile off a pool that names none (#5349)\n\nNo command takes a profile off a pool that names none, so See what this does offers no such line and says why. Recording a profile first makes the pool name its default, so that line stays.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NMVYM0C2E2JZNFJZ2QZ21N\nPurlis-Persona: steward\n\n* Review: a Discard during a check stays with that end, and See what this does names what really takes a profile off (#5312, #5349)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NMVYM0C2E2JZNFJZ2QZ21N\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-05T13:41:42Z",
+          "tree_id": "ac844076807acc3c53a19be893c958f62291a453",
+          "url": "https://github.com/purlis/purlis/commit/168a13a9cf0f48c54d89c8df29507bfbeccbe0ec"
+        },
+        "date": 1793889091568,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6922195,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.667, 0.688, 0.692, 0.693, 0.726 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6243555,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.385, 16.474, 16.624, 16.711, 16.930 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.0851355,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.755, 101.781, 102.085, 102.825, 104.035 ms"
           }
         ]
       }
