@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 
 use purlis_core::repofolder::{self, Git, Holdings, Layout, Refused, Row, Trouble};
 use purlis_core::repos;
+use purlis_core::worktree;
 use purlis_core::worktree::confine::Outside;
 
 use crate::support;
@@ -312,7 +313,7 @@ fn only_a_real_repo_in_repos_wins_over_a_repo_at_the_root() {
 // ---------------------------------------------------------------------------------------
 
 #[test]
-fn a_name_the_workspace_keeps_is_no_repos_name_in_any_question() {
+fn a_name_the_workspace_keeps_is_no_new_repos_and_no_repos_in_repos() {
     purlis_core::unsteered!();
     let plane = Plane::new();
     std::fs::create_dir_all(plane.workspace().join("memory")).unwrap();
@@ -328,25 +329,85 @@ fn a_name_the_workspace_keeps_is_no_repos_name_in_any_question() {
     ] {
         assert!(
             matches!(
-                repofolder::folder(&plane.root, "alpha", name),
-                Err(Refused::NotARepoName(_))
-            ),
-            "folder {name:?}"
-        );
-        assert!(
-            matches!(
                 repofolder::new_folder(&plane.root, "alpha", name),
                 Err(Refused::NotARepoName(_))
             ),
             "new_folder {name:?}"
         );
     }
-    // In `repos/` it is still no repo, so the listing and the lookup cannot disagree about it.
+    for name in [".worktrees", "a b"] {
+        assert!(
+            matches!(
+                repofolder::folder(&plane.root, "alpha", name),
+                Err(Refused::NotARepoName(_))
+            ),
+            "folder {name:?}"
+        );
+    }
+    // In `repos/` it is no repo, so the listing and the lookups cannot disagree about it.
     assert_eq!(plane.repos(), []);
     assert_eq!(
         facts(&plane, &plane.holdings().others),
         [fact("todos", "repos/todos", Layout::Repos, Git::Directory)]
     );
+    assert_eq!(plane.folder("todos"), plane.workspace().join("todos"));
+    assert_eq!(
+        repofolder::locate(&plane.root, &plane.workspace().join("repos/todos")),
+        None
+    );
+}
+
+#[test]
+fn an_old_clone_in_a_name_the_workspace_keeps_goes_on_working() {
+    purlis_core::unsteered!();
+    // ADR 0113, decision 3: a clone at the root keeps working with nothing done, whatever it is
+    // named, and `repos::clones` and `repos::clone_at` have always taken these.
+    let plane = Plane::new();
+    for name in ["work", "themes", "memory"] {
+        let clone = plane.repo_at(name);
+        std::fs::create_dir_all(clone.join("src")).unwrap();
+
+        assert_eq!(plane.folder(name), clone, "folder {name}");
+        assert_eq!(
+            repos::clone_at(&plane.root, "alpha", name).map(|repo| repo.path),
+            Some(clone.clone()),
+            "clone_at {name}"
+        );
+        for path in [clone.clone(), clone.join("src")] {
+            let found = repofolder::locate(&plane.root, &path).expect("the old clone holds it");
+            assert_eq!(found.repo.name, name);
+            assert_eq!(found.repo.path, clone);
+            assert_eq!(found.layout, Layout::Root);
+            assert_eq!(found.git, Git::Directory);
+        }
+    }
+    // Still not one of the repos the workspace lists, as the walk has it.
+    assert_eq!(plane.repos(), []);
+}
+
+#[test]
+fn a_repo_in_repos_never_wins_for_a_name_the_workspace_keeps() {
+    purlis_core::unsteered!();
+    let plane = Plane::new();
+    let old = plane.repo_at("memory");
+    plane.repo_at("repos/memory");
+
+    assert_eq!(plane.folder("memory"), old);
+    assert_eq!(plane.holdings().shadowed, []);
+}
+
+#[test]
+fn a_kept_name_with_no_clone_there_answers_the_hand_joined_path_and_implies_no_repo() {
+    purlis_core::unsteered!();
+    let plane = Plane::new();
+    let memory = plane.workspace().join("memory");
+    std::fs::create_dir_all(&memory).unwrap();
+
+    assert_eq!(plane.folder("memory"), memory);
+    assert_eq!(plane.folder("sessions"), plane.workspace().join("sessions"));
+    // The question "is there a repo" is the walk's, and a kept folder with no `.git` is no row.
+    assert_eq!(plane.holdings(), Holdings::default());
+    assert_eq!(repofolder::locate(&plane.root, &memory), None);
 }
 
 #[test]
@@ -663,8 +724,9 @@ fn a_path_in_no_repo_of_the_workspace_locates_nothing() {
     purlis_core::unsteered!();
     let plane = Plane::new();
     plane.repo_at("old");
-    plane.repo_at("memory");
+    std::fs::create_dir_all(plane.workspace().join("memory")).unwrap();
     plane.repo_at("repos/new");
+    plane.repo_at("repos/todos");
     plane.repo_at(".worktrees/old/piece");
     let notes = plane.workspace().join("notes");
     std::fs::create_dir_all(&notes).unwrap();
@@ -680,6 +742,7 @@ fn a_path_in_no_repo_of_the_workspace_locates_nothing() {
         notes,
         plain,
         plane.workspace().join("memory"),
+        plane.workspace().join("repos/todos"),
         plane.workspace().join(".worktrees/old/piece"),
         plane.workspace().join("out"),
     ] {
@@ -721,19 +784,149 @@ fn a_path_inside_a_repo_finds_its_plane_with_no_plane_given() {
     purlis_core::unsteered!();
     let plane = Plane::new();
     let new = plane.repo_at("repos/new");
-    // A plane inside a repo's own tree, as a fixture is: it holds no repo, so the repo holds it.
+    // A plane inside a repo's own tree, as a fixture is. Where it holds no repo, the outer repo
+    // holds the path. Where it holds one, that is the nearest, and the farthest would be wrong.
     let fixture = new.join("fixtures/plane");
     std::fs::create_dir_all(fixture.join("workspaces/inner/notes")).unwrap();
     std::fs::write(fixture.join("charter.toml"), "schema = 1\n").unwrap();
+    let held = fixture.join("workspaces/inner/held");
+    std::fs::create_dir_all(&held).unwrap();
+    support::git(&held, &["init", "-q", "-b", "main", "."]);
+    // A folder that is only called `workspaces`, with no manifest above it, is no plane, whatever
+    // is under it.
+    let unplaned = new.join("vendor/workspaces/inner/thing");
+    std::fs::create_dir_all(&unplaned).unwrap();
+    support::git(&unplaned, &["init", "-q", "-b", "main", "."]);
 
-    for path in [new.clone(), fixture.join("workspaces/inner/notes")] {
+    for path in [
+        new.clone(),
+        fixture.join("workspaces/inner/notes"),
+        unplaned.clone(),
+    ] {
         let found = repofolder::locate_from(&path).expect("a repo holds it");
         assert_eq!(found.plane, plane.root, "{path:?}");
         assert_eq!(found.ws, "alpha");
         assert_eq!(found.repo.name, "new");
         assert_eq!(found.layout, Layout::Repos);
     }
+
+    let nearest = repofolder::locate_from(&held).expect("the fixture's repo holds it");
+    assert_eq!(nearest.plane, fixture);
+    assert_eq!(nearest.ws, "inner");
+    assert_eq!(nearest.repo.name, "held");
+    assert_eq!(nearest.layout, Layout::Root);
+
     assert_eq!(repofolder::locate_from(&plane.root), None);
+}
+
+#[test]
+fn a_branch_folder_is_located_as_a_piece_and_not_as_a_repo() {
+    purlis_core::unsteered!();
+    // `locate_from` answers `None` here, and `worktree::locate` is what a caller asks instead:
+    // it names the workspace, the repo and the piece, and `folder` then names the clone.
+    let plane = Plane::new();
+    let clone = plane.repo_at("repos/api");
+    let piece = plane.workspace().join(".worktrees/api/piece");
+    std::fs::create_dir_all(piece.join("src")).unwrap();
+    std::fs::write(piece.join(".git"), "gitdir: /nowhere\n").unwrap();
+
+    assert_eq!(repofolder::locate_from(&piece), None);
+    assert_eq!(repofolder::locate(&plane.root, &piece.join("src")), None);
+
+    let found = worktree::locate(&plane.root, &piece.join("src")).expect("a piece holds it");
+    assert_eq!(found.workspace, "alpha");
+    assert_eq!(found.piece, "piece");
+    assert_eq!(plane.folder(&found.repo), clone);
+}
+
+// ---------------------------------------------------------------------------------------
+// A path that is not there, and what stands where `.git` would be                         #
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn a_path_not_there_yet_inside_a_repo_is_in_that_repo() {
+    purlis_core::unsteered!();
+    let plane = Plane::new();
+    let old = plane.repo_at("old");
+    let new = plane.repo_at("repos/new");
+
+    for (path, name) in [
+        (old.join("nofile"), "old"),
+        (old.join("not/there/yet"), "old"),
+        (new.join("nofile"), "new"),
+    ] {
+        let found = repofolder::locate(&plane.root, &path).expect("a repo holds it");
+        assert_eq!(found.repo.name, name, "{path:?}");
+    }
+}
+
+#[test]
+fn a_path_that_walks_up_and_is_not_there_is_in_no_repo() {
+    purlis_core::unsteered!();
+    let plane = Plane::new();
+    let api = plane.repo_at("api");
+    plane.repo_at("repos/new");
+
+    for path in [
+        api.join("../../../../etc/nofile"),
+        plane.workspace().join("repos/new/../../api/nofile"),
+    ] {
+        assert_eq!(repofolder::locate(&plane.root, &path), None, "{path:?}");
+    }
+}
+
+#[test]
+fn a_path_through_a_link_that_goes_nowhere_or_out_is_in_no_repo() {
+    purlis_core::unsteered!();
+    let plane = Plane::new();
+    let api = plane.repo_at("api");
+    let (_keep, outside) = elsewhere();
+    symlink(api.join("nothing-here"), api.join("dang")).unwrap();
+    symlink(&outside, api.join("out")).unwrap();
+
+    for path in [
+        api.join("dang"),
+        api.join("dang/deeper"),
+        api.join("out/nofile"),
+    ] {
+        assert_eq!(repofolder::locate(&plane.root, &path), None, "{path:?}");
+    }
+}
+
+#[test]
+fn a_path_is_located_in_a_folder_with_a_git_of_any_kind_and_says_which() {
+    purlis_core::unsteered!();
+    // `chatpiece::clone_at` takes any `.git`, so #5370 keeps that by not asking `git`, and a caller
+    // who wants a repository asks for `Git::Directory`.
+    let plane = Plane::new();
+    let (_keep, outside) = elsewhere();
+    plane.repo_at("clone");
+    plane.linked_at("linked");
+    plane.git_link_at("gitlink", &outside.join(".git"));
+    plane.repo_at("repos/clone2");
+    plane.linked_at("repos/linked2");
+    plane.git_link_at("repos/gitlink2", &outside.join(".git"));
+    std::fs::create_dir_all(plane.workspace().join("empty")).unwrap();
+
+    for (below, name, layout, git) in [
+        ("clone", "clone", Layout::Root, Git::Directory),
+        ("linked", "linked", Layout::Root, Git::File),
+        ("gitlink", "gitlink", Layout::Root, Git::Link),
+        ("repos/clone2", "clone2", Layout::Repos, Git::Directory),
+        ("repos/linked2", "linked2", Layout::Repos, Git::File),
+        ("repos/gitlink2", "gitlink2", Layout::Repos, Git::Link),
+    ] {
+        let path = plane.workspace().join(below);
+        let found = repofolder::locate(&plane.root, &path).expect("a .git is there");
+        assert_eq!(found.repo.name, name, "{below}");
+        assert_eq!(found.repo.path, path, "{below}");
+        assert_eq!(found.layout, layout, "{below}");
+        assert_eq!(found.git, git, "{below}");
+    }
+    assert_eq!(
+        repofolder::locate(&plane.root, &plane.workspace().join("empty")),
+        None
+    );
 }
 
 // ---------------------------------------------------------------------------------------
@@ -748,6 +941,50 @@ fn an_old_repo_named_repos_in_capitals_is_read_as_a_repo() {
 
     assert_eq!(plane.folder("Repos"), plane.workspace().join("Repos"));
     assert_eq!(plane.repos(), [row("Repos", "Repos", Layout::Root)]);
+}
+
+#[test]
+fn a_plain_repos_folder_in_capitals_on_a_disk_that_folds_case_is_the_folder_in_every_question() {
+    purlis_core::unsteered!();
+    let plane = Plane::new();
+    let upper = plane.workspace().join("Repos");
+    std::fs::create_dir_all(upper.join("new/src")).unwrap();
+    if !plane.workspace().join("repos").exists() {
+        return; // A disk that tells the two apart: `Repos/` is a folder of the person's own.
+    }
+    support::git(&upper.join("new"), &["init", "-q", "-b", "main", "."]);
+
+    let folder = plane.workspace().join("repos/new");
+    assert_eq!(plane.folder("new"), folder);
+    assert_eq!(plane.repos(), [row("new", "repos/new", Layout::Repos)]);
+    for path in [
+        upper.join("new"),
+        upper.join("new/src"),
+        upper.join("new/nofile"),
+        folder.join("src"),
+    ] {
+        let found = repofolder::locate(&plane.root, &path).expect("the repo holds it");
+        assert_eq!(found.repo.name, "new", "{path:?}");
+        assert_eq!(found.repo.path, folder, "{path:?}");
+        assert_eq!(found.layout, Layout::Repos, "{path:?}");
+    }
+    assert_eq!(repofolder::locate(&plane.root, &upper), None);
+}
+
+#[test]
+fn a_plain_folder_in_capitals_beside_repos_on_a_disk_that_keeps_case_is_the_persons_own() {
+    purlis_core::unsteered!();
+    let plane = Plane::new();
+    let upper = plane.workspace().join("Repos");
+    std::fs::create_dir_all(&upper).unwrap();
+    if plane.workspace().join("repos").exists() {
+        return; // A disk that folds case: there is one folder, asked of above.
+    }
+    plane.repo_at("repos/new");
+    plane.repo_at("Repos/mine");
+
+    assert_eq!(plane.repos(), [row("new", "repos/new", Layout::Repos)]);
+    assert_eq!(repofolder::locate(&plane.root, &upper.join("mine")), None);
 }
 
 // ---------------------------------------------------------------------------------------
@@ -782,10 +1019,17 @@ fn an_entry_that_is_a_link_is_said_in_either_place_and_is_no_repo() {
     symlink(&outside, plane.workspace().join("rootlink")).unwrap();
     std::fs::create_dir_all(plane.workspace().join("repos")).unwrap();
     symlink(&outside, plane.workspace().join("repos/inlink")).unwrap();
+    // The same link in `repos/`, with something at the root: the link beats nothing.
+    let beside = plane.repo_at("beside");
+    symlink(&outside, plane.workspace().join("repos/beside")).unwrap();
 
     assert_eq!(plane.folder("inlink"), plane.workspace().join("inlink"));
+    assert_eq!(plane.folder("beside"), beside);
+    // `folder` is a hand-join with one precedence question: it gates only what it prefers, so a
+    // link at the root comes back as the path it is, for the caller to gate as before.
+    assert_eq!(plane.folder("rootlink"), plane.workspace().join("rootlink"));
     let found = plane.holdings();
-    assert_eq!(found.repos, []);
+    assert_eq!(plane.repos(), [row("beside", "beside", Layout::Root)]);
     let said: Vec<_> = found
         .refused
         .iter()
@@ -793,13 +1037,28 @@ fn an_entry_that_is_a_link_is_said_in_either_place_and_is_no_repo() {
         .collect();
     assert_eq!(
         said,
-        [("inlink", Layout::Repos), ("rootlink", Layout::Root)]
+        [
+            ("beside", Layout::Repos),
+            ("inlink", Layout::Repos),
+            ("rootlink", Layout::Root)
+        ]
     );
     assert!(
         found.refused[0].why.contains("symlink"),
         "{:?}",
         found.refused
     );
+}
+
+#[test]
+fn a_folder_whose_git_is_a_link_is_answered_by_folder_as_it_stands_and_refused_as_a_repo() {
+    purlis_core::unsteered!();
+    let plane = Plane::new();
+    let (_keep, outside) = elsewhere();
+    plane.git_link_at("gitlink", &outside.join(".git"));
+
+    assert_eq!(plane.folder("gitlink"), plane.workspace().join("gitlink"));
+    assert_eq!(plane.repos(), []);
 }
 
 #[test]
@@ -812,8 +1071,7 @@ fn a_git_that_is_a_link_is_no_repo_and_loses_to_a_real_one() {
 
     assert_eq!(plane.folder("api"), root);
     assert_eq!(plane.repos(), [row("api", "api", Layout::Root)]);
-    assert_eq!(
-        repofolder::locate(&plane.root, &plane.workspace().join("repos/api")),
-        None
-    );
+    let found = repofolder::locate(&plane.root, &plane.workspace().join("repos/api"))
+        .expect("a .git is there, and it says what kind");
+    assert_eq!(found.git, Git::Link);
 }

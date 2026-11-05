@@ -14,16 +14,23 @@
 //! - [`locate`] and [`locate_from`]: from a path inside a repo back to the repo.
 //!
 //! **One rule for what a repo is.** A folder reached through no link, whose `.git` is a directory,
-//! with a name purlis takes for a repo ([`name_ok`]). `repos/<name>` wins over `<name>` only when
-//! it is one: an empty folder, a file, a link or a linked worktree there beats nothing.
+//! with a name purlis takes for a repo ([`name_ok`]). [`repos`] lists those, and `repos/<name>`
+//! wins over `<name>` only when it is one: an empty folder, a file, a link or a linked worktree
+//! there beats nothing. **The rule decides the list and the precedence, not every answer:**
+//! [`folder`] checks only the name, the workspace and what it prefers, so `<name>` comes back as
+//! it stands, as the path a caller joined by hand did. [`locate`] answers any `.git` and says which.
+//!
+//! **An old clone in a kept name.** A clone at the root named as the workspace keeps (`work`,
+//! `memory`) keeps working (ADR 0113, decision 3): [`folder`] and [`locate`] answer it, though
+//! [`repos`] does not list it. `repos/<kept>` is never a repo.
 //!
 //! **An old repo named `repos`.** A `repos/` with `.git` directly in it is a repo cloned at the
 //! root before version 6, never the folder new repos go in: what is inside it is that repo's own
 //! files, so none of it is read as another repo of the workspace's.
 //!
 //! Nothing here follows a link: a `repos` that is a link is not the folder new repos go in, an
-//! entry that is a link is no repo, and a `.git` that is a link is no repository. Each is said,
-//! not dropped.
+//! entry that is a link is no repo, and a `.git` that is a link is no repository. The walk says
+//! each rather than dropping it.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -105,7 +112,7 @@ pub struct Holdings {
     pub unreadable: Vec<Said>,
 }
 
-/// The repo a path is inside.
+/// The folder with a `.git` that a path is inside.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Located {
     /// The plane, as it was given or as [`locate_from`] found it.
@@ -115,6 +122,8 @@ pub struct Located {
     /// folder rather than one deep in it (a chat's working directory) asks it of this.
     pub repo: Repo,
     pub layout: Layout,
+    /// What its `.git` is, of any kind: only [`Git::Directory`] is a repository.
+    pub git: Git,
 }
 
 /// charter could not look at the workspace at all.
@@ -151,18 +160,29 @@ pub enum Refused {
 /// `<repo>`, whether or not anything is there. A caller asks of it what it asked of the path it
 /// joined by hand before: whether it exists, whether it is a repo.
 ///
-/// A workspace with no folder has the same answer, as a hand-joined path did. Refused for a name
-/// [`name_ok`] does not take, and for a workspace [`confine::workspace_dir`] does not.
+/// **What it checks:** the name ([`contain::repo_name_ok`]), the workspace
+/// ([`confine::workspace_dir`]) and `repos/<repo>` before preferring it. `<repo>` is not checked:
+/// it may be a link, or hold a `.git` that is a link, which [`holdings`] refuses, and a caller
+/// gates it as it gated the hand-joined path ([`confine::within_workspace`]).
+///
+/// **A name the workspace keeps** answers `<kept>`, never `repos/<kept>`, so an old clone there
+/// keeps working. In a workspace with no clone there, that is still the hand-joined path, with no
+/// repo implied (`memory` is the workspace's own): a caller who needs to know whether there is a
+/// repo asks [`holdings`].
+///
+/// A workspace with no folder has the same answer, as a hand-joined path did.
 pub fn folder(plane: &Path, ws: &str, repo: &str) -> Result<PathBuf, Refused> {
-    if !name_ok(repo) {
+    if !contain::repo_name_ok(repo) {
         return Err(Refused::NotARepoName(repo.to_string()));
     }
     let Some(dir) = anchored(plane, ws)? else {
         return Ok(plane.join("workspaces").join(ws).join(repo));
     };
-    if let Some(repos) = repos_folder(&dir) {
+    if let Some(repos) = repos_folder(&dir).filter(|_| name_ok(repo)) {
         let new = repos.join(repo);
-        if is_repo(plane, ws, &new) {
+        if confine::within_workspace(plane, ws, &new).is_ok()
+            && matches!(git_of(&new), Ok(Some(Git::Directory)))
+        {
             return Ok(new);
         }
     }
@@ -230,11 +250,18 @@ pub fn repos(plane: &Path, ws: &str) -> Result<Vec<Row>, Trouble> {
     Ok(holdings(plane, ws)?.repos)
 }
 
-/// **The repo in `plane` that `path` is inside**, in either layout, or `None`.
+/// **The folder with a `.git` in `plane` that `path` is inside**, in either layout, or `None`.
+///
+/// Any `.git`, as [`Located::git`] says: a caller who wants a repository asks for
+/// [`Git::Directory`]. At the root the name is one [`contain::repo_name_ok`] takes, so an old clone
+/// in a kept name is answered; in `repos/` it is one [`name_ok`] takes.
 ///
 /// Both sides resolved, as [`crate::active::workspace_of_tree`] has them, so a path that leaves
-/// through a link is where the link goes. `None` for a path in no repo: a workspace's own folders,
-/// `repos/` itself, and a branch folder (`.worktrees/<repo>/<piece>`, which is in neither layout).
+/// through a link is where the link goes. A path not there yet is judged by what is there above it,
+/// and is in no repo if it walks up (`..`) or goes through a link that leads nowhere. `None` for a
+/// path in no repo: a workspace's own folders, `repos/` itself, and a branch folder
+/// (`.worktrees/<repo>/<piece>`, which is in neither layout and which [`crate::worktree::locate`]
+/// answers).
 ///
 /// A shadowed folder ([`Holdings::shadowed`]) is answered where it stands, at [`Layout::Root`], so
 /// a caller tells it from the repo of that name by [`folder`]. A nested repository is inside the
@@ -242,20 +269,28 @@ pub fn repos(plane: &Path, ws: &str) -> Result<Vec<Row>, Trouble> {
 pub fn locate(plane: &Path, path: &Path) -> Option<Located> {
     let workspaces = plane.join("workspaces");
     let base = std::fs::canonicalize(&workspaces).ok()?;
-    let here = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let here = resolved(path)?;
     let mut parts = here.strip_prefix(&base).ok()?.components();
     let ws = parts.next()?.as_os_str().to_str()?;
     let first = parts.next()?.as_os_str().to_str()?;
     let dir = confine::workspace_dir(plane, ws).ok()?;
-    let (folder, name, layout) = match repos_folder(&dir) {
-        Some(repos) if first == REPOS => {
+    let (folder, name, layout) = match repos_folder(&dir).filter(|repos| spelled(repos, first)) {
+        Some(repos) => {
             let name = parts.next()?.as_os_str().to_str()?;
             (repos, name, Layout::Repos)
         }
-        _ => (dir, first, Layout::Root),
+        None => (dir, first, Layout::Root),
     };
-    let at = folder.join(name);
-    (name_ok(name) && is_repo(plane, ws, &at)).then(|| Located {
+    let named = match layout {
+        Layout::Repos => name_ok(name),
+        Layout::Root => contain::repo_name_ok(name),
+    };
+    if !named {
+        return None;
+    }
+    let at = confine::within_workspace(plane, ws, &folder.join(name)).ok()?;
+    let git = git_of(&at).ok()??;
+    Some(Located {
         plane: plane.to_path_buf(),
         ws: ws.to_string(),
         repo: Repo {
@@ -263,12 +298,17 @@ pub fn locate(plane: &Path, path: &Path) -> Option<Located> {
             path: at,
         },
         layout,
+        git,
     })
 }
 
 /// **[`locate`] with no plane given**, for finding the plane from inside a clone: the nearest plane
-/// above `path` with a repo holding it. Nearest with a repo, not nearest: a repo's tree may hold a
-/// plane of its own, as a fixture, and a path in that fixture is still in the repo.
+/// above `path`, a path that is there, with a `.git` holding it. Nearest with one, not nearest: a
+/// repo's tree may hold a plane of its own, as a fixture, and a path in that fixture is still in
+/// the repo.
+///
+/// **`None` in a branch folder**, as [`locate`] is. A caller there, with its plane in hand, asks
+/// [`crate::worktree::locate`] for the workspace, repo and piece, and [`folder`] for the clone.
 pub fn locate_from(path: &Path) -> Option<Located> {
     let here = std::fs::canonicalize(path).ok()?;
     here.ancestors()
@@ -297,8 +337,10 @@ pub fn git_of(path: &Path) -> std::io::Result<Option<Git>> {
     }
 }
 
-/// **Whether purlis takes `name` for a repo's**, in every question here: one
-/// [`contain::repo_name_ok`] takes, and not one the workspace keeps for its own, `repos` apart.
+/// **Whether `name` is one a repo is listed under or placed in**: one [`contain::repo_name_ok`]
+/// takes, and not one the workspace keeps for its own, `repos` apart. What decides [`repos`],
+/// [`new_folder`] and anything in `repos/`. An old clone at the root may hold a kept name still,
+/// which [`folder`] and [`locate`] answer.
 pub fn name_ok(name: &str) -> bool {
     contain::repo_name_ok(name) && !kept(name, contain::workspace_keeps)
 }
@@ -344,6 +386,37 @@ fn anchored(plane: &Path, ws: &str) -> Result<Option<PathBuf>, Trouble> {
         }
         Err(why) => Err(why.into()),
     }
+}
+
+/// **`path`, resolved**: as it stands, or for a path not there yet, what is there above it with the
+/// rest added. `None` for one that walks up, whose lexical shape says nothing of where it goes, and
+/// for one through a link that leads nowhere.
+fn resolved(path: &Path) -> Option<PathBuf> {
+    if let Ok(here) = std::fs::canonicalize(path) {
+        return Some(here);
+    }
+    if path
+        .components()
+        .any(|part| matches!(part, std::path::Component::ParentDir))
+    {
+        return None;
+    }
+    for above in path.ancestors() {
+        if let Ok(real) = std::fs::canonicalize(above) {
+            return Some(real.join(path.strip_prefix(above).ok()?));
+        }
+        // There, and it would not resolve.
+        if std::fs::symlink_metadata(above).is_ok() {
+            return None;
+        }
+    }
+    None
+}
+
+/// Whether a resolved path's entry `first` is the folder `repos`: on a disk that folds case, `repos`
+/// answers for a folder spelled `Repos`, and a resolved path spells it as it stands.
+fn spelled(repos: &Path, first: &str) -> bool {
+    std::fs::canonicalize(repos).is_ok_and(|real| real.file_name().is_some_and(|n| n == first))
 }
 
 /// `dir/repos` when it is the folder new repos go in: a folder, not a link, with no `.git` in it.
@@ -412,13 +485,6 @@ fn walk(
         }
     }
     rows
-}
-
-/// A folder inside workspace `ws` reached through no link, whose `.git` is a directory, which is
-/// how git tells a repo from a linked worktree (whose `.git` is a file).
-fn is_repo(plane: &Path, ws: &str, path: &Path) -> bool {
-    confine::within_workspace(plane, ws, path).is_ok()
-        && matches!(git_of(path), Ok(Some(Git::Directory)))
 }
 
 /// Whether `keeps` holds `name` for the workspace's own. `repos` is an old repo's name, read as

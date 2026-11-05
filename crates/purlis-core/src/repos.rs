@@ -43,10 +43,12 @@ pub struct Clones {
 
 /// The clones directly under `workspaces/<ws>`, sorted, with what was refused beside them.
 ///
-/// A reading of [`repofolder::holdings`], the one walk of a workspace. Only its root for now: a
-/// repo in `repos/` joins this list with the migration of the scanners (#5371), which is then
-/// this function's filter going away. A repository in a name the workspace keeps is a clone here,
-/// as it has always been.
+/// A reading of [`repofolder::holdings`], the one walk of a workspace. Only its root for now. A
+/// repo in `repos/` joins this list with the migration of the scanners (#5371), which is more than
+/// the filter going away, since `foo/` beside `repos/foo/` would then be listed twice: it stops
+/// reading `shadowed`, reads `repos` whole, and reads `others` and `refused` from both places, with
+/// a directory in `others` still a clone only at the root. A repository in a name the workspace
+/// keeps is a clone here, as it has always been; in `repos/` it never was one.
 pub fn clones(plane: &Path, ws: &str) -> Result<Clones, Trouble> {
     // The workspace directory is the anchor, and it is asked for rather than assumed: a
     // committed `workspaces/<legal-name> -> elsewhere` travels to every machine that clones
