@@ -1181,14 +1181,7 @@ fn a_project_with_a_clone() -> (tempfile::TempDir, PathBuf) {
             "first",
         ][..],
     ] {
-        assert!(
-            std::process::Command::new("git")
-                .args(args)
-                .current_dir(&clone)
-                .status()
-                .unwrap()
-                .success()
-        );
+        assert!(crate::testgit::run(&clone, args).ok(), "git {args:?}");
     }
     (dir, root)
 }

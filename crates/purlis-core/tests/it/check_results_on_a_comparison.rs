@@ -331,11 +331,7 @@ mod the_store {
     }
 
     fn head_of(at: &std::path::Path) -> String {
-        let out = std::process::Command::new("git")
-            .args(["rev-parse", "HEAD"])
-            .current_dir(at)
-            .output()
-            .unwrap();
+        let out = support::git(at, &["rev-parse", "HEAD"]);
         String::from_utf8(out.stdout).unwrap().trim().to_owned()
     }
 
@@ -423,14 +419,7 @@ mod the_store {
                     message,
                 ][..],
             ] {
-                assert!(
-                    std::process::Command::new("git")
-                        .args(args)
-                        .current_dir(at)
-                        .status()
-                        .unwrap()
-                        .success()
-                );
+                support::git(at, args);
             }
         };
         commit(&cut.path, "the file");
@@ -468,12 +457,11 @@ mod the_store {
             (f.repo.clone(), Some("feature".to_owned()))
         );
         let on_clone = String::from_utf8(
-            std::process::Command::new("git")
-                .args(["symbolic-ref", "--short", "HEAD"])
-                .current_dir(f.plane.join("workspaces").join(&f.ws).join(&f.repo))
-                .output()
-                .unwrap()
-                .stdout,
+            support::git(
+                &f.plane.join("workspaces").join(&f.ws).join(&f.repo),
+                &["symbolic-ref", "--short", "HEAD"],
+            )
+            .stdout,
         )
         .unwrap();
         assert_eq!(

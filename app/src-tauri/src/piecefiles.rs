@@ -668,7 +668,7 @@ pub(crate) fn what_changed_shown(shown: files::WhatChanged) -> WhatChanged {
         base: shown.base,
         diff,
         stamp: shown.stamp,
-        checks: shown.checks.into(),
+        checks: (*shown.checks).into(),
     }
 }
 

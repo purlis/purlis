@@ -270,7 +270,7 @@ pub struct WhatChanged {
     /// [`Discard`] is checked against. `None` for a file past [`super::LARGEST`] or unreadable.
     pub stamp: Option<String>,
     /// The branch's check results as this file shows them (ADR 0114): placed on the same hunks.
-    pub checks: crate::checks::OnFile,
+    pub checks: Box<crate::checks::OnFile>,
 }
 
 /// One file of `branch`, by its path relative to the branch's folder, compared against the
@@ -419,7 +419,7 @@ fn one_file_compared(
         base: compared.base,
         diff,
         stamp,
-        checks,
+        checks: Box::new(checks),
     }))
 }
 
