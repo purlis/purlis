@@ -11,7 +11,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.5.0] - 2026-11-08
+## [0.5.0] - 2026-11-05
 
 0.5.0 is the first release as purlis, and the first under the Apache License 2.0. The app,
 its command, its environment variables and its keyring items now carry the purlis name, and
@@ -25,7 +25,7 @@ own.
 **After updating:** if your personas had sub-agents, run `purlis doctor --fix persona-agents`
 in each project (see *Removed*).
 
-These are the highlights. All 2,417 changes are in
+These are the highlights. All 2,438 changes are in
 [Every change in 0.5.0](https://github.com/purlis/purlis/blob/v0.5.0/docs/changelog-0.5.0.md).
 
 ### Added
