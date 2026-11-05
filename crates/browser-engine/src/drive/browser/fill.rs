@@ -33,7 +33,8 @@
 //! ruling SF-3 and decision SF-9 on #5096): the caller's [`FillHold`] holds it just before the
 //! value goes in, and where it cannot, nothing goes in. It is released once the page loads
 //! another document in its main frame or is closed; a route change that loads no document keeps
-//! it. And the field itself gives nothing to a copy, a cut or a drag, whoever makes it: the
+//! it. A form the fill's site's own server redirects to another site leaves as [`super::leaving`]
+//! says (#5230). And the field itself gives nothing to a copy, a cut or a drag, whoever makes it: the
 //! function that writes the value stops each of them on the field first, from purlis's own
 //! world, where the page's scripts can't take the stop away.
 //!
@@ -79,6 +80,20 @@ pub(crate) const FIELD_KIND: &str = r"function () {
   if (!label.trim()) label = said(this.getAttribute('placeholder'));
   if (!label.trim()) label = said(this.getAttribute('name'));
   return { kind, label };
+}";
+
+/// Where the form this element is in sends it. A control named `action` or `method` stands in for
+/// the form's own property, so the attributes are read.
+const FORM_SENT: &str = r"function () {
+  const form = this.form;
+  if (!form) { return null; }
+  const of = (name) => Element.prototype.getAttribute.call(form, name);
+  const action = new URL(of('action') || document.URL, document.baseURI);
+  action.hash = '';
+  return {
+    action: action.href,
+    method: (of('method') || 'get').toLowerCase() === 'post' ? 'POST' : 'GET',
+  };
 }";
 
 /// **What stops a copy, a cut and a drag of a filled field** (#5117), and a wheel over it, as
@@ -261,7 +276,17 @@ impl Browser {
         // The browser reaches only this site while the page lives, from before the value goes in
         // (#5117): where it can't be held, nothing goes in.
         self.inner
-            .hold_while_it_lives(&at.page, page_document, hold)
+            .hold_while_it_lives(
+                &at.page,
+                page_document,
+                super::leaving::Filled {
+                    origin: origin.to_owned(),
+                    key: fill.key.clone(),
+                    value: fill.value.clone(),
+                    form: self.form_of(&at),
+                },
+                hold,
+            )
             .map_err(|why| {
                 not_filled(format!(
                     "purlis could not hold this browser to {origin} while the page is open \
@@ -281,8 +306,8 @@ impl Browser {
             "purlis filled {} into {target} on {origin}; the value is kept out of everything you \
              read. While this page is open, the browser reaches only {origin}, and you press no \
              key and type or choose nothing in it: click the page's own button to send the \
-             form. Once the page loads another document or is closed, it \
-             reaches as before",
+             form. Its form goes to another site only by a redirect from {origin}'s own server. \
+             Once the page loads another document or is closed, it reaches as before",
             fill.key
         ));
         Ok(answer)
@@ -376,6 +401,31 @@ impl Browser {
     pub(super) fn main_document(&self, page: &str) -> Option<u64> {
         let state = lock(&self.inner.state);
         Some(state.page(page)?.frames.get(page)?.generation)
+    }
+
+    /// **Where the form `at`'s element is in sends it**, read in purlis's own world (#5230): none
+    /// for a field in no form, or what can't be read.
+    fn form_of(&self, at: &Resolved) -> Option<super::leaving::FormSent> {
+        let object = self.field_object(at)?;
+        let on = Some(at.node_session.as_str());
+        let read = self.devtools().call(
+            "Runtime.callFunctionOn",
+            json!({
+                "objectId": object,
+                "functionDeclaration": FORM_SENT,
+                "returnByValue": true,
+            }),
+            on,
+        );
+        let _ = self
+            .devtools()
+            .call("Runtime.releaseObject", json!({ "objectId": object }), on);
+        let value = read.ok()?;
+        let value = value.pointer("/result/value")?;
+        Some(super::leaving::FormSent {
+            method: value.get("method")?.as_str()?.to_owned(),
+            action: value.get("action")?.as_str()?.to_owned(),
+        })
     }
 
     /// `at`'s element in purlis's own world in its frame: an object of that world.

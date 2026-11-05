@@ -44,9 +44,13 @@ pub struct Target {
 /// Every link on this machine: vault → key → the entry it reads.
 type Index = BTreeMap<String, BTreeMap<String, Target>>;
 
-/// Where the links index lives: in the state directory, beside the vaults' own folder.
+/// The links index's file name under the state directory.
+pub const FILE: &str = "vault-links.json";
+
+/// Where the links index lives: in the state directory, beside the vaults' own folder. It says
+/// where a key's value is read from, so every chat's sandbox denies it as it does the vaults.
 pub fn path(ctx: &Ctx) -> PathBuf {
-    ctx.state.join("vault-links.json")
+    ctx.state.join(FILE)
 }
 
 fn corrupt(ctx: &Ctx, why: &str) -> VaultError {
@@ -70,6 +74,11 @@ fn load(ctx: &Ctx) -> Result<Index, VaultError> {
             )));
         }
     };
+    // Empty is no links, not a corrupt index: a chat's sandbox may hold a denied path that isn't
+    // there with an empty file while the chat runs, and purlis never writes one (`rewrite`).
+    if text.trim().is_empty() {
+        return Ok(Index::new());
+    }
     let doc: Value =
         serde_json::from_str(&text).map_err(|e| corrupt(ctx, &registry::py_json_error(&e)))?;
     let mut index = Index::new();
@@ -254,6 +263,7 @@ pub fn link_over(
             e.message.lines().next().unwrap_or_default()
         )));
     }
+    super::no_seed::forget(ctx, &v.name, key);
     Ok(())
 }
 

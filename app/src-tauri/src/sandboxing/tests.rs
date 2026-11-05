@@ -1094,7 +1094,7 @@ fn a_vault_you_allowed_a_persona_is_listed_and_revoke_takes_it_out_audited_once(
             cautions: None,
         }]
     );
-    // A block's Allow never grants one: only the refused vault's own Notice does.
+    // A block's Allow never grants one: only the refused vault's own ask does.
     let from_a_block = allow(
         root,
         &machine(),
@@ -1107,7 +1107,7 @@ fn a_vault_you_allowed_a_persona_is_listed_and_revoke_takes_it_out_audited_once(
     .expect_err("refused")
     .to_string();
     assert!(
-        from_a_block.contains("notice its refusal raises"),
+        from_a_block.contains("ask its refusal raises"),
         "{from_a_block}"
     );
     // Not audited, not revoked.

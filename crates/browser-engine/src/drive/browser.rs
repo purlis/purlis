@@ -37,6 +37,7 @@ mod downloads;
 mod drawing;
 mod fill;
 mod inspect;
+mod leaving;
 mod login;
 mod reading;
 mod takeover;
@@ -904,6 +905,12 @@ struct Page {
     /// that failed (#5150). What a filled page sent may be in it, so it is handed to the caller
     /// to judge ([`Browser::say_why_refused`]) and never said.
     failed_load: Option<String>,
+    /// **It holds a secret and is leaving, or stands on what purlis replaces** (#5230): an answer
+    /// and a read wait for how that ends.
+    leaving: bool,
+    /// **The load it is on was chosen, by an address the agent wrote or by the person** (#5230):
+    /// only such a load makes a site one the browser was on.
+    chosen: bool,
 }
 
 impl Page {
@@ -1046,8 +1053,16 @@ struct State {
     forms: VecDeque<String>,
     /// Addresses a page asked to go to by a link or a script, each until its request is seen.
     offered: VecDeque<String>,
-    /// Each document request held lately, and why it was sent: what a redirect from it is.
-    documents: VecDeque<(String, Why)>,
+    /// Each document request held lately: what a redirect from it is.
+    documents: VecDeque<Hop>,
+    /// **The sites this browser was on** (#5230), each by its origin: what a page holding a
+    /// secret may leave for without the person being asked, as it was when the secret went in.
+    been_on: HashSet<String>,
+    /// The request of the act [`Self::addressing`] marks has been seen (#5230).
+    addressing_seen: bool,
+    /// What a page leaving for another site, or kept from it, has to say in the next answer
+    /// (#5230).
+    leaving_said: Vec<String>,
     /// The sites the judge asked about since the last answer, each once (#2018).
     asked: Vec<String>,
     /// The sites a text was kept out on (#2303): their pages' screenshots paint over what
@@ -1108,16 +1123,44 @@ impl State {
     /// came late is never taken for a read. Anything else reads.
     fn why(&mut self, held: &Held<'_>) -> Why {
         let bare = without_fragment(held.address);
-        let why = if !matches!(held.method, "GET" | "HEAD" | "OPTIONS") {
+        let earlier = held
+            .redirected_from
+            .and_then(|from| self.documents.iter().find(|hop| hop.id == from))
+            .map(|hop| {
+                (
+                    hop.why,
+                    hop.form,
+                    hop.address.clone(),
+                    hop.head.clone(),
+                    hop.head_method.clone(),
+                )
+            });
+        let reads = matches!(held.method, "GET" | "HEAD" | "OPTIONS");
+        let marked = held.document && held.redirected_from.is_none() && take(&mut self.forms, bare);
+        // What began as a form stays one along its redirects (#5230). A document sent with a body
+        // is a form whatever was said of it, and the word of one may come late.
+        let form = match &earlier {
+            Some((_, form, ..)) => *form,
+            None => held.document && held.redirected_from.is_none() && (marked || !reads),
+        };
+        // A site that answered a page's own document with a redirect is one it was on (#5230):
+        // the app that sends the person to sign in shows nothing first.
+        if let Some((_, _, from, ..)) = &earlier
+            && held
+                .frame
+                .and_then(|frame| self.page(frame))
+                .is_some_and(|page| page.chosen)
+        {
+            let from = from.clone();
+            self.was_on(&from);
+        }
+        let why = if !reads {
             Why::Sends
         } else if !held.document {
             return Why::Reads;
-        } else if let Some(from) = held
-            .redirected_from
-            .and_then(|from| self.documents.iter().find(|(id, _)| id == from))
-        {
-            from.1
-        } else if take(&mut self.forms, bare) {
+        } else if let Some((why, ..)) = earlier {
+            why
+        } else if marked {
             Why::Sends
         } else if let Some((page, why)) = &self.addressing
             && held.frame == Some(page.as_str())
@@ -1134,7 +1177,18 @@ impl State {
             if self.documents.len() >= DOCUMENTS_KEPT {
                 self.documents.pop_front();
             }
-            self.documents.push_back((held.request.to_owned(), why));
+            self.documents.push_back(Hop {
+                id: held.request.to_owned(),
+                address: held.address.to_owned(),
+                why,
+                form,
+                head: earlier
+                    .as_ref()
+                    .map_or_else(|| held.address.to_owned(), |(.., head, _)| head.clone()),
+                head_method: earlier
+                    .as_ref()
+                    .map_or_else(|| held.method.to_owned(), |(.., method)| method.clone()),
+            });
         }
         why
     }
@@ -1204,6 +1258,14 @@ impl State {
             every.insert(0, own);
         }
         Ok(every)
+    }
+
+    /// **purlis itself goes on to `address`** (#5230): a read of it, as a page's link is.
+    fn offered_by_purlis(&mut self, address: &str) {
+        if self.offered.len() >= FORMS_KEPT {
+            self.offered.pop_front();
+        }
+        self.offered.push_back(without_fragment(address).to_owned());
     }
 
     /// Keeps `site` to be said in the next answer, once.
@@ -1802,6 +1864,15 @@ impl State {
 
 /// What the event reader does after it lets go of the state.
 enum FollowUp {
+    /// A page holding a secret moved, and that is judged on its own thread (#5230).
+    Leave(leaving::Leave),
+    /// A document a hold refuses: its frame stays on the page it showed (#5230).
+    Stay(Paused),
+    /// Purlis's own page is answered for (#5230).
+    Own {
+        request: String,
+        page: String,
+    },
     Attach(String),
     Close(String),
     SetUp(String),
@@ -1882,6 +1953,16 @@ pub(crate) struct Inner {
     /// **The pages holding a secret purlis filled** (#5117), each with what holds the browser to
     /// its site while it lives.
     fill_holds: Mutex<Vec<PageHeld>>,
+    /// Who is told once a page leaving for another site holds nothing any more (#5230), by page.
+    departing: Mutex<HashMap<String, std::sync::mpsc::Sender<()>>>,
+    /// The address each page holding a secret waits to leave for, on the person (#5230), by page.
+    leaving_asked: Mutex<HashMap<String, String>>,
+    /// What purlis's own page says, once it has one to show (#5230).
+    own_page: Mutex<Option<String>>,
+    /// The sites of the holds that have gone and aren't over yet (#5230).
+    ending: Arc<Mutex<Vec<String>>>,
+    /// What judges a filled page's move, on a thread of its own (#5230).
+    leaves: Mutex<Option<std::sync::mpsc::Sender<leaving::Leave>>>,
     /// What says which site's documents the agent is kept off (#5152), once it was told.
     kept_off: Mutex<Option<KeptOff>>,
     /// Why the caller refused a load, where it says ([`Browser::say_why_refused`], #5150).
@@ -1890,10 +1971,13 @@ pub(crate) struct Inner {
     agent_calls: AtomicUsize,
 }
 
-/// **A page holding a secret purlis filled** (#5117): the page, and who is told once it is gone.
+/// **A page holding a secret purlis filled** (#5117): the page, who is told once it is gone, what
+/// was filled, and the sites the browser had been on by then (#5230).
 struct PageHeld {
     target: String,
     hold: Arc<dyn FillHold>,
+    filled: leaving::Filled,
+    been_on: Arc<HashSet<String>>,
 }
 
 /// **One of the agent's calls being carried out** (#5152): counted in [`Inner`] until dropped.
@@ -2044,6 +2128,11 @@ impl Browser {
             held_in: Mutex::new(None),
             back: Mutex::new(None),
             fill_holds: Mutex::new(Vec::new()),
+            departing: Mutex::new(HashMap::new()),
+            leaving_asked: Mutex::new(HashMap::new()),
+            own_page: Mutex::new(None),
+            ending: Arc::new(Mutex::new(Vec::new())),
+            leaves: Mutex::new(None),
             kept_off: Mutex::new(None),
             refused_load: Mutex::new(None),
             agent_calls: AtomicUsize::new(0),
@@ -2065,6 +2154,20 @@ impl Browser {
                 .map_err(|e| Refusal::Engine(e.to_string()))?;
             *lock(&inner.judging) = Some(judging);
         }
+        let (leaves, stopped) = std::sync::mpsc::channel::<leaving::Leave>();
+        let leave_for = Arc::downgrade(&inner);
+        thread::Builder::new()
+            .name("browser-fill-leaving".to_owned())
+            .spawn(move || {
+                for leave in stopped {
+                    let Some(inner) = leave_for.upgrade() else {
+                        break;
+                    };
+                    inner.leaving(leave);
+                }
+            })
+            .map_err(|e| Refusal::Engine(e.to_string()))?;
+        *lock(&inner.leaves) = Some(leaves);
         // Calls wait on the engine, which can leave one unanswered: the thread that reads its
         // events never makes one, or what it reads behind that call comes too late (#4472).
         let (following, steps) = std::sync::mpsc::channel::<FollowUp>();
@@ -2198,6 +2301,7 @@ impl Browser {
         // A call that only reads acts on nothing, so a retry of it reads again; only what acts
         // is kept by id.
         if call.only_reads() {
+            self.reads_once_settled()?;
             let _one = lock(&self.acting);
             let every = matches!(call, Call::Downloads);
             return self.run_at(epoch, call).map(|answer| {
@@ -2235,6 +2339,12 @@ impl Browser {
     fn with_asked(&self, mut answer: Answer) -> Answer {
         let mut state = lock(&self.inner.state);
         answer.asked = std::mem::take(&mut state.asked);
+        for said in std::mem::take(&mut state.leaving_said) {
+            answer.note = Some(match answer.note.take() {
+                Some(note) => format!("{note}; {said}"),
+                None => said,
+            });
+        }
         answer.downloads = state.downloads.untold();
         if let Some(refused) = state.downloads.refused_since() {
             let said = format!(
@@ -2266,6 +2376,9 @@ impl Browser {
         // why (#5150): the answer does.
         let refused = lock(&self.inner.refused_load).clone();
         let said = refused.and_then(|why| failed.iter().find_map(|address| why(address)));
+        // It may have been said already, as the page failed (#5230).
+        let said =
+            said.filter(|said| !answer.note.as_ref().is_some_and(|note| note.contains(said)));
         if let Some(said) = said {
             answer.note = Some(match answer.note.take() {
                 Some(note) => format!("{note}; {said}"),
@@ -2316,6 +2429,26 @@ impl Browser {
     /// told before.
     pub fn say_why_refused(&self, why: RefusedLoad) {
         *lock(&self.inner.refused_load) = Some(why);
+    }
+
+    /// **What the browser reaches has changed** (#5230): a page holding a secret that waits on the
+    /// person to leave for another site goes on, where it now may.
+    pub fn reach_changed(&self) {
+        let waiting: Vec<String> = lock(&self.inner.leaving_asked).keys().cloned().collect();
+        if waiting.is_empty() {
+            return;
+        }
+        // Before any answer of the act this comes with is made: it waits for how that ends.
+        let mut state = lock(&self.inner.state);
+        for target in &waiting {
+            if let Some(page) = state.page_mut(target) {
+                page.leaving = true;
+            }
+        }
+        drop(state);
+        if let Some(leaves) = &*lock(&self.inner.leaves) {
+            let _ = leaves.send(leaving::Leave::Answered(waiting));
+        }
     }
 
     /// The frames of `target`'s page the agent is kept off now, with their site (#5152).
@@ -2582,7 +2715,10 @@ impl Browser {
     /// Marks `target`'s page as the one the agent's act is sending to an address, until the
     /// mark is dropped (#2018).
     fn addressing(&self, target: &str, why: Why) -> Addressing<'_> {
-        lock(&self.inner.state).addressing = Some((target.to_owned(), why));
+        let mut state = lock(&self.inner.state);
+        state.addressing = Some((target.to_owned(), why));
+        state.addressing_seen = false;
+        drop(state);
         Addressing(&self.inner)
     }
 
@@ -3303,6 +3439,10 @@ impl Browser {
                             waiting.push(format!("{prefix}the page has no address yet"));
                         }
                         Some(session) => {
+                            if page.leaving {
+                                waiting
+                                    .push(format!("{prefix}the page is leaving for another site"));
+                            }
                             sessions.push((prefix.clone(), session.clone(), page.target.clone()));
                             waiting.extend(
                                 page.settle
@@ -5184,6 +5324,7 @@ impl Inner {
         &self,
         target: &str,
         document: u64,
+        filled: leaving::Filled,
         hold: Arc<dyn FillHold>,
     ) -> Result<(), String> {
         hold.hold()?;
@@ -5202,6 +5343,8 @@ impl Inner {
             lock(&self.fill_holds).push(PageHeld {
                 target: target.to_owned(),
                 hold,
+                filled,
+                been_on: Arc::new(state.been_on.clone()),
             });
             return Ok(());
         }
@@ -5221,9 +5364,7 @@ impl Inner {
             *holds = kept;
             gone
         };
-        for held in released {
-            held.hold.released();
-        }
+        self.released(target, released);
     }
 
     /// Page `target`'s own document is now at `address`: a login waiting for that page to leave
@@ -5539,6 +5680,8 @@ impl Inner {
                                 settle: Settle::new(now),
                                 scrubbed: kept,
                                 failed_load: None,
+                                leaving: false,
+                                chosen: false,
                                 shows: 0,
                                 gone: 0,
                                 frames: HashMap::new(),
@@ -5660,12 +5803,35 @@ impl Inner {
                             lock(&self.devtools_unread).remove(&target);
                             // A page's own document, where a login waits for it (#4995).
                             if text("/frame/id").as_deref() == Some(target.as_str()) {
-                                // The engine's own page for a load that failed is no page left
-                                // (#5117): the request that failed is still in the page's
-                                // history, and the hold lives on until a page loads or it is
-                                // closed.
-                                if params.pointer("/frame/unreachableUrl").is_none() {
-                                    left.push(target.clone());
+                                // The engine's own page for a load that failed holds no value
+                                // either (#5230): the hold ends there too, so no browser is left
+                                // stuck. In a browser that held a value, purlis's own page stands
+                                // in for it, and no read comes before that. It is no site the
+                                // browser was on.
+                                left.push(target.clone());
+                                let failed = params.pointer("/frame/unreachableUrl").is_some();
+                                let chosen = state.page(&target).is_some_and(|page| page.chosen);
+                                if !failed && chosen {
+                                    state.was_on(&text("/frame/url").unwrap_or_default());
+                                }
+                                let held_one = self.copy_withheld.load(Ordering::SeqCst);
+                                let departing = lock(&self.departing).contains_key(&target);
+                                if let Some(page) = state.page_mut(&target) {
+                                    page.leaving = departing || (failed && held_one);
+                                }
+                                if failed && held_one {
+                                    // Told before the page goes: why it failed is said in the next
+                                    // answer, from then on there is no page to say it of (#5150).
+                                    let why = lock(&self.refused_load).clone();
+                                    let said = why
+                                        .zip(text("/frame/unreachableUrl"))
+                                        .and_then(|(why, address)| why(&address));
+                                    if let Some(said) = said {
+                                        state.say_of_leaving(said);
+                                    }
+                                    follow.push(FollowUp::Leave(leaving::Leave::Failed(
+                                        target.clone(),
+                                    )));
                                 }
                                 let failed = text("/frame/unreachableUrl");
                                 if let Some(page) =
@@ -5770,6 +5936,27 @@ impl Inner {
                             frame: frame.as_deref(),
                             redirected_from: redirected_from.as_deref(),
                         });
+                        // The engine keeps a fragment beside the address.
+                        let whole = match text("/request/urlFragment") {
+                            Some(fragment) => format!("{address}{fragment}"),
+                            None => address.clone(),
+                        };
+                        let moved = {
+                            let holds = lock(&self.fill_holds);
+                            let ending = lock(&self.ending);
+                            state.move_of(
+                                &holds,
+                                &ending,
+                                &Held {
+                                    request: &request,
+                                    address: &address,
+                                    method: &method,
+                                    document,
+                                    frame: frame.as_deref(),
+                                    redirected_from: redirected_from.as_deref(),
+                                },
+                            )
+                        };
                         let by = if self.person_drives.load(Ordering::SeqCst) {
                             Driver::Person
                         } else if self.purlis_drives.load(Ordering::SeqCst) {
@@ -5777,6 +5964,21 @@ impl Inner {
                         } else {
                             Driver::Agent
                         };
+                        // The first of a page's own chain says whether it was chosen (#5230): an
+                        // address the agent wrote is the first the call sends, and what the page
+                        // does while the call waits on it isn't.
+                        let chosen = by == Driver::Person
+                            || (why == Why::Addressed
+                                && document
+                                && redirected_from.is_none()
+                                && !std::mem::replace(&mut state.addressing_seen, true));
+                        if document
+                            && redirected_from.is_none()
+                            && let Some(page) =
+                                frame.as_deref().and_then(|frame| state.page_mut(frame))
+                        {
+                            page.chosen = chosen;
+                        }
                         // While one of the agent's calls is carried out, nothing is sent to a
                         // site it is kept off by an address it wrote, however written, nor by
                         // a document of that site (#5152): a key or a click that reached such a
@@ -5804,7 +6006,75 @@ impl Inner {
                                         })
                                     })
                             });
-                        if addressed_to_kept_off || sends_from_kept_off {
+                        // Its own page is answered here, and goes nowhere: only as the page
+                        // purlis is moving asks for it (#5230).
+                        let own_page = if address == leaving::OWN_PAGE
+                            && document
+                            && frame
+                                .as_deref()
+                                .is_some_and(|frame| lock(&self.departing).contains_key(frame))
+                        {
+                            lock(&self.own_page).take()
+                        } else {
+                            None
+                        };
+                        // What a hold decides comes next: it decides as the request pauses.
+                        if let Some(page) = own_page {
+                            follow.push(FollowUp::Own { request, page });
+                        } else if let Some(moved) = moved {
+                            let paused = Paused {
+                                id: request,
+                                document,
+                            };
+                            match moved {
+                                leaving::Move::Refused => {
+                                    follow.push(FollowUp::Refuse(paused.id));
+                                }
+                                leaving::Move::FrameForm { key, origin, to } => {
+                                    state.say_of_leaving(leaving::form_refused_said(
+                                        &key,
+                                        &origin,
+                                        to.as_deref(),
+                                    ));
+                                    follow.push(FollowUp::Refuse(paused.id));
+                                }
+                                leaving::Move::Elsewhere { origin } => {
+                                    let said = lock(&self.refused_load)
+                                        .clone()
+                                        .and_then(|why| why(&address))
+                                        .unwrap_or_else(|| leaving::elsewhere_said(&origin));
+                                    state.say_of_leaving(said);
+                                    follow.push(FollowUp::Stay(paused));
+                                }
+                                leaving::Move::Redirect(target) | leaving::Move::Form(target)
+                                    if state.page(&target).is_none() =>
+                                {
+                                    follow.push(FollowUp::Stay(paused));
+                                }
+                                leaving::Move::Redirect(target) => {
+                                    if let Some(page) = state.page_mut(&target) {
+                                        page.leaving = true;
+                                    }
+                                    follow.push(FollowUp::Leave(leaving::Leave::Stopped {
+                                        paused,
+                                        target,
+                                        whole,
+                                        form: false,
+                                    }));
+                                }
+                                leaving::Move::Form(target) => {
+                                    if let Some(page) = state.page_mut(&target) {
+                                        page.leaving = true;
+                                    }
+                                    follow.push(FollowUp::Leave(leaving::Leave::Stopped {
+                                        paused,
+                                        target,
+                                        whole,
+                                        form: true,
+                                    }));
+                                }
+                            }
+                        } else if addressed_to_kept_off || sends_from_kept_off {
                             follow.push(FollowUp::Refuse(request));
                         } else {
                             follow.push(FollowUp::Judge {
@@ -5876,8 +6146,8 @@ impl Inner {
         self.changed.notify_all();
         for step in follow {
             let step = match step {
-                // Handed to the judge's own thread at once.
-                judge @ FollowUp::Judge { .. } => judge,
+                // Handed to the judge's own thread at once, and a filled page's move to its own.
+                judge @ (FollowUp::Judge { .. } | FollowUp::Leave(_)) => judge,
                 other => match &*lock(&self.following) {
                     Some(following) => match following.send(other) {
                         Ok(()) => continue,
@@ -6017,6 +6287,33 @@ impl Inner {
                     self.judged(&paused, &outbound);
                 }
             }
+            FollowUp::Leave(leave) => {
+                let unsent = match &*lock(&self.leaves) {
+                    Some(leaves) => leaves.send(leave).err().map(|e| e.0),
+                    None => Some(leave),
+                };
+                if let Some(leave) = unsent {
+                    self.leaving(leave);
+                }
+            }
+            FollowUp::Stay(paused) => self.stays(&paused),
+            FollowUp::Own { request, page } => {
+                let _ = devtools.call_within(
+                    "Fetch.fulfillRequest",
+                    json!({
+                        "requestId": request,
+                        "responseCode": 200,
+                        "responseHeaders": [
+                            { "name": "Content-Type", "value": "text/html; charset=utf-8" },
+                            { "name": "Content-Security-Policy", "value": "default-src 'none'" },
+                            { "name": "Cache-Control", "value": "no-store" },
+                        ],
+                        "body": base64::engine::general_purpose::STANDARD.encode(page),
+                    }),
+                    None,
+                    JUDGED_WITHIN,
+                );
+            }
             FollowUp::Refuse(request) => {
                 let _ = devtools.call_within(
                     "Fetch.failRequest",
@@ -6056,6 +6353,18 @@ impl Drop for Addressing<'_> {
 struct Paused {
     id: String,
     document: bool,
+}
+
+/// **A document request held lately** (#2018, #5230): its id and address, why it was sent,
+/// whether its chain began with a form, and how.
+struct Hop {
+    id: String,
+    address: String,
+    why: Why,
+    form: bool,
+    /// The first request of its chain, and its method.
+    head: String,
+    head_method: String,
 }
 
 /// A request held for the judge, as the engine said it (#2018).

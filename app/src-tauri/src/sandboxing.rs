@@ -1660,7 +1660,7 @@ pub(crate) fn judged(
     let what = match what {
         GrantWhat::Vault => {
             return refused(
-                "purlis allows a vault from the notice its refusal raises, not from a block's."
+                "purlis allows a vault from the ask its refusal raises, not from a block's."
                     .to_owned(),
             );
         }

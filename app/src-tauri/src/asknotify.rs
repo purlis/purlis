@@ -297,6 +297,7 @@ fn kind_said(ask: &Shown) -> &'static str {
         AskSource::BrowserLogin => "Asks to log its browser in to a site with vault credentials",
         AskSource::Secret => "Asks you for a secret its vault doesn't hold",
         AskSource::SecretFill => "Asks to put a vault secret into a field of its browser",
+        AskSource::Vault => "Refused a vault its persona isn't tagged for",
     }
 }
 

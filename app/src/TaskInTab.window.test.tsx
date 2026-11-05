@@ -34,7 +34,7 @@ import { forgetKeyboard } from "./paneKeyboard";
 import { REFERENCE_TYPE } from "./references";
 import { forgetThisLaunch } from "./regions";
 import { chipSays, rowSays, stripNamed } from "./test-strips";
-import { askOfBlock, askOfDispatch } from "./test-asks";
+import { askOfBlock, askOfDispatch, askOfVault } from "./test-asks";
 import { forgetInboxOpen, inboxAwayAtLaunch } from "./test-inbox";
 import { findResult } from "./actionResult.testkit";
 import { heard } from "./frame.testkit";
@@ -290,6 +290,7 @@ function core(open: Listed[], atLaunch: LaidOut = tabbed(open)) {
           .concat(
             [...dispatches.values()].flat().map((one) => askOfDispatch(one, nameIn(one.session))),
             [...blocks.values()].flat().flatMap((one) => askOfBlock(one, nameIn(one.session))),
+            [...refusals.values()].flat().map((one) => askOfVault(one, nameIn(one.session))),
           ),
       };
     if (cmd === "opened_chats") return open.map(asListed);

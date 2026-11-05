@@ -731,3 +731,39 @@ fn the_notice_says_what_became_of_the_line_and_the_line_is_one_paste_and_one_ent
     );
     assert_eq!(sent.matches('\r').count(), 1, "one Enter: {sent:?}");
 }
+
+/// #5160: every chat's refusals are listed for the asks registry, each with when it was first
+/// heard, which a second try at the same vault does not move.
+#[test]
+fn every_chats_refusals_are_listed_with_when_each_was_first_heard() {
+    let project = project();
+    let root = project.path();
+    let refusals = Refusals::default();
+    let (_, tell) = told();
+    let mut seven = asker(root, Some("steward"));
+    seven.chat = 7;
+    for (chat, vault) in [(&asker(root, Some("steward")), "devops"), (&seven, "loose")] {
+        refused(&plane(root), &refusals, chat, false, vault, &tell);
+    }
+    let first = refusals.every();
+    refused(
+        &plane(root),
+        &refusals,
+        &asker(root, Some("steward")),
+        false,
+        "devops",
+        &tell,
+    );
+
+    let listed: Vec<(u32, &str)> = first
+        .iter()
+        .map(|(chat, not, _)| (*chat, not.vault.as_str()))
+        .collect();
+    assert_eq!(listed, [(3, "devops"), (7, "loose")]);
+    assert!(first.iter().all(|(_, _, since)| *since > 0), "{first:?}");
+    assert_eq!(refusals.every(), first, "a second try moves nothing");
+
+    refusals.put_away(3, "devops");
+    let left: Vec<u32> = refusals.every().iter().map(|(chat, ..)| *chat).collect();
+    assert_eq!(left, [7]);
+}

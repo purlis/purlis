@@ -85,14 +85,19 @@ browser leaves it out, and from then on that browser copies, cuts and drags noth
 keep it blocked, tell them what needs it and don't ask again. While the page you filled stays
 open, the browser reaches only that site: an address for another is refused, saying so. Nor do
 you press any key in that page, or type or choose anything in it, so type the other fields (a user name) before you fill, and send the form by clicking its button,
-not with Enter. Once that page loads another of its pages, or you close it, the browser reaches
-and takes keys as before. It works the
+not with Enter. The form may go on to another site only by a redirect from that site's own
+server: to a site this browser was on before the fill it goes by itself, and any other asks the
+person once. A redirect whose address holds the value is refused, and a form that posts straight
+to another site is refused unless the person approved the key for that site too; the answer says
+how. Once that page loads another page, an error page, or you close it, the browser reaches and
+takes keys as before. It works the
 same on a pool's runner.
 
 **A 2FA code comes from its seed**: name the key that holds the seed (an `otpauth://totp/`
 address or the base32 secret) and set `code` to true. purlis works the current code out from
 the seed as it fills, and only the code goes into the page; the seed never does. A seed asked for
-without `code` is refused.
+without `code` is refused. So is any value that looks like one, unless the person marked its key
+as no 2FA seed in the vault's tab, and a chat can't make that mark. Pass on what the refusal says.
 
 **In the user's own terminal**, `purlis secret exec --dotenv` resolves vault keys into one 0600
 temp file and points `PLAYWRIGHT_MCP_SECRETS_FILE` at it. You then refer to a secret **by

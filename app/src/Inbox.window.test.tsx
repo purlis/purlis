@@ -29,6 +29,7 @@ import { IN_ANOTHER_WINDOW, OTHER_PROJECTS, type Elsewhere } from "./InboxElsewh
 import type { Needing, Quiet } from "./NeedsYou";
 import { SETTLE_MS } from "./TaskBlocksNotice";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
+import { askOfVault } from "./test-asks";
 import { forgetInbox, replyBytes } from "./inboxRules";
 import { keepInboxScope } from "./inboxScope";
 import { forgetProjectViews } from "./projectViews";
@@ -732,6 +733,51 @@ describe("answering in place", () => {
           shown: HOST.answer.via === "sandbox-block" ? HOST.answer.shown : null,
           reason: null,
         },
+      }),
+    );
+  });
+
+  it("allows a refused vault's persona, or keeps it blocked with the reason, by its Notice's own commands (#5160)", async () => {
+    // A chat in no pane: the Inbox is where its refusal is answered.
+    const vault = askOfVault(
+      {
+        plane: PLANE,
+        session: 6,
+        vault: "devops",
+        persona: "steward",
+        tagged_for: "devops",
+        dispatch_to: null,
+        locked: null,
+      },
+      ["steward 6"],
+    );
+    const calls = core({ allow_refused_vault: { said: "Allowed." } });
+    draw([vault]);
+    expect(screen.getByText(vault.says)).toBeInTheDocument();
+    expect(vault.says).toContain(
+      "Allow lets every chat opened as steward use it in this project on this machine",
+    );
+    // A grant, told apart from Keep blocked at a glance, as the Notice's is (ADR 0097 §6).
+    expect(screen.getByRole("button", { name: "Allow steward to use this vault" })).toHaveAttribute(
+      "data-variant",
+      "grants",
+    );
+    await userEvent.type(
+      screen.getByRole("textbox", { name: /Why you keep it blocked/ }),
+      "ask devops instead",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Keep blocked" }));
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "keep_vault_blocked",
+        args: { plane: PLANE, session: 6, vault: "devops", reason: "ask devops instead" },
+      }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Allow steward to use this vault" }));
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "allow_refused_vault",
+        args: { plane: PLANE, session: 6, vault: "devops" },
       }),
     );
   });
