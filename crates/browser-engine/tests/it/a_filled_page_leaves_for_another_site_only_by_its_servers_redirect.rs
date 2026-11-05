@@ -278,6 +278,7 @@ fn links_scripts_and_the_chats_navigate_stay_refused() {
                 .and_then(|answer| answer.note)
         }),
     ];
+    let mut went = Vec::new();
     for (name, moved) in moves {
         let Some((browser, _data, site)) = browser() else {
             return;
@@ -290,16 +291,16 @@ fn links_scripts_and_the_chats_navigate_stay_refused() {
         let note = moved(&browser).unwrap_or_default();
         // Whatever it was to do has been done by a moment after it answered.
         std::thread::sleep(Duration::from_millis(800));
-        assert!(note.contains("did not load"), "{name}: {note}");
-
-        assert_eq!(
-            site.sent_count("other.test"),
-            before,
-            "{name} reached the other site"
-        );
-        assert!(sees(&browser, "API key"), "{name}: the page stays");
-        assert_eq!(holder.said(), ["held"], "{name}: the hold lives on");
+        // Each is said, so one that goes doesn't hide the next.
+        if !note.contains("did not load")
+            || site.sent_count("other.test") != before
+            || holder.said() != ["held"]
+            || !sees(&browser, "API key")
+        {
+            went.push(name);
+        }
     }
+    assert!(went.is_empty(), "not refused: {went:?}");
 }
 
 /// Everything the page sends the destination, while it is being redirected there and as it goes,
