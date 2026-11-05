@@ -12,7 +12,7 @@ use purlis_core::skills::verbs::{self, set};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-use crate::skillchange::{SkillGrant, SkillLevel, SkillPinner, flag_on, heard};
+use crate::skillchange::{SkillGrant, SkillLevel, SkillPinner, heard};
 use crate::skillhistory::SkillLifecycle;
 use crate::skillsources::{SkillSource, SourceRemote};
 
@@ -151,7 +151,6 @@ pub(crate) async fn skill_source_installed(
 ) -> Result<Vec<InstalledCopy>, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading what is installed from the source", move || {
-        flag_on()?;
         Ok(
             set::installed_from(held.root(), &remote.core(), workspace.as_deref())
                 .iter()
@@ -180,7 +179,6 @@ pub(crate) async fn skill_set_review(
 ) -> Result<SkillSetReview, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading the review of these skills", move || {
-        flag_on()?;
         let members: Vec<set::Member> = members.iter().map(SkillSetMember::core).collect();
         let to: Option<verbs::Level> = to.as_ref().map(Into::into);
         let review = set::review_set(
@@ -242,7 +240,6 @@ pub(crate) async fn skill_set_delete(
 ) -> Result<SkillSetDeleted, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("deleting the skills", move || {
-        flag_on()?;
         let members: Vec<set::Member> = members.iter().map(SkillSetMember::core).collect();
         let remote = remove_source.as_ref().map(SourceRemote::core);
         let mut gone = Vec::new();
@@ -278,7 +275,6 @@ pub(crate) async fn skill_set_restore(
 ) -> Result<crate::skillchange::SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("bringing the skills back", move || {
-        flag_on()?;
         let set_of: Vec<(verbs::Deleted, Option<String>)> = ids
             .iter()
             .map(|id| {
@@ -319,7 +315,6 @@ pub(crate) async fn skill_set_turn(
 ) -> Result<SkillSetTurned, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("turning the skills on or off", move || {
-        flag_on()?;
         let mut changed = Vec::new();
         let said = heard(held.root(), |cx| {
             changed = set::turn_set(cx, &workspace, &names, on)?;
@@ -345,7 +340,6 @@ pub(crate) async fn skill_set_pin(
 ) -> Result<SkillSetTurned, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("pinning the skills", move || {
-        flag_on()?;
         let by = (&by).into();
         let mut changed = Vec::new();
         let said = heard(held.root(), |cx| {
@@ -385,7 +379,6 @@ pub(crate) async fn skill_set_lifecycle(
 ) -> Result<SkillSetLifecycled, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("changing the skills' state", move || {
-        flag_on()?;
         let changes: Vec<(set::Member, purlis_core::skills::Lifecycle)> = changes
             .into_iter()
             .map(|one| (one.member.core(), one.lifecycle.into()))
@@ -434,7 +427,6 @@ pub(crate) async fn skill_set_move(
 ) -> Result<SkillSetMoved, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("moving the skills", move || {
-        flag_on()?;
         let moves: Vec<set::Moving> = moves
             .into_iter()
             .map(|one| set::Moving {
@@ -485,7 +477,6 @@ pub(crate) async fn skill_set_delete_now(
 ) -> Result<SkillSetGone, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("deleting the skills now", move || {
-        flag_on()?;
         let set_of: Vec<verbs::Deleted> = ids
             .iter()
             .map(|id| {
