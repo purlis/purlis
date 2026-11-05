@@ -3,9 +3,17 @@
 
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render as renderBare, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render as renderBare,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { emit } from "@tauri-apps/api/event";
 import App from "./App";
 import { forgetThisLaunch } from "./regions";
 import { findStripNamed, openTheInbox, sayingSomething, stripNamed } from "./test-strips";
@@ -170,28 +178,33 @@ function paneDoing(session: number) {
 function core(
   options: unknown = START_OPTIONS,
   found: () => unknown = () => null,
+  /** Whether the core's events reach the window, for a test that has the core send one. */
+  events = false,
 ): { asked: { cmd: string; args: unknown }[] } {
   const asked: { cmd: string; args: unknown }[] = [];
   let opened = 0;
-  mockIPC((cmd, args) => {
-    asked.push({ cmd, args });
-    if (cmd === "plane_at_launch")
-      return { plane: "/home/dev/plane", from: "/home/dev/plane", why: null };
-    if (cmd === "plane_sidebar") return SIDEBAR;
-    // Read, and nothing to say: the right side opens on the Inbox, which lists them (#1738).
-    if (cmd === "alerts_everywhere")
-      return [{ plane: "/home/dev/plane", alerts: [], stopped: null }];
-    if (cmd === "running_sessions") return [];
-    if (cmd === "opened_chats") return [];
-    if (cmd === "chat_states") return [];
-    if (cmd === "chats_that_would_not_start") return [];
-    if (cmd === "open_session") return ++opened;
-    if (cmd === "start_details") return [];
-    if (cmd === "start_options" || cmd === "start_options_first") return options;
-    if (cmd === "start_chat") return { session: ++opened };
-    if (cmd === "harness_setup_found") return found();
-    return null;
-  });
+  mockIPC(
+    (cmd, args) => {
+      asked.push({ cmd, args });
+      if (cmd === "plane_at_launch")
+        return { plane: "/home/dev/plane", from: "/home/dev/plane", why: null };
+      if (cmd === "plane_sidebar") return SIDEBAR;
+      // Read, and nothing to say: the right side opens on the Inbox, which lists them (#1738).
+      if (cmd === "alerts_everywhere")
+        return [{ plane: "/home/dev/plane", alerts: [], stopped: null }];
+      if (cmd === "running_sessions") return [];
+      if (cmd === "opened_chats") return [];
+      if (cmd === "chat_states") return [];
+      if (cmd === "chats_that_would_not_start") return [];
+      if (cmd === "open_session") return ++opened;
+      if (cmd === "start_details") return [];
+      if (cmd === "start_options" || cmd === "start_options_first") return options;
+      if (cmd === "start_chat") return { session: ++opened };
+      if (cmd === "harness_setup_found") return found();
+      return null;
+    },
+    { shouldMockEvents: events },
+  );
   return { asked };
 }
 
@@ -374,12 +387,20 @@ describe("App", () => {
   it("says nothing about an ordinary launch", async () => {
     // The core answers with nothing when the launch was inside the limit, and a window that
     // drew an empty notice on every start would be noise on every start.
-    core();
+    core(START_OPTIONS, () => null, true);
 
     render(<App />);
 
     expect(await projectAt("/home/dev/plane")).toBeInTheDocument();
-    expect(sayingSomething()).toEqual([]);
+    // Its chats are back, as the core says of every project it opens (#5322): the rail's
+    // "Loading 1 project…" has nothing more to say (#5323).
+    await act(() =>
+      emit("project-ready", {
+        plane: "/home/dev/plane",
+        outcome: { kind: "ready", back: 0, wanted: 0 },
+      }),
+    );
+    await waitFor(() => expect(sayingSomething()).toEqual([]));
   });
 
   it("puts that notice away when it is dismissed", async () => {

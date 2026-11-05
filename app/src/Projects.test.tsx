@@ -1030,10 +1030,10 @@ describe("the cold launch putting the last quit's projects back", () => {
     await waitFor(() => expect(projectTabs()).toEqual(["one", "two*"]));
     // Through `open_plane`, which is the trust gate — never a path of its own. A restore that
     // opened these itself would be ADR 0035 turned off for every project the operator had
-    // ever had open at once.
+    // ever had open at once. The one that was in front is asked first (#5323).
     expect(asked.filter((one) => one.cmd === "open_plane").map((one) => one.args.path)).toEqual([
-      ONE,
       TWO,
+      ONE,
     ]);
   });
 
