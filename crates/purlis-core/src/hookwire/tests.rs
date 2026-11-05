@@ -564,6 +564,14 @@ fn a_git_ask_is_read_back_whole_and_names_the_chat_its_token_must_be() {
             piece: "p1".to_owned(),
             step: UpdateStep::Continue,
         },
+        GitWork::WorktreeUpdate {
+            repo: "widget".to_owned(),
+            piece: "p1".to_owned(),
+            step: UpdateStep::Merge {
+                base: Some("main".to_owned()),
+                take_base_baselines: true,
+            },
+        },
         GitWork::CloneUpdate {
             repo: "widget".to_owned(),
             step: UpdateStep::Abort,

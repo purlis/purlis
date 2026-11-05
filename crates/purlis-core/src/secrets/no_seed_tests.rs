@@ -85,6 +85,52 @@ fn a_key_the_person_marked_fills_as_a_value() {
     assert_eq!(filled(tmp.path(), "APP").unwrap(), APP_PASSWORD);
 }
 
+/// Values that hold a seed in the forms the look takes in beyond a bare one.
+const SEED_FORMS: [&str; 5] = [
+    "secret=GEZDGNBVGY3TQOJQ",
+    "Dash\nGEZDGNBVGY3TQOJQ",
+    "Dash GEZD GNBV GY3T QOJQ",
+    "GEZD_GNBV_GY3T_QOJQ",
+    "GeZdGnBvGy3tQoJq",
+];
+
+#[test]
+fn a_seed_in_any_form_is_refused_and_the_refusal_holds_none_of_it() {
+    let tmp = project(serde_json::json!({}));
+    for value in SEED_FORMS {
+        holding(tmp.path(), &serde_json::json!({ "APP": value }));
+        let refused = filled(tmp.path(), "APP").unwrap_err();
+        assert!(refused.contains("looks like a 2FA seed"), "{refused}");
+        assert!(!refused.contains("GEZD"), "{refused}");
+        assert!(!refused.contains("GeZd"), "{refused}");
+    }
+}
+
+#[test]
+fn a_key_the_person_marked_fills_whatever_form_it_is_in() {
+    let tmp = project(serde_json::json!({}));
+    for value in SEED_FORMS {
+        holding(tmp.path(), &serde_json::json!({ "APP": value }));
+        mark(&ctx(tmp.path()), &team(tmp.path()), "APP").unwrap();
+        assert_eq!(filled(tmp.path(), "APP").unwrap(), value);
+    }
+}
+
+#[test]
+fn an_ordinary_password_and_a_hex_key_fill_with_no_mark() {
+    let tmp = project(serde_json::json!({}));
+    for value in [
+        "CorrectHorseBatteryStaple",
+        "MySecretPassword",
+        "abcdef2345672345",
+        "AbCdEf2345672345",
+        "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    ] {
+        holding(tmp.path(), &serde_json::json!({ "APP": value }));
+        assert_eq!(filled(tmp.path(), "APP").unwrap(), value);
+    }
+}
+
 #[test]
 fn the_file_holds_a_seal_and_never_the_value() {
     let tmp = project(serde_json::json!({"APP": APP_PASSWORD}));

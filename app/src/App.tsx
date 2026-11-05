@@ -1797,6 +1797,8 @@ function App() {
       endChat: () => undefined,
       askPersona: () => undefined,
       useSkill: () => undefined,
+      showChatSkills: () => undefined,
+      openStudioChat: () => undefined,
       unlinkWorkItem: async () => nowhere(),
       focusWorkspace: () => undefined,
       pickClone: () => undefined,

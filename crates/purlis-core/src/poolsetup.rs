@@ -981,7 +981,7 @@ fn see_of(id: StepId, facts: &Facts) -> Option<See> {
                 .filter(|(_, profile)| *profile != Profile::Standing(Standing::SignedIn))
                 .map(|(profile, _)| profile.clone())
                 .collect();
-            signins::by_hand(&pool.name, &adding, &signing_in)
+            signins::by_hand(&pool.name, &adding, &[], &signing_in)
         }
         _ => None,
     }

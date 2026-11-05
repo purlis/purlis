@@ -29,7 +29,7 @@ const NONE_UPDATED: PlaneUpdatedHere = { files: {}, skills: {} };
  * once, when it starts. The Python charter said "control plane updated" in the transcript on
  * the next prompt; the ruling on #369 moved it here, onto the chat's tab, so the operator —
  * who is the one who can start it fresh — is the one told. Its skills changed are what the
- * Skills chip on its pane is warning-coloured for (#3953), from this one answer.
+ * skills warning on its pane foot says (#3953), from this one answer.
  *
  * Asked at the mount and whenever the core says a change on disk concerns the instructions
  * (`instructionsChanges`, from `usePlaneChanged(…, INSTRUCTIONS)`, FD-10d), which is when the

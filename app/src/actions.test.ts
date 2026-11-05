@@ -145,6 +145,8 @@ function doing(): Doing & { calls: string[] } {
     endChat: note("endChat"),
     askPersona: note("askPersona"),
     useSkill: note("useSkill"),
+    showChatSkills: note("showChatSkills"),
+    openStudioChat: note("openStudioChat"),
     unlinkWorkItem: async (...args: unknown[]) => {
       note("unlinkWorkItem")(...args);
       return { ok: true };

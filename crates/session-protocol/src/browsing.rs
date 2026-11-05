@@ -382,7 +382,7 @@ pub struct BrowserReach {
     pub open_web: bool,
     /// **The sites the person allowed when this browser's chat asked** (1.74, #5230, SF-14), each
     /// as `host:port`: a page holding a secret may leave for one by its server's redirect, as it
-    /// may for a site the browser was on. Absent, none.
+    /// may for the site its sign-in began from. Absent, none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub answered: Vec<String>,
 }

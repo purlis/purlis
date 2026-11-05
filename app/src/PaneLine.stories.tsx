@@ -21,7 +21,8 @@ import { catalogued, type Offer } from "./actions";
 import { BriefButton, BriefOpener, type BriefAsk } from "./Brief";
 import { HarnessChip } from "./HarnessCard";
 import { ChatGauge } from "./ChatGauge";
-import { PaneActions, PaneBellOf, PaneHead } from "./LayoutPanes";
+import { PaneActions, PaneActionsOf, PaneBellOf, PaneHead } from "./LayoutPanes";
+import { paneLinesOf } from "./paneHead";
 import { PaneFoot, PaneFootEnd, PaneFootSeparator, PaneFootStart } from "./ui/pane-foot/PaneFoot";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
 
@@ -74,28 +75,31 @@ function PaneLine() {
       <div className="pane-frame pane-headed" style={{ blockSize: 180 }}>
         <div className="pane-top">
           <BriefOpener value={(of: BriefAsk) => setSaid(`Brief of ${of.name}`)}>
-            <PaneHead
-              doing={
-                // The bell, with nothing to hold: a chat's pane always draws it (#4754).
-                <PaneBellOf.Provider value={{ notes: 0, trouble: 0, asks: 0 }}>
-                  <PaneActions
-                    pane={1}
-                    // Its one state button: Brief, on a task (`PaneStateButton` draws this one).
-                    state={<BriefButton of={{ name: "fix-login", chat: SESSION }} word="Brief" />}
-                    chat={{ session: SESSION, offers: LIST }}
-                    offerFor={(id) => SPLITS.find((offer) => offer.id === id)}
-                    closeOf={() => undefined}
-                    onPaneDoes={(_pane, offer) => setSaid(offer?.title ?? "")}
-                    // A pane showing a task of its session draws no close (#1486).
-                    task
-                  />
-                </PaneBellOf.Provider>
-              }
+            {/* A pane showing a task of its session draws no close (#1486). */}
+            <PaneActionsOf.Provider
+              value={paneLinesOf("task", undefined, { closes: false }).actions}
             >
-              <div className="pane-chips">
-                <span className="pane-crumbs">steward 2 › fix-login</span>
-              </div>
-            </PaneHead>
+              <PaneHead
+                doing={
+                  // The bell, with nothing to hold: a chat's pane always draws it (#4754).
+                  <PaneBellOf.Provider value={{ notes: 0, trouble: 0, asks: 0 }}>
+                    <PaneActions
+                      pane={1}
+                      // Its one state button: Brief, on a task (`PaneStateButton` draws this one).
+                      state={<BriefButton of={{ name: "fix-login", chat: SESSION }} word="Brief" />}
+                      chat={{ session: SESSION, offers: LIST }}
+                      offerFor={(id) => SPLITS.find((offer) => offer.id === id)}
+                      closeOf={() => undefined}
+                      onPaneDoes={(_pane, offer) => setSaid(offer?.title ?? "")}
+                    />
+                  </PaneBellOf.Provider>
+                }
+              >
+                <div className="pane-chips">
+                  <span className="pane-crumbs">steward 2 › fix-login</span>
+                </div>
+              </PaneHead>
+            </PaneActionsOf.Provider>
           </BriefOpener>
         </div>
         {/* **The focused pane**, as the window draws it (`App.css`, `.pane-doing`): its own
@@ -105,7 +109,7 @@ function PaneLine() {
           <div className="pane focused" />
         </div>
         {/* **The pane foot** (#5202, look A): where the task runs, and its gauge. */}
-        <PaneFoot className="pane-foot">
+        <PaneFoot className="pane-foot" label="deep: where it runs and its context">
           <PaneFootStart>
             <span className="pane-where">
               <HarnessChip

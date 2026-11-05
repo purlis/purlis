@@ -330,6 +330,26 @@ export async function bringBackHeldRunner(runner: string): Promise<string | unde
 export async function replaceRunner(name: string, plane?: string): Promise<string | undefined> {
   const said = await caught(commands.dockerPoolReplaceRunner(name));
   if (said.status === "error") return said.error;
+  await readAfterANewRunner(name, plane);
+  return undefined;
+}
+
+/**
+ * **Moves pool `name` to a new runner on the current image** (#5175): as {@link replaceRunner},
+ * for a runner whose older purlis holds what a profile can send. Why not, in the core's words.
+ */
+export async function moveRunnerToThisVersion(
+  name: string,
+  plane?: string,
+): Promise<string | undefined> {
+  const said = await caught(commands.poolSetupMoveRunner(name));
+  if (said.status === "error") return said.error;
+  await readAfterANewRunner(name, plane);
+  return undefined;
+}
+
+/** What a pool's new runner changes, read again. */
+async function readAfterANewRunner(name: string, plane?: string) {
   await Promise.all([
     askLimits(name),
     askLink(name),
@@ -337,7 +357,6 @@ export async function replaceRunner(name: string, plane?: string): Promise<strin
     askProfiles(name, plane),
     rereadPools(),
   ]);
-  return undefined;
 }
 
 /** The newest read of each pool's limits out: an answer to an older one is dropped. */

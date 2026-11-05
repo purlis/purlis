@@ -75,7 +75,7 @@ use super::super::kept::Kept;
 use super::super::keys::key_events;
 use super::super::tree::NodeKey;
 use super::Browser;
-use super::fill::{GUARD_FIELD, spellings};
+use super::fill::GUARD_FIELD;
 use super::takeover::Carrying;
 use crate::drive::{Answer, Content, Driver, Hold, Login, Refusal, Why, lock};
 
@@ -277,10 +277,12 @@ impl Browser {
             lease.driver = Driver::Agent;
             lock(&self.inner.state).refs.void();
         }
+        let ended = (lease.driver, lease.epoch);
+        drop(lease);
         Ok(LoginEnded {
-            driver: lease.driver,
-            epoch: lease.epoch,
-            outcome,
+            driver: ended.0,
+            epoch: ended.1,
+            outcome: self.kept_out(outcome),
         })
     }
 
@@ -289,12 +291,11 @@ impl Browser {
         let origin = login.origin.as_str();
         // What it fills is kept out before anything else, for the browser's life.
         let mut held = Kept::default();
-        let values: Vec<zeroize::Zeroizing<String>> = login
+        let values: Vec<&str> = login
             .user
             .iter()
             .map(|user| user.as_str())
             .chain(std::iter::once(login.password.as_str()))
-            .flat_map(spellings)
             .collect();
         held.run(&values);
         lock(&self.inner.state).keep_out_everywhere(&held);

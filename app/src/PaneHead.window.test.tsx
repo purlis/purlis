@@ -173,8 +173,10 @@ describe("a chat's pane head", () => {
     expect(line.firstElementChild?.querySelector(".chat-persona")).not.toBeNull();
     expect(head().querySelector(".pane-where")).toBeNull();
     expect(within(head()).queryByText("alpha")).toBeNull();
-    // The badge moved from the tab to the head (#4760): named for a screen reader.
-    expect(within(head()).getByRole("img", { name: "floor" })).toBeInTheDocument();
+    // The badge moved from the tab to the head (#4760) and on to the foot (#5204): named for a
+    // screen reader.
+    expect(within(head()).queryByRole("img", { name: "floor" })).toBeNull();
+    expect(within(foot()).getByRole("img", { name: "floor" })).toBeInTheDocument();
     const strip = document.querySelector('[data-strip="Tabs"]') as HTMLElement;
     expect(strip.querySelector(".tab-sandbox")).toBeNull();
   });
@@ -370,14 +372,13 @@ describe("a narrow pane's head", () => {
   it("keeps every part in a pane 520px wide", async () => {
     await aPaneOf(520);
 
-    expect(within(head()).getByRole("img", { name: "floor" })).toBeInTheDocument();
+    expect(within(foot()).getByRole("img", { name: "floor" })).toBeInTheDocument();
     expect(controls()).toContain("Split down");
   });
 
-  it("drops the sandbox first, and the bell, ⋯, Split right and Close stay", async () => {
+  it("keeps the bell, ⋯, Split right and Close as it narrows", async () => {
     await aPaneOf(500);
 
-    expect(within(head()).queryByRole("img", { name: "floor" })).toBeNull();
     expect(controls()).toContain("Split down");
     // Harness · workspace is the foot's, which drops nothing here (#5206 orders its drops).
     expect(foot().querySelector(".pane-where")).toHaveTextContent(/^claude\s*·\s*alpha$/);
@@ -386,7 +387,6 @@ describe("a narrow pane's head", () => {
   it("drops Split down last, and still keeps the bell, ⋯, Split right and Close", async () => {
     await aPaneOf(280);
 
-    expect(within(head()).queryByRole("img", { name: "floor" })).toBeNull();
     const [bell, more, right, close, ...rest] = controls();
     expect(bell).toMatch(/^Pane notices:/);
     expect(more).toBe(`More for ${NAME}`);

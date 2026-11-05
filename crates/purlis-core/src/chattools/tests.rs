@@ -1284,6 +1284,31 @@ fn an_update_s_arguments_are_its_step_and_at_a_start_a_base() {
         worktree_update_args(&args(json!({"step": "abort"}))),
         Ok(UpdateStep::Abort)
     );
+    assert_eq!(
+        worktree_update_args(&args(json!({"step": "merge", "base": "main"}))),
+        Ok(UpdateStep::Merge {
+            base: Some("main".to_owned()),
+            take_base_baselines: false,
+        })
+    );
+    assert_eq!(
+        worktree_update_args(&args(json!({"step": "merge", "take_base_baselines": true}))),
+        Ok(UpdateStep::Merge {
+            base: None,
+            take_base_baselines: true,
+        })
+    );
+    // Only a merge takes it: a rebase never hears of it and quietly does something else.
+    assert!(worktree_update_args(&args(json!({"take_base_baselines": true}))).is_err());
+    assert!(
+        worktree_update_args(&args(
+            json!({"step": "continue", "take_base_baselines": true})
+        ))
+        .is_err()
+    );
+    assert!(
+        worktree_update_args(&args(json!({"step": "merge", "take_base_baselines": 1}))).is_err()
+    );
     assert!(worktree_update_args(&args(json!({"step": "abort", "base": "main"}))).is_err());
     assert!(worktree_update_args(&args(json!({"step": "reset"}))).is_err());
     assert!(worktree_update_args(&args(json!({"base": 3}))).is_err());

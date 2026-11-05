@@ -21,6 +21,8 @@ use purlis_core::worktree::git;
 
 use support::git;
 
+mod by_a_merge;
+
 struct World {
     _dir: tempfile::TempDir,
     plane: PathBuf,

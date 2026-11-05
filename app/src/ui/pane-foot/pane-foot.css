@@ -86,6 +86,11 @@
   color: var(--state-failed);
 }
 
+/* A chat that has ended keeps its last numbers, greyed (#5205). */
+[data-scope="pane-foot"][data-part="value"][data-tone="ended"] {
+  color: var(--text-muted);
+}
+
 [data-scope="pane-foot"][data-part="track"] {
   grid-column: 1 / -1;
   display: block;
@@ -107,4 +112,8 @@
 
 [data-scope="pane-foot"][data-part="fill"][data-tone="bad"] {
   background-color: var(--state-failed);
+}
+
+[data-scope="pane-foot"][data-part="fill"][data-tone="ended"] {
+  background-color: var(--text-muted);
 }

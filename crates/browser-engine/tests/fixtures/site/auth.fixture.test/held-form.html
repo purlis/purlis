@@ -31,6 +31,7 @@
 <button id="goes" type="button">Leave by a script</button>
 <button id="scripted" type="button">Leave by a scripted form</button>
 <button id="asks" type="button">Send from a script</button>
+<button id="opens" type="button">Open a window</button>
 <script>
   window.name = 'left-behind';
   document.getElementById('goes').addEventListener('click', () => {
@@ -42,6 +43,12 @@
     form.action = '/redirect?to=http://other.test/landed.html';
     document.body.append(form);
     form.submit();
+  });
+  document.getElementById('opens').addEventListener('click', () => {
+    const opened = window.open('about:blank');
+    opened.eval(
+      "setInterval(() => fetch('http://other.test/from-a-window', { mode: 'no-cors' }).catch(() => {}), 50)"
+    );
   });
   const send = () => {
     fetch('http://other.test/from-script', { mode: 'no-cors' }).catch(() => {});

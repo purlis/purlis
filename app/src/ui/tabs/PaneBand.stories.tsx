@@ -17,7 +17,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Fragment, useRef, useState, type ReactNode } from "react";
 import { expect, waitFor, within } from "storybook/test";
-import { Sparkles, X } from "lucide-react";
+import { X } from "lucide-react";
 import { Notice, NoticePaneRow } from "../../Notice";
 import { NOTICE_MOVED_JUST_NOW, SETTLE_MS, paneBand } from "../../noticeSettle";
 import { PaneActions, PaneBellAt, PaneBellOf, PaneHead } from "../../LayoutPanes";
@@ -26,7 +26,6 @@ import { PANE_NOTICES } from "../../paneNoticesPref";
 import type { Offer } from "../../actions";
 import { ChatMark } from "../../NeedsYou";
 import { useTabIds, StripTablist } from "../../StripTablist";
-import { Button } from "../button/Button";
 import { panelRoot } from "../panel/Panel";
 import { TabCell, tabPart, tabsPart } from "./Tabs";
 import { expectFocusInSight, untilFocused } from "../../stories.testkit";
@@ -230,14 +229,7 @@ function Pane({
           }
         >
           <div className="pane-chips">
-            <Button
-              size="sm"
-              variant="ghost"
-              className="pane-skills"
-              icon={<Sparkles aria-hidden="true" />}
-            >
-              11 skills
-            </Button>
+            <span className="pane-name">work</span>
           </div>
         </PaneHead>
         <NoticePaneRow
@@ -557,9 +549,11 @@ export const BellBesideItsNeighbours: Story = {
       expect(boxes[i].left - boxes[i - 1].right, `gap before head button ${i}`).toBeGreaterThan(1);
     }
 
-    // The last control before the actions: the harness that stood here is the foot's (#5202).
-    canvas.getByRole("button", { name: "11 skills" }).focus();
-    await userEvent.tab();
+    // From the control after it, back: nothing on the head's line is pressed before the bell now
+    // that the chat's facts are the foot's (#5202, #5204).
+    const all = canvas.getAllByRole("button");
+    all[all.indexOf(bell) + 1].focus();
+    await userEvent.tab({ shift: true });
     await untilFocused(() => bell, "Tab onto the bell");
     const tip = await within(document.body).findByRole("tooltip");
     await waitFor(() => {
@@ -569,6 +563,9 @@ export const BellBesideItsNeighbours: Story = {
         expect(overlaps(at, boxOf(one)), one.getAttribute("aria-label") ?? "").toBe(false);
       }
     });
+    // The picture is of the head at rest: neither a ring nor a tooltip.
+    bell.blur();
+    await waitFor(() => expect(document.querySelector('[role="tooltip"]')).toBeNull());
   },
 };
 
@@ -793,8 +790,8 @@ export const ConsentPressedByThePointer: Story = {
       await mouse.click(allow);
     } finally {
       letGo();
-      // **The engine's mouse stays where it last was, story after story**: put back in the page's
-      // corner, so it hovers nothing a later story draws (a tooltip, a row's hover).
+      // **This story's picture is taken after its `play`, and of the band at rest**: the engine's
+      // mouse is taken off the Allow it pressed, which would otherwise be drawn hovered.
       await mouse.hover(document.body, { position: { x: 0, y: 0 } });
     }
     expect(allowed).toEqual(["forge"]);

@@ -335,6 +335,28 @@ describe("the explorer", () => {
     );
   });
 
+  it("says a branch folder's state is still being read, then shows its state (#5321)", () => {
+    // The list's first answer names the folders before any is read; a row says so rather than
+    // pass for one with nothing to say, and its mark goes once the state is in.
+    const why = "git did not answer within 30 seconds";
+    draw({
+      state: state({ pieces: { svc: [piece("one", { reading: true })], tool: [] } }),
+    });
+
+    const row = screen.getByTestId("piece-svc-one");
+    expect(row.querySelector("[data-testid=piece-reading]")).toHaveTextContent("reading…");
+    expect(row.querySelector("[data-testid=piece-unread]")).toBe(null);
+
+    cleanup();
+    draw({
+      state: state({ pieces: { svc: [piece("one", { unread: why })], tool: [] } }),
+    });
+
+    const read = screen.getByTestId("piece-svc-one");
+    expect(read.querySelector("[data-testid=piece-reading]")).toBe(null);
+    expect(read.querySelector("[data-testid=piece-unread]")).toHaveTextContent("unreadable");
+  });
+
   it("says a registration whose directory is gone is stale", () => {
     draw({ state: state({ pieces: { svc: [piece("one", { stale: true })], tool: [] } }) });
 

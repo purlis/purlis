@@ -238,7 +238,7 @@ export const commands = {
 	 *  97): where another of the project's windows has it in a pane, that window comes forward and
 	 *  shows it there; a chat is never shown in two windows. Where no window has it, it goes to the
 	 *  most recently used pane across the project's windows: where that is another window's, that
-	 *  window comes forward and shows it in its focused pane (`Chats::window_pressed`). Either way
+	 *  window comes forward and opens it as a press does there (`Chats::window_pressed`). Either way
 	 *  that window's label is answered, and its pane counts as used. Null where the press is the
 	 *  asking window's: the chat is in its pane, its pane was used last, or none has been.
 	 */
@@ -1599,6 +1599,11 @@ export const commands = {
 	/**  This workspace's pieces for one repo. */
 	worktreeList: (plane: PlaneId, workspace: string, repo: string) => typedError<Piece[], string>(__TAURI_INVOKE("worktree_list", { plane, workspace, repo })),
 	/**
+	 *  The state of each of this repo's branch folders, asked once `worktree_list` has named them
+	 *  (#5321): what each has uncommitted, or why it could not be read.
+	 */
+	worktreeStates: (plane: PlaneId, workspace: string, repo: string) => typedError<PieceState[], string>(__TAURI_INVOKE("worktree_states", { plane, workspace, repo })),
+	/**
 	 *  **New branch**, from a repo's row (GL-1): cut a piece off the clone's HEAD and log it
 	 *  `claimed`. It starts nothing. `branch` is the name the operator typed, used exactly or
 	 *  refused; `None` is charter's next free `chat-<n>`.
@@ -1713,6 +1718,7 @@ export const commands = {
 	poolSetupCommand: __WINDOW_ONLY_RESULT,
 	poolSetupCreate: __WINDOW_ONLY_RESULT,
 	poolSetupSignInsByHand: __WINDOW_ONLY_RESULT,
+	poolSetupMoveRunner: __WINDOW_ONLY_RESULT,
 	poolSetupSizes: __WINDOW_ONLY_RESULT,
 	poolSetupSkip: __WINDOW_ONLY_RESULT,
 	poolSetupWake: __WINDOW_ONLY_RESULT,
@@ -2421,6 +2427,8 @@ export const PERSONA_SCOPE_KEY = "persona/" as const;
 
 export const POOL_MINTS_WITHOUT_ASKING = "pool-mints-without-asking" as const;
 
+export const PROJECT_READY = "project-ready" as const;
+
 export const ROUTER_GRADE = "router-grade" as const;
 
 export const SESSION_BUS_ANSWERS = "session-bus://answers" as const;
@@ -3051,6 +3059,13 @@ export type Asking = {
 	 */
 	with_asking_chat: WithAskingChat[],
 };
+
+/**  Which command's question it is. */
+export type Asks = 
+/**  `purlis profile sign-in --pool`. */
+"sign-in" | 
+/**  `purlis pool remove-profile`: its runner forgets the profile, and its sign-in there. */
+"take-off";
 
 /**  What a chat's row says while it is at its task limit. */
 export type AtLimit = {
@@ -7733,6 +7748,15 @@ export type OldHome =
 /**  It could not be read, so it is kept, held, all the same. */
 "unread";
 
+/**  **What helps a profile over what a pool's older runner takes** (#5175): by what makes its image. */
+export type OlderRunner = 
+/**  A pool of purlis's own image: a new runner on the current image, which the window makes. */
+"move" | 
+/**  A pool of a team's own image, which purlis never moves: built anew, and the pool added again. */
+"own-image" | 
+/**  A cluster pool, whose image its Pool in the cluster names. */
+"cluster";
+
 /**
  *  The chats of a project still running under an older sandbox (#1428), for the Notice after
  *  a sandbox setting changes: those that run under a sandbox other than the one a start would
@@ -8581,6 +8605,13 @@ export type Piece = {
 	 *  was read, and for one that is gone (`stale`).
 	 */
 	unread?: string | null,
+	/**
+	 *  `true` while this folder's state (`uncommitted`, `unread`) is still to come (#5321): the
+	 *  list's first answer names the folders without reading any of them, and
+	 *  `worktree_states` reads them. `null` once read, and for a folder that is gone (`stale`),
+	 *  which has nothing to read.
+	 */
+	reading?: boolean | null,
 };
 
 /**  One file of a branch, as the light editor draws it. */
@@ -8601,6 +8632,15 @@ export type PieceFile =
 { kind: "huge-image"; mime: string; width: number; height: number } | 
 /**  Past the largest file the preview draws (2 MiB), by its size in bytes. */
 { kind: "too-large"; bytes: number };
+
+/**  One branch folder's state, as `worktree_states` reads it (#5321). */
+export type PieceState = {
+	piece: string,
+	/**  As [`Piece::uncommitted`]. */
+	uncommitted?: number | null,
+	/**  As [`Piece::unread`]. */
+	unread?: string | null,
+};
 
 /**  What the plane's pin says against this charter. */
 export type PinReport = {
@@ -9235,6 +9275,8 @@ export type PoolSetupOver = {
 	said: string,
 	/**  What to raise it to, where a value would do. */
 	raise_to: number | null,
+	/**  What its runner's older purlis holds it to, and what helps, where only that does (#5175). */
+	older_runner: OlderRunner | null,
 };
 
 /**  One of this machine's profiles against a pool's limit (#4482). */
@@ -9314,6 +9356,7 @@ export type PoolSetupTried = {
 /**  What the person is asked. */
 export type PoolSignInAsk = {
 	id: number,
+	asks: Asks,
 	profile: string,
 	pool: string,
 	/**  What the terminal of the command that asks shows. */
@@ -9674,6 +9717,25 @@ export type ProjectNotHeld = {
 	 *  mark is drawn on where there is one.
 	 */
 	pools: string[],
+};
+
+/**  How a project's opening came out. */
+export type ProjectOutcome = 
+/**
+ *  Every chat its record held has been tried, and `back` of the `wanted` came back. The
+ *  ones that did not are listed as chats that would not start, as they always were.
+ */
+{ kind: "ready"; back: number; wanted: number } | 
+/**
+ *  Nothing was put back, and this is why: the record could not be read, or the launch's
+ *  gate refused (#2004).
+ */
+{ kind: "failed"; error: string };
+
+/**  What `project-ready` carries: a project, and how its opening came out. */
+export type ProjectReady = {
+	plane: PlaneId,
+	outcome: ProjectOutcome,
 };
 
 /**  Both files. */

@@ -26,7 +26,7 @@ apart.
   row said twice. Where the chat came from, the skills warning and the sandbox follow (#5204).
 - **One model answers both lines.** The pane head's pure model (`paneHead.ts`) answers, for a
   pane's kind and width, the pane line's parts and the foot's parts, and the pane draws what it
-  answers. The head's actions join it as #5203 and #5206 settle them. A shell and a one-job program
+  answers. The head's actions are in its answer too (#5206). A shell and a one-job program
   draw no foot and keep harness · workspace on their heads. The head's drop order loses its
   workspace step, and the foot gets its own (#5206).
 - **The foot is a themable family of its own**, `pane-foot` (ADR 0103, ADR 0104), drawn in look
@@ -44,6 +44,10 @@ A chat's terminal is one foot's height shorter. The foot is drawn whether or not
 known yet, so that cost is paid once and the terminal never moves when the first usage arrives.
 The per-turn bars said each turn's cache share on their tooltips; that history is still in the
 chat's record, and no surface draws it now.
+
+## Amendments
+
+The amendments to this decision are files of their own in [`0111/`](0111/), one per ruling.
 
 ## The words
 

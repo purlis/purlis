@@ -1659,6 +1659,7 @@ function cloneItems({
     const marks = [
       ...(piece.stale ? ["stale"] : piece.wired ? [] : ["unwired"]),
       ...(piece.said ? [piece.said] : []),
+      ...(piece.reading ? ["reading"] : []),
       ...(piece.unread ? ["unreadable"] : []),
       ...(piece.unclaimed ? [`unclaimed ${piece.unclaimed}`] : []),
     ].join(", ");
@@ -1716,6 +1717,14 @@ function cloneItems({
             {/* A folder purlis could not read: said, with the core's sentence for why (#1476),
                 never drawn as one with nothing to commit. The row is one line, so the
                 sentence is the label's tooltip. */}
+            {/* A folder whose state is still being read (#5321): the list names every folder
+                first and reads each one after, so a row says so rather than pass for one with
+                nothing to say. */}
+            {piece.reading && (
+              <span className="label said" data-testid="piece-reading">
+                reading…
+              </span>
+            )}
             {piece.unread && (
               <span className="label said" data-testid="piece-unread">
                 unreadable

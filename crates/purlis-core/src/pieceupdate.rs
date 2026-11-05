@@ -23,6 +23,9 @@
 //!   sandboxed chat, the rebase is judged by the clone guard's own rules first
 //!   ([`crate::cloneupdate::judged`]) and refused where it would write a file the chat's
 //!   sandbox denies, naming it. A folder with uncommitted changes is refused.
+//! - **update `--merge`** (#5253, [`merge`]): the same fetch and the same base, merged into the
+//!   branch instead of its commits being replayed, so nothing is rewritten and a plain push
+//!   follows. It stops, goes on and goes back as a rebase does.
 //! - **update, standing in a workspace's clone** (#3831): fetch the remote its branch follows,
 //!   and fast-forward the branch to it or rebase the branch's own commits onto it, with the
 //!   same `--continue` and `--abort`, the same judging for a sandboxed chat, and the same
@@ -38,8 +41,8 @@
 //!   cannot read refuses it, naming what to do. A plain push does this; `--force-with-lease`
 //!   asks for nothing more, so no chat ever needs a force push approved.
 //!
-//! Every git call goes through the hardened runner. Nothing here amends, resets, merges or
-//! pushes another branch.
+//! Every git call goes through the hardened runner. Nothing here amends or resets, and nothing
+//! merges into or pushes another branch.
 
 use std::path::{Path, PathBuf};
 
@@ -49,6 +52,8 @@ use crate::hookwire::UpdateStep;
 use crate::planegit::ondisk;
 use crate::repocmd::Say;
 use crate::worktree::{self, git, name};
+
+mod merge;
 
 /// The branch folder a verb acts on.
 pub struct Piece<'a> {
@@ -92,7 +97,7 @@ const REBASE: [&str; 14] = [
 pub fn update(piece: &Piece, step: &UpdateStep, reach: &Reach, say: &mut dyn FnMut(Say)) -> u8 {
     mended(piece.root, piece.ws, piece.repo, say);
     // A stopped rebase leaves the folder on no branch: going on or back needs none.
-    let on_a_branch = matches!(step, UpdateStep::Start { .. });
+    let on_a_branch = matches!(step, UpdateStep::Start { .. } | UpdateStep::Merge { .. });
     let ran = Here::of(piece, on_a_branch).and_then(|here| {
         let lock = broker::lock_of(&here.git_dir);
         let _held = lock
@@ -100,8 +105,19 @@ pub fn update(piece: &Piece, step: &UpdateStep, reach: &Reach, say: &mut dyn FnM
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         match step {
             UpdateStep::Start { base } => start(piece, &here, base.as_deref(), reach, say),
+            UpdateStep::Merge {
+                base,
+                take_base_baselines,
+            } => merge::start(
+                piece,
+                &here,
+                base.as_deref(),
+                *take_base_baselines,
+                reach,
+                say,
+            ),
             UpdateStep::Continue => go_on(&here, say),
-            UpdateStep::Abort => abort(&here, say),
+            UpdateStep::Abort => abort(&here, reach.sandboxed_at.map(|at| (piece.root, at)), say),
         }
     });
     ran.unwrap_or_else(|why| {
@@ -135,8 +151,13 @@ pub fn update_clone(
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         match step {
             UpdateStep::Start { base } => start_clone(at, &here, base.as_deref(), reach, say),
+            UpdateStep::Merge { .. } => Err(format!(
+                "{} is a clone, brought up to the remote branch its own branch follows: `--merge` \
+                 is for a branch folder. Nothing was moved",
+                here.label
+            )),
             UpdateStep::Continue => go_on(&here, say),
-            UpdateStep::Abort => abort(&here, say),
+            UpdateStep::Abort => abort(&here, reach.sandboxed_at.map(|chat| (at.root, chat)), say),
         }
     });
     ran.unwrap_or_else(|why| {
@@ -386,14 +407,41 @@ fn stopped_said(here: &Here, git_said: &str, say: &mut dyn FnMut(Say)) -> u8 {
     1
 }
 
-fn start(
+/// The base an update brings in, fetched and brought up to its remote where it may be.
+struct Brought {
+    /// The branch the base names.
+    base: String,
+    /// What to bring in: the base, or its remote-tracking branch where the base is behind it and
+    /// checked out.
+    onto: String,
+    /// The base recorded when the piece was cut.
+    recorded: Option<String>,
+    /// The base to record once the piece is on it, where that is a new one.
+    new_base: Option<String>,
+    /// Where the base was brought up to in moving it, where it was moved.
+    moved_to: Option<String>,
+}
+
+impl Brought {
+    /// How a sentence says where the base's commits came from, or nothing.
+    fn said_from(&self) -> String {
+        match (&self.moved_to, self.onto.strip_prefix("refs/remotes/")) {
+            (Some(up), _) => format!(" ({} brought up to {up})", self.base),
+            (None, Some(up)) => format!(" (as {up} has it)"),
+            (None, None) => String::new(),
+        }
+    }
+}
+
+/// The base named, or the one recorded when the piece was cut, fetched and brought up to its
+/// remote where it may be. Nothing of the folder's own has moved yet.
+fn brought_up(
     piece: &Piece,
     here: &Here,
     base: Option<&str>,
     reach: &Reach,
     say: &mut dyn FnMut(Say),
-) -> Result<u8, String> {
-    unstopped_and_clean(here)?;
+) -> Result<Brought, String> {
     let base = match base {
         Some(base) => base.to_owned(),
         None => worktree::recorded_base(&here.clone, &here.branch).ok_or_else(|| {
@@ -437,26 +485,48 @@ fn start(
     // A base named in place of the recorded one is recorded once the piece is on it.
     let new_base =
         (recorded.as_deref() != Some(named.branch.as_str())).then(|| named.branch.clone());
+    Ok(Brought {
+        base: named.branch,
+        onto,
+        recorded,
+        new_base,
+        moved_to: fresh.moved_to,
+    })
+}
+
+fn start(
+    piece: &Piece,
+    here: &Here,
+    base: Option<&str>,
+    reach: &Reach,
+    say: &mut dyn FnMut(Say),
+) -> Result<u8, String> {
+    unstopped_and_clean(here)?;
+    let brought = brought_up(piece, here, base, reach, say)?;
     let own = Own {
-        recorded: recorded.as_deref(),
-        new_base: new_base.clone(),
+        recorded: brought.recorded.as_deref(),
+        new_base: brought.new_base.clone(),
     };
     let label = &here.label;
-    let base = &named.branch;
-    match rebased(piece.root, here, &onto, Leased::Piece, own, reach, say)? {
+    let base = &brought.base;
+    match rebased(
+        piece.root,
+        here,
+        &brought.onto,
+        Leased::Piece,
+        own,
+        reach,
+        say,
+    )? {
         Moved::Already => {
-            if let Some(base) = &new_base {
+            if let Some(base) = &brought.new_base {
                 rerecord(here, &here.branch, base, say);
             }
             say(Say::Done(format!("{label} is already on {base}").into()));
         }
         Moved::Stopped(code) => return Ok(code),
         Moved::Forward | Moved::Rebased => {
-            let moved = match (&fresh.moved_to, onto.strip_prefix("refs/remotes/")) {
-                (Some(up), _) => format!(" ({base} brought up to {up})"),
-                (None, Some(up)) => format!(" (as {up} has it)"),
-                (None, None) => String::new(),
-            };
+            let moved = brought.said_from();
             say(Say::Done(
                 format!("{label} is rebased onto {base}{moved}").into(),
             ));
@@ -782,6 +852,9 @@ const MARKER: &[u8] = b"<<<<<<< ";
 
 fn go_on(here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, String> {
     let label = &here.label;
+    if merge::is_stopped(here) {
+        return merge::go_on(here, say);
+    }
     let Some(stopped) =
         stopped_in(here).filter(|stopped| stopped.operation == Some(Operation::Rebase))
     else {
@@ -797,47 +870,7 @@ fn go_on(here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, String> {
     })?;
     let files = stopped.unmerged;
     if !files.is_empty() {
-        // Each resolved file is staged as the bytes looked at for a marker, read through its
-        // one open descriptor, so nothing is read again by its name.
-        // As a save: a resolved file with a second name is refused through its descriptor, so
-        // its bytes never reach the clone's object store (`planegit::ondisk`).
-        let rows = resolved(&here.folder, &files)?;
-        let held = ondisk::stage_rows(&here.folder, rows).map_err(|said| {
-            format!(
-                "git did not stage the resolved files: {}",
-                first_line(&said)
-            )
-        })?;
-        if let Some(refusal) = ondisk::refused_unstaged(&held, ondisk::PutBack::Conflicted(&files))
-        {
-            return Err(not_the_file(&refusal));
-        }
-        // Staged: where the index cannot be refreshed, whether each is the file on disk cannot
-        // be asked, and every one goes back in conflict.
-        if let Err(said) = ondisk::refresh(&here.folder, false)
-            && let Some(refusal) = ondisk::refused_into(
-                &here.folder,
-                &Err(said),
-                ondisk::PutBack::Conflicted(&files),
-            )
-        {
-            return Err(not_the_file(&refusal));
-        }
-        // And once staged: a resolved file that is not the file on disk now, with one name, is
-        // marked as conflicted again, and its blob taken out of the object store where nothing
-        // else reaches it. Only the files staged here are asked about: the rest of the index
-        // is the paused commit as git left it.
-        let ours: std::collections::HashSet<&str> = files.iter().map(String::as_str).collect();
-        let found = ondisk::not_as_staged(&here.folder).map(|held| {
-            held.into_iter()
-                .filter(|one| ours.contains(one.path.as_str()))
-                .collect()
-        });
-        if let Some(refusal) =
-            ondisk::refused_into(&here.folder, &found, ondisk::PutBack::Conflicted(&files))
-        {
-            return Err(not_the_file(&refusal));
-        }
+        stage_resolved(here, &files)?;
     }
     let mut args: Vec<&str> = REBASE.to_vec();
     args.extend(["rebase", "--continue"]);
@@ -855,6 +888,49 @@ fn go_on(here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, String> {
     NewBase::recorded(here, &record.branch, say);
     say(Say::Done(format!("{label} is rebased").into()));
     Ok(0)
+}
+
+/// The files git named as conflicted, staged once each is resolved, as a save stages a file, or
+/// why not: those refused are left as they were, in conflict.
+fn stage_resolved(here: &Here, files: &[String]) -> Result<(), String> {
+    // Each resolved file is staged as the bytes looked at for a marker, read through its
+    // one open descriptor, so nothing is read again by its name.
+    // As a save: a resolved file with a second name is refused through its descriptor, so
+    // its bytes never reach the clone's object store (`planegit::ondisk`).
+    let rows = resolved(&here.folder, files)?;
+    let held = ondisk::stage_rows(&here.folder, rows).map_err(|said| {
+        format!(
+            "git did not stage the resolved files: {}",
+            first_line(&said)
+        )
+    })?;
+    if let Some(refusal) = ondisk::refused_unstaged(&held, ondisk::PutBack::Conflicted(files)) {
+        return Err(not_the_file(&refusal));
+    }
+    // Staged: where the index cannot be refreshed, whether each is the file on disk cannot
+    // be asked, and every one goes back in conflict.
+    if let Err(said) = ondisk::refresh(&here.folder, false)
+        && let Some(refusal) =
+            ondisk::refused_into(&here.folder, &Err(said), ondisk::PutBack::Conflicted(files))
+    {
+        return Err(not_the_file(&refusal));
+    }
+    // And once staged: a resolved file that is not the file on disk now, with one name, is
+    // marked as conflicted again, and its blob taken out of the object store where nothing
+    // else reaches it. Only the files staged here are asked about: the rest of the index
+    // is the paused commit as git left it.
+    let ours: std::collections::HashSet<&str> = files.iter().map(String::as_str).collect();
+    let found = ondisk::not_as_staged(&here.folder).map(|held| {
+        held.into_iter()
+            .filter(|one| ours.contains(one.path.as_str()))
+            .collect()
+    });
+    if let Some(refusal) =
+        ondisk::refused_into(&here.folder, &found, ondisk::PutBack::Conflicted(files))
+    {
+        return Err(not_the_file(&refusal));
+    }
+    Ok(())
 }
 
 /// What `--continue` refused by `planegit::ondisk` says: a resolved file is not the one file
@@ -1243,8 +1319,15 @@ fn holds_marker(mut file: &std::fs::File) -> std::io::Result<bool> {
     }
 }
 
-fn abort(here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, String> {
+fn abort(
+    here: &Here,
+    sandboxed: Option<(&Path, &Path)>,
+    say: &mut dyn FnMut(Say),
+) -> Result<u8, String> {
     let label = &here.label;
+    if merge::is_stopped(here) {
+        return merge::abort(here, sandboxed, say);
+    }
     if !stopped_in(here).is_some_and(|stopped| stopped.operation == Some(Operation::Rebase)) {
         return Err(format!("no rebase is stopped in {label}"));
     }

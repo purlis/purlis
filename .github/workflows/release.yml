@@ -977,7 +977,7 @@ jobs:
         run: |
           set -euo pipefail
           {
-            echo "## ${{ matrix.platform }} — charter $VERSION"
+            echo "## ${{ matrix.platform }} — purlis $VERSION"
             echo
             if [ "$PUBLISH" = "true" ]; then
               echo "Built from \`${{ needs.plan.outputs.sha }}\`, **\`$PROFILE\` profile, published to the \`$CHANNEL\` channel**."
@@ -1344,7 +1344,7 @@ jobs:
             notes=$(cargo run --locked --quiet -p changelog -- "$VERSION" CHANGELOG.md)
           else
             base="https://github.com/$GITHUB_REPOSITORY/releases/download/dev"
-            notes="charter $VERSION, a dev build of $SHA."
+            notes="purlis $VERSION, a dev build of $SHA."
           fi
           mkdir -p manifest
           cargo run --locked --release -p release-manifest -- \
@@ -1586,7 +1586,7 @@ jobs:
             # `--verify-tag`: refuse unless the tag already exists on the remote. This command
             # can never create a tag, which is the operator's rule enforced by the tool.
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
-              --title "charter $VERSION" --notes-file "$RUNNER_TEMP/body.md" "${assets[@]}"
+              --title "purlis $VERSION" --notes-file "$RUNNER_TEMP/body.md" "${assets[@]}"
           fi
           # The weekly manifest beside it, the same bytes: only its download count differs
           # (OB-17, docs/updating.md, "Counting weekly users").
@@ -1632,9 +1632,9 @@ jobs:
           done
           tools/replace-release-assets.sh dev dist/dev.json dist/dev-weekly.json
           gh release edit dev --repo "$GITHUB_REPOSITORY" \
-            --notes "The rolling dev channel. Now: charter $VERSION, built from $SHA. Not a release — see the stable releases for those."
+            --notes "The rolling dev channel. Now: purlis $VERSION, built from $SHA. Not a release — see the stable releases for those."
           {
-            echo "## dev channel now serves charter $VERSION"
+            echo "## dev channel now serves purlis $VERSION"
             echo "Built from \`$SHA\`. Machines on the dev channel find it at their next check."
           } >> "$GITHUB_STEP_SUMMARY"
 

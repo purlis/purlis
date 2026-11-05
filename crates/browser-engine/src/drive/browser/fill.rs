@@ -229,13 +229,13 @@ impl Browser {
                 filled
             }
         };
-        answer.map(|answer| self.with_asked(answer))
+        self.kept_out(answer.map(|answer| self.with_asked(answer)))
     }
 
     fn filling(&self, fill: &SecretFill, hold: Arc<dyn FillHold>) -> Result<Answer, Refusal> {
         // What it fills is kept out before anything else, for the browser's life.
         let mut held = Kept::default();
-        held.run(&spellings(&fill.value));
+        held.run(&[fill.value.as_str()]);
         lock(&self.inner.state).keep_out_everywhere(&held);
         let target = &fill.target;
         let origin = fill.origin.as_str();
@@ -273,6 +273,14 @@ impl Browser {
         if self.frame_now(&at) != Some((document, Some(origin.to_owned()))) {
             return Err(changed(target, origin));
         }
+        // A window related to the page could read the field from its own document.
+        if lock(&self.inner.state).related_on_site(&at.page, origin) {
+            return Err(not_filled(format!(
+                "another window, on {origin} or on no site yet, is related to this page: it opened \
+                 the page, or the page opened it, and it could read the field, so nothing was \
+                 filled. Open the form with browser_open, in a page of its own, and fill it there"
+            )));
+        }
         // The browser reaches only this site while the page lives, from before the value goes in
         // (#5117): where it can't be held, nothing goes in.
         self.inner
@@ -307,7 +315,8 @@ impl Browser {
              read. While this page is open, the browser reaches only {origin}, and you press no \
              key and type or choose nothing in it: click the page's own button to send the \
              form. Its form goes to another site only by a redirect from {origin}'s own server. \
-             Once the page loads another document or is closed, it reaches as before",
+             Once the page loads another document or is closed, any window it opened or that \
+             opened it closes too, and the browser reaches as before",
             fill.key
         ));
         Ok(answer)
@@ -528,33 +537,6 @@ fn asks_each_time(target: &Ref) -> Refusal {
     ))
 }
 
-/// **The value, and how a page could spell it back** (#5116): as it is, percent-encoded as an
-/// address carries it, and form-encoded as a form sent by its address does. A page that puts
-/// the value into its address, or echoes it so spelled, shows the agent none of it. Each is
-/// wiped as it goes.
-pub(super) fn spellings(value: &str) -> Vec<zeroize::Zeroizing<String>> {
-    let encoded = |space: &str| {
-        let mut out = String::with_capacity(value.len() * 3);
-        for byte in value.bytes() {
-            match byte {
-                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                    out.push(char::from(byte));
-                }
-                b' ' => out.push_str(space),
-                _ => out.push_str(&format!("%{byte:02X}")),
-            }
-        }
-        zeroize::Zeroizing::new(out)
-    };
-    let mut all = vec![zeroize::Zeroizing::new(value.to_owned())];
-    for one in [encoded("%20"), encoded("+")] {
-        if !all.iter().any(|seen| **seen == *one) {
-            all.push(one);
-        }
-    }
-    all
-}
-
 /// A kind of field, in words.
 fn said_kind(kind: FieldKind) -> &'static str {
     match kind {
@@ -584,19 +566,6 @@ fn stale(target: &Ref) -> Refusal {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_value_is_kept_out_as_an_address_or_a_form_would_spell_it() {
-        let spelled: Vec<String> = spellings("sk+a/b c=")
-            .iter()
-            .map(|one| one.to_string())
-            .collect();
-        assert_eq!(
-            spelled,
-            ["sk+a/b c=", "sk%2Ba%2Fb%20c%3D", "sk%2Ba%2Fb+c%3D"]
-        );
-        assert_eq!(spellings("plain-word").len(), 1, "nothing spelled twice");
-    }
 
     #[test]
     fn a_label_is_one_plain_line_at_most_its_length() {

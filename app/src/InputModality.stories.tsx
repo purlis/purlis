@@ -3,7 +3,7 @@
 
 /**
  * **A story starts from the same input modality whatever the story before it did** (#5040,
- * `.storybook/modality.setup.ts`). The stories of a file run one after another on one page, and
+ * `.storybook/at-rest.setup.ts`). The stories of a file run one after another on one page, and
  * React Aria remembers on that page whether the last input was a key or a press: a control that
  * takes the focus draws its focus ring only when it was not a press. So without the setup, a
  * story's picture would show the ring when the story ran alone and lose it when the story before

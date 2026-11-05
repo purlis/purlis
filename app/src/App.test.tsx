@@ -92,8 +92,8 @@ const START_OPTIONS = {
 
 /** Opens a chat the way the operator does now: New chat, then a row, then Start.
  *
- *  New chat takes the focused pane (#4758), so a chat wanted beside the one in front gets a
- *  tab of its own first, from the strip's `+`, whose one pane is empty.
+ *  New chat fills an empty pane (#5289), so these give it one first, from the strip's `+`,
+ *  whose one pane is empty.
  *
  *  A harness starts only once a row is picked (ADR 0022) — the dialog shows even when one
  *  profile is available, because skipping it would bring back the harness nobody picked on

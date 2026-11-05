@@ -147,7 +147,13 @@ fn a_pool_this_machine_hasnt_got_is_refused() {
 
 #[test]
 fn by_hand_records_the_ticked_profiles_then_signs_in_each_that_needs_it() {
-    let see = by_hand("builds", &["home".into(), "work".into()], &["home".into()]).unwrap();
+    let see = by_hand(
+        "builds",
+        &["home".into(), "work".into()],
+        &[],
+        &["home".into()],
+    )
+    .unwrap();
     assert_eq!(
         see.text,
         "purlis pool add-profile builds home work\npurlis profile sign-in home --pool builds"
@@ -162,7 +168,7 @@ fn by_hand_records_the_ticked_profiles_then_signs_in_each_that_needs_it() {
 
 #[test]
 fn by_hand_with_nothing_to_record_only_signs_in() {
-    let see = by_hand("builds", &[], &["work".into()]).unwrap();
+    let see = by_hand("builds", &[], &[], &["work".into()]).unwrap();
     assert_eq!(see.text, "purlis profile sign-in work --pool builds");
     assert!(
         see.note
@@ -172,17 +178,81 @@ fn by_hand_with_nothing_to_record_only_signs_in() {
     );
 }
 
+/// **#5174**: in the button's order, and each profile on a line of its own, since each is
+/// confirmed on its own.
+#[test]
+fn by_hand_takes_each_unticked_profile_off_after_recording_and_before_signing_in() {
+    let see = by_hand(
+        "builds",
+        &["home".into()],
+        &["old".into(), "older".into()],
+        &["home".into()],
+    )
+    .unwrap();
+    assert_eq!(
+        see.text,
+        "purlis pool add-profile builds home\n\
+         purlis pool remove-profile builds old\n\
+         purlis pool remove-profile builds older\n\
+         purlis profile sign-in home --pool builds"
+    );
+    assert!(
+        see.note.contains("forgotten by the runner first"),
+        "{}",
+        see.note
+    );
+    assert!(see.note.contains("purlis window"), "{}", see.note);
+}
+
+#[test]
+fn by_hand_with_one_to_take_off_says_what_it_does_to_its_sign_in() {
+    let see = by_hand("builds", &[], &["old".into()], &[]).unwrap();
+    assert_eq!(see.text, "purlis pool remove-profile builds old");
+    assert!(
+        see.note.contains("its sign-in there with it"),
+        "{}",
+        see.note
+    );
+}
+
+#[test]
+fn only_a_profile_the_pool_keeps_can_be_taken_off() {
+    let machine = a_machine(&["work", "home"]);
+    let config = machine.path();
+    runners::add_pool_profile(config, "builds", "work", None).unwrap();
+    assert_eq!(may_take_off(config, "builds", "work"), Ok(()));
+    let why = may_take_off(config, "builds", "home").unwrap_err();
+    assert!(why.contains("doesn't keep"), "{why}");
+    assert!(may_take_off(config, "elsewhere", "work").is_err());
+}
+
+/// **#5174**: what a pool that names none keeps depends on a project the line doesn't name.
+#[test]
+fn a_pool_that_names_none_gives_up_nothing_from_the_command() {
+    let machine = a_machine(&["work"]);
+    let why = may_take_off(machine.path(), "builds", "work").unwrap_err();
+    assert!(why.contains("Sign-ins step"), "{why}");
+}
+
 #[test]
 fn by_hand_with_nothing_to_do_shows_nothing() {
-    assert_eq!(by_hand("builds", &[], &[]), None);
+    assert_eq!(by_hand("builds", &[], &[], &[]), None);
 }
 
 #[test]
 fn by_hand_spells_no_word_that_isnt_a_name() {
-    let see = by_hand("Not A Pool;", &["$(x)".into()], &["$(x)".into()]).unwrap();
+    let see = by_hand(
+        "Not A Pool;",
+        &["$(x)".into()],
+        &["$(x)".into()],
+        &["$(x)".into()],
+    )
+    .unwrap();
     assert_eq!(
         see.text,
-        "purlis pool add-profile POOL PROFILE\npurlis profile sign-in PROFILE --pool POOL"
+        "purlis pool add-profile POOL PROFILE\n\
+         purlis pool remove-profile POOL PROFILE\n\
+         purlis profile sign-in PROFILE --pool POOL"
     );
 }
 

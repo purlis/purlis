@@ -293,8 +293,9 @@ curl's own `--variable %TOKEN` and an `--expand-` option (`--expand-header`, `--
   that has held nothing, and the chat and the person are told why. A login's values follow the same
   rules as a fill's. A
   login that does not go through has what it filled cleared, and the chat is told why. The chat
-  never gets the values: they are kept out of every snapshot, find, wait and screenshot of every
-  page of that browser for as long as it runs, and each field purlis filled is blanked, so a
+  never gets the values: they are kept out of every string and screenshot it is answered with, in
+  plain, URL-encoded, form-encoded and base64 forms, for every page of that browser for as long as
+  it runs (#5310), and each field purlis filled is blanked, so a
   show-password toggle shows nothing. From the first fill the browser reaches the login's
   origin alone; a chat that needs another site opens another browser. No file of the session is
   written. The chat chooses which declared login and nothing else; run as a command, the tool

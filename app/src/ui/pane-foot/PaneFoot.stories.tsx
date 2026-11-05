@@ -44,7 +44,7 @@ function Foot({
 }) {
   return (
     <Pane>
-      <PaneFoot>
+      <PaneFoot label="steward 3: where it runs and its context">
         <PaneFootStart>
           <span>Claude Code</span>
           <PaneFootSeparator />

@@ -24,9 +24,10 @@ Both browsers run every story: WebKit is the engine purlis ships in on macOS and
 
 **A story is drawn as it is when it runs alone.** The stories of a file share one page, so what
 one leaves behind could reach the next: React Aria's input modality, which decides whether a
-focused control draws its ring, is put back before each story (`app/.storybook/modality.setup.ts`,
-#5040), and so is the window's size after a story that resized it (`inAWindow`,
-`cell.setup.ts`).
+focused control draws its ring, is put back before each story (#5040), the engine's pointer goes
+to the window's far corner before each story, so a story hovers only what it points at (#5063), both
+in `app/.storybook/at-rest.setup.ts`, and the window's size is put back after a story that resized
+it (`inAWindow`, `cell.setup.ts`).
 
 ## The theme matrix
 

@@ -55,6 +55,10 @@ export function SecretFillSite({ fill }: { fill: FillShown }) {
           ? "purlis works the code out from the seed as it fills, and the page and the chat never see the seed."
           : "purlis fills it there and nowhere else, and the chat never sees the value."}
       </p>
+      <p className="ui-text-meta" data-testid="fill-site-receives">
+        {fill.site} will receive this {fill.code ? "code" : "value"} and can send it to its servers.
+        Approve only for a site you'd type it into yourself.
+      </p>
       {fill.warnings.map((warning) => (
         <p key={warning} className="login-site-warning">
           {warning}

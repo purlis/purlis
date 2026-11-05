@@ -334,6 +334,26 @@ fn a_login_page_with_no_form_for_a_clean_browser_is_said_by_its_own_kind() {
     );
 }
 
+/// #5272, #5310: what the no-form answer says leaves by the way every answer does. A user name that
+/// is a word of that sentence is taken out of it, as a site's name holding one would be.
+#[test]
+fn a_login_s_no_form_answer_holds_no_value_it_filled() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    open(&browser, "clean-earlier-session.html");
+    let login = Login {
+        user: Some("clearing".to_owned().into()),
+        ..in_a_used_browser("clean-earlier-session.html")
+    };
+    let ended = browser.log_in(&login, binds()).expect("the login runs");
+    let Err(Refusal::NoFormOnCleanLoad(why)) = &ended.outcome else {
+        panic!("{}", ended_as(&ended.outcome));
+    };
+    assert!(why.contains("no login form appeared"), "{why}");
+    assert!(!why.contains("clearing"), "{why}");
+}
+
 /// #5121, SF-7: a value is kept out as a form spells it, as any fill's is, where the page it sent
 /// the form to writes what its address carries into the page.
 #[test]

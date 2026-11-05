@@ -3,7 +3,7 @@
 
 //! How a page holding a secret purlis filled may leave for another site (#5230; the person's
 //! rulings SF-14 and SF-15 on #5096), on a real engine and two sites: the sign-in's steps of the
-//! ticket, and each thing that stays refused. The fixture site stands in for the browser's reach
+//! ticket, each thing that stays refused, and the windows related to the page. The fixture site stands in for the browser's reach
 //! proxy, held as a fill's holder holds that ([`Site::held_to`]), so what reached a site is what
 //! its server was sent.
 //!
@@ -21,7 +21,8 @@ use common::drive::{call, find, next_id, ref_on, sees, snapshot};
 use common::site::{Held, Site, started_judged};
 use purlis_browser_engine::WebAddress;
 use purlis_browser_engine::drive::{
-    Answer, Browser, Call, FillHold, Gate, Judge, Leaving, Outbound, Ref, SecretFill,
+    Answer, Browser, Call, Content, FillHold, Gate, Judge, Leaving, Outbound, PageId, Ref,
+    SecretFill,
 };
 
 const VALUE: &str = "fixture-key-5230";
@@ -102,9 +103,9 @@ impl FillHold for Holder {
         });
     }
 
-    fn may_leave_for(&self, address: &str, been_on: bool) -> Leaving {
+    fn may_leave_for(&self, address: &str, chain_began: bool) -> Leaving {
         let host = host_of(address);
-        if been_on || self.answered.lock().unwrap().contains(&host) {
+        if chain_began || self.answered.lock().unwrap().contains(&host) {
             return Leaving::Go;
         }
         self.told.lock().unwrap().push(format!("asked {host}"));
@@ -135,8 +136,8 @@ fn redirecting_to(from: &str, to: &str) -> String {
     format!("http://{from}/redirect?to={to}")
 }
 
-/// Opens the sign-in form as an app sends a browser to it: by `app`'s redirect, so the browser was
-/// on `app` though it never showed a page of it.
+/// Opens the sign-in form as an app sends a browser to it: by `app`'s redirect, so the chain
+/// leading to it began on `app`, though it never showed a page of it.
 fn the_app_sends_it_to_sign_in(browser: &Browser, app: &str) {
     opened(
         browser,
@@ -195,7 +196,7 @@ fn click(browser: &Browser, line: &str) -> Answer {
 /// The steps of #5230: the app sends the browser to sign in, the form is filled and sent, and the
 /// server's redirect takes the page back to the app by itself, its query whole.
 #[test]
-fn a_sign_in_redirected_to_a_site_the_browser_was_on_finishes_by_itself() {
+fn a_sign_in_redirected_to_the_site_its_chain_began_from_finishes_by_itself() {
     let Some((browser, _data, site)) = browser() else {
         return;
     };
@@ -217,9 +218,9 @@ fn a_sign_in_redirected_to_a_site_the_browser_was_on_finishes_by_itself() {
     );
 }
 
-/// A site the browser hasn't been on asks once; the page stays, and goes on once allowed.
+/// Any other site asks once; the page stays, and goes on once allowed.
 #[test]
-fn a_site_the_browser_has_not_been_on_asks_and_goes_on_once_allowed() {
+fn a_site_its_chain_did_not_begin_from_asks_and_goes_on_once_allowed() {
     let Some((browser, _data, site)) = browser() else {
         return;
     };
@@ -245,7 +246,7 @@ fn a_site_the_browser_has_not_been_on_asks_and_goes_on_once_allowed() {
     holder.released_within_ten_seconds();
 }
 
-/// A site a page moved on to by itself, while the chat's call waited on it, is no site it was on.
+/// A site a page moved on to by itself, while the chat's call waited on it, began no chain.
 #[test]
 fn a_site_a_page_moved_to_by_itself_still_asks() {
     let Some((browser, _data, site)) = browser() else {
@@ -448,5 +449,210 @@ fn a_load_that_fails_ends_the_hold_and_shows_purlis_s_own_page() {
     assert!(
         sees(&browser, "Landed on the other site"),
         "reaches as before"
+    );
+}
+
+/// The page the answer is on: what a chat goes back to.
+fn page_of(answer: &Answer) -> PageId {
+    answer.page.as_ref().expect("a page").id.clone()
+}
+
+fn pages_open(browser: &Browser) -> usize {
+    match call(browser, Call::Pages).content {
+        Content::Pages(pages) => pages.len(),
+        other => panic!("not pages: {other:?}"),
+    }
+}
+
+/// The page the agent is on now.
+fn current_page(browser: &Browser) -> PageId {
+    match call(browser, Call::Pages).content {
+        Content::Pages(pages) => {
+            let current = pages.into_iter().find(|page| page.current);
+            current.expect("a current page").id
+        }
+        other => panic!("not pages: {other:?}"),
+    }
+}
+
+/// A site an earlier load showed, in this page or another, is no part of this sign-in's chain.
+#[test]
+fn a_site_an_earlier_load_showed_asks() {
+    let Some((browser, _data, site)) = browser() else {
+        return;
+    };
+    let first = opened(&browser, "http://other.test/landed.html");
+    let address = WebAddress::parse("http://auth.fixture.test/held-form.html").unwrap();
+    call(
+        &browser,
+        Call::Navigate {
+            page: Some(page_of(&first)),
+            address,
+        },
+    );
+    assert!(sees(&browser, "Sign in"), "the form is open");
+    let holder = Holder::on(&site, None);
+    filled(&browser, &holder);
+
+    let answer = click(&browser, "button \"Sign in\"");
+
+    assert_eq!(answer.asked, ["other.test"], "the answer names the site");
+    assert!(sees(&browser, "Sign in"), "the page stays");
+}
+
+/// A site a chain only passed through asks: it began elsewhere.
+#[test]
+fn a_site_its_chain_passed_through_asks() {
+    let Some((browser, _data, site)) = browser() else {
+        return;
+    };
+    opened(
+        &browser,
+        &redirecting_to(
+            "third.test",
+            &redirecting_to(OTHER, "http://auth.fixture.test/held-form.html"),
+        ),
+    );
+    assert!(sees(&browser, "Sign in"), "the form is open");
+    let holder = Holder::on(&site, None);
+    filled(&browser, &holder);
+
+    let answer = click(&browser, "button \"Sign in\"");
+
+    assert_eq!(answer.asked, ["other.test"], "the answer names the site");
+}
+
+/// Going back to the form begins its chain again: the site the chat had gone on to is no part of
+/// this sign-in.
+#[test]
+fn going_back_to_a_sign_in_begins_its_chain_again() {
+    let Some((browser, _data, site)) = browser() else {
+        return;
+    };
+    let first = opened(&browser, "http://auth.fixture.test/held-form.html");
+    assert!(sees(&browser, "Sign in"), "the form is open");
+    let address = WebAddress::parse("http://other.test/landed.html").unwrap();
+    call(
+        &browser,
+        Call::Navigate {
+            page: Some(page_of(&first)),
+            address,
+        },
+    );
+    assert!(sees(&browser, "Landed on the other site"), "it went on");
+    call(
+        &browser,
+        Call::Back {
+            page: Some(page_of(&first)),
+        },
+    );
+    assert!(sees(&browser, "Sign in"), "the form is back");
+    let holder = Holder::on(&site, None);
+    filled(&browser, &holder);
+
+    let answer = click(&browser, "button \"Sign in\"");
+
+    assert_eq!(answer.asked, ["other.test"], "the answer names the site");
+}
+
+/// A link a page offers stays in the chain the chat began.
+#[test]
+fn a_link_followed_on_the_way_to_a_sign_in_keeps_its_chain() {
+    let Some((browser, _data, site)) = browser() else {
+        return;
+    };
+    opened(&browser, "http://other.test/opens-sign-in.html");
+    click(&browser, "link \"Sign in here\"");
+    assert!(sees(&browser, "API key"), "the form is open");
+    let holder = Holder::on(&site, None);
+    filled(&browser, &holder);
+
+    click(&browser, "button \"Sign in\"");
+
+    assert!(sees(&browser, "Landed on the other site"), "it landed");
+    assert_eq!(holder.said(), ["held", "released"], "nobody was asked");
+}
+
+/// A window the filled page opens is closed before the hold ends, and what it was set to send
+/// never goes.
+#[test]
+fn a_window_the_page_opened_is_gone_before_the_hold_ends() {
+    let Some((browser, _data, site)) = browser() else {
+        return;
+    };
+    the_app_sends_it_to_sign_in(&browser, OTHER);
+    let holder = Holder::on(&site, None);
+    filled(&browser, &holder);
+    let form = current_page(&browser);
+    let before = pages_open(&browser);
+    let opened = click(&browser, "button \"Open a window\"");
+    assert_eq!(opened.opened.len(), 1, "the window opened");
+    call(&browser, Call::SwitchPage { page: form });
+
+    click(&browser, "button \"Sign in\"");
+
+    assert!(sees(&browser, "Landed on the other site"), "it landed");
+    holder.released_within_ten_seconds();
+    std::thread::sleep(Duration::from_millis(1500));
+    assert_eq!(pages_open(&browser), before, "the window closed");
+    assert!(
+        !site.was_sent("GET other.test/from-a-window"),
+        "nothing it was set to send went"
+    );
+}
+
+/// A fill is refused beside a blank window the page opened: it could read the field.
+#[test]
+fn a_fill_is_refused_beside_a_window_the_page_opened() {
+    let Some((browser, _data, site)) = browser() else {
+        return;
+    };
+    the_app_sends_it_to_sign_in(&browser, OTHER);
+    let form = current_page(&browser);
+    click(&browser, "button \"Open a window\"");
+    call(&browser, Call::SwitchPage { page: form });
+    let holder = Holder::on(&site, None);
+    let fill = SecretFill {
+        target: ref_of(&browser, "textbox \"API key\""),
+        origin: "http://auth.fixture.test".to_owned(),
+        key: "the-api-key".to_owned(),
+        value: VALUE.to_owned().into(),
+        multi_line: false,
+    };
+
+    let filled = browser.fill_secret(
+        browser.epoch(),
+        &fill,
+        Arc::clone(&holder) as Arc<dyn FillHold>,
+    );
+
+    assert!(filled.is_err(), "nothing was filled");
+    assert!(holder.said().is_empty(), "nothing was held");
+}
+
+/// The window that opened the filled page, on another site, closes when the page is done, and a
+/// window's chain begins where its opener's did.
+#[test]
+fn the_window_that_opened_the_page_is_gone_before_the_hold_ends() {
+    let Some((browser, _data, site)) = browser() else {
+        return;
+    };
+    opened(&browser, "http://other.test/opens-sign-in.html");
+    let before = pages_open(&browser);
+    let window = click(&browser, "button \"Sign in in a window\"");
+    assert_eq!(window.opened.len(), 1, "the window opened");
+    assert!(sees(&browser, "API key"), "the form is open");
+    let holder = Holder::on(&site, None);
+    filled(&browser, &holder);
+
+    click(&browser, "button \"Sign in\"");
+
+    assert!(sees(&browser, "Landed on the other site"), "it landed");
+    holder.released_within_ten_seconds();
+    assert_eq!(holder.said(), ["held", "released"], "nobody was asked");
+    assert_eq!(
+        pages_open(&browser),
+        before,
+        "its opener closed, and the window is left"
     );
 }

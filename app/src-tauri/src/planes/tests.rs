@@ -537,6 +537,127 @@ fn a_second_open_of_a_project_waits_for_its_sweep_and_sweeps_nothing() {
     );
 }
 
+/// #5320: building a project as it opens holds up no other project. While one project's
+/// opening is slow, another open project's data requests, which each ask the registry for it
+/// first, answer; and a third project opens.
+#[test]
+fn another_open_project_answers_while_one_project_is_slow_to_open() {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let dir = tempfile::tempdir().expect("a directory");
+    let [slow, open, third] = ["slow", "open", "third"].map(|name| {
+        let root = dir.path().join(name);
+        std::fs::create_dir_all(&root).expect("a project's directory");
+        root.canonicalize().expect("resolved")
+    });
+    let (entered, building) = mpsc::channel::<()>();
+    let (release, released) = mpsc::channel::<()>();
+    let released = Mutex::new(released);
+    let held_at = slow.clone();
+    let planes = Arc::new(planes().building_with(Arc::new(move |root| {
+        if root == held_at {
+            let _ = entered.send(());
+            let _ = released
+                .lock()
+                .expect("the release")
+                .recv_timeout(Duration::from_secs(60));
+        }
+    })));
+    let open_id = planes.open(&open);
+
+    let opening_slow = std::thread::spawn({
+        let (planes, slow) = (Arc::clone(&planes), slow.clone());
+        move || planes.open(&slow)
+    });
+    building
+        .recv_timeout(Duration::from_secs(30))
+        .expect("the slow project has begun to open");
+
+    let (answered, answers) = mpsc::channel();
+    std::thread::spawn({
+        let (planes, open_id) = (Arc::clone(&planes), open_id.clone());
+        move || {
+            let root = planes.held(&open_id).map(|held| held.root().to_path_buf());
+            let third = planes.open(&third);
+            let _ = answered.send((root, third, planes.open_now()));
+        }
+    });
+    let answer = answers.recv_timeout(Duration::from_secs(10));
+    release.send(()).expect("released");
+    let (root, third_id, open_meanwhile) =
+        answer.expect("the open project answers while the slow one opens");
+    assert_eq!(root.as_deref(), Ok(open.as_path()));
+    let mut meanwhile = vec![open_id.clone(), third_id.clone()];
+    meanwhile.sort_by(|one, two| one.0.cmp(&two.0));
+    assert_eq!(
+        open_meanwhile, meanwhile,
+        "the slow project is not held until it has opened"
+    );
+
+    let slow_id = opening_slow.join().expect("the slow project opens");
+    let mut all = vec![slow_id, open_id, third_id];
+    all.sort_by(|one, two| one.0.cmp(&two.0));
+    assert_eq!(planes.open_now(), all);
+}
+
+/// #5320: with the registry free while a project is built, a second open of the same project
+/// still waits for the first and builds nothing: the project is opened once.
+#[test]
+fn a_project_opened_twice_at_once_is_built_once() {
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = dir.path().canonicalize().expect("resolved");
+    let (entered, building) = mpsc::channel::<()>();
+    let (release, released) = mpsc::channel::<()>();
+    let released = Mutex::new(released);
+    let builds = Arc::new(AtomicUsize::new(0));
+    let planes = Arc::new(planes().building_with(Arc::new({
+        let builds = Arc::clone(&builds);
+        move |_| {
+            if builds.fetch_add(1, Ordering::SeqCst) == 0 {
+                let _ = entered.send(());
+                let _ = released
+                    .lock()
+                    .expect("the release")
+                    .recv_timeout(Duration::from_secs(60));
+            }
+        }
+    })));
+
+    let first = std::thread::spawn({
+        let (planes, root) = (Arc::clone(&planes), root.clone());
+        move || planes.open(&root)
+    });
+    building
+        .recv_timeout(Duration::from_secs(30))
+        .expect("the first open has begun to build");
+    let second = std::thread::spawn({
+        let (planes, root) = (Arc::clone(&planes), root.clone());
+        move || planes.open(&root)
+    });
+    // Long enough for an open that does not wait to build and hold the project.
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(!second.is_finished(), "the second open waits for the first");
+    assert!(planes.open_now().is_empty(), "nothing is held mid-build");
+
+    release.send(()).expect("released");
+    let (one, two) = (
+        first.join().expect("opened"),
+        second.join().expect("opened"),
+    );
+    assert_eq!(one, two, "one project, one id");
+    assert_eq!(
+        builds.load(Ordering::SeqCst),
+        1,
+        "the project was built once"
+    );
+    assert_eq!(planes.open_now(), vec![one]);
+}
+
 #[test]
 fn opening_a_plane_does_not_run_what_its_record_names() {
     // `.charter/app/reopen.json` is an execution input: putting it back starts the

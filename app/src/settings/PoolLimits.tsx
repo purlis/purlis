@@ -30,10 +30,13 @@ const typedOf = (row: PoolLimitRow, value: number): string =>
 /** **Replace pool {pool}'s runner?**, asked before it is: what happens to its running chats. */
 export function ReplaceRunner({
   pool,
+  onCurrentImage = false,
   onCancel,
   onReplace,
 }: {
   pool: string;
+  /** The new runner is on the current image, which the old one is not (#5175). */
+  onCurrentImage?: boolean;
   onCancel: () => void;
   onReplace: () => void;
 }) {
@@ -41,7 +44,13 @@ export function ReplaceRunner({
     <AlertDialog
       onClose={onCancel}
       title={`Replace pool ${pool}'s runner?`}
-      description={<p className="came-back">{REPLACE_SAID}</p>}
+      description={
+        <p className="came-back">
+          {onCurrentImage
+            ? REPLACE_SAID.replace("a new runner held", "a new runner on the current image, held")
+            : REPLACE_SAID}
+        </p>
+      }
       main={{ children: "Replace the runner", onPress: onReplace }}
     />
   );
