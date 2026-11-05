@@ -366,6 +366,7 @@ impl Chat {
         let never_used = |program: &str| {
             self.apart.iter().any(|one| one == program)
                 && !self.ended.iter().any(|one| one == program)
+                && !self.pinned.iter().any(|one| one == program)
         };
         let current = self
             .current
@@ -373,7 +374,7 @@ impl Chat {
             .filter(|name| self.program(name).is_some_and(|one| never_used(&one)));
         match current {
             Some(name) => Some(name.to_owned()),
-            None if at_the_limit || self.browsers.len() < 99 => self
+            None if at_the_limit => self
                 .browsers
                 .iter()
                 .rev()
@@ -1027,7 +1028,9 @@ impl ChatBrowsers {
     /// **`program` is no longer a browser its chat made and never used** (#5296): the person took
     /// it over, or the chat asked them about it, which no later call of the chat's undoes.
     pub fn no_longer_unused(&self, program: &str) {
-        let _ = (self, program);
+        for chat in self.lock().values_mut() {
+            chat.apart.retain(|one| one != program);
+        }
     }
 
     /// **Stops each chat's browser unused for the idle time** (#2023), at `now`: one neither
@@ -1060,11 +1063,12 @@ impl ChatBrowsers {
         };
         let driving = {
             // The chats' lock first: a refusal at the limit reads who drives under it (#5296).
+            let chats = self.lock();
             let mut driving = self
                 .person_drives
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner);
-            let chats = self.lock();
+            // One no chat has any more is forgotten.
             driving.retain(|program| {
                 chats
                     .values()
@@ -1350,14 +1354,18 @@ impl ChatBrowsers {
         else {
             return None;
         };
-        let _ = (persona, read);
+        if !read.opens {
+            return None;
+        }
         let (closing, name) = {
             let mut chats = self.lock();
             let open =
                 self.endings().browsers.len() + chats.values().map(Chat::running).sum::<usize>();
             let at_the_limit = open >= (self.limits)().per_project;
             let chat = chats.get_mut(&browse.chat)?;
-            if !matches!(chat.posture, Posture::Allowed { .. }) {
+            if !matches!(chat.posture, Posture::Allowed { .. })
+                || self.holding_login(chat, persona, login, read).is_some()
+            {
                 return None;
             }
             let name = chat.to_close_for_a_kept_login(at_the_limit)?;
