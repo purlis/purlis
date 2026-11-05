@@ -288,9 +288,6 @@ export function PaneFrame({
           after it is one Tab never reaches (charter-app#189). */}
       <div className="pane-top">
         {strip}
-        {/* **A task's question, as a quiz at the top of the pane** (#4565): above the pane's
-            head, where the reviewed prototype drew it, so the terminal's input never moves for it. */}
-        <QuizBand plane={plane} session={session} />
         <PaneDropsOf.Provider value={drops}>
           <PaneHead
             grip={!oneJob}
@@ -420,7 +417,15 @@ export function PaneFrame({
         {/* **The band under the header** (#4754): a Notice arriving never moves the header. */}
         <PaneNotices
           band={pane === undefined ? undefined : paneBand(plane, pane)}
-          notices={notices}
+          notices={
+            <>
+              {/* **A task's question, as a quiz, first in the band under the head** (#4565,
+                  #5213): one of what waits on the person here, folded by the band's setting,
+                  and above the terminal, so its input never moves for it. */}
+              <QuizBand plane={plane} session={session} />
+              {notices}
+            </>
+          }
           asked={asked}
           others={others}
           onShowChat={onShowChat}

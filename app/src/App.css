@@ -6247,14 +6247,11 @@ nav.piece-files-head {
   margin: var(--space-2) 0;
 }
 
-/* The task's own words, as text: line breaks kept, a long word broken. */
+/* The task's own words, a chat's text (`ChatText`, which keeps their lines), marked as theirs. */
 .answer-asked {
-  margin: 0;
   padding-inline-start: var(--space-3);
   border-inline-start: 2px solid var(--border-subtle);
   color: var(--text-primary);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
 }
 
 .answer-text {

@@ -13,10 +13,12 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 import type { Shown } from "./bindings";
+import { NoticePaneRow } from "./Notice";
 import { QuestionsHere } from "./QuestionsHere";
-import { QuizBand, QuizPlaces } from "./QuizBand";
+import { FIRST_LINE, QuizBand, QuizPlaces } from "./QuizBand";
 import { forgetThisLaunch } from "./regions";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
+import { CLOSE_QUIZ } from "./TaskQuiz";
 import { TextArea } from "./ui/field/Field";
 import { setWhereYouAnswer } from "./whereYouAnswer";
 
@@ -62,9 +64,11 @@ function TerminalStandIn() {
   return <TextArea aria-label="Terminal of steward 4" rows={4} value={text} onChange={setText} />;
 }
 
-/** The steward's pane: the band at its top, and a stand-in for its terminal under it. As tall as
- *  a window's pane, since the top takes at most about half of it and the quiz shows whole. */
-function StewardsPane({ asks }: { asks: Shown[] }) {
+/** The steward's pane: a stand-in for its head, the notices band under it with the quiz first in
+ *  it (#5213), and a stand-in for its terminal. As tall as a window's pane, since the top takes at
+ *  most about half of it and the quiz shows whole. `minimised` hands the band a bell to fold
+ *  into, minimised; without it the band shows all it holds. */
+function StewardsPane({ asks, minimised }: { asks: Shown[]; minimised?: boolean }) {
   return (
     <QuizPlaces.Provider
       value={{
@@ -79,7 +83,18 @@ function StewardsPane({ asks }: { asks: Shown[] }) {
           style={{ display: "flex", flexDirection: "column", inlineSize: 760, blockSize: 680 }}
         >
           <div className="pane-top">
-            <QuizBand plane="/plane" session={4} />
+            <div className="pane-head" data-testid="pane-head">
+              <span className="ui-text-meta">Claude Code · smart-ide</span>
+            </div>
+            <NoticePaneRow
+              bell={
+                minimised === undefined
+                  ? undefined
+                  : { minimised, minimise: () => {}, onHolds: () => {}, focus: () => {} }
+              }
+            >
+              <QuizBand plane="/plane" session={4} />
+            </NoticePaneRow>
           </div>
           <div className="pane-body">
             <TerminalStandIn />
@@ -110,14 +125,23 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/** Whether two parts of the band are drawn apart: neither covers any of the other. */
+function apart(one: Element, other: Element): boolean {
+  const a = one.getBoundingClientRect();
+  const b = other.getBoundingClientRect();
+  return a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top;
+}
+
 const terminal = (canvas: HTMLElement) => within(canvas).getByLabelText("Terminal of steward 4");
 const box = (canvas: HTMLElement) => within(canvas).getByRole("textbox", { name: "Your answer" });
 
 /**
- * **The first question, with the choice offered once above it**: a quiet line, never a dialog,
- * with Answer from each session and Keep this. The quiz says who asks, why it reached you, the
- * asking chat's note as its own, and how long it has waited. Typing in the terminal carries on
- * while it arrives; Tab walks the line's answers. The picture is the band at rest.
+ * **The first question, with the note above it said once** (#5213): a quiet note, never a dialog,
+ * saying questions now come here, with Change and its ×. The quiz says who asks, why it reached
+ * you, the asking chat's note as its own, and how long it has waited, and closes. Nothing in the
+ * band is drawn over another part: the note's ways out, the quiz's title and its close each stand
+ * apart. Typing in the terminal carries on while it arrives; Tab walks the note's ways out. The
+ * picture is the band at rest.
  */
 export const FirstQuestionOffersTheChoice: Story = {
   beforeEach: () => {
@@ -126,22 +150,26 @@ export const FirstQuestionOffersTheChoice: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(
-      canvas.getByText("Questions from tasks come to this tab, so you answer them in one place."),
-    ).toBeVisible();
+    await expect(canvas.getByText(FIRST_LINE)).toBeVisible();
     const quiz = canvas.getByRole("group", { name: "developer 7 asks" });
+    const title = within(quiz).getByText("developer 7 asks");
+    const close = within(quiz).getByRole("button", { name: CLOSE_QUIZ });
+    const change = canvas.getByRole("button", { name: "Change" });
+    const dismiss = canvas.getByRole("button", { name: "Dismiss" });
+    for (const way of [change, dismiss, close]) await expect(apart(way, title)).toBe(true);
+    await expect(apart(change, quiz)).toBe(true);
+    await expect(apart(dismiss, quiz)).toBe(true);
     await expect(quiz).toHaveTextContent("steward 4 passed this on.");
     await expect(quiz).toHaveTextContent("steward 4's note");
     await waitFor(() => expect(box(canvasElement)).toBeEnabled());
     // It never took the keyboard: whatever had it still has it.
     await expect(box(canvasElement)).not.toHaveFocus();
-    const each = canvas.getByRole("button", { name: "Answer from each session" });
-    each.focus();
-    await untilFocused(() => each, "on Answer from each session");
+    change.focus();
+    await untilFocused(() => change, "on Change");
     await userEvent.tab();
-    await untilFocused(() => canvas.getByRole("button", { name: "Keep this" }), "on Keep this");
+    await untilFocused(() => dismiss, "on the note's Dismiss");
     expectFocusInSight();
-    canvas.getByRole("button", { name: "Keep this" }).blur();
+    dismiss.blur();
   },
 };
 
@@ -159,7 +187,7 @@ export const OneAtATimeWithACount: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByText("2 more")).toBeVisible();
-    await expect(canvas.queryByText(/Questions from tasks come to this tab/)).toBeNull();
+    await expect(canvas.queryByText(FIRST_LINE)).toBeNull();
     await waitFor(() => expect(box(canvasElement)).toBeEnabled());
     terminal(canvasElement).focus();
     await userEvent.keyboard("pnpm te");
@@ -176,6 +204,90 @@ export const OneAtATimeWithACount: Story = {
     canvas.getByRole("button", { name: "Open task" }).blur();
     await userEvent.clear(terminal(canvasElement));
     terminal(canvasElement).blur();
+  },
+};
+
+/** A question a task wrote over several lines, as the core gives it: its line ends as themselves. */
+const OVER_LINES =
+  "Which branch should the fix land on?\n\n- **main**, where the next release is cut\n- the fork the person keeps";
+
+/**
+ * **A question over several lines is drawn over its lines** (#5213): each line end the task
+ * wrote starts a line, and no mark stands in for one. The picture is the quiz at rest.
+ */
+export const AQuestionOverSeveralLines: Story = {
+  args: { asks: [question(7, "developer 7", NOW - 125, { says: OVER_LINES })] },
+  beforeEach: () => {
+    pausedOnItsQuestion();
+    setWhereYouAnswer({ answer: "top", offered: true });
+  },
+  play: async ({ canvasElement }) => {
+    const quiz = within(canvasElement).getByRole("group", { name: "developer 7 asks" });
+    await expect(quiz).not.toHaveTextContent(/⟦U\+|\*\*/);
+    // Drawn over its lines: the question's line above its list, each of the list's on its own.
+    const line = within(quiz).getByText("Which branch should the fix land on?");
+    const [first, second] = within(quiz).getAllByRole("listitem");
+    await expect(within(quiz).getByText("main").tagName).toBe("STRONG");
+    await expect(first.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      line.getBoundingClientRect().bottom,
+    );
+    await expect(second.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      first.getBoundingClientRect().bottom,
+    );
+    await waitFor(() => expect(box(canvasElement)).toBeEnabled());
+  },
+};
+
+/**
+ * **Closing a question here** (#5213): Close puts it away from this pane, unanswered, and the one
+ * waiting behind it comes after the pause. The picture is the next question.
+ */
+export const ClosingOneShowsTheNext: Story = {
+  args: { asks: THREE },
+  beforeEach: () => {
+    pausedOnItsQuestion();
+    setWhereYouAnswer({ answer: "top", offered: true });
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const quiz = canvas.getByRole("group", { name: "developer 7 asks" });
+    const close = within(quiz).getByRole("button", { name: CLOSE_QUIZ });
+    close.focus();
+    await untilFocused(() => close, "on the quiz's Close");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(canvas.queryByRole("group", { name: "developer 7 asks" })).toBeNull(),
+    );
+    await waitFor(
+      () => expect(canvas.getByRole("group", { name: "designer 3 asks" })).toBeVisible(),
+      { timeout: 5000 },
+    );
+    await waitFor(() => expect(box(canvasElement)).toBeEnabled());
+  },
+};
+
+/**
+ * **Folded with the pane's notices** (#5213): minimised, which every pane's notices are by
+ * default, the note folds into the pane's bell and the quiz stands, as every ask does, with its
+ * Close in reach. The picture is the band minimised.
+ */
+export const FoldedWithThePanesNotices: Story = {
+  args: { asks: [FIRST], minimised: true },
+  beforeEach: () => {
+    pausedOnItsQuestion();
+    setWhereYouAnswer({ answer: "top", offered: false });
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const quiz = canvas.getByRole("group", { name: "developer 7 asks" });
+    await expect(quiz).toBeVisible();
+    await waitFor(() => expect(canvas.getByText(FIRST_LINE)).not.toBeVisible());
+    await waitFor(() => expect(box(canvasElement)).toBeEnabled());
+    const close = within(quiz).getByRole("button", { name: CLOSE_QUIZ });
+    close.focus();
+    await untilFocused(() => close, "on the quiz's Close");
+    expectFocusInSight();
+    close.blur();
   },
 };
 

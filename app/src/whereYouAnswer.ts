@@ -6,8 +6,8 @@ import { layoutPref } from "./layoutPref";
 
 /**
  * **Where you answer** (#4565, spec #4551, ADR 0107): where the person sees a task question that
- * has reached them. **From the top**, the default: one at a time, as a quiz at the top of the
- * pane of the nearest chat above it with a tab (`sessionOf`, as a task's session tab is defined).
+ * has reached them. **From the top**, the default: one at a time, as a quiz in the notices band of
+ * the pane of the nearest chat above it with a tab (`sessionOf`, as a task's session tab is defined).
  * **From each session**: in its task's own pane. It moves what the person sees, never who is
  * asked first, and nothing is rerouted when it changes: every surface reads it as it draws. Any
  * task can still be opened and answered in its own pane either way, and the question stays in the
@@ -15,13 +15,13 @@ import { layoutPref } from "./layoutPref";
  *
  * **Kept in the layout file** (`layout.json`, `regions.ts`), under `questions`, beside how the
  * Chats list is drawn: how one person likes to be asked, on this machine. `offered` is whether
- * the quiet line above the first question has been answered, so it is offered once.
+ * the note above the first question has been put away, so it shows once.
  */
 export type WhereYouAnswer = "top" | "each";
 
 export type WhereYouAnswerPrefs = {
   answer: WhereYouAnswer;
-  /** Whether the person has answered the line that offers the choice, or answered a quiz. */
+  /** Whether the person has put away the note about where questions come, or answered a quiz. */
   offered: boolean;
 };
 

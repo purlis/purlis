@@ -21,9 +21,8 @@ import { Button } from "./ui/button/Button";
 /**
  * **What a chat wrote, as markdown under a safe subset** (#5214; the person's ruling of
  * 2026-11-04, a security call). One component for a chat's own words: its message, a task's
- * question, a note and a report, in the Inbox and on a pane's band (a task's question card moves
- * to it in #5213). Before it they were text nodes, so a chat's bold and lists read as raw `**`
- * and `-`.
+ * question, a note and a report, in the Inbox and on a pane's band. Before it they were text
+ * nodes, so a chat's bold and lists read as raw `**` and `-`.
  *
  * **Drawn, and nothing else** (`ALLOWED`): paragraphs and line breaks (every one the chat wrote,
  * `remark-breaks`), lists, bold and italics, inline code and code blocks, tables (GitHub's

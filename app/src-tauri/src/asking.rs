@@ -1239,7 +1239,7 @@ pub fn task_question(
     Shown {
         session: reached.task,
         ask: format!("task-question:{}:{}", reached.task, reached.number),
-        says: purlis_core::shown::one_line(&masked(&reached.text), purlis_core::shown::NO_CLIP),
+        says: purlis_core::shown::prose(&masked(&reached.text)),
         options: Vec::new(),
         source: AskSource::TaskQuestion,
         chain,
