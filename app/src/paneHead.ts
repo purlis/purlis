@@ -177,6 +177,9 @@ export const FOOT_ROWS = {
   ctx: activityId,
 } as const satisfies Partial<Record<FootPart, (session: number) => string>>;
 
+/** **What a part of the foot presses**: its row of the chat's list, by that row's title. */
+export type FootPress = { title: string; press: () => void };
+
 /** **The parts of the foot that are facts alone**, with nothing to press: the sandbox and the work
  *  item, whose rows change them rather than show them, `cache`, whose words are `ctx`'s, and the
  *  mark of a chat that has ended, whose ways on are its ended band's. */

@@ -355,12 +355,15 @@
   gap: inherit;
 }
 
-/* **Each part of the foot's start, in the order it gives way** (#5204): a name is as long as the
-   person made it, so each is cut at its end and none pushes the gauge. The sandbox's mark and the
-   warning's sign keep their size. */
+/* **Each part of the foot's start gives way before the gauge does** (#5204): a name is as long as
+   the person made it, so each is cut at its end. A button's words are the family's, its place
+   here; the words that are no button draw their own, in the foot's muted tier. */
 .pane-foot :is(.pane-foot-from, .pane-studio, .pane-foot-work-item, .pane-skills) {
   flex: 0 1 auto;
   min-inline-size: 0;
+}
+
+.pane-foot :is(span.pane-foot-from, .pane-foot-work-item, span.pane-studio) {
   overflow: hidden;
   align-content: center;
   color: var(--text-muted);
@@ -368,12 +371,10 @@
   text-overflow: ellipsis;
 }
 
-/* The warning's sign, on the line of its words. */
-.pane-foot .pane-skills-sign {
-  inline-size: 1em;
-  block-size: 1em;
-  margin-inline-end: var(--space-1);
-  vertical-align: -0.125em;
+.pane-foot span.pane-skills {
+  align-content: center;
+  color: var(--state-waiting);
+  white-space: nowrap;
 }
 
 :is(.pane-foot .pane-foot-sandbox, .pane-foot .pane-foot-ended) {

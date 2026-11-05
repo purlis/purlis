@@ -217,14 +217,10 @@ const DRESS: Readonly<Record<string, Dress>> = {
   "chat.back": { said: unnamed, slot: "open" },
   "chat.brief": { said: SAID.brief, slot: "open" },
   "chat.answer": { said: SAID.answer, slot: "first" },
-  // What its pane foot presses (#5204): harness and workspace by their own names.
-  "chat.harness": {
-    said: (offer) => `About ${offer.name ?? ""}`.trim(),
-    slot: "open",
-    under: "open",
-  },
+  // What its pane foot presses (#5204): the card and the workspace as the palette says them.
+  "chat.harness": { said: (offer) => offer.name ?? "", slot: "open", under: "open" },
   "chat.workspace": {
-    said: (offer) => `Workspace ${offer.name ?? ""}`.trim(),
+    said: (offer) => `Focus workspace ${offer.name ?? ""}`.trim(),
     slot: "open",
     under: "open",
   },

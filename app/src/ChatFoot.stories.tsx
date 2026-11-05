@@ -10,21 +10,21 @@
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState, type ReactNode } from "react";
-import { expect, userEvent, within } from "storybook/test";
+import { expect, userEvent, waitFor, within } from "storybook/test";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { ChatUsage, HarnessGlance } from "./bindings";
-import {
-  ChatFoot,
-  PaneActions,
-  PaneActionsOf,
-  PaneBellOf,
-  PaneHead,
-  type FootPress,
-} from "./LayoutPanes";
+import { ChatFoot, PaneActions, PaneActionsOf, PaneBellOf, PaneHead } from "./LayoutPanes";
 import { catalogued, type Offer } from "./actions";
 import type { ChatHead } from "./paneHead";
-import { FOOT_ROWS, paneLinesOf, type LineFacts, type PaneKind } from "./paneHead";
-import { expectFocusInSight } from "./stories.testkit";
+import {
+  FOOT_ROWS,
+  paneLinesOf,
+  type FootPart,
+  type FootPress,
+  type LineFacts,
+  type PaneKind,
+} from "./paneHead";
+import { expectFocusInSight, untilFocused } from "./stories.testkit";
 import { ChatSkillSetsHere, type ChatSkillSets } from "./UseSkill";
 import { StudioChatsHere } from "./studioChats";
 
@@ -214,8 +214,12 @@ function Foot({
   );
 }
 
+/** Whether a part of the foot is the skills warning, which is drawn once the studio has said. */
+const warns = (part: FootPart) => part === "skills" || part === "skillsMark";
+
 const meta = {
   component: Foot,
+  play: async (context) => walked(context),
   beforeEach: () => {
     mockIPC((cmd) => (cmd === "skill_studio_on" ? true : cmd === "skill_drafts" ? [] : null));
   },
@@ -223,6 +227,25 @@ const meta = {
 
 export default meta;
 type Story = StoryObj<typeof meta>;
+
+/**
+ * **The foot's keyboard path**: Tab takes each part that can be pressed in the order it is drawn,
+ * with its ring in sight, and out again, so the picture holds no focus and no tooltip. What the
+ * foot waits on is drawn first, so the picture never races it.
+ */
+async function walked({ canvasElement, args }: { canvasElement: HTMLElement; args: FootArgs }) {
+  const canvas = within(canvasElement);
+  const foot = canvas.getByRole("group", { name: /where it runs and its context$/ });
+  if (paneLinesOf(args.kind ?? "chat", args.width ?? 900, args.facts ?? {}).foot?.some(warns))
+    await canvas.findByTestId("pane-skills");
+  for (const part of within(foot).getAllByRole("button")) {
+    await userEvent.tab();
+    await untilFocused(() => part, "the foot's next part");
+    await expectFocusInSight();
+  }
+  await userEvent.tab();
+  await waitFor(() => expect(document.querySelector('[role="tooltip"]')).toBeNull());
+}
 
 /** **A plain chat**: harness · workspace, its sandbox and its gauge. */
 export const APlainChat: Story = {
@@ -237,25 +260,14 @@ export const EveryFact: Story = {
     from: "↳ from steward 3 · ops",
     workItem: "PRJ-1",
   },
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await expect(
-      canvas.getByRole("group", { name: /where it runs and its context$/ }),
-    ).toBeTruthy();
-    for (const name of [
-      "What Claude Code can do here",
-      /chat\.workspace/,
-      /↳ from steward 3/,
-      /test-design/,
-      /skills\. /,
-      /^ctx 62%/,
-    ]) {
-      await userEvent.tab();
-      await expect(canvas.getByRole("button", { name })).toHaveFocus();
-      await expectFocusInSight();
-    }
-    await userEvent.keyboard("{Enter}");
+  play: async (context) => {
+    const canvas = within(context.canvasElement);
+    await walked(context);
+    // The press on `ctx`, and on every other part, is its row.
+    await userEvent.click(canvas.getByRole("button", { name: /^ctx 62%/ }));
     await expect(canvas.getByTestId("pressed")).toHaveTextContent("chat.activity:7");
+    await userEvent.tab();
+    await waitFor(() => expect(document.querySelector('[role="tooltip"]')).toBeNull());
   },
 };
 
@@ -299,20 +311,22 @@ export const At900: Story = { args: { ...AT_A_WIDTH, width: 900 } };
 export const At520: Story = { args: { ...AT_A_WIDTH, width: 520 } };
 export const At420: Story = {
   args: { ...AT_A_WIDTH, width: 420 },
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+  play: async (context) => {
+    const canvas = within(context.canvasElement);
     const warning = await canvas.findByTestId("pane-skills");
     await expect(warning.textContent).toBe("");
     await expect(warning).toHaveAccessibleName(/^39 skills\./);
     await expect(canvas.queryByText(/cache/)).toBeNull();
+    await walked(context);
   },
 };
 export const At300: Story = {
   args: { ...AT_A_WIDTH, width: 300 },
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+  play: async (context) => {
+    const canvas = within(context.canvasElement);
     await canvas.findByTestId("pane-skills");
     await expect(canvas.queryByText(/↳ from/)).toBeNull();
     await expect(canvas.getByText(/ctx/)).toBeInTheDocument();
+    await walked(context);
   },
 };

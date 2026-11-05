@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useOnShownAgain, useProjectShown } from "./projectShown";
 import { commands, type ChatUsage, type PlaneId } from "./bindings";
-import type { FootPart } from "./paneHead";
+import type { FootPart, FootPress } from "./paneHead";
 import { everyWhileShown } from "./whileShown";
 import { Button } from "./ui/button/Button";
 import { Tooltip } from "./ui/tooltip/Tooltip";
@@ -74,7 +74,7 @@ export function useChatUsage(
   session: number,
   moved: number,
   running: boolean,
-  /** The chat has ended (#5205): what it said last stands, and nothing reads it again. */
+  /** A chat that has ended whose last reading is kept (#5205): nothing reads it again. */
   frozen = false,
 ): ChatUsage | undefined {
   const [usage, setUsage] = useState<{ session: number; usage: ChatUsage | null }>();
@@ -164,7 +164,7 @@ export function ChatGauge({
   /** What the pane's model answers for its foot (`paneHead.paneLinesOf`). */
   parts?: readonly FootPart[];
   /** The row a press on `ctx` runs (#5204, spec #5191 story 36): the chat's Activity. */
-  context?: { title: string; press: () => void };
+  context?: FootPress;
   /** The chat has ended: its numbers are its last, greyed (#5205, story 24). */
   ended?: boolean;
 }) {

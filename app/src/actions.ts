@@ -4596,7 +4596,7 @@ function footRows(now: Now, session: number, name: string): Offer[] {
         chatHarnessId(session),
         `${card.label} (${name})`,
         { verb: "openView", view: harnessCardView(card.name), title: card.label },
-        card.title,
+        card.label,
       ),
       note: `What a chat on ${card.title} can and cannot do in this project, in a tab of its own.`,
     });

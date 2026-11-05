@@ -470,7 +470,7 @@ describe("a chat's list (#4753)", () => {
       [
         "Go to qa 12",
         "Place…",
-        "Open ▸ [Workspace beta, Activity, Network]",
+        "Open ▸ [Focus workspace beta, Activity, Network]",
         "Ignore until it asks again",
       ],
       ["Restart"],
@@ -673,7 +673,7 @@ describe("the other tabs' menus", () => {
         "Open beside console-developer 16",
         "Place…",
         "Brief",
-        "Open ▸ [Workspace beta, Activity, Network]",
+        "Open ▸ [Focus workspace beta, Activity, Network]",
         "Go to console-developer 16",
       ],
       ["Restart"],

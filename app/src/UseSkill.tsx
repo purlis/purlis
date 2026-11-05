@@ -19,7 +19,8 @@ import { Dialog } from "./ui/dialog/Dialog";
 import { ListFilter, noMatchSaid } from "./ui/list/ListFilter";
 import { ListBox, ListOption } from "./ui/list/List";
 import { RowBelow, RowDescription, RowLabel } from "./ui/list/Row";
-import { Button } from "./ui/button/Button";
+import { Button, IconButton } from "./ui/button/Button";
+import { Tooltip } from "./ui/tooltip/Tooltip";
 import { counted } from "./dispatches";
 import { AT_THE_ROOT, useSkillStudioOn } from "./skillStudio";
 import { SKILLS_MISSING_PUT_AWAY, type ChatSkillsAsk } from "./chatSkillsAsk";
@@ -205,7 +206,7 @@ export function UseSkill({
                   {!skills.known
                     ? (skills.not_supported ??
                       "This chat runs no tool purlis knows, so it has no skills to use here.")
-                    : "This chat has no skills. Its skills chip shows why any skill is left out."}
+                    : "This chat has no skills. The Skills view shows why any skill is left out."}
                 </p>
               ) : shown.length === 0 ? (
                 <p className="honest">{noMatchSaid(SKILLS, query)}</p>
@@ -455,16 +456,16 @@ const NOTHING_CHANGED: SkillsChangedHere = {};
 export const SHOW_THIS_CHATS_SKILLS = "Show this chat's skills";
 
 /**
- * **The Skills chip on a chat's pane** (#2775; spec #3679 S8, #3694, #3953), in its top line
- * beside the gauge: how many skills the chat's set holds, warning-coloured whenever the Skills
- * view's Needs you holds a card of the chat's own (`chatNeedsOf`, the view's own reckoning): its
- * set near or past the budget, its pins read by none, its router fallen back at its start or on
- * its latest prompt, skills it started without, or its skills changed since it started. Its
- * tooltip names each. Pressed, it
- * shows this chat's skills in the sidebar Skills view, the one answer to what the chat gets and
- * why, where each need has its fix; it no longer opens Use skill…. Its set is the window's
- * ({@link ChatSkillSetsHere}). Nothing while the Skill studio is off, or for a chat purlis knows
- * no skills of; where the pane leaves the chip out, the Skills view says the budget (`⌘⇧X`).
+ * **The skills warning on a chat's pane foot** (#2775; spec #3679 S8, #3694, #3953, #5204): drawn
+ * only while the Skills view's Needs you holds a card of the chat's own (`chatNeedsOf`, the view's
+ * own reckoning): its set near or past the budget, its pins read by none, its router fallen back at
+ * its start or on its latest prompt, skills it started without, or its skills changed since it
+ * started. It says how many skills the set holds, and its tooltip names each need. Pressed, it runs
+ * the chat's Skills row, the sidebar Skills view, the one answer to what the chat gets and why,
+ * where each need has its fix. With no such row it is its words alone. Its set is the window's
+ * ({@link ChatSkillSetsHere}). Nothing while the Skill studio is off, or for a chat purlis knows no
+ * skills of. A narrow pane shrinks it to its ⚠, named all the same; a chat with nothing wrong says
+ * nothing here, and the Skills row and the Skills view say the budget (`⌘⇧X`).
  */
 export const SkillsChip = memo(function SkillsChip({
   session,
@@ -482,21 +483,42 @@ export const SkillsChip = memo(function SkillsChip({
   if (warning === undefined || said === undefined) return null;
   const tip = `${warning}. ${SHOW_THIS_CHATS_SKILLS}.`;
   const count = counted(skillsInTheSet(said.budget), "skill", "skills");
-  return (
+  const named = { "data-testid": "pane-skills", "aria-label": `${count}. ${tip}` };
+  if (onOpen === undefined)
+    return (
+      <Tooltip tip={tip}>
+        <span {...named} role="img" className="pane-skills pane-skills-words">
+          {SIGN}
+          {!markOnly && ` ${count}`}
+        </span>
+      </Tooltip>
+    );
+  return markOnly ? (
+    <IconButton
+      {...named}
+      variant="warning-soft"
+      size="sm"
+      className="pane-skills"
+      icon={<TriangleAlert aria-hidden="true" />}
+      tooltip={tip}
+      onPress={onOpen}
+    />
+  ) : (
     <Button
+      {...named}
       inline
       variant="warning-soft"
-      className="pane-skills pane-foot-press"
-      data-testid="pane-skills"
+      className="pane-skills"
       tooltip={tip}
-      aria-label={`${count}. ${tip}`}
       onPress={onOpen}
     >
-      <TriangleAlert aria-hidden="true" className="pane-skills-sign" />
-      {!markOnly && count}
+      {`${SIGN} ${count}`}
     </Button>
   );
 });
+
+/** The warning's sign as words: drawn as text, never as the coloured emoji a platform may pick. */
+const SIGN = "\u26A0\uFE0E";
 
 /** **What chat `session`'s set of skills needs the person for**, in words, or nothing while it
  *  needs nothing or the Skill studio is off: what its pane foot's warning says (#5204). */

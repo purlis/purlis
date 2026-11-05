@@ -7,6 +7,7 @@ import {
   Fragment,
   useCallback,
   useContext,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -51,6 +52,7 @@ import { WaitingStrip } from "./WaitingStrip";
 import { keepHolds, keptHolds, paneBand } from "./noticeSettle";
 import { type Blocks } from "./sandboxBlocks";
 import { ChatGauge, useChatUsage } from "./ChatGauge";
+import { footKept, keepFoot } from "./footKept";
 import { SkillsChip, useChatSkillsWarn } from "./UseSkill";
 import { harnessCardView, isOneJob, panes, type Content, type Layout, type ViewRef } from "./tabs";
 import { EVEN, shareOf, WHOLE } from "./laidOut";
@@ -94,6 +96,7 @@ import {
   WHOLE_ACTIONS,
   type ActionPart,
   type FootPart,
+  type FootPress,
   stateButtonOf,
   type ChatHead,
 } from "./paneHead";
@@ -268,14 +271,17 @@ export function PaneFrame({
   // has ended, and the foot says what the window last knew of it, the core having let go of a chat
   // closed on purpose. Its gauge reads no more.
   const hasEnded = ended !== undefined;
-  const read = useChatUsage(plane, session, moved, running, hasEnded);
-  const usage = useLastKnown(read, session, hasEnded);
-  const lastHead = useLastKnown(head, session, hasEnded);
-  const lastHarness = useLastKnown(harness, session, hasEnded);
+  const last = hasEnded ? footKept(plane, session) : {};
+  const read = useChatUsage(plane, session, moved, running, last.usage !== undefined);
+  const usage = last.usage ?? read;
+  const lastHead = head ?? last.head;
+  const lastHarness = harness ?? last.harness;
+  useEffect(() => {
+    if (!hasEnded) keepFoot(plane, session, { head, harness, usage: read });
+  }, [hasEnded, plane, session, head, harness, read]);
   const lent = useReferenceChats();
   const frame = useRef<HTMLDivElement>(null);
-  // **What a narrow pane drops, in the ruled order** (#4760, `paneHead.ts`), and whether the
-  // line has room for the Skills chip too (#2775).
+  // **What a narrow pane drops, in the ruled order** (#4760, #5206, `paneHead.ts`).
   const width = usePaneWidth(frame);
   const skillsWarn = useChatSkillsWarn(session);
   const startedByStudio = useStudioChats().chats.some((one) => one.session === session);
@@ -599,8 +605,8 @@ export function ChatFoot({
 
 /**
  * **A pane's header** (#3142): one slim row under the band and over the terminal, the chat at a
- * glance at its start (its `children`, the `.pane-chips` line: the breadcrumb, the skills, the
- * harness, the gauge; written where it is drawn, so the line's guard reads it) and the pane's
+ * glance at its start (its `children`, the `.pane-chips` line: its name or the
+ * breadcrumb and its state; written where it is drawn, so the line's guard reads it) and the pane's
  * actions at its end (`PaneActions`). A row of its own, so neither covers what the terminal
  * draws; the same row in every pane with a chat, so panes side by side line up. Its tooltips
  * open below it, as a strip's do (`TIPS_BELOW`, #5189). With no
@@ -776,22 +782,6 @@ function PaneWhere({
     </>
   );
 }
-
-/**
- * **`value`, or while `hold` is on the last that was known of it for `session`**: what a pane still
- * says of a chat that has ended, which the core may no longer answer for.
- */
-function useLastKnown<T>(value: T | undefined, session: number, hold: boolean): T | undefined {
-  const [known, setKnown] = useState<{ session: number; value: T }>();
-  // Kept as it is drawn (React's "information from previous renders"): no commit comes of it.
-  if (!hold && value !== undefined && (known?.value !== value || known.session !== session))
-    setKnown({ session, value });
-  if (!hold) return value;
-  return known?.session === session ? known.value : value;
-}
-
-/** **What a part of the foot presses**: its row of the chat's list, by that row's title. */
-export type FootPress = { title: string; press: () => void };
 
 /** **A part of the foot after another**, the `·` that joins them before it (look A). Drawn as its
  *  one child, so the part stands straight in its group (`controls.guard.test.ts`). */
@@ -1555,10 +1545,9 @@ export function LayoutPanes({
         }}
         onShowChat={onShowChat}
         from={
-          shownPath === undefined
-            ? handedFrom[content.session]
-            : // **A task's foot names the chat that asked** (#5205, story 22): the path's last but one.
-              askedFromOf(shownPath)
+          // **A task's foot names the chat that asked** (#5205, story 22): its path's last but one.
+          // A chat with a path of one, beside its task, says what any handed-off chat says.
+          (shownPath && askedFromOf(shownPath)) ?? handedFrom[content.session]
         }
         harness={glances[content.session]}
         onOpenCard={(glance) => onOpenView(harnessCardView(glance.name), glance.label)}

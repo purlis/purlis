@@ -18,6 +18,8 @@ import { emit } from "@tauri-apps/api/event";
 import App from "./App";
 import type { Moved } from "./bindings";
 import { onTheWire } from "./chatEvents.testkit";
+import { CHAT_SKILLS_ASKED } from "./chatSkillsAsk";
+import { forgetFootKept } from "./footKept";
 import { aTabForEachChat } from "./laidOut.testkit";
 import { askToEnd } from "./menus.testkit";
 
@@ -38,7 +40,9 @@ vi.mock("./SessionPane", () => ({
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
 
 afterEach(() => {
+  forgetFootKept();
   usage = USAGE;
+  skillsOf = null;
   cleanup();
   clearMocks();
   vi.unstubAllGlobals();
@@ -56,6 +60,8 @@ const USAGE = {
   cold: null,
 };
 let usage: unknown = USAGE;
+/** What the core says of a chat's skills, with the Skill studio on, which the window asks once. */
+let skillsOf: unknown = null;
 /** How many times the core was asked for a gauge. */
 let reads = 0;
 
@@ -150,6 +156,10 @@ function core(
       if (cmd === "asks_waiting") return { plane: PLANE, asks: [] };
       if (cmd === "mcp_failures") return [];
       if (cmd === "smart_closing") return [];
+      if (cmd === "skill_studio_on") return true;
+      if (cmd === "skill_drafts") return [];
+      if (cmd === "skill_studio") return { on: false };
+      if (cmd === "chat_skills") return skillsOf;
       if (cmd === "open_view") return { kind: "gone", why: "Not read in this test." };
       return null;
     },
@@ -409,7 +419,43 @@ describe("a narrow pane drops parts from its two lines, and has them back (#5206
     });
   const says = (part: string) => foot().querySelector(part) !== null;
 
-  it("drops cache, shrinks nothing it has not got, drops ↳ from and the workspace, then brings each back as it widens", async () => {
+  it("shrinks the skills warning to its ⚠, named all the same", async () => {
+    skillsOf = {
+      known: true,
+      skills: [],
+      not_supported: null,
+      routing: null,
+      missing: null,
+      changed: null,
+      budget: {
+        skills: 39,
+        chars: 5900,
+        manual: 0,
+        most_skills: 30,
+        most_chars: 6000,
+        hidden: 0,
+        still_over: null,
+        pinned_by: [],
+        pins_together: null,
+        warns: "chars",
+      },
+    };
+    panesOfAWidth(900);
+    await aPane([{ ...HANDED, from: null }]);
+    await waitFor(() =>
+      expect(within(foot()).getByTestId("pane-skills")).toHaveTextContent("39 skills"),
+    );
+
+    await toWidth(449);
+    const mark = within(foot()).getByTestId("pane-skills");
+    expect(mark).not.toHaveTextContent("39 skills");
+    expect(mark).toHaveAccessibleName(/^39 skills\./);
+
+    await toWidth(900);
+    expect(within(foot()).getByTestId("pane-skills")).toHaveTextContent("39 skills");
+  });
+
+  it("drops cache, then ↳ from, then the workspace, and brings each back as it widens", async () => {
     panesOfAWidth(900);
     await aPane();
     await waitFor(() => expect(says(".pane-foot-from")).toBe(true));
@@ -476,5 +522,101 @@ describe("a narrow pane drops parts from its two lines, and has them back (#5206
     await toWidth(299);
     expect(names()).not.toContain("Split down");
     expect(names()).toContain("Split right");
+  });
+});
+
+describe("the foot's skills warning and studio chip (#5204, #5205, #5206)", () => {
+  const PAST_ITS_BUDGET = {
+    known: true,
+    skills: [],
+    not_supported: null,
+    routing: null,
+    missing: null,
+    changed: null,
+    budget: {
+      skills: 39,
+      chars: 5900,
+      manual: 0,
+      most_skills: 30,
+      most_chars: 6000,
+      hidden: 0,
+      still_over: null,
+      pinned_by: [],
+      pins_together: null,
+      warns: "chars",
+    },
+  };
+
+  it("runs the chat's Skills row on a press: the sidebar's Skills view, on this chat", async () => {
+    skillsOf = PAST_ITS_BUDGET;
+    await aPane([{ ...HANDED, from: null }]);
+
+    const warning = await waitFor(() => within(foot()).getByTestId("pane-skills"));
+    expect(warning).toHaveTextContent("39 skills");
+    expect(warning).toHaveAccessibleName(/Near the skill budget/);
+    const asked: unknown[] = [];
+    const hear = (event: Event) => asked.push((event as CustomEvent).detail);
+    window.addEventListener(CHAT_SKILLS_ASKED, hear);
+    fireEvent.click(warning);
+    window.removeEventListener(CHAT_SKILLS_ASKED, hear);
+    expect(asked).toEqual([{ plane: PLANE, session: 4 }]);
+  });
+
+  it("says a task's own skills on its foot", async () => {
+    skillsOf = PAST_ITS_BUDGET;
+    await aPane([PARENT, TASK]);
+
+    await waitFor(() => within(foot(5)).getByTestId("pane-skills"));
+  });
+
+  it("opens what the Skill studio started it for, on the studio chip", async () => {
+    await aPane([
+      {
+        ...HANDED,
+        from: null,
+        studio: {
+          skill: "test-design",
+          level: { at: "project", local: false },
+          job: "draft",
+          done: false,
+        },
+      } as unknown as typeof HANDED,
+    ]);
+
+    const chip = await waitFor(() => within(foot()).getByTestId("pane-studio"));
+    expect(chip.tagName).toBe("BUTTON");
+    fireEvent.click(chip);
+    await waitFor(() => expect(tabInFront()).toHaveTextContent(/Skill studio/));
+  });
+});
+
+describe("what an ended chat's foot keeps, when its pane is drawn anew (#5205, story 26)", () => {
+  it("keeps its gauge and harness · workspace after its tab goes behind and comes back", async () => {
+    const DONE = {
+      plane: PLANE,
+      session: 4,
+      state: "done",
+      needs_you: false,
+      queue: [],
+      moved_at: 3,
+      reports: [],
+      refusals: [],
+      children: [],
+      sequence: 3,
+    } as unknown as Moved;
+    await aPane([{ ...HANDED, from: null }, PARENT]);
+    await within(foot()).findByTestId("chat-gauge");
+    await act(() => emit(...onTheWire("chat-moved", DONE)));
+    await screen.findByRole("status", { name: /ended/i });
+    usage = null;
+
+    const tabs = within(document.querySelector('[data-strip="Tabs"]') as HTMLElement);
+    fireEvent.click(tabs.getByRole("tab", { name: /steward 3/ }));
+    await waitFor(() => expect(frameOf(4)).toBeUndefined());
+    fireEvent.click(tabs.getByRole("tab", { name: /work/ }));
+
+    const gauge = await waitFor(() => within(foot()).getByTestId("chat-gauge"));
+    expect(gauge).toHaveTextContent("ctx 62%");
+    expect(foot().querySelector(".pane-where")).toHaveTextContent(/Claude Code\s*·\s*alpha/);
   });
 });

@@ -732,9 +732,9 @@ body {
   min-height: 0;
 }
 
-/* **The pane line**: the chat at a glance, its breadcrumb, its skills, where it came from and its
-   work item. One row, in the pane head (`PaneHead`); harness · workspace and the gauge are
-   on the pane foot (#5202). */
+/* **The pane line**: the chat at a glance, its name or its breadcrumb, and its state. One row, in
+   the pane head (`PaneHead`); the chat's other facts are on the pane foot (#5202, #5204), but for
+   a pane with no foot, which keeps where it came from and its work item here. */
 .pane-chips {
   display: flex;
   flex: none;
@@ -744,8 +744,7 @@ body {
 }
 
 /* **The line's words are one height** (#2484): each chip that is words (the breadcrumb, where a
-   chat came from, its work item) is the chrome height. Its buttons (Brief, the skills, a task's
-   ways) are the family's small size, which the family draws a step
+   chat came from, its work item) is the chrome height. Its buttons (a task's ways) are the family's small size, which the family draws a step
    taller and which wins over this; the line centres both, so nothing stands off its middle. The
    heights guard holds every chip here (`PANE_LINE_CHIPS`). */
 .pane-chips
@@ -951,8 +950,7 @@ body {
 }
 
 /* The harness a chat runs, at a glance (HP-19): a button, because it opens the harness's card
-   tab, drawn by the family as the skills chip beside it is (ghost, small; `HarnessCard.tsx`,
-   #3129). Its place only, here: never wider than one, a long name cut at its end. */
+   tab, drawn by the family (ghost, inline; `HarnessCard.tsx`, #3129). Its place only, here: never wider than one, a long name cut at its end. */
 .pane-harness {
   max-width: 16rem;
 }

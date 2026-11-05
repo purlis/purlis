@@ -306,7 +306,7 @@ describe("Use skill…", () => {
     expect(screen.getByTestId("use-skill-none").textContent).toBe(goose);
     cleanup();
     opened(skills([]));
-    expect(screen.getByTestId("use-skill-none").textContent).toMatch(/skills chip shows why/);
+    expect(screen.getByTestId("use-skill-none").textContent).toMatch(/Skills view shows why/);
   });
 });
 
@@ -441,7 +441,7 @@ describe("the Skills chip on a chat's pane", () => {
   it("is in the warning look, naming the need, for a set near or past the budget", async () => {
     const chip = await chipOf(held({ budget: { ...BUDGET, warns: "chars" } }));
     // A manual-only skill is in the set's count, free in the listing's.
-    expect(chip.textContent).toBe("4 skills");
+    expect(chip.textContent).toContain("4 skills");
     expect(chip.getAttribute("aria-label")).toBe(
       `4 skills. Near the skill budget. ${SHOW_THIS_CHATS_SKILLS}.`,
     );
