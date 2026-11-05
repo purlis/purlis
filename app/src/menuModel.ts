@@ -219,13 +219,10 @@ const DRESS: Readonly<Record<string, Dress>> = {
   "chat.answer": { said: SAID.answer, slot: "first" },
   // What its pane foot presses (#5204): the card and the workspace as the palette says them.
   "chat.harness": { said: (offer) => offer.name ?? "", slot: "open", under: "open" },
-  "chat.workspace": {
-    said: (offer) => `Focus workspace ${offer.name ?? ""}`.trim(),
-    slot: "open",
-    under: "open",
-  },
+  // Neither opens a tab, which is what Open ▸ says of each of its rows: each stays beside it.
+  "chat.workspace": { said: (offer) => `Focus workspace ${offer.name ?? ""}`.trim(), slot: "open" },
   "chat.asker": { said: (offer) => `Go to ${offer.name ?? ""}`.trim(), slot: "open" },
-  "chat.skills": { said: SAID.skills, slot: "open", under: "open" },
+  "chat.skills": { said: SAID.skills, slot: "open" },
   "chat.studio": { said: SAID.openInStudio, slot: "open", under: "open" },
   "chat.activity": { said: SAID.activity, slot: "open", under: "open" },
   "chat.network": { said: SAID.network, slot: "open", under: "open" },

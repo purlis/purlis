@@ -6,7 +6,7 @@ import { join } from "node:path";
 import process from "node:process";
 import { $, $$, browser, expect } from "@wdio/globals";
 import { projectRoot } from "../acting.js";
-import { openChatList, pressMenuPath, ROW, SUB } from "../menus.js";
+import { openChatList, pressMenuPath, ROW } from "../menus.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 import {
   OPENINGS,
@@ -122,7 +122,7 @@ async function typeInto(label: string, text: string, effort: Effort): Promise<vo
 /** The chat in front's Skills view, its Left out unfolded. */
 async function theSkillsViewUnfolded(): Promise<void> {
   await openChatList();
-  await pressMenuPath(SUB.open, ROW.skills);
+  await pressMenuPath(ROW.skills);
   await $('[data-testid="skills-view"]').waitForDisplayed({ timeout: 20_000 });
   const fold = await $('[data-fold="left-out:fold"]');
   await fold.waitForExist({
