@@ -1058,6 +1058,8 @@ struct State {
     /// **The sites this browser was on** (#5230), each by its origin: what a page holding a
     /// secret may leave for without the person being asked, as it was when the secret went in.
     been_on: HashSet<String>,
+    /// The request of the act [`Self::addressing`] marks has been seen (#5230).
+    addressing_seen: bool,
     /// What a page leaving for another site, or kept from it, has to say in the next answer
     /// (#5230).
     leaving_said: Vec<String>,
@@ -2713,7 +2715,10 @@ impl Browser {
     /// Marks `target`'s page as the one the agent's act is sending to an address, until the
     /// mark is dropped (#2018).
     fn addressing(&self, target: &str, why: Why) -> Addressing<'_> {
-        lock(&self.inner.state).addressing = Some((target.to_owned(), why));
+        let mut state = lock(&self.inner.state);
+        state.addressing = Some((target.to_owned(), why));
+        state.addressing_seen = false;
+        drop(state);
         Addressing(&self.inner)
     }
 
@@ -5951,13 +5956,20 @@ impl Inner {
                         } else {
                             Driver::Agent
                         };
-                        // The first of a page's own chain says whether it was chosen (#5230).
+                        // The first of a page's own chain says whether it was chosen (#5230): an
+                        // address the agent wrote is the first the call sends, and what the page
+                        // does while the call waits on it isn't.
+                        let chosen = by == Driver::Person
+                            || (why == Why::Addressed
+                                && document
+                                && redirected_from.is_none()
+                                && !std::mem::replace(&mut state.addressing_seen, true));
                         if document
                             && redirected_from.is_none()
                             && let Some(page) =
                                 frame.as_deref().and_then(|frame| state.page_mut(frame))
                         {
-                            page.chosen = by == Driver::Person || why == Why::Addressed;
+                            page.chosen = chosen;
                         }
                         // While one of the agent's calls is carried out, nothing is sent to a
                         // site it is kept off by an address it wrote, however written, nor by
@@ -5986,18 +5998,21 @@ impl Inner {
                                         })
                                     })
                             });
-                        // Its own page is answered here, and goes nowhere (#5230).
-                        let own_page = if address == leaving::OWN_PAGE {
-                            lock(&self.own_page).clone()
+                        // Its own page is answered here, and goes nowhere: only as the page
+                        // purlis is moving asks for it (#5230).
+                        let own_page = if address == leaving::OWN_PAGE
+                            && document
+                            && frame
+                                .as_deref()
+                                .is_some_and(|frame| lock(&self.departing).contains_key(frame))
+                        {
+                            lock(&self.own_page).take()
                         } else {
                             None
                         };
                         // What a hold decides comes next: it decides as the request pauses.
-                        if address == leaving::OWN_PAGE {
-                            follow.push(FollowUp::Own {
-                                request,
-                                page: own_page.unwrap_or_default(),
-                            });
+                        if let Some(page) = own_page {
+                            follow.push(FollowUp::Own { request, page });
                         } else if let Some(moved) = moved {
                             let paused = Paused {
                                 id: request,
@@ -6007,8 +6022,7 @@ impl Inner {
                                 leaving::Move::Refused => {
                                     follow.push(FollowUp::Refuse(paused.id));
                                 }
-                                leaving::Move::FrameForm { key, origin } => {
-                                    let to = login::origin_of(&address);
+                                leaving::Move::FrameForm { key, origin, to } => {
                                     state.say_of_leaving(leaving::form_refused_said(
                                         &key,
                                         &origin,

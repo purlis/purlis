@@ -1325,8 +1325,12 @@ impl drive::FillHold for FillHolder {
     }
 
     fn approved_for(&self, address: &str) -> bool {
-        judge::site_of(address)
-            .is_some_and(|(host, port)| self.also.contains(&Site::of(&host, port)))
+        // A key is approved for another site over https alone, and the host and port say no scheme.
+        address
+            .get(..6)
+            .is_some_and(|scheme| scheme.eq_ignore_ascii_case("https:"))
+            && judge::site_of(address)
+                .is_some_and(|(host, port)| self.also.contains(&Site::of(&host, port)))
     }
 }
 

@@ -753,6 +753,7 @@ fn a_fill_holds_its_other_approved_sites_too_and_its_judge_says_where_it_may_lea
     assert!(!sites.bound().lets("elsewhere.example.com", 443));
     assert!(holder.approved_for("https://sso.example.com/in"));
     assert!(!holder.approved_for("https://elsewhere.example.com/in"));
+    assert!(!holder.approved_for("http://sso.example.com:443/in"));
     assert_eq!(
         holder.may_leave_for("https://app.example.com/?code=1", true),
         Leaving::Go

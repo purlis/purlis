@@ -90,7 +90,11 @@ pub(super) enum Move {
     /// A form the page sent to another site, in page `.0`.
     Form(String),
     /// A form a frame in the page sent to another site: only it fails, and the answer says why.
-    FrameForm { key: String, origin: String },
+    FrameForm {
+        key: String,
+        origin: String,
+        to: Option<String>,
+    },
     /// Any other document of a main frame: its page stays where it is.
     Elsewhere { origin: String },
     /// Anything else: it fails.
@@ -165,9 +169,12 @@ impl State {
                 return None;
             }
             if !main {
+                // A value in the site's own name is not said back.
+                let to = to.filter(|to| !on.iter().any(|one| carries_value(to, &one.filled.value)));
                 return Some(Move::FrameForm {
                     key: first.filled.key.clone(),
                     origin: origin.clone(),
+                    to,
                 });
             }
             return Some(Move::Form(target.clone()));
@@ -403,22 +410,23 @@ impl Inner {
         };
         let went = loaded.is_ok() && heard.recv_timeout(within).is_ok();
         lock(&self.departing).remove(target);
-        let Some(address) = then else {
-            let _ = self
-                .devtools
-                .call("Page.resetNavigationHistory", json!({}), on);
-            return;
-        };
-        if !went {
-            self.say("purlis could not take this page on to the site its server named".to_owned());
-            return;
-        }
-        // What the page left behind in its window goes no further.
-        let _ = self.devtools.call(
+        // What it showed goes from its history, and what the page left in its window goes too. The
+        // page it now shows runs nothing of the old one's.
+        let _ = self
+            .devtools
+            .call("Page.resetNavigationHistory", json!({}), on);
+        let cleared = self.devtools.call(
             "Runtime.evaluate",
             json!({ "expression": "window.name = ''" }),
             on,
         );
+        let Some(address) = then else {
+            return;
+        };
+        if !went || cleared.is_err() {
+            self.say("purlis could not take this page on to the site its server named".to_owned());
+            return;
+        }
         // A read of the address the server named, as a page's link is: the reach was judged.
         lock(&self.state).offered_by_purlis(address);
         let _ = self

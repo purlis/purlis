@@ -245,11 +245,27 @@ fn a_site_the_browser_has_not_been_on_asks_and_goes_on_once_allowed() {
     holder.released_within_ten_seconds();
 }
 
+/// A site a page moved on to by itself, while the chat's call waited on it, is no site it was on.
+#[test]
+fn a_site_a_page_moved_to_by_itself_still_asks() {
+    let Some((browser, _data, site)) = browser() else {
+        return;
+    };
+    opened(&browser, "http://other.test/moves-on.html");
+    assert!(sees(&browser, "Sign in"), "the form is open");
+    let holder = Holder::on(&site, None);
+    filled_in(&browser, &holder, "Key elsewhere");
+
+    let answer = click(&browser, "button \"Sign in elsewhere\"");
+
+    assert_eq!(answer.asked, ["third.test"], "the answer says it asked");
+}
+
 /// A link, a link the fill's site redirects, a script and the chat's navigate don't take it there:
 /// none began the form the field was filled in. The page stays, and the hold lives on.
 #[test]
 fn links_scripts_and_the_chats_navigate_stay_refused() {
-    let moves: [(&str, Moved); 5] = [
+    let moves: [(&str, Moved); 6] = [
         ("a link", |browser| {
             click(browser, "link \"Leave by a link\"").note
         }),
@@ -258,6 +274,9 @@ fn links_scripts_and_the_chats_navigate_stay_refused() {
         }),
         ("a script", |browser| {
             click(browser, "button \"Leave by a script\"").note
+        }),
+        ("the said page", |browser| {
+            click(browser, "link \"Leave for the said page\"").note
         }),
         ("a form a script made", |browser| {
             click(browser, "button \"Leave by a scripted form\"").note
