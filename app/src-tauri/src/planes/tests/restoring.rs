@@ -16,6 +16,7 @@ use purlis_core::reopen;
 use super::{Opening, Planes};
 use crate::hooks::Moved;
 use crate::host::pretend::Pretend;
+use crate::projectready::{ProjectOutcome, ProjectReady};
 
 /// How long a test waits for the thread behind the window before it calls it stuck.
 const SOON: Duration = Duration::from_secs(30);
@@ -325,5 +326,128 @@ fn a_project_whose_chats_hang_holds_up_neither_the_other_projects_nor_a_retry() 
     for number in 1..=4 {
         stuck_host.lets_go(number);
     }
+    planes.let_go_of_all();
+}
+
+/// What a registry tells the window of each project it puts back (#5322), kept for a test.
+fn telling_ready(planes: Planes) -> (Planes, Arc<Mutex<Vec<ProjectReady>>>) {
+    let told = Arc::new(Mutex::new(Vec::new()));
+    let planes = planes.telling_project_ready({
+        let told = Arc::clone(&told);
+        Arc::new(move |ready| told.lock().unwrap().push(ready))
+    });
+    (planes, told)
+}
+
+/// **A project says it is ready once its chats have been tried** (#5322): with how many of the
+/// ones its record held came back, so a chat that did not start leaves it ready, not failed.
+#[cfg(unix)]
+#[test]
+fn a_project_says_it_is_ready_with_how_many_of_its_chats_came_back() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane_with_chats(&dir.path().join("plane"), 3);
+    let host = Pretend::default();
+    host.refuses_number(2, "its program went");
+    let (planes, told) = telling_ready(planes_on(&[&host], &dir.path().join("config")));
+
+    let plane = approve_and_open(&planes, &root);
+
+    until("the project to say it is ready", || {
+        !told.lock().unwrap().is_empty()
+    });
+    assert_eq!(
+        *told.lock().unwrap(),
+        [ProjectReady {
+            plane,
+            outcome: ProjectOutcome::Ready { back: 2, wanted: 3 },
+        }]
+    );
+    planes.let_go_of_all();
+}
+
+/// A project with nothing to put back is ready at once, with none of none back.
+#[cfg(unix)]
+#[test]
+fn a_project_with_nothing_to_put_back_says_it_is_ready_with_none_of_none() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane_with_chats(&dir.path().join("plane"), 0);
+    let (planes, told) = telling_ready(planes_on(
+        &[&Pretend::default()],
+        &dir.path().join("config"),
+    ));
+
+    let plane = approve_and_open(&planes, &root);
+
+    until("the project to say it is ready", || {
+        !told.lock().unwrap().is_empty()
+    });
+    assert_eq!(
+        *told.lock().unwrap(),
+        [ProjectReady {
+            plane,
+            outcome: ProjectOutcome::Ready { back: 0, wanted: 0 },
+        }]
+    );
+    planes.let_go_of_all();
+}
+
+/// **A project whose chats are not put back says it failed, and why** (#5322): a gate that
+/// refuses (#2004) is a real error, not a project with no chats.
+#[cfg(unix)]
+#[test]
+fn a_project_whose_chats_the_gate_refuses_says_it_failed_with_why() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane_with_chats(&dir.path().join("plane"), 2);
+    let (planes, told) = telling_ready(
+        planes_on(&[&Pretend::default()], &dir.path().join("config"))
+            .putting_back_chats_after(Arc::new(|| Err("a host still runs them".to_owned()))),
+    );
+
+    let plane = approve_and_open(&planes, &root);
+
+    until("the project to say it failed", || {
+        !told.lock().unwrap().is_empty()
+    });
+    assert_eq!(
+        *told.lock().unwrap(),
+        [ProjectReady {
+            plane,
+            outcome: ProjectOutcome::Failed {
+                error: "a host still runs them".to_owned(),
+            },
+        }]
+    );
+    planes.let_go_of_all();
+}
+
+/// A record that cannot be read puts nothing back, and the project says it failed with the
+/// refusal rather than that it is ready with none of none.
+#[cfg(unix)]
+#[test]
+fn a_project_whose_record_is_refused_says_it_failed_with_the_refusal() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane_with_chats(&dir.path().join("plane"), 2);
+    // A record that will not read at all (a garbled one reads as nothing open, by design).
+    let record = reopen::path(&root);
+    std::fs::remove_file(&record).expect("the record is taken away");
+    std::fs::create_dir(&record).expect("a folder stands in its place");
+    let (planes, told) = telling_ready(planes_on(
+        &[&Pretend::default()],
+        &dir.path().join("config"),
+    ));
+
+    let plane = approve_and_open(&planes, &root);
+
+    until("the project to say it failed", || {
+        !told.lock().unwrap().is_empty()
+    });
+    let told = told.lock().unwrap().clone();
+    assert_eq!(told.len(), 1, "told once: {told:?}");
+    assert_eq!(told[0].plane, plane);
+    assert!(
+        matches!(&told[0].outcome, ProjectOutcome::Failed { error } if !error.is_empty()),
+        "{:?}",
+        told[0].outcome
+    );
     planes.let_go_of_all();
 }

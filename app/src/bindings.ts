@@ -4956,6 +4956,8 @@ export const PERSONA_SCOPE_KEY = "persona/" as const;
 
 export const POOL_MINTS_WITHOUT_ASKING = "pool-mints-without-asking" as const;
 
+export const PROJECT_READY = "project-ready" as const;
+
 export const ROUTER_GRADE = "router-grade" as const;
 
 export const SESSION_BUS_ANSWERS = "session-bus://answers" as const;
@@ -12228,6 +12230,25 @@ export type ProjectNotHeld = {
 	 *  mark is drawn on where there is one.
 	 */
 	pools: string[],
+};
+
+/**  How a project's opening came out. */
+export type ProjectOutcome = 
+/**
+ *  Every chat its record held has been tried, and `back` of the `wanted` came back. The
+ *  ones that did not are listed as chats that would not start, as they always were.
+ */
+{ kind: "ready"; back: number; wanted: number } | 
+/**
+ *  Nothing was put back, and this is why: the record could not be read, or the launch's
+ *  gate refused (#2004).
+ */
+{ kind: "failed"; error: string };
+
+/**  What `project-ready` carries: a project, and how its opening came out. */
+export type ProjectReady = {
+	plane: PlaneId,
+	outcome: ProjectOutcome,
 };
 
 /**  Both files. */
