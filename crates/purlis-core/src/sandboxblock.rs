@@ -477,7 +477,10 @@ pub fn its_own_to_retry(block: &Block, target: Option<&str>, chat_dir: Option<&P
     if block.ours
         || !matches!(
             (block.operation, block.kind),
-            (Operation::Write | Operation::File, Kind::ProtectedFile)
+            (
+                Operation::Write | Operation::File,
+                Kind::ProtectedFile | Kind::ProjectFiles
+            )
         )
     {
         return false;
@@ -485,10 +488,16 @@ pub fn its_own_to_retry(block: &Block, target: Option<&str>, chat_dir: Option<&P
     let (Some(target), Some(chat_dir)) = (target.map(Path::new), chat_dir) else {
         return false;
     };
-    let (Some(path), Some(own)) = (branch_record_path(target), own_branch_record(chat_dir)) else {
+    let Some(own) = own_branch_record(chat_dir) else {
         return false;
     };
-    path.starts_with(own)
+    if block.kind == Kind::ProtectedFile {
+        return branch_record_path(target).is_some_and(|path| path.starts_with(own));
+    }
+    // The rest of its clone's git folder, which a fetch there writes (objects, refs).
+    let clones_git = own.parent().and_then(Path::parent);
+    branch_record_path(target).is_none()
+        && clones_git.is_some_and(|git| unprivate(&lexical(target)).starts_with(git))
 }
 
 /// **The git record of the branch folder `chat_dir` is in** (#3861): the linked worktree's
@@ -517,7 +526,7 @@ pub fn own_branch_record(chat_dir: &Path) -> Option<PathBuf> {
 /// what was refused, and the purlis commands that do it.
 pub fn told_the_chat_to_retry() -> String {
     format!(
-        "⬢ purlis's sandbox blocked a write to this branch folder's git record, which no chat \
+        "⬢ purlis's sandbox blocked a write to this branch folder's git, which no chat \
          writes and no Allow opens. Retry it with purlis: {WORKTREE_COMMIT_WAY}"
     )
 }
@@ -1361,6 +1370,9 @@ pub fn way_out(path: &Path, root: &Path) -> Option<&'static str> {
         })
         .collect::<Option<_>>()?;
     match parts.as_slice() {
+        // The rest of a clone's git folder, which a fetch in a branch folder writes: no grant
+        // opens it, since the clone's `.git` stays denied there.
+        ["workspaces", _, _, ".git", _, ..] if !is_planted(&path) => Some(WORKTREE_COMMIT_WAY),
         ["sessions", _] | ["workspaces", _, "sessions", _] => Some(
             "purlis writes session records for a chat: write one with `purlis session record`.",
         ),
