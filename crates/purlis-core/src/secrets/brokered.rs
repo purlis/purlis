@@ -2934,12 +2934,19 @@ pub(crate) fn serve_recorded(
     // A name is judged as it reads, with any byte that is not UTF-8 replaced, so one is never
     // let through for not spelling the name it is judged by.
     // An approved value is held to the same names a chat's is ([`may_hand_on`]).
+    // Under a grant, where it connects and whom it trusts is what the command says, which the
+    // person read ([`crate::sandbox::tools::a_granted_run_starts_from`]).
+    let starts_from = if under_a_grant {
+        crate::sandbox::tools::a_granted_run_starts_from
+    } else {
+        crate::sandbox::tools::a_run_starts_from
+    };
     let mut base: Vec<(OsString, OsString)> = wanted
         .environment
         .into_iter()
         .filter(|(k, _)| {
             let k = k.to_string_lossy();
-            may_hand_on(&k) && crate::sandbox::tools::a_run_starts_from(&k)
+            may_hand_on(&k) && starts_from(&k)
         })
         .collect();
     for (k, v) in its_entry_sets.into_iter().filter(|(k, _)| may_hand_on(k)) {

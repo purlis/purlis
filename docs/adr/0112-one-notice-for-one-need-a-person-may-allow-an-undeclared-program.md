@@ -4,6 +4,8 @@
 D-PE-ruling-2 (a sandboxed chat runs only its persona's declared tools with a vault, 2026-10-12)
 and ADR 0109's offer of a Secret need after a first fill, and it retires #5159's dismissal store.
 
+The amendments to this decision are files of their own in [`0112/`](0112/), one per ruling.
+
 ## Where purlis was
 
 ADR 0109 let a chat ask for any secret, and D-PE-ruling-2 let a value reach only a declared tool.

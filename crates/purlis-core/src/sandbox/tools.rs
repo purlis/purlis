@@ -1791,8 +1791,9 @@ fn spelled_as_it_is_held(program: &Path) -> bool {
 /// - one found only where a chat writes, or not at all ([`resolve_beside`]);
 /// - a `--dotenv`, which names no variable; a variable that steers what runs ([`refused_var`]);
 ///   a key no Secret ask takes;
-/// - a key a `mint` line names ([`mint::raw`]), or one `listed` hands only to a browser login or a
-///   secret-fill line: purlis fills those on one origin itself, and no program is handed them.
+/// - a key a `mint` line names ([`mint::raw`]), or one that `listed` or any persona's line hands
+///   only to a browser login or a secret-fill line: purlis fills those on one origin itself, and no
+///   program is handed them, whoever's vault it is asked of.
 pub fn for_run_grant(
     root: &Path,
     persona: &str,
@@ -1821,6 +1822,7 @@ pub fn for_run_grant(
             "--dotenv names no variable, so {name} can't be allowed with it: hand each key with              --file VARIABLE=key or --env VARIABLE=key"
         ));
     }
+    let every_line = every_personas_lines(root);
     let mut values = Vec::new();
     for (specs, handed) in [(asked.file, Handed::File), (asked.env, Handed::Env)] {
         for spec in specs {
@@ -1860,10 +1862,14 @@ pub fn for_run_grant(
                         || (tool.login.is_some()
                             && tool.values.iter().any(|value| value.key == key)))
             };
-            if listed.iter().any(only_a_browser_fills_it) {
+            if listed
+                .iter()
+                .chain(&every_line)
+                .any(only_a_browser_fills_it)
+            {
                 return Err(format!(
                     "{key} in vault {} is one purlis fills in a browser itself, on the one site \
-                     {persona} declares, so no program is handed it",
+                     a persona declares, so no program is handed it",
                     asked.vault
                 ));
             }
@@ -1930,6 +1936,22 @@ pub fn for_run_grant(
         ));
     }
     Ok(ready)
+}
+
+/// Every tool line the project at `root` writes, for any persona, in force or not: a login
+/// another persona declares is still purlis's to fill.
+fn every_personas_lines(root: &Path) -> Vec<Tool> {
+    let said = super::Plane::read(root).said();
+    said.policy
+        .or(said.unset)
+        .map(|policy| {
+            policy
+                .personas
+                .into_values()
+                .flat_map(|grants| grants.tools)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// The longest variable name a person is asked to allow: it is drawn among the app's own facts.
@@ -2183,6 +2205,35 @@ const A_RUN_STARTS_FROM: &[&str] = &[
 /// `LC_*`).
 pub fn a_run_starts_from(var: &str) -> bool {
     A_RUN_STARTS_FROM.contains(&var) || var.starts_with("LC_")
+}
+
+/// **What a run under a Run grant leaves of the chat's variables** (ADR 0112, amended
+/// 2026-11-05): where it connects and whom it trusts. The person read a command and a program,
+/// and neither shows these, so a chat that wants a host, a port, a region or a certificate
+/// authority says it in the command, where the person reads it.
+const A_GRANTED_RUN_LEAVES: &[&str] = &[
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "NODE_EXTRA_CA_CERTS",
+    "REQUESTS_CA_BUNDLE",
+    "CURL_CA_BUNDLE",
+    "AWS_CA_BUNDLE",
+    "PGHOST",
+    "PGHOSTADDR",
+    "PGPORT",
+    "PGSSLMODE",
+    "MYSQL_HOST",
+    "MYSQL_TCP_PORT",
+    "REDIS_HOST",
+    "REDIS_PORT",
+    "AWS_REGION",
+    "AWS_DEFAULT_REGION",
+];
+
+/// **Whether a run under a Run grant starts with the chat's `var`**: [`a_run_starts_from`], less
+/// [`A_GRANTED_RUN_LEAVES`].
+pub fn a_granted_run_starts_from(var: &str) -> bool {
+    a_run_starts_from(var) && !A_GRANTED_RUN_LEAVES.contains(&var)
 }
 
 /// **A brokered run's home** (#2047): `HOME` and the `XDG_*` folders, each in the run's own
