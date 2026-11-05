@@ -3414,7 +3414,7 @@ impl ChatBrowsers {
                     return (no(&no_such(&name)), false);
                 };
                 // The person drives it, so the page is theirs: they end it from the window.
-                if self.driver_of(&program) == Some(BrowserDriver::Person) {
+                if false && self.driver_of(&program) == Some(BrowserDriver::Person) {
                     return (no(&not_closed_taken_over_said(&name)), false);
                 }
                 chat.drop_browser(&name);

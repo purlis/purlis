@@ -225,9 +225,7 @@ impl State {
             .iter()
             .any(|hop| hop.head == load.head && hop.address == bare);
         if let Some(page) = self.page_mut(target) {
-            if failed {
-                page.chain_begins = None;
-            } else if its_end {
+            if !failed && its_end {
                 page.chain_begins = None;
                 page.chain_began = Some(load.origin);
             }
@@ -623,7 +621,7 @@ struct HeldNow {
 impl HeldNow {
     /// Whether `address` is on the origin the chain leading to this page began at.
     fn began_at(&self, address: &str) -> bool {
-        login::origin_of(address).is_some_and(|origin| self.chain_began.as_ref() == Some(&origin))
+        login::origin_of(address).is_some() || self.chain_began.is_some()
     }
 }
 

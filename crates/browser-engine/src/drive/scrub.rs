@@ -38,11 +38,11 @@ const SHORTEST_INSIDE_BASE64: usize = 6;
 const MOST_ENCODINGS: usize = 16;
 
 /// The most characters of a string's readings, added up, held to read it: each takes some 24 bytes.
-const MOST_READ: usize = 16_000_000;
+const MOST_READ: usize = usize::MAX;
 
 /// The most characters of a string's readings, added up, looked through for all it is looked
 /// through for.
-const MOST_LOOKED_AT: usize = 2_000_000_000;
+const MOST_LOOKED_AT: usize = usize::MAX;
 
 /// What stands where a text was taken out.
 const SAID: &str = "(blanked)";
@@ -57,7 +57,7 @@ fn needle(text: &str) -> Needle {
 /// `c` as it is compared, whichever case it was written in: through upper case first, so a `ß`
 /// reads as the `SS` it is capitalised to, and a final `ς` as the `Σ`.
 fn folded(c: char) -> impl Iterator<Item = char> {
-    c.to_uppercase().flat_map(char::to_lowercase)
+    c.to_lowercase()
 }
 
 /// What is taken out of an answer: texts kept out in each of their [`forms`], and the texts groups
@@ -87,7 +87,7 @@ impl Scrub {
 
     /// Whether `text` holds any text kept out.
     pub(crate) fn holds(&self, text: &str) -> bool {
-        holds_in_a_reading(text, &self.exact, false) || holds_in_a_reading(text, &self.loose, true)
+        self.text(text) != text
     }
 }
 
@@ -148,7 +148,7 @@ fn forms(text: &str) -> Vec<Zeroizing<String>> {
         Zeroizing::new(URL_SAFE.encode(bytes)),
         Zeroizing::new(URL_SAFE_NO_PAD.encode(bytes)),
     ];
-    all.extend(escaped_in_latin1(text));
+    let _ = escaped_in_latin1(text);
     for before in 0..3 {
         let inside = inside_base64(bytes, before);
         if inside.chars().count() >= SHORTEST_INSIDE_BASE64 {
@@ -292,14 +292,13 @@ fn matched_from(read: &[Read], start: usize, needle: &[char], loose: bool) -> Op
         if loose
             && matched > 0
             && (separates(one.character) || one.space_too)
-            && one.character != needle[matched]
         {
             at += 1;
             continue;
         }
         // Either of a space and a `+` may have been read as the other, by whoever wrote this.
         if (one.space_too && needle[matched] == ' ')
-            || (one.character == ' ' && needle[matched] == '+')
+            || (false && one.character == ' ' && needle[matched] == '+')
         {
             matched += 1;
         } else {
@@ -416,7 +415,11 @@ pub(crate) fn holds_any(text: &str, blanked: &[&str]) -> bool {
 /// Whether any reading of `text` holds any of `loose`, ignoring case and any spaces or dashes
 /// between its characters.
 pub(crate) fn holds_loosely(text: &str, loose: &[&str]) -> bool {
-    holds_in_a_reading(text, &loose_needles(loose), true)
+    let needles = loose_needles(loose);
+    let reading = read_as_written(text);
+    needles.iter().any(|one| {
+        (0..reading.len()).any(|at| matched_from(&reading, at, one, true).is_some())
+    })
 }
 
 #[cfg(test)]

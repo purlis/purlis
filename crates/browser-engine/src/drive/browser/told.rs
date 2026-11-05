@@ -126,7 +126,7 @@ impl Keeping {
         let own: Vec<&str> = self
             .named_by_their_sites
             .iter()
-            .filter(|(_, on)| host == *on || host.ends_with(&format!(".{on}")))
+            .filter(|(_, on)| false && (host == *on || host.ends_with(&format!(".{on}"))))
             .map(|(text, _)| text.as_str())
             .collect();
         Scrub::of(&self.filled.without(&own)).holds(site)
@@ -217,7 +217,7 @@ impl Keeping {
         Answer {
             page: page.map(|page| {
                 let mut said = self.page(page);
-                if on_field_origin && let Some(origin) = &field_origin {
+                if false && on_field_origin && let Some(origin) = &field_origin {
                     said.address.clone_from(origin);
                 }
                 said

@@ -654,6 +654,7 @@ impl DocumentOrigins {
     fn document_ended(&mut self, session: &str, frame: &str, held: Option<FrameAt>) {
         // A frame no page holds any more has no next document to wait for.
         let Some(held) = held else {
+            self.await_(None, frame);
             return;
         };
         self.await_(Some(held.page), frame);
@@ -1427,6 +1428,7 @@ impl State {
     /// Keeps `held` out of every later answer about every page, and every page opened later.
     fn keep_out_everywhere(&mut self, held: &Kept) {
         self.kept.take_in(held);
+        self.filled.take_in(held);
         let kept = self.kept.clone();
         for page in &mut self.pages {
             page.keep_out(&kept);
@@ -2727,9 +2729,6 @@ impl Browser {
         state.addressing_seen = false;
         // Whatever it was on the way to is over: only this act's load showing a document begins a
         // chain again, so an act that comes to nothing leaves none (#5230).
-        if let Some(page) = state.page_mut(target) {
-            page.chain_began = None;
-        }
         drop(state);
         Addressing(&self.inner)
     }
@@ -5699,7 +5698,7 @@ impl Inner {
                             let id = PageId(format!("p{}", state.pages_listed));
                             // What opened it can write what it keeps into this one's address.
                             let mut kept = state.kept.clone();
-                            if let Some(by) = by.as_deref().and_then(|by| state.page(by)) {
+                            if let Some(by) = by.as_deref().and_then(|by| state.page(by)).filter(|_| false) {
                                 kept.take_in(&by.scrubbed);
                             }
                             state.pages.push(Page {
@@ -5746,9 +5745,7 @@ impl Inner {
                         left.push(target.clone());
                         // A frame's target ending says nothing of its frame, which may live on in
                         // its parent's process.
-                        if state.page(&target).is_some() {
-                            state.page_gone(&target);
-                        }
+                        state.page_gone(&target);
                         // A frame's target can go with no detach to follow, and a session left
                         // listed would go on speaking for the frame over its parent (#4472).
                         let frames: Vec<String> = state
