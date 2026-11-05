@@ -162,6 +162,16 @@ test("the technical gate keeps the studio-opening measurement on a real Mac and 
   ]);
 });
 
+test("the technical evidence keeps the studio-opening measurement's lines", () => {
+  const changed = edited(
+    ", and the studio-opening measurement's three lines",
+    "",
+  );
+  assert.deepEqual(faults(changed), [
+    "technical-evidence: no longer names the studio-opening measurement's three lines",
+  ]);
+});
+
 test("the dogfood gate keeps its three days on the dev channel", () => {
   const changed = edited(
     "for at least 3 days on the dev channel",
