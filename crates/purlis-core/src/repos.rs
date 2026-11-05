@@ -107,12 +107,7 @@ pub fn clone_at(plane: &Path, ws: &str, name: &str) -> Option<Repo> {
     if !contain::segment_ok(name) {
         return None;
     }
-    let dir = confine::workspace_dir(plane, ws).ok()?;
-    let named = match repofolder::folder(plane, ws, name) {
-        Ok(folder) => folder,
-        Err(repofolder::Refused::NotARepoName(_)) => dir.join(name),
-        Err(_) => return None,
-    };
+    let named = repofolder::entry(plane, ws, name)?;
     let path = confine::within_workspace(plane, ws, &named).ok()?;
     matches!(repofolder::git_of(&path), Ok(Some(Git::Directory))).then(|| Repo {
         name: name.to_string(),

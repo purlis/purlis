@@ -53,8 +53,9 @@ pub fn drop_repo(root: &Path, ws: &str, repo: &str, say: Sink) -> Removal {
     }
     // The repo's folder in either layout: never the old place's folder of that name while
     // `repos/<repo>` is the clone, which this would delete instead.
-    let Ok(clone) = crate::repofolder::folder(root, ws, repo) else {
-        return fail(say, format!("'{repo}' is not a clone in workspace '{ws}'"));
+    let clone = match crate::repofolder::folder(root, ws, repo) {
+        Ok(clone) => clone,
+        Err(refused) => return fail(say, format!("nothing was removed: {refused}")),
     };
     // Before anything is read in it: a link here is a directory somewhere else entirely.
     if let Err(why) = crate::contain::no_link_on_the_way(root, &clone) {

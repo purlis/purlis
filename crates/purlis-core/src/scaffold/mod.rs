@@ -1990,21 +1990,23 @@ pub fn adopt_as_workspace(
         ));
     };
     let from = firstclone::upstream_of(&source);
-    let name = (1..)
-        .map(|n| {
-            if n == 1 {
-                base.clone()
-            } else {
-                format!("{base}-{n}")
-            }
-        })
-        .find(|name| {
-            let Ok(clone) = crate::repofolder::folder(&root, name, name) else {
-                return false;
-            };
-            !clone.exists() || firstclone::origin_of(&clone).as_deref() == Some(from.as_str())
-        })
-        .expect("an unbounded range always has a free name");
+    // The first name whose clone is free or already this source's. A refusal (the workspaces
+    // folder is a link, unreadable, …) would refuse every name alike, so it ends the search.
+    let mut name = None;
+    for n in 1.. {
+        let candidate = if n == 1 {
+            base.clone()
+        } else {
+            format!("{base}-{n}")
+        };
+        let clone = crate::repofolder::folder(&root, &candidate, &candidate)
+            .map_err(|refused| format!("charter cannot adopt {}: {refused}", source.display()))?;
+        if !clone.exists() || firstclone::origin_of(&clone).as_deref() == Some(from.as_str()) {
+            name = Some(candidate);
+            break;
+        }
+    }
+    let name = name.expect("an unbounded range always has a free name");
     let mut run = Run::default();
     firstclone::into_workspace(&mut run, &root, &source, &name, &name, now)
         .map(|clone| (name, clone))

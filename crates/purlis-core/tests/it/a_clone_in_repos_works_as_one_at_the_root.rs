@@ -261,3 +261,50 @@ fn the_plane_is_found_from_inside_a_clone_in_either_place() {
         assert_eq!((found.layout, found.git), (layout, Git::Directory));
     }
 }
+
+#[test]
+fn a_clone_is_found_through_a_plane_path_that_is_not_resolved() {
+    purlis_core::unsteered!();
+    // As macOS's `/var` is a link to `/private/var`: the plane named through a link is still
+    // the plane its clones are in.
+    for (layout, f) in both() {
+        let elsewhere = tempfile::tempdir().unwrap();
+        let link = elsewhere.path().join("plane");
+        std::os::unix::fs::symlink(&f.plane, &link).unwrap();
+
+        assert_eq!(
+            chatpiece::clone_at(&link, &f.clone),
+            Some((f.ws.clone(), f.repo.clone())),
+            "{layout:?}"
+        );
+    }
+}
+
+#[test]
+fn a_dispatch_from_a_root_folder_that_one_in_repos_shadows_is_cut_from_the_workspace() {
+    purlis_core::unsteered!();
+    // Standing in the old `api` is standing in the workspace's folder, not in a clone: the
+    // dispatch is cut from the workspace's `api`, which is `repos/api`, as `purlis worktree
+    // add` would cut it, never from where the chat stands.
+    let f = support::plane_with_clone_in_repos("api");
+    let shadowed = f.workspace().join("api");
+    std::fs::create_dir_all(&shadowed).unwrap();
+    support::git(&shadowed, &["init", "-q", "-b", "main", "."]);
+
+    let from_clone = purlis_core::dispatchplace::repo_of(&f.plane, Some(&f.clone), None)
+        .expect("a chat in repos/api works in api");
+    assert!(!from_clone.from_default, "{from_clone:?}");
+
+    match purlis_core::dispatchplace::repo_of(&f.plane, Some(&shadowed), None) {
+        Ok(repo) => {
+            assert_eq!(repo.repo, "api");
+            assert!(
+                repo.from_default,
+                "cut as from the workspace's folder: {repo:?}"
+            );
+        }
+        Err(refused) => {
+            panic!("a chat in the workspace's folder works in its one repo: {refused:?}")
+        }
+    }
+}

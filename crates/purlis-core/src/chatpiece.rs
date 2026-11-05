@@ -60,6 +60,8 @@ pub struct Cut {
 /// not ask for; nor is `.worktrees` or `repos/` a repo. Nor is an old `<repo>` that a
 /// `repos/<repo>` shadows: the repo of that name is the other one, which a branch is cut from.
 pub fn clone_at(plane: &Path, cwd: &Path) -> Option<(String, String)> {
+    // Both resolved, so a plane given through a link (macOS's /var) still finds its clones.
+    let plane = &std::fs::canonicalize(plane).ok()?;
     let here = std::fs::canonicalize(cwd).ok()?;
     let found = crate::repofolder::locate(plane, &here)?;
     let repo = found.repo.name;
