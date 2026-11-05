@@ -2638,7 +2638,9 @@ alike.
 - **Tier:** Clone state — never committed; what a tool last reported for a folder's branch. purlis
   cannot rebuild it, since it runs no check: deleting it loses the results until they are reported again.
 - **Written by:** `checks::report` (`crates/purlis-core/src/checks.rs`), from `purlis check report`,
-  which in a chat the app started hands the write to the app (`Write::CheckReport`).
+  which in a chat the app started hands the write to the app (`Write::CheckReport`); and
+  `checks::report_converted`, from `purlis check report --reporter`, with the SARIF a **Check
+  reporter** answered (#5410).
 - **Read by:** `checks::read_sets`, for "What changed" in one file.
 - **Git:** never committed (under `pieces/`).
 - **Encoding details:** a clone's own record is `checks/<repo>.json` and a piece's is
@@ -2653,6 +2655,12 @@ alike.
   that names no file. A set whose `head` is not the branch's head now is drawn out of date. The write
   holds `pieces/.claims.lock`, so two reports at once keep both tools' sets. A link at the record,
   or at a folder down to it, is refused and never written through.
+- **`faults`** (#5410), absent where there are none and read as `[]` when absent, so a record
+  written before it reads the same: one entry per **Check reporter** whose last answer could not be
+  recorded, with `extension` (its id), `said` (what was wrong, in purlis's sentence) and
+  `reported_at` (UTC ISO seconds). A reporter's fault replaces its earlier one, its next answer that
+  is recorded removes it, and neither touches `sets`: what was recorded before stays. The window
+  draws each as a Notice naming the extension, above the results.
 
 ### `workspaces/<ws>/.charter-structure` — the layout stamp
 

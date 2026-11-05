@@ -248,6 +248,22 @@ pub fn store_path(plane: &Path, ws: &str, repo: &str, piece: Option<&str>) -> Pa
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct Record {
     sets: Vec<Set>,
+    /// Each Check reporter whose last answer could not be recorded (#5410). Absent in a record
+    /// with none, so one written before it reads the same.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    faults: Vec<Fault>,
+}
+
+/// **A Check reporter whose last answer could not be recorded** (ADR 0114, #5410): what the
+/// window draws as a Notice naming it. The results recorded before stay; its next answer that is
+/// recorded takes this away.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Fault {
+    /// The extension, by its id.
+    pub extension: String,
+    /// What was wrong, in purlis's sentence, naming the extension.
+    pub said: String,
+    pub reported_at: String,
 }
 
 /// What a branch folder's results are, or why they cannot be read. None reported is none.
@@ -257,16 +273,24 @@ pub fn read_sets(
     repo: &str,
     piece: Option<&str>,
 ) -> Result<Vec<Set>, String> {
+    read_record(plane, ws, repo, piece).map(|record| record.sets)
+}
+
+/// The record of a branch folder, or why it cannot be read. None reported is an empty one.
+fn read_record(
+    plane: &Path,
+    ws: &str,
+    repo: &str,
+    piece: Option<&str>,
+) -> Result<Record, String> {
     let path = store_path(plane, ws, repo, piece);
     crate::contain::writable(plane, &path).map_err(|e| e.to_string())?;
     let text = match crate::contain::read_no_link(plane, &path) {
         Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Record::default()),
         Err(e) => return Err(format!("purlis could not read {}: {e}", path.display())),
     };
-    serde_json::from_slice::<Record>(&text)
-        .map(|record| record.sets)
-        .map_err(|e| {
+    serde_json::from_slice::<Record>(&text).map_err(|e| {
             format!(
                 "purlis could not read {} ({e}): delete it, and report the results again",
                 path.display()
@@ -296,7 +320,7 @@ pub fn report(
 ) -> Result<Reported, String> {
     let folder = crate::files::folder(plane, branch, "").map_err(|e| e.to_string())?;
     let results = results_in(file, &folder).map_err(|why| not_recorded(file, &why))?;
-    recorded(plane, branch, &folder, results, now)
+    recorded(plane, branch, &folder, results, None, now)
 }
 
 /// [`report`] for a chat, by the app: `relative` is a file of the branch's folder, already confined
@@ -315,15 +339,123 @@ pub fn report_inside(
         .and_then(read_bounded)
         .and_then(|bytes| results_of(&bytes, &folder))
         .map_err(|why| not_recorded(&file, &why))?;
-    recorded(plane, branch, &folder, results, now)
+    recorded(plane, branch, &folder, results, None, now)
 }
 
-/// `results` kept as the branch's, each tool's replacing its own and leaving the others.
+/// **A Check reporter's answer, recorded for `branch`** (ADR 0114, #5410): `answered` is the SARIF
+/// it printed, or why it gave none. SARIF 2.1.0 is recorded as [`report`] records a file, and
+/// takes away the reporter's fault. Anything else is kept as its fault, naming it, and refused
+/// in the same sentence; the results recorded before stay, so the review goes on.
+pub fn report_converted(
+    plane: &Path,
+    branch: Branch<'_>,
+    reporter: &str,
+    answered: Result<Vec<u8>, String>,
+    now: DateTime<Utc>,
+) -> Result<Reported, String> {
+    let folder = crate::files::folder(plane, branch, "").map_err(|e| e.to_string())?;
+    let results = answered.and_then(|sarif| {
+        results_of(&sarif, &folder).map_err(|why| {
+            format!(
+                "The Check reporter '{reporter}' answered something purlis cannot read as SARIF \
+                 {VERSION}: {why}"
+            )
+        })
+    });
+    match results {
+        Ok(results) => recorded(plane, branch, &folder, results, Some(reporter), now),
+        Err(why) => {
+            let said = format!(
+                "{why}. Nothing it said was recorded, and the results before stay. Run the check \
+                 again once the extension is fixed"
+            );
+            faulted(plane, branch, reporter, &said, now)?;
+            Err(said)
+        }
+    }
+}
+
+/// **What a Check reporter answers for a check's `output` and exit `status`** (ADR 0114, #5410),
+/// asked through `executor` as its own process, never inside the window.
+///
+/// The outer `Err` is a refusal before anything ran: no extension by that name, one not approved,
+/// turned off, changed since its yes, or one that does not ask for the capability. Nothing is
+/// recorded for it. The inner result is the reporter's: the SARIF it printed when it exited 0,
+/// or why it gave none, which [`report_converted`] keeps as its fault.
+pub fn converted(
+    executor: &crate::executor::Executor,
+    config_root: &Path,
+    project: &crate::extension::project::Choices,
+    reporter: &str,
+    output: &[u8],
+    status: i32,
+) -> Result<Result<Vec<u8>, String>, String> {
+    let found = crate::executor::cleared(config_root, executor.built_in(), reporter)?;
+    if !found.manifest.reports_checks() {
+        return Err(format!(
+            "'{reporter}' does not ask for the capability \"check-reporter\", so purlis does not \
+             hand it a check's output. Nothing was recorded"
+        ));
+    }
+    let output = String::from_utf8_lossy(output);
+    let ran = match executor.check(config_root, project, reporter, &output, status) {
+        Ok(ran) => ran,
+        Err(why) => {
+            return Ok(Err(format!(
+                "The Check reporter '{reporter}' gave no answer: {}",
+                why.trim_end_matches('.')
+            )));
+        }
+    };
+    if ran.status != 0 {
+        let said = String::from_utf8_lossy(&ran.stderr);
+        let said = said.trim();
+        let last = if said.is_empty() {
+            String::new()
+        } else {
+            format!(
+                ", saying: {}",
+                crate::shown::readable(said, crate::executor::MOST_STDERR_BYTES)
+            )
+        };
+        return Ok(Err(format!(
+            "The Check reporter '{reporter}' exited with status {}{last}",
+            ran.status
+        )));
+    }
+    Ok(Ok(ran.stdout))
+}
+
+/// `reporter`'s fault kept in `branch`'s record, in place of any it had.
+fn faulted(
+    plane: &Path,
+    branch: Branch<'_>,
+    reporter: &str,
+    said: &str,
+    now: DateTime<Utc>,
+) -> Result<(), String> {
+    let path = store_path(plane, branch.ws, branch.repo, branch.piece);
+    let held = crate::piececlaim::locked(plane, branch.ws)?;
+    let mut record = read_record(plane, branch.ws, branch.repo, branch.piece)?;
+    record.faults.retain(|kept| kept.extension != reporter);
+    record.faults.push(Fault {
+        extension: reporter.to_owned(),
+        said: said.to_owned(),
+        reported_at: now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+    });
+    written(plane, branch.ws, &path, &record)?;
+    drop(held);
+    Ok(())
+}
+
+/// `results` kept as the branch's, each tool's replacing its own and leaving the others; and,
+/// where a Check reporter answered them, its fault taken away.
 fn recorded(
     plane: &Path,
     branch: Branch<'_>,
     folder: &Path,
     results: Vec<ToolResults>,
+    reporter: Option<&str>,
     now: DateTime<Utc>,
 ) -> Result<Reported, String> {
     let piece = branch.piece;
@@ -352,10 +484,15 @@ fn recorded(
         .map(|set| (set.tool.clone(), set.diagnostics.len()))
         .collect();
     let held = crate::piececlaim::locked(plane, branch.ws)?;
-    let mut sets = read_sets(plane, branch.ws, branch.repo, piece)?;
-    sets.retain(|kept| !fresh.iter().any(|set| set.tool == kept.tool));
-    sets.extend(fresh);
-    written(plane, branch.ws, &path, &Record { sets })?;
+    let mut record = read_record(plane, branch.ws, branch.repo, piece)?;
+    record
+        .sets
+        .retain(|kept| !fresh.iter().any(|set| set.tool == kept.tool));
+    record.sets.extend(fresh);
+    if let Some(reporter) = reporter {
+        record.faults.retain(|kept| kept.extension != reporter);
+    }
+    written(plane, branch.ws, &path, &record)?;
     drop(held);
     Ok(Reported {
         path,
@@ -561,6 +698,8 @@ pub struct OnFile {
     pub more_elsewhere: usize,
     /// Why the results could not be read, where they could not. The diff is drawn regardless.
     pub trouble: Option<String>,
+    /// Each Check reporter whose last answer could not be recorded (#5410), for the whole branch.
+    pub faults: Vec<Fault>,
 }
 
 /// `text` held to [`MOST_MESSAGE_CHARS`], on a character.
@@ -625,8 +764,11 @@ pub fn of_branch(
     hunks: &[Hunk],
     head: Option<&str>,
 ) -> OnFile {
-    match read_sets(plane, branch.ws, branch.repo, branch.piece) {
-        Ok(sets) => on_file(&sets, path, hunks, head),
+    match read_record(plane, branch.ws, branch.repo, branch.piece) {
+        Ok(record) => OnFile {
+            faults: record.faults,
+            ..on_file(&record.sets, path, hunks, head)
+        },
         Err(why) => OnFile {
             trouble: Some(why),
             ..OnFile::default()
