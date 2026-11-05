@@ -96,56 +96,45 @@ describe("a narrow pane head drops its parts in the ruled order (#4760, #4585 ru
   });
 });
 
-describe("the pane's two lines: what the head and the foot of a chat's pane draw (#5202)", () => {
-  /** A chat with every fact the head's line still holds until #5204 moves them to the foot. */
-  const full = { from: true, skills: true, workItem: true };
+describe("the pane's two lines: what the head and the foot of a chat's pane draw (#5202, #5204)", () => {
+  /** A chat with every fact either line can hold. */
+  const full = {
+    from: true,
+    skills: true,
+    studio: true,
+    workItem: true,
+    sandbox: true,
+  };
+  const WHOLE = [
+    "harness",
+    "workspace",
+    "from",
+    "studio",
+    "workItem",
+    "skills",
+    "sandbox",
+    "ctx",
+    "cache",
+  ];
+  /** A task's foot says the chat that asked (`from`), its skills and its gauge, as a chat's does:
+   *  its breadcrumb is on the head. */
+  const FOOTLESS_HEAD = [
+    "persona",
+    "name",
+    "sandbox",
+    "mark",
+    "markWord",
+    "where",
+    "from",
+    "workItem",
+  ];
 
   it.each([
     // kind, width, the head's line, the foot
-    [
-      "chat",
-      900,
-      ["persona", "name", "sandbox", "mark", "markWord", "skills", "studio", "from", "workItem"],
-      ["harness", "workspace", "ctx", "cache"],
-    ],
-    [
-      "chat",
-      undefined,
-      ["persona", "name", "sandbox", "mark", "markWord", "skills", "studio", "from", "workItem"],
-      ["harness", "workspace", "ctx", "cache"],
-    ],
-    [
-      "chat",
-      500,
-      ["persona", "name", "mark", "markWord"],
-      ["harness", "workspace", "ctx", "cache"],
-    ],
-    ["chat", 460, ["persona", "name", "mark"], ["harness", "workspace", "ctx", "cache"]],
-    ["chat", 300, ["persona", "name"], ["harness", "workspace", "ctx", "cache"]],
-    [
-      "task",
-      900,
-      ["persona", "crumbs", "sandbox", "from", "workItem"],
-      ["harness", "workspace", "ctx", "cache"],
-    ],
-    ["task", 300, ["persona", "crumbs"], ["harness", "workspace", "ctx", "cache"]],
-    [
-      "shell",
-      900,
-      [
-        "persona",
-        "name",
-        "sandbox",
-        "mark",
-        "markWord",
-        "where",
-        "skills",
-        "studio",
-        "from",
-        "workItem",
-      ],
-      null,
-    ],
+    ["chat", 900, ["persona", "name", "mark", "markWord"], WHOLE],
+    ["chat", undefined, ["persona", "name", "mark", "markWord"], WHOLE],
+    ["task", 900, ["persona", "crumbs"], WHOLE],
+    ["shell", 900, FOOTLESS_HEAD, null],
     ["oneJob", 300, ["persona", "name"], null],
   ] as const)("a %s pane %s px wide", (kind, width, head, foot) => {
     const lines = paneLinesOf(kind, width, full);
@@ -153,20 +142,35 @@ describe("the pane's two lines: what the head and the foot of a chat's pane draw
     expect(lines.foot).toEqual(foot);
   });
 
-  it("never draws harness · workspace or the gauge on a chat's or a task's head, at any width", () => {
+  it("never draws the foot's facts on a chat's or a task's head, at any width", () => {
     for (const kind of ["chat", "task"] as const)
       for (const width of [undefined, 1200, 900, 520, 420, 300, 0]) {
         const head: string[] = paneLinesOf(kind, width, full).head;
-        for (const gone of ["harness", "workspace", "where", "ctx", "cache", "gauge", "trend"])
+        for (const gone of [
+          "harness",
+          "workspace",
+          "where",
+          "from",
+          "studio",
+          "workItem",
+          "skills",
+          "sandbox",
+          "ctx",
+          "cache",
+          "gauge",
+          "trend",
+        ])
           expect(head, `${kind} at ${width}`).not.toContain(gone);
       }
   });
 
-  it("keeps harness · workspace on the head of a pane with no foot, dropped as it always was", () => {
+  it("keeps a footless pane's head as it was, its details going in a narrow pane", () => {
     // Spec #5191: shells' and one-job programs' panes "keep their current heads and get no foot".
     for (const kind of ["shell", "oneJob"] as const) {
       expect(paneLinesOf(kind, 900, {}).head).toContain("where");
-      expect(paneLinesOf(kind, 519, {}).head).not.toContain("where");
+      expect(paneLinesOf(kind, 900, full).head).toContain("from");
+      expect(paneLinesOf(kind, 519, full).head).not.toContain("where");
+      expect(paneLinesOf(kind, 519, full).head).not.toContain("from");
       expect(paneLinesOf(kind, 900, {}).foot).toBeNull();
     }
   });
@@ -178,25 +182,21 @@ describe("the pane's two lines: what the head and the foot of a chat's pane draw
     expect(paneKindOf({ task: false, oneJob: false, shell: false })).toBe("chat");
   });
 
-  it("keeps the whole foot of a chat at every width, its drops being #5206's", () => {
-    for (const width of [undefined, 1200, 520, 300, 0])
-      expect(paneLinesOf("chat", width, full).foot).toEqual([
-        "harness",
-        "workspace",
-        "ctx",
-        "cache",
-      ]);
-  });
-
-  it("draws only the facts a chat has on the head's line", () => {
-    expect(paneLinesOf("chat", 900, {}).head).toEqual([
-      "persona",
-      "name",
-      "sandbox",
-      "mark",
-      "markWord",
-      "studio",
+  it("draws on the foot only the facts a chat has: the harness, the workspace and the gauge always", () => {
+    expect(paneLinesOf("chat", 900, {}).foot).toEqual(["harness", "workspace", "ctx", "cache"]);
+    expect(paneLinesOf("chat", 900, { from: true }).foot).toEqual([
+      "harness",
+      "workspace",
+      "from",
+      "ctx",
+      "cache",
     ]);
-    expect(paneLinesOf("chat", 900, { from: true }).head).toContain("from");
+    expect(paneLinesOf("chat", 900, { sandbox: true }).foot).toEqual([
+      "harness",
+      "workspace",
+      "sandbox",
+      "ctx",
+      "cache",
+    ]);
   });
 });

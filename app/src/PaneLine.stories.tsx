@@ -105,7 +105,7 @@ function PaneLine() {
           <div className="pane focused" />
         </div>
         {/* **The pane foot** (#5202, look A): where the task runs, and its gauge. */}
-        <PaneFoot className="pane-foot">
+        <PaneFoot className="pane-foot" label="deep: where it runs and its context">
           <PaneFootStart>
             <span className="pane-where">
               <HarnessChip

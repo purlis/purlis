@@ -69,7 +69,7 @@ function HeaderLine() {
         </PaneHead>
       </div>
       <div className="pane-body" />
-      <PaneFoot className="pane-foot">
+      <PaneFoot className="pane-foot" label="deep: where it runs and its context">
         <PaneFootStart>
           <span className="pane-where">
             Claude Code

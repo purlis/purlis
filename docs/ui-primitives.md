@@ -907,8 +907,9 @@ error (Get project's clone progress is still off, until it moves).
 ## The pane foot family
 
 **The line under a chat's terminal is the pane foot family** (`app/src/ui/pane-foot/`, #5202,
-spec #5191, ADR 0111): `PaneFoot`, holding its `PaneFootStart` (harness · workspace) and its
-`PaneFootEnd` (the gauge); `PaneFootSeparator`, the `·` between two parts; and `PaneFootGauge`, a
+spec #5191, ADR 0111): `PaneFoot`, a group named for its chat, holding its `PaneFootStart`
+(harness · workspace, where it came from, its skills warning and its sandbox) and its `PaneFootEnd`
+(the gauge); `PaneFootSeparator`, the `·` between two parts; and `PaneFootGauge`, a
 labelled number, `ctx 62%`, with its fill as a thin bar under it where it has one. No screen
 writes `data-scope="pane-foot"`: `purlis/pane-foot-family` is an error.
 
@@ -926,6 +927,10 @@ writes `data-scope="pane-foot"`: `purlis/pane-foot-family` is an error.
 - **Drawn by its parts** (ADR 0103): `root`, `start`, `end`, `separator`, `gauge`, `label`,
   `value`, `track` and `fill`, in `pane-foot.css`; a theme's parts reach the same attributes
   (`pane-foot.*`, the next release's manifest version).
+- **Every press is a row** (#5204): `paneHead.FOOT_ROWS` says which row of the chat's list each part
+  runs, and `chatList.test.ts` holds each to the chat's ⋯ and the palette. A part whose row is
+  missing or cannot run now is its words alone. Its parts are inline buttons, so they stay words on
+  the line; the skills warning takes the button family's `warning-soft` drawn inline, with no ground.
 - **Its chips are held like the head's**: `PANE_FOOT_CHIPS` in `controls.guard.test.ts`, read off
   `PaneFootStart` and `PaneFootEnd`, each at the chrome height.
 

@@ -206,8 +206,8 @@ export const TheChatsChip: StoryObj<{ done: boolean; openSkill: (link: StudioLin
     <StudioChatsHere.Provider
       value={{ chats: [{ session: 7, name: "7", link: LINK }], show: () => undefined, openSkill }}
     >
-      <div className="pane-chips" style={{ display: "flex", inlineSize: 420 }}>
-        <StudioChatChip plane="story" session={7} />
+      <div className="pane-foot" style={{ display: "flex", inlineSize: 420 }}>
+        <StudioChatChip plane="story" session={7} onOpen={() => openSkill(LINK)} />
       </div>
     </StudioChatsHere.Provider>
   ),

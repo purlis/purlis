@@ -45,6 +45,10 @@ known yet, so that cost is paid once and the terminal never moves when the first
 The per-turn bars said each turn's cache share on their tooltips; that history is still in the
 chat's record, and no surface draws it now.
 
+## Amendments
+
+The amendments to this decision are files of their own in [`0111/`](0111/), one per ruling.
+
 ## The words
 
 **Pane foot** joins the glossary. **Pane line** narrows to the head's row of chips

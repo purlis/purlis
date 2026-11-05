@@ -37,6 +37,8 @@ export const SAID = {
   // button whose name is the row's whole title.
   answerButton: "Answer",
   stopButton: "Stop",
+  skills: "Skills",
+  openInStudio: "Open in the Skill studio",
   activity: "Activity",
   network: "Network",
   restart: "Restart",

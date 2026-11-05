@@ -30,13 +30,22 @@ export type PaneFootTone = "ok" | "warn" | "bad";
 export function PaneFoot({
   children,
   className,
+  label,
 }: {
   children: ReactNode;
   /** A place for it in its pane. Never a look. */
   className?: string;
+  /** What a screen reader hears it as, naming the chat (spec #5191 story 39). */
+  label: string;
 }) {
   return (
-    <div data-scope="pane-foot" data-part="root" className={className}>
+    <div
+      data-scope="pane-foot"
+      data-part="root"
+      className={className}
+      role="group"
+      aria-label={label}
+    >
       {children}
     </div>
   );

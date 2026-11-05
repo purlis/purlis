@@ -38,6 +38,7 @@ import type {
   ExtensionView,
   FinishedTask,
   HarnessGlance,
+  StudioLink,
   MemoryScope,
   PanelBlock,
   RowAction,
@@ -394,6 +395,10 @@ export type Does =
   /** Opens **Use skill…** for a chat (#2775): its skills, to type one into it unsent. It types
    *  nothing by itself: the pick does, through `use_skill`. */
   | { verb: "useSkill"; session: number }
+  /** Shows the chat's skills in the sidebar's Skills view (S8, #5204). */
+  | { verb: "showChatSkills"; session: number }
+  /** Opens the skill the Skill studio started the chat for (#5185, #5204). */
+  | { verb: "openStudioChat"; session: number }
   /** **End…, a chat's own row** (#4753): asks first (`EndingChat`), then ends the chat's
    *  program and takes it off the board, wherever it is drawn. Never a task's: a task ends by
    *  Stop and get its report or Close now. */
@@ -1004,6 +1009,10 @@ export type Now = {
   /** Whether a persona can be asked from a chat's tab: not from a shell, which is on no
    *  harness profile to start the persona's chat on. */
   askable?: (session: number) => boolean;
+  /** The harness chat `session` runs on, as its card names it, where it has one (HP-19, #5204). */
+  cardOf?: (session: number) => HarnessGlance | undefined;
+  /** What the Skill studio started chat `session` for, where it did (#5185, #5204). */
+  studioOf?: (session: number) => StudioLink | undefined;
   /** Why a chat in the queue needs you when nothing it said itself says so (#1448), as its row
    *  says each. */
   neededFor?: (session: number) => readonly string[];
@@ -1084,6 +1093,10 @@ export type Doing = {
   askPersona: (session: number, persona: string) => void;
   /** Opens Use skill… for the chat (#2775). */
   useSkill: (session: number) => void;
+  /** Shows the chat's skills in the sidebar's Skills view (S8, #5204). */
+  showChatSkills: (session: number) => void;
+  /** Opens what the Skill studio started the chat for (#5185, #5204). */
+  openStudioChat: (session: number) => void;
   /** Ends the chat's work link, through `chat_work_unlink`; a refusal is the core's sentence. */
   unlinkWorkItem: (session: number) => Promise<Ran>;
   /** Ends the chat, once the person has answered End… (`EndingChat`). */
@@ -1568,6 +1581,16 @@ function isPinned<T>(held: readonly T[], one: T): boolean {
 export const activityId = (session: number) => `chat.activity:${session}`;
 /** The catalogue's id for the row that opens chat `session`'s Network view (#1662). */
 export const networkId = (session: number) => `chat.network:${session}`;
+/** The id of the row that opens the card of the harness chat `session` runs on (#5204). */
+export const chatHarnessId = (session: number) => `chat.harness:${session}`;
+/** The id of the row that focuses the workspace chat `session` works in (#5204). */
+export const chatWorkspaceId = (session: number) => `chat.workspace:${session}`;
+/** The id of the row that goes to the chat chat `session` came from (#5204). */
+export const askerId = (session: number) => `chat.asker:${session}`;
+/** The id of the row that shows chat `session`'s skills in the Skills view (#5204). */
+export const chatSkillsId = (session: number) => `chat.skills:${session}`;
+/** The id of the row that opens what the Skill studio started chat `session` for (#5204). */
+export const chatStudioId = (session: number) => `chat.studio:${session}`;
 /** The id of the row that opens Use skill… for chat `session` (#2775). */
 export const usingSkillId = (session: number) => `chat.useskill:${session}`;
 /** The id of Rename… for chat `session`. */
@@ -3507,6 +3530,12 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
     case "useSkill":
       doing.useSkill(does.session);
       return DID;
+    case "showChatSkills":
+      doing.showChatSkills(does.session);
+      return DID;
+    case "openStudioChat":
+      doing.openStudioChat(does.session);
+      return DID;
     case "unlinkWorkItem":
       return doing.unlinkWorkItem(does.session);
     case "endChat":
@@ -4456,6 +4485,7 @@ function chatRows(now: Now): Offer[] {
 
     // **Its Activity** (#1495) and **its Network** (#1662), each in a tab of its own. They only
     // read, so they sit above the line.
+    if (harnessed) offers.push(...footRows(now, session, name));
     offers.push(...readingRows(session, name));
 
     // **Restart**: the chat's program ends and starts again on the same conversation, with the
@@ -4548,6 +4578,67 @@ function chatRows(now: Now): Offer[] {
             },
       );
   }
+  return offers;
+}
+
+/**
+ * **What a chat's pane foot presses, where the chat's list had no row for it** (#5204, spec #5191
+ * story 37): the card of its harness, its workspace, the chat it came from, its skills and what
+ * the Skill studio started it for. Each opens or goes to something and changes nothing. A chat
+ * with none of a thing has no row for it, so the foot says that thing in words.
+ */
+function footRows(now: Now, session: number, name: string): Offer[] {
+  const offers: Offer[] = [];
+  const card = now.cardOf?.(session);
+  if (card !== undefined)
+    offers.push({
+      ...can(
+        chatHarnessId(session),
+        `${card.label} (${name})`,
+        { verb: "openView", view: harnessCardView(card.name), title: card.label },
+        card.title,
+      ),
+      note: `What a chat on ${card.title} can and cannot do in this project, in a tab of its own.`,
+    });
+  const listed = now.listed?.find((chat) => chat.session === session);
+  if (listed !== undefined) {
+    // A chat at the plane's root lists the root's own word: its workspace there is `OUTSIDE`.
+    const workspace = now.workspaces.includes(listed.workspace) ? listed.workspace : OUTSIDE;
+    const title = `Focus workspace ${listed.workspace} (${name})`;
+    offers.push(
+      workspace === now.focused
+        ? cannot(chatWorkspaceId(session), title, "It is already focused.", listed.workspace)
+        : can(
+            chatWorkspaceId(session),
+            title,
+            { verb: "focusWorkspace", workspace },
+            listed.workspace,
+          ),
+    );
+  }
+  const asker = now.listed?.find((chat) => chat.session === listed?.parent);
+  if (asker !== undefined)
+    offers.push(
+      can(
+        askerId(session),
+        `Go to ${asker.name} (${name} came from it)`,
+        { verb: "showChat", session: asker.session },
+        asker.name,
+      ),
+    );
+  if (now.skillStudio)
+    offers.push(
+      can(chatSkillsId(session), `Skills of ${name}`, { verb: "showChatSkills", session }, name),
+    );
+  if (now.studioOf?.(session) !== undefined)
+    offers.push(
+      can(
+        chatStudioId(session),
+        `Open in the Skill studio (${name})`,
+        { verb: "openStudioChat", session },
+        name,
+      ),
+    );
   return offers;
 }
 
@@ -5519,6 +5610,12 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
           // Where it is drawn, by the keys (#4764).
           placeChatId(at),
           briefId(at),
+          // What its pane foot presses (#5204), then what it said and reached.
+          chatHarnessId(at),
+          chatWorkspaceId(at),
+          askerId(at),
+          chatSkillsId(at),
+          chatStudioId(at),
           activityId(at),
           networkId(at),
           ignoreId(at),

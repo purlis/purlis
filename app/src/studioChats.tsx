@@ -17,7 +17,6 @@
  *
  * Only chats still open are lent: a closed chat has no tab to open.
  */
-import { Sparkles } from "lucide-react";
 import { createContext, useContext, useId, useMemo } from "react";
 import type { SkillDraft, SkillLevel, StudioJobKind, StudioLink } from "./bindings";
 import { stateOf, useChatsHere, useChatsSelect } from "./chatState";
@@ -177,28 +176,35 @@ export function useEnded(session: number): boolean {
  * **The chip in a studio chat's header** (#5185, variant A): `✦ test-design · writing outcome
  * evals`, which opens the skill's page. Nothing for a chat the studio did not start.
  */
-export function StudioChatChip({ plane, session }: { plane: string; session: number }) {
+export function StudioChatChip({
+  plane,
+  session,
+  onOpen,
+}: {
+  plane: string;
+  session: number;
+  /** The row a press runs (#5204): what the chat was started for. */
+  onOpen?: () => void;
+}) {
   const { chats } = useStudioChats();
   const chat = chats.find((one) => one.session === session);
-  return chat === undefined ? null : <ChipOf plane={plane} chat={chat} />;
+  return chat === undefined ? null : <ChipOf plane={plane} chat={chat} onOpen={onOpen} />;
 }
 
 /** The chip of a chat the studio started: done once its draft waits or its program ended. */
-function ChipOf({ plane, chat }: { plane: string; chat: StudioChat }) {
-  const { openSkill } = useStudioChats();
+function ChipOf({ plane, chat, onOpen }: { plane: string; chat: StudioChat; onOpen?: () => void }) {
   const drafts = useSkillDrafts(plane, 0);
   const ended = useEnded(chat.session);
   const done = isDone(chat, drafts, ended);
   const where = chat.link.skill === null ? "Drafts" : chat.link.skill;
   return (
     <Button
-      variant={done ? "ghost" : "soft-accent"}
-      size="sm"
-      className="pane-studio"
+      inline
+      variant="ghost"
+      className="pane-studio pane-foot-press"
       data-testid="pane-studio"
-      icon={<Sparkles aria-hidden="true" />}
       tooltip={`Open ${where} in the Skill studio`}
-      onPress={() => openSkill(chat.link)}
+      onPress={onOpen}
     >
       {chipSaid(chat.link, done)}
     </Button>

@@ -16,7 +16,7 @@ import {
   useChatSkillSets,
 } from "./UseSkill";
 import type { ChatSkill, ChatSkills, PlaneUpdated, SkillBudget } from "./bindings";
-import { CHAT_SKILLS_ASKED, skillsMissingPutAway, type ChatSkillsAsk } from "./chatSkillsAsk";
+import { skillsMissingPutAway } from "./chatSkillsAsk";
 import { budgetSaid, pinsTogetherSaid, warnsSaid, type ChatSkillsSaid } from "./chatSkillNeeds";
 
 afterEach(() => {
@@ -332,7 +332,7 @@ describe("the Skills chip on a chat's pane", () => {
     studioOn();
     render(
       <ChatSkillSetsHere.Provider value={{ 4: set }}>
-        <SkillsChip plane="p" session={4} />
+        <SkillsChip session={4} />
       </ChatSkillSetsHere.Provider>,
     );
     return screen.findByTestId("pane-skills");
@@ -365,7 +365,7 @@ describe("the Skills chip on a chat's pane", () => {
       const [sets] = useChatSkillSets("p", [4, 5], true);
       return (
         <ChatSkillSetsHere.Provider value={sets}>
-          <SkillsChip plane="p" session={4} />
+          <SkillsChip session={4} />
         </ChatSkillSetsHere.Provider>
       );
     }
@@ -376,25 +376,22 @@ describe("the Skills chip on a chat's pane", () => {
   it("marks a chat's chip as a prompt falls back, with no skill moved, until a later one is answered (#4445)", async () => {
     let now = routedChat(QUICK);
     const reads = chipReadBy(() => now);
-    const chip = await screen.findByTestId("pane-skills");
-    expect(chip).not.toHaveAttribute("data-over");
     await waitFor(() => expect(reads).toHaveLength(2));
+    expect(screen.queryByTestId("pane-skills")).toBeNull();
 
     now = routedChat(SLOW);
     await act(() => emit("chat-prompt-routing", { plane: "p", session: 4 }));
-    await waitFor(() => expect(chip).toHaveAttribute("data-over"));
+    const chip = await screen.findByTestId("pane-skills");
     expect(chip).toHaveAccessibleName(/Its router fell back on a prompt\./);
     expect(reads).toEqual([4, 5, 4]);
 
     now = routedChat(QUICK);
     await act(() => emit("chat-prompt-routing", { plane: "p", session: 4 }));
-    await waitFor(() => expect(chip).not.toHaveAttribute("data-over"));
-    expect(chip).not.toHaveAccessibleName(/fell back/);
+    await waitFor(() => expect(screen.queryByTestId("pane-skills")).toBeNull());
   });
 
   it("reads no chat for a telling of another project or of a chat not open (#4445)", async () => {
     const reads = chipReadBy(() => routedChat(QUICK));
-    await screen.findByTestId("pane-skills");
     await waitFor(() => expect(reads).toHaveLength(2));
     await act(() => emit("chat-prompt-routing", { plane: "q", session: 4 }));
     await act(() => emit("chat-prompt-routing", { plane: "p", session: 9 }));
@@ -420,37 +417,29 @@ describe("the Skills chip on a chat's pane", () => {
     expect(reads).toEqual([4]);
   });
 
-  it("shows the chat's skills at a glance and opens the Skills view on them, not Use skill… (S8)", async () => {
+  it("says nothing while the set needs nothing, and runs its row on a press, not Use skill… (S8, #5204)", async () => {
     studioOn();
-    const open = vi.fn();
-    const ran: ChatSkillsAsk[] = [];
-    const hear = (event: Event) => ran.push((event as CustomEvent<ChatSkillsAsk>).detail);
-    window.addEventListener(CHAT_SKILLS_ASKED, hear);
-    try {
-      render(
-        <UseSkillOpener value={open}>
-          <ChatSkillSetsHere.Provider value={{ 4: held() }}>
-            <SkillsChip plane="p" session={4} />
-            <SkillsChip plane="p" session={5} />
-          </ChatSkillSetsHere.Provider>
-        </UseSkillOpener>,
-      );
-      const chip = await screen.findByTestId("pane-skills");
-      expect(screen.getAllByTestId("pane-skills")).toHaveLength(1);
-      expect(chip.textContent).toBe("4 skills");
-      expect(chip.hasAttribute("data-over")).toBe(false);
-      expect(chip.getAttribute("aria-label")).toBe(`4 skills. ${SHOW_THIS_CHATS_SKILLS}.`);
-      fireEvent.click(chip);
-      expect(ran).toEqual([{ plane: "p", session: 4 }]);
-      expect(open).not.toHaveBeenCalled();
-    } finally {
-      window.removeEventListener(CHAT_SKILLS_ASKED, hear);
-    }
+    const opener = vi.fn();
+    const pressed = vi.fn();
+    const warned = held({ budget: { ...BUDGET, warns: "chars" } });
+    render(
+      <UseSkillOpener value={opener}>
+        <ChatSkillSetsHere.Provider value={{ 4: warned, 6: held() }}>
+          <SkillsChip session={4} onOpen={pressed} />
+          <SkillsChip session={5} />
+          <SkillsChip session={6} />
+        </ChatSkillSetsHere.Provider>
+      </UseSkillOpener>,
+    );
+    const chip = await screen.findByTestId("pane-skills");
+    expect(screen.getAllByTestId("pane-skills")).toHaveLength(1);
+    fireEvent.click(chip);
+    expect(pressed).toHaveBeenCalled();
+    expect(opener).not.toHaveBeenCalled();
   });
 
   it("is in the warning look, naming the need, for a set near or past the budget", async () => {
     const chip = await chipOf(held({ budget: { ...BUDGET, warns: "chars" } }));
-    expect(chip.hasAttribute("data-over")).toBe(true);
     // A manual-only skill is in the set's count, free in the listing's.
     expect(chip.textContent).toBe("4 skills");
     expect(chip.getAttribute("aria-label")).toBe(
@@ -460,7 +449,6 @@ describe("the Skills chip on a chat's pane", () => {
 
   it("is in the warning look for pins past 64 together, under the budget or not (#3391)", async () => {
     const chip = await chipOf(held({ budget: TOGETHER }));
-    expect(chip.hasAttribute("data-over")).toBe(true);
     expect(chip.getAttribute("aria-label")).toMatch(/^4 skills\. Its pins are not read\./);
   });
 
@@ -488,15 +476,22 @@ describe("the Skills chip on a chat's pane", () => {
       [held({ changed }), "Changed since it started"],
     ] as const) {
       const chip = await chipOf(set);
-      expect(chip.hasAttribute("data-over"), title).toBe(true);
       expect(chip.getAttribute("aria-label")).toBe(
         `4 skills. ${title}. ${SHOW_THIS_CHATS_SKILLS}.`,
       );
       cleanup();
     }
     // A router that did not fall back needs nothing: the view's header says it.
-    const quiet = await chipOf(held({ routing: { ...fellBack, fell_back: false } }));
-    expect(quiet.hasAttribute("data-over")).toBe(false);
+    studioOn();
+    render(
+      <ChatSkillSetsHere.Provider
+        value={{ 4: held({ routing: { ...fellBack, fell_back: false } }) }}
+      >
+        <SkillsChip session={4} />
+      </ChatSkillSetsHere.Provider>,
+    );
+    await act(async () => {});
+    expect(screen.queryByTestId("pane-skills")).toBeNull();
     cleanup();
     // A prompt that fell back says so as a start's does (#4445).
     const prompted = await chipOf(

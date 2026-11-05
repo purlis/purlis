@@ -13,7 +13,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import { Sparkles, TriangleAlert } from "lucide-react";
+import { TriangleAlert } from "lucide-react";
 import { Field, SettingRow } from "./settings/components";
 import { Dialog } from "./ui/dialog/Dialog";
 import { ListFilter, noMatchSaid } from "./ui/list/ListFilter";
@@ -22,7 +22,7 @@ import { RowBelow, RowDescription, RowLabel } from "./ui/list/Row";
 import { Button } from "./ui/button/Button";
 import { counted } from "./dispatches";
 import { AT_THE_ROOT, useSkillStudioOn } from "./skillStudio";
-import { SKILLS_MISSING_PUT_AWAY, askChatSkills, type ChatSkillsAsk } from "./chatSkillsAsk";
+import { SKILLS_MISSING_PUT_AWAY, type ChatSkillsAsk } from "./chatSkillsAsk";
 import { chatNeedsOf, type ChatSkillsSaid } from "./chatSkillNeeds";
 import type { SkillsChangedHere } from "./PlaneUpdated";
 import { usePromptRoutingMoved } from "./promptRouting";
@@ -467,40 +467,41 @@ export const SHOW_THIS_CHATS_SKILLS = "Show this chat's skills";
  * no skills of; where the pane leaves the chip out, the Skills view says the budget (`⌘⇧X`).
  */
 export const SkillsChip = memo(function SkillsChip({
-  plane,
   session,
+  onOpen,
 }: {
-  plane: PlaneId;
   session: number;
+  /** The row a press runs (#5204): the chat's Skills, in the sidebar's Skills view. */
+  onOpen?: () => void;
 }) {
-  const on = useSkillStudioOn();
+  const warning = useChatSkillsWarn(session);
   const said = useContext(ChatSkillSetsHere)[session];
-  if (!on || said === undefined) return null;
-  // The scope only aims each need's fix, which the view offers and the chip does not.
-  const needs = chatNeedsOf(said, AT_THE_ROOT);
-  const warning = needs.length === 0 ? undefined : needs.map((one) => one.title).join(" · ");
-  const tip =
-    warning === undefined ? `${SHOW_THIS_CHATS_SKILLS}.` : `${warning}. ${SHOW_THIS_CHATS_SKILLS}.`;
+  if (warning === undefined || said === undefined) return null;
+  const tip = `${warning}. ${SHOW_THIS_CHATS_SKILLS}.`;
   const count = counted(skillsInTheSet(said.budget), "skill", "skills");
   return (
     <Button
-      variant={warning === undefined ? "ghost" : "warning-soft"}
-      size="sm"
-      className="pane-skills"
+      inline
+      variant="warning-soft"
+      className="pane-skills pane-foot-press"
       data-testid="pane-skills"
-      data-over={warning === undefined ? undefined : ""}
       tooltip={tip}
       aria-label={`${count}. ${tip}`}
-      icon={
-        warning === undefined ? (
-          <Sparkles aria-hidden="true" />
-        ) : (
-          <TriangleAlert aria-hidden="true" />
-        )
-      }
-      onPress={() => askChatSkills(plane, session)}
+      onPress={onOpen}
     >
+      <TriangleAlert aria-hidden="true" className="pane-skills-sign" />
       {count}
     </Button>
   );
 });
+
+/** **What chat `session`'s set of skills needs the person for**, in words, or nothing while it
+ *  needs nothing or the Skill studio is off: what its pane foot's warning says (#5204). */
+export function useChatSkillsWarn(session: number): string | undefined {
+  const on = useSkillStudioOn();
+  const said = useContext(ChatSkillSetsHere)[session];
+  if (!on || said === undefined) return undefined;
+  // The scope only aims each need's fix, which the view offers and the chip does not.
+  const needs = chatNeedsOf(said, AT_THE_ROOT);
+  return needs.length === 0 ? undefined : needs.map((one) => one.title).join(" · ");
+}

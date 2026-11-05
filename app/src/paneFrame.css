@@ -355,6 +355,33 @@
   gap: inherit;
 }
 
+/* **Each part of the foot's start, in the order it gives way** (#5204): a name is as long as the
+   person made it, so each is cut at its end and none pushes the gauge. The sandbox's mark and the
+   warning's sign keep their size. */
+.pane-foot :is(.pane-foot-from, .pane-studio, .pane-foot-work-item, .pane-skills) {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  align-content: center;
+  color: var(--text-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* The warning's sign, on the line of its words. */
+.pane-foot .pane-skills-sign {
+  inline-size: 1em;
+  block-size: 1em;
+  margin-inline-end: var(--space-1);
+  vertical-align: -0.125em;
+}
+
+.pane-foot .pane-foot-sandbox {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+}
+
 /* And on the head of a pane with no foot, a shell's or a one-job program's (spec #5191). */
 :is(.pane-foot .pane-where, .pane-chips > .pane-head-where) {
   display: inline-flex;
@@ -438,7 +465,8 @@
    under the pointer or the keyboard. **Interim, until the quiet ghost variant (#3214)**: the
    family's ghost draws primary words, so these rules out-rank its variant (0,3,0) by
    specificity, naming the button's own attributes, never by where they are written. */
-:is(.pane-foot, .pane-head) .pane-harness[data-scope="button"][data-variant="ghost"] {
+:is(.pane-foot, .pane-head) .pane-harness[data-scope="button"][data-variant="ghost"],
+.pane-foot .pane-foot-press[data-scope="button"][data-variant="ghost"] {
   color: var(--text-muted);
 }
 
@@ -448,7 +476,9 @@
   :is(.pane-foot, .pane-head)
   .pane-harness[data-scope="button"][data-variant="ghost"],
 :is(.pane-foot, .pane-head)
-  .pane-harness[data-scope="button"][data-variant="ghost"]:is(
+  .pane-harness[data-scope="button"][data-variant="ghost"]:is([data-hovered], [data-focus-visible]),
+.pane-foot
+  .pane-foot-press[data-scope="button"][data-variant="ghost"]:is(
     [data-hovered],
     [data-focus-visible]
   ) {

@@ -15,6 +15,7 @@ import {
 import type { ChatWorktree } from "./bindings";
 import type { ListedChat } from "./chatsTree";
 import { menuOf, rowsOf, type SubDrawn } from "./menuModel";
+import { FOOT_FACTS, FOOT_ROWS, type FootPart } from "./paneHead";
 import { noTabs, openTab, selectTab, splitFocusedPane } from "./tabs";
 
 /**
@@ -164,8 +165,9 @@ describe("a chat's one list (#4753)", () => {
       it("acts on this chat by its number, whatever surface presses it", () => {
         const { offers } = world();
         for (const row of rowsOf(menuOf({ on: "chat", session }, offers))) {
-          // Go to names the chat this one's work went to, and goes there (#1492).
-          if (row.offer.id.startsWith("chat.handed:")) continue;
+          // Go to names the chat this one's work went to, and goes there (#1492), and the chat
+          // it came from (#5204).
+          if (/^chat\.(handed|asker):/.test(row.offer.id)) continue;
           const does = row.offer.does as { session?: number; tab?: number };
           expect(does.tab, row.offer.id).toBeUndefined();
           if (does.session !== undefined) expect(does.session, row.offer.id).toBe(session);
@@ -188,6 +190,98 @@ describe("a chat's one list (#4753)", () => {
     const own = (id: string) => id.startsWith("chat.workunlink:") || id.startsWith("chat.handed:");
     expect(shape(3)).toEqual(shape(1).filter((id) => !own(id)));
     expect(shape(2)).toEqual(shape(3));
+  });
+
+  describe("the pane foot's presses (#5204, spec #5191 stories 33 to 37)", () => {
+    const card = {
+      name: "claude",
+      title: "Claude Code",
+      label: "What Claude Code can do here",
+      lines: [],
+      cannot_type: null,
+    };
+    /** The window, with chat 5 (a handoff from chat 1) on a harness with a card, and started by
+     *  the Skill studio. */
+    const footed = (over: Partial<Now> = {}) =>
+      world({
+        cardOf: (session) => (session === 6 ? undefined : card),
+        studioOf: (session) =>
+          session === 5
+            ? {
+                skill: "test-design",
+                level: { at: "project", local: false },
+                job: "draft",
+                done: false,
+              }
+            : undefined,
+        ...over,
+      });
+
+    it("is every press a row of the chat's list and of the palette: nothing lives on the foot only", () => {
+      const { offers, palette } = footed();
+      const inThePalette = new Set(palette.map((offer) => offer.id));
+      const list = new Set(listOf(5, offers));
+      for (const [part, rowOf] of Object.entries(FOOT_ROWS)) {
+        expect(list, part).toContain(rowOf(5));
+        expect(inThePalette, part).toContain(rowOf(5));
+      }
+    });
+
+    it("gives every part of the foot a row, or says it is a fact with nothing to press", () => {
+      const parts: FootPart[] = [
+        "harness",
+        "workspace",
+        "from",
+        "studio",
+        "workItem",
+        "skills",
+        "sandbox",
+        "ctx",
+        "cache",
+      ];
+      const pressed = new Set(Object.keys(FOOT_ROWS));
+      const facts = new Set<string>(FOOT_FACTS);
+      for (const part of parts) expect(pressed.has(part) !== facts.has(part), part).toBe(true);
+    });
+
+    it("goes where each part says", () => {
+      const { offers } = footed();
+      expect(offers.get(FOOT_ROWS.harness(5))?.does).toMatchObject({
+        verb: "openView",
+        view: { view: "harness" },
+      });
+      expect(offers.get(FOOT_ROWS.from(5))?.does).toEqual({ verb: "showChat", session: 1 });
+      expect(offers.get(FOOT_ROWS.ctx(5))?.does).toMatchObject({ verb: "openView" });
+      expect(offers.get(FOOT_ROWS.skills(5))?.does).toEqual({ verb: "showChatSkills", session: 5 });
+      expect(offers.get(FOOT_ROWS.studio(5))?.does).toEqual({ verb: "openStudioChat", session: 5 });
+    });
+
+    it("focuses the chat's workspace from another, and says why not from its own", () => {
+      const elsewhere = footed({ focused: OUTSIDE }).offers.get(FOOT_ROWS.workspace(5));
+      expect(elsewhere).toMatchObject({
+        available: true,
+        does: { verb: "focusWorkspace", workspace: "beta" },
+      });
+      const here = footed().offers.get(FOOT_ROWS.workspace(5));
+      expect(here).toMatchObject({ available: false, reason: "It is already focused." });
+    });
+
+    it("has a row only for what the chat has: no asker on a chat nobody started, no card or workspace on a shell", () => {
+      const { offers } = footed();
+      expect(offers.has(FOOT_ROWS.from(3))).toBe(false);
+      expect(offers.has(FOOT_ROWS.studio(3))).toBe(false);
+      for (const rowOf of Object.values(FOOT_ROWS).filter((row) => row !== FOOT_ROWS.ctx))
+        expect(offers.has(rowOf(6)), rowOf(6)).toBe(false);
+    });
+
+    it("has no asker's row once that chat has closed, since there is nowhere to go", () => {
+      const listed = world().now.listed?.filter((one) => one.session !== 1);
+      expect(footed({ listed }).offers.has(FOOT_ROWS.from(5))).toBe(false);
+    });
+
+    it("has no Skills row with the Skill studio off, as it has no Use skill", () => {
+      expect(footed({ skillStudio: false }).offers.has(FOOT_ROWS.skills(5))).toBe(false);
+    });
   });
 
   it("says End chat in the palette only on End…: a tab's close says Close (#4753 D6, #4756)", () => {

@@ -51,15 +51,16 @@ function drawn(value: StudioChatsLent, children: ReactNode) {
 }
 
 describe("a studio chat's chip (#5185)", () => {
-  it("names the skill and the job, and opens the skill's page", async () => {
+  it("names the skill and the job, and runs its row on a press", async () => {
     mockIPC((cmd) => (cmd === "skill_drafts" ? [] : null));
     const value = lent();
-    drawn(value, <StudioChatChip plane="p" session={7} />);
+    const open = vi.fn();
+    drawn(value, <StudioChatChip plane="p" session={7} onOpen={open} />);
 
     const chip = await screen.findByRole("button", { name: "test-design · writing outcome evals" });
     fireEvent.click(chip);
 
-    expect(value.openSkill).toHaveBeenCalledWith(EVALS);
+    expect(open).toHaveBeenCalled();
   });
 
   it("says what the job did once its draft waits", async () => {

@@ -314,7 +314,16 @@ describe("every menu", () => {
 
   it("lets a row name another thing only where it acts on that thing", () => {
     expect([...NAMES_ANOTHER].sort()).toEqual(
-      ["chat.back", "chat.beside", "chat.handed", "tab.close", "worktree.merge"].sort(),
+      [
+        "chat.asker",
+        "chat.back",
+        "chat.beside",
+        "chat.handed",
+        "chat.harness",
+        "chat.workspace",
+        "tab.close",
+        "worktree.merge",
+      ].sort(),
     );
     const { offers } = world();
     const rows = rowsOf(menuOf({ on: "chat", session: 7 }, offers));
@@ -458,7 +467,12 @@ describe("a chat's list (#4753)", () => {
         "Unlink work item",
       ],
       // Its work went to qa 12, and chat 7 needs you, so it can be ignored until it asks again.
-      ["Go to qa 12", "Place…", "Open ▸ [Activity, Network]", "Ignore until it asks again"],
+      [
+        "Go to qa 12",
+        "Place…",
+        "Open ▸ [Workspace beta, Activity, Network]",
+        "Ignore until it asks again",
+      ],
       ["Restart"],
       // The ways to stop it end something too: in the last group, above the row that ends it.
       ["Stop ▸ [Stop, Stop and everything below it, Stop all tasks]", "Start fresh", "End…"],
@@ -500,7 +514,11 @@ describe("a chat's list (#4753)", () => {
 
     // Less what is chat 7's own now: its work link, and the Ignore of a chat that needs you.
     const mine = new Set(["Unlink work item", "Go to qa 12", "Ignore until it asks again"]);
-    expect(rows(12)).toEqual(rows(7).filter((one) => !mine.has(one)));
+    // And what is the handoff's: the way back to the chat it came from (#5204).
+    const itsOwn = "Go to console-developer 16";
+    expect(rows(12).filter((one) => one !== itsOwn)).toEqual(
+      rows(7).filter((one) => !mine.has(one)),
+    );
   });
 
   it("says the key that does the same from the tab, at the row's end", () => {
@@ -655,7 +673,8 @@ describe("the other tabs' menus", () => {
         "Open beside console-developer 16",
         "Place…",
         "Brief",
-        "Open ▸ [Activity, Network]",
+        "Open ▸ [Workspace beta, Activity, Network]",
+        "Go to console-developer 16",
       ],
       ["Restart"],
       ["Start fresh", "Stop and get its report", "Close now"],

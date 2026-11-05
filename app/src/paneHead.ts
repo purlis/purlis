@@ -1,7 +1,18 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { answerId, briefId, smartCloseCancelId, stopId } from "./actions";
+import {
+  activityId,
+  answerId,
+  askerId,
+  briefId,
+  chatHarnessId,
+  chatSkillsId,
+  chatStudioId,
+  chatWorkspaceId,
+  smartCloseCancelId,
+  stopId,
+} from "./actions";
 import type { ListedChat } from "./chatsTree";
 import { SAID } from "./menuWords";
 import type { SandboxSaid } from "./SandboxMark";
@@ -69,9 +80,8 @@ export function stateButtonOf(chat: {
  * The parts of a pane head a narrow pane can drop. The bell, ⋯, Split right and Close are not
  * among them: they never go.
  *
- * - `where`: the line's details that are still on the head (its sandbox, its skills, where a
- *   handed-off chat came from, its work item). "harness · workspace" and the gauge are on the
- *   pane foot since #5202, which drops nothing yet (#5206); #5204 moves the rest of these there.
+ * - `where`: the details on the head of a pane with no foot (its sandbox, harness · workspace,
+ *   where it came from and its work item). A chat's are on its foot since #5204.
  * - `markWord`: the state mark's word, its dot staying.
  * - `buttonWord`: the state button's word, its icon staying with the word as its name.
  * - `mark`: the state mark, dot and all.
@@ -101,48 +111,58 @@ export type PaneKind = "chat" | "task" | "shell" | "oneJob";
 
 /**
  * **A chip of the head's line** (the **pane line**, `.pane-chips`), in its drawn order: who it
- * runs as, which chat it is (its name, or the path to the task it shows), its sandbox, its state
- * mark and the mark's word, harness · workspace on a pane with no foot (`where`), then the details still on the head until #5204 moves them to the
- * foot: its skills, what the Skill studio started it for (#5185), where it came from and its work
- * item. `studio` is drawn only for a chat the studio started: its chip reads that itself.
+ * runs as, which chat it is (its name, or the path to the task it shows) and its state mark and
+ * the mark's word. A pane with no foot keeps its details here too (spec #5191, Out of Scope): its
+ * sandbox, harness · workspace (`where`), where it came from and its work item.
  */
 export type LinePart =
-  | "persona"
-  | "name"
-  | "crumbs"
-  | "sandbox"
-  | "mark"
-  | "markWord"
-  | "where"
-  | "skills"
-  | "studio"
-  | "from"
-  | "workItem";
+  "persona" | "name" | "crumbs" | "sandbox" | "mark" | "markWord" | "where" | "from" | "workItem";
 
 /**
- * **A part of the pane foot** (#5202, spec #5191, look A), in its drawn order: the harness and the
- * workspace at its start, then `ctx`, its fill a thin bar under its number, and `cache` at its
- * end. The gauge's parts are drawn once the chat's first usage arrives; the foot keeps its row
- * either way, so the terminal never moves for it.
+ * **A part of the pane foot** (#5202, #5204, spec #5191, look A), in its drawn order: at its start
+ * the harness and the workspace, where the chat came from (`from`, then what the Skill studio
+ * started it for, `studio`, then its work item), its skills warning and its sandbox; at its end
+ * `ctx`, its fill a thin bar under its number, and `cache`. The gauge's parts are drawn once the
+ * chat's first usage arrives; the foot keeps its row either way, so the terminal never moves.
  */
-export type FootPart = "harness" | "workspace" | "ctx" | "cache";
+export type FootPart =
+  "harness" | "workspace" | "from" | "studio" | "workItem" | "skills" | "sandbox" | "ctx" | "cache";
 
-/** The details a chat has for the head's line: drawn only where it has them. */
+/**
+ * **The row of the chat's list each part of the foot presses** (#5204, spec #5191 story 37): a
+ * foot's part has no press of its own, so nothing lives on the foot only. `chatList.test.ts` holds
+ * each of these to the chat's ⋯ and the palette.
+ */
+export const FOOT_ROWS = {
+  harness: chatHarnessId,
+  workspace: chatWorkspaceId,
+  from: askerId,
+  studio: chatStudioId,
+  skills: chatSkillsId,
+  ctx: activityId,
+} as const satisfies Partial<Record<FootPart, (session: number) => string>>;
+
+/** **The parts of the foot that are facts alone**, with nothing to press: the sandbox and the work
+ *  item, whose rows change them rather than show them, and `cache`, whose words are `ctx`'s. */
+export const FOOT_FACTS: readonly FootPart[] = ["workItem", "sandbox", "cache"];
+
+/** The details a chat has for its lines: drawn only where it has them. */
 export type LineFacts = {
   /** It was handed off from, or asked by, another chat. */
   from?: boolean;
-  /** Its skills chip has room: not beside a task's path, nor in a narrow pane (#2775). */
+  /** Its set of skills needs the person. */
   skills?: boolean;
+  /** The Skill studio started it (#5185). */
+  studio?: boolean;
   /** It works on a work item (V60). */
   workItem?: boolean;
+  /** Its sandbox is known. */
+  sandbox?: boolean;
 };
 
 /** **Both lines of a pane**: the head's chips, and the foot's parts, or `null` for a pane that
  *  draws no foot. */
 export type PaneLines = { head: LinePart[]; foot: FootPart[] | null };
-
-/** The foot of a chat's pane, whole: it drops nothing yet (#5206 orders its drops). */
-export const WHOLE_FOOT: readonly FootPart[] = ["harness", "workspace", "ctx", "cache"];
 
 /** **A pane's kind, by what it shows**: a task's path says it first, whatever runs there. */
 export function paneKindOf(shows: { task: boolean; oneJob: boolean; shell: boolean }): PaneKind {
@@ -153,11 +173,11 @@ export function paneKindOf(shows: { task: boolean; oneJob: boolean; shell: boole
 
 /**
  * **What a pane of `kind`, `width` pixels wide (none where not measured), draws on its two lines**
- * (#5202): the head says which chat this is and what it is doing; the foot, under the terminal,
- * where it runs and how full it is. On a chat's or a task's pane, harness · workspace and the gauge
- * are the foot's, never the head's, at any width. A shell and a one-job program draw no foot and
- * keep their heads as they were (spec #5191), `where` among them. The head's actions are not
- * here: they are `PaneActions`', by `droppedAt`, until #5203 and #5206 settle them.
+ * (#5202, #5204): the head says which chat this is and what it is doing; the foot, under the
+ * terminal, where it runs, where it came from and how healthy it is. On a chat's or a task's pane
+ * the chat's facts are the foot's, never the head's, at any width. A shell and a one-job program
+ * draw no foot and keep their heads as they were (spec #5191), `where` among them. The head's
+ * actions are not here: they are `PaneActions`', by `droppedAt`, until #5206 settles them.
  */
 export function paneLinesOf(
   kind: PaneKind,
@@ -166,19 +186,25 @@ export function paneLinesOf(
 ): PaneLines {
   const drops = droppedAt(width);
   const head: LinePart[] = ["persona", kind === "task" ? "crumbs" : "name"];
-  if (!drops.has("where")) head.push("sandbox");
+  const footed = kind === "chat" || kind === "task";
+  if (!footed && !drops.has("where")) head.push("sandbox");
   // A task's path says its state; a chat's head says it with its mark.
   if (kind !== "task" && !drops.has("mark")) {
     head.push("mark");
     if (!drops.has("markWord")) head.push("markWord");
   }
-  const footed = kind === "chat" || kind === "task";
-  if (!drops.has("where")) {
-    if (kind === "shell" || kind === "oneJob") head.push("where");
-    if (facts.skills === true && kind !== "task") head.push("skills");
-    if (kind !== "task") head.push("studio");
+  if (!footed && !drops.has("where")) {
+    head.push("where");
     if (facts.from === true) head.push("from");
     if (facts.workItem === true) head.push("workItem");
   }
-  return { head, foot: footed ? [...WHOLE_FOOT] : null };
+  if (!footed) return { head, foot: null };
+  const foot: FootPart[] = ["harness", "workspace"];
+  if (facts.from === true) foot.push("from");
+  if (facts.studio === true) foot.push("studio");
+  if (facts.workItem === true) foot.push("workItem");
+  if (facts.skills === true) foot.push("skills");
+  if (facts.sandbox === true) foot.push("sandbox");
+  foot.push("ctx", "cache");
+  return { head, foot };
 }

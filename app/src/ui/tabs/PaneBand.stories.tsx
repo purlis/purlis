@@ -17,7 +17,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Fragment, useRef, useState, type ReactNode } from "react";
 import { expect, waitFor, within } from "storybook/test";
-import { Sparkles, X } from "lucide-react";
+import { X } from "lucide-react";
 import { Notice, NoticePaneRow } from "../../Notice";
 import { NOTICE_MOVED_JUST_NOW, SETTLE_MS, paneBand } from "../../noticeSettle";
 import { PaneActions, PaneBellAt, PaneBellOf, PaneHead } from "../../LayoutPanes";
@@ -26,7 +26,6 @@ import { PANE_NOTICES } from "../../paneNoticesPref";
 import type { Offer } from "../../actions";
 import { ChatMark } from "../../NeedsYou";
 import { useTabIds, StripTablist } from "../../StripTablist";
-import { Button } from "../button/Button";
 import { panelRoot } from "../panel/Panel";
 import { TabCell, tabPart, tabsPart } from "./Tabs";
 import { expectFocusInSight, untilFocused } from "../../stories.testkit";
@@ -230,14 +229,7 @@ function Pane({
           }
         >
           <div className="pane-chips">
-            <Button
-              size="sm"
-              variant="ghost"
-              className="pane-skills"
-              icon={<Sparkles aria-hidden="true" />}
-            >
-              11 skills
-            </Button>
+            <span className="pane-name">work</span>
           </div>
         </PaneHead>
         <NoticePaneRow

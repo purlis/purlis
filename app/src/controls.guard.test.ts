@@ -495,16 +495,22 @@ export const PANE_LINE_CHIPS = [
   "pane-crumbs",
   "pane-from",
   "pane-work-item",
-  "pane-skills",
-  "pane-studio",
   "pane-head-where",
 ];
 
-/** **The chips of the pane foot** (#5202, spec #5191 stories 43 and 44): harness · workspace and
- *  the gauge. Held at the head's chips' height, inside a foot the tab strip's height, and read off
+/** **The chips of the pane foot** (#5202, #5204, spec #5191 stories 43 and 44): harness ·
+ *  workspace, where it came from, its skills warning, its sandbox and the gauge. Held at the head's chips' height, inside a foot the tab strip's height, and read off
  *  the foot's own groups, so a chip cannot drift back onto the head's line, nor a head's chip onto
  *  the foot, unnoticed. */
-export const PANE_FOOT_CHIPS = ["pane-where", "chat-gauge"];
+export const PANE_FOOT_CHIPS = [
+  "pane-where",
+  "pane-foot-from",
+  "pane-studio",
+  "pane-foot-work-item",
+  "pane-skills",
+  "pane-foot-sandbox",
+  "chat-gauge",
+];
 
 /** What is drawn as part of a strip or a pane's top line, as tall as it is: the ways to end a
  *  pane's task (#1488), the chip a tab wears for its tasks (#1487) and the chips of the pane's
@@ -828,8 +834,6 @@ export const HEAD_ROW: ChipRow = {
     SandboxMark: "tab-sandbox",
     TaskEndAsked: "pane-task-ends",
     PaneCrumbs: "pane-crumbs",
-    SkillsChip: "pane-skills",
-    StudioChatChip: "pane-studio",
   },
 };
 
@@ -838,11 +842,16 @@ export const FOOT_ROW: ChipRow = {
   name: "the pane foot",
   opens: (tag) => tag.name === "PaneFootStart" || tag.name === "PaneFootEnd",
   chips: PANE_FOOT_CHIPS,
-  components: { ChatGauge: "chat-gauge" },
+  components: {
+    ChatGauge: "chat-gauge",
+    FootFrom: "pane-foot-from",
+    SkillsChip: "pane-skills",
+    StudioChatChip: "pane-studio",
+  },
 };
 
 /** A component that draws its one child as itself (`asChild`): the line reads through it. */
-const LINE_WRAPPERS = new Set(["Menued"]);
+const LINE_WRAPPERS = new Set(["Menued", "PaneFootJoined"]);
 
 /** What each opening of `row` in a component's source holds (the pane line's `<div
  *  className="pane-chips">` unless named): each element drawn straight in it (through
@@ -1211,7 +1220,15 @@ export const plantedTall = { minBlockSize: 32 };
 
   it("pins each chip to its own row: none is listed on both, and harness · workspace and the gauge are the foot's (#5202)", () => {
     expect(PANE_LINE_CHIPS.filter((chip) => PANE_FOOT_CHIPS.includes(chip))).toEqual([]);
-    for (const chip of ["pane-where", "chat-gauge"]) {
+    for (const chip of [
+      "pane-where",
+      "chat-gauge",
+      "pane-foot-from",
+      "pane-skills",
+      "pane-studio",
+      "pane-foot-sandbox",
+      "pane-foot-work-item",
+    ]) {
       expect(PANE_FOOT_CHIPS).toContain(chip);
       expect(PANE_LINE_CHIPS).not.toContain(chip);
     }
@@ -1267,7 +1284,7 @@ export const plantedTall = { minBlockSize: 32 };
         controls,
         PANE_FOOT_CHIPS,
       ),
-    ).toEqual(["pane-where"]);
+    ).toEqual(PANE_FOOT_CHIPS.filter((chip) => chip !== "chat-gauge"));
     // A chip off the chrome height fails, a button chip as any other.
     expect(cssHeights(".pane-from { min-height: 1.25rem; }", controls)).toEqual([
       ".pane-from | min-height: 1.25rem (a strip)",

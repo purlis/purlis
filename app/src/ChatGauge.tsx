@@ -4,8 +4,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useOnShownAgain, useProjectShown } from "./projectShown";
 import { commands, type ChatUsage, type PlaneId } from "./bindings";
-import { WHOLE_FOOT, type FootPart } from "./paneHead";
+import type { FootPart } from "./paneHead";
 import { everyWhileShown } from "./whileShown";
+import { Button } from "./ui/button/Button";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 import { PaneFootGauge } from "./ui/pane-foot/PaneFoot";
 
@@ -145,16 +146,22 @@ function sameReading(a: ChatUsage | null, b: ChatUsage | null): boolean {
   return a === b || JSON.stringify(a) === JSON.stringify(b);
 }
 
+/** Both of the gauge's numbers, where no pane's model has said otherwise. */
+const WHOLE_GAUGE: readonly FootPart[] = ["ctx", "cache"];
+
 /** **The gauge itself, on the pane foot** (#5202, look A), or nothing: `ctx` with its fill as a
  *  thin bar under its number, then `cache`. The separate row of bars, one per turn, is gone: one figure says what the number
  *  and the row said twice. */
 export function ChatGauge({
   usage,
-  parts = WHOLE_FOOT,
+  parts = WHOLE_GAUGE,
+  context: contextRow,
 }: {
   usage: ChatUsage | undefined;
   /** What the pane's model answers for its foot (`paneHead.paneLinesOf`). */
   parts?: readonly FootPart[];
+  /** The row a press on `ctx` runs (#5204, spec #5191 story 36): the chat's Activity. */
+  context?: { title: string; press: () => void };
 }) {
   if (usage === undefined) return null;
   const { rebuilds, cold } = usage;
@@ -178,20 +185,42 @@ export function ChatGauge({
   ]
     .filter(Boolean)
     .join("; ");
+  const contextDrawn = context && (
+    <PaneFootGauge
+      label="ctx"
+      value={`${context.value}%`}
+      fill={{ percent: context.value, tone: context.tone }}
+    />
+  );
   return (
     // No live region: a screen reader announcing every turn's percentage in every pane would
     // be noise. The words are in the text and the full sentence is its tooltip.
-    <Tooltip tip={said}>
-      <span className="chat-gauge" data-testid="chat-gauge">
-        {context && (
-          <PaneFootGauge
-            label="ctx"
-            value={`${context.value}%`}
-            fill={{ percent: context.value, tone: context.tone }}
-          />
-        )}
-        {cache && <PaneFootGauge label="cache" value={`${cache.value}%`} tone={cache.tone} />}
-      </span>
-    </Tooltip>
+    <span className="chat-gauge" data-testid="chat-gauge">
+      {context &&
+        (contextRow === undefined ? (
+          <Tooltip tip={said}>
+            <span>{contextDrawn}</span>
+          </Tooltip>
+        ) : (
+          // **A shortcut to the chat's Activity** (#5204), which shows what fills the context.
+          <Button
+            inline
+            variant="ghost"
+            className="pane-foot-press"
+            tooltip={said}
+            aria-label={`ctx ${context.value}%. ${contextRow.title}`}
+            onPress={contextRow.press}
+          >
+            {contextDrawn}
+          </Button>
+        ))}
+      {cache && (
+        <Tooltip tip={said}>
+          <span>
+            <PaneFootGauge label="cache" value={`${cache.value}%`} tone={cache.tone} />
+          </span>
+        </Tooltip>
+      )}
+    </span>
   );
 }
