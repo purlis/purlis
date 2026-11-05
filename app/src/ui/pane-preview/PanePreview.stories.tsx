@@ -5,7 +5,7 @@
  * **What a drag draws, each kind of preview** (#5291, spec #5288), in every cell of the theme
  * matrix. The drag's own logic is window tests' (`paneMakingRoom.window.test.tsx`); each story here
  * is one still of it, drawn with the marks and the boxes a drag writes, so no picture catches a
- * state by timing: nothing moves, and each waits for what animates as it appears.
+ * state by timing: nothing moves, and what animates as it appears is taken to its end.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect } from "storybook/test";
@@ -79,14 +79,22 @@ const meta: Meta = { title: "Panes/Moving a pane" };
 export default meta;
 type Story = StoryObj;
 
-/** Each waits for what animates as it appears, so no picture has it half way. */
+/**
+ * A pane picked up is dimmed on purpose while it is held, its words with it: it says what is being
+ * moved by being faint, its name is at full strength on the label by the pointer, and a reader
+ * hears it from the window's status line. So contrast is off on these stories alone.
+ */
+const DIMMED = { a11y: { options: { rules: { "color-contrast": { enabled: false } } } } };
+
+/** What animates as it appears is taken to its end, so no picture has it half way. */
 const still: Story["play"] = async ({ canvasElement }) => {
-  await Promise.all(canvasElement.getAnimations({ subtree: true }).map((one) => one.finished));
+  for (const one of canvasElement.getAnimations({ subtree: true })) one.finish();
   await expect(canvasElement.querySelector('[data-testid="room"]')).not.toBeNull();
 };
 
 /** A pane picked up, over no place: it dims, and letting go cancels. */
 export const PickedUp: Story = {
+  parameters: DIMMED,
   play: still,
   render: () => (
     <Room>
@@ -207,6 +215,7 @@ export const Folds: Story = {
 
 /** A refused place: marked on its own pane, with the layout where it is. */
 export const Refused: Story = {
+  parameters: DIMMED,
   play: still,
   render: () => (
     <Room>
@@ -223,6 +232,7 @@ export const Refused: Story = {
 
 /** On the strip: the panes stay put, and a line says where the tab would go. */
 export const OnTheStrip: Story = {
+  parameters: DIMMED,
   play: still,
   render: () => (
     <Room>
@@ -237,6 +247,7 @@ export const OnTheStrip: Story = {
 
 /** Over its own place: nothing red and nothing dashed. */
 export const OverItself: Story = {
+  parameters: DIMMED,
   play: still,
   render: () => (
     <Room>

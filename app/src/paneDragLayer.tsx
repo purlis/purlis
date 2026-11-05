@@ -63,9 +63,10 @@ const measuredAs = (shown: ReturnType<typeof shownIn>) =>
 
 /** How far from the pointer the label and the words sit. */
 const heldAt = (x: number, y: number) => ({ left: x + 14, top: y + 12 });
-/** The words stay in the window, however near its end the pointer is (`pane-preview.css`). */
+/** How far from the window's end the words keep, so they stay in it (`pane-preview.css`). */
+const WORDS_ROOM = 350;
 const wordsAt = (x: number, y: number) => ({
-  left: `min(${x + 14}px, calc(100vw - var(--pane-preview-words-room)))`,
+  left: Math.min(x + 14, window.innerWidth - WORDS_ROOM),
   top: y + 40,
 });
 

@@ -144,8 +144,7 @@ export function judgeDrop(
     const pane = paneAt(tabs, source);
     if (pane === undefined) return refused("That pane has closed.");
     // First: over its own place nothing moves, whatever it is that could not have moved (#5284).
-    if (to.kind === "pane" && source.pane === to.pane)
-      return overItself(LET_GO_LEAVES_IT);
+    if (to.kind === "pane" && source.pane === to.pane) return overItself(LET_GO_LEAVES_IT);
     if (pane.content.kind === "empty")
       return refused("An empty pane has nothing to move. Close it instead.");
     // A one-job program stays beside the pane it opened from (#4761; spec #4750 story 78).
@@ -172,8 +171,7 @@ export function judgeDrop(
 
   const target = paneAt(tabs, to);
   if (target === undefined) return refused("That pane has closed.");
-  if (source.kind === "tab" && source.tab === to.tab)
-    return overItself(LET_GO_LEAVES_IT);
+  if (source.kind === "tab" && source.tab === to.tab) return overItself(LET_GO_LEAVES_IT);
   const there = ctx.name(target.content);
 
   let verdict: { says: string; did: string };

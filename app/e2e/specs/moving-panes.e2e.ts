@@ -85,7 +85,9 @@ const toldSizes = () =>
 /** A press on chat `session`'s head, and a move far enough to pick it up. */
 async function pickUp(session: number): Promise<void> {
   await browser.execute((session: number) => {
-    const frame = document.querySelector(`[data-session="${session}"]`)?.closest(".pane-frame");
+    const frame = document
+      .querySelector(`[data-testid="pane"][data-session="${session}"]`)
+      ?.closest(".pane-frame");
     const grip = frame?.querySelector("[data-pane-grip]");
     if (!grip) throw new Error(`chat ${session}'s pane has no head to pick up`);
     const box = grip.getBoundingClientRect();

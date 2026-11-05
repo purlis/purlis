@@ -94,7 +94,7 @@ export function PanePreviewHeld({
   ref,
 }: {
   children: ReactNode;
-  at: { left: number | string; top: number };
+  at: { left: number; top: number };
   ref?: Ref<HTMLDivElement>;
 }) {
   return (
@@ -113,7 +113,7 @@ export function PanePreviewWords({
 }: {
   children: ReactNode;
   refused?: boolean;
-  at: { left: number | string; top: number };
+  at: { left: number; top: number };
   ref?: Ref<HTMLDivElement>;
 }) {
   return (
