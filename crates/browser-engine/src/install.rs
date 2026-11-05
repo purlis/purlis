@@ -263,6 +263,10 @@ pub type Listener = Arc<dyn Fn(Hop<'_>) + Send + Sync>;
 /// The most redirects one download follows.
 pub const MAX_REDIRECTS: usize = 5;
 
+/// How many times a request answered with a server error is asked again.
+#[cfg(test)]
+const SERVER_ERROR_RETRIES: usize = 2;
+
 /// Downloads over https, and only https, redirects included, each request told to a
 /// [`Listener`] when there is one, and the whole of each request, its body included, bounded
 /// by a total time ([`Https::within`]), so a server that stops answering is given up on.
