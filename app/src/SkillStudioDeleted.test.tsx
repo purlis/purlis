@@ -202,7 +202,13 @@ describe("a set deleted together (#5331)", () => {
     const user = userEvent.setup();
     renderStudio(AT_THE_ROOT, "deleted");
     const group = await screen.findByTestId(`deleted-group-${SET.id}`);
-    expect(group).toHaveTextContent("3 skills from acme-skills, 5 Nov");
+    expect(group).toHaveTextContent("3 skills");
+    expect(group).toHaveTextContent("from acme-skills, 5 Nov");
+    expect(
+      within(group).getByRole("button", {
+        name: "Bring all back: 3 skills from acme-skills, 5 Nov",
+      }),
+    ).toBeInTheDocument();
     await user.click(within(group).getByRole("button", { name: /Bring all back/ }));
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_set_restore")?.args).toMatchObject({

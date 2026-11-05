@@ -72,7 +72,7 @@ const COPIES = [
 ];
 
 /** The review of `members`: one taken out, one left naming another, two open chats. */
-const SET_REVIEW = ({ members }: { members: { name: string }[] }) => ({
+const SET_REVIEW = ({ act, members }: { act: string; members: { name: string }[] }) => ({
   skills: members.map((member) => ({
     member,
     changed: member.name === "systematic-debugging",
@@ -82,11 +82,18 @@ const SET_REVIEW = ({ members }: { members: { name: string }[] }) => ({
         : null,
   })),
   names: [
-    {
-      namer: "to-spec",
-      named: "brainstorming",
-      member: { level: PROJECT, name: "brainstorming", label: "project" },
-    },
+    act === "turn-on"
+      ? {
+          // One turned on names one that stays off, which is not among those ticked.
+          namer: "brainstorming",
+          named: "writing-plans",
+          member: { level: PROJECT, name: "writing-plans", label: "project" },
+        }
+      : {
+          namer: "to-spec",
+          named: "brainstorming",
+          member: { level: PROJECT, name: "brainstorming", label: "project" },
+        },
   ],
   open_chats: 2,
 });
@@ -336,7 +343,7 @@ function core({ tooMuch = false }: { tooMuch?: boolean } = {}) {
       case "skill_source_installed":
         return COPIES;
       case "skill_set_review":
-        return SET_REVIEW(args as { members: { name: string }[] });
+        return SET_REVIEW(args as { act: string; members: { name: string }[] });
       case "skill_deletes_cut_short":
         return { settled: [], unsettled: [] };
       default:
@@ -651,9 +658,9 @@ export const TurnAllOnReview: Story = {
   },
   play: async ({ canvas }) => {
     const review = await canvas.findByTestId("set-review");
-    const warning = await within(review).findByTestId("set-names-to-spec-brainstorming");
+    const warning = await within(review).findByTestId("set-names-brainstorming-writing-plans");
     await expect(warning).toHaveTextContent("which stays off.");
-    const also = within(warning).getByRole("button", { name: "Also turn on brainstorming" });
+    const also = within(warning).getByRole("button", { name: "Also turn on writing-plans" });
     await tabInto(() => also);
     expectFocusInSight();
     await expect(within(review).getByRole("button", { name: "Turn on" })).toBeVisible();

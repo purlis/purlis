@@ -16,7 +16,7 @@ import { sameLevel } from "./skillChanges";
 import type { Change, Said } from "./SkillPage";
 import { BUSY, Held, useRead } from "./SkillRead";
 import { Badge } from "./ui/badge/Badge";
-import { Button } from "./ui/button/Button";
+import { Button, ButtonRow } from "./ui/button/Button";
 import { Checkbox } from "./ui/choice/Checkbox";
 import { List, ListRow, ListRowSection } from "./ui/list/List";
 import { RowLabel, RowLead, RowTrail } from "./ui/list/Row";
@@ -60,7 +60,8 @@ const WORDS: Record<
     title: "Delete all from",
     doing: "which you're deleting",
     summary: "Nothing is deleted until you press Delete.",
-    does: () => "go to Deleted for 30 days, as one change, and Undo is offered right after.",
+    does: () =>
+      "Each stays in Deleted for 30 days. It is one change, and Undo is offered right after.",
   },
   "turn-off": {
     verb: "Turn off",
@@ -68,7 +69,7 @@ const WORDS: Record<
     doing: "which you're turning off",
     summary: "Nothing is turned off until you press Turn off.",
     does: (workspace) =>
-      `turn off in ${workspace ?? "this workspace"} as one change, and Undo is offered right after.`,
+      `It turns off in ${workspace ?? "this workspace"} as one change, and Undo is offered right after.`,
   },
   "turn-on": {
     verb: "Turn on",
@@ -76,7 +77,7 @@ const WORDS: Record<
     doing: "which stays off",
     summary: "Nothing is turned on until you press Turn on.",
     does: (workspace) =>
-      `turn on in ${workspace ?? "this workspace"} as one change, and Undo is offered right after.`,
+      `It turns on in ${workspace ?? "this workspace"} as one change, and Undo is offered right after.`,
   },
 };
 
@@ -378,7 +379,7 @@ export function SetReviewPage({
     >
       <h2 className="ui-text-strong">{title}</h2>
       <p className="honest" data-testid="set-review-lead">
-        {counted(can.length, "skill", "skills")} in this change. They {words.does(workspace)}
+        {counted(can.length, "skill", "skills")} in this change. {words.does(workspace)}
         {alsoRemoves !== undefined && ` ${alsoRemoves} stops being a source in the same change.`}
       </p>
       {going.length > 0 && (
@@ -387,8 +388,9 @@ export function SetReviewPage({
             <>
               {data.open_chats > 0 && (
                 <p className="honest" data-testid="set-open-chats">
-                  {counted(data.open_chats, "open chat uses", "open chats use")} these. They keep
-                  the skills until they restart, and each offers a restart once.
+                  {counted(data.open_chats, "open chat uses", "open chats use")}{" "}
+                  {can.length === 1 ? "this one" : "these"}. Each keeps what it started with until
+                  it restarts, and offers a restart once.
                 </p>
               )}
               {data.names.map((one) => (
@@ -400,23 +402,25 @@ export function SetReviewPage({
                   <p className="honest">
                     <code>{one.namer}</code> names <code>{one.named}</code>, {words.doing}.
                   </p>
-                  <Button
-                    size="sm"
-                    isDisabled={busy}
-                    onPress={() => {
-                      const key = memberKey(one.member);
-                      if (act === "turn-on") {
-                        setAll((was) =>
-                          was.some((other) => memberKey(other) === key)
-                            ? was
-                            : [...was, one.member],
-                        );
-                        tick(key, true);
-                      } else tick(key, false);
-                    }}
-                  >
-                    {act === "turn-on" ? `Also turn on ${one.named}` : `Keep ${one.named}`}
-                  </Button>
+                  <ButtonRow size="sm">
+                    <Button
+                      size="sm"
+                      isDisabled={busy}
+                      onPress={() => {
+                        const key = memberKey(one.member);
+                        if (act === "turn-on") {
+                          setAll((was) =>
+                            was.some((other) => memberKey(other) === key)
+                              ? was
+                              : [...was, one.member],
+                          );
+                          tick(key, true);
+                        } else tick(key, false);
+                      }}
+                    >
+                      {act === "turn-on" ? `Also turn on ${one.named}` : `Keep ${one.named}`}
+                    </Button>
+                  </ButtonRow>
                 </div>
               ))}
               <section

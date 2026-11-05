@@ -147,7 +147,7 @@ export const Group: Story = {
   args: { deleted: GROUPED, item: "grilling" },
   play: async ({ canvas }) => {
     const group = await canvas.findByTestId(`deleted-group-${SET.id}`);
-    await expect(group).toHaveTextContent("3 skills from mattpocock-skills, 5 Nov");
+    await expect(group).toHaveTextContent("from mattpocock-skills, 5 Nov");
     const all = within(group).getByRole("button", { name: /Bring all back/ });
     await canvas.findByRole("button", { name: "Bring back grilling" });
     // Into the list, up to the group's own row, and across to what it holds.

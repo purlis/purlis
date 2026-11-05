@@ -53,14 +53,19 @@ export function groupedDeleted(
   return out;
 }
 
-/** A group's name: "14 skills from mattpocock-skills, 5 Nov". */
-export function groupSaid(group: DeletedGroup): string {
+/** What a group's row says of where and when, under its count: "from mattpocock-skills, 5 Nov". */
+function groupFrom(group: DeletedGroup): string {
   const day = new Date(group.at * 1000).toLocaleDateString("en-GB", {
     day: "numeric",
     month: "short",
   });
+  return group.from === null ? day : `from ${group.from}, ${day}`;
+}
+
+/** A group's name: "14 skills from mattpocock-skills, 5 Nov". */
+export function groupSaid(group: DeletedGroup): string {
   const count = counted(group.skills.length, "skill", "skills");
-  return group.from === null ? `${count}, ${day}` : `${count} from ${group.from}, ${day}`;
+  return group.from === null ? `${count}, ${groupFrom(group)}` : `${count} ${groupFrom(group)}`;
 }
 
 /** What a group's Bring all back says of a skill that does not come with it (#3729). */
@@ -90,10 +95,11 @@ export function DeletedList({
   /** **Bring all back** a group (#5331). */
   onBringAllBack?: (group: DeletedGroup) => void;
 }) {
-  const row = (one: DeletedSkill) => (
+  const row = (one: DeletedSkill, inGroup = false) => (
     <ListRow
       key={one.id}
       id={one.id}
+      className={inGroup ? "skill-deleted-member" : undefined}
       textValue={one.name}
       data-testid={`deleted-${one.name}`}
       data-row={one.id}
@@ -126,13 +132,13 @@ export function DeletedList({
         const said = groupSaid(one);
         const none = one.skills.every((skill) => skill.reserved);
         return (
-          <ListRowSection key={one.id} id={one.id} aria-label={said}>
+          <ListRowSection key={one.id} id={one.id} aria-label={said} className="skill-deleted-set">
             <ListRow
               id={`${GROUP_ROW}${one.id}`}
               textValue={said}
               data-testid={`deleted-group-${one.id}`}
             >
-              <RowLabel>{said}</RowLabel>
+              <RowLabel>{counted(one.skills.length, "skill", "skills")}</RowLabel>
               <RowTrail>
                 <Button
                   size="sm"
@@ -150,8 +156,11 @@ export function DeletedList({
                   Bring all back
                 </Button>
               </RowTrail>
+              <RowBelow clamp={1} tipWhenCut>
+                {groupFrom(one)}
+              </RowBelow>
             </ListRow>
-            {one.skills.map(row)}
+            {one.skills.map((skill) => row(skill, true))}
           </ListRowSection>
         );
       })}
