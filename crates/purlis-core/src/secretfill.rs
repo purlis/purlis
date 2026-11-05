@@ -146,6 +146,19 @@ pub fn a_browsers(ctx: &Ctx, vault: &str, key: &str) -> bool {
     })
 }
 
+/// **Whether `key` of `vault` is one a `mint` line of any persona's marks** (#5265), read as
+/// [`a_cards`] reads: as written, in any case and through a linked entry either way, failing
+/// closed. A GitHub App's private key is handed to no program a person allows.
+pub fn a_mints(ctx: &Ctx, vault: &str, key: &str) -> bool {
+    held_by_lines(ctx, vault, key, |tool| {
+        if tool.contains_key(mint::KEY) {
+            vec!["key"]
+        } else {
+            Vec::new()
+        }
+    })
+}
+
 /// Whether `key` of `vault` is one that a tool line of any persona's names under one of the keys
 /// `names` picks for it, read from the project's file as written; true where the file or a link
 /// can't be read.

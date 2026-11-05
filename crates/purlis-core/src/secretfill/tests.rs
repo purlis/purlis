@@ -150,3 +150,21 @@ fn a_key_any_personas_browser_login_or_fill_line_holds_is_a_browsers_through_a_l
         "kubeconfig"
     ));
 }
+
+#[test]
+fn a_key_a_mint_line_marks_is_a_minters_through_a_link_and_in_any_case() {
+    let dir = project(
+        "[sandbox]\nmode = \"on\"\n[sandbox.personas.qa.tools.gh]\nvault = \"app\"\nkey = \"priv\"\nmint = { app = \"Iv1.abc\" }\n",
+    );
+    let ctx = Ctx::new(dir.path(), Env::of(&[]));
+    std::fs::create_dir_all(&ctx.state).expect("a state folder");
+    std::fs::write(
+        crate::secrets::links::path(&ctx),
+        r#"{"links": {"qa": {"l": {"vault": "app", "key": "PRIV"}}}}"#,
+    )
+    .expect("a links index");
+    for (vault, key) in [("app", "priv"), ("APP", "Priv"), ("qa", "l")] {
+        assert!(a_mints(&ctx, vault, key), "{vault}/{key}");
+    }
+    assert!(!a_mints(&ctx, "qa", "other"));
+}

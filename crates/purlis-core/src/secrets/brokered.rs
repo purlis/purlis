@@ -837,18 +837,16 @@ fn grantable(
 /// **Why no program may be handed one of `keys` of `vault`** (#5265), if one is a key that a
 /// browser login or secret-fill line of any persona holds, or a `mint` line marks, through a
 /// link the person made either way and in any case ([`crate::secretfill::a_browsers`]); or the
-/// project's settings file can't be read to tell. Judged before a person is asked, and again as
-/// they answer and once they have, since a line may come in with a pull while they read.
+/// project's settings file can't be read to tell. Judged before a person is asked, again as they
+/// answer and once they have, since a line may come in with a pull while they read, and after a
+/// Fill, which may link the key to an entry the person keeps.
 pub fn no_program_is_handed(ctx: &Ctx, vault: &str, keys: &[&str]) -> Option<String> {
     use crate::sandbox::tools::mint;
-    let Some(marked) = mint::marked(&ctx.root) else {
+    if mint::marked(&ctx.root).is_none() {
         return Some(mint::unreadable_said());
-    };
+    }
     for &key in keys {
-        if marked
-            .iter()
-            .any(|(one, named)| one.eq_ignore_ascii_case(vault) && named.eq_ignore_ascii_case(key))
-        {
+        if crate::secretfill::a_mints(ctx, vault, key) {
             return Some(mint::refused_said(vault, key));
         }
         if crate::secretfill::a_browsers(ctx, vault, key) {
@@ -3192,6 +3190,13 @@ pub(crate) fn serve_recorded(
                             )
                         }) {
                             return refuse(&mut *writer, 1, locked);
+                        }
+                        // The person may have filled it with an entry they keep, as a link: one
+                        // a browser login fills is no granted program's either.
+                        if under_a_grant
+                            && let Some(why) = no_program_is_handed(&ctx, &wanted.vault, &[&key])
+                        {
+                            return refuse(&mut *writer, 1, why);
                         }
                         filled.push(key);
                     }
