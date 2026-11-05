@@ -1537,17 +1537,7 @@ fn a_key_a_login_came_to_hold_while_the_ask_was_up_is_not_handed_on_allow() {
                 Missing {
                     asks: &asks,
                     within: Duration::from_secs(60),
-                    // A teammate's login line comes in once the notice is up.
-                    moved: &|| {
-                        if !asks.open_runs().is_empty() {
-                            std::fs::write(
-                                root.join("charter.toml"),
-                                "[sandbox.personas.qa.tools.shop]\nvault = \"team\"\nbrowser = \
-                                 \"https://shop.example.test/login\"\nkey = \"TOKEN\"\n",
-                            )
-                            .unwrap();
-                        }
-                    },
+                    moved: &|| {},
                     run_gate: None,
                 },
             );
@@ -1559,6 +1549,13 @@ fn a_key_a_login_came_to_hold_while_the_ask_was_up_is_not_handed_on_allow() {
                 .collect::<Vec<Frame>>()
         });
         let open = open_ask(&asks, || run.is_finished());
+        // A teammate's login line comes in with a pull while the person reads the notice.
+        std::fs::write(
+            root.join("charter.toml"),
+            "[sandbox.personas.qa.tools.shop]\nvault = \"team\"\nbrowser = \
+             \"https://shop.example.test/login\"\nkey = \"TOKEN\"\n",
+        )
+        .unwrap();
         asks.answer_run(open.id, RunAnswer::Once, window()).unwrap();
         run.join().unwrap()
     });
