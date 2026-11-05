@@ -221,7 +221,7 @@ export const GATES = {
   // No step of its own greps this one: the job's steps are the scenario legs'. What the Skill
   // studio's outcome bars measure, and the suite and its stand-ins (#4343).
   "outcome-bars":
-    "^(app/src/(Skill|UseSkill|skill|chatSkill|personaSkills)|app/src/ui/list/|app/src-tauri/src/(skill|useskill|personaskills)|crates/skills/|crates/purlis-core/src/(skills|skillspan|skilltools|skilluse)(\\.rs|/)|crates/fake-harness/|app/e2e/(outcomeBars|harness\\.ts|wdio\\.outcome\\.conf|specs/skill-outcome-bars)|tools/quiet-runner\\.mjs$|Cargo\\.toml$|\\.github/workflows/ci\\.yml$)",
+    "^(app/src/(Skill|UseSkill|skill|chatSkill|personaSkills)|app/src/ui/list/|app/src-tauri/src/(skill|useskill|personaskills)|crates/skills/|crates/purlis-core/src/(skills|skillspan|skilltools|skilluse)(\\.rs|/)|crates/fake-harness/|app/e2e/(outcomeBars|harness\\.ts|wdio\\.outcome\\.conf|specs/skill-outcome-bars)|Cargo\\.toml$|\\.github/workflows/ci\\.yml$)",
   // No step of its own greps this one either: Pool setup's walk in the window on Docker (#4985),
   // what it presses and the pools and runner image it makes.
   "pool-setup":
@@ -245,6 +245,7 @@ export const WINDOW_SOURCE_GUARDS = [
 export const WHOLE_TREE_GUARDS = [
   { crate: "purlis-core", test: "every_first_party_source_file_carries_its_licence_header" },
   { crate: "purlis-core", test: "no_tracked_file_is_one_a_sandboxed_chat_may_not_write" },
+  { crate: "purlis-core", test: "a_no_seed_mark_is_made_only_in_the_window" },
 ];
 
 // The files at the root a change to which runs the docs alone: what an agent reads to steer

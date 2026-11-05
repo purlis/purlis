@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import type { Tab, Tabs } from "./tabs";
+import { panes, sameContent, type Tab, type Tabs } from "./tabs";
 
 /**
  * **Undo after a layout change** (#4763, #4765; #4583: "Undo after every layout change, ⌘Z"):
@@ -55,8 +55,9 @@ export function undone(now: Tabs, before: Tabs, after: Tabs): Tabs | undefined {
       if (is === undefined) return [id, was];
       const back: Tab = { ...is, layout: was.layout, focused: was.focused };
       // A tab no one has named since is named for what it shows: a close that left the strip's
-      // last tab empty named it so, and its Undo names it as it was (#4756).
-      if (is.name === is.defaultName) {
+      // last tab empty named it so, and its Undo names it as it was (#4756). So is one whose
+      // first pane goes back to another chat, whose name is the tab's again (#5283).
+      if (is.name === is.defaultName || !sameFirstPane(is, was)) {
         back.name = was.name;
         back.defaultName = was.defaultName;
       }
@@ -68,4 +69,10 @@ export function undone(now: Tabs, before: Tabs, after: Tabs): Tabs | undefined {
   );
   // Numbers handed out since stay handed out: a pane or a tab never reuses one.
   return { ...now, byId, order: before.order, inFront: before.inFront, named: now.named };
+}
+
+/** Whether two tabs show the same thing in their first panes. */
+function sameFirstPane(a: Tab, b: Tab): boolean {
+  const [one, other] = [a, b].map((tab) => panes(tab.layout)[0].content);
+  return sameContent(one, other);
 }

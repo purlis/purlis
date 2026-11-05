@@ -74,6 +74,8 @@ pub struct Swept {
     pub dispatches: usize,
     /// What a chat's harness said its session cost ([`crate::usage::spend_dir`], #1457).
     pub spend: usize,
+    /// What a look found in a chat's folders ([`crate::sandbox::arrived`]).
+    pub arrived: usize,
     /// The commit gate's per-session cooldowns, `commit-gate/<sid>` (#1004).
     pub gates: usize,
     /// The first-edit-in-a-clone markers, `ws-edit-nudge/<sid>-<ws>` (#1004).
@@ -140,6 +142,23 @@ pub fn sweep_keeping(
                 crate::names::state_name(plane),
                 "app",
                 crate::usage::SPEND_DIR_NAME,
+            ],
+            now,
+            |name| {
+                name.strip_suffix(".json").is_some_and(|chat| {
+                    !chat.is_empty() && !chats.iter().any(|live| live.id.as_deref() == Some(chat))
+                })
+            },
+            |_, written| Some(written),
+        ),
+        // What can run later and appeared in a chat's folders, by its id: kept while the chat
+        // comes back, however old.
+        arrived: collect(
+            plane,
+            &[
+                crate::names::state_name(plane),
+                "app",
+                crate::sandbox::arrived::DIR,
             ],
             now,
             |name| {

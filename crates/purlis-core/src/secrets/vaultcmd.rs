@@ -1227,6 +1227,7 @@ pub fn destroy_with(
         }
     }
     super::links::forget_vault(ctx, name)?;
+    super::no_seed::forget_vault(ctx, name);
     registry::remove_vault(ctx, name)?;
     Ok(Destroyed {
         provider: v.provider,

@@ -243,9 +243,11 @@ fn a_chat_never_reads_or_writes_a_vaults_storage() {
         [
             root.join(".charter/vaults"),
             root.join(".charter/fingerprint.key"),
+            root.join(".charter/vault-links.json"),
             // Every spelling of the state folder, there or not.
             root.join(".purlis/vaults"),
             root.join(".purlis/fingerprint.key"),
+            root.join(".purlis/vault-links.json"),
             root.join("secrets/dev.json"),
             std::path::PathBuf::from("/home/op/.config/op"),
             std::path::PathBuf::from("/home/op/.op"),
@@ -693,6 +695,76 @@ fn every_harness_denies_a_chat_reading_or_writing_the_dispatch_records() {
     for store in &stores {
         for rule in held_rules(store, Access::ReadWrite, true) {
             assert!(profile.contains(&rule), "{rule} missing:\n{profile}");
+        }
+    }
+}
+
+/// What decides what a person is told of a chat's folders ([`super::arrived`]) is no chat's to
+/// write, its own or another's, under both names of the state folder, for every harness.
+#[test]
+fn every_harness_denies_a_chat_writing_the_record_of_what_appeared_in_its_folders() {
+    for os in [Os::MacOs, Os::Linux] {
+        let (plane, denied) = denied_with(None, os);
+        // Nor reading: a chat that could open the folder could hold its lock.
+        let read_and_written = paths(&denied, Class::Integrity, Access::ReadWrite);
+        assert!(read_and_written.contains(&super::arrived::dir(plane.path())));
+        let stores: Vec<std::path::PathBuf> = [".charter", ".purlis"]
+            .iter()
+            .map(|state| {
+                plane
+                    .path()
+                    .join(state)
+                    .join("app")
+                    .join(super::arrived::DIR)
+            })
+            .collect();
+        assert!(stores.contains(&super::arrived::dir(plane.path())));
+        let under = |held: &[std::path::PathBuf], file: &std::path::Path| {
+            held.iter().any(|folder| file.starts_with(folder))
+        };
+        let writes = |it: &Denial| matches!(it.access, Access::Write | Access::ReadWrite);
+        let held: Vec<std::path::PathBuf> = denied
+            .paths
+            .iter()
+            .filter(|it| it.class == Class::Integrity && writes(it))
+            .map(|it| it.path.clone())
+            .collect();
+        for store in &stores {
+            assert!(under(&held, store), "{os:?}: {}", store.display());
+        }
+        let settings = claude::settings(&compiled(denied.clone(), os)).expect("compiles");
+        let denied_writes: Vec<std::path::PathBuf> = settings.sandbox["filesystem"]["denyWrite"]
+            .as_array()
+            .expect("a list")
+            .iter()
+            .filter_map(|path| path.as_str().map(std::path::PathBuf::from))
+            .collect();
+        for store in &stores {
+            let named = super::real(store.parent().expect("a folder")).join(super::arrived::DIR);
+            assert!(under(&denied_writes, &named), "{os:?}: {named:?}");
+        }
+        let Ok(codex) = codex::wrap(&compiled(denied.clone(), os)) else {
+            assert_eq!(os, Os::Linux, "codex compiles on macOS");
+            continue;
+        };
+        let held: Vec<std::path::PathBuf> = codex
+            .denied
+            .iter()
+            .filter(|it| writes(it))
+            .map(|it| it.path.clone())
+            .collect();
+        for store in &stores {
+            assert!(under(&held, store), "codex: {}", store.display());
+        }
+        let opencode = opencode::wrap(&compiled(denied.clone(), os)).expect("compiles");
+        let held: Vec<std::path::PathBuf> = opencode
+            .denied
+            .iter()
+            .filter(|it| writes(it))
+            .map(|it| it.path.clone())
+            .collect();
+        for store in &stores {
+            assert!(under(&held, store), "opencode: {}", store.display());
         }
     }
 }

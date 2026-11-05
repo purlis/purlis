@@ -1582,6 +1582,7 @@ jobs:
           tools/tests-ran.sh -- cargo test --locked -p purlis-core --test it --
           every_first_party_source_file_carries_its_licence_header::
           no_tracked_file_is_one_a_sandboxed_chat_may_not_write::
+          a_no_seed_mark_is_made_only_in_the_window::
           no_old_name_is_spelled_in_the_window_or_its_assets::
           every_deferral_names_its_ticket::
       - name: The plane writes, hooks, status line and doctor, as recorded
@@ -1899,15 +1900,14 @@ jobs:
         run: xvfb-run -a npm run e2e:state
         if: runner.os == 'Linux' && matrix.extras
         working-directory: app
-      # GitHub's macOS image spends much of a job on its own, and the same code measured a p95 of
-      # about 300 ms on one run and 500 on the next (#4351). So the runner settles before each
-      # harness's bars (`tools/quiet-runner.mjs`), Spotlight having gone off before the build. The
-      # bars stay as they are.
-      - name: Let the runner settle before claude's bars
+      # What GitHub's macOS image is busy with around each harness's bars (#4351), to read beside
+      # their numbers. Spotlight went off before the build. Nothing waits for the runner: waiting
+      # brought L10 no gain (the person's ruling of 2026-11-05).
+      - name: What is busy before claude's bars
         if: ${{ runner.os == 'macOS' && matrix.outcome }}
         continue-on-error: true
-        timeout-minutes: 5
-        run: node tools/quiet-runner.mjs
+        timeout-minutes: 1
+        run: ps -Ao pcpu,comm -r | sed -n 1,7p
       # The Skill studio's outcome bars, one run per harness on its stand-in (#4343). `outcome-bars`
       # alone runs these. Each runs whatever the one before it did, so a red run names every miss.
       - name: The Skill studio's outcome bars on claude's stand-in
@@ -1922,11 +1922,11 @@ jobs:
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: claude
-      - name: Let the runner settle before codex's bars
+      - name: What is busy before codex's bars
         if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
         continue-on-error: true
-        timeout-minutes: 5
-        run: node tools/quiet-runner.mjs
+        timeout-minutes: 1
+        run: ps -Ao pcpu,comm -r | sed -n 1,7p
       - name: The Skill studio's outcome bars on codex's stand-in
         run: npm run e2e:outcome
         if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
@@ -1939,11 +1939,11 @@ jobs:
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: codex
-      - name: Let the runner settle before opencode's bars
+      - name: What is busy before opencode's bars
         if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
         continue-on-error: true
-        timeout-minutes: 5
-        run: node tools/quiet-runner.mjs
+        timeout-minutes: 1
+        run: ps -Ao pcpu,comm -r | sed -n 1,7p
       - name: The Skill studio's outcome bars on opencode's stand-in
         run: npm run e2e:outcome
         if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
@@ -1956,10 +1956,11 @@ jobs:
         working-directory: app
         env:
           PURLIS_OUTCOME_HARNESS: opencode
-      - name: What is still busy on the runner after the outcome bars
+      - name: What is busy after the outcome bars
         if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
         continue-on-error: true
-        run: node tools/quiet-runner.mjs --log-only
+        timeout-minutes: 1
+        run: ps -Ao pcpu,comm -r | sed -n 1,7p
       # The app started the way an operator starts it — from Finder, with the `PATH` Finder
       # gives — on purlis's own built-in profile. Its own run, because it is the app's
       # ENVIRONMENT that is under test and one run is one environment (charter-app#134).

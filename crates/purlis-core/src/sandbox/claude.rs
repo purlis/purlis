@@ -199,7 +199,11 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
     // No project's vaults are read, at either level (#2071): under every spelling of a state
     // folder, anywhere. The chat's own project's are denied by path above.
     for state in crate::names::STATE_DIR.spellings() {
-        for kept in ["vaults", crate::secrets::fingerprint::KEY_FILE] {
+        for kept in [
+            "vaults",
+            crate::secrets::fingerprint::KEY_FILE,
+            crate::secrets::links::FILE,
+        ] {
             let name = format!("{state}/{kept}");
             for (plain, cased) in [
                 (format!("/**/{name}"), format!("/**/{}", either_case(&name))),
@@ -227,7 +231,9 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
         edit_rules.push(format!("Edit(/{TERMINALS})"));
     }
     // The later-code class (ruling V73b), by name at any depth: added to the names Claude
-    // Code's own sandbox already keeps commands from writing, never in their place. A name
+    // Code's own sandbox already keeps commands from writing, never in their place. What these
+    // hold is a command's write of the name; one that arrives another way is told, not refused
+    // ([`super::arrived`]). A name
     // that holds only itself (`.git`) is left out: a glob here denies what is below it too,
     // and git writes there. A glob can't be written past one path, so a name a person lifted for
     // this chat goes whole ([`super::grant::lift`]; its Notice says so).

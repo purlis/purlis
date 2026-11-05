@@ -29,6 +29,9 @@
 //! - **The engine judges again at the moment of filling**: the field's own frame must still be
 //!   on the approved origin, and the field one line. The window's read is only what it shows.
 //!
+//! - **A form on the filled page may be sent only where the key is approved** (#5230, SF-15): the
+//!   other origins a line or an Allow for this chat approve it on go with the fill, and the browser
+//!   refuses any other, saying how to approve it there.
 //! - **A browser on a pool's runner** (#5122, SF-12) is asked about the same way, in this
 //!   window, and the notice warns that the value goes to that runner. The fill and its hold run
 //!   there, through the runner's link, as a login's do.
@@ -273,6 +276,16 @@ impl Fills {
             .any(|(chat, v, k, o)| *chat == session && v == vault && k == key && o == origin)
     }
 
+    /// The origins the person allowed this key on for this chat (#5230).
+    fn granted_origins(&self, session: u32, vault: &str, key: &str) -> Vec<String> {
+        self.lock()
+            .granted
+            .iter()
+            .filter(|(chat, v, k, _)| *chat == session && v == vault && k == key)
+            .map(|(.., origin)| origin.clone())
+            .collect()
+    }
+
     /// Chat `session` closed: what it waited on and was allowed go with it, so nothing reaches a
     /// later chat dealt the same number, and its call stops waiting.
     pub fn forget(&self, session: u32) {
@@ -493,7 +506,48 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<A
                 .to_owned(),
         );
     }
-    Ok(Allowed { value, multi_line })
+    let persona = persona_of_fill(held, session);
+    let also = approved_elsewhere(
+        held.root(),
+        fills,
+        session,
+        persona.as_deref(),
+        asked,
+        &origin,
+    );
+    Ok(Allowed {
+        value,
+        multi_line,
+        also,
+    })
+}
+
+/// The persona chat `session` was started as.
+fn persona_of_fill(held: &Held, session: u32) -> Option<String> {
+    held.chats()
+        .persona_of(session)
+        .and_then(|persona| persona.started_as)
+}
+
+/// **The other origins this key is approved for** (#5230, SF-15): a line of the persona's, or the
+/// person's Allow for this chat, each as [`granted`] reads one. What the page's form may be sent
+/// to while it holds the value.
+fn approved_elsewhere(
+    root: &std::path::Path,
+    fills: &Fills,
+    session: u32,
+    persona: Option<&str>,
+    asked: &FillAsked,
+    origin: &str,
+) -> Vec<String> {
+    let ctx = Ctx::new(root, Env::from_process());
+    let mut named =
+        purlis_core::secretfill::origins_of_lines(&ctx, persona, &asked.vault, &asked.key);
+    named.extend(fills.granted_origins(session, &asked.vault, &asked.key));
+    named.sort();
+    named.dedup();
+    named.retain(|one| one != origin && granted(root, fills, session, persona, asked, one));
+    named
 }
 
 /// **What a fill the person allowed is handed to the browser with** (#5115, #5120): the value,
@@ -502,6 +556,8 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<A
 pub struct Allowed {
     pub value: Secret,
     pub multi_line: bool,
+    /// The other origins the key is approved for (#5230, SF-15).
+    pub also: Vec<String>,
 }
 
 /// **Whether the person is asked about this fill**: a multi-line text box or an editable area

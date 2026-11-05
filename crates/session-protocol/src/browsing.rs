@@ -328,6 +328,11 @@ pub struct FillSecret {
     /// alone, which a host that doesn't read it holds every fill to as well.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub multi_line: bool,
+    /// **The other origins this key is approved for** (1.74, #5230, SF-15): a form on the page may
+    /// be sent there, and to no other site. Absent, none, which a host that doesn't read it holds
+    /// every fill to as well.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub also: Vec<String>,
 }
 
 /// **One download of a browser's, as an answer says it** (1.46, #2020): its name in the browser
@@ -375,6 +380,11 @@ pub struct BrowserReach {
     pub withdrawn: Vec<u16>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub open_web: bool,
+    /// **The sites the person allowed when this browser's chat asked** (1.74, #5230, SF-14), each
+    /// as `host:port`: a page holding a secret may leave for one by its server's redirect, as it
+    /// may for a site the browser was on. Absent, none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub answered: Vec<String>,
 }
 
 /// **How a browser's views over a link between hosts are held** (1.49, #3297): at most `frames`
@@ -689,6 +699,7 @@ mod fill_tests {
             key: "dash-api-key".into(),
             value: Secret::new("fixture-word-5115".into()),
             multi_line: false,
+            also: Vec::new(),
         };
         let said = format!("{fill:?}");
         assert!(!said.contains("fixture-word-5115"), "{said}");
@@ -702,12 +713,31 @@ mod fill_tests {
         )
         .expect("a fill of 1.72 reads");
         assert!(!fill.multi_line);
+        assert!(
+            fill.also.is_empty(),
+            "a fill of 1.72 is approved for one site"
+        );
         let said = serde_json::to_string(&FillSecret {
             multi_line: true,
             ..fill
         })
         .expect("written");
         assert!(said.contains(r#""multi_line":true"#), "{said}");
+    }
+
+    #[test]
+    fn a_reach_of_1_72_names_no_site_the_person_allowed_when_asked() {
+        let reach: BrowserReach = serde_json::from_str(r#"{"open_web":true}"#).expect("reads");
+        assert!(reach.answered.is_empty());
+        let said = serde_json::to_string(&BrowserReach {
+            answered: vec!["app.example.test:443".into()],
+            ..reach
+        })
+        .expect("written");
+        assert!(
+            said.contains(r#""answered":["app.example.test:443"]"#),
+            "{said}"
+        );
     }
 
     #[test]

@@ -970,7 +970,6 @@ test("a job that only asks whether it is needed is not started on a pull request
 test("the outcome bars run on a pull request that touches what they measure, and on main", () => {
   const on = (path) => gatesOf({ event: "pull_request", paths: [path] })["outcome-bars"];
   for (const path of [
-    "tools/quiet-runner.mjs",
     "app/src/SkillStudioTab.tsx",
     "app/src/UseSkill.tsx",
     "app/src/skillsListing.ts",

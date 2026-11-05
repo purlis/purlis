@@ -895,4 +895,51 @@ describe("a chat's undelivered messages (#3958)", () => {
     );
     await waitFor(() => expect(reread).toHaveBeenCalled());
   });
+
+  it("names a chat's arrived files, and Put away sends its id and rereads", async () => {
+    const asked: { cmd: string; args: unknown }[] = [];
+    mockIPC((cmd, args) => {
+      asked.push({ cmd, args });
+      return null;
+    });
+    const reread = vi.fn();
+    const ARRIVED: AlertRow = {
+      severity: "warn",
+      subject: "files that can run later",
+      detail:
+        "Fix the build: these appeared in a folder it can write: work/.envrc. They can run outside the sandbox if you or a tool work in that folder. purlis changed nothing.",
+      workspaces: [],
+      way: { kind: "arrived-files", chat: "01M6M3VNN8GNE85XEV3194WJE6" },
+    };
+    render(
+      <NoticeList>
+        <InboxAlerts
+          plane={PLANE}
+          reading={{ at: "read", planes: [{ plane: PLANE, alerts: [ARRIVED], stopped: null }] }}
+          machine={[]}
+          elsewhere={[]}
+          does={{
+            openSettings: vi.fn(),
+            openProject: vi.fn(),
+            openSaving: vi.fn(),
+            reread,
+            openInboxOf: vi.fn(),
+          }}
+        />
+      </NoticeList>,
+    );
+    const line = screen.getByRole("status");
+    expect(line.textContent).toContain("work/.envrc");
+    expect(line.textContent).toContain("files that can run later");
+    await userEvent.click(within(line).getByRole("button", { name: "Put away" }));
+    await waitFor(() =>
+      expect(asked.filter(({ cmd }) => cmd === "put_away_arrived_files")).toEqual([
+        {
+          cmd: "put_away_arrived_files",
+          args: { plane: PLANE, chat: "01M6M3VNN8GNE85XEV3194WJE6" },
+        },
+      ]),
+    );
+    await waitFor(() => expect(reread).toHaveBeenCalled());
+  });
 });

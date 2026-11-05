@@ -310,3 +310,34 @@ fn a_layout_alert_names_the_workspaces_behind_it_and_no_other_alert_names_any() 
         .is_empty()
     );
 }
+
+#[test]
+fn what_appeared_in_a_chats_folder_is_one_row_with_its_way_out_until_it_is_put_away() {
+    use purlis_core::sandbox::arrived;
+    const CHAT: &str = "01M6M3VNN8GNE85XEV3194WJE6";
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let watched = arrived::Watched {
+        folders: vec![root.clone()],
+        ..arrived::Watched::default()
+    };
+    arrived::begin(&root, CHAT, Some("Fix the build"), &watched).unwrap();
+    std::fs::write(root.join(".envrc"), "x\n").unwrap();
+    arrived::look(&root, CHAT, None).unwrap().unwrap();
+
+    let [row] = arrived_files(&root).try_into().unwrap();
+    assert_eq!(row.subject, ARRIVED_FILES);
+    assert_eq!(row.severity, "warn");
+    assert!(row.detail.starts_with("Fix the build: "), "{}", row.detail);
+    assert!(row.detail.contains(".envrc"), "{}", row.detail);
+    assert_eq!(
+        row.way,
+        AlertWay::ArrivedFiles {
+            chat: CHAT.to_owned()
+        }
+    );
+
+    arrived::put_away(&root, CHAT).unwrap();
+    assert!(arrived_files(&root).is_empty());
+    assert!(root.join(".envrc").exists());
+}

@@ -116,6 +116,27 @@ fn the_floor_still_denies_the_vaults_and_what_a_later_program_runs() {
             "{name} in {deny_write:?}"
         );
     }
+    // The person's no-seed marks live in the vaults' folder and are sealed with the key, and the
+    // links index says where a marked key's value is read from (#5237): no chat writes any of them.
+    for state in crate::names::STATE_DIR.spellings() {
+        for kept in [
+            "vaults/**".to_owned(),
+            crate::secrets::fingerprint::KEY_FILE.to_owned(),
+            crate::secrets::links::FILE.to_owned(),
+        ] {
+            let name = format!("{state}/{kept}");
+            assert!(
+                deny_write.iter().any(|rule| rule.ends_with(&name)),
+                "{name} in {deny_write:?}"
+            );
+            assert!(
+                deny_read
+                    .iter()
+                    .any(|rule| claude::uncased(rule).ends_with(&name)),
+                "{name} in {deny_read:?}"
+            );
+        }
+    }
     assert!(
         settings.deny.iter().any(|rule| rule.starts_with("Read(")),
         "its tools are held to the vaults too"

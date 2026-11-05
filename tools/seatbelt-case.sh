@@ -36,7 +36,8 @@
 # `crates/purlis-core/tests/it/claude_codes_own_sandbox_holds_the_settings_purlis_writes.rs` has the
 # real Claude Code run this line through its Bash tool, at the full sandbox and at the floor. The
 # last line says how many answers were checked and how many were wrong. There, it also probes
-# the sample project's repositories: each git folder held as a whole, and git still at work.
+# the sample project's repositories: each git folder held as a whole, and git still at work; and
+# what a chat's temp folder can make while its project's own names stay held.
 set -eu
 
 failed=0
@@ -161,6 +162,42 @@ others_held() {
   expect "$(here "mv '$HOME/.local/share/opencode' '$HOME/.local/share/opencode.moved'")" no "$1: opencode's folder moved"
 }
 
+# What a chat's temp folder and its project do with the names a program run later loads: a
+# repository and a manifest are made in the temp folder as ever, and a write of a name in the
+# project's own folder, at any depth, is refused, which is asked where `$3` is `expect`. `$1`,
+# `what`. At the floor on macOS every folder is written and the names are held in all of them,
+# the temp folder too (#2071), so neither is made there, and what the test's look is to find is
+# laid out by the test, in `tmp/brought` beside the project.
+temp_and_folder_in() {
+  p=$1
+  what=$2
+  depth=$3
+  t=${TMPDIR:-/tmp}/seatbelt-case-temp.$$
+  in_temp=yes
+  case "$depth $what" in
+    expect*floor) in_temp=no ;;
+  esac
+  g="git -C '$t/repo' -c user.name=probe -c user.email=probe@example.invalid -c commit.gpgsign=false"
+  expect "$(here "mkdir -p '$t/repo' && git init -q '$t/repo' && $g commit -q --allow-empty -m probe")" "$in_temp" "$what: git makes a repository and commits in the temp folder"
+  expect "$(here "touch '$t/repo/purlis.toml'")" "$in_temp" "$what: a manifest is written in the temp folder"
+  # Each name new to the project, at its root and in its own folders at depth.
+  if [ "$depth" = expect ]; then
+    for name in .envrc .mcp.json sub/.envrc sub/.mcp.json sub/deep/.vscode/tasks.json sub/deep/.husky/pre-commit .githooks/pre-commit; do
+      expect "$(here "mkdir -p \"\$(dirname '$p/$name')\" && echo x > '$p/$name'")" no "$what: a new $name in the project is written"
+    done
+  fi
+  # What the test's look is to find.
+  from=$(dirname "$p")/tmp/brought
+  if [ ! -d "$from" ]; then
+    from=$t/brought
+    mkdir -p "$from/.git/hooks" 2>/dev/null || :
+    echo x > "$from/.git/hooks/pre-commit" 2>/dev/null || :
+  fi
+  brought=$(here "mv '$from' '$p/brought'")
+  echo "seatbelt-case: $what: brought $brought"
+  rm -rf "$t" 2>/dev/null || :
+}
+
 # `--repositories-here <project> <what>`: the repositories' probes alone, for a sandbox whose
 # other holds are not the case-folding ones `held_in` asks about (Claude Code's on Linux).
 if [ "${1-}" = --repositories-here ]; then
@@ -170,6 +207,7 @@ if [ "${1-}" = --repositories-here ]; then
   fi
   git_held_in "$2" "$3" here
   others_held "$3"
+  temp_and_folder_in "$2" "$3" temp-only
   echo "seatbelt-case: $3: $checks checks, $wrong wrong"
   exit "$failed"
 fi
@@ -182,6 +220,7 @@ if [ "${1-}" = --here ]; then
   held_in "$2" "$3" here
   git_held_in "$2" "$3" here
   others_held "$3"
+  temp_and_folder_in "$2" "$3" expect
   echo "seatbelt-case: $3: $checks checks, $wrong wrong"
   exit "$failed"
 fi

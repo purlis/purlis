@@ -549,7 +549,7 @@ export type WindowLines = {
 
 /**
  * **The asks whose answers are Allow and Keep blocked** (ADR 0097 §6): a permission prompt, a
- * sandbox's host, folder or local service, and a browser's sites. On these, each answer that
+ * sandbox's host, folder or local service, a browser's sites, and a refused vault. On these, each answer that
  * allows is drawn as the `grants` variant and every other in the plain style: equal in weight,
  * and told apart at a glance in every theme by the grant's edge and its open lock. A question's choices, a removal and a browser's reach are
  * answers of another kind and keep their own looks.
@@ -565,6 +565,7 @@ export const ALLOW_OR_KEEP: ReadonlySet<Shown["source"]> = new Set<Shown["source
   "browser-login",
   "run-grant",
   "secret-fill",
+  "vault",
 ]);
 
 /** What one ask's row offers, decided once for its stops and its drawing. */
@@ -649,7 +650,8 @@ function shapeOf(
         ask.answer.via === "browser" ||
         ask.answer.via === "browser-sites" ||
         ask.answer.via === "browser-login" ||
-        ask.answer.via === "secret-fill") &&
+        ask.answer.via === "secret-fill" ||
+        ask.answer.via === "vault") &&
       ask.options.some((one) => one.id === "keep"),
     // A chat that only waits for the person's next word asks again at its next stop, so it
     // may be put away, as the queue always let it be. A decision never is.
@@ -815,6 +817,7 @@ const SOURCE_SAID: Record<Shown["source"], string> = {
   "pool-login": "Asks to log its browser in on a pool's runner",
   "pool-tool": "Asks to send a tool its vault values for a run on a pool's runner",
   secret: "Asks you for a secret its vault doesn't hold",
+  vault: "Refused a vault its persona isn't tagged for",
   "browser-login": "Asks to log its browser in to a site with vault credentials",
   "secret-fill": "Asks to put a vault secret into a field of its browser",
   "run-grant": "Asks you to allow a program to use a vault secret",

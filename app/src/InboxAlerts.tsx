@@ -183,6 +183,17 @@ function ThisProject({
               reread={does.reread}
             />
           );
+        // What can run later and appeared in a chat's folders: read, then put away.
+        if (way.kind === "arrived-files")
+          return (
+            <ArrivedFilesRow
+              key={way.chat}
+              plane={plane}
+              alert={alert}
+              chat={way.chat}
+              reread={does.reread}
+            />
+          );
         return (
           <ProjectRow
             key={`${alert.subject}\n${alert.detail}`}
@@ -288,6 +299,44 @@ function LeftMessagesRow({
   );
 }
 
+/**
+ * **What can run later and appeared in a chat's folders** (ADR 0067 §5, amended 2026-11-05): the
+ * chat, the paths and what they mean, with Put away once it is read. The files are the person's:
+ * nothing here changes them.
+ */
+function ArrivedFilesRow({
+  plane,
+  alert,
+  chat,
+  reread,
+}: {
+  plane: PlaneId;
+  alert: AlertRow;
+  chat: string;
+  reread: () => void;
+}) {
+  const [said, setSaid] = useState<string>();
+  const putAway = () => {
+    setSaid(undefined);
+    void commands
+      .putAwayArrivedFiles(plane, chat)
+      .then((answer) => {
+        if (answer.status === "error") setSaid(`purlis could not put it away: ${answer.error}`);
+        reread();
+      })
+      .catch((err: unknown) => setSaid(`purlis could not put it away: ${String(err)}`));
+  };
+  return (
+    <Notice
+      cause={`alert:${alert.subject}:${chat}`}
+      tone={toneOf(alert.severity)}
+      fixes={[{ label: "Put away", onPress: putAway }]}
+    >
+      <Words severity={alert.severity} subject={alert.subject} detail={alert.detail} said={said} />
+    </Notice>
+  );
+}
+
 /** A row's Notice look: trouble for what loses work if it is left. */
 const toneOf = (severity: string) => (severity === "bad" ? "trouble" : "news");
 
@@ -300,7 +349,10 @@ function ProjectRow({
   plane: PlaneId;
   /** Any alert but a save's red request, which draws its own Notice (`RequestMerge`). */
   alert: Omit<AlertRow, "way"> & {
-    way: Exclude<AlertWay, { kind: "save-request" } | { kind: "left-messages" }>;
+    way: Exclude<
+      AlertWay,
+      { kind: "save-request" } | { kind: "left-messages" } | { kind: "arrived-files" }
+    >;
   };
   does: InboxAlertsDo;
 }) {

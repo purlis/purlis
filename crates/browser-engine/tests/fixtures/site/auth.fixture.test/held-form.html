@@ -1,0 +1,58 @@
+<!doctype html>
+<title>Sign in</title>
+<h1>Sign in</h1>
+<form method="post" action="/redirect?to=http://other.test/landed.html?code=1">
+  <label>API key <input type="password" name="key"></label>
+  <button>Sign in</button>
+</form>
+<form method="post" action="/redirect?to=http://third.test/landed.html">
+  <label>Key elsewhere <input type="password" name="key"></label>
+  <button>Sign in elsewhere</button>
+</form>
+<form method="post" action="/redirect?to=http://other.test/landed.html?code=fixture-key-5230">
+  <label>Key named <input type="password" name="key"></label>
+  <button>Sign in named</button>
+</form>
+<form method="post" action="/redirect?to=http://other.test/landed.html%23code=fixture%252Dkey%252D5230">
+  <label>Key encoded <input type="password" name="key"></label>
+  <button>Sign in encoded</button>
+</form>
+<form method="post" action="http://other.test/posted.html">
+  <label>Key posted <input type="password" name="key"></label>
+  <button>Post elsewhere</button>
+</form>
+<form method="get" action="/hangs-up">
+  <label>Key failing <input type="password" name="key"></label>
+  <button>Send and fail</button>
+</form>
+<a href="http://other.test/landed.html">Leave by a link</a>
+<a href="http://purlis.invalid/said">Leave for the said page</a>
+<a href="/redirect?to=http://other.test/landed.html">Leave by a redirected link</a>
+<button id="goes" type="button">Leave by a script</button>
+<button id="scripted" type="button">Leave by a scripted form</button>
+<button id="asks" type="button">Send from a script</button>
+<script>
+  window.name = 'left-behind';
+  document.getElementById('goes').addEventListener('click', () => {
+    location.href = 'http://other.test/landed.html';
+  });
+  document.getElementById('scripted').addEventListener('click', () => {
+    const form = document.createElement('form');
+    form.method = 'post';
+    form.action = '/redirect?to=http://other.test/landed.html';
+    document.body.append(form);
+    form.submit();
+  });
+  const send = () => {
+    fetch('http://other.test/from-script', { mode: 'no-cors' }).catch(() => {});
+    new Image().src = 'http://other.test/from-an-image';
+  };
+  document.getElementById('asks').addEventListener('click', () => {
+    // A moment later, so the click that set it going answers first.
+    setTimeout(() => setInterval(send, 25), 1500);
+    addEventListener('pagehide', () => {
+      navigator.sendBeacon('http://other.test/from-a-beacon', 'x');
+      send();
+    });
+  });
+</script>

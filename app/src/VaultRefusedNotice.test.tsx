@@ -9,9 +9,11 @@ import { emit } from "@tauri-apps/api/event";
 import { AskPersonaOpener, type OpenAskPersona } from "./AskPersona";
 import { VaultRefusedNotice } from "./VaultRefusedNotice";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
-import { askOfDispatch } from "./test-asks";
-import { NoticeOf } from "./Notice";
-import type { DispatchPending, VaultRefused } from "./bindings";
+import { askOfDispatch, askOfVault } from "./test-asks";
+import { answerThrough } from "./asks";
+import { NoticeInCentre, NoticeList, NoticeOf } from "./Notice";
+import { ChatNotices } from "./ChatNotices";
+import type { DispatchPending, Shown, VaultRefused } from "./bindings";
 
 /**
  * A vault refused for a chat's persona offers a way forward on the chat's tab (#1430): Allow
@@ -173,7 +175,7 @@ describe("the refused vault Notice", () => {
     // Screenshot 43: the refusal had been answered elsewhere, the Notice stayed, and every
     // press said the same refusal. Now the press re-reads what the core holds.
     const refusal =
-      "purlis allowed nothing: the chat was not refused that vault. A vault is allowed from the notice its refusal raises.";
+      "purlis allowed nothing: the chat was not refused that vault. A vault is allowed from the ask its refusal raises.";
     let held: VaultRefused[] = [DEVOPS];
     mockIPC((cmd) => {
       if (cmd === "vault_refusals") return held;
@@ -234,6 +236,61 @@ describe("the refused vault Notice", () => {
       expect(
         screen.queryAllByRole("button", { name: "Allow steward to use this vault" }),
       ).toHaveLength(0),
+    );
+  });
+
+  it("is the Inbox's ask: answered there, it goes from the pane too (#5160)", async () => {
+    let held: VaultRefused[] = [DEVOPS];
+    mockIPC((cmd) => {
+      if (cmd === "vault_refusals") return held;
+      if (cmd === "keep_vault_blocked") {
+        held = [];
+        return null;
+      }
+      return null;
+    });
+    render(<VaultRefusedNotice plane={PLANE} session={7} asks={[askOfVault(DEVOPS)]} />);
+    await screen.findByRole("button", { name: "Allow steward to use this vault" });
+
+    expect(await answerThrough(PLANE, askOfVault(DEVOPS), "keep")).toBeUndefined();
+
+    await waitFor(() => expect(screen.queryByRole("status", { name: "Vault" })).toBeNull());
+  });
+
+  it("draws a refusal only while the registry lists it for this pane (#5160)", async () => {
+    const forge: VaultRefused = { ...DEVOPS, vault: "forge", tagged_for: "reviewer" };
+    mockIPC((cmd) => (cmd === "vault_refusals" ? [DEVOPS, forge] : null));
+    const { rerender } = render(
+      <VaultRefusedNotice plane={PLANE} session={7} asks={[askOfVault(DEVOPS)]} />,
+    );
+
+    // The newest the core holds is forge, but the Inbox lists only devops: that is what is drawn.
+    expect(await notice()).toHaveTextContent("vault devops is tagged for devops");
+    expect(await notice()).not.toHaveTextContent("more vault");
+
+    rerender(<VaultRefusedNotice plane={PLANE} session={7} asks={[]} />);
+    await waitFor(() => expect(screen.queryByRole("status", { name: "Vault" })).toBeNull());
+  });
+
+  it("draws the answers its ask carries, and says which was taken (#5160)", async () => {
+    mockIPC((cmd) => (cmd === "vault_refusals" ? [DEVOPS] : null));
+    const said = askOfVault(DEVOPS);
+    const ask = {
+      ...said,
+      options: said.options.map((one) => ({ ...one, label: `${one.label}, as the registry says` })),
+    };
+    const onWay = vi.fn();
+    render(<VaultRefusedNotice plane={PLANE} session={7} asks={[ask]} onWay={onWay} />);
+
+    await screen.findByRole("button", {
+      name: "Allow steward to use this vault, as the registry says",
+    });
+    await userEvent.click(
+      screen.getByRole("button", { name: "Keep blocked, as the registry says" }),
+    );
+
+    await waitFor(() =>
+      expect(onWay).toHaveBeenCalledWith("Keep blocked, as the registry says", ask),
     );
   });
 
@@ -554,5 +611,62 @@ describe("the refused vault Notice, for a chat that is not on screen", () => {
     expect(screen.getByText(/is to have devops do the work/)).toHaveTextContent(
       "The other way is to have devops do the work, and it has asked devops to. Nothing starts until you answer that request.",
     );
+  });
+});
+
+/**
+ * **A chat in no pane has its refusal in the Inbox alone** (#5160, spec #4750): `PlaneView` draws
+ * that chat's Notices in the Notices centre with no asks, since its asks are the Inbox's, so no
+ * vault line stands there with an Allow of its own. On a pane the same ask is on the chat's band.
+ */
+describe("the refused vault, between the Notices centre and the pane (#5160)", () => {
+  const notices = (waiting: readonly Shown[]) => (
+    <ChatNotices
+      plane={PLANE}
+      session={7}
+      onByHand={() => {}}
+      onDismissStartNote={() => {}}
+      onRestart={() => {}}
+      onDismissBlock={() => {}}
+      onRestarted={() => {}}
+      onAllowed={() => {}}
+      onRestartAnswer={() => {}}
+      asks={[]}
+      waiting={waiting}
+    />
+  );
+
+  it("draws no line in the Notices centre for a chat in no pane, though the core holds it", async () => {
+    const reads: string[] = [];
+    mockIPC((cmd) => {
+      reads.push(cmd);
+      return cmd === "vault_refusals" ? [DEVOPS] : null;
+    });
+    const held = vi.fn();
+    render(
+      <NoticeList>
+        <NoticeInCentre.Provider value={held}>
+          <NoticeOf.Provider value={{ whose: "steward 7", onGo: () => {} }}>
+            {notices([])}
+          </NoticeOf.Provider>
+        </NoticeInCentre.Provider>
+      </NoticeList>,
+    );
+
+    await waitFor(() => expect(reads).toContain("vault_refusals"));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.queryByRole("button", { name: "Allow steward to use this vault" })).toBeNull();
+    expect(screen.queryByRole("status", { name: "steward 7: Vault" })).toBeNull();
+    expect(held).not.toHaveBeenCalledWith(expect.stringMatching(/vault/i), true);
+  });
+
+  it("draws the registry's ask on the chat's own pane", async () => {
+    mockIPC((cmd) => (cmd === "vault_refusals" ? [DEVOPS] : null));
+    render(notices([askOfVault(DEVOPS)]));
+
+    expect(await notice()).toHaveTextContent("vault devops is tagged for devops");
+    expect(screen.getByRole("button", { name: "Allow steward to use this vault" })).toBeVisible();
   });
 });

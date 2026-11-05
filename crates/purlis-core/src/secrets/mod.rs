@@ -42,6 +42,7 @@ pub mod keyring;
 pub mod links;
 pub mod mcpstart;
 pub mod needs;
+pub mod no_seed;
 pub mod onepassword;
 pub mod persons_own;
 pub mod plain_file;

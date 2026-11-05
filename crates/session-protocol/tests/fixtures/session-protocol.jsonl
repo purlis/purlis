@@ -225,3 +225,5 @@
 {"reply":{"re":193,"ok":{"browsed":{"page":{"page":"p1","address":"https://dash.example.test/settings","title":"Settings"},"settled":true,"note":"filled dash-api-key into the field on https://dash.example.test"}}}}
 {"call":{"id":194,"command":"browse","program":"01J9ZQ8000000000000000000D","call_id":"c-194:signed-in","act":{"do":"asks_to_sign_in"}}}
 {"reply":{"re":194,"ok":{"browsed":{"page":{"page":"p1","address":"https://shop.example.test/account","title":"Account"},"settled":true,"asks_to_sign_in":false}}}}
+{"call":{"id":195,"command":"fill_secret","program":"01J9ZQ8000000000000000000D","fill":{"target":"e12","origin":"https://dash.example.test","key":"dash-api-key","value":"fixture-word","also":["https://sso.example.test"]}}}
+{"reply":{"re":195,"ok":{"browsed":{"page":{"page":"p1","address":"https://dash.example.test/settings","title":"Settings"},"settled":true}}}}
