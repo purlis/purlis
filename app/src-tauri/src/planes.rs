@@ -2416,6 +2416,10 @@ pub struct Planes {
     /// Collects a plane's month-old per-session files as it opens (SC-7):
     /// [`purlis_core::retention::on_open`], or a test's stand-in.
     sweep: Sweep,
+    /// Called as an open builds the project it holds, after its sweep (#5320): a test's way to
+    /// make one project's opening slow.
+    #[cfg(test)]
+    building: Sweep,
     /// The projects an open is between its sweep and holding them (#1027), or a close between
     /// taking them out and having let go of them (#1949), so an open of one waits for it: see
     /// [`Planes::opening`].
@@ -2677,6 +2681,8 @@ impl Planes {
             sweep: Arc::new(|root| {
                 purlis_core::retention::on_open(root, std::time::SystemTime::now());
             }),
+            #[cfg(test)]
+            building: Arc::new(|_| {}),
             turns: Arc::default(),
             letting_go: Arc::default(),
             quit_waits: QUIT_WAITS_FOR_TURNS,
@@ -2741,6 +2747,14 @@ impl Planes {
     #[cfg(test)]
     pub(crate) fn sweeping_with(mut self, sweep: Sweep) -> Self {
         self.sweep = sweep;
+        self
+    }
+
+    /// Calls `building` with each plane it opens as it builds what it holds of it: for a test
+    /// that needs one project's opening to be slow (#5320).
+    #[cfg(test)]
+    pub(crate) fn building_with(mut self, building: Sweep) -> Self {
+        self.building = building;
         self
     }
 
@@ -3099,18 +3113,20 @@ impl Planes {
         // waits for this one** ([`Self::opening`]): it then finds the plane held and sweeps
         // nothing, so no sweep ever runs beside a chat of a plane this app holds.
         let _opening = self.opening(&id);
-        if !self.map().contains_key(&id) {
-            (self.sweep)(&root);
-            // The app's own state an older purlis kept in the plane's state folder moves to the
-            // data home, once (#3718): before any chat is put back, so what arms them reads it
-            // there, and outside the registry's lock, as the sweep is.
-            let _ = purlis_core::appstate::move_out_of_the_plane(&root);
-        }
-
-        let mut open = self.map();
-        if let Some(already) = open.get(&id) {
+        if let Some(already) = self.map().get(&id) {
             return already.id.clone();
         }
+        (self.sweep)(&root);
+        // The app's own state an older purlis kept in the plane's state folder moves to the
+        // data home, once (#3718): before any chat is put back, so what arms them reads it
+        // there, and outside the registry's lock, as the sweep is.
+        let _ = purlis_core::appstate::move_out_of_the_plane(&root);
+        // **Everything from here to the insert is built outside the registry's lock too**
+        // (#5320): every command for every other project asks the registry for its plane first,
+        // so a lock held while this project is built made each of them wait on it. The turn
+        // taken above is what keeps a second open (or a close) of this root out meanwhile.
+        #[cfg(test)]
+        (self.building)(&root);
         // The credential files a brokered `secret exec` of this project left when the app was
         // stopped before it could remove them (#1407). Here, where no run of the project's can
         // be live: it is not open in this app.
@@ -3744,7 +3760,10 @@ impl Planes {
             }));
         }
         // A quit that began while this opened has let go of every project already, and nothing
-        // after it lets go of one (#1949): the project is let go of here, not held.
+        // after it lets go of one (#1949): the project is let go of here, not held. The flag is
+        // read under the registry's lock, which the quit's drain takes after setting it, so the
+        // project is either drained by the quit or let go of here.
+        let mut open = self.map();
         if self.letting_go.quitting() {
             drop(open);
             held.let_go(false);
