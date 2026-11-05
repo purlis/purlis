@@ -1936,6 +1936,9 @@ pub(crate) struct Inner {
     /// **The pages holding a secret purlis filled** (#5117), each with what holds the browser to
     /// its site while it lives.
     fill_holds: Mutex<Vec<PageHeld>>,
+    /// **The pages a login filled, each with the windows related to it** (the person's ruling of
+    /// 2026-11-05): those close once the page is done with what was filled, as a fill's do.
+    login_families: Mutex<Vec<leaving::LoginFamily>>,
     /// Who is told once a page leaving for another site holds nothing any more (#5230), by page.
     departing: Mutex<HashMap<String, std::sync::mpsc::Sender<()>>>,
     /// The address each page holding a secret waits to leave for, on the person (#5230), by page.
@@ -2116,6 +2119,7 @@ impl Browser {
             held_in: Mutex::new(None),
             back: Mutex::new(None),
             fill_holds: Mutex::new(Vec::new()),
+            login_families: Mutex::new(Vec::new()),
             departing: Mutex::new(HashMap::new()),
             leaving_asked: Mutex::new(HashMap::new()),
             own_page: Mutex::new(None),
