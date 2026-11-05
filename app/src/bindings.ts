@@ -3237,6 +3237,11 @@ export const commands = {
 	/**  This workspace's pieces for one repo. */
 	worktreeList: (plane: PlaneId, workspace: string, repo: string) => typedError<Piece[], string>(__TAURI_INVOKE("worktree_list", { plane, workspace, repo })),
 	/**
+	 *  The state of each of this repo's branch folders, asked once `worktree_list` has named them
+	 *  (#5321): what each has uncommitted, or why it could not be read.
+	 */
+	worktreeStates: (plane: PlaneId, workspace: string, repo: string) => typedError<PieceState[], string>(__TAURI_INVOKE("worktree_states", { plane, workspace, repo })),
+	/**
 	 *  **New branch**, from a repo's row (GL-1): cut a piece off the clone's HEAD and log it
 	 *  `claimed`. It starts nothing. `branch` is the name the operator typed, used exactly or
 	 *  refused; `None` is charter's next free `chat-<n>`.
@@ -11107,6 +11112,13 @@ export type Piece = {
 	 *  was read, and for one that is gone (`stale`).
 	 */
 	unread?: string | null,
+	/**
+	 *  `true` while this folder's state (`uncommitted`, `unread`) is still to come (#5321): the
+	 *  list's first answer names the folders without reading any of them, and
+	 *  `worktree_states` reads them. `null` once read, and for a folder that is gone (`stale`),
+	 *  which has nothing to read.
+	 */
+	reading?: boolean | null,
 };
 
 /**  One file of a branch, as the light editor draws it. */
@@ -11127,6 +11139,15 @@ export type PieceFile =
 { kind: "huge-image"; mime: string; width: number; height: number } | 
 /**  Past the largest file the preview draws (2 MiB), by its size in bytes. */
 { kind: "too-large"; bytes: number };
+
+/**  One branch folder's state, as `worktree_states` reads it (#5321). */
+export type PieceState = {
+	piece: string,
+	/**  As [`Piece::uncommitted`]. */
+	uncommitted?: number | null,
+	/**  As [`Piece::unread`]. */
+	unread?: string | null,
+};
 
 /**  What the plane's pin says against this charter. */
 export type PinReport = {

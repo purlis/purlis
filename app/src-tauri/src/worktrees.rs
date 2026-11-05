@@ -181,6 +181,12 @@ pub struct Piece {
     /// was read, and for one that is gone (`stale`).
     #[specta(optional)]
     pub unread: Option<String>,
+    /// `true` while this folder's state (`uncommitted`, `unread`) is still to come (#5321): the
+    /// list's first answer names the folders without reading any of them, and
+    /// `worktree_states` reads them. `null` once read, and for a folder that is gone (`stale`),
+    /// which has nothing to read.
+    #[specta(optional)]
+    pub reading: Option<bool>,
 }
 
 /// Where a chat is working, when it is working in a piece.
@@ -240,7 +246,9 @@ pub async fn worktree_list(
     crate::off_the_window(LISTING, move || pieces_of(&root, &workspace, &repo)).await
 }
 
-/// The listing itself, against a root the registry has already vouched for.
+/// The listing itself, against a root the registry has already vouched for: each folder by
+/// name, none of them read (#5321). What a folder has uncommitted is [`states_of`]'s, asked
+/// after this answer, so sixty folders are named as fast as one.
 fn pieces_of(plane: &Path, workspace: &str, repo: &str) -> Result<Vec<Piece>, String> {
     let now = chrono::Utc::now();
     worktree::list(plane, workspace, repo)
@@ -249,23 +257,90 @@ fn pieces_of(plane: &Path, workspace: &str, repo: &str) -> Result<Vec<Piece>, St
                 purlis_core::pieces::unclaimed(plane, workspace, repo, &pieces, now);
             pieces
                 .into_iter()
-                .map(|p| {
-                    let (uncommitted, unread) = uncommitted_in(&p);
-                    Piece {
-                        said: purlis_core::pieces::said(plane, workspace, repo, &p.piece, now),
-                        unclaimed: unclaimed.remove(&p.piece),
-                        uncommitted,
-                        unread,
-                        piece: p.piece,
-                        path: p.path.display().to_string(),
-                        branch: p.branch,
-                        wired: p.wired,
-                        stale: p.prunable.is_some(),
-                    }
+                .map(|p| Piece {
+                    said: purlis_core::pieces::said(plane, workspace, repo, &p.piece, now),
+                    unclaimed: unclaimed.remove(&p.piece),
+                    uncommitted: None,
+                    unread: None,
+                    // A folder that is gone has nothing to read.
+                    reading: p.prunable.is_none().then_some(true),
+                    piece: p.piece,
+                    path: p.path.display().to_string(),
+                    branch: p.branch,
+                    wired: p.wired,
+                    stale: p.prunable.is_some(),
                 })
                 .collect()
         })
         .map_err(|refusal| refusal.in_window())
+}
+
+/// One branch folder's state, as `worktree_states` reads it (#5321).
+#[derive(Debug, serde::Serialize, specta::Type)]
+pub struct PieceState {
+    pub piece: String,
+    /// As [`Piece::uncommitted`].
+    #[specta(optional)]
+    pub uncommitted: Option<u32>,
+    /// As [`Piece::unread`].
+    #[specta(optional)]
+    pub unread: Option<String>,
+}
+
+/// How many folders' states are read at once: enough that sixty folders fill in within a few
+/// seconds, few enough that a listing never floods the machine with `git status` runs.
+const READ_AT_ONCE: usize = 8;
+
+/// The state of each of this repo's branch folders, asked once `worktree_list` has named them
+/// (#5321): what each has uncommitted, or why it could not be read.
+#[tauri::command]
+#[specta::specta]
+pub async fn worktree_states(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    workspace: String,
+    repo: String,
+) -> Result<Vec<PieceState>, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    crate::off_the_window(LISTING, move || states_of(&root, &workspace, &repo)).await
+}
+
+/// Each branch folder's state, read [`READ_AT_ONCE`] at a time, in the listing's order. A
+/// folder that is gone is left out: it has nothing to read.
+fn states_of(plane: &Path, workspace: &str, repo: &str) -> Result<Vec<PieceState>, String> {
+    let pieces: Vec<worktree::Piece> = worktree::list(plane, workspace, repo)
+        .map_err(|refusal| refusal.in_window())?
+        .into_iter()
+        .filter(|p| p.prunable.is_none())
+        .collect();
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let read = Mutex::new(Vec::with_capacity(pieces.len()));
+    std::thread::scope(|scope| {
+        for _ in 0..READ_AT_ONCE.min(pieces.len()) {
+            scope.spawn(|| {
+                loop {
+                    let at = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Some(piece) = pieces.get(at) else { break };
+                    let (uncommitted, unread) = uncommitted_in(piece);
+                    read.lock().unwrap_or_else(PoisonError::into_inner).push((
+                        at,
+                        uncommitted,
+                        unread,
+                    ));
+                }
+            });
+        }
+    });
+    let mut read = read.into_inner().unwrap_or_else(PoisonError::into_inner);
+    read.sort_by_key(|(at, ..)| *at);
+    Ok(read
+        .into_iter()
+        .map(|(at, uncommitted, unread)| PieceState {
+            piece: pieces[at].piece.clone(),
+            uncommitted,
+            unread,
+        })
+        .collect())
 }
 
 /// The files `piece`'s folder has uncommitted, by the status read a clone's row is counted by
@@ -1118,7 +1193,7 @@ mod tests {
         std::fs::write(busy.join("README.md"), "changed\n").unwrap();
         std::fs::write(busy.join("new.txt"), "untracked\n").unwrap();
 
-        let counts: Vec<(String, Option<u32>)> = pieces_of(&root, "alpha", "thing")
+        let counts: Vec<(String, Option<u32>)> = states_of(&root, "alpha", "thing")
             .unwrap()
             .into_iter()
             .map(|row| (row.piece, row.uncommitted))
@@ -1203,6 +1278,114 @@ mod tests {
         let chat_2 = claimed.iter().find(|p| p.piece == "chat-2").unwrap();
         assert_eq!(chat_2.unclaimed, None);
         assert!(serde_json::to_value(chat_2).unwrap()["unclaimed"].is_null());
+    }
+
+    /// How many branch folders the slow-repo tests cut: about what the person had when the
+    /// list took 21.5 s (#5321).
+    const MANY: usize = 60;
+
+    /// A plane whose clone has [`MANY`] branch folders, each far behind an upstream, so that
+    /// reading one folder's state (`git status --branch` counts behind) costs about a fifth of
+    /// a second, as a large real repo's does. The folders' names, in order.
+    fn a_plane_of_slow_folders() -> (tempfile::TempDir, PathBuf, PathBuf, Vec<String>) {
+        let (dir, root, clone) = plane();
+        // 50,000 empty commits on `far`, through fast-import: well under a second to make.
+        let stream = dir.path().join("far.stream");
+        let mut text = String::from(
+            "commit refs/heads/far\ncommitter t <t@e.invalid> 0 +0000\ndata 1\nx\nfrom refs/heads/main\n\n",
+        );
+        for at in 1..50_000 {
+            text.push_str(&format!(
+                "commit refs/heads/far\ncommitter t <t@e.invalid> {at} +0000\ndata 1\nx\n\n"
+            ));
+        }
+        std::fs::write(&stream, text).unwrap();
+        let imported = purlis_core::forklock::spawn(
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(&clone)
+                .args(["fast-import", "--quiet"])
+                .stdin(std::fs::File::open(&stream).unwrap()),
+        )
+        .unwrap()
+        .wait()
+        .unwrap();
+        assert!(imported.success(), "fast-import: {imported:?}");
+        let names: Vec<String> = (0..MANY).map(|n| format!("folder-{n:02}")).collect();
+        let mut upstreams = String::new();
+        for name in &names {
+            worktree::add(&root, "alpha", "thing", name, None).unwrap();
+            upstreams.push_str(&format!(
+                "[branch \"{name}\"]\n\tremote = .\n\tmerge = refs/heads/far\n"
+            ));
+        }
+        let config = clone.join(".git/config");
+        let mut was = std::fs::read_to_string(&config).unwrap();
+        was.push_str(&upstreams);
+        std::fs::write(&config, was).unwrap();
+        (dir, root, clone, names)
+    }
+
+    /// #5321: with many branch folders, each slow to read, the list's first answer names them
+    /// all at once, without waiting on any folder's state, and says each state is still coming.
+    #[test]
+    fn many_slow_branch_folders_are_named_within_two_seconds() {
+        let (_dir, root, _clone, names) = a_plane_of_slow_folders();
+
+        let asked = Instant::now();
+        let listed = pieces_of(&root, "alpha", "thing").unwrap();
+        let took = asked.elapsed();
+
+        let mut named: Vec<String> = listed.iter().map(|p| p.piece.clone()).collect();
+        named.sort();
+        assert_eq!(named, names);
+        assert!(
+            took < Duration::from_secs(2),
+            "the first answer took {took:?} for {MANY} folders"
+        );
+        assert!(
+            listed
+                .iter()
+                .all(|p| p.reading == Some(true) && p.uncommitted.is_none()),
+            "each folder's state is still coming: {listed:?}"
+        );
+    }
+
+    /// #5321: each slow folder's state, once read, is still its own, and the reads overlap:
+    /// one after another, sixty of these would take a dozen seconds.
+    #[test]
+    fn many_slow_branch_folders_each_fill_in_their_own_state() {
+        let (_dir, root, _clone, names) = a_plane_of_slow_folders();
+        let busy = PathBuf::from(
+            pieces_of(&root, "alpha", "thing")
+                .unwrap()
+                .into_iter()
+                .find(|row| row.piece == names[7])
+                .expect("the busy row")
+                .path,
+        );
+        std::fs::write(busy.join("README.md"), "changed\n").unwrap();
+        std::fs::write(busy.join("new.txt"), "untracked\n").unwrap();
+
+        let asked = Instant::now();
+        let states = states_of(&root, "alpha", "thing").unwrap();
+        let took = asked.elapsed();
+
+        let mut counts: Vec<(&str, Option<u32>)> = states
+            .iter()
+            .map(|s| (s.piece.as_str(), s.uncommitted))
+            .collect();
+        counts.sort_unstable();
+        let expected: Vec<(&str, Option<u32>)> = names
+            .iter()
+            .map(|name| (name.as_str(), Some(if *name == names[7] { 2 } else { 0 })))
+            .collect();
+        assert_eq!(counts, expected);
+        assert!(states.iter().all(|s| s.unread.is_none()), "{states:?}");
+        assert!(
+            took < Duration::from_secs(8),
+            "reading {MANY} folders took {took:?}"
+        );
     }
 
     /// What a start was handed, for the tests that stand in for the harness.
