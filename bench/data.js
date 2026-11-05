@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793844521650,
+  "lastUpdate": 1793847374470,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -39564,6 +39564,48 @@ window.BENCHMARK_DATA = {
             "value": 101.227711,
             "unit": "ms",
             "extra": "median of 5 runs: 100.788, 100.899, 101.228, 102.173, 102.836 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "7970e6b26a1821b6260a00e173e9a3388246c43d",
+          "message": "ADR 0111: one notice for one need; a person may allow an undeclared program (#5233)\n\n* ADR 0110: one notice for one need; a person may allow an undeclared program (#5227)\n\nAmends D-PE-ruling-2 and ADR 0109's offer of a Secret need, from the operator's grill\nof #5227. Adds Run grant to CONTEXT.md.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6GXWJPHQ5BB6097XR7GGZ9Q\nPurlis-Persona: steward\n\n* ADR: renumber one notice for one need to 0111, since main's 0110 is another record; record the held line\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6GXWJPHQ5BB6097XR7GGZ9Q\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-05T01:56:51Z",
+          "tree_id": "fbde7669c372dcd8ee244842a5d328df48dccfc5",
+          "url": "https://github.com/purlis/purlis/commit/7970e6b26a1821b6260a00e173e9a3388246c43d"
+        },
+        "date": 1793847370623,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6914864999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.656, 0.685, 0.691, 0.697, 0.712 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5424175,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.383, 16.528, 16.542, 16.551, 16.597 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.74809300000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.774, 101.791, 102.748, 103.209, 103.546 ms"
           }
         ]
       }
