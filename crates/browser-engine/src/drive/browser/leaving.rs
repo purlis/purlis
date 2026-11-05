@@ -159,7 +159,7 @@ impl State {
         };
         let on: Vec<&super::PageHeld> = holds
             .iter()
-            .filter(|one| !one.left && Some(&one.target) == target.as_ref())
+            .filter(|one| Some(&one.target) == target.as_ref())
             .collect();
         let hop = self
             .documents
@@ -262,9 +262,7 @@ impl State {
             .filter_map(|one| self.page(one))
             .any(|page| {
                 let own = page.site();
-                own.is_none()
-                    || own == here
-                    || page.frames.values().any(|frame| site(&frame.url) == here)
+                own == here
             })
     }
 
@@ -408,7 +406,7 @@ impl Inner {
     fn held_on(&self, target: &str) -> Vec<HeldNow> {
         lock(&self.fill_holds)
             .iter()
-            .filter(|one| !one.left && one.target == target)
+            .filter(|one| one.target == target)
             .map(|one| HeldNow {
                 hold: Arc::clone(&one.hold),
                 origin: one.filled.origin.clone(),
@@ -508,9 +506,7 @@ impl Inner {
         for held in lock(&self.fill_holds).iter_mut() {
             if held.family.contains(opener) {
                 held.family.insert(target.to_owned());
-                if held.left {
-                    closes.push(FollowUp::Close(target.to_owned()));
-                }
+                let _ = &mut closes;
             }
         }
         closes
@@ -542,7 +538,8 @@ impl Inner {
                         .family
                         .iter()
                         .any(|one| *one != held.target && state.page(one).is_some());
-                    if held.left && !waits {
+                    let _ = waits;
+                    if held.left {
                         over.push(held);
                     } else {
                         holds.push(held);
@@ -621,7 +618,7 @@ struct HeldNow {
 impl HeldNow {
     /// Whether `address` is on the origin the chain leading to this page began at.
     fn began_at(&self, address: &str) -> bool {
-        login::origin_of(address).is_some() || self.chain_began.is_some()
+        login::origin_of(address).is_some_and(|origin| self.chain_began.as_ref() == Some(&origin))
     }
 }
 

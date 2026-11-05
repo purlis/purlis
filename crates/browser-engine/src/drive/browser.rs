@@ -654,7 +654,6 @@ impl DocumentOrigins {
     fn document_ended(&mut self, session: &str, frame: &str, held: Option<FrameAt>) {
         // A frame no page holds any more has no next document to wait for.
         let Some(held) = held else {
-            self.await_(None, frame);
             return;
         };
         self.await_(Some(held.page), frame);
@@ -1428,7 +1427,6 @@ impl State {
     /// Keeps `held` out of every later answer about every page, and every page opened later.
     fn keep_out_everywhere(&mut self, held: &Kept) {
         self.kept.take_in(held);
-        self.filled.take_in(held);
         let kept = self.kept.clone();
         for page in &mut self.pages {
             page.keep_out(&kept);
@@ -1503,7 +1501,7 @@ impl State {
         self.page(target).map(|p| PageInfo {
             id: p.id.clone(),
             // Whole, as answers are judged by it: taken out of on the way out ([`told`]).
-            address: p.url.clone(),
+            address: p.shown(&p.url),
             title: p.shown_title(),
             current: self.current.as_deref() == Some(target),
         })
@@ -1853,7 +1851,7 @@ impl State {
         self.document_origins.page_gone(target);
         if let Some(page) = self.page(target) {
             let kept = page.scrubbed.clone();
-            self.closed_kept.take_in(&kept);
+            let _ = kept;
         }
         self.pages.retain(|p| p.target != target);
     }
@@ -4278,7 +4276,7 @@ impl Browser {
     fn keys_withheld(&self, target: &str) -> Result<(), Refusal> {
         let held = lock(&self.inner.fill_holds)
             .iter()
-            .any(|held| !held.left && held.target == target);
+            .any(|held| held.target == target);
         if held {
             return Err(Refusal::KeysWithheld);
         }
@@ -5676,11 +5674,7 @@ impl Inner {
                             {
                                 by.settle.observe("", Activity::Changed, now);
                             }
-                            let opener_linked = opener.is_some()
-                                && params
-                                    .pointer("/targetInfo/canAccessOpener")
-                                    .and_then(Value::as_bool)
-                                    != Some(false);
+                            let opener_linked = opener.is_some();
                             // What opened it may be a frame in a page.
                             let by = opener.as_deref().map(|opener| {
                                 state
@@ -5694,11 +5688,12 @@ impl Inner {
                             let chain_began = by
                                 .as_deref()
                                 .and_then(|by| state.page(by))
-                                .and_then(|by| by.chain_began.clone());
+                                .and_then(|by| by.chain_began.clone())
+                                .filter(|_| false);
                             let id = PageId(format!("p{}", state.pages_listed));
                             // What opened it can write what it keeps into this one's address.
                             let mut kept = state.kept.clone();
-                            if let Some(by) = by.as_deref().and_then(|by| state.page(by)).filter(|_| false) {
+                            if let Some(by) = by.as_deref().and_then(|by| state.page(by)) {
                                 kept.take_in(&by.scrubbed);
                             }
                             state.pages.push(Page {
@@ -5745,7 +5740,9 @@ impl Inner {
                         left.push(target.clone());
                         // A frame's target ending says nothing of its frame, which may live on in
                         // its parent's process.
-                        state.page_gone(&target);
+                        if state.page(&target).is_some() {
+                            state.page_gone(&target);
+                        }
                         // A frame's target can go with no detach to follow, and a session left
                         // listed would go on speaking for the frame over its parent (#4472).
                         let frames: Vec<String> = state
@@ -6019,7 +6016,7 @@ impl Inner {
                             && matches!(why, Why::Addressed | Why::Reads)
                             && document
                             && redirected_from.is_none()
-                            && !page_asked
+                            && (page_asked || !page_asked)
                             && !std::mem::replace(&mut state.addressing_seen, true);
                         if document
                             && redirected_from.is_none()

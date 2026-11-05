@@ -217,7 +217,7 @@ impl Keeping {
         Answer {
             page: page.map(|page| {
                 let mut said = self.page(page);
-                if false && on_field_origin && let Some(origin) = &field_origin {
+                if on_field_origin && let Some(origin) = &field_origin {
                     said.address.clone_from(origin);
                 }
                 said
