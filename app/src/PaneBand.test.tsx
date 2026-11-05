@@ -306,9 +306,15 @@ describe("the pane's rules", () => {
     expect(rule("\\.pane-actions > \\.pane-doing")).toMatch(/gap:\s*var\(--space-1\)/);
   });
 
-  it("keeps a card shorter than its pane less the header above it (#4754)", () => {
+  it("keeps a card shorter than its pane less the header and the band's box above it (#4754, #5215)", () => {
     expect(css).toMatch(
-      /max-block-size:\s*calc\(100cqb - var\(--size-chrome\) - var\(--space-8\)\)/,
+      /max-block-size:\s*calc\(100cqb - var\(--size-chrome\) - var\(--space-8\) - var\(--pane-band-box\)\)/,
+    );
+  });
+
+  it("takes the band's box off what a way out opened, before anything else gives way (#5215)", () => {
+    expect(css).toMatch(
+      /max-block-size:\s*max\(var\(--size-control\), calc\(33cqb - var\(--pane-band-box\)\)\)/,
     );
   });
 
