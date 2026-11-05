@@ -1,0 +1,1128 @@
+<title>Moving panes</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a working window on the left, the list of every scenario on the right, then the rules and open questions under them. One dark look, matching the app. */
+:root {
+  --page: #0e0f13; --ink: #e7e7ec; --ink-2: #b3b4bf; --ink-3: #8a8b98; --rule: #2a2b34;
+  --win: #101116; --surface: #1b1c23; --raised: #262730; --hover: #2c2d38; --term: #1d1e25; --line: #33343f;
+  --accent: #a99df6; --accent-wash: rgba(169,157,246,.16); --ok: #62c98f; --warn: #e6b25e; --danger: #ef8a8a; --danger-wash: rgba(239,138,138,.12);
+  --display: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box }
+body { background: var(--page); color: var(--ink); font: 14px/1.5 var(--display); }
+main { max-width: 1500px; margin: 0 auto; padding-block: 22px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 26px; }
+h1 { font: 600 24px/1.2 var(--display); margin: 0; text-wrap: balance }
+h2 { font: 600 17px/1.3 var(--display); margin: 0 0 6px; text-wrap: balance }
+.lede { color: var(--ink-2); max-width: 74ch; margin: 6px 0 0 }
+button { font: inherit; color: inherit }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px }
+
+.controls { display: flex; flex-wrap: wrap; gap: 12px 22px; align-items: end; }
+.ctl { display: grid; gap: 4px; min-width: 0 }
+.ctl .lab { font-size: 12px; color: var(--ink-3) }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 7px; overflow: hidden }
+.seg button { border: 0; background: transparent; color: var(--ink-2); padding: 5px 10px; font-size: 13px; cursor: pointer }
+.seg button + button { border-left: 1px solid var(--rule) }
+.seg button[aria-pressed="true"] { background: var(--raised); color: var(--ink) }
+
+.work { display: grid; grid-template-columns: minmax(0, 1fr) 372px; gap: 16px; align-items: start }
+@media (max-width: 1080px) { .work { grid-template-columns: minmax(0, 1fr) } }
+.stage-wrap { overflow-x: auto; min-width: 0; display: grid; gap: 8px }
+.said { min-height: 42px; padding: 8px 12px; border: 1px solid var(--rule); border-radius: 8px; color: var(--ink-2); font-size: 13px; }
+.said b { color: var(--ink); font-weight: 500 }
+
+/* The window */
+.win { position: relative; width: 100%; min-width: 860px; height: 560px; display: grid; grid-template-columns: 244px minmax(0, 1fr); gap: 6px; padding: 6px; background: var(--win); border: 1px solid var(--rule); border-radius: 10px; user-select: none; overflow: hidden }
+.side { background: var(--surface); border-radius: 9px; display: flex; flex-direction: column; min-height: 0; padding: 8px }
+.side-head { display: flex; align-items: center; gap: 6px; padding: 2px 4px 8px }
+.side-head b { font-weight: 600; flex: 1 }
+.side-head span { color: var(--ink-3); font-weight: 400 }
+.ico-btn { width: 26px; height: 26px; display: inline-grid; place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--ink-2); cursor: pointer; flex: none }
+.ico-btn:hover { background: var(--hover); color: var(--ink) }
+.ico-btn svg { width: 15px; height: 15px; display: block }
+.group { font-size: 11px; color: var(--ink-3); padding: 10px 6px 3px; }
+.row { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 4px 6px; border-radius: 6px; cursor: pointer; }
+.row:hover { background: var(--hover) }
+.row.front { background: var(--raised) }
+.row .nm { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.row .st { font-size: 11px; color: var(--ink-3); white-space: nowrap }
+.row.ended .nm { color: var(--ink-3) }
+
+/* The persona mark, and the grip it turns into */
+.who { position: relative; width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; background: #24372c; color: var(--ok); font: 500 9px var(--mono); flex: none; cursor: grab; touch-action: none }
+.who.plain { background: var(--raised); color: var(--ink-2) }
+.who .mk { display: grid; place-items: center }
+.who .dots { display: none; color: var(--ink-2) }
+.who svg { display: block }
+.who:hover, .who:focus-visible, .dragging .who.held { background: var(--hover) }
+.who:hover .mk, .who:focus-visible .mk { display: none }
+.who:hover .dots, .who:focus-visible .dots { display: grid; place-items: center }
+.who .stat { position: absolute; right: -2px; bottom: -2px; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); outline: 2px solid var(--surface) }
+.who .stat.run { background: #6db7ff }
+.who.none { cursor: default }
+.who.none:hover { background: var(--raised) }
+.who.none:hover .mk { display: grid }
+.who.none:hover .dots { display: none }
+
+.main { display: grid; grid-template-rows: 34px minmax(0, 1fr); gap: 6px; min-width: 0; min-height: 0 }
+.strip { position: relative; display: flex; align-items: center; gap: 2px; min-width: 0 }
+.chip { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 6px 0 10px; border-radius: 7px 7px 0 0; color: var(--ink-2); cursor: pointer; max-width: 210px; white-space: nowrap; touch-action: none; transition: transform .14s ease }
+.chip:hover { background: var(--surface) }
+.chip.front { background: var(--surface); color: var(--ink) }
+.chip .nm { overflow: hidden; text-overflow: ellipsis }
+.chip .more { color: var(--ink-3); font-size: 12px }
+.chip .x { width: 18px; height: 18px; display: grid; place-items: center; border: 0; background: none; color: var(--ink-3); border-radius: 4px; cursor: pointer; flex: none }
+.chip .x:hover { background: var(--hover); color: var(--ink) }
+.chip.spring { box-shadow: inset 0 -2px 0 var(--accent) }
+.tabline { width: 2px; height: 24px; background: var(--accent); border-radius: 2px; flex: none }
+
+.area { position: relative; min-height: 0; background: var(--surface); border-radius: 9px; overflow: hidden }
+.pane { position: absolute; display: flex; flex-direction: column; background: var(--term); border-radius: 7px; overflow: hidden; outline: 1px solid transparent; outline-offset: -1px; transition: left .16s cubic-bezier(.2,.7,.2,1), top .16s cubic-bezier(.2,.7,.2,1), width .16s cubic-bezier(.2,.7,.2,1), height .16s cubic-bezier(.2,.7,.2,1), opacity .12s linear; }
+.no-motion .pane, .no-motion .chip { transition: none }
+.pane.focused { outline-color: var(--line) }
+.pane.lifted { opacity: .38 }
+.pane.moving { outline: 2px solid var(--accent); outline-offset: -2px; box-shadow: 0 0 0 1px var(--accent-wash) }
+.pane.incoming { outline: 2px solid var(--accent); outline-offset: -2px; animation: arrive .16s ease-out }
+.no-motion .pane.incoming { animation: none }
+.pane.refused { outline: 1px solid var(--danger); outline-offset: -1px }
+@keyframes arrive { from { opacity: 0; transform: scale(.97) } to { opacity: 1; transform: none } }
+.head { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 4px 6px 4px 8px; cursor: grab; flex: none; touch-action: none; min-width: 0 }
+.head .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 2ch }
+.head .state { color: var(--ink-3); font-size: 12px; white-space: nowrap }
+.head .gap { flex: 1 }
+.head .divider { width: 1px; height: 16px; background: var(--line); margin-inline: 2px; flex: none }
+.head .acts { display: flex; align-items: center; gap: 2px; flex: none }
+.term { flex: 1; min-height: 0; overflow: hidden; padding: 4px 12px; font: 12px/18px var(--mono); color: #c9cad4; position: relative }
+.term .t { white-space: pre-wrap; word-break: break-word }
+.term .dim { color: var(--ink-3) }
+.foot { display: flex; align-items: center; gap: 6px; min-height: 26px; padding: 0 10px; font-size: 11.5px; color: var(--ink-3); flex: none; white-space: nowrap; overflow: hidden }
+.foot .ctx { margin-left: auto; font-family: var(--mono) }
+.size { position: absolute; right: 8px; top: 40px; padding: 1px 6px; border-radius: 5px; background: var(--raised); color: var(--ink-2); font: 11px var(--mono); pointer-events: none }
+.incoming .size, .moving .size { color: var(--accent) }
+.rail { align-items: center; cursor: pointer }
+.rail .vert { writing-mode: vertical-rl; padding: 10px 0; color: var(--ink-2); font-size: 12px; white-space: nowrap }
+.view { flex: 1; min-height: 0; padding: 10px 14px; color: var(--ink-2); overflow: hidden }
+.view .segm { display: inline-flex; gap: 2px; padding: 2px; background: var(--raised); border-radius: 7px; margin-bottom: 8px }
+.view .segm span { padding: 3px 10px; border-radius: 5px; font-size: 13px }
+.view .segm span.on { background: var(--hover); color: var(--ink) }
+.empty { flex: 1; min-height: 0; display: grid; place-content: center; justify-items: center; gap: 10px; color: var(--ink-3); text-align: center; padding: 10px }
+.empty .opts { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center }
+.empty button { border: 1px solid var(--line); background: var(--raised); color: var(--ink); padding: 5px 12px; border-radius: 6px; cursor: pointer }
+.empty button:hover { background: var(--hover) }
+
+.preview-box { position: absolute; border: 2px solid var(--accent); background: var(--accent-wash); border-radius: 7px; pointer-events: none; z-index: 4 }
+.drag-label { position: fixed; z-index: 30; padding: 3px 9px; background: var(--raised); border: 1px solid var(--line); border-radius: 6px; font-size: 13px; pointer-events: none; white-space: nowrap; box-shadow: 0 6px 18px rgba(0,0,0,.45) }
+.drag-tip { position: fixed; z-index: 30; max-width: 340px; padding: 4px 9px; background: #0b0c10; border: 1px solid var(--line); border-radius: 6px; font-size: 12.5px; pointer-events: none; color: var(--ink-2) }
+.drag-tip.no { color: var(--danger); border-color: rgba(239,138,138,.45) }
+.fake-cursor { position: fixed; z-index: 40; width: 18px; height: 18px; border-radius: 50%; background: rgba(255,255,255,.28); border: 2px solid #fff; transform: translate(-50%,-50%); pointer-events: none }
+html.dragging, html.dragging * { cursor: grabbing !important }
+html.dragging.no-drop, html.dragging.no-drop * { cursor: not-allowed !important }
+
+.menu { position: absolute; z-index: 20; width: 232px; padding: 4px; background: var(--raised); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 10px 28px rgba(0,0,0,.5); }
+.menu button { display: flex; width: 100%; align-items: center; gap: 8px; border: 0; background: none; padding: 5px 8px; border-radius: 5px; cursor: pointer; text-align: left }
+.menu button:hover, .menu button:focus-visible { background: var(--hover); outline: none }
+.menu button .k { margin-left: auto; color: var(--ink-3); font-size: 11.5px; font-family: var(--mono) }
+.menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0 }
+.menu input { width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: 5px; color: var(--ink); padding: 4px 8px; margin-bottom: 4px; font: inherit }
+.menu .list { max-height: 240px; overflow: auto }
+
+/* The scenarios */
+.sc-panel { border: 1px solid var(--rule); border-radius: 10px; max-height: 660px; display: flex; flex-direction: column; min-width: 0 }
+.sc-top { padding: 10px 12px; border-bottom: 1px solid var(--rule); display: flex; gap: 8px; align-items: center; flex-wrap: wrap }
+.sc-top .count { color: var(--ink-3); font-size: 12px; font-variant-numeric: tabular-nums; flex: 1; min-width: 120px }
+.small { border: 1px solid var(--line); background: transparent; padding: 3px 9px; border-radius: 6px; cursor: pointer; font-size: 12.5px }
+.small:hover { background: var(--raised) }
+.sc-list { overflow: auto; padding: 4px 6px 10px; min-height: 0 }
+.sc-g { font: 500 11px var(--mono); letter-spacing: .05em; text-transform: uppercase; color: var(--ink-3); padding: 12px 6px 4px }
+.sc { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 5px 6px 5px 22px; border-radius: 6px; cursor: pointer; position: relative; font-size: 13px; color: var(--ink-2) }
+.sc:hover { background: var(--raised) }
+.sc[aria-current="true"] { background: var(--raised); color: var(--ink) }
+.sc::before { content: ""; position: absolute; left: 7px; top: 11px; width: 8px; height: 8px; border-radius: 50%; border: 1px solid var(--ink-3) }
+.sc.good::before { background: var(--ok); border-color: var(--ok) }
+.sc.change::before { background: var(--warn); border-color: var(--warn) }
+.sc .tag { color: var(--ink-3); font-size: 11px; margin-left: 4px }
+.sc-now { padding: 10px 12px; border-top: 1px solid var(--rule); display: grid; gap: 6px; font-size: 13px }
+.sc-now .try { color: var(--ink-2) }
+.sc-now .exp { color: var(--ink) }
+.sc-now .btns { display: flex; gap: 6px; flex-wrap: wrap }
+.small.on-good { border-color: var(--ok); color: var(--ok) }
+.small.on-change { border-color: var(--warn); color: var(--warn) }
+.primary { border-color: var(--accent); color: var(--accent) }
+
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 430px), 1fr)); gap: 22px }
+.note { color: var(--ink-2); margin: 0 0 10px; max-width: 74ch }
+ol.dec, ul.dec { margin: 0; padding-left: 20px; display: grid; gap: 8px; max-width: 74ch }
+ol.dec b, ul.dec b { font-weight: 600 }
+.q { padding: 10px 12px; border: 1px solid var(--rule); border-radius: 8px; display: grid; gap: 3px }
+.q b { font-weight: 600 }
+.q span { color: var(--ink-2); font-size: 13px }
+.qs { display: grid; gap: 8px }
+.tblw { overflow-x: auto }
+table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 13px }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top }
+th { font-weight: 500; color: var(--ink-3); font-size: 12px }
+td:first-child { color: var(--ink); white-space: nowrap }
+td { color: var(--ink-2) }
+.chg { color: var(--accent) }
+</style>
+
+<main>
+<header>
+  <h1>Moving panes</h1>
+  <p class="lede">A working window for the seven things you reported. Drag anything by its icon, or press <b>Show me</b> on a scenario. It uses the same drop rules as the app today, with the proposed look and behaviour on top. Nothing here is built yet.</p>
+</header>
+
+<div class="controls" aria-label="Options to compare">
+  <div class="ctl"><span class="lab">While dragging</span><span class="seg" data-opt="preview"><button data-v="live">Panes make room</button><button data-v="overlay">Box only (today)</button></span></div>
+  <div class="ctl"><span class="lab">Grip dots</span><span class="seg" data-opt="dots"><button data-v="3x2">3 × 2</button><button data-v="3x3">3 × 3</button></span></div>
+  <div class="ctl"><span class="lab">Press a chat that isn't on screen</span><span class="seg" data-opt="press"><button data-v="swap">One pane: show here. Split: new tab</button><button data-v="tab">Always a new tab</button></span></div>
+  <div class="ctl"><span class="lab">Window</span><span class="seg" data-opt="narrow"><button data-v="no">Wide</button><button data-v="yes">Narrow (folds)</button></span></div>
+  <div class="ctl"><span class="lab">Motion</span><span class="seg" data-opt="motion"><button data-v="on">On</button><button data-v="off">Reduced</button></span></div>
+</div>
+
+<div class="work">
+  <div class="stage-wrap">
+    <div class="win" id="win">
+      <aside class="side" id="side"></aside>
+      <div class="main">
+        <div class="strip" id="strip"></div>
+        <div class="area" id="area"></div>
+      </div>
+      <div class="menu" id="menu" hidden></div>
+    </div>
+    <div class="said" id="said" role="status" aria-live="polite"></div>
+  </div>
+  <div class="sc-panel">
+    <div class="sc-top"><span class="count" id="count"></span><button class="small" id="copy">Copy my verdicts</button></div>
+    <div class="sc-list" id="sc-list"></div>
+    <div class="sc-now" id="sc-now"></div>
+  </div>
+</div>
+
+<section class="two">
+  <div>
+    <h2>What's proposed</h2>
+    <ol class="dec">
+      <li><b>One grip everywhere.</b> Hover a persona icon, in the list or a pane's head, and it turns into dots with no button shape. The cursor is an open hand, and closes while you drag. A pane's blank head also drags, as it does today. The "Place…" button goes.</li>
+      <li><b>A view on its own has no grip on it.</b> Settings alone in a tab moves by its tab. In a split it has a head like any pane. So the grip never sits on a view's content, as it did over "You".</li>
+      <li><b>Panes make room while you drag.</b> The other panes move to where they'd end up, and what you're moving shows in its place. Let go elsewhere, or press Esc, and everything goes back.</li>
+      <li><b>Drop zones don't move.</b> They stay on the layout from before the drag, so panes making room can't shift a zone under your pointer and start a flicker.</li>
+      <li><b>Terminals keep their size until you drop.</b> A small label shows the size each will take. Resizing a live terminal on every pointer move would be slow and scramble its text.</li>
+      <li><b>A new chat never replaces anything.</b> It fills an empty pane if the tab has one, and otherwise gets a new tab.</li>
+      <li><b>+ opens an empty tab.</b> Hover it, or press Down on it, for the list: empty tab, new chat, new shell, and whatever else joins the action list. An empty pane offers the same choices.</li>
+      <li><b>Hold over a tab to go there.</b> During a drag, resting on another tab for a moment brings it to the front, so a pane can land in it.</li>
+      <li><b>Letting go on the pane itself does nothing and warns of nothing.</b> Only a real refusal is red, and it sits on the pane it means.</li>
+    </ol>
+  </div>
+  <div>
+    <h2>Questions for you</h2>
+    <p class="note">My recommendation comes first in each. The buttons above the window let you feel the first two.</p>
+    <div class="qs">
+      <div class="q"><b>Pressing a chat that isn't on screen</b><span>One pane: show it there, and the old chat keeps running in the list, so switching stays fast. Split: new tab, so your layout survives. The alternative is always a new tab, which fills the strip quickly.</span></div>
+      <div class="q"><b>Should the dots show on row hover, or only on the icon?</b><span>Only on the icon, so a list you run the mouse down doesn't lose its persona marks. The whole row still drags.</span></div>
+      <div class="q"><b>A drop at the far edge of a split tab</b><span>Keep today's rule, where it splits just the pane under the pointer. Spanning the whole tab's height is a later addition.</span></div>
+      <div class="q"><b>Which key opens what?</b><span>⌘T an empty tab and ⌘N a new chat. Today's new tab shortcut opens a chat, so this changes habits.</span></div>
+      <div class="q"><b>Empty tabs when you leave them</b><span>Keep them until closed, like a browser's. Closing one never asks.</span></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>What each drop does</h2>
+  <p class="note">The app's current rules. <span class="chg">Coloured text</span> is what this proposal changes.</p>
+  <div class="tblw"><table>
+    <thead><tr><th>Dragging</th><th>Pane's edge</th><th>Pane's middle</th><th>Empty pane</th><th>Tab strip</th><th>Itself</th></tr></thead>
+    <tbody>
+      <tr><td>A chat's pane</td><td>Splits there; its old place closes up</td><td>Swaps the two</td><td>Fills it; its old pane closes</td><td>New tab where the line is</td><td class="chg">Nothing happens, no warning</td></tr>
+      <tr><td>A view's pane in a split</td><td>Same as a chat</td><td>Swaps</td><td>Fills it</td><td>New tab</td><td class="chg">Nothing happens, no warning</td></tr>
+      <tr><td>A shell</td><td>Same as a chat</td><td>Swaps</td><td>Fills it</td><td>New tab</td><td class="chg">Nothing happens, no warning</td></tr>
+      <tr><td>A one-job program</td><td colspan="5">Doesn't move: it stays beside the pane it opened from. <span class="chg">Shows no grip.</span></td></tr>
+      <tr><td>An empty pane</td><td colspan="5">Nothing to move. <span class="chg">Shows no grip.</span></td></tr>
+      <tr><td>A chat off screen, from the list</td><td>Splits, and joins the tab</td><td>Shows it there; the old chat keeps running in the list</td><td>Fills it</td><td>New tab</td><td>–</td></tr>
+      <tr><td>A chat on screen, from the list</td><td colspan="4">Acts as its pane, so it moves rather than showing twice. <span class="chg">Its pane dims as you pick it up.</span></td><td>–</td></tr>
+      <tr><td>Another workspace's chat</td><td>Right or below only: left or above would carry the whole tab to that workspace, so it's refused with the reason</td><td>Same check</td><td>Same check</td><td>New tab on its own workspace's strip</td><td>–</td></tr>
+      <tr><td>A tab of several panes</td><td>Its panes go beside that pane</td><td>Refused: a tab goes beside a pane, not into one</td><td>Refused</td><td>Moves the tab</td><td class="chg">Nothing happens, no warning</td></tr>
+      <tr><td>A tab of one pane</td><td colspan="3">Acts as its pane</td><td>Moves the tab</td><td class="chg">Nothing happens, no warning</td></tr>
+      <tr><td>Onto a one-job program</td><td>Splits beside it</td><td>Refused: it goes when its program exits</td><td>–</td><td>–</td><td>–</td></tr>
+      <tr><td>Would leave a pane too small</td><td>Refused: under about 40 columns or 8 rows, with the reason</td><td>–</td><td>–</td><td>–</td><td>–</td></tr>
+      <tr><td>Onto a pane folded to a rail</td><td colspan="2">Takes no drop (narrow windows)</td><td>–</td><td>–</td><td>–</td></tr>
+    </tbody>
+  </table></div>
+</section>
+</main>
+
+<script>
+"use strict";
+/* ---------- The world ---------- */
+const CH = {
+  1: { name: "codeql-issues", state: "idle", ws: "smart-ide", p: "ST", ctx: "12%", cache: "98%", text: "recap: three fix PRs have merged and CodeQL now skips test code, leaving only the two alerts we expected." },
+  2: { name: "performance", state: "working", ws: "smart-ide", p: "ST", ctx: "41%", cache: "87%", text: "Profiling the terminal's paint. The first frame takes 38 ms; most of it is the font atlas." },
+  3: { name: "copy-past-crash", state: "idle", ws: "smart-ide", p: "ST", ctx: "9%", cache: "100%", text: "Yes, it's done on our side. PR #5004 merged into main, and I've removed the paste-crash branch folder." },
+  4: { name: "fix-the-login", state: "idle", ws: "git-ci-cd", p: "DO", ctx: "22%", cache: "91%", text: "The runner's token had expired. I've asked for a new one in the Inbox." },
+  5: { name: "old-report", state: "ended", ws: "smart-ide", p: "ST", ctx: "63%", cache: "70%", text: "Report written. This chat has ended; its program has exited." },
+  6: { name: "probe (task)", state: "working", ws: "smart-ide", p: "RE", ctx: "5%", cache: "100%", text: "Checking the guard's linear time budget on 5 000 lines, for the chat that asked." },
+};
+let chatN = 0;
+const chat = (id) => ({ t: "chat", id });
+const view = (name) => ({ t: "view", name });
+const shell = (name = "zsh") => ({ t: "shell", name });
+const job = (name = "lazygit") => ({ t: "job", name });
+const empty = () => ({ t: "empty" });
+const nameOf = (c) => c.t === "chat" ? CH[c.id].name : c.t === "empty" ? "an empty pane" : c.name;
+const clone = (x) => JSON.parse(JSON.stringify(x));
+
+let S;
+let builder = { n: 0, t: 0 };
+const leaf = (c) => ({ p: ++builder.n, c });
+const row = (a, b, share = 0.5) => ({ d: "row", a, b, share });
+const col = (a, b, share = 0.5) => ({ d: "col", a, b, share });
+const leaves = (n) => n.c ? [n] : [...leaves(n.a), ...leaves(n.b)];
+const firstLeaf = (n) => leaves(n)[0];
+const tabOf = (layout) => ({ id: ++builder.t, layout, focused: firstLeaf(layout).p });
+function world(layouts, front = 0) {
+  const tabs = layouts.map(tabOf);
+  return { tabs, front: tabs[front].id, n: builder.n, t: builder.t };
+}
+const leafC = (c) => (c.t ? leaf(c) : c);
+const W = (...tabs) => { builder = { n: 0, t: 0 }; return world(tabs.map((f) => f())); };
+
+const tabById = (st, id) => st.tabs.find((t) => t.id === id);
+const frontTab = (st) => tabById(st, st.front);
+function where(st, pid) {
+  for (const tab of st.tabs) { const pane = leaves(tab.layout).find((l) => l.p === pid); if (pane) return { tab, pane }; }
+}
+function onScreen(st, id) {
+  for (const tab of st.tabs) { const pane = leaves(tab.layout).find((l) => l.c.t === "chat" && l.c.id === id); if (pane) return { tab, pane }; }
+}
+const repl = (n, pid, fn) => n.p === pid ? fn(n) : n.c ? n : { ...n, a: repl(n.a, pid, fn), b: repl(n.b, pid, fn) };
+function rem(n, pid) {
+  if (n.c) return n.p === pid ? null : n;
+  const a = rem(n.a, pid), b = rem(n.b, pid);
+  if (!a) return b;
+  if (!b) return a;
+  return { ...n, a, b };
+}
+const homeOfC = (c) => c.t === "chat" ? CH[c.id].ws : "smart-ide";
+const stripOf = (tab) => homeOfC(firstLeaf(tab.layout).c);
+
+/* ---------- The drop rules, as the app has them (paneDrop.ts) ---------- */
+const FLOOR = { width: 300, height: 140 };
+const EDGE = 0.25;
+function placeAt(x, y, was) {
+  const edges = [["left", x], ["right", 1 - x], ["top", y], ["bottom", 1 - y]];
+  const [place, d] = edges.reduce((near, one) => one[1] < near[1] ? one : near);
+  // A little stickiness, so a pointer on the boundary doesn't flip the preview.
+  if (was && was !== "middle" && was !== place) {
+    const w = edges.find((e) => e[0] === was);
+    if (w[1] < EDGE + 0.03) return was;
+  }
+  if (was === "middle" && d > EDGE - 0.03) return "middle";
+  return d < EDGE ? place : "middle";
+}
+const SIDE = { left: "left of", right: "right of", top: "above", bottom: "below" };
+function asDropped(st, from, to) {
+  if (from.kind === "chat") {
+    const on = onScreen(st, from.id);
+    return on ? asDropped(st, { kind: "pane", tab: on.tab.id, pane: on.pane.p }, to) : from;
+  }
+  const tab = tabById(st, from.tab);
+  if (!tab) return from;
+  const all = leaves(tab.layout);
+  if (from.kind === "tab" && to.kind === "pane" && all.length === 1) return { kind: "pane", tab: from.tab, pane: all[0].p };
+  if (from.kind === "pane" && to.kind === "strip" && all.length === 1) return { kind: "tab", tab: from.tab };
+  return from;
+}
+const sourceName = (st, s) => s.kind === "chat" ? CH[s.id].name : s.kind === "pane" ? nameOf(where(st, s.pane).pane.c) : nameOf(firstLeaf(tabById(st, s.tab).layout).c);
+function judge(st, from, to, size) {
+  const src = asDropped(st, from, to);
+  if (src.kind === "pane") {
+    const at = where(st, src.pane);
+    if (!at) return { ok: false, why: "That pane has closed." };
+    if (at.pane.c.t === "empty") return { ok: false, why: "An empty pane has nothing to move. Close it instead." };
+    if (at.pane.c.t === "job") return { ok: false, why: "A program stays beside the pane it opened from until it exits." };
+  }
+  const name = sourceName(st, src);
+  const home = src.kind === "chat" ? CH[src.id].ws : src.kind === "tab" ? stripOf(tabById(st, src.tab)) : homeOfC(where(st, src.pane).pane.c);
+  if (to.kind === "strip") {
+    if (src.kind === "tab") return { ok: true, says: "Move the tab here." };
+    const strip = stripOf(frontTab(st));
+    return { ok: true, says: home !== strip ? `A new tab with ${name}, on ${home}'s strip.` : `A new tab with ${name}.` };
+  }
+  const tgt = where(st, to.pane);
+  if (!tgt) return { ok: false, why: "That pane has closed." };
+  if ((src.kind === "pane" && src.pane === to.pane) || (src.kind === "tab" && src.tab === tgt.tab.id)) return { ok: false, self: true, why: "Let go to leave it where it is." };
+  const there = nameOf(tgt.pane.c);
+  let says;
+  if (to.place === "middle") {
+    if (src.kind === "tab") return { ok: false, why: "A tab of several panes goes beside a pane, not into one." };
+    if (tgt.pane.c.t === "job") return { ok: false, why: `${there} goes when its program exits. Drop beside it instead.` };
+    if (tgt.pane.c.t === "empty") says = `Put ${name} in this empty pane.`;
+    else if (src.kind === "pane") says = `Swap ${name} and ${there}.`;
+    else says = `Show ${name} here. ${there} keeps running in the list.`;
+  } else {
+    const across = to.place === "left" || to.place === "right";
+    if (size && (across ? size.width : size.height) / 2 < (across ? FLOOR.width : FLOOR.height))
+      return { ok: false, why: across ? "Too narrow: a pane here would be under about 40 columns. Drop it on a wider pane." : "Too short: a pane here would be under about 8 rows. Drop it on a taller pane." };
+    says = `${src.kind === "tab" ? "The tab " + name : name} ${SIDE[to.place]} ${there}.`;
+  }
+  const strip = stripOf(tgt.tab);
+  if (home !== strip) {
+    const after = apply(st, src, to);
+    if (stripOf(tabById(after, tgt.tab.id)) !== strip) return { ok: false, why: `${name} works in ${home}. Drop it right of or below ${there}.` };
+    says += ` It stays filed in ${home}.`;
+  }
+  return { ok: true, says };
+}
+function lift(N, src) {
+  if (src.kind === "chat") return { moved: { p: ++N.n, c: chat(src.id) } };
+  if (src.kind === "tab") {
+    const tab = tabById(N, src.tab);
+    N.tabs = N.tabs.filter((t) => t.id !== src.tab);
+    return { moved: tab.layout };
+  }
+  const at = where(N, src.pane);
+  const moved = at.pane;
+  const layout = rem(at.tab.layout, src.pane);
+  if (layout) {
+    at.tab.layout = layout;
+    if (at.tab.focused === src.pane) at.tab.focused = firstLeaf(layout).p;
+  } else if (N.tabs.length === 1) {
+    at.tab.layout = { p: ++N.n, c: empty() };
+    at.tab.focused = at.tab.layout.p;
+  } else {
+    N.tabs = N.tabs.filter((t) => t !== at.tab);
+  }
+  return { moved };
+}
+function bringFront(N, tabId, pid) { N.front = tabId; const t = tabById(N, tabId); if (t && pid) t.focused = pid; }
+function apply(st, from, to) {
+  const N = clone(st);
+  const src = asDropped(N, from, to);
+  if (to.kind === "strip") {
+    if (src.kind === "tab") {
+      const before = N.tabs.slice(to.at).find((t) => t.id !== src.tab);
+      const moving = tabById(N, src.tab);
+      N.tabs = N.tabs.filter((t) => t.id !== src.tab);
+      const i = before ? N.tabs.indexOf(before) : N.tabs.length;
+      N.tabs.splice(i, 0, moving);
+      N.front = src.tab;
+      return N;
+    }
+    const before = N.tabs[to.at];
+    const { moved } = lift(N, src);
+    const tab = { id: ++N.t, layout: moved, focused: firstLeaf(moved).p };
+    const i = before && N.tabs.includes(before) ? N.tabs.indexOf(before) : N.tabs.length;
+    N.tabs.splice(i, 0, tab);
+    N.front = tab.id;
+    return N;
+  }
+  const tgtTab = where(N, to.pane).tab.id;
+  if (to.place === "middle") {
+    if (src.kind === "chat") {
+      const t = tabById(N, tgtTab);
+      t.layout = repl(t.layout, to.pane, (l) => ({ ...l, c: chat(src.id) }));
+      bringFront(N, tgtTab, to.pane);
+      return N;
+    }
+    if (where(N, to.pane).pane.c.t === "empty") {
+      const { moved } = lift(N, src);
+      const t = tabById(N, tgtTab);
+      t.layout = repl(t.layout, to.pane, () => moved);
+      bringFront(N, tgtTab, firstLeaf(moved).p);
+      return N;
+    }
+    const a = where(N, src.pane), b = where(N, to.pane);
+    const [ac, bc] = [a.pane.c, b.pane.c];
+    a.pane.c = bc; b.pane.c = ac;
+    // The pane keeps its number, so its terminal is the same one wherever it lands.
+    const [ap, bp] = [a.pane.p, b.pane.p];
+    a.pane.p = bp; b.pane.p = ap;
+    bringFront(N, tgtTab, ap);
+    return N;
+  }
+  const { moved } = lift(N, src);
+  const t = tabById(N, tgtTab);
+  const d = to.place === "left" || to.place === "right" ? "row" : "col";
+  const first = to.place === "left" || to.place === "top";
+  t.layout = repl(t.layout, to.pane, (found) => ({ d, share: 0.5, a: first ? moved : found, b: first ? found : moved }));
+  bringFront(N, tgtTab, firstLeaf(moved).p);
+  return N;
+}
+
+/* ---------- Laying panes out ---------- */
+const GAP = 6;
+const opts = { preview: "live", dots: "3x2", press: "swap", narrow: "no", motion: "on" };
+function rects(tab, box) {
+  const out = {};
+  const walk = (n, r) => {
+    if (n.c) { out[n.p] = { ...r, rail: false }; return; }
+    if (opts.narrow === "yes" && n.d === "row") {
+      const inA = leaves(n.a).some((l) => l.p === tab.focused);
+      const rail = 34;
+      if (inA) { walk(n.a, { ...r, w: r.w - rail - GAP }); railAll(n.b, { x: r.x + r.w - rail, y: r.y, w: rail, h: r.h }); }
+      else { railAll(n.a, { x: r.x, y: r.y, w: rail, h: r.h }); walk(n.b, { x: r.x + rail + GAP, y: r.y, w: r.w - rail - GAP, h: r.h }); }
+      return;
+    }
+    if (n.d === "row") {
+      const wa = Math.round((r.w - GAP) * n.share);
+      walk(n.a, { x: r.x, y: r.y, w: wa, h: r.h });
+      walk(n.b, { x: r.x + wa + GAP, y: r.y, w: r.w - wa - GAP, h: r.h });
+    } else {
+      const ha = Math.round((r.h - GAP) * n.share);
+      walk(n.a, { x: r.x, y: r.y, w: r.w, h: ha });
+      walk(n.b, { x: r.x, y: r.y + ha + GAP, w: r.w, h: r.h - ha - GAP });
+    }
+  };
+  const railAll = (n, r) => { const ls = leaves(n); const h = (r.h - GAP * (ls.length - 1)) / ls.length; ls.forEach((l, i) => { out[l.p] = { x: r.x, y: r.y + i * (h + GAP), w: r.w, h, rail: true }; }); };
+  walk(tab.layout, box);
+  return out;
+}
+
+/* ---------- Drawing ---------- */
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const ICON = {
+  plus: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3v10M3 8h10"/></svg>',
+  x: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" width="11" height="11"><path d="M4 4l8 8M12 4l-8 8"/></svg>',
+  bell: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M4 11V7a4 4 0 0 1 8 0v4l1 1.5H3zM6.5 14h3"/></svg>',
+  more: '<svg viewBox="0 0 16 16" fill="currentColor"><circle cx="3.5" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="12.5" cy="8" r="1.2"/></svg>',
+  right: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M8 3v10"/></svg>',
+  down: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M2.5 8h11"/></svg>',
+};
+function dotsSvg() {
+  const rows = opts.dots === "3x3" ? 3 : 2;
+  let c = "";
+  for (let y = 0; y < 3; y++) for (let x = 0; x < rows; x++) c += `<circle cx="${(rows === 2 ? 4 : 2.5) + x * 3.5}" cy="${2.5 + y * 3.5}" r="1.15"/>`;
+  return `<svg viewBox="0 0 12 12" width="13" height="13" fill="currentColor" aria-hidden="true">${c}</svg>`;
+}
+function whoMark(c) {
+  if (c.t === "chat") return { txt: CH[c.id].p, plain: false, run: CH[c.id].state === "working" };
+  if (c.t === "shell") return { txt: ">_", plain: true };
+  if (c.t === "view") return { txt: c.name[0], plain: true };
+  if (c.t === "job") return { txt: "▶", plain: true };
+  return { txt: "", plain: true };
+}
+function gripHtml(c, attrs, name, movable = true) {
+  const m = whoMark(c);
+  const stat = c.t === "chat" ? `<span class="stat ${m.run ? "run" : ""}"></span>` : "";
+  if (!movable) return `<span class="who none ${m.plain ? "plain" : ""}" title="${esc(c.t === "job" ? "A program stays beside the pane it opened from" : "")}"><span class="mk">${esc(m.txt)}</span>${stat}</span>`;
+  return `<span class="who ${m.plain ? "plain" : ""}" tabindex="0" role="button" aria-label="Move ${esc(name)}. Enter picks it up; arrows choose a place." ${attrs}><span class="mk">${esc(m.txt)}</span><span class="dots">${dotsSvg()}</span>${stat}</span>`;
+}
+function drawSide(st) {
+  const ids = [1, 2, 3, 5, 6, ...Object.keys(CH).map(Number).filter((i) => i > 6)];
+  const inFront = (id) => leaves(frontTab(st).layout).some((l) => l.c.t === "chat" && l.c.id === id);
+  const rowHtml = (id) => {
+    const c = CH[id];
+    return `<div class="row ${inFront(id) ? "front" : ""} ${c.state === "ended" ? "ended" : ""}" data-row="${id}">${gripHtml(chat(id), `data-grip-chat="${id}"`, c.name)}<span class="nm">${esc(c.name)}</span><span class="st">${onScreen(st, id) ? "on screen" : c.state === "ended" ? "ended" : ""}</span></div>`;
+  };
+  $("side").innerHTML = `<div class="side-head"><b>smart-ide <span>· purlis-plane</span></b><button class="ico-btn" data-act="new-chat" aria-label="New chat" title="New chat">${ICON.plus}</button></div>
+    ${ids.map(rowHtml).join("")}<div class="group">Other workspace · git-ci-cd</div>${rowHtml(4)}`;
+}
+function drawStrip(st, lineAt, springId) {
+  const chips = st.tabs.map((t, i) => {
+    const ls = leaves(t.layout);
+    const first = ls[0].c;
+    const label = first.t === "empty" ? "Empty tab" : nameOf(first);
+    return `${lineAt === i ? '<span class="tabline"></span>' : ""}<div class="chip ${t.id === st.front ? "front" : ""} ${t.id === springId ? "spring" : ""}" data-chip="${t.id}" tabindex="0"><span class="nm">${esc(label)}</span>${ls.length > 1 ? `<span class="more">+${ls.length - 1}</span>` : ""}<button class="x" data-close-tab="${t.id}" aria-label="Close tab">${ICON.x}</button></div>`;
+  }).join("");
+  $("strip").innerHTML = `${chips}${lineAt === st.tabs.length ? '<span class="tabline"></span>' : ""}<button class="ico-btn" id="plus" aria-label="New tab. Down opens more choices." aria-haspopup="menu">${ICON.plus}</button>`;
+}
+const LINES = (c) => `<div class="t" data-t>${esc(CH[c.id].text)}\n\n<span class="dim">❯ </span></div>`;
+function paneInner(l, tab, soleView) {
+  const c = l.c, name = nameOf(c);
+  const movable = c.t !== "job" && c.t !== "empty";
+  const acts = `<span class="acts"><button class="ico-btn" aria-label="Pane notices" title="Notices">${ICON.bell}</button><button class="ico-btn" data-act="more" aria-label="More" title="More">${ICON.more}</button><span class="divider"></span><button class="ico-btn" data-split="right" data-p="${l.p}" aria-label="Split right" title="Split right">${ICON.right}</button><button class="ico-btn" data-split="down" data-p="${l.p}" aria-label="Split down" title="Split down">${ICON.down}</button><button class="ico-btn" data-close="${l.p}" aria-label="Close pane" title="Close pane">${ICON.x}</button></span>`;
+  if (c.t === "empty") return `<div class="empty"><span>What goes here?</span><div class="opts"><button data-fill="chat" data-p="${l.p}">New chat</button><button data-fill="shell" data-p="${l.p}">New shell</button></div><span style="font-size:12px">or drag a chat here from the list</span></div>${leaves(tab.layout).length > 1 ? `<button class="ico-btn" style="position:absolute;right:6px;top:6px" data-close="${l.p}" aria-label="Close pane">${ICON.x}</button>` : ""}`;
+  if (c.t === "view") {
+    const body = `<div class="view"><div class="segm"><span>You</span><span>Project</span><span class="on">Workspace</span></div><div>${esc(c.name)} for this workspace. Its controls are its own: nothing is drawn on top of them.</div></div>`;
+    if (soleView) return body;
+    return `<div class="head" data-grip-pane="${l.p}">${gripHtml(c, `data-grip-pane="${l.p}"`, name)}<span class="nm">${esc(name)}</span><span class="gap"></span>${acts}</div>${body}`;
+  }
+  const state = c.t === "chat" ? CH[c.id].state : c.t === "job" ? "running" : "";
+  const headAttr = movable ? `data-grip-pane="${l.p}"` : "";
+  const foot = c.t === "chat" ? `<div class="foot"><span>Claude Code</span><span>·</span><span>${esc(CH[c.id].ws)}</span><span class="ctx">ctx ${CH[c.id].ctx} · cache ${CH[c.id].cache}</span></div>` : "";
+  const term = c.t === "chat" ? LINES(c) : `<div class="t" data-t><span class="dim">~/purlis $ </span>${c.t === "job" ? "lazygit" : ""}</div>`;
+  return `<div class="head" ${headAttr} ${movable ? "" : 'style="cursor:default"'}>${gripHtml(c, headAttr, name, movable)}<span class="nm">${esc(name)}</span><span class="state">${esc(state)}</span><span class="gap"></span>${acts}</div><div class="term">${term}</div>${foot}`;
+}
+const paneEls = new Map();
+function drawArea(st, base, marks = {}) {
+  const area = $("area");
+  const box = { x: GAP, y: GAP, w: area.clientWidth - GAP * 2, h: area.clientHeight - GAP * 2 };
+  const tab = frontTab(st);
+  const rs = rects(tab, box);
+  const ls = leaves(tab.layout);
+  const seen = new Set();
+  const soleView = ls.length === 1 && ls[0].c.t === "view";
+  for (const l of ls) {
+    seen.add(l.p);
+    const r = rs[l.p];
+    let el = paneEls.get(l.p);
+    const isNew = !el;
+    if (!el) { el = document.createElement("div"); el.className = "pane"; el.dataset.pane = l.p; area.appendChild(el); paneEls.set(l.p, el); }
+    const key = JSON.stringify([l.c, r.rail, soleView, opts.dots, leaves(tab.layout).length > 1]);
+    if (el.dataset.key !== key) {
+      el.dataset.key = key;
+      el.innerHTML = r.rail ? `<div class="vert">${esc(nameOf(l.c))}</div>` : paneInner(l, tab, soleView);
+      el.classList.toggle("rail", r.rail);
+      el.style.flexDirection = r.rail ? "row" : "column";
+    }
+    if (isNew && !marks.incoming?.includes(l.p)) el.style.transition = "none";
+    el.style.left = r.x + "px"; el.style.top = r.y + "px"; el.style.width = r.w + "px"; el.style.height = r.h + "px";
+    if (isNew) { el.offsetWidth; el.style.transition = ""; }
+    el.classList.toggle("focused", tab.focused === l.p);
+    el.classList.toggle("lifted", marks.lifted === l.p);
+    el.classList.toggle("moving", !!marks.moving?.includes(l.p));
+    el.classList.toggle("incoming", !!marks.incoming?.includes(l.p));
+    el.classList.toggle("refused", marks.refused === l.p);
+    // Terminals keep their width until the drop: their text doesn't rewrap under the pointer.
+    const t = el.querySelector("[data-t]");
+    if (t) t.style.width = marks.frozen?.[l.p] ? marks.frozen[l.p] + "px" : "";
+    let size = el.querySelector(".size");
+    const showSize = marks.sizes && (l.c.t === "chat" || l.c.t === "shell") && !r.rail && (marks.incoming?.includes(l.p) || !marks.frozenSame?.(l.p, r));
+    if (showSize) {
+      if (!size) { size = document.createElement("span"); size.className = "size"; el.appendChild(size); }
+      size.textContent = `${Math.max(1, Math.floor((r.w - 24) / 7.2))} × ${Math.max(1, Math.floor((r.h - 60 - (l.c.t === "chat" ? 26 : 0)) / 18))}`;
+    } else if (size) size.remove();
+  }
+  for (const [p, el] of paneEls) if (!seen.has(p)) { el.remove(); paneEls.delete(p); }
+  return rs;
+}
+function drawBox(rect) {
+  let b = document.querySelector(".preview-box");
+  if (!rect) { b?.remove(); return; }
+  if (!b) { b = document.createElement("div"); b.className = "preview-box"; $("area").appendChild(b); }
+  Object.assign(b.style, { left: rect.x + "px", top: rect.y + "px", width: rect.w + "px", height: rect.h + "px" });
+}
+function render() {
+  drawSide(S); drawStrip(S); drawArea(S); drawBox(null);
+}
+const say = (html) => { $("said").innerHTML = html; };
+
+/* ---------- Dragging ---------- */
+let drag = null, pending = null, justDragged = false;
+const areaBox = () => { const a = $("area"); return { x: GAP, y: GAP, w: a.clientWidth - GAP * 2, h: a.clientHeight - GAP * 2 }; };
+function startDrag(src, x, y, kb) {
+  const baseFront = S.front;
+  const saved = clone(S);
+  const base = rects(frontTab(S), areaBox());
+  const held = heldPid(src);
+  const frozen = {};
+  for (const p of Object.keys(base)) frozen[p] = base[p].w - 24;
+  drag = { src, saved, baseFront, base, frozen, held, target: null, place: null, kb, targets: null, i: -1, timer: null };
+  document.documentElement.classList.add("dragging");
+  const l = document.createElement("div"); l.className = "drag-label"; l.id = "drag-label"; l.textContent = sourceName(S, src); document.body.appendChild(l);
+  const tip = document.createElement("div"); tip.className = "drag-tip"; tip.id = "drag-tip"; tip.hidden = true; document.body.appendChild(tip);
+  positionFloat(x, y);
+  refresh();
+  $("menu").hidden = true;
+}
+function heldPid(src) {
+  if (src.kind === "pane") return src.pane;
+  if (src.kind === "chat") return onScreen(S, src.id)?.pane.p;
+  return undefined;
+}
+function positionFloat(x, y) {
+  drag.x = x; drag.y = y;
+  const l = $("drag-label"); if (l) { l.style.left = x + 14 + "px"; l.style.top = y + 12 + "px"; }
+  const t = $("drag-tip"); if (t) { t.style.left = Math.min(x + 14, innerWidth - 350) + "px"; t.style.top = y + 40 + "px"; }
+}
+function hit(x, y) {
+  const stripR = $("strip").getBoundingClientRect();
+  if (x >= stripR.left && x <= stripR.right && y >= stripR.top - 4 && y <= stripR.bottom + 2) {
+    const tabs = drag.chipRects || (drag.chipRects = chipRects());
+    let at = tabs.length;
+    for (let i = 0; i < tabs.length; i++) if (x < tabs[i].mid) { at = i; break; }
+    const over = tabs.find((c) => x >= c.left && x <= c.right);
+    return { kind: "strip", at, over: over?.id };
+  }
+  const a = $("area").getBoundingClientRect();
+  if (x < a.left || x > a.right || y < a.top || y > a.bottom) return null;
+  const px = x - a.left, py = y - a.top;
+  for (const [p, r] of Object.entries(drag.base)) {
+    if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) {
+      if (r.rail) return { kind: "rail", pane: +p };
+      const was = drag.target?.kind === "pane" && drag.target.pane === +p ? drag.target.place : null;
+      return { kind: "pane", pane: +p, place: placeAt((px - r.x) / r.w, (py - r.y) / r.h, was) };
+    }
+  }
+  return null;
+}
+const chipRects = () => [...document.querySelectorAll("#strip .chip")].map((el) => { const r = el.getBoundingClientRect(); return { id: +el.dataset.chip, left: r.left, right: r.right, mid: (r.left + r.right) / 2 }; });
+const tKey = (t) => !t ? "none" : t.kind === "strip" ? `strip:${t.at}` : t.kind === "rail" ? `rail:${t.pane}` : `pane:${t.pane}:${t.place}`;
+function moveDrag(x, y) {
+  positionFloat(x, y);
+  const t = hit(x, y);
+  // Resting on another tab brings it to the front, so a pane can land in it.
+  if (t?.kind === "strip" && t.over && t.over !== S.front) {
+    if (drag.springId !== t.over) {
+      clearTimeout(drag.spring);
+      drag.springId = t.over;
+      drag.spring = setTimeout(() => {
+        if (!drag) return;
+        S.front = drag.springId; drag.springId = null;
+        drag.base = rects(frontTab(S), areaBox());
+        for (const p of Object.keys(drag.base)) drag.frozen[p] = drag.base[p].w - 24;
+        drag.chipRects = null;
+        refresh();
+      }, 650);
+    }
+  } else if (t?.over !== drag.springId) { clearTimeout(drag.spring); drag.springId = null; }
+  if (tKey(t) === tKey(drag.pendingT ?? drag.target)) return;
+  drag.pendingT = t;
+  clearTimeout(drag.timer);
+  // A short wait, so a pointer crossing a pane on its way elsewhere doesn't shuffle everything.
+  drag.timer = setTimeout(() => { if (drag) { drag.target = t; drag.pendingT = undefined; refresh(); } }, 70);
+}
+function verdictFor(t) {
+  if (!t) return null;
+  if (t.kind === "rail") return { ok: false, why: "A pane folded to a rail takes no drop. Open it first." };
+  if (t.kind === "strip") return judge(S, drag.src, t);
+  const r = drag.base[t.pane];
+  return judge(S, drag.src, { kind: "pane", pane: t.pane, place: t.place }, { width: r.w, height: r.h });
+}
+function refresh() {
+  const t = drag.target;
+  const v = verdictFor(t);
+  const tip = $("drag-tip");
+  document.documentElement.classList.toggle("no-drop", !!v && !v.ok && !v.self);
+  const marks = { lifted: drag.held, frozen: drag.frozen };
+  if (!t) {
+    tip.hidden = false; tip.className = "drag-tip"; tip.textContent = "Let go here to cancel. Esc also cancels.";
+  } else { tip.hidden = false; tip.className = "drag-tip" + (v.ok || v.self ? "" : " no"); tip.textContent = v.ok ? v.says : v.why; }
+  say(t ? (v.ok ? `<b>If you let go:</b> ${esc(v.says)}` : v.self ? esc(v.why) : `<b>Refused:</b> ${esc(v.why)}`) : "Dragging. Nothing changes until you let go.");
+  drawBox(null);
+  if (v && !v.ok && !v.self && t.pane) marks.refused = t.pane;
+  if (!v || !v.ok) { drawSide(S); drawStrip(S, null, drag.springId); drawArea(S, null, marks); return; }
+  const to = t.kind === "strip" ? t : { kind: "pane", pane: t.pane, place: t.place };
+  const V = apply(S, drag.src, to);
+  if (t.kind === "strip") {
+    // The new tab is drawn on the strip; the panes stay put until the drop.
+    const live = opts.preview === "live";
+    drawSide(S); drawStrip(S, t.at, drag.springId); drawArea(S, null, marks);
+    return void live;
+  }
+  drawSide(S); drawStrip(S, null, drag.springId);
+  const movedP = movedPid(V, drag.src, to);
+  if (opts.preview === "overlay") {
+    const rsV = rects(frontTab(V), areaBox());
+    const swapRect = t.place === "middle" ? drag.base[t.pane] : rsV[movedP];
+    drawArea(S, null, marks);
+    drawBox(swapRect);
+    return;
+  }
+  const baseSame = (p, r) => { const b = drag.base[p]; return b && Math.abs(b.w - r.w) < 2 && Math.abs(b.h - r.h) < 2; };
+  const isNewPane = !where(S, movedP);
+  drawArea(V, null, { frozen: drag.frozen, sizes: true, frozenSame: baseSame, moving: isNewPane ? [] : [movedP], incoming: isNewPane ? [movedP] : [] });
+}
+function movedPid(V, src, to) {
+  const s = asDropped(S, src, to);
+  if (s.kind === "chat") return where(V, to.pane) && to.place === "middle" ? to.pane : V.n;
+  if (s.kind === "pane") return s.pane;
+  return firstLeaf(tabById(S, s.tab).layout).p;
+}
+function endDrag(drop) {
+  if (!drag) return;
+  clearTimeout(drag.timer); clearTimeout(drag.spring);
+  const t = drag.pendingT !== undefined ? drag.pendingT : drag.target;
+  const v = t ? verdictForFinal(t) : null;
+  document.documentElement.classList.remove("dragging", "no-drop");
+  $("drag-label")?.remove(); $("drag-tip")?.remove();
+  let msg;
+  if (drop && v?.ok) {
+    S = apply(S, drag.src, t.kind === "strip" ? t : { kind: "pane", pane: t.pane, place: t.place });
+    msg = `<b>Done:</b> ${esc(v.says)}`;
+  } else {
+    S = drag.saved;
+    msg = drop && v && !v.ok && !v.self ? `Not moved. ${esc(v.why)}` : "Put back as it was.";
+  }
+  drag = null;
+  justDragged = true; setTimeout(() => { justDragged = false; }, 50);
+  render();
+  say(msg);
+}
+function verdictForFinal(t) { return verdictFor(t); }
+
+/* Keyboard: Enter on a grip picks up; arrows walk the places; Enter drops; Esc cancels. */
+function kbTargets() {
+  const out = [];
+  for (const [p, r] of Object.entries(drag.base)) {
+    if (r.rail) continue;
+    if (drag.held === +p) continue;
+    for (const place of ["left", "right", "top", "bottom", "middle"]) out.push({ kind: "pane", pane: +p, place });
+  }
+  out.push({ kind: "strip", at: S.tabs.length });
+  return out;
+}
+function startKb(src) {
+  const r = $("win").getBoundingClientRect();
+  startDrag(src, r.left + r.width / 2, r.top + 40, true);
+  drag.targets = kbTargets();
+  say("Picked up. Arrow keys choose a place, Enter drops it there, Esc cancels.");
+}
+function kbStep(d) {
+  const n = drag.targets.length;
+  drag.i = (drag.i + d + n) % n;
+  drag.target = drag.targets[drag.i];
+  const t = drag.target;
+  const a = $("area").getBoundingClientRect();
+  if (t.kind === "pane") { const r = drag.base[t.pane]; positionFloat(a.left + r.x + r.w / 2, a.top + r.y + 30); }
+  else positionFloat(a.left + 100, a.top - 20);
+  refresh();
+}
+
+/* ---------- Pointer and keys ---------- */
+document.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0 || drag) return;
+  const el = e.target.closest?.("[data-grip-pane],[data-grip-chat],[data-row],[data-chip]");
+  if (!el || e.target.closest("button")) return;
+  let src;
+  if (el.dataset.gripPane) { const at = where(S, +el.dataset.gripPane); if (!at) return; src = { kind: "pane", tab: at.tab.id, pane: at.pane.p }; }
+  else if (el.dataset.gripChat) src = { kind: "chat", id: +el.dataset.gripChat };
+  else if (el.dataset.row) src = { kind: "chat", id: +el.dataset.row };
+  else if (el.dataset.chip) src = { kind: "tab", tab: +el.dataset.chip };
+  pending = { src, x: e.clientX, y: e.clientY };
+});
+document.addEventListener("pointermove", (e) => {
+  if (pending && !drag) {
+    if (Math.hypot(e.clientX - pending.x, e.clientY - pending.y) < 5) return;
+    startDrag(pending.src, e.clientX, e.clientY); pending = null;
+  }
+  if (drag && !drag.kb && !demoing) moveDrag(e.clientX, e.clientY);
+});
+document.addEventListener("pointerup", () => { pending = null; if (drag && !drag.kb && !demoing) endDrag(true); });
+document.addEventListener("keydown", (e) => {
+  if (drag) {
+    if (e.key === "Escape") { e.preventDefault(); endDrag(false); return; }
+    if (drag.kb) {
+      if (["ArrowRight", "ArrowDown"].includes(e.key)) { e.preventDefault(); kbStep(1); }
+      if (["ArrowLeft", "ArrowUp"].includes(e.key)) { e.preventDefault(); kbStep(-1); }
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); endDrag(true); }
+    }
+    return;
+  }
+  const g = e.target.closest?.(".who[tabindex]");
+  if (g && (e.key === "Enter" || e.key === " ")) {
+    e.preventDefault();
+    if (g.dataset.gripPane) { const at = where(S, +g.dataset.gripPane); startKb({ kind: "pane", tab: at.tab.id, pane: at.pane.p }); }
+    else if (g.dataset.gripChat) startKb({ kind: "chat", id: +g.dataset.gripChat });
+    return;
+  }
+  if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "m") {
+    e.preventDefault();
+    const t = frontTab(S); const at = where(S, t.focused);
+    if (at && at.pane.c.t !== "empty" && at.pane.c.t !== "job") startKb({ kind: "pane", tab: t.id, pane: t.focused });
+    return;
+  }
+  if (e.target.id === "plus" && e.key === "ArrowDown") { e.preventDefault(); openMenu(true); return; }
+  if (!$("menu").hidden) {
+    const items = [...$("menu").querySelectorAll("button")];
+    const i = items.indexOf(document.activeElement);
+    if (e.key === "Escape") { closeMenu(); $("plus")?.focus(); }
+    if (e.key === "ArrowDown") { e.preventDefault(); items[(i + 1) % items.length]?.focus(); }
+    if (e.key === "ArrowUp") { e.preventDefault(); items[(i - 1 + items.length) % items.length]?.focus(); }
+  }
+});
+
+/* ---------- Opening things ---------- */
+function fillOrTab(content) {
+  // A new chat never replaces anything: an empty pane if this tab has one, else a new tab.
+  const t = frontTab(S);
+  const e = leaves(t.layout).find((l) => l.c.t === "empty");
+  if (e) { t.layout = repl(t.layout, e.p, (l) => ({ ...l, c: content })); t.focused = e.p; return `Filled the empty pane with ${nameOf(content)}.`; }
+  const pane = { p: ++S.n, c: content };
+  const tab = { id: ++S.t, layout: pane, focused: pane.p };
+  S.tabs.push(tab); S.front = tab.id;
+  return `Opened ${nameOf(content)} in a new tab. Your panes weren't touched.`;
+}
+function newChatContent() {
+  chatN++;
+  const id = 100 + chatN;
+  CH[id] = { name: `new chat ${chatN}`, state: "idle", ws: "smart-ide", p: "ST", ctx: "0%", cache: "–", text: "Started. What should we do?" };
+  return chat(id);
+}
+function pressRow(id) {
+  const on = onScreen(S, id);
+  if (on) { S.front = on.tab.id; on.tab.focused = on.pane.p; render(); say(`Went to ${esc(CH[id].name)}, where it already is.`); return; }
+  const t = frontTab(S);
+  const ls = leaves(t.layout);
+  const e = ls.find((l) => l.c.t === "empty");
+  if (e) { t.layout = repl(t.layout, e.p, (l) => ({ ...l, c: chat(id) })); t.focused = e.p; render(); say(`Filled the empty pane with ${esc(CH[id].name)}.`); return; }
+  if (opts.press === "swap" && ls.length === 1 && ls[0].c.t !== "job") {
+    const was = nameOf(ls[0].c);
+    t.layout = { ...t.layout, c: chat(id) };
+    render(); say(`Showing ${esc(CH[id].name)} here. ${esc(was)} keeps running in the list.`);
+    return;
+  }
+  const msg = fillOrTab(chat(id)); render(); say(esc(msg));
+}
+const MENU_BASE = [
+  { k: "empty", label: "Empty tab", key: "⌘T" }, { k: "chat", label: "New chat", key: "⌘N" }, { k: "shell", label: "New shell", key: "⌃`" }, { sep: true },
+  { k: "view:Settings", label: "Settings" }, { k: "view:Repos", label: "Repos" },
+];
+const MENU_LONG = [...MENU_BASE, ...["New chat as devops", "New chat as reviewer", "New chat as researcher", "Activity", "Todos", "Memory", "Skills", "Dispatches", "Browser", "Theme"].map((label) => ({ k: "view:" + label, label }))];
+let menuLong = false, menuTimer = null, menuKeep = null;
+function drawMenu(filter = "") {
+  const items = (menuLong ? MENU_LONG : MENU_BASE).filter((i) => i.sep ? !filter : i.label.toLowerCase().includes(filter.toLowerCase()));
+  const body = items.map((i) => i.sep ? "<hr>" : `<button data-menu="${esc(i.k)}"><span>${esc(i.label)}</span>${i.key ? `<span class="k">${esc(i.key)}</span>` : ""}</button>`).join("") || `<span style="padding:6px 8px;color:var(--ink-3);display:block">Nothing matches.</span>`;
+  const m = $("menu");
+  if (menuLong) {
+    if (!m.querySelector("input")) m.innerHTML = `<input id="menu-filter" placeholder="Filter" aria-label="Filter"><div class="list"></div>`;
+    m.querySelector(".list").innerHTML = body;
+  } else m.innerHTML = body;
+}
+function openMenu(focus) {
+  const m = $("menu"), p = $("plus"), w = $("win").getBoundingClientRect(), r = p.getBoundingClientRect();
+  m.innerHTML = ""; drawMenu();
+  m.hidden = false;
+  m.style.left = Math.min(r.left - w.left, w.width - 244) + "px";
+  m.style.top = r.bottom - w.top + 2 + "px";
+  m.setAttribute("role", "menu");
+  if (focus) (m.querySelector("input") || m.querySelector("button"))?.focus();
+}
+const closeMenu = () => { $("menu").hidden = true; };
+function runMenu(k) {
+  closeMenu();
+  let msg;
+  const newTabWith = (content) => { const pane = { p: ++S.n, c: content }; const tab = { id: ++S.t, layout: pane, focused: pane.p }; S.tabs.push(tab); S.front = tab.id; return nameOf(content); };
+  if (k === "empty") { newTabWith(empty()); msg = "Opened an empty tab."; }
+  else if (k === "chat") msg = `Opened ${esc(newTabWith(newChatContent()))} in a new tab.`;
+  else if (k === "shell") msg = `Opened ${esc(newTabWith(shell()))} in a new tab.`;
+  else msg = `Opened ${esc(newTabWith(view(k.slice(5))))} in a new tab.`;
+  render(); say(msg);
+}
+$("strip").addEventListener("pointerover", (e) => {
+  if (e.target.closest?.("#plus") && !drag) { clearTimeout(menuKeep); clearTimeout(menuTimer); menuTimer = setTimeout(() => { if (!drag) openMenu(false); }, 160); }
+});
+$("strip").addEventListener("pointerout", (e) => {
+  if (e.target.closest?.("#plus")) { clearTimeout(menuTimer); menuKeep = setTimeout(closeMenu, 260); }
+});
+$("menu").addEventListener("pointerenter", () => clearTimeout(menuKeep));
+$("menu").addEventListener("pointerleave", () => { menuKeep = setTimeout(closeMenu, 260); });
+$("menu").addEventListener("input", (e) => { if (e.target.id === "menu-filter") drawMenu(e.target.value); });
+$("menu").addEventListener("click", (e) => { const b = e.target.closest("[data-menu]"); if (b) runMenu(b.dataset.menu); });
+
+$("win").addEventListener("click", (e) => {
+  if (justDragged) return;
+  const q = (s) => e.target.closest(s);
+  let b;
+  if (q("#plus")) { clearTimeout(menuTimer); closeMenu(); runMenu("empty"); return; }
+  if (q('[data-act="new-chat"]')) { const m = fillOrTab(newChatContent()); render(); say(esc(m)); return; }
+  if ((b = q("[data-fill]"))) {
+    const t = where(S, +b.dataset.p).tab, c = b.dataset.fill === "chat" ? newChatContent() : shell();
+    t.layout = repl(t.layout, +b.dataset.p, (l) => ({ ...l, c })); t.focused = +b.dataset.p; render(); say(`Filled the empty pane with ${esc(nameOf(c))}.`); return;
+  }
+  if ((b = q("[data-split]"))) {
+    const at = where(S, +b.dataset.p); const pane = { p: ++S.n, c: empty() };
+    at.tab.layout = repl(at.tab.layout, at.pane.p, (f) => ({ d: b.dataset.split === "right" ? "row" : "col", share: 0.5, a: f, b: pane }));
+    at.tab.focused = pane.p; render(); say("Split: the new pane is empty and asks what goes there."); return;
+  }
+  if ((b = q("[data-close]"))) {
+    const at = where(S, +b.dataset.close); const l = rem(at.tab.layout, at.pane.p);
+    if (l) { at.tab.layout = l; if (at.tab.focused === at.pane.p) at.tab.focused = firstLeaf(l).p; }
+    else closeTab(at.tab.id);
+    render(); say("Closed the pane. A chat in it keeps running in the list."); return;
+  }
+  if ((b = q("[data-close-tab]"))) { closeTab(+b.dataset.closeTab); render(); say("Closed the tab. Its chats keep running in the list."); return; }
+  if ((b = q("[data-chip]"))) { S.front = +b.dataset.chip; render(); say(""); return; }
+  if ((b = q("[data-row]"))) { pressRow(+b.dataset.row); return; }
+  if ((b = q(".pane"))) {
+    const p = +b.dataset.pane, t = frontTab(S);
+    if (t.focused !== p) { t.focused = p; render(); }
+  }
+});
+function closeTab(id) {
+  S.tabs = S.tabs.filter((t) => t.id !== id);
+  if (!S.tabs.length) { const pane = { p: ++S.n, c: empty() }; const tab = { id: ++S.t, layout: pane, focused: pane.p }; S.tabs.push(tab); }
+  if (!tabById(S, S.front)) S.front = S.tabs[S.tabs.length - 1].id;
+}
+
+/* ---------- Scenarios ---------- */
+const L = leaf;
+const chatPane = (id) => () => L(chat(id));
+const two = (a, b) => () => row(L(a), L(b));
+const grid = (a, b, c) => () => row(L(a), col(L(b), L(c)));
+const SC = [
+ { g: "The grip", items: [
+  { id: "g-row", t: "In the chat list", set: () => W(chatPane(3)), try: "Hover a persona icon in the list. Then press and drag from it, or from the rest of the row.", exp: "The icon turns into dots, with no button shape, and the cursor is an open hand. It closes while you drag. There's no \"Place…\" button." },
+  { id: "g-head", t: "In a pane's head", set: () => W(two(chat(3), chat(1))), try: "Hover the icon in a pane's head. Then drag the blank part of the head.", exp: "The same dots and hand as the list. The blank head also drags. The head's buttons don't start a drag." },
+  { id: "g-view", t: "Settings alone in a tab", set: () => W(() => L(view("Settings"))), try: "Look at \"You\" in Settings. Now drag the tab's chip.", exp: "No grip sits on the view's content. The view moves by its tab." },
+  { id: "g-view2", t: "Settings in a split", set: () => W(two(chat(3), view("Settings"))), try: "Drag Settings by its head's icon.", exp: "In a split, a view has a head like any pane, so it has the same grip." },
+  { id: "g-job", t: "A one-job program", set: () => W(two(chat(3), job())), try: "Hover lazygit's icon.", exp: "No dots and no hand: it stays beside the pane it opened from." },
+  { id: "g-empty", t: "An empty pane", set: () => W(two(chat(3), empty())), try: "Look at the empty pane.", exp: "No grip: there's nothing to move." },
+  { id: "g-kb", t: "With the keyboard", set: () => W(two(chat(3), chat(1))), try: "Tab onto a pane's icon. Press Enter, use the arrows, then Enter to drop or Esc to cancel. ⌘⇧M does the same from the focused pane.", exp: "Focus shows the dots. The arrows show the same preview as dragging, with its words, so nothing needs a pointer." },
+ ]},
+ { g: "Moving a pane", items: [
+  { id: "p-left", t: "To another pane's left", set: () => W(two(chat(3), chat(1))), demo: { src: { pane: 1 }, to: [{ pane: 0, place: "left" }] }, try: "Drag codeql-issues to the left edge of copy-past-crash.", exp: "The panes change places before you let go. The labels show their sizes after the drop, and the terminal text doesn't rewrap until then." },
+  { id: "p-sweep", t: "Around every edge", set: () => W(two(chat(3), chat(1))), demo: { src: { pane: 1 }, to: [{ pane: 0, place: "top" }, { pane: 0, place: "right" }, { pane: 0, place: "bottom" }, { pane: 0, place: "left" }] }, try: "Sweep slowly around copy-past-crash's four edges.", exp: "Each edge shows its layout. Nothing flickers, even on the boundary, because the zones stay on the old layout." },
+  { id: "p-swap", t: "Into another pane's middle", set: () => W(grid(chat(3), chat(1), chat(2))), demo: { src: { pane: 0 }, to: [{ pane: 2, place: "middle" }] }, try: "Drag copy-past-crash to the middle of performance.", exp: "The two swap places; the third pane doesn't move. Each keeps its own terminal." },
+  { id: "p-empty", t: "Into an empty pane", set: () => W(grid(chat(3), chat(1), empty())), demo: { src: { pane: 0 }, to: [{ pane: 2, place: "middle" }] }, try: "Drag copy-past-crash into the empty pane.", exp: "It fills the empty pane, and its old place closes up." },
+  { id: "p-self", t: "Onto itself", set: () => W(two(chat(3), chat(1))), demo: { src: { pane: 0 }, to: [{ pane: 0, place: "middle" }] }, try: "Pick up a pane and hold it over itself.", exp: "Nothing red and nothing dashed. The tip says letting go leaves it where it is. This is the fix for the line across the top." },
+  { id: "p-small", t: "Where it would be too small", set: () => W(grid(chat(3), chat(1), chat(2))), demo: { src: { pane: 0 }, to: [{ pane: 1, place: "right" }] }, try: "Drag copy-past-crash to the right edge of codeql-issues.", exp: "Refused, in red, on that pane only, with the reason beside the pointer. The layout doesn't move." },
+  { id: "p-job", t: "Onto a one-job program", set: () => W(grid(chat(3), chat(1), job())), demo: { src: { pane: 0 }, to: [{ pane: 2, place: "middle" }, { pane: 2, place: "bottom" }] }, try: "Drag to lazygit's middle, then its bottom edge.", exp: "The middle is refused, since it goes when its program exits. The edge splits beside it." },
+  { id: "p-strip", t: "To the tab strip", set: () => W(two(chat(3), chat(1)), chatPane(2)), demo: { src: { pane: 1 }, to: ["strip"] }, try: "Drag codeql-issues up to the strip.", exp: "A line shows where the new tab goes. On the drop, the pane becomes that tab and the other pane fills the space." },
+  { id: "p-spring", t: "Into another tab", set: () => W(two(chat(3), chat(1)), chatPane(2)), try: "Drag a pane up and rest it on the performance tab for a moment. Then drop it on that tab's pane.", exp: "The tab comes to the front while you hold, so the pane can land in it. Esc puts everything back, including which tab was in front." },
+  { id: "p-last", t: "A tab's last pane leaving", set: () => W(() => L(chat(3)), chatPane(2)), try: "Rest on the other tab, then drop this pane there.", exp: "Its old tab closes, since nothing is left in it." },
+  { id: "p-lasttab", t: "The strip's last tab", set: () => W(() => L(chat(3))), demo: { src: { pane: 0 }, to: ["strip"] }, try: "Drag the only pane to the strip.", exp: "A tab of one pane just moves as a tab; the strip is never left with nothing." },
+  { id: "p-cancel", t: "Esc, or letting go elsewhere", set: () => W(two(chat(3), chat(1))), try: "Start a drag over a pane, then press Esc. Try again and let go over the chat list.", exp: "Everything returns to exactly how it was, with the same sizes, front tab and focus." },
+ ]},
+ { g: "A chat from the list", items: [
+  { id: "c-edge", t: "Off screen, to an edge", set: () => W(chatPane(3)), demo: { src: { chat: 1 }, to: [{ pane: 0, place: "right" }] }, try: "Drag codeql-issues from the list to the right of the pane.", exp: "Room opens for it before you let go. After the drop, each pane's head and the list show the right name. This is the case where both said copy-past-crash." },
+  { id: "c-mid", t: "Off screen, to the middle", set: () => W(chatPane(3)), demo: { src: { chat: 1 }, to: [{ pane: 0, place: "middle" }] }, try: "Drag codeql-issues onto the middle of the pane.", exp: "It shows in that pane. The tip says copy-past-crash keeps running in the list, and the list still has it." },
+  { id: "c-on", t: "Already on screen", set: () => W(grid(chat(3), chat(1), chat(2))), demo: { src: { chat: 2 }, to: [{ pane: 0, place: "top" }] }, try: "Drag performance from the list, which already has a pane.", exp: "Its pane dims as you pick it up, and it moves. It never shows twice." },
+  { id: "c-other", t: "Another workspace's chat", set: () => W(chatPane(3)), demo: { src: { chat: 4 }, to: [{ pane: 0, place: "left" }, { pane: 0, place: "right" }] }, try: "Drag fix-the-login to the pane's left, then its right.", exp: "Left is refused with the reason: it would carry the tab to git-ci-cd. Right works, and the tip says it stays filed in git-ci-cd." },
+  { id: "c-otherstrip", t: "Another workspace's chat, to the strip", set: () => W(chatPane(3)), demo: { src: { chat: 4 }, to: ["strip"] }, try: "Drag fix-the-login to the strip.", exp: "The tip says the tab goes on git-ci-cd's strip." },
+  { id: "c-ended", t: "An ended chat", set: () => W(chatPane(3)), demo: { src: { chat: 5 }, to: [{ pane: 0, place: "bottom" }] }, try: "Drag old-report below the pane.", exp: "It moves like any chat, and its foot still says what ended." },
+  { id: "c-task", t: "A task", set: () => W(chatPane(3)), demo: { src: { chat: 6 }, to: [{ pane: 0, place: "right" }] }, try: "Drag the task to the right of its chat.", exp: "It moves like a chat, and its name and foot stay the task's." },
+ ]},
+ { g: "Moving a tab", items: [
+  { id: "t-order", t: "Along the strip", set: () => W(chatPane(3), chatPane(1), chatPane(2)), demo: { src: { tab: 0 }, to: ["strip"] }, try: "Drag the first tab to the end of the strip.", exp: "A line shows where it goes, and it moves on the drop." },
+  { id: "t-edge", t: "A tab of several panes, to an edge", set: () => W(two(chat(3), chat(1)), chatPane(2)), try: "Show the performance tab. Drag the other tab's chip onto the pane's edge.", exp: "All its panes go beside that pane, and the tab closes. The layout inside it stays." },
+  { id: "t-mid", t: "A tab of several panes, to a middle", set: () => { const s = W(chatPane(2), two(chat(3), chat(1))); return s; }, demo: { src: { tab: 1 }, to: [{ pane: 0, place: "middle" }] }, try: "Drag the two-pane tab's chip to the pane's middle.", exp: "Refused: a tab goes beside a pane, not into one." },
+  { id: "t-one", t: "A tab of one pane, to a pane", set: () => W(chatPane(3), chatPane(1)), demo: { src: { tab: 1 }, to: [{ pane: 0, place: "right" }] }, try: "Drag the other tab's chip beside the pane.", exp: "It acts as its pane, and the two tabs become one split." },
+ ]},
+ { g: "Opening a chat", items: [
+  { id: "n-split", t: "New chat, tab already split", set: () => W(two(chat(3), chat(1))), try: "Press + at the top of the chat list.", exp: "A new tab. Neither pane changes. This was replacing the active pane." },
+  { id: "n-one", t: "New chat, one pane", set: () => W(chatPane(3)), try: "Press + at the top of the chat list.", exp: "A new tab, the same rule. A new chat never replaces anything." },
+  { id: "n-empty", t: "New chat, tab has an empty pane", set: () => W(two(chat(3), empty())), try: "Press + at the top of the chat list.", exp: "It fills the empty pane." },
+  { id: "o-on", t: "Press a chat that's on screen", set: () => W(chatPane(2), two(chat(3), chat(1))), try: "Press codeql-issues in the list.", exp: "It goes to the tab and pane where it already is." },
+  { id: "o-off1", t: "Press a chat off screen, one pane", set: () => W(chatPane(3)), try: "Press performance. Compare both settings of \"Press a chat\" above.", exp: "Recommended: it shows here and the old chat keeps running in the list." },
+  { id: "o-off2", t: "Press a chat off screen, split", set: () => W(two(chat(3), chat(1))), try: "Press performance.", exp: "A new tab, so your split layout survives." },
+ ]},
+ { g: "The + button", items: [
+  { id: "m-click", t: "Press it", set: () => W(chatPane(3)), try: "Press + on the tab strip.", exp: "An empty tab, which asks what goes there and offers the same choices. No chat starts by accident." },
+  { id: "m-hover", t: "Hover it", set: () => W(chatPane(3)), try: "Hover +, then move onto the list.", exp: "The list opens shortly after you arrive, stays open as you move onto it, and closes shortly after you leave." },
+  { id: "m-kb", t: "With the keyboard", set: () => W(chatPane(3)), try: "Tab to +. Press Down, use the arrows, then Enter or Esc.", exp: "Everything hover offers is reachable by keyboard, and Esc returns to +." },
+  { id: "m-long", t: "A long list", set: () => { menuLong = true; return W(chatPane(3)); }, try: "Hover +, and type in the filter.", exp: "Past a handful of entries the list scrolls and gets a filter, so it can grow." },
+  { id: "m-etab", t: "An empty tab's life", set: () => W(chatPane(3), () => L(empty())), try: "Drag a chat into the empty pane. Or close the tab.", exp: "A drag or either button fills it, and its tab takes the name. Closing it never asks." },
+ ]},
+ { g: "Narrow windows", items: [
+  { id: "w-fold", t: "A pane folded to a rail", set: () => { opts.narrow = "yes"; syncOpts(); return W(two(chat(3), chat(1))); }, try: "Pick up something and hold it over the rail. Press the rail to open it.", exp: "The rail takes no drop and says why. It's a rail, so it has no head or foot." },
+ ]},
+ { g: "Comes up during a drag", items: [
+  { id: "r-output", t: "A chat prints while dragged", rule: true, exp: "The terminal keeps running under the preview; only its size waits for the drop." },
+  { id: "r-ask", t: "A question arrives mid-drag", rule: true, exp: "The notice waits on the bell and the Inbox. It doesn't jump into the layout until the drop." },
+  { id: "r-closed", t: "The target closes mid-drag", rule: true, exp: "Refused with \"That pane has closed\", and the preview goes back." },
+  { id: "r-window", t: "To a tab window, or out of the window", rule: true, exp: "Letting go outside cancels. Moving to another window stays on the tab's menu, as it is today; a real-machine check." },
+  { id: "r-focus", t: "App loses focus mid-drag", rule: true, exp: "It cancels and puts everything back, as Esc does." },
+  { id: "r-names", t: "Names after every move", rule: true, exp: "After any drop, each head, chip and row names what it shows. A window test pins this in the bug fix (#5283)." },
+  { id: "r-mouse", t: "Press and release without moving", rule: true, exp: "A press under 5 px of movement is a press, never a drag." },
+  { id: "r-contrast", t: "High contrast and themes", rule: true, exp: "The dots and previews take the theme's colours, and pass in every shipped appearance." },
+  { id: "r-reduced", t: "Reduced motion", rule: true, exp: "Panes jump to their new places without animation. Try the Motion setting above." },
+ ]},
+];
+const ALL = SC.flatMap((g) => g.items);
+let current = null;
+const VERD_KEY = "moving-panes-verdicts";
+let verdicts = {};
+try { verdicts = JSON.parse(localStorage.getItem(VERD_KEY) || "{}"); } catch { verdicts = {}; }
+const saveV = () => { try { localStorage.setItem(VERD_KEY, JSON.stringify(verdicts)); } catch {} };
+function drawList() {
+  $("sc-list").innerHTML = SC.map((g) => `<div class="sc-g">${esc(g.g)}</div>` + g.items.map((s) => `<button class="sc ${verdicts[s.id] || ""}" data-sc="${s.id}" ${current?.id === s.id ? 'aria-current="true"' : ""}>${esc(s.t)}${s.rule ? '<span class="tag">by rule</span>' : ""}</button>`).join("")).join("");
+  const done = ALL.filter((s) => verdicts[s.id]).length;
+  $("count").textContent = `${ALL.length} scenarios · ${done} judged`;
+}
+function drawNow() {
+  const s = current; if (!s) return;
+  const v = verdicts[s.id];
+  $("sc-now").innerHTML = `<b>${esc(s.t)}</b>${s.try ? `<div class="try">${esc(s.try)}</div>` : ""}<div class="exp">${esc(s.exp)}</div>
+   <div class="btns">${s.demo ? '<button class="small primary" id="show">Show me</button>' : ""}${s.rule ? "" : '<button class="small" id="reset">Reset</button>'}<button class="small ${v === "good" ? "on-good" : ""}" id="v-good">Feels right</button><button class="small ${v === "change" ? "on-change" : ""}" id="v-change">Change it</button></div>`;
+}
+function load(s) {
+  if (drag) endDrag(false);
+  current = s;
+  if (s.id !== "w-fold" && opts.narrow === "yes") { opts.narrow = "no"; syncOpts(); }
+  menuLong = false;
+  if (s.set) { const st = s.set(); S = st; paneEls.forEach((el) => el.remove()); paneEls.clear(); render(); say(""); }
+  drawList(); drawNow();
+}
+$("sc-list").addEventListener("click", (e) => { const b = e.target.closest("[data-sc]"); if (b) load(ALL.find((s) => s.id === b.dataset.sc)); });
+$("sc-now").addEventListener("click", (e) => {
+  if (e.target.id === "reset") load(current);
+  if (e.target.id === "show") runDemo(current);
+  if (e.target.id === "v-good" || e.target.id === "v-change") {
+    const v = e.target.id === "v-good" ? "good" : "change";
+    verdicts[current.id] = verdicts[current.id] === v ? undefined : v;
+    if (!verdicts[current.id]) delete verdicts[current.id];
+    saveV(); drawList(); drawNow();
+  }
+});
+$("copy").addEventListener("click", async () => {
+  const lines = ALL.filter((s) => verdicts[s.id]).map((s) => `${verdicts[s.id] === "good" ? "OK" : "CHANGE"}: ${s.t}`);
+  const text = `Moving panes verdicts (${lines.length} of ${ALL.length})\n` + lines.join("\n") + `\nOptions: preview=${opts.preview}, dots=${opts.dots}, press=${opts.press}`;
+  try { await navigator.clipboard.writeText(text); say("Copied. Paste it into the chat."); }
+  catch { say(`<span style="white-space:pre-wrap;user-select:text">${esc(text)}</span>`); }
+});
+
+/* Show me: a pretend pointer runs the same drag code you'd use. */
+let demoing = false;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function glide(c, from, to, ms, onMove) {
+  const t0 = performance.now();
+  for (;;) {
+    const k = Math.min(1, (performance.now() - t0) / ms);
+    const e = k * k * (3 - 2 * k);
+    const x = from.x + (to.x - from.x) * e, y = from.y + (to.y - from.y) * e;
+    c.style.left = x + "px"; c.style.top = y + "px"; onMove?.(x, y);
+    if (k >= 1) return to;
+    await new Promise(requestAnimationFrame);
+  }
+}
+const centre = (el) => { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
+async function runDemo(s) {
+  if (demoing || !s.demo) return;
+  load(s);
+  demoing = true;
+  const c = document.createElement("div"); c.className = "fake-cursor"; document.body.appendChild(c);
+  try {
+    const d = s.demo;
+    const ls = leaves(frontTab(S).layout);
+    let src, startEl;
+    if (d.src.chat) { src = { kind: "chat", id: d.src.chat }; startEl = document.querySelector(`[data-grip-chat="${d.src.chat}"]`); }
+    else if (d.src.pane !== undefined) { const p = ls[d.src.pane].p; src = { kind: "pane", tab: S.front, pane: p }; startEl = paneEls.get(p).querySelector(".who[tabindex]"); }
+    else { const t = S.tabs[d.src.tab]; src = { kind: "tab", tab: t.id }; startEl = document.querySelector(`[data-chip="${t.id}"]`); }
+    let at = centre(startEl);
+    await glide(c, { x: at.x - 60, y: at.y + 50 }, at, 350);
+    await sleep(250);
+    startDrag(src, at.x, at.y);
+    const a = $("area").getBoundingClientRect();
+    for (const to of d.to) {
+      let pt;
+      if (to === "strip") { const r = $("strip").getBoundingClientRect(); const chips = chipRects(); const last = chips[chips.length - 1]; pt = { x: last ? last.right + 8 : r.left + 40, y: r.top + r.height / 2 }; }
+      else {
+        const r = drag.base[ls[to.pane].p];
+        const fx = { left: .1, right: .9, top: .5, bottom: .5, middle: .5 }[to.place], fy = { left: .5, right: .5, top: .1, bottom: .9, middle: .5 }[to.place];
+        pt = { x: a.left + r.x + r.w * fx, y: a.top + r.y + r.h * fy };
+      }
+      at = await glide(c, at, pt, 620, (x, y) => moveDrag(x, y));
+      moveDrag(at.x, at.y);
+      await sleep(1100);
+    }
+    endDrag(true);
+    await sleep(500);
+  } finally { c.remove(); demoing = false; if (drag) endDrag(false); }
+}
+
+/* ---------- Options ---------- */
+function syncOpts() {
+  document.querySelectorAll(".seg[data-opt]").forEach((seg) => {
+    seg.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === opts[seg.dataset.opt])));
+  });
+  document.documentElement.classList.toggle("no-motion", opts.motion === "off");
+}
+document.querySelector(".controls").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-v]"); if (!b) return;
+  opts[b.parentElement.dataset.opt] = b.dataset.v; syncOpts();
+  paneEls.forEach((el) => { el.dataset.key = ""; }); render();
+});
+if (matchMedia("(prefers-reduced-motion: reduce)").matches) opts.motion = "off";
+syncOpts();
+addEventListener("resize", () => { if (!drag && S) render(); });
+addEventListener("blur", () => { if (drag && !demoing) endDrag(false); });
+
+load(ALL.find((s) => s.id === "c-edge"));
+window.__mp = { W, judge, apply, leaves, where, frontTab, chat, view, shell, job, empty, leaf, row, col, ALL, get S() { return S; } };
+</script>
