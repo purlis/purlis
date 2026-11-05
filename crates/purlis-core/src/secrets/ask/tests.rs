@@ -52,6 +52,7 @@ fn need(chat: u32, key: &str) -> Need {
         declared: None,
         names_no_vault: false,
         reason: None,
+        no_allow: None,
     }
 }
 
@@ -1824,6 +1825,7 @@ const SAID: &str = "the API answers 401 Unauthorized";
 fn replacing(project: &Path, key: &str) -> Need {
     Need {
         reason: Some(Reason::replace(&ctx(project), "team", key, SAID)),
+        no_allow: None,
         ..need(7, key)
     }
 }
@@ -1999,6 +2001,7 @@ fn a_broken_link_ask_names_the_entry_that_is_gone_and_a_fill_gives_the_key_a_val
         &asks,
         Need {
             reason: Some(reason),
+            no_allow: None,
             ..need(7, "KEY")
         },
     );
@@ -2078,6 +2081,7 @@ fn picking_an_entry_mends_a_broken_link() {
         &asks,
         Need {
             reason: Reason::broken(&ctx, "team", "KEY"),
+            no_allow: None,
             ..need(7, "KEY")
         },
     );

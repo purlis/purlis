@@ -208,6 +208,9 @@ pub struct SecretShown {
     pub declared_purpose: Option<String>,
     /// How many chats wait on it.
     pub waiting: u32,
+    /// **Why the run that missed it is offered no Allow** (ADR 0111, #5243): the app's own words.
+    #[specta(optional)]
+    pub no_allow: Option<String>,
     /// **The chat says its value doesn't work** (#5075): the chat's own words, drawn as the
     /// chat's. Absent on an ask for a key the vault doesn't hold.
     #[specta(optional)]
@@ -2055,6 +2058,7 @@ pub fn secret_ask(open: &purlis_core::secrets::ask::Open, may_remember: bool) ->
             declared: open.declared.is_some(),
             declared_purpose: open.declared.clone(),
             waiting: u32::try_from(open.waiting()).unwrap_or(u32::MAX),
+            no_allow: open.no_allow.clone(),
             replace,
             reads,
             gone,

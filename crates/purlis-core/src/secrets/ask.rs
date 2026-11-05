@@ -103,6 +103,9 @@ pub struct Need {
     /// Why the key is asked for though the vault has it (#5075): the chat says its value doesn't
     /// work, or it is a link whose entry is gone. None for a key the vault doesn't hold.
     pub reason: Option<Reason>,
+    /// **Why the run that missed it is offered no Allow** (ADR 0111, #5243): the app's own words
+    /// on what policy locks, said on the notice, where a Fill is still offered.
+    pub no_allow: Option<String>,
 }
 
 /// The longest purpose a Secret ask carries, in characters: about a line of the ask.
@@ -194,6 +197,8 @@ pub struct Open {
     pub names_no_vault: bool,
     /// Why it is asked for though the vault has it (#5075).
     pub reason: Option<Reason>,
+    /// Why the run that missed it is offered no Allow ([`Need::no_allow`]).
+    pub no_allow: Option<String>,
     /// Each chat that needs it, the first to ask first: those holding a command, and those
     /// whose command stopped waiting and will be nudged.
     pub chats: Vec<u32>,
@@ -347,6 +352,7 @@ struct Asked {
     declared: Option<String>,
     names_no_vault: bool,
     reason: Option<Reason>,
+    no_allow: Option<String>,
     since: u64,
     waiters: Vec<Waiter>,
     /// The runner chats that cannot receive the value ([`Open::cannot_receive`]).
@@ -437,6 +443,9 @@ struct KeptAsk {
     /// Why it is asked though the vault has the key: a replace or a broken link (#5075).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     reason: Option<Reason>,
+    /// Why the run that missed it is offered no Allow (#5243).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    no_allow: Option<String>,
 }
 
 fn is_zero(n: &usize) -> bool {
@@ -469,6 +478,7 @@ impl KeptAsk {
             cannot_receive: asked.cannot_receive.clone(),
             starts: starts_of(asked),
             reason: asked.reason.clone(),
+            no_allow: asked.no_allow.clone(),
         })
     }
 
@@ -672,6 +682,7 @@ impl Asks {
                     declared: one.declared,
                     names_no_vault: one.names_no_vault,
                     reason: one.reason,
+                    no_allow: one.no_allow,
                     since: one.since,
                     waiters,
                     cannot_receive: one.cannot_receive,
@@ -778,6 +789,7 @@ impl Asks {
             declared,
             names_no_vault,
             reason,
+            no_allow,
         } = need;
         let said_why = reason.clone();
         let (answered, n) = {
@@ -844,6 +856,7 @@ impl Asks {
                         declared,
                         names_no_vault,
                         reason,
+                        no_allow,
                         since: now_secs(),
                         waiters: vec![waiter],
                         cannot_receive: Vec::new(),
@@ -950,6 +963,7 @@ impl Asks {
             declared,
             names_no_vault,
             reason,
+            no_allow,
         } = need;
         let mut inner = self.inner();
         if how == Unheld::Waits
@@ -1014,6 +1028,7 @@ impl Asks {
                     declared,
                     names_no_vault,
                     reason,
+                    no_allow,
                     since: now_secs(),
                     waiters: waiter.into_iter().collect(),
                     cannot_receive: cannot,
@@ -1093,6 +1108,7 @@ impl Asks {
                 declared: asked.declared.clone(),
                 names_no_vault: asked.names_no_vault,
                 reason: asked.reason.clone(),
+                no_allow: asked.no_allow.clone(),
                 chats: chats_of(asked),
                 cannot_receive: asked.cannot_receive.clone(),
                 starts: starts_of(asked),
@@ -1523,6 +1539,7 @@ pub fn raised_within(
         declared: super::needs::declared(&ctx.root, persona, &line.key).map(|need| need.purpose),
         names_no_vault,
         reason,
+        no_allow: None,
     };
     Ok(match asks.hold(need, within, &mut |_: &str| moved()) {
         Held::Filled { vault, key } => Said::Filled { vault, key },

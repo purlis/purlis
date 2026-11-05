@@ -500,6 +500,30 @@ impl Asks {
         }
     }
 
+    /// **Records that policy refused a run of `program`** (ADR 0111, #5243): closed words in the
+    /// event log, and the names in the chat's own trace.
+    pub fn refused_run_by_policy(&self, chat: u32, program: &str, vault: &str) {
+        crate::trace::record_values(
+            &self.root,
+            &chat.to_string(),
+            super::TRACED_AS,
+            &[
+                ("what", Value::from("run grant refused by policy")),
+                ("vault", Value::from(vault)),
+                ("program", Value::from(program)),
+                ("chat", Value::from(chat)),
+            ],
+            chrono::Local::now().naive_local(),
+        );
+        self.tell(
+            Some(chat),
+            crate::eventlog::secretasks::Step::Refused {
+                by: crate::eventlog::secretasks::By::RunGrantPolicy,
+                declared: false,
+            },
+        );
+    }
+
     /// **Whether a grant covers `bound`**, with nothing asked: Allow once goes as it is taken.
     pub fn granted(&self, bound: &Bound) -> bool {
         self.inner().runs.take(bound)

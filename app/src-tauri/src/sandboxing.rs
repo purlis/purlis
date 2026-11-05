@@ -412,6 +412,8 @@ pub struct SandboxPolicy {
     /// Whether a chat's ask for a secret its persona does not declare is refused (#5078): the
     /// chat hears `declined: policy` and the person is never asked.
     pub undeclared_secret_asks: bool,
+    /// Whether Run grants are turned off (ADR 0111, #5243).
+    pub run_grants: bool,
 }
 
 impl SandboxPolicy {
@@ -435,6 +437,7 @@ impl SandboxPolicy {
             required: locks.required_by(),
             write_grants: locks.forbids_write_grants(),
             undeclared_secret_asks: locks.forbids_undeclared_secret_asks(),
+            run_grants: locks.forbids_run_grants(),
         })
     }
 }

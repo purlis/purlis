@@ -3445,6 +3445,7 @@ fn an_open_ask(chat: u32, vault: &str, key: &str) -> purlis_core::secrets::ask::
         declared: Some(String::new()),
         names_no_vault: false,
         reason: None,
+        no_allow: None,
         chats: vec![chat],
         starts: 0,
         cannot_receive: Vec::new(),

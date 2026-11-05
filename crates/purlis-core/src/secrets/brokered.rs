@@ -706,6 +706,95 @@ pub fn command_shown(words: &[String]) -> String {
         .join(" ")
 }
 
+/// The plain name of the program `word` names.
+fn command_name(word: &str) -> String {
+    Path::new(word).file_name().map_or_else(
+        || word.to_owned(),
+        |name| name.to_string_lossy().into_owned(),
+    )
+}
+
+/// **Why policy allows no Run grant for `wanted`'s command**, where it does not (#5243): its lock
+/// on them, or on a persona's tools, or, strictest wins, its lock on asks for undeclared keys
+/// where the command names a key the persona does not declare.
+fn run_grant_locked(
+    asker: &Asker,
+    wanted: &Wanted,
+    command: &[String],
+    locks: &crate::sandbox::policy::Locks,
+) -> Option<String> {
+    let persona = asker.persona.as_deref().unwrap_or_default();
+    let named = command_name(&command[0]);
+    locks.refuses_run_grant(persona, &named).or_else(|| {
+        let undeclared = locks.forbids_undeclared_secret_asks()
+            && keys_named(wanted)
+                .any(|key| super::needs::declared(&asker.root, persona, key).is_none());
+        undeclared.then(|| {
+            format!(
+                "policy turns off asks for a secret {persona} does not declare, so {named} needs \
+                 to be declared as a tool of {persona}'s. {}",
+                locks.locked_by()
+            )
+        })
+    })
+}
+
+/// Each key `wanted` hands over by `--env` or `--file`, as `VAR=key` spells it.
+fn keys_named(wanted: &Wanted) -> impl Iterator<Item = &str> {
+    wanted
+        .env
+        .iter()
+        .chain(&wanted.file)
+        .filter_map(|spec| spec.split_once('=').map(|(_, key)| key))
+}
+
+/// **Asks the person for each key a run under policy's lock misses** (#5243): Fill alone, saying
+/// why no Allow is offered (`locked`). The run does not go on either way: storing a value still
+/// works, and a chat waiting on it hears so, as a run missing a key does.
+fn fill_what_it_misses(
+    asker: &Asker,
+    confines: &Confines,
+    wanted: &Wanted,
+    missing: &Missing<'_>,
+    locked: &str,
+    say: &mut dyn FnMut(&str),
+) -> Result<(), (i32, String)> {
+    use super::ask::{Held, Need, Reason};
+    let persona = asker.persona.as_deref().unwrap_or_default();
+    let ctx = Ctx::new(&asker.root, asker.env.clone()).chat(confines, asker.folder.as_deref());
+    let v = cmd::provider(&ctx, &wanted.vault).map_err(|e| (1, e.message.to_string()))?;
+    for key in keys_named(wanted) {
+        let lacks = cmd::get_value(&ctx, &v, key).map(zeroize::Zeroizing::new);
+        if !lacks
+            .as_ref()
+            .is_err_and(|e| matches!(e.kind, super::Kind::NotFound | super::Kind::BrokenLink))
+        {
+            continue;
+        }
+        let need = Need {
+            chat: Some(asker.chat),
+            persona: persona.to_owned(),
+            vault: wanted.vault.clone(),
+            key: key.to_owned(),
+            tool: None,
+            purpose: None,
+            declared: super::needs::declared(&ctx.root, persona, key).map(|need| need.purpose),
+            names_no_vault: false,
+            reason: Reason::broken(&ctx, &wanted.vault, key),
+            no_allow: Some(locked.to_owned()),
+        };
+        match missing.asks.hold(need, missing.within, &mut |line: &str| {
+            (missing.moved)();
+            say(line);
+        }) {
+            Held::Filled { .. } => {}
+            Held::Declined { line } | Held::Refused { line } => return Err((1, line)),
+            Held::StillOpen { line } => return Err((WAITING_ON_THE_PERSON, line)),
+        }
+    }
+    Ok(())
+}
+
 /// **Whether `wanted`'s command runs under a Run grant** (ADR 0111, #5239): the program its words
 /// name, as the app resolves it where no chat writes, once the person allowed it. Asked only for
 /// a program that is no declared tool, and refused with no notice for one no tool may be
@@ -737,6 +826,33 @@ fn run_granted(
     // Every tool line written for this persona, in force or not: a teammate's is no ask.
     let (written_lines, _) = tools::declared_and_allowed_here(&asker.root, persona);
     let listed = written_lines.as_slice();
+    // Policy first (#5243): whatever was given before, nothing runs under a Run grant while it
+    // locks them, and nobody is offered an Allow. A key the command misses can still be stored.
+    if let Some(locked) = run_grant_locked(asker, wanted, command, &locks) {
+        let named = command_name(&command[0]);
+        missing
+            .asks
+            .refused_run_by_policy(asker.chat, &named, &wanted.vault);
+        let may_fill = tools::for_run_grant(
+            &asker.root,
+            persona,
+            &tools::Asked {
+                vault: &wanted.vault,
+                env: &wanted.env,
+                file: &wanted.file,
+                dotenv: &wanted.dotenv,
+                program: &command[0],
+            },
+            listed,
+            &locks,
+            &chat_writes(asker, confines),
+        )
+        .is_ok();
+        if may_fill {
+            fill_what_it_misses(asker, confines, wanted, missing, &locked, say)?;
+        }
+        return Err((1, locked));
+    }
     let ready = tools::for_run_grant(
         &asker.root,
         persona,
@@ -828,7 +944,16 @@ fn run_granted(
             say(line);
         });
     match held {
-        RunHeld::Allowed => Ok(ready),
+        // Policy may have come to lock them while it waited.
+        RunHeld::Allowed => match run_grant_locked(
+            asker,
+            wanted,
+            command,
+            &crate::sandbox::policy::Locks::of(&asker.root),
+        ) {
+            Some(locked) => Err((1, locked)),
+            None => Ok(ready),
+        },
         RunHeld::Refused { line } => Err((1, line)),
         RunHeld::StillOpen { line } => Err((WAITING_ON_THE_PERSON, line)),
     }
@@ -1717,6 +1842,7 @@ fn read_login(
             .map(|need| need.purpose),
             names_no_vault: false,
             reason: super::ask::Reason::broken(ctx, vault, key),
+            no_allow: None,
         };
         missing
             .read_asking(need, &mut once)
@@ -2835,6 +2961,7 @@ pub(crate) fn serve_recorded(
                         .map(|need| need.purpose),
                     names_no_vault: false,
                     reason: super::ask::Reason::broken(&ctx, &wanted.vault, &key),
+                    no_allow: None,
                 };
                 let held = missing.asks.hold(need, missing.within, &mut |line: &str| {
                     (missing.moved)();

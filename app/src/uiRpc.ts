@@ -11159,6 +11159,8 @@ export type SandboxPolicy = {
 	 *  chat hears `declined: policy` and the person is never asked.
 	 */
 	undeclared_secret_asks: boolean,
+	/**  Whether Run grants are turned off (ADR 0111, #5243). */
+	run_grants: boolean,
 };
 
 /**  One Internet access preset (`sandbox::Preset`), as Settings shows it. */
@@ -11604,6 +11606,8 @@ export type SecretShown = {
 	declared_purpose?: string | null,
 	/**  How many chats wait on it. */
 	waiting: number,
+	/**  **Why the run that missed it is offered no Allow** (ADR 0111, #5243): the app's own words. */
+	no_allow?: string | null,
 	/**
 	 *  **The chat says its value doesn't work** (#5075): the chat's own words, drawn as the
 	 *  chat's. Absent on an ask for a key the vault doesn't hold.

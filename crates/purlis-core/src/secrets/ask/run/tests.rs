@@ -234,6 +234,7 @@ fn numbers_are_never_given_twice_across_the_two_kinds_of_ask() {
         declared: None,
         names_no_vault: false,
         reason: None,
+        no_allow: None,
     })
     .unwrap();
     assert_ne!(asks.open()[0].id, run_id);

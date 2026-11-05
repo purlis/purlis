@@ -43,6 +43,8 @@ pub enum How {
 pub enum By {
     /// Policy's lock on asks for undeclared keys.
     Policy,
+    /// Policy's lock on Run grants, or on a persona's tools (ADR 0111, #5243).
+    RunGrantPolicy,
 }
 
 /// **One step of a Secret ask's life.** `ask` is the ask's number in its project; `waiting` how

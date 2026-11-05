@@ -564,3 +564,159 @@ fn allow_for_this_chat_runs_the_program_with_other_arguments_and_no_more_asks() 
     );
     assert!(asks.open_runs().is_empty(), "nothing more was asked");
 }
+
+// ----------------------------------------------------------------------------------------
+// Under policy (#5243)
+
+/// Policy says `said` for this test, and no longer once it ends.
+struct Policy;
+
+impl Policy {
+    fn says(said: &str) -> Self {
+        crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::parse(
+            said,
+            Path::new("/etc/purlis/policy.json"),
+        ));
+        Self
+    }
+}
+
+impl Drop for Policy {
+    fn drop(&mut self) {
+        crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::none());
+    }
+}
+
+#[test]
+fn locked_a_command_raises_no_allow_and_the_chat_hears_why_and_to_declare_it() {
+    for said in [
+        r#"{"sandbox": {"run-grants": false}}"#,
+        r#"{"sandbox": {"persona-tools": false}}"#,
+    ] {
+        let _policy = Policy::says(said);
+        let project = project();
+        let asks = Asks::new(project.path());
+        let frames = run_with(
+            &the_chat(project.path()),
+            printenv(project.path(), &["X"]),
+            &asks,
+            Duration::from_secs(60),
+        );
+        let (why, code) = refusal(&frames);
+        assert_eq!(code, 1, "{frames:?}");
+        assert!(why.contains("policy"), "{why}");
+        assert!(asks.open_runs().is_empty(), "no Allow under {said}");
+    }
+}
+
+#[test]
+fn the_lock_set_later_stops_a_grant_given_before_it() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    answered(
+        project.path(),
+        printenv(project.path(), &["X"]),
+        &asks,
+        RunAnswer::ForChat,
+    );
+    let _policy = Policy::says(r#"{"sandbox": {"run-grants": false}}"#);
+    let frames = run_with(
+        &the_chat(project.path()),
+        printenv(project.path(), &["X"]),
+        &asks,
+        Duration::ZERO,
+    );
+    assert!(refusal(&frames).0.contains("policy"), "{frames:?}");
+}
+
+#[test]
+fn locked_a_key_the_vault_lacks_is_still_asked_for_saying_why_no_allow_is_offered() {
+    let _policy = Policy::says(r#"{"sandbox": {"run-grants": false}}"#);
+    let project = project();
+    let asks = Asks::new(project.path());
+    let mut want = printenv(project.path(), &["X"]);
+    want.env = vec!["X=NOT_THERE_YET".into()];
+    let frames = run_with(&the_chat(project.path()), want, &asks, Duration::ZERO);
+    assert_eq!(refusal(&frames).1, WAITING_ON_THE_PERSON, "{frames:?}");
+    assert!(asks.open_runs().is_empty(), "no Allow");
+    let open = asks.open();
+    assert_eq!(open.len(), 1, "Fill");
+    assert_eq!(open[0].key, "NOT_THERE_YET");
+    assert!(
+        open[0]
+            .no_allow
+            .as_deref()
+            .is_some_and(|why| why.contains("policy")),
+        "{open:?}"
+    );
+}
+
+#[test]
+fn a_refusal_under_policy_is_audited_with_closed_words() {
+    use crate::eventlog::secretasks::{By, Step};
+    let _policy = Policy::says(r#"{"sandbox": {"run-grants": false}}"#);
+    let project = project();
+    let asks = Asks::new(project.path());
+    let steps = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let seen = std::sync::Arc::clone(&steps);
+    asks.telling(std::sync::Arc::new(move |chat, step| {
+        seen.lock().unwrap().push((chat, step));
+    }));
+    run_with(
+        &the_chat(project.path()),
+        printenv(project.path(), &["X"]),
+        &asks,
+        Duration::ZERO,
+    );
+    let steps = steps.lock().unwrap();
+    assert!(
+        steps.iter().any(|(_, step)| matches!(
+            step,
+            Step::Refused {
+                by: By::RunGrantPolicy,
+                ..
+            }
+        )),
+        "{steps:?}"
+    );
+}
+
+#[test]
+fn under_the_lock_on_undeclared_asks_an_undeclared_key_is_offered_no_allow() {
+    let _policy = Policy::says(r#"{"sandbox": {"undeclared-secret-asks": false}}"#);
+    let project = project();
+    let asks = Asks::new(project.path());
+    let frames = run_with(
+        &the_chat(project.path()),
+        printenv(project.path(), &["X"]),
+        &asks,
+        Duration::from_secs(60),
+    );
+    assert_eq!(refusal(&frames).1, 1, "{frames:?}");
+    assert!(asks.open_runs().is_empty());
+}
+
+#[test]
+fn with_no_lock_set_run_grants_are_allowed() {
+    let locks = crate::sandbox::policy::Locks::parse(
+        r#"{"sandbox": {"hosts": []}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    );
+    assert_eq!(locks.refuses_run_grant("devops", "curl"), None);
+}
+
+// ----------------------------------------------------------------------------------------
+// On a runner (#5243)
+
+#[test]
+fn a_runner_chat_gets_no_run_grant_and_hears_to_declare_it_as_a_tool() {
+    let project = project();
+    let asks = Asks::new(project.path());
+    let chat = the_chat(project.path());
+    let want = printenv(project.path(), &["X"]);
+    // What its desktop says before any value is sent.
+    let why = crate::secrets::brokered::armed_as(&chat, &want).expect_err("no tool");
+    assert!(why.contains("declared tools"), "{why}");
+    assert!(why.contains("tools = {"), "says how to declare it: {why}");
+    assert!(asks.open_runs().is_empty(), "nobody was asked");
+}
