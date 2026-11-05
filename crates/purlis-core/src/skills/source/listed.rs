@@ -195,6 +195,19 @@ pub fn add(cx: &mut Ctx<'_>, source: &Source, which: Which) -> Result<bool, Stri
     if listed_as(plane, &source.remote)?.is_some() {
         return Ok(false);
     }
+    written_in(plane, source, which)?;
+    cx.done(format!("{source} is a skill source of this project"));
+    if which == Which::Shared {
+        cx.commit(
+            &[Which::Shared.file_at(plane).to_owned()],
+            "skill source add",
+        );
+    }
+    Ok(true)
+}
+
+/// `source`'s tables written in `which` settings, with this machine's line where it asks one.
+fn written_in(plane: &Path, source: &Source, which: Which) -> Result<(), String> {
     let folder = source.folder.as_deref();
     match which {
         Which::Local => {
@@ -218,14 +231,7 @@ pub fn add(cx: &mut Ctx<'_>, source: &Source, which: Which) -> Result<bool, Stri
             })?;
         }
     }
-    cx.done(format!("{source} is a skill source of this project"));
-    if which == Which::Shared {
-        cx.commit(
-            &[Which::Shared.file_at(plane).to_owned()],
-            "skill source add",
-        );
-    }
-    Ok(true)
+    Ok(())
 }
 
 /// **Confirms `remote`, a source the committed lockfile names, on this machine**: purlis may ask
@@ -253,31 +259,55 @@ pub(super) fn confirm_here(cx: &mut Ctx<'_>, remote: &Remote) -> Result<bool, St
     Ok(true)
 }
 
+/// The file a commit taking `remote` out would hold: its shared settings, where it is shared.
+pub fn shared_file_of(plane: &Path, remote: &Remote) -> Result<Option<String>, String> {
+    Ok(sources(plane)?
+        .into_iter()
+        .find(|one| one.source.remote == *remote && one.which == Which::Shared)
+        .map(|_| Which::Shared.file_at(plane).to_owned()))
+}
+
+/// **Takes `remote` out of the settings, committing nothing**: its own, and this machine's line
+/// for it. Answers what it was, for a change to put back.
+pub fn take_out(plane: &Path, remote: &Remote) -> Result<Option<(Source, Which)>, String> {
+    let Some(listed) = sources(plane)?
+        .into_iter()
+        .find(|one| one.source.remote == *remote)
+    else {
+        return Ok(None);
+    };
+    let without = |list: &mut toml_edit::ArrayOfTables| {
+        let before = list.len();
+        list.retain(|table| !names(table, remote));
+        list.len() != before
+    };
+    edit(plane, listed.which, without)?;
+    if listed.which == Which::Shared {
+        edit(plane, Which::Local, without)?;
+    }
+    Ok(Some((listed.source, listed.which)))
+}
+
+/// **Puts `source` in `which` settings, committing nothing**, and answers the file a commit should
+/// hold: its shared settings, where it went there and was not listed already.
+pub fn put_in(plane: &Path, source: &Source, which: Which) -> Result<Option<String>, String> {
+    if listed_as(plane, &source.remote)?.is_some() {
+        return Ok(None);
+    }
+    written_in(plane, source, which)?;
+    Ok((which == Which::Shared).then(|| Which::Shared.file_at(plane).to_owned()))
+}
+
 /// **Takes `remote` out of the project's sources**, and this machine's line for it. Skills
 /// installed from it stay, with their pins.
 pub fn remove(cx: &mut Ctx<'_>, remote: &Remote) -> Result<bool, String> {
     let plane = cx.plane;
     crate::settings::writable(plane)?;
-    let Some(listed) = sources(plane)?
-        .into_iter()
-        .find(|one| one.source.remote == *remote)
-    else {
+    let Some((source, which)) = take_out(plane, remote)? else {
         return Ok(false);
     };
-    let take_out = |list: &mut toml_edit::ArrayOfTables| {
-        let before = list.len();
-        list.retain(|table| !names(table, remote));
-        list.len() != before
-    };
-    edit(plane, listed.which, take_out)?;
-    if listed.which == Which::Shared {
-        edit(plane, Which::Local, take_out)?;
-    }
-    cx.done(format!(
-        "{} is no longer a skill source here",
-        listed.source
-    ));
-    if listed.which == Which::Shared {
+    cx.done(format!("{source} is no longer a skill source here"));
+    if which == Which::Shared {
         cx.commit(
             &[Which::Shared.file_at(plane).to_owned()],
             "skill source remove",

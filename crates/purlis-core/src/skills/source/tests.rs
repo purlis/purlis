@@ -1268,6 +1268,13 @@ fn an_update_brings_along_a_skill_it_newly_refers_to_and_shows_the_local_edits()
 fn a_source_only_the_committed_lock_names_is_not_contacted_until_confirmed() {
     let tmp = plane();
     let root = tmp.path();
+    // A copy that is there: an entry whose skill is gone is a deleted skill's, and asks nothing.
+    std::fs::create_dir_all(root.join("skills/far")).unwrap();
+    std::fs::write(
+        root.join("skills/far/SKILL.md"),
+        "---\nname: far\ndescription: x\n---\n",
+    )
+    .unwrap();
     let entry = |url: &str| {
         serde_json::json!({
             "name": "far",

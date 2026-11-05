@@ -1578,6 +1578,11 @@ Every entry is checked as it is read: a name that is a skill's, plain file paths
 a level that belongs in this lockfile, and a source purlis reads. One that is not refuses the
 whole file in one sentence, and nothing installed changes.
 
+**An entry whose `<level>/<name>/SKILL.md` is gone is a deleted skill's** (#5331). A delete leaves
+the entry, so a skill brought back is pinned as it was and a delete is one commit of the skill's
+own files. Every reader through `lock::every` treats such an entry as not installed, and an install
+of that name at that level replaces it.
+
 ### `[[skill_sources]]` — the sources a project browses
 
 - **Format:** TOML array of tables, in `charter.toml` (the project's) and in
@@ -7661,8 +7666,9 @@ rewritten.
   track (a local skill, or one in a workspace that is not LIVE), or a committed one in a project
   that could not commit it then (no save mode yet, saving off, or something else staged). It
   holds the skill's folder as it was, the `<folder>.toml` beside it where there was one, and `from`: one line naming the level it came from, relative to the
-  plane (`skills.local`, `workspaces/ops/skills`, `personas/reviewer/skills.local`). `<stamp>` is when it was deleted, in
-  milliseconds since the epoch. Folders are `0700` and `from` is `0600`.
+  plane (`skills.local`, `workspaces/ops/skills`, `personas/reviewer/skills.local`), and, for a skill deleted as one of a set (#5331), a second line: the set's id, a tab, and what it was deleted from in words, which may be empty. `<stamp>` is when it was deleted, in
+  milliseconds since the epoch, a skill of a set taking the set's stamp plus its place in the set, so two copies of one folder name are kept apart. Folders are `0700` and `from` is `0600`.
+- **A set's commit** (#5331): a set deleted with `verbs::set::delete_set` is one commit whose message ends with the trailers `Purlis-Skill-Set: <id>` and, where it has one, `Purlis-Skill-Set-From: <words>`. `verbs::deleted` reads them, so a set is listed as one group in every clone, and the id joins the skills of it kept here. A commit with neither is a delete on its own.
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2770).
 - **Tier:** Clone state — this machine's, as the skill was.
 - **Written by:** `purlis_core::skills::verbs::delete`, which moves the folder in with

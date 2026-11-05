@@ -1778,6 +1778,7 @@ fn a_deleted_skill_says_how_long_it_stays() {
         folder: "deploy".to_owned(),
         kept: Kept(Source::Here(format!("{}-deploy", at * 1000))),
         at,
+        set: None,
     };
     let when = |secs: u64| std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs);
     let at = 1_761_000_000;
@@ -2160,6 +2161,7 @@ fn a_deleted_skill_counts_the_days_left_to_bring_it_back_wherever_it_is_kept() {
         folder: "deploy".to_owned(),
         kept: Kept(Source::Here(format!("{}-deploy", at * 1000))),
         at,
+        set: None,
     };
     let when = |secs: u64| std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs);
     let at = 1_761_000_000;
@@ -2213,6 +2215,7 @@ fn the_last_text_of_a_record_the_project_does_not_list_is_refused_unread() {
         folder: "../..".to_owned(),
         kept: Kept(Source::Commit("HEAD".to_owned())),
         at: 0,
+        set: None,
     };
     let refused = deleted_text(root, &made_up).unwrap_err();
     assert!(refused.contains("not a deleted skill"), "{refused}");
