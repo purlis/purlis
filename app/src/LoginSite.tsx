@@ -21,8 +21,9 @@ export function useTypedSite(ask: Shown) {
 
 /**
  * **What a login a chat suggests is filled on, and from** (#4595, the person's rulings): the
- * site large and editable, the vault and key names and never a value, then what they're warned
- * of, and the line Always writes. The site is never cut short: the part a lookalike hides in is
+ * site large and editable, a page but the front one as large (the person's ruling of
+ * 2026-11-05), the vault and key names and never a value, then what they're warned of, and the
+ * line Always writes. The site is never cut short: the part a lookalike hides in is
  * the part that would go.
  */
 export function LoginSite({
@@ -48,10 +49,15 @@ export function LoginSite({
         </div>
       )}
       <p className="ui-text-meta">Opens</p>
-      <p className="login-site-domain ui-text-title">
-        https://{login.domain}
-        <span className="ui-text-body">{login.path}</span>
-      </p>
+      <p className="login-site-domain ui-text-title">https://{login.domain}</p>
+      {login.path !== "/" && (
+        <>
+          <p className="ui-text-meta">On the page the chat chose, not the front page</p>
+          <p className="login-site-domain ui-text-title" data-testid="login-site-path">
+            {login.path}
+          </p>
+        </>
+      )}
       <TextField
         aria-label="Change the site this login opens"
         value={typed ?? siteOf(login)}

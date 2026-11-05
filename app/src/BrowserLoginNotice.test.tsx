@@ -59,6 +59,15 @@ describe("BrowserLoginNotice", () => {
     expect(screen.getByTestId("login-site")).toHaveTextContent('shop-login = { vault = "qa" }');
   });
 
+  it("shows a page the chat chose as large as the site, and no such line for the front page", () => {
+    render(<BrowserLoginNotice plane="p" session={7} asks={[ask()]} />);
+    expect(screen.getByTestId("login-site-path")).toHaveTextContent(/^\/login$/);
+    expect(screen.getByTestId("login-site-path")).toHaveClass("ui-text-title");
+    cleanup();
+    render(<BrowserLoginNotice plane="p" session={7} asks={[ask({ path: "/" })]} />);
+    expect(screen.queryByTestId("login-site-path")).toBeNull();
+  });
+
   it("says each warning, and why Always isn't offered", () => {
     render(
       <BrowserLoginNotice

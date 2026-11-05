@@ -766,8 +766,14 @@ pub fn answer(
     };
     let judged = finish(root, &locks, fresh)?;
     let changed = judged.proposal.digest() != wait.proposal.digest();
-    // Always writes a line, and the line is shown before it's written.
-    if changed && (!spelled || !judged.proposal.warnings.is_empty() || press == Press::Always) {
+    // Always writes a line, and the line is shown before it's written. A warning the notice
+    // didn't show is shown before a press counts; one it showed was read.
+    let unseen = judged
+        .proposal
+        .warnings
+        .iter()
+        .any(|warning| !wait.proposal.warnings.contains(warning));
+    if changed && (!spelled || unseen || press == Press::Always) {
         let said = format!(
             "purlis would open {} and type the password on {}. Check it, then choose again.",
             judged.proposal.page, judged.proposal.form
