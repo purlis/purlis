@@ -12483,7 +12483,7 @@ export const PlaneView = memo(function PlaneView({
                     />
                   ),
                   // **Skills** (#3266): this workspace's skills by level, from the Skill studio's own
-                  // answer, drawn only while its preview is on; the side falls back to Chats meanwhile.
+                  // answer.
                   skills: skillsDrawn && (
                     <SkillsView
                       plane={plane}
