@@ -1592,9 +1592,9 @@ fn a_host_before_secret_fill_is_sent_no_field_read_and_no_fill() {
     assert_eq!(super::fills_secrets(KNOWS_SECRET_FILL), Ok(()));
 }
 
-/// #5272: no login goes to a host before 1.74, which would leave a declared login's site as it is.
+/// #5272: no login goes to a host before 1.75, which would leave a declared login's site as it is.
 #[test]
-fn a_host_before_1_74_is_sent_no_login() {
+fn a_host_before_1_75_is_sent_no_login() {
     use purlis_session_protocol::session::KNOWS_CLEAN_LOGINS;
     use purlis_session_protocol::version::Version;
     let before = Version {

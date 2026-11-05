@@ -949,7 +949,7 @@ impl Upstream {
                 ),
             });
         }
-        // A runner before 1.74 would leave a login's site as it is, or clear less (#5272): the
+        // A runner before 1.75 would leave a login's site as it is, or clear less (#5272): the
         // window's version check is of its own host, not of this runner.
         if let Some(why) = no_login_for(&command, self.client.version()) {
             return Err(Refusal {

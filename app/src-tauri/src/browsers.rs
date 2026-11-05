@@ -418,7 +418,7 @@ mod hosted {
             if let Some(why) = self.pool_of(program).and_then(|pool| self.untrusted(&pool)) {
                 return Err(Refused::Said(why));
             }
-            // A host before 1.74 doesn't start every login clean, and clears less (#5272).
+            // A host before 1.75 doesn't start every login clean, and clears less (#5272).
             if !starts_logins_clean(link.version()) {
                 return Err(Refused::Said(
                     "the purlis that runs this browser is too old to start this login clean on \

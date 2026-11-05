@@ -31,11 +31,11 @@ sign-in reach rules (#5099, as amended by #5152).
   the first tab the login opened goes.
 - The browser's HTTP cache has no way to clear one site, and clearing all of it would touch other
   sites. So the login's page loads past it, until the login has answered.
-- The clean load's failure is a refusal of its own at session protocol 1.74, not a sentence read back.
-  No login goes to a host before 1.74, which would leave a declared login's site as it is or clear less.
+- The clean load's failure is a refusal of its own at session protocol 1.75, not a sentence read back.
+  No login goes to a host before 1.75, which would leave a declared login's site as it is or clear less.
 - One new browser, once. It tries the login as a first load does, and what it says is the answer, on
   this call or a later one. It opens from nothing kept. The browser left lets go of the store it
   opened from, and a kept login that goes through in the new one keeps its session as any fresh
   browser's does. What policy and the chat's browsing say are asked again before it opens.
-- A runner is held to 1.74 by the host that relays to it, as the window's check is of its own host.
+- A runner is held to 1.75 by the host that relays to it, as the window's check is of its own host.
 - A user name is under the value rules too, as it goes into a page as a fill does.
