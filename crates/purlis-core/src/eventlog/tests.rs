@@ -3541,6 +3541,8 @@ fn typed_skill(
         level: None,
         text: crate::skillspan::PromptMarks::digest(text, &salt_of_3()),
         confirmed,
+        started_by: purlis_skills::runs::StartedBy::UseSkill,
+        waits: false,
     }
 }
 

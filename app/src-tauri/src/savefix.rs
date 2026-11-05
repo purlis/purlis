@@ -280,6 +280,7 @@ fn start(
             then_a_space: false,
             starts_runs: None,
             studio: None,
+            skill: None,
         },
         size,
         SentFor::FixASave,

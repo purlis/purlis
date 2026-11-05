@@ -71,12 +71,19 @@ pub fn chat(root: &Path, workspace: Option<&str>, asked: Asked<'_>) -> Result<Re
         },
         str::to_owned,
     );
+    let job = format!(
+        "edit the theme \"{theme}\" for the {} {name}",
+        subject.kind.as_str()
+    );
+    let prompt = format!("Use the purlis-theme skill to {job}.");
     Ok(Resolved {
         label: EDIT_LABEL.to_owned(),
-        prompt: format!(
-            "Use the purlis-theme skill to edit the theme \"{theme}\" for the {} {name}.",
-            subject.kind.as_str()
-        ),
+        skill: Some(crate::skillprompt::SkillPrompt::built_in(
+            "purlis-theme",
+            job,
+            prompt.clone(),
+        )),
+        prompt,
         ..create
     })
 }

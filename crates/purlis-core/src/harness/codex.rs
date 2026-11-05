@@ -237,6 +237,14 @@ impl HarnessAdapter for Codex {
         }
     }
 
+    /// Codex resolves a `$<name>` only among the skills it found itself. purlis's built-in skills
+    /// and the plane's are only listed in a chat's briefing (ADR 0063), so for those the mention
+    /// starts nothing: it is text its model reads, and a sentence says the same thing plainly.
+    fn own_start_reaches(&self, origin: crate::skills::Origin) -> bool {
+        use crate::skills::Origin;
+        matches!(origin, Origin::Harness | Origin::Repo)
+    }
+
     /// Codex lists skills within 2% of the context window, 8,000 characters where it does not
     /// know the window, cutting each description at 1,024 characters, and past that drops
     /// trailing skills without saying so (0.163.0, `ext/skills/src/render.rs`). A Codex chat is

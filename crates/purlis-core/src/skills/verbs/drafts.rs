@@ -31,6 +31,7 @@ use std::path::{Component, Path, PathBuf};
 
 use super::{Ctx, Level, find, level_is_there, rel};
 use crate::proposed::{self, Change, NotMade};
+use crate::skillprompt::SkillPrompt;
 #[cfg(unix)]
 use crate::skills::at;
 
@@ -1358,7 +1359,8 @@ fn skills_dir_told(level: &Level) -> String {
 /// its runs and grades. Each prompt is one line that names the job, the skill's folder and this
 /// skill, as `curation::BUILTINS`' are: a prompt is typed to be read before the person presses
 /// Enter, and a harness draws a longer paste as a placeholder nobody can read
-/// (`Harness::why_drawn_as_a_placeholder`), which purlis refuses to type.
+/// (`Harness::why_drawn_as_a_placeholder`), which purlis refuses to type. Each is a
+/// [`SkillPrompt`], which the chat's harness renders as its own start of this skill (#5186).
 pub const STUDIO_SKILL: &str = "purlis-skill-studio";
 
 /// **The prompt "Ask a chat to draft a skill" types** (decision 13), unsent, into a chat that
@@ -1369,15 +1371,19 @@ pub const STUDIO_SKILL: &str = "purlis-skill-studio";
 /// `what` is typed into a terminal and never sent, so it stays one line: a line break or another
 /// control character in it would send the prompt, or reach the terminal as a key, so each run of
 /// them and of spaces is one space.
-pub fn asking(level: &Level, what: &str) -> String {
+pub fn asking(level: &Level, what: &str) -> SkillPrompt {
     let dir = skills_dir_told(level);
     let what = one_line(what);
-    let lead = format!("Use the {STUDIO_SKILL} skill to draft a new skill in {dir}.");
-    if what.is_empty() {
-        format!("{lead} The skill should ")
+    let ask = if what.is_empty() {
+        format!("draft a new skill in {dir}. The skill should ")
     } else {
-        format!("{lead} What the skill does: {what}")
-    }
+        format!("draft a new skill in {dir}. What the skill does: {what}")
+    };
+    SkillPrompt::built_in(
+        STUDIO_SKILL,
+        ask.clone(),
+        format!("Use the {STUDIO_SKILL} skill to {ask}"),
+    )
 }
 
 /// The most characters of what a skill should do that a draft prompt types.
@@ -1410,10 +1416,18 @@ fn one_line(text: &str) -> String {
 /// which holds skill-creator's `triggers.json` format and what makes a good test. The write comes
 /// back as a draft, as any chat's write to a skill's files does. One line, which the person may
 /// add to before sending.
-pub fn asking_for_trigger_tests(root: &Path, level: &Level, name: &str) -> Result<String, String> {
+pub fn asking_for_trigger_tests(
+    root: &Path,
+    level: &Level,
+    name: &str,
+) -> Result<SkillPrompt, String> {
     let at = told_folder(root, level, name, "write its trigger tests")?;
-    Ok(format!(
-        "Use the {STUDIO_SKILL} skill to write trigger tests for the {name} skill in {at}."
+    Ok(SkillPrompt::built_in(
+        STUDIO_SKILL,
+        format!("write trigger tests for {name} in {at}"),
+        format!(
+            "Use the {STUDIO_SKILL} skill to write trigger tests for the {name} skill in {at}."
+        ),
     ))
 }
 
@@ -1449,10 +1463,18 @@ fn told_folder(root: &Path, level: &Level, name: &str, to: &str) -> Result<Strin
 /// [`STUDIO_SKILL`], which holds skill-creator's `evals.json` format and what makes a good eval.
 /// The write comes back as a draft, as any chat's write to a skill's files does. One line, which
 /// the person may add to.
-pub fn asking_for_outcome_evals(root: &Path, level: &Level, name: &str) -> Result<String, String> {
+pub fn asking_for_outcome_evals(
+    root: &Path,
+    level: &Level,
+    name: &str,
+) -> Result<SkillPrompt, String> {
     let at = told_folder(root, level, name, "write its outcome evals")?;
-    Ok(format!(
-        "Use the {STUDIO_SKILL} skill to write outcome evals for the {name} skill in {at}."
+    Ok(SkillPrompt::built_in(
+        STUDIO_SKILL,
+        format!("write outcome evals for {name} in {at}"),
+        format!(
+            "Use the {STUDIO_SKILL} skill to write outcome evals for the {name} skill in {at}."
+        ),
     ))
 }
 
@@ -1462,10 +1484,12 @@ pub fn asking_for_outcome_evals(root: &Path, level: &Level, name: &str) -> Resul
 /// person accepts whole. It names the job, the skill and its folder, and [`STUDIO_SKILL`], whose
 /// Checks section holds both formats and what makes a good check (#4714). One line, which the
 /// person may add to.
-pub fn asking_for_checks(root: &Path, level: &Level, name: &str) -> Result<String, String> {
+pub fn asking_for_checks(root: &Path, level: &Level, name: &str) -> Result<SkillPrompt, String> {
     let at = told_folder(root, level, name, "write its checks")?;
-    Ok(format!(
-        "Use the {STUDIO_SKILL} skill to write checks for the {name} skill in {at}."
+    Ok(SkillPrompt::built_in(
+        STUDIO_SKILL,
+        format!("write checks for {name} in {at}"),
+        format!("Use the {STUDIO_SKILL} skill to write checks for the {name} skill in {at}."),
     ))
 }
 
@@ -1493,7 +1517,7 @@ fn level_flags(level: &Level) -> String {
 /// accept or discard. It never edits a skill on its own: a chat's write to a skill's files is
 /// always a draft ([`take`]). Only a plain name is typed, as this one goes on a command line the
 /// chat is told to run. One line, which the person may add to.
-pub fn improving_from_runs(root: &Path, level: &Level, name: &str) -> Result<String, String> {
+pub fn improving_from_runs(root: &Path, level: &Level, name: &str) -> Result<SkillPrompt, String> {
     if purlis_skills::change::name_problem(name).is_some() {
         return Err(format!(
             "{} is not a plain skill name, so no chat can be asked to improve it: rename it first",
@@ -1502,40 +1526,86 @@ pub fn improving_from_runs(root: &Path, level: &Level, name: &str) -> Result<Str
     }
     let at = told_folder(root, level, name, "improve it")?;
     let flags = level_flags(level);
-    Ok(format!(
-        "Use the {STUDIO_SKILL} skill to improve the {level} copy of the {name} skill, in {at}, \
-         from its runs and its grades (purlis skill grade {name}{flags} --json)."
+    let job = format!(
+        "improve the {level} copy of the {name} skill, in {at}, from its runs and its grades \
+         (purlis skill grade {name}{flags} --json)"
+    );
+    Ok(SkillPrompt::built_in(
+        STUDIO_SKILL,
+        job.clone(),
+        format!("Use the {STUDIO_SKILL} skill to {job}."),
     ))
 }
 
-/// **The prompt "Ask the chat to redo it" types** (S9), unsent, for the draft of the skill in
-/// `folder` at `level` whose files `stale` (below the skill's folder) the project changed since:
-/// into the chat that drafted it where it is still open (`same_chat`), else into a new chat that
-/// starts where `level`'s skills are reached from, as [`asking`]'s does, naming [`STUDIO_SKILL`].
-/// It asks for each whole file, which [`take`] drafts afresh on the project's copy. The skill's
-/// folder is named once and each file from it, so a long folder is not said once a file (#4714).
-/// One line; a new chat's ends where the person says what the change was.
-pub fn redoing(level: &Level, folder: &str, stale: &[&str], same_chat: bool) -> String {
+/// **The prompt "Ask the chat to redo it" types** (S9), unsent, into a new chat that starts where
+/// `level`'s skills are reached from, as [`asking`]'s does, for the draft of the skill in `folder`
+/// at `level` whose files `stale` (below the skill's folder) the project changed since, starting
+/// [`STUDIO_SKILL`]. It asks for each whole file, which [`take`] drafts afresh on the project's
+/// copy. The skill's folder is named once and each file from it, so a long folder is not said once
+/// a file (#4714). One line, which ends where the person says what the change was.
+pub fn redoing(level: &Level, folder: &str, stale: &[&str]) -> SkillPrompt {
     let at = format!("{}/{folder}", skills_dir_told(level));
     let files = stale.join(", ");
-    if same_chat {
-        format!(
-            "The project's copy of {files} in {at} changed since you drafted your change to it, so \
-             purlis cannot accept your draft. Read it again and write each whole file once more \
-             with your change on top of it; purlis keeps it as a draft in the Skill studio for me \
-             to try."
-        )
-    } else {
-        format!(
-            "Use the {STUDIO_SKILL} skill to redo a draft: the project's copy of {files} in {at} \
-             changed since a chat drafted a change to it. The change should "
-        )
+    let job = format!(
+        "redo a draft: the project's copy of {files} in {at} changed since a chat drafted a \
+         change to it. The change should "
+    );
+    SkillPrompt::built_in(
+        STUDIO_SKILL,
+        job.clone(),
+        format!("Use the {STUDIO_SKILL} skill to {job}"),
+    )
+}
+
+/// **The prompt "Ask the chat to redo it" types into the chat that drafted it**, where it is still
+/// open: it has the steps already, so this starts no skill. One line.
+pub fn redoing_in_its_chat(level: &Level, folder: &str, stale: &[&str]) -> String {
+    let at = format!("{}/{folder}", skills_dir_told(level));
+    let files = stale.join(", ");
+    format!(
+        "The project's copy of {files} in {at} changed since you drafted your change to it, so \
+         purlis cannot accept your draft. Read it again and write each whole file once more \
+         with your change on top of it; purlis keeps it as a draft in the Skill studio for me \
+         to try."
+    )
+}
+
+/// **The prompt Try it types** (decision 50), unsent, into the scratch chat of `tried`, in the
+/// project at `root`: one line. The chat's set holds the skill as a project's, so that is the
+/// origin its harness names it by. A draft that could not be started that way gets the sentence
+/// on every harness ([`started_by_these_words`]).
+pub fn trying(root: &Path, tried: &Try, name: &str) -> SkillPrompt {
+    let direct = crate::appstate::dir(root).is_some_and(|state| {
+        let skills = state
+            .join(TRIES_DIR)
+            .join(&tried.id)
+            .join(purlis_skills::PROJECT_DIR);
+        started_by_these_words(&skills, name)
+    });
+    SkillPrompt {
+        skill: name.to_owned(),
+        origin: crate::skills::Origin::Project,
+        words: "try it on a small example of what it is for, and say how it went".to_owned(),
+        sentence: format!(
+            "Use the {name} skill on a small example of what it is for, and say how it went."
+        ),
+        direct,
     }
 }
 
-/// **The prompt Try it types** (decision 50), unsent, into its scratch chat: one line.
-pub fn trying(name: &str) -> String {
-    format!("Use the {name} skill on a small example of what it is for, and say how it went.")
+/// **Whether skill `name`, in the skills folder `skills`, starts by its name with plain words**:
+/// the reader of a chat's set finds a skill of that name there, a plain one; a person may start it;
+/// and it names no arguments, which the words would fill one by one. A slash command its harness
+/// does not answer to ends the turn before its model reads a word.
+fn started_by_these_words(skills: &Path, name: &str) -> bool {
+    purlis_skills::change::name_problem(name).is_none()
+        && purlis_skills::read(skills)
+            .iter()
+            .find(|skill| skill.name == name)
+            .is_some_and(|skill| {
+                let declared = purlis_skills::declared(skill);
+                declared.arguments.is_empty() && !declared.not_by_a_person
+            })
 }
 
 /// Ends the try `id`: [`end_try_at`] by its id.

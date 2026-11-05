@@ -31,6 +31,8 @@ pub struct Declared {
     pub hint: Option<String>,
     /// Its `when_to_use`, which Claude Code joins to its description in its listing.
     pub when_to_use: Option<String>,
+    /// Whether it says a person cannot start it by name (`user-invocable: false`).
+    pub not_by_a_person: bool,
 }
 
 /// **What a person gave a skill's arguments** in Use skill… (decision 61), each value on one
@@ -159,11 +161,14 @@ pub(crate) fn declared_in(text: &str) -> Declared {
         .map(unquoted)
         .map(str::to_owned)
         .filter(|when| !when.is_empty());
+    let not_by_a_person =
+        value("user-invocable").is_some_and(|v| unquoted(v).eq_ignore_ascii_case("false"));
     Declared {
         manual,
         arguments,
         hint,
         when_to_use,
+        not_by_a_person,
     }
 }
 

@@ -92,7 +92,7 @@ pub enum Entry {
     },
     /// The kill switch's journal, read again ([`Recorder::kill_switch_read`]).
     KillSwitchRead,
-    /// Use skill… typed a skill into chat `number`, unsent (SK-12): the run a prompt that
+    /// Use skill…, or a prompt purlis filled in (#5186), typed a skill into chat `number`, unsent (SK-12): the run a prompt that
     /// shows it was sent opens ([`Recorder::skill_typed`]). Nothing is written until then.
     SkillTyped {
         plane: PathBuf,

@@ -251,6 +251,7 @@ pub fn run(root: &std::path::Path, command: CurationCommand) -> Result<Code, Str
                     return Ok(1);
                 }
             };
+            let harness = curation::default_harness(root);
             for (n, action) in resolution.actions.iter().enumerate() {
                 if n > 0 {
                     println!();
@@ -270,7 +271,7 @@ pub fn run(root: &std::path::Path, command: CurationCommand) -> Result<Code, Str
                         .own(" · in: ")
                         .text(action.cwd.display())
                 );
-                for line in action.prompt.lines() {
+                for line in action.prompt_on(harness).lines() {
                     println!("{}", Markup::new().own("    ").text(line));
                 }
             }
