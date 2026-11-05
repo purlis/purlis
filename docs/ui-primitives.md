@@ -907,7 +907,7 @@ error (Get project's clone progress is still off, until it moves).
 ## The pane foot family
 
 **The line under a chat's terminal is the pane foot family** (`app/src/ui/pane-foot/`, #5202,
-spec #5191, ADR 0111): `PaneFoot`, a group named for its chat, holding its `PaneFootStart`
+spec #5191, ADR 0112): `PaneFoot`, a group named for its chat, holding its `PaneFootStart`
 (harness · workspace, where it came from, its skills warning and its sandbox) and its `PaneFootEnd`
 (the gauge); `PaneFootSeparator`, the `·` between two parts; and `PaneFootGauge`, a
 labelled number, `ctx 62%`, with its fill as a thin bar under it where it has one. No screen
