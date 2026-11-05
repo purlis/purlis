@@ -19,6 +19,8 @@ import {
   PanePreviewWords,
 } from "./PanePreview";
 
+const TERMINAL = "❯ cargo test -p purlis-core\n   Compiling purlis-core\n    Finished in 4.2s\n❯ ";
+
 const WIDTH = 640;
 const HEIGHT = 240;
 
@@ -46,7 +48,10 @@ function Pane({
           <span className="pane-name">{name}</span>
         </div>
       </div>
-      <div className="pane-body" />
+      {/* A terminal's text, which it draws on a canvas: no reader is given it. */}
+      <div className="pane-body" aria-hidden="true">
+        <pre style={{ margin: 0 }}>{TERMINAL}</pre>
+      </div>
     </div>
   );
 }
@@ -79,13 +84,6 @@ const meta: Meta = { title: "Panes/Moving a pane" };
 export default meta;
 type Story = StoryObj;
 
-/**
- * A pane picked up is dimmed on purpose while it is held, its words with it: it says what is being
- * moved by being faint, its name is at full strength on the label by the pointer, and a reader
- * hears it from the window's status line. So contrast is off on these stories alone.
- */
-const DIMMED = { a11y: { options: { rules: { "color-contrast": { enabled: false } } } } };
-
 /** What animates as it appears is taken to its end, so no picture has it half way. */
 const still: Story["play"] = async ({ canvasElement }) => {
   for (const one of canvasElement.getAnimations({ subtree: true })) one.finish();
@@ -94,7 +92,6 @@ const still: Story["play"] = async ({ canvasElement }) => {
 
 /** A pane picked up, over no place: it dims, and letting go cancels. */
 export const PickedUp: Story = {
-  parameters: DIMMED,
   play: still,
   render: () => (
     <Room>
@@ -215,7 +212,6 @@ export const Folds: Story = {
 
 /** A refused place: marked on its own pane, with the layout where it is. */
 export const Refused: Story = {
-  parameters: DIMMED,
   play: still,
   render: () => (
     <Room>
@@ -232,7 +228,6 @@ export const Refused: Story = {
 
 /** On the strip: the panes stay put, and a line says where the tab would go. */
 export const OnTheStrip: Story = {
-  parameters: DIMMED,
   play: still,
   render: () => (
     <Room>
@@ -247,7 +242,6 @@ export const OnTheStrip: Story = {
 
 /** Over its own place: nothing red and nothing dashed. */
 export const OverItself: Story = {
-  parameters: DIMMED,
   play: still,
   render: () => (
     <Room>
