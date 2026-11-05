@@ -144,6 +144,14 @@ export const commands = {
 	 */
 	openPlane: (path: string) => typedError<Opened, string>(__TAURI_INVOKE("open_plane", { path })),
 	/**
+	 *  **Retry on a project** (#5324): reopens that one project with its chats, the one action
+	 *  behind its row on the rail and a waiting task's row in the sidebar
+	 *  ([`Planes::retry_project`]). How it came out is told on `project-ready`.
+	 * 
+	 *  On a blocking thread, for [`open_plane`]'s reason, and because it starts programs.
+	 */
+	retryProject: (plane: PlaneId) => typedError<ProjectRetried, string>(__TAURI_INVOKE("retry_project", { plane })),
+	/**
 	 *  Whether the folder at `path` is in a project: a manifest at it or in a directory above it,
 	 *  which is what [`open_plane`] resolves (#1822). `false` for a folder that is in none, which the
 	 *  welcome then offers to make into one. A path that is not a readable folder is refused in a
@@ -12338,6 +12346,15 @@ export type ProjectReady = {
 	outcome: ProjectOutcome,
 };
 
+/**
+ *  What a project's Retry came to (#5324): what to ask the person first, where its record read
+ *  again asks more than this machine approved, and the chats that started on the press.
+ */
+export type ProjectRetried = {
+	ask: Ask | null,
+	started: StartedAgain[],
+};
+
 /**  Both files. */
 export type ProjectSettings = {
 	shared: SettingsFile,
@@ -15784,6 +15801,12 @@ export type Started = {
 	 *  line: what the notice's Open file and Move aside… act on (NO-4).
 	 */
 	agents_md: TheirAgentsMd[],
+};
+
+/**  A chat that started on a project's Retry: its id, and the session it runs as. */
+export type StartedAgain = {
+	id: string,
+	session: number,
 };
 
 /**  A chat "Start a chat here" opened: what the window needs to put its tab on the right strip. */

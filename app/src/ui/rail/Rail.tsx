@@ -24,7 +24,8 @@
  */
 import type { ComponentPropsWithoutRef, CSSProperties, ReactNode, Ref } from "react";
 import { mergeProps, useFocusRing, useHover, useId } from "react-aria";
-import { PanelLeft } from "lucide-react";
+import { PanelLeft, RotateCw, X } from "lucide-react";
+import { IconButton } from "../button/Button";
 import { Tooltip, type Tip } from "../tooltip/Tooltip";
 
 /** The family's variants, in the order the manifest names them. */
@@ -88,9 +89,10 @@ export interface RailProjectProps extends Drawn {
    *  in it: its monogram's and its ground's. Absent draws the accent. */
   colour?: { colour: string | undefined; tint: Record<string, string> };
   /** How its load is going at a launch (#5323): `loading` draws the loading mark and marks it
-   *  busy; `says` is said as its description and its tooltip's second line ("Loading…", "Still
-   *  loading…", "2 of 3 chats back"). Absent, it is loaded and says nothing of it. */
-  load?: { loading: boolean; says?: string };
+   *  busy; `failed` draws the failed mark (#5324); `says` is said as its description and its
+   *  tooltip's second line ("Loading…", "Still loading…", "2 of 3 chats back", or the error).
+   *  Absent, it is loaded and says nothing of it. */
+  load?: { loading: boolean; failed?: boolean; says?: string };
 }
 
 /**
@@ -166,6 +168,9 @@ export function RailProject({
             from the current one's solid ring and not its colour alone; its words are its
             description's. */}
           {load?.loading && <span data-scope="rail" data-part="loading" aria-hidden="true" />}
+          {/* Its failed mark (#5324): a "!" at its bottom left, which a shape and not a colour
+            alone says; its words are its description's and its tooltip's. */}
+          {load?.failed && <span data-scope="rail" data-part="failed" aria-hidden="true" />}
           {waiting > 0 && (
             <span
               data-scope="rail"
@@ -185,6 +190,34 @@ export function RailProject({
         </button>
       </Tooltip>
     </>
+  );
+}
+
+/**
+ * **What a project's row offers while its load fell short** (#5324): Retry, and Dismiss on a
+ * project whose open failed, which has no menu to close it from. Under its button and beside it
+ * in the Tab order, never inside it: a button cannot hold a button, and the tablist holds tabs.
+ */
+export function RailProjectWay({
+  doing,
+  name,
+  onPress,
+}: {
+  doing: "retry" | "dismiss";
+  /** The project's name, which names the way: two rows can both offer Retry. */
+  name: string;
+  onPress: () => void;
+}) {
+  const retry = doing === "retry";
+  return (
+    <IconButton
+      size="sm"
+      variant="ghost"
+      aria-label={`${retry ? "Retry" : "Dismiss"} ${name}`}
+      tooltip={retry ? "Opens it again, and brings its chats back" : "Takes it off this list"}
+      icon={retry ? <RotateCw aria-hidden="true" /> : <X aria-hidden="true" />}
+      onPress={onPress}
+    />
   );
 }
 

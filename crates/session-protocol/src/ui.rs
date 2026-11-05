@@ -104,7 +104,8 @@ pub struct Server {
 /// - **it starts a chat or a shell as the person**: `ask_persona_chat`, `start_chat`,
 ///   `cancel_chat_start`,
 ///   `start_chat_here`, `open_session`, `open_shell_in_branch`, `first_task_run`,
-///   `resume_session`, `retry_chat_that_did_not_start`, `reopen_finished_task`, `curate` (a
+///   `resume_session`, `retry_chat_that_did_not_start`, `retry_project`, `reopen_finished_task`,
+///   `curate` (a
 ///   chat with a curation's prompt typed), and `relaunch` (the launch's answer, which starts
 ///   every chat the project held);
 /// - **it starts a chat again**: `restart_chat_without_sandbox`, `restart_chat`,
@@ -311,6 +312,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "first_task_run",
     "resume_session",
     "retry_chat_that_did_not_start",
+    "retry_project",
     "reopen_finished_task",
     "curate",
     "relaunch",

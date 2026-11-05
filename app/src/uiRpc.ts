@@ -119,6 +119,7 @@ export const commands = {
 	 *  the window, so this answers as soon as the project is held.
 	 */
 	openPlane: (path: string) => typedError<Opened, string>(__TAURI_INVOKE("open_plane", { path })),
+	retryProject: __WINDOW_ONLY_RESULT,
 	folderIsAProject: __WINDOW_ONLY_RESULT,
 	approvePlane: __WINDOW_ONLY_RESULT,
 	reviewPlane: __WINDOW_ONLY_RESULT,
@@ -9766,6 +9767,15 @@ export type ProjectReady = {
 	outcome: ProjectOutcome,
 };
 
+/**
+ *  What a project's Retry came to (#5324): what to ask the person first, where its record read
+ *  again asks more than this machine approved, and the chats that started on the press.
+ */
+export type ProjectRetried = {
+	ask: Ask | null,
+	started: StartedAgain[],
+};
+
 /**  Both files. */
 export type ProjectSettings = {
 	shared: SettingsFile,
@@ -13212,6 +13222,12 @@ export type Started = {
 	 *  line: what the notice's Open file and Move aside… act on (NO-4).
 	 */
 	agents_md: TheirAgentsMd[],
+};
+
+/**  A chat that started on a project's Retry: its id, and the session it runs as. */
+export type StartedAgain = {
+	id: string,
+	session: number,
 };
 
 /**  A chat "Start a chat here" opened: what the window needs to put its tab on the right strip. */

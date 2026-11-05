@@ -45,6 +45,7 @@ import {
 } from "./projectShown";
 import {
   commands,
+  PROJECT_READY,
   type AtRisk,
   type AwayRefusal,
   type ByHand,
@@ -512,6 +513,7 @@ import type {
   PanelView,
   BrowsersEnded,
   AskEnded,
+  ProjectReady,
   Rescreened,
   RowAction,
   SavedRecord,
@@ -7674,6 +7676,23 @@ export const PlaneView = memo(function PlaneView({
     [askRestart],
   );
 
+  /** A chat that started again on a press: listed, and its tab in front. */
+  const showBack = useCallback(
+    (chat: OpenChat) => {
+      noteStarted(chat);
+      showStarted(
+        {
+          session: chat.session,
+          chat: chat.name,
+          who: whoOf(chat.persona, chat.harness),
+          label: chat.label,
+        },
+        filedFor(chat.cwd, focused),
+      );
+    },
+    [focused, noteStarted, showStarted],
+  );
+
   /** The waiting chats a Retry now is under way for, by id, so a second press starts nothing. */
   const retrying = useRef(new Set<string>());
   /**
@@ -7707,18 +7726,9 @@ export const PlaneView = memo(function PlaneView({
       }
       const chat = said.data;
       setWouldNotStart((was) => was.filter((one) => one.id !== id));
-      noteStarted(chat);
-      showStarted(
-        {
-          session: chat.session,
-          chat: chat.name,
-          who: whoOf(chat.persona, chat.harness),
-          label: chat.label,
-        },
-        filedFor(chat.cwd, focused),
-      );
+      showBack(chat);
     },
-    [focused, noteStarted, plane, showStarted],
+    [plane, showBack],
   );
 
   /**
@@ -7791,6 +7801,21 @@ export const PlaneView = memo(function PlaneView({
   useEffect(() => {
     readRestoredNow.current = readRestored;
   }, [readRestored]);
+  // A project's Retry has come out (#5324): which chats still wait, and its rows, read again. Each
+  // chat that came back is told on `chat-restored`.
+  useEffect(() => {
+    const listening = listen<ProjectReady>(PROJECT_READY, (event) => {
+      if (event.payload.plane !== plane) return;
+      void commands
+        .chatsThatWouldNotStart(plane)
+        .then((trouble) => {
+          if (trouble.status === "ok") setWouldNotStart(trouble.data ?? []);
+        })
+        .catch(() => undefined);
+    }).catch(() => undefined);
+    return () => void listening.then((stop) => stop?.()).catch(() => undefined);
+  }, [plane]);
+
   // Each chat of the launch as it starts, or is found not to. Read once more as the listener
   // is heard, for a chat that started before it was.
   useEffect(() => {
@@ -7923,9 +7948,19 @@ export const PlaneView = memo(function PlaneView({
    */
   const waitingTaskWays = useMemo<WaitingTaskWays>(
     () => ({
+      // **The one Retry** (#5324): the action the project's row on the rail runs. It brings
+      // back every chat this project is short of, this one among them, whose tab then opens.
       retry: async (task) => {
-        await retryChat(task.id);
+        const retried = await windowDoes.retryProject(plane);
         rereadFinished();
+        const session = retried?.started.find((one) => one.id === task.id)?.session;
+        if (session === undefined) return;
+        const open = await commands.openedChats(plane).catch(() => undefined);
+        const chat =
+          open?.status === "ok"
+            ? (open.data ?? []).find((one) => one.session === session)
+            : undefined;
+        if (chat !== undefined) showBack(chat);
       },
       approve: (task, approval) => askApprove(task.id, task.name, approval),
       end: async (task) => {
@@ -7936,7 +7971,7 @@ export const PlaneView = memo(function PlaneView({
         return said.status === "error" ? said.error : undefined;
       },
     }),
-    [askApprove, plane, rereadFinished, retryChat],
+    [askApprove, plane, rereadFinished, showBack, windowDoes],
   );
 
   const askStartFresh = useCallback(

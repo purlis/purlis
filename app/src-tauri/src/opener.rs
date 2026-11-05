@@ -534,6 +534,47 @@ pub async fn open_plane(app: tauri::AppHandle, path: String) -> Result<Opened, S
     .map_err(|err| format!("opening the project did not finish: {err}"))?
 }
 
+/// What a project's Retry came to (#5324): what to ask the person first, where its record read
+/// again asks more than this machine approved, and the chats that started on the press.
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+pub struct ProjectRetried {
+    pub ask: Option<Ask>,
+    pub started: Vec<StartedAgain>,
+}
+
+/// A chat that started on a project's Retry: its id, and the session it runs as.
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+pub struct StartedAgain {
+    pub id: String,
+    pub session: u32,
+}
+
+/// **Retry on a project** (#5324): reopens that one project with its chats, the one action
+/// behind its row on the rail and a waiting task's row in the sidebar
+/// ([`Planes::retry_project`]). How it came out is told on `project-ready`.
+///
+/// On a blocking thread, for [`open_plane`]'s reason, and because it starts programs.
+#[tauri::command]
+#[specta::specta]
+pub async fn retry_project(
+    app: tauri::AppHandle,
+    plane: PlaneId,
+) -> Result<ProjectRetried, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let retried = app.state::<Planes>().retry_project(&plane)?;
+        Ok(ProjectRetried {
+            ask: retried.ask.map(Ask::of),
+            started: retried
+                .started
+                .into_iter()
+                .map(|(id, session)| StartedAgain { id, session })
+                .collect(),
+        })
+    })
+    .await
+    .map_err(|err| format!("retrying the project did not finish: {err}"))?
+}
+
 /// The operator's answer to [`Ask`]: yes, open it.
 ///
 /// `contributes` is the value the dialog drew, handed straight back. It is checked against the
