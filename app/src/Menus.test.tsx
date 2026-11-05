@@ -125,6 +125,8 @@ describe("what a menu lists", () => {
     expect(tab.above).toEqual([
       "Pin tab 3 steward",
       "Tile all in 3 steward",
+      // Placement mode, the keyboard's drag (#4764).
+      "Place tab 3 steward…",
       // Into a tab window of the project (#4768).
       "Move tab 3 steward to new window",
     ]);
@@ -133,6 +135,7 @@ describe("what a menu lists", () => {
     const chat = titles({ on: "chat", session: 7 }, { tabs });
     expect(chat.above).toEqual([
       "Rename chat 3 steward…",
+      "Place chat 3 steward…",
       "Activity of 3 steward",
       "Network of 3 steward",
     ]);
@@ -338,6 +341,8 @@ describe("a menu on screen", () => {
     expect(rowsIn(menu).map((row) => row.getAttribute("aria-label"))).toEqual([
       "Rename…",
       "Ask",
+      // Where it is drawn, by the keys (#4764).
+      "Place…",
       "Open",
       "Restart",
       "Stop",

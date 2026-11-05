@@ -296,6 +296,13 @@
   .pane-head {
     padding-inline: var(--space-5) var(--space-3);
   }
+
+  /* **And a task's line keeps the grip's room too** (#4764): with a breadcrumb on it, the grip
+     is not drawn in a narrow pane, so the state word stays whole (it needs about 17px more in a
+     pane of two in the narrowest window). ⌘⇧M and a drag of the head still pick the pane up. */
+  .pane-head:has(> .pane-chips > .pane-crumbs) > [data-pane-grip-handle] {
+    display: none;
+  }
 }
 
 /* **The header is the top of the pane** (#4754): it keeps the runway, band or none. */
@@ -855,4 +862,65 @@
   align-items: center;
   justify-content: space-between;
   color: var(--text-muted);
+}
+
+/* **Placement mode** (#4764): every other pane shows its five targets in a cross in its middle,
+   as real buttons over the terminal, and the strip a New tab at its end. Over the drop's preview,
+   which draws the result of the target the keyboard is on. Only the buttons take the pointer: a
+   press anywhere else puts what is held back. */
+.pane-placing {
+  position: fixed;
+  z-index: 5;
+  display: grid;
+  grid-template-areas:
+    ". top ."
+    "left middle right"
+    ". bottom .";
+  gap: var(--space-1);
+  place-content: center;
+  pointer-events: none;
+}
+
+.pane-placing-at {
+  display: flex;
+  pointer-events: auto;
+}
+
+.pane-placing-at[data-place="top"] {
+  grid-area: top;
+}
+
+.pane-placing-at[data-place="left"] {
+  grid-area: left;
+}
+
+.pane-placing-at[data-place="middle"] {
+  grid-area: middle;
+}
+
+.pane-placing-at[data-place="right"] {
+  grid-area: right;
+}
+
+.pane-placing-at[data-place="bottom"] {
+  grid-area: bottom;
+}
+
+/* The strip's New tab, at its end, as tall as the strip. */
+.pane-placing-strip {
+  position: fixed;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  padding-inline: var(--space-1);
+  transform: translateX(-100%);
+}
+
+/* What is held, where it is: dashed, as a place it leaves. */
+.pane-placing-held {
+  position: fixed;
+  z-index: 4;
+  pointer-events: none;
+  border: var(--focus-ring-width) dashed var(--border-strong);
+  border-radius: var(--radius-sm);
 }

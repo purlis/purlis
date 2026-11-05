@@ -658,6 +658,19 @@ export const SHORTCUTS: readonly Shortcut[] = [
     matches: (e, mac) => isChord(e, mac ? cmd("z") : ctl("z")),
   },
   {
+    id: "pane.place",
+    does: "Pick up the focused pane, chat or tab to place it with the keys",
+    group: "Tabs and chats",
+    where: "window",
+    kind: "key",
+    chords: { mac: [cmd("M", { shift: true })], other: [ctl("M", { shift: true })] },
+    said: (mac) => (mac ? "⌘⇧M" : "Ctrl+Shift+M"),
+    // **Placement mode** (#4764): claimed over a chat's terminal, where xterm.js sends no byte
+    // for it on either keyboard, so nothing is kept from a chat; a dialog keeps its keys.
+    yields: ["modal", "dialog", "palette", "typing"],
+    matches: (e, mac) => isChord(e, mac ? cmd("M", { shift: true }) : ctl("M", { shift: true })),
+  },
+  {
     id: "tab.rename",
     does: "Rename the focused chat tab",
     group: "Tabs and chats",
