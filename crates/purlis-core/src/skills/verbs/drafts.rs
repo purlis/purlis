@@ -1537,13 +1537,12 @@ pub fn improving_from_runs(root: &Path, level: &Level, name: &str) -> Result<Ski
     ))
 }
 
-/// **The prompt "Ask the chat to redo it" types** (S9), unsent, for the draft of the skill in
-/// `folder` at `level` whose files `stale` (below the skill's folder) the project changed since:
-/// into the chat that drafted it where it is still open (`same_chat`), else into a new chat that
-/// starts where `level`'s skills are reached from, as [`asking`]'s does, naming [`STUDIO_SKILL`].
-/// It asks for each whole file, which [`take`] drafts afresh on the project's copy. The skill's
-/// folder is named once and each file from it, so a long folder is not said once a file (#4714).
-/// One line; a new chat's ends where the person says what the change was.
+/// **The prompt "Ask the chat to redo it" types** (S9), unsent, into a new chat that starts where
+/// `level`'s skills are reached from, as [`asking`]'s does, for the draft of the skill in `folder`
+/// at `level` whose files `stale` (below the skill's folder) the project changed since, starting
+/// [`STUDIO_SKILL`]. It asks for each whole file, which [`take`] drafts afresh on the project's
+/// copy. The skill's folder is named once and each file from it, so a long folder is not said once
+/// a file (#4714). One line, which ends where the person says what the change was.
 pub fn redoing(level: &Level, folder: &str, stale: &[&str]) -> SkillPrompt {
     let at = format!("{}/{folder}", skills_dir_told(level));
     let files = stale.join(", ");
@@ -1573,47 +1572,40 @@ pub fn redoing_in_its_chat(level: &Level, folder: &str, stale: &[&str]) -> Strin
 
 /// **The prompt Try it types** (decision 50), unsent, into the scratch chat of `tried`, in the
 /// project at `root`: one line. The chat's set holds the skill as a project's, so that is the
-/// origin its harness names it by. A skill that cannot take this prompt as its start is only named
-/// ([`started_by_these_words`]).
+/// origin its harness names it by. A draft that could not be started that way gets the sentence
+/// on every harness ([`started_by_these_words`]).
 pub fn trying(root: &Path, tried: &Try, name: &str) -> SkillPrompt {
-    let sentence =
-        format!("Use the {name} skill on a small example of what it is for, and say how it went.");
-    let startable = app_state(root).ok().is_some_and(|state| {
-        let file = format!(
-            "{TRIES_DIR}/{}/{}/{name}/SKILL.md",
-            tried.id,
-            purlis_skills::PROJECT_DIR
-        );
-        read_at(&state, &file)
-            .ok()
-            .flatten()
-            .is_some_and(|text| started_by_these_words(&text, name))
+    let direct = crate::appstate::dir(root).is_some_and(|state| {
+        let skills = state
+            .join(TRIES_DIR)
+            .join(&tried.id)
+            .join(purlis_skills::PROJECT_DIR);
+        started_by_these_words(&skills, name)
     });
     SkillPrompt {
         skill: name.to_owned(),
         origin: crate::skills::Origin::Project,
         words: "try it on a small example of what it is for, and say how it went".to_owned(),
-        sentence,
-        direct: startable,
+        sentence: format!(
+            "Use the {name} skill on a small example of what it is for, and say how it went."
+        ),
+        direct,
     }
 }
 
-/// **Whether the skill folder `folder` holding `text` as its `SKILL.md` can be started by name with
-/// plain words**: its frontmatter's name is the folder's and a plain one, so the harness knows it
-/// by what is typed; a person may start it (`user-invocable`); and it names no arguments, which
-/// the words would fill word by word.
-fn started_by_these_words(text: &str, folder: &str) -> bool {
-    let pairs = purlis_skills::frontmatter(text);
-    let value = |key: &str| {
-        pairs
+/// **Whether skill `name`, in the skills folder `skills`, starts by its name with plain words**:
+/// the reader of a chat's set finds a skill of that name there, a plain one; a person may start it;
+/// and it names no arguments, which the words would fill one by one. A slash command its harness
+/// does not answer to ends the turn before its model reads a word.
+fn started_by_these_words(skills: &Path, name: &str) -> bool {
+    purlis_skills::change::name_problem(name).is_none()
+        && purlis_skills::read(skills)
             .iter()
-            .find(|(k, _)| k == key)
-            .map(|(_, v)| v.trim().trim_matches(['"', '\'']))
-    };
-    value("name") == Some(folder)
-        && purlis_skills::change::name_problem(folder).is_none()
-        && !value("user-invocable").is_some_and(|v| v.eq_ignore_ascii_case("false"))
-        && value("arguments").is_none()
+            .find(|skill| skill.name == name)
+            .is_some_and(|skill| {
+                let declared = purlis_skills::declared(skill);
+                declared.arguments.is_empty() && !declared.not_by_a_person
+            })
 }
 
 /// Ends the try `id`: [`end_try_at`] by its id.

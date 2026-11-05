@@ -130,7 +130,10 @@ fn the_sentence_holds_no_run_because_the_chat_starts_the_skill_its_own_way() {
 
 #[test]
 fn a_skill_that_cannot_be_started_by_name_is_only_named_on_every_harness() {
-    let prompt = evals(Origin::Project).only_named();
+    let prompt = SkillPrompt {
+        direct: false,
+        ..evals(Origin::Project)
+    };
     for harness in Harness::ALL {
         assert_eq!(
             prompt.typed_on(Some(harness)),

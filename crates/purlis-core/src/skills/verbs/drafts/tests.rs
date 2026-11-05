@@ -1415,6 +1415,7 @@ fn try_it_starts_the_drafted_skill_unless_it_cannot_be_started_by_its_name() {
             false,
         ),
         ("name: other\ndescription: Ships it.", false),
+        ("name: deploy", false),
     ];
     for (front, direct) in cases {
         let tmp = plane();

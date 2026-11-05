@@ -30,8 +30,8 @@ pub struct SkillPrompt {
     pub words: String,
     /// The whole prompt where the harness has no direct start.
     pub sentence: String,
-    /// Whether it may be started directly at all: false for a skill that says it cannot be
-    /// ([`Self::only_named`]).
+    /// Whether the skill can be started directly at all: false for a draft Try it found cannot
+    /// (`drafts::trying`), which gets the sentence on every harness.
     pub direct: bool,
 }
 
@@ -45,12 +45,6 @@ impl SkillPrompt {
             sentence,
             direct: true,
         }
-    }
-
-    /// This prompt, with no direct start on any harness: the sentence, always.
-    pub fn only_named(mut self) -> Self {
-        self.direct = false;
-        self
     }
 
     /// What starts it on `harness`, where `harness` has a start that reaches it.

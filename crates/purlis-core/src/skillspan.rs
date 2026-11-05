@@ -23,7 +23,7 @@
 //! - **by the prompt**, everywhere else: the run opens with the next prompt where a line of that
 //!   prompt holds the typed text ([`PromptMarks`]), and the next prompt drops it either way.
 //!
-//! One held longer than [`HELD_FOR_MS`] is dropped unopened, and so is every one held for a chat
+//! One held longer than [`HELD_FOR_MS`] is dropped unopened, unless it [`Typed::waits`], and so is every one held for a chat
 //! whose session ends.
 //!
 //! **A prompt a curation action typed, or a trigger sent** (SK-20, #2783; decision 60), is held
@@ -532,7 +532,8 @@ impl Tracker {
         self.open_typed(key, &one.typed, at_ms, tokens())
     }
 
-    /// Drops every skill held for the chat keyed `key` longer than [`HELD_FOR_MS`].
+    /// Drops every skill held for the chat keyed `key` longer than [`HELD_FOR_MS`], but one that
+    /// [`Typed::waits`].
     fn expire(&mut self, key: &str, at_ms: u64) {
         if let Some(held) = self.typed.get_mut(key) {
             held.retain(|one| one.typed.waits || at_ms.saturating_sub(one.at_ms) <= HELD_FOR_MS);

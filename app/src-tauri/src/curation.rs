@@ -402,7 +402,8 @@ fn open(held: &Arc<Held>, spec: &str, action: &str, size: Size) -> Result<Curati
 /// as `shown`: a curation action's, or Settings › Theme's New theme and Edit with a chat
 /// ([`crate::themegallery::theme_chat`], #2333). `starts_runs` is what starts the skill runs
 /// its prompt's turn opens: a curation action, and none for a theme chat, which is no curation
-/// action (decision 60), so its runs are the harness's own pick. A refused start says the
+/// action (decision 60), so a run it starts directly is the person's, and any other the harness's
+/// own pick. A refused start says the
 /// approval its profile needs, where it needs one (#3968).
 pub(crate) fn open_chosen(
     held: &Arc<Held>,
@@ -475,7 +476,7 @@ pub struct ChatTyped {
     /// other chat.
     pub studio: Option<purlis_core::reopen::StudioJob>,
     /// The one skill its prompt exists to start, where it does (#5186): what is typed is then
-    /// this, as the harness the start resolved takes it, and `prompt` is unused.
+    /// this, as the harness the start resolved takes it, in place of `prompt`.
     pub skill: Option<purlis_core::skillprompt::SkillPrompt>,
 }
 
@@ -632,7 +633,7 @@ pub fn start_typed_where_it_can_be(
             &salt,
             forming.workspace,
             chat.starts_runs
-                .unwrap_or(purlis_core::skills::runs::StartedBy::UseSkill),
+                .unwrap_or(purlis_core::skills::runs::StartedBy::Prefilled),
         )
     {
         held.hooks().skill_typed(&root, session, run);
