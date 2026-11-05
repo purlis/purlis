@@ -262,6 +262,7 @@ fn an_ordinary_value_is_no_seed() {
         "Summer2024!",
         "hunter2",
         "MySecretPassword",
+        "AbCdEfGhIjKlMnOp",
         "Blue Frog Tree Rock",
         "Welcome2Password",
         "Bluesky2mountain",
