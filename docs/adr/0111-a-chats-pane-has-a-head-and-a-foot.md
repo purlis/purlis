@@ -47,7 +47,7 @@ chat's record, and no surface draws it now.
 
 ## Amendments
 
-The amendments to this decision are files of their own in [`0112/`](0112/), one per ruling.
+The amendments to this decision are files of their own in [`0111/`](0111/), one per ruling.
 
 ## The words
 
