@@ -530,3 +530,54 @@ fn a_window_a_logins_page_opened_elsewhere_closes_as_the_page_goes_on() {
     }
     assert!(sees(&browser, "Account"), "{}", snapshot(&browser));
 }
+
+/// #5272: a frame of the login's site in a page of another origin runs nothing while the login
+/// clears and fills, so it can't put back what was cleared: whether that page is of another site,
+/// its frame in a process of its own, or of another origin of the login's site. The frame's timer
+/// sends a request to another host every 50 ms while it runs, and leaves an earlier session's
+/// cookie where its context may.
+#[test]
+fn a_frame_of_the_logins_site_in_another_page_runs_nothing_during_the_login() {
+    for top in [
+        "http://other.test/frames-the-login-site.html",
+        "http://auth.fixture.test/frames-its-site.html",
+    ] {
+        let Some((browser, _data, site)) = started() else {
+            return;
+        };
+        let address = WebAddress::parse(top).unwrap();
+        call(&browser, Call::Open { address });
+        let start = std::time::Instant::now();
+        while site.sent_count("third.test") < 5 {
+            assert!(
+                start.elapsed() < std::time::Duration::from_secs(10),
+                "{top}: no ticks"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        // The form shows 3 s after the clean load begins: a second inside that, the frame is
+        // looked at twice, a second apart.
+        let ticked = std::thread::scope(|scope| {
+            let watch = scope.spawn(|| {
+                std::thread::sleep(std::time::Duration::from_millis(1500));
+                let then = site.sent_count("third.test");
+                std::thread::sleep(std::time::Duration::from_millis(1000));
+                site.sent_count("third.test") - then
+            });
+            let ended = browser
+                .log_in(&in_a_used_browser("clean-late-site.html"), binds())
+                .expect("the login runs");
+            assert!(ended.outcome.is_ok(), "{top}: {}", ended_as(&ended.outcome));
+            watch.join().unwrap()
+        });
+        assert!(
+            ticked <= 1,
+            "{top}: the frame ran {ticked} times while the login held it still"
+        );
+        assert!(sees(&browser, "Account"), "{top}: {}", snapshot(&browser));
+        assert!(
+            !snapshot(&browser).contains("Kept for the earlier session"),
+            "{top}: the frame put an earlier session back"
+        );
+    }
+}
