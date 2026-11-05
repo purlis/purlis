@@ -32,6 +32,10 @@ const HELPED: Record<string, { grounds: string[]; where: string }> = {
     grounds: ["surface.raised"],
     where: "RaiseLimit: a limit's new value, on its own ground (as refusingFields.guard says)",
   },
+  "SkillBudget.tsx": {
+    grounds: ["surface.overlay"],
+    where: "SkillBudgetChange: where each number comes from, in its Change… dialog (#5353)",
+  },
   "StartChat.tsx": {
     grounds: ["surface.overlay"],
     where: "the Start a chat dialog: a chat's name, and why it runs without the sandbox",

@@ -47,6 +47,10 @@ const REFUSING: Record<string, { grounds: string[]; where: string }> = {
     where:
       "RaiseLimit: a limit's new value, on its own ground, in the Start a chat dialog, under a move's line, in Add a pool, a sign-in's strip and a profile's row on a pool",
   },
+  "SkillBudget.tsx": {
+    grounds: ["surface.overlay"],
+    where: "SkillBudgetChange: a program's two numbers, in its Change… dialog (#5353)",
+  },
   "SkillSources.tsx": {
     grounds: ["surface.base"],
     where: "ClashChoice: a new name in an install's review, a page of the Skills view",
