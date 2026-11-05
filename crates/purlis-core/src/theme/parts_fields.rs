@@ -6,7 +6,8 @@
 //! `app/src/ui/field/`.
 
 use super::{
-    CONTROL_GROUNDS, FIELD_ERROR_GROUNDS, FIELD_HELP_GROUNDS, Family, Length, Part, Prop, State, box_look, field_look,
+    CONTROL_GROUNDS, FIELD_ERROR_GROUNDS, FIELD_HELP_GROUNDS, Family, Length, Part, Prop, State, box_look,
+    field_look,
 };
 
 pub(super) const FIELD: Family = Family {
@@ -142,6 +143,12 @@ pub(super) const TEXTAREA: Family = Family {
             Prop::Padding,
             Prop::FontSize,
         ],
+    },
+    Part {
+        name: "hint",
+        since: super::NEXT,
+        description: "A strip's hint, small at its foot, shown while it holds the caret (#5214).",
+        properties: &[Prop::Text],
     }],
     variants: &[],
     // A field stands where a button does, a filter on a list's layer.
@@ -161,7 +168,8 @@ pub(super) const TEXTAREA: Family = Family {
         State::Invalid,
     ],
     focused: "[data-focus-within]",
-    words: &[],
+    // A strip's hint is in the quiet tier (#5214).
+    words: &[("hint", "text.quiet")],
     corner_most: None,
     around: &[],
     fills: &[],

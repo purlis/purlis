@@ -150,7 +150,7 @@ function doing(): Doing & { calls: string[] } {
     removeWorkspace: note("removeWorkspace"),
     showChat: note("showChat"),
     paneBack: note("paneBack"),
-    showTabTasks: note("showTabTasks"),
+    showChatTasks: note("showChatTasks"),
     ownTab: note("ownTab"),
     beside: note("beside"),
     sendBack: note("sendBack"),
@@ -4098,7 +4098,6 @@ describe("the focused chat's tasks and its pane's previous chat (#4767, ruled on
   const two = () => selectTab(openTab(openTab(noTabs(), 1), 9), 1);
   const rows = (tabs: Tabs) =>
     catalogue(now({ tabs, listed: chats, nameOf: (session) => `chat ${session}` }));
-  const frontTab = (tabs: Tabs) => tabs.inFront as number;
 
   it("offers the focused chat's tasks, and says its key", () => {
     const tabs = two();
@@ -4106,13 +4105,13 @@ describe("the focused chat's tasks and its pane's previous chat (#4767, ruled on
     expect(by(rows(tabs), "tasks.menu")).toMatchObject({
       title: "Show the focused chat's tasks",
       available: true,
-      does: { verb: "showTabTasks", tab: frontTab(tabs) },
+      does: { verb: "showChatTasks", session: 1 },
     });
     expect(by(rows(tabs), "tasks.menu")?.note).toContain("Ctrl+Shift+J");
 
     const hands = doing();
     void run(rows(tabs), "tasks.menu", hands);
-    expect(hands.calls).toEqual([`showTabTasks:${frontTab(tabs)}`]);
+    expect(hands.calls).toEqual(["showChatTasks:1"]);
   });
 
   it("reads the tasks of the chat the focused pane shows, not of the tab's first chat", () => {
@@ -4231,7 +4230,7 @@ describe("the focused chat's tasks and its pane's previous chat (#4767, ruled on
 
     expect(by(offers, "tasks.menu")).toMatchObject({
       available: true,
-      does: { verb: "showTabTasks", tab: 2 },
+      does: { verb: "showChatTasks", session: 9 },
     });
   });
 

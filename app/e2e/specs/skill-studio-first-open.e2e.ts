@@ -109,7 +109,7 @@ describe("the Skill studio's first open", function () {
     await runFromThePalette("Open Skill studio", "skills.studio");
     await (await (await newSkill()).$("button=Ask a chat to draft it")).click();
     await typeInto("What should it do?", "Probes drafting a skill.");
-    await (await $("button=Open the chat")).click();
+    await (await $("button*=Open a chat")).click();
     await browser.waitUntil(
       async () => (await runningIn(plane)).some((one) => !wereRunning.includes(one)),
       { timeout: 30_000, timeoutMsg: "Ask a chat to draft it started no chat" },

@@ -1076,8 +1076,8 @@ fn button_look(variant: &str, state: Option<State>) -> Look {
             text: "markdown.link",
             border: TRANSPARENT,
         },
-        // The quiet ghost (#3214): no box, quiet words.
-        "quiet" => Look {
+        // The quiet ghost (#3214) and the quiet link (#5214): no box, quiet words.
+        "quiet" | "quiet-link" => Look {
             fill: TRANSPARENT,
             text: "text.quiet",
             border: TRANSPARENT,
@@ -1096,11 +1096,12 @@ fn button_look(variant: &str, state: Option<State>) -> Look {
                 "danger" => "danger.surface",
                 "soft-accent" => "list.selected",
                 // A link is underlined under the pointer; its ground stays none.
-                "link" => TRANSPARENT,
+                "link" | "quiet-link" => TRANSPARENT,
                 _ => "control.hover",
             };
-            // The quiet ghost's words come up to the primary on its hover fill (#3214).
-            if variant == "quiet" {
+            // The quiet ghost's words come up to the primary on its hover fill (#3214), and the
+            // quiet link's as it is underlined (#5214).
+            if variant == "quiet" || variant == "quiet-link" {
                 look.text = "text.primary";
             }
         }

@@ -3775,6 +3775,11 @@ export type ChatBrowser = {
 	 *  what its row and thumbnail name as its device.
 	 */
 	pool: string | null,
+	/**
+	 *  **The vault secrets purlis filled into it** (#5119, SF-8): by key and site, never a value,
+	 *  oldest first. Its view marks each while its page is on that site.
+	 */
+	secrets: SecretFilled[],
 };
 
 /**
@@ -5515,6 +5520,11 @@ export type FillShown = {
 	no_always?: string | null,
 	/**  Always also allows the vault for the persona. */
 	vault_too: boolean,
+	/**
+	 *  **A 2FA code the seed under `key` makes, not the value itself** (#5118): the notice says
+	 *  so, and that the seed reaches no page.
+	 */
+	code: boolean,
 };
 
 /**  What finishing them came to. What each step said is in the app's log. */
@@ -7883,6 +7893,11 @@ export type OpenChat = {
 	 *  is never recorded. `null` for every other chat.
 	 */
 	one_job?: boolean | null,
+	/**
+	 *  **What the Skill studio started it for** (#5185): its header's chip, which opens the
+	 *  skill's page, and the skill page's line while it runs. `null` for every other chat.
+	 */
+	studio?: StudioLink | null,
 };
 
 /**  One group of **Open hosts**: a preset's, or the project's own. */
@@ -11469,6 +11484,26 @@ export type SecretEntryShown = {
 };
 
 /**
+ *  **A vault secret purlis filled into a browser** (#5119, SF-8), as its view marks it: the
+ *  key's name, the site it went to and the field the page labels, never a value.
+ */
+export type SecretFilled = {
+	/**  The key's name in its vault (`dash-api-key`). */
+	key: string,
+	/**  The origin of the field's own frame it went into (`https://dash.example.test`). */
+	origin: string,
+	/**
+	 *  The origin of the page that frame was in, where it was known: the field may be in a
+	 *  part of the page from another site.
+	 */
+	page: string | null,
+	/**  What the page labels the field: the page's words, never purlis's. */
+	label: string,
+	/**  A 2FA code the seed under `key` made (#5118), not the value itself. */
+	code: boolean,
+};
+
+/**
  *  **A Secret ask, as its row draws it** (#5068, ADR 0109): the persona, the vault and the key
  *  its chats miss, and how many wait on it. Names only: no value is ever here.
  */
@@ -13122,6 +13157,9 @@ export type StudioHarness = {
 	plugins_off: PluginOffShown[],
 };
 
+/**  The studio's jobs a chat is started for: [`StudioWork`], by the record's words. */
+export type StudioJobKind = "draft" | "trigger-tests" | "outcome-evals" | "checks" | "improve" | "redo";
+
 /**  A level a skill can be moved to or made at, and its words. */
 export type StudioLevel = {
 	level: SkillLevel,
@@ -13136,6 +13174,19 @@ export type StudioLevel = {
 export type StudioLevelsToConfirm = {
 	said: string,
 	folders: string[],
+};
+
+/**
+ *  **What the Skill studio started a chat for** (#5185), as the window reads it off the chat:
+ *  its header's chip, the skill page's running line and its Runs.
+ */
+export type StudioLink = {
+	/**  The skill, by its name: `None` for a new skill's draft. */
+	skill: string | null,
+	level: SkillLevel,
+	job: StudioJobKind,
+	/**  Whether the chat wrote its draft: once true, never running again. */
+	done: boolean,
 };
 
 /**

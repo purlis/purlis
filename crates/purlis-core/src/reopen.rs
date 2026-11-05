@@ -35,6 +35,8 @@ use crate::harness::{Harness, SessionId};
 
 mod arrival;
 pub use arrival::{Arrival, CloneSeat, arrive};
+mod studio;
+pub use studio::{StudioJob, StudioWork};
 pub mod layout;
 pub use layout::Layout;
 pub mod upgrade;
@@ -287,6 +289,12 @@ pub struct Chat {
     /// a format change: no key is written or read for it. **Only for a chat that does no work**:
     /// what reads the record, a commit's provenance among it, never sees such a chat.
     pub unrecorded: bool,
+    /// **What the Skill studio started this chat for** (#5185): the skill, its level and the
+    /// job, which the chat's header names and the skill's page says while it runs. Recorded by
+    /// the app when the studio starts the chat, and never by the chat. `None` is every other
+    /// chat, and every record written before this field — not a format change, for
+    /// [`Self::pinned`]'s reason.
+    pub studio: Option<StudioJob>,
 }
 
 impl Chat {
@@ -1669,6 +1677,14 @@ struct ChatOnDisk {
         deserialize_with = "lenient"
     )]
     routing: Option<crate::skills::router::Kept>,
+    /// What the Skill studio started the chat for, or absent — see [`Chat::studio`]. A value
+    /// that does not read whole reads as absent.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "lenient"
+    )]
+    studio: Option<studio::StudioOnDisk>,
 }
 
 fn is_zero(n: &u32) -> bool {
@@ -1907,6 +1923,7 @@ impl From<&Record> for OnDisk {
                     model: chat.model.clone().unwrap_or_default(),
                     plane_skills: chat.plane_skills,
                     routing: chat.routing.clone(),
+                    studio: chat.studio.as_ref().map(studio::StudioOnDisk::of),
                 })
                 .collect(),
             dealt: highest_dealt(record),
@@ -2000,6 +2017,7 @@ impl From<ChatOnDisk> for Chat {
             task_level: crate::dispatchmode::Level::Asks,
             // Never on disk ([`Chat::unrecorded`]): a chat that is read back was recorded.
             unrecorded: false,
+            studio: chat.studio.and_then(studio::StudioOnDisk::sound),
         }
     }
 }

@@ -40,12 +40,21 @@ export function ReleaseNotes({ markdown }: { markdown: string }) {
  * A link that opens in the operator's browser rather than in charter's window. Anything but an
  * http or https address is drawn as its text.
  */
-export function ExternalLink({ href, children }: { href?: string; children: ReactNode }) {
+export function ExternalLink({
+  href,
+  children,
+  reachable = true,
+}: {
+  href?: string;
+  children: ReactNode;
+  /** In the Tab order: a link in words folded out of sight is not, until they are opened. */
+  reachable?: boolean;
+}) {
   if (href === undefined || !/^https?:\/\//.test(href)) return <>{children}</>;
   return (
     <a
       href={href}
-      tabIndex={0}
+      tabIndex={reachable ? 0 : -1}
       onClick={(event) => {
         event.preventDefault();
         void openUrl(href);

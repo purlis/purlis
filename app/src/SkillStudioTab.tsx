@@ -46,13 +46,13 @@ import { DraftPage, DraftsList } from "./SkillStudioDrafts";
 import { DeletedList, DeletedPage } from "./SkillStudioDeleted";
 import { DRAFT_WITH_A_CHAT, NEW_SKILL_MENU } from "./SkillStarts";
 import { NewSkillDialog } from "./NewSkillDialog";
-import { askDraft, askSkillChat, useSkillDraftsRead } from "./skillDraftAsks";
+import { askDraft, askSkillChat, draftLevel, useSkillDraftsRead } from "./skillDraftAsks";
 import { SkillSourcesPage } from "./SkillSources";
 import { ExportDialog, SkillPublishPage } from "./SkillPublish";
 import { NotRead, ReadingRows } from "./SkillPanels";
 import { Select } from "./ui/select/Select";
 import { Choice } from "./settings/components";
-import { labelOf, levelFrom, levelOf, levelsFor, sameLevel } from "./skillChanges";
+import { askAChat, labelOf, levelFrom, levelOf, levelsFor, sameLevel } from "./skillChanges";
 import { DeleteDialog, MoveDialog, RenameDialog } from "./SkillChangeDialogs";
 import {
   SkillPage,
@@ -985,7 +985,9 @@ export function SkillStudioTab({
       isDisabled={studio === undefined}
       onPress={() => studio !== undefined && askDraft(plane, scope, studio.levels)}
     >
-      {DRAFT_WITH_A_CHAT}
+      {studio === undefined
+        ? DRAFT_WITH_A_CHAT
+        : askAChat(draftLevel(scope, studio.levels), "draft a skill")}
     </Button>
   );
   // What is chosen on Harness skills (#3692): a program's own skill, by its place's id.

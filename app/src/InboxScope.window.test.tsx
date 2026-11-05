@@ -268,10 +268,10 @@ describe("what a row is made of", () => {
     const where = part(ask, ".inbox-secondary");
     expect(where.textContent).toBe("alpha · steward");
     expect(part(row(9), ".inbox-secondary").textContent).toBe("Plane root");
-    // Kind and age, last in the row's head.
+    // Kind and age, under the name in the card's head (#5214).
     const meta = part(ask, ".inbox-meta");
     expect(meta.textContent).toBe("Asks your permission · 5m");
-    expect(part(ask, ".inbox-says").lastElementChild).toBe(meta);
+    expect(part(ask, ".inbox-ask-head").contains(meta)).toBe(true);
     expect(within(ask).getByText("5m").tagName).toBe("TIME");
   });
 

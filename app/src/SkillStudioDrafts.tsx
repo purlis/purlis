@@ -3,6 +3,8 @@
 
 import { lazy, Suspense, useEffect, useId, useState } from "react";
 import { commands, type ProfileRow, type SkillDraft, type SkillDraftFile } from "./bindings";
+import { askAChat } from "./skillChanges";
+import { useStudioChats } from "./studioChats";
 import { counted } from "./dispatches";
 import { Badge } from "./ui/badge/Badge";
 import { Button } from "./ui/button/Button";
@@ -44,7 +46,7 @@ function draftedBy(draft: SkillDraft): string {
 
 /** **"Ask the chat to redo it"**, or "Ask a chat…" where the chat that drafted it is closed. */
 export function redoLabel(draft: SkillDraft): string {
-  return draft.chat_open ? "Ask the chat to redo it" : "Ask a chat to redo it";
+  return draft.chat_open ? "Ask the chat to redo it" : askAChat(draft.level, "redo it");
 }
 
 /**
@@ -154,6 +156,10 @@ export function DraftPage({
   const [profile, setProfile] = useState(DEFAULT);
   const tryOn = useId();
   const grade = useDraftGrade(plane, draft.id, changed);
+  // **The chat the studio started that wrote it, while it is open** (#5185): Open chat beside
+  // its name, where its draft waits for review.
+  const studio = useStudioChats();
+  const wrote = studio.chats.find((one) => one.session === draft.chat);
   const graded = grade === undefined ? undefined : draftGradeState(grade);
   useEffect(() => {
     let live = true;
@@ -182,6 +188,7 @@ export function DraftPage({
       kind: "redo",
       id: draft.id,
       name: draft.name,
+      level: draft.level,
       chat: draft.chat_open ? draft.chat : null,
     });
   return (
@@ -191,6 +198,18 @@ export function DraftPage({
         tag={<Badge>{label}</Badge>}
         mark={markOf(draft)}
         description={`${draft.new ? "A new skill" : "A change to it"}, drafted by ${draftedBy(draft)}. A draft stays on this machine until you accept it.`}
+        actions={
+          wrote === undefined ? undefined : (
+            <Button
+              size="sm"
+              tooltip={`Shows ${wrote.name}`}
+              data-testid="draft-open-chat"
+              onPress={() => studio.show(wrote.session)}
+            >
+              Open chat
+            </Button>
+          )
+        }
       />
       <ReviewPage
         label={`The draft of ${draft.name}`}
@@ -204,6 +223,7 @@ export function DraftPage({
         actions={
           graded === undefined ? undefined : (
             <DraftGradeActions
+              level={draft.level}
               state={graded}
               isNew={draft.new}
               onGrade={() => onGrading({ at: "plan" }, "go")}
