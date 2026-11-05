@@ -49,13 +49,14 @@ fn profile(name: &str) -> Vec<String> {
 }
 
 #[test]
-fn dev_release_is_release_with_a_lighter_link_and_nothing_else() {
-    // The stable build's profile, exactly as it was before the dev channel got its own.
+fn release_links_as_dev_release_does_and_dev_release_changes_nothing_else() {
+    // The stable build's profile: thin LTO across sixteen units since one fat pass over one unit
+    // stopped fitting the hosted runners (ADR 0092 amended 2026-11-06, #4833).
     assert_eq!(
         profile("release"),
         [
-            "codegen-units = 1",
-            "lto = true",
+            "codegen-units = 16",
+            r#"lto = "thin""#,
             "opt-level = 3",
             r#"panic = "unwind""#,
             "strip = true",
