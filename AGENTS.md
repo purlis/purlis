@@ -101,9 +101,9 @@ amending the same record do not conflict (`tools/adr-amendments.mjs` holds it).
 
 ## Checks
 
-Run what CI runs before pushing (commands in `README.md`). Clippy runs with `-D warnings`.
-Tests describe behaviour in their names. A test is only trusted once it has been seen to fail
-for the right reason.
+Run what CI runs before pushing (commands in `docs/development.md`). Clippy runs with
+`-D warnings`. Tests describe behaviour in their names. A test is only trusted once it has been
+seen to fail for the right reason.
 
 Two that have each cost a red `main`:
 

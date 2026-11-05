@@ -21,7 +21,15 @@ else: the git repository where purlis keeps your workspaces, personas, memory an
 
 ## Install
 
-Download the newest release from the
+The quickest way is from a terminal. It installs the latest stable release for your machine,
+and on macOS it avoids the first-launch refusal described below
+([`install.sh`](../../install.sh) says what it does):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/purlis/purlis/main/install.sh | sh
+```
+
+Or download the newest release from the
 [releases page](https://github.com/purlis/purlis/releases/latest):
 
 - **macOS:** `purlis-macos-arm64.dmg`. Open it and drag **purlis** to Applications. The build
