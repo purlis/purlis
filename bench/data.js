@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793842172700,
+  "lastUpdate": 1793844521650,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -39522,6 +39522,48 @@ window.BENCHMARK_DATA = {
             "value": 101.64027300000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.722, 101.556, 101.640, 102.171, 102.603 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "988c222bd82f3f33e4cf48ed974d1a2a4958119f",
+          "message": "Pane head: the chat's actions, a divider, then the pane's controls (#5203) (#5221)\n\n* Pane head's right side: failing tests for the chat's actions, a divider, then the pane's controls (#5203)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M034CPNQMBVPV3BX4XWWR2\nPurlis-Persona: steward\n\n* Pane head: the chat's actions, a divider, then the pane's controls (#5203)\n\nThe head's right side reads state button, bell, ⋯, then a thin divider, then\nSplit right, Split down and Close. The divider is the separator family's line,\nthe first of .pane-doing, so it is drawn and hidden with the controls and never\nstands alone at rest. A view's pane has no chat actions and draws none.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M034CPNQMBVPV3BX4XWWR2\nPurlis-Persona: steward\n\n* Pane head: centre the divider on the marks it parts (#5203)\n\nThe separator family's vertical line sets align-self: stretch with a more specific\nselector, so the divider's align-self: center lost and the line sat at the top of the row.\nMatch its specificity, and pin the centring in the PaneLine story.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M034CPNQMBVPV3BX4XWWR2\nPurlis-Persona: steward\n\n* Pane head: the stories' baselines for the regrouped right side (#5203)\n\nFrom the stories run of 4f3770e70: PaneLine and PaneBand only.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M034CPNQMBVPV3BX4XWWR2\nPurlis-Persona: steward\n\n* Pane head: the review's findings, stale words and two gap checks (#5203)\n\nThe doc and comments still described one cluster, with the bell after ⋯. The PaneLine story's\nBrief, bell and ⋯ checks passed even if their grounds touched; they now need a gap. The boolean\nfor whether a bell is drawn reads as one.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M034CPNQMBVPV3BX4XWWR2\nPurlis-Persona: steward\n\n* PaneLine story: wait for the closed menu to hand the keyboard back (#5203)\n\nReact Aria returns focus to the trigger a frame after the menu's scope unmounts, if nothing holds\nit. Run 41932723047 shows that frame landing after the story's closing blur: one cell's picture\nhad ⋯ focused with its tip. Waiting for the handback removes the race.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M034CPNQMBVPV3BX4XWWR2\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-05T01:29:15Z",
+          "tree_id": "4fa469e3fd07df3b4adc142aab021f9e7a9bea72",
+          "url": "https://github.com/purlis/purlis/commit/988c222bd82f3f33e4cf48ed974d1a2a4958119f"
+        },
+        "date": 1793844517067,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.538774,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.531, 0.534, 0.539, 0.540, 0.540 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.440107,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.882, 16.439, 16.440, 16.506, 16.555 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.227711,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.788, 100.899, 101.228, 102.173, 102.836 ms"
           }
         ]
       }
