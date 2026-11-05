@@ -482,7 +482,7 @@ pub struct DataHome<'a> {
 /// in purlis's data home, but what purlis keeps there itself ([`PURLIS_KEEPS`]), the mark of the
 /// first program and a transfer's scratch beside the projects, and each repository listed; and,
 /// where `beyond` is given, in each place [`writable`] found its user may write, and each file
-/// it owns or may write that [`writable`] found elsewhere. What [`writable`] could not look through is said
+/// it owns or may write that [`writable`] found elsewhere, by itself or by its folder. What [`writable`] could not look through is said
 /// again. `skip` is left out of every walk but where it holds the data home or is in its
 /// projects. A data home that is the home itself is looked through as the home.
 #[cfg(unix)]
@@ -577,6 +577,15 @@ fn outside_within(
                 Err(e) => outside.say(format!("/{file} on the runner could not be read: {e}")),
             }
         }
+        for folder in &found.folders {
+            outside.look_in(
+                beyond.root,
+                folder,
+                Rules::Beyond(beyond.owner),
+                &skip,
+                since,
+            );
+        }
         for said in &found.said {
             outside.say(said.clone());
         }
@@ -590,12 +599,14 @@ fn outside_within(
 pub const MOST_IMAGE_FOLDERS: usize = 2_000_000;
 
 /// The most files its user owns or may write outside every place it may write a runner keeps to
-/// look at again ([`writable`]): past it, what it found is not whole.
+/// look at again ([`writable`]), a folder recorded in place of its files counting as one (#5112):
+/// past it, what it found is not whole.
 pub const MOST_OWN_FILES: usize = 100_000;
 
 /// **Where on a runner, outside its home, its user may have saved anything** (#5030), as
 /// [`writable`] found it: each place it may write, by its path from the root, each file it owns
-/// or may write outside them, and what could not be looked through, in sentences.
+/// or may write outside them, each folder recorded in place of its files, and what could not be
+/// looked through, in sentences.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Writable {
     /// The cutoff it was found with: an unreadable folder unchanged since is passed over.
@@ -604,6 +615,8 @@ pub struct Writable {
     pub skip: Vec<std::path::PathBuf>,
     places: Vec<String>,
     files: Vec<String>,
+    /// Folders it may not write, each holding only files it may change (#5112).
+    folders: Vec<String>,
     said: Vec<String>,
 }
 
@@ -624,8 +637,10 @@ impl Writable {
 /// **Every place on the runner from `beyond`'s root, but `skip`, its user may write** (#5030): a
 /// folder it owns, since it could open that one again at any time, or one it may write in now,
 /// and nothing within it is looked at further. Each file it owns or may write outside them is
-/// kept too (#5103), since it may change that one wherever it is. What can't be looked through is said, by
-/// [`outside_the_projects_and_beyond`]'s rules for it.
+/// kept too (#5103), since it may change that one wherever it is. Where it may change every file
+/// in a folder, that folder is kept in place of them (#5112), so an image of many such files is
+/// looked through whole: it may not write there, so what the folder holds stays. What can't be
+/// looked through is said, by [`outside_the_projects_and_beyond`]'s rules for it.
 ///
 /// Found once for each host and kept while it is [whole](Writable::whole), since what its user
 /// may write can't grow: a runner's user is never root, holds no capability and can gain none
@@ -953,6 +968,11 @@ impl Outside {
                 }
             };
             let hidden_left_out = rules.hidden_left_out(&rel);
+            // Finding (#5112): the files of this folder its user may change, kept only while they
+            // could still fit, and whether it holds a file it may not.
+            let mut its_files: Vec<String> = Vec::new();
+            let mut more_than_fit = false;
+            let mut one_it_may_not_change = false;
             while let Some(entry) = dir.read() {
                 let entry = match entry {
                     Ok(entry) => entry,
@@ -1030,19 +1050,13 @@ impl Outside {
                         if rules.counts(&stat, &fd, raw) =>
                     {
                         // Outside every place, a file of its own, or one it may write, is kept
-                        // to be looked at again at each check, whatever its time now.
-                        if let Some(kept) = self.finding.as_ref().map(|found| found.files.len()) {
-                            if kept >= self.most_files {
-                                self.say(format!(
-                                    "the runner's user may change more than {} files \
-                                     outside the places it may write, so not all were \
-                                     looked at",
-                                    self.most_files
-                                ));
-                                return false;
-                            }
-                            if let Some(finding) = &mut self.finding {
-                                finding.files.push(rel_now);
+                        // to be looked at again at each check, whatever its time now: by its
+                        // folder, or by itself, as the rest of the folder decides.
+                        if self.finding.is_some() {
+                            if its_files.len() < self.most_files {
+                                its_files.push(rel_now);
+                            } else {
+                                more_than_fit = true;
                             }
                             continue;
                         }
@@ -1050,11 +1064,130 @@ impl Outside {
                             self.found(rules.shown(&rel_now));
                         }
                     }
+                    rustix::fs::FileType::RegularFile => one_it_may_not_change = true,
                     _ => {}
+                }
+            }
+            if let Some(finding) = &mut self.finding {
+                let kept = finding.files.len() + finding.folders.len();
+                let adding = match (its_files.is_empty(), one_it_may_not_change) {
+                    (true, _) => 0,
+                    (false, false) => 1,
+                    (false, true) if more_than_fit => usize::MAX,
+                    (false, true) => its_files.len(),
+                };
+                if kept.saturating_add(adding) > self.most_files {
+                    self.say(format!(
+                        "the runner's user may change more than {} files outside the places it \
+                         may write, so not all were looked at",
+                        self.most_files
+                    ));
+                    return false;
+                }
+                if one_it_may_not_change {
+                    finding.files.append(&mut its_files);
+                } else if !its_files.is_empty() {
+                    finding.folders.push(rel);
                 }
             }
         }
         true
+    }
+
+    /// Looks at the files directly in the folder at `rel` in `base`, recorded by [`writable`] in
+    /// place of them (#5112), by the rules the walk that found it went by. A folder within is
+    /// [`writable`]'s to have recorded on its own. It is opened from the root by its path: no
+    /// folder above it, nor it, is one its user owns or may write in, so none can have been made
+    /// a link since it was found.
+    fn look_in(
+        &mut self,
+        base: &Path,
+        rel: &str,
+        rules: Rules<'_>,
+        skip: &[std::path::PathBuf],
+        since: std::time::SystemTime,
+    ) {
+        use rustix::fs::{AtFlags, CWD, Mode, OFlags};
+        let shown_dir = rules.shown(rel);
+        let at = if rel.is_empty() {
+            base.to_path_buf()
+        } else {
+            base.join(rel)
+        };
+        let opened = rustix::fs::openat(
+            CWD,
+            &at,
+            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC,
+            Mode::empty(),
+        );
+        let fd = match opened {
+            Ok(fd) => fd,
+            Err(rustix::io::Errno::NOENT) => return,
+            Err(e) => {
+                self.say(format!("{shown_dir} on the runner could not be read: {e}"));
+                return;
+            }
+        };
+        let mut dir = match rustix::fs::Dir::read_from(&fd) {
+            Ok(dir) => dir,
+            Err(e) => {
+                self.say(format!("{shown_dir} on the runner could not be read: {e}"));
+                return;
+            }
+        };
+        let hidden_left_out = rules.hidden_left_out(rel);
+        while let Some(entry) = dir.read() {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(e) => {
+                    self.say(format!(
+                        "{shown_dir} on the runner could not all be read: {e}"
+                    ));
+                    return;
+                }
+            };
+            let raw = entry.file_name();
+            let bytes = raw.to_bytes();
+            if bytes == b"." || bytes == b".." || (hidden_left_out && bytes.starts_with(b".")) {
+                continue;
+            }
+            let Ok(name) = std::str::from_utf8(bytes) else {
+                self.say(format!(
+                    "a file in {shown_dir} on the runner has a name that is not text, so it \
+                     was not looked at"
+                ));
+                continue;
+            };
+            let rel_now = if rel.is_empty() {
+                name.to_owned()
+            } else {
+                format!("{rel}/{name}")
+            };
+            if rules.left_out(&rel_now) || skip.contains(&base.join(&rel_now)) {
+                continue;
+            }
+            let stat = match rustix::fs::statat(&fd, raw, AtFlags::SYMLINK_NOFOLLOW) {
+                Ok(stat) => stat,
+                Err(rustix::io::Errno::NOENT) => continue,
+                Err(e) => {
+                    self.say(format!(
+                        "{} on the runner could not be read: {e}",
+                        rules.shown(&rel_now)
+                    ));
+                    continue;
+                }
+            };
+            let a_file = matches!(
+                rustix::fs::FileType::from_raw_mode(stat.st_mode),
+                rustix::fs::FileType::RegularFile | rustix::fs::FileType::Symlink
+            );
+            if a_file
+                && rules.counts(&stat, &fd, raw)
+                && changed_at(&stat).is_none_or(|at| at >= since)
+            {
+                self.found(rules.shown(&rel_now));
+            }
+        }
     }
 
     fn sentences(mut self) -> Vec<String> {
