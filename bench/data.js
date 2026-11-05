@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793897766818,
+  "lastUpdate": 1793901058729,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -40320,6 +40320,48 @@ window.BENCHMARK_DATA = {
             "value": 102.154399,
             "unit": "ms",
             "extra": "median of 5 runs: 101.960, 102.030, 102.154, 102.553, 103.075 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ca6bc72bcbfb115a694e74541364b96fa3a7d15e",
+          "message": "docs: workspace files and the repos/ folder — plane format, ADR 0113 (#5368) (#5396)\n\n* docs: workspace files and the repos/ folder (ADR 0113, amendments to 0038 and 0081)\n\nRecords the operator's grill of 2026-11-05: new clones go to\nworkspaces/<ws>/repos/<name>, both layouts are read for ever, moving is\nan operator-started doctor fix; with the workspace picked Explorer shows\nthe workspace's folder; the person's own workspace files may be written.\nAdds the term Workspace files to CONTEXT.md.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NJKMBSPD5DVKH82AMJ8F4Y\nPurlis-Persona: steward\n\n* docs(plane-format): repos/, the repos table and structure version 6 (#5368)\n\nA workspace's repos live in repos/<repo>/, a clone made before\nstructure version 6 is read at the root for ever, repos is reserved,\nand version 6 adds no requires entry (ADR 0113).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NJKMBSPD5DVKH82AMJ8F4Y\nPurlis-Persona: steward\n\n* docs: answer the review of #5396\n\nWith nothing picked Explorer shows the workspace's folder, and a one-repo\nworkspace's repo row starts open, keeping #3343's no-click promise. The\ntree's no-write rule also holds on the plane root, and the light editor is\nunchanged. A clone may still take most reserved names; only repos is newly\nrefused. Managed names skills.local/, extension folders and generated files.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NJKMBSPD5DVKH82AMJ8F4Y\nPurlis-Persona: steward\n\n* docs: with one repo the filter covers the workspace files and that repo\n\nAnswers the re-review of #5396.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NJKMBSPD5DVKH82AMJ8F4Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-05T17:03:58Z",
+          "tree_id": "90146a78308911639f67487510350b89e30c6239",
+          "url": "https://github.com/purlis/purlis/commit/ca6bc72bcbfb115a694e74541364b96fa3a7d15e"
+        },
+        "date": 1793901054176,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.553258,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.541, 0.549, 0.553, 0.558, 0.561 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.334137499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.167, 16.260, 16.334, 16.380, 16.416 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8084045,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.155, 101.769, 101.808, 102.715, 103.909 ms"
           }
         ]
       }
