@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { nothingKnown, type ChatStates, type State } from "./chatState";
 import type { ChatRow } from "./chatsTree";
-import type { Shown } from "./shownState";
+import type { Said } from "./shownState";
 import {
   chipSaid,
   countsOf,
@@ -45,9 +45,9 @@ function states(by: Record<number, State>, needsYou: number[] = []): ChatStates 
   return { ...nothingKnown, bySession: by, needsYou };
 }
 
-const DONE: Shown = { kind: "done", word: "done", shape: "tick", token: "text.muted" };
-const FAILED: Shown = { kind: "failed", word: "failed", shape: "cross", token: "state.failed" };
-const CANCELLED: Shown = {
+const DONE: Said = { kind: "done", word: "done", shape: "tick", token: "text.muted" };
+const FAILED: Said = { kind: "failed", word: "failed", shape: "cross", token: "state.failed" };
+const CANCELLED: Said = {
   kind: "cancelled",
   word: "cancelled",
   shape: "dash",

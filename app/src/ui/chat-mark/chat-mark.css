@@ -1,0 +1,70 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **A chat's mark** (#5340; its look lifted from `chatPersona.css`, #3342, #4762): who the chat
+   runs as, with its one state's glyph on the lower end corner, ringed in the ground it stands on.
+   One look wherever a chat is drawn: its tab, its row, its pane's head and a folded pane's rail.
+   The place it stands sets two things and nothing else:
+
+   - `--chat-mark-size`, the who's size (the sidebar's 20px when unset);
+   - `--chat-mark-ground`, the ground the badge is ringed in: its own at rest, under the pointer
+     and chosen. */
+[data-scope="chat-mark"][data-part="root"] {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+[data-scope="chat-mark"][data-part="who"] {
+  display: inline-flex;
+  flex: none;
+}
+
+[data-scope="chat-mark"][data-part="who"] > :is(svg, .persona-mark) {
+  inline-size: var(--chat-mark-size, calc(var(--space-6) + var(--space-2)));
+  block-size: var(--chat-mark-size, calc(var(--space-6) + var(--space-2)));
+}
+
+[data-scope="chat-mark"][data-part="badge"] {
+  display: grid;
+  place-items: center;
+  inline-size: calc(var(--space-4) + var(--space-2));
+  block-size: calc(var(--space-4) + var(--space-2));
+  border-radius: var(--radius-full);
+  background-color: var(--chat-mark-ground);
+  color: var(--text-muted);
+}
+
+/* On the who's corner, where there is one. A mark with none is its badge alone, where it stands. */
+[data-scope="chat-mark"][data-part="who"] + [data-part="badge"] {
+  position: absolute;
+  inset-block-end: calc(-1 * var(--space-2));
+  inset-inline-end: calc(-1 * var(--space-2));
+}
+
+[data-scope="chat-mark"][data-part="badge"] > svg {
+  inline-size: calc(var(--space-4) + var(--space-1));
+  block-size: calc(var(--space-4) + var(--space-1));
+}
+
+/* Each state's colour, on the glyph only (a shape as well, `ChatMark`). Idle and ended stay the
+   root rule's muted grey. */
+[data-scope="chat-mark"][data-part="badge"][data-variant="needs"] {
+  color: var(--needs-you-base);
+}
+
+[data-scope="chat-mark"][data-part="badge"][data-variant="failed"] {
+  color: var(--state-failed);
+}
+
+[data-scope="chat-mark"][data-part="badge"]:is(
+    [data-variant="working"],
+    [data-variant="waiting"]
+  ) {
+  color: var(--state-running);
+}
+
+/* **The hand knocks twice when a chat starts needing you** (`ChatMark`): on the change only. */
+[data-scope="chat-mark"][data-part="badge"][data-arrived] > svg {
+  animation: charter-knock var(--motion-duration-settle) var(--motion-easing-standard) 2;
+}

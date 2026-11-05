@@ -554,6 +554,7 @@ import { handedFromNote } from "./handedFrom";
 import { ChatsSection } from "./ChatsSection";
 import { chatsListDrawn, type Reveal } from "./revealTask";
 import { owedAfterEnded, restartsDue, withRestartOwed } from "./restartAtPause";
+import { useFailuresSeen } from "./failuresSeen";
 import { tasksBelowOf, type TasksBelow } from "./sessionTasks";
 import { TasksBelowLent } from "./TasksBelow";
 import { finishedOf, qualifierOf, shownOf, useFinishedTasks, useRowsUntilRead } from "./finished";
@@ -4817,6 +4818,15 @@ export const PlaneView = memo(function PlaneView({
         void commands.taskFailureSeen(plane, asked.asker, id).catch(() => undefined);
     },
     [failedTasks, plane, showChat],
+  );
+  /** **The chat on screen and focused has been seen** (#5340): what failed of it leaves its mark. */
+  useFailuresSeen(
+    plane,
+    tabs.inFront === undefined
+      ? undefined
+      : shownIn(tabs, tabs.inFront).find((one) => one.pane === tabs.byId[tabs.inFront ?? -1]?.focused)
+          ?.session,
+    failedTasks,
   );
   /** A finished row was opened to be read: where it is a failure its session is flagged for,
    *  it has been looked at (#1491). */

@@ -163,11 +163,17 @@ function core(open: Filed[], ended: FinishedTask[] = []) {
     if (cmd === "opened_chats") return open.map(asListed);
     // The layout stored gives a tab to each chat its lineage says has one (#4758): a task has
     // none until the person opens it.
-    if (cmd === "reopened_layout")
-      return aTabForEachChat(
-        open.filter((one) => one.from?.tab !== false),
+    if (cmd === "reopened_layout") {
+      const tabbed = open.filter((one) => one.from?.tab !== false);
+      const laid = aTabForEachChat(
+        tabbed,
         (session) => open.find((one) => one.session === session)?.workspace ?? null,
       );
+      return {
+        ...laid,
+        tabs: laid.tabs.map((tab, at) => ({ ...tab, pinned: tabbed[at]?.pinned ?? false })),
+      };
+    }
     if (cmd === "open_chat_tab") {
       const one = open.find((chat) => chat.session === a.session);
       if (one?.from) one.from = { ...one.from, tab: true };
@@ -1044,6 +1050,113 @@ describe("a row of the Chats list (V100-19, V100-50)", () => {
   });
 });
 
+describe("a chat's tab and its row wear one mark (#5340)", () => {
+  /** The tab on the strip whose name starts with `name`. */
+  const tabOf = (name: string) => {
+    const found = [...document.querySelectorAll<HTMLElement>('[data-strip="Tabs"] [role="tab"]')]
+      .filter((tab) => tab.querySelector(".tab-name")?.textContent === name)
+      .at(0);
+    if (found === undefined) throw new Error(`no tab named ${name}`);
+    return found;
+  };
+  /** What a mark draws: its state, and the glyph of its corner. */
+  const markIn = (holder: Element) => {
+    const root = holder.querySelector('[data-scope="chat-mark"][data-part="root"]');
+    return {
+      state: root?.getAttribute("data-state") ?? null,
+      glyph:
+        root
+          ?.querySelector('[data-part="badge"] svg')
+          ?.getAttribute("class")
+          ?.split(" ")
+          .filter((one) => one.startsWith("lucide-"))
+          .join(" ") ?? null,
+    };
+  };
+
+  const twoChats = () => [chat(1, "alpha"), chat(2, "alpha", { in_front: true })];
+  const pending: [string, State, number[], Partial<Moved>, string][] = [
+    ["needs you", "waiting", [1], {}, "needs"],
+    ["working", "running", [], {}, "working"],
+    ["idle", "waiting", [], {}, "idle"],
+    ["ended", "done", [], {}, "ended"],
+    [
+      "waiting on its own work",
+      "waiting",
+      [],
+      { own_work: { helpers: 2, workflows: 0, monitors: 0, shells: 0 } },
+      "waiting",
+    ],
+    [
+      "a task failed, in the queue for that alone",
+      "running",
+      [1],
+      {
+        only_failures: true,
+        needs: [{ kind: "task_failed", id: "r-1", task: "build", how: "failed", why: "" }],
+      } as Partial<Moved>,
+      "failed",
+    ],
+  ];
+
+  it.each(pending)("wears the same mark on both: %s", async (_, state, queue, more, expected) => {
+    const { move } = core(twoChats());
+    render(<App />);
+    await section();
+    await waitFor(() => expect(tabOf("steward 1")).toBeTruthy());
+
+    move(1, state, queue, more);
+
+    await waitFor(() => expect(markIn(row("steward 1")).state).toBe(expected));
+    expect(markIn(tabOf("steward 1"))).toEqual(markIn(row("steward 1")));
+  });
+
+  it("wears the hourglass on both for a chat waiting on its tasks, never the board's dot", async () => {
+    const { move } = core([
+      chat(1, "alpha"),
+      chat(2, "alpha", { in_front: true }),
+      chat(5, "alpha", { persona: "devops", from: taskOf(1) }),
+    ]);
+    render(<App />);
+    await section();
+    await waitFor(() => expect(tabOf("steward 1")).toBeTruthy());
+
+    move(5, "running");
+    move(1, "waiting");
+
+    await waitFor(() => expect(markIn(row("steward 1")).state).toBe("waiting"));
+    expect(markIn(tabOf("steward 1"))).toEqual({ state: "waiting", glyph: "lucide-hourglass" });
+    expect(markIn(row("steward 1"))).toEqual({ state: "waiting", glyph: "lucide-hourglass" });
+    expect(document.querySelector('[data-strip="Tabs"] .state-dot')).toBeNull();
+  });
+
+  it("keeps the mark on a pinned tab", async () => {
+    const { move } = core([
+      chat(1, "alpha", { pinned: true }),
+      chat(2, "alpha", { in_front: true }),
+    ]);
+    render(<App />);
+    await section();
+    await waitFor(() => expect(tabOf("steward 1").querySelector(".pinned")).not.toBeNull());
+
+    move(1, "waiting", [1]);
+
+    await waitFor(() => expect(markIn(tabOf("steward 1")).state).toBe("needs"));
+    expect(markIn(tabOf("steward 1"))).toEqual(markIn(row("steward 1")));
+  });
+
+  it("wears no state on a view's tab", async () => {
+    core([chat(1, "alpha")]);
+    render(<App />);
+    await section();
+    await waitFor(() => expect(tabOf("steward 1")).toBeTruthy());
+
+    for (const tab of document.querySelectorAll('[data-strip="Tabs"] [role="tab"]'))
+      if (tab.querySelector('[data-mark="view"]'))
+        expect(tab.querySelector('[data-scope="chat-mark"]')).toBeNull();
+  });
+});
+
 describe("a chat's tab and its row say one state word (#4935)", () => {
   /** The tab on the strip whose name starts with `name`. */
   const tabOf = (name: string) => {
@@ -1334,5 +1447,54 @@ describe("a chat moving, with fifty sessions and their tasks listed (SC-3)", () 
     // The two rows it leaves are drawn again, once each. The ninety-eight that left draw
     // nothing.
     expect([...drawn.rows].sort((a, b) => a - b)).toEqual([10, 60]);
+  });
+});
+
+describe("a failed task's mark lasts until its chat has been seen (#5340)", () => {
+  const FAILED = {
+    only_failures: true,
+    needs: [{ kind: "task_failed", id: "r-1", task: "build", how: "failed", why: "" }],
+  } as Partial<Moved>;
+  type Ask = (cmd: string) => Record<string, unknown>[];
+  const seen = (asked: Ask) => asked("task_failure_seen");
+
+  it("stays on a chat in a background tab, and the core is told nothing", async () => {
+    const { move, asked } = core([chat(1, "alpha"), chat(2, "alpha", { in_front: true })]);
+    render(<App />);
+    await section();
+    await waitFor(() => expect(row("steward 1")).toBeTruthy());
+
+    move(1, "running", [1], FAILED);
+
+    await waitFor(() =>
+      expect(row("steward 1").querySelector('[data-part="badge"]')).toHaveAttribute(
+        "data-variant",
+        "failed",
+      ),
+    );
+    expect(seen(asked)).toEqual([]);
+  });
+
+  it("is seen once its chat is in front and focused, and not while the window is away", async () => {
+    const focused = vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    const { move, asked } = core([chat(1, "alpha", { in_front: true })]);
+    render(<App />);
+    await section();
+    await waitFor(() => expect(row("steward 1")).toBeTruthy());
+
+    move(1, "running", [1], FAILED);
+    await waitFor(() =>
+      expect(row("steward 1").querySelector('[data-part="badge"]')).toHaveAttribute(
+        "data-variant",
+        "failed",
+      ),
+    );
+    expect(seen(asked)).toEqual([]);
+
+    focused.mockReturnValue(true);
+    act(() => void window.dispatchEvent(new Event("focus")));
+
+    await waitFor(() => expect(seen(asked)).toContainEqual(expect.objectContaining({ id: "r-1" })));
+    focused.mockRestore();
   });
 });

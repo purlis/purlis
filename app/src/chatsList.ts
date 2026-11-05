@@ -11,7 +11,13 @@
  * answer redraws its own marks and no row (SC-3).
  */
 import type { FinishedTask } from "./bindings";
-import { markOf, ownWorkOf, type ChatStates } from "./chatState";
+import {
+  failedUnseen,
+  failuresUnseenOf,
+  markOf,
+  ownWorkOf,
+  type ChatStates,
+} from "./chatState";
 import type { ChatRow, ListedChat } from "./chatsTree";
 import { shownOf } from "./finished";
 import { shownState, type Shown, type ShownKind } from "./shownState";
@@ -29,7 +35,9 @@ export function shownOfRow(
 ): Shown | undefined {
   return shownState({
     board: markOf(states, row.session, row.shell),
-    needsYou: queue.has(row.session),
+    needsYou: queue.has(row.session) && states.onlyFailures[row.session] !== true,
+    failuresUnseen: failuresUnseenOf(states, row.session),
+    failedUnseen: failedUnseen(states, row.session),
     task:
       row.report === null ? null : { report: row.report, outcome: row.outcome, asking: row.asking },
     harness: row.harness,
@@ -47,7 +55,7 @@ export type Rank = 0 | 1 | 2;
  * person.
  */
 export function rankOf(kind: ShownKind | undefined): Rank {
-  if (kind === "needs-you") return 0;
+  if (kind === "needs-you" || kind === "task-failed") return 0;
   // A chat waiting on its tasks is at work through them (#1491): nothing waits on the person.
   // So is one waiting on its own work (#3878).
   if (

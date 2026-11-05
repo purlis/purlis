@@ -1727,14 +1727,7 @@ body {
 .tabs .tab {
   /* Equal shares of the row up to 230px each (ADR 0039, amended 2026-11-02). */
   --most: calc(230rem / 14);
-  --chat-persona-size: var(--space-6);
-}
-
-.tabs .tab-persona > .state-dot:not(:only-child) {
-  position: absolute;
-  inset-block-end: calc(-1 * var(--space-1));
-  inset-inline-end: calc(-1 * var(--space-1));
-  margin: 0;
+  --chat-mark-size: var(--space-6);
 }
 
 /* **`⊟+N`, a split's other panes** (#4762): after the name, and never cut. The name gives way
@@ -3519,19 +3512,19 @@ body {
    cross, the triangle. A chat at rest (done, idle, reported, stopped or closed) wears none, so no
    grey mark stands for seven states; its state is still the row's word to a screen reader and
    its tooltip's. */
-.chats-section .chat-persona {
+.chats-section [data-scope="chat-mark"][data-part="root"] {
   /* The ground the badge is ringed in: the row's, at rest, under the pointer, chosen. */
-  --chat-badge-ground: var(--panel-fill);
+  --chat-mark-ground: var(--panel-fill);
 }
 
-.chats-section .chat:hover .chat-persona {
-  --chat-badge-ground: var(--surface-hover);
+.chats-section .chat:hover [data-scope="chat-mark"][data-part="root"] {
+  --chat-mark-ground: var(--surface-hover);
 }
 
 .chats-section
   .chat:is([aria-selected="true"], [aria-current]:not([aria-current="false"]))
-  .chat-persona {
-  --chat-badge-ground: var(--list-selected);
+  [data-scope="chat-mark"][data-part="root"] {
+  --chat-mark-ground: var(--list-selected);
 }
 
 /* **A chat on screen in another pane of this tab** (#4757; the faint on-screen bar accepted on
@@ -3547,7 +3540,7 @@ body {
 
 /* The icon's look is `chatPersona.css`'s (#4762): the row sets only its size and its grounds. */
 .chats-section {
-  --chat-persona-size: var(--chats-mark);
+  --chat-mark-size: var(--chats-mark);
 }
 
 /* **A finished row says how it ended by its mark** (#1687, as a chat's row does, #1675): the
@@ -4230,16 +4223,6 @@ body {
 /* What a chat is doing. A mark, plus a shape per state: colour alone is no state at all to
    anyone who cannot see it, and the accessible name carries the word either way. */
 .state {
-  display: inline-block;
-  width: 0.6rem;
-  height: 0.6rem;
-  margin-inline-start: var(--space-3);
-  border-radius: 50%;
-  vertical-align: middle;
-  flex: none;
-}
-/* **The state's dot on a tab's icon** (#4762): the mark's shape, seen and not heard. */
-.state-dot {
   display: inline-block;
   width: 0.6rem;
   height: 0.6rem;
@@ -6859,11 +6842,6 @@ nav.piece-files-head {
    over `settle` rather than cutting — a transition, so it only ever runs on a change and never
    on a tab being drawn. */
 .state {
-  transition-property: background-color, border-color, border-radius, box-shadow, opacity;
-  transition-duration: var(--motion-duration-settle);
-  transition-timing-function: var(--motion-easing-standard);
-}
-.state-dot {
   transition-property: background-color, border-color, border-radius, box-shadow, opacity;
   transition-duration: var(--motion-duration-settle);
   transition-timing-function: var(--motion-easing-standard);
