@@ -8,8 +8,13 @@
  * message, under one of three headings: on the changed lines (marked in the gutter too), outside
  * them in this file, and in other files. **None is dropped**: past what a list holds, the rest are
  * counted. A result on a file of the branch opens at its line, in the file tab and in your editor.
+ *
+ * **A Check reporter whose last answer could not be recorded is a Notice naming it** (#5410), above
+ * the results, which are the ones recorded before it: the review goes on.
  */
+import { useState } from "react";
 import type { CheckResult, CheckResults, PlaneId } from "../bindings";
+import { Notice } from "../Notice";
 import { jumpTo } from "../fileJump";
 import type { Place } from "../pieceViews";
 import { Badge } from "../ui/badge/Badge";
@@ -133,9 +138,23 @@ export function CheckResultsList({
   path: string;
   results: CheckResults;
 }) {
-  if (checks.sets.length === 0 && checks.trouble === null) return null;
+  const [dismissed, setDismissed] = useState<readonly string[]>([]);
+  const faults = checks.faults.filter((fault) => !dismissed.includes(fault.said));
+  if (checks.sets.length === 0 && checks.trouble === null && checks.faults.length === 0) {
+    return null;
+  }
   return (
     <section className="check-results" aria-label={`Check results for ${path}`} tabIndex={0}>
+      {faults.map((fault) => (
+        <Notice
+          key={fault.extension}
+          cause={`check-reporter-fault:${fault.extension}`}
+          tone="trouble"
+          onDismiss={() => setDismissed((was) => [...was, fault.said])}
+        >
+          {fault.said}
+        </Notice>
+      ))}
       {checks.trouble !== null && (
         <p className="piece-files-trouble" role="status">
           {checks.trouble}

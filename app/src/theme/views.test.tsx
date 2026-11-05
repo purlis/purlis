@@ -1910,6 +1910,7 @@ const STATES: State[] = [
           moreOutside: 0,
           moreElsewhere: 0,
           trouble: null,
+          faults: [],
         },
         mark: "changed",
         from: null,
