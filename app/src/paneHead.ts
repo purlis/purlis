@@ -105,9 +105,11 @@ export function droppedAt(width: number | undefined): ReadonlySet<HeadPart> {
   return new Set(HEAD_DROPS.filter((drop) => width < drop.below).map((drop) => drop.part));
 }
 
-/** **What a pane shows**, as its two lines tell it apart (#5202): a chat, a task shown in a
- *  chat's pane (#1486), a shell, and a one-job program (#4761). */
-export type PaneKind = "chat" | "task" | "shell" | "oneJob";
+/** **What a pane shows**, as its two lines tell it apart (#5202, #5205, spec #5191): a chat, a task
+ *  shown in a chat's pane (#1486), either of them ended (#5019, #4757), a pane folded to a rail or
+ *  a bar (#4766), a view, nothing, a shell, and a one-job program (#4761). */
+export type PaneKind =
+  "chat" | "task" | "ended" | "endedTask" | "folded" | "view" | "empty" | "shell" | "oneJob";
 
 /**
  * **A chip of the head's line** (the **pane line**, `.pane-chips`), in its drawn order: who it
@@ -126,7 +128,16 @@ export type LinePart =
  * chat's first usage arrives; the foot keeps its row either way, so the terminal never moves.
  */
 export type FootPart =
-  "harness" | "workspace" | "from" | "studio" | "workItem" | "skills" | "sandbox" | "ctx" | "cache";
+  | "harness"
+  | "workspace"
+  | "from"
+  | "studio"
+  | "workItem"
+  | "skills"
+  | "sandbox"
+  | "ended"
+  | "ctx"
+  | "cache";
 
 /**
  * **The row of the chat's list each part of the foot presses** (#5204, spec #5191 story 37): a
@@ -143,8 +154,9 @@ export const FOOT_ROWS = {
 } as const satisfies Partial<Record<FootPart, (session: number) => string>>;
 
 /** **The parts of the foot that are facts alone**, with nothing to press: the sandbox and the work
- *  item, whose rows change them rather than show them, and `cache`, whose words are `ctx`'s. */
-export const FOOT_FACTS: readonly FootPart[] = ["workItem", "sandbox", "cache"];
+ *  item, whose rows change them rather than show them, `cache`, whose words are `ctx`'s, and the
+ *  mark of a chat that has ended, whose ways on are its ended band's. */
+export const FOOT_FACTS: readonly FootPart[] = ["workItem", "sandbox", "ended", "cache"];
 
 /** The details a chat has for its lines: drawn only where it has them. */
 export type LineFacts = {
@@ -165,10 +177,16 @@ export type LineFacts = {
 export type PaneLines = { head: LinePart[]; foot: FootPart[] | null };
 
 /** **A pane's kind, by what it shows**: a task's path says it first, whatever runs there. */
-export function paneKindOf(shows: { task: boolean; oneJob: boolean; shell: boolean }): PaneKind {
-  if (shows.task) return "task";
+export function paneKindOf(shows: {
+  task: boolean;
+  oneJob: boolean;
+  shell: boolean;
+  ended: boolean;
+}): PaneKind {
+  if (shows.task) return shows.ended ? "endedTask" : "task";
   if (shows.oneJob) return "oneJob";
-  return shows.shell ? "shell" : "chat";
+  if (shows.shell) return "shell";
+  return shows.ended ? "ended" : "chat";
 }
 
 /**
@@ -176,20 +194,27 @@ export function paneKindOf(shows: { task: boolean; oneJob: boolean; shell: boole
  * (#5202, #5204): the head says which chat this is and what it is doing; the foot, under the
  * terminal, where it runs, where it came from and how healthy it is. On a chat's or a task's pane
  * the chat's facts are the foot's, never the head's, at any width. A shell and a one-job program
- * draw no foot and keep their heads as they were (spec #5191), `where` among them. The head's
- * actions are not here: they are `PaneActions`', by `droppedAt`, until #5206 settles them.
+ * draw no foot and keep their heads as they were (spec #5191), `where` among them, as does a
+ * view's pane, an empty pane and a folded one. What has ended keeps its foot, marked `ended`, its
+ * gauge frozen (#5205). The head's actions are not here: they are `PaneActions`', by `droppedAt`, until #5206 settles them.
  */
 export function paneLinesOf(
   kind: PaneKind,
   width: number | undefined,
   facts: LineFacts,
 ): PaneLines {
+  // A view's and an empty pane's head is its actions alone; a folded pane is a rail, which says
+  // who it runs as and its name.
+  if (kind === "view" || kind === "empty") return { head: [], foot: null };
+  if (kind === "folded") return { head: ["persona", "name"], foot: null };
   const drops = droppedAt(width);
-  const head: LinePart[] = ["persona", kind === "task" ? "crumbs" : "name"];
-  const footed = kind === "chat" || kind === "task";
+  const pathed = kind === "task" || kind === "endedTask";
+  const ended = kind === "ended" || kind === "endedTask";
+  const footed = kind === "chat" || pathed || ended;
+  const head: LinePart[] = ["persona", pathed ? "crumbs" : "name"];
   if (!footed && !drops.has("where")) head.push("sandbox");
   // A task's path says its state; a chat's head says it with its mark.
-  if (kind !== "task" && !drops.has("mark")) {
+  if (!pathed && !drops.has("mark")) {
     head.push("mark");
     if (!drops.has("markWord")) head.push("markWord");
   }
@@ -203,8 +228,10 @@ export function paneLinesOf(
   if (facts.from === true) foot.push("from");
   if (facts.studio === true) foot.push("studio");
   if (facts.workItem === true) foot.push("workItem");
-  if (facts.skills === true) foot.push("skills");
+  // What has ended can do nothing about its skills.
+  if (facts.skills === true && !ended) foot.push("skills");
   if (facts.sandbox === true) foot.push("sandbox");
+  if (ended) foot.push("ended");
   foot.push("ctx", "cache");
   return { head, foot };
 }

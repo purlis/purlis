@@ -236,6 +236,7 @@ describe("a chat's one list (#4753)", () => {
         "workItem",
         "skills",
         "sandbox",
+        "ended",
         "ctx",
         "cache",
       ];

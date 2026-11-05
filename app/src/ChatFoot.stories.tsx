@@ -186,3 +186,18 @@ export const NearlyFullAndCold: Story = {
     },
   },
 };
+
+/** **A task's foot**: the task's harness and gauge, and `↳ from` the chat that asked (#5205). */
+export const ATasksFoot: Story = {
+  args: { kind: "task", facts: { from: true, sandbox: true }, from: "↳ from steward 2" },
+};
+
+/** **An ended chat's foot**: its gauge frozen at its last values, greyed and marked `ended`, with
+ *  a value that was warning before it ended (#5205). */
+export const AnEndedChat: Story = {
+  args: {
+    kind: "ended",
+    facts: { sandbox: true },
+    usage: { ...USAGE, context: { value: 87, tone: "warn" }, cache: { value: 40, tone: "warn" } },
+  },
+};

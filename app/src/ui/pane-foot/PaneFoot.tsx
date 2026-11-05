@@ -22,8 +22,9 @@
  */
 import type { ReactNode } from "react";
 
-/** The core's tone for a gauge's value (`purlis_core::usage::gauge`). */
-export type PaneFootTone = "ok" | "warn" | "bad";
+/** The core's tone for a gauge's value (`purlis_core::usage::gauge`), or `ended`, a chat's last
+ *  value, greyed (#5205). */
+export type PaneFootTone = "ok" | "warn" | "bad" | "ended";
 
 /** **The pane foot**: the line under a chat's terminal, holding its {@link PaneFootStart} and
  *  its {@link PaneFootEnd}. */

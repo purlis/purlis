@@ -14,8 +14,12 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { emit } from "@tauri-apps/api/event";
 import App from "./App";
+import type { Moved } from "./bindings";
+import { onTheWire } from "./chatEvents.testkit";
 import { aTabForEachChat } from "./laidOut.testkit";
+import { askToEnd } from "./menus.testkit";
 
 /**
  * **What a chat's pane foot says and what a press on it does, against the whole window** (#5204,
@@ -52,6 +56,8 @@ const USAGE = {
   cold: null,
 };
 let usage: unknown = USAGE;
+/** How many times the core was asked for a gauge. */
+let reads = 0;
 
 const PARENT = {
   session: 3,
@@ -74,6 +80,27 @@ const PARENT = {
   card: { name: "claude", title: "Claude Code", label: "What Claude Code can do here", lines: [] },
 };
 
+/** A task chat 3 asked for, in a tab of its own, on another harness. */
+const TASK = {
+  ...PARENT,
+  session: 5,
+  name: "fix-login",
+  label: "fix-login",
+  in_front: true,
+  harness: "codex",
+  profile: "codex",
+  card: { name: "codex", title: "Codex", label: "What Codex can do here", lines: [] },
+  from: {
+    chat: 3,
+    name: "steward 3",
+    workspace: "alpha",
+    task: true,
+    tab: true,
+    reported: false,
+    unreported: false,
+  },
+};
+
 /** A chat handed off from chat 3. */
 const HANDED = {
   ...PARENT,
@@ -93,12 +120,15 @@ const HANDED = {
 };
 
 function core(
-  open: readonly (typeof PARENT | typeof HANDED)[],
+  open: readonly (typeof PARENT | typeof HANDED | typeof TASK)[],
   stripOf: (session: number) => string = () => "alpha",
 ) {
   mockIPC(
     (cmd) => {
-      if (cmd === "chat_usage") return usage;
+      if (cmd === "chat_usage") {
+        reads++;
+        return usage;
+      }
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return open;
       if (cmd === "reopened_layout") return aTabForEachChat([...open], stripOf);
@@ -128,7 +158,7 @@ function core(
 }
 
 async function aPane(
-  open: readonly (typeof PARENT | typeof HANDED)[] = [PARENT, HANDED],
+  open: readonly (typeof PARENT | typeof HANDED | typeof TASK)[] = [PARENT, HANDED],
   stripOf?: (session: number) => string,
 ) {
   core(open, stripOf);
@@ -249,5 +279,98 @@ describe("the foot's keyboard order (#5204, story 38)", () => {
     expect(heard[0]).toBe("What Claude Code can do here");
     expect(heard[1]).toMatch(/↳ from steward 3/);
     expect(heard[2]).toMatch(/^ctx 62%/);
+  });
+});
+
+describe("a task's foot says the task (#5205, stories 21 and 22)", () => {
+  it("says the task's harness and gauge, and ↳ from the chat that asked, with the path on the head", async () => {
+    await aPane([PARENT, TASK]);
+
+    await waitFor(() => expect(foot(5).querySelector(".pane-foot-from")).not.toBeNull());
+    expect(head(5).querySelector(".pane-crumbs")).not.toBeNull();
+    expect(foot(5).querySelector(".pane-where")).toHaveTextContent("Codex");
+    expect(foot(5).querySelector(".pane-foot-from")).toHaveTextContent("↳ from steward 3");
+    await within(foot(5)).findByTestId("chat-gauge");
+    expect(head(5).querySelector(".chat-gauge")).toBeNull();
+  });
+
+  it("goes to the chat that asked, on ↳ from", async () => {
+    await aPane([PARENT, TASK]);
+
+    fireEvent.click(
+      await waitFor(() => within(foot(5)).getByRole("button", { name: /↳ from steward 3/ })),
+    );
+    await waitFor(() => expect(tabInFront()).toHaveTextContent("steward 3"));
+  });
+});
+
+describe("an ended chat's foot (#5205, stories 23 and 24)", () => {
+  /** What the board says as chat 4 ends. */
+  const DONE = {
+    plane: PLANE,
+    session: 4,
+    state: "done",
+    needs_you: false,
+    queue: [],
+    moved_at: 3,
+    reports: [],
+    refusals: [],
+    children: [],
+    sequence: 3,
+  } as unknown as Moved;
+  const ALONE = { ...HANDED, from: null };
+
+  const gaugeFrozen = async () => {
+    const gauge = await within(foot()).findByTestId("chat-gauge");
+    expect(gauge.querySelector('[data-part="value"]')).toHaveAttribute("data-tone", "ended");
+    expect(gauge.querySelector('[data-part="fill"]')).toHaveAttribute("data-tone", "ended");
+    return gauge;
+  };
+
+  it("keeps its harness · workspace and its gauge as its program ends, greyed and marked ended, and reads no more", async () => {
+    await aPane([ALONE]);
+    await within(foot()).findByTestId("chat-gauge");
+
+    await act(() => emit(...onTheWire("chat-moved", DONE)));
+
+    await screen.findByRole("status", { name: /ended/i });
+    const gauge = await gaugeFrozen();
+    expect(foot().querySelector(".pane-foot-ended")).toHaveTextContent("ended");
+    expect(foot().querySelector(".pane-where")).toHaveTextContent(/Claude Code\s*·\s*alpha/);
+    expect(gauge).toHaveTextContent("ctx 62%");
+
+    // Whatever the record says later, the gauge says what it said as the chat ended.
+    usage = { ...USAGE, context: { value: 99, tone: "bad" } };
+    const before = reads;
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(reads).toBe(before);
+    expect(gauge).toHaveTextContent("ctx 62%");
+  });
+
+  it("keeps them after End…, though the core no longer lists the chat or answers for its usage", async () => {
+    await aPane([ALONE]);
+    await within(foot()).findByTestId("chat-gauge");
+    usage = null;
+
+    const asking = await askToEnd("work");
+    fireEvent.click(within(asking).getByRole("button", { name: "Close" }));
+
+    await screen.findByRole("status", { name: /ended/i });
+    await gaugeFrozen();
+    expect(foot().querySelector(".pane-where")).toHaveTextContent(/Claude Code\s*·\s*alpha/);
+    expect(foot().querySelector(".pane-foot-ended")).toHaveTextContent("ended");
+  });
+
+  it("draws no gauge where none was known as it ended, and is still marked ended", async () => {
+    usage = null;
+    await aPane([ALONE]);
+
+    await act(() => emit(...onTheWire("chat-moved", DONE)));
+
+    await screen.findByRole("status", { name: /ended/i });
+    expect(foot().querySelector(".pane-foot-ended")).toHaveTextContent("ended");
+    expect(within(foot()).queryByTestId("chat-gauge")).toBeNull();
   });
 });

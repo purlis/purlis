@@ -176,10 +176,50 @@ describe("the pane's two lines: what the head and the foot of a chat's pane draw
   });
 
   it("tells a pane's kind by what it shows, a task's path before anything else", () => {
-    expect(paneKindOf({ task: true, oneJob: false, shell: false })).toBe("task");
-    expect(paneKindOf({ task: false, oneJob: true, shell: false })).toBe("oneJob");
-    expect(paneKindOf({ task: false, oneJob: false, shell: true })).toBe("shell");
-    expect(paneKindOf({ task: false, oneJob: false, shell: false })).toBe("chat");
+    const shows = { task: false, oneJob: false, shell: false, ended: false };
+    expect(paneKindOf({ ...shows, task: true })).toBe("task");
+    expect(paneKindOf({ ...shows, task: true, ended: true })).toBe("endedTask");
+    expect(paneKindOf({ ...shows, oneJob: true })).toBe("oneJob");
+    expect(paneKindOf({ ...shows, shell: true })).toBe("shell");
+    expect(paneKindOf({ ...shows, ended: true })).toBe("ended");
+    expect(paneKindOf(shows)).toBe("chat");
+    // A shell and a one-job program that ended still have no foot to keep.
+    expect(paneKindOf({ ...shows, shell: true, ended: true })).toBe("shell");
+    expect(paneKindOf({ ...shows, oneJob: true, ended: true })).toBe("oneJob");
+  });
+
+  describe("for each kind of pane (#5205)", () => {
+    const ENDED_FOOT = [
+      "harness",
+      "workspace",
+      "from",
+      "studio",
+      "workItem",
+      "sandbox",
+      "ended",
+      "ctx",
+      "cache",
+    ];
+
+    it.each([
+      // kind, the head's line, the foot
+      ["task", ["persona", "crumbs"], WHOLE],
+      ["ended", ["persona", "name", "mark", "markWord"], ENDED_FOOT],
+      ["endedTask", ["persona", "crumbs"], ENDED_FOOT],
+      ["view", [], null],
+      ["empty", [], null],
+      ["folded", ["persona", "name"], null],
+    ] as const)("a %s pane", (kind, head, foot) => {
+      const lines = paneLinesOf(kind, 900, full);
+      expect(lines.head).toEqual(head);
+      expect(lines.foot).toEqual(foot);
+    });
+
+    it("says no skills warning on what has ended: nothing there can act on it", () => {
+      expect(paneLinesOf("ended", 900, { skills: true }).foot).not.toContain("skills");
+      expect(paneLinesOf("endedTask", 900, { skills: true }).foot).not.toContain("skills");
+      expect(paneLinesOf("task", 900, { skills: true }).foot).toContain("skills");
+    });
   });
 
   it("draws on the foot only the facts a chat has: the harness, the workspace and the gauge always", () => {

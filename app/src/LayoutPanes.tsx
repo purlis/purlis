@@ -260,7 +260,14 @@ export function PaneFrame({
   const chats = useChatsHere();
   const moved = useChatsSelect(chats, (states) => movedAt(states, session));
   const running = useChatsSelect(chats, (states) => stateOf(states, session) === "running");
-  const usage = useChatUsage(plane, session, moved, running);
+  // **What has ended stays said** (#5205, stories 23 and 24): its band is there only once the chat
+  // has ended, and the foot says what the window last knew of it, the core having let go of a chat
+  // closed on purpose. Its gauge reads no more.
+  const hasEnded = ended !== undefined;
+  const read = useChatUsage(plane, session, moved, running, hasEnded);
+  const usage = useLastKnown(read, session, hasEnded);
+  const lastHead = useLastKnown(head, session, hasEnded);
+  const lastHarness = useLastKnown(harness, session, hasEnded);
   const lent = useReferenceChats();
   const frame = useRef<HTMLDivElement>(null);
   // **What a narrow pane drops, in the ruled order** (#4760, `paneHead.ts`), and whether the
@@ -276,14 +283,15 @@ export function PaneFrame({
     oneJob,
     // The plane's listing, once it has come; until then what the open chats said of it, so a
     // chat reserves its foot from its first frame and its terminal gets one size (story 46).
-    shell: head?.chat.shell ?? shell,
+    shell: lastHead?.chat.shell ?? shell,
+    ended: hasEnded,
   });
   const lines = paneLinesOf(kind, width, {
     from: Boolean(from),
     skills: skillsWarn !== undefined,
     studio: startedByStudio,
     workItem: Boolean(workItem),
-    sandbox: head?.sandbox?.level != null,
+    sandbox: lastHead?.sandbox?.level != null,
   });
   const line = new Set(lines.head);
   /** **What a part of the foot presses** (#5204, spec #5191 story 37): its row of the chat's list,
@@ -469,9 +477,9 @@ export function PaneFrame({
           plane={plane}
           session={session}
           parts={lines.foot}
-          head={head}
+          head={lastHead}
           crumbs={crumbs}
-          harness={harness}
+          harness={lastHarness}
           from={from}
           workItem={workItem}
           usage={usage}
@@ -570,7 +578,12 @@ export function ChatFoot({
         {/* **The gauge at the end** (#3142, rule 15; #5202): drawn once the chat's first
             usage arrives, in a line that is there before it, so its arrival moves nothing.
             `ctx` is the chat's Activity's shortcut (#5204). */}
-        <ChatGauge usage={usage} parts={parts} context={rowOf("ctx")} />
+        {foot.has("ended") && (
+          <span className="pane-foot-ended">
+            <Badge variant="neutral">ended</Badge>
+          </span>
+        )}
+        <ChatGauge usage={usage} parts={parts} context={rowOf("ctx")} ended={foot.has("ended")} />
       </PaneFootEnd>
     </PaneFoot>
   );
@@ -755,6 +768,19 @@ function PaneWhere({
   );
 }
 
+/**
+ * **`value`, or while `hold` is on the last that was known of it for `session`**: what a pane still
+ * says of a chat that has ended, which the core may no longer answer for.
+ */
+function useLastKnown<T>(value: T | undefined, session: number, hold: boolean): T | undefined {
+  const [known, setKnown] = useState<{ session: number; value: T }>();
+  // Kept as it is drawn (React's "information from previous renders"): no commit comes of it.
+  if (!hold && value !== undefined && (known?.value !== value || known.session !== session))
+    setKnown({ session, value });
+  if (!hold) return value;
+  return known?.session === session ? known.value : value;
+}
+
 /** **What a part of the foot presses**: its row of the chat's list, by that row's title. */
 export type FootPress = { title: string; press: () => void };
 
@@ -913,6 +939,12 @@ export type EndedChat = {
   /** The record a Smart close wrote, which its band links to (spec #4750 story 62). */
   record?: { path: string; title: string };
 };
+
+/** `↳ from` the chat that asked for the task at the end of `path`, or nothing for a path of one. */
+function askedFromOf(path: Crumbs): string | undefined {
+  const asker = path.path[path.path.length - 2];
+  return asker === undefined ? undefined : `↳ from ${asker.name}`;
+}
 
 /** A chat that lives in a pane and is not the one the pane shows, with what purlis has to say
  *  of it. */
@@ -1507,7 +1539,12 @@ export function LayoutPanes({
           onPress: (offer) => onPaneDoes(layout.pane, offer),
         }}
         onShowChat={onShowChat}
-        from={shownPath === undefined ? handedFrom[content.session] : undefined}
+        from={
+          shownPath === undefined
+            ? handedFrom[content.session]
+            : // **A task's foot names the chat that asked** (#5205, story 22): the path's last but one.
+              askedFromOf(shownPath)
+        }
         harness={glances[content.session]}
         onOpenCard={(glance) => onOpenView(harnessCardView(glance.name), glance.label)}
         workItem={workItems[content.session]}

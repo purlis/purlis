@@ -509,6 +509,7 @@ export const PANE_FOOT_CHIPS = [
   "pane-foot-work-item",
   "pane-skills",
   "pane-foot-sandbox",
+  "pane-foot-ended",
   "chat-gauge",
 ];
 

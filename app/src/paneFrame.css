@@ -376,7 +376,7 @@
   vertical-align: -0.125em;
 }
 
-.pane-foot .pane-foot-sandbox {
+:is(.pane-foot .pane-foot-sandbox, .pane-foot .pane-foot-ended) {
   display: inline-flex;
   flex: none;
   align-items: center;

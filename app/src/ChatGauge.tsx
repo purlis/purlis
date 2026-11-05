@@ -74,6 +74,8 @@ export function useChatUsage(
   session: number,
   moved: number,
   running: boolean,
+  /** The chat has ended (#5205): what it said last stands, and nothing reads it again. */
+  frozen = false,
 ): ChatUsage | undefined {
   const [usage, setUsage] = useState<{ session: number; usage: ChatUsage | null }>();
   /** The reading last drawn, read in the answer's callback to leave an unchanged one undrawn. */
@@ -98,7 +100,7 @@ export function useChatUsage(
   useEffect(() => {
     const back = wasBehind.current;
     wasBehind.current = !shown;
-    if (!shown) return;
+    if (!shown || frozen) return;
     let gone = false;
     const read = () => {
       void commands
@@ -134,7 +136,7 @@ export function useChatUsage(
       clearTimeout(again);
       ticking?.();
     };
-  }, [plane, session, moved, running, shown]);
+  }, [plane, session, moved, running, shown, frozen]);
 
   // Keyed on the session, so a pane handed another chat never shows the last one's numbers.
   return usage?.session === session ? (usage.usage ?? undefined) : undefined;
@@ -156,12 +158,15 @@ export function ChatGauge({
   usage,
   parts = WHOLE_GAUGE,
   context: contextRow,
+  ended = false,
 }: {
   usage: ChatUsage | undefined;
   /** What the pane's model answers for its foot (`paneHead.paneLinesOf`). */
   parts?: readonly FootPart[];
   /** The row a press on `ctx` runs (#5204, spec #5191 story 36): the chat's Activity. */
   context?: { title: string; press: () => void };
+  /** The chat has ended: its numbers are its last, greyed (#5205, story 24). */
+  ended?: boolean;
 }) {
   if (usage === undefined) return null;
   const { rebuilds, cold } = usage;
@@ -171,6 +176,7 @@ export function ChatGauge({
   // **The whole story in words**, whatever the line has room for: a costly rebuild, a cold streak
   // and a cache that has dropped from a narrow foot have no colour of their own here.
   const said = [
+    ended && "as it ended",
     usage.context && `context window ${usage.context.value}% full`,
     usage.cache &&
       `${usage.cache.value}% of the last turn's input served from cache${
@@ -189,7 +195,8 @@ export function ChatGauge({
     <PaneFootGauge
       label="ctx"
       value={`${context.value}%`}
-      fill={{ percent: context.value, tone: context.tone }}
+      fill={{ percent: context.value, tone: ended ? "ended" : context.tone }}
+      tone={ended ? "ended" : undefined}
     />
   );
   return (
@@ -217,7 +224,11 @@ export function ChatGauge({
       {cache && (
         <Tooltip tip={said}>
           <span>
-            <PaneFootGauge label="cache" value={`${cache.value}%`} tone={cache.tone} />
+            <PaneFootGauge
+              label="cache"
+              value={`${cache.value}%`}
+              tone={ended ? "ended" : cache.tone}
+            />
           </span>
         </Tooltip>
       )}

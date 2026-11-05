@@ -777,6 +777,7 @@ body {
     .pane-foot-work-item,
     .pane-skills,
     .pane-foot-sandbox,
+    .pane-foot-ended,
     .chat-gauge
   ) {
   height: var(--size-chrome);
