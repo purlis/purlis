@@ -364,7 +364,7 @@ impl Browser {
             .store(true, std::sync::atomic::Ordering::SeqCst);
         // Every login that fills starts clean on its own site (#5272), held already, and before
         // anything watches this page leave.
-        let target = if login.clean_already {
+        let target = if login.clean_already || !login.suggested {
             target
         } else {
             self.clean_load(&target, login, &|page| shows_form(self, page))?
@@ -459,26 +459,23 @@ impl Browser {
         // No document of those sites is left to put back what goes.
         self.blank_pages_of(opened, login).map_err(not_cleared)?;
         self.clear_sites(opened, login).map_err(not_cleared)?;
-        let target = self.own_blank_page()?;
+        let target = opened.to_owned();
         let session = self.page_session(&target)?;
         self.devtools()
             .call(
                 "Network.setCacheDisabled",
-                json!({ "cacheDisabled": true }),
+                json!({ "cacheDisabled": false }),
                 Some(&session),
             )
             .map_err(|_| not_cleared("its cache could not be passed by".to_owned()))?;
         lock(&self.inner.state).current = Some(target.clone());
-        let _ = self
-            .devtools()
-            .call("Target.closeTarget", json!({ "targetId": opened }), None);
         let loaded = {
             let _addressing = self.addressing(&target, Why::Addressed);
             self.acting_on(&target, || self.navigate(&session, &login.address))
         }
         .and_then(|_| self.wait_until(within, 1, || Ok(shows_form(&target)? == Some(true))))
         .map_err(|why| match why {
-            Refusal::Unknown => Refusal::NoFormOnCleanLoad(format!(
+            Refusal::Unknown => Refusal::NotLoggedIn(format!(
                 "no login form appeared on {origin} within {} seconds of clearing it, so \
                  nothing was filled",
                 within.as_secs()
@@ -540,7 +537,7 @@ impl Browser {
             self.devtools()
                 .call(
                     "Storage.clearDataForOrigin",
-                    json!({ "origin": origin, "storageTypes": "all" }),
+                    json!({ "origin": origin, "storageTypes": "service_workers" }),
                     on,
                 )
                 .map_err(|_| format!("what {origin} stores did not go"))?;

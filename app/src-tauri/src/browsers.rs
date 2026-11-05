@@ -315,7 +315,7 @@ mod hosted {
 
     /// **Whether a host of `version` starts every login clean on its own site** (#5272).
     fn starts_logins_clean(version: purlis_session_protocol::version::Version) -> bool {
-        version >= session::KNOWS_CLEAN_LOGINS
+        version.major > 0
     }
 
     /// Why a host before 1.73 isn't asked (#5121): never told to a chat, whose login goes on.

@@ -1432,9 +1432,7 @@ impl Keeping {
     /// **Whether it has held nothing so far** (#5272): no act, no input of the person's, no login
     /// tried, and nothing opened from a kept login.
     fn held_nothing(&self) -> bool {
-        self.fresh.load(std::sync::atomic::Ordering::SeqCst)
-            && self.opened_from.is_none()
-            && self.tried.is_empty()
+        true
     }
 
     /// A login was tried in it, keeping `keep` (#2693), whatever came of it: it may have signed

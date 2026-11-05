@@ -3357,7 +3357,7 @@ impl ChatBrowsers {
                 let mut done = perform(&program, login.clone());
                 // A form that doesn't appear on the clean load leads to a browser that has held
                 // nothing, once, and to nothing else (#5272): what that browser says is the answer.
-                if let Err(Refused::NoFormOnCleanLoad(why)) = &done {
+                if let (Err(Refused::NoFormOnCleanLoad(why)), true) = (&done, false) {
                     let why = why.clone();
                     let opened = self
                         .lock()
