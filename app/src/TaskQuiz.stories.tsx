@@ -212,7 +212,17 @@ export const OneAtATimeWithACount: Story = {
     await userEvent.tab();
     await untilFocused(() => canvas.getByRole("button", { name: "Open task" }), "on Open task");
     expectFocusInSight();
-    canvas.getByRole("button", { name: "Open task" }).blur();
+    // Esc folds it from the box, what was typed kept, and lands on its toggle (#5215).
+    box(canvasElement).focus();
+    await untilFocused(() => box(canvasElement), "back in the answer box");
+    await userEvent.keyboard("{Escape}");
+    const toggle = canvas.getByRole("button", { name: "Show the whole question" });
+    await untilFocused(() => toggle, "on the question's toggle");
+    expectFocusInSight();
+    // Opened again for the picture, the keyboard put down.
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(box(canvasElement)).toBeVisible());
+    toggle.blur();
     await userEvent.clear(terminal(canvasElement));
     terminal(canvasElement).blur();
   },

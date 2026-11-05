@@ -104,6 +104,17 @@ export const closeIn =
     return now;
   };
 
+/** Opens `cause` in `band` again, once what it closed has gone. */
+export const reopenIn =
+  (band: string | undefined, cause: string) =>
+  (was: ReadonlySet<string>): ReadonlySet<string> => {
+    if (!was.has(cause)) return was;
+    const now = new Set(was);
+    now.delete(cause);
+    if (band !== undefined) closedHere.set(band, now);
+    return now;
+  };
+
 /** Lets the band memory of a pane closed for good go. */
 export function forgetPaneBand(band: string) {
   bands.delete(band);

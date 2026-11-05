@@ -25,6 +25,7 @@
  *   layout, drawn here and themed through the Notices they hold.
  */
 import {
+  ChevronDown,
   CircleAlert,
   CircleCheck,
   CircleQuestionMark,
@@ -33,7 +34,14 @@ import {
   Shield,
   SquareTerminal,
 } from "lucide-react";
-import type { ComponentPropsWithRef, ReactNode, Ref } from "react";
+import {
+  useLayoutEffect,
+  type ComponentPropsWithRef,
+  type ReactNode,
+  type Ref,
+  type RefObject,
+} from "react";
+import { Button } from "../button/Button";
 import { useObjectRef } from "react-aria";
 import { useScrollEdges } from "./scrollEdges";
 
@@ -54,6 +62,7 @@ export function NoticeBox({
   layout,
   whole = false,
   what,
+  consent = false,
   children,
 }: {
   /** **`card`** (#3344, the sidebar-views prototype's Q3 A): its mark at the start, its title
@@ -65,6 +74,8 @@ export function NoticeBox({
   whole?: boolean;
   /** **What it is about, in a word or two**, for the folded band's line to name (#5215). */
   what?: string;
+  /** **A row that waits on consent** (#5215, ADR 0097 §6): it keeps its full waiting edge. */
+  consent?: boolean;
   tone: NoticeTone;
   placement: NoticePlacement;
   /** A way out opened something under the line: in a pane the box takes a sentence's width. */
@@ -88,6 +99,7 @@ export function NoticeBox({
       data-layout={layout}
       data-whole={whole ? "" : undefined}
       data-what={what}
+      data-consent={consent ? "" : undefined}
     >
       {children}
     </div>
@@ -187,7 +199,7 @@ export function NoticeWords({ children }: { children: ReactNode }) {
 /** **A row's sub-line** (#5215): what kind of notice it is, or who asks, and its age. */
 export function NoticeSub({ children }: { children: ReactNode }) {
   return (
-    <span data-scope="notice" data-part="sub">
+    <span data-scope="notice" data-part="sub" className="ui-text-meta">
       {children}
     </span>
   );
@@ -195,9 +207,9 @@ export function NoticeSub({ children }: { children: ReactNode }) {
 
 /** **A row's ways out** (#5215): its own buttons, its toggle, then its ×, in that order. A message
  *  opened whole pins them at its foot. */
-export function NoticeWays({ children }: { children: ReactNode }) {
+export function NoticeWays({ children, ref }: { children: ReactNode; ref?: Ref<HTMLDivElement> }) {
   return (
-    <div data-scope="notice" data-part="ways">
+    <div ref={ref} data-scope="notice" data-part="ways">
       {children}
     </div>
   );
@@ -277,6 +289,55 @@ export function NoticeStack({
       {children}
     </div>
   );
+}
+
+/** **The folded band's one line** (#5215): one button, what waits at its start and Show at its
+ *  far end, where a dot before it would stand alone, so only a reader hears that. */
+export function NoticeRowFolded({
+  says,
+  show,
+  onPress,
+  ref,
+}: {
+  says: string;
+  show: string;
+  onPress: () => void;
+  ref?: Ref<HTMLButtonElement>;
+}) {
+  return (
+    <div data-scope="notice-row" data-part="folded">
+      <Button ref={ref} size="sm" variant="ghost" onPress={onPress} data-way="show">
+        <span data-scope="notice-row" data-part="folded-says">
+          {says}
+        </span>
+        <span className="sr-only"> · </span>
+        <span data-scope="notice-row" data-part="folded-show">
+          {show}
+          <ChevronDown aria-hidden="true" />
+        </span>
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * **What a pinned foot covers is kept clear of the keyboard** (#5215, WCAG 2.4.11): while `pinned`,
+ * the stack it scrolls in stops a focused control above it, however tall the foot is.
+ */
+export function usePinnedRoom(foot: RefObject<HTMLElement | null>, pinned: boolean): void {
+  useLayoutEffect(() => {
+    const at = foot.current;
+    const stack = at?.closest<HTMLElement>('[data-scope="notice-row"][data-part="stack"]');
+    if (!pinned || !at || !stack) return;
+    const say = () => stack.style.setProperty("scroll-padding-block-end", `${at.offsetHeight}px`);
+    say();
+    const watch = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(say);
+    watch?.observe(at);
+    return () => {
+      watch?.disconnect();
+      stack.style.removeProperty("scroll-padding-block-end");
+    };
+  }, [foot, pinned]);
 }
 
 /** **The open band's head** (#4754, #5215): what it holds, then its ways (Dismiss all, the fold),

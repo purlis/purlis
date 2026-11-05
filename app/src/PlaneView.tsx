@@ -5096,7 +5096,7 @@ export const PlaneView = memo(function PlaneView({
       // A question's row's Answer (#5215): the Inbox, at the task's question.
       answerInInbox: (task: number) => {
         showSideView("inbox");
-        requestAnimationFrame(() => landOnGroupIn(plane, task));
+        requestAnimationFrame(() => landOnGroupIn(plane, task, "task-question"));
       },
     }),
     [tabs, askedBy, showChat, openSettingsAt, showSideView, plane],

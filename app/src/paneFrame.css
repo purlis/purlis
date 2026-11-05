@@ -81,38 +81,19 @@
   background-color: var(--surface-raised);
 }
 
+/* Its rows touch, a line between them: the stack's fades give back no gap (`notice.css`). */
+.pane-top
+  > [data-scope="notice-row"][data-part="root"]
+  > [data-scope="notice-row"][data-part="stack"] {
+  --notice-row-gap: 0px;
+}
+
 /* Folded, its rows are all `hidden`: a stack with nothing to show takes no room and scrolls nothing
    (its fades are boxes of their own). */
 .pane-top
   > [data-scope="notice-row"][data-part="root"]
   > [data-scope="notice-row"][data-part="stack"]:not(:has(> :not([hidden]))) {
   display: none;
-}
-
-/* The folded band's line: the whole box is its one button. */
-.pane-band-folded {
-  inline-size: 100%;
-  justify-content: flex-start;
-}
-
-.pane-band-folded-says {
-  overflow: hidden;
-  min-inline-size: 0;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pane-band-folded-show {
-  display: inline-flex;
-  flex: none;
-  gap: var(--space-2);
-  align-items: center;
-  margin-inline-start: auto;
-}
-
-.pane-band-folded-show > svg {
-  inline-size: var(--font-size-md);
-  block-size: var(--font-size-md);
 }
 
 /* The warnings, one under another and each the band's width; past the band's room they scroll
@@ -132,7 +113,7 @@
    notices leaves the terminal its height; a message opened, or what a way out opened, takes what it needs. */
 .pane-top
   > [data-scope="notice-row"][data-part="root"]
-  > [data-scope="notice-row"][data-part="stack"]:not(:has([data-whole], [data-opened])) {
+  > [data-scope="notice-row"][data-part="stack"]:not(:has([data-whole], [aria-expanded="true"])) {
   max-block-size: min(calc(var(--size-control) * 7), 33cqb);
 }
 
@@ -347,7 +328,7 @@
   border-block-start: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
-.pane-top [data-scope="notice"][data-part="root"][data-layout="row"]:has([data-variant="grants"]) {
+.pane-top [data-scope="notice"][data-part="root"][data-layout="row"][data-consent] {
   border: 1px solid var(--state-waiting);
   border-radius: var(--radius-md);
   background-color: transparent;
@@ -377,13 +358,8 @@
   color: var(--text-muted);
 }
 
-.pane-top [data-layout="row"]:has([data-variant="grants"]) > [role="status"] > [data-part="mark"] {
+.pane-top [data-layout="row"][data-consent] > [role="status"] > [data-part="mark"] {
   color: var(--accent-base);
-}
-
-[data-scope="notice"][data-part="words"] {
-  display: grid;
-  min-inline-size: 0;
 }
 
 /* **Its first line, and a toggle where that cuts it** (`useCut`). */
@@ -397,28 +373,6 @@
 .pane-top [data-layout="row"] [data-part="words"] > [data-part="message"] {
   font-size: var(--font-size-md);
   font-weight: var(--font-weight-medium);
-}
-
-[data-scope="notice"][data-part="sub"] {
-  overflow: hidden;
-  color: var(--text-muted);
-  font-size: var(--font-size-xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-[data-scope="notice"][data-part="ways"] {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  align-items: center;
-  justify-content: flex-end;
-  min-inline-size: 0;
-}
-
-[data-scope="notice"][data-part="way-slot"] {
-  flex: none;
-  inline-size: max(24px, var(--size-chrome), var(--space-7));
 }
 
 /* **A consent's Allow stands apart from Keep blocked** (rule 9), and a plain way out has no edge. */
@@ -447,6 +401,9 @@
   z-index: 2;
   inset-block-end: 0;
   padding-block: var(--space-2);
+}
+
+.pane-top [data-layout="row"][data-whole] [data-part="ways"] {
   background-color: var(--surface-raised);
 }
 
@@ -456,9 +413,11 @@
   background-color: inherit;
 }
 
-/* A prompt's question over the lines it was written on, once opened (#4710). */
-.terminal-prompt-says {
-  white-space: pre-wrap;
+/* Folded, a prompt's text keeps to the row's one line: nothing in it takes a line of its own. */
+.pane-top [data-layout="row"]:not([data-whole]) .terminal-prompt-says * {
+  display: inline;
+  margin: 0;
+  padding: 0;
 }
 
 /* A row's words keep their room in a narrow pane, and its ways go under them. */

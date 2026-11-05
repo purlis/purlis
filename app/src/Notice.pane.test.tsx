@@ -261,6 +261,28 @@ describe("a pane's row of Notices", () => {
       expect(screen.queryByRole("button", { name: /Dismiss all/ })).toBeNull();
     });
 
+    it("shows a closed ask again only once it has gone and been asked again (#5215)", async () => {
+      PANE_NOTICES.keep("expanded");
+      let setAsked: (asked: boolean) => void = () => undefined;
+      function Asked() {
+        const [asked, set] = useState(true);
+        setAsked = set;
+        return <Band>{asked && ask("dispatch-grant:1", "dispatch")}</Band>;
+      }
+      render(<Asked />);
+      await waitFor(() => expect(seen()).toEqual(["dispatch"]));
+
+      await userEvent.click(screen.getByRole("button", { name: "Close" }));
+      await waitFor(() => expect(seen()).toEqual([]));
+
+      act(() => setAsked(false));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      act(() => setAsked(true));
+      await waitFor(() => expect(seen()).toEqual(["dispatch"]));
+    });
+
     it("draws no band while minimised it holds only notes", async () => {
       const { container } = render(<Band>{one("a:1", "first")}</Band>);
       await waitFor(() => expect(holds()).toEqual({ notes: 1, trouble: 0, asks: 0 }));

@@ -63,13 +63,7 @@ function Strip({ wait }: { wait: Wait }) {
     setAt(to);
   };
   const label =
-    wait.kind !== "prose"
-      ? wait.kind === "ask" || wait.kind === "prompt"
-        ? `${STRIP.waitingOn} · ${STRIP.answerBelow}`
-        : STRIP.waitingOn
-      : at === null
-        ? STRIP.lastMessage
-        : STRIP.earlierAt(earlier.length - at, earlier.length);
+    at === null ? STRIP.lastMessage : STRIP.earlierAt(earlier.length - at, earlier.length);
   const long = cutOnOneLine(says);
   return (
     <div

@@ -467,6 +467,7 @@ describe("the stylesheet and the vocabulary agree", () => {
     "--window-controls",
     "--dialog-height",
     "--tree-depth",
+    // How tall a terminal's line is, as `SessionPane` measures it, for the pane's three-line floor.
     "--terminal-row",
   ];
 

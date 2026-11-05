@@ -12,7 +12,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { commands, type PlaneId, type Shown } from "./bindings";
-import { Notice } from "./Notice";
+import { Notice, useBandRows } from "./Notice";
 import { useQuestionsHere } from "./QuestionsHere";
 import { QuizClosing, type Closed } from "./QuizClosing";
 import { closeQuizSaid, moreSaid, moreSaidFully, TaskQuiz } from "./TaskQuiz";
@@ -236,11 +236,11 @@ export function QuizBand({
   const held = useQuestionsHere();
   const places = useContext(QuizPlaces);
   const prefs = useWhereYouAnswer();
-  /** The questions closed in this pane: put away here, still the registry's, so still the
-   *  Inbox's and the ✋'s. */
-  const [closed, setClosed] = useState<ReadonlySet<string>>(() => new Set());
+  /** The questions closed in this pane, kept with its band (#5215): put away here, still the
+   *  registry's, so still the Inbox's and the ✋'s. */
+  const rows = useBandRows();
   const asks = held?.asks ?? [];
-  const open = asks.filter((ask) => !closed.has(ask.ask));
+  const open = asks.filter((ask) => rows?.closed.has(ask.ask) !== true);
   const quiz = places === undefined ? undefined : quizIn(open, session, prefs.answer, places.topOf);
   const { pausing, closings, dismiss, box, answered, typedIn } = useQuizzes(
     plane,
@@ -253,7 +253,7 @@ export function QuizBand({
   );
   if (quiz === undefined && closings.length === 0) return null;
   const closeQuiz = () => {
-    if (quiz !== undefined) setClosed((now) => new Set(now).add(quiz.ask.ask));
+    if (quiz !== undefined) rows?.close(quiz.ask.ask);
   };
   return (
     <>

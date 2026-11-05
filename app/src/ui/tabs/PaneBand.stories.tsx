@@ -17,7 +17,9 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Fragment, useRef, useState, type ReactNode } from "react";
 import { expect, waitFor, within } from "storybook/test";
 import { Sparkles, X } from "lucide-react";
+import type { Shown } from "../../bindings";
 import { Notice, NoticePaneRow } from "../../Notice";
+import { TerminalPromptNotice } from "../../TerminalPromptNotice";
 import { NOTICE_MOVED_JUST_NOW, SETTLE_MS, paneBand } from "../../noticeSettle";
 import { PaneActions, PaneBellAt, PaneBellOf, PaneHead } from "../../LayoutPanes";
 import { HOLDS_NOTHING, type BandHolds, type PaneNoticesShown } from "../../paneNotices";
@@ -37,7 +39,8 @@ type Warning =
   | "stale-clone"
   | "vault-refused"
   | "sandbox-long"
-  | "sandbox-ask";
+  | "sandbox-ask"
+  | "terminal-prompt";
 
 /** The pane's own rows of the catalogue, as the window's catalogue offers them for a chat. */
 const OFFERS: Record<string, Offer> = {
@@ -83,12 +86,25 @@ const LAST_LINES = [
   "  ⏵⏵ auto mode on (shift+tab to cycle)",
 ].join("\n");
 
+/** The chat on screen stopped on a prompt in its own terminal. */
+const PROMPT: Shown = {
+  session: 2,
+  ask: "terminal:2:1",
+  says: "Waiting in its terminal: a permission prompt",
+  options: [],
+  source: "terminal",
+  chain: ["steward 2"],
+  answer: { via: "in-its-pane" },
+  since: null,
+};
+
 /** The warnings of one pane, each put away by its Dismiss as the window's are. */
 function Warnings({ shown }: { shown: readonly Warning[] }) {
   const [away, setAway] = useState<readonly Warning[]>([]);
   const off = (one: Warning) => () => setAway((was) => [...was, one]);
   // Drawn in the order given: the band's order is the pane's.
   const drawn: Record<Warning, ReactNode> = {
+    "terminal-prompt": <TerminalPromptNotice session={2} waiting={[PROMPT]} />,
     "vault-refused": (
       <Notice
         cause="vault-refused:2:forge"
@@ -520,6 +536,32 @@ export const Minimised: Story = {
 };
 
 /**
+ * **Each kind keeps its own actions on its row** (#5215): a prompt in the terminal with Go to prompt,
+ * a consent with its full waiting edge and its Allow apart from Keep blocked, and a note with its
+ * ×. The keyboard takes each row's buttons in order, and the × last.
+ */
+export const EachKindOfRow: Story = {
+  args: { warnings: ["terminal-prompt", "sandbox-ask", "mcp-failed"] },
+  play: async ({ canvas, userEvent }) => {
+    const prompt = await canvas.findByRole("status", { name: "Terminal prompt" });
+    const go = within(prompt).getByRole("button", { name: "Go to prompt" });
+    go.focus();
+    await untilFocused(() => go, "on Go to prompt");
+    await userEvent.tab();
+    await untilFocused(
+      () => within(prompt).getByRole("button", { name: "Close" }),
+      "on the prompt's ×",
+    );
+    expectFocusInSight();
+    const block = canvas.getByRole("status", { name: "Sandbox block" })
+      .parentElement as HTMLElement;
+    expect(getComputedStyle(block).borderTopWidth).toBe("1px");
+    expect(getComputedStyle(block).borderLeftWidth).toBe("1px");
+    atRest();
+  },
+};
+
+/**
  * **A long message opened** (#5215): one row until its toggle is pressed; opened, it shows whole, the
  * band grows, the terminal keeps its three lines, and past that the band scrolls as one, with the
  * ways out pinned at the message's foot, above the band's fade. Esc folds it, and the keyboard lands
@@ -540,8 +582,8 @@ export const ALongMessageOpened: Story = {
     expectFocusInSight();
     // The terminal keeps at least its three lines.
     const { terminal } = rowsOf(canvasElement);
-    const lines = 3 * parseFloat(getComputedStyle(terminal as Element).lineHeight || "0");
-    expect(boxOf(terminal).height).toBeGreaterThanOrEqual(Number.isNaN(lines) ? 0 : lines - 1);
+    const size = parseFloat(getComputedStyle(terminal as Element).fontSize);
+    expect(boxOf(terminal).height).toBeGreaterThanOrEqual(3 * size);
     // A tooltip that is up takes the first Esc (`ui/tooltip`), and the row the next.
     await userEvent.keyboard("{Escape}");
     if (box.hasAttribute("data-whole")) await userEvent.keyboard("{Escape}");

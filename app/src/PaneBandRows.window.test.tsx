@@ -226,7 +226,7 @@ describe("a row", () => {
 
     const row = await within(frame()).findByRole("status", { name: "Remove workspace" });
     expect(within(row).getByText(/asks you to remove workspace/)).toBeTruthy();
-    expect(within(row).getByText("Remove workspace")).toBeTruthy();
+    expect(within(row).getByText(/^Remove workspace · /)).toBeTruthy();
     const buttons = within(row)
       .getAllByRole("button")
       .map((one) => one.getAttribute("aria-label") ?? one.textContent);

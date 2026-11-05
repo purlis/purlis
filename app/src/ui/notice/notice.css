@@ -290,13 +290,13 @@
 
 [data-scope="notice-row"][data-part="stack"]::before {
   inset-block-start: 0;
-  margin-block-end: calc(-1 * (var(--notice-row-fade) + var(--space-2)));
+  margin-block-end: calc(-1 * (var(--notice-row-fade) + var(--notice-row-gap, var(--space-2))));
   background-image: linear-gradient(to bottom, var(--notice-row-ground), transparent);
 }
 
 [data-scope="notice-row"][data-part="stack"]::after {
   inset-block-end: 0;
-  margin-block-start: calc(-1 * (var(--notice-row-fade) + var(--space-2)));
+  margin-block-start: calc(-1 * (var(--notice-row-fade) + var(--notice-row-gap, var(--space-2))));
   background-image: linear-gradient(to top, var(--notice-row-ground), transparent);
 }
 
@@ -418,4 +418,59 @@
   grid-column: 2 / 4;
   margin-block-start: var(--space-3);
   padding: 0;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   A row of a chat pane's band (#5215): its words and sub-line, its ways, and the band's folded line.
+   `paneFrame.css` lays the row out; these are the parts' own. The sub-line's look is its text role.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="notice"][data-part="words"] {
+  display: grid;
+  min-inline-size: 0;
+}
+
+[data-scope="notice"][data-part="sub"] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-scope="notice"][data-part="ways"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: flex-end;
+  min-inline-size: 0;
+}
+
+[data-scope="notice"][data-part="way-slot"] {
+  flex: none;
+  inline-size: max(24px, var(--size-chrome), var(--space-7));
+}
+
+[data-scope="notice-row"][data-part="folded"] > [data-scope="button"] {
+  inline-size: 100%;
+  justify-content: flex-start;
+}
+
+[data-scope="notice-row"][data-part="folded-says"] {
+  overflow: hidden;
+  min-inline-size: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-scope="notice-row"][data-part="folded-show"] {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-2);
+  align-items: center;
+  margin-inline-start: auto;
+}
+
+[data-scope="notice-row"][data-part="folded-show"] > svg {
+  inline-size: var(--font-size-md);
+  block-size: var(--font-size-md);
 }

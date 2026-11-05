@@ -3,8 +3,7 @@
 
 import { useRef } from "react";
 import type { Shown } from "./bindings";
-import { agoSaid } from "./inboxRules";
-import { useNow } from "./InboxRow";
+import { ChatText } from "./ChatText";
 import { Notice } from "./Notice";
 import { STRIP, waitOf } from "./waitingOn";
 
@@ -26,11 +25,9 @@ export function TerminalPromptNotice({
   waiting: readonly Shown[] | undefined;
 }) {
   const wait = waitOf(waiting, session);
-  const now = useNow();
   const at = useRef<HTMLSpanElement>(null);
   if (wait === undefined || wait.kind === "prose") return null;
   const since = waiting?.find((ask) => ask.ask === wait.ask)?.since;
-  const age = since == null ? undefined : agoSaid(since * 1000, now);
   return (
     <Notice
       at="pane"
@@ -39,7 +36,8 @@ export function TerminalPromptNotice({
       label={STRIP.prompt}
       waits
       mark="prompt"
-      sub={age === undefined ? STRIP.answerBelow : `${STRIP.answerBelow} · ${age}`}
+      sub={STRIP.answerBelow}
+      since={since}
       fixes={[
         {
           label: STRIP.goToPrompt,
@@ -52,7 +50,7 @@ export function TerminalPromptNotice({
       ]}
     >
       <span ref={at} className="terminal-prompt-says">
-        {wait.says}
+        <ChatText whole text={wait.says} />
       </span>
     </Notice>
   );

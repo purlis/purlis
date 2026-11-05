@@ -3,6 +3,7 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useId,
@@ -14,8 +15,17 @@ import {
   type Ref,
 } from "react";
 import { createPortal } from "react-dom";
+import { useNow } from "./InboxRow";
+import { agoSaid } from "./inboxRules";
 import { PersonaMark } from "./PersonaMark";
-import { closedIn, closeIn, grants, NoticeWayGuard, useNoticeSettle } from "./noticeSettle";
+import {
+  closedIn,
+  closeIn,
+  grants,
+  reopenIn,
+  NoticeWayGuard,
+  useNoticeSettle,
+} from "./noticeSettle";
 import {
   bandHeadSays,
   bandRegionSays,
@@ -25,7 +35,7 @@ import {
   sameHolds,
   type BandHolds,
 } from "./paneNotices";
-import { ChevronDown, ChevronUp, X } from "lucide-react";
+import { ChevronUp, X } from "lucide-react";
 import { Twist } from "./ui/disclosure/Disclosure";
 import { Button, ButtonRow, IconButton } from "./ui/button/Button";
 import {
@@ -34,6 +44,7 @@ import {
   NoticeMark,
   NoticeMessage,
   NoticeRow,
+  NoticeRowFolded,
   NoticeRowHead,
   NoticeStack,
   NoticeSub,
@@ -43,6 +54,7 @@ import {
   NoticeWaySlot,
   NoticeWhose,
   NoticeWords,
+  usePinnedRoom,
   type NoticeListAt,
   type NoticeTone,
 } from "./ui/notice/Notice";
@@ -175,6 +187,8 @@ type LineProps = WayOut &
     /** **A row's sub-line in a chat pane's band** (#5215): who asks or what it is, and its age.
      *  Without, its `label`. */
     sub?: ReactNode;
+    /** **When it began to wait, in seconds**, where it is known: said as its age (#5215). */
+    since?: number | null;
     /** **A row's icon, where its tone does not say what it is** (#5215): a prompt in the
      *  terminal. */
     mark?: "prompt";
@@ -207,6 +221,7 @@ type CardProps = CardWayOut &
     label?: never;
     persona?: never;
     sub?: never;
+    since?: never;
     mark?: never;
   };
 
@@ -283,6 +298,11 @@ export function Notice(props: NoticeProps) {
   const of = askedAt === "pane" ? provided : null;
   // **In a chat pane's band, a compact row** (#5215): the band says so, with how to close it here.
   const band = useContext(BandRows);
+  const stands = band?.stands;
+  useEffect(
+    () => (at === "pane" && title === undefined ? stands?.(cause) : undefined),
+    [at, title, stands, cause],
+  );
   const stacked = list !== null && at === "inbox";
   const id = useId();
   // Where this Notice is drawn when the Inbox lists it: an element of its own, which the list
@@ -417,27 +437,7 @@ export function Notice(props: NoticeProps) {
         </Button>
       )}
       {fixes?.map((fix) => (
-        <Button
-          key={fix.label}
-          ref={fix.button}
-          size="sm"
-          variant={fix.allows === true ? "grants" : "secondary"}
-          data-way="fix"
-          aria-expanded={fix.opens?.open}
-          aria-controls={fix.opens?.open ? fix.opens.id : undefined}
-          aria-disabled={fix.busy || fix.off !== undefined || undefined}
-          aria-busy={fix.busy || undefined}
-          tooltip={fix.off}
-          onPress={
-            fix.busy || fix.off !== undefined
-              ? undefined
-              : (press) => {
-                  if (mayAct(press.target)) fix.onPress();
-                }
-          }
-        >
-          {fix.label}
-        </Button>
+        <FixWay key={fix.label} fix={fix} mayAct={mayAct} />
       ))}
       {link && (
         <Button size="sm" onPress={link.onPress} data-way="link">
@@ -486,6 +486,39 @@ export function Notice(props: NoticeProps) {
   return stacked ? createPortal(drawn, host) : drawn;
 }
 
+/** **A way out that fixes**, on a pane's line or row: Allow in its own look, and every press asks
+ *  the place it stands in first (`mayAct`, #1695). */
+function FixWay({
+  fix: { button, label, allows, opens, busy, off, onPress },
+  mayAct,
+}: {
+  fix: NoticeAction;
+  mayAct: (way: Element) => boolean;
+}) {
+  return (
+    <Button
+      ref={button}
+      size="sm"
+      variant={allows === true ? "grants" : "secondary"}
+      data-way="fix"
+      aria-expanded={opens?.open}
+      aria-controls={opens?.open ? opens.id : undefined}
+      aria-disabled={busy || off !== undefined || undefined}
+      aria-busy={busy || undefined}
+      tooltip={off}
+      onPress={
+        busy || off !== undefined
+          ? undefined
+          : (press) => {
+              if (mayAct(press.target)) onPress();
+            }
+      }
+    >
+      {label}
+    </Button>
+  );
+}
+
 /** What a toggle says, by whether the row's message is opened (#5215). */
 export const SHOW_WHOLE = "Show the whole message";
 export const SHOW_LESS = "Show less";
@@ -502,7 +535,14 @@ export const CLOSE_NOTE_SAYS = "Close here.";
 const BandRows = createContext<{
   closed: ReadonlySet<string>;
   close: (cause: string) => void;
+  /** Says a Notice of this cause stands, and returns how to say it has gone: once none does, its
+   *  cause is no longer closed, so the same ask asked again is seen. */
+  stands: (cause: string) => () => void;
 } | null>(null);
+
+/** **What this band has closed, and how to close**, for what draws a part of it itself (a task's
+ *  question, `QuizBand`); none outside a chat's band. */
+export const useBandRows = () => useContext(BandRows);
 
 /** **Whether its one line cuts what it says**, measured as it is laid out and as its width changes:
  *  what a row's toggle is offered on. */
@@ -543,6 +583,7 @@ function BandRow({
   children,
   under,
   sub,
+  since,
   mark,
   fixes,
   link,
@@ -555,7 +596,7 @@ function BandRow({
   onClose,
 }: Said &
   Omit<Ways, "onDismiss"> &
-  Pick<LineProps, "label" | "persona" | "sub" | "mark"> & {
+  Pick<LineProps, "label" | "persona" | "sub" | "since" | "mark"> & {
     whose: { whose: string; onGo: () => void } | null;
     waitsHere: boolean;
     onDismiss?: () => void;
@@ -564,10 +605,23 @@ function BandRow({
   }) {
   const [whole, setWhole] = useState(false);
   const { at, cut } = useCut(whole);
+  // Pinned at its foot, opened, its ways keep the keyboard clear of them (WCAG 2.4.11).
+  const waysAt = useRef<HTMLDivElement>(null);
+  usePinnedRoom(waysAt, whole);
   const asksConsent = fixes?.some((fix) => fix.allows) === true;
   const holdsStill = asksConsent || grants(cause);
   const kind = mark ?? (asksConsent ? "consent" : tone === "news" && !running ? "note" : undefined);
-  const says = sub ?? label;
+  const now = useNow();
+  const age = since == null ? undefined : agoSaid(since * 1000, now);
+  const what = sub ?? label;
+  const says =
+    what == null || age === undefined ? (
+      (what ?? age)
+    ) : (
+      <>
+        {what} · {age}
+      </>
+    );
   return (
     <NoticeBox
       tone={tone}
@@ -578,6 +632,7 @@ function BandRow({
       waits={waitsHere}
       whole={whole}
       what={label}
+      consent={holdsStill}
     >
       <ButtonRow
         size="sm"
@@ -595,37 +650,17 @@ function BandRow({
           </NoticeMessage>
           {says != null && <NoticeSub>{says}</NoticeSub>}
         </NoticeWords>
-        <NoticeWays>
+        <NoticeWays ref={waysAt}>
           {whose !== null && (
             <Button size="sm" onPress={whose.onGo} data-way="go">
               Go to it
             </Button>
           )}
           {fixes?.map((fix) => (
-            <Button
-              key={fix.label}
-              ref={fix.button}
-              size="sm"
-              variant={fix.allows === true ? "grants" : "secondary"}
-              data-way="fix"
-              aria-expanded={fix.opens?.open}
-              aria-controls={fix.opens?.open ? fix.opens.id : undefined}
-              aria-disabled={fix.busy || fix.off !== undefined || undefined}
-              aria-busy={fix.busy || undefined}
-              tooltip={fix.off}
-              onPress={
-                fix.busy || fix.off !== undefined
-                  ? undefined
-                  : (press) => {
-                      if (mayAct(press.target)) fix.onPress();
-                    }
-              }
-            >
-              {fix.label}
-            </Button>
+            <FixWay key={fix.label} fix={fix} mayAct={mayAct} />
           ))}
           {link && (
-            <Button size="sm" onPress={link.onPress} data-way="link">
+            <Button size="sm" variant="link" onPress={link.onPress} data-way="link">
               {link.label}
             </Button>
           )}
@@ -968,6 +1003,29 @@ export function NoticePaneRow({
   // anew. A chat's band alone: only there is a Notice a row.
   const [closed, setClosed] = useState<ReadonlySet<string>>(() => closedIn(band));
   const hasBell = bell !== undefined;
+  // How many Notices of each cause stand. Read a moment after one goes: a band drawn anew takes
+  // every Notice down and up again, and only one that stays down has gone.
+  const standing = useRef(new Map<string, number>());
+  const drawnNow = useRef(false);
+  useLayoutEffect(() => {
+    drawnNow.current = true;
+    return () => {
+      drawnNow.current = false;
+    };
+  }, []);
+  const stands = useCallback(
+    (cause: string) => {
+      const count = standing.current;
+      count.set(cause, (count.get(cause) ?? 0) + 1);
+      return () => {
+        count.set(cause, (count.get(cause) ?? 1) - 1);
+        queueMicrotask(() => {
+          if (drawnNow.current && count.get(cause) === 0) setClosed(reopenIn(band, cause));
+        });
+      };
+    },
+    [band],
+  );
   const rows = useMemo(
     () =>
       !hasBell
@@ -975,8 +1033,9 @@ export function NoticePaneRow({
         : {
             closed,
             close: (cause: string) => setClosed(closeIn(band, cause)),
+            stands,
           },
-    [hasBell, closed, band],
+    [hasBell, closed, band, stands],
   );
   // **A granting Notice's ways out wait for it to settle once it moved** (#1695, train 54's
   // review): a Notice above it answered or gone can move another's way out under the pointer.
@@ -1148,25 +1207,15 @@ export function NoticePaneRow({
       ref={rowAt}
     >
       {foldedLine && (
-        <Button
+        <NoticeRowFolded
           ref={showAt}
-          size="sm"
-          variant="ghost"
-          className="pane-band-folded"
+          says={foldedSays(asks, held.waitsOn)}
+          show={SHOW_BAND}
           onPress={() => {
             goesOn.current = true;
             bell?.expand();
           }}
-          data-way="show"
-        >
-          <span className="pane-band-folded-says">{foldedSays(asks, held.waitsOn)}</span>
-          {/* The prototype's line: Show at the far end, where a dot before it would stand alone. */}
-          <span className="sr-only"> · </span>
-          <span className="pane-band-folded-show">
-            {SHOW_BAND}
-            <ChevronDown aria-hidden="true" />
-          </span>
-        </Button>
+        />
       )}
       {headed && (
         <NoticeRowHead says={bandHeadSays({ notes, trouble, asks })}>

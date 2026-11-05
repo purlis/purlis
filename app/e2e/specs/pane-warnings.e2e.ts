@@ -70,6 +70,9 @@ async function raise(pane: number, sentence: string, ways: string[]): Promise<vo
         '.pane-top [data-scope="notice-row"][data-part="root"] > [data-scope="notice-row"][data-part="stack"]',
       );
       if (!stack) return false;
+      // The band open (#5215): folded, what it holds is one line, however it is marked.
+      const bell = frames[at]?.querySelector('[aria-label^="Pane notices:"]');
+      if (bell?.getAttribute("aria-expanded") === "false") (bell as HTMLElement).click();
       const el = [
         (tag: string, cls: string, text?: string): HTMLElement => {
           const made = document.createElement(tag);

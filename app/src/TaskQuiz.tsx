@@ -6,11 +6,13 @@ import { X } from "lucide-react";
 import type { PlaneId, ReachedWhy, Shown } from "./bindings";
 import { answerHowSaid, useAnswerQuestion } from "./AnswerQuestion";
 import { ChatText } from "./ChatText";
+import { CLOSE_ASK_SAYS, SHOW_LESS } from "./Notice";
 import { KindMark, useNow } from "./InboxRow";
 import { agoSaid } from "./inboxRules";
 import { Count } from "./ui/badge/Badge";
 import { Button, IconButton } from "./ui/button/Button";
 import { Card } from "./ui/card/Card";
+import { usePinnedRoom } from "./ui/notice/Notice";
 import { Twist } from "./ui/disclosure/Disclosure";
 import { Form, TextArea } from "./ui/field/Field";
 import { Tooltip } from "./ui/tooltip/Tooltip";
@@ -28,12 +30,11 @@ export const moreSaidFully = (count: number) =>
   `${count} more ${count === 1 ? "question waits" : "questions wait"} after this`;
 /** What the quiz's close says it does (#5213): the question is put away here, not answered. */
 export const CLOSE_QUIZ = "Close question";
-export const closeQuizSaid = "Close here. It stays in the Inbox until you answer it.";
+export const closeQuizSaid = CLOSE_ASK_SAYS;
 
 /** A question's row (#5215): Answer opens it in the Inbox, and its toggle shows it whole. */
 export const ANSWER_IN_INBOX = "Answer";
 export const SHOW_WHOLE_QUESTION = "Show the whole question";
-export const SHOW_LESS_QUESTION = "Show less";
 
 /** **A question's first line**, the first the task wrote with any words on it. */
 export const firstLineOf = (says: string): string =>
@@ -119,6 +120,8 @@ export function TaskQuiz({
   const why = ask.answer.via === "task-question" ? ask.answer : undefined;
   const age = ask.since == null ? undefined : agoSaid(ask.since * 1000, now);
   const toggleAt = useRef<HTMLButtonElement>(null);
+  const pinnedAt = useRef<HTMLDivElement>(null);
+  usePinnedRoom(pinnedAt, open);
   /** **Esc folds it** (#5215): what was typed is kept, and the keyboard lands on its toggle. */
   const fold = () => {
     setOpen(false);
@@ -170,7 +173,7 @@ export function TaskQuiz({
             ref={toggleAt}
             size="sm"
             variant="ghost"
-            aria-label={open ? SHOW_LESS_QUESTION : SHOW_WHOLE_QUESTION}
+            aria-label={open ? SHOW_LESS : SHOW_WHOLE_QUESTION}
             aria-expanded={open}
             onPress={() => setOpen((was) => !was)}
             icon={<Twist open={open} />}
@@ -203,7 +206,7 @@ export function TaskQuiz({
           )}
           {/* **Its buttons stay in reach** (#5215): pinned at the message's foot as the band
               scrolls, above the band's fade. */}
-          <div className="task-quiz-pinned">
+          <div ref={pinnedAt} className="task-quiz-pinned">
             <Form
               className="task-quiz-answer"
               aria-label={`Answer ${task}'s question`}
@@ -219,7 +222,8 @@ export function TaskQuiz({
                 aria-describedby={`${ids}-asked ${ids}-how`}
                 placeholder="Your answer"
                 error={refused}
-                rows={Math.min(Math.max(2, text.split("\n").length), 10)}
+                // Pinned, so it stays a few lines tall, and scrolls past them.
+                rows={Math.min(Math.max(2, text.split("\n").length), 4)}
                 value={text}
                 isDisabled={held}
                 onChange={(to) => {

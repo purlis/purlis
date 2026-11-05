@@ -833,7 +833,7 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
   #5215), `inbox` (a row of the Inbox's list, no box of its
   own, the danger ground across a trouble row) or `alone` (on a page, edged in the hairline, which takes the card's edge width: none in Purlis).
   Each way out is a button of the button family that says which it is (`data-way`: `go`, `fix`,
-  `link`, `copy`, `dismiss`, and a band row's `whole` and `close`). **A Notice holds Allow, so it is a consent
+  `link`, `copy`, `dismiss`, a band row's `whole` and `close`, and its folded line's `show`). **A Notice holds Allow, so it is a consent
   surface**: its fill is one of the grounds an answer that grants is measured on, and its edge's
   width is no theme's. The Inbox's list (`data-scope="notice-list"`) and a pane's row
   (`data-scope="notice-row"`) are the family's layout.

@@ -126,6 +126,9 @@ async function raise(
         "[data-scope=notice-row][data-part=root] > [data-scope=notice-row][data-part=stack]",
       );
       if (!stack) return false;
+      // The band open (#5215): folded, what it holds is one line, however it is marked.
+      const bell = frames[at]?.querySelector('[aria-label^="Pane notices:"]');
+      if (bell?.getAttribute("aria-expanded") === "false") (bell as HTMLElement).click();
       // Held in a list, not bound by name: the spec's bundler wraps a named function in a
       // `__name` call the page does not have (`gauge.e2e.ts`, `view-tabs.e2e.ts`).
       const el = [
@@ -334,6 +337,12 @@ async function measured(pane: number) {
       neighbours: frames.filter((one) => one !== frame).map((one) => box(one)),
       row: box(frame?.querySelector("[data-scope=notice-row][data-part=root]")),
       terminal: box(frame?.querySelector('[data-testid="pane"]')),
+      // How tall the terminal's line is, as it says for the pane's three-line floor (#5215).
+      terminalRow: Number.parseFloat(
+        getComputedStyle(frame?.querySelector(".pane-body") ?? document.body).getPropertyValue(
+          "--terminal-row",
+        ),
+      ),
       head: box(frame?.querySelector(".pane-head")),
       // The cap's "+N more", which is gone (#4754): measured to say it is not drawn.
       more: box(frame?.querySelector("[data-scope=notice-row][data-part=root] > [data-way=more]")),
@@ -996,12 +1005,13 @@ describe("a Notice in a pane", () => {
     const seen = await measured(0);
     const [frame, stack] = [seen.frame as Box, seen.stack as Box];
     // The band gives way before the terminal goes under its three lines, and scrolls what it cannot
-    // show (#5215). A line of the terminal is at least a rem.
+    // show (#5215).
+    expect(Number.isFinite(seen.terminalRow)).toBe(true);
     check(
       "the terminal gave way past its three lines",
       (seen.terminal as Box).height,
       "atLeast",
-      3 * seen.rem,
+      3 * seen.terminalRow,
     );
     // What each Notice draws, its box clipped to the stack, stays inside the pane and off the
     // terminal, however short the pane is.

@@ -1034,6 +1034,7 @@ function AllowNotice({
       at="pane"
       tone="trouble"
       label="Sandbox block"
+      since={asks[0]?.since}
       fixes={fixes}
       under={under}
     >
