@@ -17,6 +17,12 @@
 //! - [`push_after`] is what follows a replay that finished: a push of what is committed, and
 //!   nothing else.
 //!
+//! **A project that saves through requests merges rather than replays** (#5338): its line of
+//! saves can run to hundreds of commits, and its request carries them, so [`start`] merges the
+//! target in, with what purlis generates already settled ([`super::bringin`]). It stops once,
+//! on the files a person wrote. *Continue* finishes the merge and *Abort* undoes it; everything
+//! below about a replay holds for that merge, whose stop is its `MERGE_HEAD`.
+//!
 //! **What git stopped with is kept, in this process, for each stop** ([`Stop`]): the commit it
 //! stopped on, the files in conflict, which of them git could not mark ([`Conflicts::by_hand`]),
 //! and every other change git had staged. Continue carries on only from that: the files in
@@ -27,6 +33,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
+use super::bringin::{self, BroughtIn};
 use super::{
     Claim, PushResult, Rebased, WRITE, changed_paths, count, fetch_branch, forget_replayed_push,
     gpgsign, ondisk, rebase_in_progress, rebase_onto, tail,
@@ -87,10 +94,10 @@ const BUSY: &str = "A save of this project is running. Wait for it to finish, th
 
 /// What a press says where this window holds no stop for the rebase git is stopped in.
 const NOT_HELD: &str = "This window did not see where git stopped (it was restarted, or the \
-     rebase was started elsewhere), so it carries nothing on. Carry on in a terminal here, which \
-     keeps what is settled: `git add -- <file>` for each settled file, then `git rebase \
-     --continue`. Abort instead throws away the edits already made and puts the project back \
-     where it was, and Resolve then starts again.";
+     rebase or merge was started elsewhere), so it carries nothing on. Carry on in a terminal \
+     here, which keeps what is settled: `git add -- <file>` for each settled file, then `git \
+     rebase --continue`, or `git commit` for a merge. Abort instead throws away the edits \
+     already made and puts the project back where it was, and Resolve then starts again.";
 
 /// **Resolve**: fetch the target branch and replay the project's own commits onto it, stopping
 /// where git stops. For the person's own press in the window, and nothing else.
@@ -145,6 +152,12 @@ pub fn start(root: &Path, say: Sink) -> Settled {
         forget_replayed_push(root);
         return Settled::Replayed;
     }
+    if matches!(
+        plane.mode.value,
+        Some(crate::planesave::Mode::Pr | crate::planesave::Mode::PrMerge)
+    ) {
+        return start_merge(root, &branch, &theirs, plane.sign.value, say);
+    }
     say(Say::Info("Replaying this project's own commits …".into()));
     match rebase_onto(root, &theirs, plane.sign.value, WRITE) {
         Rebased::Replayed => {
@@ -181,6 +194,103 @@ pub fn start(root: &Path, say: Sink) -> Settled {
             }
         }
     }
+}
+
+/// [`start`] for a project that saves through requests: bring the target in whole where nothing
+/// a person wrote is in conflict, and otherwise leave a merge stopped on just those files, with
+/// everything purlis generates already settled.
+fn start_merge(root: &Path, branch: &str, theirs: &str, sign: bool, say: Sink) -> Settled {
+    say(Say::Info(format!("Merging `{branch}` in …").into()));
+    match bringin::bring_in(root, branch, sign) {
+        BroughtIn::Nothing | BroughtIn::Moved(_) => {
+            forget_replayed_push(root);
+            return Settled::Replayed;
+        }
+        BroughtIn::Waiting(why) => return Settled::Refused(format!("Nothing was started: {why}.")),
+        BroughtIn::Failed(why) => {
+            return Settled::Refused(format!(
+                "Nothing was started: git could not merge them: {}.",
+                one_line(&why)
+            ));
+        }
+        BroughtIn::Conflict(_) => {}
+    }
+    let plan = match bringin::plan(root, theirs) {
+        Ok(plan) => plan,
+        Err(why) => {
+            return Settled::Refused(format!(
+                "Nothing was started: git could not merge them: {}.",
+                one_line(&why)
+            ));
+        }
+    };
+    let stops = super::sandbox_would_stop(root, theirs);
+    if !stops.is_empty() {
+        return Settled::Refused(format!(
+            "Nothing was started, since these files cannot be written here: {}.",
+            stops.join(", ")
+        ));
+    }
+    let subject = format!("Bring {branch} into this machine's saves");
+    let merged = git::run_untimed(
+        root,
+        &[
+            "merge",
+            "--no-ff",
+            "--no-commit",
+            "--no-edit",
+            "-m",
+            &subject,
+            theirs,
+        ],
+    );
+    if !merging(root) {
+        return Settled::Refused(format!(
+            "Nothing was started: git would not merge: {}.",
+            match &merged {
+                Ok(run) => one_line(&tail(run)),
+                Err(unavailable) => unavailable.to_string(),
+            }
+        ));
+    }
+    // What git cannot settle by itself and purlis can, staged; and what a person holds, written
+    // with purlis's part settled and markers around theirs alone.
+    for (path, text) in plan.settled.iter().chain(&plan.marked) {
+        // Never through a link a side of the merge committed on the way to it.
+        let settled = crate::contain::no_link_on_the_way(root, &root.join(path)).and_then(|()| {
+            crate::rewrite::replace(
+                root,
+                &root.join(path),
+                text.as_bytes(),
+                crate::rewrite::Mode::Kept,
+            )
+        });
+        let staged = !plan.marked.contains_key(path)
+            && !git::run(root, &["--literal-pathspecs", "add", "--", path], WRITE)
+                .is_ok_and(|run| run.ok());
+        if settled.is_err() || staged {
+            let _ = git::run_untimed(root, &["merge", "--abort"]);
+            return Settled::Refused(format!(
+                "Nothing was started: purlis could not write {path}."
+            ));
+        }
+    }
+    after_step(root, merged)
+}
+
+/// Whether git has a merge stopped in the repository at `root`.
+fn merging(root: &Path) -> bool {
+    rev(root, "MERGE_HEAD").is_some()
+}
+
+/// Whether a replay or a merge this module can carry on is stopped at `root`.
+fn stopped_here(root: &Path) -> bool {
+    rebase_in_progress(root) || merging(root)
+}
+
+/// The commit a stop is at: the one being replayed, or the one being merged in.
+fn stop_commit(root: &Path) -> Option<String> {
+    rev(root, "REBASE_HEAD").or_else(|| rev(root, "MERGE_HEAD"))
 }
 
 /// **Continue**: carry the stopped replay on once every file in conflict is settled.
@@ -309,8 +419,24 @@ pub fn carry_on(root: &Path, shown: &[String], say: Sink) -> Settled {
             return Settled::Refused(not_the_file(&refusal));
         }
     }
-    say(Say::Info("Continuing the replay …".into()));
     let plane = crate::planesave::Settings::read(root).plane;
+    if merging(root) {
+        say(Say::Info("Finishing the merge …".into()));
+        let finished = git::run(
+            root,
+            &[
+                "-c",
+                "core.editor=true",
+                "-c",
+                gpgsign(plane.sign.value),
+                "commit",
+                "--no-edit",
+            ],
+            WRITE,
+        );
+        return after_step(root, finished);
+    }
+    say(Say::Info("Continuing the replay …".into()));
     let continued = git::run(
         root,
         &[
@@ -333,6 +459,13 @@ pub fn skip(root: &Path) -> Settled {
     };
     if let Err(refused) = held_stop(root) {
         return refused;
+    }
+    if merging(root) {
+        return Settled::Refused(
+            "A merge has no commit to skip. Continue finishes it, whatever it changes; Abort \
+             undoes it."
+                .into(),
+        );
     }
     // Only a commit with nothing left to commit is dropped, whatever the window last drew.
     let settled = unmerged(root).is_empty();
@@ -358,15 +491,16 @@ pub fn abort(root: &Path) -> Settled {
     let Some(_claim) = Claim::of(root) else {
         return Settled::Refused(BUSY.into());
     };
-    if !rebase_in_progress(root) {
+    if !stopped_here(root) {
         return Settled::Refused(
-            "No rebase is stopped in this project, so there is nothing to abort.".into(),
+            "No rebase or merge is stopped in this project, so there is nothing to abort.".into(),
         );
     }
-    let aborted = git::run_untimed(root, &["rebase", "--abort"]);
-    if rebase_in_progress(root) {
+    let verb = if merging(root) { "merge" } else { "rebase" };
+    let aborted = git::run_untimed(root, &[verb, "--abort"]);
+    if stopped_here(root) {
         return Settled::Refused(format!(
-            "git did not abort the rebase: {}",
+            "git did not abort the {verb}: {}",
             match aborted {
                 Ok(run) => one_line(&tail(&run)),
                 Err(unavailable) => unavailable.to_string(),
@@ -427,8 +561,9 @@ fn sorted(root: &Path, by_hand: Option<&BTreeSet<String>>) -> Conflicts {
     out
 }
 
-/// The two sides of a stopped rebase, by their commit subjects: the remote's (`HEAD` while a
-/// rebase is stopped) and the project's own being replayed (`REBASE_HEAD`).
+/// The two sides of a stopped rebase or merge, by their commit subjects: the remote's (`HEAD`
+/// while a rebase is stopped, `MERGE_HEAD` while a merge is) and the project's own being replayed
+/// (`REBASE_HEAD`) or merged into (`HEAD`).
 pub fn sides(root: &Path) -> Option<(String, String)> {
     let subject = |name: &str| {
         git::run(root, &["log", "-1", "--format=%s", name, "--"], git::READ)
@@ -436,6 +571,9 @@ pub fn sides(root: &Path) -> Option<(String, String)> {
             .filter(git::Run::ok)
             .map(|run| run.line().trim().to_string())
     };
+    if merging(root) {
+        return Some((subject("MERGE_HEAD")?, subject("HEAD")?));
+    }
     Some((subject("HEAD")?, subject("REBASE_HEAD")?))
 }
 
@@ -455,7 +593,8 @@ pub fn said_by_hand(files: &[String]) -> String {
         "git could not mark the conflict in {} (a binary file, a file one side deleted, a link, \
          a submodule, or a file that is gone), so {} settled in a terminal here: keep one \
          side with `git checkout --ours -- <file>` or `git checkout --theirs -- <file>` (during \
-         a rebase, ours is the remote's and theirs is this project's own), or delete it, then \
+         a rebase, ours is the remote's and theirs is this project's own; during a merge, the \
+         other way round), or delete it, then \
          `git add -- <file>` or `git rm -- <file>`. Then Continue.",
         join(&named),
         if files.len() == 1 {
@@ -477,7 +616,7 @@ pub fn markers_in(text: &[u8]) -> bool {
 
 /// How a step that ran git left the replay: finished, stopped again, empty, or refused.
 fn after_step(root: &Path, ran: Result<git::Run, git::GitUnavailable>) -> Settled {
-    if !rebase_in_progress(root) {
+    if !stopped_here(root) {
         // A finished rebase can leave its `REBASE_HEAD` behind, which would read as one still
         // stopped: it names a commit now replayed, and is dropped.
         if gitstate::stopped(root).is_some_and(|left| left.unmerged.is_empty()) {
@@ -492,12 +631,13 @@ fn after_step(root: &Path, ran: Result<git::Run, git::GitUnavailable>) -> Settle
         hold_stop(root);
         return Settled::Stopped(unmerged);
     }
-    let nothing_staged = git::run(
-        root,
-        &["diff", "--cached", "--quiet", "HEAD", "--"],
-        git::READ,
-    )
-    .is_ok_and(|run| run.ok());
+    let nothing_staged = !merging(root)
+        && git::run(
+            root,
+            &["diff", "--cached", "--quiet", "HEAD", "--"],
+            git::READ,
+        )
+        .is_ok_and(|run| run.ok());
     if nothing_staged {
         return Settled::Empty;
     }
@@ -522,12 +662,13 @@ fn after_step(root: &Path, ran: Result<git::Run, git::GitUnavailable>) -> Settle
 
 /// The stop this window holds for the rebase stopped now, or the refusal to carry on.
 fn held_stop(root: &Path) -> Result<Stop, Settled> {
-    if !rebase_in_progress(root) {
+    if !stopped_here(root) {
         return Err(Settled::Refused(
-            "No rebase is stopped in this project, so there is nothing to carry on.".into(),
+            "No rebase or merge is stopped in this project, so there is nothing to carry on."
+                .into(),
         ));
     }
-    let at = rev(root, "REBASE_HEAD");
+    let at = stop_commit(root);
     let stops = STOPS.lock().unwrap_or_else(PoisonError::into_inner);
     stops
         .as_ref()
@@ -539,7 +680,7 @@ fn held_stop(root: &Path) -> Result<Stop, Settled> {
 
 /// Keep what git stopped with now, for the next Continue.
 fn hold_stop(root: &Path) {
-    let Some(at) = rev(root, "REBASE_HEAD") else {
+    let Some(at) = stop_commit(root) else {
         return;
     };
     let found = sorted(root, None);

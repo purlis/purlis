@@ -1042,7 +1042,7 @@ fn merge_rules(run: &mut Run, root: &Path) {
 
 /// The files a plane only ever grows by whole lines, merged by git's `union` driver so two
 /// machines appending to them never conflict (`docs/plane-format.md`, `.gitattributes`).
-const MERGE_RULES: [&str; 7] = [
+const MERGE_RULES: [&str; 10] = [
     "personas/_dispatch/*.jsonl merge=union",
     "personas/_skills/*.jsonl merge=union",
     "workspaces/*/pieces/*.jsonl merge=union",
@@ -1050,6 +1050,9 @@ const MERGE_RULES: [&str; 7] = [
     "workspaces/*/work/*.jsonl merge=union",
     "personas/*/memory/MEMORY.md merge=union",
     "workspaces/*/memory/MEMORY.md merge=union",
+    "workspaces/*/todos/MEMORY.md merge=union",
+    "workspaces/*/sessions/index.md merge=union",
+    "sessions/index.md merge=union",
 ];
 
 /// The managed block, exactly as the plane format records it, under the markers the plane at
@@ -1078,14 +1081,22 @@ pub fn ensure_gitattributes(path: &Path) -> Result<bool, String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(e) => return Err(strerror(&e)),
     };
-    let block = merge_rules_block(path.parent().unwrap_or(Path::new("")));
-    // Whole lines only, and only a COMPLETE block: the last BEGIN line with an END line after
-    // it. A BEGIN or an END on its own is something somebody edited, and is left exactly as
-    // it is — the rules are added below it, and the next run finds that complete block.
-    let lines: Vec<&str> = text.split_inclusive('\n').collect();
+    let next = with_merge_rules(&text, path.parent().unwrap_or(Path::new("")));
+    if next == text {
+        return Ok(false);
+    }
+    replace_text(path, &next)?;
+    Ok(true)
+}
+
+/// Where the complete managed block is in `lines`, as the lines of its BEGIN and END.
+///
+/// Whole lines only, and only a COMPLETE block: the last BEGIN line with an END line after it.
+/// A BEGIN or an END on its own is something somebody edited, and is left exactly as it is.
+fn managed_block(lines: &[&str]) -> Option<(usize, usize)> {
     let is =
         |line: &str, marker: &names::Name| marker.recognises(line.trim_end_matches(['\n', '\r']));
-    let complete = lines
+    lines
         .iter()
         .enumerate()
         .filter(|(_, line)| is(line, &names::MERGE_RULES_BEGIN))
@@ -1095,8 +1106,15 @@ pub fn ensure_gitattributes(path: &Path) -> Result<bool, String> {
                 .position(|line| is(line, &names::MERGE_RULES_END))
                 .map(|offset| (start, start + 1 + offset))
         })
-        .next_back();
-    let next = match complete {
+        .next_back()
+}
+
+/// `.gitattributes`'s text with the block as the plane at `plane` writes it: the one there
+/// replaced where it stands, or added at the end, every other line kept.
+pub(crate) fn with_merge_rules(text: &str, plane: &Path) -> String {
+    let block = merge_rules_block(plane);
+    let lines: Vec<&str> = text.split_inclusive('\n').collect();
+    match managed_block(&lines) {
         Some((start, end)) => {
             let before: String = lines[..start].concat();
             let after: String = lines[end + 1..].concat();
@@ -1104,12 +1122,16 @@ pub fn ensure_gitattributes(path: &Path) -> Result<bool, String> {
         }
         None if text.is_empty() => format!("{block}\n"),
         None => format!("{}\n{block}\n", text.trim_end_matches('\n')),
-    };
-    if next == text {
-        return Ok(false);
     }
-    replace_text(path, &next)?;
-    Ok(true)
+}
+
+/// `.gitattributes`'s text with the managed block taken out: what a person wrote in it.
+pub(crate) fn without_merge_rules(text: &str) -> String {
+    let lines: Vec<&str> = text.split_inclusive('\n').collect();
+    match managed_block(&lines) {
+        Some((start, end)) => format!("{}{}", lines[..start].concat(), lines[end + 1..].concat()),
+        None => text.to_owned(),
+    }
 }
 
 fn ensure_gitignore(path: &Path) -> Result<bool, String> {

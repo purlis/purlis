@@ -299,9 +299,10 @@ fn ago(at: Option<u64>) -> Option<Duration> {
 }
 
 impl State {
-    /// Look again at the open pull request of a `pr-merge` plane, when a look is due
-    /// ([`autosave::Looks`]): merged if its checks passed since, and otherwise what the look
-    /// found is kept for the standing. Answers whether the window has something to read.
+    /// Look again at the open pull request of a plane that saves through requests, when a look
+    /// is due ([`autosave::Looks`]): a `pr-merge` one is merged if its checks passed since, a
+    /// moved target is brought in where the request needs it (#5338), and what the look found
+    /// is kept for the standing. Answers whether the window has something to read.
     ///
     /// Asked as [`planegit::look_caller`] says for a look from the window: with the person's
     /// purlis sign-in where there is one, as a save pressed here would (ADR 0070 §5, amended
@@ -313,9 +314,12 @@ impl State {
         now: Instant,
         poke: Option<Poke>,
     ) -> bool {
-        let open = (plane.mode.value == Some(planesave::Mode::PrMerge))
-            .then(|| planegit::request_to_look_at(root))
-            .flatten();
+        let open = matches!(
+            plane.mode.value,
+            Some(planesave::Mode::Pr | planesave::Mode::PrMerge)
+        )
+        .then(|| planegit::request_to_look_at(root))
+        .flatten();
         let Some((pushed_at, head)) = open else {
             self.looks = autosave::Looks::default();
             return false;

@@ -29,6 +29,11 @@
 //!    and nothing says a check will run. A failed check of any kind, required or not, leaves
 //!    it open and unmerged, as does a review the branch requires. The forge's own auto-merge
 //!    is never asked for: it merges past a failing check that is not required.
+//!
+//!    Before that push, a target that moved while the request was open is brought in
+//!    ([`super::bringin`]): one merge commit, with what purlis generates rebuilt, so a request
+//!    never stays in conflict because of files nobody wrote. A conflict in what a person wrote
+//!    stops the save here, with nothing changed, and the window's Resolve is the way out.
 //! 4. **The outcome is recorded** in `plane-push.json` as `pr-open`, with the PR's link and
 //!    number, so [`super::standing`] can say *pushed, PR open* without asking the network.
 //!    The PR itself — number, link, the commit it was last pushed at and when, and where it
@@ -50,6 +55,7 @@
 //! or a rebase of the newer commits onto it. A merge commit that does not hold the work blocks
 //! the plane, and nothing is moved.
 
+use super::bringin::BroughtIn;
 use super::*;
 use crate::counts::counted;
 use crate::forge::Caller;
@@ -498,6 +504,15 @@ fn push_unsaid(root: &Path, plane: &Plane, sign: bool, caller: &Caller, say: Sin
     } else {
         save
     };
+    // The target may have moved while the request was open: nothing else brings it in. A move
+    // settled just above has only just fetched it.
+    if settled != Settled::Moved {
+        fetch_target(root, &https, &helper, &target);
+    }
+    let head = match brought_in(root, &target, sign, say) {
+        Ok(_) => resolve(root, "HEAD").unwrap_or(head),
+        Err(res) => return record_push(root, *res, &head),
+    };
     if count(root, &format!("refs/remotes/origin/{target}..HEAD")) == Some(0) {
         say(Say::Done(
             format!("Nothing left to push — {target} on the remote already has all of it.").into(),
@@ -619,6 +634,111 @@ fn push_unsaid(root: &Path, plane: &Plane, sign: bool, caller: &Caller, say: Sin
         },
         &head,
     )
+}
+
+/// `target` of the origin, into its remote-tracking ref. Answers whether it was.
+fn fetch_target(root: &Path, https: &str, helper: &str, target: &str) -> bool {
+    git::run_network(
+        root,
+        Some(helper),
+        &[
+            "fetch",
+            "--no-recurse-submodules",
+            "--no-write-fetch-head",
+            https,
+            &format!("+refs/heads/{target}:refs/remotes/origin/{target}"),
+        ],
+    )
+    .is_ok_and(|run| run.ok())
+}
+
+/// Bring the fetched target in, and say what it came to. `Ok` is whether the plane moved; the
+/// line of commits it stands on is pushed either way. `Err` is a conflict in what a person wrote,
+/// as the record that stops the save.
+fn brought_in(root: &Path, target: &str, sign: bool, say: Sink) -> Result<bool, Box<PushResult>> {
+    match super::bringin::bring_in(root, target, sign) {
+        BroughtIn::Nothing => Ok(false),
+        BroughtIn::Moved(commits) => {
+            say(Say::Done(
+                format!(
+                    "Brought {} from {target} on the remote into this machine's saves.",
+                    counted(commits as usize, "commit", "commits")
+                )
+                .into(),
+            ));
+            Ok(true)
+        }
+        BroughtIn::Waiting(why) => {
+            say(Say::Info(why.into()));
+            Ok(false)
+        }
+        BroughtIn::Failed(why) => {
+            say(Say::Warn(
+                format!("{target} on the remote was not brought in: {why}").into(),
+            ));
+            Ok(false)
+        }
+        BroughtIn::Conflict(conflicts) => {
+            let detail = super::bringin::said_conflict(target, &conflicts);
+            say(Say::Fail(
+                format!("Committed, not pushed: {detail}.").into(),
+            ));
+            Err(Box::new(PushResult {
+                detail,
+                conflicts,
+                ..PushResult::of(Outcome::Conflict, target)
+            }))
+        }
+    }
+}
+
+/// **The look's half of bringing a target in**: fetch it and, when it moved, bring it in and push
+/// the request ([`push_unsaid`]). Asked by [`super::look`] of a request still open that a person
+/// merges, or that the forge says cannot merge. Answers whether the plane moved, and whether the
+/// standing changed.
+pub(super) fn bring_in_for_a_look(
+    root: &Path,
+    plane: &Plane,
+    target: &str,
+    caller: &Caller,
+    say: Sink,
+) -> Result<(bool, bool), String> {
+    let (repo, _, _) = config(root, plane)?;
+    let Some((https, helper)) = fetch_after_merge(root, &repo.forge).map_err(str::to_string)?
+    else {
+        return Ok((false, false));
+    };
+    if !fetch_target(root, &https, &helper, target) {
+        return Ok((false, false));
+    }
+    match super::bringin::bring_in(root, target, plane.sign.value) {
+        BroughtIn::Nothing | BroughtIn::Waiting(_) | BroughtIn::Failed(_) => Ok((false, false)),
+        BroughtIn::Moved(_) => {
+            let _ = push(root, plane, plane.sign.value, caller, say);
+            Ok((true, true))
+        }
+        BroughtIn::Conflict(conflicts) => {
+            let already = push_record(root).is_some_and(|rec| {
+                rec.get("outcome").and_then(serde_json::Value::as_str)
+                    == Some(Outcome::Conflict.word())
+                    && rec.get("conflicts") == Some(&serde_json::json!(conflicts))
+            });
+            if !already {
+                let head = resolve(root, "HEAD").unwrap_or_default();
+                let detail = super::bringin::said_conflict(target, &conflicts);
+                record_push(
+                    root,
+                    PushResult {
+                        detail,
+                        conflicts,
+                        ..PushResult::of(Outcome::Conflict, target)
+                    },
+                    &head,
+                );
+            }
+            Ok((false, !already))
+        }
+    }
 }
 
 /// Merge the save's request ourselves, at `head`, once the forge's own rules and `gate` allow
@@ -1143,15 +1263,36 @@ pub(super) fn settle(
                 Ok(run) => tail(run),
                 Err(unavailable) => unavailable.to_string(),
             };
-            return blocked(
-                format!(
-                    "{request} merged, but the {} made since would \
-                     not replay onto {target}: {said}",
-                    counted(newer, "commit", "commits")
-                ),
-                false,
-                say,
-            );
+            // The newer commits would not replay, one by one: what they wrote may still merge,
+            // whole, with what purlis generates rebuilt (#5338).
+            match super::bringin::bring_in(root, target, sign) {
+                BroughtIn::Moved(_) | BroughtIn::Nothing => {}
+                BroughtIn::Waiting(why) => return Settled::Waiting(why),
+                BroughtIn::Conflict(conflicts) => {
+                    let detail = super::bringin::said_conflict(target, &conflicts);
+                    say(Say::Fail(format!("Blocked: {detail}.").into()));
+                    return Settled::Blocked(record_push(
+                        root,
+                        PushResult {
+                            detail,
+                            conflicts,
+                            ..PushResult::of(Outcome::Conflict, target)
+                        },
+                        &resolve(root, "HEAD").unwrap_or_default(),
+                    ));
+                }
+                BroughtIn::Failed(why) => {
+                    return blocked(
+                        format!(
+                            "{request} merged, but the {} made since would \
+                             not replay onto {target}: {said}. Nor would they merge: {why}",
+                            counted(newer, "commit", "commits")
+                        ),
+                        false,
+                        say,
+                    );
+                }
+            }
         }
     }
     kept.pr = None;

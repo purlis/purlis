@@ -881,11 +881,12 @@ pub fn request_to_look_at(root: &Path) -> Option<(Option<u64>, String)> {
     prsave::open_request(root)
 }
 
-/// **Look again at a `pr-merge` plane's open pull request**, with no save: merge it if every
-/// check has passed since, or if it has been there long enough and nothing says a check will
+/// **Look again at a request mode plane's open pull request**, with no save. In `pr-merge`, merge
+/// it if every check has passed since, or if it has been there long enough and nothing says a check will
 /// run, and then move the plane onto what merged; otherwise keep where it stands (waiting,
 /// red with the failed checks, unable to merge) for the standing to say. This is what merges a
-/// green request without the person saving again (ADR 0051, amended 2026-10-13).
+/// green request without the person saving again (ADR 0051, amended 2026-10-13). In either mode,
+/// a target that moved under a request that needs it is brought in and pushed (#5338).
 ///
 /// One look is a handful of forge reads. The caller paces them (the app's auto-save worker
 /// backs off from a minute to five, and stops after two hours; `app/src-tauri/src/autosave.rs`).
@@ -893,7 +894,8 @@ pub fn request_to_look_at(root: &Path) -> Option<(Option<u64>, String)> {
 pub fn look(root: &Path, caller: &forge::Caller, say: Sink) -> Result<Looked, String> {
     let _claim = Claim::of(root).ok_or(ALREADY_SAVING)?;
     let plane = crate::planesave::Settings::read(root).plane;
-    if plane.mode.value != Some(crate::planesave::Mode::PrMerge) {
+    use crate::planesave::Mode;
+    if !matches!(plane.mode.value, Some(Mode::Pr | Mode::PrMerge)) {
         return Ok(Looked::default());
     }
     let here = git::run(root, &["rev-parse", "--abbrev-ref", "HEAD"], git::READ)
@@ -912,11 +914,26 @@ pub fn look(root: &Path, caller: &forge::Caller, say: Sink) -> Result<Looked, St
     // What is kept beside the request moved, and no git file did: the shared standing is told.
     touch(root);
     let moved = settled == prsave::Settled::Moved;
+    // A moved target, while the request stays open. A request that may still merge by itself
+    // is left: each new head starts the wait for its checks again, so a busy target could keep
+    // it from ever merging, and its merge brings the target in anyway. A request a person
+    // merges has no such wait, and nothing else would come back to it.
+    let bring_in = settled == prsave::Settled::Open
+        && (plane.mode.value == Some(Mode::Pr)
+            || prsave::known_merging(root).is_some_and(|m| m.state == MergeState::CannotMerge));
+    let (brought, said) = if bring_in {
+        prsave::bring_in_for_a_look(root, &plane, &branch, caller, say)?
+    } else {
+        (false, false)
+    };
+    if said {
+        touch(root);
+    }
     let after = prsave::known_merging(root);
     Ok(Looked {
         open: prsave::knows_a_pr(root),
-        changed: moved || before != after || matches!(settled, prsave::Settled::Blocked(_)),
-        moved,
+        changed: moved || said || before != after || matches!(settled, prsave::Settled::Blocked(_)),
+        moved: moved || brought,
     })
 }
 
@@ -2884,6 +2901,26 @@ impl Default for Attempt {
     }
 }
 
+/// Bring an existing plane's managed merge rules up to this build's, so a plane scaffolded before
+/// a rule was added takes it with its next whole save (#5338). `.gitattributes` is committed, so
+/// it reaches the plane's other machines by the save it lands in. Only a block already there:
+/// `init` and `reinit` are what add one. A file it may not write is left, as a chat's sandbox
+/// holds it: the window's own save takes it, and nothing depends on the rules arriving first,
+/// since what purlis generates is rebuilt with or without them.
+fn refresh_merge_rules(root: &Path) {
+    let path = root.join(".gitattributes");
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return;
+    };
+    // A link at the file is somebody's own arrangement, and is not written through.
+    if crate::scaffold::without_merge_rules(&text) == text
+        || !std::fs::symlink_metadata(&path).is_ok_and(|meta| meta.is_file())
+    {
+        return;
+    }
+    let _ = crate::scaffold::ensure_gitattributes(&path);
+}
+
 /// The most lines the journal keeps. The Saving view shows the newest fifty.
 const JOURNAL_LINES: usize = 500;
 
@@ -3195,6 +3232,7 @@ fn commit_push(
             ));
             return 1;
         }
+        refresh_merge_rules(root);
     }
 
     // A plane is not always a git repo: `charter init` in a fresh directory does not run `git
@@ -3778,6 +3816,7 @@ pub fn push_saved(root: &Path, sign: bool, say: Sink) -> PushResult {
 }
 
 mod blockedby;
+mod bringin;
 pub mod merging;
 pub(crate) mod ondisk;
 mod prsave;
