@@ -562,6 +562,15 @@ export function SetReviewPage({
 }) {
   const [all, setAll] = useState<readonly SkillSetMember[]>(named);
   const [keys, setKeys] = useState<ReadonlySet<string>>(new Set(ticked));
+  // What it is handed changes in place (a move's level picked, #5332): it starts again from
+  // that, adjusted as it is drawn, so nothing it holds is drawn anew and the keyboard stays put.
+  const handed = `${named.map(memberKey).join("\u0001")}\u0002${ticked.join("\u0001")}`;
+  const [was, setWas] = useState(handed);
+  if (was !== handed) {
+    setWas(handed);
+    setAll(named);
+    setKeys(new Set(ticked));
+  }
   const going = all.filter((one) => keys.has(memberKey(one)));
   const { read, again } = useRead<Review>(
     going.length === 0 || (act === "move" && to === null)

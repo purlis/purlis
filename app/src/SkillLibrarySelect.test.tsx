@@ -216,11 +216,14 @@ describe("the Library's Select mode", () => {
     const review = await screen.findByTestId("set-review");
     const go = within(review).getByRole("button", { name: "Move" });
     expect(go).toHaveAttribute("aria-disabled", "true");
-    await user.click(within(review).getByRole("radio", { name: /workspace ops/ }));
+    const ops = within(review).getByRole("radio", { name: /workspace ops/ });
+    await user.click(ops);
     // Picked, the level is the review's own: it is read again for where they go.
     const moving = () =>
       within(screen.getByTestId("set-review")).getByRole("button", { name: "Move" });
     await waitFor(() => expect(moving()).not.toHaveAttribute("aria-disabled", "true"));
+    // The review takes the level in place: the keyboard stays on the choice it made.
+    expect(document.activeElement).toBe(ops);
     await user.click(moving());
     await vi.waitFor(() => expect(asks(asked, "skill_set_move")).toHaveLength(1));
     const moves = asks(asked, "skill_set_move")[0]?.args.moves as { to: unknown }[];

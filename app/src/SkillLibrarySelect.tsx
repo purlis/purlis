@@ -553,8 +553,6 @@ export function SelectReviewPage({
   ];
   return (
     <SetReviewPage
-      // A move's level picked is its own review: what can go there is read again.
-      key={act === "move" && to !== null ? levelKey(to) : act}
       plane={plane}
       act={act}
       title={reviewTitle(act, named.length)}
