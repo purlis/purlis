@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793864078169,
+  "lastUpdate": 1793867081959,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -39858,6 +39858,48 @@ window.BENCHMARK_DATA = {
             "value": 102.69253499999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.761, 101.974, 102.693, 102.906, 103.725 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c62afabd85d5393a9c88d02ad225db2e47f8e528",
+          "message": "Secret fill: a filled page leaves for another site only by its server's redirect (#5230) (#5252)\n\n* A filled page leaves for another site only by its server's redirect (#5230)\n\nSF-14 and SF-15, amending SF-3. A main-frame redirect from the fill's site, in a chain that began\nwith a form sent there, is stopped; the page loads a blank document, the hold ends, and the browser\ngoes on to the address the server named: by itself to a site it was on before the fill, once the\nperson allows it otherwise, never outside the usual reach. An address holding the value is refused.\nA form posted straight to another site is refused unless its key is approved there. Any other load\nelsewhere leaves the page where it was, and an error page ends the hold.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M9KVXZGKCDBD943DSXYD9V\nPurlis-Persona: steward\n\n* A browser's reach says the sites the person allowed when asked, in every literal (#5230)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M9KVXZGKCDBD943DSXYD9V\nPurlis-Persona: steward\n\n* A filled page's moves are decided as they pause, by the form it was filled in (#5230)\n\nA request for another site is decided as the engine pauses it, not later. A redirect counts only in\na chain begun by the form the field was filled in. A site counts as one the browser was on only by a\nload chosen by an address the chat wrote or by the person. A load that fails in a browser that held a\nvalue shows purlis's own page. Review fixes: value spellings, frames, notes, and the tests.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M9KVXZGKCDBD943DSXYD9V\nPurlis-Persona: steward\n\n* A filled page's refusals and failed loads show a page the driver answers for (#5230)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M9KVXZGKCDBD943DSXYD9V\nPurlis-Persona: steward\n\n* A failed load and a load elsewhere say why in #5150's words (#5230)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M9KVXZGKCDBD943DSXYD9V\nPurlis-Persona: steward\n\n* Secret fill's window tests carry the fields both changes added (#5230)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M9KVXZGKCDBD943DSXYD9V\nPurlis-Persona: steward\n\n* A refused load's reason is said once (#5230)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M9KVXZGKCDBD943DSXYD9V\nPurlis-Persona: steward\n\n* A failed load's stand-in page is shown; protocol 1.73 until #5229 lands (#5230)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M9KVXZGKCDBD943DSXYD9V\nPurlis-Persona: steward\n\n* Test: each move that stays refused is said by name (#5230)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M9KVXZGKCDBD943DSXYD9V\nPurlis-Persona: steward\n\n* TEMPORARY: guards removed, to see each test red; undone by the next commit (#5230)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M9KVXZGKCDBD943DSXYD9V\nPurlis-Persona: steward\n\n* TEMPORARY: other guards removed, to see their tests red; undone by the next commit (#5230)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M9KVXZGKCDBD943DSXYD9V\nPurlis-Persona: steward\n\n* Undo the two temporary commits: the guards are back (#5230)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M9KVXZGKCDBD943DSXYD9V\nPurlis-Persona: steward\n\n* A filled page's moves: purlis's own page only as it moves one, a chosen load only as written (#5230)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M9KVXZGKCDBD943DSXYD9V\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-05T07:37:11Z",
+          "tree_id": "0127e33532dcea331774bf593a534095967f628a",
+          "url": "https://github.com/purlis/purlis/commit/c62afabd85d5393a9c88d02ad225db2e47f8e528"
+        },
+        "date": 1793867076227,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6811134999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.666, 0.673, 0.681, 0.684, 0.693 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.529628000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.410, 16.500, 16.530, 16.659, 16.711 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.180114,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.013, 102.107, 102.180, 102.438, 102.823 ms"
           }
         ]
       }
