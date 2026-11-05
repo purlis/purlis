@@ -292,6 +292,7 @@ fn matched_from(read: &[Read], start: usize, needle: &[char], loose: bool) -> Op
         if loose
             && matched > 0
             && (separates(one.character) || one.space_too)
+            && one.character != needle[matched]
         {
             at += 1;
             continue;
@@ -371,7 +372,7 @@ fn taken_out(mut text: String, needles: &[Needle], loose: bool) -> String {
         return text;
     }
     let Some(mut all) = readings_for(&text, needles.len()) else {
-        return text;
+        return SAID.to_owned();
     };
     for needle in needles {
         let mut layer = 0;

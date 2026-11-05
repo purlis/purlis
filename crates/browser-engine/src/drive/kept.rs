@@ -178,7 +178,7 @@ impl Kept {
             if !self
                 .texts
                 .iter()
-                .any(|kept| kept.from.as_ref() == from && kept.text.to_lowercase() == text.to_lowercase())
+                .any(|kept| kept.from.as_ref() == from && kept.text == text)
             {
                 self.texts.push(Text {
                     from: from.cloned(),

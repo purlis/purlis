@@ -159,7 +159,7 @@ impl State {
         };
         let on: Vec<&super::PageHeld> = holds
             .iter()
-            .filter(|one| Some(&one.target) == target.as_ref())
+            .filter(|one| !one.left && Some(&one.target) == target.as_ref())
             .collect();
         let hop = self
             .documents
@@ -225,7 +225,9 @@ impl State {
             .iter()
             .any(|hop| hop.head == load.head && hop.address == bare);
         if let Some(page) = self.page_mut(target) {
-            if !failed && its_end {
+            if failed {
+                page.chain_begins = None;
+            } else if its_end {
                 page.chain_begins = None;
                 page.chain_began = Some(load.origin);
             }
@@ -262,7 +264,9 @@ impl State {
             .filter_map(|one| self.page(one))
             .any(|page| {
                 let own = page.site();
-                own == here
+                own.is_none()
+                    || own == here
+                    || page.frames.values().any(|frame| site(&frame.url) == here)
             })
     }
 
@@ -406,7 +410,7 @@ impl Inner {
     fn held_on(&self, target: &str) -> Vec<HeldNow> {
         lock(&self.fill_holds)
             .iter()
-            .filter(|one| one.target == target)
+            .filter(|one| !one.left && one.target == target)
             .map(|one| HeldNow {
                 hold: Arc::clone(&one.hold),
                 origin: one.filled.origin.clone(),
@@ -506,7 +510,9 @@ impl Inner {
         for held in lock(&self.fill_holds).iter_mut() {
             if held.family.contains(opener) {
                 held.family.insert(target.to_owned());
-                let _ = &mut closes;
+                if held.left {
+                    closes.push(FollowUp::Close(target.to_owned()));
+                }
             }
         }
         closes
@@ -538,8 +544,7 @@ impl Inner {
                         .family
                         .iter()
                         .any(|one| *one != held.target && state.page(one).is_some());
-                    let _ = waits;
-                    if held.left {
+                    if held.left && !waits {
                         over.push(held);
                     } else {
                         holds.push(held);

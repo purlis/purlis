@@ -1501,7 +1501,7 @@ impl State {
         self.page(target).map(|p| PageInfo {
             id: p.id.clone(),
             // Whole, as answers are judged by it: taken out of on the way out ([`told`]).
-            address: p.shown(&p.url),
+            address: p.url.clone(),
             title: p.shown_title(),
             current: self.current.as_deref() == Some(target),
         })
@@ -1851,7 +1851,7 @@ impl State {
         self.document_origins.page_gone(target);
         if let Some(page) = self.page(target) {
             let kept = page.scrubbed.clone();
-            let _ = kept;
+            self.closed_kept.take_in(&kept);
         }
         self.pages.retain(|p| p.target != target);
     }
@@ -2727,6 +2727,9 @@ impl Browser {
         state.addressing_seen = false;
         // Whatever it was on the way to is over: only this act's load showing a document begins a
         // chain again, so an act that comes to nothing leaves none (#5230).
+        if let Some(page) = state.page_mut(target) {
+            page.chain_began = None;
+        }
         drop(state);
         Addressing(&self.inner)
     }
@@ -4276,7 +4279,7 @@ impl Browser {
     fn keys_withheld(&self, target: &str) -> Result<(), Refusal> {
         let held = lock(&self.inner.fill_holds)
             .iter()
-            .any(|held| held.target == target);
+            .any(|held| !held.left && held.target == target);
         if held {
             return Err(Refusal::KeysWithheld);
         }
@@ -5674,7 +5677,11 @@ impl Inner {
                             {
                                 by.settle.observe("", Activity::Changed, now);
                             }
-                            let opener_linked = opener.is_some();
+                            let opener_linked = opener.is_some()
+                                && params
+                                    .pointer("/targetInfo/canAccessOpener")
+                                    .and_then(Value::as_bool)
+                                    != Some(false);
                             // What opened it may be a frame in a page.
                             let by = opener.as_deref().map(|opener| {
                                 state
@@ -5688,8 +5695,7 @@ impl Inner {
                             let chain_began = by
                                 .as_deref()
                                 .and_then(|by| state.page(by))
-                                .and_then(|by| by.chain_began.clone())
-                                .filter(|_| false);
+                                .and_then(|by| by.chain_began.clone());
                             let id = PageId(format!("p{}", state.pages_listed));
                             // What opened it can write what it keeps into this one's address.
                             let mut kept = state.kept.clone();
@@ -6016,7 +6022,7 @@ impl Inner {
                             && matches!(why, Why::Addressed | Why::Reads)
                             && document
                             && redirected_from.is_none()
-                            && (page_asked || !page_asked)
+                            && !page_asked
                             && !std::mem::replace(&mut state.addressing_seen, true);
                         if document
                             && redirected_from.is_none()
