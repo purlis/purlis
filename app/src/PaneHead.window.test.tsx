@@ -25,9 +25,11 @@ import { placementFor } from "./ui/tooltip/Tooltip";
  * 61; the accepted prototype `prototype/pane-chat-actions`, variant A).
  *
  * The head shows the chat at a glance (its name, its state, "harness · workspace" and its
- * sandbox) and then, at its end, one state button, ⋯, the bell, Split right, Split down and
- * Close. Its right-click is the chat's list, then the pane's rows. A narrow pane drops its
- * parts in the ruled order (`paneHead.ts`), and the bell, ⋯, Split right and Close never go.
+ * sandbox) and then, at its end, two groups (#5203, spec #5191): the chat's actions, its one
+ * state button, the bell and ⋯ last, then, after a thin divider, the pane's controls, Split
+ * right, Split down and Close last. Its right-click is the chat's list, then the pane's rows. A
+ * narrow pane drops its parts in the ruled order (`paneHead.ts`), and the bell, ⋯, Split right
+ * and Close never go.
  */
 
 /** What the stand-in terminal was asked to do from its pane's head (#4760). */
@@ -171,21 +173,29 @@ describe("a chat's pane head", () => {
     expect(within(row).getByRole("img", { name: "floor" })).toBeInTheDocument();
   });
 
-  it("ends with ⋯, the bell, Split right, Split down and Close, in that order", async () => {
+  it("ends with the bell and ⋯, a divider, then Split right, Split down and Close (#5203)", async () => {
     await aPane();
 
-    await waitFor(() => expect(controls()[0]).toMatch(/^More for /));
-    const [more, bell, right, down, close, ...rest] = controls();
-    expect(more).toBe(`More for ${NAME}`);
+    await waitFor(() => expect(controls()[1]).toMatch(/^More for /));
+    const [bell, more, right, down, close, ...rest] = controls();
     expect(bell).toMatch(/^Pane notices:/);
+    expect(more).toBe(`More for ${NAME}`);
     expect([right, down]).toEqual(["Split right", "Split down"]);
     expect(close).toBeTruthy();
     expect(rest).toEqual([]);
+    // The thin divider parts the chat's actions from the pane's controls, unheard and untabbed.
+    const actions = [
+      ...head().querySelectorAll('.pane-actions button, .pane-actions [data-scope="separator"]'),
+    ];
+    const line = actions.findIndex((one) => one.getAttribute("data-scope") === "separator");
+    expect(actions[line - 1]).toHaveAccessibleName(`More for ${NAME}`);
+    expect(actions[line + 1]).toHaveAccessibleName("Split right");
+    expect(actions[line]).toHaveAttribute("aria-hidden", "true");
   });
 
   it("draws the bell as an icon button, and opens every head hint below the head (#5189)", async () => {
     await aPane();
-    await waitFor(() => expect(controls()[1]).toMatch(/^Pane notices:/));
+    await waitFor(() => expect(controls()[0]).toMatch(/^Pane notices:/));
 
     const bell = within(head()).getByRole("button", { name: /^Pane notices:/ });
     // The size of Split right beside it: an icon button, as wide as it is tall.
@@ -196,26 +206,27 @@ describe("a chat's pane head", () => {
       expect(placementFor(one)).toBe("bottom");
   });
 
-  it("shows Stop while the chat works, before ⋯, and nothing once it is quiet", async () => {
+  it("shows Stop while the chat works, first of the chat's actions, and nothing once it is quiet", async () => {
     await aPane();
-    await waitFor(() => expect(controls()[0]).toMatch(/^More for /));
+    await waitFor(() => expect(controls()[1]).toMatch(/^More for /));
 
     await act(() => emit(...onTheWire("chat-moved", RUNNING)));
     const stop = await within(head()).findByRole("button", { name: `Stop chat ${NAME}` });
     expect(stop).toHaveTextContent("Stop");
     expect(controls()[0]).toBe(`Stop chat ${NAME}`);
-    expect(controls()[1]).toBe(`More for ${NAME}`);
+    expect(controls()[1]).toMatch(/^Pane notices:/);
+    expect(controls()[2]).toBe(`More for ${NAME}`);
 
     await act(() => emit(...onTheWire("chat-moved", WAITING)));
     await waitFor(() =>
       expect(within(head()).queryByRole("button", { name: `Stop chat ${NAME}` })).toBeNull(),
     );
-    expect(controls()[0]).toBe(`More for ${NAME}`);
+    expect(controls()[1]).toBe(`More for ${NAME}`);
   });
 
   it("opens the chat's list, then a line, then the pane's rows, on a right-click", async () => {
     await aPane();
-    await waitFor(() => expect(controls()[0]).toMatch(/^More for /));
+    await waitFor(() => expect(controls()[1]).toMatch(/^More for /));
 
     fireEvent.contextMenu(head().querySelector(".pane-chips") as HTMLElement);
     const menu = await screen.findByRole("menu");
@@ -239,7 +250,7 @@ describe("a chat's pane head", () => {
 
   it("puts the terminal's Copy and Paste among the pane's rows, before Send F2, and runs them on it", async () => {
     await aPane();
-    await waitFor(() => expect(controls()[0]).toMatch(/^More for /));
+    await waitFor(() => expect(controls()[1]).toMatch(/^More for /));
     ran.length = 0;
 
     fireEvent.contextMenu(head().querySelector(".pane-chips") as HTMLElement);
@@ -269,7 +280,7 @@ describe("a chat wrapping up (#4760)", () => {
 
   it("keeps its pane, whose head breathes and offers Cancel smart close, and turns no tab into a chip", async () => {
     await aPane();
-    await waitFor(() => expect(controls()[0]).toMatch(/^More for /));
+    await waitFor(() => expect(controls()[1]).toMatch(/^More for /));
 
     await step("sent");
 
@@ -288,7 +299,7 @@ describe("a chat wrapping up (#4760)", () => {
 
     await step("cancelled");
     await waitFor(() => expect(head().querySelector('[data-mark="wrapping-up"]')).toBeNull());
-    expect(controls()[0]).toBe(`More for ${NAME}`);
+    expect(controls()[1]).toBe(`More for ${NAME}`);
   });
 
   it("breathes on its row in the Chats list, and the mark goes when it is cancelled", async () => {
@@ -339,7 +350,7 @@ describe("a narrow pane's head", () => {
         : real.call(this);
     });
     await aPane();
-    await waitFor(() => expect(controls()[0]).toMatch(/^More for /));
+    await waitFor(() => expect(controls()[1]).toMatch(/^More for /));
   }
 
   it("keeps every part in a pane 520px wide", async () => {
@@ -363,9 +374,9 @@ describe("a narrow pane's head", () => {
     await aPaneOf(280);
 
     expect(head().querySelector(".pane-where")).toBeNull();
-    const [more, bell, right, close, ...rest] = controls();
-    expect(more).toBe(`More for ${NAME}`);
+    const [bell, more, right, close, ...rest] = controls();
     expect(bell).toMatch(/^Pane notices:/);
+    expect(more).toBe(`More for ${NAME}`);
     expect(right).toBe("Split right");
     expect(close).toBeTruthy();
     expect(rest).toEqual([]);

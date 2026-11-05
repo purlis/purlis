@@ -420,8 +420,8 @@ describe("the window's tab order", () => {
       // it runs (HP-19), its bell (#4754), then the chat's ⋯ (#4753), split and end — then its
       // terminal. From here Tab is the shell's, and Ctrl+Tab is the way on.
       "button What Claude Code can do here",
-      "button More for steward two",
       "button Pane notices: No notices",
+      "button More for steward two",
       "button Split right",
       "button Split down",
       "button Close this pane",
