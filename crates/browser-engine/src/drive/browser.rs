@@ -2374,6 +2374,9 @@ impl Browser {
         // why (#5150): the answer does.
         let refused = lock(&self.inner.refused_load).clone();
         let said = refused.and_then(|why| failed.iter().find_map(|address| why(address)));
+        // It may have been said already, as the page failed (#5230).
+        let said =
+            said.filter(|said| !answer.note.as_ref().is_some_and(|note| note.contains(said)));
         if let Some(said) = said {
             answer.note = Some(match answer.note.take() {
                 Some(note) => format!("{note}; {said}"),
