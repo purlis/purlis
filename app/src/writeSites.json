@@ -560,7 +560,7 @@
     {
       "at": "secretasks.rs run_grant_answered",
       "writes": "this machine's answers about the project (sandbox-grants)",
-      "by": ["answerRunGrant"]
+      "by": ["answerRunGrant", "keepVaultBlocked"]
     },
     {
       "at": "secretasks.rs declare_the_tool",

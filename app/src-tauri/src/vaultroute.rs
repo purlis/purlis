@@ -718,7 +718,7 @@ pub(crate) fn vault_kept_blocked(
 ) {
     held.vault_refusals().keep_blocked(session, vault);
     for open in held.secret_asks().open_runs() {
-        if false && open.not_its_vault && open.bound.chat == session && open.bound.vault == vault {
+        if open.not_its_vault && open.bound.chat == session && open.bound.vault == vault {
             let answered = crate::secretasks::run_grant_answered(
                 held,
                 network,

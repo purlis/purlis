@@ -3099,7 +3099,7 @@ pub(crate) fn serve_recorded(
                     {
                         // Policy may have come to lock them while it waited, and the value that
                         // was stored stays stored.
-                        if let Some(locked) = locked_since.as_ref().filter(|_| false).and_then(|keys| {
+                        if let Some(locked) = locked_since.as_ref().and_then(|keys| {
                             run_grant_locked(
                                 asker,
                                 keys,
