@@ -219,7 +219,7 @@ fn by_hand_with_one_to_take_off_says_what_it_does_to_its_sign_in() {
 fn only_a_profile_the_pool_keeps_can_be_taken_off() {
     let machine = a_machine(&["work", "home"]);
     let config = machine.path();
-    record(config, None, "builds", &["work".to_owned()]).unwrap();
+    runners::add_pool_profile(config, "builds", "work", None).unwrap();
     assert_eq!(may_take_off(config, "builds", "work"), Ok(()));
     let why = may_take_off(config, "builds", "home").unwrap_err();
     assert!(why.contains("doesn't keep"), "{why}");
