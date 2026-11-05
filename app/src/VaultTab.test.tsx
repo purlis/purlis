@@ -481,7 +481,7 @@ describe("a vault's tab", () => {
       within(menu)
         .getAllByRole("menuitem")
         .map((item) => item.textContent),
-    ).toEqual(["Edit value…", "Rename…", "Copy", "Delete…"]);
+    ).toEqual(["Edit value…", "Rename…", "Copy", "Mark as no 2FA seed…", "Delete…"]);
     // On its first row, as the menu button's does (charter-app#189).
     await waitFor(() =>
       expect(within(menu).getByRole("menuitem", { name: "Edit value…" })).toHaveFocus(),
