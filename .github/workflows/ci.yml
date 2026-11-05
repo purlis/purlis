@@ -1819,10 +1819,14 @@ jobs:
         # The outcome bars are judged on a release build (the operator's ruling of 2026-11-03,
         # #4351): `dev-release`, release with thin LTO over sixteen codegen units, what the dev
         # channel ships. Every other leg builds debug.
-        run: >-
-          npx tauri build ${{ !matrix.outcome && '--debug' || '' }} --no-bundle --features e2e
-          --config src-tauri/tauri.e2e.conf.json -- -p purlis-app -p fake-harness -p purlis-cli
-          --timings ${{ matrix.outcome && '--profile dev-release' || '' }}
+        run: |
+          if [ "${{ matrix.outcome }}" = true ] && [ "$RUNNER_OS" = Linux ]; then
+            free -m; df -h / /mnt; nproc; swapon --show
+            ( while sleep 10; do
+                echo "PROBE $(date +%T) $(free -m | awk '/Mem:/{print "mem_used="$3" avail="$7} /Swap:/{print "swap_used="$3"/"$2}' | tr '\n' ' ') disk_avail=$(df -m --output=avail / | tail -1) top=$(ps -eo rss,comm --sort=-rss --no-headers | head -4 | awk '{printf "%s:%dM ",$2,$1/1024}')"
+              done ) &
+          fi
+          npx tauri build ${{ !matrix.outcome && '--debug' || '' }} --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json -- -p purlis-app -p fake-harness -p purlis-cli --timings ${{ matrix.outcome && '--profile dev-release' || '' }}
         working-directory: app
       # Cargo's own account of that build, unit by unit (`--timings`), kept a week: what a slow
       # build spent its time on, read without rerunning it (#3742).
