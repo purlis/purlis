@@ -4977,15 +4977,9 @@ function footRows(now: Now, session: number, name: string): Offer[] {
   const parent = listed === undefined ? now.endedAskedBy?.get(session) : listed.parent;
   const asker = askerRow(now, session, name, parent);
   if (asker !== undefined) offers.push(asker);
-  if (now.skillStudio)
-    offers.push(
-      can(
-        chatSkillsId(session),
-        `Show skills of ${name}`,
-        { verb: "showChatSkills", session },
-        name,
-      ),
-    );
+  offers.push(
+    can(chatSkillsId(session), `Show skills of ${name}`, { verb: "showChatSkills", session }, name),
+  );
   if (now.studioOf?.(session) !== undefined)
     offers.push(
       can(
