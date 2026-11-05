@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { ChatText } from "./ChatText";
 import { commands, type PlaneId } from "./bindings";
 import { Button } from "./ui/button/Button";
 import { Card } from "./ui/card/Card";
@@ -37,8 +38,8 @@ type Asked = { number: number; question: string };
  *   The number of the question shown goes to the core with the answer, and an answer for a
  *   question the task is no longer paused on is refused there, though the task has asked
  *   another in the very same words. It is never delivered as the answer to another.
- * - **The question is drawn as text.** It is a chat's own words: a text node, with its line
- *   breaks, never read as Markdown or markup.
+ * - **The question is a chat's text** (`ChatText`, #5214, #5213): its own words, over the lines
+ *   it wrote them on, in markdown under the safe subset, as the quiz and the Inbox draw it.
  * - **Enter sends, Shift+Enter starts a new line**, as in a chat's own pane. An Enter that only
  *   picks a candidate while composing a character is not a send. **One send is final**: a
  *   question is answered once, and more is said in the task's own tab.
@@ -251,9 +252,7 @@ export function AnswerBox({ answering }: { answering: Answering }) {
   if (asked === undefined || asked === null) return null;
   return (
     <>
-      <p className="answer-asked" id={`${ids}-asked`}>
-        {asked.question}
-      </p>
+      <ChatText id={`${ids}-asked`} className="answer-asked" text={asked.question} />
       {/* The last refusal is the field's error, under the box; a question that closed is not
           the answer's fault, and is said on its own line. */}
       <TextArea
