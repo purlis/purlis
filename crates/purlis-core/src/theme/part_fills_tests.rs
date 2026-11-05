@@ -238,6 +238,30 @@ const DRAWN: &[Drawn] = &[
         around: &[],
         on: None,
     },
+    Drawn {
+        family: "pane-preview",
+        part: "size",
+        css: include_str!("../../../../app/src/ui/pane-preview/pane-preview.css"),
+        own: &["[data-scope=\"pane-preview\"][data-part=\"size\"]"],
+        around: &[],
+        on: None,
+    },
+    Drawn {
+        family: "pane-preview",
+        part: "held",
+        css: include_str!("../../../../app/src/ui/pane-preview/pane-preview.css"),
+        own: &["[data-scope=\"pane-preview\"][data-part=\"held\"]"],
+        around: &[],
+        on: None,
+    },
+    Drawn {
+        family: "pane-preview",
+        part: "words",
+        css: include_str!("../../../../app/src/ui/pane-preview/pane-preview.css"),
+        own: &["[data-scope=\"pane-preview\"][data-part=\"words\"]"],
+        around: &[],
+        on: None,
+    },
 ];
 
 /// A theme over Purlis Classic that sets `tokens` and `parts`, as read.

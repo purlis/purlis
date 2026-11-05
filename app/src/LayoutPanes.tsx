@@ -1759,6 +1759,7 @@ export function LayoutPanes({
           {side === 1 && (
             <EvenedSeparator
               sides={[`pane-${sideOf(0)}`, `pane-${sideOf(1)}`]}
+              share={share}
               onEven={() => split.shared?.(path, EVEN)}
             />
           )}
@@ -1785,12 +1786,27 @@ export function LayoutPanes({
  */
 export function EvenedSeparator({
   sides,
+  share,
   onEven,
 }: {
   sides: [string, string];
+  /** What the tree holds as the first side's share: a drop can change it under a live group. */
+  share?: number;
   onEven: () => void;
 }) {
   const group = useParentGroup();
+  // **A split draws the share its tree holds** (#5291): the library reads a side's size once, as
+  // it mounts, and a drop that leaves other panes on the same two sides keeps its group, so the
+  // window would draw the old sizes where the preview promised the tree's. A separator's own drag
+  // says back what the library already draws.
+  const shareDrawn = useRef(share);
+  useLayoutEffect(() => {
+    if (share === undefined || shareDrawn.current === share) return;
+    shareDrawn.current = share;
+    const first = share / 10;
+    if (group !== null && Math.abs((group.getLayout()[sides[0]] ?? first) - first) > 0.1)
+      group.setLayout({ [sides[0]]: first, [sides[1]]: (WHOLE - share) / 10 });
+  }, [group, share, sides]);
   const even = () => {
     group?.setLayout({ [sides[0]]: EVEN / 10, [sides[1]]: (WHOLE - EVEN) / 10 });
     onEven();

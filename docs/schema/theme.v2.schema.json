@@ -6953,6 +6953,99 @@
         "pane-foot.fill.fill": {
           "$ref": "#/$defs/part-fill"
         },
+        "pane-preview.arriving.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "pane-preview.arriving.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "pane-preview.arriving.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "pane-preview.arriving.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "pane-preview.arriving.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "pane-preview.name.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "pane-preview.name.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "pane-preview.name.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "pane-preview.line.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "pane-preview.size.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "pane-preview.size.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "pane-preview.size.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "pane-preview.size.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "pane-preview.size.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "pane-preview.refused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "pane-preview.refused.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "pane-preview.refused.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "pane-preview.held.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "pane-preview.held.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "pane-preview.held.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "pane-preview.held.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "pane-preview.held.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "pane-preview.held.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "pane-preview.held.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "pane-preview.words.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "pane-preview.words.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "pane-preview.words.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "pane-preview.words.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "pane-preview.words.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "pane-preview.words.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "pane-preview.words.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
         "panel.root.fill": {
           "$ref": "#/$defs/part-fill"
         },

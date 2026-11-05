@@ -475,6 +475,7 @@ import { OpenVault, useVaults } from "./Vaults";
 import { usePlaneEdits } from "./PlaneEdits";
 import { MemoryStores, useMemoryEdits, useMemoryStores } from "./MemoryEdits";
 import { PlacingHere, usePaneDrag } from "./paneDrag";
+import { PANES_ROOM } from "./paneHeld";
 import type { DropContext } from "./paneDrop";
 import type { MemoryTargets } from "./memoryMoves";
 import { AddToAChat } from "./AddToAChat";
@@ -11520,6 +11521,7 @@ export const PlaneView = memo(function PlaneView({
                       <div
                         ref={panesAt}
                         className="panes"
+                        {...{ [PANES_ROOM]: "" }}
                         {...panelRoot("content")}
                         {...tabPanelOf(panelNamedBy)}
                         onPointerDownCapture={paneUsed}

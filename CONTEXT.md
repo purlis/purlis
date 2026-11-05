@@ -1094,6 +1094,12 @@ and its chat keeps running in the sidebar.
 _Avoid_: tile, frame, terminal (a pane may hold a view), split (that is two panes and the line
 between them)
 
+**Pane preview**:
+What a drag draws before the drop: the panes where the drop would leave them, and what is moved in
+its place (ADR 0113). It is the drop model's answer drawn, never a change: the tabs stay as they were
+until the drop, and a cancel puts everything back.
+_Avoid_: ghost, drop box (the box it replaced)
+
 **Pane head**:
 The line above a pane's terminal that says which chat it shows, what the chat is doing and what
 the person can do to it now: the persona with its state, the chat's name or the path to the task
