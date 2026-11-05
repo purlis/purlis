@@ -1905,6 +1905,7 @@ const STATES: State[] = [
         from: null,
         uncommitted: true,
         base: "main",
+        stamp: "drawn",
         diff: {
           kind: "text",
           base: "kept line\n",

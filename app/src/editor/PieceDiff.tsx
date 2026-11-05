@@ -26,6 +26,12 @@
  * editor at that line** (#1043): beside each, the same *Open in your editor* the header has,
  * handed the change's line instead of the first.
  *
+ * **A hunk can be discarded** (#5406, ADR 0084 §8): each change's *Discard* puts it back as the
+ * base has it, through the core's `discard_hunk`, and the hunk leaves at once, from the diff the
+ * core answers with. A binary file's change goes whole, and a deleted file comes back. A chat
+ * that is not idle in the folder is warned of by name and state, and the choice is the operator's;
+ * a file that changed on disk since it was drawn offers Reload or Overwrite, and never merges.
+ *
  * **Each sentence is a status** (#1189): the reading, the refusal and the change with no line in
  * it are said to a screen reader as they come, and the merge view is named after the file and
  * what it is compared against.
@@ -33,18 +39,38 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { FileDiff as FileDiffMark, LoaderCircle } from "lucide-react";
 import { EmptyState } from "../ui/empty-state/EmptyState";
-import { commands, type PlaneId, type WhatChanged } from "../bindings";
+import {
+  commands,
+  type BusyChat,
+  type DiscardAgainst,
+  type DiscardTarget,
+  type PlaneId,
+  type WhatChanged,
+} from "../bindings";
 import type { Place } from "../pieceViews";
 import { MergeViewer } from "./LightEditor";
 import { sized, ToYourEditor } from "./PieceFiles";
 import { jumpTo } from "../fileJump";
+import { Notice } from "../Notice";
 import { useBranchMoved } from "./branchMoved";
 import { Button } from "../ui/button/Button";
+import { AlertDialog } from "../ui/dialog/Dialog";
 import { editorToolbar, ToolbarFile } from "../ui/tabs/Tabs";
 
 /** The comparison, as the tab draws it: being read, refused with the core's sentence, or read. */
 type Read =
   { kind: "reading" } | { kind: "refused"; why: string } | { kind: "read"; shown: WhatChanged };
+
+/** A discard the operator pressed, as it is asked again once they answer a warning. */
+type Asked = {
+  target: DiscardTarget;
+  against: DiscardAgainst;
+  head: string | null;
+  busyToo: boolean;
+};
+
+/** What stands between a discard and the file: the operator's to answer. */
+type Warning = (Asked & { kind: "busy"; chats: BusyChat[] }) | (Asked & { kind: "stale" });
 
 /**
  * One file of a branch against the branch's base. *Compare again* reads it again, from
@@ -58,6 +84,11 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
   const [read, setRead] = useState<{ asked: number; moved: number; read: Read }>();
   /** The read in flight, and whether the branch moved during it. */
   const flight = useRef<{ again: boolean }>(undefined);
+  /** A discard on its way: the controls wait for it, and hold their places. */
+  const [discarding, setDiscarding] = useState(false);
+  const [warning, setWarning] = useState<Warning>();
+  /** What the last discard could not do, or could not record. */
+  const [trouble, setTrouble] = useState<string>();
   useEffect(() => {
     let gone = false;
     const now = { again: false };
@@ -89,6 +120,39 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
   const now: Read = read?.asked === asked ? read.read : { kind: "reading" };
   // The branch moved since the comparison drawn was read, and it is being read again behind it.
   const again = read?.asked === asked && read.moved !== moved;
+  const discard = (ask: Asked) => {
+    setWarning(undefined);
+    setTrouble(undefined);
+    setDiscarding(true);
+    void commands
+      .discardHunk(
+        plane,
+        cut.workspace,
+        cut.repo,
+        cut.piece,
+        path,
+        ask.target,
+        ask.against,
+        ask.busyToo,
+      )
+      .then((answer) => {
+        if (answer.status === "error") {
+          setTrouble(answer.error);
+          return;
+        }
+        const told = answer.data;
+        if (told.kind === "busy") setWarning({ ...ask, kind: "busy", chats: told.chats });
+        else if (told.kind === "stale") setWarning({ ...ask, kind: "stale" });
+        else {
+          if (told.now !== null) setRead({ asked, moved, read: { kind: "read", shown: told.now } });
+          else setAsked((n) => n + 1);
+          if (told.unrecorded !== null)
+            setTrouble(`Discarded, but it is not in the chat's history: ${told.unrecorded}`);
+        }
+      })
+      .catch((err: unknown) => setTrouble(String(err)))
+      .finally(() => setDiscarding(false));
+  };
   return (
     <div className="piece-file" aria-busy={again}>
       <header className="piece-files-head" {...editorToolbar}>
@@ -107,51 +171,143 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
           {`Comparing ${path} again…`}
         </p>
       )}
-      <ChangedLines plane={plane} cut={cut} path={path} read={now} />
+      {trouble !== undefined && (
+        <Notice
+          cause={`discard-trouble:${path}`}
+          tone="trouble"
+          onDismiss={() => setTrouble(undefined)}
+        >
+          {trouble}
+        </Notice>
+      )}
+      <ChangedLines
+        plane={plane}
+        cut={cut}
+        path={path}
+        read={now}
+        discarding={discarding}
+        onDiscard={discard}
+      />
       <Compared path={path} read={now} />
+      {warning?.kind === "busy" && (
+        <AlertDialog
+          onClose={() => setWarning(undefined)}
+          title={warning.chats.map((chat) => `${chat.name} ${chat.state}`).join(", ")}
+          description={<p>{`Discarding now changes ${path} in the folder it works in.`}</p>}
+          main={{
+            children: "Discard anyway",
+            variant: "danger",
+            onPress: () => discard({ ...warning, busyToo: true }),
+          }}
+        />
+      )}
+      {warning?.kind === "stale" && (
+        <AlertDialog
+          onClose={() => setWarning(undefined)}
+          title={`${path} changed on disk since this diff was drawn`}
+          description={
+            <p>
+              Reload draws it again. Overwrite writes the file as drawn here, less this change, over
+              what it holds now.
+            </p>
+          }
+          cancel={{
+            children: "Reload",
+            onPress: () => {
+              setWarning(undefined);
+              setAsked((n) => n + 1);
+            },
+          }}
+          main={{
+            children: "Overwrite",
+            variant: "danger",
+            onPress: () =>
+              discard({
+                ...warning,
+                against: { kind: "overwrite", head: warning.head },
+              }),
+          }}
+        />
+      )}
     </div>
   );
 }
 
-/** How many changes are offered a line of their own: past it, the rest are counted. */
+/** How many changes are offered a line of their own: past it, the rest are counted, and each comes
+ *  into the first ones as those are discarded. */
 const LINES_OFFERED = 20;
 
 /**
  * Each change's first line on the head's side, to open in the file tab (#984) or in your editor
- * at that line (#1043, through the header's own *Open in your editor*). None for a file the
- * branch deleted: the head has no line of it to land on.
+ * at that line (#1043, through the header's own *Open in your editor*), and its *Discard* (#5406).
+ * A file the branch deleted has no line on the head to land on, so only its *Discard*; so too a
+ * binary file's change, which goes whole.
  */
 function ChangedLines({
   plane,
   cut,
   path,
   read,
+  discarding,
+  onDiscard,
 }: {
   plane: PlaneId;
   cut: Place;
   path: string;
   read: Read;
+  discarding: boolean;
+  onDiscard: (ask: Asked) => void;
 }) {
-  if (read.kind !== "read" || read.shown.mark === "deleted" || read.shown.diff.kind !== "text")
-    return null;
-  const lines = [...new Set(read.shown.diff.hunks.map((hunk) => Math.max(1, hunk.newStart)))];
-  if (lines.length === 0) return null;
-  const offered = lines.slice(0, LINES_OFFERED);
-  const count = lines.length === 1 ? "1 change" : `${lines.length} changes`;
+  if (read.kind !== "read") return null;
+  const { shown } = read;
+  const { diff, stamp } = shown;
+  const againstOpened: DiscardAgainst | null = stamp === null ? null : { kind: "opened", stamp };
+  const discardButton = (label: string, target: DiscardTarget, head: string | null) =>
+    againstOpened !== null && (
+      <Button
+        size="sm"
+        aria-label={label}
+        isDisabled={discarding}
+        onPress={() => onDiscard({ target, against: againstOpened, head, busyToo: false })}
+      >
+        Discard
+      </Button>
+    );
+  if (diff.kind === "binary")
+    return (
+      <nav className="piece-files-head" aria-label={`Changes in ${path}`}>
+        <span>The whole change</span>
+        <span className="piece-files-actions">
+          {discardButton(`Discard the change to ${path}`, { kind: "whole" }, null)}
+        </span>
+      </nav>
+    );
+  if (diff.kind !== "text" || diff.hunks.length === 0) return null;
+  const offered = diff.hunks.slice(0, LINES_OFFERED);
+  const count = diff.hunks.length === 1 ? "1 change" : `${diff.hunks.length} changes`;
   return (
     <nav className="piece-files-head" aria-label={`Changes in ${path}`}>
       <span>
-        {offered.length < lines.length ? `${count}, the first ${offered.length} here` : count}
+        {offered.length < diff.hunks.length ? `${count}, the first ${offered.length} here` : count}
       </span>
       <span className="piece-files-actions">
-        {offered.map((line) => (
-          <Fragment key={line}>
-            <Button size="sm" onPress={() => jumpTo({ plane, place: cut, path, line })}>
-              {`Open at line ${line}`}
-            </Button>
-            <ToYourEditor plane={plane} cut={cut} path={path} line={line} />
-          </Fragment>
-        ))}
+        {offered.map((hunk) => {
+          const line = Math.max(1, hunk.newStart);
+          const target: DiscardTarget = { kind: "hunk", hunk };
+          return shown.mark === "deleted" ? (
+            <Fragment key={hunk.oldStart}>
+              {discardButton(`Discard the deletion of ${path}`, target, diff.head)}
+            </Fragment>
+          ) : (
+            <Fragment key={`${hunk.oldStart}:${hunk.newStart}`}>
+              <Button size="sm" onPress={() => jumpTo({ plane, place: cut, path, line })}>
+                {`Open at line ${line}`}
+              </Button>
+              <ToYourEditor plane={plane} cut={cut} path={path} line={line} />
+              {discardButton(`Discard the change at line ${line}`, target, diff.head)}
+            </Fragment>
+          );
+        })}
       </span>
     </nav>
   );

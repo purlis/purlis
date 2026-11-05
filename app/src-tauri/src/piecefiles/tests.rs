@@ -451,6 +451,10 @@ fn what_changed_in_a_file_crosses_with_both_sides_and_gits_hunks() {
     std::fs::write(piece.join("README.md"), "one\ntwo\n").unwrap();
 
     let shown = what_changed_of(&root, PIECE, "README.md").unwrap();
+    assert!(
+        shown.stamp.is_some(),
+        "a discard needs what it was drawn from"
+    );
 
     assert_eq!(
         shown,
@@ -469,6 +473,7 @@ fn what_changed_in_a_file_crosses_with_both_sides_and_gits_hunks() {
                     new_lines: 1,
                 }],
             },
+            stamp: shown.stamp.clone(),
         }
     );
 }

@@ -3414,3 +3414,47 @@ fn a_window_that_takes_the_hosts_board_is_handed_what_each_chat_last_said() {
         )]
     );
 }
+
+// A socket and the project's event log: a sandboxed chat may not bind the one, as for its
+// neighbours here.
+#[test]
+fn a_human_edit_is_one_event_in_the_log_of_its_file_and_lines_and_never_its_contents() {
+    use purlis_core::eventlog::{self, ArgsKey, Log, Recorder};
+    use purlis_core::humanedit::{self, EditKind, EditedFile, EditedLines, HumanEdit};
+    let dir = tempfile::tempdir().expect("a directory");
+    let at = Where {
+        within: dir.path().to_path_buf(),
+        socket: dir.path().join("app").join("hooks.sock"),
+    };
+    let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
+    let hooks =
+        Hooks::listening_on(plane, &at, Arc::new(|_| {}), Arc::new(|_| {})).expect("listening");
+    let logs = dir.path().join("events");
+    hooks.record_into(Events::here(Recorder::new(
+        Log::open(&logs, "DEVICE").expect("a log"),
+        ArgsKey::open(&logs).expect("a key"),
+    )));
+    let edit = HumanEdit {
+        kind: EditKind::DiscardedHunk,
+        repo: "svc".to_owned(),
+        piece: Some("fix-it".to_owned()),
+        files: vec![EditedFile {
+            path: "src/lib.rs".to_owned(),
+            lines: vec![EditedLines { start: 9, count: 1 }],
+        }],
+        busy: false,
+        chats: Vec::new(),
+    };
+
+    hooks
+        .record_human_edit(dir.path(), None, &edit)
+        .expect("recorded");
+
+    let events: Vec<_> = eventlog::read(&logs)
+        .expect("the log reads")
+        .into_iter()
+        .filter(|event| event.kind == humanedit::KIND)
+        .collect();
+    assert_eq!(events.len(), 1);
+    assert_eq!(HumanEdit::of(&events[0]), Some(edit));
+}

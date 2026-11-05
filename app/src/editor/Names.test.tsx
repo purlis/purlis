@@ -65,6 +65,7 @@ function core() {
             from: null,
             uncommitted: true,
             base: "main",
+            stamp: "drawn",
             diff: {
               kind: "text",
               base: "one\ntwo\n",

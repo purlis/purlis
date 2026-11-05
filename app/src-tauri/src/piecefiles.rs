@@ -336,13 +336,24 @@ pub async fn branch_ahead_behind(
 
 /// One hunk, in `git diff -U0`'s numbers: lines counted from 1, and a side with no lines naming
 /// the line the hunk comes after (`0` for the top). The window's `GitHunk`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct GitHunk {
     pub old_start: u32,
     pub old_lines: u32,
     pub new_start: u32,
     pub new_lines: u32,
+}
+
+impl From<GitHunk> for files::Hunk {
+    fn from(one: GitHunk) -> Self {
+        Self {
+            old_start: one.old_start,
+            old_lines: one.old_lines,
+            new_start: one.new_start,
+            new_lines: one.new_lines,
+        }
+    }
 }
 
 impl From<files::Hunk> for GitHunk {
@@ -383,6 +394,8 @@ pub struct WhatChanged {
     /// The branch it is compared against; `null` when against the last commit.
     pub base: Option<String>,
     pub diff: FileDiff,
+    /// What a discard of a hunk here is checked against (`null` for a file past what is drawn).
+    pub stamp: Option<String>,
 }
 
 /// One file of a branch compared against the branch it was cut from, committed or not: its
@@ -413,6 +426,11 @@ pub async fn what_changed(
 fn what_changed_of(plane: &Path, branch: Branch<'_>, path: &str) -> Result<WhatChanged, String> {
     let shown =
         files::what_changed(&crate::reader(), plane, branch, path).map_err(|e| e.to_string())?;
+    Ok(what_changed_shown(shown))
+}
+
+/// The core's answer, as the comparison tab draws it.
+pub(crate) fn what_changed_shown(shown: files::WhatChanged) -> WhatChanged {
     let diff = match shown.diff {
         files::FileDiff::Text { base, head, hunks } => FileDiff::Text {
             base,
@@ -424,13 +442,14 @@ fn what_changed_of(plane: &Path, branch: Branch<'_>, path: &str) -> Result<WhatC
             bytes: u32::try_from(bytes).unwrap_or(u32::MAX),
         },
     };
-    Ok(WhatChanged {
+    WhatChanged {
         mark: shown.change.mark.into(),
         from: shown.change.from,
         uncommitted: shown.change.uncommitted,
         base: shown.base,
         diff,
-    })
+        stamp: shown.stamp,
+    }
 }
 
 pub(crate) fn ahead_behind_of(plane: &Path, branch: Branch<'_>) -> Result<AheadBehind, String> {
@@ -798,7 +817,7 @@ pub async fn reveal_branch_path(
 /// The file or folder `path` names, or with `""` the branch's own folder (#1143), placed by the
 /// core: the branch's row and its *Files* row copy and reveal the folder itself. The branch's
 /// folder is found by `reader`'s child (#1189).
-fn placed_of(
+pub(crate) fn placed_of(
     reader: &Reader,
     plane: &Path,
     branch: Branch<'_>,

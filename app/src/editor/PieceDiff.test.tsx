@@ -39,6 +39,7 @@ const changed = (diff: WhatChanged["diff"]): WhatChanged => ({
   uncommitted: true,
   base: "main",
   diff,
+  stamp: "drawn",
 });
 
 afterEach(() => {
@@ -366,8 +367,10 @@ describe("a changed line opened in the file tab (#984)", () => {
     expect([...changes.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
       "Open at line 2",
       "Open in your editor at line 2",
+      "Discard",
       "Open at line 7",
       "Open in your editor at line 7",
+      "Discard",
     ]);
     await userEvent.click(screen.getByRole("button", { name: "Open at line 7" }));
 
@@ -430,7 +433,7 @@ describe("a changed line opened in the file tab (#984)", () => {
     expect(within(changes).getByRole("button", { name: "Choose your editor" })).toBeInTheDocument();
   });
 
-  it("offers no line of a deleted file, which the branch no longer has", async () => {
+  it("offers no line of a deleted file, which the branch no longer has, only its Discard", async () => {
     core({
       ...changed({
         kind: "text",
@@ -443,6 +446,185 @@ describe("a changed line opened in the file tab (#984)", () => {
     render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/old.rs" />);
 
     await screen.findByTestId("merge-viewer");
-    expect(screen.queryByRole("navigation")).toBeNull();
+    const changes = screen.getByRole("navigation", { name: "Changes in src/old.rs" });
+    expect([...changes.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
+      "Discard",
+    ]);
+  });
+});
+
+describe("discarding a hunk (#5406)", () => {
+  const TEXT: WhatChanged["diff"] = {
+    kind: "text",
+    base: "one\ntwo\nthree\nfour\n",
+    head: "ONE\ntwo\nthree\nFOUR\n",
+    hunks: [
+      { oldStart: 1, oldLines: 1, newStart: 1, newLines: 1 },
+      { oldStart: 4, oldLines: 1, newStart: 4, newLines: 1 },
+    ],
+  };
+  /** The core: `what_changed` answers `drawn`, and each `discard_hunk` the next of `answers`. */
+  function discarding(drawn: WhatChanged, answers: readonly unknown[]) {
+    const asked: Record<string, unknown>[] = [];
+    const left = [...answers];
+    let reads = 0;
+    mockIPC((cmd, args) => {
+      if (cmd === "what_changed") {
+        reads += 1;
+        return drawn;
+      }
+      if (cmd !== "discard_hunk") throw new Error(`unexpected ${cmd}`);
+      asked.push(args as Record<string, unknown>);
+      return left.shift();
+    });
+    return { asked, reads: () => reads };
+  }
+  const opened = async () => {
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
+    return screen.findByRole("button", { name: "Discard the change at line 4" });
+  };
+
+  it("takes the hunk out of the diff at once, from what the core answers", async () => {
+    const left: WhatChanged["diff"] = {
+      kind: "text",
+      base: "one\ntwo\nthree\nfour\n",
+      head: "ONE\ntwo\nthree\nfour\n",
+      hunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1 }],
+    };
+    const { asked, reads } = discarding(changed(TEXT), [
+      { kind: "discarded", now: changed(left), unrecorded: null },
+    ]);
+    const control = await opened();
+
+    await userEvent.click(control);
+
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Discard the change at line 4" })).toBeNull(),
+    );
+    expect(screen.getByRole("button", { name: "Discard the change at line 1" })).toBeEnabled();
+    expect(asked).toEqual([
+      expect.objectContaining({
+        path: "src/lib.rs",
+        target: { kind: "hunk", hunk: { oldStart: 4, oldLines: 1, newStart: 4, newLines: 1 } },
+        against: { kind: "opened", stamp: "drawn" },
+        busyToo: false,
+      }),
+    ]);
+    expect(reads()).toBe(1);
+  });
+
+  it("warns of a chat that is not idle by name and state, and goes on only at the operator's word", async () => {
+    const { asked } = discarding(changed(TEXT), [
+      { kind: "busy", chats: [{ name: "Fix the parser", state: "is running" }] },
+      { kind: "discarded", now: changed(TEXT), unrecorded: null },
+    ]);
+    await userEvent.click(await opened());
+
+    const warned = await screen.findByRole("alertdialog", {
+      name: "Fix the parser is running",
+    });
+    expect(asked).toHaveLength(1);
+    await userEvent.click(within(warned).getByRole("button", { name: "Discard anyway" }));
+
+    await waitFor(() => expect(asked).toHaveLength(2));
+    expect(asked[1]).toEqual(expect.objectContaining({ busyToo: true }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  });
+
+  it("writes nothing when the warning is cancelled", async () => {
+    const { asked } = discarding(changed(TEXT), [
+      { kind: "busy", chats: [{ name: "Fix the parser", state: "is running" }] },
+    ]);
+    await userEvent.click(await opened());
+    const warned = await screen.findByRole("alertdialog");
+
+    await userEvent.click(within(warned).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(asked).toHaveLength(1);
+  });
+
+  it("offers Reload for a file changed on disk, which reads it again and writes nothing", async () => {
+    const { asked, reads } = discarding(changed(TEXT), [{ kind: "stale" }]);
+    await userEvent.click(await opened());
+    const stale = await screen.findByRole("alertdialog", {
+      name: "src/lib.rs changed on disk since this diff was drawn",
+    });
+
+    await userEvent.click(within(stale).getByRole("button", { name: "Reload" }));
+
+    await waitFor(() => expect(reads()).toBe(2));
+    expect(asked).toHaveLength(1);
+  });
+
+  it("offers Overwrite for a file changed on disk, sending what was drawn and merging nothing", async () => {
+    const { asked } = discarding(changed(TEXT), [
+      { kind: "stale" },
+      { kind: "discarded", now: changed(TEXT), unrecorded: null },
+    ]);
+    await userEvent.click(await opened());
+    const stale = await screen.findByRole("alertdialog");
+
+    await userEvent.click(within(stale).getByRole("button", { name: "Overwrite" }));
+
+    await waitFor(() => expect(asked).toHaveLength(2));
+    expect(asked[1]).toEqual(
+      expect.objectContaining({
+        against: { kind: "overwrite", head: "ONE\ntwo\nthree\nFOUR\n" },
+      }),
+    );
+  });
+
+  it("offers a binary file's change whole, and a deleted file's its one hunk", async () => {
+    discarding(changed({ kind: "binary" }), []);
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="logo.png" />);
+    expect(
+      await screen.findByRole("button", { name: "Discard the change to logo.png" }),
+    ).toBeInTheDocument();
+    cleanup();
+
+    discarding(
+      {
+        ...changed({
+          kind: "text",
+          base: "gone\n",
+          head: "",
+          hunks: [{ oldStart: 1, oldLines: 1, newStart: 0, newLines: 0 }],
+        }),
+        mark: "deleted",
+      },
+      [],
+    );
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="gone.txt" />);
+    expect(
+      await screen.findByRole("button", { name: "Discard the deletion of gone.txt" }),
+    ).toBeInTheDocument();
+  });
+
+  it("offers no discard for a file past what the comparison draws", async () => {
+    discarding({ ...changed({ kind: "too-large", bytes: 9_000_000 }), stamp: null }, []);
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="huge.txt" />);
+    await screen.findByTestId("piece-diff-trouble");
+    expect(screen.queryByRole("button", { name: /Discard/ })).toBeNull();
+  });
+
+  it("says the core's refusal, and that a discard the log refused is not in the chat's history", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "what_changed") return changed(TEXT);
+      throw "'src/lib.rs' was not discarded: it is a link or a submodule on one side";
+    });
+    await userEvent.click(await opened());
+    expect(await screen.findByText(/was not discarded/)).toBeInTheDocument();
+    cleanup();
+
+    discarding(changed(TEXT), [
+      { kind: "discarded", now: changed(TEXT), unrecorded: "the event log refused it" },
+    ]);
+    await userEvent.click(await opened());
+    expect(
+      await screen.findByText(
+        "Discarded, but it is not in the chat's history: the event log refused it",
+      ),
+    ).toBeInTheDocument();
   });
 });

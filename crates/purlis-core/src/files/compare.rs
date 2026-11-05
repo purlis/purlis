@@ -52,6 +52,11 @@ use super::status::{Change, MARKED, Mark, Opened, RefusedChange, open, plain, re
 use super::{Branch, Refused};
 use crate::worktree::name;
 
+// The one write beside the comparison it undoes part of (#5406).
+mod discard;
+pub(super) use discard::discard_here;
+pub use discard::{Against, Discard, Discarded, Target};
+
 /// What to compare (R1). Each kind names its two sides (ADR 0084 §1's table).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Comparison {
@@ -258,6 +263,9 @@ pub struct WhatChanged {
     pub base: Option<String>,
     /// Its lines and hunks, or the kind that is drawn as a sentence instead.
     pub diff: FileDiff,
+    /// What this was drawn from, as a digest of the base and the file on disk: what a
+    /// [`Discard`] is checked against. `None` for a file past [`super::LARGEST`] or unreadable.
+    pub stamp: Option<String>,
 }
 
 /// One file of `branch`, by its path relative to the branch's folder, compared against the
@@ -299,6 +307,21 @@ pub fn what_changed(
     }
 }
 
+/// [`Discard`] one hunk of `branch`, in `reader`'s child (see [`discard`]): the path's own
+/// spelling is checked here, before any child starts.
+pub fn discard(
+    reader: &super::Reader,
+    plane: &Path,
+    branch: Branch<'_>,
+    ask: &Discard,
+) -> Result<Discarded, Refused> {
+    super::spelled_inside(&ask.path)?;
+    match reader.ask(plane, branch, super::Ask::Discard(ask.clone()))? {
+        super::Answer::Discarded(answer) => Ok(answer),
+        _ => Err(Refused::Read("the reader answered something else".into())),
+    }
+}
+
 /// What the reader's child answers "Show what changed" with: the file compared, or that the
 /// comparison's file list does not hold it — and how many files past [`MARKED`] it left out, so
 /// the app says whether the file is unchanged or only not among the first.
@@ -316,7 +339,7 @@ pub(super) fn what_changed_here(
     path: &str,
 ) -> Result<Shown, Refused> {
     let opened = open(plane, branch)?;
-    let relative = super::named_in(
+    let (relative, gone) = super::named_or_gone(
         &super::Kept::of(plane, &opened.base, branch),
         &opened.base,
         path,
@@ -329,6 +352,9 @@ pub(super) fn what_changed_here(
         Whitespace::Shown,
     )?;
     let Some(change) = compared.files.into_iter().find(|one| one.path == relative) else {
+        if gone {
+            return Err(Refused::NotThere(path.to_string()));
+        }
         return Ok(Shown::NotListed {
             more: compared.more,
         });
@@ -340,6 +366,13 @@ pub(super) fn what_changed_here(
         Some(from) => Some(plain(from).ok_or_else(|| Refused::NotInPiece(from.to_string()))?),
         None => None,
     };
+    // Read before the diff, so a write between the two reads as stale and never as drawn.
+    let stamp = hold(plane, &opened.base).ok().and_then(|held| {
+        discard::stamp_of(
+            compared.sides.base.as_deref(),
+            &on_disk(&held, &at, super::LARGEST),
+        )
+    });
     let diff = file_diff_in(
         plane,
         branch,
@@ -353,6 +386,7 @@ pub(super) fn what_changed_here(
         change,
         base: compared.base,
         diff,
+        stamp,
     }))
 }
 

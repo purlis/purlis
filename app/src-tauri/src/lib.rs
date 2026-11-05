@@ -114,6 +114,7 @@ mod hostfailing;
 mod hostlost;
 #[cfg(unix)]
 mod hostsaving;
+mod humanedits;
 mod inputlanes;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod instance;

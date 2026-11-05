@@ -3334,6 +3334,7 @@ export const commands = {
 	 *  sentence, for a path any file command would refuse and for a file the branch did not change.
 	 */
 	whatChanged: (plane: PlaneId, workspace: string, repo: string, piece: string | null, path: string) => typedError<WhatChanged, string>(__TAURI_INVOKE("what_changed", { plane, workspace, repo, piece, path })),
+	discardHunk: (plane: PlaneId, workspace: string, repo: string, piece: string | null, path: string, target: DiscardTarget, against: DiscardAgainst, busyToo: boolean) => typedError<DiscardAnswer, string>(__TAURI_INVOKE("discard_hunk", { plane, workspace, repo, piece, path, target, against, busyToo })),
 	/**
 	 *  The folders of branches this window's explorer has expanded, watched until it names others
 	 *  (FM-1). A folder that does not resolve — gone, or refused as the tree refuses it — is not
@@ -6092,6 +6093,13 @@ export type BusNotice = {
 	can_restart: boolean,
 };
 
+/**  A chat working in the folder that is not idle. */
+export type BusyChat = {
+	name: string,
+	/**  Its state, as a sentence ends: "is running". */
+	state: string,
+};
+
 /**
  *  A harness the operator started by hand in a shell tab, as the window draws its banner.
  * 
@@ -6933,6 +6941,32 @@ export type DiagnosticsHere = {
 	 */
 	hot: number,
 };
+
+/**  What a discard is checked against. */
+export type DiscardAgainst = 
+/**  The stamp the diff came with: the file must still be as it was drawn. */
+{ kind: "opened"; stamp: string } | 
+/**  The operator's Overwrite: the file is written as it was drawn, less the hunk. */
+{ kind: "overwrite"; head: string | null };
+
+/**  What a discard came to. */
+export type DiscardAnswer = 
+/**
+ *  It is written. `now` is the file's diff without the hunk, or `null` when nothing of its
+ *  change is left to draw; `unrecorded` says why the log did not take it, if it did not.
+ */
+{ kind: "discarded"; now: WhatChanged | null; unrecorded: string | null } | 
+/**  Nothing was written: these chats are not idle, and the choice is the operator's. */
+{ kind: "busy"; chats: BusyChat[] } | 
+/**  Nothing was written: the file changed on disk since the diff was drawn. */
+{ kind: "stale" };
+
+/**  What of the file's change a discard puts back. */
+export type DiscardTarget = 
+/**  One hunk of a text file, as the diff drew it. */
+{ kind: "hunk"; hunk: GitHunk } | 
+/**  A binary file's change, whole. */
+{ kind: "whole" };
 
 /**  **The disk each pool's runners hold**, as the use table says it (#3493). */
 export type DiskHeld = 
@@ -17036,6 +17070,8 @@ export type WhatChanged = {
 	/**  The branch it is compared against; `null` when against the last commit. */
 	base: string | null,
 	diff: FileDiff,
+	/**  What a discard of a hunk here is checked against (`null` for a file past what is drawn). */
+	stamp: string | null,
 };
 
 /**

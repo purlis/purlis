@@ -349,6 +349,9 @@ pub enum Ask {
     /// One file, by its path relative to the branch's folder, against the branch's base, the
     /// folder found and the path confined here too: "Show what changed" in one ask (#1189).
     WhatChanged { path: String },
+    /// One hunk of that file put back (#5406): the one ask that writes, of the file alone, in the
+    /// same child, so it starts no program and is bounded as a read is.
+    Discard(super::Discard),
     /// Its offered list: what `git ls-files --cached --others --exclude-standard` lists, sorted,
     /// at most `most` of it (#1189).
     Offered { most: Option<usize> },
@@ -372,6 +375,7 @@ pub enum Answer {
     Compared(super::Compared),
     FileDiff(super::FileDiff),
     WhatChanged(super::Shown),
+    Discarded(super::Discarded),
     Offered(super::offered::Offered),
     Ignored(super::offered::Ignored),
     /// To [`Ask::Offered`] and [`Ask::Ignored`] only: gitoxide could not read the branch's
@@ -743,6 +747,7 @@ fn not_asked_of_the_plane_root(ask: &Ask, branch: Branch<'_>) -> bool {
                 | Ask::Compare { .. }
                 | Ask::CompareFile { .. }
                 | Ask::WhatChanged { .. }
+                | Ask::Discard(_)
         )
 }
 
@@ -797,6 +802,9 @@ fn serve() -> i32 {
         .map(Answer::FileDiff),
         Ask::WhatChanged { path } => {
             super::compare::what_changed_here(plane, branch, &path).map(Answer::WhatChanged)
+        }
+        Ask::Discard(ask) => {
+            super::compare::discard_here(plane, branch, &ask).map(Answer::Discarded)
         }
         Ask::Offered { most } => super::offered::offered_here(plane, branch, most),
         Ask::Ignored { paths, folders } => {

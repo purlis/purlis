@@ -131,6 +131,7 @@ pub mod hookwire;
 pub mod hostedchats;
 pub mod hostsocket;
 pub mod hoststart;
+pub mod humanedit;
 pub mod inboxupdates;
 pub mod instructions;
 pub mod inventory;

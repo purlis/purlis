@@ -3176,6 +3176,29 @@ impl Hooks {
         )
     }
 
+    /// **A human edit** (ADR 0084 §8, #5406) in the event log, under the chat `number` it is told
+    /// to first. Made durable before it answers.
+    pub fn record_human_edit(
+        &self,
+        root: &Path,
+        number: Option<u32>,
+        edit: &purlis_core::humanedit::HumanEdit,
+    ) -> Result<(), String> {
+        let events = self
+            .events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .ok_or("purlis's event log is not open on this machine")?;
+        events
+            .record(Entry::HumanEdit {
+                plane: root.to_path_buf(),
+                number,
+                edit: edit.clone(),
+            })
+            .map_err(|why| format!("the event log refused it ({why})"))
+    }
+
     /// [`Hooks::record_dispatch_grant`] for one the person made on a refusal kept while nobody
     /// was there (#1507): the same event with no chat, whose body says `from: "away"`.
     pub fn record_dispatch_grant_from_away(

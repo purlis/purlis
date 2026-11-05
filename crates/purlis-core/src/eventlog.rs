@@ -2160,6 +2160,18 @@ impl Recorder {
         Ok(event)
     }
 
+    /// **A human edit** (ADR 0084 §8): one event under chat `number`'s current run where a chat
+    /// works in the folder, of its files and lines and never their contents, made durable before
+    /// it answers.
+    pub fn human_edit(
+        &mut self,
+        plane: &Path,
+        number: Option<u32>,
+        edit: &crate::humanedit::HumanEdit,
+    ) -> io::Result<Event> {
+        self.audited(plane, number, crate::humanedit::KIND, edit.body())
+    }
+
     /// **The audit of a proposed change the person applied** (#1975, PC-4):
     /// `trust.proposed.apply` under the chat that proposed it, with who applied it (the person,
     /// in the window), the persona the chat runs as, the file and the hash of what was written.
