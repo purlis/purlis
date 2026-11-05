@@ -5,6 +5,16 @@ The complete list of what [0.5.0](../CHANGELOG.md) brought, from v0.4.1. The cha
 
 ## Added
 
+- **Say a vault key's value is no 2FA seed.** A secret fill refuses a value that looks like a seed,
+  and some real values look like one, such as a 16-letter app password. In a vault's tab, a key's
+  menu has *Mark as no 2FA seed…*, and a marked key then fills as a plain value on the same notice
+  and grants as any key. A chat can't make the mark, a new value takes it away, and an `otpauth`
+  address is refused whatever the mark says (#5237).
+- **Install from a terminal.** `curl -fsSL https://raw.githubusercontent.com/purlis/purlis/main/install.sh | sh`
+  installs the latest stable release on macOS (Apple silicon) or Linux (x86_64), and
+  `PURLIS_CHANNEL=dev` installs the dev build. On macOS it avoids the first-launch refusal an
+  ad-hoc signed app downloaded in a browser meets. When `gh` is signed in, it checks each
+  download's build provenance first and installs nothing that fails.
 - **A sandbox block that names no socket or service lets you choose it.** When the sandbox
   refused a local socket and nothing said which (a build runner that started Docker, a
   background command read back later), the Notice said there was no socket to allow and offered
@@ -3741,6 +3751,13 @@ The complete list of what [0.5.0](../CHANGELOG.md) brought, from v0.4.1. The cha
 
 ## Changed
 
+- **A vault refusal is an ask in the Inbox** (#5160). A vault a chat was refused for its persona
+  is counted on the ✋ and said in a notification like any other ask. Allow and Keep blocked
+  answer it there as they do on the chat's pane, and an answer in either place clears both. A
+  chat in no pane has it in the Inbox rather than in the Notices centre.
+- **A filled form that posts straight to another site is refused unless the key is approved for that
+  site too.** The chat's answer and the page you see in the browser name the site and say how to
+  approve the key for it (#5230).
 - **`op` no longer sees the `OP_*` variables purlis was started with.** purlis runs the 1Password
   CLI with its own environment less every `OP_` variable, and adds only what the vault declares.
   A token, a session (`OP_SESSION_*`), a Connect server or a settings folder (`OP_CONFIG_DIR`)
@@ -7399,6 +7416,12 @@ The complete list of what [0.5.0](../CHANGELOG.md) brought, from v0.4.1. The cha
 
 ## Fixed
 
+- **A sign-in whose server redirects to another site now finishes after `browser_fill_secret`.**
+  A redirect from the approved site's own server, after a form sent there, takes the page on: to a
+  site this browser was on before the fill by itself, and to any other once you allow it. The filled
+  page is gone before anything reaches that site. Links, scripts and the chat's navigate stay
+  refused, and a redirect whose address holds the value is refused. A page that ends on an error page
+  no longer holds the browser (#5230).
 - **A bare `ssh` in a sandboxed Claude Code chat reaches an allowed host.** Its route through
   the chat's SOCKS port is written where no chat writes, and Claude Code puts it first on each
   command's `PATH` before the command runs, so `ssh` works with the command unchanged, as it
@@ -10441,6 +10464,11 @@ The complete list of what [0.5.0](../CHANGELOG.md) brought, from v0.4.1. The cha
 
 ## Security
 
+- **The Inbox says when a file that can run later appears in a chat's folder.** When a sandboxed
+  chat's turn ends, purlis looks for what a later program loads, such as a repository's hooks, an
+  editor's tasks or a harness's project config, in the folders that chat may write. Anything new
+  gets one Notice a chat, naming the chat and the paths, with Put away. purlis never changes the
+  files. A look that stopped at its limit says the check was incomplete.
 - **A token kept in the keyring is handed only to a 1Password CLI purlis can vouch for.** Every
   read holds the `op` it pinned to more than the pin says: on macOS it must carry 1Password's own
   signature, verified against the file. A token is not stored beside an `op` that does not
