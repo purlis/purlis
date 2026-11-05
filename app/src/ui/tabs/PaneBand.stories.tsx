@@ -791,9 +791,6 @@ export const ConsentPressedByThePointer: Story = {
       await mouse.click(allow);
     } finally {
       letGo();
-      // **The engine's mouse stays where it last was, story after story**: put back in the page's
-      // corner, so it hovers nothing a later story draws (a tooltip, a row's hover).
-      await mouse.hover(document.body, { position: { x: 0, y: 0 } });
     }
     expect(allowed).toEqual(["forge"]);
     atRest();

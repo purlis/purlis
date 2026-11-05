@@ -20,6 +20,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, waitFor } from "storybook/test";
 import { Button } from "./ui/button/Button";
+import { pressWithTheEnginesPointer } from "./stories.testkit";
 
 /** Long enough for the engine to tell the page what is under its pointer, as it does when a page
  *  lays out under a pointer that has not moved. Nothing on the page says it has: a pointer that
@@ -41,10 +42,8 @@ type Story = StoryObj<typeof meta>;
 /** **A story that ends on a press with the engine's pointer**, which it leaves on the button. */
 export const EndsOnAPress: Story = {
   play: async ({ canvas }) => {
-    // The engine's own mouse: imported only where a story runs in it.
-    const { userEvent: mouse } = await import("vitest/browser");
     const cancel = canvas.getByRole("button", { name: "Cancel" });
-    await mouse.click(cancel);
+    if (!(await pressWithTheEnginesPointer(cancel))) return;
     await waitFor(() => expect(cancel.matches(":hover")).toBe(true));
   },
 };

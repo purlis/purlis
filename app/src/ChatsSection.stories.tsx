@@ -14,7 +14,7 @@ import { aCardIsUp } from "./chatCard";
 import { CARD_LEAVE_MS, ChatsSection, ON_MEMORY_SAID } from "./ChatsSection";
 import { ChatsHere, fixedChats, moved, nothingKnown } from "./chatState";
 import { chatsTree, type ListedChat } from "./chatsTree";
-import { expectFocusInSight, parkTheEnginesCursor, untilFocused } from "./stories.testkit";
+import { expectFocusInSight, untilFocused } from "./stories.testkit";
 import { panelRoot } from "./ui/panel/Panel";
 
 /** A chat as the core lists it, open in a tab. */
@@ -280,7 +280,8 @@ const drawn = () => new Promise((done) => requestAnimationFrame(() => requestAni
  * test cannot see. It waits on what it checks, never on the clock (#3951): the card is up
  * before the chat arrives, the list says it is held (`data-holding`, #4020) before the chat
  * arrives, and the hold's wait is over only when the story says so. The engine's own cursor is
- * out of the way first, so the story's pointer is the only one the list hears (#4098).
+ * out of the way (`.storybook/pointer.setup.ts`), so the story's pointer is the only one the list
+ * hears (#4098).
  */
 export const HeldAcrossTheGapToTheCard: Story = {
   render: () => <ArrivingInItsPanel />,
@@ -290,7 +291,6 @@ export const HeldAcrossTheGapToTheCard: Story = {
     const user = userEvent.setup();
     const row = canvasElement.querySelector<HTMLElement>('[role="treeitem"][data-session="1"]');
     await expect(row).not.toBeNull();
-    await parkTheEnginesCursor();
     const inUse = keepTheWindowInUse();
     const clock = parkTheCardsWait();
     try {
