@@ -151,6 +151,17 @@ test("a gate that stops naming where its evidence is read is named", () => {
   ]);
 });
 
+test("the technical gate keeps the studio-opening measurement on a real Mac and its steps", () => {
+  const changed = edited(
+    'on a real Mac, following CONTRIBUTING.md, \\"Measuring the studio opening\\"',
+    "on CI",
+  );
+  assert.deepEqual(faults(changed), [
+    "technical-gate: no longer names a real Mac",
+    "technical-gate: no longer names Measuring the studio opening",
+  ]);
+});
+
 test("the dogfood gate keeps its three days on the dev channel", () => {
   const changed = edited(
     "for at least 3 days on the dev channel",
