@@ -183,6 +183,15 @@
   max-block-size: calc(100cqb - var(--size-chrome) - var(--space-8));
 }
 
+/* **A row is as tall as what it says** (#5215): the band scrolls as one, so a row has no cap, and
+   what an opened one says never runs over the row after it. */
+.pane-top
+  > :is(.pane-notice-row, [data-scope="notice-row"][data-part="root"])
+  > :is(.pane-notices, [data-scope="notice-row"][data-part="stack"])
+  > [data-scope="notice"][data-part="root"][data-layout="row"] {
+  max-block-size: none;
+}
+
 .pane-top
   :is(.notice-pane-box:has(> .notice-trouble), [data-scope="notice"][data-variant="trouble"]) {
   background-color: var(--danger-wash);
