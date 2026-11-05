@@ -44,9 +44,11 @@ function oneFile(): Plugin {
 }
 
 export default defineConfig(async (env) => {
-  const given = await (base as unknown as (e: typeof env) => Promise<{ plugins: Plugin[] }>)(env);
+  const given = await (base as unknown as (e: typeof env) => Promise<{ plugins: Plugin[]; resolve: object; css: object }>)(env);
   return {
     root: here,
+    resolve: given.resolve,
+    css: given.css,
     plugins: [...given.plugins, handedThemes(), oneFile()],
     cacheDir: resolve(out, ".vite"),
     build: {
