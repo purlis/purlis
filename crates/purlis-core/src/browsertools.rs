@@ -379,6 +379,7 @@ pub fn browser_reach(reach: &Reach, open_web: bool) -> BrowserReach {
         never: written.never,
         withdrawn: written.withdrawn,
         open_web,
+        answered: Vec::new(),
     }
 }
 

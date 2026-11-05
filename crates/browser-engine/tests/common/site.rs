@@ -120,12 +120,33 @@ pub struct Site {
     heard: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
     /// Every request it was sent, as `METHOD host/path`, in order (#5152).
     sent: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    /// The hosts it carries alone, as a reach proxy held by a fill does (#5230): empty, all of them.
+    held_to: Held,
 }
+
+/// The hosts the fixture site carries alone, where it is held (#5230).
+pub type Held = std::sync::Arc<std::sync::Mutex<Vec<String>>>;
 
 impl Site {
     /// Whether any request reached it for `host`.
     pub fn heard_from(&self, host: &str) -> bool {
         self.heard.lock().unwrap().iter().any(|one| one == host)
+    }
+
+    /// What holds it to some hosts, as a fill's holder holds a reach proxy (#5230): a request for
+    /// any other is hung up on, unheard, and shows the engine's own page, as a refused tunnel does.
+    pub fn held_to(&self) -> Held {
+        std::sync::Arc::clone(&self.held_to)
+    }
+
+    /// How many requests reached it for `host` (#5230).
+    pub fn sent_count(&self, host: &str) -> usize {
+        self.heard
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|one| *one == host)
+            .count()
     }
 
     /// Whether it was sent `request`, written `METHOD host/path` (#5152).
@@ -141,20 +162,24 @@ pub fn serve() -> Site {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/site");
     let heard = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let sent = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let held_to: Held = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let hearing = std::sync::Arc::clone(&heard);
     let sending = std::sync::Arc::clone(&sent);
+    let holding = std::sync::Arc::clone(&held_to);
     thread::spawn(move || {
         for stream in listener.incoming().flatten() {
             let root = root.clone();
             let hearing = std::sync::Arc::clone(&hearing);
             let sending = std::sync::Arc::clone(&sending);
-            thread::spawn(move || answer(stream, &root, &hearing, &sending));
+            let holding = std::sync::Arc::clone(&holding);
+            thread::spawn(move || answer(stream, &root, &hearing, &sending, &holding));
         }
     });
     Site {
         address,
         heard,
         sent,
+        held_to,
     }
 }
 
@@ -163,6 +188,7 @@ fn answer(
     root: &Path,
     heard: &std::sync::Mutex<Vec<String>>,
     sent: &std::sync::Mutex<Vec<String>>,
+    held_to: &std::sync::Mutex<Vec<String>>,
 ) {
     let mut reader = BufReader::new(stream.try_clone().unwrap());
     let mut first = String::new();
@@ -193,6 +219,13 @@ fn answer(
         .split(['/', ':'])
         .next()
         .unwrap_or_default();
+    // Held to other hosts (#5230): hung up on, and never heard.
+    {
+        let held = held_to.lock().unwrap();
+        if !held.is_empty() && !held.iter().any(|one| one == host) {
+            return;
+        }
+    }
     heard.lock().unwrap().push(host.to_owned());
     if let Some(rest) = target.strip_prefix("http://") {
         let without_query = rest.split(['?', '#']).next().unwrap_or_default();
@@ -264,6 +297,23 @@ fn answer(
                 b"<!doctype html><title>Not verified</title><h1>Code refused</h1>"
             };
             let _ = respond(&mut out, "200 OK", "text/html; charset=utf-8", &[], said);
+        }
+        // A server that hangs up, which shows the engine's own page (#5230).
+        "hangs-up" => {}
+        // A server's redirect to the address the query names, as a sign-in's is (#5230).
+        "redirect" => {
+            // Written %23 where a form's action would take it for that address's own fragment.
+            let to = query
+                .strip_prefix("to=")
+                .unwrap_or_default()
+                .replace("%23", "#");
+            let _ = respond(
+                &mut out,
+                "302 Found",
+                "text/plain",
+                &[("Location", &to)],
+                b"",
+            );
         }
         "slow-data" => {
             thread::sleep(SLOW);

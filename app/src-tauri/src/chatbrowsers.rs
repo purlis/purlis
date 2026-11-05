@@ -279,6 +279,9 @@ struct Chat {
     /// The sites its browser asked about that wait on the person, oldest first, with when the
     /// first began to wait (#2018).
     sites_asked: Vec<Site>,
+    /// The sites the person allowed when this chat's browser asked (#5230): a filled page may
+    /// leave for one by its server's redirect, as for a site the browser was on.
+    sites_answered: Vec<Site>,
     sites_since: u64,
     /// The browser sites allowed for this chat alone, while the app holds it (#2018).
     sites: Vec<Site>,
@@ -330,6 +333,7 @@ impl Default for Chat {
             unsandboxed: false,
             rests_on: None,
             sites_asked: Vec::new(),
+            sites_answered: Vec::new(),
             sites_since: 0,
             sites: Vec::new(),
             used: HashMap::new(),
@@ -2487,6 +2491,22 @@ impl ChatBrowsers {
         Ok(())
     }
 
+    /// **The person allowed `sites` when chat `session`'s browser asked**, at whatever level
+    /// (#5230): a page in it holding a secret may leave for them by its server's redirect, as for
+    /// a site the browser was on. A site the chat's reach lists already is asked about too, so
+    /// this is told apart from what it lists.
+    pub fn allowed_when_asked(&self, session: u32, sites: &[Site]) {
+        let mut chats = self.lock();
+        let Some(chat) = chats.get_mut(&session) else {
+            return;
+        };
+        for site in sites {
+            if !chat.sites_answered.contains(site) && chat.sites_answered.len() < MOST_SITES_ASKED {
+                chat.sites_answered.push(site.clone());
+            }
+        }
+    }
+
     /// The browser sites allowed for one chat alone (#2018), each with its chat: what the
     /// Granted list shows of them.
     pub fn chat_sites(&self) -> Vec<(u32, Site)> {
@@ -2996,6 +3016,7 @@ impl ChatBrowsers {
         };
         let named = browse.browser.clone().or_else(|| chat.current.clone());
         let chat_sites = chat.sites.clone();
+        let chat_answered: Vec<String> = chat.sites_answered.iter().map(Site::to_string).collect();
         let per_project = (self.limits)().per_project;
         let start = |chat: &mut Chat, kept: Option<KeptLogin>| -> Result<String, String> {
             let kept_as = kept.as_ref().map(|kept| HeldLogin {
@@ -3268,12 +3289,13 @@ impl ChatBrowsers {
             }
             other => other,
         };
-        let reach_now = with_sites(
+        let mut reach_now = with_sites(
             reach(),
             open_web,
             &chat_sites,
             &purlis_core::sandbox::policy::Locks::of(root),
         );
+        reach_now.answered = chat_answered;
         let acted = match act {
             _ if ended => Err(Refused::Gone),
             Doing::Act(act) => {
@@ -3566,6 +3588,8 @@ impl ChatBrowsers {
                 // Only where the person answered a notice naming a multi-line field (#5120): the
                 // engine reads the field again as it fills, and refuses one otherwise.
                 multi_line: allowed.multi_line,
+                // A form on the page may be sent to these, and to no other site (#5230, SF-15).
+                also: allowed.also,
             },
         )?;
         // The person's view marks it, by key and site (#5119, SF-8).
@@ -5143,6 +5167,7 @@ pub fn sites_allowed(
     kept?;
     held.browsers()
         .sites_answered(session, &sites, level == Level::Chat)?;
+    held.browsers().allowed_when_asked(session, &sites);
     for site in &sites {
         held.chats().tell_outcome(
             session,

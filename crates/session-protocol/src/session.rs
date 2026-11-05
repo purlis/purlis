@@ -475,19 +475,25 @@ use crate::view::{Limits, Views};
 /// refuses it, and the login goes as it always did. And a login a chat chose starts clean on its
 /// own site, which a host before 1.73 doesn't do, so no such login is sent to one.
 ///
-/// 1.74 starts every login that fills clean on its own site (#5272), a declared one too, and
+/// 1.74 lets a page holding a filled secret leave for another site (#5230, the person's rulings
+/// SF-14 and SF-15): `fill_secret` may carry `also`, the other origins the key is approved for,
+/// where a form on the page may be sent, and a browser's reach may carry `answered`, the sites the
+/// person allowed when its chat asked. A host before 1.74 ignores both, and holds the browser to
+/// the fill's site as before.
+///
+/// 1.75 starts every login that fills clean on its own site (#5272), a declared one too, and
 /// clears all the site stores, so no login is sent to a host before. A form that doesn't appear
 /// on the load after is refused [`NO_LOGIN_FORM_ON_CLEAN_LOAD`].
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 74,
+    minor: 75,
 };
 
 /// The version that first starts every login clean on its own site (#5272): no login is sent to
 /// a host before.
 pub const KNOWS_CLEAN_LOGINS: Version = Version {
     major: 1,
-    minor: 74,
+    minor: 75,
 };
 
 /// The version that first fills a secret into a field (#5115): no fill is sent to a host before.
@@ -767,7 +773,7 @@ pub const NO_ENGINE_SANDBOX: &str = "no_engine_sandbox";
 /// [`NOT_ALLOWED`].
 pub const PROGRAMS_NOT_KNOWN: &str = "programs_not_known";
 
-/// A login's site was cleared, and its form didn't appear on the load after (1.74, #5272): nothing
+/// A login's site was cleared, and its form didn't appear on the load after (1.75, #5272): nothing
 /// was filled, and a browser that has held nothing may show it where this one, held to the login,
 /// can't. Its `why` says so.
 pub const NO_LOGIN_FORM_ON_CLEAN_LOAD: &str = "no_login_form_on_clean_load";

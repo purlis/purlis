@@ -4,7 +4,7 @@
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 
-use purlis_browser_engine::drive::{Driver, Gate, Outbound, Why};
+use purlis_browser_engine::drive::{Driver, Gate, Leaving, Outbound, Why};
 use purlis_host::protocol::browsing::BrowserReach;
 use purlis_host::protocol::session::{Layer, Listed};
 
@@ -438,4 +438,70 @@ fn a_logins_site_is_let_on_for_good_only_once_the_browser_is_bound_to_it() {
         sites.new_sites().carries(&shop),
         "bound to it, the browser reaches it"
     );
+}
+
+/// #5230, SF-14: a site the browser was on continues by itself; any other asks once and stays
+/// once asked; what the person allowed goes; never outside the usual reach.
+#[test]
+fn a_filled_page_leaves_for_a_site_it_was_on_and_asks_once_about_any_other() {
+    let address = "https://app.example.com/?code=1";
+    let site = "app.example.com:443";
+
+    let judge = sites(&["app.example.com"], false);
+    assert_eq!(judge.may_leave_for(address, true), Leaving::Go);
+
+    // Listed, but not been on: it asks, once.
+    let judge = sites(&["app.example.com"], false);
+    assert_eq!(
+        judge.may_leave_for(address, false),
+        Leaving::Ask {
+            site: site.to_owned()
+        }
+    );
+    assert!(matches!(
+        judge.may_leave_for(address, false),
+        Leaving::No { .. }
+    ));
+
+    // The open web asks too, and goes once the person allowed it.
+    let judge = sites(&[], true);
+    assert!(matches!(
+        judge.may_leave_for(address, false),
+        Leaving::Ask { .. }
+    ));
+    let mut allowed = reach(&["app.example.com"], true);
+    allowed.answered = vec![site.to_owned()];
+    judge.reach_now(&allowed).unwrap();
+    assert_eq!(judge.may_leave_for(address, false), Leaving::Go);
+
+    // A site it was on, that the reach no longer carries, is asked about.
+    let judge = sites(&[], false);
+    assert!(matches!(
+        judge.may_leave_for(address, true),
+        Leaving::Ask { .. }
+    ));
+
+    // A private address is outside the reach, whoever says what.
+    let judge = sites(&[], true);
+    assert!(matches!(
+        judge.may_leave_for("https://10.0.0.5/", true),
+        Leaving::No { .. }
+    ));
+}
+
+/// #5230: a login's hold outlasts a fill's: a filled page leaves for no site it keeps off.
+#[test]
+fn a_filled_page_leaves_for_no_site_a_login_keeps_the_browser_off() {
+    let judge = sites(&["app.example.com"], false);
+    judge
+        .bound()
+        .to(&LoginSites {
+            page: Site::of("shop.example.com", 443),
+            form: None,
+        })
+        .unwrap();
+    assert!(matches!(
+        judge.may_leave_for("https://app.example.com/", true),
+        Leaving::No { .. }
+    ));
 }
