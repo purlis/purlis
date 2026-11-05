@@ -18,6 +18,7 @@ import { QuestionsHere } from "./QuestionsHere";
 import { FIRST_LINE, QuizBand, QuizPlaces } from "./QuizBand";
 import { forgetThisLaunch } from "./regions";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
+import { CLOSE_QUIZ } from "./TaskQuiz";
 import { TextArea } from "./ui/field/Field";
 import { setWhereYouAnswer } from "./whereYouAnswer";
 
@@ -152,7 +153,7 @@ export const FirstQuestionOffersTheChoice: Story = {
     await expect(canvas.getByText(FIRST_LINE)).toBeVisible();
     const quiz = canvas.getByRole("group", { name: "developer 7 asks" });
     const title = within(quiz).getByText("developer 7 asks");
-    const close = within(quiz).getByRole("button", { name: "Close" });
+    const close = within(quiz).getByRole("button", { name: CLOSE_QUIZ });
     const change = canvas.getByRole("button", { name: "Change" });
     const dismiss = canvas.getByRole("button", { name: "Dismiss" });
     for (const way of [change, dismiss, close]) await expect(apart(way, title)).toBe(true);
@@ -186,7 +187,7 @@ export const OneAtATimeWithACount: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByText("2 more")).toBeVisible();
-    await expect(canvas.queryByText(/Questions from tasks come to this tab/)).toBeNull();
+    await expect(canvas.queryByText(FIRST_LINE)).toBeNull();
     await waitFor(() => expect(box(canvasElement)).toBeEnabled());
     terminal(canvasElement).focus();
     await userEvent.keyboard("pnpm te");
@@ -238,9 +239,37 @@ export const AQuestionOverSeveralLines: Story = {
 };
 
 /**
+ * **Closing a question here** (#5213): Close puts it away from this pane, unanswered, and the one
+ * waiting behind it comes after the pause. The picture is the next question.
+ */
+export const ClosingOneShowsTheNext: Story = {
+  args: { asks: THREE },
+  beforeEach: () => {
+    pausedOnItsQuestion();
+    setWhereYouAnswer({ answer: "top", offered: true });
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const quiz = canvas.getByRole("group", { name: "developer 7 asks" });
+    const close = within(quiz).getByRole("button", { name: CLOSE_QUIZ });
+    close.focus();
+    await untilFocused(() => close, "on the quiz's Close");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(canvas.queryByRole("group", { name: "developer 7 asks" })).toBeNull(),
+    );
+    await waitFor(
+      () => expect(canvas.getByRole("group", { name: "designer 3 asks" })).toBeVisible(),
+      { timeout: 5000 },
+    );
+    await waitFor(() => expect(box(canvasElement)).toBeEnabled());
+  },
+};
+
+/**
  * **Folded with the pane's notices** (#5213): minimised, which every pane's notices are by
- * default, the note folds into the pane's bell and the quiz stands, as every ask does. Close puts
- * the quiz away from this pane, unanswered. The picture is the band minimised.
+ * default, the note folds into the pane's bell and the quiz stands, as every ask does, with its
+ * Close in reach. The picture is the band minimised.
  */
 export const FoldedWithThePanesNotices: Story = {
   args: { asks: [FIRST], minimised: true },
@@ -254,7 +283,7 @@ export const FoldedWithThePanesNotices: Story = {
     await expect(quiz).toBeVisible();
     await waitFor(() => expect(canvas.getByText(FIRST_LINE)).not.toBeVisible());
     await waitFor(() => expect(box(canvasElement)).toBeEnabled());
-    const close = within(quiz).getByRole("button", { name: "Close" });
+    const close = within(quiz).getByRole("button", { name: CLOSE_QUIZ });
     close.focus();
     await untilFocused(() => close, "on the quiz's Close");
     expectFocusInSight();

@@ -15,7 +15,7 @@ import { commands, type PlaneId, type Shown } from "./bindings";
 import { Notice } from "./Notice";
 import { useQuestionsHere } from "./QuestionsHere";
 import { QuizClosing, type Closed } from "./QuizClosing";
-import { moreSaid, moreSaidFully, TaskQuiz } from "./TaskQuiz";
+import { closeQuizSaid, moreSaid, moreSaidFully, TaskQuiz } from "./TaskQuiz";
 import { Count } from "./ui/badge/Badge";
 import { Card } from "./ui/card/Card";
 import { quizIn, setWhereYouAnswer, useWhereYouAnswer, type QuizHere } from "./whereYouAnswer";
@@ -35,7 +35,7 @@ export const QuizPlaces = createContext<
   | {
       topOf: (task: number) => number | undefined;
       openTask: (task: number) => void;
-      /** Opens Settings at Where you answer, where the line that moved them says so. */
+      /** Opens Settings at Where you answer, for the note's Change. */
       openSettings: () => void;
     }
   | undefined
@@ -198,17 +198,16 @@ function useQuizzes(
 }
 
 /**
- * **The top of a pane, where a task's question is drawn** (#4565, #4566, the reviewed
- * prototype's Band: the quiz sits at the top of the pane, because a chat's input is inside its
- * terminal and a quiz at its foot moved the input line).
+ * **A task's question in a pane** (#4565, #4566): the quiz stands above the terminal, because a
+ * chat's input is inside it and a quiz at its foot moved the input line.
  *
  * The pane showing chat `session` draws the quiz {@link quizIn} picks: the chat's own question,
  * and from the top the oldest that waits at it, with a count of the rest. **One at a time**, with
  * a short pause before the next ({@link useQuizzes}), and the line an agent's answer leaves
  * above it. A task's question the window cannot draw is a line linking to its pane, in the same
- * place in the queue. Above the first one that reaches the person, **the choice is offered once**
- * as a quiet note, never a dialog, and in one pane only: it says the questions come here, with
- * Change, which opens Settings at Where you answer. Answering the quiz counts as keeping it.
+ * place in the queue. Above the first one that reaches the person, **a note says once** where
+ * they come, never a dialog, and in one pane only, with Change, which opens Settings at Where you
+ * answer. Answering the quiz counts as keeping the setting.
  * The setting is read as it is drawn, so a change applies to every open question at once and
  * reroutes nothing.
  *
@@ -216,8 +215,8 @@ function useQuizzes(
  * parts is one box of the band's stack, so the band folds them by its one setting. Its notes
  * (the line about where questions come, an agent's answer) fold into the bell while the band is
  * minimised, and the quiz stands, as every ask does (`data-waits`). Everything in it closes: the
- * note for good, by its Dismiss, which counts as keeping the setting, and the quiz from this
- * pane only, so the question stays in the Inbox and on the ✋ until it is answered.
+ * note for good, by its Dismiss, which counts as keeping the setting, and a question from this
+ * pane only, drawn or not, so it stays in the Inbox and on the ✋ until it is answered.
  */
 export function QuizBand({
   plane,
@@ -249,15 +248,18 @@ export function QuizBand({
     quiz !== undefined && quiz.drawn && !quiz.own && !prefs.offered && prefs.answer === "top",
   );
   if (quiz === undefined && closings.length === 0) return null;
+  const closeQuiz = () => {
+    if (quiz !== undefined) setClosed((now) => new Set(now).add(quiz.ask.ask));
+  };
   return (
     <>
-      {closings.map((closed) => (
+      {closings.map((closing) => (
         <QuizClosing
-          key={`${closed.session}:${closed.number}`}
+          key={`${closing.session}:${closing.number}`}
           plane={plane}
-          closed={closed}
+          closed={closing}
           onGoToTask={(task) => places?.openTask(task)}
-          onDismiss={() => dismiss(closed)}
+          onDismiss={() => dismiss(closing)}
         />
       ))}
       {pausing !== undefined && (
@@ -300,15 +302,16 @@ export function QuizBand({
                 if (!prefs.offered) setWhereYouAnswer({ offered: true });
               }}
               onTyped={(text) => typedIn(quiz.ask.ask, text)}
-              onClose={() => setClosed((now) => new Set(now).add(quiz.ask.ask))}
+              onClose={closeQuiz}
             />
           ) : (
             <Notice
               at="pane"
               tone="attention"
-              waits
               cause={`task-question:cannot-draw:${quiz.ask.session}`}
               link={{ label: "Open task", onPress: () => places.openTask(quiz.ask.session) }}
+              onDismiss={closeQuiz}
+              dismissSays={closeQuizSaid}
             >
               {cannotDrawSaid(taskOf(quiz.ask))}
               {quiz.more > 0 && (

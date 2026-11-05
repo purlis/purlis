@@ -23,14 +23,14 @@ export const QUIZ_WHY: Record<ReachedWhy, (chat: string) => string> = {
 
 /** How many more wait behind the quiz, short and in full. */
 export const moreSaid = (count: number) => `${count} more`;
-/** What the quiz's close says it does (#5213): the question is put away here, not answered. */
-export const CLOSE_QUIZ = "Close";
-export const closeQuizSaid = "Close here. It stays in the Inbox until you answer it.";
 export const moreSaidFully = (count: number) =>
   `${count} more ${count === 1 ? "question waits" : "questions wait"} after this`;
+/** What the quiz's close says it does (#5213): the question is put away here, not answered. */
+export const CLOSE_QUIZ = "Close question";
+export const closeQuizSaid = "Close here. It stays in the Inbox until you answer it.";
 
 /**
- * **A task question, drawn as a quiz at the top of a pane** (#4565, spec #4551, the reviewed
+ * **A task question, drawn as a quiz in a pane's notices band** (#4565, spec #4551, the reviewed
  * prototype on `prototype/task-question-surfaces`): who asks, in the task's own words, why it
  * reached the person, the asking chat's note marked as its own, how long it has waited, a box for
  * the answer and, away from the task's own pane, Open task.

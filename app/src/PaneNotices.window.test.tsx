@@ -327,7 +327,7 @@ describe("a full band", () => {
 const QUESTION: Shown = {
   session: 4,
   ask: "task-question:4:1",
-  says: "Which branch?\n\n- main\n- the fork",
+  says: "Which branch?\nSay why.\n\n- **main**\n- the fork",
   options: [],
   source: "task-question",
   chain: ["steward 1", "claude 4"],
@@ -347,7 +347,10 @@ describe("a task's question in the band (#5213)", () => {
     expect(head.compareDocumentPosition(quiz) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(bell()).toHaveAttribute("aria-expanded", "false");
     expect(quiz).toBeVisible();
-    // Its lines are the task's, never a mark for a line break.
-    expect(quiz).not.toHaveTextContent(/⟦U\+/);
+    // Its lines are the task's, never a mark for a line break, and its markdown is drawn.
+    expect(quiz).not.toHaveTextContent(/⟦U\+|\*\*/);
+    expect(quiz.querySelector("br")).not.toBeNull();
+    expect(within(quiz).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(quiz).getByText("main").tagName).toBe("STRONG");
   });
 });

@@ -158,7 +158,7 @@ describe("where a task's question is drawn (#4565)", () => {
       since: (QUESTION.since ?? 0) + 60,
     };
     const { rerender } = render(<Pane session={4} asks={[QUESTION, second]} pauseMs={0} />);
-    await user.click(within(quiz() as HTMLElement).getByRole("button", { name: "Close" }));
+    await user.click(within(quiz() as HTMLElement).getByRole("button", { name: "Close question" }));
     expect(quiz()).not.toBeInTheDocument();
     // Still the registry's: the next list holds it, and this pane leaves it closed.
     rerender(<Pane session={4} asks={[QUESTION, second]} pauseMs={0} />);
@@ -409,5 +409,10 @@ describe("several questions at once (#4566)", () => {
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Open task" }));
     expect(openTask).toHaveBeenCalledWith(7);
+
+    // It closes as a quiz does: from this pane, the registry keeping it (#5213).
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(screen.queryByText(/cannot draw/)).toBeNull());
+    expect(sent).toEqual([]);
   });
 });
