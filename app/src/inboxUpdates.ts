@@ -162,7 +162,7 @@ export function resumeUpdates(chats: Iterable<OpenChat>, now: number): UpdateNot
 
 /**
  * **A chat another chat started, announced** (#4759, spec #4750 story 26): a handoff, or a task
- * on a harness purlis has no hooks into, which started in no pane. One update per chat the core
+ * that can't report asks, which started in no pane. One update per chat the core
  * says the person has not looked at yet (`unseen`), keyed by the chat's id, so noting it again
  * is the same update, and it stands for its day once the chat has been looked at. **It asks
  * nothing**, so the ✋ never counts it: the ✋ counts the asks registry alone.
@@ -183,7 +183,9 @@ export function arrivedUpdates(
       at: secondsOf(now),
       session: chat.session,
       chain: [name],
-      says: cantReportAsks(chat.from, chat.unreported) ? `${title}. ${CANT_REPORT_WORDS}` : title,
+      says: cantReportAsks(chat.from, chat.cant_report_asks)
+        ? `${title}. ${CANT_REPORT_WORDS}`
+        : title,
     });
   }
   return out;

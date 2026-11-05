@@ -1,15 +1,15 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **A task on a harness purlis has no hooks into** (#4759, ADR 0090 as amended 2026-11-02):
+//! **A task that can't report asks** (#4759, ADR 0090 as amended 2026-11-02):
 //! it starts in no pane like every dispatch, and it can't say when it needs the person, so the
 //! asking chat is told, beside the start, that the person must look at it.
 
 use super::*;
 
 /// What the window is told of chat 7, started from chat 1, as a task or a handoff, on a
-/// harness that reports all or one that can't say when it waits.
-fn arrived(task: bool, unreported: Option<&str>) -> Arrived {
+/// harness that says when it waits or one that can't.
+fn arrived(task: bool, cant_report_asks: bool) -> Arrived {
     Arrived {
         plane: PlaneId::for_tests(Path::new("/home/dev/plane")),
         session: 7,
@@ -30,14 +30,14 @@ fn arrived(task: bool, unreported: Option<&str>) -> Arrived {
         workspace: Some("alpha".to_owned()),
         persona: None,
         harness: Some("codex".to_owned()),
-        unreported: unreported.map(str::to_owned),
-        announced: !task || unreported.is_some(),
+        cant_report_asks,
+        announced: !task || cant_report_asks,
     }
 }
 
 #[test]
 fn a_task_whose_harness_cannot_report_asks_tells_its_asking_chat_the_person_must_look() {
-    let note = cant_report_note(&arrived(true, Some("Codex can't say when it waits.")));
+    let note = cant_report_note(&arrived(true, true));
     assert_eq!(note.as_deref(), Some(CANT_REPORT_ASKS));
     assert_eq!(
         CANT_REPORT_ASKS,
@@ -47,13 +47,10 @@ fn a_task_whose_harness_cannot_report_asks_tells_its_asking_chat_the_person_must
 
 #[test]
 fn a_task_whose_harness_reports_its_asks_is_told_nothing_more() {
-    assert_eq!(cant_report_note(&arrived(true, None)), None);
+    assert_eq!(cant_report_note(&arrived(true, false)), None);
 }
 
 #[test]
 fn a_handoff_is_told_nothing_more_whatever_its_harness_its_asking_chat_hears_nothing_back() {
-    assert_eq!(
-        cant_report_note(&arrived(false, Some("Codex can't say when it waits."))),
-        None
-    );
+    assert_eq!(cant_report_note(&arrived(false, true)), None);
 }

@@ -83,7 +83,7 @@ export type ListedChat = {
    *  the asking chat's name for the row's word. */
   question?: QuestionStanding["level"] | null;
   /** **Announced, and not looked at yet** (#4759): a chat another chat started, a handoff or a
-   *  task on a harness purlis has no hooks into, which took no pane. Its row says "new" until
+   *  task that can't report asks, which took no pane. Its row says "new" until
    *  the chat has been on screen. */
   unseen?: boolean;
   /** **A task that can't report asks** (#4759): its harness can't say when it needs the
@@ -143,14 +143,14 @@ export type ChatRow = ListedChat & {
 };
 
 /** **A task that can't report asks** (#4759, ADR 0090 as amended 2026-11-02): one another chat
- *  started as a task, on a harness that can't tell purlis when it waits (`unreported`). Nothing
- *  it asks reaches the person, so it is announced like a handoff and its row keeps the faint
- *  hand. A handoff, or a task whose harness reports its asks, is not one. */
+ *  started as a task, where the core says it can't tell the person it needs them. Nothing it
+ *  asks reaches the person, so it is announced like a handoff and its row keeps the faint hand.
+ *  A handoff, or a task whose harness reports its asks, is not one. */
 export function cantReportAsks(
   from: { task?: boolean } | null | undefined,
-  unreported: string | null | undefined,
+  cant: boolean | null | undefined,
 ): boolean {
-  return from?.task === true && Boolean(unreported);
+  return from?.task === true && cant === true;
 }
 
 /** One of the core's open chats as the section lists it. `tab` is the window's own answer. */
@@ -190,7 +190,7 @@ export function listedChat(
     asking: question?.level === "with-asker" ? question.asker : null,
     question: question?.level ?? null,
     unseen: chat.unseen === true,
-    cantReport: cantReportAsks(chat.from, chat.unreported),
+    cantReport: cantReportAsks(chat.from, chat.cant_report_asks),
   };
 }
 

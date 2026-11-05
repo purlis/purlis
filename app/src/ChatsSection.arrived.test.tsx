@@ -9,7 +9,7 @@ import { chatsTree, type ListedChat } from "./chatsTree";
 
 /**
  * **A chat another chat started, on its row** (#4759, spec #4750 stories 26 and 28): a handoff,
- * or a task on a harness purlis has no hooks into, starts in no pane and is announced, and its
+ * or a task that can't report asks, starts in no pane and is announced, and its
  * row says "new" until it has been on screen. A task that can't report asks keeps the faint
  * hand on its row, since nothing it asks reaches the ✋.
  */

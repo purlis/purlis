@@ -7,6 +7,7 @@ import {
   below,
   belowCount,
   cameFromSaid,
+  cantReportAsks,
   chatsTree,
   handedOff,
   handedOffSaid,
@@ -329,5 +330,54 @@ describe("what a chat runs on (#1673)", () => {
     expect(on("work", null)).toBe("work");
     expect(on(null, "codex")).toBe("codex");
     expect(on(null, null)).toBeNull();
+  });
+});
+
+describe("a task that can't report asks (#4759)", () => {
+  const task = { task: true };
+
+  it("is a task the core says can't, and no other chat", () => {
+    expect(cantReportAsks(task, true)).toBe(true);
+    expect(cantReportAsks({ task: false }, true)).toBe(false);
+    expect(cantReportAsks(null, true)).toBe(false);
+    expect(cantReportAsks(task, null)).toBe(false);
+  });
+
+  it("goes by the core's answer, not by what else its harness's card lacks", () => {
+    const listed = (chat: Partial<OpenChat>) =>
+      listedChat(
+        {
+          session: 4,
+          name: "4",
+          cwd: null,
+          harness: "opencode",
+          in_front: false,
+          resumed: null,
+          fresh: null,
+          guessed: null,
+          profile: null,
+          persona: null,
+          unreported: null,
+          card: null,
+          pinned: false,
+          label: null,
+          from: {
+            chat: 1,
+            name: "steward 1",
+            workspace: "alpha",
+            task: true,
+            tab: false,
+            reported: false,
+            unreported: false,
+          },
+          ...chat,
+        },
+        "alpha",
+        "4",
+        false,
+      );
+
+    expect(listed({ unreported: "its helpers are not shown under it" }).cantReport).toBe(false);
+    expect(listed({ cant_report_asks: true }).cantReport).toBe(true);
   });
 });

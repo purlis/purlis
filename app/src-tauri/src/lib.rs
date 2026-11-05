@@ -821,6 +821,12 @@ struct OpenChat {
     persona: Option<String>,
     /// What its harness cannot tell charter, said on the chat — none where it tells all.
     unreported: Option<String>,
+    /// `true` where it can't tell the person it needs them (#4759): its harness's card says no
+    /// to hooks or to reporting a wait, or it has no adapter
+    /// ([`Harness::reports_asks`]). A task that started so keeps the faint hand on its row.
+    /// `null` where it can.
+    #[specta(optional)]
+    cant_report_asks: Option<bool>,
     /// Its harness's card at a glance, which its header draws (HP-19) — none for a shell.
     card: Option<HarnessGlance>,
     /// Whether the operator pinned it (ADR 0039). It rides the plane's own app
@@ -848,7 +854,7 @@ struct OpenChat {
     #[specta(optional)]
     studio: Option<skilldrafts::StudioLink>,
     /// `true` for a chat another chat started and announced that the person has not looked at
-    /// yet (#4759): a handoff, or a task on a harness purlis has no hooks into. Its sidebar row
+    /// yet (#4759): a handoff, or a task that can't report asks. Its sidebar row
     /// says "new" until it has been on screen. `null` for every other chat.
     #[specta(optional)]
     unseen: Option<bool>,
@@ -2981,6 +2987,7 @@ impl From<chats::Open> for OpenChat {
                 .harness
                 .and_then(Harness::unreported)
                 .map(str::to_owned),
+            cant_report_asks: (!Harness::reports_asks(open.harness)).then_some(true),
             // The declaration it started on, a project's or this machine's (#1134, #968), else
             // the built-in's: a chat on a declared harness has its card's button too.
             card: open

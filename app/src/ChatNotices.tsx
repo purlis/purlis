@@ -115,9 +115,10 @@ export type Arrived = {
    *  (#1447), whether it arrives with a tab, and whether it is a task, which owes that chat a
    *  report. */
   from?: (HandedFrom & { tab?: boolean; task?: boolean }) | null;
-  /** **What its harness cannot tell purlis** (#4759), where it can't say when it waits: a task
-   *  on such a harness is announced like a handoff. None where it reports all. */
-  unreported?: string | null;
+  /** **Whether it can't tell the person it needs them** (#4759): the core's answer from its
+   *  harness's card, or `true` for a program with no adapter. A task like this is announced
+   *  like a handoff. */
+  cant_report_asks?: boolean;
   /** **Whether it is announced** (#4759): a handoff, or a task that can't report asks, that the
    *  person did not start. The core's answer, the one its row's "new" mark starts from. */
   announced?: boolean;

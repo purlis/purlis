@@ -96,7 +96,7 @@ below. Then, from a chat the app started:
 5. The chat starts in the target workspace's sidebar and **takes no pane and no tab**, so
    nothing you are reading moves, and the window is not raised. It is shown in a pane when you
    pick it. **You are told it arrived** (#4759): a card hangs from that workspace's chip,
-   "<chat> arrived from <asking chat>", with Go to it, or it is listed in the Notices centre
+   `<chat> arrived from <asking chat>`, with Go to it, or it is listed in the Notices centre
    where the workspace has no chip. The card takes no keyboard, and hiding it leaves a dot.
    The Inbox gets an Update, which the ✋ does not count, since a handoff asks nothing, and its
    row says "new" until it has been on screen. A task is not announced, since its asking chat

@@ -172,7 +172,7 @@ pub struct Chat {
     /// — not a format change, for [`Self::pinned`]'s reason.
     pub tab_opened: bool,
     /// **Whether the person has yet to look at this chat** (#4759): a chat another chat
-    /// started that is announced, a handoff or a task on a harness purlis has no hooks into
+    /// started that is announced, a handoff or a task that can't report asks
     /// ([`Self::announced`]). It starts in no pane, and its sidebar row keeps a "new" mark until
     /// the chat is on screen, across a reload and a relaunch. `false` is every other chat, and
     /// every record written before this field — not a format change, for [`Self::pinned`]'s

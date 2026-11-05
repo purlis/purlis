@@ -130,12 +130,12 @@ describe("each source, said as updates", () => {
       session: number,
       unseen: boolean | null,
       from: { name: string; task: boolean } | null,
-      unreported: string | null = null,
-    ) => ({ session, id: `id-${session}`, unseen, from, unreported }) as unknown as OpenChat;
+      cant_report_asks: boolean | null = null,
+    ) => ({ session, id: `id-${session}`, unseen, from, cant_report_asks }) as unknown as OpenChat;
     const said = arrivedUpdates(
       [
         chat(1, true, { name: "steward 3", task: false }),
-        chat(2, true, { name: "steward 3", task: true }, "No hooks."),
+        chat(2, true, { name: "steward 3", task: true }, true),
         chat(3, null, { name: "steward 3", task: false }),
         chat(4, true, null),
       ],

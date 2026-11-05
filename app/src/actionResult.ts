@@ -93,8 +93,8 @@ export const CANT_REPORT_WORDS = "It can't report asks, so look at it from time 
  * **A chat another chat started, announced** (#4759, spec #4750 stories 24 and 28): hung from
  * the chip of `workspace` it arrived in, or listed in the Notices centre where that has none
  * (`noticePlace.ts`), as "<chat> arrived from <asking chat>", with Go to it. It started in the
- * sidebar and took no pane, so this is how it is seen. `cantReport`, for a task on a harness
- * purlis has no hooks into: it can't say when it needs the person, so it says so.
+ * sidebar and took no pane, so this is how it is seen. `cantReport`, for a task that can't
+ * report asks: it can't say when it needs the person, so it says so.
  */
 export function chatArrived(
   {

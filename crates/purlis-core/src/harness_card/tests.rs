@@ -326,6 +326,13 @@ fn the_card_tab_draws_its_label_where_it_comes_from_and_a_row_per_line() {
 }
 
 #[test]
+fn a_declared_harness_with_no_adapter_cannot_report_asks_whatever_its_declaration_says() {
+    // GEMINI's own lines are its word; purlis arms hooks only through an adapter it ships.
+    let cards = read(project(&[("gemini.toml", GEMINI)]).path());
+    assert!(!card_of(&cards, "gemini").reports_asks());
+}
+
+#[test]
 fn a_harness_a_project_declares_says_where_and_has_no_sentence_of_charters() {
     let cards = read(project(&[("gemini.toml", GEMINI)]).path());
     let gemini = card_of(&cards, "gemini");

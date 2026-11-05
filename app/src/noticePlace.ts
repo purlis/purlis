@@ -29,8 +29,8 @@ export type About =
    *  plane root). `ask` for something that blocks until the person decides, and not for a plain
    *  note. A chat on screen is `pane`'s. */
   | { chat: number; workspace: string; ask: boolean }
-  /** **A chat another chat started, arrived in `arrived`** (#4759): a handoff, or a task on a
-   *  harness purlis has no hooks into, which is announced like one. */
+  /** **A chat another chat started, arrived in `arrived`** (#4759): a handoff, or a task that
+   *  can't report asks, which is announced like one. */
   | { arrived: string };
 
 /** **A chip of the title bar**, as the placement reads it: the workspace it is, and how it is

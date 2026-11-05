@@ -2117,9 +2117,9 @@ export const PlaneView = memo(function PlaneView({
       const note = handedFromNote(arrived.from);
       if (note) setHandedFrom((was) => ({ ...was, [arrived.session]: note }));
       // **Announced, never put on screen** (#4759): a handoff hangs a card on its workspace's
-      // chip, or is listed in the Notices centre where there is none, and so does a task on a
-      // harness purlis has no hooks into, which can't say when it needs the person. Any other
-      // task is its asking chat's to read, and a chat the person started is theirs: the core
+      // chip, or is listed in the Notices centre where there is none, and so does a task that
+      // can't report asks, which can't say when it needs the person. Any other task is its
+      // asking chat's to read, and a chat the person started is theirs: the core
       // says which (`announced`), as its record's "new" mark does. The card takes no keyboard.
       if (arrived.announced === true) {
         const who = whoOf(arrived.persona, arrived.harness);
@@ -2132,10 +2132,10 @@ export const PlaneView = memo(function PlaneView({
               session: arrived.session,
             },
             {
-              cantReport: cantReportAsks(arrived.from, arrived.unreported),
+              cantReport: cantReportAsks(arrived.from, arrived.cant_report_asks),
               // Said to the window as an event of its own, which the press below hears: the
               // result is state, and holds no function of the window's beyond this one.
-              onGo: () => goToArrived(arrived.session),
+              onGo: () => goToArrived(plane, arrived.session),
             },
           ),
         );
@@ -4590,12 +4590,16 @@ export const PlaneView = memo(function PlaneView({
       landOn((tabs) => pressChat(tabs, pressedOf(session), pressing));
   }, [landOn, pressedOf, pressing]);
   // **Go to it, on a chat's arrival card** (#4759): a press on a card said before it was drawn,
-  // heard here, where the press as it stands now is.
+  // heard here, where the press as it stands now is. Every project this window holds hears it,
+  // and a chat's number means something only in its own.
   useEffect(() => {
-    const go = (event: Event) => showChat((event as CustomEvent<number>).detail);
+    const go = (event: Event) => {
+      const { detail } = event as CustomEvent<{ plane: PlaneId; session: number }>;
+      if (detail.plane === plane) showChat(detail.session);
+    };
     window.addEventListener(GO_TO_ARRIVED, go);
     return () => window.removeEventListener(GO_TO_ARRIVED, go);
-  }, [showChat]);
+  }, [plane, showChat]);
   /**
    * **Move to new window, or Move to window ▸** (#4768): tab `tab`, or its focused pane, goes to
    * another window of the project in one step of the core's, which tells every window what it
@@ -12295,10 +12299,10 @@ function whoOf(persona: string | null, harness: string | null | undefined): stri
   return persona ?? harness ?? null;
 }
 
-/** **Go to it on a chat's arrival card** (#4759), told to the window that drew it. */
+/** **Go to it on a chat's arrival card** (#4759), told to the project that drew it. */
 const GO_TO_ARRIVED = "purlis:go-to-arrived";
-const goToArrived = (session: number) =>
-  window.dispatchEvent(new CustomEvent(GO_TO_ARRIVED, { detail: session }));
+const goToArrived = (plane: PlaneId, session: number) =>
+  window.dispatchEvent(new CustomEvent(GO_TO_ARRIVED, { detail: { plane, session } }));
 
 /**
  * **Chat `session`'s Notices, said in the Notices centre** (#4759): its pane's Notices drawn

@@ -15,8 +15,8 @@ import { aTabForEachChat } from "./laidOut.testkit";
  * **A chat another chat started is announced, never put on screen** (#4759, spec #4750 stories
  * 23 to 28): a handoff hangs a card on its workspace's chip, "<chat> arrived from <asking
  * chat>", with Go to it. The card takes no keyboard and leaves a dot when it is hidden. A task
- * is the asking chat's to read, so only one on a harness purlis has no hooks into is announced,
- * since it can't say when it needs the person.
+ * is the asking chat's to read, so only one that can't report asks is announced, since it
+ * can't say when it needs the person.
  */
 
 vi.mock("./SessionPane", () => ({
@@ -31,6 +31,8 @@ afterEach(() => {
 });
 
 const PLANE = "/home/dev/one";
+/** A second project the same window holds, whose chats are numbered on their own. */
+const OTHER = "/home/dev/two";
 
 function chat(session: number, name: string): OpenChat {
   return {
@@ -54,7 +56,9 @@ function chat(session: number, name: string): OpenChat {
 
 /** One project with `alpha` pinned, its chat `alpha.1` in front, and `beta` unpinned; a chat
  *  that arrives is listed in its workspace, as the core files it. */
-function core() {
+function core({ alsoHolds }: { alsoHolds?: string } = {}) {
+  /** Which project each layout the window reported was of. */
+  const laidOut: string[] = [];
   const listeners = new Map<string, number[]>();
   const listed: Record<string, OpenChat[]> = { alpha: [chat(1, "alpha.1")], beta: [] };
   const kept: { key: string; kind: string; read: boolean }[] = [];
@@ -68,6 +72,13 @@ function core() {
       return 1;
     }
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
+    if (cmd === "planes_to_restore" && alsoHolds !== undefined)
+      return { windows: [{ planes: [PLANE, alsoHolds], active: 0 }], dropped: [], gone: [] };
+    if (cmd === "open_plane") return { plane: given.path, ask: null };
+    if (cmd === "window_layout") {
+      laidOut.push(String(given.plane));
+      return null;
+    }
     if (cmd === "plane_sidebar")
       return {
         root: PLANE,
@@ -116,6 +127,7 @@ function core() {
     label,
     workspace = "alpha",
     task = false,
+    cantReportAsks = false,
     unreported = null,
     byPerson = false,
   }: {
@@ -123,18 +135,22 @@ function core() {
     label: string;
     workspace?: string;
     task?: boolean;
+    /** The core's answer from its harness's card. */
+    cantReportAsks?: boolean;
+    /** What else its card lacks, which the chat says and which announces nothing. */
     unreported?: string | null;
     /** The person asked for it themselves, from the window: it is theirs, and not announced. */
     byPerson?: boolean;
   }) => {
     // The core's answer (`Chat::announced`), on the event and in the record alike.
-    const announced = !byPerson && (!task || unreported !== null);
+    const announced = !byPerson && (!task || cantReportAsks);
     listed[workspace].push({
       ...chat(session, String(session)),
       label,
       in_front: false,
       harness: "codex",
       unreported,
+      cant_report_asks: cantReportAsks ? true : null,
       unseen: announced ? true : null,
       from: {
         name: "alpha.1",
@@ -165,7 +181,7 @@ function core() {
             workspace,
             persona: null,
             harness: "codex",
-            unreported,
+            cant_report_asks: cantReportAsks,
             announced,
             from: { name: "alpha.1", workspace: "alpha", chat: 1, task, tab: !task },
           },
@@ -234,7 +250,7 @@ function core() {
         ).__TAURI_INTERNALS__.runCallback(handler, { event, id: 1, payload });
     });
   };
-  return { arrive, kept, waitsInItsTerminal };
+  return { arrive, kept, laidOut, waitsInItsTerminal };
 }
 
 const opened = () =>
@@ -306,6 +322,21 @@ describe("a handoff's arrival card (#4759)", () => {
 
     await waitFor(() => expect(screen.getByTestId("pane")).toHaveTextContent("session 2"));
   });
+
+  it("goes to the chat in its own project, and moves nothing in another this window holds", async () => {
+    const { arrive, laidOut } = core({ alsoHolds: OTHER });
+    opened();
+    await ready();
+    arrive({ session: 2, label: "fix the login" });
+    const card = await findCard("alpha");
+    laidOut.length = 0;
+
+    await userEvent.click(within(card).getByRole("button", { name: "Go to it" }));
+
+    await waitFor(() => expect(screen.getByTestId("pane")).toHaveTextContent("session 2"));
+    await waitFor(() => expect(laidOut).toContain(PLANE));
+    expect(laidOut).not.toContain(OTHER);
+  });
 });
 
 describe("a handoff's Update in the Inbox (#4759)", () => {
@@ -346,13 +377,30 @@ describe("a task's arrival (#4759)", () => {
       session: 2,
       label: "check the queue",
       task: true,
-      unreported: "Codex can't tell purlis when it is waiting.",
+      cantReportAsks: true,
     });
 
     const card = await findCard("alpha");
     expect(card).toHaveTextContent("check the queue arrived from alpha.1");
     expect(card).toHaveTextContent("It can't report asks, so look at it from time to time.");
     expect(within(card).getByRole("button", { name: "Go to it" })).toBeInTheDocument();
+  });
+
+  it("is not announced where its harness reports its asks, whatever else its card lacks", async () => {
+    const { arrive, kept } = core();
+    opened();
+    await ready();
+
+    arrive({
+      session: 2,
+      label: "check the queue",
+      task: true,
+      unreported: "opencode's helpers are not shown under it.",
+    });
+
+    await waitFor(() => expect(screen.getByTestId("pane")).toHaveTextContent("session 1"));
+    expect(queryCard("alpha")).toBeNull();
+    expect(kept).toEqual([]);
   });
 
   it("is not announced where the person asked for it themselves, though it can't report asks", async () => {
@@ -364,7 +412,7 @@ describe("a task's arrival (#4759)", () => {
       session: 2,
       label: "check the queue",
       task: true,
-      unreported: "Codex can't tell purlis when it is waiting.",
+      cantReportAsks: true,
       byPerson: true,
     });
 

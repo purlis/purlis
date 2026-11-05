@@ -120,33 +120,32 @@ pub struct Arrived {
     /// The harness it runs, by the word the plane calls it — what its tab's default name puts
     /// before the number when it adopted no persona (charter-app#254).
     pub harness: Option<String>,
-    /// **What its harness cannot tell purlis** (#4759), from the harness's own card
-    /// ([`purlis_core::harness::Harness::unreported`]), or none where it reports all. A task on
-    /// such a harness can't say when it needs the person, so the window announces it as it does
-    /// a handoff, and the asking chat is told the person must look at it.
-    pub unreported: Option<String>,
+    /// **Whether it can't tell the person it needs them** (#4759): its harness's card says no
+    /// to hooks or to reporting a wait, or it has no adapter at all
+    /// ([`purlis_core::harness::Harness::reports_asks`]). A task on one is announced as a handoff
+    /// is, and the asking chat is told the person must look at it.
+    pub cant_report_asks: bool,
     /// **Whether the window announces it** (#4759, [`Chat::announced`]): a handoff, or a task
-    /// on a harness purlis has no hooks into, that the person did not start themselves. The
-    /// same answer its record's `unseen` starts from, so the chip card, the Inbox Update and
+    /// that can't report asks, that the person did not start themselves. The same answer its record's `unseen` starts from, so the chip card, the Inbox Update and
     /// the row's "new" mark come together or not at all.
     pub announced: bool,
 }
 
-/// **What the asking chat is told of a task on a harness purlis has no hooks into** (#4759, ADR
+/// **What the asking chat is told of a task that can't report asks** (#4759, ADR
 /// 0090 as amended 2026-11-02): one of the notes beside its start, which the CLI says as
 /// `Note: …`. The task starts in no pane, and nothing it asks reaches the person, so the person
 /// must look at it, and only the asking chat can tell them.
 pub const CANT_REPORT_ASKS: &str =
     "its harness can't report asks, so tell the person they must look at it themselves";
 
-/// [`CANT_REPORT_ASKS`] for a task that `arrived` on a harness purlis has no hooks into, and
+/// [`CANT_REPORT_ASKS`] for a task that `arrived` and can't report its asks, and
 /// nothing for a handoff, whose asking chat hears nothing back, or a task whose harness reports
 /// its asks.
 fn cant_report_note(arrived: &Arrived) -> Option<String> {
     arrived
         .from
         .as_ref()
-        .is_some_and(|from| from.task && arrived.unreported.is_some())
+        .is_some_and(|from| from.task && arrived.cant_report_asks)
         .then(|| CANT_REPORT_ASKS.to_owned())
 }
 
@@ -1900,9 +1899,9 @@ fn start_on(
                 opening.message,
             )
         })?;
-    // What its harness can't tell purlis, and so whether it is announced (#4759).
-    let unreported = ready.harness.and_then(|harness| harness.unreported());
-    let announced = Chat::announced(&opening.from, opening.by_person, unreported.is_some());
+    // Whether it can say when it needs the person, and so whether it is announced (#4759).
+    let cant_report_asks = !purlis_core::harness::Harness::reports_asks(ready.harness);
+    let announced = Chat::announced(&opening.from, opening.by_person, cant_report_asks);
     let chat = Chat {
         program: ready.program.clone(),
         args: Vec::new(),
@@ -1963,7 +1962,7 @@ fn start_on(
         workspace: opening.workspace.clone(),
         persona: start.persona,
         harness: ready.harness.map(|harness| harness.name().to_owned()),
-        unreported: unreported.map(str::to_owned),
+        cant_report_asks,
         announced,
     })
 }

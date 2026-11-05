@@ -171,6 +171,18 @@ impl Card {
             .filter(|ability| !ability.answer.holds())
     }
 
+    /// **Whether a chat on this harness can tell the person it needs them** (#4759): purlis has
+    /// hooks into it, and they report a wait. A line the declaration leaves unanswered does not
+    /// hold, and neither line holds for a harness with no adapter ([`THROUGH_AN_ADAPTER`]).
+    pub fn reports_asks(&self) -> bool {
+        let holds = |id: &str| {
+            self.abilities
+                .iter()
+                .any(|ability| ability.id == id && ability.answer.holds())
+        };
+        holds(HOOKS) && holds("reports_waiting")
+    }
+
     /// The one line a missing ability is said in: *Codex does not tell charter when it is
     /// waiting, so its chats will not show needs you.*
     fn line(&self, ability: &Ability) -> String {
