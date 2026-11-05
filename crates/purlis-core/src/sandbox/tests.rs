@@ -243,9 +243,11 @@ fn a_chat_never_reads_or_writes_a_vaults_storage() {
         [
             root.join(".charter/vaults"),
             root.join(".charter/fingerprint.key"),
+            root.join(".charter/vault-links.json"),
             // Every spelling of the state folder, there or not.
             root.join(".purlis/vaults"),
             root.join(".purlis/fingerprint.key"),
+            root.join(".purlis/vault-links.json"),
             root.join("secrets/dev.json"),
             std::path::PathBuf::from("/home/op/.config/op"),
             std::path::PathBuf::from("/home/op/.op"),

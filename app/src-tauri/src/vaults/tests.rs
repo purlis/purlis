@@ -187,6 +187,7 @@ fn a_vault_charter_does_not_track_sizes_for_lists_names_alone() {
             updated: None,
             link: None,
             linked_by: 0,
+            no_seed: false,
         }]
     );
 }
@@ -217,6 +218,44 @@ fn opening_a_vault_names_each_linked_entry_and_counts_the_links_that_read_a_key(
     let files = open(&ctx, "files").unwrap();
     assert_eq!(files.secrets[0].linked_by, 1, "{files:?}");
     assert!(!wire(&Ok(files)).contains("sk_fixture-open-5069"));
+}
+
+#[test]
+fn a_key_the_person_marked_is_named_on_its_row_and_no_value_crosses() {
+    let (_dir, ctx) = plane();
+    add(&ctx, "files", "APP", &SecretValue::from("abcdefghijklmnop")).unwrap();
+    assert!(!open(&ctx, "files").unwrap().secrets[0].no_seed);
+
+    let marked = mark_no_seed(&ctx, "files", "APP");
+    assert!(marked.as_ref().unwrap().secrets[0].no_seed);
+    assert!(!wire(&marked).contains("abcdefghijklmnop"));
+
+    let unmarked = unmark_no_seed(&ctx, "files", "APP").unwrap();
+    assert!(!unmarked.secrets[0].no_seed);
+}
+
+#[test]
+fn an_otpauth_address_is_not_marked_and_the_window_is_told_why() {
+    let (_dir, ctx) = plane();
+    add(
+        &ctx,
+        "files",
+        "APP",
+        &SecretValue::from("otpauth://totp/x?secret=GEZDGNBVGY3TQOJQ"),
+    )
+    .unwrap();
+    let refused = mark_no_seed(&ctx, "files", "APP").unwrap_err();
+    assert!(refused.contains("authenticator app's address"), "{refused}");
+    assert!(!refused.contains("GEZDGNBV"), "{refused}");
+    assert!(!open(&ctx, "files").unwrap().secrets[0].no_seed);
+}
+
+#[test]
+fn the_marks_commands_are_the_windows_alone() {
+    for command in ["vault_secret_mark_no_seed", "vault_secret_unmark_no_seed"] {
+        assert!(purlis_session_protocol::ui::window_only(command));
+        assert!(!purlis_session_protocol::ui::SERVED_ON_A_LINK.contains(&command));
+    }
 }
 
 #[test]

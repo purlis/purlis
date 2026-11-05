@@ -1456,9 +1456,11 @@ fn granted_ready(
 /// **The value of `key` in `vault`, for a secret fill the person allowed** (#5115): read for
 /// chat `asker` as a login the person allowed from its notice is ([`granted_login`]), since that
 /// press confirmed this vault and this key for one exact site. Refused, with a sentence and no
-/// value, for a private key, whoever asked: no private key is filled on a page; and for a value
-/// taken as a 2FA seed, an address or a bare secret, which goes into no page: its code does
-/// ([`fill_code`]). `None` where the vault holds no value under `key` (#5116).
+/// value, for a private key, whoever asked: no private key is filled on a page; for a value that
+/// holds an authenticator's address, whatever the person's mark says (#5237); and for a value
+/// taken as a 2FA seed by its look, unless the person marked this value as no seed
+/// ([`super::no_seed`]): a seed goes into no page, its code does ([`fill_code`]). `None` where
+/// the vault holds no value under `key` (#5116).
 pub fn fill_value(
     asker: &Asker,
     vault: &str,
@@ -1467,13 +1469,16 @@ pub fn fill_value(
     let Some(value) = read_for_fill(asker, vault, key)? else {
         return Ok(None);
     };
-    goes_into_a_page(&value, vault, key)?;
+    goes_into_a_page(asker, &value, vault, key)?;
     Ok(Some(value))
 }
 
 /// **The rules for a value that goes into a page**, a fill's and a login's alike (#5272): no private
-/// key, and no 2FA seed. Why not, in words that hold none of it.
+/// key, no authenticator's address whatever the person's mark says, and nothing taken as a 2FA seed
+/// by its look unless the person marked this value as no seed. Why not, in words that hold none of
+/// it.
 fn goes_into_a_page(
+    asker: &Asker,
     value: &purlis_session_protocol::browsing::Secret,
     vault: &str,
     key: &str,
@@ -1483,11 +1488,39 @@ fn goes_into_a_page(
             "{key} in vault '{vault}' is a private key, so purlis filled nothing"
         ));
     }
+    // The next step, said only where it would work.
+    let code = if super::totp::Seed::parse(value.expose()).is_ok() {
+        "Call browser_fill_secret with `code` to fill the code it makes"
+    } else {
+        "purlis can't make a code from this value either"
+    };
+    if super::totp::holds_an_address(value.expose()) {
+        return Err(format!(
+            "{key} in vault '{vault}' holds an otpauth address, which carries a 2FA seed, so \
+             purlis filled nothing: a seed never goes into a page, and no mark changes that. {code}"
+        ));
+    }
     if super::totp::looks_like_a_seed(value.expose()) {
+        // The key is named once, up front: what the person has to do comes last, and has to
+        // survive what their view of the browser keeps of a long key's name.
+        let place = "in the window, open the vault's tab and open the menu on this key's row, or \
+                     on the row of the entry it reads if it is linked, and choose";
+        let then = match super::no_seed::of(&reading_for(asker), vault, key, value.expose()) {
+            super::no_seed::Mark::Holds => return Ok(()),
+            super::no_seed::Mark::None => format!(
+                "If its value is no seed, ask the person to mark it: {place} {}",
+                super::no_seed::MARK_WORDS
+            ),
+            super::no_seed::Mark::ValueChanged => format!(
+                "The person marked this key as no 2FA seed, and its value has changed since. If \
+                 this value is no seed either, ask them to mark it again: {place} {}, then {}",
+                super::no_seed::UNMARK_WORDS,
+                super::no_seed::MARK_WORDS
+            ),
+        };
         return Err(format!(
             "{key} in vault '{vault}' looks like a 2FA seed, so purlis filled nothing: a seed \
-             never goes into a page. Call browser_fill_secret with `code` to fill the code it \
-             makes"
+             never goes into a page. {code}. A chat can't make this mark. {then}"
         ));
     }
     Ok(())
@@ -1514,6 +1547,16 @@ pub fn fill_code(
     )))
 }
 
+/// What a vault is read through for chat `asker`: the app's record of the chat.
+fn reading_for(asker: &Asker) -> Ctx {
+    match &asker.confines {
+        Some(confines) => {
+            Ctx::new(&asker.root, asker.env.clone()).chat(confines, asker.folder.as_deref())
+        }
+        None => Ctx::new(&asker.root, asker.env.clone()),
+    }
+}
+
 /// `key` of `vault`, read for chat `asker`'s fill: the value whole, `None` where the vault holds
 /// none under `key`, or why not, in words that hold none of it.
 fn read_for_fill(
@@ -1521,12 +1564,7 @@ fn read_for_fill(
     vault: &str,
     key: &str,
 ) -> Result<Option<purlis_session_protocol::browsing::Secret>, String> {
-    let ctx = match &asker.confines {
-        Some(confines) => {
-            Ctx::new(&asker.root, asker.env.clone()).chat(confines, asker.folder.as_deref())
-        }
-        None => Ctx::new(&asker.root, asker.env.clone()),
-    };
+    let ctx = reading_for(asker);
     let provider = cmd::provider(&ctx, vault).map_err(|e| e.message.to_string())?;
     match cmd::get_value(&ctx, &provider, key) {
         Ok(value) => Ok(Some(purlis_session_protocol::browsing::Secret::new(value))),
@@ -1597,9 +1635,9 @@ fn read_login(
     let password = read(pass_key)?;
     // A login's values follow a fill's rules (#5272), whoever declared it: the `mint` mark is by a
     // name in a vault, and one item may have two, and Always may have saved the line that names it.
-    goes_into_a_page(&password, vault, pass_key)?;
+    goes_into_a_page(asker, &password, vault, pass_key)?;
     if let (Some(user), Some(user_key)) = (&user, user_key) {
-        goes_into_a_page(user, vault, user_key)?;
+        goes_into_a_page(asker, user, vault, user_key)?;
     }
     Ok((
         LogIn {

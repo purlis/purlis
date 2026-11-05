@@ -812,9 +812,10 @@ pub fn is_a_vault(path: &Path) -> bool {
 
 /// What a project keeps in its state folder that no program reads, each with the end of a regex
 /// on its path.
-const VAULT_TAILS: [(&str, &str); 2] = [
+const VAULT_TAILS: [(&str, &str); 3] = [
     ("vaults", "(/.*)?$"),
     (crate::secrets::fingerprint::KEY_FILE, "$"),
+    (crate::secrets::links::FILE, "$"),
 ];
 
 /// A `deny` of `ops` on every project's vault folder and fingerprint key.

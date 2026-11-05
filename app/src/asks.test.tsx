@@ -16,6 +16,7 @@ import { OPEN_RUNNER_DISPATCH_ASK } from "./runnerDispatchOpen";
 import { PROFILE_SIGN_IN } from "./settings/links";
 import { useSandboxCommands } from "./sandboxAsked";
 import { onTheWire } from "./chatEvents.testkit";
+import { askOfVault } from "./test-asks";
 
 /**
  * The asks registry's window side (#1690): each ask is answered through the command its own
@@ -520,6 +521,41 @@ describe("answering through the path an ask names", () => {
     const before = result.current;
     await act(() => answerThrough(PLANE, BROWSER_SITES, "chat"));
     expect(result.current).toBeGreaterThan(before);
+  });
+
+  it("allows a refused vault's persona, the one grant its Notice makes, or keeps it blocked with the reason (#5160)", async () => {
+    const calls = sent({ allow_refused_vault: { said: "Allowed." }, keep_vault_blocked: null });
+    const vault = askOfVault({
+      plane: PLANE,
+      session: 7,
+      vault: "devops",
+      persona: "steward",
+      tagged_for: "devops",
+      dispatch_to: null,
+      locked: null,
+    });
+    expect(await answerThrough(PLANE, vault, "allow")).toBeUndefined();
+    await answerTaken(PLANE, vault, "keep", "  not for this ");
+    expect(calls.map((one) => [one.cmd, one.args])).toEqual([
+      ["allow_refused_vault", { plane: PLANE, session: 7, vault: "devops" }],
+      ["keep_vault_blocked", { plane: PLANE, session: 7, vault: "devops", reason: "not for this" }],
+    ]);
+  });
+
+  it("sends no Allow for a refused vault whose grant policy locks (#5160)", async () => {
+    const calls = sent({ keep_vault_blocked: null });
+    const locked = askOfVault({
+      plane: PLANE,
+      session: 7,
+      vault: "devops",
+      persona: "steward",
+      tagged_for: "devops",
+      dispatch_to: null,
+      locked: "Locked by policy, set by IT.",
+    });
+    expect(await answerThrough(PLANE, locked, "allow")).toMatch(/not one of the answers/);
+    await answerTaken(PLANE, locked, "keep");
+    expect(calls.map((one) => one.cmd)).toEqual(["keep_vault_blocked"]);
   });
 
   it("says the source's own sentence when the source refuses", async () => {

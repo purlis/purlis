@@ -199,7 +199,11 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
     // No project's vaults are read, at either level (#2071): under every spelling of a state
     // folder, anywhere. The chat's own project's are denied by path above.
     for state in crate::names::STATE_DIR.spellings() {
-        for kept in ["vaults", crate::secrets::fingerprint::KEY_FILE] {
+        for kept in [
+            "vaults",
+            crate::secrets::fingerprint::KEY_FILE,
+            crate::secrets::links::FILE,
+        ] {
             let name = format!("{state}/{kept}");
             for (plain, cased) in [
                 (format!("/**/{name}"), format!("/**/{}", either_case(&name))),

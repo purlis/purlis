@@ -29,6 +29,7 @@ function secret(key: string, over: Partial<VaultSecret> = {}): VaultSecret {
     updated: "2026-09-24T11:32:17Z",
     link: null,
     linked_by: 0,
+    no_seed: false,
     ...over,
   };
 }
@@ -409,6 +410,75 @@ describe("a vault's tab", () => {
     });
   });
 
+  it("marks a key as no 2FA seed only after asking, starting on Cancel (#5237)", async () => {
+    const asked = core(contents([secret("APP")]), {
+      vault_secret_mark_no_seed: contents([secret("APP", { no_seed: true })]),
+    });
+    draw();
+
+    await fromTheMenuOf("APP", "Mark as no 2FA seed…");
+    const asking = await screen.findByRole("alertdialog", { name: "Mark APP as no 2FA seed?" });
+    expect(asking).toHaveTextContent("a 16-letter app password");
+    expect(asking).toHaveTextContent("If the value changes, the mark goes.");
+    expect(within(asking).getByRole("button", { name: "Cancel" })).toHaveFocus();
+    await userEvent.click(within(asking).getByRole("button", { name: "Cancel" }));
+    expect(asked.some((one) => one.cmd === "vault_secret_mark_no_seed")).toBe(false);
+
+    await fromTheMenuOf("APP", "Mark as no 2FA seed…");
+    const again = await screen.findByRole("alertdialog");
+    await userEvent.click(within(again).getByRole("button", { name: "Mark as no 2FA seed" }));
+
+    await screen.findByText("Marked as no 2FA seed. Fills as a plain value.");
+    expect(asked.find((one) => one.cmd === "vault_secret_mark_no_seed")?.args).toEqual({
+      plane: PLANE,
+      vault: "ops",
+      key: "APP",
+    });
+  });
+
+  it("says in the dialog why a key could not be marked (#5237)", async () => {
+    core(contents([secret("APP")]), {
+      vault_secret_mark_no_seed: new Error("APP holds an otpauth address"),
+    });
+    draw();
+    await fromTheMenuOf("APP", "Mark as no 2FA seed…");
+    const asking = await screen.findByRole("alertdialog");
+    await userEvent.click(within(asking).getByRole("button", { name: "Mark as no 2FA seed" }));
+    expect(await within(asking).findByRole("alert")).toHaveTextContent(
+      "APP holds an otpauth address",
+    );
+    expect(screen.queryByText("Marked as no 2FA seed. Fills as a plain value.")).toBeNull();
+  });
+
+  it("offers no mark on a linked entry, whose value is another entry's (#5237)", async () => {
+    core(contents([secret("K", { link: { vault: "team", key: "STRIPE" } })]));
+    draw();
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    const row = screen.getByRole("row", { name: /^K/ });
+    row.focus();
+    await userEvent.keyboard("{Enter}");
+    const menu = await screen.findByRole("menu", { name: "K" });
+    expect(within(menu).queryByRole("menuitem", { name: "Mark as no 2FA seed…" })).toBeNull();
+  });
+
+  it("takes the mark off a marked key at once, with nothing to ask (#5237)", async () => {
+    const asked = core(contents([secret("APP", { no_seed: true })]), {
+      vault_secret_unmark_no_seed: contents([secret("APP")]),
+    });
+    draw();
+    await screen.findByText("Marked as no 2FA seed. Fills as a plain value.");
+    await fromTheMenuOf("APP", "Remove the no-seed mark");
+    await waitFor(() =>
+      expect(screen.queryByText("Marked as no 2FA seed. Fills as a plain value.")).toBeNull(),
+    );
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(asked.find((one) => one.cmd === "vault_secret_unmark_no_seed")?.args).toEqual({
+      plane: PLANE,
+      vault: "ops",
+      key: "APP",
+    });
+  });
+
   it("names the entry a linked entry reads under its name (#5069)", async () => {
     core(
       contents([
@@ -463,7 +533,7 @@ describe("a vault's tab", () => {
       within(menu)
         .getAllByRole("menuitem")
         .map((item) => item.textContent),
-    ).toEqual(["Edit value…", "Rename…", "Copy", "Delete…"]);
+    ).toEqual(["Edit value…", "Rename…", "Copy", "Mark as no 2FA seed…", "Delete…"]);
     // On its first row, as the menu button's does (charter-app#189).
     await waitFor(() =>
       expect(within(menu).getByRole("menuitem", { name: "Edit value…" })).toHaveFocus(),

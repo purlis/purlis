@@ -66,6 +66,10 @@ pub const MOST_CHATS: usize = 16;
 /// The most characters of a reference the agent wrote that a moment keeps.
 pub const MOST_TARGET_CHARS: usize = 200;
 
+/// The most of a refused fill's reason kept: enough for what the person has to do, which comes
+/// last in it (#5237).
+const MOST_WHY_CHARS: usize = 800;
+
 /// How young a chat's timeline is spared by a [`sweep`], whatever the record of open chats
 /// says: a chat that has only just started may not be in it yet.
 pub const SWEEP_GRACE: std::time::Duration = std::time::Duration::from_secs(120);
@@ -290,7 +294,7 @@ pub fn fill_refused(browser: &str, key: &str, why: &str, at: u64) -> Happened {
         &format!(
             "purlis filled nothing of {}: {}",
             cut_to(key, MOST_TARGET_CHARS),
-            cut_to(why, MOST_TARGET_CHARS)
+            cut_to(why, MOST_WHY_CHARS)
         ),
         at,
     )
