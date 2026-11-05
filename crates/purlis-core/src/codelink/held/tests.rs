@@ -1609,6 +1609,239 @@ fn more_files_it_may_change_than_the_bound_in_one_folder_are_looked_through_whol
     assert!(!says(&said, "/opt/app/2.conf"), "{said:?}");
 }
 
+/// How many times `said` says a check ran out of time.
+#[cfg(unix)]
+fn times_out_of_time_is_said(said: &[String]) -> usize {
+    said.iter()
+        .filter(|one| one.contains("ran out of time"))
+        .count()
+}
+
+/// **A check that runs out of time stops, says so and keeps the runner** (#5312): what it has not
+/// looked at is not named, and the sentence says why and what helps.
+#[cfg(unix)]
+#[test]
+fn a_check_out_of_time_stops_says_why_and_keeps_the_runner() {
+    let (_dir, _root, home, since) = a_runners_root();
+    std::fs::write(home.join("notes.txt"), "saved by the task\n").unwrap();
+
+    let said = outside_until(
+        &home,
+        None,
+        &[],
+        Some(since),
+        None,
+        std::time::Instant::now(),
+    );
+
+    assert_eq!(times_out_of_time_is_said(&said), 1, "{said:?}");
+    assert!(!says(&said, "notes.txt"), "it stopped: {said:?}");
+    assert!(
+        says(&said, "5 minutes")
+            && says(&said, "purlis can't tell")
+            && says(&said, "Fetch again")
+            && says(&said, "smaller image"),
+        "why, and what helps: {said:?}"
+    );
+    let work = tempfile::tempdir().unwrap();
+    assert!(
+        says(
+            &not_home(work.path(), PROJECT, &[], &said),
+            "ran out of time"
+        ),
+        "it keeps the runner"
+    );
+}
+
+/// **A check with time left says nothing of time** (#5312), and finds what it finds.
+#[cfg(unix)]
+#[test]
+fn a_check_within_its_limit_says_nothing_of_time() {
+    let (_dir, _root, home, since) = a_runners_root();
+    std::fs::write(home.join("notes.txt"), "saved by the task\n").unwrap();
+
+    let said = outside_until(
+        &home,
+        None,
+        &[],
+        Some(since),
+        None,
+        std::time::Instant::now() + LOOK_WITHIN,
+    );
+
+    assert_eq!(times_out_of_time_is_said(&said), 0, "{said:?}");
+    assert!(says(&said, "notes.txt"), "{said:?}");
+}
+
+/// **A first look that runs out of time is not kept** (#5312), so the next check looks again, and
+/// it is said once, however much of the check's time is left.
+#[cfg(unix)]
+#[test]
+fn a_first_look_out_of_time_is_not_kept_and_is_said_once() {
+    if the_runners_user() == 0 {
+        return;
+    }
+    let (_dir, root, home, _shut) = a_large_image(5);
+    let since = std::time::SystemTime::now();
+    let beyond = Beyond {
+        root: &root,
+        owner: the_runners_user().wrapping_add(1),
+    };
+
+    let found = writable_until(
+        beyond,
+        std::slice::from_ref(&home),
+        since,
+        std::time::Instant::now(),
+    );
+
+    assert!(!found.whole(), "{found:?}");
+    assert!(found.places().is_empty(), "{found:?}");
+    let far_off = std::time::Instant::now() + LOOK_WITHIN;
+    let said = outside_until(
+        &home,
+        None,
+        &[],
+        Some(since),
+        Some((beyond, &found)),
+        far_off,
+    );
+    assert_eq!(times_out_of_time_is_said(&said), 1, "{said:?}");
+    let spent = outside_until(
+        &home,
+        None,
+        &[],
+        Some(since),
+        Some((beyond, &found)),
+        std::time::Instant::now(),
+    );
+    assert_eq!(times_out_of_time_is_said(&spent), 1, "{spent:?}");
+}
+
+/// **A check out of time looks at neither a recorded folder's files nor a file recorded alone**
+/// (#5312): a folder recorded is what makes a check's cost follow the image (#5112).
+#[cfg(unix)]
+#[test]
+fn a_check_out_of_time_looks_at_no_recorded_file_or_folder() {
+    if the_runners_user() == 0 {
+        return;
+    }
+    let (_dir, root, home, _) = a_runners_root();
+    let files: Vec<String> = (0..3).map(|n| format!("opt/app/{n}.conf")).collect();
+    let _shut = an_image_of_open_files(&root, &files, &["opt", "opt/app"]);
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let since = std::time::SystemTime::now();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let beyond = Beyond {
+        root: &root,
+        owner: the_runners_user().wrapping_add(1),
+    };
+    let found = writable(beyond, std::slice::from_ref(&home), since);
+    assert!(found.whole(), "{found:?}");
+    std::fs::write(root.join("opt/app/1.conf"), "as the task left it\n").unwrap();
+
+    let in_time = outside_until(
+        &home,
+        None,
+        &[],
+        Some(since),
+        Some((beyond, &found)),
+        std::time::Instant::now() + LOOK_WITHIN,
+    );
+    assert!(says(&in_time, "/opt/app/1.conf"), "{in_time:?}");
+
+    let late = outside_until(
+        &home,
+        None,
+        &[],
+        Some(since),
+        Some((beyond, &found)),
+        std::time::Instant::now(),
+    );
+    assert_eq!(times_out_of_time_is_said(&late), 1, "{late:?}");
+    assert!(!says(&late, "/opt/app/1.conf"), "{late:?}");
+}
+
+/// TEMPORARY, never to land (#5312): what a check of a large image takes on a CI runner, said by
+/// failing. Removed before the pull request is ready.
+#[cfg(unix)]
+#[test]
+fn measure_5312() {
+    use std::time::Instant;
+    if the_runners_user() == 0 {
+        return;
+    }
+    const FOLDERS: usize = 5_000;
+    const FILES: usize = 200;
+    let (dir, root, home, _) = a_runners_root();
+    let mut shut: Vec<String> = [
+        "",
+        "usr",
+        "usr/share",
+        "usr/share/doc",
+        "var",
+        "var/lib",
+        "opt",
+    ]
+    .map(str::to_owned)
+    .to_vec();
+    for n in 0..FOLDERS {
+        let rel = format!("opt/{n:05}");
+        std::fs::create_dir_all(root.join(&rel)).unwrap();
+        for f in 0..FILES {
+            std::fs::File::create(root.join(&rel).join(format!("{f}.so"))).unwrap();
+        }
+        shut.push(rel);
+    }
+    let shut_names: Vec<&str> = shut.iter().map(String::as_str).collect();
+    let shut = Shut::folders(&root, &shut_names);
+    let since = std::time::SystemTime::now();
+    let beyond = Beyond {
+        root: &root,
+        owner: the_runners_user().wrapping_add(1),
+    };
+    let drop_caches = || {
+        std::process::Command::new("sudo")
+            .args(["-n", "sh", "-c", "sync; echo 3 > /proc/sys/vm/drop_caches"])
+            .status()
+            .is_ok_and(|done| done.success())
+    };
+    let timed = |what: &mut Vec<String>, name: &str, work: &mut dyn FnMut()| {
+        let at = Instant::now();
+        work();
+        what.push(format!("{name}: {:?}", at.elapsed()));
+    };
+    let mut out = vec![format!("files={} folders={FOLDERS}", FOLDERS * FILES)];
+    let skip = [home.clone()];
+    let dropped = drop_caches();
+    out.push(format!("caches dropped: {dropped}"));
+    let mut found = Writable::default();
+    timed(&mut out, "first look, cold", &mut || {
+        found = writable(beyond, &skip, since);
+    });
+    timed(&mut out, "first look, warm", &mut || {
+        found = writable(beyond, &skip, since);
+    });
+    out.push(format!(
+        "whole: {} places: {} folders recorded: {}",
+        found.whole(),
+        found.places().len(),
+        found.folders.len()
+    ));
+    let mut said = Vec::new();
+    timed(&mut out, "check, warm", &mut || {
+        said = outside_with(&home, None, &[], Some(since), Some((beyond, &found)));
+    });
+    drop_caches();
+    timed(&mut out, "check, cold", &mut || {
+        said = outside_with(&home, None, &[], Some(since), Some((beyond, &found)));
+    });
+    out.push(format!("said: {said:?}"));
+    std::mem::forget(shut);
+    std::mem::forget(dir);
+    panic!("MEASURE-5312 {out:#?}");
+}
+
 /// **A folder recorded holds its one bound with the files** (#5112): each is one more thing kept,
 /// so more of them than the bound are said and not whole, and what it keeps stays bounded.
 #[cfg(unix)]

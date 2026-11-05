@@ -477,6 +477,33 @@ pub struct DataHome<'a> {
     pub listed: &'a [std::path::PathBuf],
 }
 
+/// How long one check of what a runner holds may look through its files (#5312).
+pub const LOOK_WITHIN: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// [`outside_with`], stopping at `until`.
+#[cfg(unix)]
+pub fn outside_until(
+    home: &Path,
+    data: Option<DataHome<'_>>,
+    skip: &[std::path::PathBuf],
+    since: Option<std::time::SystemTime>,
+    beyond: Option<(Beyond<'_>, &Writable)>,
+    _until: std::time::Instant,
+) -> Vec<String> {
+    outside_with(home, data, skip, since, beyond)
+}
+
+/// [`writable`], stopping at `until`.
+#[cfg(unix)]
+pub fn writable_until(
+    beyond: Beyond<'_>,
+    skip: &[std::path::PathBuf],
+    since: std::time::SystemTime,
+    _until: std::time::Instant,
+) -> Writable {
+    writable(beyond, skip, since)
+}
+
 /// **What a task keeps on its runner outside every repository** (#4781, #4933, #5029, #5030), in
 /// sentences: each file changed since `since` in the runner's `home` ([`outside_the_projects`]);
 /// in purlis's data home, but what purlis keeps there itself ([`PURLIS_KEEPS`]), the mark of the
