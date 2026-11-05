@@ -11,7 +11,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.5.0] - 2026-11-05
+## [0.5.0] - 2026-11-08
 
 0.5.0 is the first release as purlis, and the first under the Apache License 2.0. The app,
 its command, its environment variables and its keyring items now carry the purlis name, and
