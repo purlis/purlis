@@ -352,6 +352,10 @@ fn a_login_s_no_form_answer_holds_no_value_it_filled() {
     };
     assert!(why.contains("no login form appeared"), "{why}");
     assert!(!why.contains("clearing"), "{why}");
+    assert!(
+        why.contains("(blanked)"),
+        "the sentence no longer holds the word: {why}"
+    );
 }
 
 /// #5121, SF-7: a value is kept out as a form spells it, as any fill's is, where the page it sent
