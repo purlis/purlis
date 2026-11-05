@@ -983,14 +983,10 @@ fn the_manifest_says_which_parts_are_drawn_apart_from_the_next_version_on() {
             .unwrap()
             .clone()
     };
-    assert_eq!(
-        part(parts::VERSION + 1, "crumb")["apart"],
-        json!(["hover", "selected", "focused"])
-    );
-    assert_eq!(part(parts::VERSION + 1, "row")["apart"], json!(["hover", "selected"]));
-    assert!(part(parts::VERSION, "crumb").get("apart").is_none());
-    assert!(part(parts::VERSION + 1, "count").get("apart").is_none());
-    assert!(parts::has_unreleased());
+    assert_eq!(part(13, "crumb")["apart"], json!(["hover", "selected", "focused"]));
+    assert_eq!(part(13, "row")["apart"], json!(["hover", "selected"]));
+    assert!(part(12, "crumb").get("apart").is_none());
+    assert!(part(13, "count").get("apart").is_none());
 }
 
 #[test]

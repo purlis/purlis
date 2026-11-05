@@ -1252,11 +1252,7 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     assert_eq!(manifest["version"], parts::VERSION);
     // A refused box (#3110) is the one state added since the first version.
     for one in manifest["states"].as_array().unwrap() {
-        let since = if one["name"] == "invalid" {
-            13
-        } else {
-            1
-        };
+        let since = if one["name"] == "invalid" { 13 } else { 1 };
         assert_eq!(one["since"], since, "{one}");
     }
     // The tab family's layout options came in version 8 (#2914).

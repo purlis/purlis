@@ -64,8 +64,8 @@ fn invalid_is_a_state_since_next_keyed_on_data_invalid() {
         .expect("the manifest lists invalid");
     assert_eq!(invalid["attribute"], "[data-invalid]");
     assert_eq!(invalid["since"], 13);
-    // The release the last version shipped knew no such state.
-    let released = parts::manifest_as_of(parts::VERSION);
+    // The release before it knew no such state.
+    let released = parts::manifest_as_of(12);
     assert!(
         !released["states"]
             .as_array()
