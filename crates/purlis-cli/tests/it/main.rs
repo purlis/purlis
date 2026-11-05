@@ -54,6 +54,7 @@ mod brokered_git;
 mod brokered_writes;
 mod browser_install;
 mod change;
+mod check_report;
 mod commit_scan;
 mod commit_trailers;
 mod commitment_gate;

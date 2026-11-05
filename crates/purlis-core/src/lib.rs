@@ -23,6 +23,7 @@ pub mod chatenv;
 pub mod chatpiece;
 pub mod chatspec;
 pub mod chattools;
+pub mod checks;
 pub mod cistate;
 pub mod cliname;
 pub mod clipath;

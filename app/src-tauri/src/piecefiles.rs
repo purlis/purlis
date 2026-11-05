@@ -396,6 +396,111 @@ pub struct WhatChanged {
     pub diff: FileDiff,
     /// What a discard of a hunk here is checked against (`null` for a file past what is drawn).
     pub stamp: Option<String>,
+    /// The branch's check results as this file shows them (ADR 0114).
+    pub checks: Box<CheckResults>,
+}
+
+/// How much a check result matters, in SARIF's words.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "lowercase")]
+pub enum CheckSeverity {
+    Error,
+    Warning,
+    Note,
+    None,
+}
+
+/// One tool's results for a branch, and whether the branch has moved since they were reported.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckSet {
+    pub tool: String,
+    /// The commit they were reported for; `null` for a branch with no commit then.
+    pub head: Option<String>,
+    pub out_of_date: bool,
+    pub results: u32,
+}
+
+/// One result of a check.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckResult {
+    pub tool: String,
+    pub out_of_date: bool,
+    pub severity: CheckSeverity,
+    /// The file as the tool named it, relative to the branch's folder where it could be placed
+    /// there; `null` for a result on no file.
+    pub path: Option<String>,
+    /// Its first line, from 1; `null` for a result on the file as a whole.
+    pub line: Option<u32>,
+    /// The first of its lines a hunk shows, where one does: where the gutter marks it.
+    pub shown_at: Option<u32>,
+    pub rule: Option<String>,
+    pub message: String,
+}
+
+/// A branch's check results as one file of its comparison shows them. Every result is in a list or
+/// counted past it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckResults {
+    pub sets: Vec<CheckSet>,
+    /// On a line a hunk shows.
+    pub on_lines: Vec<CheckResult>,
+    /// In this file, on no line a hunk shows.
+    pub outside: Vec<CheckResult>,
+    /// In any other file, or in none.
+    pub elsewhere: Vec<CheckResult>,
+    pub more_on_lines: u32,
+    pub more_outside: u32,
+    pub more_elsewhere: u32,
+    /// Why they could not be read, where they could not.
+    pub trouble: Option<String>,
+}
+
+impl From<purlis_core::checks::OnFile> for CheckResults {
+    fn from(on: purlis_core::checks::OnFile) -> Self {
+        let count = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
+        let list = |placed: Vec<purlis_core::checks::Placed>| -> Vec<CheckResult> {
+            placed
+                .into_iter()
+                .map(|one| CheckResult {
+                    tool: one.tool,
+                    out_of_date: one.out_of_date,
+                    severity: match one.diagnostic.severity {
+                        purlis_core::checks::Severity::Error => CheckSeverity::Error,
+                        purlis_core::checks::Severity::Warning => CheckSeverity::Warning,
+                        purlis_core::checks::Severity::Note => CheckSeverity::Note,
+                        purlis_core::checks::Severity::None => CheckSeverity::None,
+                    },
+                    path: one.diagnostic.path,
+                    line: one.diagnostic.line,
+                    shown_at: one.shown_at,
+                    rule: one.diagnostic.rule,
+                    message: one.diagnostic.message,
+                })
+                .collect()
+        };
+        Self {
+            sets: on
+                .sets
+                .into_iter()
+                .map(|set| CheckSet {
+                    tool: set.tool,
+                    head: set.head,
+                    out_of_date: set.out_of_date,
+                    results: count(set.results),
+                })
+                .collect(),
+            on_lines: list(on.on_lines),
+            outside: list(on.outside),
+            elsewhere: list(on.elsewhere),
+            more_on_lines: count(on.more_on_lines),
+            more_outside: count(on.more_outside),
+            more_elsewhere: count(on.more_elsewhere),
+            trouble: on.trouble,
+        }
+    }
 }
 
 /// One file of a branch compared against the branch it was cut from, committed or not: its
@@ -563,6 +668,7 @@ pub(crate) fn what_changed_shown(shown: files::WhatChanged) -> WhatChanged {
         base: shown.base,
         diff,
         stamp: shown.stamp,
+        checks: Box::new((*shown.checks).into()),
     }
 }
 

@@ -18,6 +18,9 @@ reporter** capability: purlis hands it the check's output, and it answers SARIF.
 capability, it is declared in the manifest and approved (ADR 0053), and it runs as the
 extension's own program (ADR 0041), never inside the window.
 
+Results arrive by `purlis check report`: see
+[its amendments](0114/), of 2026-11-05.
+
 ## Considered options
 
 - **Also parse the common `file:line:col: message` line in the core.** It covers more tools with

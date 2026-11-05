@@ -16,6 +16,17 @@ const CUT = { workspace: "alpha", repo: "svc", piece: "fix-it" };
 
 /** The core, answering `what_changed` with `answer`, or refusing with it when it is a string.
  *  An `open_in_your_editor` is noted as `editor:<path>:<line>:<editor>`. */
+const NO_CHECKS: WhatChanged["checks"] = {
+  sets: [],
+  onLines: [],
+  outside: [],
+  elsewhere: [],
+  moreOnLines: 0,
+  moreOutside: 0,
+  moreElsewhere: 0,
+  trouble: null,
+};
+
 function core(answer: WhatChanged | string) {
   const asked: string[] = [];
   mockIPC((cmd, args) => {
@@ -40,6 +51,7 @@ const changed = (diff: WhatChanged["diff"]): WhatChanged => ({
   base: "main",
   diff,
   stamp: "drawn",
+  checks: NO_CHECKS,
 });
 
 afterEach(() => {
@@ -831,5 +843,123 @@ describe("discarding a hunk (#5406)", () => {
         "Discarded, but it is not in the chat's history: the event log refused it",
       ),
     ).toBeInTheDocument();
+  });
+});
+
+describe("a branch's check results on the diff (ADR 0114)", () => {
+  const TEXT: WhatChanged["diff"] = {
+    kind: "text",
+    base: "one\n",
+    head: "one\ntwo\nthree\n",
+    hunks: [{ oldStart: 1, oldLines: 0, newStart: 2, newLines: 2 }],
+  };
+  const result = (over: Partial<WhatChanged["checks"]["onLines"][number]>) => ({
+    tool: "eslint",
+    outOfDate: false,
+    severity: "error" as const,
+    path: "src/a.ts",
+    line: 2,
+    shownAt: 2,
+    rule: "no-undef",
+    message: "x is not defined",
+    ...over,
+  });
+  const reported = (checks: Partial<WhatChanged["checks"]>): WhatChanged => ({
+    ...changed(TEXT),
+    checks: {
+      ...NO_CHECKS,
+      sets: [{ tool: "eslint", head: "32f2ddcb58188242", outOfDate: false, results: 1 }],
+      ...checks,
+    },
+  });
+  const tab = () =>
+    render(
+      <PieceDiffTab
+        plane={"p" as PlaneId}
+        cut={{ workspace: "w", repo: "r", piece: "b" }}
+        path="src/a.ts"
+      />,
+    );
+
+  it("says nothing of checks where nothing was reported", async () => {
+    core(changed(TEXT));
+    tab();
+    await screen.findByTestId("merge-viewer");
+    expect(screen.queryByRole("region", { name: /Check results/ })).toBeNull();
+  });
+
+  it("marks a result on a changed line in the gutter with its tool, severity and message", async () => {
+    core(reported({ onLines: [result({})] }));
+    tab();
+    await screen.findByTestId("merge-viewer");
+    const mark = await waitFor(() => {
+      // The gutter's spacer, which holds its width, is one too, and says nothing.
+      const found = [...document.querySelectorAll<HTMLElement>(".cm-check-mark")].find(
+        (one) => one.title !== "",
+      );
+      if (!found) throw new Error("no mark yet");
+      return found;
+    });
+    expect(mark.title).toBe("eslint, error: x is not defined");
+    expect(mark.textContent).toBe("E");
+  });
+
+  it("lists a result outside every hunk under its file, and one on another file with its name", async () => {
+    core(
+      reported({
+        outside: [result({ line: 90, shownAt: null, message: "far away" })],
+        elsewhere: [result({ path: "src/b.ts", line: 4, shownAt: null, message: "in b" })],
+      }),
+    );
+    tab();
+    const list = await screen.findByRole("region", { name: "Check results for src/a.ts" });
+    const inside = within(list);
+    inside.getByRole("heading", { name: "Outside the changed lines" });
+    inside.getByText("far away");
+    inside.getByRole("heading", { name: "In other files" });
+    inside.getByText("eslint, no-undef, src/b.ts, line 4");
+  });
+
+  it("counts what a list could not hold", async () => {
+    core(reported({ elsewhere: [result({ shownAt: null })], moreElsewhere: 7 }));
+    tab();
+    await screen.findByText("And 7 results more.");
+  });
+
+  it("names the commit a set was reported for, and says when the branch has moved", async () => {
+    core(
+      reported({
+        sets: [{ tool: "eslint", head: "32f2ddcb58188242", outOfDate: true, results: 1 }],
+        onLines: [result({ outOfDate: true })],
+      }),
+    );
+    tab();
+    await screen.findByText("eslint: 1 result, reported for 32f2ddc");
+    screen.getByText("Out of date");
+    screen.getByText("The branch has moved since. Run the check and report it again.");
+  });
+
+  it("opens your editor at a result's line", async () => {
+    setYourEditor("zed");
+    const asked = core(reported({ outside: [result({ line: 90, shownAt: null })] }));
+    tab();
+    const list = await screen.findByRole("region", { name: "Check results for src/a.ts" });
+    await userEvent.click(within(list).getByRole("button", { name: /your editor/i }));
+    await waitFor(() => expect(asked).toContain("editor:src/a.ts:90:zed"));
+  });
+
+  it("offers no opening for a file the tool named outside the branch, and still lists it", async () => {
+    core(reported({ elsewhere: [result({ path: "/home/runner/a.ts", line: 1, shownAt: null })] }));
+    tab();
+    const list = await screen.findByRole("region", { name: "Check results for src/a.ts" });
+    within(list).getByText("eslint, no-undef, /home/runner/a.ts, line 1");
+    expect(within(list).queryByRole("button")).toBeNull();
+  });
+
+  it("draws the diff and says why when the results cannot be read", async () => {
+    core(reported({ sets: [], trouble: "purlis could not read the results" }));
+    tab();
+    await screen.findByText("purlis could not read the results");
+    await screen.findByTestId("merge-viewer");
   });
 });

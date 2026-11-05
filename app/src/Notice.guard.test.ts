@@ -633,6 +633,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "forge's own line below it has its Sign in… or Retry",
   },
   "editor/BranchTree.tsx": { count: 1, why: "the branch tree's read refusal, inside the editor" },
+  "editor/CheckResults.tsx": {
+    count: 1,
+    why:
+      "why a branch's check results could not be read, inside the list they would fill: the " +
+      "core's sentence says what to do, and the comparison beside it is drawn regardless",
+  },
   "editor/PieceDiff.tsx": {
     count: 6,
     why:

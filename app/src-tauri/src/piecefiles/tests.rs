@@ -474,6 +474,7 @@ fn what_changed_in_a_file_crosses_with_both_sides_and_gits_hunks() {
                 }],
             },
             stamp: shown.stamp.clone(),
+            checks: Box::default(),
         }
     );
 }
