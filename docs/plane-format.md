@@ -231,7 +231,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`workspaces/<ws>/.charter-structure` — the layout stamp](#workspaceswscharter-structure--the-layout-stamp)
   - [`workspaces/<ws>/.charter-generated` — the harness-layer ownership marker](#workspaceswscharter-generated--the-harness-layer-ownership-marker)
   - [`workspaces/<ws>/.claude/settings.json` — the generated harness layer](#workspaceswsclaudesettingsjson--the-generated-harness-layer)
-  - [`workspaces/<ws>/<repo>/` — a cloned repo (guest checkout)](#workspaceswsrepo--a-cloned-repo-guest-checkout)
+  - [`workspaces/<ws>/repos/<repo>/` — a cloned repo (guest checkout)](#workspaceswsreposrepo--a-cloned-repo-guest-checkout)
   - [`workspaces/<ws>/themes/` — the workspace's theme folders](#workspaceswsthemes--the-workspaces-theme-folders)
   - [`<clone>/.git/info/exclude` — purlis's managed block](#clonegitinfoexclude--purliss-managed-block)
   - [`workspaces/<ws>/.worktrees/<repo>/<piece>/` — pieces](#workspaceswsworktreesrepopiece--pieces)
@@ -1780,6 +1780,22 @@ Two rules hold for the whole area and are not repeated per file:
   frame launch.
 - **Read by:** everything in this area.
 - **Git:** the directory entry is ignored by `/workspaces/*/*`.
+- **Layout (ADR 0113):** a workspace's folder holds three kinds of thing:
+  - **its repos**, each a clone at [`repos/<repo>/`](#workspaceswsreposrepo--a-cloned-repo-guest-checkout),
+    or, for a clone made before structure version 6, at `<repo>/` directly under the workspace.
+    Both places are read for ever, a workspace may hold clones in both, and one resolver in the
+    core says where a repo is: `repos/<repo>/` when that is a clone, else `<repo>/`;
+  - **their branches' folders**, at [`.worktrees/<repo>/<piece>/`](#workspaceswsworktreesrepopiece--pieces),
+    wherever the repo itself is;
+  - **the workspace files** (`CONTEXT.md`): everything else — what purlis keeps here (*managed*:
+    the reserved names below, `skills.local/`, the folders an extension keeps in the workspace, and
+    its generated `.claude/` and `.purlis-*` files) and whatever the person or a chat puts here
+    (notes, scripts, artifacts). For the person's files purlis gives no name a meaning and creates
+    no folder.
+- **Reserved names:** `workspace.md`, `workspace.json`, `memory`, `todos`, `sessions`, `pieces`,
+  `refs`, `skills`, `themes`, `changes`, `work` and, from structure version 6, `repos`. A clone may
+  still take most of them: `skills` and `skills.local` are refused as clone names as before, and
+  from version 6 only `repos` is newly refused. A clone in `repos/` can't collide with any of them.
 - **Encoding details:** `scaffold` refuses the whole directory when it does not resolve
   inside `workspaces/` (`charter/workspace.py:1840`). Baseline creation order is
   memory → refs → workspace.md → workspace.json → harness layer → structure stamp
@@ -1923,7 +1939,7 @@ Two rules hold for the whole area and are not repeated per file:
 | `name` | string | required; the workspace's own name | identity; rewritten by `rename` | stable | `charter/workspace.py:1677`, `charter/workspace.py:1487` |
 | `description` | string | `""` | free text, set by `snapshot --description` | stable | `charter/commands_workspace.py:937` |
 | `repos` | list of objects | `[]` | membership, and optionally pinned branches | stable | `charter/workspace.py:1677` |
-| `repos[].name` | string | required | clone directory name under the workspace; untrusted, gated by `contain.child` on restore | stable | `charter/workspace.py:1649`, `charter/commands_workspace.py:985` |
+| `repos[].name` | string | required | the clone's folder name: under the workspace's `repos/`, or directly under the workspace for a clone made before structure version 6 (ADR 0113). It never holds a path, and the file has no `path` field: where a clone lives is this machine's layout, not the project's. Untrusted, gated by `contain.child` on restore | stable | `charter/workspace.py:1649`, `charter/commands_workspace.py:985` |
 | `repos[].branch` | string | **absent** for every row purlis writes itself; set by `snapshot` | the branch `restore` checks out; a row without one restores at the default branch | stable | `charter/commands_workspace.py:939`, `charter/commands_workspace.py:1014` |
 | `updated_at` | string | required | UTC ISO-8601, `timespec="seconds"`, e.g. `2026-09-17T14:01:35+00:00` | stable | `charter/workspace.py:1616`, `charter/commands_workspace.py:940` |
 | `updated_by` | string | required | `$USER` or `"unknown"` for automatic writes (`charter/workspace.py:1633`); `git config user.name` for `snapshot`/`fork` (`charter/commands_workspace.py:860`) | stable | `charter/workspace.py:1679` |
@@ -2647,9 +2663,13 @@ renamed to it the first time it is read, keeping its version (V93i).
   (`charter/workspace.py:4515`), `structure_status` (`charter/workspace.py:4584`),
   `needs_reinit` (`charter/workspace.py:4618`).
 - **Git:** gitignored (`/workspaces/*/*`; not in the LIVE block).
-- **Encoding details:** `STRUCTURE_VERSION = 5` today (`charter/workspace.py:4473`) — v2
-  memory-as-DB, v3 `changes/` in the LIVE block, v4 the harness layer, v5 every workspace
-  has a `workspace.json`. A pre-rename `.edm-structure` is renamed in place on first read
+- **Encoding details:** `STRUCTURE_VERSION = 6` (ADR 0113; 5 in `charter/workspace.py:4473`)
+  — v2 memory-as-DB, v3 `changes/` in the LIVE block, v4 the harness layer, v5 every workspace
+  has a `workspace.json`, v6 a new clone goes to `repos/<repo>/` and `repos` is reserved.
+  Version 6 only adds: re-stamping creates no `repos/`, moves no clone, and a clone at the
+  workspace's root still counts as a baseline-complete workspace. It puts nothing in the
+  project's `requires`: clones are this machine's alone, so a teammate's older build is never
+  affected, and an older build on this machine only fails to see the clones in `repos/`. A pre-rename `.edm-structure` is renamed in place on first read
   (`charter/workspace.py:4477`–`4500`). "Current" is `version >= STRUCTURE_VERSION` **and**
   no baseline file missing (`charter/workspace.py:4585`).
 
@@ -2721,8 +2741,17 @@ beside a purlis one is removed when the record is published (V93i).
   `charter/harness/codex.py:182`), reported by `workspace.harness_deficits`
   (`charter/workspace.py:1971`).
 
-### `workspaces/<ws>/<repo>/` — a cloned repo (guest checkout)
+### `workspaces/<ws>/repos/<repo>/` — a cloned repo (guest checkout)
 
+- **Where (ADR 0113):** every clone made from structure version 6 on is at
+  `workspaces/<ws>/repos/<repo>/`, its landing folder beside it in `repos/` while it is made. A
+  clone made before then stays at `workspaces/<ws>/<repo>/` and is read there for ever; the
+  operator moves it only through `doctor`'s **Move into repos/** fix, which refuses while a chat
+  is open in the workspace, runs `git worktree repair`, and puts everything back if any step
+  fails. When both `<repo>/` and `repos/<repo>/` exist, `repos/<repo>/` is the repo and `doctor`
+  warns. A clone at the root named `repos` (a `repos/` with `.git` directly in it) is read as
+  that clone, and a new clone into its workspace is refused until it is renamed. Everything
+  below holds for a clone in either place.
 - **Format:** an ordinary git clone. purlis recognises it by `<dir>/.git` being a
   **directory** (`workspace.is_clone`, `charter/workspace.py:300`, via `_directory`
   `charter/workspace.py:2287`); a linked worktree's `.git` is a file and is excluded there
@@ -5061,7 +5090,7 @@ harness's `workspace_files` / `checkout_files` (`charter/workspace.py:2020`
   Empty plane settings ⇒ **no file at all**.
 - **Git:** inside `workspaces/<ws>/`, already ignored by `/workspaces/*/*`.
 
-#### `workspaces/<ws>/<repo>/.claude/settings.json` and `.claude/settings.local.json` (generated, in a clone)
+#### `workspaces/<ws>/repos/<repo>/.claude/settings.json` and `.claude/settings.local.json` (generated, in a clone)
 
 **Tier:** Clone state, rebuildable — purlis's part; Claude Code co-writes the local file.
 

@@ -126,6 +126,13 @@ A clone of a code repository that a workspace holds. It has its own remote and i
 and it is never part of the plane's commits.
 _Avoid_: clone (as a noun in UI text), guest checkout, project
 
+**Workspace files**:
+A part of **Workspace**: everything in a workspace's folder except its repos and their
+branches' folders — the files purlis keeps there (its charter, memory, todos, sessions) and
+whatever the person or a chat put there (notes, scripts, artifacts). The person may add,
+rename and delete their own; the ones purlis keeps are shown but never changed by hand.
+_Avoid_: artifacts, workspace docs, workspace repo
+
 **Piece**:
 A git worktree of a workspace's repo, at `workspaces/<ws>/.worktrees/<repo>/<piece>`, where
 one chat works on its own branch. Git says which pieces exist. The piece log says what git

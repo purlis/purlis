@@ -187,7 +187,7 @@ chat's command line (`-c hooks.*`) instead, so no file in a directory carries th
 writes nothing machine-global on the operator's behalf.
 
 **A clone gets the same layer, plus what the walk-up could not carry there.**
-`workspaces/<ws>/<repo>/` is a repo of its own, so a session inside it loses the settings
+`workspaces/<ws>/repos/<repo>/` (or `<repo>/` at the workspace's root, for an older clone) is a repo of its own, so a session inside it loses the settings
 *and* the plane's `.claude/agents/` — the walk-up stops at that git root. purlis writes
 both, and hides them in the clone's own `.git/info/exclude`: per-checkout, never
 committed, not itself tracked, and the one file a guest may write. purlis never edits the
