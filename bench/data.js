@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793907593063,
+  "lastUpdate": 1793910586791,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -40446,6 +40446,48 @@ window.BENCHMARK_DATA = {
             "value": 101.187501,
             "unit": "ms",
             "extra": "median of 5 runs: 100.319, 100.884, 101.188, 101.240, 103.112 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "cfaa207791641a9e03fa7f000ecd40552a9112b1",
+          "message": "Skill budget: a number per program, changed where you see it, with its cost (#5353) (#5361)\n\n* Skill budget: a number per program, changed where you see it, with its cost (#5353)\n\nEach program takes its own override at project and workspace level. The\nRouting page's table and Settings' In force say where each number comes\nfrom, with Change... and Reset to default; Change... says what a typed\nnumber would cost. The numbers on the Skills view and the chat's pane link\nthere.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NNN84S2VENP57CCXQZKQP6\nPurlis-Persona: steward\n\n* Skill budget: name the pick of a budget's number\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NNN84S2VENP57CCXQZKQP6\nPurlis-Persona: steward\n\n* Skill budget: what the two-axis review found (#5353)\n\nThe project's Skills group kept no row, so Settings dropped it. A low number\nsaid nothing of the pins where what no router hides was over too. A program's\nown number no longer unfolds a number for every program. A manual-only skill\nno longer reads as past the budget on the chip. A reset says what it did.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NNN84S2VENP57CCXQZKQP6\nPurlis-Persona: steward\n\n* Skill budget stories: the table is one Tab stop, and the panels beside it are further\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NNN84S2VENP57CCXQZKQP6\nPurlis-Persona: steward\n\n* Skill budget: the guards name its dialog, its fields and its live regions\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NNN84S2VENP57CCXQZKQP6\nPurlis-Persona: steward\n\n* Skill budget story: a Tab out of the table lands on what follows it\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NNN84S2VENP57CCXQZKQP6\nPurlis-Persona: steward\n\n* Skill budget story: Tab is not trapped in the table\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NNN84S2VENP57CCXQZKQP6\nPurlis-Persona: steward\n\n* Skill budget stories: the view's budget link is a stop of its own, and an error line waits to be drawn\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NNN84S2VENP57CCXQZKQP6\nPurlis-Persona: steward\n\n* Skill budget: the link sits beside the pane foot's skills warning (#5353)\n\nMain's #5204 made the chip a warning drawn only while a chat has a need. Its\nof 60 goes beside that, and out of a narrow pane's mark; the Skills view's\nbudget line is the link for a chat with nothing wrong.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NNN84S2VENP57CCXQZKQP6\nPurlis-Persona: steward\n\n* Skills view: the budget's link has its clear space\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NNN84S2VENP57CCXQZKQP6\nPurlis-Persona: steward\n\n* Stories: baselines from this pull request's run (#5353)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NNN84S2VENP57CCXQZKQP6\nPurlis-Persona: steward\n\n* Skill budget: each button as wide as its words, and its stories with room to be read\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NNN84S2VENP57CCXQZKQP6\nPurlis-Persona: steward\n\n* Skill budget stories: the core's fake ends with its story\n\nA mock made while rendering was left behind, and answered the next stories'\nfont asks in that worker with nothing, so Badge and MergeViewer drew in the\nwrong face. Their pictures go back to main's. The Change cell keeps its heading,\nwhich is what gives it room as a target when stacked.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NNN84S2VENP57CCXQZKQP6\nPurlis-Persona: steward\n\n* Skill budget: Change...'s cell keeps its target clear when stacked and compact\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NNN84S2VENP57CCXQZKQP6\nPurlis-Persona: steward\n\n* Skill budget: where the table stacks, Change...'s cell has its full target\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NNN84S2VENP57CCXQZKQP6\nPurlis-Persona: steward\n\n* Stories: baselines from this pull request's run (#5353)\n\nThe skill budget's stories, Routing and the pane foot as this run drew them.\nBadge, MergeViewer and SkillPublish move only in their monospace text: the\nfirst pass's pictures, which is what this shard compares them with, since\n--font-mono is a system font Chromium picks by what it drew before.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NNN84S2VENP57CCXQZKQP6\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-05T19:55:11Z",
+          "tree_id": "59d1aa8acfacd4bd2b87f233527cfa01f12fc85f",
+          "url": "https://github.com/purlis/purlis/commit/cfaa207791641a9e03fa7f000ecd40552a9112b1"
+        },
+        "date": 1793910581354,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.693075,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.653, 0.664, 0.693, 0.694, 0.711 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.64983,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.489, 16.577, 16.650, 16.652, 16.663 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.0828855,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.767, 102.075, 102.083, 102.836, 102.942 ms"
           }
         ]
       }
