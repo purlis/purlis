@@ -168,7 +168,14 @@ pub fn fetch_remote(
     let fetched = git::run_network(
         clone,
         helper.as_deref(),
-        &["fetch", "--prune", "--no-recurse-submodules", remote],
+        // Nothing reads FETCH_HEAD after this: the remote-tracking branches say what came.
+        &[
+            "fetch",
+            "--prune",
+            "--no-recurse-submodules",
+            "--no-write-fetch-head",
+            remote,
+        ],
     )
     .map_err(|e| e.to_string())?;
     if fetched.ok() {
@@ -289,7 +296,12 @@ fn sync_one(root: &Path, ws: &str, repo: &repos::Repo, say: Sink) {
     let fetched = git::run_network(
         d,
         helper.as_deref(),
-        &["fetch", "--prune", "--no-recurse-submodules"],
+        &[
+            "fetch",
+            "--prune",
+            "--no-recurse-submodules",
+            "--no-write-fetch-head",
+        ],
     );
     let fetched = match fetched {
         Ok(run) if run.ok() => run,
