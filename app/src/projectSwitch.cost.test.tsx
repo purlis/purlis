@@ -91,14 +91,15 @@ const MOUNTS = 20;
  *  built again sent 49, all of them then. */
 const COMMANDS_AT_ONCE = 10;
 /** The most it may send in all where each tab holds one pane, with what it reads again once it
- *  is painted. It sends 22: since #5375 the project in front draws its workspace's own folder,
+ *  is painted. It sends 23: since #5375 the project in front draws its workspace's own folder,
  *  so that folder is read again (`workspace_tree`) and watched (`files_watch`, one for every
- *  tree the switch changed) behind the paint, as a one-repo workspace's tree always was. With
- *  more panes it sends more, after the paint: two reads a pane. And one more where the switches
- *  took longer than a beat (`SAVING_REREAD_MS`, 10 s): a project that comes to the front with a
- *  save standing older than that reads it once (`plane_saving`, #6246), which a slow runner's run
- *  of switches always reaches (#6264). */
-const COMMANDS = 23;
+ *  tree the switch changed) behind the paint, as a one-repo workspace's tree always was; and
+ *  since #2786 the skills-changed offer every chat's pane now has reads once after the paint,
+ *  one read however many panes share it. With more panes it sends more, after the paint: two
+ *  reads a pane. And one more where the switches took longer than a beat (`SAVING_REREAD_MS`,
+ *  10 s): a project that comes to the front with a save standing older than that reads it once
+ *  (`plane_saving`, #6246), which a slow runner's run of switches always reaches (#6264). */
+const COMMANDS = 24;
 /** The most times React may commit for it, the reads' answers among them. It commits 5 times
  *  now, two of them small ones after the paint. */
 const COMMITS = 6;
