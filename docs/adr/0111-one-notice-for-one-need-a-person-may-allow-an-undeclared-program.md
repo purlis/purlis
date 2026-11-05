@@ -38,7 +38,9 @@ file collected a line for every one-off key.
   control characters made visible.
 - **A need is remembered only when asked.** The notice has an unticked *Remember this need for the
   persona*. Ticking it shows the exact line with its purpose editable, and Fill writes it, along with
-  a `vault:` line where the persona names none. Unticked, nothing is written or offered later. The
+  a `vault:` line where the persona names none. A ticked line that cannot be written is held as a
+  proposal, so the words the person confirmed are not lost. Unticked, nothing is written or offered
+  later. The
   vault row's *Offer as a Secret need* stays as the way to do it afterwards, and #5159's dismissal
   store goes, with no offer left to dismiss.
 - **Every grant is seen and audited.** Run grants appear in the Granted list with a revoke that
