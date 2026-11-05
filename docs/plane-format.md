@@ -232,6 +232,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`workspaces/<ws>/.charter-generated` — the harness-layer ownership marker](#workspaceswscharter-generated--the-harness-layer-ownership-marker)
   - [`workspaces/<ws>/.claude/settings.json` — the generated harness layer](#workspaceswsclaudesettingsjson--the-generated-harness-layer)
   - [`workspaces/<ws>/<repo>/` — a cloned repo (guest checkout)](#workspaceswsrepo--a-cloned-repo-guest-checkout)
+  - [`refs/purlis/turns/<chat>/<n>/start` and `…/end` — each turn of a chat, in a clone's git](#refspurlisturnschatnstart-and-end--each-turn-of-a-chat-in-a-clones-git)
   - [`workspaces/<ws>/themes/` — the workspace's theme folders](#workspaceswsthemes--the-workspaces-theme-folders)
   - [`<clone>/.git/info/exclude` — purlis's managed block](#clonegitinfoexclude--purliss-managed-block)
   - [`workspaces/<ws>/.worktrees/<repo>/<piece>/` — pieces](#workspaceswsworktreesrepopiece--pieces)
@@ -2775,6 +2776,27 @@ beside a purlis one is removed when the record is published (V93i).
   harness root (`_generated_roots`, `charter/workspace.py:2587`) whose content still matches
   the recorded digest (`charter/workspace.py:2642`), and empty parent directories are pruned
   (`_prune_empty`, `charter/workspace.py:4123`).
+
+### `refs/purlis/turns/<chat>/<n>/start` and `…/end` — each turn of a chat, in a clone's git
+
+The branch's state before and after turn `<n>` of a chat (N3, ADR 0084 §1's comparison (d),
+#5405), which a file's diff compares as *Latest turn*.
+
+- **Tier:** Clone state — in the clone's own git, never pushed by anything purlis runs, and not
+  rebuildable: a turn's states exist nowhere else.
+- **What each is:** a commit of the folder as it was, uncommitted work and untracked files git does
+  not ignore included, staged in an index of its own so the folder's index is untouched. Its parent
+  is the folder's `HEAD`, and its message names the branch in a `Branch:` line. Nothing git would
+  stage is left out, what a save to the forge refuses included, because these refs stay on this
+  machine and a turn's undo has to put back every file. No filter runs on the way in.
+- **Its names:** `<chat>` is the chat's id (letters, digits, `_` and `-`, starting with a letter or
+  digit, at most 64 characters) and `<n>` counts from 1. A second prompt in a turn that has no `end`
+  yet takes no second `start`.
+- **Written by** the app as it hears the chat's own harness start a turn and end one, or the chat's
+  program end, through `files::turns` and the git runner, with hooks and the repo's programs off.
+  Only a chat whose folder is on this machine and in a workspace's repo records any, and only while
+  the app holds its project: a turn that ends with no window open has no `end` until the next one.
+- **Removed** when the chat is removed: `turns::forget`.
 
 ### `workspaces/<ws>/themes/` — the workspace's theme folders
 

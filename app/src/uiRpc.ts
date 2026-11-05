@@ -1669,6 +1669,8 @@ export const commands = {
 	 */
 	whatChanged: (plane: PlaneId, workspace: string, repo: string, piece: string | null, path: string) => typedError<WhatChanged, string>(__TAURI_INVOKE("what_changed", { plane, workspace, repo, piece, path })),
 	discardHunk: __WINDOW_ONLY_RESULT,
+	/**  One file of a branch across the latest turn that ended there, or why there is none. */
+	latestTurnChanged: (plane: PlaneId, workspace: string, repo: string, piece: string | null, path: string) => typedError<TurnChanged, string>(__TAURI_INVOKE("latest_turn_changed", { plane, workspace, repo, piece, path })),
 	/**
 	 *  The folders of branches this window's explorer has expanded, watched until it names others
 	 *  (FM-1). A folder that does not resolve — gone, or refused as the tree refuses it — is not
@@ -14026,6 +14028,15 @@ export type TodoView = {
 	/**  Everything under the stamp line, trimmed. Empty for a todo that is only a title. */
 	body: string,
 };
+
+/**  One file across the latest turn on a branch: "Latest turn" in the file diff (#5405). */
+export type TurnChanged = 
+/**  No turn to show, and why, in a sentence. */
+{ kind: "no-turn"; why: string } | 
+/**  The latest turn left this file as it found it. */
+{ kind: "not-changed"; number: number } | 
+/**  The file, compared across the turn. */
+{ kind: "changed"; number: number; shown: WhatChanged };
 
 /**
  *  Why a vault read through an identity variable could not be read: the core's own sentence,

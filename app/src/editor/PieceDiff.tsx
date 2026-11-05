@@ -35,6 +35,10 @@
  * **Each sentence is a status** (#1189): the reading, the refusal and the change with no line in
  * it are said to a screen reader as they come, and the merge view is named after the file and
  * what it is compared against.
+ *
+ * **Against base or the latest turn** (#5405): the same view of one file across the last turn that
+ * ended on the branch ([`DiffAgainst`]), which the core reads from that turn's refs. No turn to
+ * show, and a file the turn left alone, are each a sentence.
  */
 import { Fragment, useEffect, useRef, useState } from "react";
 import { FileDiff as FileDiffMark, LoaderCircle } from "lucide-react";
@@ -45,10 +49,12 @@ import {
   type DiscardAgainst,
   type DiscardTarget,
   type PlaneId,
+  type TurnChanged,
   type WhatChanged,
 } from "../bindings";
 import type { Place } from "../pieceViews";
 import { MergeViewer } from "./LightEditor";
+import { DiffAgainst, type Against } from "./DiffAgainst";
 import { sized, ToYourEditor } from "./PieceFiles";
 import { jumpTo } from "../fileJump";
 import { Notice } from "../Notice";
@@ -78,10 +84,16 @@ type Warning = (Asked & { kind: "busy"; chats: BusyChat[] }) | (Asked & { kind: 
  */
 export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place; path: string }) {
   const [asked, setAsked] = useState(0);
+  const [comparedTo, setComparedTo] = useState<Against>("base");
   /** How often the branch moved and was read again for it. */
   const [moved, setMoved] = useState(0);
   /** The last comparison told, with the asks and the moves it was read for. */
-  const [read, setRead] = useState<{ asked: number; moved: number; read: Read }>();
+  const [read, setRead] = useState<{
+    asked: number;
+    moved: number;
+    comparedTo: Against;
+    read: Read;
+  }>();
   /** The read in flight, and whether the branch moved during it. */
   const flight = useRef<{ again: boolean }>(undefined);
   /** A discard on its way: the controls wait for it, and hold their places. */
@@ -96,30 +108,38 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
     const told = (got: Read) => {
       if (gone) return;
       flight.current = undefined;
-      setRead({ asked, moved, read: got });
+      setRead({ asked, moved, comparedTo, read: got });
       if (now.again) setMoved((n) => n + 1);
     };
-    void commands
-      .whatChanged(plane, cut.workspace, cut.repo, cut.piece, path)
-      .then((answer) =>
-        told(
-          answer.status === "error"
-            ? { kind: "refused", why: answer.error }
-            : { kind: "read", shown: answer.data },
-        ),
-      )
-      .catch((err: unknown) => told({ kind: "refused", why: String(err) }));
+    const asking =
+      comparedTo === "base"
+        ? commands
+            .whatChanged(plane, cut.workspace, cut.repo, cut.piece, path)
+            .then((answer) =>
+              answer.status === "error"
+                ? ({ kind: "refused", why: answer.error } as const)
+                : ({ kind: "read", shown: answer.data } as const),
+            )
+        : commands
+            .latestTurnChanged(plane, cut.workspace, cut.repo, cut.piece, path)
+            .then((answer) =>
+              answer.status === "error"
+                ? ({ kind: "refused", why: answer.error } as const)
+                : turnRead(answer.data, path),
+            );
+    void asking.then(told).catch((err: unknown) => told({ kind: "refused", why: String(err) }));
     return () => {
       gone = true;
     };
-  }, [plane, cut.workspace, cut.repo, cut.piece, path, asked, moved]);
+  }, [plane, cut.workspace, cut.repo, cut.piece, path, asked, moved, comparedTo]);
   useBranchMoved(plane, cut, () => {
     if (flight.current !== undefined) flight.current.again = true;
     else setMoved((n) => n + 1);
   });
-  const now: Read = read?.asked === asked ? read.read : { kind: "reading" };
+  const current = read?.asked === asked && read.comparedTo === comparedTo;
+  const now: Read = current ? read.read : { kind: "reading" };
   // The branch moved since the comparison drawn was read, and it is being read again behind it.
-  const again = read?.asked === asked && read.moved !== moved;
+  const again = current && read.moved !== moved;
   const discard = (ask: Asked) => {
     setWarning(undefined);
     setTrouble(undefined);
@@ -144,7 +164,8 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
         if (told.kind === "busy") setWarning({ ...ask, kind: "busy", chats: told.chats });
         else if (told.kind === "stale") setWarning({ ...ask, kind: "stale" });
         else {
-          if (told.now !== null) setRead({ asked, moved, read: { kind: "read", shown: told.now } });
+          if (told.now !== null)
+            setRead({ asked, moved, comparedTo, read: { kind: "read", shown: told.now } });
           else setAsked((n) => n + 1);
           if (told.unrecorded !== null)
             setTrouble(`Discarded, but it is not in the chat's history: ${told.unrecorded}`);
@@ -160,6 +181,7 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
         <ToolbarFile path={path} named={false} />
         {now.kind === "read" && <span>{against(now.shown)}</span>}
         <span className="piece-files-actions">
+          <DiffAgainst value={comparedTo} onChange={setComparedTo} />
           <ToYourEditor plane={plane} cut={cut} path={path} line={firstLine(now)} />
           <Button size="sm" onPress={() => setAsked((n) => n + 1)}>
             Compare again
@@ -231,6 +253,19 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
       )}
     </div>
   );
+}
+
+/** What the core said of the latest turn, as the tab draws it. */
+function turnRead(turn: TurnChanged, path: string): Read {
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  switch (turn.kind) {
+    case "no-turn":
+      return { kind: "refused", why: turn.why };
+    case "not-changed":
+      return { kind: "refused", why: `Turn ${turn.number} did not change ${name}` };
+    case "changed":
+      return { kind: "read", shown: turn.shown };
+  }
 }
 
 /** How many changes are offered a line of their own: past it, the rest are counted, and each comes

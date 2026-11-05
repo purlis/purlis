@@ -423,6 +423,80 @@ pub async fn what_changed(
     .map_err(|err| format!("comparing the file did not finish: {err}"))?
 }
 
+/// One file across the latest turn on a branch: "Latest turn" in the file diff (#5405).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum TurnChanged {
+    /// No turn to show, and why, in a sentence.
+    NoTurn { why: String },
+    /// The latest turn left this file as it found it.
+    NotChanged { number: u32 },
+    /// The file, compared across the turn.
+    Changed { number: u32, shown: WhatChanged },
+}
+
+/// One file of a branch across the latest turn that ended there, or why there is none.
+// Read as `what_changed` reads. The sentence for no turn is the app's, since only the app knows
+// which chats work in the folder. Not a doc comment, because the generated bindings carry those.
+#[tauri::command]
+#[specta::specta]
+pub async fn latest_turn_changed(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    workspace: String,
+    repo: String,
+    piece: Option<String>,
+    path: String,
+) -> Result<TurnChanged, String> {
+    let held = planes.held(&plane)?;
+    let root = held.root().to_path_buf();
+    let silent = held
+        .chats()
+        .silent_about_turns_in(&root, &workspace, &repo, piece.as_deref());
+    tauri::async_runtime::spawn_blocking(move || {
+        latest_turn_changed_of(
+            &root,
+            branch(&workspace, &repo, &piece),
+            &path,
+            silent.as_deref(),
+        )
+    })
+    .await
+    .map_err(|err| format!("comparing the file did not finish: {err}"))?
+}
+
+fn latest_turn_changed_of(
+    plane: &Path,
+    branch: Branch<'_>,
+    path: &str,
+    silent: Option<&str>,
+) -> Result<TurnChanged, String> {
+    let read = files::latest_turn_changed(&crate::reader(), plane, branch, path)
+        .map_err(|e| e.to_string())?;
+    Ok(match read {
+        files::TurnChanged::NoTurn => TurnChanged::NoTurn {
+            why: no_turn_why(silent),
+        },
+        files::TurnChanged::NotChanged { number } => TurnChanged::NotChanged { number },
+        files::TurnChanged::Changed { number, shown, .. } => TurnChanged::Changed {
+            number,
+            shown: what_changed_shown(*shown),
+        },
+    })
+}
+
+/// Why a branch has no turn to show: a chat working there whose program reports none, by name,
+/// or no turn yet.
+fn no_turn_why(silent: Option<&str>) -> String {
+    match silent {
+        Some(chat) => format!(
+            "{chat} runs a program that does not report its turns to purlis, so it has no turn \
+             to show here. Against base still shows this file."
+        ),
+        None => "No chat has finished a turn on this branch yet.".to_owned(),
+    }
+}
+
 fn what_changed_of(plane: &Path, branch: Branch<'_>, path: &str) -> Result<WhatChanged, String> {
     let shown =
         files::what_changed(&crate::reader(), plane, branch, path).map_err(|e| e.to_string())?;

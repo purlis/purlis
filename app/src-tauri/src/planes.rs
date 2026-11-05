@@ -343,6 +343,8 @@ pub struct Held {
     at_limits: crate::atlimit::AtLimits,
     /// Which chats run with their harness's permission prompts off (#1446).
     unattended: crate::handoff::Unattended,
+    /// Each turn of a chat, as refs in its branch's clone (#5405).
+    turns: crate::turns::TurnRecorder,
     /// Which chats were waiting on the person at their last report: what counts a dispatch's
     /// needs-you once per wait (#1452).
     dispatches: crate::dispatches::Waiting,
@@ -637,6 +639,23 @@ impl Held {
     }
 
     /// Which chats run with their harness's permission prompts off (#1446).
+    /// Chat `session`'s id and folder, where a turn of it is recorded here: not a chat on a
+    /// runner, whose folder is the runner's, and not one with no id or folder.
+    fn turn_place(&self, session: u32) -> Option<(String, PathBuf)> {
+        if self.chats.runner_of(session).is_some() || self.chats.pool_of(session).is_some() {
+            return None;
+        }
+        let at = self.chats.chat_at(session)?;
+        Some((at.id?, at.cwd?))
+    }
+
+    /// A report the board took, which may be a boundary of chat `report.chat`'s turn (#5405).
+    fn turn_heard(&self, report: &purlis_core::hookwire::Report) {
+        if let Some((id, cwd)) = self.turn_place(report.chat) {
+            self.turns.heard(self.root(), &id, &cwd, report);
+        }
+    }
+
     pub fn unattended(&self) -> &crate::handoff::Unattended {
         &self.unattended
     }
@@ -1397,6 +1416,10 @@ impl Held {
             .and_then(|chat| chat.identity.id)
         {
             crate::chatbrowsers::timeline_closed(self, &chat);
+        }
+        // And so do its turns' refs (#5405).
+        if let Some((id, cwd)) = self.turn_place(session) {
+            self.turns.removed(self.root(), &id, &cwd);
         }
         self.proposals.forget(session);
         self.runner_writes.forget(session);
@@ -3404,6 +3427,8 @@ impl Planes {
                     // A persona chat that has just come to wait on the person's input: its
                     // dispatch needed them once more (#1452, #1457).
                     crate::dispatches::needed_you(&held, report.chat);
+                    // Each turn of it, as refs in its branch's clone, off this thread (#5405).
+                    held.turn_heard(report);
                     // What a sandboxed chat's turn left in its folders is looked at once it has
                     // ended, off this thread. A helper's end is no end of it.
                     if report.event == purlis_core::state::Event::Stop && report.agent.is_none() {
@@ -4753,6 +4778,12 @@ impl Planes {
                             record,
                         });
                     }
+                    // A turn still open ended with its program (#5405).
+                    if let Some(held) = me.get().and_then(std::sync::Weak::upgrade)
+                        && let Some((id, cwd)) = held.turn_place(session)
+                    {
+                        held.turns.program_ended(held.root(), &id, &cwd);
+                    }
                     let changed = hooks::held_board(&board).exited(session, hooks::code_of(&exit));
                     // **Its sub-agents' runs end with its own** (ADR 0076 §6, #1084), in the
                     // end state and for the cause the host knows its run ended by: its own stop,
@@ -4965,6 +4996,7 @@ impl Planes {
             held_dispatches: crate::handoff::HeldDispatches::default(),
             at_limits: crate::atlimit::AtLimits::default(),
             unattended: crate::handoff::Unattended::default(),
+            turns: crate::turns::TurnRecorder::default(),
             dispatches: crate::dispatches::Waiting::default(),
             touched_files: crate::taskchanges::Touched::default(),
             talk_sweep,

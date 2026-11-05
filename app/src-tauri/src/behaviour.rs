@@ -3478,6 +3478,109 @@ fn the_event_log_has_one_writer_and_each_hook_line_is_written_once(target: &Targ
     }
 }
 
+/// **A whole chat, through the fake harness** (#5405): a prompt, an edit, the turn's end, each by
+/// the hooks a harness fires. What the turn changed is read as the file diff reads it, and the
+/// refs go as the chat is removed.
+#[test]
+fn a_turn_is_recorded_by_its_hooks_and_its_diff_is_what_it_edited() {
+    use purlis_core::files::{self, Branch};
+    const CHAT: &str = "01J9CHAT0000000000000000TN";
+    let target = in_the_window();
+    let folder = target.root.join("workspaces/ws/app");
+    std::fs::create_dir_all(&folder).expect("the repo's folder");
+    let git = |args: &[&str]| {
+        let done = purlis_core::forklock::output(
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(&folder)
+                .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+                .args(["-c", "commit.gpgSign=false"])
+                .args(args),
+        )
+        .expect("git runs");
+        assert!(done.status.success(), "git {args:?}: {done:?}");
+        String::from_utf8_lossy(&done.stdout).into_owned()
+    };
+    git(&["init", "-q", "-b", "main"]);
+    std::fs::write(folder.join("a.txt"), "one\n").expect("a file");
+    git(&["add", "."]);
+    git(&["commit", "-qm", "first"]);
+    let refs = |git: &dyn Fn(&[&str]) -> String| {
+        git(&["for-each-ref", "--format=%(refname)", "refs/purlis/turns/"])
+    };
+
+    let recorder = crate::turns::TurnRecorder::default();
+    target.hooks.when_heard({
+        let (recorder, root, folder) = (recorder.clone(), target.root.clone(), folder.clone());
+        Arc::new(move |report| recorder.heard(&root, CHAT, &folder, report))
+    });
+    // The edit waits for the turn's start to be recorded, as a harness's waits for its model.
+    let edits = format!(
+        "cd '{dir}' && until git for-each-ref refs/purlis/turns/ | grep -q start; do sleep 0.02; \
+         done; printf 'one\\nTWO\\n' > a.txt; printf 'new\\n' > b.txt",
+        dir = folder.display()
+    );
+    let prompt = format!(
+        "printf '%s' '{{\"prompt\":\"go\"}}' | PURLIS_HARNESS=claude-code '{}' hook userpromptsubmit",
+        purlis()
+    );
+    let stop = format!(
+        "PURLIS_HARNESS=claude-code '{}' hook stop </dev/null",
+        purlis()
+    );
+    let id = a_chat_on_the_board(
+        &target,
+        &a_harness(&[
+            "--hook",
+            &prompt,
+            "--hook",
+            &edits,
+            "--hook",
+            &stop,
+            "--sentinel",
+            "ready.",
+            "--interactive",
+        ]),
+    );
+
+    until("the turn's end is recorded", || {
+        refs(&git).lines().any(|name| name.ends_with("/end"))
+    });
+
+    assert_eq!(
+        refs(&git).lines().collect::<Vec<_>>(),
+        [
+            format!("refs/purlis/turns/{CHAT}/1/end"),
+            format!("refs/purlis/turns/{CHAT}/1/start"),
+        ]
+    );
+    let at = Branch::repo("ws", "app");
+    let (start, end) = (
+        format!("refs/purlis/turns/{CHAT}/1/start"),
+        format!("refs/purlis/turns/{CHAT}/1/end"),
+    );
+    assert_eq!(
+        git(&["diff", "--name-status", &start, &end]),
+        "M\ta.txt\nA\tb.txt\n"
+    );
+    let files::TurnChanged::Changed {
+        number: 1, shown, ..
+    } = files::latest_turn_changed(&crate::reader(), &target.root, at, "a.txt").expect("it reads")
+    else {
+        panic!("a.txt is what the turn changed");
+    };
+    let files::FileDiff::Text { base, head, .. } = shown.diff else {
+        panic!("a.txt is text");
+    };
+    assert_eq!((base.as_str(), head.as_str()), ("one\n", "one\nTWO\n"));
+
+    recorder.removed(&target.root, CHAT, &folder);
+    until("the chat's refs are removed with it", || {
+        refs(&git).is_empty()
+    });
+    target.sessions.close(id).expect("it closes");
+}
+
 /// **A chat whose program ends with the window gone still has its end recorded, and its
 /// dispatch report written** (#2003): the window lets go of its project and the host runs on;
 /// the task's program ends by itself; its sub-agent's run ends with its own in the event log,

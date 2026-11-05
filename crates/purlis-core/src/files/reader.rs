@@ -352,6 +352,8 @@ pub enum Ask {
     /// One hunk of that file put back (#5406): the one ask that writes, of the file alone, in the
     /// same child, so it starts no program and is bounded as a read is.
     Discard(super::Discard),
+    /// One file of the latest turn that ended on the branch (#5405).
+    TurnChanged { path: String },
     /// Its offered list: what `git ls-files --cached --others --exclude-standard` lists, sorted,
     /// at most `most` of it (#1189).
     Offered { most: Option<usize> },
@@ -376,6 +378,7 @@ pub enum Answer {
     FileDiff(super::FileDiff),
     WhatChanged(super::Shown),
     Discarded(super::Discarded),
+    TurnChanged(super::TurnChanged),
     Offered(super::offered::Offered),
     Ignored(super::offered::Ignored),
     /// To [`Ask::Offered`] and [`Ask::Ignored`] only: gitoxide could not read the branch's
@@ -748,6 +751,7 @@ fn not_asked_of_the_plane_root(ask: &Ask, branch: Branch<'_>) -> bool {
                 | Ask::CompareFile { .. }
                 | Ask::WhatChanged { .. }
                 | Ask::Discard(_)
+                | Ask::TurnChanged { .. }
         )
 }
 
@@ -805,6 +809,9 @@ fn serve() -> i32 {
         }
         Ask::Discard(ask) => {
             super::compare::discard_here(plane, branch, &ask).map(Answer::Discarded)
+        }
+        Ask::TurnChanged { path } => {
+            super::compare::latest_turn_changed_here(plane, branch, &path).map(Answer::TurnChanged)
         }
         Ask::Offered { most } => super::offered::offered_here(plane, branch, most),
         Ask::Ignored { paths, folders } => {
