@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793847374470,
+  "lastUpdate": 1793850153417,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -39606,6 +39606,48 @@ window.BENCHMARK_DATA = {
             "value": 102.74809300000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.774, 101.791, 102.748, 103.209, 103.546 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "60f9d3c76cfcce26a568aa8c407d8f0053e28225",
+          "message": "Window tests for ⌘⇧J's picks and a task's end; e2e exact strips and where a file ends (#5224, #5131) (#5264)\n\n* Window tests for ⌘⇧J's picks and a task's end after a re-read, and what they found (#5224)\n\nChatTasksMenu.window.test.tsx holds the three paths #5218 landed with only\ntsc and lint: the cross-window jump, the pane-gone pick and #5106's fallback\nto the asker's workspace. Each reads what the person sees, and each was seen\nto fail with its behaviour broken.\n\nTwo were wrong, and are fixed here. A pick of a task in no pane followed the\ncore's pane used last to another window, since the chord never reaches the\npanes: the pane asked from is now said to be used before the core is asked.\nA task the plane listed no more before its end arrived lost its asker: its\ntab left the strip at the read, and closed at the end, so #5106's fallback\nnever ran. The window keeps each task's asker in state (askedOnce), which\nfiledIn and keepsItsPane read.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6MMV7E60W0GJ5GDBGWM9ZC9\nPurlis-Persona: steward\n\n* e2e: an exact strip in four specs, and a file ends where it began (#5131)\n\ntab-chip, activity, task-own-tab and pane-crumbs no longer write down what\nwas open: each waits for a bare strip as it begins and ends\n(untilTheStripIsBare), since every file closes its own tabs.\n\nThe tab guard now fails a file that ends with another project or workspace\nin front, naming both, and brings the one it began on back so the next file\nis not judged for this one; it then judges that strip's tabs as before.\n\nopenProjectSettings moves from seven specs to reach.ts, and\nclosesTheTabsItOpens registers a spec's before/after tab snapshot pair, used\nby the six settings-tab specs that had it by hand.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6MMV7E60W0GJ5GDBGWM9ZC9\nPurlis-Persona: steward\n\n* Review fixes for #5224: a test that tells the asked pane apart, and a task's asker kept current\n\nThe asked-pane test files the task in another workspace, so it fails when the\npick loses its pane, which it could not before. A test holds a task standing\non its asker's strip from the read on. askedOnce follows a task's asker\nrather than keeping the first. The changelog entries lead in bold and name\nthe ticket.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6MMV7E60W0GJ5GDBGWM9ZC9\nPurlis-Persona: steward\n\n* e2e guard judges both ends of a file, and settings helpers get their own file (#5131)\n\nThe first CI run showed thirty specs go to a workspace in their setup and\nstay there, as the next file expects, so failing a file for ending elsewhere\nwould have reddened them all for no leftover tab. The guard now takes the\nissue's other option: a file that ends on another strip is judged on that\nstrip and on the one it began on, visited for the reading, and it ends where\nit ended. A strip it only passed through is not read.\n\nopenProjectSettings moves from reach.ts to settingsTab.ts, since reach.ts's\nheader promises presses from the page and this helper uses the driver's keys.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6MMV7E60W0GJ5GDBGWM9ZC9\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-05T03:09:56Z",
+          "tree_id": "67744dbeca0d0ca5dc4fc50cd15f023610a1771b",
+          "url": "https://github.com/purlis/purlis/commit/60f9d3c76cfcce26a568aa8c407d8f0053e28225"
+        },
+        "date": 1793850149161,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.345876,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.332, 0.338, 0.346, 0.359, 0.362 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.535794000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.137, 16.274, 16.536, 16.598, 16.616 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.85126349999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.713, 100.739, 100.851, 101.109, 101.318 ms"
           }
         ]
       }
