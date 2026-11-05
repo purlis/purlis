@@ -350,6 +350,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`save-branch.json`](#save-branchjson)
   - [`save-journal.jsonl`](#save-journaljsonl)
   - [`skills-deleted/<stamp>-<name>/`](#skills-deletedstamp-name)
+  - [`skills-deleted-gone/<commit>-<digest>`](#skills-deleted-gonecommit-digest)
   - [`skills-deleting/<stamp>-<folder>`](#skills-deletingstamp-folder)
   - [`skill-drafts/<id>/` (legacy)](#skill-draftsid)
   - [`<state>/skill-grades/<YYYY-MM>.jsonl` (legacy)](#stateskill-gradesyyyy-mmjsonl)
@@ -7715,6 +7716,24 @@ rewritten.
   the skill's folder is removed as a link and nothing outside this folder is reached. A committed
   skill whose delete was committed is never kept here: git keeps it. Every read, write and removal here goes through folders held
   open with `O_NOFOLLOW`. A chat's sandbox denies writing it (SK-35).
+- **Git:** gitignored, under the state directory.
+
+### `skills-deleted-gone/<commit>-<digest>`
+- **Format:** one empty file per committed skill delete that **Delete now** took off the Skill
+  studio's Deleted list before its 30 days were up (#5332). `<commit>` is the commit that deleted
+  it, in full; `<digest>` is the first 16 hex digits of the SHA-256 of the skill's folder relative
+  to the plane (`skills/grilling`), so one commit's set is marked a skill at a time. The folder is
+  `0700` and each file `0600`, made new and never through a link, as
+  [`skills-deleted/`](#skills-deletedstamp-name)'s are.
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
+- **Tier:** Clone state — this machine's choice of what its Deleted list shows. The project's
+  history still holds the skill, and `purlis skill restore` with the commit still brings it back; another clone
+  still lists it.
+- **Written by:** `purlis_core::skills::verbs::set::delete_now`. A skill this machine kept is
+  removed from `skills-deleted/` instead, and leaves no mark.
+- **Read by:** `verbs::deleted`, which leaves out a committed delete with a mark. Deleted ⇒ each
+  marked delete is listed again for what is left of its 30 days. A mark is never removed: one past
+  its delete's 30 days names nothing the list shows.
 - **Git:** gitignored, under the state directory.
 
 ### `skills-deleting/<stamp>-<folder>`

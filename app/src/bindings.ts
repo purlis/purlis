@@ -2241,7 +2241,7 @@ export const commands = {
 	 *  **The one review of `act` on `members`**: what each is marked with, who is left naming one that
 	 *  goes, and how many open chats started with them. Reads only.
 	 */
-	skillSetReview: (plane: PlaneId, act: SkillSetAct, members: SkillSetMember[], workspace: string | null) => typedError<SkillSetReview, string>(__TAURI_INVOKE("skill_set_review", { plane, act, members, workspace })),
+	skillSetReview: (plane: PlaneId, act: SkillSetAct, members: SkillSetMember[], workspace: string | null, to: { at: "project"; local: boolean } | { at: "workspace"; name: string; local: boolean } | { at: "persona"; name: string; local: boolean } | null) => typedError<SkillSetReview, string>(__TAURI_INVOKE("skill_set_review", { plane, act, members, workspace, to })),
 	/**
 	 *  **Deletes `members` as one change**, the group said to be `from`, with `remove_source` taken out
 	 *  in the same commit. All or nothing.
@@ -2268,6 +2268,25 @@ export const commands = {
 } | null) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_set_restore", { plane, ids, source })),
 	/**  **Turns `names` off or on in `workspace` as one change.** All or nothing. */
 	skillSetTurn: (plane: PlaneId, workspace: string, names: string[], on: boolean) => typedError<SkillSetTurned, string>(__TAURI_INVOKE("skill_set_turn", { plane, workspace, names, on })),
+	/**  **Pins `names` for `by`'s chats, or unpins them, as one change** (#5332). All or nothing. */
+	skillSetPin: (plane: PlaneId, by: SkillPinner, names: string[], on: boolean) => typedError<SkillSetTurned, string>(__TAURI_INVOKE("skill_set_pin", { plane, by, names, on })),
+	/**  **Archives or unarchives the skills of `changes` as one change** (#5332). All or nothing. */
+	skillSetLifecycle: (plane: PlaneId, changes: SkillSetLifecycle[]) => typedError<SkillSetLifecycled, string>(__TAURI_INVOKE("skill_set_lifecycle", { plane, changes })),
+	/**  **Moves the skills of `moves` as one change** (#5332). All or nothing. */
+	skillSetMove: (plane: PlaneId, moves: SkillSetMove[]) => typedError<SkillSetMoved, string>(__TAURI_INVOKE("skill_set_move", { plane, moves })),
+	/**
+	 *  **Takes every deleted skill `ids` names off Deleted now** (#5332): the one change there with no
+	 *  undo. Refused whole where one is no longer listed.
+	 */
+	skillSetDeleteNow: (plane: PlaneId, ids: string[]) => typedError<SkillSetGone, string>(__TAURI_INVOKE("skill_set_delete_now", { plane, ids })),
+	/**  **What an export of the skills `members` would write** (#5332), each once with what they name. */
+	skillSetExportReview: (plane: PlaneId, members: SkillSetMember[]) => typedError<ExportReview, string>(__TAURI_INVOKE("skill_set_export_review", { plane, members })),
+	/**
+	 *  **Asks where, and writes an export of the skills `members`** (#5332): a zip, or a folder of
+	 *  skill folders. The place written, or `None` where the person chose none. Nothing is written
+	 *  over anything.
+	 */
+	skillSetExport: (plane: PlaneId, members: SkillSetMember[], zip: boolean) => typedError<string | null, string>(__TAURI_INVOKE("skill_set_export", { plane, members, zip })),
 	/**  **Sets where the project skill `name` reaches.** */
 	skillGrant: (plane: PlaneId, name: string, grant: SkillGrant) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_grant", { plane, name, grant })),
 	/**
@@ -15409,7 +15428,7 @@ export type SkillRouting = {
 };
 
 /**  What is asked of a set. */
-export type SkillSetAct = "delete" | "turn-off" | "turn-on";
+export type SkillSetAct = "delete" | "turn-off" | "turn-on" | "pin" | "unpin" | "archive" | "unarchive" | "move" | "export";
 
 /**  What a set's delete did, and what an Undo hands back. */
 export type SkillSetDeleted = {
@@ -15418,11 +15437,47 @@ export type SkillSetDeleted = {
 	deleted: string[],
 };
 
+/**  What a Delete now did. */
+export type SkillSetGone = {
+	/**  Those whose delete was a commit, off the list: the project's history still holds them. */
+	off_the_list: number,
+	/**  Those this machine kept, removed from it for good. */
+	removed: number,
+	/**  Each that could not be taken off, with why. */
+	failed: string[],
+};
+
+/**  One skill's lifecycle state in a set's change: what it is set to, or what an Undo sets back. */
+export type SkillSetLifecycle = {
+	member: SkillSetMember,
+	lifecycle: SkillLifecycle,
+};
+
+/**  What a set's archive or unarchive did, and what an Undo sets back. */
+export type SkillSetLifecycled = {
+	notes: string[],
+	/**  Each it changed, with the state it had. */
+	was: SkillSetLifecycle[],
+};
+
 /**  One skill of a set: its level and name, and its level as a person reads it. */
 export type SkillSetMember = {
 	level: SkillLevel,
 	name: string,
 	label: string,
+};
+
+/**  One skill's move in a set's: where it goes, and the grant it takes into the project's skills. */
+export type SkillSetMove = {
+	member: SkillSetMember,
+	to: SkillLevel,
+	grant: SkillGrant | null,
+};
+
+/**  What a set's move did, and the moves its Undo makes. */
+export type SkillSetMoved = {
+	notes: string[],
+	back: SkillSetMove[],
 };
 
 /**  A skill that stays naming one that goes. */
@@ -16306,6 +16361,11 @@ export type StudioSkill = {
 	source_label: string | null,
 	/**  Whether that chat's workspace or persona pins it, so no router hides it. */
 	pinned: boolean,
+	/**
+	 *  Whether it is archived, so it never loads until it is restored (SK-19): what the
+	 *  Library's Select mode counts its Archive and Unarchive by (#5332).
+	 */
+	archived: boolean,
 	/**
 	 *  Which of the studio's workspace and persona have it in their pins, as written (SK-15d):
 	 *  what the row's Pin switch shows. Empty for a skill from outside the plane.

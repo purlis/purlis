@@ -1167,6 +1167,12 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
   list's edges** (`space.2`), so a pill never touches the panel the list is joined to.
 - **The keyboard is React Aria's**: one Tab stop, the row last focused; ↑ and ↓ move and stop at
   the ends; Home and End; typing finds a row by its `textValue`; Enter and Space choose or run.
+  **A list that chooses several** (`selectionMode="multiple"`, a `Checkbox` in the row's lead with
+  `slot="selection"`) takes a click or Space to tick a row, Shift-click and Shift+↑ ↓ for a range,
+  and ⌘A (Ctrl+A off macOS) for every row, which a list that draws its rows a screen at a time
+  answers with every item of its data, not only the rows drawn (`"all"`, the Library's Select
+  mode, #5332). Esc clears what is chosen, or does what `onEscape` says: a list in a mode of its
+  own leaves it.
 - **A row's menu and its tooltip are the row's own** (`menu` and `tip` on a row): a collection
   draws its rows itself, so no `ContextMenu` or `Tooltip` can be put around one. The menu opens
   on a right-click, or by Shift+F10 or the menu key while the row has the keyboard, on its first

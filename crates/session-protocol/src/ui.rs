@@ -713,6 +713,14 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_set_delete",
     "skill_set_restore",
     "skill_set_turn",
+    // The Library's Select mode's (#5332): several skills pinned, archived or moved as one
+    // commit, an export of them, and deleted skills taken off Deleted now, which has no undo.
+    "skill_set_pin",
+    "skill_set_lifecycle",
+    "skill_set_move",
+    "skill_set_delete_now",
+    "skill_set_export_review",
+    "skill_set_export",
     "skill_grant",
     "skill_turn",
     // A skill pinned or unpinned for a workspace's or a persona's chats (SK-15d, #3232): one

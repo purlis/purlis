@@ -30,6 +30,7 @@ export function skill(name: string, over: Partial<StudioSkill> = {}): StudioSkil
     lint: [],
     hidden: [],
     pinned: false,
+    archived: false,
     pinned_by: [],
     ...over,
   };
