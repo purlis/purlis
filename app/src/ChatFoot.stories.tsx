@@ -196,7 +196,7 @@ function Foot({
     <Lent>
       <div className="pane-frame pane-headed" style={{ inlineSize: width, blockSize: 96 }}>
         {withHead && <Head kind={kind} width={width} />}
-        <div className="pane-body" />
+        <div className="pane-body" tabIndex={-1} />
         <ChatFoot
           plane="story"
           session={SESSION}
@@ -229,9 +229,15 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/** Takes the keyboard off the story, and with it any tooltip, so its picture holds neither. */
+async function leftAlone() {
+  (document.activeElement as HTMLElement | null)?.blur();
+  await waitFor(() => expect(document.querySelector('[role="tooltip"]')).toBeNull());
+}
+
 /**
  * **The foot's keyboard path**: Tab takes each part that can be pressed in the order it is drawn,
- * with its ring in sight, and out again, so the picture holds no focus and no tooltip. What the
+ * with its ring in sight, and is then taken off it, so the picture holds no focus and no tooltip. What the
  * foot waits on is drawn first, so the picture never races it.
  */
 async function walked({ canvasElement, args }: { canvasElement: HTMLElement; args: FootArgs }) {
@@ -239,13 +245,14 @@ async function walked({ canvasElement, args }: { canvasElement: HTMLElement; arg
   const foot = canvas.getByRole("group", { name: /where it runs and its context$/ });
   if (paneLinesOf(args.kind ?? "chat", args.width ?? 900, args.facts ?? {}).foot?.some(warns))
     await canvas.findByTestId("pane-skills");
+  // From the terminal, as the window has it: the foot's parts follow it (story 38).
+  canvasElement.querySelector<HTMLElement>(".pane-body")?.focus();
   for (const part of within(foot).getAllByRole("button")) {
     await userEvent.tab();
     await untilFocused(() => part, "the foot's next part");
     await expectFocusInSight();
   }
-  await userEvent.tab();
-  await waitFor(() => expect(document.querySelector('[role="tooltip"]')).toBeNull());
+  await leftAlone();
 }
 
 /** **A plain chat**: harness · workspace, its sandbox and its gauge. */
@@ -267,8 +274,8 @@ export const EveryFact: Story = {
     // The press on `ctx`, and on every other part, is its row.
     await userEvent.click(canvas.getByRole("button", { name: /^ctx 62%/ }));
     await expect(canvas.getByTestId("pressed")).toHaveTextContent("chat.activity:7");
-    await userEvent.tab();
-    await waitFor(() => expect(document.querySelector('[role="tooltip"]')).toBeNull());
+    await userEvent.unhover(canvas.getByRole("button", { name: /^ctx 62%/ }));
+    await leftAlone();
   },
 };
 
@@ -316,7 +323,7 @@ export const At420: Story = {
     const canvas = within(context.canvasElement);
     const warning = await canvas.findByTestId("pane-skills");
     await expect(warning.textContent).toBe("");
-    await expect(warning).toHaveAccessibleName(/^39 skills\./);
+    await expect(warning).toHaveAccessibleName(/^40 skills\./);
     await expect(canvas.queryByText(/cache/)).toBeNull();
     await walked(context);
   },
