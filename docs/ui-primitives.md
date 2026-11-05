@@ -907,8 +907,9 @@ error (Get project's clone progress is still off, until it moves).
 ## The pane foot family
 
 **The line under a chat's terminal is the pane foot family** (`app/src/ui/pane-foot/`, #5202,
-spec #5191, ADR 0111): `PaneFoot`, holding its `PaneFootStart` (harness · workspace) and its
-`PaneFootEnd` (the gauge); `PaneFootSeparator`, the `·` between two parts; and `PaneFootGauge`, a
+spec #5191, ADR 0111): `PaneFoot`, a group named for its chat, holding its `PaneFootStart`
+(harness · workspace, where it came from, its skills warning and its sandbox) and its `PaneFootEnd`
+(the gauge); `PaneFootSeparator`, the `·` between two parts; and `PaneFootGauge`, a
 labelled number, `ctx 62%`, with its fill as a thin bar under it where it has one. No screen
 writes `data-scope="pane-foot"`: `purlis/pane-foot-family` is an error.
 
@@ -921,11 +922,21 @@ writes `data-scope="pane-foot"`: `purlis/pane-foot-family` is an error.
 - **The bar is a mark**: its number says the value, so the track is hidden from a reader and the
   value is never told by its length or colour alone (WCAG 1.4.1). Its fill is in the core's tone
   for the value (`ok`, `warn`, `bad`), as is a warning on a number with no bar (`cache`), which its
-  tooltip says in words too. In forced colours the fill is the system's highlight on a track
+  tooltip says in words too. A chat that has ended keeps its last numbers in `ended`, the muted tier,
+  beside a badge that says so. In forced colours the fill is the system's highlight on a track
   edged in the words' colour.
 - **Drawn by its parts** (ADR 0103): `root`, `start`, `end`, `separator`, `gauge`, `label`,
   `value`, `track` and `fill`, in `pane-foot.css`; a theme's parts reach the same attributes
   (`pane-foot.*`, the next release's manifest version).
+- **Every press is a row** (#5204): `paneHead.FOOT_ROWS` says which row of the chat's list each part
+  runs, and `chatList.test.ts` holds each to the chat's ⋯ and the palette. A part whose row is
+  missing or cannot run now is its words alone. Its parts are inline buttons, so they stay words on
+  the line; the skills warning takes the button family's `warning-soft` drawn inline, with no ground.
+- **A narrow pane drops its parts in one order** (#5206, `paneHead.FOOT_DROPS`, widths measured on the
+  default theme): `cache`, the skills warning to its ⚠, `↳ from` with what the studio started the
+  chat for and its work item, then the workspace. The harness's name, ⚠ and `ctx` never go, and a
+  longer name is cut at its end. `paneLinesOf` answers the head's chips, its actions and the foot's
+  parts, so Split down's drop comes from there too.
 - **Its chips are held like the head's**: `PANE_FOOT_CHIPS` in `controls.guard.test.ts`, read off
   `PaneFootStart` and `PaneFootEnd`, each at the chrome height.
 

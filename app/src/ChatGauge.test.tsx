@@ -42,8 +42,10 @@ describe("the gauge, on the pane foot (#5202)", () => {
 
     const gauge = screen.getByTestId("chat-gauge");
     expect(gauge.textContent?.replace(/\s+/g, " ")).toBe("ctx 83%cache 98%");
-    expect(tipOf(gauge)).toContain("context window 83% full");
-    expect(tipOf(gauge)).toContain("2 prompt-cache rebuilds, which is costly, 696k tokens");
+    expect(tipOf(gauge.firstElementChild as Element)).toContain("context window 83% full");
+    expect(tipOf(gauge.firstElementChild as Element)).toContain(
+      "2 prompt-cache rebuilds, which is costly, 696k tokens",
+    );
   });
 
   it("carries ctx's fill as a thin bar under its number, in the core's tone, and no other bar", () => {
@@ -68,7 +70,9 @@ describe("the gauge, on the pane foot (#5202)", () => {
 
     const gauge = screen.getByTestId("chat-gauge");
     expect(gauge.textContent?.replace(/\s+/g, " ").trim()).toBe("ctx 83%");
-    expect(tipOf(gauge)).toContain("12% of the last turn's input served from cache, which is low");
+    expect(tipOf(gauge.firstElementChild as Element)).toContain(
+      "12% of the last turn's input served from cache, which is low",
+    );
   });
 
   it("keeps a low cache's tone on its number, and none on a good one", () => {
@@ -117,11 +121,15 @@ describe("the gauge, on the pane foot (#5202)", () => {
 
   it("says a cold streak in words in its tooltip once the core says there is one, never on the line", () => {
     const { rerender } = render(<ChatGauge usage={USAGE} />);
-    expect(tipOf(screen.getByTestId("chat-gauge"))).not.toContain("cold");
+    expect(tipOf(screen.getByTestId("chat-gauge").firstElementChild as Element)).not.toContain(
+      "cold",
+    );
 
     rerender(<ChatGauge usage={{ ...USAGE, cold: 3 }} />);
     const gauge = screen.getByTestId("chat-gauge");
-    expect(tipOf(gauge)).toContain("the cache has been cold 3 turns running");
+    expect(tipOf(gauge.firstElementChild as Element)).toContain(
+      "the cache has been cold 3 turns running",
+    );
     expect(gauge.textContent).not.toContain("cold");
   });
 });

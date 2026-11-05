@@ -1787,8 +1787,9 @@ the focus rings, #2867):
   a chart's bar or a side's column) and the rows of controls a strip or a pane's top line draws
   as part of itself (`.pane-task-ends`, `.tab-tasks`, and the top line's chips). **The pane's
   head and foot are each one height** (#2484, #5202): every chip on the pane line (the
-  breadcrumb, where the chat came from, its work item, its skills: `PANE_LINE_CHIPS`) and on the
-  pane foot (harness · workspace, the harness, the gauge: `PANE_FOOT_CHIPS`) is set to
+  breadcrumb, its name, its state mark: `PANE_LINE_CHIPS`) and on the pane foot (harness ·
+  workspace, where the chat came from, its skills warning, its sandbox, the gauge:
+  `PANE_FOOT_CHIPS`) is set to
   `--size-chrome`, and the guard fails a chip that is not. A strip's part is the strip's height
   even when it is a button. The guard reads what `LayoutPanes.tsx` draws in each row (the head's
   `.pane-chips`, the foot's `PaneFootStart` and `PaneFootEnd`), so a new chip fails until it is

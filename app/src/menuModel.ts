@@ -217,6 +217,20 @@ const DRESS: Readonly<Record<string, Dress>> = {
   "chat.back": { said: unnamed, slot: "open" },
   "chat.brief": { said: SAID.brief, slot: "open" },
   "chat.answer": { said: SAID.answer, slot: "first" },
+  // What its pane foot presses (#5204): the card and the workspace as the palette says them.
+  "chat.harness": { said: (offer) => offer.name ?? "", slot: "open", under: "open" },
+  "chat.workspace": {
+    said: (offer) => `Focus workspace ${offer.name ?? ""}`.trim(),
+    slot: "open",
+    under: "open",
+  },
+  "chat.asker": {
+    said: (offer) => `Go to ${offer.name ?? ""}`.trim(),
+    slot: "open",
+    under: "open",
+  },
+  "chat.skills": { said: SAID.skills, slot: "open", under: "open" },
+  "chat.studio": { said: SAID.openInStudio, slot: "open", under: "open" },
   "chat.activity": { said: SAID.activity, slot: "open", under: "open" },
   "chat.network": { said: SAID.network, slot: "open", under: "open" },
   "needs.ignore": { said: SAID.ignore, slot: "open" },
@@ -385,6 +399,9 @@ export function stemOf(id: string): string {
  *  carry a name: a chat gone to, a chat opened beside, a repo merged into. */
 export const NAMES_ANOTHER: ReadonlySet<string> = new Set([
   "chat.handed",
+  "chat.harness",
+  "chat.workspace",
+  "chat.asker",
   "chat.beside",
   "chat.back",
   "tab.close",

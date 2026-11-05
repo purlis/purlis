@@ -22,21 +22,31 @@
  */
 import type { ReactNode } from "react";
 
-/** The core's tone for a gauge's value (`purlis_core::usage::gauge`). */
-export type PaneFootTone = "ok" | "warn" | "bad";
+/** The core's tone for a gauge's value (`purlis_core::usage::gauge`), or `ended`, a chat's last
+ *  value, greyed (#5205). */
+export type PaneFootTone = "ok" | "warn" | "bad" | "ended";
 
 /** **The pane foot**: the line under a chat's terminal, holding its {@link PaneFootStart} and
  *  its {@link PaneFootEnd}. */
 export function PaneFoot({
   children,
   className,
+  label,
 }: {
   children: ReactNode;
   /** A place for it in its pane. Never a look. */
   className?: string;
+  /** What a screen reader hears it as, naming the chat (spec #5191 story 39). */
+  label: string;
 }) {
   return (
-    <div data-scope="pane-foot" data-part="root" className={className}>
+    <div
+      data-scope="pane-foot"
+      data-part="root"
+      className={className}
+      role="group"
+      aria-label={label}
+    >
       {children}
     </div>
   );

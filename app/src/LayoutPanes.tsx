@@ -7,6 +7,7 @@ import {
   Fragment,
   useCallback,
   useContext,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -25,6 +26,7 @@ import { Separator } from "./ui/panel/Separator";
 import { Separator as Divider } from "./ui/separator/Separator";
 import {
   type ChatBlocked,
+  type ChatUsage,
   type HarnessGlance,
   type FinishedTask,
   type OpenChat,
@@ -50,7 +52,8 @@ import { WaitingStrip } from "./WaitingStrip";
 import { keepHolds, keptHolds, paneBand } from "./noticeSettle";
 import { type Blocks } from "./sandboxBlocks";
 import { ChatGauge, useChatUsage } from "./ChatGauge";
-import { SkillsChip } from "./UseSkill";
+import { footKept, keepFoot } from "./footKept";
+import { SkillsChip, useChatSkillsWarn } from "./UseSkill";
 import { harnessCardView, isOneJob, panes, type Content, type Layout, type ViewRef } from "./tabs";
 import { EVEN, shareOf, WHOLE } from "./laidOut";
 import { floorAlong, type Size } from "./paneDrop";
@@ -74,7 +77,7 @@ import { HarnessChip } from "./HarnessCard";
 import { movedAt, stateOf, useChatsHere, useChatsSelect } from "./chatState";
 import { EmptyPane } from "./EmptyPane";
 import { EndedBand, endedBy, endedState, resumeOf } from "./EndedBand";
-import { StudioChatChip } from "./studioChats";
+import { StudioChatChip, useStudioChats } from "./studioChats";
 import { markOf } from "./StripMarks";
 import {
   type RestartAct,
@@ -87,12 +90,15 @@ import { Button, IconButton } from "./ui/button/Button";
 import { TIPS_BELOW } from "./ui/tooltip/Tooltip";
 import { Bell, Plus, Puzzle, Reply, ScrollText, Square, SquareTerminal, Undo2 } from "lucide-react";
 import {
-  droppedAt,
   paneKindOf,
   paneLinesOf,
+  FOOT_ROWS,
+  WHOLE_ACTIONS,
+  type ActionPart,
+  type FootPart,
+  type FootPress,
   stateButtonOf,
   type ChatHead,
-  type HeadPart,
 } from "./paneHead";
 import { PaneTerminalAt, type PaneTerminal } from "./paneTerminal";
 import { stemOf } from "./menuModel";
@@ -192,6 +198,7 @@ export function PaneFrame({
   focused = false,
   oneJob = false,
   shell = false,
+  closes = true,
   children,
 }: {
   plane: PlaneId;
@@ -214,6 +221,9 @@ export function PaneFrame({
   /** **It runs a shell**, as the open chats say before the plane lists it: it draws no foot. A
    *  shell still restoring is not known yet, and has an empty foot until it is. */
   shell?: boolean;
+  /** False where its head draws no close: a pane showing a task of its session (#1486), since a
+   *  close there would read as ending the task. */
+  closes?: boolean;
   /** While the pane shows a task of its tab's session: the path to it (#1486). Also for a task
    *  in a pane of its own, and the session it is beside (#1489). */
   crumbs?: Crumbs;
@@ -257,14 +267,24 @@ export function PaneFrame({
   const chats = useChatsHere();
   const moved = useChatsSelect(chats, (states) => movedAt(states, session));
   const running = useChatsSelect(chats, (states) => stateOf(states, session) === "running");
-  const usage = useChatUsage(plane, session, moved, running);
+  // **What has ended stays said** (#5205, stories 23 and 24): its band is there only once the chat
+  // has ended, and the foot says what the window last knew of it, the core having let go of a chat
+  // closed on purpose. Its gauge reads no more.
+  const hasEnded = ended !== undefined;
+  const last = hasEnded ? footKept(plane, session) : {};
+  const read = useChatUsage(plane, session, moved, running, last.usage !== undefined);
+  const usage = last.usage ?? read;
+  const lastHead = head ?? last.head;
+  const lastHarness = harness ?? last.harness;
+  useEffect(() => {
+    if (!hasEnded) keepFoot(plane, session, { head, harness, usage: read });
+  }, [hasEnded, plane, session, head, harness, read]);
   const lent = useReferenceChats();
   const frame = useRef<HTMLDivElement>(null);
-  // **What a narrow pane drops, in the ruled order** (#4760, `paneHead.ts`), and whether the
-  // line has room for the Skills chip too (#2775).
+  // **What a narrow pane drops, in the ruled order** (#4760, #5206, `paneHead.ts`).
   const width = usePaneWidth(frame);
-  const drops = droppedAt(width);
-  const roomy = width === undefined || width > NARROW_REM * remPx();
+  const skillsWarn = useChatSkillsWarn(session);
+  const startedByStudio = useStudioChats().chats.some((one) => one.session === session);
   // **Its two lines** (#5202, `paneHead.paneLinesOf`): the head's chips, and the foot's parts,
   // or no foot for a pane whose program has no harness or gauge to say.
   const kind = paneKindOf({
@@ -272,14 +292,27 @@ export function PaneFrame({
     oneJob,
     // The plane's listing, once it has come; until then what the open chats said of it, so a
     // chat reserves its foot from its first frame and its terminal gets one size (story 46).
-    shell: head?.chat.shell ?? shell,
+    shell: lastHead?.chat.shell ?? shell,
+    ended: hasEnded,
   });
   const lines = paneLinesOf(kind, width, {
     from: Boolean(from),
-    skills: roomy,
+    skills: skillsWarn !== undefined,
+    studio: startedByStudio,
     workItem: Boolean(workItem),
+    sandbox: lastHead?.sandbox?.level != null,
+    closes,
   });
   const line = new Set(lines.head);
+  /** **What a part of the foot presses** (#5204, spec #5191 story 37): its row of the chat's list,
+   *  for a foot's part has no press of its own. None where the chat has no such row, or where the
+   *  row cannot run now: the part is then its words alone. */
+  const footPress = (part: keyof typeof FOOT_ROWS): FootPress | undefined => {
+    const offer = headMenu?.offers.get(FOOT_ROWS[part](session));
+    return offer === undefined || !offer.available
+      ? undefined
+      : { title: offer.title, press: () => headMenu?.onPress(offer) };
+  };
   /** What the band holds, for the bell in the pane's header (#4754), and the bell itself, which
    *  the band's Dismiss all hands the keyboard to once it has cleared the band. */
   const [holds, setHolding] = useState<BandHolds>(HOLDS_NOTHING);
@@ -315,7 +348,7 @@ export function PaneFrame({
           after it is one Tab never reaches (charter-app#189). */}
       <div className="pane-top">
         {strip}
-        <PaneDropsOf.Provider value={drops}>
+        <PaneActionsOf.Provider value={lines.actions}>
           <PaneHead
             grip={!oneJob}
             at={tab === undefined || pane === undefined ? undefined : { tab, pane }}
@@ -374,9 +407,8 @@ export function PaneFrame({
                   focusBack={() => giveKeyboardTo(plane, session)}
                 />
               )}
-              {/* **Its sandbox** (#4760): moved from the tab, which no longer is the chat. It says
-              how the chat runs, and a narrow pane drops it with the line's details, so a task's
-              path and the ways to end it keep their room. */}
+              {/* **The sandbox of a pane with no foot** (#4760, spec #5191): a chat's says it on its
+              foot, and a narrow pane drops it with the line's details. */}
               {head && line.has("sandbox") && (
                 <SandboxMark
                   level={head.sandbox?.level}
@@ -409,21 +441,21 @@ export function PaneFrame({
               one-job program's keep their heads. */}
               {line.has("where") && saysWhere(head, harness) && (
                 <span className="pane-head-where">
-                  <PaneWhere head={head} harness={harness} onOpenCard={onOpenCard} between=" · " />
+                  <PaneWhere
+                    head={head}
+                    harness={harness}
+                    onHarness={harness && (() => onOpenCard(harness))}
+                    between=" · "
+                  />
                 </span>
               )}
-              {/* The chat's skills (#2775, S8): not beside a task's path, which is the fullest
-              line a pane has, nor in a narrow pane. */}
-              {line.has("skills") && <SkillsChip plane={plane} session={session} />}
-              {/* What the Skill studio started it for, which opens the skill (#5185). */}
-              {line.has("studio") && <StudioChatChip plane={plane} session={session} />}
               {line.has("from") && <span className="pane-from">{from}</span>}
               {line.has("workItem") && workItem && (
                 <span className="pane-work-item">{workItemSaid(workItem)}</span>
               )}
             </div>
           </PaneHead>
-        </PaneDropsOf.Provider>
+        </PaneActionsOf.Provider>
         {/* **The band under the header** (#4754): a Notice arriving never moves the header. */}
         <PaneNotices
           band={pane === undefined ? undefined : paneBand(plane, pane)}
@@ -447,39 +479,134 @@ export function PaneFrame({
       <PaneTerminalAt.Provider value={terminalAt}>
         <div className="pane-body">{children}</div>
       </PaneTerminalAt.Provider>
-      {/* **The pane foot** (#5202, spec #5191, look A): under the terminal, where the chat runs
-          and how full it is. Drawn whether or not the gauge is known yet, so the terminal keeps its rows when the first usage arrives; after it in the tab order, as it is drawn. */}
+      {/* **The pane foot** (#5202, spec #5191, look A): under the terminal. Drawn whether or not
+          the gauge is known yet, so the terminal keeps its rows when the first usage arrives;
+          after it in the tab order, as it is drawn. */}
       {lines.foot !== null && (
-        <PaneFoot className="pane-foot">
-          <PaneFootStart>
-            {/* **harness · workspace** (#4760, #5202): the harness opens its card (HP-19). */}
-            {saysWhere(head, harness) && (
-              <span className="pane-where">
-                <PaneWhere
-                  head={head}
-                  harness={harness}
-                  onOpenCard={onOpenCard}
-                  between={<PaneFootSeparator />}
-                  workspace={lines.foot.includes("workspace")}
-                />
-              </span>
-            )}
-          </PaneFootStart>
-          <PaneFootEnd>
-            {/* **The gauge at the end** (#3142, rule 15; #5202): drawn once the chat's first
-                usage arrives, in a line that is there before it, so its arrival moves nothing. */}
-            <ChatGauge usage={usage} parts={lines.foot} />
-          </PaneFootEnd>
-        </PaneFoot>
+        <ChatFoot
+          plane={plane}
+          session={session}
+          parts={lines.foot}
+          head={lastHead}
+          crumbs={crumbs}
+          harness={lastHarness}
+          from={from}
+          workItem={workItem}
+          usage={usage}
+          rowOf={footPress}
+        />
       )}
     </div>
   );
 }
 
 /**
+ * **What a pane foot draws** (#5202, #5204, spec #5191, look A), from what the pane's model answers
+ * (`parts`): where the chat runs, where it came from and how healthy it is. Each part that can be
+ * pressed runs its row of the chat's list (`rowOf`), and nothing on it asks for anything.
+ */
+export function ChatFoot({
+  plane,
+  session,
+  parts,
+  head,
+  crumbs,
+  harness,
+  from,
+  workItem,
+  usage,
+  rowOf,
+}: {
+  plane: PlaneId;
+  session: number;
+  parts: readonly FootPart[];
+  head: ChatHead | undefined;
+  crumbs: Crumbs | undefined;
+  harness: HarnessGlance | undefined;
+  from: string | undefined;
+  workItem: string | undefined;
+  usage: ChatUsage | undefined;
+  rowOf: (part: keyof typeof FOOT_ROWS) => FootPress | undefined;
+}) {
+  const foot = new Set(parts);
+  return (
+    <PaneFoot
+      className="pane-foot"
+      label={`${footName(head, crumbs)}: where it runs and its context`}
+    >
+      <PaneFootStart>
+        {/* **harness · workspace** (#4760, #5202), each a shortcut to its row (#5204). */}
+        {saysWhere(head, harness) && (
+          <span className="pane-where">
+            <PaneWhere
+              head={head}
+              harness={harness}
+              onHarness={rowOf("harness")?.press}
+              onWorkspace={rowOf("workspace")}
+              between={<PaneFootSeparator />}
+              workspace={foot.has("workspace")}
+            />
+          </span>
+        )}
+        {/* **Where it came from** (#5204): the chat that started it, what the Skill studio
+            started it for (#5185) and the work item it works on, each a fact of its origin. */}
+        {foot.has("from") && (
+          <PaneFootJoined>
+            <FootFrom said={from ?? ""} row={rowOf("from")} />
+          </PaneFootJoined>
+        )}
+        {foot.has("studio") && (
+          <PaneFootJoined>
+            <StudioChatChip plane={plane} session={session} onOpen={rowOf("studio")?.press} />
+          </PaneFootJoined>
+        )}
+        {foot.has("workItem") && workItem && (
+          <PaneFootJoined>
+            <span className="pane-foot-work-item">{workItemSaid(workItem)}</span>
+          </PaneFootJoined>
+        )}
+        {/* **Its skills warning** (#2775, #5204): only while something needs the person. */}
+        {(foot.has("skills") || foot.has("skillsMark")) && (
+          <PaneFootJoined>
+            <SkillsChip
+              session={session}
+              onOpen={rowOf("skills")?.press}
+              markOnly={foot.has("skillsMark")}
+            />
+          </PaneFootJoined>
+        )}
+        {/* **Its sandbox** (#4760, #5204): how the chat runs, a mark with its words on it. */}
+        {foot.has("sandbox") && (
+          <PaneFootJoined>
+            <span className="pane-foot-sandbox">
+              <SandboxMark
+                level={head?.sandbox?.level}
+                why={head?.sandbox?.why}
+                sites={head?.sandbox?.sites}
+              />
+            </span>
+          </PaneFootJoined>
+        )}
+      </PaneFootStart>
+      <PaneFootEnd>
+        {/* **The gauge at the end** (#3142, rule 15; #5202): drawn once the chat's first
+            usage arrives, in a line that is there before it, so its arrival moves nothing.
+            `ctx` is the chat's Activity's shortcut (#5204). */}
+        {foot.has("ended") && (
+          <span className="pane-foot-ended">
+            <Badge variant="neutral">ended</Badge>
+          </span>
+        )}
+        <ChatGauge usage={usage} parts={parts} context={rowOf("ctx")} ended={foot.has("ended")} />
+      </PaneFootEnd>
+    </PaneFoot>
+  );
+}
+
+/**
  * **A pane's header** (#3142): one slim row under the band and over the terminal, the chat at a
- * glance at its start (its `children`, the `.pane-chips` line: the breadcrumb, the skills, the
- * harness, the gauge; written where it is drawn, so the line's guard reads it) and the pane's
+ * glance at its start (its `children`, the `.pane-chips` line: its name or the
+ * breadcrumb and its state; written where it is drawn, so the line's guard reads it) and the pane's
  * actions at its end (`PaneActions`). A row of its own, so neither covers what the terminal
  * draws; the same row in every pane with a chat, so panes side by side line up. Its tooltips
  * open below it, as a strip's do (`TIPS_BELOW`, #5189). With no
@@ -540,6 +667,7 @@ export function PaneActions({
 }) {
   // The bell is a chat's, drawn where the pane holds a chat's notices: a view's pane has none.
   const hasBell = useContext(PaneBellOf) !== null;
+  const parts = useContext(PaneActionsOf);
   return (
     <div className="pane-actions">
       {/* **The state button, then the bell, then ⋯** (#4760, #5203), each always drawn: the
@@ -548,8 +676,8 @@ export function PaneActions({
           or the keyboard (`.pane-doing`, `App.css`), and keep their room hidden, so nothing
           beside them moves when a notice arrives or they are drawn. */}
       {state}
-      <PaneBell />
-      {chat !== undefined && (
+      {parts.includes("bell") && <PaneBell />}
+      {parts.includes("menu") && chat !== undefined && (
         <ChatMenuButton
           session={chat.session}
           offers={chat.offers}
@@ -604,31 +732,89 @@ function saysWhere(head: ChatHead | undefined, harness: HarnessGlance | undefine
 function PaneWhere({
   head,
   harness,
-  onOpenCard,
+  onHarness,
+  onWorkspace,
   between,
   workspace = true,
 }: {
   head: ChatHead | undefined;
   harness: HarnessGlance | undefined;
-  onOpenCard: (glance: HarnessGlance) => void;
+  /** What a press on the harness does, where one does anything. */
+  onHarness?: () => void;
+  /** The row a press on the workspace runs (#5204): none on a head, or where the row cannot run,
+   *  the workspace being the focused one. */
+  onWorkspace?: FootPress;
   between: ReactNode;
   /** Whether the pane's model keeps the workspace part. */
   workspace?: boolean;
 }) {
   const shown = workspace && head !== undefined && head.chat.workspace !== "";
+  const words =
+    shown && head ? (
+      head.elsewhere ? (
+        <ElsewhereBadge {...head.elsewhere} />
+      ) : (
+        head.chat.workspace
+      )
+    ) : null;
   return (
     <>
-      {harness ? (
-        <HarnessChip glance={harness} onOpen={() => onOpenCard(harness)} />
+      {harness && onHarness ? (
+        <HarnessChip glance={harness} onOpen={onHarness} />
       ) : (
-        head?.chat.harness
+        (harness?.title ?? head?.chat.harness)
       )}
       {shown && head && harnessWord(head, harness) !== "" && between}
-      {shown &&
-        head &&
-        (head.elsewhere ? <ElsewhereBadge {...head.elsewhere} /> : head.chat.workspace)}
+      {words !== null && onWorkspace ? (
+        <Button
+          inline
+          variant="ghost"
+          className="pane-foot-press"
+          tooltip={onWorkspace.title}
+          aria-label={onWorkspace.title}
+          onPress={onWorkspace.press}
+        >
+          {words}
+        </Button>
+      ) : (
+        words
+      )}
     </>
   );
+}
+
+/** **A part of the foot after another**, the `·` that joins them before it (look A). Drawn as its
+ *  one child, so the part stands straight in its group (`controls.guard.test.ts`). */
+function PaneFootJoined({ children }: { children: ReactNode }) {
+  return (
+    <>
+      <PaneFootSeparator />
+      {children}
+    </>
+  );
+}
+
+/** **`↳ from` on the foot** (#5204): a shortcut to the chat it came from, or its words alone where
+ *  that chat has closed. */
+function FootFrom({ said, row }: { said: string; row: FootPress | undefined }) {
+  return row === undefined ? (
+    <span className="pane-foot-from">{said}</span>
+  ) : (
+    <Button
+      inline
+      variant="ghost"
+      className="pane-foot-from pane-foot-press"
+      tooltip={row.title}
+      onPress={row.press}
+    >
+      {said}
+    </Button>
+  );
+}
+
+/** What the foot's group is named by: the chat's name, or the task's at the end of its path. */
+function footName(head: ChatHead | undefined, crumbs: Crumbs | undefined): string {
+  return crumbs?.path[crumbs.path.length - 1]?.name ?? head?.chat.name ?? "This chat";
 }
 
 /** The harness a pane head names, by its card's word or the core's: none for a shell. */
@@ -636,18 +822,9 @@ function harnessWord(head: ChatHead, glance: HarnessGlance | undefined): string 
   return glance?.title ?? head.chat.harness ?? "";
 }
 
-/** The parts of its head a pane drops for its width (#4760, `paneHead.droppedAt`): none where it
- *  is not measured, and none in a view's pane, whose head is its actions alone. */
-export const PaneDropsOf = createContext<ReadonlySet<HeadPart>>(new Set());
-
-/** The widest a pane may be and still be narrow (#2775): 40rem, past which its top line has
- *  room for the Skills chip beside everything else it holds. */
-const NARROW_REM = 40;
-
-/** The root font size, in pixels: what a rem is here. */
-function remPx(): number {
-  return Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-}
+/** **The controls the pane's model answers for its head** (#5206, `paneHead.paneLinesOf`): all of
+ *  them where nothing says otherwise. */
+export const PaneActionsOf = createContext<readonly ActionPart[]>(WHOLE_ACTIONS);
 
 /** How wide the pane frame in `frame` is, in CSS pixels, as it is resized: none where it cannot
  *  be measured, or is not laid out, as in a test with no layout. */
@@ -697,15 +874,14 @@ export function PaneStateButton({
     useChatsHere(),
     (states) => stateOf(states, session) === "running",
   );
-  const drops = useContext(PaneDropsOf);
+  const worded = useContext(PaneActionsOf).includes("stateWord");
   if (ended)
     return brief === undefined ? null : (
-      <BriefButton of={brief} word={drops.has("buttonWord") ? undefined : SAID.brief} />
+      <BriefButton of={brief} word={worded ? SAID.brief : undefined} />
     );
   const pick = stateButtonOf({ session, task, working, has: (id) => offers.has(id) });
   const offer = pick === undefined ? undefined : offers.get(pick.id);
   if (pick === undefined || offer === undefined) return null;
-  const worded = !drops.has("buttonWord");
   if (pick.id === briefId(session) && brief !== undefined)
     return <BriefButton of={brief} word={worded ? pick.word : undefined} />;
   const Icon = STATE_ICONS[stemOf(pick.id)] ?? Square;
@@ -761,6 +937,12 @@ export type EndedChat = {
   /** The record a Smart close wrote, which its band links to (spec #4750 story 62). */
   record?: { path: string; title: string };
 };
+
+/** `↳ from` the chat that asked for the task at the end of `path`, or nothing for a path of one. */
+function askedFromOf(path: Crumbs): string | undefined {
+  const asker = path.path[path.path.length - 2];
+  return asker === undefined ? undefined : `↳ from ${asker.name}`;
+}
 
 /** A chat that lives in a pane and is not the one the pane shows, with what purlis has to say
  *  of it. */
@@ -1143,18 +1325,20 @@ export function LayoutPanes({
           {...dropPane(tab, layout.pane)}
         >
           {/* An empty pane has nothing to pick up, so its head is no grip (#4583). */}
-          <PaneHead
-            grip={false}
-            doing={
-              <PaneActions
-                pane={layout.pane}
-                size={drawn?.sizes[layout.pane]}
-                offerFor={offerFor}
-                closeOf={closeOf}
-                onPaneDoes={onPaneDoes}
-              />
-            }
-          />
+          <PaneActionsOf.Provider value={paneLinesOf("empty", undefined, {}).actions}>
+            <PaneHead
+              grip={false}
+              doing={
+                <PaneActions
+                  pane={layout.pane}
+                  size={drawn?.sizes[layout.pane]}
+                  offerFor={offerFor}
+                  closeOf={closeOf}
+                  onPaneDoes={onPaneDoes}
+                />
+              }
+            />
+          </PaneActionsOf.Provider>
           <div
             className={layout.pane === focused ? "pane view focused" : "pane view"}
             onFocus={() => onFocus(layout.pane)}
@@ -1185,18 +1369,20 @@ export function LayoutPanes({
         >
           {/* Before the view, for `PaneFrame`'s reason: the tab order is the document's. Over
               the view's first row, which keeps the room it takes (`paneFrame.css`). */}
-          <PaneHead
-            at={{ tab, pane: layout.pane }}
-            doing={
-              <PaneActions
-                pane={layout.pane}
-                size={drawn?.sizes[layout.pane]}
-                offerFor={offerFor}
-                closeOf={closeOf}
-                onPaneDoes={onPaneDoes}
-              />
-            }
-          />
+          <PaneActionsOf.Provider value={paneLinesOf("view", undefined, {}).actions}>
+            <PaneHead
+              at={{ tab, pane: layout.pane }}
+              doing={
+                <PaneActions
+                  pane={layout.pane}
+                  size={drawn?.sizes[layout.pane]}
+                  offerFor={offerFor}
+                  closeOf={closeOf}
+                  onPaneDoes={onPaneDoes}
+                />
+              }
+            />
+          </PaneActionsOf.Provider>
           <div
             className={layout.pane === focused ? "pane view focused" : "pane view"}
             onFocus={() => onFocus(layout.pane)}
@@ -1292,9 +1478,6 @@ export function LayoutPanes({
         offerFor={offerFor}
         closeOf={closeOf}
         onPaneDoes={onPaneDoes}
-        // No close on a pane showing a task: nothing on screen ends the task, and the
-        // session's close is its tab's (#1486).
-        task={crumb !== undefined || endedTask !== undefined}
         // Its one state button and its ⋯: rows of the list of the chat it shows (#4753, #4760).
         // A task that has ended is read by its finished row's record (#1494), and has no Brief
         // of its own once that row is gone (#4757).
@@ -1317,7 +1500,6 @@ export function LayoutPanes({
           />
         }
         chat={{ session: content.session, offers }}
-        oneJob={isOneJob(content)}
       />
     );
     return (
@@ -1329,6 +1511,13 @@ export function LayoutPanes({
         focused={layout.pane === focused}
         oneJob={isOneJob(content)}
         shell={shells.has(content.session)}
+        // No close on a pane showing a task: nothing on screen ends the task, and the session's
+        // close is its tab's (#1486). A task's own pane keeps its minimise whatever it shows
+        // (#1489): switched to a task of its own, it is still the pane that is sent back.
+        closes={
+          (crumb === undefined && endedTask === undefined) ||
+          closeOf(layout.pane)?.does.verb === "sendBack"
+        }
         crumbs={shownPath}
         said={
           endedTask === undefined
@@ -1355,7 +1544,11 @@ export function LayoutPanes({
           onPress: (offer) => onPaneDoes(layout.pane, offer),
         }}
         onShowChat={onShowChat}
-        from={shownPath === undefined ? handedFrom[content.session] : undefined}
+        from={
+          // **A task's foot names the chat that asked** (#5205, story 22): its path's last but one.
+          // A chat with a path of one, beside its task, says what any handed-off chat says.
+          (shownPath && askedFromOf(shownPath)) ?? handedFrom[content.session]
+        }
         harness={glances[content.session]}
         onOpenCard={(glance) => onOpenView(harnessCardView(glance.name), glance.label)}
         workItem={workItems[content.session]}
@@ -1644,8 +1837,6 @@ export function PaneDoing({
   offerFor,
   closeOf,
   onPaneDoes,
-  task = false,
-  oneJob = false,
   size,
   parted = false,
 }: {
@@ -1659,27 +1850,18 @@ export function PaneDoing({
    *  (#1489), which sends the task back and ends nothing. */
   closeOf: (pane: number) => Offer | undefined;
   onPaneDoes: (pane: number, offer: Offer | undefined) => void;
-  /** The pane shows a task of its tab's session (#1486): it draws no close. A close here
-   *  would read as ending the task, and what it would end is the session under it. */
-  task?: boolean;
-  /** A one-job program's pane (#4761): no close, since it goes when its program exits. Its
-   *  edges still take a split. */
-  oneJob?: boolean;
   /** **The chat's actions are drawn before these** (#5203): a thin divider parts the two
    *  groups. None on a view's pane, whose controls are all its head has. */
   parted?: boolean;
 }) {
-  // **A task's own pane keeps its minimise whatever it shows** (#1489): switched to a task of
-  // its own, it is still the pane that is sent back. Only a close is not drawn over a task.
-  const minimise = closeOf(pane)?.does.verb === "sendBack";
-  // **A narrow pane drops Split down last of its head's parts** (#4760, `paneHead.ts`); Split
-  // right and the close never go. A task's own tab and its pane beside its session are rows of
-  // its ⋯ now (`command-table.md`, rule 4), not buttons here.
-  const drops = useContext(PaneDropsOf);
+  // **What the pane's model answers** (#5206, `paneHead.ts`): a narrow pane drops Split down last
+  // of its head's parts, and Split right and the close never go. A task's own tab and its pane
+  // beside its session are rows of its ⋯ now (`command-table.md`, rule 4), not buttons here.
+  const parts = useContext(PaneActionsOf);
   const rows = [
     "pane.split.right",
-    ...(drops.has("splitDown") ? [] : ["pane.split.down"]),
-    ...((task && !minimise) || oneJob ? [] : ["pane.close"]),
+    ...(parts.includes("splitDown") ? ["pane.split.down"] : []),
+    ...(parts.includes("close") ? ["pane.close"] : []),
   ];
   return (
     <div className="pane-doing">

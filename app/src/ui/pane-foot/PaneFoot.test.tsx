@@ -11,7 +11,7 @@ afterEach(cleanup);
 describe("the pane foot", () => {
   it("is drawn by its parts: the root, its start and its end", () => {
     const { container } = render(
-      <PaneFoot className="pane-foot">
+      <PaneFoot className="pane-foot" label="steward 3: where it runs and its context">
         <PaneFootStart>Claude Code</PaneFootStart>
         <PaneFootEnd>gauge</PaneFootEnd>
       </PaneFoot>,
@@ -22,6 +22,15 @@ describe("the pane foot", () => {
       "start",
       "end",
     ]);
+  });
+
+  it("is a group a screen reader hears by its label (spec #5191 story 39)", () => {
+    const { getByRole } = render(
+      <PaneFoot label="steward 3: where it runs and its context">x</PaneFoot>,
+    );
+    expect(
+      getByRole("group", { name: "steward 3: where it runs and its context" }),
+    ).toHaveAttribute("data-part", "root");
   });
 
   it("joins two parts with a · a reader is not given", () => {

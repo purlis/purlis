@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { focusedChat } from "../menus.js";
+import { focusedChat, openChatList, pressMenuPath, ROW, SUB } from "../menus.js";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { showView } from "../opening.js";
@@ -183,15 +183,12 @@ describe("Use skill…", function () {
       await typeTheSkill(typed);
     });
 
-  it("shows the chat's skills in the Skills view from the Skills chip on its pane (S8)", async () => {
+  it("shows the chat's skills in the Skills view from its row of the chat's list (S8, #5204)", async () => {
     // Whatever the step before left open goes first, so this one opens its own.
     await browser.keys(["Escape"]);
-    // The chip is left out of a narrow pane (`App.css`), so the window is wide enough for one.
-    await browser.setWindowSize(1440, 900);
-    const chip = await $('[data-testid="pane-skills"]');
-    await chip.waitForDisplayed({ timeout: 20_000 });
-    await expect(chip).toHaveText(/skills?$/);
-    await chip.click();
+    // The foot's warning presses this same row, and is drawn only while the set needs the person.
+    await openChatList();
+    await pressMenuPath(SUB.open, ROW.skills);
     // The one answer to what the chat gets: the sidebar's Skills view, on this chat, with its
     // budget under whose set it is. Use skill… does not open.
     const view = await $('[data-testid="skills-view"]');

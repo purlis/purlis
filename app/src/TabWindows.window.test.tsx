@@ -48,12 +48,15 @@ declare global {
 
 const ONE = "/home/dev/one";
 
+/** The chat on a harness, where the others are shells. */
+const ON_A_HARNESS = 9;
+
 function chat(session: number): OpenChat {
   return {
     session,
     name: String(session),
     cwd: null,
-    harness: null,
+    harness: session === ON_A_HARNESS ? "claude" : null,
     in_front: false,
     resumed: null,
     fresh: null,
@@ -157,6 +160,24 @@ describe("a tab window (#4768)", () => {
     // It holds no project of its own, and remakes no window.
     expect(sent("window_holds_planes")).toEqual([]);
     expect(sent("tab_windows_back")).toEqual([]);
+  });
+});
+
+describe("a tab window's panes (#5205, story 27)", () => {
+  it("draws the same head and foot as the project window: moving a tab changes nothing about its panes", async () => {
+    mockWindows("window-1");
+    core({
+      tabWindow: 1,
+      layout: { strip: null, tabs: [tab(1, true, ON_A_HARNESS)] },
+      chats: [ON_A_HARNESS],
+    });
+    render(<App />);
+
+    const frame = (await screen.findByText(`session ${ON_A_HARNESS}`)).closest(
+      ".pane-frame",
+    ) as HTMLElement;
+    expect(frame.querySelector(".pane-head")).not.toBeNull();
+    await waitFor(() => expect(frame.lastElementChild).toHaveAttribute("data-scope", "pane-foot"));
   });
 });
 

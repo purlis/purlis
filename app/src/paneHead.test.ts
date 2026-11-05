@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { answerId, briefId, smartCloseCancelId, stopId } from "./actions";
 import {
+  FOOT_DROPS,
   HEAD_DROPS,
   droppedAt,
   paneKindOf,
@@ -64,21 +65,19 @@ describe("the pane head's one state button (#4760)", () => {
   });
 });
 
-describe("a narrow pane head drops its parts in the ruled order (#4760, #4585 rule 4)", () => {
-  const order = (width: number) => [...droppedAt(width)].sort();
-
+describe("a narrow pane head drops its parts in the ruled order (#4760, #4585 rule 4, #5206)", () => {
   it("drops nothing in a wide pane, or one not measured", () => {
-    expect(order(900)).toEqual([]);
-    expect(order(520)).toEqual([]);
+    expect([...droppedAt(900)]).toEqual([]);
+    expect([...droppedAt(470)]).toEqual([]);
     expect([...droppedAt(undefined)]).toEqual([]);
   });
 
-  it("drops the details first, then the mark's word, the button's word, the mark and Split down", () => {
-    expect([...droppedAt(519)]).toEqual(["where"]);
-    expect([...droppedAt(469)]).toEqual(["where", "markWord"]);
-    expect([...droppedAt(419)]).toEqual(["where", "markWord", "buttonWord"]);
-    expect([...droppedAt(379)]).toEqual(["where", "markWord", "buttonWord", "mark"]);
-    expect([...droppedAt(299)]).toEqual(["where", "markWord", "buttonWord", "mark", "splitDown"]);
+  it("drops the mark's word, the button's word, the mark and Split down, and no workspace", () => {
+    expect([...droppedAt(469)]).toEqual(["markWord"]);
+    expect([...droppedAt(419)]).toEqual(["markWord", "buttonWord"]);
+    expect([...droppedAt(379)]).toEqual(["markWord", "buttonWord", "mark"]);
+    expect([...droppedAt(299)]).toEqual(["markWord", "buttonWord", "mark", "splitDown"]);
+    expect(HEAD_DROPS.map((drop) => drop.part as string)).not.toContain("where");
   });
 
   it("never drops the bell, ⋯, Split right or Close", () => {
@@ -96,56 +95,161 @@ describe("a narrow pane head drops its parts in the ruled order (#4760, #4585 ru
   });
 });
 
-describe("the pane's two lines: what the head and the foot of a chat's pane draw (#5202)", () => {
-  /** A chat with every fact the head's line still holds until #5204 moves them to the foot. */
-  const full = { from: true, skills: true, workItem: true };
+describe("a narrow pane's two lines (#5206, spec #5191 stories 28 to 32)", () => {
+  /** A chat or a task with every fact a line can hold. */
+  const full = { from: true, skills: true, studio: true, workItem: true, sandbox: true };
+  const ORIGIN = ["from", "studio", "workItem"];
+  const WARM = ["sandbox", "ctx", "cache"];
+
+  const chatHead = ["persona", "name", "mark", "markWord"];
+  const ALL = ["state", "stateWord", "bell", "menu", "splitRight", "splitDown", "close"];
+
+  it.each([
+    // width, the chat's head, its actions, its foot
+    [900, chatHead, ALL, ["harness", "workspace", ...ORIGIN, "skills", ...WARM]],
+    [520, chatHead, ALL, ["harness", "workspace", ...ORIGIN, "skills", ...WARM]],
+    [519, chatHead, ALL, ["harness", "workspace", ...ORIGIN, "skills", "sandbox", "ctx"]],
+    [
+      450,
+      ["persona", "name", "mark"],
+      ALL,
+      ["harness", "workspace", ...ORIGIN, "skills", "sandbox", "ctx"],
+    ],
+    [470, chatHead, ALL, ["harness", "workspace", ...ORIGIN, "skills", "sandbox", "ctx"]],
+    [
+      449,
+      ["persona", "name", "mark"],
+      ALL,
+      ["harness", "workspace", ...ORIGIN, "skillsMark", "sandbox", "ctx"],
+    ],
+    [
+      420,
+      ["persona", "name", "mark"],
+      ALL,
+      ["harness", "workspace", ...ORIGIN, "skillsMark", "sandbox", "ctx"],
+    ],
+    [
+      419,
+      ["persona", "name", "mark"],
+      ALL.filter((part) => part !== "stateWord"),
+      ["harness", "workspace", ...ORIGIN, "skillsMark", "sandbox", "ctx"],
+    ],
+    [
+      399,
+      ["persona", "name", "mark"],
+      ALL.filter((part) => part !== "stateWord"),
+      ["harness", "workspace", "skillsMark", "sandbox", "ctx"],
+    ],
+    [
+      379,
+      ["persona", "name"],
+      ALL.filter((part) => part !== "stateWord"),
+      ["harness", "workspace", "skillsMark", "sandbox", "ctx"],
+    ],
+    [
+      299,
+      ["persona", "name"],
+      ALL.filter((part) => part !== "stateWord" && part !== "splitDown"),
+      ["harness", "workspace", "skillsMark", "sandbox", "ctx"],
+    ],
+    [
+      269,
+      ["persona", "name"],
+      ALL.filter((part) => part !== "stateWord" && part !== "splitDown"),
+      ["harness", "skillsMark", "sandbox", "ctx"],
+    ],
+  ] as const)("a chat's pane %s px wide", (width, head, actions, foot) => {
+    const lines = paneLinesOf("chat", width, full);
+    expect(lines.head).toEqual(head);
+    expect(lines.actions).toEqual(actions);
+    expect(lines.foot).toEqual(foot);
+  });
+
+  it.each([
+    // width, the task's foot; its head is its path at every width, its state said there
+    [900, ["harness", "workspace", ...ORIGIN, "skills", ...WARM]],
+    [519, ["harness", "workspace", ...ORIGIN, "skills", "sandbox", "ctx"]],
+    [449, ["harness", "workspace", ...ORIGIN, "skillsMark", "sandbox", "ctx"]],
+    [399, ["harness", "workspace", "skillsMark", "sandbox", "ctx"]],
+    [269, ["harness", "skillsMark", "sandbox", "ctx"]],
+  ] as const)("a task's pane %s px wide", (width, foot) => {
+    const lines = paneLinesOf("task", width, { ...full, closes: false });
+    expect(lines.head).toEqual(["persona", "crumbs"]);
+    expect(lines.foot).toEqual(foot);
+    expect(lines.actions).not.toContain("close");
+  });
+
+  it("always keeps the harness, the ⚠ of a warning and ctx", () => {
+    for (const width of [900, 520, 450, 400, 270, 200, 0]) {
+      const foot: string[] = paneLinesOf("chat", width, full).foot ?? [];
+      expect(foot, `at ${width}`).toContain("harness");
+      expect(foot, `at ${width}`).toContain("ctx");
+      expect(foot.some((part) => part === "skills" || part === "skillsMark")).toBe(true);
+    }
+  });
+
+  it("drops each part of the foot at a narrower width than the one before it", () => {
+    const widths = FOOT_DROPS.map((drop) => drop.below);
+    expect(widths).toEqual([...widths].sort((a, b) => b - a));
+    expect(FOOT_DROPS.map((drop) => drop.part)).toEqual(["cache", "skills", "from", "workspace"]);
+  });
+
+  it("has only a view's and an empty pane's controls on theirs, which never drop", () => {
+    for (const kind of ["view", "empty"] as const)
+      for (const width of [undefined, 900, 200])
+        expect(paneLinesOf(kind, width, {}).actions).toEqual(["splitRight", "splitDown", "close"]);
+  });
+
+  it("draws no close on a one-job program's pane, nor where the pane says it has none", () => {
+    expect(paneLinesOf("oneJob", 900, {}).actions).not.toContain("close");
+    expect(paneLinesOf("chat", 900, { closes: false }).actions).not.toContain("close");
+    expect(paneLinesOf("chat", 900, {}).actions).toContain("close");
+  });
+
+  it("keeps a folded pane's bell", () => {
+    expect(paneLinesOf("folded", 40, {}).actions).toEqual(["bell"]);
+  });
+});
+
+describe("the pane's two lines: what the head and the foot of a chat's pane draw (#5202, #5204)", () => {
+  /** A chat with every fact either line can hold. */
+  const full = {
+    from: true,
+    skills: true,
+    studio: true,
+    workItem: true,
+    sandbox: true,
+  };
+  const WHOLE = [
+    "harness",
+    "workspace",
+    "from",
+    "studio",
+    "workItem",
+    "skills",
+    "sandbox",
+    "ctx",
+    "cache",
+  ];
+  /** A task's foot says the chat that asked (`from`), its skills and its gauge, as a chat's does:
+   *  its breadcrumb is on the head. */
+  const FOOTLESS_HEAD = [
+    "persona",
+    "name",
+    "sandbox",
+    "mark",
+    "markWord",
+    "where",
+    "from",
+    "workItem",
+  ];
 
   it.each([
     // kind, width, the head's line, the foot
-    [
-      "chat",
-      900,
-      ["persona", "name", "sandbox", "mark", "markWord", "skills", "studio", "from", "workItem"],
-      ["harness", "workspace", "ctx", "cache"],
-    ],
-    [
-      "chat",
-      undefined,
-      ["persona", "name", "sandbox", "mark", "markWord", "skills", "studio", "from", "workItem"],
-      ["harness", "workspace", "ctx", "cache"],
-    ],
-    [
-      "chat",
-      500,
-      ["persona", "name", "mark", "markWord"],
-      ["harness", "workspace", "ctx", "cache"],
-    ],
-    ["chat", 460, ["persona", "name", "mark"], ["harness", "workspace", "ctx", "cache"]],
-    ["chat", 300, ["persona", "name"], ["harness", "workspace", "ctx", "cache"]],
-    [
-      "task",
-      900,
-      ["persona", "crumbs", "sandbox", "from", "workItem"],
-      ["harness", "workspace", "ctx", "cache"],
-    ],
-    ["task", 300, ["persona", "crumbs"], ["harness", "workspace", "ctx", "cache"]],
-    [
-      "shell",
-      900,
-      [
-        "persona",
-        "name",
-        "sandbox",
-        "mark",
-        "markWord",
-        "where",
-        "skills",
-        "studio",
-        "from",
-        "workItem",
-      ],
-      null,
-    ],
+    ["chat", 900, ["persona", "name", "mark", "markWord"], WHOLE],
+    ["chat", undefined, ["persona", "name", "mark", "markWord"], WHOLE],
+    ["task", 900, ["persona", "crumbs"], WHOLE],
+    ["shell", 900, FOOTLESS_HEAD, null],
     ["oneJob", 300, ["persona", "name"], null],
   ] as const)("a %s pane %s px wide", (kind, width, head, foot) => {
     const lines = paneLinesOf(kind, width, full);
@@ -153,50 +257,101 @@ describe("the pane's two lines: what the head and the foot of a chat's pane draw
     expect(lines.foot).toEqual(foot);
   });
 
-  it("never draws harness · workspace or the gauge on a chat's or a task's head, at any width", () => {
+  it("never draws the foot's facts on a chat's or a task's head, at any width", () => {
     for (const kind of ["chat", "task"] as const)
       for (const width of [undefined, 1200, 900, 520, 420, 300, 0]) {
         const head: string[] = paneLinesOf(kind, width, full).head;
-        for (const gone of ["harness", "workspace", "where", "ctx", "cache", "gauge", "trend"])
+        for (const gone of [
+          "harness",
+          "workspace",
+          "where",
+          "from",
+          "studio",
+          "workItem",
+          "skills",
+          "sandbox",
+          "ctx",
+          "cache",
+          "gauge",
+          "trend",
+        ])
           expect(head, `${kind} at ${width}`).not.toContain(gone);
       }
   });
 
-  it("keeps harness · workspace on the head of a pane with no foot, dropped as it always was", () => {
+  it("keeps a footless pane's head as it was, its details going in a narrow pane", () => {
     // Spec #5191: shells' and one-job programs' panes "keep their current heads and get no foot".
     for (const kind of ["shell", "oneJob"] as const) {
       expect(paneLinesOf(kind, 900, {}).head).toContain("where");
-      expect(paneLinesOf(kind, 519, {}).head).not.toContain("where");
+      expect(paneLinesOf(kind, 900, full).head).toContain("from");
+      expect(paneLinesOf(kind, 519, full).head).not.toContain("where");
+      expect(paneLinesOf(kind, 519, full).head).not.toContain("from");
       expect(paneLinesOf(kind, 900, {}).foot).toBeNull();
     }
   });
 
   it("tells a pane's kind by what it shows, a task's path before anything else", () => {
-    expect(paneKindOf({ task: true, oneJob: false, shell: false })).toBe("task");
-    expect(paneKindOf({ task: false, oneJob: true, shell: false })).toBe("oneJob");
-    expect(paneKindOf({ task: false, oneJob: false, shell: true })).toBe("shell");
-    expect(paneKindOf({ task: false, oneJob: false, shell: false })).toBe("chat");
+    const shows = { task: false, oneJob: false, shell: false, ended: false };
+    expect(paneKindOf({ ...shows, task: true })).toBe("task");
+    expect(paneKindOf({ ...shows, task: true, ended: true })).toBe("endedTask");
+    expect(paneKindOf({ ...shows, oneJob: true })).toBe("oneJob");
+    expect(paneKindOf({ ...shows, shell: true })).toBe("shell");
+    expect(paneKindOf({ ...shows, ended: true })).toBe("ended");
+    expect(paneKindOf(shows)).toBe("chat");
+    // A shell and a one-job program that ended still have no foot to keep.
+    expect(paneKindOf({ ...shows, shell: true, ended: true })).toBe("shell");
+    expect(paneKindOf({ ...shows, oneJob: true, ended: true })).toBe("oneJob");
   });
 
-  it("keeps the whole foot of a chat at every width, its drops being #5206's", () => {
-    for (const width of [undefined, 1200, 520, 300, 0])
-      expect(paneLinesOf("chat", width, full).foot).toEqual([
-        "harness",
-        "workspace",
-        "ctx",
-        "cache",
-      ]);
-  });
-
-  it("draws only the facts a chat has on the head's line", () => {
-    expect(paneLinesOf("chat", 900, {}).head).toEqual([
-      "persona",
-      "name",
-      "sandbox",
-      "mark",
-      "markWord",
+  describe("for each kind of pane (#5205)", () => {
+    const ENDED_FOOT = [
+      "harness",
+      "workspace",
+      "from",
       "studio",
+      "workItem",
+      "sandbox",
+      "ended",
+      "ctx",
+      "cache",
+    ];
+
+    it.each([
+      // kind, the head's line, the foot
+      ["task", ["persona", "crumbs"], WHOLE],
+      ["ended", ["persona", "name", "mark", "markWord"], ENDED_FOOT],
+      ["endedTask", ["persona", "crumbs"], ENDED_FOOT],
+      ["view", [], null],
+      ["empty", [], null],
+      ["folded", ["persona", "name"], null],
+    ] as const)("a %s pane", (kind, head, foot) => {
+      const lines = paneLinesOf(kind, 900, full);
+      expect(lines.head).toEqual(head);
+      expect(lines.foot).toEqual(foot);
+    });
+
+    it("says no skills warning on what has ended: nothing there can act on it", () => {
+      expect(paneLinesOf("ended", 900, { skills: true }).foot).not.toContain("skills");
+      expect(paneLinesOf("endedTask", 900, { skills: true }).foot).not.toContain("skills");
+      expect(paneLinesOf("task", 900, { skills: true }).foot).toContain("skills");
+    });
+  });
+
+  it("draws on the foot only the facts a chat has: the harness, the workspace and the gauge always", () => {
+    expect(paneLinesOf("chat", 900, {}).foot).toEqual(["harness", "workspace", "ctx", "cache"]);
+    expect(paneLinesOf("chat", 900, { from: true }).foot).toEqual([
+      "harness",
+      "workspace",
+      "from",
+      "ctx",
+      "cache",
     ]);
-    expect(paneLinesOf("chat", 900, { from: true }).head).toContain("from");
+    expect(paneLinesOf("chat", 900, { sandbox: true }).foot).toEqual([
+      "harness",
+      "workspace",
+      "sandbox",
+      "ctx",
+      "cache",
+    ]);
   });
 });

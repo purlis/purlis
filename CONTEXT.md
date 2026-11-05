@@ -1101,16 +1101,18 @@ it shows, the state button, then ⋯, the bell, the splits and Close (#4760, ADR
 _Avoid_: title bar, header (unqualified), toolbar
 
 **Pane line**:
-The pane head's row of chips about the chat: its persona, its name or path, its state mark and
-the details still drawn there. It is no longer the whole head's single line: harness · workspace
-and the gauge are on the **pane foot** (ADR 0111).
+The pane head's row of chips about the chat: its persona, its name or path and its state mark. It
+is no longer the whole head's single line: the chat's other facts are on the **pane foot** (ADR
+0111). A shell and a one-job program have no foot, so their heads keep those details.
 _Avoid_: top line (it is one of two), status line (that is the window's)
 
 **Pane foot**:
-The quiet line under a chat's terminal that says where the chat runs and how healthy it is:
-harness · workspace at its start, and `ctx`, its fill a thin bar under its number, then `cache`
-at its end. Only a chat's pane has one; a view, an empty pane, a shell and a one-job program do
-not. It never asks for anything (ADR 0111, #5202).
+The quiet line under a chat's terminal that says where the chat runs, where it came from and how
+healthy it is: harness · workspace, `↳ from`, what the Skill studio started it for, its work item,
+its skills warning and its sandbox at its start, and `ctx`, its fill a thin bar under its number,
+then `cache` at its end. Only a chat's pane has one, a task's in a chat's pane and an ended chat's
+among them; a view, an empty pane, a folded pane, a shell and a one-job program do not. Each part that can be pressed runs a row of the chat's list, and it never asks for
+anything (ADR 0111, #5202, #5204).
 _Avoid_: footer, status bar, gauge row
 
 **Empty pane**:

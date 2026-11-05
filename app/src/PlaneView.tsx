@@ -531,7 +531,7 @@ import { forgetSkillEdit } from "./skillEdit";
 import { discardGone, discardRemoved, unsavedClosedBy, unsavedIn } from "./unsavedWork";
 import { UnsavedWorkQuestion, type UnsavedAsk } from "./UnsavedWorkQuestion";
 import { SkillRunsHere, aPersonasOwn, useSkillRuns, type RunsOf } from "./skillRuns";
-import { CHAT_SKILLS_ASKED, type ChatSkillsAsk } from "./chatSkillsAsk";
+import { CHAT_SKILLS_ASKED, askChatSkills, type ChatSkillsAsk } from "./chatSkillsAsk";
 import { projectThemeChanged, useProjectThemeKept } from "./projectTheme";
 import { inForce, isWorkspaceColour, onDrawn, tabTint } from "./theme/theme";
 import { handedFromNote } from "./handedFrom";
@@ -8144,6 +8144,11 @@ export const PlaneView = memo(function PlaneView({
       // A chat's Ask {persona}… and Use skill… open their dialogs: the one way in to each.
       askPersona: openAskPersona,
       useSkill: openUseSkill,
+      showChatSkills: (session) => askChatSkills(plane, session),
+      openStudioChat: (session) => {
+        const link = studioLinks[session];
+        if (link !== undefined) studioChats.openSkill(link);
+      },
       pinTab,
       pinWorkspace,
       pinProject: windowDoes.pinProject,
@@ -8262,6 +8267,8 @@ export const PlaneView = memo(function PlaneView({
         setAddingToChat(rows.map(({ at, folder }) => ({ plane, ...at, folder }))),
     }),
     [
+      studioChats,
+      studioLinks,
       beginRename,
       showSideViewSeen,
       toggleRegionSeen,
@@ -9221,6 +9228,8 @@ export const PlaneView = memo(function PlaneView({
             ask: askOffer,
             // Not from a shell: it is on no harness profile to start the persona's chat on.
             askable: (session) => !shells.has(session),
+            cardOf: (session) => glances[session],
+            studioOf: (session) => studioLinks[session],
             branch: nearBranch,
             harnesses: harnessCards,
             memoryStores,
@@ -9235,6 +9244,8 @@ export const PlaneView = memo(function PlaneView({
             places,
           }),
     [
+      glances,
+      studioLinks,
       readOnlySaid,
       places,
       askedBy,

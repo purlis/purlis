@@ -206,8 +206,8 @@ export const TheChatsChip: StoryObj<{ done: boolean; openSkill: (link: StudioLin
     <StudioChatsHere.Provider
       value={{ chats: [{ session: 7, name: "7", link: LINK }], show: () => undefined, openSkill }}
     >
-      <div className="pane-chips" style={{ display: "flex", inlineSize: 420 }}>
-        <StudioChatChip plane="story" session={7} />
+      <div className="pane-foot" style={{ display: "flex", inlineSize: 420 }}>
+        <StudioChatChip plane="story" session={7} onOpen={() => openSkill(LINK)} />
       </div>
     </StudioChatsHere.Provider>
   ),
@@ -224,6 +224,9 @@ export const TheChatsChip: StoryObj<{ done: boolean; openSkill: (link: StudioLin
     expectFocusInSight();
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(args.openSkill).toHaveBeenCalledWith(LINK));
+    // The picture is of the chip at rest: neither its ring nor its tooltip.
+    chip.blur();
+    await waitFor(() => expect(document.querySelector('[role="tooltip"]')).toBeNull());
   },
 };
 
