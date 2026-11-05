@@ -365,7 +365,11 @@ pub fn keep_chat_on_pool(
                 crate::machine::ChatOnPool {
                     pool: pool.to_owned(),
                     workspace: workspace.to_owned(),
-                    runner: Some(runner.name().to_owned()),
+                    // Only a Docker pool's runners drain, one at a time.
+                    runner: match runner {
+                        runners::Reached::Docker(kept) => Some(kept.name().to_owned()),
+                        runners::Reached::Cluster(..) => None,
+                    },
                 },
             );
         }
