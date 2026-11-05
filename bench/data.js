@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793850153417,
+  "lastUpdate": 1793852406944,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -39648,6 +39648,48 @@ window.BENCHMARK_DATA = {
             "value": 100.85126349999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.713, 100.739, 100.851, 101.109, 101.318 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a07bb4fe18050f4e6c5c5d960aa2abce9a928af5",
+          "message": "The pane foot on a chat's pane, with its gauge (#5202) (#5223)\n\n* The pane foot on a chat's pane: model, family, gauge and guard (#5202)\n\nThe pane's model answers both lines (paneLinesOf); harness · workspace and\nthe gauge leave the head for the pane foot, a new themable family drawn under\nthe terminal; ctx carries its fill as a thin bar and the row of bars goes; the\ncontrols guard holds PANE_LINE_CHIPS and PANE_FOOT_CHIPS, each read off its row.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M02SBCNXRF5BF79Z4SGSXD\nPurlis-Persona: steward\n\n* The pane foot: stories, window tests, the head's tab order, ADR 0111 and the glossary (#5202)\n\nThe task's head story draws its foot; the faded-words gate measures the foot's\nwords; the family's own stories cover each tone and the foot before any usage.\nTab reaches the foot's harness after the terminal. ADR 0111 records that a\nchat's pane has a head and a foot, replacing the one-line ruling of #4760;\nCONTEXT.md gains pane head and pane foot and narrows pane line.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M02SBCNXRF5BF79Z4SGSXD\nPurlis-Persona: steward\n\n* The pane foot: F6 lands on the head's first control, and the gauge draws no svg (#5202)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M02SBCNXRF5BF79Z4SGSXD\nPurlis-Persona: steward\n\n* The pane foot: a chat's pane holds its top, its body and its foot (#5202)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M02SBCNXRF5BF79Z4SGSXD\nPurlis-Persona: steward\n\n* pane-fill: a terminal's room ends at the pane foot, which takes a tab's height and nothing else (#5202)\n\nThe check measured the grid against the centre's bottom, which the foot now\nstands on. It measures from the foot's top with the same slack, and pins the foot:\nat the frame's bottom, a tab's height, with no row of the grid under it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M02SBCNXRF5BF79Z4SGSXD\nPurlis-Persona: steward\n\n* keyboard-reach: a pane's stops are its head, its terminal, then its foot (#5202)\n\nThe check required the terminal to be the pane's last stop. Story 38 of spec #5191\nputs the foot after it, so it now says that exactly: the head's controls before the\nterminal, then at least one stop after it, each of them the foot's.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M02SBCNXRF5BF79Z4SGSXD\nPurlis-Persona: steward\n\n* PaneBand story: the bell's keyboard walk starts from the head's last chip (#5202)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M02SBCNXRF5BF79Z4SGSXD\nPurlis-Persona: steward\n\n* The harness on the pane foot is inline, the foot's size; baselines for PaneFoot and PaneBand (#5202)\n\nThe harness button drew at the button family's small size beside the foot's smaller\nwords. Inline, as the prototype's look A drew it, it takes the line's size. Its pictures\nin PaneLine come from the next stories run.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M02SBCNXRF5BF79Z4SGSXD\nPurlis-Persona: steward\n\n* The pane's model answers the studio chip too, which #5201 put on the head's line (#5202)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M02SBCNXRF5BF79Z4SGSXD\nPurlis-Persona: steward\n\n* Review of the pane foot: shells keep their heads, and the pane draws what the model answers (#5202)\n\nTwo-axis review. Spec: a shell's and a one-job program's panes keep harness · workspace\non their heads, as a chip of their own; the foot's parts are drawn from the model's\nlist. Standards: the gauge's dead class and identity map, the bar's literal size, the\ntheme keys for the groups' gaps now reach what they name, and stale comments and docs.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M02SBCNXRF5BF79Z4SGSXD\nPurlis-Persona: steward\n\n* The gauge is two numbers; a low cache says so; a pane not listed yet has no foot (#5202)\n\nThe rebuilds and a cold streak leave the foot for the gauge's tooltip, which says them\nin words. cache's number carries a warning tone, as ctx's bar does. A pane of unknown\nkind draws no foot until the plane lists it, so a shell shows no empty strip.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M02SBCNXRF5BF79Z4SGSXD\nPurlis-Persona: steward\n\n* A chat reserves its pane foot from its first frame, and a shell never draws one (#5202)\n\nThe open chats say which panes run a shell before the plane lists them, so a chat's\nterminal gets one size from the start, and a shell shows no empty strip. Only a shell\nstill restoring is not known yet.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M02SBCNXRF5BF79Z4SGSXD\nPurlis-Persona: steward\n\n* Baselines for PaneLine and the low cache's stories (#5202)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M02SBCNXRF5BF79Z4SGSXD\nPurlis-Persona: steward\n\n* F6 lands on the head's first control, the bell since #5203 (#5202)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M02SBCNXRF5BF79Z4SGSXD\nPurlis-Persona: steward\n\n* Baselines for PaneLine and PaneBand on the regrouped head (#5202)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6M02SBCNXRF5BF79Z4SGSXD\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-05T03:39:01Z",
+          "tree_id": "a3ec37250ca9f074b1891dd1d95aeba7e2da9014",
+          "url": "https://github.com/purlis/purlis/commit/a07bb4fe18050f4e6c5c5d960aa2abce9a928af5"
+        },
+        "date": 1793852401527,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6762790000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.664, 0.666, 0.676, 0.681, 0.683 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.433008,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.256, 16.416, 16.433, 16.474, 16.820 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.30551249999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.417, 101.846, 102.306, 102.329, 103.323 ms"
           }
         ]
       }
