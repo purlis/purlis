@@ -746,3 +746,36 @@ fn a_claim_mark_is_read_per_branch_from_gits_config_listing() {
     );
     assert_eq!(marks.len(), 2);
 }
+
+#[test]
+fn the_folders_removed_since_a_moment_are_listed_in_order_and_others_are_not() {
+    // #5439: what a chat that stopped waiting on a prune says was removed.
+    let (_dir, root) = a_plane();
+    let line = |event: &str, repo: &str, piece: &str, ago: i64| serde_json::json!({"ts": at(ago), "event": event, "repo": repo, "piece": piece});
+    log(
+        &root,
+        &[
+            line("removed", "api", "before", 30),
+            line("removed", "api", "first", 9),
+            line("claimed", "api", "cut", 8),
+            line("removed", "web", "elsewhere", 7),
+            line("removed", "api", "second", 5),
+            serde_json::json!({"ts": "not a time", "event": "removed", "repo": "api", "piece": "x"}),
+        ],
+    );
+    let since = now() - chrono::Duration::seconds(10);
+    assert_eq!(
+        removed_since(&root, "alpha", Some("api"), since),
+        [
+            ("api".to_owned(), "first".to_owned()),
+            ("api".to_owned(), "second".to_owned())
+        ]
+    );
+    assert_eq!(removed_since(&root, "alpha", None, since).len(), 3);
+    // The log keeps whole seconds: a removal in the second it was asked counts.
+    let in_that_second = now() - chrono::Duration::seconds(5) + chrono::Duration::milliseconds(400);
+    assert_eq!(
+        removed_since(&root, "alpha", Some("api"), in_that_second),
+        [("api".to_owned(), "second".to_owned())]
+    );
+}

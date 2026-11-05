@@ -414,10 +414,21 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
                 },
                 crate::gitask::A_FOLDER_IS_JUDGED_WITHIN,
             ) {
-                // Given up on: what was removed, said plainly, from the piece log (#5439).
-                crate::gitask::Forwarded::Unsure(_) => crate::gitask::Forwarded::Unsure(
-                    crate::gitask::unsure_prune(dry_run, &removed_since(&root, &ws, since)),
-                ),
+                // Given up on: what was removed, said plainly, from the workspace's record of its
+                // folders (#5439), with how the wait ended.
+                crate::gitask::Forwarded::Unsure { cause, .. } => {
+                    crate::gitask::Forwarded::Unsure {
+                        said: crate::gitask::unsure_prune(
+                            dry_run,
+                            &cause,
+                            &purlis_core::pieces::removed_since(&root, &ws, repo.as_deref(), since)
+                                .into_iter()
+                                .map(|(repo, piece)| format!("{repo} · {piece}"))
+                                .collect::<Vec<_>>(),
+                        ),
+                        cause,
+                    }
+                }
                 other => other,
             };
             let asked = crate::gitask::told(forwarded, &mut say);
@@ -465,34 +476,6 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
         }
     };
     Ok(code)
-}
-
-/// The folders of `ws` the piece log shows removed at `since` or after, each
-/// `<repo> · <piece>`, in the order they went.
-fn removed_since(
-    root: &std::path::Path,
-    ws: &str,
-    since: chrono::DateTime<chrono::Utc>,
-) -> Vec<String> {
-    // The log keeps whole seconds: a removal in the second the prune was asked counts.
-    let since = since - chrono::Duration::seconds(1);
-    purlis_core::pieces::events(root, ws)
-        .iter()
-        .filter(|event| event["event"].as_str() == Some("removed"))
-        .filter(|event| {
-            event["ts"]
-                .as_str()
-                .and_then(|ts| chrono::DateTime::parse_from_rfc3339(ts).ok())
-                .is_some_and(|ts| ts >= since)
-        })
-        .filter_map(|event| {
-            Some(format!(
-                "{} · {}",
-                event["repo"].as_str()?,
-                event["piece"].as_str()?
-            ))
-        })
-        .collect()
 }
 
 /// The folder `purlis worktree update` stands in (#3831): a branch folder, a workspace's clone
@@ -666,7 +649,7 @@ fn answered_by_the_app(
     use purlis_core::repocmd::Say;
     let (lines, code) = match forwarded {
         Forwarded::Said { lines, code } => (lines, code),
-        Forwarded::Refused(why) | Forwarded::Unsure(why) => return Err(why),
+        Forwarded::Refused(why) | Forwarded::Unsure { said: why, .. } => return Err(why),
         Forwarded::NotTaken => return Err(not_taken.to_owned()),
     };
     let text = lines

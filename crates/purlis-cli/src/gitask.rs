@@ -27,7 +27,8 @@ pub enum Forwarded {
     /// No app took it, so this process runs it.
     NotTaken,
     /// The app took it and did not answer in time: it may have run, so nothing runs here.
-    Unsure(String),
+    /// `cause` is how the wait ended, and `said` the sentence that tells it.
+    Unsure { cause: String, said: String },
 }
 
 /// The longest a clone the app runs for this chat may show no life before this command stops
@@ -71,28 +72,30 @@ pub(crate) fn git_ask(chat: u32, workspace: &str, work: GitWork) -> GitAsk {
 
 /// The longest a prune the app runs for this chat may show no life before this command stops
 /// waiting on it (#5439). Not a bound on the whole prune: the app says it is alive as it reads
-/// each folder ([`hookwire::Answer::Alive`]), so this bounds one folder's reading, a handful of
-/// local git calls each held to [`git::READ`].
+/// each folder and each removal ([`hookwire::Answer::Alive`], at most one line every
+/// [`hookwire::alive::EVERY`]), so this bounds one folder's reading: its git calls, each held to
+/// [`git::READ`], and the walk of its ignored folders, which stops at a fixed count of entries.
 pub const A_FOLDER_IS_JUDGED_WITHIN: Duration = Duration::from_secs(8 * git::READ.as_secs());
 
 /// What a chat's prune says where the app took it and this command stopped waiting (#5439),
-/// plainly about what was removed: nothing, for a dry run; else the folders the piece log
-/// shows removed since it was asked, `removed`, each `<repo> · <piece>`.
-pub fn unsure_prune(dry_run: bool, removed: &[String]) -> String {
-    let stopped = "The app took this prune and did not answer in time, so this command stopped \
-                   waiting.";
+/// `cause` saying how the wait ended, plainly about what was removed: nothing, for a dry run;
+/// else the folders the workspace's record shows removed since it was asked, `removed`, each
+/// `<repo> · <piece>`, whoever removed them.
+pub fn unsure_prune(dry_run: bool, cause: &str, removed: &[String]) -> String {
+    let stopped = format!(
+        "The app took this prune and did not answer ({cause}), so this command stopped waiting."
+    );
     if dry_run {
-        return format!(
-            "{stopped} Nothing was removed: a dry run removes nothing. Run it again to see \
-             the list."
-        );
+        return format!("{stopped} Nothing was removed: a dry run removes nothing.");
     }
     let so_far = if removed.is_empty() {
-        "No folder has been removed since this prune was asked".to_owned()
+        "No folder of this workspace has been removed since this prune was asked".to_owned()
     } else {
         format!(
-            "{} been removed since this prune was asked: {}",
-            purlis_core::counts::counted(removed.len(), "folder has", "folders have"),
+            "{} of this workspace {} been removed since this prune was asked, by it or by \
+             another: {}",
+            purlis_core::counts::counted(removed.len(), "folder", "folders"),
+            purlis_core::counts::plural(removed.len(), "has", "have"),
             removed.join(", ")
         )
     };
@@ -384,10 +387,13 @@ fn answered(answer: std::io::Result<hookwire::Answer>) -> Forwarded {
         {
             Forwarded::NotTaken
         }
-        Err(e) => Forwarded::Unsure(format!(
-            "the app took this and did not answer ({e}), so it may still be running it. Nothing \
-             was run again here: `purlis status` shows what is in the workspace now."
-        )),
+        Err(e) => Forwarded::Unsure {
+            cause: e.to_string(),
+            said: format!(
+                "the app took this and did not answer ({e}), so it may still be running it. \
+                 Nothing was run again here: `purlis status` shows what is in the workspace now."
+            ),
+        },
     }
 }
 
@@ -407,8 +413,8 @@ pub fn told(forwarded: Forwarded, say: &mut dyn FnMut(Say)) -> Option<u8> {
             ));
             Some(1)
         }
-        Forwarded::Unsure(why) => {
-            say(Say::Fail(why.into()));
+        Forwarded::Unsure { said, .. } => {
+            say(Say::Fail(said.into()));
             Some(1)
         }
         Forwarded::NotTaken => None,

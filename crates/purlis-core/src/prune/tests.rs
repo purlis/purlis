@@ -126,3 +126,26 @@ fn a_chats_prune_of_many_folders_says_it_is_alive_as_it_goes() {
         "the asker heard nothing for {longest:?} of a {whole:?} prune of {folders} folders"
     );
 }
+
+#[test]
+fn the_links_of_every_folder_are_read_saying_the_work_is_alive() {
+    // #5439, on review: after every folder is judged, a `git status` of each is read for its
+    // links, which on about 290 folders was minutes with nothing said.
+    crate::unsteered!();
+    let (_dir, plane) = a_plane();
+    for n in 0..4 {
+        plain(&plane, &format!("lane-{n}"));
+    }
+    let said: Arc<Mutex<Vec<Instant>>> = Arc::default();
+    let lines = Arc::clone(&said);
+    let pulse = alive::Pulse::saying(move || {
+        lines.lock().unwrap().push(Instant::now());
+        true
+    });
+    let links = alive::within(Some(&pulse), || crate::finished::links(&plane, "alpha"));
+    assert!(links.is_empty(), "{links:?}");
+    assert!(
+        !said.lock().unwrap().is_empty(),
+        "nothing was said while the links were read"
+    );
+}

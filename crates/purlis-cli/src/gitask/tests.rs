@@ -115,7 +115,7 @@ fn an_app_that_ends_the_connection_at_once_did_not_take_it_and_a_quiet_one_may_h
     }
     assert!(matches!(
         answered(Err(Error::from(ErrorKind::WouldBlock))),
-        Forwarded::Unsure(_)
+        Forwarded::Unsure { .. }
     ));
     assert!(matches!(
         answered(Ok(hookwire::Answer::No {
@@ -264,20 +264,25 @@ fn a_prune_is_asked_to_show_life_as_it_goes_and_a_removal_is_not() {
 #[test]
 fn a_prune_given_up_on_says_plainly_whether_anything_was_removed() {
     // #5439: "it may still be running it" was read as "it may have worked".
-    let dry = unsure_prune(true, &[]);
+    let cause = "Resource temporarily unavailable (os error 35)";
+    let dry = unsure_prune(true, cause, &[]);
     assert!(
         dry.contains("Nothing was removed: a dry run removes nothing"),
         "{dry}"
     );
-    let none = unsure_prune(false, &[]);
+    assert!(dry.contains(cause), "the cause is passed on: {dry}");
+    let none = unsure_prune(false, cause, &[]);
     assert!(
-        none.contains("No folder has been removed since this prune was asked"),
+        none.contains("No folder of this workspace has been removed since this prune was asked"),
         "{none}"
     );
-    assert!(none.contains("may still be"), "{none}");
-    let some = unsure_prune(false, &["api · a".to_owned(), "api · b".to_owned()]);
+    assert!(none.contains("may still be removing"), "{none}");
+    let some = unsure_prune(false, cause, &["api · a".to_owned(), "api · b".to_owned()]);
     assert!(
-        some.contains("2 folders have been removed since this prune was asked: api · a, api · b"),
+        some.contains(
+            "2 folders of this workspace have been removed since this prune was asked, by it or \
+             by another: api · a, api · b"
+        ),
         "{some}"
     );
 }

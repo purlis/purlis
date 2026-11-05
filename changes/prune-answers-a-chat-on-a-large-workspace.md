@@ -5,5 +5,5 @@
   went on and finished the prune about 20 minutes later. A chat now waits for as long as the app
   is still working through folders, and the app reads several folders at once, so the same
   prune takes a fraction of the time. If a chat does stop waiting, it says plainly what was
-  removed: nothing for a dry run, or the folders the piece log shows removed since it asked
+  removed: nothing for a dry run, or the folders of the workspace removed since it asked
   (#5439).

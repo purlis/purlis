@@ -12,8 +12,8 @@
 //! unless the branches are to be kept. A dry run says what would go and why each other folder
 //! stays, and removes nothing.
 //!
-//! Folders are read several at once, and the work says it is alive after each folder read and
-//! each removal (#5439): a chat's wait on the app bounds a silence, never the whole prune.
+//! Folders are read several at once, and the work says it is alive after each folder read, each
+//! folder's links read and each removal (#5439): a chat's wait on the app bounds a silence, never the whole prune.
 
 use std::path::Path;
 
@@ -26,7 +26,7 @@ use crate::hookwire::alive;
 use crate::piececlaim::{self, Live};
 use crate::pieces::Who;
 use crate::repocmd::Say;
-use crate::worktree::{self, Located, git, standing};
+use crate::worktree::{self, Located, standing};
 
 /// What a prune was asked.
 #[derive(Debug, Clone, Copy)]
@@ -91,12 +91,12 @@ pub fn prune(
     }
     let mut kept: Vec<(Folder, String)> = Vec::new();
     let mut candidates: Vec<Candidate> = Vec::new();
-    let asked_of: Vec<&(Folder, bool)> = listed
+    let in_scope: Vec<&(Folder, bool)> = listed
         .folders
         .iter()
         .filter(|(folder, _)| asked.repo.is_none_or(|repo| repo == folder.repo))
         .collect();
-    let judged = each_at_once(&asked_of, |(folder, gone)| {
+    let judged = finished::each_at_once(&in_scope, |(folder, gone)| {
         if *gone {
             Err(format!(
                 "its folder is already gone, and only git's record of it is left: `purlis \
@@ -109,7 +109,7 @@ pub fn prune(
             why_kept(plane, ws, folder, asker)
         }
     });
-    for ((folder, _), judged) in asked_of.into_iter().zip(judged) {
+    for ((folder, _), judged) in in_scope.into_iter().zip(judged) {
         match judged {
             Ok(commits) => candidates.push(Candidate {
                 folder: folder.clone(),
@@ -182,62 +182,6 @@ pub fn prune(
         .into(),
     ));
     code
-}
-
-/// The most folders read at once: each reading is a handful of git processes, and a reading
-/// waits on the disk as much as on a core.
-const AT_ONCE: usize = 8;
-
-/// `judge` of each of `items`, in their order, read on as many threads as the machine has
-/// cores, at most [`AT_ONCE`] (#5439): each folder's reading is its own and only reads, and a
-/// workspace of about 290 folders took 21 minutes read one by one.
-///
-/// Each thread runs its git as this one does ([`git::within`]) and says the work is alive
-/// after each item it read ([`crate::hookwire::alive`]): a chat's wait on the app bounds a
-/// silence, and a workspace may hold any number of folders.
-fn each_at_once<T: Sync, R: Send>(items: &[T], judge: impl Fn(&T) -> R + Sync) -> Vec<R> {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    let isolation = git::isolation();
-    let pulse = alive::held();
-    let threads = std::thread::available_parallelism()
-        .map_or(1, std::num::NonZeroUsize::get)
-        .clamp(1, AT_ONCE)
-        .min(items.len());
-    let next = AtomicUsize::new(0);
-    let read: Vec<(usize, R)> = std::thread::scope(|scope| {
-        let reading: Vec<_> = (0..threads)
-            .map(|_| {
-                scope.spawn(|| {
-                    git::within(isolation.as_ref(), || {
-                        alive::within(pulse.as_ref(), || {
-                            let mut read = Vec::new();
-                            loop {
-                                let at = next.fetch_add(1, Ordering::Relaxed);
-                                let Some(item) = items.get(at) else {
-                                    return read;
-                                };
-                                read.push((at, judge(item)));
-                                alive::beat();
-                            }
-                        })
-                    })
-                })
-            })
-            .collect();
-        reading
-            .into_iter()
-            .flat_map(|thread| {
-                thread
-                    .join()
-                    .unwrap_or_else(|panicked| std::panic::resume_unwind(panicked))
-            })
-            .collect()
-    });
-    let mut out: Vec<Option<R>> = items.iter().map(|_| None).collect();
-    for (at, judged) in read {
-        out[at] = Some(judged);
-    }
-    out.into_iter().flatten().collect()
 }
 
 /// How `folder`'s commits stand where it may go but for links, else why it stays.
