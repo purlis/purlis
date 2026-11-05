@@ -349,7 +349,7 @@ export type Does =
   | { verb: "chat.new" }
   /** The strip's `+` (#4758; spec story 13): a new tab holding one empty pane. */
   | { verb: "tab.new" }
-  /** Opens a plain shell (SI-5) in the focused pane (#4758): the operator's own `$SHELL`, no
+  /** Opens a plain shell (SI-5) by the one rule (#5289): the operator's own `$SHELL`, no
    *  harness, no profile — in `workspace`'s directory and filed under it, or where a new chat
    *  would start when it names none. Nothing asks first: a shell starts no harness, so ADR 0022's picker has
    *  nothing to ask about. */
@@ -357,7 +357,7 @@ export type Does =
   /** Starts a browser in the session host and opens it in a view tab (#2012). The person's
    *  own act: nothing asks first, and Stop all refuses it. */
   | { verb: "newBrowser" }
-  /** Opens the picker for a chat that starts in `path`, in the focused pane (#4758): the plane
+  /** Opens the picker for a chat that starts in `path`, by the one rule (#5289): the plane
    *  root's own row (SI-1), and a clone's "New chat in <repo>", which leaves the explorer's pick
    *  as it was (making the clone the spot for every chat after is `pickClone`'s). It starts
    *  nothing by itself; the picker is the only path ADR 0022 admits. */
@@ -1925,16 +1925,16 @@ export function catalogue(now: Now): Offer[] {
   const offers: Offer[] = [];
 
   // A chat starts through the picker, which is the only path ADR 0022 admits. The palette
-  // opens that question; it never answers it. **The chat takes the focused pane** (#4758): a
-  // chat is never a tab of its own.
+  // opens that question; it never answers it. **The chat opens by the one rule** (#5289,
+  // `tabs.opensAt`): it fills an empty pane or gets a tab of its own, and replaces nothing.
   offers.push(can("chat.new", SAID.newChat, { verb: "chat.new" }));
 
   // **Beside it, and never inside the picker** (SI-5). A shell runs no harness, so there is no
   // profile to pick and nothing for ADR 0022 to ask. It is still a chat to the core — a session
-  // with a number, recorded and put back — which is why it takes the focused pane like one.
+  // with a number, recorded and put back — which is why it opens like one (#5289).
   offers.push({
     ...can("shell.new", "New shell", { verb: "newShell" }),
-    note: `Your own shell, with no harness, in the focused pane. ${SHELL_KEY_SAID}.`,
+    note: `Your own shell, with no harness, in an empty pane or a new tab. ${SHELL_KEY_SAID}.`,
   });
   // **The strip's `+`** (#4758; spec story 13): a tab with one empty pane, which New chat then
   // fills. "New tab" still means a tab.

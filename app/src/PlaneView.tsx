@@ -283,7 +283,6 @@ import {
   focusPane,
   chatNamed,
   dropEmptyTabsOfGoneWorkspaces,
-  startedInto,
   newChatNumber,
   noTabs,
   chatNameOf,
@@ -294,7 +293,8 @@ import {
   openViewBesidePane,
   openChatsKey,
   openEmptyTab,
-  openTab,
+  openNew,
+  opensAt,
   openView,
   offerView,
   harnessSetupTitle,
@@ -684,8 +684,8 @@ type Where =
       /** A pool chosen on the picker's Runs on row as it opens, in the workspace `workspace`
        *  (#4483): Pool setup's Open a chat. */
       pool?: { name: string; workspace: string };
-      /** The pane New chat was pressed for (#4758): the chat takes it, while it is there,
-       *  whichever tab is in front by the time the start answers. */
+      /** The empty pane New chat was pressed for (#5289): the chat takes it, while it stays
+       *  empty, whichever tab is in front by the time the start answers. */
       pane?: PaneAt;
     }
   | { split: Direction };
@@ -2515,36 +2515,34 @@ export const PlaneView = memo(function PlaneView({
     [change, plane, sidebar],
   );
   /**
-   * **A chat the person started takes the focused pane** (#4758; spec story 12): New chat, a
-   * shell, a curation, theme or skill chat, a file's chat, a Fix, a reopened task. It lands as
-   * a press does (`tabs.press`), on the strip it was filed under, which is told here because
-   * the list that files it has not been read yet. No tab is added, save where that strip has
-   * no pane but views.
+   * **A chat the person started opens by the one rule** (`tabs.opensAt`, #5289): New chat, a
+   * shell, a curation, theme or skill chat, a file's chat, a Fix. It replaces nothing: it fills
+   * an empty pane of the front tab, or gets a tab of its own. It goes on the strip it was filed
+   * under, which is told here because the list that files it has not been read yet.
    */
+  const filedAs = useCallback(
+    (session: number, workspace: string): Pressing => ({
+      ...pressing,
+      filedIn: (one) => (one === session ? workspace : pressing.filedIn(one)),
+    }),
+    [pressing],
+  );
   const showStarted = useCallback(
     (chat: PressedChat, workspace: string, named = false, asked?: PaneAt) => {
-      landOn((tabs) =>
-        pressChat(
-          tabs,
-          chat,
-          {
-            ...pressing,
-            filedIn: (session) =>
-              session === chat.session ? workspace : pressing.filedIn(session),
-          },
-          // A start that named its workspace goes to that strip ("New shell in beta"); else the
-          // pane New chat was pressed for, while it is there; else the focused pane of the tab
-          // in front, whichever strip the chat is filed on (#4758).
-          named
-            ? undefined
-            : asked !== undefined &&
-                contentsOf(tabs, asked.tab).some((one) => one.pane === asked.pane)
-              ? asked
-              : startedInto(tabs),
-        ),
-      );
+      landOn((tabs) => openNew(tabs, chat, filedAs(chat.session, workspace), { named, asked }));
     },
-    [landOn, pressing],
+    [filedAs, landOn],
+  );
+  /**
+   * **A chat that came back is a press** (#5289; spec #4750): a resumed chat or a reopened task
+   * was the person's to pick, so it lands as a pressed row does. Not listed yet, so it is told
+   * where it is filed, as a start is.
+   */
+  const showResumed = useCallback(
+    (chat: PressedChat, workspace: string) => {
+      landOn((tabs) => pressChat(tabs, chat, filedAs(chat.session, workspace)));
+    },
+    [filedAs, landOn],
   );
   /**
    * **A chat the core started and placed** (#4758): a curation, a Fix, a theme, a skill, a
@@ -3729,9 +3727,13 @@ export const PlaneView = memo(function PlaneView({
     [plane],
   );
 
-  /** **New chat** (#4758; spec story 12): the picker, and the chat it starts takes the focused
-   *  pane. */
-  const newChat = useCallback(() => void ask({ tab: true, pane: startedInto(now.current) }), [ask]);
+  /** **New chat** (#5289): the picker, and the chat it starts opens by the one rule. An empty
+   *  pane it would fill now is the pane it was pressed for, whichever tab is in front by the time
+   *  the start answers. */
+  const newChat = useCallback(() => {
+    const opens = opensAt(now.current, { kind: "new" }, pressing);
+    void ask({ tab: true, pane: opens.how === "fills" ? opens.at : undefined });
+  }, [ask, pressing]);
   /** **The strip's `+`** (#4758; spec story 13): a tab with one empty pane on the strip in front,
    *  in front, which New chat then fills. */
   const newTab = useCallback(
@@ -3780,7 +3782,7 @@ export const PlaneView = memo(function PlaneView({
             change((tabs) => openOneJob(tabs, session, name));
             giveKeyboardTo(plane, session);
           }
-          // A shell follows a chat's rules (#4758; spec story 63): it takes the focused pane.
+          // A shell follows a chat's rules (#4758; spec story 63): it opens by the one rule.
           else showStarted({ session, chat: name }, filed, named);
           // A command typed in for the operator, run as if they had typed it: the shell reads
           // it once it is up, and the tab is theirs to leave. A harness's installer is named,
@@ -4199,9 +4201,8 @@ export const PlaneView = memo(function PlaneView({
       const filed = filedIn ?? filedFor(cwd, focused);
       setStartedIn((was) => ({ ...was, [session]: filed }));
       if ("tab" in where) {
-        // **It takes the focused pane** (#4758; spec story 12), and the chat it replaces keeps
-        // running in the sidebar. A start that names its place, a directory or a strip the
-        // caller chose, keeps that place's strip.
+        // **It opens by the one rule** (#5289), and replaces nothing. A start that names its
+        // place, a directory or a strip the caller chose, keeps that place's strip.
         const label = started.data.label ?? null;
         const named = where.in !== undefined || filedIn !== undefined;
         showStarted(
@@ -4556,13 +4557,11 @@ export const PlaneView = memo(function PlaneView({
    * through here: a row of the Chats list and of the explorer, the hand on a row above it, the
    * title bar's list, the palette, a needs-you Go, a name in a pane's breadcrumb.
    *
-   * **A press shows the chat in the focused pane** (`tabs.press`): a chat on screen in a pane
-   * is jumped to, never shown twice; otherwise the focused pane of its workspace's front tab
-   * shows it, or, where that pane holds a view, the pane used last that shows a chat or
-   * nothing. A task lands like any chat. **The chat the pane showed before keeps running**,
-   * and the pane remembers it for ⌘⇧H. No tab is added, save where the chat's strip has no
-   * pane but views. `into` is the pane a breadcrumb was pressed in, which walks up its chain
-   * in that same pane.
+   * **A press opens by the one rule** (`tabs.opensAt`, #5289): a chat on screen in a pane is
+   * jumped to, never shown twice; otherwise it fills an empty pane of its workspace's front tab,
+   * shows in a one-pane tab, or gets a tab of its own, so a split survives. A task lands like
+   * any chat. **A chat a pane showed before keeps running**, and the pane remembers it for ⌘⇧H.
+   * `into` is the pane a breadcrumb was pressed in, which walks up its chain in that same pane.
    *
    * The new layout is told in the same call (`change`), so a task pressed onto is held from
    * that moment. A chat listed because its Smart close stopped (SI-8f) has been looked at, so
@@ -4592,7 +4591,7 @@ export const PlaneView = memo(function PlaneView({
   /** **A pane of this window was used** (#5108): pressed in, or typed in. Said to the core while
    *  the project has another window, so a press on a chat in no pane, in whichever window, goes
    *  to the most recently used pane across them (`press_elsewhere`). A project of one window
-   *  says nothing: its press goes to its focused pane, as it always has. A pane's focus is no
+   *  says nothing: its press opens by the one rule there. A pane's focus is no
    *  use of it: the window coming forward hands focus back to the pane that last had it, so a
    *  press on a sidebar row would always be this window's. **Said once until the window has been
    *  away**: no other window's pane can be used while this one keeps the focus. */
@@ -6844,12 +6843,12 @@ export const PlaneView = memo(function PlaneView({
       setStartedIn((was) => ({ ...was, [chat.session]: filedFor(chat.cwd, focused) }));
       setReopened((was) => [...was.filter((one) => one.session !== chat.session), chat]);
       // **Resume on an ended chat's band** (#5019) starts it in the pane that showed it, and
-      // that pane no longer shows it as ended. Any other resume takes the focused pane (#4758).
+      // that pane no longer shows it as ended. Any other resume lands as a press (#5289).
       if (into !== undefined) forgetEndedHere(into);
       if (into !== undefined && tabHolding(now.current, into) !== undefined)
         change((tabs) => replaceSession(tabs, into, chat.session));
       else
-        showStarted(
+        showResumed(
           {
             session: chat.session,
             chat: name,
@@ -6860,7 +6859,7 @@ export const PlaneView = memo(function PlaneView({
         );
       return { ok: true };
     },
-    [change, focused, forgetEndedHere, plane, showAgain, showStarted, takeChatNumber],
+    [change, focused, forgetEndedHere, plane, showAgain, showResumed, takeChatNumber],
   );
 
   /**
@@ -6934,7 +6933,7 @@ export const PlaneView = memo(function PlaneView({
       if (said.status === "error") return said.error;
       const chat = said.data;
       noteStarted(chat);
-      showStarted(
+      showResumed(
         {
           session: chat.session,
           chat: chat.name,
@@ -6946,7 +6945,7 @@ export const PlaneView = memo(function PlaneView({
       rereadFinished();
       return undefined;
     },
-    [focused, noteStarted, plane, rereadFinished, showStarted],
+    [focused, noteStarted, plane, rereadFinished, showResumed],
   );
   /**
    * **Resume, on the band of a pane left on a task that ended** (#4757, #4756): its finished row
@@ -6966,15 +6965,23 @@ export const PlaneView = memo(function PlaneView({
       if (said.status === "error") return;
       const chat = said.data;
       noteStarted(chat);
-      if (was !== undefined) forgetEndedFiled(was);
-      change((tabs) =>
-        was === undefined
-          ? openTab(tabs, chat.session, chat.name, whoOf(chat.persona, chat.harness), chat.label)
-          : replaceSession(tabs, was, chat.session),
-      );
+      if (was === undefined)
+        showResumed(
+          {
+            session: chat.session,
+            chat: chat.name,
+            who: whoOf(chat.persona, chat.harness),
+            label: chat.label,
+          },
+          filedFor(chat.cwd, focused),
+        );
+      else {
+        forgetEndedFiled(was);
+        change((tabs) => replaceSession(tabs, was, chat.session));
+      }
       rereadFinished();
     },
-    [change, forgetEndedFiled, noteStarted, plane, rereadFinished],
+    [change, focused, forgetEndedFiled, noteStarted, plane, rereadFinished, showResumed],
   );
 
   /**

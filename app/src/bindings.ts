@@ -337,7 +337,7 @@ export const commands = {
 	 *  97): where another of the project's windows has it in a pane, that window comes forward and
 	 *  shows it there; a chat is never shown in two windows. Where no window has it, it goes to the
 	 *  most recently used pane across the project's windows: where that is another window's, that
-	 *  window comes forward and shows it in its focused pane (`Chats::window_pressed`). Either way
+	 *  window comes forward and opens it as a press does there (`Chats::window_pressed`). Either way
 	 *  that window's label is answered, and its pane counts as used. Null where the press is the
 	 *  asking window's: the chat is in its pane, its pane was used last, or none has been.
 	 */
