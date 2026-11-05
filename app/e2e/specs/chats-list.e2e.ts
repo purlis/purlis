@@ -157,7 +157,11 @@ async function measured(): Promise<Measured | null> {
           '.chat [data-scope="chat-mark"][data-part="who"] > :first-child',
         ),
       ].map((mark) =>
-        seen(mark, mark.closest('[data-part="root"]')?.getAttribute("data-variant") ?? ""),
+        seen(
+          mark,
+          mark.closest('[data-part="root"]')?.querySelector('[data-part="word"]')?.textContent ??
+            "",
+        ),
       ),
       rows: [
         ...section.querySelectorAll<HTMLElement>(
