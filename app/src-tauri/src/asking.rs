@@ -1906,6 +1906,7 @@ pub fn vault_refused(one: &crate::vaultroute::VaultRefused) -> Shown {
         login: None,
         earlier_messages: None,
         secret: None,
+        fill: None,
     }
 }
 
