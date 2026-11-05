@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { CHAT_ROW, dropPane, GRIP, STRIP, TAB, usePaneDrag } from "./paneDrag";
@@ -85,7 +85,9 @@ function Window({
     },
     [heard],
   );
-  control?.(change);
+  useEffect(() => {
+    control?.(change);
+  }, [change, control]);
   const hold = useCallback((id: number) => change((t) => selectTab(t, id)), [change]);
   const own = useCallback((session: number) => String(session), []);
   const drag = usePaneDrag({ tabs, change, ctx, onHoldTab: hold, chatNameOf: own, active });
@@ -155,7 +157,9 @@ beforeEach(() => {
   });
   // The strip and the rows are found by the point; the panes never are: their zones stay put.
   document.elementFromPoint = (x: number, y: number) => {
-    const holding = [...document.querySelectorAll(`[${STRIP}], [${TAB}]:not([${"data-drop-pane"}])`)].filter((el) => {
+    const holding = [
+      ...document.querySelectorAll(`[${STRIP}], [${TAB}]:not([${"data-drop-pane"}])`),
+    ].filter((el) => {
       const b = boxOf(el);
       return x >= b.left && x < b.left + b.width && y >= b.top && y < b.top + b.height;
     });
@@ -204,8 +208,11 @@ function drawn(session: number) {
 
 const LEFT_HALF = { left: 0, top: 40, width: 800, height: 600 };
 const RIGHT_HALF = { left: 800, top: 40, width: 800, height: 600 };
-const part = (name: string) => document.querySelector(`[data-scope="pane-preview"][data-part="${name}"]`);
-const allParts = (name: string) => [...document.querySelectorAll(`[data-scope="pane-preview"][data-part="${name}"]`)];
+const part = (name: string) =>
+  document.querySelector(`[data-scope="pane-preview"][data-part="${name}"]`);
+const allParts = (name: string) => [
+  ...document.querySelectorAll(`[data-scope="pane-preview"][data-part="${name}"]`),
+];
 const root = () => document.documentElement;
 
 describe("the panes move to where a drop would leave them (#5291)", () => {
@@ -224,8 +231,20 @@ describe("the panes move to where a drop would leave them (#5291)", () => {
   });
 
   it.each([
-    ["top", 400, 50, { left: 0, top: 40, width: 1600, height: 300 }, { left: 0, top: 340, width: 1600, height: 300 }],
-    ["bottom", 400, 630, { left: 0, top: 340, width: 1600, height: 300 }, { left: 0, top: 40, width: 1600, height: 300 }],
+    [
+      "top",
+      400,
+      50,
+      { left: 0, top: 40, width: 1600, height: 300 },
+      { left: 0, top: 340, width: 1600, height: 300 },
+    ],
+    [
+      "bottom",
+      400,
+      630,
+      { left: 0, top: 340, width: 1600, height: 300 },
+      { left: 0, top: 40, width: 1600, height: 300 },
+    ],
     ["middle", 400, 340, LEFT_HALF, RIGHT_HALF],
   ])("draws a pane held at another's %s", (_, x, y, moved, other) => {
     const window = shown();
@@ -380,7 +399,11 @@ describe("the zones stay on the layout from the drag's start (#5291)", () => {
     fireEvent.pointerDown(head(3), at(900, 50));
     fireEvent.pointerMove(document, at(60, 300));
     fireEvent.pointerUp(document, at(60, 300));
-    expect(contentsOf(window.tabs(), front).map(({ content }) => content.kind === "session" && content.session)).toEqual([3, 1]);
+    expect(
+      contentsOf(window.tabs(), front).map(
+        ({ content }) => content.kind === "session" && content.session,
+      ),
+    ).toEqual([3, 1]);
   });
 
   it("retakes the zones when another tab comes to the front", () => {

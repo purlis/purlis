@@ -10,12 +10,12 @@
    (`styles.css`). Only tokens. Motion reads its token, so reduced motion makes it immediate. */
 
 [data-scope="pane-preview"]:is(
-    [data-part="arriving"],
-    [data-part="size"],
-    [data-part="refused"],
-    [data-part="held"],
-    [data-part="words"]
-  ) {
+  [data-part="arriving"],
+  [data-part="size"],
+  [data-part="refused"],
+  [data-part="held"],
+  [data-part="words"]
+) {
   position: fixed;
   z-index: 4;
   box-sizing: border-box;
@@ -74,7 +74,8 @@
 }
 
 /* **What is held** and **what letting go would do**, by the pointer. */
-[data-scope="pane-preview"]:is([data-part="held"], [data-part="words"]) {
+[data-scope="pane-preview"][data-part="held"] {
+  overflow: hidden;
   max-inline-size: 32rem;
   padding: var(--space-1) var(--space-2);
   border: var(--panel-border-width) solid var(--border-subtle);
@@ -83,12 +84,19 @@
   box-shadow: var(--elevation-overlay);
   color: var(--text-primary);
   font-size: var(--font-size-sm);
-}
-
-[data-scope="pane-preview"][data-part="held"] {
-  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+[data-scope="pane-preview"][data-part="words"] {
+  max-inline-size: 32rem;
+  padding: var(--space-1) var(--space-2);
+  border: var(--panel-border-width) solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-overlay);
+  box-shadow: var(--elevation-overlay);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
 }
 
 [data-scope="pane-preview"][data-part="words"][data-refused] {

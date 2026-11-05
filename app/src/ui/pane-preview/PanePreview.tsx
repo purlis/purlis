@@ -82,7 +82,9 @@ export function PanePreviewSize({
 
 /** **The pane a refused place means**: its edge, over where it is. */
 export function PanePreviewRefused({ box }: { box: PreviewBox }) {
-  return <div data-scope="pane-preview" data-part="refused" aria-hidden="true" style={placed(box)} />;
+  return (
+    <div data-scope="pane-preview" data-part="refused" aria-hidden="true" style={placed(box)} />
+  );
 }
 
 /** **What is held**, its name, by the pointer. */

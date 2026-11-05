@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useLayoutEffect, useMemo, useSyncExternalStore } from "react";
+import { useCallback, useLayoutEffect, useMemo, useSyncExternalStore } from "react";
 import { HeldPanes, type PaneBase, PANES_ROOM } from "./paneHeld";
 import {
   type Box,
@@ -72,8 +72,14 @@ export class PaneDragStore {
   private measuredFor: Layout | undefined;
   private at = { x: 0, y: 0 };
   /** The elements that follow the pointer, while they are drawn. */
-  heldLabel: HTMLElement | null = null;
-  wordsLabel: HTMLElement | null = null;
+  private heldLabel: HTMLElement | null = null;
+  private wordsLabel: HTMLElement | null = null;
+  readonly heldHere = (element: HTMLElement | null) => {
+    this.heldLabel = element;
+  };
+  readonly wordsHere = (element: HTMLElement | null) => {
+    this.wordsLabel = element;
+  };
 
   readonly get = () => this.state;
   readonly subscribe = (listener: () => void) => {
@@ -168,6 +174,8 @@ export function PaneDragLayer({
   ctx: DropContext;
 }) {
   const drag = useSyncExternalStore(store.subscribe, store.get);
+  const heldHere = useCallback((label: HTMLElement | null) => store.heldHere(label), [store]);
+  const wordsHere = useCallback((label: HTMLElement | null) => store.wordsHere(label), [store]);
   const dragging = drag !== undefined;
   const shown = useMemo(() => shownIn(tabs), [tabs]);
   const front = shown?.front;
@@ -272,22 +280,11 @@ export function PaneDragLayer({
           return <PanePreviewSize key={pane} box={box} {...gridIn(box, cells)} />;
         })}
       {name !== "" && (
-        <PanePreviewHeld
-          at={heldAt(x, y)}
-          ref={(element) => {
-            store.heldLabel = element;
-          }}
-        >
+        <PanePreviewHeld at={heldAt(x, y)} ref={heldHere}>
           {name}
         </PanePreviewHeld>
       )}
-      <PanePreviewWords
-        at={wordsAt(x, y)}
-        refused={refused}
-        ref={(element) => {
-          store.wordsLabel = element;
-        }}
-      >
+      <PanePreviewWords at={wordsAt(x, y)} refused={refused} ref={wordsHere}>
         {verdict === undefined
           ? "Let go here to cancel. Esc also cancels."
           : verdict.ok

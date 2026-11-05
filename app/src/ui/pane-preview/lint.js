@@ -16,8 +16,7 @@ const panePreviewFamily = moved({
   classes: [],
   roles: [],
   elements: [],
-  message:
-    "what a drag draws over the panes: draw it from `ui/pane-preview/PanePreview`",
+  message: "what a drag draws over the panes: draw it from `ui/pane-preview/PanePreview`",
 });
 
 /** This folder's rules, by name: `purlis/<name>` in `eslint.config.js`, an error. */

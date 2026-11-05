@@ -69,8 +69,9 @@ const boxOfRect = (r: DOMRect): Box => ({
   height: r.height,
 });
 
-const framesOf = (tab: number) =>
-  [...document.querySelectorAll<HTMLElement>(`[${PANE}][${TAB}="${tab}"]`)];
+const framesOf = (tab: number) => [
+  ...document.querySelectorAll<HTMLElement>(`[${PANE}][${TAB}="${tab}"]`),
+];
 
 /** The pixels a length in the theme comes to here. Its own element, since nothing may be drawn. */
 function pixelsOf(length: string): number {
@@ -155,12 +156,7 @@ export class HeldPanes {
    * **Draws the preview on the frames of tab `front`**: each moved to its box, or, with no plan,
    * where it is, with `lifted` dimmed. `moved` is the pane that is being moved.
    */
-  draw(
-    front: number,
-    base: PaneBase,
-    plan: Plan | undefined,
-    marks: { held?: number },
-  ) {
+  draw(front: number, base: PaneBase, plan: Plan | undefined, marks: { held?: number }) {
     for (const frame of framesOf(front)) {
       const pane = Number(frame.getAttribute(PANE));
       const from = base.zones.get(pane);

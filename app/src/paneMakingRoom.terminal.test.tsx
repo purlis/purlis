@@ -43,7 +43,7 @@ const ctx: DropContext = {
 const ROOM = { left: 0, top: 0, width: 1600, height: 600 };
 
 function start(): Tabs {
-  let tabs = openTab(noTabs(), 1, "1", "steward");
+  const tabs = openTab(noTabs(), 1, "1", "steward");
   const tab = tabs.order[0];
   return insertPane(tabs, {
     tab,
@@ -84,12 +84,7 @@ function Window({ first }: { first: Tabs }) {
             data-box={`${box?.left},${box?.top},${box?.width},${box?.height}`}
           >
             <div {...{ [GRIP]: "" }}>{`head ${session}`}</div>
-            <SessionPane
-              plane="/planes/one"
-              session={session}
-              focused={false}
-              onFocus={() => {}}
-            />
+            <SessionPane plane="/planes/one" session={session} focused={false} onFocus={() => {}} />
           </div>
         );
       })}
@@ -105,14 +100,15 @@ function boxOf(el: Element): { left: number; top: number; width: number; height:
   const own = el.getAttribute("data-box");
   const written = el as HTMLElement;
   const pixels = (value: string) => (value === "" ? undefined : parseFloat(value));
-  const from = own !== null
-    ? (() => {
-        const [left, top, width, height] = own.split(",").map(Number);
-        return { left, top, width, height };
-      })()
-    : el.parentElement !== null
-      ? boxOf(el.parentElement)
-      : { left: 0, top: 0, width: 0, height: 0 };
+  const from =
+    own !== null
+      ? (() => {
+          const [left, top, width, height] = own.split(",").map(Number);
+          return { left, top, width, height };
+        })()
+      : el.parentElement !== null
+        ? boxOf(el.parentElement)
+        : { left: 0, top: 0, width: 0, height: 0 };
   return {
     ...from,
     width: pixels(written.style?.width ?? "") ?? from.width,

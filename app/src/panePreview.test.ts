@@ -3,13 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import { type DropContext, dropOn, type Source, type Target } from "./paneDrop";
-import {
-  boxesOf,
-  gridIn,
-  planOf,
-  type TerminalCells,
-  wouldBe,
-} from "./panePreview";
+import { boxesOf, gridIn, planOf, type TerminalCells, wouldBe } from "./panePreview";
 import { contentsOf, insertPane, type Content, noTabs, openTab, type Tabs } from "./tabs";
 
 /**
