@@ -472,6 +472,24 @@ mod light_rule {
         format!("{}{alpha}", best.1)
     }
 
+    /// `value` stepped darker by 0.01 of lightness until it is `distance` from `from` in OKLab.
+    pub(super) fn apart(mut value: String, from: &str, distance: f64) -> String {
+        let (mut lightness, chroma, hue) = oklch_of(&value);
+        let lab = |hex: &str| {
+            let (l, c, h) = oklch_of(hex);
+            [l, c * h.to_radians().cos(), c * h.to_radians().sin()]
+        };
+        let far = |one: &str| {
+            let ([l1, a1, b1], [l2, a2, b2]) = (lab(one), lab(from));
+            ((l1 - l2).powi(2) + (a1 - a2).powi(2) + (b1 - b2).powi(2)).sqrt()
+        };
+        while far(&value) < distance {
+            lightness -= 0.01;
+            value = oklch(lightness, chroma, hue);
+        }
+        value
+    }
+
     /// `value` stepped darker by 0.01 of lightness until it clears `floor` on `ground`.
     pub(super) fn cleared(mut value: String, ground: &str, floor: f64) -> String {
         let (mut lightness, chroma, hue) = oklch_of(&value);
@@ -555,15 +573,31 @@ fn reflected(
     dark: &ResolvedTheme,
     stepped: Stepped<'_>,
 ) -> std::collections::BTreeMap<&'static str, String> {
+    reflected_apart(dark, stepped, &[])
+}
+
+/// [`reflected`], then each colour of `apart` stepped darker until it is as far as it asks, in
+/// OKLab, from the other colour (#4921).
+fn reflected_apart(
+    dark: &ResolvedTheme,
+    stepped: Stepped<'_>,
+    apart: Stepped<'_>,
+) -> std::collections::BTreeMap<&'static str, String> {
     // The foundation's deepest colour: what the window is drawn on, behind everything.
     let deepest = light_rule::oklch_of(dark.value("window.background")).0;
     // A plain control's edge stays none, and the filled primary is drawn as in dark: its white
-    // words hold 4.5:1 on its fill in either (#3177).
+    // words hold 4.5:1 on its fill in either (#3177). High contrast draws the edge (#4921), and
+    // reflects it as it reflects every rule.
+    let edge = if dark.high_contrast {
+        "overlay.scrim"
+    } else {
+        "border.control"
+    };
     let kept = [
         "overlay.scrim",
         "overlay.shadow",
         "scrollbar.track",
-        "border.control",
+        edge,
         "accent.fill",
         "accent.fill-hover",
         "accent.fill-edge",
@@ -588,6 +622,11 @@ fn reflected(
         let ground = derived[ground].clone();
         let value = derived[token].clone();
         derived.insert(token, light_rule::cleared(value, &ground, *floor));
+    }
+    for (token, from, distance) in apart {
+        let from = derived[from].clone();
+        let value = derived[token].clone();
+        derived.insert(token, light_rule::apart(value, &from, *distance));
     }
     derived
 }
@@ -628,6 +667,10 @@ const LIGHT_HIGH_CONTRAST_STEPPED: Stepped<'static> = &[
     ("state.success", "list.selected", 7.0),
 ];
 
+/// **Light high contrast's colours held apart** (#4921), past its steps: the success colour,
+/// stepped to 7:1, came within 0.1 of the waiting colour, so it is stepped on until it is not.
+const LIGHT_HIGH_CONTRAST_APART: Stepped<'static> = &[("state.success", "state.waiting", 0.1)];
+
 #[test]
 fn light_high_contrast_is_dark_high_contrast_reflected_by_light_s_rule() {
     // #4677: light high contrast is to dark high contrast what light is to dark. Its words a
@@ -636,7 +679,7 @@ fn light_high_contrast_is_dark_high_contrast_reflected_by_light_s_rule() {
     // ruled for high contrast on #4663.
     let dark = appearance("dark-high-contrast");
     let light = appearance("light-high-contrast");
-    let derived = reflected(dark, LIGHT_HIGH_CONTRAST_STEPPED);
+    let derived = reflected_apart(dark, LIGHT_HIGH_CONTRAST_STEPPED, LIGHT_HIGH_CONTRAST_APART);
     for (token, value) in &light.values {
         assert_eq!(value, &derived[token], "{token}");
     }

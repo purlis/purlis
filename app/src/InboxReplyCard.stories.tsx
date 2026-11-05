@@ -4,12 +4,15 @@
 /**
  * **The Inbox's card for a chat waiting on the person's reply** (#4550): what the chat said under
  * the status line, over the lines it wrote and never cut, and the one line that says so where
- * the app heard no message. The person answers from here, so the reply box is walked to.
+ * the app heard no message. The person answers from here, so the reply box is walked to. What
+ * the chat said is its markdown under the safe subset, folded past six lines (#5214). The card's
+ * head is one row in the pane band's style, with Go to chat and the × that ignores it; the reply
+ * is a strip at its foot whose send is the card's one button.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor, within } from "storybook/test";
 import type { Shown } from "./bindings";
-import { Inbox, NO_MESSAGE } from "./Inbox";
+import { Inbox, NO_MESSAGE, REPLY_HINT } from "./Inbox";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
 
 const QUESTION: Shown = {
@@ -31,6 +34,7 @@ function OneCard({ last_message }: { last_message?: string }) {
         asks={[{ ...QUESTION, last_message }]}
         onGo={() => {}}
         onLeave={() => {}}
+        onIgnore={() => {}}
       />
     </div>
   );
@@ -43,8 +47,8 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** The list is one Tab stop: Tab lands on the card, ↓ goes on to its reply box however long the
- *  message above it, ↑ comes back, and Shift+Tab leaves the list. */
+/** The list is one Tab stop: Tab lands on the card, ↓ goes on past its head's Go to chat and ×
+ *  to its reply strip, ↑ comes back, and Shift+Tab leaves the list. */
 async function theReplyBoxIsReached(canvasElement: HTMLElement) {
   const card = () => canvasElement.querySelector("li.inbox-ask");
   await userEvent.tab();
@@ -52,12 +56,18 @@ async function theReplyBoxIsReached(canvasElement: HTMLElement) {
   expectFocusInSight();
   await userEvent.keyboard("{ArrowDown}");
   await untilFocused(
-    () => within(canvasElement).getByRole("textbox", { name: "Reply to steward 6" }),
-    "↓ reaches the reply box",
+    () => within(canvasElement).getByRole("button", { name: "Go to chat steward 6" }),
+    "↓ reaches Go to chat in the head",
   );
   expectFocusInSight();
-  await userEvent.keyboard("{ArrowUp}");
-  await untilFocused(card, "↑ comes back to the card");
+  await userEvent.keyboard("{ArrowDown}{ArrowDown}");
+  await untilFocused(
+    () => within(canvasElement).getByRole("textbox", { name: "Reply to steward 6" }),
+    "↓ reaches the reply strip",
+  );
+  expectFocusInSight();
+  await userEvent.keyboard("{Escape}");
+  await untilFocused(card, "Esc leaves the strip for the card");
   expectFocusInSight();
   await userEvent.tab({ shift: true });
   await waitFor(() => expect(card()?.contains(document.activeElement)).toBe(false));
@@ -84,5 +94,62 @@ export const NoMessageToShow: Story = {
     await expect(card.getAllByText(NO_MESSAGE)).toHaveLength(1);
     await expect(card.getAllByText("Waiting on your reply")).toHaveLength(1);
     await theReplyBoxIsReached(canvasElement);
+  },
+};
+
+const LONG = `I'm waiting for #5141 to merge before the last part of #5160. Until then there's nothing left to do on PR #5163.
+
+- **CI on the current head (\`07e0ff5\`):** the Rust tests pass now that the wrong expectation is fixed.
+- **The one remaining failure:** stories WebKit 5/7, on \`SkillPage.stories.tsx\`. These are #4672's pictures, so I'm not pulling any.
+- **Still to do:** remove the Notices-centre \`VaultRefusedNotice\` for a chat with no pane, and add the vault rows to \`noticePlace.test.ts\`.
+
+I've sent you a note saying this. When you tell me #5141 has merged, I'll rebase onto main, do that last part, run tsc and eslint, and push.`;
+
+/** **A long message** (#5214): folded at six lines behind Show all, which ↓ reaches before the
+ *  reply box; opened, it shows whole, and the reply strip stays at the card's foot. */
+export const ALongMessage: Story = {
+  args: { last_message: LONG },
+  play: async ({ canvasElement }) => {
+    const card = within(canvasElement);
+    await expect(card.getAllByText("Still to do:")[0]?.tagName).toBe("STRONG");
+    const show = () => card.getByRole("button", { name: /^Show all · \d+ lines$/ });
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}");
+    await untilFocused(show, "↓ reaches Show all, past the head");
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await untilFocused(
+      () => card.getByRole("button", { name: "Show less" }),
+      "Enter opens it whole",
+    );
+    expectFocusInSight();
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(
+      () => card.getByRole("textbox", { name: "Reply to steward 6" }),
+      "↓ goes on to the reply box at the card's foot",
+    );
+    expectFocusInSight();
+  },
+};
+
+/** **The reply strip held** (#5214): two lines and its hint once it holds the caret, its send the
+ *  accent's once there is something to send, Shift+Enter a new line. */
+export const TheReplyStripHeld: Story = {
+  args: { last_message: "Which should I build on, main or dev?" },
+  play: async ({ canvasElement }) => {
+    const card = within(canvasElement);
+    const box = card.getByRole("textbox", { name: "Reply to steward 6" });
+    const strip = () => canvasElement.querySelector("[data-foot-strip]");
+    await expect(strip()).toHaveAttribute("data-rows", "1");
+    await userEvent.click(box);
+    await waitFor(() => expect(strip()).toHaveAttribute("data-rows", "2"));
+    await expect(card.getByText(REPLY_HINT)).toHaveAttribute("data-shown");
+    await userEvent.keyboard("main,{Shift>}{Enter}{/Shift}then rebase");
+    await expect(box).toHaveValue("main,\nthen rebase");
+    await expect(card.getByRole("button", { name: "Send reply to steward 6" })).toHaveAttribute(
+      "data-variant",
+      "primary",
+    );
+    expectFocusInSight();
   },
 };

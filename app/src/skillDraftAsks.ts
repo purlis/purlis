@@ -85,7 +85,15 @@ export type SkillChatAsk =
   | { plane: string; kind: "try"; id: string; profile: string | null }
   /** "Ask the chat to redo it" (S9): typed into `chat`, the chat that drafted it, where it is
    *  open; else (`chat` null, or no tab holds it) a chat opened afresh. */
-  | { plane: string; kind: "redo"; id: string; name: string; chat: number | null }
+  | {
+      plane: string;
+      kind: "redo";
+      id: string;
+      name: string;
+      /** The draft's level: what the chat it opens is linked to (#5185). */
+      level: SkillLevel;
+      chat: number | null;
+    }
   /** "Ask a chat to write them" (#3925): the trigger tests of the skill `name` at `level`. */
   | { plane: string; kind: "triggers"; level: SkillLevel; name: string }
   /** "Ask a chat to write outcome evals" (#2780): the outcome evals of the skill `name`. */
@@ -108,12 +116,12 @@ export function askSkillChat(ask: SkillChatAsk): void {
  * project's `levels`.
  */
 export function askDraft(plane: string, scope: StudioScope, levels: readonly StudioLevel[]): void {
-  askSkillChat({
-    plane,
-    kind: "draft",
-    level: levelFrom(scope, levelsFor(levels, scope)),
-    what: "",
-  });
+  askSkillChat({ plane, kind: "draft", level: draftLevel(scope, levels), what: "" });
+}
+
+/** The level {@link askDraft}'s draft lands at, and so where its chat starts (#5184). */
+export function draftLevel(scope: StudioScope, levels: readonly StudioLevel[]): SkillLevel {
+  return levelFrom(scope, levelsFor(levels, scope));
 }
 
 /** What a chat's tab says of the drafts it wrote (decision 38): only that they are ready. */

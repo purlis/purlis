@@ -1392,7 +1392,7 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     for (name, wanted) in [
         ("field", &["root", "label", "help", "error"][..]),
         ("text-input", &["root", "icon"][..]),
-        ("textarea", &["root"][..]),
+        ("textarea", &["root", "hint"][..]),
     ] {
         let one = family(name);
         assert_eq!(one["since"], 3, "{name}");

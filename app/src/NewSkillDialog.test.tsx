@@ -216,7 +216,7 @@ describe("New skill…", () => {
     const dialog = await newSkill(user);
     await user.click(within(dialog).getByRole("button", { name: "Ask a chat to draft it" }));
     const form = await screen.findByRole("dialog", { name: "Ask a chat to draft a skill" });
-    const open = within(form).getByRole("button", { name: "Open the chat" });
+    const open = within(form).getByRole("button", { name: "Open a chat at ops" });
     expect(open).toBeDisabled();
     await user.type(within(form).getByLabelText("What should it do?"), "Sorts issues.");
     await user.click(open);

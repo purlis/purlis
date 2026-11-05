@@ -170,7 +170,7 @@ describe("draft skills in the Skill studio", function () {
     const what = await $("aria/What should it do?");
     await what.waitForDisplayed({ timeout: 10_000 });
     await what.addValue("Probes drafting a skill.");
-    await (await $("button=Open the chat")).click();
+    await (await $("button*=Open a chat")).click();
     await untilAChatStarts(plane, wereRunning, "Ask a chat to draft a skill started no chat");
     await endTheSessionsStartedSince(wereRunning);
   });

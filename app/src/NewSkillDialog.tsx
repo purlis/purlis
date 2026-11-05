@@ -29,7 +29,7 @@ import {
 import { nameProblem, whoGets } from "./SkillChangeDialogs";
 import { NEW_SKILL } from "./SkillStarts";
 import { Choice, Field, SettingRow } from "./settings/components";
-import { labelOf, levelKey } from "./skillChanges";
+import { chatPlace, labelOf, levelKey } from "./skillChanges";
 import { CardButton } from "./ui/card/CardButton";
 import { Dialog } from "./ui/dialog/Dialog";
 import { Select } from "./ui/select/Select";
@@ -196,8 +196,15 @@ export function NewSkillDialog({
       }
       alternative={back}
       main={{
-        children: writing ? (busy ? "Making…" : "Make it and open its page") : "Open the chat",
-        reserve: writing ? ["Make it and open its page", "Making…"] : ["Open the chat"],
+        // The chat starts where its draft lands (#5184), and the button names the place.
+        children: writing
+          ? busy
+            ? "Making…"
+            : "Make it and open its page"
+          : `Open a chat ${chatPlace(level)}`,
+        reserve: writing
+          ? ["Make it and open its page", "Making…"]
+          : levels.map((one) => `Open a chat ${chatPlace(one.level)}`),
         isDisabled: !ready,
         onPress: () => {
           if (!ready) return;

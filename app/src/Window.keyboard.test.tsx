@@ -529,7 +529,8 @@ describe("a list is one Tab stop", () => {
     const asks = within(inbox).getAllByRole("listitem");
     // The keyboard lands on the first ask, never on one of its buttons.
     await waitFor(() => expect(asks[0]).toHaveFocus());
-    await userEvent.keyboard("{ArrowDown}");
+    // Past the card's head, Go to chat and its × (#5214), to its reply.
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}");
     expect(within(asks[0]).getByRole("textbox", { name: "Reply to steward three" })).toHaveFocus();
   });
 

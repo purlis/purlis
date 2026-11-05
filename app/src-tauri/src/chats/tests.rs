@@ -10136,3 +10136,57 @@ fn a_task_pressed_into_a_pane_is_held_from_that_layout_and_the_chat_it_replaced_
     );
     chats.end_all();
 }
+
+// ----- what the Skill studio started a chat for (#5185) ----------------------------------
+
+#[test]
+fn a_studio_chats_job_is_done_once_its_draft_came_and_stays_done() {
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let studio = purlis_core::reopen::StudioJob {
+        skill: Some("deploy".to_owned()),
+        level: purlis_core::skills::verbs::Level::project(),
+        job: purlis_core::reopen::StudioWork::OutcomeEvals,
+        done: false,
+    };
+    let session = chats
+        .start(
+            &Chat {
+                studio: Some(studio),
+                ..chat(&a_claude(dir.path()), "3", None)
+            },
+            SIZE,
+        )
+        .unwrap();
+    assert_eq!(
+        chats.open_now()[0].studio.as_ref().map(|job| job.done),
+        Some(false)
+    );
+
+    chats.studio_job_done(session);
+    chats.studio_job_done(session);
+
+    assert_eq!(
+        chats.record().chats[0].studio.as_ref().map(|job| job.done),
+        Some(true)
+    );
+    assert_eq!(
+        chats.open_now()[0].studio.as_ref().map(|job| job.done),
+        Some(true)
+    );
+    let _ = chats.close(session);
+}
+
+#[test]
+fn a_chat_the_studio_did_not_start_has_no_job_to_be_done() {
+    let dir = tempfile::tempdir().unwrap();
+    let chats = Chats::new();
+    let session = chats
+        .start(&chat(&a_claude(dir.path()), "3", None), SIZE)
+        .unwrap();
+
+    chats.studio_job_done(session);
+
+    assert_eq!(chats.record().chats[0].studio, None);
+    let _ = chats.close(session);
+}

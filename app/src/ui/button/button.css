@@ -194,6 +194,31 @@
   text-decoration: underline;
 }
 
+/* **A quiet link** (#5214): a card's way on beside its one answer, Go to chat in an Inbox card's
+   head. The quiet words and no box at rest; under the pointer and the keyboard, the primary
+   words, underlined, and still no ground. */
+[data-scope="button"][data-part="root"][data-variant="quiet-link"] {
+  border-color: transparent;
+  color: var(--text-quiet);
+  background-color: transparent;
+  padding-inline: 0;
+}
+
+/* On one line each because the engine reads this rule by its selector
+   (`the_buttons_family_default_is_what_button_css_draws`), which prettier would wrap. */
+/* prettier-ignore */
+[data-scope="button"][data-part="root"][data-variant="quiet-link"][data-open]:not([data-disabled]),
+[data-scope="button"][data-part="root"][data-variant="quiet-link"][data-hovered]:not([data-disabled]) {
+  color: var(--text-primary);
+  background-color: transparent;
+  text-decoration: underline;
+}
+
+[data-scope="button"][data-part="root"][data-variant="quiet-link"][data-focus-visible] {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
 /* **Pressed, as a toggle** (`ToggleButton`, DS-12): it stands on the accent's ground behind the
    accent's edge, as a chosen segment does, so it is told by its edge and not by colour alone.
    Under the pointer it stays pressed. */

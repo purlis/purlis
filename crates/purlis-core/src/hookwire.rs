@@ -1688,6 +1688,10 @@ pub enum Browsing {
         target: String,
         vault: String,
         key: String,
+        /// **The 2FA code the seed under `key` makes, not the value itself** (#5118): the app
+        /// works the code out from the seed as it fills, and the seed reaches no page.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        code: bool,
     },
 }
 
@@ -1983,6 +1987,19 @@ pub enum GitWork {
         /// Also delete the folder's branch, as `git branch -d` does: only where it is merged.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         delete_branch: bool,
+    },
+    /// `purlis worktree prune [repo] [--dry-run] [--keep-branches]` (ADR 0110): every finished
+    /// branch folder of the ask's workspace removed, by the route a chat's removal takes, and
+    /// each one's local branch deleted unless `keep_branches`. **It has no word for `--force`**:
+    /// a folder that is not finished is kept and said. A kind of its own, so an app that does
+    /// not know it answers nothing and removes nothing.
+    WorktreePrune {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        repo: Option<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        dry_run: bool,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        keep_branches: bool,
     },
     /// **The guard's question before plain git writes a branch folder** (#3931): may this chat
     /// `act` in the folder `<repo>/<piece>` of the ask's workspace? The app runs no git: it

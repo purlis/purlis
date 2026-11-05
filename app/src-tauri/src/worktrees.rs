@@ -318,7 +318,8 @@ pub async fn worktree_remove(
 /// task's folder needs hold (`purlis_core::dispatchplace::merge` and `discard`): the commit the
 /// person was shown, the task ended and no chat standing in the folder, the brokered route, and
 /// only the branch purlis cut. These two have none of them, so a folder the dispatch store
-/// holds is refused here with where to go instead, `force` or not.
+/// holds is refused here with where to go instead, `force` or not, unless it is a finished
+/// folder (ADR 0110): its task ended and nothing in it would be lost, removed without `force`.
 ///
 /// The rule is the core's (`dispatchplace::kept_from_the_explorer`), read as `purlis worktree
 /// remove` reads it: a record that does not read holds the folder its text names, and names
@@ -330,10 +331,11 @@ fn not_a_task_s(
     repo: &str,
     piece: &str,
     merging: bool,
+    force: bool,
 ) -> Result<(), String> {
     let no_discard = || no_discard_there(plane, workspace, repo);
     purlis_core::dispatchplace::kept_from_the_explorer(
-        plane, workspace, repo, piece, merging, no_discard,
+        plane, workspace, repo, piece, merging, force, no_discard,
     )
     .map_or(Ok(()), Err)
 }
@@ -356,7 +358,7 @@ fn remove_piece(
     force: bool,
 ) -> Result<(), String> {
     let _turn = turn(plane, workspace, repo)?;
-    not_a_task_s(plane, workspace, repo, piece, false)?;
+    not_a_task_s(plane, workspace, repo, piece, false, force)?;
     worktree::remove(plane, workspace, repo, piece, force, false)
         .map(|_| ())
         .map_err(|refusal| refusal.in_window())
@@ -628,7 +630,7 @@ pub async fn worktree_merge(
 /// The merge itself, against a root the registry has already vouched for.
 fn merge_piece(plane: &Path, workspace: &str, repo: &str, piece: &str) -> Result<Merged, String> {
     let _turn = turn(plane, workspace, repo)?;
-    not_a_task_s(plane, workspace, repo, piece, true)?;
+    not_a_task_s(plane, workspace, repo, piece, true, false)?;
     worktree::merge(plane, workspace, repo, piece)
         .map(|m| Merged {
             branch: m.branch,
@@ -970,14 +972,21 @@ mod tests {
             purlis_core::dispatchplace::left_to_its_task("check the queue", "check", true)
         );
         in_the_windows_words(&merged);
-        for force in [false, true] {
-            let removed = remove_piece(&root, "alpha", "thing", "check", force).unwrap_err();
-            assert_eq!(
-                removed,
-                purlis_core::dispatchplace::left_to_its_task("check the queue", "check", false)
-            );
-            in_the_windows_words(&removed);
-        }
+        // A Remove not forced says why the folder is not finished (ADR 0110); a forced one is
+        // left to the task's Changes tab, finished or not.
+        let removed = remove_piece(&root, "alpha", "thing", "check", false).unwrap_err();
+        assert!(
+            removed.contains("not finished: its task has not ended"),
+            "{removed}"
+        );
+        assert!(removed.contains("Changes tab"), "{removed}");
+        in_the_windows_words(&removed);
+        let removed = remove_piece(&root, "alpha", "thing", "check", true).unwrap_err();
+        assert_eq!(
+            removed,
+            purlis_core::dispatchplace::left_to_its_task("check the queue", "check", false)
+        );
+        in_the_windows_words(&removed);
         assert!(added.path.is_dir(), "nothing was removed");
         assert!(!clone.join("work.txt").exists(), "nothing was merged");
 

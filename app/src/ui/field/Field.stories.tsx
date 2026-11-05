@@ -3,7 +3,7 @@
 
 /**
  * **The field family** (#2905): a field with its label, help and error, a refused value, each
- * size of the text input with its glass, an unavailable box, a textarea, inline validation on
+ * size of the text input with its glass, an unavailable box, a textarea and its strip, inline validation on
  * blur, ⌘⏎ sending a form, and a filter that keeps the keyboard and its caret when its list is
  * drawn again. Each is drawn, held to axe, walked by the keyboard and compared with its baseline
  * in Chromium and WebKit (`docs/component-stories.md`).
@@ -323,6 +323,66 @@ export const Textarea: Story = {
     expectFocusInSight();
     await userEvent.tab();
     await expect(canvas.queryByRole("alert")).toBeNull();
+  },
+};
+
+/** **A strip** (#5214): no box of its own, one line at rest; holding the caret it grows to two
+ *  with its hint in sight, and to as many as four with its lines. */
+function Strip() {
+  const [value, setValue] = useState("");
+  return (
+    <div style={{ inlineSize: "24rem" }}>
+      <TextArea
+        strip
+        aria-label="Reply to steward 6"
+        placeholder="Reply to steward 6…"
+        hint="Enter sends · Shift+Enter new line"
+        value={value}
+        onChange={setValue}
+      />
+    </div>
+  );
+}
+
+export const TextareaStrip: Story = {
+  args: { "aria-label": "Reply to steward 6" },
+  render: () => <Strip />,
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const box = canvas.getByRole("textbox", { name: "Reply to steward 6" });
+    const strip = () => canvasElement.querySelector("[data-foot-strip]");
+    await expect(strip()).toHaveAttribute("data-rows", "1");
+    await userEvent.tab();
+    await expect(box).toHaveFocus();
+    await waitFor(() => expect(strip()).toHaveAttribute("data-rows", "2"));
+    expectFocusInSight();
+    await userEvent.keyboard("one{Enter}two{Enter}three");
+    await waitFor(() => expect(strip()).toHaveAttribute("data-rows", "3"));
+    await userEvent.tab({ shift: true });
+    await expect(box).toHaveValue("one\ntwo\nthree");
+  },
+};
+
+/** A refused strip draws the box's danger edge, as every refused box does (#3323, #5214). */
+export const TextareaStripRefused: Story = {
+  args: { "aria-label": "Reply to steward 6" },
+  render: () => (
+    <div style={{ inlineSize: "24rem" }}>
+      <TextArea
+        strip
+        aria-label="Reply to steward 6"
+        value="too long"
+        error="This reply is too long."
+        onChange={() => {}}
+      />
+    </div>
+  ),
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const box = canvas.getByRole("textbox", { name: "Reply to steward 6" });
+    await expect(box).toHaveAccessibleDescription("This reply is too long.");
+    await expect(canvasElement.querySelector("[data-foot-strip]")).toHaveAttribute("data-invalid");
+    await userEvent.tab();
+    await expect(box).toHaveFocus();
+    expectFocusInSight();
   },
 };
 

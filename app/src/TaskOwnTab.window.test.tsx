@@ -789,6 +789,24 @@ describe("the session's End…, the one way it ends (#4756)", () => {
     ]);
   });
 
+  it("keeps a task ended in its own tab on its workspace's strip, once the plane lists it no more (#5106)", async () => {
+    const { tree, asked } = await drawn(withTasks(), {
+      running: ["talk", "sweep", "probe", "deep"],
+    });
+    await toOwnTab(tree, "talk");
+    const read = commandsOf(asked, "plane_sidebar").length;
+
+    const question = await askToEnd("steward 1");
+    await userEvent.click(within(question).getByRole("radio", { name: "Stop them" }));
+    await userEvent.click(within(question).getByRole("button", { name: "Close" }));
+
+    // The core has ended it, and the plane, read again, lists it no more.
+    await waitFor(() => expect(commandsOf(asked, "close_chat_stopping")).toHaveLength(1));
+    await waitFor(() => expect(commandsOf(asked, "plane_sidebar").length).toBeGreaterThan(read));
+    // Its tab stands where it stood, beside its workspace's other tabs.
+    await waitFor(() => expect(tabNames()).toEqual(["steward 1", "steward 2", "talk"]));
+  });
+
   it("says nothing of tabs for a session none of whose tasks has one", async () => {
     await drawn(withTasks(), { running: ["talk"] });
     const question = await askToEnd("steward 1");

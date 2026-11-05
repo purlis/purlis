@@ -372,6 +372,7 @@ pub fn here(
             prompt: text.clone(),
             then_a_space: true,
             starts_runs: None,
+            studio: None,
         },
         size,
         |_, declared, _| {

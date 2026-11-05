@@ -1964,6 +1964,111 @@
         "button.root.quiet.open.shadow": {
           "$ref": "#/$defs/part-shadow"
         },
+        "button.root.quiet-link.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "button.root.quiet-link.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.root.quiet-link.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "button.root.quiet-link.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "button.root.quiet-link.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "button.root.quiet-link.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "button.root.quiet-link.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "button.root.quiet-link.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "button.root.quiet-link.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "button.root.quiet-link.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "button.root.quiet-link.height": {
+          "$ref": "#/$defs/part-height"
+        },
+        "button.root.quiet-link.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "button.root.quiet-link.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.root.quiet-link.hover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "button.root.quiet-link.hover.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "button.root.quiet-link.pressed.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "button.root.quiet-link.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.root.quiet-link.pressed.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "button.root.quiet-link.pressed.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "button.root.quiet-link.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "button.root.quiet-link.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.root.quiet-link.selected.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "button.root.quiet-link.selected.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "button.root.quiet-link.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "button.root.quiet-link.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.root.quiet-link.focused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "button.root.quiet-link.focused.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "button.root.quiet-link.disabled.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "button.root.quiet-link.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.root.quiet-link.disabled.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "button.root.quiet-link.disabled.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
+        "button.root.quiet-link.open.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "button.root.quiet-link.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.root.quiet-link.open.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "button.root.quiet-link.open.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
         "button.label.text": {
           "$ref": "#/$defs/part-text"
         },
@@ -2234,6 +2339,33 @@
         "button.label.quiet.open.text": {
           "$ref": "#/$defs/part-text"
         },
+        "button.label.quiet-link.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.label.quiet-link.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "button.label.quiet-link.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "button.label.quiet-link.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.label.quiet-link.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.label.quiet-link.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.label.quiet-link.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.label.quiet-link.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.label.quiet-link.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
         "button.icon.text": {
           "$ref": "#/$defs/part-text"
         },
@@ -2442,6 +2574,27 @@
           "$ref": "#/$defs/part-text"
         },
         "button.icon.quiet.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.icon.quiet-link.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.icon.quiet-link.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.icon.quiet-link.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.icon.quiet-link.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.icon.quiet-link.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.icon.quiet-link.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.icon.quiet-link.open.text": {
           "$ref": "#/$defs/part-text"
         },
         "button.shortcut.text": {
@@ -2682,6 +2835,30 @@
           "$ref": "#/$defs/part-text"
         },
         "button.shortcut.quiet.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.quiet-link.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.quiet-link.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "button.shortcut.quiet-link.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.quiet-link.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.quiet-link.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.quiet-link.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.quiet-link.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.quiet-link.open.text": {
           "$ref": "#/$defs/part-text"
         },
         "card.root.fill": {
@@ -9727,6 +9904,21 @@
         },
         "textarea.root.invalid.shadow": {
           "$ref": "#/$defs/part-shadow"
+        },
+        "textarea.hint.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "textarea.hint.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "textarea.hint.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "textarea.hint.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "textarea.hint.invalid.text": {
+          "$ref": "#/$defs/part-text"
         },
         "titlebar.workspace.fill": {
           "$ref": "#/$defs/part-fill"

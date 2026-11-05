@@ -25,6 +25,8 @@ afterEach(() => {
   forgetStudio();
 });
 
+const PROJECT = { at: "project", local: false } as const;
+
 const draft = (name: string, over: Record<string, unknown> = {}) => ({
   id: `${name}-id`,
   name,
@@ -169,11 +171,13 @@ describe("the Drafts page", () => {
 
     // Its chat closed: a chat is asked afresh.
     const lint = await openDraft("lint", user);
-    await user.click(within(lint).getByRole("button", { name: "Ask a chat to redo it" }));
+    await user.click(
+      within(lint).getByRole("button", { name: "Ask a chat at the project's root to redo it" }),
+    );
     stop();
     expect(asks).toEqual([
-      { plane: "p", kind: "redo", id: "triage-id", name: "triage", chat: 4 },
-      { plane: "p", kind: "redo", id: "lint-id", name: "lint", chat: null },
+      { plane: "p", kind: "redo", id: "triage-id", name: "triage", level: PROJECT, chat: 4 },
+      { plane: "p", kind: "redo", id: "lint-id", name: "lint", level: PROJECT, chat: null },
     ]);
   });
 
@@ -185,7 +189,7 @@ describe("the Drafts page", () => {
 
     const page = await openDraft("triage", user);
     await user.click(within(page).getByRole("button", { name: "Try it" }));
-    await user.click(screen.getByRole("button", { name: "Ask a chat to draft a skill" }));
+    await user.click(screen.getByRole("button", { name: "Ask a chat at ops to draft a skill" }));
     stop();
     expect(asks).toEqual([
       { plane: "p", kind: "try", id: "triage-id", profile: null },
@@ -212,7 +216,9 @@ describe("the Drafts page", () => {
     const none = await screen.findByTestId("skill-drafts-none");
     expect(none).toHaveTextContent("No drafts");
     expect(
-      within(none).getByRole("button", { name: "Ask a chat to draft a skill" }),
+      within(none).getByRole("button", {
+        name: "Ask a chat at the project's root to draft a skill",
+      }),
     ).toBeInTheDocument();
   });
 
