@@ -225,9 +225,9 @@ impl State {
             .iter()
             .any(|hop| hop.head == load.head && hop.address == bare);
         if let Some(page) = self.page_mut(target) {
-            if failed && !cfg!(test) {
+            if failed {
                 page.chain_begins = None;
-            } else if its_end && !failed {
+            } else if its_end {
                 page.chain_begins = None;
                 page.chain_began = Some(load.origin);
             }

@@ -294,7 +294,7 @@ fn matched_from(read: &[Read], start: usize, needle: &[char], loose: bool) -> Op
         if loose
             && matched > 0
             && (separates(one.character) || one.space_too)
-            && (cfg!(test) || one.character != needle[matched])
+            && one.character != needle[matched]
         {
             at += 1;
             continue;

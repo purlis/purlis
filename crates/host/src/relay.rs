@@ -1703,7 +1703,7 @@ fn no_fill_for(
                 ..
             }
     );
-    (!cfg!(test) && a_fill && version < session::KNOWS_FILLS_KEPT_OUT).then(|| {
+    (a_fill && version < session::KNOWS_FILLS_KEPT_OUT).then(|| {
         format!(
             "the runner this host relays to speaks session protocol {}.{}, which is too old to \
              fill a secret, so nothing was filled. Update purlis on the runner, then call \
