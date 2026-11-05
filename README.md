@@ -1,61 +1,132 @@
 # purlis
 
-purlis as one cross-platform desktop app: run tons of harness sessions (Claude Code, Codex) in
-parallel, across workspaces and repos, and always know which one needs you.
+**Run many coding-agent chats in parallel, across workspaces and repos, and always know which
+one needs you.**
 
-purlis was called charter until 2026-10, and this repo was `diazoxide/charter`
-([ADR 0091](docs/adr/0091-the-product-is-purlis-and-reads-its-old-names-until-1-0.md)).
-Before 2026-09, `diazoxide/charter` meant the plane repo, now
-[`purlis/purlis-plane`](https://github.com/purlis/purlis-plane), which is private.
+[![ci](https://github.com/purlis/purlis/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/purlis/purlis/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/purlis/purlis)](https://github.com/purlis/purlis/releases/latest)
+[![Licence: Apache-2.0](https://img.shields.io/badge/licence-Apache--2.0-blue)](LICENSE)
 
-This is the rebuild decided in [ADR 0025](docs/adr/0025-charter-is-rebuilt-as-a-desktop-app-on-a-rust-core.md),
-and it stands alone: nothing it ships needs the Python charter it replaces. The spec, with its
-milestones and acceptance limits, is [`docs/spec.md`](docs/spec.md); the decisions since are in
-[`docs/adr/`](docs/adr/), and the plane's on-disk format is
-[`docs/plane-format.md`](docs/plane-format.md). All three moved here from
-[purlis/purlis-plane](https://github.com/purlis/purlis-plane), where ADRs 0001 to 0024
-stay as history ([ADR 0044](docs/adr/0044-charter-apps-design-record-lives-in-charter-app.md)).
-`purlis version` is the app's version ([ADR 0045](docs/adr/0045-charters-version-is-the-apps-version.md)).
+purlis is a desktop app for people who work with coding agents all day. Claude Code, Codex and
+opencode chats run side by side, each in its own tab, each in the workspace and repo it works
+on. The window tells you which chat is waiting for you, so you stop checking terminals.
 
-**Status:** version 0.4, in internal testing. Builds for macOS on Apple silicon and
-for Linux on x86_64 are published on the [releases page](https://github.com/purlis/purlis/releases),
-on a stable and a dev channel, and purlis updates itself from them
-([`docs/updating.md`](docs/updating.md)). There is no Windows build yet. Until 1.0, a command
-or a file format can still change, and purlis still reads the names it had as charter
-([ADR 0091](docs/adr/0091-the-product-is-purlis-and-reads-its-old-names-until-1-0.md)).
+Everything purlis knows is in a git repository you own: your workspaces, the roles your agents
+play, and what earlier chats learned. A new chat starts already knowing what the last one
+learned. purlis is a Tauri app with a Rust core and a React window.
 
-To start, follow [Getting started with GitHub](docs/getting-started/github.md) or
-[Getting started with GitLab](docs/getting-started/gitlab.md). To remove purlis from a machine,
-see [Uninstall purlis](docs/uninstall.md).
+## Why purlis
 
-## What it is
+- **Many agents, one window.** Chats on different harnesses and repos run at once. Each one
+  reports its state through its hooks and its exit, never through purlis reading its output, so
+  "needs you" means it actually needs you.
+- **Memory that carries over.** Each workspace keeps a journal, its todos and its memory. Every
+  chat writes a session record when it closes, and the next chat starts with what the earlier
+  ones recorded.
+- **Plain files in git.** Workspaces, personas, memory and settings are files in a repo. Share
+  them with a team by pushing, review them in a pull request, and read them without purlis.
+- **Sandboxed by default.** Each chat runs in a sandbox purlis builds for its harness. The
+  default is a floor every chat gets; the full sandbox limits a chat to the folders and network
+  hosts it was given. Your level is yours, kept on your machine
+  ([ADR 0067](docs/adr/0067-a-chat-runs-in-a-sandbox-charter-compiles-for-its-harness.md),
+  [ADR 0096](docs/adr/0096-your-sandbox-level-is-yours-and-is-kept-on-this-machine.md)).
+- **No secrets in the chat.** Credentials live in a vault, in your system keyring or in
+  1Password. A chat uses one by name and never sees its value
+  ([`secrets.md`](crates/purlis-core/docs/secrets.md)).
+- **Your own logins.** purlis uses GitHub's `gh` and GitLab's `glab` as you, and each harness
+  with its own sign-in. It holds no forge token and installs nothing into your harness
+  ([`forges.md`](crates/purlis-core/docs/forges.md),
+  [`harnesses.md`](crates/purlis-core/docs/harnesses.md)).
 
-purlis has five concepts ([`CONTEXT.md`](CONTEXT.md) is the glossary):
+## Install
 
-- **Project**: the git repo that holds your workspaces, personas, memory and settings. The
-  first run makes one on this machine only. A team shares one by pushing it, as any repo. A
-  code repo is never a project: purlis calls it a **repo**.
-- **Workspace**: a named piece of work in a project, with its own `workspace.md`, memory, todos
-  and clones of the repos it works on.
-- **Chat**: one conversation with a coding agent, in a tab, in one workspace or at the project
-  root. It is where work happens, and the window says which chats need you.
-- **Persona**: a role a chat runs as, with its own `persona.md`, memory and vault of
-  credentials. Work for another persona goes to a chat of its own, by dispatch.
-- **Memory**: what purlis keeps so that the next chat starts knowing what earlier ones learned:
-  a workspace's journal, a persona's memory, shared memory, and the session records chats
-  write when they close.
+purlis runs on macOS (Apple silicon) and Linux (x86_64). There is no Windows build yet.
 
-**Harnesses.** A chat runs Claude Code, Codex or opencode, each signed in with its own login.
-The app starts each one and arms it with purlis's hooks and its guard for that chat alone, and
-installs nothing into the harness ([`harnesses.md`](crates/purlis-core/docs/harnesses.md)).
+### Quick install
 
-**Forges.** purlis works with GitHub and with GitLab, gitlab.com or self-managed, through their
-own command-line tools, `gh` and `glab`, signed in as you. It keeps no forge token of its own
-([`forges.md`](crates/purlis-core/docs/forges.md)).
+```sh
+curl -fsSL https://raw.githubusercontent.com/purlis/purlis/main/install.sh | sh
+```
 
-**Credentials.** A vault holds them, in the operating system's keyring by default, or in
-1Password, and a chat uses one by its name through `purlis secret`
-([`secrets.md`](crates/purlis-core/docs/secrets.md)).
+[`install.sh`](install.sh) is short: read it before you run it. It downloads the latest stable
+release from GitHub and installs it:
+
+- **macOS:** `purlis.app` goes into `/Applications`, or `~/Applications` when you cannot write
+  to `/Applications`.
+- **Linux:** the `.deb`, through `sudo apt install`, which also puts `purlis` on your `PATH`.
+  Without apt, the AppImage goes into `~/Applications`.
+
+When the [GitHub CLI](https://cli.github.com/) is installed and signed in, the script first
+checks that the download was built by this repository's release workflow, and installs nothing
+if it was not. To install the dev build of `main` instead, run
+`curl -fsSL https://raw.githubusercontent.com/purlis/purlis/main/install.sh | PURLIS_CHANNEL=dev sh`.
+
+### Install by hand
+
+Download a build from the [releases page](https://github.com/purlis/purlis/releases/latest).
+
+**macOS:** open `purlis-macos-arm64.dmg` and drag **purlis** to Applications. macOS builds are
+signed ad hoc and are not notarized, because purlis has no Apple Developer ID yet. macOS
+refuses to open an app downloaded in a browser until you clear its download flag, sometimes
+calling it "damaged". Run this once, before the first launch:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/purlis.app
+```
+
+The quick install above doesn't need this step, because a file `curl` downloads carries no
+such flag.
+
+**Linux:** install the `.deb` with `sudo apt install ./purlis-linux-x86_64.deb`, or make
+`purlis-linux-x86_64-appimage.AppImage` executable and run it.
+
+### After installing
+
+purlis updates itself. It checks each update's signature before installing it, and asks first
+([`docs/updating.md`](docs/updating.md)). `purlis update --channel dev` moves a machine to the
+dev channel, and `--channel stable` moves it back. To use `purlis` in a terminal on macOS, run
+**Install `purlis` command in PATH** from the command palette. To check that a download is a
+real purlis build, see [SECURITY.md](SECURITY.md).
+
+On macOS, an ad-hoc signed build counts as a new app after each update, so the Keychain asks
+again for the items purlis keeps there. *Always Allow* lasts until the next update
+([why](docs/updating.md#macos-privacy-questions-and-why-purlis-needs-no-full-disk-access)).
+
+## Get started
+
+You need at least one harness (Claude Code, Codex or opencode) and your forge's command-line
+tool, signed in. If no harness is installed, purlis offers each one's official installer.
+
+1. Open purlis and choose **Create a project**, or open a repo you already have.
+2. Make a workspace for the piece of work you are doing.
+3. Start a chat in it. Start more as you need them.
+
+The step-by-step guides start from a clean machine:
+[Getting started with GitHub](docs/getting-started/github.md) and
+[Getting started with GitLab](docs/getting-started/gitlab.md).
+
+## Concepts
+
+[`CONTEXT.md`](CONTEXT.md) is the full glossary. These five cover most of it:
+
+| Word | What it is |
+| --- | --- |
+| **Project** | The git repo that holds your workspaces, personas, memory and settings. A code repo is never a project: purlis calls it a **repo**. |
+| **Workspace** | A named piece of work in a project, with its own `workspace.md`, memory, todos and clones of the repos it works on. |
+| **Chat** | One conversation with a coding agent, in a tab, in a workspace or at the project root. |
+| **Persona** | A role a chat runs as, with its own `persona.md`, memory and vault. Work for another persona goes to its own chat, by dispatch. |
+| **Memory** | What the next chat starts with: a workspace's journal, a persona's memory, shared memory, and the session records chats write when they close. |
+
+## Status
+
+purlis has not reached 1.0 and is still in testing. Until 1.0, a command or a file format can
+still change. purlis was called charter until 2026-10, and until 1.0 it still reads charter's
+names and answers to the `charter` command
+([ADR 0091](docs/adr/0091-the-product-is-purlis-and-reads-its-old-names-until-1-0.md)). What
+each release brought is in [CHANGELOG.md](CHANGELOG.md), and `purlis news` prints it.
+
+Builds are published on two channels: **stable**, from release tags, and **dev**, from every
+green `main`.
 
 ## Supported platforms
 
@@ -75,156 +146,45 @@ Intel macOS build, no `.rpm`, and no Windows until the port lands.
 | iOS 16.4 or later | no iOS app yet | — | Nothing. The floor any iOS client will be held to |
 | Desktop browsers, the current Chrome, Edge, Firefox and Safari | no browser client yet | — | Nothing. The floor any browser client will be held to |
 
-## Layout
+## Documentation
 
-| Path | What |
+| To | Read |
 | --- | --- |
-| `crates/purlis-core` | The core: projects, workspaces, personas, memory, vaults, the forges, the harnesses and the sandbox chats run in. No UI, no Tauri |
-| `crates/terminal` | A program in its own pseudo-terminal, the headless engine that keeps its screen, and the fork lock every program is started under, with nothing of git, HTTP or the keyring: what a session host owns terminals with. The core re-exports it |
-| `crates/purlis-cli` | The `purlis` binary, with `charter` as an alias, called by hooks, scripts and agents |
-| `crates/stand-in` | Test-only: the one way a test writes a program it is about to run |
-| `crates/same-user` | Whether a socket's peer, a directory or a file is this user's alone: the one copy of the checks `charterd.sock`, the hook sockets and the client scopes' credentials rest on |
-| `crates/browser-engine` | The engine a browser runs on: a pinned Chrome for Testing, verified against its manifest before it runs, started over an inherited DevTools pipe with no port, in a process group its keeper ends when the host ends |
-| `crates/persona-statistics` | purlis's first built-in extension, and the executor's first consumer: the persona statistics view (ADR 0041 stage 2). The release build assembles it into the app's resources (`persona-statistics assemble <dir>`), and it links the core's stats code so its numbers are `purlis persona stats`'s |
-| `app/` | The desktop app: React + TypeScript UI |
-| `app/src-tauri` | The app's Rust side: Tauri commands that call the core |
-| `app/src/bindings.ts` | The commands as TypeScript, generated by `tauri-specta`. Never edited by hand |
-| `app/src/theme` | The themes, as data: semantic tokens the CSS and xterm are both generated from ([`docs/design-system.md`](docs/design-system.md)) |
-| `tools/relaunch.mjs` | The app quit and started again, which no scenario spec can do |
-| `site/` | purlis's website and docs: an Astro Starlight site built from `docs/` and checked on every PR (`.github/workflows/docs.yml`). Not published yet (ruling V38) |
+| Install and set up a first project | [Getting started with GitHub](docs/getting-started/github.md), [with GitLab](docs/getting-started/gitlab.md) |
+| Learn the words purlis uses | [`CONTEXT.md`](CONTEXT.md) |
+| See what purlis is held to | [The spec](docs/spec.md), with its limits and milestones |
+| Find why something is the way it is | [Decision records](docs/adr/), from ADR 0025 |
+| Read or write a project's files | [The project format](docs/plane-format.md) |
+| Understand updates and signatures | [Updating](docs/updating.md) |
+| Remove purlis from a machine | [Uninstall](docs/uninstall.md) |
+| Build, test or change purlis | [Developing purlis](docs/development.md) |
 
-## Develop
+## Contributing
 
-Requires stable Rust (`rust-toolchain.toml` picks it) and Node 24 (`.nvmrc`). On Linux, install
-[Tauri's system dependencies](https://v2.tauri.app/start/prerequisites/#linux) first.
+Bug reports, fixes, tests and documentation are welcome. Read
+[CONTRIBUTING.md](CONTRIBUTING.md) first: it covers the build, the checks CI runs, changelog
+fragments and decision records. Every commit is signed off under the
+[DCO](https://developercertificate.org/) (`git commit -s`). For a larger change, open an issue
+before you write code.
 
-```bash
-cd app && npm install
-npm run tauri dev          # the app, with hot reload
+The quickest way in:
+
+```sh
+git clone https://github.com/purlis/purlis && cd purlis/app
+npm install
+npm run tauri dev
 ```
 
-Everything CI checks, runnable locally:
-
-```bash
-cargo fmt --all --check
-cargo clippy --all-targets -- -D warnings    # core and cli
-cargo test
-cargo deny check                             # licences and advisories (brew install cargo-deny)
-tools/no-orphans.sh -- cargo test --workspace   # and that no test left a process running
-
-cd app
-npm run typecheck && npm run lint && npm run format:check && npm test
-npx tauri build --debug --no-bundle          # the app crate, with its frontend built first
-```
-
-`tools/no-orphans.sh` counts every process of yours that started while the suite ran and is still
-running after it, so on a machine doing other work it names that work too. CI runs it with
-`--reap`, which also kills each one by pid; leave that off on a shared machine.
-
-purlis's website and docs, with the link check and the check that every page in `docs/` is in the
-sidebar, which CI runs on every pull request:
-
-```bash
-cd site && npm ci
-npm test && npm run build    # dist/; `npm run dev` serves it with reload
-```
-
-The commands the UI calls are generated into `app/src/bindings.ts`. Running the app writes it,
-and a test fails when it is out of date; to write it without running the app:
-
-```bash
-cargo test -p purlis-app -- --ignored
-```
-
-The scenario tests run against a built app; CI builds it with the `e2e` cargo feature first.
-One test cannot live among them — the app ended and started again, because WebdriverIO's
-service keeps one app process for a whole run and a spec that quits takes the run with it:
-
-```bash
-npm run e2e:relaunch          # in app/, with the app already built with the `e2e` feature
-```
-
-CI also runs clippy on the app crate (`--workspace`), after creating an empty `app/dist` so it
-compiles without a frontend build.
-
-On Linux, CI also holds the built app's cold start to the spec's 2 s limit on the desktops
-purlis#24 is about. Each case launches the debug build once, discarded, then five times on
-a fresh HOME and XDG profile each. The median of the five must be inside the limit and no one
-of them past 2.5 s: a debug build on a shared runner is noisy (one launch in five went 63 ms over
-while the rest sat near 1.35 s), and a release build — the one users run — costs about 6.5 min
-of fat LTO on the runner against about 1 min for the debug build CI already makes. The
-discarded launch pays for a disk cold since boot or install (the binary and GTK/WebKitGTK's
-libraries), which a person pays once; its time is printed as "cold disk, once per boot or
-install: reported, not gated". The fresh profile makes each held launch pay what a new user's
-first launch pays: Mesa compiling WebKit's shaders into `~/.cache/mesa_shader_cache`. After the
-debug build above, with `xvfb`, `xauth`, `dbus-x11` and `i3` installed:
-
-```bash
-tools/coldstart-linux.sh bare       # X with no window manager, on the session bus as found
-tools/coldstart-linux.sh i3         # i3 under X11, on the session bus as found
-tools/coldstart-linux.sh i3-nobus   # i3 under X11 with no session bus, as `startx` into i3
-```
-
-`APP` names another binary and `LIMIT_MS` and `CEILING_MS` another limit and ceiling.
-
-CI runs a `windows` job too, every night but not on a pull request or a push to `main`,
-and it is **evidence, not a gate**: `continue-on-error`, not one of the eight required checks,
-and it reports the whole `cargo check` error list rather than stopping at the first line.
-Nothing has been ported to Windows, so it is expected to be red — what it is for is making
-"what is true on Windows" a measurement instead of a guess. What it has found so far is
-[ADR 0031](docs/adr/0031-windows-gets-charters-guards-or-it-gets-no-charter.md), and #95 to #103.
-
-Every plane write is also checked against what the Python charter answered for the same
-command on the same fixture plane: its output, its exit status and the tree it left, byte for
-byte. Those answers were recorded once, on 2026-09-23, and are replayed against every build with
-no Python anywhere (ADR 0046):
-
-```bash
-cargo test -p purlis-cli --test recorded_behaviour                  # every scenario
-cargo test -p purlis-cli --test recorded_behaviour -- save- doctor-  # only those
-```
-
-A change that is meant to move a recorded answer re-records it
-(`CHARTER_RECORDED_BLESS=1`, same command) and says why in the PR.
-
-To measure the app against the spec's limits, with tmux beside it as a reference (macOS; it
-takes about twenty minutes, opens windows on screen and brings each to the front, and needs the
-screen unlocked — a locked or sleeping display is not drawn, so nothing would paint):
-
-```bash
-node tools/bench.mjs          # builds release, then prints and writes target/bench/<time>/results.json
-```
-
-## A build you can run
-
-CI builds the app but never bundles it, so nothing in a PR is installable. The `release`
-workflow does, three ways: a `v*` tag publishes to the **stable** channel, a green `main`
-publishes to the **dev** channel, and **release → Run workflow** on any branch builds a macOS
-`.app`/`.dmg` and a Linux `.deb`/AppImage as run artifacts, published nowhere. The job summary
-prints what to type to install each one. A build started by hand uses the stable build's
-`release` profile unless you pick `dev-release`, the lighter profile the dev channel is built
-with ([ADR 0092](docs/adr/0092-the-channels-differ-in-optimisation-profile-and-bundle-set-and-in-nothing-else.md)).
-
-The app updates itself from those channels, and `purlis update --channel dev|stable` picks
-one. Published builds are updater-signed (minisign) and Developer ID signed, **not notarized**,
-so a first install from a browser meets Gatekeeper once and updates do not. How that works, and
-the keys and secrets only the operator can set up, are in [`docs/updating.md`](docs/updating.md)
-and [ADR 0042](docs/adr/0042-charter-updates-itself-and-nothing-it-cannot-verify-reaches-it.md).
-
-The bundles carry the `purlis` binary beside the app's own executable, because the app runs
-that one for hooks and deliberately does not look at `PATH`. It is staged as a Tauri sidecar by
-the workflow and declared in `app/src-tauri/tauri.release.conf.json`, which exists only so that
-a plain checkout — where the sidecar has not been built — still builds in CI.
+You need stable Rust and Node 24; [Developing purlis](docs/development.md) lists the rest.
 
 ## Community and support
 
 - **Questions and ideas:** [Discussions](https://github.com/purlis/purlis/discussions).
 - **Bugs and feature requests:** [issues](https://github.com/purlis/purlis/issues/new/choose).
 - **Where to go for what, and how soon we aim to answer:** [SUPPORT.md](SUPPORT.md).
-- **Contributing, and signing commits off under the DCO:** [CONTRIBUTING.md](CONTRIBUTING.md).
 - **How we treat each other:** the [Code of Conduct](CODE_OF_CONDUCT.md).
-- **Security vulnerabilities:** privately, as [SECURITY.md](SECURITY.md) describes, never in a
-  public issue.
+- **Security vulnerabilities:** report them privately, as [SECURITY.md](SECURITY.md) describes,
+  never in a public issue.
 
 ## Licence
 
@@ -232,8 +192,6 @@ purlis is licensed under the [Apache License, Version 2.0](LICENSE). Copyright 2
 The [NOTICE](NOTICE) file holds the attribution notices that travel with every copy, and the
 app shows both under About › Licences.
 
-"Purlis" and the Purlis logo are trademarks of Purlis. The licence does not grant permission
-to use them, except as required for reasonable and customary use in describing the origin of
-the work; [NOTICE](NOTICE) says so.
-
-Releases up to and including v0.4.1 were published under the MIT licence and remain under it.
+"Purlis" and the Purlis logo are trademarks of Purlis. The licence does not grant permission to
+use them, except as required for reasonable and customary use in describing the origin of the
+work; [NOTICE](NOTICE) says so.
