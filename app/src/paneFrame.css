@@ -7,9 +7,8 @@
 
    1. **the header** (`PaneHead`): the chat at a glance at its start, the chat's actions and the
       pane's own controls at its end, the bell in a fixed slot before ⋯ (`PaneBell`);
-   2. **the band** (`NoticePaneRow`): the pane's notices as washed cards, the words above their
-      ways out: its asks, and, expanded, its notes too under a head row with Dismiss all. Under
-      the header, so a notice arriving never moves it;
+   2. **the band** (`NoticePaneRow`): the pane's notices as compact rows under a head that folds
+      them to one line (#5215). Under the header, so a notice arriving never moves it;
    3. **the terminal**, which has the room the two leave and is pinned to its bottom.
 
    **Nothing sits between a tab and its pane, and nothing draws over the terminal.** The band was
@@ -36,14 +35,20 @@
   background-color: var(--terminal-background);
 }
 
-/* **The band and the header together never take more than about half the pane** (rule 6): past
-   that the band gives way and its warnings scroll inside it, and the header never does. */
+/* **The terminal never gives way past three lines** (#5215): the top gives way first, the header
+   never, and past that the band scrolls as one. Set by the flex of the frame, so a foot under the
+   terminal is taken off too (#5191). */
 .pane-top {
   display: flex;
-  flex: none;
+  flex: 0 1 auto;
   flex-direction: column;
   min-block-size: 0;
-  max-block-size: 46%;
+}
+
+.pane-frame.pane-headed > .pane-body {
+  /* Three of the terminal's own lines, as it measures them (`SessionPane`, `--terminal-row`), and
+     its strip under the last. Before a terminal says, three lines of the base text. */
+  min-block-size: calc(3 * var(--terminal-row, 1.25rem) + var(--space-4));
 }
 
 /* ---------------------------------------------------------------------------------------------
@@ -60,9 +65,35 @@
   gap: var(--space-2);
   min-block-size: 0;
   max-block-size: none;
-  padding: 0 var(--space-4) var(--space-2);
+  padding: 0;
+  margin: 0 var(--space-4) var(--space-3);
   border: 0;
   background-color: transparent;
+}
+
+/* **The band's own box** (#5215, the approved prototype): the raised ground and a hairline, with
+   its rows one under another inside it. Its folded line is the same box, one line high. */
+.pane-frame.pane-headed > .pane-top > [data-scope="notice-row"][data-part="root"] {
+  gap: 0;
+  overflow: hidden;
+  border: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
+  border-radius: var(--radius-lg);
+  background-color: var(--surface-raised);
+}
+
+/* Its rows touch, a line between them: the stack's fades give back no gap (`notice.css`). */
+.pane-top
+  > [data-scope="notice-row"][data-part="root"]
+  > [data-scope="notice-row"][data-part="stack"] {
+  --notice-row-gap: 0px;
+}
+
+/* Folded, its rows are all `hidden`: a stack with nothing to show takes no room and scrolls nothing
+   (its fades are boxes of their own). */
+.pane-top
+  > [data-scope="notice-row"][data-part="root"]
+  > [data-scope="notice-row"][data-part="stack"]:not(:has(> :not([hidden]))) {
+  display: none;
 }
 
 /* The warnings, one under another and each the band's width; past the band's room they scroll
@@ -72,15 +103,23 @@
   > :is(.pane-notices, [data-scope="notice-row"][data-part="stack"]) {
   flex: 0 1 auto;
   align-items: stretch;
-  gap: var(--space-2);
+  gap: 0;
   max-inline-size: none;
   min-block-size: 0;
   overflow-y: auto;
 }
 
-/* The band's fade goes to what the warnings stand on here: the terminal's fill (#3168). */
+/* **Its rows at rest take a few lines' room** (the prototype's 196px of its 560px pane), so a pile of
+   notices leaves the terminal its height; a message opened, or what a way out opened, takes what it needs. */
+.pane-top
+  > [data-scope="notice-row"][data-part="root"]
+  > [data-scope="notice-row"][data-part="stack"]:not(:has([data-whole], [aria-expanded="true"])) {
+  max-block-size: min(calc(var(--size-control) * 7), 33cqb);
+}
+
+/* The band's fade goes to what the rows stand on here: the band's own ground (#3168, #5215). */
 .pane-frame.pane-headed [data-scope="notice-row"][data-part="stack"] {
-  --notice-row-ground: var(--terminal-background);
+  --notice-row-ground: var(--surface-raised);
 }
 
 /* **An expanded band's head row** (#4754): what it holds at its start, quiet, and Dismiss all
@@ -93,8 +132,9 @@
   align-items: center;
   gap: var(--space-2);
   min-block-size: var(--size-control);
-  padding-inline: var(--space-1);
-  color: var(--text-quiet);
+  padding-inline: var(--space-5) var(--space-2);
+  border-block-end: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
+  color: var(--text-muted);
   font-size: var(--font-size-sm);
 }
 
@@ -265,6 +305,160 @@
   > :is(.notice-under-pane, [data-scope="notice"][data-part="under"])
   > p.ui-text-secondary {
   color: var(--text-quiet);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   A row of the band (#5215, the approved prototype's live pane): its icon, its words on one line
+   with its sub-line beneath, its ways out, and a separator to the next. No wash of its own: the
+   icon says what it is, and a consent keeps its full waiting-coloured edge (ADR 0097 §6).
+   --------------------------------------------------------------------------------------------- */
+
+.pane-top [data-scope="notice"][data-part="root"][data-placement="pane"][data-layout="row"] {
+  padding: 0;
+  border-radius: 0;
+  background-color: transparent;
+}
+
+/* **A note about a setting is an information line** (#5215, the prototype): quieter, and shorter. */
+.pane-top [data-layout="row"]:not(:has([data-part="sub"])) > [role="status"] {
+  min-block-size: var(--size-control);
+}
+
+.pane-top
+  [data-layout="row"]:not(:has([data-part="sub"]))
+  [data-part="words"]
+  > [data-part="message"] {
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-regular);
+}
+
+.pane-top
+  [data-scope="notice"][data-part="root"][data-placement="pane"][data-layout="row"]::before {
+  content: none;
+}
+
+.pane-top [data-scope="notice"][data-part="root"][data-layout="row"] + *,
+.pane-top .quiz-band-quiz + * {
+  border-block-start: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
+}
+
+.pane-top
+  [data-scope="notice"][data-part="root"][data-placement="pane"][data-layout="row"][data-consent] {
+  border: 1px solid var(--state-waiting);
+  border-radius: var(--radius-md);
+  background-color: transparent;
+}
+
+.pane-top [data-layout="row"] > [role="status"] {
+  display: grid;
+  grid-template-columns: auto minmax(8rem, 1fr) fit-content(70%);
+  gap: var(--space-2) var(--space-4);
+  align-items: center;
+  min-block-size: calc(var(--size-control) + var(--space-4));
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-5);
+}
+
+.pane-top [data-layout="row"] > [role="status"] > [data-part="mark"] {
+  /* On its first line, whatever the row holds (#5215's review of #5216). */
+  align-self: start;
+  margin-block-start: var(--space-2);
+  color: var(--state-waiting);
+}
+
+.pane-top [data-layout="row"][data-variant="trouble"] > [role="status"] > [data-part="mark"] {
+  color: var(--danger-base);
+}
+
+.pane-top [data-layout="row"][data-variant="news"] > [role="status"] > [data-part="mark"] {
+  color: var(--text-muted);
+}
+
+.pane-top [data-layout="row"][data-consent] > [role="status"] > [data-part="mark"] {
+  color: var(--accent-base);
+}
+
+/* **Its first line, and a toggle where that cuts it** (`useCut`). */
+.pane-top [data-layout="row"]:not([data-whole]) [data-part="words"] > [data-part="message"] {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+.pane-top [data-layout="row"] [data-part="words"] > [data-part="message"] {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+}
+
+/* **A consent's Allow stands apart from Keep blocked** (rule 9), and a plain way out has no edge. */
+.pane-top [data-part="ways"] > [data-variant="grants"] + :not([data-variant="grants"]) {
+  margin-inline-start: var(--space-6);
+}
+
+.pane-top [data-part="ways"] > [data-variant="secondary"] {
+  border-color: transparent;
+}
+
+/* Its sub-line stays on its one line in the row, whatever it says. */
+.pane-top [data-layout="row"] [data-part="sub"] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* **Opened, whole, with its ways pinned at its foot** (#5215): the band grows, the terminal gives
+   way down to three lines, and only past that does the band scroll, as one. */
+.pane-top [data-layout="row"][data-whole] > [role="status"] {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+}
+
+.pane-top [data-layout="row"][data-whole] [data-part="ways"] {
+  grid-column: 1 / -1;
+}
+
+.pane-top [data-layout="row"][data-whole] [data-part="ways"],
+.task-quiz-pinned {
+  position: sticky;
+  z-index: 2;
+  inset-block-end: 0;
+  padding-block: var(--space-2);
+}
+
+.pane-top [data-layout="row"][data-whole] [data-part="ways"] {
+  background-color: var(--surface-raised);
+}
+
+/* On the question's own card, whatever its ground. */
+.task-quiz-whole,
+.task-quiz-pinned {
+  background-color: inherit;
+}
+
+/* Folded, a prompt's text keeps to the row's one line: nothing in it takes a line of its own. */
+.pane-top [data-layout="row"]:not([data-whole]) .terminal-prompt-says * {
+  display: inline;
+  margin: 0;
+  padding: 0;
+}
+
+/* A row's words keep their room in a narrow pane, and its ways go under them. */
+@container (max-width: 34rem) {
+  .pane-top [data-layout="row"] > [role="status"] {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .pane-top [data-layout="row"] [data-part="ways"] {
+    grid-column: 1 / -1;
+  }
+}
+
+/* What a way out opened stays in the row and has no box of its own to scroll: the band is the one
+   thing that scrolls (#5215). */
+.pane-top [data-layout="row"] > :is(.notice-under-pane, [data-scope="notice"][data-part="under"]) {
+  max-block-size: none;
+  overflow-y: visible;
+  padding-inline: var(--space-5) var(--space-3);
 }
 
 /* ---------------------------------------------------------------------------------------------
@@ -623,12 +817,12 @@
   margin: var(--space-4) var(--space-4) 0;
 }
 
-/* **Opened, it stays inside the top's cap** (#4843): in a short pane the top is 46% of it, and
-   the strip gives way to it like the band does, its text scrolling inside it, so the terminal
-   below keeps its room whatever the message holds. */
+/* **Opened, it stays inside its cap** (#4843): with the header, no more than 46% of a short pane,
+   its text scrolling inside it, so the terminal below keeps its room whatever the message holds. */
 .pane-top > .waiting-strip[data-open] {
   flex: 0 1 auto;
   min-block-size: 0;
+  max-block-size: calc(46cqb - var(--size-chrome));
 }
 
 /* ---------------------------------------------------------------------------------------------
@@ -844,7 +1038,73 @@
 
 .task-quiz.inbox-ask {
   margin: 0;
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-5);
+}
+
+/* **A question's row** (#5215): as every row of the band, its kind mark on its first line. */
+.task-quiz-row {
+  display: grid;
+  grid-template-columns: auto minmax(8rem, 1fr) auto;
+  gap: var(--space-2) var(--space-4);
+  align-items: center;
+  min-block-size: calc(var(--size-control) + var(--space-4));
+}
+
+.task-quiz-row > .inbox-kind {
+  align-self: start;
+  margin-block-start: var(--space-2);
+}
+
+.task-quiz-words {
+  display: grid;
+  min-inline-size: 0;
+}
+
+.task-quiz-title {
+  overflow: hidden;
+  font-size: var(--font-size-md);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The first line is the task's words, inline after who asks: nothing in it takes a line of its own. */
+.task-quiz-first,
+.task-quiz-first * {
+  display: inline;
+  margin: 0;
+  padding: 0;
+}
+
+.task-quiz-sub {
+  overflow: hidden;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Opened, it shows whole under its row, its answer pinned at its foot (`.task-quiz-pinned`). */
+.task-quiz-whole {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-block: var(--space-2) 0;
+}
+
+.task-quiz-pinned {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+@container (max-width: 34rem) {
+  .task-quiz-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .task-quiz-row > .task-quiz-top-end {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
 }
 
 /* **The pause before the next quiz** (#4566): the quiz's own height, held by the slot it stood

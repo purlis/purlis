@@ -1166,8 +1166,8 @@ describe("a block's Notice is drawn from the ask the registry lists (#1695)", ()
     expect(
       within(notice)
         .getAllByRole("button")
-        .map((one) => one.textContent),
-    ).toEqual(["Only this chat, please", "Leave it blocked"]);
+        .map((one) => one.getAttribute("aria-label") ?? one.textContent),
+    ).toEqual(["Only this chat, please", "Leave it blocked", "Close"]);
   });
 
   it("draws the block on the pane beside the chat's older asks, with no cap (#4754)", async () => {
