@@ -1400,6 +1400,7 @@ fn the_routing_says_every_method_of_a_chats_host() {
         "fetch_back_left",
         "fetch_back_whole",
         "not_home_of_runner",
+        "programs_have_ended",
         "reaches_runner",
         "let_go_of_runner",
     ];
