@@ -281,7 +281,7 @@ fn a_chat_that_ran_unsandboxed_is_recorded_so_and_its_relaunch_is_built_the_same
     fs::write(path(plane.path()), text.replace("\"off\"", "\"none\"")).unwrap();
     assert!(
         !read(plane.path()).chats[0].unsandboxed,
-        "only the one word"
+        "only the one word is an opt-out"
     );
 }
 
