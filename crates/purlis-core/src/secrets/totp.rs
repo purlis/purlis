@@ -101,11 +101,8 @@ const FEWEST_CHARACTERS: usize = 16;
 const BARE_CHARACTERS: [usize; 5] = [16, 26, 32, 52, 103];
 
 /// **Whether `text` looks like a 2FA seed** (#5118): such a value never goes into a page as
-/// itself, so this reads wider than [`Seed::parse`] and accepts refusing some passwords, which the
-/// person's mark lets through ([`super::no_seed`]). An authenticator's address or its export's;
-/// text of base32 characters alone, however grouped; or a seed's shape that ends a line, with a
-/// name before it on that line or on the line before. Digits alone are no seed, as a card's number
-/// may be written, and neither is hex, as an API key often is.
+/// itself, so this reads wider than [`Seed::parse`] and accepts refusing some real values, which
+/// the person's mark lets through ([`super::no_seed`]).
 pub fn looks_like_a_seed(text: &str) -> bool {
     let trimmed = text.trim_start();
     if an_address(trimmed)
@@ -115,18 +112,15 @@ pub fn looks_like_a_seed(text: &str) -> bool {
     {
         return true;
     }
-    if ends_in_hex(text) {
-        return false;
-    }
-    base32_alone(text)
-        || trimmed
-            .split_once('\n')
-            .is_some_and(|(_, after_a_name)| base32_alone(after_a_name))
-        || text.lines().any(ends_in_a_seed)
+    let whole = !ends_in_hex(text)
+        && (base32_alone(text)
+            || trimmed
+                .split_once('\n')
+                .is_some_and(|(_, rest)| base32_alone(rest)));
+    whole || text.lines().any(|line| !ends_in_hex(line) && seed_on(line))
 }
 
-/// Whether the words that end `text` are hex digits, as many of them as the fewest a seed has.
-/// Whatever stands before them is a name, so digits alone behind a name end this way too.
+/// Whether the words that end `text` are hex digits, as many as the fewest a seed has.
 fn ends_in_hex(text: &str) -> bool {
     let hex: usize = words_of(text)
         .iter()
@@ -138,8 +132,7 @@ fn ends_in_hex(text: &str) -> bool {
     hex >= FEWEST_CHARACTERS
 }
 
-/// Whether `text`, once its spaces, `=` and `-` are set aside, is a seed by its characters, in one
-/// case: in both, it is left to [`ends_in_a_seed`], which asks for more.
+/// Whether `text`, once its spaces, `=` and `-` are set aside, is a seed by its characters.
 fn base32_alone(text: &str) -> bool {
     let mut count = Base32Count::default();
     for c in text.chars() {
@@ -153,15 +146,18 @@ fn base32_alone(text: &str) -> bool {
     count.one_case_seed()
 }
 
-/// **Whether `line` ends in a seed's shape**: one word or a group of them, from the line's start or
-/// after a name. A group is words of one length (the last may be shorter) with one separator
-/// between them, so a passphrase's uneven words are none, and neither are capitalised words.
-/// Walks back from the line's end, as a stretch that isn't a group stays none however far back it
-/// goes, so a long line costs one pass.
-fn ends_in_a_seed(line: &str) -> bool {
+/// Whether `line` holds a seed. Walks back from its end, as what isn't one stays none however far
+/// back it goes, so a long line costs one pass.
+fn seed_on(line: &str) -> bool {
+    let after = line.rsplit(char::is_alphanumeric).next().unwrap_or("");
+    if !after
+        .chars()
+        .all(|c| CLOSERS.contains(&c) || c.is_whitespace())
+    {
+        return false;
+    }
     let words = words_of(line);
     let mut count = Base32Count::default();
-    let mut capitalised = true;
     let mut length = 0;
     for (at, (gap, word)) in words.iter().enumerate().rev() {
         let last = at + 1 == words.len();
@@ -175,25 +171,36 @@ fn ends_in_a_seed(line: &str) -> bool {
             return false;
         }
         length = word.len();
-        capitalised &= word.chars().skip(1).all(|c| !c.is_ascii_uppercase())
-            && word.chars().next().is_some_and(|c| !c.is_ascii_lowercase());
-        let starts_it =
-            at == 0 || gap.contains(|c: char| NAME_ENDS.contains(&c) || c.is_whitespace());
-        let words_not_a_seed = !last && capitalised;
-        if starts_it && (count.one_case_seed() || (count.both_cases_seed() && !words_not_a_seed)) {
+        let starts = if at == 0 {
+            gap.chars()
+                .all(|c| OPENERS.contains(&c) || c.is_whitespace())
+        } else {
+            gap.contains(|c: char| NAME_ENDS.contains(&c) || c.is_whitespace())
+        };
+        let group = last || at + 3 <= words.len() || is_white(words[at + 1].0);
+        if starts && group && (count.one_case_seed() || count.both_cases_seed()) {
             return true;
         }
     }
     false
 }
 
-/// What stands between a name and the seed after it, besides white space.
-const NAME_ENDS: [char; 4] = [':', '=', '"', '\''];
+/// What may stand before a value on its line.
+const OPENERS: [char; 5] = ['"', '\'', '(', '[', '{'];
+
+/// What may stand after a value on its line.
+const CLOSERS: [char; 8] = ['"', '\'', ')', ']', '}', ',', ';', '='];
+
+/// What stands between a name and the value after it, besides white space.
+const NAME_ENDS: [char; 7] = [':', '=', '"', '\'', ',', ';', '|'];
+
+fn is_white(gap: &str) -> bool {
+    gap.chars().all(char::is_whitespace)
+}
 
 /// Whether two separators are one: the same text, or white space of any kind and length.
 fn same_gap(one: &str, other: &str) -> bool {
-    let white = |gap: &str| gap.chars().all(char::is_whitespace);
-    one == other || (white(one) && white(other))
+    one == other || (is_white(one) && is_white(other))
 }
 
 /// The words of `text`, its runs of letters and digits, each with the text between it and the last.
@@ -246,9 +253,13 @@ impl Base32Count {
                 || BARE_CHARACTERS.contains(&self.all()))
     }
 
-    /// In both cases, with a digit and at a length apps give: with no digit it is words.
+    /// In both cases, each a good share of the letters, with a digit, at a length apps give.
     fn both_cases_seed(&self) -> bool {
-        self.lower > 0 && self.upper > 0 && self.digits > 0 && BARE_CHARACTERS.contains(&self.all())
+        let letters = self.lower + self.upper;
+        self.lower.min(self.upper) * 3 >= letters
+            && self.lower > 0
+            && self.digits > 0
+            && BARE_CHARACTERS.contains(&self.all())
     }
 }
 
