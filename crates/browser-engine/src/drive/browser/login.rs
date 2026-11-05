@@ -179,6 +179,9 @@ struct HeldStill<'a> {
 impl Drop for HeldStill<'_> {
     fn drop(&mut self) {
         for (_, session) in &self.pages {
+            if self.browser.cut() {
+                return;
+            }
             let _ = self.browser.devtools().call(
                 "Page.setWebLifecycleState",
                 json!({ "state": "active" }),
@@ -407,6 +410,7 @@ impl Browser {
         };
         // A page that opened since runs no more than the rest.
         if let Some(held) = &mut still
+            && target.is_empty()
             && let Err(why) = self.hold_still_any_new(&target, held)
         {
             self.cache_back_on(&target);
@@ -571,9 +575,6 @@ impl Browser {
                 let session = self.page_session(&page).map_err(|why| why.to_string())?;
                 let on = Some(session.as_str());
                 self.devtools()
-                    .call("Page.stopLoading", json!({}), on)
-                    .map_err(wont)?;
-                self.devtools()
                     .call(
                         "Page.setWebLifecycleState",
                         json!({ "state": "frozen" }),
@@ -587,6 +588,9 @@ impl Browser {
 
     /// Lets the HTTP cache serve `target`'s page again, whoever drives it now.
     fn cache_back_on(&self, target: &str) {
+        if self.cut() {
+            return;
+        }
         let session = lock(&self.inner.state)
             .page(target)
             .and_then(|page| page.session.clone());
