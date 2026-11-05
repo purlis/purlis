@@ -1826,7 +1826,7 @@ jobs:
                 echo "PROBE $(date +%T) $(free -m | awk '/Mem:/{print "mem_used="$3" avail="$7} /Swap:/{print "swap_used="$3"/"$2}' | tr '\n' ' ') disk_avail=$(df -m --output=avail / | tail -1) top=$(ps -eo rss,args --sort=-rss --no-headers | head -4 | awk '{n=$2; for(i=2;i<NF;i++) if($i=="--crate-name") n=$(i+1); sub(".*/","",n); printf "%s:%dM ",n,$1/1024}')"
               done ) &
           fi
-          npx tauri build ${{ !matrix.outcome && '--debug' || '' }} --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json -- -p purlis-app -p fake-harness -p purlis-cli --timings ${{ matrix.outcome && '--profile dev-release' || '' }} ${{ matrix.outcome && runner.os == 'Linux' && '--jobs 2' || '' }}
+          npx tauri build ${{ !matrix.outcome && '--debug' || '' }} --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json -- -p purlis-app -p fake-harness -p purlis-cli --timings ${{ matrix.outcome && '--profile dev-release' || '' }} ${{ matrix.outcome && runner.os == 'Linux' && '--jobs 1' || '' }}
         working-directory: app
       # Cargo's own account of that build, unit by unit (`--timings`), kept a week: what a slow
       # build spent its time on, read without rerunning it (#3742).
