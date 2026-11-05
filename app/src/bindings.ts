@@ -2351,6 +2351,11 @@ export const commands = {
 	 *  asks to say "draft ready in Skill studio". None while the flag is off.
 	 */
 	skillDrafts: (plane: PlaneId) => typedError<SkillDraft[], string>(__TAURI_INVOKE("skill_drafts", { plane })),
+	/**
+	 *  **The chats the studio started that have closed here** (#5248), newest first: what a skill's
+	 *  Runs keeps after a chat ends. None while the studio is off.
+	 */
+	studioChatsClosed: (plane: PlaneId) => typedError<ClosedStudioChat[], string>(__TAURI_INVOKE("studio_chats_closed", { plane })),
 	/**  **Accepts a draft**: one commit of exactly its files. */
 	skillDraftAccept: (plane: PlaneId, id: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_draft_accept", { plane, id })),
 	/**  **Rejects a draft**: deletes it. */
@@ -6799,6 +6804,19 @@ export type CloneRefused = {
 export type CloseHanded = {
 	plane: PlaneId,
 	sessions: number[],
+};
+
+/**
+ *  **A chat the studio started, closed here** (#5248), as a skill's Runs lists it: its number
+ *  (what a draft names its chat by), its name as it closed, when, and what it was started for.
+ */
+export type ClosedStudioChat = {
+	session: number,
+	name: string,
+	/**  When it closed (RFC 3339). */
+	closed: string,
+	/**  What it was started for, its `finished` always set. */
+	link: StudioLink,
 };
 
 /**
@@ -16136,7 +16154,11 @@ export type StudioHarness = {
 	plugins_off: PluginOffShown[],
 };
 
-/**  The studio's jobs a chat is started for: [`StudioWork`], by the record's words. */
+/**
+ *  **The studio's jobs, as the window types them**: the core's [`StudioWork`], which writes
+ *  itself as its word, typed for the window here, since purlis-core keeps no UI typing crate.
+ *  Never made: a test holds its words to the core's.
+ */
 export type StudioJobKind = "draft" | "trigger-tests" | "outcome-evals" | "checks" | "improve" | "redo";
 
 /**  A level a skill can be moved to or made at, and its words. */
@@ -16166,6 +16188,13 @@ export type StudioLink = {
 	job: StudioJobKind,
 	/**  Whether the chat wrote its draft: once true, never running again. */
 	done: boolean,
+	/**
+	 *  When the studio started the chat (RFC 3339), where its record knows (#5248): what the
+	 *  Grades card's running job counts from.
+	 */
+	started: string | null,
+	/**  When its job stopped running (#5248): its draft came, its program ended, or it closed. */
+	finished: string | null,
 };
 
 /**

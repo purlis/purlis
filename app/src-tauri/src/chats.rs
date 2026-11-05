@@ -4077,6 +4077,7 @@ impl Chats {
             let open = lock(&self.open).contains_key(&session);
             if open {
                 lock(&self.ended).insert(session);
+                self.studio_job_stopped(session);
             }
         }
         self.project_settings.forget(session);
@@ -5453,6 +5454,10 @@ impl Chats {
         // What its harness named since its program began, which is newer than what it started
         // under. A shell tab keeps none, as `follow_conversation` keeps none for one that is open.
         let mut under = under;
+        // A studio job whose program ended runs again with it, unless its draft came (#5248).
+        if let Some(job) = under.studio.as_mut() {
+            job.runs_again();
+        }
         if let Some((id, run)) = lock(&self.named_while_starting)
             .remove(&session)
             .flatten()
@@ -5602,6 +5607,25 @@ impl Chats {
                     self.took_back(id);
                     drop(grants);
                     last_of = Some(id.to_owned());
+                }
+            }
+            // A chat the studio started stays on its skill's Runs (#5248). Not as the project is
+            // let go of: its record brings the chat back.
+            // Nor a first run that failed and is replaced: its chat goes on.
+            if let Some(job) = gone.chat.studio.as_ref()
+                && !self.ending.load(Ordering::SeqCst)
+                && !lock(&self.replacing).contains(&session)
+            {
+                let name =
+                    purlis_core::reopen::shown_name(&gone.chat, gone.harness.map(Harness::name));
+                if let Err(why) = purlis_core::reopen::studio_chats::keep(
+                    &self.project,
+                    session,
+                    &name,
+                    job,
+                    chrono::Utc::now(),
+                ) {
+                    tracing::warn!("{why}");
                 }
             }
             let mut let_go = lock(&self.let_go);
@@ -5972,8 +5996,21 @@ impl Chats {
             return;
         };
         job.done = true;
+        job.finish(chrono::Utc::now());
         drop(open);
         self.write_it_down();
+    }
+
+    /// **Chat `session`'s studio job stopped running as its program ended** (#5248): when, kept
+    /// on its record for Runs. Nothing for a chat the studio did not start, or whose job stopped.
+    fn studio_job_stopped(&self, session: u32) {
+        let stopped = lock(&self.open)
+            .get_mut(&session)
+            .and_then(|one| one.chat.studio.as_mut())
+            .is_some_and(|job| job.finish(chrono::Utc::now()));
+        if stopped {
+            self.write_it_down();
+        }
     }
 
     /// The name `session` is shown under — the one it was given, or its default — or `None`

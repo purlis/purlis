@@ -1168,6 +1168,7 @@ export const commands = {
 	skillLifecycle: __WINDOW_ONLY_RESULT,
 	skillOwners: __WINDOW_ONLY_RESULT,
 	skillDrafts: __WINDOW_ONLY_RESULT,
+	studioChatsClosed: __WINDOW_ONLY_RESULT,
 	skillDraftAccept: __WINDOW_ONLY_RESULT,
 	skillDraftReject: __WINDOW_ONLY_RESULT,
 	skillDraftChat: __WINDOW_ONLY_START_REFUSED,
@@ -4203,6 +4204,19 @@ export type CloneRefused = {
 export type CloseHanded = {
 	plane: PlaneId,
 	sessions: number[],
+};
+
+/**
+ *  **A chat the studio started, closed here** (#5248), as a skill's Runs lists it: its number
+ *  (what a draft names its chat by), its name as it closed, when, and what it was started for.
+ */
+export type ClosedStudioChat = {
+	session: number,
+	name: string,
+	/**  When it closed (RFC 3339). */
+	closed: string,
+	/**  What it was started for, its `finished` always set. */
+	link: StudioLink,
 };
 
 /**
@@ -13540,7 +13554,11 @@ export type StudioHarness = {
 	plugins_off: PluginOffShown[],
 };
 
-/**  The studio's jobs a chat is started for: [`StudioWork`], by the record's words. */
+/**
+ *  **The studio's jobs, as the window types them**: the core's [`StudioWork`], which writes
+ *  itself as its word, typed for the window here, since purlis-core keeps no UI typing crate.
+ *  Never made: a test holds its words to the core's.
+ */
 export type StudioJobKind = "draft" | "trigger-tests" | "outcome-evals" | "checks" | "improve" | "redo";
 
 /**  A level a skill can be moved to or made at, and its words. */
@@ -13570,6 +13588,13 @@ export type StudioLink = {
 	job: StudioJobKind,
 	/**  Whether the chat wrote its draft: once true, never running again. */
 	done: boolean,
+	/**
+	 *  When the studio started the chat (RFC 3339), where its record knows (#5248): what the
+	 *  Grades card's running job counts from.
+	 */
+	started: string | null,
+	/**  When its job stopped running (#5248): its draft came, its program ended, or it closed. */
+	finished: string | null,
 };
 
 /**
