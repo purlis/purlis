@@ -1814,6 +1814,19 @@ jobs:
         continue-on-error: true
         timeout-minutes: 2
         run: sudo mdutil -a -i off
+      # The `dev-release` build needs about 26 GB here, and an `ubuntu-24.04` runner has 16 of memory
+      # and 3 of swap. Out of both, the runner itself went: "The runner has received a shutdown
+      # signal", in the build on main since 2026-11-03, so no bar and no saved cache (#5277). Measured
+      # on 2026-11-05: `purlis_app_lib` alone takes it there, and `--jobs 2` and `--jobs 1` died the
+      # same way. The disk has 84 GB free, and the file is gone with the runner.
+      - name: More swap for the outcome bars' build
+        if: ${{ runner.os == 'Linux' && matrix.outcome }}
+        timeout-minutes: 2
+        run: |
+          sudo fallocate -l 32G /swapfile-build
+          sudo chmod 600 /swapfile-build
+          sudo mkswap /swapfile-build
+          sudo swapon /swapfile-build
       - name: Build the app, the harness and the CLI for the scenario tests
         if: ${{ !matrix.sandbox }}
         # The outcome bars are judged on a release build (the operator's ruling of 2026-11-03,
