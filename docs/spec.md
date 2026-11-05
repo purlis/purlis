@@ -635,6 +635,16 @@ Each milestone is something the operator actually uses, not a layer.
 - **M4: public release.** Linux, then Windows (ConPTY, bundled package), signed installers,
   the final PyPI release pointing to the new install, and Python charter retired.
 
+
+### Check results on a diff — added 2026-11-05
+
+`purlis check report <branch> <file.sarif>` hands purlis a branch's check results in SARIF 2.1.0,
+from a script, an agent's hook or CI (ADR 0114). purlis runs no check for this and has no parser for
+any one tool. In a file's comparison, a result on a changed line is marked in the gutter with its
+tool, severity and message, and every result is listed with those words: on the changed lines,
+outside them, or in other files, never dropped. Each opens at its line, in the file tab and in your
+editor. Each tool's results record the commit they were reported for, and are marked out of date
+once the branch's head moves.
 ### Where the multi-plane work goes (added 2026-09-20)
 
 Decisions 22-28 are product work this spec missed, not a milestone of their own, so they are

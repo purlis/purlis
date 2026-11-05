@@ -69,6 +69,11 @@ export const look = [
       background: "var(--state-success)",
     },
     ".cm-inlineChangedLineGutter": { background: "var(--accent-base)" },
+    // A check result on a changed line (ADR 0114, `checkGutter.ts`): its letter says its severity,
+    // and the colour only repeats it.
+    ".cm-check-mark": { color: "var(--text-quiet)", fontWeight: "bold" },
+    '.cm-check-mark[data-severity="error"]': { color: "var(--danger-base)" },
+    '.cm-check-mark[data-severity="warning"]': { color: "var(--state-waiting)" },
     // Find in a file (#946, `find.ts`): every match washed in the terminal's own find colours,
     // the one the bar is on more strongly, as a chat's find marks them.
     ".cm-find-match": { backgroundColor: "var(--terminal-find-match)" },

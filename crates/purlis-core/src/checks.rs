@@ -515,6 +515,9 @@ fn clones_of(plane: &Path, ws: &str) -> Vec<String> {
 pub struct Placed {
     pub tool: String,
     pub out_of_date: bool,
+    /// The first of its lines a hunk shows, where one does: where the gutter marks it. A result
+    /// that only runs into a hunk starts on a line the comparison does not draw.
+    pub shown_at: Option<u32>,
     pub diagnostic: Diagnostic,
 }
 
@@ -585,9 +588,15 @@ pub fn on_file(sets: &[Set], path: &str, hunks: &[Hunk], head: Option<&str>) -> 
             results: set.diagnostics.len(),
         });
         for diagnostic in &set.diagnostics {
-            let (list, more) = if diagnostic.path.as_deref() != Some(path) {
+            let ours = diagnostic.path.as_deref() == Some(path);
+            let shown_at = if ours {
+                shown_by(diagnostic, hunks)
+            } else {
+                None
+            };
+            let (list, more) = if !ours {
                 (&mut out.elsewhere, &mut out.more_elsewhere)
-            } else if shown_by(diagnostic, hunks) {
+            } else if shown_at.is_some() {
                 (&mut out.on_lines, &mut out.more_on_lines)
             } else {
                 (&mut out.outside, &mut out.more_outside)
@@ -599,6 +608,7 @@ pub fn on_file(sets: &[Set], path: &str, hunks: &[Hunk], head: Option<&str>) -> 
             list.push(Placed {
                 tool: set.tool.clone(),
                 out_of_date,
+                shown_at,
                 diagnostic: diagnostic.clone(),
             });
         }
@@ -624,15 +634,16 @@ pub fn of_branch(
     }
 }
 
-/// Whether any line of `diagnostic` is one a hunk shows on the head's side. git's `+n,0` has none.
-fn shown_by(diagnostic: &Diagnostic, hunks: &[Hunk]) -> bool {
-    let Some(first) = diagnostic.line else {
-        return false;
-    };
+/// The first line of `diagnostic` a hunk shows on the head's side. git's `+n,0` shows none.
+fn shown_by(diagnostic: &Diagnostic, hunks: &[Hunk]) -> Option<u32> {
+    let first = diagnostic.line?;
     let last = diagnostic.end_line.unwrap_or(first);
-    hunks.iter().any(|hunk| {
-        hunk.new_lines > 0
-            && first < hunk.new_start.saturating_add(hunk.new_lines)
-            && last >= hunk.new_start
-    })
+    hunks
+        .iter()
+        .filter(|hunk| hunk.new_lines > 0)
+        .filter_map(|hunk| {
+            let past = hunk.new_start.saturating_add(hunk.new_lines);
+            (first < past && last >= hunk.new_start).then(|| first.max(hunk.new_start))
+        })
+        .min()
 }

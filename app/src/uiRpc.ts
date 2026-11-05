@@ -4134,6 +4134,55 @@ export type ChatsRunOn = {
 	pools: string[],
 };
 
+/**  One result of a check. */
+export type CheckResult = {
+	tool: string,
+	outOfDate: boolean,
+	severity: CheckSeverity,
+	/**
+	 *  The file as the tool named it, relative to the branch's folder where it could be placed
+	 *  there; `null` for a result on no file.
+	 */
+	path: string | null,
+	/**  Its first line, from 1; `null` for a result on the file as a whole. */
+	line: number | null,
+	/**  The first of its lines a hunk shows, where one does: where the gutter marks it. */
+	shownAt: number | null,
+	rule: string | null,
+	message: string,
+};
+
+/**
+ *  A branch's check results as one file of its comparison shows them. Every result is in a list or
+ *  counted past it.
+ */
+export type CheckResults = {
+	sets: CheckSet[],
+	/**  On a line a hunk shows. */
+	onLines: CheckResult[],
+	/**  In this file, on no line a hunk shows. */
+	outside: CheckResult[],
+	/**  In any other file, or in none. */
+	elsewhere: CheckResult[],
+	moreOnLines: number,
+	moreOutside: number,
+	moreElsewhere: number,
+	/**  Why they could not be read, where they could not. */
+	trouble: string | null,
+};
+
+/**  One tool's results for a branch, and whether the branch has moved since they were reported. */
+export type CheckSet = {
+	tool: string,
+	/**  The commit they were reported for; `null` for a branch with no commit then. */
+	head: string | null,
+	outOfDate: boolean,
+	results: number,
+};
+
+/**  How much a check result matters, in SARIF's words. */
+export type CheckSeverity = "error" | "warning" | "note" | "none";
+
 /**  One child agent of a chat, as the window draws it under the chat (ADR 0066, ADR 0076 §6). */
 export type ChildAgent = {
 	/**  The harness's id for it, unique within the chat. */
@@ -14571,6 +14620,8 @@ export type WhatChanged = {
 	diff: FileDiff,
 	/**  What a discard of a hunk here is checked against (`null` for a file past what is drawn). */
 	stamp: string | null,
+	/**  The branch's check results as this file shows them (ADR 0114). */
+	checks: CheckResults,
 };
 
 /**

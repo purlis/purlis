@@ -40,8 +40,12 @@
  * ended on the branch ([`DiffAgainst`]), which the core reads from that turn's refs. It opens on
  * the latest turn, and the [`TurnPicker`] steps back through that chat's turns, newest first. No
  * turn to show, a turn that changed no file, and a file the turn left alone are each a sentence.
+ *
+ * **The branch's check results come with the comparison** (ADR 0114, #5407): each one on a line a
+ * hunk shows is marked in the gutter, and every one is listed with its tool, severity and message,
+ * so the keyboard and a screen reader reach them all (`CheckResults.tsx`).
  */
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { FileDiff as FileDiffMark, LoaderCircle } from "lucide-react";
 import { EmptyState } from "../ui/empty-state/EmptyState";
 import {
@@ -58,6 +62,7 @@ import type { Place } from "../pieceViews";
 import { MergeViewer } from "./LightEditor";
 import { DiffAgainst, TurnPicker, type Against } from "./DiffAgainst";
 import { sized, ToYourEditor } from "./PieceFiles";
+import { CheckResultsList, marksOf } from "./CheckResults";
 import { jumpTo } from "../fileJump";
 import { Notice } from "../Notice";
 import { useBranchMoved } from "./branchMoved";
@@ -266,6 +271,9 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
         discarding={discarding}
         onDiscard={discard}
       />
+      {now.kind === "read" && (
+        <CheckResultsList plane={plane} cut={cut} path={path} results={now.shown.checks} />
+      )}
       <Compared path={path} read={now} />
       {warning?.kind === "busy" && (
         <AlertDialog
@@ -438,6 +446,7 @@ function against(shown: WhatChanged): string {
 
 /** The comparison drawn, or the sentence that says why it is not. */
 function Compared({ path, read }: { path: string; read: Read }) {
+  const marks = useMemo(() => (read.kind === "read" ? marksOf(read.shown.checks) : []), [read]);
   const name = path.slice(path.lastIndexOf("/") + 1);
   if (read.kind === "reading")
     return (
@@ -493,6 +502,7 @@ function Compared({ path, read }: { path: string; read: Read }) {
           base={diff.base}
           head={diff.head}
           hunks={diff.hunks}
+          marks={marks}
           label={`What changed in ${path} ${against(read.shown)}`}
         />
       );

@@ -96,6 +96,11 @@ fn a_result_that_only_runs_into_a_hunk_is_placed_on_it() {
         [Some(354)],
         "354-368 runs into 360-361"
     );
+    assert_eq!(
+        shown.on_lines[0].shown_at,
+        Some(360),
+        "the first line the hunk draws"
+    );
     assert_eq!(lines(&shown.outside), [Some(352)]);
 }
 

@@ -433,6 +433,8 @@ pub struct CheckResult {
     pub path: Option<String>,
     /// Its first line, from 1; `null` for a result on the file as a whole.
     pub line: Option<u32>,
+    /// The first of its lines a hunk shows, where one does: where the gutter marks it.
+    pub shown_at: Option<u32>,
     pub rule: Option<String>,
     pub message: String,
 }
@@ -473,6 +475,7 @@ impl From<purlis_core::checks::OnFile> for CheckResults {
                     },
                     path: one.diagnostic.path,
                     line: one.diagnostic.line,
+                    shown_at: one.shown_at,
                     rule: one.diagnostic.rule,
                     message: one.diagnostic.message,
                 })
