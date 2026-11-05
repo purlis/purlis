@@ -1,8 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 import type { RunShown } from "./bindings";
 import { RunGrantFacts } from "./RunGrantFacts";
 
@@ -18,6 +18,8 @@ function run(over: Partial<RunShown> = {}): RunShown {
     ...over,
   };
 }
+
+afterEach(cleanup);
 
 describe("RunGrantFacts", () => {
   it("shows the full path, the keys and the hosts apart from the chat's command", () => {
