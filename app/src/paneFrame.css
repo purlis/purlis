@@ -831,6 +831,11 @@
   font-size: var(--font-size-sm);
 }
 
+.task-quiz-note-words {
+  flex: 1;
+  color: var(--text-secondary);
+}
+
 .task-quiz-note-who {
   flex: none;
   color: var(--text-muted);

@@ -2,8 +2,8 @@
 
 - **A question from a task keeps its line breaks.** In a chat's pane, a question a task wrote
   over several lines showed each line break as `⟦U+000A⟧` on one line. It is now drawn over the
-  lines the task wrote, in the markdown a chat's text is drawn in: a link opens only when you
-  press it, and raw HTML is dropped (#5213).
+  lines the task wrote, in the markdown a chat's text is drawn in, as is the asking chat's note:
+  a link opens only when you press it, and raw HTML is dropped (#5213).
 - **Questions from tasks sit under the pane's head, in its notices band, and close.** They were
   drawn above the head and took up to half the pane with nothing to close them. Each question
   now has a Close, which puts it away from that pane only: it stays in the Inbox and on ✋ until

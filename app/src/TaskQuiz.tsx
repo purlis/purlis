@@ -41,8 +41,8 @@ export const closeQuizSaid = "Close here. It stays in the Inbox until you answer
  * - **It is one item everywhere**: it reads the asks registry's item, the same the ✋ and the
  *   Inbox read, and the answer goes the one path a task's question is answered by
  *   (`answer_task_question`). One answer clears it from every surface.
- * - **A question is a chat's text** (`ChatText`, #5214): over the lines its task wrote (#5213), in
- *   markdown under the safe subset, as the Inbox draws it.
+ * - **A question and its note are a chat's text** (`ChatText`, #5214): over the lines they were
+ *   written on (#5213), in markdown under the safe subset, as the Inbox draws them.
  * - **It closes** (#5213): Close puts the quiz away from this pane and answers nothing, so the
  *   question stays in the Inbox and on the ✋ until it is answered.
  */
@@ -137,10 +137,10 @@ export function TaskQuiz({
         <>
           <p className="task-quiz-why ui-text-secondary">{QUIZ_WHY[why.why](why.from)}</p>
           {why.note !== null && (
-            <p className="task-quiz-note">
+            <div className="task-quiz-note">
               <span className="task-quiz-note-who ui-text-meta">{`${why.from}'s note`}</span>
-              <span className="ui-text-secondary">{why.note}</span>
-            </p>
+              <ChatText className="task-quiz-note-words" text={why.note} />
+            </div>
           )}
         </>
       )}

@@ -135,6 +135,27 @@ describe("a task question's quiz (#4565)", () => {
     expect(urls).toEqual(["https://example.com/plan"]);
   });
 
+  it("draws the asking chat's note the same way: its link opens on a press, its raw HTML is dropped (#5213)", async () => {
+    const urls: string[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "plugin:opener|open_url") urls.push((args as { url: string }).url);
+      if (cmd === "task_question")
+        return { task: "developer 7", asked: "steward 4", number: 3, question: "Which wins?" };
+      return null;
+    });
+    draw(asked({}, { note: `**Mine:** ${TASK_PATH_QUESTION}` }));
+    const quiz = screen.getByRole("group", { name: "developer 7 asks" });
+
+    expect(within(quiz).getByText("Mine:").tagName).toBe("STRONG");
+    expect(quiz.querySelector("b, script, img")).toBeNull();
+    expect(quiz.textContent).not.toContain("alert");
+    expect(urls).toEqual([]);
+
+    await userEvent.click(within(quiz).getByRole("link", { name: "the plan" }));
+
+    expect(urls).toEqual(["https://example.com/plan"]);
+  });
+
   it("names the question's words as what the answer box answers", () => {
     core();
     draw(asked({ says: "Which **branch**?" }));

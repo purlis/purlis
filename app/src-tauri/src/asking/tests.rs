@@ -2448,12 +2448,16 @@ fn a_task_questions_link_and_raw_html_reach_the_window_as_written() {
         text: says.to_owned(),
         why: purlis_core::dispatchtalk::Reached::PassedOn,
         at: 0,
-        note: None,
+        note: Some(says.to_owned()),
     };
 
     let shown = task_question(reached, "lead".to_owned(), Vec::new());
 
     assert_eq!(shown.says, says);
+    let AnswerPath::TaskQuestion { note, .. } = shown.answer else {
+        panic!("a task's question is answered as one");
+    };
+    assert_eq!(note.as_deref(), Some(says));
 }
 
 /// **A task's question keeps its lines** (#5213): the window draws a question as the prose it
