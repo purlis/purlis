@@ -155,6 +155,23 @@ describe("a note in the Notices centre (#5217)", () => {
     expect(card.querySelectorAll('[data-variant="primary"]')).toHaveLength(1);
   });
 
+  it("draws a quiet link in its tone's words on trouble's and attention's grounds", async () => {
+    for (const [tone, words] of [
+      ["trouble", "var(--danger-text)"],
+      ["attention", "var(--attention-text)"],
+    ] as const) {
+      const card = await inTheCentre({
+        cause: `quiet:${tone}`,
+        tone,
+        link: { label: "See its settings", onPress: () => {} },
+        children: "It stands.",
+      });
+      const link = within(card).getByRole("button", { name: "See its settings" });
+      expect(drawnWith(link, "color"), tone).toBe(words);
+      cleanup();
+    }
+  });
+
   it("leads with the way the caller named, where it names one", async () => {
     const card = await inTheCentre({
       cause: "named-way",

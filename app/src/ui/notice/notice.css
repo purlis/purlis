@@ -204,6 +204,18 @@
   font-size: var(--font-size-sm);
 }
 
+/* A quiet link's quiet words are below 4.5:1 on trouble's and attention's grounds in some themes
+   (axe, #5217): there it takes the tone's words, as what the card says does. */
+[data-placement="inbox"][data-variant="trouble"]
+  [data-scope="button"][data-part="root"][data-variant="quiet-link"] {
+  color: var(--danger-text);
+}
+
+[data-placement="inbox"][data-variant="attention"]
+  [data-scope="button"][data-part="root"][data-variant="quiet-link"] {
+  color: var(--attention-text);
+}
+
 [data-scope="notice"][data-part="end"] {
   display: flex;
   align-items: center;
