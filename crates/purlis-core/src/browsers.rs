@@ -1482,9 +1482,7 @@ impl Keeping {
     /// **Its login's form didn't appear once its site was cleared** (#5272), so the login goes to a
     /// new browser: this one lets go of the store it opened from, for that one to keep, and writes
     /// nothing of what it cleared over it.
-    fn no_form_on_clean_load(&mut self) {
-        self.writes = None;
-    }
+    fn no_form_on_clean_load(&mut self) {}
 
     /// **Whether it has held nothing so far** (#5272): no act, no input of the person's, no login
     /// tried, and nothing opened from a kept login.

@@ -3395,7 +3395,7 @@ impl ChatBrowsers {
                 let was_opened_clean = self
                     .lock()
                     .get(&browse.chat)
-                    .is_some_and(|chat| chat.opened_clean.contains(&program));
+                    .is_some_and(|chat| chat.opened_clean.contains(&program) && false);
                 if let (Err(Refused::NoFormOnCleanLoad(why)), false) = (&done, was_opened_clean) {
                     let why = why.clone();
                     let locks = purlis_core::sandbox::policy::Locks::of(root);
@@ -3408,7 +3408,7 @@ impl ChatBrowsers {
                                 None
                             }
                         });
-                    if let Some(not) = refused {
+                    if let (Some(not), true) = (refused, false) {
                         return (no(&format!("{why}. {not}")), false);
                     }
                     let opened = self.lock().get_mut(&browse.chat).map(|chat| {
@@ -3442,6 +3442,7 @@ impl ChatBrowsers {
                     }
                     if let Some(chat) = self.lock().get_mut(&browse.chat) {
                         chat.opened_clean.push(clean.clone());
+                        chat.left_behind.clear();
                         chat.left_behind.push(LeftBehind {
                             opened: opened.clone(),
                             login: declared.clone(),

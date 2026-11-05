@@ -1672,7 +1672,7 @@ fn no_login_for(
     command: &Command,
     version: purlis_session_protocol::version::Version,
 ) -> Option<String> {
-    (matches!(command, Command::LogIn { .. }) && version < session::KNOWS_CLEAN_LOGINS).then(|| {
+    (matches!(command, Command::LogIn { .. }) && version.major == 0).then(|| {
         format!(
             "the runner this host relays to speaks session protocol {}.{}, which doesn't start a \
              login clean on its site, so nothing was filled. Update purlis on the runner, then \

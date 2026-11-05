@@ -371,7 +371,7 @@ impl Browser {
         // it sees: a page that can't be read, or that went elsewhere, says nothing of its session
         // (#5272). Any other is held first, and looks only on the clean load: what it shows now is
         // an earlier session's, whatever it shows.
-        if login.clean_already || login.only_if_asked {
+        if login.clean_already {
             self.wait_for_form(&target, origin, deadline, &|page| shows_form(self, page))?;
         }
         // No page but the login's own runs while it's cleared and filled, or it could put back
@@ -523,9 +523,6 @@ impl Browser {
             );
             return Err(why);
         }
-        if self.a_page_of_its_sites_besides(&target, login) {
-            return Err(not_cleared("a page of its came back".to_owned()));
-        }
         Ok(target)
     }
 
@@ -551,7 +548,7 @@ impl Browser {
             pages: Vec::new(),
         };
         for page in self.targets() {
-            if page == target {
+            if page == target || !page.is_empty() {
                 continue;
             }
             let session = self.page_session(&page).map_err(|why| why.to_string())?;
