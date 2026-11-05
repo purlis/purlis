@@ -27,6 +27,10 @@ Settings keeps the numbers: the Routing page's and Settings' rows both write thr
 - **Reset to default takes out what this level writes.** In a workspace the project's number then stands, if it has one: that is the default a workspace has. There is no way to say "the program's own, whatever the project says", since empty is how to say "the number below".
 - **A persona's scope in the studio writes the project's**, as there is no persona level. A chat's link goes to its workspace's Routing, whoever it runs as.
 
+## Where the numbers link from
+
+The Skills view's budget line links to its chat's workspace's Routing. **The chip on a chat's pane is, since #5204, a warning drawn only while the chat has a need**, so its link is there only then: `of 60` beside it, left out of a narrow pane's ⚠. A chat with nothing wrong shows no chip, and its Skills view holds the link. The count stays the warning's way to the Skills view.
+
 ## The cost
 
 `budget_setting::preview` routes the set of a chat at the root of the level, by the built-in router, at today's numbers and at the numbers typed, as the Routing page's preview does. It writes nothing.
@@ -39,4 +43,4 @@ Settings keeps the numbers: the Routing page's and Settings' rows both write thr
 
 Every place that decides by a budget already asks `budget_in`, so a program's number reaches its own chats' routing and Claude Code's handed limit. A change to `charter.toml` or `workspace.json` already has each open chat's stamp read again, and the stamp is of the routed set, so **the restart offer comes only to a chat whose list the change would move**. Raising a number that hides nothing either way offers nothing.
 
-**An open chat keeps what it was handed, and its Skills view and pane say the numbers now**, as the 2026-11-02 record says of Use skill…: that view works a chat's set out as it is read, and it is what the stamp compares. So after a change the chip can read `of 100` for a chat handed 60, with the restart offer beside it.
+**An open chat keeps what it was handed, and its Skills view and pane say the numbers now**, as the 2026-11-02 record says of Use skill…: that view works a chat's set out as it is read, and it is what the stamp compares. So after a change the Skills view can read `of 100` for a chat handed 60, with the restart offer beside it.

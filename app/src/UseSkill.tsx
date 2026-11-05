@@ -22,9 +22,14 @@ import { RowBelow, RowDescription, RowLabel } from "./ui/list/Row";
 import { Button, IconButton } from "./ui/button/Button";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 import { counted } from "./dispatches";
-import { AT_THE_ROOT, useSkillStudioOn } from "./skillStudio";
+import { AT_THE_ROOT, askSkillStudio, useSkillStudioOn } from "./skillStudio";
 import { SKILLS_MISSING_PUT_AWAY, type ChatSkillsAsk } from "./chatSkillsAsk";
-import { chatNeedsOf, type ChatSkillsSaid } from "./chatSkillNeeds";
+import {
+  budgetScope,
+  CHANGE_THE_SKILL_BUDGET,
+  chatNeedsOf,
+  type ChatSkillsSaid,
+} from "./chatSkillNeeds";
 import type { SkillsChangedHere } from "./PlaneUpdated";
 import { usePromptRoutingMoved } from "./promptRouting";
 import {
@@ -468,10 +473,13 @@ export const SHOW_THIS_CHATS_SKILLS = "Show this chat's skills";
  * nothing here, and the Skills row and the Skills view say the budget (`⌘⇧X`).
  */
 export const SkillsChip = memo(function SkillsChip({
+  plane,
   session,
   onOpen,
   markOnly = false,
 }: {
+  /** The project whose Routing its `of 60` opens (#5353): where it is left out, so is that. */
+  plane?: PlaneId;
   session: number;
   /** The row a press runs (#5204): the chat's Skills, in the sidebar's Skills view. */
   onOpen?: () => void;
@@ -484,14 +492,36 @@ export const SkillsChip = memo(function SkillsChip({
   const tip = `${warning}. ${SHOW_THIS_CHATS_SKILLS}.`;
   const count = counted(skillsInTheSet(said.budget), "skill", "skills");
   const named = { "data-testid": "pane-skills", "aria-label": `${count}. ${tip}` };
+  // The budget counts what is listed, and a manual-only skill is free: so the number it is out of
+  // is said beside the count only where they are the same count.
+  const most =
+    said.budget.manual === 0
+      ? `of ${said.budget.most_skills}`
+      : `${said.budget.skills} listed of ${said.budget.most_skills}`;
+  const budget = plane !== undefined && !markOnly && (
+    <Button
+      inline
+      variant="ghost"
+      className="pane-skills"
+      data-testid="pane-skills-budget"
+      tooltip={CHANGE_THE_SKILL_BUDGET}
+      aria-label={`${most}. ${CHANGE_THE_SKILL_BUDGET}`}
+      onPress={() => askSkillStudio(plane, budgetScope(said.budget), "routing")}
+    >
+      {most}
+    </Button>
+  );
   if (onOpen === undefined)
     return (
-      <Tooltip tip={tip}>
-        <span {...named} role="img" className="pane-skills pane-skills-words">
-          {SIGN}
-          {!markOnly && ` ${count}`}
-        </span>
-      </Tooltip>
+      <>
+        <Tooltip tip={tip}>
+          <span {...named} role="img" className="pane-skills pane-skills-words">
+            {SIGN}
+            {!markOnly && ` ${count}`}
+          </span>
+        </Tooltip>
+        {budget}
+      </>
     );
   return markOnly ? (
     <IconButton
@@ -504,16 +534,19 @@ export const SkillsChip = memo(function SkillsChip({
       onPress={onOpen}
     />
   ) : (
-    <Button
-      {...named}
-      inline
-      variant="warning-soft"
-      className="pane-skills"
-      tooltip={tip}
-      onPress={onOpen}
-    >
-      {`${SIGN} ${count}`}
-    </Button>
+    <>
+      <Button
+        {...named}
+        inline
+        variant="warning-soft"
+        className="pane-skills"
+        tooltip={tip}
+        onPress={onOpen}
+      >
+        {`${SIGN} ${count}`}
+      </Button>
+      {budget}
+    </>
   );
 });
 

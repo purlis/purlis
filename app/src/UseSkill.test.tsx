@@ -17,6 +17,7 @@ import {
 } from "./UseSkill";
 import type { ChatSkill, ChatSkills, PlaneUpdated, SkillBudget } from "./bindings";
 import { skillsMissingPutAway } from "./chatSkillsAsk";
+import { inWorkspace, SKILL_STUDIO_ASKED } from "./skillStudio";
 import { budgetSaid, pinsTogetherSaid, warnsSaid, type ChatSkillsSaid } from "./chatSkillNeeds";
 
 afterEach(() => {
@@ -400,7 +401,7 @@ describe("the Skills chip on a chat's pane", () => {
       <ChatSkillSetsHere.Provider
         value={{
           4: {
-            budget: { ...BUDGET, workspace: "ops", most_skills: 60, manual: 0 },
+            budget: { ...BUDGET, workspace: "ops", most_skills: 60, manual: 0, warns: "skills" },
             routing: null,
             missing: null,
             changed: null,
@@ -419,9 +420,33 @@ describe("the Skills chip on a chat's pane", () => {
   });
 
   it("never says more skills than its budget for manual-only ones, which are free (#5353)", async () => {
-    await chipOf(held({ budget: { ...BUDGET, skills: 58, manual: 4, most_skills: 60 } }));
+    studioOn();
+    render(
+      <ChatSkillSetsHere.Provider
+        value={{
+          4: held({
+            budget: { ...BUDGET, skills: 58, manual: 4, most_skills: 60, warns: "skills" },
+          }),
+        }}
+      >
+        <SkillsChip plane="p" session={4} />
+      </ChatSkillSetsHere.Provider>,
+    );
     expect(await screen.findByTestId("pane-skills")).toHaveTextContent("62 skills");
     expect(screen.getByTestId("pane-skills-budget")).toHaveTextContent("58 listed of 60");
+  });
+
+  it("leaves the budget's link out of a narrow pane's mark, and says nothing with nothing wrong (#5353)", async () => {
+    studioOn();
+    const warned = { ...BUDGET, warns: "skills" as const };
+    render(
+      <ChatSkillSetsHere.Provider value={{ 4: held({ budget: warned }), 5: held() }}>
+        <SkillsChip plane="p" session={4} markOnly onOpen={() => undefined} />
+        <SkillsChip plane="p" session={5} />
+      </ChatSkillSetsHere.Provider>,
+    );
+    expect(await screen.findAllByTestId("pane-skills")).toHaveLength(1);
+    expect(screen.queryByTestId("pane-skills-budget")).toBeNull();
   });
 
   it("reads no chat for a telling of another project or of a chat not open (#4445)", async () => {

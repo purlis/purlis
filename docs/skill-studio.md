@@ -345,8 +345,8 @@ A chat's **Skills** chip, on its pane, shows how many skills it has, and warns n
 
 Each program has its own budget: **Most skills in a chat's list** and **Most characters in a
 chat's list**. Change it where you see it: on the studio's **Routing** page each program has a row
-with **Change…**, and the numbers in the Skills view and on a chat's pane (`16 skills`, `of 60`)
-take you there. **Settings** shows the same rows, under the project's or a workspace's **Skills**
+with **Change…**, and the numbers in the Skills view take you there, as does `of 60` beside the
+skills warning on a chat's pane. **Settings** shows the same rows, under the project's or a workspace's **Skills**
 group, in **In force**.
 
 - **Whose it is.** In a workspace, the number is that workspace's. At the project's root it is the
