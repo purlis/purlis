@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { $, browser, expect } from "@wdio/globals";
-import { SETTINGS_GROUPS, closesTheTabsItOpens, openProjectSettings } from "../reach.js";
+import { closesTheTabsItOpens } from "../reach.js";
+import { SETTINGS_GROUPS, openProjectSettings } from "../settingsTab.js";
 import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
 
 /**
@@ -65,7 +66,6 @@ describe("a settings row, in the real WebView", () => {
   before(() => windowAt(WINDOW_1280));
   after(() => theWindowHoldsTheRail());
 
-  // The Settings tab it opened, by its own ×, waited for until the strip is as it was (#5111).
   closesTheTabsItOpens();
 
   it("draws a select and its Reset one height, side by side, on the label's line", async () => {

@@ -4,7 +4,8 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
-import { closesTheTabsItOpens, openProjectSettings } from "../reach.js";
+import { closesTheTabsItOpens } from "../reach.js";
+import { openProjectSettings } from "../settingsTab.js";
 import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
 
 /**
@@ -138,7 +139,6 @@ describe("the merge view's keyboard list of differences", function () {
     }
   });
 
-  // Then the Settings tab it opened, by its own ×, waited for until the strip is as it was (#5111).
   closesTheTabsItOpens();
 
   it("lists every difference under the view, at its width, and the keyboard goes from one to the next", async () => {

@@ -3,7 +3,8 @@
 
 import { $, browser, expect } from "@wdio/globals";
 import { READY } from "../harness.js";
-import { closesTheTabsItOpens, openProjectSettings } from "../reach.js";
+import { closesTheTabsItOpens } from "../reach.js";
+import { openProjectSettings } from "../settingsTab.js";
 import { endChatsStartedHere, startAChat, type Started } from "../started.js";
 
 /**
@@ -198,7 +199,6 @@ describe("the limits' lines and the set's native controls, in the real WebView",
     await tried(() => endChatsStartedHere([mine]));
   });
 
-  // Then the Settings tab it opened, by its own ×, waited for until the strip is as it was (#5111).
   closesTheTabsItOpens();
 
   it("draws the note under the limits table whole, inside its column, wide and narrow", async () => {

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { frontLeftSaid, sameStrip, type Strip, tabsLeftOver, tabsLeftSaid } from "./tabsLeft.js";
+import { samePlace, type Strip, tabsLeftOver, tabsLeftSaid } from "./tabsLeft.js";
 
 const strip = (tabs: string[], project = "/p", workspace = ""): Strip => ({
   project,
@@ -44,44 +44,41 @@ describe("the tabs a spec file left open", () => {
 
 describe("where a spec file ended", () => {
   it("is the strip it began on when its project and workspace are the same, whatever its tabs", () => {
-    expect(sameStrip(strip(["a"]), strip(["b"]))).toBe(true);
+    expect(samePlace(strip(["a"]), strip(["b"]))).toBe(true);
   });
 
   it("is another strip when another project or workspace is in front", () => {
-    expect(sameStrip(strip([]), strip([], "/q"))).toBe(false);
-    expect(sameStrip(strip([]), strip([], "/p", "talk"))).toBe(false);
-    expect(sameStrip(strip([], "/p", "talk"), strip([]))).toBe(false);
+    expect(samePlace(strip([]), strip([], "/q"))).toBe(false);
+    expect(samePlace(strip([]), strip([], "/p", "talk"))).toBe(false);
+    expect(samePlace(strip([], "/p", "talk"), strip([]))).toBe(false);
+  });
+
+  it("judges the strip a file ended on, away from where it began, as if it held nothing", () => {
+    const ended = strip(["New chat", "Settings"], "/p", "alpha");
+    expect(tabsLeftOver({ ...ended, tabs: [] }, ended)).toEqual(["Settings"]);
   });
 
   it("says nothing of the project when the rail did not draw one", () => {
-    expect(sameStrip(strip([]), strip([], ""))).toBe(true);
-    expect(sameStrip(strip([], ""), strip([], "/p"))).toBe(true);
-    expect(sameStrip(strip([], ""), strip([], "", "talk"))).toBe(false);
-  });
-
-  it("is said with the file, where it began, where it ended, and that the guard went back", () => {
-    const said = frontLeftSaid(
-      "/repo/app/e2e/specs/regions.e2e.ts",
-      strip([]),
-      strip([], "/p", "talk"),
-    );
-    expect(said).toContain("specs/regions.e2e.ts");
-    expect(said).toContain("began in /p, the plane root");
-    expect(said).toContain("left /p, talk in front");
-    expect(said).toContain("the guard went back");
+    expect(samePlace(strip([]), strip([], ""))).toBe(true);
+    expect(samePlace(strip([], ""), strip([], "/p"))).toBe(true);
+    expect(samePlace(strip([], ""), strip([], "", "talk"))).toBe(false);
   });
 });
 
 describe("what the tab guard says", () => {
   it("names the spec file and the tabs it left, and says it closed them", () => {
-    const said = tabsLeftSaid("/repo/app/e2e/specs/settings-row.e2e.ts", ["Settings", "Activity"]);
+    const said = tabsLeftSaid(
+      "/repo/app/e2e/specs/settings-row.e2e.ts",
+      ["Settings", "Activity"],
+      strip([], "/p", "alpha"),
+    );
     expect(said).toContain("specs/settings-row.e2e.ts");
-    expect(said).toContain("left 2 tabs open");
+    expect(said).toContain("left 2 tabs open on /p, alpha");
     expect(said).toContain("Settings, Activity");
     expect(said).toMatch(/closed them/);
   });
 
   it("says one tab in the singular", () => {
-    expect(tabsLeftSaid("specs/one.e2e.ts", ["Settings"])).toContain("left 1 tab open");
+    expect(tabsLeftSaid("specs/one.e2e.ts", ["Settings"], strip([]))).toContain("left 1 tab open");
   });
 });

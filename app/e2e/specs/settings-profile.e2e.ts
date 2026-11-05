@@ -4,7 +4,8 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
-import { SETTINGS_GROUPS, closesTheTabsItOpens, openProjectSettings } from "../reach.js";
+import { closesTheTabsItOpens } from "../reach.js";
+import { SETTINGS_GROUPS, openProjectSettings } from "../settingsTab.js";
 import { theProfilesWrapper } from "../harness.js";
 
 /**
@@ -62,7 +63,6 @@ describe("Settings › Harness & profiles", () => {
     }
   });
 
-  // Then the Settings tab it opened, by its own ×, waited for until the strip is as it was (#5111).
   closesTheTabsItOpens();
 
   it("adds a profile that lands in charter.local.toml with a page of its own, and removes it", async () => {

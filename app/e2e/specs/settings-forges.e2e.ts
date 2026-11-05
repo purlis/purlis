@@ -4,7 +4,8 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
-import { closesTheTabsItOpens, openProjectSettings } from "../reach.js";
+import { closesTheTabsItOpens } from "../reach.js";
+import { SETTINGS_GROUPS, openProjectSettings } from "../settingsTab.js";
 
 /**
  * **Settings › Forges adds and removes a `[[forge]]` block**, in the built app (ST-3, #1227).
@@ -54,12 +55,11 @@ describe("Settings › Forges", () => {
     }
   });
 
-  // Then the Settings tab it opened, by its own ×, waited for until the strip is as it was (#5111).
   closesTheTabsItOpens();
 
   it("adds a forge that lands in charter.toml, and removes it again", async () => {
     await openProjectSettings();
-    await $('nav[aria-label="Groups"]').$("button=Forges").click();
+    await $(SETTINGS_GROUPS).$("button=Forges").click();
 
     await $("button=Add forge").click();
     const form = await $('form[aria-label="New forge"]');

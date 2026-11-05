@@ -15,7 +15,7 @@ import { CURRENT_CHIP, goToWorkspace } from "./titleBarWorkspaces.js";
  * of every file after it: the settings specs used to leave their Settings tab for the rest of
  * their shard, and a spec that counted tabs passed or failed by the order it ran in.
  *
- * Two halves, as for chats:
+ * Three parts, the first two as for chats:
  * - **Each spec closes its own tabs through the window**: `before`, it writes down `reach.ts`'s
  *   `tabNames`, and `after`, `closeTheViewTabsOpenedSince` closes each tab that was not there by
  *   its own `Close <name>` and waits until the strip is as it was.
@@ -24,10 +24,11 @@ import { CURRENT_CHIP, goToWorkspace } from "./titleBarWorkspaces.js";
  *   front and its workspace), and `afterAll`, when the same strip is in front again, closes every
  *   tab on it that was not there, by its own `Close <name>`, and FAILS the file, naming it and
  *   the tabs. A file that leaves tabs behind is a red file, not a quiet cost to the files after.
- * - **A file ends where it began** (#5131). The window draws one strip, so a file that left
- *   another project or workspace in front would hide what it left and hand the next file a
- *   different strip. `afterAll` FAILS it, naming both, brings the one it began on back so the
- *   next file is not judged for this one, and then judges that strip's tabs as above.
+ * - **Both ends of a file are judged, wherever it ended** (#5131). The window draws one strip, and
+ *   most files go to a workspace in their setup and stay there, as the next file expects. So a
+ *   file that ended on another strip than it began on is judged on that one, which should hold
+ *   nothing of its own, and on the one it began on, visited for the reading, and it ends where
+ *   it ended. A strip it only passed through is not read.
  */
 
 /** The strip in front: the project and the workspace it is drawn for, and its tabs' names. */
@@ -40,8 +41,10 @@ export interface Strip {
   tabs: string[];
 }
 
-/** Whether two strips are the same one. A project of `""` says nothing: the rail was not drawn. */
-export function sameStrip(one: Strip, other: Strip): boolean {
+/** Whether two strips stand in the same project and workspace, whatever their tabs. A project of
+ *  `""` says nothing, since a narrow window does not draw the rail: a file that ends in another
+ *  project behind a hidden rail is not seen, which is why each spec's `after` brings the rail back. */
+export function samePlace(one: Strip, other: Strip): boolean {
   return (
     one.workspace === other.workspace &&
     (one.project === "" || other.project === "" || one.project === other.project)
@@ -54,28 +57,24 @@ export function sameStrip(one: Strip, other: Strip): boolean {
  * strip says nothing about this one.
  */
 export function tabsLeftOver(before: Strip, now: Strip): string[] {
-  return sameStrip(before, now) ? openedSince(before.tabs, now.tabs) : [];
+  if (before.project !== now.project || before.workspace !== now.workspace) return [];
+  return openedSince(before.tabs, now.tabs);
 }
+
+/** A spec file as the guard names it. */
+const shownOf = (spec: string) =>
+  spec.includes("specs/") ? spec.slice(spec.lastIndexOf("specs/")) : spec;
 
 /** How a strip reads in what the guard says. */
 const placeOf = ({ project, workspace }: Strip) =>
   `${project === "" ? "the project" : project}, ${workspace === "" ? "the plane root" : workspace}`;
 
-/** What the guard says when a file ended with another project or workspace in front. */
-export function frontLeftSaid(spec: string, began: Strip, ended: Strip): string {
-  const shown = spec.includes("specs/") ? spec.slice(spec.lastIndexOf("specs/")) : spec;
-  return (
-    `${shown} began in ${placeOf(began)} and left ${placeOf(ended)} in front; the guard went back. ` +
-    "A spec file goes back to where it began in its own `after` (#5131)."
-  );
-}
-
 /** What the guard says when a file left tabs open: the file, how many, and which. */
-export function tabsLeftSaid(spec: string, left: readonly string[]): string {
-  const shown = spec.includes("specs/") ? spec.slice(spec.lastIndexOf("specs/")) : spec;
+export function tabsLeftSaid(spec: string, left: readonly string[], on: Strip): string {
+  const shown = shownOf(spec);
   const many = left.length === 1 ? "1 tab" : `${left.length} tabs`;
   return (
-    `${shown} left ${many} open (${left.join(", ")}); the guard closed them. ` +
+    `${shown} left ${many} open on ${placeOf(on)} (${left.join(", ")}); the guard closed them. ` +
     "A spec file closes the tabs it opens, through the window, in its own `after` (#5111)."
   );
 }
@@ -95,8 +94,8 @@ export async function stripInFront(): Promise<Strip> {
   return { ...where, tabs: await tabNames() };
 }
 
-/** Brings strip `to`'s project and workspace back to the front, as a person does. */
-async function bringBack(to: Strip): Promise<void> {
+/** Brings strip `to`'s project and workspace to the front, as a person does. */
+async function goTo(to: Strip): Promise<void> {
   if (to.project !== "") {
     await browser.execute((project: string) => {
       document
@@ -111,6 +110,33 @@ async function bringBack(to: Strip): Promise<void> {
     });
   }
   await goToWorkspace(to.workspace === "" ? "Plane root" : to.workspace);
+}
+
+/**
+ * Judges the strip in front against `had`, closes what the file left on it, and says so; none
+ * when it left nothing. A tab the spec closed through the window takes a moment to go: it gets
+ * that moment.
+ */
+async function judgeTheStripInFront(had: Strip, spec: string): Promise<string[]> {
+  let left = tabsLeftOver(had, await stripInFront());
+  if (left.length > 0)
+    await browser
+      .waitUntil(async () => (left = tabsLeftOver(had, await stripInFront())).length === 0, {
+        timeout: 5_000,
+        interval: 250,
+      })
+      .catch(() => undefined);
+  if (left.length === 0) return [];
+  // `chatsLeft.ts`'s `afterAll`, run first, has already ended any chat the file left, so
+  // what is pressed here is a view's tab or an ended chat's. The file is red either way.
+  await pressClose(left).catch(() => undefined);
+  await browser
+    .waitUntil(async () => tabsLeftOver(had, await stripInFront()).length === 0, {
+      timeout: 10_000,
+      interval: 250,
+    })
+    .catch(() => undefined);
+  return [tabsLeftSaid(spec, left, had)];
 }
 
 let before: Strip | null = null;
@@ -141,40 +167,22 @@ export const tabHooks = {
     const spec = specOf(this.test?.parent);
     const faults: string[] = [];
 
-    // A switch back the spec made takes a moment to draw: give it that moment.
-    let ended = await stripInFront();
-    if (!sameStrip(had, ended))
-      await browser
-        .waitUntil(async () => sameStrip(had, (ended = await stripInFront())), {
-          timeout: 5_000,
-          interval: 250,
-        })
-        .catch(() => undefined);
-    if (!sameStrip(had, ended)) {
-      faults.push(frontLeftSaid(spec, had, ended));
-      await bringBack(had).catch(() => undefined);
-    }
-
-    // A tab the spec closed through the window takes a moment to go: give it that moment.
-    let left = tabsLeftOver(had, await stripInFront());
-    if (left.length > 0)
-      await browser
-        .waitUntil(async () => (left = tabsLeftOver(had, await stripInFront())).length === 0, {
-          timeout: 5_000,
-          interval: 250,
-        })
-        .catch(() => undefined);
-    if (left.length > 0) {
-      // `chatsLeft.ts`'s `afterAll`, run first, has already ended any chat the file left, so
-      // what is pressed here is a view's tab or an ended chat's. The file is red either way.
-      await pressClose(left).catch(() => undefined);
-      await browser
-        .waitUntil(async () => tabsLeftOver(had, await stripInFront()).length === 0, {
-          timeout: 10_000,
-          interval: 250,
-        })
-        .catch(() => undefined);
-      faults.push(tabsLeftSaid(spec, left));
+    const ended = await stripInFront();
+    if (samePlace(had, ended)) {
+      faults.push(...(await judgeTheStripInFront(had, spec)));
+    } else {
+      // The strip it ended on, then the one it began on, and back to where it ended.
+      faults.push(...(await judgeTheStripInFront({ ...ended, tabs: [] }, spec)));
+      try {
+        await goTo(had);
+        faults.push(...(await judgeTheStripInFront(had, spec)));
+      } catch (trouble) {
+        // Its project may be closed, and with it the strip: there is nothing there to judge.
+        console.warn(`${spec}: the strip it began on was not read`, trouble);
+      }
+      await goTo(ended).catch((trouble: unknown) => {
+        console.warn(`${spec}: the guard did not get back to the strip it ended on`, trouble);
+      });
     }
     if (faults.length === 0) return;
 
@@ -182,7 +190,7 @@ export const tabHooks = {
     // Not a hook WebdriverIO wraps, so written down where `tools/e2e-annotations.mjs` reads it.
     recordFailure(
       {
-        title: '"after all" hook: where a spec file ended, and the tabs it left',
+        title: '"after all" hook: the tabs a spec file left',
         parent: "",
         file: spec,
       },

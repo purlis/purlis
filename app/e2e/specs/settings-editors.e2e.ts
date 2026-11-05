@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { $, browser, expect } from "@wdio/globals";
-import { SETTINGS_GROUPS, closesTheTabsItOpens, openProjectSettings } from "../reach.js";
+import { closesTheTabsItOpens } from "../reach.js";
+import { SETTINGS_GROUPS, openProjectSettings } from "../settingsTab.js";
 
 /**
  * **Settings' editors, in the real WebView** (DS-10, #1842; spec #1832's seam 3):
@@ -105,7 +106,6 @@ async function listMeasured() {
 }
 
 describe("Settings' editors, in the real WebView", () => {
-  // The Settings tab it opened, by its own ×, waited for until the strip is as it was (#5111).
   closesTheTabsItOpens();
 
   it("draws Edit as TOML as CodeMirror: numbered, coloured, the group's width, eight controls tall", async () => {

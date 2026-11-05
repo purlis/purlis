@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { $, $$, browser, expect } from "@wdio/globals";
 import { harnessRowsDrawn, openThePicker } from "../opening.js";
 import { ask } from "../switching.js";
-import { SETTINGS_GROUPS, openProjectSettings } from "../reach.js";
+import { SETTINGS_GROUPS, openProjectSettings } from "../settingsTab.js";
 
 /**
  * **A harness the project declares in `harnesses/<name>.toml`** (ADR 0073), in the built app:
