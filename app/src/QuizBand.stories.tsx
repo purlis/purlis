@@ -126,6 +126,7 @@ function StewardsPane({
         topOf: (task) => (task > 4 ? 4 : undefined),
         openTask: () => {},
         openSettings: () => {},
+        answerInInbox: () => undefined,
       }}
     >
       <QuestionsHere.Provider value={{ asks: now, with_asking_chat: [] }}>

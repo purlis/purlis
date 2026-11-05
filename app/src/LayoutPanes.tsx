@@ -46,6 +46,7 @@ import { NONE_RESTORING } from "./restoringChats";
 import { SessionPane } from "./SessionPane";
 import { droppedReference, overChat, useReferenceChats } from "./references";
 import { NoticeOf, NoticePaneRow } from "./Notice";
+import { TerminalPromptNotice } from "./TerminalPromptNotice";
 import { WaitingStrip } from "./WaitingStrip";
 import { keepHolds, keptHolds, paneBand } from "./noticeSettle";
 import { type Blocks } from "./sandboxBlocks";
@@ -817,6 +818,7 @@ export function PaneNotices({
         : {
             minimised,
             minimise: () => showNotices("minimised"),
+            expand: () => showNotices("expanded"),
             onHolds,
             focus: () => onFocusBell?.(),
           },
@@ -1363,6 +1365,8 @@ export function LayoutPanes({
         strip={<WaitingStrip session={content.session} waiting={waiting} />}
         notices={
           <>
+            {/* The prompt it is stopped on (#5215): one row, whose way goes to the terminal. */}
+            <TerminalPromptNotice session={content.session} waiting={waiting} />
             {noticesOf(content.session)}
             {/* The first dispatch on this machine explains the chip, on the session's own
                 pane (#1501). */}

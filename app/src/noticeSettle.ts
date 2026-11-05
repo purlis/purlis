@@ -83,10 +83,32 @@ export function keptHolds(band: string): BandHolds {
   return held.get(band) ?? HOLDS_NOTHING;
 }
 
+/**
+ * **What each pane's band was told to close, by its band** (#5215): put away from that pane alone,
+ * never answered, so it stays the registry's, the Inbox's and the ✋'s. Kept as the band is drawn
+ * anew, and for this run only.
+ */
+const closedHere = new Map<string, ReadonlySet<string>>();
+
+const NOTHING_CLOSED: ReadonlySet<string> = new Set();
+
+export const closedIn = (band: string | undefined): ReadonlySet<string> =>
+  band === undefined ? NOTHING_CLOSED : (closedHere.get(band) ?? NOTHING_CLOSED);
+
+/** Closes `cause` in `band`, and says what that band now has closed. */
+export const closeIn =
+  (band: string | undefined, cause: string) =>
+  (was: ReadonlySet<string>): ReadonlySet<string> => {
+    const now = new Set(was).add(cause);
+    if (band !== undefined) closedHere.set(band, now);
+    return now;
+  };
+
 /** Lets the band memory of a pane closed for good go. */
 export function forgetPaneBand(band: string) {
   bands.delete(band);
   held.delete(band);
+  closedHere.delete(band);
 }
 
 /** Lets every pane's band memory of plane `plane` go, as the window lets the project go; with
@@ -97,6 +119,9 @@ export function forgetPaneBands(plane?: string) {
   }
   for (const band of [...held.keys()]) {
     if (plane === undefined || band.startsWith(`${plane}\u0000`)) held.delete(band);
+  }
+  for (const band of [...closedHere.keys()]) {
+    if (plane === undefined || band.startsWith(`${plane}\u0000`)) closedHere.delete(band);
   }
 }
 
@@ -112,6 +137,8 @@ const freshBand = (): BandMemory => ({ hadAny: false, emptiedAt: -Infinity, plac
 export function carryPaneBand(from: string, to: string) {
   const holds = held.get(from);
   if (holds !== undefined && !held.has(to)) held.set(to, holds);
+  const closed = closedHere.get(from);
+  if (closed !== undefined && !closedHere.has(to)) closedHere.set(to, closed);
   const was = bands.get(from);
   if (was === undefined) return;
   const into = bands.get(to);

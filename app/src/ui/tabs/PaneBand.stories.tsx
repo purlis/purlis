@@ -245,6 +245,7 @@ function Pane({
           bell={{
             minimised,
             minimise: () => PANE_NOTICES.set("minimised"),
+            expand: () => undefined,
             onHolds: setHolds,
             focus: () => bellAt.current?.focus(),
           }}

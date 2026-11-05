@@ -25,6 +25,8 @@ import { quizIn, setWhereYouAnswer, useWhereYouAnswer, type QuizHere } from "./w
 export const FIRST_LINE =
   "Questions from this chat's tasks now come here, so you answer them in one place.";
 export const CHANGE = "Change";
+/** What the folded band's line calls a task's question (#5215). */
+export const QUESTION_WHAT = "A task's question";
 
 /**
  * **Where the window places a task's question**, lent to every pane by the window (#4565):
@@ -37,6 +39,8 @@ export const QuizPlaces = createContext<
       openTask: (task: number) => void;
       /** Opens Settings at Where you answer, for the note's Change. */
       openSettings: () => void;
+      /** Opens the Inbox at a task's question, for its row's Answer (#5215). */
+      answerInInbox: (task: number) => void;
     }
   | undefined
 >(undefined);
@@ -267,6 +271,7 @@ export function QuizBand({
         <div
           className="quiz-band-quiz"
           data-waits=""
+          data-what={QUESTION_WHAT}
           style={{ minBlockSize: `${pausing.height}px` }}
         >
           <Card variant="ask" className="inbox-ask task-quiz task-quiz-pause">
@@ -287,7 +292,7 @@ export function QuizBand({
         </Notice>
       )}
       {pausing === undefined && quiz !== undefined && places !== undefined && (
-        <div ref={box} className="quiz-band-quiz" data-waits="">
+        <div ref={box} className="quiz-band-quiz" data-waits="" data-what={QUESTION_WHAT}>
           {quiz.drawn ? (
             <TaskQuiz
               // A new question is a new quiz: nothing typed for one is carried to the next.
@@ -297,6 +302,7 @@ export function QuizBand({
               more={quiz.more}
               own={quiz.own}
               onOpenTask={places.openTask}
+              onAnswerInInbox={places.answerInInbox}
               onAnswered={() => {
                 answered(quiz.ask.ask);
                 if (!prefs.offered) setWhereYouAnswer({ offered: true });

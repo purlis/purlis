@@ -33,6 +33,7 @@ const QUESTION: Shown = {
 
 const openTask = vi.fn();
 const openSettings = vi.fn();
+const answerInInbox = vi.fn();
 
 /** Tasks 7 and 8 are at home in steward 4's tab (chat 4); task 21 in talk 2's (chat 20). */
 const topOf = (task: number) => (task === 7 || task === 8 ? 4 : task === 21 ? 20 : undefined);
@@ -50,9 +51,15 @@ function Pane({
   pauseMs?: number;
   minimised?: boolean;
 }) {
-  const bell = { minimised, minimise: () => {}, onHolds: () => {}, focus: () => {} };
+  const bell = {
+    minimised,
+    minimise: () => {},
+    expand: () => {},
+    onHolds: () => {},
+    focus: () => {},
+  };
   return (
-    <QuizPlaces.Provider value={{ topOf, openTask, openSettings }}>
+    <QuizPlaces.Provider value={{ topOf, openTask, openSettings, answerInInbox }}>
       <QuestionsHere.Provider value={{ asks, with_asking_chat: [] }}>
         {(Array.isArray(session) ? session : [session]).map((one) => (
           <div key={one} data-testid={`pane-${one}`}>

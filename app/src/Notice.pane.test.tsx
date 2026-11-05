@@ -229,6 +229,7 @@ describe("a pane's row of Notices", () => {
             bell={{
               minimised,
               minimise: () => PANE_NOTICES.set("minimised"),
+              expand: () => undefined,
               onHolds: setHolds,
               focus: () => undefined,
             }}

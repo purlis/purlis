@@ -24,7 +24,15 @@
  *   `data-scope="notice-row"`) stands above the terminal and takes the height it leaves. Both are
  *   layout, drawn here and themed through the Notices they hold.
  */
-import { CircleAlert, CircleCheck, CircleQuestionMark, LoaderCircle } from "lucide-react";
+import {
+  CircleAlert,
+  CircleCheck,
+  CircleQuestionMark,
+  Info,
+  LoaderCircle,
+  Shield,
+  SquareTerminal,
+} from "lucide-react";
 import type { ComponentPropsWithRef, ReactNode, Ref } from "react";
 import { useObjectRef } from "react-aria";
 import { useScrollEdges } from "./scrollEdges";
@@ -44,12 +52,19 @@ export function NoticeBox({
   asks,
   waits = false,
   layout,
+  whole = false,
+  what,
   children,
 }: {
   /** **`card`** (#3344, the sidebar-views prototype's Q3 A): its mark at the start, its title
    *  with its × at the top right, its sentence, its ways on a row of their own and what a way
-   *  out opened inside it. Without, the line. */
-  layout?: "card";
+   *  out opened inside it. **`row`** (#5215): one compact row of a chat pane's band. Without, the
+   *  line. */
+  layout?: "card" | "row";
+  /** **A row's message, opened whole** (#5215): its ways are pinned at its foot. */
+  whole?: boolean;
+  /** **What it is about, in a word or two**, for the folded band's line to name (#5215). */
+  what?: string;
   tone: NoticeTone;
   placement: NoticePlacement;
   /** A way out opened something under the line: in a pane the box takes a sentence's width. */
@@ -71,6 +86,8 @@ export function NoticeBox({
       data-asks={asks ? "" : undefined}
       data-waits={waits ? "" : undefined}
       data-layout={layout}
+      data-whole={whole ? "" : undefined}
+      data-what={what}
     >
       {children}
     </div>
@@ -83,14 +100,18 @@ export function NoticeMessage({
   children,
   live,
   cause,
+  ref,
 }: {
   children: ReactNode;
   live?: boolean;
   /** What a card is about, stably, for a test to name it by (`src/Notice.tsx`). */
   cause?: string;
+  /** Where a row measures whether its one line cuts it (#5215). */
+  ref?: Ref<HTMLDivElement>;
 }) {
   return (
     <div
+      ref={ref}
       data-scope="notice"
       data-part="message"
       role={live === true ? "status" : undefined}
@@ -101,13 +122,34 @@ export function NoticeMessage({
   );
 }
 
+/** The icons only a row of a pane's band draws (#5215). */
+export type NoticeMarkKind = "note" | "prompt" | "consent";
+
+const NOTICE_MARKS = { note: Info, prompt: SquareTerminal, consent: Shield } as const;
+
 /** **A Notice's mark** (#3344): a check for news, an alert for trouble, a question for what needs
  *  a decision (#3678); decoration, its tone said in words inside the message. A card draws it at
  *  its start, and an attention line before its words, so attention is never told by its colour
  *  alone. */
-export function NoticeMark({ tone, running = false }: { tone: NoticeTone; running?: boolean }) {
+export function NoticeMark({
+  tone,
+  running = false,
+  kind,
+}: {
+  tone: NoticeTone;
+  running?: boolean;
+  /** **What a row of a pane's band says it is, by its icon** (#5215): an information line, a
+   *  prompt in the terminal, or a consent. Without, its tone's. */
+  kind?: NoticeMarkKind;
+}) {
   const Mark =
-    tone === "trouble" ? CircleAlert : tone === "attention" ? CircleQuestionMark : CircleCheck;
+    kind === undefined
+      ? tone === "trouble"
+        ? CircleAlert
+        : tone === "attention"
+          ? CircleQuestionMark
+          : CircleCheck
+      : NOTICE_MARKS[kind];
   return (
     <span data-scope="notice" data-part="mark" aria-hidden="true">
       {running ? <LoaderCircle className="spinning" /> : <Mark />}
@@ -130,6 +172,34 @@ export function NoticeWhose({ children }: { children: ReactNode }) {
     <strong data-scope="notice" data-part="whose">
       {children}
     </strong>
+  );
+}
+
+/** **A row's words** (#5215): what it says on one line, and its sub-line muted beneath. */
+export function NoticeWords({ children }: { children: ReactNode }) {
+  return (
+    <div data-scope="notice" data-part="words">
+      {children}
+    </div>
+  );
+}
+
+/** **A row's sub-line** (#5215): what kind of notice it is, or who asks, and its age. */
+export function NoticeSub({ children }: { children: ReactNode }) {
+  return (
+    <span data-scope="notice" data-part="sub">
+      {children}
+    </span>
+  );
+}
+
+/** **A row's ways out** (#5215): its own buttons, its toggle, then its ×, in that order. A message
+ *  opened whole pins them at its foot. */
+export function NoticeWays({ children }: { children: ReactNode }) {
+  return (
+    <div data-scope="notice" data-part="ways">
+      {children}
+    </div>
   );
 }
 
@@ -204,8 +274,8 @@ export function NoticeStack({
   );
 }
 
-/** **An expanded band's head row** (#4754): what it holds, then its ways (Dismiss all,
- *  Minimise), above its Notices. */
+/** **The open band's head** (#4754, #5215): what it holds, then its ways (Dismiss all, the fold),
+ *  above its rows. */
 export function NoticeRowHead({ says, children }: { says: string; children: ReactNode }) {
   return (
     <div data-scope="notice-row" data-part="head">

@@ -75,6 +75,7 @@ function StewardsPane({ asks, minimised }: { asks: Shown[]; minimised?: boolean 
         topOf: (task) => (task > 4 ? 4 : undefined),
         openTask: () => {},
         openSettings: () => {},
+        answerInInbox: () => undefined,
       }}
     >
       <QuestionsHere.Provider value={{ asks, with_asking_chat: [] }}>
@@ -90,7 +91,7 @@ function StewardsPane({ asks, minimised }: { asks: Shown[]; minimised?: boolean 
               bell={
                 minimised === undefined
                   ? undefined
-                  : { minimised, minimise: () => {}, onHolds: () => {}, focus: () => {} }
+                  : { minimised, minimise: () => {}, expand: () => {}, onHolds: () => {}, focus: () => {} }
               }
             >
               <QuizBand plane="/plane" session={4} />
