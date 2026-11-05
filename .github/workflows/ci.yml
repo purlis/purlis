@@ -2134,9 +2134,10 @@ jobs:
 
   # **The Skill studio's outcome bars** (SK-23, #4343): the scenario legs' steps, with every leg's
   # own flag off and `outcome` on, so it runs the three runs alone, on a `dev-release` build
-  # (2026-11-03, #4351). Not required, and no `scenario-checks` waits on it: its 300 ms is
-  # measured on a shared runner, and a miss is a ticket (the operator's ruling of 2026-10-31), not
-  # a block on every merge. It becomes required with the flag's flip (#2786).
+  # (2026-11-03, #4351). Not required, and no `scenario-checks` waits on it: it measures on a
+  # shared runner, and a miss is a ticket (the operator's ruling of 2026-10-31), not a block on
+  # every merge. It says L10's p95 and judges a median guard: the 300 ms is judged on a real Mac
+  # (ADR 0086, amended 2026-11-05). It becomes required with the flag's flip (#2786).
   #
   # On main's push, and on a pull request that touches what the bars measure (`GATES`), by the
   # operator's choice of 2026-11-01: it takes a macOS and a Linux runner, for 11 to 17 minutes on
@@ -2146,8 +2147,8 @@ jobs:
     name: outcome bars (${{ matrix.os }})
     needs: changes
     # A missed bar keeps this job red and the `ci` run green, so it does not stop `tools/land.mjs`,
-    # which refuses to land while main's newest finished `ci` run failed. This line goes once #4351
-    # and #4352 are fixed, and the job is made required before the flag's flip (#2786).
+    # which refuses to land while main's newest finished `ci` run failed. This line goes once its
+    # bars are met (#4352 among them), and the job is made required before the flag's flip (#2786).
     continue-on-error: true
     # A timed-out job still turns the run `cancelled`, which skips the release: this bounds that,
     # and main's queue behind it, from the 6 hours a job gets by default. 75, not the 40 the debug

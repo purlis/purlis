@@ -240,6 +240,7 @@ fn a_reopen_record_that_cannot_be_read_leaves_every_session_file_alone() {
             reports: 1,
             dispatches: 0,
             spend: 0,
+            arrived: 0,
             gates: 0,
             nudges: 0,
             saved: 0,
@@ -771,6 +772,28 @@ fn a_chats_figure_untouched_for_thirty_days_is_collected_unless_the_chat_comes_b
     assert!(spend.join(format!("{SEPTEMBERS_ASKER}.json")).exists());
     assert!(!spend.join(format!("{SEPTEMBERS_WORKER}.json")).exists());
     assert!(spend.join(format!("{OCTOBERS_CHAT}.json")).exists());
+}
+
+#[test]
+fn a_record_of_what_appeared_in_a_chats_folders_goes_after_thirty_days_unless_the_chat_comes_back()
+{
+    let (_d, root) = plane();
+    let records = crate::sandbox::arrived::dir(&root);
+    aged(&records.join(format!("{SEPTEMBERS_ASKER}.json")), OLD);
+    aged(&records.join(format!("{SEPTEMBERS_WORKER}.json")), OLD);
+    aged(&records.join(format!("{OCTOBERS_CHAT}.json")), YOUNG);
+
+    let swept = sweep_keeping(
+        &root,
+        SystemTime::now(),
+        &[],
+        &[live(3, Some(SEPTEMBERS_ASKER))],
+    );
+
+    assert_eq!(swept.arrived, 1);
+    assert!(records.join(format!("{SEPTEMBERS_ASKER}.json")).exists());
+    assert!(!records.join(format!("{SEPTEMBERS_WORKER}.json")).exists());
+    assert!(records.join(format!("{OCTOBERS_CHAT}.json")).exists());
 }
 
 /// A month-old trace at `name` in the trace store, holding `bytes`.

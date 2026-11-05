@@ -304,6 +304,8 @@ pub fn answered_first(
                     ),
                 });
             };
+            // Asked about, it is no longer a browser never used (#5296).
+            browsers.no_longer_unused(&program);
             // A browser whose engine ended is gone: the person is asked nothing about it (#2385).
             let raised = if browsers.holds(browse.chat, &program) {
                 needs.raise_on(

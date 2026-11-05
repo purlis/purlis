@@ -1639,6 +1639,33 @@ fn armed_for_opencode(plane: &std::path::Path) -> (Chats, Pretend) {
 }
 
 #[test]
+fn a_sandboxed_chat_starts_on_a_record_of_its_folder_and_what_appears_after_is_told() {
+    use purlis_core::sandbox::arrived;
+    let plane = a_sandboxed_plane();
+    let (chats, _host) = armed_for_opencode(plane.path());
+    let ready = ready_under(
+        Harness::Opencode,
+        a_sandbox_for(Harness::Opencode, plane.path()),
+    );
+    std::fs::write(plane.path().join(".envrc"), "there at the start\n").expect("a name");
+    let chat = Chat {
+        cwd: Some(plane.path().to_path_buf()),
+        ..chat("/bin/sh", "c", None)
+    };
+    let session = chats.start_ready(&chat, &ready, SIZE).expect("starts");
+    let id = chats.id_of(session).expect("an id");
+
+    std::fs::write(plane.path().join(".mcp.json"), "{}\n").expect("a name");
+    let looked = arrived::look(plane.path(), &id, None)
+        .expect("a look")
+        .expect("its record");
+    let [told] = looked.new.as_slice() else {
+        panic!("{looked:?}");
+    };
+    assert!(told.ends_with(".mcp.json"), "{told}");
+}
+
+#[test]
 fn a_sandboxed_chat_pointed_at_a_cluster_starts_with_kubeconfig_naming_its_own_copy() {
     let plane = a_sandboxed_plane();
     let (chats, host) = armed_for_opencode(plane.path());

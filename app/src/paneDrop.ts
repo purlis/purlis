@@ -4,7 +4,10 @@
 import {
   type Content,
   closeTab,
+  contentsOf,
+  EMPTY_TAB,
   type FiledIn,
+  findView,
   type Layout,
   nothingPinned,
   isOneJob,
@@ -13,6 +16,7 @@ import {
   panes,
   type Pinned,
   replace,
+  sameContent,
   showIn,
   type Tab,
   type Tabs,
@@ -37,6 +41,8 @@ import {
  * - **A pane's last chat leaving its tab closes the tab**, unless it is its strip's last tab,
  *   which keeps an empty pane (#4587).
  * - **A moved pane keeps its number**, so its terminal is the same one wherever it lands.
+ * - **A tab's name is its first pane's** (`tabs.renameTab`), so a drop that puts something else
+ *   first names the tab for it (#5283). A chat's own name never changes for a drop.
  */
 
 /** Where in a pane a drop lands: an edge splits on that side, the middle swaps. */
@@ -67,13 +73,24 @@ export type DropContext = {
   filedIn: FiledIn;
   /** What a pane's content is called in a sentence. */
   name: (content: Content) => string;
+  /**
+   * What a tab is called when `chat` is its first pane: the name it says, and what that goes back
+   * to when a given name is taken off (`Tab.defaultName`). `name` for both where this says
+   * nothing: where it is absent, or for a chat it does not know, such as one with no row yet.
+   */
+  tabName?: (chat: Extract<Content, { kind: "session" }>) => TabName | undefined;
   pinned?: Pinned;
 };
+
+type TabName = { name: string; defaultName: string };
 
 /** What a drop would do, said, or why it is refused. */
 export type Verdict =
   /** `says` what it would do, before the drop; `did` what it did, after it. */
-  { ok: true; says: string; did: string } | { ok: false; why: string };
+  | { ok: true; says: string; did: string }
+  /** `overItself`: what is dragged is over its own place, which is no mistake to warn about:
+   *  letting go there moves nothing (#5284). */
+  | { ok: false; why: string; overItself?: true };
 
 /** How far in from an edge, as a share of the pane, a drop splits rather than swaps. */
 export const EDGE = 0.25;
@@ -115,6 +132,9 @@ export function judgeDrop(
   if (source.kind === "pane") {
     const pane = paneAt(tabs, source);
     if (pane === undefined) return refused("That pane has closed.");
+    // First: over its own place nothing moves, whatever it is that could not have moved (#5284).
+    if (to.kind === "pane" && source.pane === to.pane)
+      return overItself("That's the pane being moved. Drop it on another pane.");
     if (pane.content.kind === "empty")
       return refused("An empty pane has nothing to move. Close it instead.");
     // A one-job program stays beside the pane it opened from (#4761; spec #4750 story 78).
@@ -141,10 +161,8 @@ export function judgeDrop(
 
   const target = paneAt(tabs, to);
   if (target === undefined) return refused("That pane has closed.");
-  if (source.kind === "pane" && source.pane === to.pane)
-    return refused("That's the pane being moved. Drop it on another pane.");
   if (source.kind === "tab" && source.tab === to.tab)
-    return refused("That's the tab being moved. Drop it on a pane in another tab.");
+    return overItself("That's the tab being moved. Drop it on a pane in another tab.");
   const there = ctx.name(target.content);
 
   let verdict: { says: string; did: string };
@@ -207,10 +225,45 @@ export function judgeDrop(
 /** **`tabs` after dropping `from` on `to`**, or `tabs` itself when the drop is refused. */
 export function dropOn(tabs: Tabs, from: Source, to: Target, ctx: DropContext, size?: Size): Tabs {
   if (!judgeDrop(tabs, from, to, ctx, size).ok) return tabs;
-  return apply(tabs, asDropped(tabs, from, to), to, ctx);
+  return namedForFirstPanes(tabs, apply(tabs, asDropped(tabs, from, to), to, ctx), ctx);
+}
+
+/**
+ * **What a tab with `content` in its first pane is called**, as `tabs` stands before the drop. A
+ * view keeps the title of the tab it led; a view beside another pane has no title of its own, so
+ * it says its own word, as the layout records it (`laidOut.nodeOf`), never the name of the chat
+ * beside it, which the record would then keep as its title.
+ */
+function tabNameOf(content: Content, tabs: Tabs, ctx: DropContext): TabName {
+  if (content.kind === "empty") return { name: EMPTY_TAB, defaultName: EMPTY_TAB };
+  if (content.kind === "view") {
+    const at = findView(tabs, content.view);
+    if (at !== undefined && contentsOf(tabs, at.tab)[0]?.pane === at.pane) {
+      const { name, defaultName } = tabs.byId[at.tab];
+      return { name, defaultName };
+    }
+    return { name: content.view.view, defaultName: content.view.view };
+  }
+  const named = ctx.tabName?.(content);
+  if (named !== undefined) return named;
+  const name = ctx.name(content);
+  return { name, defaultName: name };
+}
+
+/** `after`, with each tab whose first pane shows something else than `before` named for it. */
+function namedForFirstPanes(before: Tabs, after: Tabs, ctx: DropContext): Tabs {
+  const byId = { ...after.byId };
+  for (const id of after.order) {
+    const was = contentsOf(before, id)[0]?.content;
+    const is = contentsOf(after, id)[0]?.content;
+    if (was === undefined || is === undefined || sameContent(was, is)) continue;
+    byId[id] = { ...byId[id], ...tabNameOf(is, before, ctx) };
+  }
+  return { ...after, byId };
 }
 
 const refused = (why: string): Verdict => ({ ok: false, why });
+const overItself = (why: string): Verdict => ({ ok: false, why, overItself: true });
 const said = (says: string, did: string): Verdict => ({ ok: true, says, did });
 
 /**
@@ -329,11 +382,9 @@ function toStrip(tabs: Tabs, source: Source, at: number, ctx: DropContext): Tabs
   const lifted = lift(tabs, source, ctx);
   const next = lifted.tabs;
   const id = next.named.tabs + 1;
-  const name = ctx.name(panes(lifted.moved)[0].content);
   const tab: Tab = {
     id,
-    name,
-    defaultName: name,
+    ...tabNameOf(panes(lifted.moved)[0].content, tabs, ctx),
     layout: lifted.moved,
     focused: firstPane(lifted.moved),
   };

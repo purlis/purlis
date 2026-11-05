@@ -67,7 +67,7 @@ Draft pull requests are welcome for early feedback. Maintainers may request revi
 
 ### Building and testing
 
-[README.md](README.md#develop) lists what to install and every check CI runs. Run them before
+[Developing purlis](docs/development.md) lists what to install and every check CI runs. Run them before
 you push:
 
 ```bash

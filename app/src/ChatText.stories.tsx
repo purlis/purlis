@@ -10,7 +10,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, within } from "storybook/test";
 import { ChatText } from "./ChatText";
-import { expectFocusInSight, parkTheEnginesCursor, untilFocused } from "./stories.testkit";
+import { expectFocusInSight, untilFocused } from "./stories.testkit";
 
 const SHORT =
   "I checked both branches. **main** has the fix, and `dev` has the new tests.\n\nWhich should I build on, main or dev?";
@@ -82,9 +82,6 @@ export const Long: Story = {
 export const LongOpened: Story = {
   args: { text: LONG },
   play: async ({ canvasElement }) => {
-    // The picture has the pointer still on Show less. A real `pointerover` from the engine's
-    // cursor, over this story's words, would take the button's hover away (#4098).
-    await parkTheEnginesCursor();
     const said = within(canvasElement);
     await userEvent.click(said.getByRole("button", { name: /^Show all/ }));
     await expect(said.getByRole("table")).toBeVisible();

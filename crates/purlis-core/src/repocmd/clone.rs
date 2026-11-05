@@ -232,6 +232,12 @@ pub fn clone(request: &Request, say: Sink) -> u8 {
                 } else {
                     format!("{name} ({branch})")
                 };
+                if let Err(why) = crate::sandbox::arrived::made_by_the_app(root, &dest) {
+                    tracing::warn!(
+                        "purlis: {} was not recorded as made ({why})",
+                        dest.display()
+                    );
+                }
                 let rel = dest.strip_prefix(root).unwrap_or(&dest);
                 say(Say::Done(
                     format!(

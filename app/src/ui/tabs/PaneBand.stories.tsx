@@ -606,7 +606,9 @@ export const DismissAll: Story = {
     await userEvent.click(all);
     await waitFor(() => expect(rowsOf(canvasElement).warnings).toHaveLength(1));
     expect(canvas.getByRole("status", { name: "Vault" })).toBeVisible();
-    expect(bellOf(canvas)).toHaveAccessibleName("Pane notices: No notices, 1 asking");
+    await waitFor(() =>
+      expect(bellOf(canvas)).toHaveAccessibleName("Pane notices: No notices, 1 asking"),
+    );
     await untilFocused(
       () => canvas.getByRole("button", { name: "Minimise" }),
       "the keyboard stays on the band's head",
@@ -791,8 +793,8 @@ export const ConsentPressedByThePointer: Story = {
       await mouse.click(allow);
     } finally {
       letGo();
-      // **The engine's mouse stays where it last was, story after story**: put back in the page's
-      // corner, so it hovers nothing a later story draws (a tooltip, a row's hover).
+      // **This story's picture is taken after its `play`, and of the band at rest**: the engine's
+      // mouse is taken off the Allow it pressed, which would otherwise be drawn hovered.
       await mouse.hover(document.body, { position: { x: 0, y: 0 } });
     }
     expect(allowed).toEqual(["forge"]);

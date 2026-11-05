@@ -9,13 +9,10 @@
  * **And the window a story may resize** (#3510, `inAWindow` in `src/stories.testkit.ts`): a
  * story that checks a short window asks for one, and the window is put back to its own size
  * after the story, so the next story is drawn in the window every other one is.
- *
- * **And the engine's own cursor, moved out of a story's way** (#4098, `parkTheEnginesCursor` in
- * `src/stories.testkit.ts`): set here, where `vitest/browser` is imported, and not in a story.
  */
 import { afterEach, beforeEach, inject } from "vitest";
-import { page, userEvent } from "vitest/browser";
-import { CURSOR_GLOBAL, WINDOW_GLOBAL } from "../src/stories.testkit";
+import { page } from "vitest/browser";
+import { WINDOW_GLOBAL } from "../src/stories.testkit";
 import { CELL_GLOBAL, type Cell } from "./matrix";
 
 declare module "vitest" {
@@ -43,13 +40,6 @@ let own: { width: number; height: number } | undefined;
 (globalThis as Record<string, unknown>)[WINDOW_GLOBAL] = async (width: number, height: number) => {
   own ??= { width: window.innerWidth, height: window.innerHeight };
   await page.viewport(width, height);
-};
-
-(globalThis as Record<string, unknown>)[CURSOR_GLOBAL] = async () => {
-  const root = document.documentElement;
-  await userEvent.hover(root, {
-    position: { x: root.clientWidth - 1, y: root.clientHeight - 1 },
-  });
 };
 
 afterEach(async () => {
