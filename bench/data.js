@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793877956665,
+  "lastUpdate": 1793881111211,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -40068,6 +40068,48 @@ window.BENCHMARK_DATA = {
             "value": 102.635744,
             "unit": "ms",
             "extra": "median of 5 runs: 102.307, 102.461, 102.636, 102.927, 102.963 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "45ce2a5906c739393e7bbe777f146c970c06b791",
+          "message": "The branch folder list answers with names first, and reads each folder's state in parallel (#5345)\n\n* The branch folder list answers with names first, and reads each folder's state in parallel (#5321)\n\nworktree_list no longer runs git status on every branch folder one after\nanother before answering: it names the folders, each marked reading, and\nthe new worktree_states reads their states eight at a time. The window asks\nfor the states once the names are in and fills them in; a refusal is said\non each folder rather than left reading. The Explorer's branch rows say\nreading… until a folder's state is in.\n\nWith 60 folders each slow to read (~0.2 s per git status), the first answer\nwent from 11.6 s to under the 2 s bound, and the states from 11.5 s serial\nto well under 8 s.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NGM9ZKGMA1A3J6Z5BBAHAX\nPurlis-Persona: steward\n\n* A link is served worktree_states, as it is the list (#5321)\n\nEach branch folder's state is a read, asked once worktree_list has named\nthe folders, so a window on a link needs it as much as the list.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NGM9ZKGMA1A3J6Z5BBAHAX\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-05T11:32:35Z",
+          "tree_id": "31d01b1b526e893e90cc74ce454bcd62e8c6ed1a",
+          "url": "https://github.com/purlis/purlis/commit/45ce2a5906c739393e7bbe777f146c970c06b791"
+        },
+        "date": 1793881107496,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.550894,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.540, 0.546, 0.551, 0.552, 0.555 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3578105,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.952, 16.072, 16.358, 16.414, 16.506 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.93152599999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.526, 101.716, 101.932, 102.142, 102.506 ms"
           }
         ]
       }
