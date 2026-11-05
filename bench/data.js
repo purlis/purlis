@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793834067149,
+  "lastUpdate": 1793836870789,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -39396,6 +39396,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9138625,
             "unit": "ms",
             "extra": "median of 5 runs: 101.497, 101.722, 101.914, 102.008, 102.955 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "33992cfd2723c9b61a87c3d407b6f0f118d21dc6",
+          "message": "⌘⇧J: the focused chat's tasks; an ended task keeps its strip (#5058, #5106) (#5218)\n\n* A task kept on its ended band stays on its workspace's strip (#5106)\n\nkeepsItsPane records the workspace a kept task is filed in as it ends,\nand filedIn falls back to it once the plane lists the task no more, as\n#5104 does for a chat ended on purpose.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6KXTNX535KPMXY6WYCPV82M\nPurlis-Persona: steward\n\n* An ended task's workspace is read from state, not a ref, while drawing (#5106)\n\nfiledIn runs during render, so the workspaces kept tasks were filed in\nas they ended are held in state beside endedInPanes, set where\nkeepsItsPane records them (change runs it outside React's updaters).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6KXTNX535KPMXY6WYCPV82M\nPurlis-Persona: steward\n\n* ⌘⇧J: a menu of the focused chat's own tasks (#5058)\n\nThe tasks.menu row (⌘⇧J, Ctrl+Shift+J) now opens a menu of the tasks\nthe focused pane's chat asked for and nothing else's, under that\npane's head (ChatTasksMenu, from the menu family). Picking one shows it\nin the focused pane, as a press does: a task already on screen is\njumped to (D1). Finished tasks are listed by how they ended and cannot\nbe picked. The row's verb is showChatTasks(session) in place of\nshowTabTasks(tab); the tab's chip menu still opens by a press, a rest\nor Down on its tab. Its window tests that opened the chip with the key\nopen it with Down on the tab now.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6KXTNX535KPMXY6WYCPV82M\nPurlis-Persona: steward\n\n* Review fixes: ⌘⇧J's menu in this view's panes, and an ended task filed where its asker is (#5058, #5106)\n\n#5058: the menu stands under the focused pane's head in this view's own\npanes, not the first one in the document (a project behind keeps its\npanes drawn). A pick goes to the pane asked from only while that pane is\nstill there, and a task on screen in another of the project's windows is\njumped to there first, as a press is (#4768). Lines are a union of a\nrunning and a finished task. A story walks it by the keyboard, and a\nwindow test holds that a finished task is listed and shows nothing.\n\n#5106: a task ending after the plane was read again without it is\nrecorded in its asker's workspace rather than outside every one, and\nResume on its band forgets it in both stores.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6KXTNX535KPMXY6WYCPV82M\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-04T23:04:51Z",
+          "tree_id": "775d6bc39f8988c9722b3738ccd236bf541f0991",
+          "url": "https://github.com/purlis/purlis/commit/33992cfd2723c9b61a87c3d407b6f0f118d21dc6"
+        },
+        "date": 1793836865760,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.35350899999999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.345, 0.348, 0.354, 0.361, 0.368 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3447845,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.165, 16.217, 16.345, 16.384, 16.799 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.0803775,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.071, 101.040, 101.080, 101.427, 102.357 ms"
           }
         ]
       }
