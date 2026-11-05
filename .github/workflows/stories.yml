@@ -141,10 +141,6 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
       - run: npm ci
-      # TEMPORARY probe for #5402: the image's fonts and what fontconfig picks for monospace.
-      - run: |
-          fc-list : family style | sort
-          for q in monospace 'monospace:lang=en' 'monospace:lang=zh-cn' 'monospace:lang=ja' Menlo Consolas ui-monospace sans-serif; do echo "== $q"; fc-match -s "$q" | head -5; done
       - name: The image is the Playwright the lockfile names, by its tag and its digest
         run: node ../tools/story-image.mjs
       # One browser and one part of its story files; every cell of the matrix is a project of its

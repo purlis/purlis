@@ -26,6 +26,7 @@ import { storybookTest } from "@storybook/addon-vitest/vitest-plugin";
 import { playwright } from "@vitest/browser-playwright";
 import type { TestProjectInlineConfiguration } from "vitest/config";
 import { cellsOf, type BuiltInThemes, type Cell } from "./matrix.ts";
+import { imageMonospace } from "./monospace.ts";
 
 /** Chromium's flag for greyscale text, which draws the same whatever ran before it. */
 const LCD_OFF = ["--disable-lcd-text"];
@@ -45,12 +46,19 @@ export function cells(): Cell[] {
 
 export function stories(): TestProjectInlineConfiguration[] {
   const pictures = process.env[PICTURES] === "1";
+  // Where pictures are taken, Chromium's `monospace` is pinned to the image's own (#5402,
+  // `monospace.ts`): a picture never takes the one an earlier story left the process with.
+  const monospace = pictures ? imageMonospace() : undefined;
+  if (pictures && monospace === undefined)
+    throw new Error(
+      `${PICTURES}=1, but fc-match names no monospace to pin Chromium's to (monospace.ts)`,
+    );
   return cells().map((cell) => ({
     extends: true,
     plugins: [storybookTest({ configDir: here(".") })],
     test: {
       name: `stories ${cell.name}`,
-      provide: { storyCell: cell },
+      provide: { storyCell: cell, storyMonospace: monospace },
       setupFiles: [
         here("cell.setup.ts"),
         here("at-rest.setup.ts"),
