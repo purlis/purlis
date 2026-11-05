@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793901058729,
+  "lastUpdate": 1793905947927,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -40362,6 +40362,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8084045,
             "unit": "ms",
             "extra": "median of 5 runs: 101.155, 101.769, 101.808, 102.715, 103.909 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1b3752a9c2af3a8527b368a2e8410b917be67222",
+          "message": "docs: the repos/ layout's ADR is 0114 (#5422)\n\n#5328 and #5396 each landed an ADR 0113. The panes record landed first, so\nthis one takes the next number. Only the number and its references change.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NJKMBSPD5DVKH82AMJ8F4Y\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-05T18:32:27Z",
+          "tree_id": "f180c7233c3e8505148c1b9e5336a6aa9637e7d5",
+          "url": "https://github.com/purlis/purlis/commit/1b3752a9c2af3a8527b368a2e8410b917be67222"
+        },
+        "date": 1793905943915,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5407985,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.506, 0.524, 0.541, 0.552, 0.559 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.265632500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.212, 16.251, 16.266, 16.383, 16.587 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.939667,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.929, 101.932, 102.940, 103.770, 104.125 ms"
           }
         ]
       }
