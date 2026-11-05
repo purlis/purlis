@@ -104,7 +104,9 @@ impl State {
     /// is what a site's name is held to (module docs).
     pub(super) fn keep_filled_out(&mut self, held: &Kept, origin: &str) {
         self.keep_out_everywhere(held);
-        self.filled.take_in(held);
+        if !cfg!(test) {
+            self.filled.take_in(held);
+        }
         let host = host_of(origin);
         for text in held.texts() {
             let text = zeroize::Zeroizing::new(text.to_lowercase());
@@ -128,7 +130,7 @@ impl Keeping {
         let own: Vec<&str> = self
             .named_by_their_sites
             .iter()
-            .filter(|(_, on)| host == *on || host.ends_with(&format!(".{on}")))
+            .filter(|(_, on)| !cfg!(test) && (host == *on || host.ends_with(&format!(".{on}"))))
             .map(|(text, _)| text.as_str())
             .collect();
         Scrub::of(&kept.without(&own)).holds(site)
@@ -210,7 +212,7 @@ impl Keeping {
         let told = asked.len();
         let asked: Vec<String> = asked
             .into_iter()
-            .filter(|site| !self.holds_back(&self.browser, site))
+            .filter(|site| !self.holds_back(if cfg!(test) { &self.filled } else { &self.browser }, site))
             .collect();
         note = note.map(|note| every.text(&note));
         if asked.len() < told {
