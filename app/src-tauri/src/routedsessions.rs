@@ -700,8 +700,11 @@ fn fetch_back_owed(
     let mut failed = Vec::new();
     for workspace in workspaces {
         let left = !routed.contains(workspace);
+        // A chat that leaves its record meanwhile owes what the fetch may have read too soon to
+        // bring, so this fetch settles nothing and the next one does (#5393).
+        let leaves = chats_kept.leaves();
         let why = fetch_back_pool(shared, to_a_pool, draining_of, pool, workspace, left);
-        if why.is_empty() {
+        if why.is_empty() && chats_kept.leaves() == leaves {
             chats_kept.fetched(pool, workspace);
         }
         failed.extend(why);
@@ -735,7 +738,8 @@ fn fetch_back_all(
 /// The branches of `workspace` back from each runner of `pool`, each draining one's beside its
 /// runner's now (#4248). `left` is a pool it no longer runs on (#4590). What comes to no failure
 /// has asked every runner of the pool that runs, since a draining runner goes on that (#5393). A
-/// runner's word that it holds no such repository is nothing to fetch, and no failure.
+/// runner's word that it holds no such repository is nothing to fetch, and no failure. A draining
+/// runner still running a program of the project may yet commit, so that is one (#5393).
 fn fetch_back_pool(
     shared: &Arc<Shared>,
     to_a_pool: &ToAPool,
@@ -764,6 +768,7 @@ fn fetch_back_pool(
         .collect();
     lock(&shared.left).retain(|left| !gone.contains(&left.made));
     lock(&shared.stayed).retain(|_, made| !gone.contains(made));
+    let mut still_asked: Vec<Arc<dyn SessionHost>> = Vec::new();
     let mut draining: Vec<Arc<dyn SessionHost>> = lock(&shared.left)
         .iter()
         .filter(|left| left.pool == pool)
@@ -790,6 +795,12 @@ fn fetch_back_pool(
                 .iter()
                 .any(|left| left.runner.as_deref() == Some(named.as_str()));
         if reached {
+            // Its link is still on this runner: it is the pool's host only by name.
+            still_asked.extend(
+                host.iter()
+                    .filter(|host| host.reaches_runner(runner))
+                    .map(Arc::clone),
+            );
             continue;
         }
         let asked = {
@@ -801,6 +812,13 @@ fn fetch_back_pool(
             Err(why) => failed.push(why),
         }
     }
+    // Before the fetch: what ended after this may have committed since.
+    failed.extend(
+        draining
+            .iter()
+            .chain(&still_asked)
+            .filter_map(|host| host.programs_have_ended().err()),
+    );
     // The pool's runner last: where both have a branch, its commit is the one kept.
     for host in draining.into_iter().chain(host) {
         let said = if left {

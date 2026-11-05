@@ -14,7 +14,8 @@ whose proof held the lock on fetches.
    restart forgets it, so that costs one more check.
 3. **A look that took longer than the wait for any answer is taken again**, and the runner goes
    only on a second that passes within that wait. Past it, the runner stays and says what helps.
-4. **A draining runner goes only with its work fetched.** A look at it finds no chat left, then it
+4. **A draining runner goes only once its fetch has run.** That fetch brings each clone's branches,
+   as every fetch back does. A look at it finds no chat left, then it
    stays while any project this machine remembers owes a fetch from its pool (`branchesToFetch`) or
    keeps a chat that may be on it (`chatsOnPools`). The look reads the record, so it covers a project
    whose window is closed. If the record can't be read, the runner stays. A runner already unpaired
@@ -22,11 +23,14 @@ whose proof held the lock on fetches.
 5. **A chat's record names the runner it started on** (`runner` in `chatsOnPools`, in `machine.json`,
    Machine tier, device-bound), so a chat on the pool's next runner holds no draining one back. A
    record with no name counts for every runner of its pool: one from before this, or one a restart
-   found. A record kept again on its pool keeps the name it had.
+   found. A chat started again on another of the pool's runners owes what it left on the first.
 6. **A fetch settles what is owed only once it has asked every runner of the pool that runs.** A
    draining runner no host reaches is asked over `<pool>/<runner>`, and one a link reaches already
    gets no second link. What can't be asked is a failure, so it stays owed. A runner's word that it
    holds no such repository is nothing to fetch, or a runner a workspace never ran on could never go.
+   A fetch settles nothing while a program of the project still runs on a draining runner, or where
+   a chat left its record while the fetch ran: what it read may be older than that chat's last
+   commit, and the next fetch settles it.
 7. **A stopped draining runner is not woken to be asked**, as before (#2051). One stopped during its
    drain is held for the person, and one stopped before it goes by whether its home holds a
    conversation (#4633).

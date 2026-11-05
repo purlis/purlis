@@ -338,7 +338,7 @@ pub fn fresh_runner_ended(config: &Path, chat: &str, missing: &[String], proved:
         Err(why) => {
             tracing::warn!("purlis: a chat's fresh runner stays for now: {why}");
             FreshEnd::Kept {
-                why: vec![release_failed_said(proved, &why)],
+                why: vec![release_failed_said(proved, &why.to_string())],
                 gone: false,
             }
         }

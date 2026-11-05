@@ -508,6 +508,7 @@ fn a_chat_that_ends_comes_back_from_its_own_pool_alone_and_only_a_clean_fetch_se
         &window.on_pools,
         &window.fetch_from,
         &window.to_a_pool,
+        &window.draining_of,
         &window.chats_kept,
     );
     assert_eq!(failed, Vec::<String>::new());
@@ -1052,6 +1053,87 @@ fn a_fetch_asks_a_draining_runner_no_host_reaches_and_settles_only_once_it_answe
         "{:?}",
         old.fetched()
     );
+    assert!(machine.store.owed().values().all(BTreeSet::is_empty));
+}
+
+/// **A program still running on a draining runner may yet commit**, so a fetch settles nothing
+/// until it has ended (#5393): a close is answered before its program ends.
+#[test]
+fn a_fetch_settles_nothing_while_a_program_still_runs_on_a_draining_runner() {
+    let machine = AMachine::new();
+    machine.store.owes("builds", "app");
+    let (window, old) = a_window_with_a_draining_runner(&machine);
+    old.program_still_runs(Some("1 program still runs"));
+
+    assert_eq!(fetches_what_is_owed(&window), ["1 program still runs"]);
+    window.chats_kept.settled();
+    assert!(!machine.store.owed().values().all(BTreeSet::is_empty));
+
+    old.program_still_runs(None);
+    assert_eq!(fetches_what_is_owed(&window), Vec::<String>::new());
+    window.chats_kept.settled();
+    assert!(machine.store.owed().values().all(BTreeSet::is_empty));
+}
+
+/// The pool's own host, whose link is still on a draining runner, is asked the same.
+#[test]
+fn a_fetch_settles_nothing_while_a_program_runs_where_the_pools_link_still_is() {
+    let machine = AMachine::new();
+    machine.store.owes("builds", "app");
+    let (window, _) = a_window_with_a_draining_runner(&machine);
+    machine.builds.reaches("old");
+    machine
+        .builds
+        .program_still_runs(Some("1 program still runs"));
+
+    assert_eq!(fetches_what_is_owed(&window), ["1 program still runs"]);
+}
+
+/// A program on the pool's next runner holds nothing owed back, or a busy pool would never settle.
+#[test]
+fn a_program_on_the_pools_next_runner_holds_nothing_back() {
+    let machine = AMachine::new();
+    machine.store.owes("builds", "app");
+    let (window, _) = a_window_with_a_draining_runner(&machine);
+    machine
+        .builds
+        .program_still_runs(Some("1 program still runs"));
+
+    assert_eq!(fetches_what_is_owed(&window), Vec::<String>::new());
+    window.chats_kept.settled();
+    assert!(machine.store.owed().values().all(BTreeSet::is_empty));
+}
+
+/// **A chat that leaves its record during a fetch owes what that fetch may have missed** (#5393):
+/// the fetch had read the runner already, so it settles nothing and the next one does.
+#[test]
+fn a_chat_that_ends_during_a_fetch_is_still_owed_after_it() {
+    let machine = AMachine::new();
+    machine.store.keep(7, "builds", "app");
+    machine.store.owes("builds", "app");
+    let (window, _) = a_window_with_a_draining_runner(&machine);
+    let kept = window.chats_kept.clone();
+
+    let leaves_meanwhile: DrainingOf = Arc::new(move |_: &str| {
+        kept.leave(7);
+        Vec::new()
+    });
+    let failed = fetch_back_owed(
+        &window.shared,
+        &window.to_a_pool,
+        &leaves_meanwhile,
+        &window.on_pools,
+        &window.chats_kept,
+        "builds",
+        &BTreeSet::from(["app".to_owned()]),
+    );
+
+    assert_eq!(failed, Vec::<String>::new());
+    window.chats_kept.settled();
+    assert!(!machine.store.owed().values().all(BTreeSet::is_empty));
+
+    assert_eq!(fetches_what_is_owed(&window), Vec::<String>::new());
+    window.chats_kept.settled();
     assert!(machine.store.owed().values().all(BTreeSet::is_empty));
 }
 

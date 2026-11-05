@@ -572,6 +572,38 @@ fn a_passing_look_that_took_long_is_taken_again_and_a_quick_one_is_not() {
     assert_eq!(again.get(), 1);
 }
 
+/// A start on a kept runner that takes too long to list what it holds is refused, and says what
+/// helps (#5393): that wait may run under a lock the window's commands wait on.
+#[test]
+fn a_start_on_a_runner_too_slow_to_say_what_it_holds_says_what_helps() {
+    let world = World::new();
+    let runner = Hosting::running_with(
+        crate::sessionhost::Composes::as_the_tests_ship(),
+        StandIns::default(),
+    )
+    .keeping_projects_in(world.projects.clone())
+    .moving_code_with(SlowToList);
+    let connection = crate::hostedsessions::tests::in_memory_with_a_runner(
+        runner.clone(),
+        runner,
+        &world._runtime,
+    )
+    .to_a_pool(FRESH);
+    let link = connection
+        .of_project(&world.root, std::time::Duration::from_secs(30))
+        .expect("a link to the runner");
+
+    let refused = crate::hostedsessions::holds_its_own_code_within(
+        &link,
+        "project",
+        std::time::Duration::from_millis(100),
+    )
+    .expect_err("it did not answer in time");
+
+    assert!(refused.contains("nothing was started"), "{refused}");
+    assert!(refused.contains("Start the task again"), "{refused}");
+}
+
 /// A runner that takes its time over a list of what it holds, as the look through a very large
 /// image can.
 struct SlowToList;

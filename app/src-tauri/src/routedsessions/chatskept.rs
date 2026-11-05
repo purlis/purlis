@@ -13,6 +13,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::time::Duration;
 
@@ -130,6 +131,8 @@ pub struct ChatsKept(Option<Keeping>);
 struct Keeping {
     places: Arc<dyn KeptPlaces>,
     steps: Sender<Step>,
+    /// How many chats have left their records so far, for what a fetch settles.
+    leaves: Arc<AtomicU64>,
 }
 
 impl ChatsKept {
@@ -165,7 +168,11 @@ impl ChatsKept {
             tracing::warn!("purlis: where each runner chat runs will not be kept: {why}");
             return ChatsKept::default();
         }
-        ChatsKept(Some(Keeping { places, steps }))
+        ChatsKept(Some(Keeping {
+            places,
+            steps,
+            leaves: Arc::default(),
+        }))
     }
 
     fn step(&self, step: Step) {
@@ -191,7 +198,17 @@ impl ChatsKept {
     }
 
     pub fn leave(&self, number: u32) {
+        if let Some(keeping) = &self.0 {
+            keeping.leaves.fetch_add(1, Ordering::SeqCst);
+        }
         self.step(Step::Leave(number));
+    }
+
+    /// How many chats have left their records so far (#5393).
+    pub fn leaves(&self) -> u64 {
+        self.0
+            .as_ref()
+            .map_or(0, |keeping| keeping.leaves.load(Ordering::SeqCst))
     }
 
     pub fn forget(&self, number: u32) {

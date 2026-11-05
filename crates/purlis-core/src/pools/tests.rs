@@ -310,9 +310,9 @@ fn work_is_owed_from_a_draining_runner_until_its_fetch_and_a_chat_on_the_next_ru
     assert!(owed().is_empty(), "its fetch ran");
 }
 
-/// A chat a restart takes back keeps the runner its record named: which one it is on has not moved.
+/// A chat started again on another of its pool's runners has left work on the one it was on.
 #[test]
-fn a_chat_kept_again_on_its_pool_keeps_the_runner_it_started_on() {
+fn a_chat_kept_again_on_another_runner_of_its_pool_owes_what_it_left_on_the_first() {
     let mut store = crate::machine::Store::default();
     let plane = std::path::Path::new("/planes/a");
     store.remember(plane, 1);
@@ -322,10 +322,13 @@ fn a_chat_kept_again_on_its_pool_keeps_the_runner_it_started_on() {
         runner: runner.map(str::to_owned),
     };
     store.keep_chat_on_pool(plane, 1, chat(Some("first-old")));
+    assert!(store.recent(plane).unwrap().branches_to_fetch.is_empty());
+
     store.keep_chat_on_pool(plane, 1, chat(Some("first-new")));
+
     let recent = store.recent(plane).unwrap();
-    assert_eq!(recent.chats_on_pools[&1], chat(Some("first-old")));
-    assert!(recent.branches_to_fetch.is_empty());
+    assert_eq!(recent.chats_on_pools[&1], chat(Some("first-new")));
+    assert!(recent.branches_to_fetch["first"].contains("ide"));
 }
 
 #[test]

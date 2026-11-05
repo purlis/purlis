@@ -441,6 +441,13 @@ pub trait SessionHost: Send + Sync {
         )]
     }
 
+    /// **Whether every program of this project on this host's runner has ended** (#5393), or why
+    /// that can't be said: a close is answered before its program ends, and what still runs may
+    /// yet commit after a fetch. Yes for a host that runs nothing of it on a runner.
+    fn programs_have_ended(&self) -> Result<(), String> {
+        Ok(())
+    }
+
     /// Whether this host's link reaches the runner named `runner` now (#5393). No, for a host with
     /// no link open.
     fn reaches_runner(&self, _runner: &str) -> bool {
@@ -997,6 +1004,8 @@ pub(crate) mod pretend {
         proof_held: Mutex<Option<Arc<std::sync::Barrier>>>,
         /// How many proofs it was asked for.
         proofs: AtomicU32,
+        /// Why its programs have not ended, while a test says so ([`Pretend::program_still_runs`]).
+        still_runs: Mutex<Option<String>>,
         /// The draining runner its link reaches, where a test said ([`Pretend::reaches`]).
         reaches: Mutex<Option<String>>,
         /// Whether it can't say what it has left ([`Pretend::cannot_say_what_it_left`]).
@@ -1076,6 +1085,11 @@ pub(crate) mod pretend {
         /// How many proofs it was asked for.
         pub fn proofs(&self) -> u32 {
             self.seen.proofs.load(Ordering::SeqCst)
+        }
+
+        /// A program of the project still runs on its runner from now on, or none.
+        pub fn program_still_runs(&self, why: Option<&str>) {
+            *lock(&self.seen.still_runs) = why.map(str::to_owned);
         }
 
         /// Its link reaches the runner `runner` from now on.
@@ -1412,6 +1426,9 @@ pub(crate) mod pretend {
                 held.wait();
             }
             lock(&self.seen.not_home).clone()
+        }
+        fn programs_have_ended(&self) -> Result<(), String> {
+            lock(&self.seen.still_runs).clone().map_or(Ok(()), Err)
         }
         fn reaches_runner(&self, runner: &str) -> bool {
             lock(&self.seen.reaches).as_deref() == Some(runner)

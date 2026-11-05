@@ -2035,18 +2035,6 @@ impl HostLink {
         }
     }
 
-    /// **Every repository the host holds in the projects it keeps** (1.69, #4569), with what it
-    /// could not look through: `None` from a host before 1.69, which cannot say.
-    pub(crate) fn repos_held(&self) -> Result<Option<ReposHeld>, String> {
-        if self.version() < session::KNOWS_REPOS_HELD {
-            return Ok(None);
-        }
-        match self.call(Command::ReposHeld)? {
-            Answer::ReposHeld { repos, unread } => Ok(Some((repos, unread))),
-            _ => Err("the runner did not say which repositories it holds".to_owned()),
-        }
-    }
-
     /// How long this link waits for any answer.
     pub(crate) fn answer_within(&self) -> Duration {
         if self.pool.is_some() {
@@ -2064,7 +2052,9 @@ impl HostLink {
         purlis_core::codelink::held::LOOK_WITHIN + self.answer_within()
     }
 
-    /// [`Self::repos_held`], waiting at most `within`, and said why where that ran out.
+    /// **Every repository the host holds in the projects it keeps** (1.69, #4569), with what it
+    /// could not look through, waiting at most `within`, and said why where that ran out: `None`
+    /// from a host before 1.69, which cannot say.
     pub(crate) fn repos_held_within(&self, within: Duration) -> Result<Option<ReposHeld>, String> {
         self.repos_held_unless_late(within).unwrap_or_else(|| {
             let waited = if within.as_secs() < 60 {
@@ -2079,8 +2069,8 @@ impl HostLink {
         })
     }
 
-    /// [`Self::repos_held`], or `None` where `within` ran out, which only this machine's own clock
-    /// says.
+    /// [`Self::repos_held_within`], or `None` where `within` ran out, which only this machine's own
+    /// clock says.
     fn repos_held_unless_late(
         &self,
         within: Duration,
@@ -3515,12 +3505,20 @@ fn reconnects_of(
 /// list that is not whole is taken as holding it, so nothing is sent over what it missed.
 fn holds_its_own_code(link: &HostLink, project: &str) -> Result<bool, String> {
     // The ordinary wait: this may run under a lock the window's commands wait on.
-    let within = link.answer_within();
+    holds_its_own_code_within(link, project, link.answer_within())
+}
+
+/// [`holds_its_own_code`], waiting at most `within`, and saying what helps where that ran out.
+pub(crate) fn holds_its_own_code_within(
+    link: &HostLink,
+    project: &str,
+    within: Duration,
+) -> Result<bool, String> {
     let Some(held) = link.repos_held_unless_late(within) else {
         return Err(format!(
-            "This task's runner did not say within {} seconds what it holds, as it has a very \
-             large number of files to look through, so nothing was started. Start the task again \
-             in a moment: a second look is often quicker.",
+            "This task's runner did not say within {} seconds what it holds, so nothing was \
+             started. Its check can take longer on a very large image. Start the task again in a \
+             moment, as a second look is often quicker.",
             within.as_secs()
         ));
     };
@@ -4944,6 +4942,15 @@ impl SessionHost for HostedSessions {
             Ok((link, project)) => crate::runnercode::proof_of(&link, &project, &self.root, runner),
             Err(why) => vec![why],
         }
+    }
+
+    /// Asked over this project's own link, with no wait for them to end.
+    fn programs_have_ended(&self) -> Result<(), String> {
+        if !self.kept_on_the_runner {
+            return Ok(());
+        }
+        let (link, project) = self.link()?;
+        crate::runnercode::programs_ended(&link, &project, Duration::ZERO)
     }
 
     /// Only of a link already open: this opens none.
