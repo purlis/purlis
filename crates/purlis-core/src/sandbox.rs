@@ -1406,7 +1406,6 @@ pub struct Denied {
 
 /// The clone's git folder, for a chat in a branch folder purlis cut (`cwd`): written by the app
 /// alone, which commits, updates and pushes for it, as a chat above the folder finds it already.
-/// Claude Code opens the git folder of the linked worktree it starts in unless a path denies it.
 /// A worktree the person made elsewhere keeps its own git, since the app commits for none of those.
 fn clones_git_held(root: &Path, cwd: Option<&Path>) -> Option<Denial> {
     let here = crate::worktree::locate(root, cwd?)?;
