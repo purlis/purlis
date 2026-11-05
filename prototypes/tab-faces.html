@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What a tab shows</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a review sheet. Today's strip above the proposed one at the same width, the shared marks, a working window, then the what-shows-where table and the questions. One dark look, matching the app. */
+:root {
+  --page: #0e0f13; --ink: #e7e7ec; --ink-2: #b3b4bf; --ink-3: #8a8b98; --rule: #2a2b34;
+  --win: #101116; --surface: #1b1c23; --raised: #262730; --hover: #2c2d38; --term: #1d1e25; --line: #33343f;
+  --accent: #a99df6; --ok: #62c98f; --warn: #e6b25e; --danger: #ef8a8a; --run: #8fbcff;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box }
+body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.5 var(--body) }
+main { max-width: 1320px; margin: 0 auto; padding: 22px 16px 64px; display: grid; gap: 28px }
+h1 { font: 600 24px/1.2 var(--body); margin: 0 }
+h2 { font: 600 17px/1.3 var(--body); margin: 0 0 6px }
+h3 { font: 600 14px/1.3 var(--body); margin: 0 0 4px }
+.lede { color: var(--ink-2); max-width: 76ch; margin: 6px 0 0 }
+.note { color: var(--ink-2); margin: 0 0 12px; max-width: 76ch }
+button { font: inherit; color: inherit }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px }
+section { display: grid; gap: 10px; min-width: 0 }
+
+.controls { display: flex; flex-wrap: wrap; gap: 12px 22px; align-items: end }
+.ctl { display: grid; gap: 4px; min-width: 0 }
+.ctl .lab { font-size: 12px; color: var(--ink-3) }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 7px; overflow: hidden }
+.seg button { border: 0; background: transparent; color: var(--ink-2); padding: 5px 10px; font-size: 13px; cursor: pointer }
+.seg button + button { border-left: 1px solid var(--rule) }
+.seg button[aria-pressed="true"] { background: var(--raised); color: var(--ink) }
+input[type=range] { width: min(300px, 70vw); accent-color: var(--accent) }
+.read { font: 12px var(--mono); color: var(--ink-2); font-variant-numeric: tabular-nums }
+
+.scrollx { overflow-x: auto; min-width: 0 }
+.cmp { display: grid; gap: 4px; min-width: 0 }
+.cmp .tag { font: 500 11px var(--mono); letter-spacing: .05em; text-transform: uppercase; color: var(--ink-3) }
+.cmp .tag.new { color: var(--accent) }
+
+/* The strip */
+.strip { display: flex; align-items: flex-end; gap: 2px; height: 36px; background: var(--win); padding: 0 6px; border-radius: 8px 8px 0 0; min-width: 0; position: relative }
+.tab { position: relative; display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 8px; border-radius: 7px 7px 0 0; color: var(--ink-2); cursor: pointer; flex: 0 1 var(--w, 200px); min-width: var(--min, 120px); max-width: 240px; white-space: nowrap }
+.tab:hover { background: var(--surface) }
+.tab.front { background: var(--surface); color: var(--ink) }
+.tab .nm { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis }
+.tab .x { width: 18px; height: 18px; display: grid; place-items: center; border: 0; background: none; color: var(--ink-3); border-radius: 4px; cursor: pointer; flex: none }
+.tab .x:hover { background: var(--hover); color: var(--ink) }
+.tab .count { display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; border-radius: 9px; background: var(--raised); font-size: 12px; flex: none }
+.tab .split { color: var(--ink-3); font-size: 12px; flex: none; display: inline-flex; gap: 3px; align-items: center }
+/* Proposed: the × takes no room at rest. Its place fades in over the end of the name. */
+.prop .tab .x { position: absolute; right: 5px; top: 7px; opacity: 0; background: var(--surface) }
+.prop .tab .fade { position: absolute; right: 0; top: 0; bottom: 0; width: 34px; border-radius: 0 7px 0 0; opacity: 0; pointer-events: none; background: linear-gradient(to right, transparent, var(--surface) 45%) }
+.prop .tab:hover .x, .prop .tab.front .x, .prop .tab:focus-within .x { opacity: 1 }
+.prop .tab:hover .fade, .prop .tab.front .fade, .prop .tab:focus-within .fade { opacity: 1 }
+.more { flex: none; height: 26px; align-self: center; border: 0; background: none; color: var(--ink-2); padding: 0 8px; border-radius: 6px; cursor: pointer; font-size: 13px; white-space: nowrap }
+.more:hover { background: var(--hover) }
+.plus { flex: none; align-self: center; width: 26px; height: 26px; display: grid; place-items: center; border: 0; background: none; color: var(--ink-2); border-radius: 6px; cursor: pointer }
+.plus:hover { background: var(--hover) }
+
+/* The one mark: the same function draws it on the tab, the list and the head. */
+.mk { position: relative; width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; background: #24372c; color: var(--ok); flex: none }
+.mk.plain { background: var(--raised); color: var(--ink-2) }
+.mk .p { font: 500 9px var(--mono) }
+.mk .b { position: absolute; right: -4px; bottom: -4px; width: 13px; height: 13px; border-radius: 50%; background: var(--win); display: grid; place-items: center; }
+.mk .b svg { width: 11px; height: 11px; display: block }
+.old .mk .b { background: none; right: -3px; bottom: -3px; width: 11px; height: 11px }
+.old .dot { width: 9px; height: 9px; border-radius: 50%; background: #d9b679; outline: 2px solid var(--surface) }
+.old .dot.run { background: var(--run) }
+
+/* The window */
+.work { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start }
+@media (max-width: 1000px) { .work { grid-template-columns: minmax(0, 1fr) } }
+.win { min-width: 720px; display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 6px; padding: 6px; background: var(--win); border: 1px solid var(--rule); border-radius: 10px; height: 470px; position: relative; overflow: hidden }
+.side { background: var(--surface); border-radius: 9px; padding: 8px; display: flex; flex-direction: column; gap: 1px; min-height: 0; overflow: auto }
+.row { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 3px 6px; border-radius: 6px; cursor: pointer; position: relative }
+.row:hover { background: var(--hover) }
+.row.front { background: var(--raised) }
+.row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.row.kid { padding-left: 22px }
+.row .kebab { opacity: 0; flex: none }
+.row:hover .kebab, .row:focus-within .kebab { opacity: 1 }
+.main { display: grid; grid-template-rows: 36px minmax(0, 1fr); min-width: 0; min-height: 0 }
+.main .strip { background: none; padding: 0; border-radius: 0 }
+.panes { background: var(--surface); border-radius: 0 9px 9px 9px; padding: 6px; display: grid; gap: 6px; min-height: 0 }
+.panes.two { grid-template-columns: 1fr 1fr }
+.pane { background: var(--term); border-radius: 7px; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; outline: 1px solid transparent }
+.pane.focus { outline-color: var(--line) }
+.head { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 4px 6px 4px 8px; min-width: 0 }
+.head .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 2ch }
+.statebtn { display: inline-flex; align-items: center; gap: 5px; border: 0; background: none; color: var(--ink-2); font-size: 12.5px; padding: 2px 6px; border-radius: 5px; cursor: pointer; white-space: nowrap; flex: none }
+.statebtn:hover { background: var(--hover); color: var(--ink) }
+.statebtn svg { width: 13px; height: 13px }
+.gap { flex: 1 }
+.ico { width: 24px; height: 24px; display: grid; place-items: center; border: 0; background: none; color: var(--ink-2); border-radius: 5px; cursor: pointer; flex: none }
+.ico:hover { background: var(--hover); color: var(--ink) }
+.term { flex: 1; padding: 6px 12px; font: 12px/18px var(--mono); color: #c9cad4; overflow: hidden }
+.empty { flex: 1; display: grid; place-content: center; color: var(--ink-3); text-align: center; gap: 6px }
+.menu { position: absolute; z-index: 20; min-width: 230px; max-width: 420px; padding: 4px; background: var(--raised); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 10px 28px rgba(0,0,0,.5) }
+.menu button { display: flex; width: 100%; gap: 8px; align-items: center; border: 0; background: none; padding: 5px 8px; border-radius: 5px; cursor: pointer; text-align: left }
+.menu button:hover, .menu button:focus-visible { background: var(--hover); outline: none }
+.menu .k { margin-left: auto; color: var(--ink-3); font: 11.5px var(--mono); padding-left: 12px }
+.menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0 }
+.menu .say { padding: 5px 8px; color: var(--ink-3); font-size: 12.5px }
+.dialog { position: absolute; z-index: 30; left: 50%; top: 70px; transform: translateX(-50%); width: min(400px, 90%); background: var(--raised); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: grid; gap: 10px; box-shadow: 0 14px 40px rgba(0,0,0,.6) }
+.dialog input[type=text] { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; color: var(--ink); padding: 6px 9px; font: inherit; width: 100% }
+.dialog label { display: flex; gap: 8px; align-items: flex-start; color: var(--ink-2); font-size: 13px }
+.dialog .btns { display: flex; justify-content: flex-end; gap: 6px }
+.btn { border: 1px solid var(--line); background: transparent; padding: 4px 12px; border-radius: 6px; cursor: pointer }
+.btn:hover { background: var(--hover) }
+.btn.pri { background: var(--accent); border-color: var(--accent); color: #17132e }
+.said { min-height: 40px; padding: 8px 12px; border: 1px solid var(--rule); border-radius: 8px; color: var(--ink-2); font-size: 13px }
+
+/* Scenarios */
+.sc-panel { border: 1px solid var(--rule); border-radius: 10px; display: flex; flex-direction: column; max-height: 560px; min-width: 0 }
+.sc-top { padding: 10px 12px; border-bottom: 1px solid var(--rule); display: flex; gap: 8px; align-items: center; flex-wrap: wrap }
+.sc-top .count { color: var(--ink-3); font-size: 12px; flex: 1; min-width: 110px }
+.small { border: 1px solid var(--line); background: transparent; padding: 3px 9px; border-radius: 6px; cursor: pointer; font-size: 12.5px }
+.small:hover { background: var(--raised) }
+.sc-list { overflow: auto; padding: 4px 6px 10px; min-height: 0 }
+.sc-g { font: 500 11px var(--mono); letter-spacing: .05em; text-transform: uppercase; color: var(--ink-3); padding: 12px 6px 4px }
+.sc { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 5px 6px 5px 22px; border-radius: 6px; cursor: pointer; position: relative; font-size: 13px; color: var(--ink-2) }
+.sc:hover { background: var(--raised) }
+.sc[aria-current="true"] { background: var(--raised); color: var(--ink) }
+.sc::before { content: ""; position: absolute; left: 7px; top: 11px; width: 8px; height: 8px; border-radius: 50%; border: 1px solid var(--ink-3) }
+.sc.good::before { background: var(--ok); border-color: var(--ok) }
+.sc.change::before { background: var(--warn); border-color: var(--warn) }
+.sc-now { padding: 10px 12px; border-top: 1px solid var(--rule); display: grid; gap: 6px; font-size: 13px }
+.sc-now .try { color: var(--ink-2) }
+.sc-now .btns { display: flex; gap: 6px; flex-wrap: wrap }
+.on-good { border-color: var(--ok); color: var(--ok) }
+.on-change { border-color: var(--warn); color: var(--warn) }
+
+.marks { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px }
+.markrow { display: flex; gap: 10px; align-items: center; padding: 7px 10px; border: 1px solid var(--rule); border-radius: 8px; min-width: 0 }
+.markrow span.w { min-width: 0 }
+.markrow b { font-weight: 500; display: block }
+.markrow small { color: var(--ink-3); font-size: 12px; display: block }
+.tblw { overflow-x: auto }
+table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 13px }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top }
+th { font-weight: 500; color: var(--ink-3); font-size: 12px }
+td:first-child { color: var(--ink); white-space: nowrap }
+td { color: var(--ink-2) }
+.y { color: var(--ok) } .chg { color: var(--accent) } .n { color: var(--ink-3) }
+.qs { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)) }
+.q { padding: 10px 12px; border: 1px solid var(--rule); border-radius: 8px; display: grid; gap: 3px }
+.q b { font-weight: 600 } .q span { color: var(--ink-2); font-size: 13px }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>What a tab shows</h1>
+  <p class="lede">Your screenshots show three problems: names cut to three letters, a tab's icon that doesn't match the chat list's, and a rename that's unclear. You also asked whether a split tab should show that it's split. Below is my recommendation, with the app's real numbers: a tab can shrink to 120 px today. Nothing here is built yet.</p>
+</header>
+
+<section>
+  <h2>Today and proposed, at the same width</h2>
+  <p class="note">The same seven tabs from your screenshot. Drag the width and watch the names. Hover a proposed tab: its × appears over the end of the name, so at rest the name has that room too.</p>
+  <div class="controls">
+    <div class="ctl"><label class="lab" for="w">Room for tabs</label><input id="w" type="range" min="520" max="1300" value="980" step="10"><span class="read" id="wread"></span></div>
+    <div class="ctl"><span class="lab">Smallest a tab may get (proposed)</span><span class="seg" data-opt="floor"><button data-v="140">140 px</button><button data-v="160">160 px</button><button data-v="180">180 px</button></span></div>
+  </div>
+  <div class="scrollx">
+    <div id="cmpbox" style="display:grid;gap:10px">
+      <div class="cmp"><span class="tag">Today · floor 120 px</span><div class="strip old" id="old"></div></div>
+      <div class="cmp"><span class="tag new">Proposed</span><div class="strip prop" id="new"></div></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>One mark, everywhere</h2>
+  <p class="note">Today the tab and the list draw different things for the same chat: the yellow dot against the hourglass in your screenshot. Proposed: one function draws the mark, and the tab, list row, pane head and rail all call it. One state wins when several are true, in this order.</p>
+  <div class="marks" id="marks"></div>
+</section>
+
+<section>
+  <h2>Try it</h2>
+  <div class="work">
+    <div style="display:grid;gap:8px;min-width:0">
+      <div class="scrollx"><div class="win" id="win">
+        <aside class="side" id="side"></aside>
+        <div class="main"><div class="strip prop" id="strip"></div><div class="panes" id="panes"></div></div>
+      </div></div>
+      <div class="said" id="said" role="status" aria-live="polite"></div>
+    </div>
+    <div class="sc-panel">
+      <div class="sc-top"><span class="count" id="count"></span><button class="small" id="copy">Copy my verdicts</button></div>
+      <div class="sc-list" id="sc-list"></div>
+      <div class="sc-now" id="sc-now"></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>What shows where</h2>
+  <p class="note">The global rule you asked for. <b style="font-weight:500">A tab says which chat this is and whether it needs you. A chat's other facts live on the list, the head or the foot.</b> <span class="chg">Coloured text</span> is a change from today.</p>
+  <div class="tblw"><table>
+    <thead><tr><th>Fact</th><th>Tab</th><th>Chat list row</th><th>Pane head</th><th>Pane foot</th><th>Hover card</th></tr></thead>
+    <tbody>
+      <tr><td>Persona and state mark</td><td class="chg">Yes, the same mark</td><td class="y">Yes</td><td class="y">Yes</td><td class="n">–</td><td class="y">Yes</td></tr>
+      <tr><td>Name</td><td class="chg">Yes, with room: 160 px floor</td><td class="y">Yes</td><td class="y">Yes</td><td class="n">–</td><td class="y">In full</td></tr>
+      <tr><td>Needs you</td><td class="chg">Through the mark, from any pane in a split</td><td class="y">Through the mark</td><td class="y">Band under it</td><td class="n">Never</td><td class="y">Yes</td></tr>
+      <tr><td>Tasks running (○3, ✓1, ×1)</td><td class="chg">No: the count chip goes</td><td class="y">The tree under the chat</td><td class="chg">State button opens the same menu</td><td class="n">–</td><td class="chg">One line, "3 tasks running"</td></tr>
+      <tr><td>A task failed</td><td class="chg">Through the mark, until seen</td><td class="y">On the task's row</td><td class="y">In the tasks menu</td><td class="n">–</td><td class="y">Yes</td></tr>
+      <tr><td>Split</td><td class="chg">A small picture of its layout, in place of +1</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="y">Panes listed</td></tr>
+      <tr><td>Close ×</td><td class="chg">On hover, focus and the front tab, taking no room</td><td class="n">–</td><td class="chg">Only with several panes (#5318)</td><td class="n">–</td><td class="n">–</td></tr>
+      <tr><td>Pinned</td><td class="y">Icon only, with its mark</td><td class="n">–</td><td class="n">–</td><td class="n">–</td><td class="y">Yes</td></tr>
+      <tr><td>Harness, workspace, ctx, cache, skills</td><td class="n">Never</td><td class="n">–</td><td class="n">–</td><td class="y">Yes</td><td class="y">Yes</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>Questions for you</h2>
+  <p class="note">My recommendation comes first in each.</p>
+  <div class="qs">
+    <div class="q"><b>Remove the tasks count from the tab?</b><span>Yes. It eats a third of a narrow tab. It repeats the tree in the list, and the mark already says "waiting on tasks". The menu it opens is useful, so that moves to the head's state button, and ⌘⇧J still opens it. The cost: seeing how many tasks a background tab has now takes a hover.</span></div>
+    <div class="q"><b>How wide should a tab be at its smallest?</b><span>160 px, which fits about 15 characters. Tabs past that go behind "N more ▾", which already exists and is sorted by activity. So you see fewer tabs at once, but you can read them. Try 140 and 180 above.</span></div>
+    <div class="q"><b>Show that a tab is split?</b><span>Yes, as a small picture of the layout's shape in place of "+1". It's quieter, it tells you the shape, and it stays readable at any width. And a split tab's mark shows its most urgent pane, so a pane that needs you can't hide behind the focused one.</span></div>
+    <div class="q"><b>Does a split rename the tab?</b><span>No: it keeps its first chat's name, the pane at top left, and doesn't change as you move between panes. So you find a tab where you left it. The heads already say what each pane is. If that chat leaves, the tab takes the next one's name. This changes today's rule, where a tab's name follows the focused pane.</span></div>
+    <div class="q"><b>Renaming in a one-chat tab</b><span>A tab that shows one chat has no name of its own: it shows the chat's. So Rename there renames the chat, and says so. A tick for "Only this tab" keeps the chat's name, for the rare case you want both. This is simpler than a suggestion you'd have to answer each time.</span></div>
+    <div class="q"><b>Renaming in a split tab</b><span>Renames the tab only, and says the chats keep their names. Each pane's ⋯ renames its chat. A tab's own name can be cleared, so it goes back to its first chat's name.</span></div>
+    <div class="q"><b>Where Rename chat appears</b><span>⋯ on a pane, the list row's menu and the palette, with F2 as today. It's missing from the pane's ⋯ now, as you found.</span></div>
+    <div class="q"><b>A task's failure on the tab</b><span>The mark shows it until you've seen that chat, then returns to the chat's own state. So a background tab can still tell you something went wrong, without a count chip.</span></div>
+  </div>
+</section>
+</main>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const SV = (body, extra = "") => `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" ${extra}>${body}</svg>`;
+const G = {
+  hand: SV('<path d="M5 8V3.5a1 1 0 0 1 2 0V7m0-4.5a1 1 0 0 1 2 0V7m0-3.5a1 1 0 0 1 2 0V9l-1 4H6L3.5 9.5a1 1 0 0 1 1.5-1.3z"/>'),
+  fail: SV('<path d="M4 4l8 8M12 4l-8 8"/>'),
+  run: SV('<circle cx="8" cy="8" r="5"/>'),
+  wait: SV('<path d="M4.5 2.5h7M4.5 13.5h7M5.5 2.5c0 4 5 4 5 5.5s-5 1.5-5 5.5M10.5 2.5c0 4-5 4-5 5.5s5 1.5 5 5.5"/>'),
+  idle: SV('<path d="M6 4v8M10 4v8"/>'),
+  ended: SV('<path d="M4 8h8"/>'),
+  x: SV('<path d="M4 4l8 8M12 4l-8 8"/>', 'width="11" height="11"'),
+  plus: SV('<path d="M8 3v10M3 8h10"/>', 'width="14" height="14"'),
+  more: '<svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14"><circle cx="3.5" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="12.5" cy="8" r="1.2"/></svg>',
+  right: SV('<rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M8 3v10"/>', 'width="14" height="14" stroke-width="1.3"'),
+};
+/* The one mark. The tab, the row, the head and the rail all call this. In the order that wins. */
+const STATES = [
+  { k: "needs", g: "hand", c: "var(--warn)", t: "Needs you", s: "Waiting on your answer" },
+  { k: "failed", g: "fail", c: "var(--danger)", t: "A task failed", s: "Until you've seen this chat" },
+  { k: "working", g: "run", c: "var(--run)", t: "Working", s: "Doing something now" },
+  { k: "waiting", g: "wait", c: "var(--run)", t: "Waiting on tasks", s: "The hourglass in your list" },
+  { k: "idle", g: "idle", c: "var(--ink-3)", t: "Idle", s: "At rest, ready for you" },
+  { k: "ended", g: "ended", c: "var(--ink-3)", t: "Ended", s: "Its program has exited" },
+];
+const STATE = Object.fromEntries(STATES.map((s) => [s.k, s]));
+function mark(chat) {
+  if (chat.view) return `<span class="mk plain"><span class="p">${esc(chat.name[0])}</span></span>`;
+  const s = STATE[chat.state];
+  return `<span class="mk" title="${esc(s.t)}"><span class="p">${esc(chat.p || "ST")}</span><span class="b" style="color:${s.c}">${G[s.g]}</span></span>`;
+}
+/* A split tab's small picture of its layout. It takes the place of "+1". */
+function shapeGlyph(n) {
+  const lines = n === 2 ? '<path d="M8 2.5v11"/>' : n === 3 ? '<path d="M8 2.5v11M8 8h5.5"/>' : '<path d="M8 2.5v11M2.5 8h11"/>';
+  return `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/>${lines}</svg>`;
+}
+const RANK = STATES.map((x) => x.k);
+/* A split tab's mark is its most urgent pane, so a pane that needs you can't hide behind the focused one. */
+const urgentOf = (chats) => chats.filter((c) => !c.view).sort((a, b) => RANK.indexOf(a.state) - RANK.indexOf(b.state))[0];
+/* Today's tab mark, for comparison: a bare dot that only says working or not. */
+function oldMark(chat) {
+  if (chat.view) return `<span class="mk plain"><span class="p">${esc(chat.name[0])}</span></span>`;
+  return `<span class="mk"><span class="p">${esc(chat.p || "ST")}</span><span class="b"><span class="dot ${chat.state === "working" ? "run" : ""}"></span></span></span>`;
+}
+
+/* The strips at the top, using the names in the person's screenshot */
+const SAMPLE = [
+  { name: "personas-vaults", state: "waiting", tasks: "○ 1" },
+  { name: "dispatch lanes", state: "waiting", panes: 2 },
+  { name: "M69 chats, tabs and panes: build", state: "waiting", tasks: "○ 3", front: true },
+  { name: "secret fill", state: "waiting", tasks: "○ 1" },
+  { name: "remove leftover folders", state: "idle", tasks: "✓ 1" },
+  { name: "private: sandbox gaps", state: "failed", tasks: "× 1" },
+  { name: "Skill studio", view: true },
+];
+let floor = 160;
+function drawCompare() {
+  const w = +$("w").value;
+  $("wread").textContent = `${w} px`;
+  $("cmpbox").style.width = w + "px";
+  const fit = (min) => Math.max(0, Math.min(SAMPLE.length, Math.floor((w - 12 - 90) / (min + 2))));
+  const face = (t, old, min) => {
+    const m = old ? oldMark(t) : mark(t);
+    return `<div class="tab ${t.front ? "front" : ""}" style="--min:${min}px"><span>${m}</span><span class="nm" title="${esc(t.name)}">${esc(t.name)}</span>${old && t.tasks ? `<span class="count">${esc(t.tasks)}</span>` : ""}${t.panes ? (old ? `<span class="split">+${t.panes - 1}</span>` : `<span class="split" title="${t.panes} panes">${shapeGlyph(t.panes)}</span>`) : ""}${old ? "" : '<span class="fade"></span>'}<button class="x" aria-label="Close tab">${G.x}</button></div>`;
+  };
+  const row = (id, min, old) => {
+    const n = fit(min);
+    // The front tab always stays on the strip.
+    let shown = SAMPLE.slice(0, n);
+    if (!shown.some((t) => t.front) && n > 0) shown = [...SAMPLE.slice(0, n - 1), SAMPLE.find((t) => t.front)];
+    const hid = SAMPLE.length - shown.length;
+    $(id).innerHTML = shown.map((t) => face(t, old, min)).join("") + (hid ? `<button class="more">${hid} more ▾</button>` : "") + `<button class="plus" aria-label="New tab">${G.plus}</button>`;
+  };
+  row("old", 120, true);
+  row("new", floor, false);
+}
+$("w").addEventListener("input", drawCompare);
+function syncSeg() {
+  document.querySelectorAll('.seg[data-opt="floor"] button').forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.v === floor)));
+}
+document.querySelector('.seg[data-opt="floor"]').addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; floor = +b.dataset.v; syncSeg(); drawCompare(); drawWin(); });
+$("marks").innerHTML = STATES.map((s) => `<div class="markrow">${mark({ state: s.k })}<span class="w"><b>${esc(s.t)}</b><small>${esc(s.s)}</small></span></div>`).join("");
+
+/* The working window */
+let W;
+const CH = () => ({
+  1: { id: 1, name: "M69 chats, tabs and panes: build", state: "waiting", tasks: [2, 3, 4] },
+  2: { id: 2, name: "M70 #5204 the pane foot", state: "waiting", parent: 1 },
+  3: { id: 3, name: "M70 #5217 notices cards", state: "working", parent: 1 },
+  4: { id: 4, name: "M71 #5291 panes make room", state: "failed", parent: 1 },
+  5: { id: 5, name: "performance", state: "working" },
+  6: { id: 6, name: "copy-past-crash", state: "needs" },
+  7: { id: 7, name: "old-report", state: "ended" },
+});
+function setup(tabs, front) { W = { chats: CH(), tabs, front, menu: null, dialog: null }; drawWin(); }
+const T = (panes, extra = {}) => ({ panes, focus: panes[0], own: null, ...extra });
+/* A tab without its own name takes its first pane's, top left. Moving focus doesn't change it. */
+const tabName = (t) => t.own || (typeof t.panes[0] === "number" ? W.chats[t.panes[0]].name : t.panes[0]);
+const contentOf = (p) => typeof p === "number" ? W.chats[p] : { name: p, view: true };
+function drawWin() {
+  if (!W) return;
+  const onScreen = (id) => W.tabs.some((t) => t.panes.includes(id));
+  const rowHtml = (c) => `<div class="row ${c.parent ? "kid" : ""} ${W.tabs[W.front].panes.includes(c.id) ? "front" : ""}" data-row="${c.id}" tabindex="0">${mark(c)}<span class="nm">${esc(c.name)}</span><button class="ico kebab" data-rowmenu="${c.id}" aria-label="More for ${esc(c.name)}">${G.more}</button></div>`;
+  $("side").innerHTML = Object.values(W.chats).map(rowHtml).join("");
+  $("strip").style.setProperty("--min", floor + "px");
+  $("strip").innerHTML = W.tabs.map((t, i) => {
+    const f = contentOf(t.focus);
+    return `<div class="tab ${i === W.front ? "front" : ""}" data-tab="${i}" tabindex="0" style="--min:${floor}px" title="${esc(tabName(t))}${t.panes.length > 1 ? " · " + t.panes.length + " panes" : ""}${f.tasks ? " · " + f.tasks.length + " tasks running" : ""}"><span>${mark(t.panes.length > 1 ? (urgentOf(t.panes.map(contentOf)) || f) : f)}</span><span class="nm">${esc(tabName(t))}</span>${t.panes.length > 1 ? `<span class="split" aria-label="${t.panes.length} panes">${shapeGlyph(t.panes.length)}</span>` : ""}<span class="fade"></span><button class="x" data-closetab="${i}" aria-label="Close tab">${G.x}</button></div>`;
+  }).join("") + `<button class="plus" aria-label="New tab">${G.plus}</button>`;
+  const t = W.tabs[W.front];
+  $("panes").className = "panes" + (t.panes.length > 1 ? " two" : "");
+  $("panes").innerHTML = t.panes.map((p) => paneHtml(p, t)).join("");
+  document.querySelectorAll("#win .menu, #win .dialog").forEach((el) => el.remove());
+  if (W.menu) drawMenu();
+  if (W.dialog) drawDialog();
+}
+function paneHtml(p, t) {
+  const c = contentOf(p), s = c.view ? null : STATE[c.state];
+  const many = t.panes.length > 1;
+  if (c.view && !many) return `<div class="pane focus"><div class="term" style="font-family:var(--body)">${esc(c.name)}. A view alone in its tab has no head: rename and close are on its tab.</div></div>`;
+  const word = c.tasks ? `waiting on ${c.tasks.length} tasks` : s ? s.t.toLowerCase() : "";
+  return `<div class="pane ${t.focus === p ? "focus" : ""}" data-pane="${esc(p)}"><div class="head">${mark(c)}<span class="nm">${esc(c.name)}</span>${s ? `<button class="statebtn" ${c.tasks ? `data-tasks="${c.id}"` : ""} ${c.tasks ? 'aria-haspopup="menu"' : ""}><span style="color:${s.c};display:grid">${G[s.g]}</span>${esc(word)}</button>` : ""}<span class="gap"></span><button class="ico" data-panemenu="${esc(p)}" aria-label="More for ${esc(c.name)}">${G.more}</button><button class="ico" aria-label="Split right" data-split="${esc(p)}">${G.right}</button>${many ? `<button class="ico" aria-label="Close pane" data-closepane="${esc(p)}">${G.x}</button>` : ""}</div><div class="term">${esc(c.view ? c.name + " view" : "Working on " + c.name + ".")}</div></div>`;
+}
+function say(s) { $("said").innerHTML = s; }
+function drawMenu() {
+  const m = document.createElement("div"); m.className = "menu"; m.setAttribute("role", "menu");
+  const w = $("win").getBoundingClientRect();
+  m.style.left = Math.max(6, Math.min(W.menu.x - w.left, w.width - 300)) + "px"; m.style.top = W.menu.y - w.top + "px";
+  m.innerHTML = W.menu.items.map((i) => i.hr ? "<hr>" : i.say ? `<div class="say">${esc(i.say)}</div>` : `<button data-do="${esc(i.do)}" role="menuitem">${i.mark ? mark(i.mark) : ""}<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(i.t)}</span>${i.k ? `<span class="k">${esc(i.k)}</span>` : ""}</button>`).join("");
+  $("win").appendChild(m);
+  m.querySelector("button")?.focus();
+}
+function openMenu(ev, items) { const r = ev.target.closest("button,[data-tab]").getBoundingClientRect(); W.menu = { x: r.left, y: r.bottom + 4, items }; drawWin(); }
+function drawDialog() {
+  const d = W.dialog, el = document.createElement("div");
+  el.className = "dialog"; el.setAttribute("role", "dialog"); el.setAttribute("aria-modal", "true"); el.setAttribute("aria-label", d.title);
+  el.innerHTML = `<h3>${esc(d.title)}</h3><input type="text" id="rn" value="${esc(d.value)}" aria-label="Name"><div class="say" style="color:var(--ink-2);font-size:13px">${esc(d.says)}</div>${d.tick ? `<label><input type="checkbox" id="rn-only"> <span>${esc(d.tick)}</span></label>` : ""}<div class="btns">${d.clear ? '<button class="btn" data-dlg="clear">Use the chat name again</button>' : ""}<button class="btn" data-dlg="cancel">Cancel</button><button class="btn pri" data-dlg="ok">Rename</button></div>`;
+  $("win").appendChild(el);
+  const i = el.querySelector("#rn"); i.focus(); i.select();
+}
+function renameTabDialog(i) {
+  const t = W.tabs[i];
+  const c = contentOf(t.focus);
+  if (t.panes.length === 1 && c.view) { say("A view's tab shows the view's own name, so it has no rename."); return; }
+  if (t.panes.length === 1) W.dialog = { kind: "tab1", tab: i, title: "Rename", value: tabName(t), says: `This tab shows one chat, so this renames the chat, everywhere it appears.`, tick: "Only this tab: keep the chat's name", clear: !!t.own };
+  else W.dialog = { kind: "tabN", tab: i, title: "Rename tab", value: tabName(t), says: `This tab shows ${t.panes.length} panes, so this names the tab only. The chats keep their names; each pane's ⋯ renames its own.`, clear: !!t.own };
+  W.menu = null; drawWin();
+}
+function renameChatDialog(id) { const c = W.chats[id]; W.dialog = { kind: "chat", id, title: "Rename chat", value: c.name, says: "Renames this chat everywhere: the list, its head, and any tab that follows it." }; W.menu = null; drawWin(); }
+function tabMenuItems(i) {
+  const t = W.tabs[i], many = t.panes.length > 1, c = contentOf(t.focus);
+  return [{ t: many ? "Rename tab…" : c.view ? "Rename" : "Rename…", do: `rename-tab:${i}`, k: "F2" }, { t: "Pin tab", do: "noop" }, { hr: 1 }, { t: "Close tab", do: `close-tab:${i}`, k: "⌘W" }, { t: "Close other tabs", do: "noop" }];
+}
+$("win").addEventListener("click", (e) => {
+  const q = (s) => e.target.closest(s); let b;
+  if ((b = q("[data-do]"))) {
+    const d = b.dataset.do; W.menu = null;
+    if (d.startsWith("rename-tab:")) { renameTabDialog(+d.split(":")[1]); return; }
+    if (d.startsWith("rename-chat:")) { renameChatDialog(+d.split(":")[1]); return; }
+    if (d.startsWith("close-tab:")) { W.tabs.splice(+d.split(":")[1], 1); W.front = Math.min(W.front, W.tabs.length - 1); if (!W.tabs.length) { W.tabs.push(T([5])); W.front = 0; } drawWin(); say("Closed the tab. Its chats keep running in the list."); return; }
+    if (d.startsWith("show:")) { const id = +d.split(":")[1]; W.tabs.push(T([id])); W.front = W.tabs.length - 1; drawWin(); say(`Opened ${esc(W.chats[id].name)}.`); return; }
+    drawWin(); return;
+  }
+  if ((b = q("[data-dlg]"))) {
+    const d = W.dialog; const v = document.getElementById("rn").value.trim() || d.value; const act = b.dataset.dlg; W.dialog = null;
+    if (act === "ok") {
+      if (d.kind === "chat") { W.chats[d.id].name = v; say(`Renamed the chat to ${esc(v)}. The list, its head and the tab following it all changed.`); }
+      else if (d.kind === "tabN") { W.tabs[d.tab].own = v; say(`Named the tab ${esc(v)}. The chats kept their names.`); }
+      else { const only = d.only; const t = W.tabs[d.tab]; if (only) { t.own = v; say(`Named only this tab ${esc(v)}. The chat is still ${esc(W.chats[t.focus].name)}.`); } else { W.chats[t.focus].name = v; t.own = null; say(`Renamed the chat to ${esc(v)}, and the tab follows it.`); } }
+    } else if (act === "clear") { W.tabs[d.tab].own = null; say("The tab goes back to its first chat's name."); }
+    drawWin(); return;
+  }
+  if ((b = q("[data-closetab]"))) { const i = +b.dataset.closetab; W.tabs.splice(i, 1); W.front = Math.min(W.front, W.tabs.length - 1); if (!W.tabs.length) { W.tabs.push(T([5])); W.front = 0; } drawWin(); say("Closed the tab. Its chats keep running in the list."); return; }
+  if ((b = q("[data-tasks]"))) { const c = W.chats[+b.dataset.tasks]; openMenu(e, [...c.tasks.map((id) => ({ t: W.chats[id].name, do: `show:${id}`, mark: W.chats[id] })), { hr: 1 }, { t: "End a task", do: "noop" }, { t: "Activity", do: "noop" }, { say: `${c.tasks.length} tasks · ⌘⇧J opens this too` }]); return; }
+  if ((b = q("[data-panemenu]"))) {
+    const p = b.dataset.panemenu, id = +p;
+    openMenu(e, Number.isNaN(id) ? [{ t: "Close pane", do: "noop" }] : [{ t: "Rename chat…", do: `rename-chat:${id}`, k: "F2" }, { t: "Show tasks", do: "noop", k: "⌘⇧J" }, { t: "Move…", do: "noop", k: "⌘⇧M" }, { hr: 1 }, { t: "End chat", do: "noop" }]);
+    return;
+  }
+  if ((b = q("[data-rowmenu]"))) { openMenu(e, [{ t: "Rename chat…", do: `rename-chat:${+b.dataset.rowmenu}`, k: "F2" }, { t: "Move…", do: "noop" }, { t: "Open in new tab", do: `show:${+b.dataset.rowmenu}` }]); return; }
+  if ((b = q("[data-split]"))) { const t = W.tabs[W.front]; const next = Object.values(W.chats).map((c) => c.id).find((id) => !W.tabs.some((x) => x.panes.includes(id)) && !t.panes.includes(id)); if (next) { t.panes.push(next); drawWin(); say(`Split. The tab keeps its first chat's name, and gains the small picture.`); } return; }
+  if ((b = q("[data-closepane]"))) { const t = W.tabs[W.front], p = Number(b.dataset.closepane); t.panes = t.panes.filter((x) => x !== p && x !== b.dataset.closepane); t.focus = t.panes[0]; drawWin(); say("Closed the pane. Its chat keeps running in the list, and Close goes from the head now that one pane is left."); return; }
+  if ((b = q("[data-tab]")) && !q(".x")) { W.front = +b.dataset.tab; W.menu = null; drawWin(); return; }
+  if ((b = q("[data-pane]"))) { const v = Number(b.dataset.pane); const t = W.tabs[W.front]; t.focus = Number.isNaN(v) ? b.dataset.pane : v; drawWin(); return; }
+  if ((b = q("[data-row]"))) { const id = +b.dataset.row; const at = W.tabs.findIndex((t) => t.panes.includes(id)); if (at >= 0) { W.front = at; W.tabs[at].focus = id; } else { W.tabs.push(T([id])); W.front = W.tabs.length - 1; } drawWin(); return; }
+  if (W.menu) { W.menu = null; drawWin(); }
+});
+$("win").addEventListener("change", (e) => { if (e.target.id === "rn-only" && W.dialog) W.dialog.only = e.target.checked; });
+$("win").addEventListener("contextmenu", (e) => { const b = e.target.closest("[data-tab]"); if (b) { e.preventDefault(); W.front = +b.dataset.tab; openMenu(e, tabMenuItems(+b.dataset.tab)); } });
+$("win").addEventListener("dblclick", (e) => { const b = e.target.closest("[data-tab]"); if (b && !e.target.closest(".x")) renameTabDialog(+b.dataset.tab); });
+$("win").addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { W.menu = null; W.dialog = null; drawWin(); return; }
+  if (e.key === "Enter" && W.dialog && e.target.id === "rn") { e.preventDefault(); document.querySelector('[data-dlg="ok"]').click(); return; }
+  if (e.key === "F2") {
+    e.preventDefault();
+    const tab = e.target.closest("[data-tab]"); if (tab) { renameTabDialog(+tab.dataset.tab); return; }
+    const row = e.target.closest("[data-row]"); if (row) { renameChatDialog(+row.dataset.row); return; }
+  }
+  if ((e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) && e.target.closest("[data-tab]")) { e.preventDefault(); const i = +e.target.closest("[data-tab]").dataset.tab; openMenu(e, tabMenuItems(i)); }
+});
+
+/* Scenarios */
+const SC = [
+ { g: "The tab's face", items: [
+  { id: "f-mark", t: "The same mark as the list", set: () => setup([T([1]), T([5]), T([6])], 0), try: "Compare each tab's icon with its row in the list.", exp: "Each is the same icon with the same state: the hourglass on both for waiting on tasks." },
+  { id: "f-order", t: "When several states are true", set: () => setup([T([6]), T([1]), T([4])], 0), try: "Look at the marks table above, then the tabs.", exp: "One state wins, in a fixed order: needs you, a failed task, working, waiting on tasks, idle, ended." },
+  { id: "f-failed", t: "A task fails in a background tab", set: () => setup([T([5]), T([4])], 0), try: "See the ✕ on the second tab. Open that tab.", exp: "The mark shows it from the background without a count. In the build it returns to the chat's own state once you've seen it." },
+  { id: "f-x", t: "The × takes no room", set: () => setup([T([1]), T([5]), T([6])], 0), try: "Hover a background tab, then move away.", exp: "The × fades in over the end of the name. The name never shifts, and at rest it has that room too." },
+  { id: "f-split", t: "A split tab", set: () => setup([T([5, 7]), T([1])], 0), try: "Look at the small picture on the first tab. Press each pane in the split, and watch the tab's name.", exp: "The picture shows the layout's shape. The name stays the first chat's as you move between panes, so you can find the tab where you left it. Hovering says how many panes it holds." },
+  { id: "f-urgent", t: "A pane needs you, but another is focused", set: () => setup([T([5, 6]), T([1])], 0), try: "The focused pane is performance, which is working. copy-past-crash beside it needs you. Look at the tab's mark.", exp: "The tab's mark says needs you, even though its name is the first chat's. A pane that needs you can't hide in a split." },
+  { id: "f-view", t: "A view's tab", set: () => setup([T(["Skill studio"]), T([5])], 0), try: "Look at the view's tab and its pane.", exp: "It has the view's icon and name and no state mark, since a view has no state." },
+  { id: "f-empty", t: "Many tabs in a small window", rule: 1, exp: "Tabs shrink to 160 px, and the rest go behind \"N more ▾\", sorted by activity. Try the width slider at the top. The front tab always stays on the strip." },
+  { id: "f-pin", t: "A pinned tab", rule: 1, exp: "Icon only, with the same mark, and it never goes behind \"more\". So a pinned tab still says if it needs you." },
+  { id: "f-long", t: "A very long name", set: () => setup([T([1]), T([5])], 0), try: "Hover the first tab and rest.", exp: "It cuts with an ellipsis, and the hover shows it in full." },
+ ]},
+ { g: "Tasks", items: [
+  { id: "t-menu", t: "Seeing a chat's tasks", set: () => setup([T([1]), T([5])], 0), try: "Press \"waiting on 3 tasks\" in the pane's head.", exp: "The same menu the tab's count opened: each task with its mark, End a task, and Activity. ⌘⇧J opens it too." },
+  { id: "t-list", t: "Tasks in the list", set: () => setup([T([1]), T([5])], 0), try: "Look at the list.", exp: "The tree under the chat is still there, each task with its own state mark." },
+  { id: "t-hover", t: "How many tasks has a background tab?", set: () => setup([T([5]), T([1])], 0), try: "Rest on the second tab.", exp: "The hover says \"3 tasks running\". This is the cost of removing the count." },
+ ]},
+ { g: "Renaming", items: [
+  { id: "r-one", t: "A tab with one chat", set: () => setup([T([5]), T([6])], 0), try: "Double-click the first tab, or press F2 on it. Rename it.", exp: "It says this renames the chat, and the tab, list and head all change." },
+  { id: "r-only", t: "One chat, tab name only", set: () => setup([T([5]), T([6])], 0), try: "Rename the first tab, ticking \"Only this tab\".", exp: "The tab has its own name and the chat keeps its own. Rename again offers \"Use the chat name again\"." },
+  { id: "r-split", t: "A tab with two chats", set: () => setup([T([5, 6]), T([1])], 0), try: "Double-click the tab and rename it.", exp: "It says the tab only, and both chats keep their names." },
+  { id: "r-pane", t: "Rename from a pane's ⋯", set: () => setup([T([5, 6])], 0), try: "Press ⋯ on a pane, then Rename chat…. This row is missing today.", exp: "It renames that chat only. The tab follows if that's its first chat and the tab has no name of its own." },
+  { id: "r-row", t: "Rename from the list", set: () => setup([T([5]), T([6])], 0), try: "Hover a row, press its ⋯, then Rename chat….", exp: "The same dialog, and the name changes everywhere." },
+  { id: "r-view", t: "A view's tab", set: () => setup([T(["Settings"]), T([5])], 0), try: "Double-click the Settings tab.", exp: "It has no rename: a view's tab shows the view's own name." },
+  { id: "r-first", t: "Splitting doesn't rename the tab", set: () => setup([T([5]), T([1])], 0), try: "Press Split right on the pane. Then press the new pane.", exp: "The tab keeps the first chat's name and gains the small picture. Closing the first pane gives the tab the next chat's name." },
+  { id: "r-closes", t: "Closing back to one pane", set: () => setup([T([5, 6])], 0), try: "Close one pane, then double-click the tab.", exp: "It's a one-chat tab again, so Rename says it renames the chat. A name the tab was given stays until you clear it." },
+  { id: "r-kb", t: "With the keyboard", set: () => setup([T([5]), T([6])], 0), try: "Tab onto a tab or a row, and press F2. Type, then Enter or Esc.", exp: "Everything works without a pointer, and Esc changes nothing." },
+ ]},
+];
+const ALL = SC.flatMap((g) => g.items);
+let current = null, verdicts = {};
+const VK = "tab-faces-verdicts";
+try { verdicts = JSON.parse(localStorage.getItem(VK) || "{}"); } catch { verdicts = {}; }
+const saveV = () => { try { localStorage.setItem(VK, JSON.stringify(verdicts)); } catch {} };
+function drawList() {
+  $("sc-list").innerHTML = SC.map((g) => `<div class="sc-g">${esc(g.g)}</div>` + g.items.map((s) => `<button class="sc ${verdicts[s.id] || ""}" data-sc="${s.id}" ${current?.id === s.id ? 'aria-current="true"' : ""}>${esc(s.t)}</button>`).join("")).join("");
+  $("count").textContent = `${ALL.length} scenarios · ${ALL.filter((s) => verdicts[s.id]).length} judged`;
+}
+function drawNow() {
+  const s = current, v = s && verdicts[s.id]; if (!s) return;
+  $("sc-now").innerHTML = `<b style="font-weight:600">${esc(s.t)}</b>${s.try ? `<div class="try">${esc(s.try)}</div>` : ""}<div>${esc(s.exp)}</div><div class="btns">${s.set ? '<button class="small" id="reset">Reset</button>' : ""}<button class="small ${v === "good" ? "on-good" : ""}" id="v-good">Feels right</button><button class="small ${v === "change" ? "on-change" : ""}" id="v-change">Change it</button></div>`;
+}
+function load(s) { current = s; if (s.set) { s.set(); say(""); } drawList(); drawNow(); }
+$("sc-list").addEventListener("click", (e) => { const b = e.target.closest("[data-sc]"); if (b) load(ALL.find((s) => s.id === b.dataset.sc)); });
+$("sc-now").addEventListener("click", (e) => {
+  if (e.target.id === "reset") load(current);
+  if (e.target.id === "v-good" || e.target.id === "v-change") { const v = e.target.id === "v-good" ? "good" : "change"; if (verdicts[current.id] === v) delete verdicts[current.id]; else verdicts[current.id] = v; saveV(); drawList(); drawNow(); }
+});
+$("copy").addEventListener("click", async () => {
+  const lines = ALL.filter((s) => verdicts[s.id]).map((s) => `${verdicts[s.id] === "good" ? "OK" : "CHANGE"}: ${s.t}`);
+  const text = `What a tab shows: verdicts (${lines.length} of ${ALL.length}), floor ${floor} px\n` + lines.join("\n");
+  try { await navigator.clipboard.writeText(text); say("Copied. Paste it into the chat."); } catch { say(`<span style="white-space:pre-wrap;user-select:text">${esc(text)}</span>`); }
+});
+
+syncSeg(); drawCompare();
+load(ALL[0]);
+window.__tf = { ALL, get W() { return W; } };
+</script>
+</body>
+</html>
