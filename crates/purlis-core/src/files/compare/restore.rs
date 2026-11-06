@@ -11,7 +11,7 @@
 //! not there. A file changed since then refuses the undo, naming the file, and a turn's diff draws
 //! that file from the turn's start to the file as it is now, so each hunk left can be discarded.
 //!
-//! **Only the latest turn not yet undone can be undone** ([`super::super::turns::offered_on`]),
+//! **Only the latest turn not yet undone can be undone** ([`super::super::turns::Ended::offered`]),
 //! and the turn's `undone` ref, written once the files are back, makes the one before it next.
 //! Whether the folder is idle is the host's to check, under the run's state lock, in the same step
 //! as this write (ADR 0084 §8): the host holds the chats.
@@ -20,6 +20,8 @@
 //! this process's own, and every check is made before the first write.
 
 use std::path::Path;
+
+use gix::object::tree::EntryKind;
 
 use super::super::{Branch, Refused};
 use super::{
@@ -60,6 +62,13 @@ pub(super) fn as_it_ended(
             if ended_kind != Kind::of_entry(disk_kind) {
                 return Ok(false);
             }
+            // The executable bit is the file's too, where the repo keeps it (`core.fileMode`).
+            if ended_kind == Kind::File
+                && file_mode(repo)
+                && executable_in(end, path) != (disk_kind == EntryKind::BlobExecutable)
+            {
+                return Ok(false);
+            }
             Ok(blob == bytes
                 || (ended_kind == Kind::File
                     && to_git.is_some_and(|to_git| to_git.clean(path, bytes.clone()) == *blob)))
@@ -67,6 +76,19 @@ pub(super) fn as_it_ended(
         (Side::TooLarge(_), _) | (_, Side::TooLarge(_)) => Err("is past the size purlis compares"),
         (Side::Unreadable, _) | (_, Side::Unreadable) => Err("cannot be read"),
     }
+}
+
+/// Whether `path` is an executable file in `tree`.
+fn executable_in(tree: Option<&gix::Tree<'_>>, path: &str) -> bool {
+    tree.and_then(|tree| tree.lookup_entry_by_path(path).ok().flatten())
+        .is_some_and(|entry| entry.mode().is_executable())
+}
+
+/// Whether the repo keeps files' executable bit, as `core.fileMode` says: git's default is yes.
+fn file_mode(repo: &gix::Repository) -> bool {
+    repo.config_snapshot()
+        .boolean("core.fileMode")
+        .unwrap_or(true)
 }
 
 /// One path of an undo, checked and ready to write.
@@ -100,8 +122,9 @@ pub(in super::super) fn undo_here(
         .flatten()
         .map(|name| name.shorten().to_string())
         .ok_or_else(|| not_undone("the folder is on no branch"))?;
-    let offered = super::super::turns::offered_on(&opened.repo, &on);
-    if offered.as_ref() != Some(turn) {
+    let ended = super::super::turns::ended_on(&opened.repo, &on);
+    let offered = ended.offered(&opened.repo);
+    if offered != Some(turn) {
         return Err(not_undone(&match offered {
             Some(latest) if latest.chat == turn.chat => format!(
                 "only the latest turn not yet undone can be, and that is turn {}",
@@ -175,10 +198,7 @@ pub(in super::super) fn undo_here(
         let back = match (was, kind) {
             (Side::Missing, _) => Back::Gone,
             (Side::Bytes(bytes), Kind::File) => {
-                let executable = start_tree
-                    .as_ref()
-                    .and_then(|tree| tree.lookup_entry_by_path(path.as_str()).ok().flatten())
-                    .is_some_and(|entry| entry.mode().is_executable());
+                let executable = executable_in(start_tree.as_ref(), path);
                 let crlf = crlf_here(
                     &opened.repo,
                     end_tree.as_ref(),
@@ -270,7 +290,7 @@ fn crlf_here(
 }
 
 /// `bytes` with each line's LF made CRLF, where it is not already.
-fn with_crlf(bytes: &[u8]) -> Vec<u8> {
+pub(super) fn with_crlf(bytes: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(bytes.len());
     for line in bytes.split_inclusive(|byte| *byte == b'\n') {
         match line.strip_suffix(b"\n") {
@@ -297,7 +317,12 @@ fn write_back(held: &super::super::Held, at: &Path, back: Back) -> std::io::Resu
             crlf,
         } => {
             let bytes = if crlf { with_crlf(&bytes) } else { bytes };
-            super::super::replace_inside(held, at, &bytes, executable)
+            super::super::replace_inside(
+                held,
+                at,
+                &bytes,
+                super::super::WrittenMode::Exactly { executable },
+            )
         }
     }
 }

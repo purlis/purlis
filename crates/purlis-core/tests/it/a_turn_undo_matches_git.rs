@@ -429,3 +429,87 @@ fn no_program_the_repos_config_names_runs_for_an_undo_or_a_discard_on_a_turn() {
         "git ran none of the fixture's programs: the fixture proves nothing"
     );
 }
+
+#[test]
+fn after_an_undo_the_file_diff_opens_on_the_turn_now_offered() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    let piece = cut(&f, FILES);
+    let first = a_turn(&f, || write(&piece, "edited.txt", "first\n"));
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    let second = a_turn(&f, || write(&piece, "edited.txt", "second\n"));
+    files::undo_turn(&reader(), &f.plane, piece_of(&f), &turn(second)).unwrap();
+
+    let opened =
+        files::turn_changed(&reader(), &f.plane, piece_of(&f), "edited.txt", None).unwrap();
+    let TurnChanged::Of {
+        number,
+        turns,
+        undo,
+        ..
+    } = opened
+    else {
+        panic!("a turn");
+    };
+    assert_eq!(number, first);
+    assert!(undo.is_some(), "Undo is offered on the turn it opens on");
+    // The undone turn is still listed, to be reviewed.
+    assert_eq!(turns, [second, first]);
+}
+
+fn executable(at: &Path, path: &str) -> bool {
+    use std::os::unix::fs::PermissionsExt as _;
+    std::fs::metadata(at.join(path))
+        .unwrap()
+        .permissions()
+        .mode()
+        & 0o111
+        != 0
+}
+
+fn set_executable(at: &Path, path: &str, on: bool) {
+    use std::os::unix::fs::PermissionsExt as _;
+    let mode = if on { 0o755 } else { 0o644 };
+    std::fs::set_permissions(at.join(path), std::fs::Permissions::from_mode(mode)).unwrap();
+}
+
+#[test]
+fn an_undo_puts_back_the_executable_bit_the_turn_changed() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    let piece = cut(&f, FILES);
+    let number = a_turn(&f, || {
+        set_executable(&piece, "untouched.txt", true);
+        write(&piece, "edited.txt", "the agent's\n");
+        set_executable(&piece, "edited.txt", true);
+    });
+    assert!(
+        undo_offered(&f, "edited.txt", number)
+            .expect("undo is offered")
+            .contains(&"untouched.txt".to_string())
+    );
+
+    files::undo_turn(&reader(), &f.plane, piece_of(&f), &turn(number)).unwrap();
+
+    assert!(!executable(&piece, "untouched.txt"));
+    assert!(!executable(&piece, "edited.txt"));
+    assert_eq!(against(&piece, &start_of(number)), "");
+}
+
+#[test]
+fn a_files_mode_changed_since_the_turn_ended_refuses_the_undo() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    let piece = cut(&f, FILES);
+    let number = a_turn(&f, || write(&piece, "edited.txt", "the agent's\n"));
+    set_executable(&piece, "edited.txt", true);
+
+    let refused = files::undo_turn(&reader(), &f.plane, piece_of(&f), &turn(number)).unwrap_err();
+    assert!(
+        refused
+            .to_string()
+            .contains("'edited.txt' changed since the turn ended"),
+        "{refused}"
+    );
+    assert_eq!(read(&piece, "edited.txt").as_deref(), Some("the agent's\n"));
+}

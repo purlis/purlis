@@ -89,8 +89,15 @@ impl TurnRecorder {
         }
     }
 
+    /// Whether a boundary of `chat` is queued or being recorded: its latest turn's refs may not
+    /// be written yet, so an undo waits until they are (#5411).
+    pub fn recording(&self, chat: &str) -> bool {
+        self.held().contains_key(chat)
+    }
+
     /// Records what is queued for `chat` until nothing is. Taking the next and giving up the
-    /// queue are one hold, so what is queued after the last is seen by a new thread.
+    /// queue are one hold, so what is queued after the last is seen by a new thread, and the chat
+    /// stays here until its last boundary is recorded ([`Self::recording`]).
     fn drain(&self, plane: &Path, chat: &str) {
         loop {
             let next = {
@@ -216,7 +223,10 @@ mod tests {
         until("the turn's start", || refs(&folder).contains("/1/start"));
         std::fs::write(folder.join("a.txt"), "one\nTWO\n").expect("the edit");
         recorder.heard(&plane.1, CHAT, &folder, &report(Event::Stop, "{}"));
-        until("the turn's end", || refs(&folder).contains("/1/end"));
+        // Recording until the end is written, which an undo waits on (#5411).
+        assert!(recorder.recording(CHAT));
+        until("the turn's end", || !recorder.recording(CHAT));
+        assert!(refs(&folder).contains("/1/end"));
 
         let read = purlis_core::files::turn_changed(
             &crate::reader(),

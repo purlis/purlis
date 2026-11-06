@@ -199,16 +199,16 @@ pub(in super::super) fn discard_here(
         ));
     };
 
+    // A file `git add` would change only in its line ends keeps its own (#704's eol
+    // conversion): the base's lines are written with the ends the file on disk has.
+    let crlf = ToGit::of(&attributes).is_some_and(|mut to_git| {
+        to_git.clean(&path, disk_bytes.to_vec()).as_slice() != disk_bytes
+    });
     let (bytes, lines) = match (ask.target, &diff, &ask.against) {
         (Target::Hunk(hunk), FileDiff::Text { hunks, .. }, Against::Opened(_)) => {
             if !hunks.contains(&hunk) {
                 return Ok(Discarded::Stale);
             }
-            // A file `git add` would change only in its line ends keeps its own (#704's eol
-            // conversion): the base's lines are written with the ends the file has.
-            let crlf = ToGit::of(&attributes).is_some_and(|mut to_git| {
-                to_git.clean(&path, disk_bytes.to_vec()).as_slice() != disk_bytes
-            });
             let Some(spliced) = spliced(disk_bytes, base_bytes, hunk, crlf) else {
                 return Ok(Discarded::Stale);
             };
@@ -229,6 +229,13 @@ pub(in super::super) fn discard_here(
                 .flatten()
             else {
                 return Err(refused("the hunk is not one of the diff drawn. Reload it"));
+            };
+            // The text drawn is git's, its line ends as `git add` stores them: a folder that
+            // converts them has the whole file written with its own again.
+            let spliced = if crlf {
+                super::restore::with_crlf(&spliced)
+            } else {
+                spliced
             };
             (spliced, vec![lines_of(hunk)])
         }
@@ -256,7 +263,12 @@ pub(in super::super) fn discard_here(
             .as_ref()
             .and_then(|tree| tree.lookup_entry_by_path(old_path).ok().flatten())
             .is_some_and(|entry| entry.mode().is_executable());
-        super::super::replace_inside(&held, at, &bytes, executable)
+        super::super::replace_inside(
+            &held,
+            at,
+            &bytes,
+            super::super::WrittenMode::Kept { executable },
+        )
     };
     wrote.map_err(|why| Refused::NotDiscarded {
         path: path.clone(),

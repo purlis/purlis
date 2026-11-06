@@ -698,17 +698,27 @@ fn folder_inside<'p>(
     Ok((fd, leaf))
 }
 
+/// The mode [`replace_inside`] writes a file with.
+#[derive(Debug, Clone, Copy)]
+enum WrittenMode {
+    /// The mode the file has, as a discard of one hunk leaves it; a new one is `executable` or
+    /// not, under the umask, as git checks one out.
+    Kept { executable: bool },
+    /// `executable` or not, under the umask, as git checks one out, whatever the file has: an
+    /// undo puts back the mode the turn changed (#5411).
+    Exactly { executable: bool },
+}
+
 /// `bytes` written at `relative` in the held folder, in a temporary file beside it renamed over
 /// it, so nothing ever finds half of them: the folders on the way opened one at a time following
-/// no link, and made where they are gone (a deleted file's). The file keeps the mode it has; a new
-/// one is `executable` or not, under the umask, as git checks one out. What was at `relative` is
-/// replaced and never followed.
+/// no link, and made where they are gone (a deleted file's). What was at `relative` is replaced
+/// and never followed.
 #[cfg(unix)]
 fn replace_inside(
     held: &Held,
     relative: &Path,
     bytes: &[u8],
-    executable: bool,
+    mode: WrittenMode,
 ) -> std::io::Result<()> {
     use std::io::Write as _;
 
@@ -737,10 +747,15 @@ fn replace_inside(
         fd = Some(next);
     }
     let at = fd.as_ref().unwrap_or(&held.0);
+    let (executable, keep) = match mode {
+        WrittenMode::Kept { executable } => (executable, true),
+        WrittenMode::Exactly { executable } => (executable, false),
+    };
     let kept = rustix::fs::statat(at, leaf, rustix::fs::AtFlags::SYMLINK_NOFOLLOW)
         .ok()
         .filter(|was| {
-            rustix::fs::FileType::from_raw_mode(was.st_mode) == rustix::fs::FileType::RegularFile
+            keep && rustix::fs::FileType::from_raw_mode(was.st_mode)
+                == rustix::fs::FileType::RegularFile
         })
         .map(|was| Mode::from_raw_mode(was.st_mode & 0o7777));
     let temporary = format!(".purlis-discard-{}", std::process::id());
@@ -769,7 +784,7 @@ fn replace_inside(
     held: &Held,
     relative: &Path,
     bytes: &[u8],
-    _executable: bool,
+    _mode: WrittenMode,
 ) -> std::io::Result<()> {
     let file = held.0.join(relative);
     if let Some(folder) = file.parent() {

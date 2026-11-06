@@ -389,6 +389,28 @@ describe("discarding on a turn and undoing it (#5411)", () => {
     expect(asked.filter((one) => one.cmd === "turn_changed")).toHaveLength(1);
   });
 
+  it("offers no Undo of the turn left after the turn picked is refused", async () => {
+    mockIPC((cmd, args) => {
+      if (cmd === "what_changed") return BASE;
+      if (cmd === "turn_changed") {
+        const pick = (args as { turn: { number: number } | null }).turn;
+        if (pick?.number === 2) throw "this branch has no turn 2 of that chat";
+        return ofTurn(FILES);
+      }
+      throw new Error(`unexpected ${cmd}`);
+    });
+    await toTheTurn();
+    expect(screen.getByRole("button", { name: "Undo turn 3…" })).toBeVisible();
+
+    screen.getByRole("button", { name: /Turn$/ }).focus();
+    await userEvent.keyboard("{Enter}");
+    await screen.findByRole("listbox");
+    await userEvent.keyboard("{ArrowDown}{Enter}");
+
+    expect(await screen.findByText(/no turn 2 of that chat/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^Undo turn/ })).toBeNull();
+  });
+
   it("offers no Undo on a turn that is not the one offered", async () => {
     onATurn(() => ofTurn(null), []);
     await toTheTurn();

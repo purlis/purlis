@@ -717,3 +717,44 @@ fn no_program_the_repos_config_names_runs_for_a_discard() {
         "git ran none of the fixture's programs: the fixture proves nothing"
     );
 }
+
+#[test]
+fn overwrite_in_a_folder_that_converts_line_ends_keeps_the_files_crlf() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    write(&f.clone, ".gitattributes", "*.txt text eol=crlf\n");
+    let piece = cut(&f, &[("crlf.txt", b"a\nb\nc\nd\ne\nf\ng\nh\n")]);
+    write(
+        &piece,
+        "crlf.txt",
+        "A\r\nb\r\nc\r\nd\r\ne\r\nf\r\ng\r\nH\r\n",
+    );
+    let shown = files::what_changed(&reader(), &f.plane, piece_of(&f), "crlf.txt").unwrap();
+    let FileDiff::Text { head, hunks, .. } = shown.diff else {
+        panic!("text");
+    };
+    write(
+        &piece,
+        "crlf.txt",
+        "A\r\nb\r\nc\r\nd\r\ne\r\nf\r\ng\r\nH, written since\r\n",
+    );
+
+    files::discard(
+        &reader(),
+        &f.plane,
+        piece_of(&f),
+        &Discard {
+            path: "crlf.txt".into(),
+            target: Target::Hunk(hunks[0]),
+            against: Against::Overwrite { head: Some(head) },
+            turn: None,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        std::fs::read(piece.join("crlf.txt")).unwrap(),
+        b"a\r\nb\r\nc\r\nd\r\ne\r\nf\r\ng\r\nH\r\n"
+    );
+    assert_eq!(git_says(&piece)[1..], ["@@ -8 +8 @@", "-h", "+H"]);
+}

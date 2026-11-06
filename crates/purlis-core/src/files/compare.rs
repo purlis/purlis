@@ -374,12 +374,31 @@ pub(super) fn one_file_compared(
     comparison: &Comparison,
     path: &str,
 ) -> Result<Shown, Refused> {
-    let (relative, gone) = super::named_or_gone(
+    // The path is checked before the comparison is made, which costs more.
+    super::named_or_gone(
         &super::Kept::of(plane, &opened.base, branch),
         &opened.base,
         path,
     )?;
     let compared = compared_in(plane, branch, opened, comparison, Whitespace::Shown)?;
+    file_of_compared(plane, branch, opened, comparison, compared, path)
+}
+
+/// [`one_file_compared`] of a comparison already made, so a caller that needs its list too
+/// compares once ([`turn_changed_here`]).
+fn file_of_compared(
+    plane: &Path,
+    branch: Branch<'_>,
+    opened: &Opened,
+    comparison: &Comparison,
+    compared: Compared,
+    path: &str,
+) -> Result<Shown, Refused> {
+    let (relative, gone) = super::named_or_gone(
+        &super::Kept::of(plane, &opened.base, branch),
+        &opened.base,
+        path,
+    )?;
     let Some(change) = compared.files.into_iter().find(|one| one.path == relative) else {
         if gone {
             return Err(Refused::NotThere(path.to_string()));
@@ -521,12 +540,12 @@ pub(super) fn turn_changed_here(
     else {
         return Ok(TurnChanged::NoTurn);
     };
-    let Some(TurnKey { chat, number }) =
-        turn.or_else(|| super::turns::latest_of(&opened.repo, &on))
+    let ended = super::turns::ended_on(&opened.repo, &on);
+    let Some(TurnKey { chat, number }) = turn.or_else(|| ended.opened(&opened.repo).cloned())
     else {
         return Ok(TurnChanged::NoTurn);
     };
-    let turns = super::turns::ended_of(&opened.repo, &on, &chat);
+    let turns = ended.of(&chat);
     if !turns.contains(&number) {
         return Err(Refused::Read(format!(
             "this branch has no turn {number} of that chat"
@@ -536,35 +555,18 @@ pub(super) fn turn_changed_here(
         chat: chat.clone(),
         number,
     };
-    let offered = super::turns::offered_on(&opened.repo, &on).is_some_and(|offered| {
-        offered
-            == TurnKey {
-                chat: chat.clone(),
-                number,
-            }
-    });
-    let mut listed = None;
-    let mut list = || -> Result<Vec<FileChange>, Refused> {
-        if listed.is_none() {
-            listed =
-                Some(compared_in(plane, branch, &opened, &comparison, Whitespace::Shown)?.files);
-        }
-        Ok(listed.clone().unwrap_or_default())
-    };
-    let file = match one_file_compared(plane, branch, &opened, &comparison, path)? {
+    let offered = ended
+        .offered(&opened.repo)
+        .is_some_and(|offered| offered.chat == chat && offered.number == number);
+    let compared = compared_in(plane, branch, &opened, &comparison, Whitespace::Shown)?;
+    let undo = offered
+        .then(|| restore::paths_of(&compared.files))
+        .filter(|paths| !paths.is_empty());
+    let nothing = compared.files.is_empty();
+    let file = match file_of_compared(plane, branch, &opened, &comparison, compared, path)? {
         Shown::Changed(shown) => InTurn::Changed(shown),
-        Shown::NotListed { .. } => {
-            if list()?.is_empty() {
-                InTurn::Nothing
-            } else {
-                InTurn::NotThisFile
-            }
-        }
-    };
-    let undo = if offered {
-        Some(restore::paths_of(&list()?)).filter(|paths| !paths.is_empty())
-    } else {
-        None
+        Shown::NotListed { .. } if nothing => InTurn::Nothing,
+        Shown::NotListed { .. } => InTurn::NotThisFile,
     };
     Ok(TurnChanged::Of {
         chat,
