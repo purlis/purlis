@@ -84,6 +84,9 @@ pub(super) const OWN_STATES: &[(State, &str)] = &[
     (State::Focused, ":is(:focus-visible, :focus-visible *)"),
 ];
 
+/// The one part with a fill: each dot, after the root, the mark and the dots.
+const DOT: usize = 3;
+
 /// **The grip's colours**: no fill and no edge in any state, and no words.
 pub(super) fn grip_look(_variant: &str, _states: &[State]) -> Look {
     Look {
@@ -93,11 +96,11 @@ pub(super) fn grip_look(_variant: &str, _states: &[State]) -> Look {
     }
 }
 
-/// **Each part's fill as `grip.css` draws it while `states` hold** (#5290): only a dot (part 3) has
+/// **Each part's fill as `grip.css` draws it while `states` hold** (#5290): only a dot ([`DOT`]) has
 /// one, none at rest, where the mark is drawn, and the muted tier under the pointer and with the
 /// keyboard, a mark held at 3:1 on every ground.
 pub(super) fn grip_fill(part: usize, states: &[State]) -> &'static str {
-    if part != 3 || states.is_empty() {
+    if part != DOT || states.is_empty() {
         TRANSPARENT
     } else {
         "text.muted"

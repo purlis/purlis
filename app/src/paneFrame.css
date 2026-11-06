@@ -525,15 +525,19 @@
   text-overflow: ellipsis;
 }
 
+/* **A pane's grip** (#5290, `ui/grip`): the mark in its head, the tab's size, and a 24px target
+   (WCAG 2.5.8) that reaches past the mark and moves nothing around it. */
+.pane-chips > .pane-persona,
+.pane-frame.pane-viewed > .pane-head > .pane-view-grip {
+  --grip-mark: var(--space-6);
+  --grip-reach: var(--space-7);
+}
+
 /* The chat's persona and state icon (`ChatPersonaState`, #4762): the tab's size, its badge
    ringed in the terminal's fill the head stands on. */
 .pane-chips > .pane-persona {
   --chat-mark-size: var(--space-6);
   --chat-mark-ground: var(--terminal-background);
-  /* It is the pane's grip (#5290, `ui/grip`), a 24px target (WCAG 2.5.8) that reaches past the
-     mark and moves nothing around it. */
-  --grip-mark: var(--space-6);
-  --grip-reach: var(--space-7);
   display: inline-flex;
   flex: none;
   align-items: center;
@@ -760,8 +764,6 @@
    over the view's first row, which keeps its room at its start as it keeps the actions' at its
    end. Alone in its tab a view has none, and its first row starts where it always did. */
 .pane-frame.pane-viewed > .pane-head > .pane-view-grip {
-  --grip-mark: var(--space-6);
-  --grip-reach: var(--space-7);
   display: inline-flex;
   flex: none;
   align-items: center;
@@ -769,7 +771,7 @@
 }
 
 .pane-frame.pane-viewed:has(> .pane-head > .pane-view-grip) {
-  /* The grip's reach and the gap after it. */
+  /* The grip's reach (`--grip-reach`, above) and the gap after it. */
   --pane-grip-room: calc(var(--space-7) + var(--space-3));
 }
 

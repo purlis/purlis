@@ -15,7 +15,9 @@
   place-items: center;
   inline-size: var(--grip-reach, auto);
   block-size: var(--grip-reach, auto);
-  margin: calc((var(--grip-mark, 0px) - var(--grip-reach, var(--grip-mark, 0px))) / 2);
+  margin: calc(
+    (var(--grip-mark, var(--grip-reach, 0px)) - var(--grip-reach, var(--grip-mark, 0px))) / 2
+  );
   padding: 0;
   color: inherit;
   cursor: grab;
