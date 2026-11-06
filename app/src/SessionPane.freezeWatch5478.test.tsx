@@ -65,7 +65,12 @@ const send = (chunk: string) =>
     window.__TAURI_INTERNALS__.runCallback(output.id, { index: index++, message: bytes.buffer });
   });
 /** The watchdog's clock moves on by `ms`. */
-const later = (ms: number) => act(() => void vi.advanceTimersByTime(ms));
+const later = (ms: number) =>
+  act(async () => {
+    vi.advanceTimersByTime(ms);
+    // The line goes to the core through the IPC, which answers a microtask later.
+    await Promise.resolve();
+  });
 
 /** The lines the window sent the diagnostic log. */
 let logged: string[] = [];
@@ -104,6 +109,9 @@ afterEach(() => {
 async function openPane() {
   render(<SessionPane plane="/planes/one" session={7} focused={false} onFocus={() => {}} />);
   await waitFor(() => expect(made[0]?.options.scrollback).toBe(5000));
+  // What opening asked xterm to draw is drawn, so a draw later is one of what came after.
+  frame();
+  frame();
   return made[0];
 }
 
