@@ -86,6 +86,7 @@ fn filled(browser: &Browser, told: &Arc<Told>) {
         key: "dash-api-key".to_owned(),
         value: VALUE.to_owned().into(),
         multi_line: false,
+        under_a_grant: false,
     };
     let filled = browser.fill_secret(
         browser.epoch(),

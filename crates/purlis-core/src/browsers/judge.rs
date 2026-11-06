@@ -72,6 +72,11 @@ struct Now {
     answered: Vec<Site>,
     /// The sites a filled page asked to leave for: each is asked about once (#5230).
     asked_leaving: HashSet<Site>,
+    /// **Of [`Self::asked_leaving`], those [`Self::answered`] held as they were asked about**
+    /// (the person's ruling of 2026-11-06): an Allow from before the ask answered no leaving
+    /// ask. Each stays until the window's answered sites leave it out, as they do once it sees
+    /// the ask, so only an Allow after it counts.
+    answered_before_asked: HashSet<Site>,
 }
 
 impl std::fmt::Debug for SiteJudge {
@@ -91,6 +96,7 @@ impl SiteJudge {
                 login: Vec::new(),
                 answered: answered_in(reach),
                 asked_leaving: HashSet::new(),
+                answered_before_asked: HashSet::new(),
             }),
             bound: Bound::default(),
             own: None,
@@ -152,13 +158,21 @@ impl SiteJudge {
         now.lane = lane;
         now.open_web = reach.open_web;
         now.answered = answered_in(reach);
+        let Now {
+            answered,
+            answered_before_asked,
+            ..
+        } = &mut *now;
+        answered_before_asked.retain(|site| answered.contains(site));
         Ok(())
     }
 
     /// **Whether a filled page may leave for `address`'s site by its server's redirect** (#5230,
     /// SF-14), `chain_began` saying the chain leading to this sign-in began on it: by itself to
-    /// such a site, or one the person allowed when asked; any other asks once, and stays once
-    /// asked. Never to what the browser's usual reach refuses, or a login in it keeps it off.
+    /// such a site, or one the person allowed when this browser asked to leave for it (the
+    /// person's ruling of 2026-11-06: an Allow of the site for anything else is no answer to
+    /// that); any other asks once, and stays once asked. Never to what the browser's usual reach
+    /// refuses, or a login in it keeps it off.
     pub fn may_leave_for(&self, address: &str, chain_began: bool) -> Leaving {
         self.leaving(None, address, chain_began)
     }
@@ -203,13 +217,19 @@ impl SiteJudge {
                 };
             }
         };
-        if within && (chain_began || now.answered.contains(&site)) {
+        let answered_to_leave = now.asked_leaving.contains(&site)
+            && now.answered.contains(&site)
+            && !now.answered_before_asked.contains(&site);
+        if within && (chain_began || answered_to_leave) {
             if now.let_on.len() < MOST_LET_ON {
                 now.let_on.insert(site);
             }
             return Leaving::Go;
         }
         if now.asked_leaving.len() < MOST_LET_ON && now.asked_leaving.insert(site.clone()) {
+            if now.answered.contains(&site) {
+                now.answered_before_asked.insert(site.clone());
+            }
             return Leaving::Ask {
                 site: site.to_string(),
             };

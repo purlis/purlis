@@ -967,6 +967,8 @@ fn field_said(field: drive::FieldInfo) -> wire::FieldSaid {
             drive::FieldKind::Editable => wire::FieldKind::Editable,
             drive::FieldKind::Other => wire::FieldKind::Other,
         },
+        by_get: Some(field.by_get),
+        payment: Some(field.payment),
     }
 }
 
@@ -1927,20 +1929,28 @@ impl EngineScreen {
         }
         let from = self.data.join(DOWNLOADS).join(&one.file);
         // What purlis filled into the browser is kept out of what the chat reads, a file it
-        // brings in among it (#5115).
-        match browser.holds_a_filled_value(&from) {
-            Ok(false) => {}
-            Ok(true) => {
+        // brings in among it (#5115), and so is a long text the person typed in it (the
+        // person's ruling of 2026-11-06).
+        match browser.holds_kept_out(&from) {
+            Ok(drive::DownloadHolds::Nothing) => {}
+            Ok(drive::DownloadHolds::Filled) => {
                 return Err(NotActed::Refused(format!(
                     "download {download} holds a secret purlis filled into this browser, which is \
                      kept out of what you read, so it is not brought in: ask the person to save \
                      it if it is needed"
                 )));
             }
+            Ok(drive::DownloadHolds::Typed) => {
+                return Err(NotActed::Refused(format!(
+                    "download {download} holds something the person typed into this browser, \
+                     which is kept out of what you read, so it is not brought in: ask the person \
+                     to save it if it is needed"
+                )));
+            }
             Err(why) => {
                 return Err(NotActed::Refused(format!(
-                    "purlis could not read download {download} to check it holds no secret it \
-                     filled ({why}), so it is not brought in"
+                    "purlis could not read download {download} to check it holds nothing kept \
+                     out of what you read ({why}), so it is not brought in"
                 )));
             }
         }
@@ -2222,6 +2232,7 @@ impl Screen for EngineScreen {
             key: fill.key.clone(),
             value: zeroize::Zeroizing::new(fill.value.expose().to_owned()),
             multi_line: fill.multi_line,
+            under_a_grant: fill.under_a_grant,
         };
         // It waits on the engine: made outside the lock, as an act is.
         let held = {

@@ -164,6 +164,14 @@ impl Kept {
         rest
     }
 
+    /// Only the texts of at least `chars` characters: what can't be an ordinary word of a page or a
+    /// site's name.
+    pub(crate) fn at_least(&self, chars: usize) -> Self {
+        let mut rest = self.clone();
+        rest.texts.retain(|kept| kept.text.chars().count() >= chars);
+        rest
+    }
+
     /// Whether nothing is kept.
     pub(crate) fn is_empty(&self) -> bool {
         self.texts.is_empty()
@@ -233,6 +241,17 @@ mod tests {
         kept.run(&["them"]);
         kept.field(&field(8), &["theme"]);
         assert_eq!(kept.texts(), vec!["the", "them", "theme"]);
+    }
+
+    #[test]
+    fn at_least_keeps_only_the_texts_that_long() {
+        let mut kept = Kept::default();
+        kept.field(&field(8), &["plumtree"]);
+        kept.run(&["plum", "pl\u{fc}mtree"]);
+        assert_eq!(
+            kept.at_least(KEPT_WHOLE_FROM).texts(),
+            vec!["plumtree", "pl\u{fc}mtree"]
+        );
     }
 
     #[test]

@@ -6788,6 +6788,22 @@ impl Chats {
         lock(&self.open).get(&session).map(Running::persona)
     }
 
+    /// **The persona whose fill and login grants chat `session` reads** (the steward's decision
+    /// of 2026-11-06): where a handoff or a dispatch narrowed it to another persona's grants
+    /// ([`purlis_core::reopen::HeldGrants`]), that persona's, and none where it holds none;
+    /// otherwise the persona it was started as. Never a persona it was not narrowed to, so a
+    /// narrowed chat fills and logs in with no more than it was narrowed to. Whose vaults it reads
+    /// stays the persona it was started as ([`ChatPersona::started_as`]). None for a chat this
+    /// app does not have open.
+    pub fn secret_grants_of(&self, session: u32) -> Option<String> {
+        let open = lock(&self.open);
+        let chat = &open.get(&session)?.chat;
+        match &chat.held {
+            Some(held) => held.persona.clone(),
+            None => chat.persona.clone(),
+        }
+    }
+
     /// **Who asks for chat `session`'s browser login** (#2560), and whether it runs with no
     /// sandbox at all by the record of how its run started (#2636), read under one hold of the
     /// open chats so both

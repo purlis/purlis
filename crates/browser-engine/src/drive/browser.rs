@@ -1475,6 +1475,17 @@ impl State {
         self.pages.retain(|p| p.target != target);
     }
 
+    /// **Every text kept out now**: of the whole browser, of each page, and of each page that
+    /// has closed.
+    fn every_kept(&self) -> Kept {
+        let mut every = self.kept.clone();
+        every.take_in(&self.closed_kept);
+        for page in &self.pages {
+            every.take_in(&page.scrubbed);
+        }
+        every
+    }
+
     /// Keeps `held` out of every later answer about every page, and every page opened later.
     fn keep_out_everywhere(&mut self, held: &Kept) {
         self.kept.take_in(held);

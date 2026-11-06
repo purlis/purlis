@@ -8893,6 +8893,16 @@ fn one_function_names_a_chats_persona_for_every_path_after_a_handoff_too() {
     };
     assert_eq!(login_as(handed).as_deref(), Some("qa"));
     assert_eq!(login_as(on_none), None, "no default stands in for a vault");
+    // Its fills and logins read the grants it was narrowed to, never a default or a profile's
+    // fallback (the decision of 2026-11-06).
+    assert_eq!(chats.secret_grants_of(handed).as_deref(), Some("devops"));
+    assert_eq!(
+        chats.secret_grants_of(no_profile).as_deref(),
+        Some("devops")
+    );
+    assert_eq!(chats.secret_grants_of(on_none), None);
+    let own = start(Some("qa"), None, Some("work"));
+    assert_eq!(chats.secret_grants_of(own).as_deref(), Some("qa"));
 
     // Fixed at the start: its own grants allowed, or a new default, change it at the next.
     assert!(chats.allow_own_grants(handed));

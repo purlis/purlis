@@ -1473,6 +1473,39 @@ fn a_site_removed_for_its_chat_no_longer_counts_as_allowed_when_asked() {
     assert!(reached.answered.is_empty(), "{reached:?}");
 }
 
+/// The person's ruling of 2026-11-06: only an answer to the ask about a filled page leaving
+/// counts. A site the browser asks about again counts as answered no more, until the person
+/// allows it again.
+#[test]
+fn a_site_asked_about_again_counts_as_allowed_when_asked_only_once_allowed_again() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, click()));
+    assert!(browsers.allow(3, false));
+    *hosted.asks.lock().unwrap() = vec!["app.example.org:443".into()];
+    answered(&browsers, &hosted, &ask(3, click()));
+    let app = site("app.example.org:443");
+    browsers
+        .sites_answered(3, std::slice::from_ref(&app), true)
+        .unwrap();
+    browsers.allowed_when_asked(3, std::slice::from_ref(&app));
+
+    // A filled page asks to leave for it.
+    answered(&browsers, &hosted, &ask(3, click()));
+    hosted.asks.lock().unwrap().clear();
+    answered(&browsers, &hosted, &ask(3, click()));
+    let reached = hosted.reached.lock().unwrap().last().cloned().unwrap();
+    assert!(reached.answered.is_empty(), "{reached:?}");
+
+    browsers
+        .sites_answered(3, std::slice::from_ref(&app), false)
+        .unwrap();
+    browsers.allowed_when_asked(3, std::slice::from_ref(&app));
+    answered(&browsers, &hosted, &ask(3, click()));
+    let reached = hosted.reached.lock().unwrap().last().cloned().unwrap();
+    assert_eq!(reached.answered, ["app.example.org:443"], "{reached:?}");
+}
+
 /// The same for a site removed for everyone here: no chat's next browser counts it as answered,
 /// and a site that stays allowed still counts.
 #[test]
