@@ -109,7 +109,8 @@ async fn no_login_runs_while_the_person_drives() {
         .unwrap()
         .expect_err("refused");
     let refusal = refused.refusal().expect("a refusal");
-    assert_eq!(refusal.code, session::BROWSER_REFUSED);
+    // Refused before it ran (1.76, #5251): the window keeps its Allow once.
+    assert_eq!(refusal.code, session::LOGIN_NOT_RUN);
     assert_eq!(refusal.why, purlis_host::A_BROWSER_THE_PERSON_DRIVES);
     assert!(screen.shown().logins.is_empty());
 }
@@ -134,6 +135,7 @@ async fn a_browser_started_from_kept_logins_is_given_them_by_the_host() {
     let (hosting, browsers, _store, project) = hosted();
     let client = window(&hosting, project.path()).await;
     let kept = purlis_session_protocol::browsing::KeptLogin {
+        form: None,
         profile: "claude".into(),
         persona: "steward".into(),
         login: "shop-login".into(),

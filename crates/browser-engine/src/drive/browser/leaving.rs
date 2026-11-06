@@ -92,6 +92,19 @@ pub(super) struct ChosenLoad {
     pub(super) head: String,
 }
 
+/// **A page a login filled, and the windows related to it** (the person's ruling of 2026-11-05):
+/// as a fill's [`super::PageHeld`] is, without the hold of the reach, which a login keeps for the
+/// browser's life.
+pub(super) struct LoginFamily {
+    pub(super) target: String,
+    /// Every window that could reach it by script, or be reached by one that could, gone or not,
+    /// itself among them.
+    pub(super) family: HashSet<String>,
+    /// Its page has shown another document or closed: the others close, and so does one opened
+    /// from any of them since.
+    pub(super) left: bool,
+}
+
 /// What a request is while a page holds a secret, where it isn't for the hold's own site.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Move {
@@ -506,14 +519,85 @@ impl Inner {
     /// **A window opened by `opener`** joins the family of any hold `opener` is in, and closes at
     /// once where that hold's page is done with the value.
     pub(super) fn window_opened(&self, target: &str, opener: &str) -> Vec<FollowUp> {
-        let mut closes = Vec::new();
+        let mut closes = false;
         for held in lock(&self.fill_holds).iter_mut() {
             if held.family.contains(opener) {
                 held.family.insert(target.to_owned());
-                if held.left {
-                    closes.push(FollowUp::Close(target.to_owned()));
+                closes |= held.left;
+            }
+        }
+        // A login's page's family likewise (the person's ruling of 2026-11-05).
+        for one in lock(&self.login_families).iter_mut() {
+            if one.family.contains(opener) {
+                one.family.insert(target.to_owned());
+                closes |= one.left;
+            }
+        }
+        if closes {
+            vec![FollowUp::Close(target.to_owned())]
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// **A login is about to fill page `target`** (the person's ruling of 2026-11-05): the windows
+    /// related to it are its family from here, and close once the page is done with what it filled.
+    /// One already there is kept, a family of the same page twice being one.
+    pub(super) fn login_fills(&self, target: &str) {
+        let state = lock(&self.state);
+        let family = state.family_of(target);
+        let mut families = lock(&self.login_families);
+        match families
+            .iter_mut()
+            .find(|one| one.target == target && !one.left)
+        {
+            Some(one) => one.family.extend(family),
+            None => families.push(LoginFamily {
+                target: target.to_owned(),
+                family,
+                left: false,
+            }),
+        }
+    }
+
+    /// **Page `target` is closed, or shows another document in its main frame**: a login's page
+    /// that did closes the windows related to it, and a family whose others are all gone is
+    /// forgotten. Answers the windows to close.
+    fn login_page_left(&self, target: &str) -> Vec<String> {
+        let mut state = lock(&self.state);
+        let mut families = lock(&self.login_families);
+        let mut closes: Vec<String> = Vec::new();
+        for one in families.iter_mut() {
+            if one.target != target || one.left {
+                continue;
+            }
+            one.left = true;
+            for window in &one.family {
+                if window != target && state.page(window).is_some() && !closes.contains(window) {
+                    closes.push(window.clone());
                 }
             }
+        }
+        families.retain(|one| {
+            !one.left
+                || one
+                    .family
+                    .iter()
+                    .any(|window| *window != one.target && state.page(window).is_some())
+        });
+        drop(families);
+        if !closes.is_empty() {
+            state.say_of_leaving(format!(
+                "purlis closed {} other {} related to the page purlis logged in on: {} could have \
+                 read what purlis filled there",
+                closes.len(),
+                if closes.len() == 1 {
+                    "window"
+                } else {
+                    "windows"
+                },
+                if closes.len() == 1 { "it" } else { "they" },
+            ));
         }
         closes
     }
@@ -522,7 +606,7 @@ impl Inner {
     /// a secret filled into it closes the windows related to it, and every hold whose page is done
     /// and whose related windows are gone is over, once. Answers what closes them.
     pub(super) fn page_left(&self, target: &str) -> Vec<FollowUp> {
-        let mut closes: Vec<String> = Vec::new();
+        let mut closes: Vec<String> = self.login_page_left(target);
         let mut over: Vec<super::PageHeld> = Vec::new();
         let its_own_stands =
             {

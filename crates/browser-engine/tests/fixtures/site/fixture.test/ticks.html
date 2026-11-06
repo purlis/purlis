@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Ticks</title></head>
+<body>
+  <h1>Ticks</h1>
+  <script>
+    // A frame of the login's site in another page: while it runs, it leaves an earlier session's
+    // cookie, and it says it runs by a request to another host.
+    let n = 0;
+    setInterval(() => {
+      document.cookie = 'earlier=host; path=/';
+      fetch('http://third.test/tick?' + n++, { mode: 'no-cors' }).catch(() => {});
+    }, 50);
+  </script>
+</body></html>

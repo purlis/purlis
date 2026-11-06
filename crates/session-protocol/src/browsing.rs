@@ -510,6 +510,12 @@ pub struct KeptLogin {
     pub login: String,
     pub identity: String,
     pub address: String,
+    /// **The origin its form is on, where that's another site than its page's** (1.76, #5167): a
+    /// browser opened from it reaches that site from its start, as one logged in afresh does, its
+    /// pages kept from the agent outside a sign-in. A host before 1.76 holds such a browser to its
+    /// page's site alone until a login signs in there again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub form: Option<String>,
 }
 
 /// **The origin of `address`** (1.35, #2300): `scheme://host[:port]`, lower-cased, for an http
