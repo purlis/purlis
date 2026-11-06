@@ -29,29 +29,19 @@ pub(super) fn pairs(sets: &[BTreeSet<String>], threshold: f64) -> Vec<(f64, usiz
     if threshold.is_nan() || threshold <= 0.0 {
         return ordered(every_pair(sets, threshold));
     }
-    let mut frequency: HashMap<&str, usize> = HashMap::new();
-    for set in sets {
-        for word in set {
-            *frequency.entry(word.as_str()).or_default() += 1;
-        }
-    }
-    // Which earlier entries have each word in their prefix.
-    let mut holders: HashMap<&str, Vec<usize>> = HashMap::new();
+    let ranked = ranked(sets);
+    // Which earlier entries have each word in their prefix, by the word's rank.
+    let mut holders: Vec<Vec<usize>> = vec![Vec::new(); ranked.iter().flatten().count()];
     // The entry each earlier one was last scored against, so a pair is scored once.
     let mut scored = vec![usize::MAX; sets.len()];
     let mut found = Vec::new();
-    for (j, set) in sets.iter().enumerate() {
-        if set.is_empty() {
-            continue;
-        }
-        let mut words: Vec<&str> = set.iter().map(String::as_str).collect();
-        words.sort_by_key(|word| (frequency[word], *word));
-        for word in &words[..prefix(words.len(), threshold)] {
-            let earlier = holders.entry(word).or_default();
+    for (j, words) in ranked.iter().enumerate() {
+        for &word in &words[..prefix(words.len(), threshold)] {
+            let earlier = &mut holders[word as usize];
             for &i in earlier.iter() {
                 if scored[i] != j {
                     scored[i] = j;
-                    if let Some(score) = scores(&sets[i], set, threshold) {
+                    if let Some(score) = overlap(&ranked[i], words, threshold) {
                         found.push((score, i, j));
                     }
                 }
@@ -60,6 +50,55 @@ pub(super) fn pairs(sets: &[BTreeSet<String>], threshold: f64) -> Vec<(f64, usiz
         }
     }
     ordered(found)
+}
+
+/// Each set's words as their ranks, rarest first: a word's rank is its place among every word
+/// of `sets`, ordered by how many sets hold it and then by the word itself.
+fn ranked(sets: &[BTreeSet<String>]) -> Vec<Vec<u32>> {
+    let mut frequency: HashMap<&str, usize> = HashMap::new();
+    for set in sets {
+        for word in set {
+            *frequency.entry(word.as_str()).or_default() += 1;
+        }
+    }
+    let mut order: Vec<(usize, &str)> = frequency.into_iter().map(|(w, n)| (n, w)).collect();
+    order.sort_unstable();
+    let rank: HashMap<&str, u32> = order
+        .into_iter()
+        .enumerate()
+        .map(|(at, (_, word))| (word, at as u32))
+        .collect();
+    sets.iter()
+        .map(|set| {
+            let mut words: Vec<u32> = set.iter().map(|w| rank[w.as_str()]).collect();
+            words.sort_unstable();
+            words
+        })
+        .collect()
+}
+
+/// [`scores`] over two sets of ranks, each sorted: the same integers, so the same score. Two
+/// sets whose sizes alone keep them under the threshold (Jaccard is at most the smaller size
+/// over the larger) are not counted.
+fn overlap(a: &[u32], b: &[u32], threshold: f64) -> Option<f64> {
+    let (small, large) = (a.len().min(b.len()), a.len().max(b.len()));
+    if small == 0 || (small as f64) / (large as f64) < threshold - 1e-12 {
+        return None;
+    }
+    let (mut x, mut y, mut shared) = (0, 0, 0);
+    while x < a.len() && y < b.len() {
+        match a[x].cmp(&b[y]) {
+            std::cmp::Ordering::Less => x += 1,
+            std::cmp::Ordering::Greater => y += 1,
+            std::cmp::Ordering::Equal => {
+                shared += 1;
+                x += 1;
+                y += 1;
+            }
+        }
+    }
+    let jaccard = shared as f64 / (a.len() + b.len() - shared) as f64;
+    (jaccard >= threshold).then_some(jaccard)
 }
 
 /// How many of a set's `len` words, rarest first, it needs to look under: `len − ⌈t·len⌉ + 1`.
@@ -112,10 +151,7 @@ mod tests {
     /// Word sets from a small vocabulary, so that most pairs share words and many sit near
     /// any threshold.
     fn stores() -> impl Strategy<Value = Vec<BTreeSet<String>>> {
-        proptest::collection::vec(
-            proptest::collection::btree_set("[a-h]{1,2}", 0..9),
-            0..40,
-        )
+        proptest::collection::vec(proptest::collection::btree_set("[a-h]{1,2}", 0..9), 0..40)
     }
 
     proptest! {
@@ -136,7 +172,10 @@ mod tests {
     #[test]
     fn a_pair_at_exactly_the_threshold_is_found() {
         // Two words of four shared, then one of three: each pair sits on its threshold.
-        let sets = vec![set(&["alpha", "beta", "gamma"]), set(&["alpha", "beta", "delta"])];
+        let sets = vec![
+            set(&["alpha", "beta", "gamma"]),
+            set(&["alpha", "beta", "delta"]),
+        ];
         assert_eq!(pairs(&sets, 0.5), vec![(0.5, 0, 1)]);
         let sets = vec![set(&["alpha", "beta"]), set(&["alpha", "gamma"])];
         assert_eq!(pairs(&sets, 1.0 / 3.0), vec![(1.0 / 3.0, 0, 1)]);

@@ -305,8 +305,14 @@ fn planted(fillers: usize) -> (tempfile::TempDir, PathBuf, PathBuf) {
     write("m2.md", &[&shared4[..], &["monly2a", "monly2b"]].concat());
     // Four shared and three apart each: 4 / 10, under it.
     let under = ["balpha", "bbeta", "bgamma", "bdelta"];
-    write("b1.md", &[&under[..], &["bonly1a", "bonly1b", "bonly1c"]].concat());
-    write("b2.md", &[&under[..], &["bonly2a", "bonly2b", "bonly2c"]].concat());
+    write(
+        "b1.md",
+        &[&under[..], &["bonly1a", "bonly1b", "bonly1c"]].concat(),
+    );
+    write(
+        "b2.md",
+        &[&under[..], &["bonly2a", "bonly2b", "bonly2c"]].concat(),
+    );
     (dir, root, mem)
 }
 
