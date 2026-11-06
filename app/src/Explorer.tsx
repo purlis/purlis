@@ -2315,7 +2315,8 @@ function KeptBadge({ kept }: { kept: KeptMark | undefined }) {
         data-kept={kept}
         variant={kept === "with-the-project" ? "accent" : "neutral"}
       >
-        {KEPT_SAID[kept]}
+        {/* Its own span, so the words can end in an ellipsis where the row is narrow. */}
+        <span className="kept-words">{KEPT_SAID[kept]}</span>
       </Badge>
     </Tooltip>
   );

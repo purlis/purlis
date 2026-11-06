@@ -3165,6 +3165,20 @@ body {
   text-decoration: line-through;
 }
 
+/* Where a file is kept (#5377) is the longest mark on a row, and the last: where the panel is
+   narrow it gives way, ending in an ellipsis, rather than running past the edge. Its tooltip
+   and its name still say it whole. */
+.explorer [data-scope="badge"].kept-mark {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.explorer .kept-mark .kept-words {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 /* **A chat is touching this right now** (FM-6): a dot in the running colour, breathing as a
    running chat's mark does, on the file and on each folder above it. It sits where the change
    mark would, and pushes it over when both are there. The window drops it a few seconds after
