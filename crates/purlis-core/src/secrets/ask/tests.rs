@@ -736,7 +736,13 @@ fn an_answer_the_moment_an_ask_is_listed_is_never_recorded_before_its_raise_or_j
         }
         for chat in [7, 8] {
             let trace = traced_of(root, chat, &key);
-            if let Some(declined) = trace.iter().position(|what| what == "declined") {
+            let declined = trace
+                .iter()
+                .position(|what| what == "declined")
+                .unwrap_or_else(|| {
+                    panic!("round {round}: chat {chat} heard its decline: {trace:?}")
+                });
+            {
                 assert!(
                     trace[..declined]
                         .iter()
@@ -745,6 +751,66 @@ fn an_answer_the_moment_an_ask_is_listed_is_never_recorded_before_its_raise_or_j
                 );
             }
         }
+    }
+}
+
+/// #5220: a chat that cannot receive a value raises its ask, as any ask is raised (#5077), the
+/// person declines it at once, and the chat raises it again the moment it is gone: its trace,
+/// which names no ask, reads raise, decline, raise, so the second ask is never read as
+/// declined; and the event log tells the first ask's answer before the second's raise.
+#[test]
+fn a_decline_is_recorded_before_an_ask_raised_again_the_moment_it_is_answered() {
+    use crate::eventlog::secretasks::Step;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let project = project();
+    let root = project.path();
+    let asks = Asks::new(root);
+    let told = steps_told(&asks);
+    for round in 0..200 {
+        let key = format!("MISSING_{round}");
+        told.lock().unwrap().clear();
+        let listed = AtomicBool::new(false);
+        std::thread::scope(|scope| {
+            scope.spawn(|| asks.cannot_receive(need(9, &key)));
+            let again = scope.spawn(|| {
+                while !listed.load(Ordering::SeqCst) {
+                    std::thread::yield_now();
+                }
+                while asks.open().iter().any(|open| open.key == key) {
+                    std::thread::yield_now();
+                }
+                asks.cannot_receive(need(9, &key))
+            });
+            let id = loop {
+                if let Some(open) = asks.open().into_iter().find(|open| open.key == key) {
+                    break open.id;
+                }
+                std::thread::yield_now();
+            };
+            listed.store(true, Ordering::SeqCst);
+            asks.answer(&ctx(root), id, Answer::Decline, window())
+                .expect("declined");
+            again.join().unwrap();
+        });
+        assert_eq!(
+            traced_of(root, 9, &key),
+            [
+                "raised, cannot receive",
+                "declined",
+                "raised, cannot receive"
+            ],
+            "round {round}"
+        );
+        let steps: Vec<Step> = told.lock().unwrap().iter().map(|(_, step)| *step).collect();
+        assert!(
+            matches!(
+                steps.as_slice(),
+                [Step::Raised { ask: first, .. }, Step::Declined { ask: answered, .. }, Step::Raised { ask: second, .. }]
+                    if first == answered && second != first
+            ),
+            "round {round}: {steps:?}"
+        );
+        asks.forget(9);
     }
 }
 

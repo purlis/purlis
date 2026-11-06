@@ -1291,8 +1291,10 @@ impl Asks {
             }
         }
         self.save(&inner);
-        drop(inner);
-        // A link is traced as one, by the asked names alone: never the entry it reads.
+        // Traced and told before the lock goes (#5220): a chat that asks again the moment the
+        // ask is taken raises another, and a trace names no ask, so its answer is written
+        // before anything else can be. A link is traced as one, by the asked names alone:
+        // never the entry it reads.
         let what = match (filled, linked) {
             (true, true) => "linked",
             (true, false) => "filled",
@@ -1327,6 +1329,7 @@ impl Asks {
                 },
             );
         }
+        drop(inner);
         let told = crate::askoutcome::Outcome {
             about: crate::askoutcome::About::Secret {
                 vault: vault.clone(),
