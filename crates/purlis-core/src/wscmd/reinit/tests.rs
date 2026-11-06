@@ -36,7 +36,7 @@ fn a_workspace_that_is_current_says_nothing_to_do() {
     made(dir.path(), "gamma");
     let (code, lines) = run(dir.path(), Scope::One("gamma"));
     assert_eq!(code, 0);
-    assert_eq!(lines, ["✓ Up to date (structure v5) — nothing to do."]);
+    assert_eq!(lines, ["✓ Up to date (structure v6) — nothing to do."]);
 }
 
 #[test]
@@ -66,8 +66,33 @@ fn an_old_stamp_is_bumped_and_the_line_names_both_versions() {
     let (_code, lines) = run(dir.path(), Scope::One("gamma"));
     assert_eq!(
         lines,
-        ["✓ Reinitialized 'gamma' → added structure v3 → v5."]
+        ["✓ Reinitialized 'gamma' → added structure v3 → v6."]
     );
+}
+
+#[test]
+fn a_version_5_workspace_is_stamped_6_and_given_no_repos_folder_and_its_old_clone_stays() {
+    // ADR 0114, decision 5: version 6 only adds. A clone needing `repos/` makes it; `reinit`
+    // never does, and moves nothing.
+    let dir = plane();
+    made(dir.path(), "gamma");
+    let ws = dir.path().join("workspaces/gamma");
+    std::fs::create_dir_all(ws.join("svc/.git")).unwrap();
+    std::fs::write(ws.join(".purlis-structure"), "5\n").unwrap();
+
+    let (code, lines) = run(dir.path(), Scope::One("gamma"));
+
+    assert_eq!(code, 0, "{lines:?}");
+    assert!(
+        lines.iter().any(|l| l.contains("structure v5 → v6")),
+        "{lines:?}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(ws.join(".purlis-structure")).unwrap(),
+        "6\n"
+    );
+    assert!(!ws.join("repos").exists(), "{lines:?}");
+    assert!(ws.join("svc/.git").is_dir());
 }
 
 #[test]
@@ -222,7 +247,7 @@ fn a_second_reinit_over_a_wired_checkout_says_there_is_nothing_to_do() {
     assert_eq!(code, 0);
     assert_eq!(
         lines,
-        vec!["✓ Up to date (structure v5) — nothing to do.".to_string()],
+        vec!["✓ Up to date (structure v6) — nothing to do.".to_string()],
         "{lines:?}"
     );
 }

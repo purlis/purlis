@@ -35,6 +35,37 @@ pub(crate) fn isolation() -> purlis_core::worktree::git::Isolated {
     }
 }
 
+/// [`isolation`], signing the commits it makes for a chat with this device's key where the
+/// person set one up (#5480, `purlis signing setup`). Read from the keyring for each ask, so a
+/// key set up or removed since is the one used. The key stays in this process: git is handed
+/// none of it.
+///
+/// A test build signs with no key: it never reads the person's keyring.
+fn signing_isolation(held: &Held) -> purlis_core::worktree::git::Isolated {
+    let isolation = isolation();
+    #[cfg(not(test))]
+    {
+        // This machine's config home, as `purlis signing setup` finds it.
+        let _ = held;
+        let Some(config) = purlis_core::machine::config_root() else {
+            return isolation;
+        };
+        let keyring = purlis_core::commitsign::this_builds_keyring(&config);
+        match purlis_core::commitsign::kept(&config, &*keyring) {
+            Ok(signer) => isolation.signing(signer),
+            Err(why) => {
+                tracing::warn!("purlis: a chat's commits are made unsigned: {why}");
+                isolation
+            }
+        }
+    }
+    #[cfg(test)]
+    {
+        let _ = held;
+        isolation
+    }
+}
+
 /// The app's own record of chat `chat`, or the answer where it has none open.
 fn asker(held: &Held, chat: u32) -> Result<Asker, Answer> {
     let Some(open) = held
@@ -100,8 +131,9 @@ pub fn commit(held: &Held, ask: &CommitAsk) -> Answer {
         Stage::Paths(paths) => purlis_core::counts::counted(paths.len(), "path", "paths"),
     };
     // The person's name and email, read before the commit runs; nothing else of their
-    // global or system git config reaches it.
-    let identity = isolation();
+    // global or system git config reaches it. And the key the app signs it with, where there
+    // is one (#5480).
+    let identity = signing_isolation(held);
     let (answer, refused) =
         purlis_core::gitbroker::commit::answer_telling(held.root(), &asker, ask, &identity);
     // A commit purlis's scan refused is a needs-you item, as a chat's own is (#1476): the chat
@@ -159,7 +191,7 @@ pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
             format!("hold {repo} {piece} for its own git's {act:?}")
         }
     };
-    let isolation = isolation();
+    let isolation = signing_isolation(held);
     let run = || {
         purlis_core::gitbroker::answer_telling(
             held.root(),

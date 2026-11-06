@@ -17,11 +17,16 @@
 //!   `plugins/known_marketplaces.json` or a settings file's `extraKnownMarketplaces`;
 //! - a running chat keeps what it started with, and a resumed one reads these again. So a chat's
 //!   answer is read at its start and held (`hoststart::ChatSkills::plugins`).
+//!
+//! Codex, measured on codex-cli 0.163.0 (ADR 0050 as amended 2026-10-21): a plugin whose table in
+//! `config.toml` says `enabled = false` reaches no model, and a session's `-c` cannot turn it back
+//! on (#4616). A table that does not say is on: that was not measured, and is how
+//! `Codex::plugins_in_config` has always read it.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use super::{ClaudeCode, Env, split};
+use super::{ClaudeCode, Codex, Env, split};
 
 /// **Where a chat reads its settings**, for one chat or for a chat that would start.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -50,6 +55,8 @@ pub enum OffWhy {
     AfterStart,
     /// purlis's own `--settings` keep it off: a plugin purlis replaced.
     PurlisOff,
+    /// Codex only: its `config.toml`, at this path, says `enabled = false` in the plugin's table.
+    OffInConfig(PathBuf),
 }
 
 /// **One installed plugin a chat does not have.**
@@ -102,6 +109,11 @@ impl PluginOff {
             OffWhy::PurlisOff => {
                 format!("purlis keeps the {name} plugin off: it is one purlis replaced.")
             }
+            OffWhy::OffInConfig(file) => format!(
+                "{title} has the {name} plugin turned off: its table in {} says enabled = false. \
+                 Set enabled to true there, {then}.",
+                file.display()
+            ),
         }
     }
 
@@ -115,6 +127,7 @@ impl PluginOff {
             OffWhy::ProjectUnread => "Project settings unread".to_owned(),
             OffWhy::AfterStart => "Installed after this chat started".to_owned(),
             OffWhy::PurlisOff => "Replaced by purlis".to_owned(),
+            OffWhy::OffInConfig(_) => format!("Off in {title}"),
         }
     }
 
@@ -129,7 +142,8 @@ impl PluginOff {
             | OffWhy::MarketplaceGone(_)
             | OffWhy::ProjectUnread
             | OffWhy::AfterStart
-            | OffWhy::PurlisOff => None,
+            | OffWhy::PurlisOff
+            | OffWhy::OffInConfig(_) => None,
         }
     }
 }
@@ -148,6 +162,12 @@ impl Plugins {
     /// Whether the skills named under plugin `name` are not the chat's.
     pub fn is_off(&self, name: &str) -> bool {
         self.off.iter().any(|one| one.name == name)
+    }
+
+    /// Leaves out of [`Self::off`] each name a copy that is on gives the chat.
+    fn drop_off_that_are_on(&mut self) {
+        let on = &self.on;
+        self.off.retain(|one| !on.contains(&one.name));
     }
 }
 
@@ -286,8 +306,34 @@ pub(super) fn claude(adapter: &ClaudeCode, env: &Env<'_>, at: &ChatFolder) -> Op
             }),
         }
     }
-    let on = out.on.clone();
-    out.off.retain(|one| !on.contains(&one.name));
+    out.drop_off_that_are_on();
+    Some(out)
+}
+
+/// **What a Codex chat has of the plugins `env`'s `config.toml` holds** (#4616), or `None` where
+/// it cannot tell: a file it cannot read, or one that is not TOML. A file that is not there is an
+/// answer: nothing is installed. The chat's folder is not read: what a project's own
+/// `.codex/config.toml` does to a plugin was never measured.
+pub(super) fn codex(adapter: &Codex, env: &Env<'_>) -> Option<Plugins> {
+    use super::Adapter as _;
+    let record = adapter.record(env)?;
+    let mut out = Plugins::default();
+    for (id, on) in adapter.plugins_in_config(env).ok()? {
+        if super::purlis_s_own(adapter, &id) {
+            continue;
+        }
+        let name = split(&id).0.to_owned();
+        if on {
+            out.on.push(name);
+        } else {
+            out.off.push(PluginOff {
+                id,
+                name,
+                why: OffWhy::OffInConfig(record.clone()),
+            });
+        }
+    }
+    out.drop_off_that_are_on();
     Some(out)
 }
 

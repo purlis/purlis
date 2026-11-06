@@ -149,13 +149,15 @@ impl World {
         })
     }
 
+    /// Where a new clone lands (ADR 0114).
     fn clone_dir(&self, name: &str) -> PathBuf {
-        self.root.join("workspaces/alpha").join(name)
+        self.root.join("workspaces/alpha/repos").join(name)
     }
 
-    /// A clone made the way an operator's would be, from the HTTPS URL.
+    /// A clone made the way an operator's would be, from the HTTPS URL, where clones landed
+    /// before structure version 6: at the workspace's root.
     fn cloned(&self, name: &str) -> PathBuf {
-        let dest = self.clone_dir(name);
+        let dest = self.root.join("workspaces/alpha").join(name);
         self.git(
             &self.root.join("workspaces/alpha"),
             &[
@@ -209,7 +211,8 @@ fn a_clone_checks_out_the_remotes_default_branch_whatever_the_inventory_assumed(
     let dest = w.clone_dir("widget");
     assert_eq!(w.git(&dest, &["symbolic-ref", "--short", "HEAD"]), "trunk");
     assert!(
-        stderr(&out).contains("✓ widget → workspaces/alpha/widget (widget (trunk) via gh, HTTPS)"),
+        stderr(&out)
+            .contains("✓ widget → workspaces/alpha/repos/widget (widget (trunk) via gh, HTTPS)"),
         "{}",
         stderr(&out)
     );
@@ -422,7 +425,8 @@ fn a_clone_into_a_workspace_that_does_not_exist_makes_it_first() {
 
     assert!(out.status.success(), "{}", stderr(&out));
     let ws = w.root.join("workspaces/beta");
-    assert!(ws.join("widget/.git").exists(), "{}", stderr(&out));
+    assert!(ws.join("repos/widget/.git").is_dir(), "{}", stderr(&out));
+    assert!(!ws.join("widget").exists(), "{}", stderr(&out));
     assert!(
         ws.join("memory/MEMORY.md").is_file(),
         "made but not scaffolded: {}",
@@ -435,6 +439,76 @@ fn a_clone_into_a_workspace_that_does_not_exist_makes_it_first() {
         stderr(&out)
     );
     assert!(!stderr(&out).contains("yet"), "{}", stderr(&out));
+}
+
+#[test]
+fn a_clone_into_a_workspace_with_old_clones_at_its_root_lands_in_repos_and_both_keep_working() {
+    // ADR 0114, decisions 1 and 3: a new clone goes to `repos/` in every workspace, and the
+    // old ones stay where they are and are still the workspace's.
+    let w = World::new();
+    let gadget = w.remote("gadget", "main");
+    let widget = w.remote("widget", "main");
+    w.inventory(json!([
+        World::record("gadget", "main"),
+        World::record("widget", "main")
+    ]));
+    let old = w.cloned("gadget");
+
+    let out = w.charter(&["clone", "widget", "gadget", "-w", "alpha"]);
+
+    assert!(out.status.success(), "{}", stderr(&out));
+    let said = stderr(&out);
+    assert!(w.clone_dir("widget").join(".git").is_dir(), "{said}");
+    assert!(said.contains("gadget: already cloned in 'alpha'"), "{said}");
+    assert!(
+        !w.clone_dir("gadget").exists(),
+        "cloned a second time: {said}"
+    );
+    assert!(!w.root.join("workspaces/alpha/widget").exists(), "{said}");
+    // Both kinds are the workspace's: `sync` reaches each where it is.
+    w.advance(&gadget, "gadget", "more.txt", "more");
+    w.advance(&widget, "widget", "more.txt", "more");
+    let synced = w.charter(&["sync", "-w", "alpha"]);
+    assert!(synced.status.success(), "{}", stderr(&synced));
+    assert!(old.join("more.txt").is_file(), "{}", stderr(&synced));
+    assert!(
+        w.clone_dir("widget").join("more.txt").is_file(),
+        "{}",
+        stderr(&synced)
+    );
+}
+
+#[test]
+fn a_clone_named_repos_is_refused_and_so_is_any_clone_while_an_old_clone_named_repos_stands() {
+    let w = World::new();
+    w.remote("repos", "main");
+    w.remote("widget", "main");
+    w.inventory(json!([
+        World::record("repos", "main"),
+        World::record("widget", "main")
+    ]));
+
+    let named = w.charter(&["clone", "repos", "-w", "alpha"]);
+    assert_eq!(named.status.code(), Some(1), "{}", stderr(&named));
+    assert!(
+        stderr(&named).contains("'repos': not cloned — "),
+        "{}",
+        stderr(&named)
+    );
+    assert!(!w.root.join("workspaces/alpha/repos").exists());
+
+    // An old clone named `repos`, from before structure version 6, stands where new ones go.
+    w.cloned("repos");
+    let out = w.charter(&["clone", "widget", "-w", "alpha"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    let said = stderr(&out);
+    assert!(said.contains("has a repo named 'repos'"), "{said}");
+    assert!(said.contains("rename"), "{said}");
+    assert!(
+        !w.root.join("workspaces/alpha/repos/widget").exists(),
+        "{said}"
+    );
+    assert!(!w.root.join("workspaces/alpha/widget").exists(), "{said}");
 }
 
 #[test]

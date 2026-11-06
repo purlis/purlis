@@ -217,7 +217,7 @@ export function applySet({
         saidOf("Skills deleted", `${count} deleted. They stay in Deleted for 30 days.`, notes, () =>
           undo(
             "The delete was not undone",
-            () => commands.skillSetRestore(plane, ids, removes),
+            () => commands.skillSetRestore(plane, ids, removes, []),
             async (undone) => saidOf("Delete undone", `${count} back.`, undone),
           ),
         ),

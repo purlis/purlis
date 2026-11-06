@@ -34,6 +34,7 @@ pub mod clusterpool;
 pub mod codelink;
 pub mod commitgate;
 pub mod commitguard;
+pub mod commitsign;
 pub mod committedby;
 pub mod compat;
 pub mod consentspelling;

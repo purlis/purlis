@@ -69,10 +69,16 @@ impl Project {
 
     /// A chat that runs as persona qa.
     fn a_chat(&self) -> u32 {
+        self.a_chat_holding(None)
+    }
+
+    /// A chat started as persona qa that a handoff narrowed to `held`'s grants, where it says.
+    fn a_chat_holding(&self, held: Option<purlis_core::reopen::HeldGrants>) -> u32 {
         let chat = Chat {
             program: "/bin/sh".to_owned(),
             name: "1".to_owned(),
             persona: Some("qa".to_owned()),
+            held,
             cwd: Some(self.held.root().to_path_buf()),
             unsandboxed: true,
             ..Default::default()
@@ -187,7 +193,18 @@ fn fills(
     chat: u32,
     kind: FieldKind,
 ) -> Answer {
-    *hosted.field.lock().unwrap() = Some(field(kind));
+    fills_into(project, browsers, hosted, chat, field(kind))
+}
+
+/// [`fills`], of a field the browser reads as `said`.
+fn fills_into(
+    project: &Project,
+    browsers: &ChatBrowsers,
+    hosted: &Arc<Hosted>,
+    chat: u32,
+    said: FieldSaid,
+) -> Answer {
+    *hosted.field.lock().unwrap() = Some(said);
     let held = &project.held;
     answered_filling(
         browsers,
@@ -218,6 +235,25 @@ fn handed(hosted: &Hosted) -> Vec<(String, bool)> {
         .iter()
         .map(|(_, fill)| (fill.value.expose().to_owned(), fill.multi_line))
         .collect()
+}
+
+/// Whether each fill the browser was handed went in under a grant, with no notice for it.
+fn handed_under_a_grant(hosted: &Hosted) -> Vec<bool> {
+    hosted
+        .fills
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(_, fill)| fill.under_a_grant)
+        .collect()
+}
+
+/// A one-line field whose form sends it by GET where `by_get` says.
+fn sent(by_get: Option<bool>) -> FieldSaid {
+    FieldSaid {
+        by_get,
+        ..field(FieldKind::OneLine)
+    }
 }
 
 fn the_key_held() -> serde_json::Value {
@@ -368,4 +404,157 @@ fn a_key_the_person_declines_to_add_fills_nothing_and_says_declined() {
     assert!(told.contains("declined"), "{told}");
     assert!(told.contains("nothing was filled"), "{told}");
     assert!(handed(&hosted).is_empty());
+}
+
+/// The person's ruling of 2026-11-06: under Allow for this chat or Always, a fill into a field
+/// whose form sends it by GET is refused, with no notice; a fill the person is asked about goes
+/// in, and the browser is told which went in under a grant.
+#[test]
+fn under_a_grant_a_field_whose_form_sends_it_by_get_is_refused() {
+    for grant in [Press::Always, Press::Chat] {
+        let project = Project::holding(&the_key_held());
+        let chat = project.a_chat();
+        let (browsers, hosted) = (ChatBrowsers::default(), Arc::new(Hosted::default()));
+        opens_a_browser(&browsers, &hosted, chat);
+        let person = Person::saying(&project, &[Says::Presses(grant)]);
+
+        let granted = fills(&project, &browsers, &hosted, chat, FieldKind::OneLine);
+        let by_post = fills_into(&project, &browsers, &hosted, chat, sent(Some(false)));
+        let by_get = fills_into(&project, &browsers, &hosted, chat, sent(Some(true)));
+
+        let came_up = person.came_up();
+        told_it_filled(&granted);
+        told_it_filled(&by_post);
+        let told = refusal(by_get);
+        assert!(told.contains("by GET"), "{grant:?}: {told}");
+        assert!(told.contains("standing Allow"), "{grant:?}: {told}");
+        assert_eq!(came_up.notices.len(), 1, "{grant:?}: no notice for it");
+        assert_eq!(handed_under_a_grant(&hosted), [false, true], "{grant:?}");
+    }
+}
+
+/// Asked about, a field whose form sends it by GET takes the value on Allow once.
+#[test]
+fn a_field_whose_form_sends_it_by_get_fills_on_allow_once() {
+    let project = Project::holding(&the_key_held());
+    let chat = project.a_chat();
+    let (browsers, hosted) = (ChatBrowsers::default(), Arc::new(Hosted::default()));
+    opens_a_browser(&browsers, &hosted, chat);
+    let person = Person::saying(&project, &[Says::Presses(Press::Once)]);
+
+    let answer = fills_into(&project, &browsers, &hosted, chat, sent(Some(true)));
+
+    let came_up = person.came_up();
+    told_it_filled(&answer);
+    assert_eq!(came_up.notices.len(), 1);
+    assert_eq!(handed_under_a_grant(&hosted), [false]);
+}
+
+/// A field whose read doesn't say how its form sends it (a host that doesn't read it) is asked
+/// about, whatever was allowed.
+#[test]
+fn a_field_whose_read_says_nothing_of_its_form_raises_the_notice_under_a_grant() {
+    let project = Project::holding(&the_key_held());
+    let chat = project.a_chat();
+    let (browsers, hosted) = (ChatBrowsers::default(), Arc::new(Hosted::default()));
+    opens_a_browser(&browsers, &hosted, chat);
+    let person = Person::saying(
+        &project,
+        &[Says::Presses(Press::Chat), Says::Presses(Press::Once)],
+    );
+
+    let granted = fills(&project, &browsers, &hosted, chat, FieldKind::OneLine);
+    let unknown = fills_into(&project, &browsers, &hosted, chat, sent(None));
+
+    let came_up = person.came_up();
+    told_it_filled(&granted);
+    told_it_filled(&unknown);
+    assert_eq!(came_up.notices.len(), 2, "{:?}", came_up.notices);
+    assert_eq!(handed_under_a_grant(&hosted), [false, false]);
+}
+
+/// The steward's decision of 2026-11-06: a field the page marks a card's or payment one raises
+/// the notice under either grant, with Allow once and Keep blocked alone, though its key is no
+/// card's; and so does one whose read doesn't say.
+#[test]
+fn a_payment_field_raises_the_notice_with_allow_once_alone_under_either_grant() {
+    for grant in [Press::Always, Press::Chat] {
+        for payment in [Some(true), None] {
+            let project = Project::holding(&the_key_held());
+            let chat = project.a_chat();
+            let (browsers, hosted) = (ChatBrowsers::default(), Arc::new(Hosted::default()));
+            opens_a_browser(&browsers, &hosted, chat);
+            let person = Person::saying(
+                &project,
+                &[Says::Presses(grant), Says::Presses(Press::Once)],
+            );
+            let card = FieldSaid {
+                payment,
+                ..field(FieldKind::OneLine)
+            };
+
+            let granted = fills(&project, &browsers, &hosted, chat, FieldKind::OneLine);
+            let asked = fills_into(&project, &browsers, &hosted, chat, card);
+
+            let came_up = person.came_up();
+            told_it_filled(&granted);
+            told_it_filled(&asked);
+            assert_eq!(came_up.notices.len(), 2, "{grant:?}, {payment:?}");
+            let notice = &came_up.notices[1];
+            assert!(notice.payment && !notice.card, "{grant:?}, {payment:?}");
+            assert!(notice.once_only(), "only Allow once and Keep blocked");
+            assert_eq!(notice.line, None, "Always isn't offered on it");
+            assert_eq!(handed_under_a_grant(&hosted), [false, false]);
+        }
+    }
+}
+
+/// The steward's decision of 2026-11-06: a chat narrowed to another persona's grants fills under
+/// that persona's, never under the Always of the persona it was started as, and its notice's
+/// Always would write in the persona it was narrowed to (none, where it holds none).
+#[test]
+fn a_narrowed_chat_fills_under_the_grants_it_was_narrowed_to() {
+    let project = Project::holding(&the_key_held());
+    let own = project.a_chat();
+    let to_devops = project.a_chat_holding(Some(purlis_core::reopen::HeldGrants {
+        persona: Some("devops".to_owned()),
+    }));
+    let to_none = project.a_chat_holding(Some(purlis_core::reopen::HeldGrants { persona: None }));
+    let (browsers, hosted) = (ChatBrowsers::default(), Arc::new(Hosted::default()));
+    for chat in [own, to_devops, to_none] {
+        opens_a_browser(&browsers, &hosted, chat);
+    }
+    let person = Person::saying(
+        &project,
+        &[
+            Says::Presses(Press::Always),
+            Says::Presses(Press::Keep),
+            Says::Presses(Press::Keep),
+        ],
+    );
+
+    let granted = fills(&project, &browsers, &hosted, own, FieldKind::OneLine);
+    let again = fills(&project, &browsers, &hosted, own, FieldKind::OneLine);
+    let devops = fills(&project, &browsers, &hosted, to_devops, FieldKind::OneLine);
+    let none = fills(&project, &browsers, &hosted, to_none, FieldKind::OneLine);
+
+    let came_up = person.came_up();
+    told_it_filled(&granted);
+    told_it_filled(&again);
+    refusal(devops);
+    refusal(none);
+    let asked: Vec<(u32, Option<&str>)> = came_up
+        .notices
+        .iter()
+        .map(|notice| (notice.session, notice.persona.as_deref()))
+        .collect();
+    assert_eq!(
+        asked,
+        [
+            (own, Some("qa")),
+            (to_devops, Some("devops")),
+            (to_none, None)
+        ]
+    );
+    assert_eq!(handed(&hosted).len(), 2, "the narrowed chats' went nowhere");
 }

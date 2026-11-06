@@ -2086,6 +2086,11 @@ fn a_committed_deleted_skill_comes_back_under_a_new_name_in_one_commit() {
     assert!(!root.join("skills/purlis-secrets").exists());
     let status = run(root, &["status", "--porcelain", "--", "skills"]);
     assert_eq!(status.out, "");
+    assert!(
+        !deleted(root).iter().any(|one| one.name == "purlis-secrets"),
+        "back under its new name, it leaves Deleted: {:?}",
+        deleted(root)
+    );
 }
 
 /// #3729: the new name is checked as a rename's is: a built-in skill's is refused with the

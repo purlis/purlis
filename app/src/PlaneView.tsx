@@ -274,7 +274,8 @@ import { DoctorNotices, useDoctor } from "./Doctor";
 import { StaleCloneNotices, useStaleClones } from "./StaleCloneNotices";
 import { BrowsersAtQuitNotice } from "./BrowsersAtQuitNotice";
 import { usePin } from "./Updates";
-import { StatusLine, projectName, runningIn, todoCount, type Alerts } from "./StatusLine";
+import { projectName } from "./projectName";
+import { StatusLine, runningIn, todoCount, type Alerts } from "./StatusLine";
 import {
   closeChat,
   closeFocusedPane,
@@ -298,6 +299,7 @@ import {
   openEmptyTab,
   openNew,
   opensAt,
+  wouldLeaveStrip,
   openView,
   offerView,
   harnessSetupTitle,
@@ -389,6 +391,8 @@ import {
   type NotesHanded,
   withStartHanded,
   PRESS_HERE,
+  type PressHere,
+  pressInProjectWindow,
 } from "./tabWindows";
 import type { TabFacts } from "./ChatRows";
 import { rowFactsOf } from "./shownState";
@@ -424,6 +428,7 @@ type EndedHere = EndedChat & { workspace: string };
 import {
   askedByOf,
   chatsOfPane,
+  chatsOfChat,
   chatsOfTabs,
   crumbsOf,
   hiddenNeeding,
@@ -432,8 +437,8 @@ import {
 } from "./tabChats";
 import { useChatsListPrefs } from "./chatsListPrefs";
 import { placeRowId, type Place as TaskPlace } from "./TabChip";
-import { ChatTasksMenu, type ChatTask } from "./ChatTasksMenu";
-import { runningByTab } from "./taskLimits";
+import { ChatTasks } from "./TabChip";
+import { runningSaid } from "./taskLimits";
 import { hasTasks, type Ended, type Needing } from "./tabTasks";
 import { readUsed, type UsedAsk } from "./tasksUsed";
 import { finishedBucketOf, taskBucketOf } from "./taskBuckets";
@@ -613,7 +618,7 @@ import {
 } from "./chatMoves";
 import { anyPoolKept, readRunnerStage, refusedWith, saveLimits, usePools } from "./pools";
 import { useSignOutTerminals } from "./settings/signOutTerminals";
-import { LEAST, LEAST_CHIP, leastAt, NARROW_TAB, narrowTabs, pinnedFirst, useRoom } from "./fits";
+import { LEAST, LEAST_CHIP, leastAt, pinnedFirst, useRoom } from "./fits";
 import type { Naming } from "./tabFace";
 import { tabPanelOf, tabsPart } from "./ui/tabs/Tabs";
 import { panelRoot } from "./ui/panel/Panel";
@@ -674,7 +679,7 @@ import {
   withNote,
   ChatNotices,
 } from "./ChatNotices";
-import { type EndedChat, LayoutPanes, type PaneFace } from "./LayoutPanes";
+import { type EndedChat, LayoutPanes, type PaneFace, type TasksOn } from "./LayoutPanes";
 import { drawnOf } from "./paneFold";
 import { usePaneRoom } from "./usePaneRoom";
 import { ChatPersonaState } from "./ChatPersonaState";
@@ -1056,9 +1061,6 @@ export const PlaneView = memo(function PlaneView({
   // counts read it where they are drawn (`QueueRead`), and the catalogue's rows for it and the
   // title bar's list are put in as this view reports, off the store (`withQueue`, `queued`). A
   // chat that starts asking for you redraws those and not every pane.
-  /** The tab whose task menu the keyboard asked for, and a count of the asks (#1487): its
-   *  chip opens when the count changes, so being drawn is never being asked. */
-  const [tasksAsked, setTasksAsked] = useState<{ tab: number; count: number }>();
   /**
    * **The one polite line about a pane the keyboard did not ask for** (#4767, ruled on #4699):
    * a press that lands on a chat already in another pane of the tab says where it went. Where
@@ -1069,10 +1071,6 @@ export const PlaneView = memo(function PlaneView({
     said: "",
     count: 0,
   });
-  const showTabTasks = useCallback(
-    (tab: number) => setTasksAsked((was) => ({ tab, count: (was?.count ?? 0) + 1 })),
-    [],
-  );
   const pretended = usePretendTasks();
   /** The limit numbers a scenario spec pretends a session has (`e2eTasks.ts`, #1545): none in a
    *  shipped build. Laid over each chat as it is listed, as the core would send them. */
@@ -1767,33 +1765,23 @@ export const PlaneView = memo(function PlaneView({
   // ended twice because it did.
   const now = useRef(tabs);
   /**
-   * **⌘⇧J: the focused chat's own tasks** (#5058, ruled on #4699): whose tasks the keyboard
-   * asked for, where the keyboard was then, and the pane a pick is shown in, the focused one
-   * (`ChatTasksMenu`). Asked again for the same chat while it is open, it closes.
+   * **⌘⇧J: the focused chat's own tasks** (#5058, ruled on #4699, #5341): whose tasks the
+   * keyboard asked for, the pane they are asked in, the focused one, and a count of the asks.
+   * The state button on that pane's head opens its menu on a rise of the count (`ChatTasks`), so
+   * being drawn is never being asked, and ⌘⇧J and the head open one menu. Asked again while it
+   * is open, it closes.
    */
   const [chatTasksAsked, setChatTasksAsked] = useState<{
     session: number;
-    from: Element | null;
-    into: PaneAt;
-    open: boolean;
+    tab: number;
+    pane: number;
+    count: number;
   }>();
-  /** What that menu stands under: the focused pane's head, as it was asked for. */
-  const chatTasksAt = useRef<Element | null>(null);
-  /** The box of the tab in front's panes, which that head is found in. */
-  const panesNow = useRef<HTMLElement | null>(null);
   const showChatTasks = useCallback((session: number) => {
     const front = now.current.inFront;
     if (front === undefined) return;
-    const into = { tab: front, pane: now.current.byId[front].focused };
-    // This view's own panes: a project behind this one keeps its panes drawn, out of sight.
-    const panes = panesNow.current;
-    chatTasksAt.current = panes?.querySelector(".pane-frame[data-focused] .pane-head") ?? panes;
-    const from = document.activeElement;
-    setChatTasksAsked((was) =>
-      was?.open === true && was.session === session
-        ? { ...was, open: false }
-        : { session, from, into, open: true },
-    );
+    const pane = now.current.byId[front].focused;
+    setChatTasksAsked((was) => ({ session, tab: front, pane, count: (was?.count ?? 0) + 1 }));
   }, []);
   /** The chats a scenario spec pretends (`e2eTasks.ts`, none in a shipped build): the core has
    *  none of them, and is never told one is in front. */
@@ -1804,6 +1792,15 @@ export const PlaneView = memo(function PlaneView({
   /** Tells the core the window's tabs as they are in `tabs` (`window_layout`, #4751), when
    *  they differ from what was last said. Set below, once what it reads is known. */
   const sayLayout = useRef<(tabs: Tabs) => void>(() => undefined);
+  /**
+   * **Whether a drag holds a tab forward** (#5294): resting on a tab, or pressing one in placement
+   * mode, draws it in front as a preview. Until the drag is over the core is told nothing of it:
+   * not the layout, not the view tabs, and no strip remembers it as its front tab. The ref is what
+   * `change` reads in the same call; the state reruns the effects that tell, so what they held
+   * back is told as it ends.
+   */
+  const heldForward = useRef(false);
+  const [holdingForward, setHoldingForward] = useState(false);
   /** What was last said of the tabs, as JSON: a change to a terminal or a notice is not one. */
   const layoutSaid = useRef<string | undefined>(undefined);
   /** The layout the core last refused, as JSON: never said again until it has taken another.
@@ -2133,13 +2130,13 @@ export const PlaneView = memo(function PlaneView({
    */
   const lastViewsSaid = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (!viewsHeard) return;
+    if (!viewsHeard || holdingForward) return;
     const said = viewTabsOf(tabs);
     const text = JSON.stringify(said);
     if (text === lastViewsSaid.current) return;
     lastViewsSaid.current = text;
     void commands.windowViews(plane, said).catch(() => undefined);
-  }, [plane, tabs, viewsHeard]);
+  }, [holdingForward, plane, tabs, viewsHeard]);
 
   /** The branch the explorer is focused on (FM-5), told to the core when it changes, after the
    *  record is heard for the views' reason: a focus said first would write over the record's. */
@@ -3512,8 +3509,11 @@ export const PlaneView = memo(function PlaneView({
   /** Unique to this view, so two projects' tabs never name each other's fresh marks. */
   const freshMarks = useId();
   const freshMarkOf = (tab: number) => `${freshMarks}-fresh-${tab}`;
-  /** The id of the counts on a tab's chip (#1487), which the tab is described by. */
-  const tasksIdOf = (tab: number) => `${freshMarks}-tasks-${tab}`;
+  /** The id of the words a pane head's tasks button is described by: its counts (#5341). */
+  const tasksIdOf = useCallback(
+    (session: number, pane: number) => `${freshMarks}-tasks-${pane}-${session}`,
+    [freshMarks],
+  );
   const strip = useCallback(
     (element: HTMLElement | null) => {
       chatStrip.current = element;
@@ -3533,20 +3533,6 @@ export const PlaneView = memo(function PlaneView({
       }),
     [onStrip, room, tabs.inFront, chatLeast, chatGap, isPinned, chipWidth],
   );
-  /**
-   * **Whether the strip's tabs are narrow** (#4702, #4762): each one's equal share is under
-   * 140px, so a tab shows its × only in front or under the pointer. Chips and icon-only pins
-   * take their own width out of the room first.
-   */
-  const narrow = useMemo(() => {
-    const ownWidth = shown.filter((id) => pinsIconOnly && isPinned(id)).length;
-    return narrowTabs(
-      room,
-      shown.length - ownWidth,
-      ownWidth * (chipWidth + chatGap),
-      leastAt(NARROW_TAB, windowText) + chatGap,
-    );
-  }, [shown, pinsIconOnly, isPinned, room, chipWidth, chatGap, windowText]);
   /** Where the tab in front is drawn on the strip, or -1 where it is not (or is a name box). */
   const frontAt = tabs.inFront === undefined ? -1 : shown.indexOf(tabs.inFront);
   const frontPlace = frontAt >= 0 && !nameBoxFor(shown[frontAt]) ? frontAt : -1;
@@ -3570,10 +3556,10 @@ export const PlaneView = memo(function PlaneView({
   // comes back to the chat that was on screen there.
   useEffect(() => {
     const front = tabs.inFront;
-    if (front === undefined || sidebar === undefined) return;
+    if (front === undefined || sidebar === undefined || holdingForward) return;
     const workspace = workspaceOf(tabs, front, filedIn);
     if (workspace !== undefined) lastFront.current[workspace] = front;
-  }, [filedIn, sidebar, tabs]);
+  }, [filedIn, holdingForward, sidebar, tabs]);
 
   /**
    * **Every tab, told to the core whenever it changes** (#4751): the record keeps it, so a
@@ -3589,7 +3575,7 @@ export const PlaneView = memo(function PlaneView({
    */
   useEffect(() => {
     sayLayout.current = (next: Tabs) => {
-      if (!layoutHeard.current) return;
+      if (!layoutHeard.current || heldForward.current) return;
       const laid = layoutOf(
         next,
         {
@@ -3621,7 +3607,7 @@ export const PlaneView = memo(function PlaneView({
         .catch(unsaid);
     };
     sayLayout.current(tabs);
-  }, [filedIn, plane, tabs, tabWindow, viewsHeard]);
+  }, [filedIn, holdingForward, plane, tabs, tabWindow, viewsHeard]);
 
   /**
    * **Tabs moved between the project's windows** (#4768): Move to new window, Move to window ▸,
@@ -3667,7 +3653,7 @@ export const PlaneView = memo(function PlaneView({
    *  (#4768): it is shown here, in its pane, and this window has come forward. */
   const showChatHere = useRef<(session: number) => void>(() => undefined);
   useEffect(() => {
-    const listening = listen<{ plane: string; chat: number }>(PRESS_HERE, (event) => {
+    const listening = listen<PressHere>(PRESS_HERE, (event) => {
       if (event.payload.plane === plane) showChatHere.current(event.payload.chat);
     }).catch(() => undefined);
     return () => void listening.then((stop) => stop?.()).catch(() => undefined);
@@ -4646,6 +4632,31 @@ export const PlaneView = memo(function PlaneView({
   const besides = useMemo(() => new Set(shownBeside(tabs)), [tabs]);
 
   /**
+   * **A press lands in this window** (#4757, #5289), by the rule. **A tab window keeps the strip
+   * it shows** (#5330): a chat in no pane here, filed on another strip, is opened by the project
+   * window instead, which comes forward, since this window holds only the tabs torn off into it.
+   * Where no window holds the project, it lands here after all.
+   */
+  const pressHere = useCallback(
+    (session: number, into?: PaneAt) => {
+      const land = () => landOn((tabs) => pressChat(tabs, pressedOf(session), pressing, into));
+      // Until the list of chats is read, nothing says which strip a chat is on.
+      const elsewhere =
+        tabWindow !== undefined &&
+        into === undefined &&
+        sidebar !== undefined &&
+        wouldLeaveStrip(now.current, session, pressing.filedIn);
+      if (!elsewhere) {
+        land();
+        return;
+      }
+      void pressInProjectWindow(plane, session).then((held) => {
+        if (!held) land();
+      });
+    },
+    [landOn, plane, pressedOf, pressing, sidebar, tabWindow],
+  );
+  /**
    * **Goes to a chat: the one way** (#1486, #4757). Every surface that shows a chat comes
    * through here: a row of the Chats list and of the explorer, the hand on a row above it, the
    * title bar's list, the palette, a needs-you Go, a name in a pane's breadcrumb.
@@ -4663,7 +4674,7 @@ export const PlaneView = memo(function PlaneView({
   const showChat = useCallback(
     (session: number, into?: PaneAt) => {
       stoppedFor(session, undefined);
-      const here = () => landOn((tabs) => pressChat(tabs, pressedOf(session), pressing, into));
+      const here = () => pressHere(session, into);
       // **A chat in a pane of another of the project's windows** (#4768), **or a chat in no
       // pane where another window's pane was used last** (#5108): that window comes forward
       // and shows it, and this window changes nothing. Asked only while the project has another
@@ -4679,7 +4690,7 @@ export const PlaneView = memo(function PlaneView({
         })
         .catch(here);
     },
-    [landOn, oneWindow, plane, pressedOf, pressing, stoppedFor],
+    [oneWindow, plane, pressHere, stoppedFor],
   );
   /** **A pane of this window was used** (#5108): pressed in, or typed in. Said to the core while
    *  the project has another window, so a press on a chat in no pane, in whichever window, goes
@@ -4703,10 +4714,14 @@ export const PlaneView = memo(function PlaneView({
       paneSaidUsed.current = false;
     });
   }, [oneWindow, plane]);
+  // **The pane it lands in counts as used** (#5330): a press a tab window handed over says so
+  // to the core, which counted the tab window's pane, so the next press comes straight here.
   useEffect(() => {
-    showChatHere.current = (session) =>
-      landOn((tabs) => pressChat(tabs, pressedOf(session), pressing));
-  }, [landOn, pressedOf, pressing]);
+    showChatHere.current = (session) => {
+      pressHere(session);
+      if (tabWindow === undefined) paneUsed();
+    };
+  }, [paneUsed, pressHere, tabWindow]);
   // **Go to it, on a chat's arrival card** (#4759): a press on a card said before it was drawn,
   // heard here, where the press as it stands now is. Every project this window holds hears it,
   // and a chat's number means something only in its own.
@@ -5382,7 +5397,8 @@ export const PlaneView = memo(function PlaneView({
   );
   /**
    * **The studio's chats still open** (#5185), lent to the studio and the chats' panes: each with
-   * its name here, Open chat, and the way to its skill's page.
+   * its name here, Open chat, the way to its skill's page and to its draft, and its Stop, which
+   * asks first as the chat's own does (#5248).
    */
   const studioChats = useMemo<StudioChatsLent>(
     () => ({
@@ -5406,8 +5422,14 @@ export const PlaneView = memo(function PlaneView({
           SKILL_STUDIO_TITLE,
         );
       },
+      openDraft: (link, id) =>
+        showView(
+          skillStudioAt(scopeOfLevel(link.level), "drafts", { item: id }),
+          SKILL_STUDIO_TITLE,
+        ),
+      stop: (session) => askToStop(session, false),
     }),
-    [chatNames, showChat, showView, studioLinks, tabs],
+    [askToStop, chatNames, showChat, showView, studioLinks, tabs],
   );
   /** {@link nameOf} as it stands, for what is decided in a handler and not while drawing. */
   const nameOfNow = useRef<(session: number) => string>((session) => String(session));
@@ -5450,7 +5472,23 @@ export const PlaneView = memo(function PlaneView({
     }),
     [filedIn, isPinned, nameOf, pressedOf, tabs],
   );
-  const holdTab = useCallback((id: number) => change((tabs) => selectTab(tabs, id)), [change]);
+  /**
+   * A tab a drag brings forward, drawn and not told (#5294), until {@link holdOver}; and the one
+   * that was in front, drawn again as it is put back. Not a `change`: no pane is noted as used
+   * (`noteUsed`), so a cancel leaves the tabs exactly as they were.
+   */
+  const holdTab = useCallback((id: number) => {
+    heldForward.current = true;
+    setHoldingForward(true);
+    now.current = selectTab(now.current, id);
+    setTabs(now.current);
+  }, []);
+  /** The drag is over: what the window draws now is told, if it differs from what was. */
+  const holdOver = useCallback(() => {
+    heldForward.current = false;
+    setHoldingForward(false);
+    sayLayout.current(now.current);
+  }, []);
   const ownNameOf = useCallback(
     (session: number) =>
       [...(sidebar?.workspaces.flatMap((ws) => ws.chats) ?? []), ...(sidebar?.unfiled ?? [])].find(
@@ -5464,6 +5502,7 @@ export const PlaneView = memo(function PlaneView({
     change,
     ctx: dropContext,
     onHoldTab: holdTab,
+    onHoldOver: holdOver,
     chatNameOf: ownNameOf,
     active: inFront,
   });
@@ -5744,7 +5783,6 @@ export const PlaneView = memo(function PlaneView({
   const [measurePanes, paneRoom] = usePaneRoom();
   const panesAt = useCallback(
     (element: HTMLDivElement | null) => {
-      panesNow.current = element;
       measurePanes(element);
     },
     [measurePanes],
@@ -8681,7 +8719,6 @@ export const PlaneView = memo(function PlaneView({
     };
   }, [colourOf, filedIn, listedChats, sandboxOf, tabs, wrapping]);
   /** Each tab menu's footer: how many of its session's tasks run against its limit (#1498). */
-  const runningOfTab = useMemo(() => runningByTab(chatsByTab), [chatsByTab]);
   useEffect(() => {
     chatsListed.current = listedChats;
   }, [listedChats]);
@@ -9119,10 +9156,10 @@ export const PlaneView = memo(function PlaneView({
     }
     return ended;
   }, [askedBy, chatsByNumber, chatsByTab, finishedTasks, recalled, sidebar, tabs]);
-  /** Whether tab `id` has tasks its chip counts: what Down on the tab opens the menu of, and
-   *  what the tab says it has. The chip's own answer (`tabTasks.hasTasks`). */
-  const tabHasTasks = (id: number) =>
-    hasTasks(chatsByTab.get(id) ?? NO_ROWS, endedByTab.get(id) ?? NO_ENDED);
+  /** **How many of tab `id`'s tasks are open** (#5341): what its hover says, the count it no
+   *  longer wears. */
+  const tasksRunningOf = (id: number) =>
+    (chatsByTab.get(id) ?? NO_ROWS).filter((row) => row.level > 1).length;
   /** **The tab in front, if its session has tasks to explain the chip by** (#1501): what the
    *  session's pane draws the first dispatch's Notice from (`ChipExplained`). Not a task's tab,
    *  since the session is what dispatched. */
@@ -9137,8 +9174,8 @@ export const PlaneView = memo(function PlaneView({
       (frontRows ?? NO_ROWS).filter((row) => row.level > 1).length + (frontEnded?.length ?? 0);
     return tasks === 0
       ? undefined
-      : { session: frontOwn, tasks, onShow: () => showTabTasks(frontTabId) };
-  }, [frontEnded, frontIsTask, frontOwn, frontRows, frontTabId, showTabTasks]);
+      : { session: frontOwn, tasks, onShow: () => showChatTasks(frontOwn) };
+  }, [frontEnded, frontIsTask, frontOwn, frontRows, frontTabId, showChatTasks]);
   /** Goes to a chat from a tab's chip or its menu (#1487): the tab is switched to it, and its
    *  terminal takes the keyboard whether or not the tab was already on it. */
   //
@@ -9156,31 +9193,13 @@ export const PlaneView = memo(function PlaneView({
     },
     [plane],
   );
-  /** **The lines of ⌘⇧J's menu** (#5058): the tasks the chat asked for and nothing else's, those
-   *  running first, by number, which is the order it asked for them, then those that finished. */
-  const chatTasksLines = useMemo<ChatTask[]>(() => {
-    if (chatTasksAsked === undefined) return [];
-    const asker = chatTasksAsked.session;
-    return [
-      ...listedChats
-        .filter((chat) => chat.mode === "task" && chat.parent === asker)
-        .map((chat) => ({ kind: "running" as const, session: chat.session, name: chat.name })),
-      ...(finishedTasks.get(asker) ?? []).map((task) => ({
-        kind: "finished" as const,
-        id: task.id,
-        name: task.name,
-        ended: task.outcome,
-      })),
-    ];
-  }, [chatTasksAsked, finishedTasks, listedChats]);
-  /** **A task picked there is shown in the focused pane**, as a press shows it: one on screen
-   *  already is jumped to (D1), in this window or, asked first, another of the project's
-   *  (#4768). That pane while it is still there, whichever window's pane was used last, so the
-   *  core is told it was used before it is asked (#5108: the chord itself never reaches the
-   *  panes); else wherever a press puts it. */
+  /** **A task picked in a head's tasks menu is shown in that head's pane** (#5058, #5341), as a
+   *  press shows it: one on screen already is jumped to (D1), in this window or, asked first,
+   *  another of the project's (#4768). That pane while it is still there, whichever window's
+   *  pane was used last, so the core is told it was used before it is asked (#5108: the chord
+   *  itself never reaches the panes); else wherever a press puts it. */
   const showPickedTask = useCallback(
-    (session: number) => {
-      const asked = chatTasksAsked?.into;
+    (session: number, asked: PaneAt | undefined) => {
       const into =
         asked !== undefined &&
         contentsOf(now.current, asked.tab).some((one) => one.pane === asked.pane)
@@ -9201,11 +9220,7 @@ export const PlaneView = memo(function PlaneView({
         })
         .catch(here);
     },
-    [chatTasksAsked, oneWindow, plane],
-  );
-  const closeChatTasks = useCallback(
-    () => setChatTasksAsked((was) => (was === undefined ? was : { ...was, open: false })),
-    [],
+    [oneWindow, plane],
   );
 
   /** The task tab `id` shows in place of its session's own chat, by name (#1486): what its
@@ -9947,6 +9962,83 @@ export const PlaneView = memo(function PlaneView({
   const dragging = useRef(false);
   /** Whether a tab is being carried along the strip: no task menu opens under a drag (#1487). */
   const isDragging = useCallback(() => dragging.current, []);
+  /**
+   * **What a pane head's state word opens** (#5341): the menu the tab's chip opened, moved as it
+   * is, for the chat the pane shows and its tasks. ⌘⇧J asks for the same one (`chatTasksAsked`),
+   * and a pick shows the task in this pane. A chat with no tasks keeps its word as it was.
+   */
+  // A pick's way into each pane, the same function for the pane's life, so a head's button is
+  // drawn again only when what it says changes (SC-3).
+  const showPickedNow = useRef(showPickedTask);
+  useEffect(() => {
+    showPickedNow.current = showPickedTask;
+  }, [showPickedTask]);
+  const pickedInto = useRef(new Map<string, (session: number) => void>());
+  const showPickedIn = useCallback((at: PaneAt) => {
+    const key = `${at.tab}:${at.pane}`;
+    let into = pickedInto.current.get(key);
+    if (into === undefined) {
+      into = (session: number) => showPickedNow.current(session, at);
+      pickedInto.current.set(key, into);
+    }
+    return into;
+  }, []);
+  const tasksOn = useCallback<TasksOn>(
+    (session, at, word, alone) => {
+      if (at === undefined) return alone ? null : word;
+      const rows = chatsOfChat(chatsByTab.get(at.tab) ?? NO_ROWS, session);
+      const below = new Set(rows.map((row) => row.session));
+      const ended = (endedByTab.get(at.tab) ?? NO_ENDED).filter((task) => below.has(task.asker));
+      // A head that says no state of its own draws nothing where there is no menu to open.
+      if (alone && !hasTasks(rows, ended)) return null;
+      const asked =
+        chatTasksAsked?.session === session &&
+        chatTasksAsked.tab === at.tab &&
+        chatTasksAsked.pane === at.pane
+          ? chatTasksAsked.count
+          : 0;
+      return (
+        <ChatTasks
+          id={tasksIdOf(session, at.pane)}
+          name={nameOf(session)}
+          rows={rows}
+          ended={ended}
+          current={session}
+          asked={asked}
+          clock={chatClock}
+          dragging={isDragging}
+          onShow={showPickedIn(at)}
+          ends={taskEndsOf}
+          onPress={pressTaskEnd}
+          onPlace={placeFromChip}
+          used={usedFromChip}
+          // The limits of this pane's own chat, the menu's first row (#1498).
+          limits={runningSaid(rows[0])}
+          stopAll={stopAllOf}
+          onActivity={activityFromChip}
+          alone={alone}
+        >
+          {word}
+        </ChatTasks>
+      );
+    },
+    [
+      activityFromChip,
+      chatClock,
+      chatTasksAsked,
+      chatsByTab,
+      endedByTab,
+      isDragging,
+      nameOf,
+      placeFromChip,
+      pressTaskEnd,
+      showPickedIn,
+      stopAllOf,
+      taskEndsOf,
+      tasksIdOf,
+      usedFromChip,
+    ],
+  );
   const notGoingBack = useCallback(() => {
     window.clearTimeout(backSoon.current);
     backSoon.current = undefined;
@@ -11546,7 +11638,6 @@ export const PlaneView = memo(function PlaneView({
                       draggedAtRef={draggedAt}
                       notGoingBack={notGoingBack}
                       isPinned={isPinned}
-                      isDragging={isDragging}
                       nameBoxFor={nameBoxFor}
                       saveName={saveName}
                       endRename={endRename}
@@ -11559,26 +11650,12 @@ export const PlaneView = memo(function PlaneView({
                       factsOf={factsOf}
                       taskNameOf={taskNameOf}
                       taskTabOf={taskTabOf}
-                      tabHasTasks={tabHasTasks}
-                      showTabTasks={showTabTasks}
-                      tasksIdOf={tasksIdOf}
-                      tasksAsked={tasksAsked}
-                      chatsByTab={chatsByTab}
                       naming={naming}
                       pinsIconOnly={pinsIconOnly}
-                      narrow={narrow}
-                      endedByTab={endedByTab}
-                      runningOfTab={runningOfTab}
-                      chatClock={chatClock}
                       hiddenIn={hiddenIn}
+                      tasksRunningOf={tasksRunningOf}
                       waitingOn={waitingOn}
                       showFromChip={showFromChip}
-                      taskEndsOf={taskEndsOf}
-                      pressTaskEnd={pressTaskEnd}
-                      placeFromChip={placeFromChip}
-                      usedFromChip={usedFromChip}
-                      stopAllOf={stopAllOf}
-                      activityFromChip={activityFromChip}
                       openSkillRun={openSkillRun}
                       freshOf={freshOf}
                       freshMarkOf={freshMarkOf}
@@ -11589,18 +11666,6 @@ export const PlaneView = memo(function PlaneView({
                       browsersOfTab={browsersOfTab}
                       openBrowser={openChatBrowser}
                     />
-                    {/* ⌘⇧J's menu of the focused chat's own tasks (#5058), under its pane's head. */}
-                    {chatTasksAsked !== undefined && (
-                      <ChatTasksMenu
-                        open={chatTasksAsked.open}
-                        name={nameOf(chatTasksAsked.session)}
-                        tasks={chatTasksLines}
-                        at={chatTasksAt}
-                        from={chatTasksAsked.from}
-                        onShow={showPickedTask}
-                        onClose={closeChatTasks}
-                      />
-                    )}
                     {/* The centre is where a chat is, so its menu is the pane's rows: the two splits,
                 the tab in front's Tile all, the key the palette claimed, and — under the line —
                 Close pane, which ends nothing (#4756). `asChild` again: the panes' box is measured, and it must not gain a
@@ -11641,6 +11706,7 @@ export const PlaneView = memo(function PlaneView({
                                   unread={frontUnread}
                                   finished={frontFinished}
                                   explaining={chipToExplain}
+                                  tasksOn={tasksOn}
                                   others={frontOthers}
                                   asked={frontAsked}
                                   asks={asksHere}

@@ -5263,6 +5263,15 @@ impl Planes {
             .ok_or_else(|| no_such(plane, "act on"))
     }
 
+    /// The folder of every plane this process holds: a project open in a window, which fetches
+    /// what its pools owe it (#5461).
+    pub fn roots_open(&self) -> Vec<PathBuf> {
+        self.map()
+            .values()
+            .map(|held| held.root().to_path_buf())
+            .collect()
+    }
+
     /// Every plane this process holds, in no particular order.
     pub fn open_now(&self) -> Vec<PlaneId> {
         let mut open: Vec<_> = self.map().keys().cloned().collect();

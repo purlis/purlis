@@ -461,7 +461,7 @@ own `min-width: max-content` beside the class.
 
 | Prop | Says |
 | --- | --- |
-| `variant` | `secondary` (the default, the plain button), `primary` (the answer purlis suggests), `ghost` (no box until the pointer reaches it), `danger` (what cannot be undone from purlis, D-1719-3), `grants` (an answer that grants, an Allow or an Accept), `soft-accent` (a suggestion that is not the answer), `warning-soft` (care, without ending anything), `link` (a button that reads as a link, as tall as its words so it can stand in a sentence), `quiet` (a ghost whose words are in the quiet tier until the pointer reaches it: a strip's end mark, a pane's split and close, a line's own marks, a breadcrumb's crumbs and a tab's task chip, #3214, #3264), `quiet-link` (a link in the quiet tier, underlined in the primary words under the pointer and the keyboard and never filled: a card's way on beside its one answer, Go to chat in an Inbox card's head, #5214) |
+| `variant` | `secondary` (the default, the plain button), `primary` (the answer purlis suggests), `ghost` (no box until the pointer reaches it), `danger` (what cannot be undone from purlis, D-1719-3), `grants` (an answer that grants, an Allow or an Accept), `soft-accent` (a suggestion that is not the answer), `warning-soft` (care, without ending anything), `link` (a button that reads as a link, as tall as its words so it can stand in a sentence), `quiet` (a ghost whose words are in the quiet tier until the pointer reaches it: a strip's end mark, a pane's split and close, a line's own marks, a breadcrumb's crumbs and a pane head's tasks button, #3214, #3264, #5341), `quiet-link` (a link in the quiet tier, underlined in the primary words under the pointer and the keyboard and never filled: a card's way on beside its one answer, Go to chat in an Inbox card's head, #5214) |
 | `size` | `sm` 24, `md` 28 (the default), `lg` 32, at the default text size and density; `lg` only beside a list's main filter field |
 | `inline` | words in a line of words, a breadcrumb's crumb (#3264): as tall as the line, no box padding or edge, cut to an ellipsis where the line squeezes it, underlined (no fill) under the pointer and the keyboard; words only |
 | `icon` | the icon before the words, drawn as the `icon` part; `IconButton` takes only an icon and an `aria-label`, and is square |
@@ -930,7 +930,8 @@ error (Get project's clone progress is still off, until it moves).
 
 **What a drag draws over the panes is the pane preview family** (`app/src/ui/pane-preview/`, #5291,
 spec #5288, ADR 0113): `PanePreviewArriving`, a pane the drop would make or a side that would fold;
-`PanePreviewLine`, on the strip, where a tab would go; `PanePreviewSize`, the columns and rows a
+`PanePreviewLine`, on the strip, where a tab would go; `PanePreviewOpening`, the mark along a tab a
+drag rests on until it comes forward (#5294); `PanePreviewSize`, the columns and rows a
 terminal will take; `PanePreviewRefused`, the mark on the pane a refused place means; and
 `PanePreviewHeld` and `PanePreviewWords`, what is held and what letting go would do, by the pointer.
 Only the wrapper writes `data-scope="pane-preview"`: `purlis/pane-preview-family` is an error.
@@ -939,7 +940,8 @@ Only the wrapper writes `data-scope="pane-preview"`: `purlis/pane-preview-family
   where each part goes is the drag's (`paneDragLayer.tsx`).
 - **None is read by a reader or takes the pointer.** A reader hears the drag from the window's status
   line, and the pointer has to reach what is under them.
-- **Its parts** are `arriving`, `name`, `line`, `size`, `refused`, `held` and `words`, in
+- **It is placement mode's preview too** (#5293): the keys' target is drawn as the pointer's place.
+- **Its parts** are `arriving`, `name`, `line`, `opening`, `size`, `refused`, `held` and `words`, in
   `pane-preview.css`; a theme's parts reach the same attributes (`pane-preview.*`, the next release's
   manifest version).
 
@@ -1126,7 +1128,7 @@ families](#the-select-and-combobox-families)).
   where it was, or where the owner's `onClosed` puts it (a row that went into Settings sent it
   there). A press outside still reaches what it was on: **a menu is not modal**, so the rest of
   the window is not hidden from a screen reader and a menu on a strip is no question. A preview
-  the pointer's rest opened (a tab's task chip) takes no keyboard (`takesNoKeyboard`), and
+  the pointer's rest opened (a pane head's tasks menu) takes no keyboard (`takesNoKeyboard`), and
   Escape and a press outside close it from wherever the keyboard is.
 - **Drawn by its parts** (ADR 0103). The surface is `data-scope="popover" data-part="root"`, its
   `data-variant` `popover` or `menu`; inside it the `filter`, `rule`, `list`, `header`,
@@ -1422,7 +1424,7 @@ WAI-ARIA "Tabs" pattern:
 - **The keyboard along it**: Left and Right move to the tab beside, wrapping past either end, Home
   and End to the first and the last, the direction following the locale. Only these keys are
   React Aria's, and only pressed on a tab: a `×` or a chip beside a tab keeps its own, Tab goes
-  on to the next stop in the document (the `+`), and a key the tab has taken is its own (a lifted
+  on to the next stop in the document, the front tab's `×` and then the `+` (#5341), and a key the tab has taken is its own (a lifted
   tab's arrows are the drag's).
 - **Manual activation**: moving is not choosing; Enter or Space chooses, through the strip's own
   press (`tab.select:<id>`), which can do what React Aria's selection cannot: a press on the tab in
@@ -2429,7 +2431,7 @@ strip's tab carries an edge, and there is no `--nested` left to indent anything 
 A `tablist` may own `tab` elements only, and what it owns is everything under it in the DOM plus
 everything its `aria-owns` names: **`aria-owns` adds to a tablist's children and never takes them
 away.** A strip's cells hold more than a tab (a project's `×` and gear, a workspace's gear, a
-chat's `×`, fresh mark and task chip, every strip's own `+`), so the `tablist` role is not on the
+chat's `×`, fresh mark and hand, every strip's own `+`), so the `tablist` role is not on the
 element that holds them.
 
 - **The strip element** (`.projects`, `.workspaces-strip`, `.tabs`) has no role. It is marked
@@ -3024,16 +3026,16 @@ then never when it types a letter or a digit or is another of the window's keys.
 
 They are capture listeners on the window, held by the project in front. ⌘⇧J and ⌘⇧H press
 their catalogue rows (`tasks.menu`, `pane.back`), which the palette lists with their keys. ⌘⇧J
-opens a menu of the tasks the focused pane's chat asked for and nothing else's, under that pane's
-head (`ChatTasksMenu.tsx`, #5058): the one picked is shown in that pane as a press shows it, and
-one on screen already is jumped to. The pane and tab keys move the keyboard and have no rows. **Nothing is taken while a dialog has the keyboard.** Over a
+opens the menu of the focused pane's chat and its tasks, from that pane head's state word, the
+same menu a press of the word opens (`TabChip.ChatTasks`, #5058, #5341): the one picked is shown
+in that pane as a press shows it, and one on screen already is jumped to. The pane and tab keys move the keyboard and have no rows. **Nothing is taken while a dialog has the keyboard.** Over a
 terminal the chord is the window's whether or not its row can run, so the same chord never
 means two things from one tab to the next; in a text field or an editor a chord whose row
 cannot run is left to the field.
 
 **A menu that opens under a resting pointer takes no keyboard** (#1487, `TabChip.tsx`). The
-task menu on a tab's chip is Radix's dropdown menu, opened three ways: a press, Down on its tab,
-and the pointer resting on the chip. Radix moves the focus into a menu as it opens and onto
+tasks menu on a pane head's state word (a tab's chip until #5341) is Radix's dropdown menu,
+opened three ways: a press, ⌘⇧J, and the pointer resting on the word. Radix moves the focus into a menu as it opens and onto
 each row the pointer crosses, which is right for the first two and would take the keyboard out
 of a terminal for the third. So a rest-opened menu refuses both (the menu's `onOpenAutoFocus`,
 and each row's pointer handlers), the stylesheet's hover says which row the pointer is on, and

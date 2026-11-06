@@ -227,6 +227,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // names the commands this machine's window ran, so no link writes or reads it.
     "record_slow",
     "slow_log_recent",
+    // [DEBUG-5478] The freeze watchdog's line goes to this machine's diagnostic log: a window's
+    // own, as the slow-answer log is, so no link writes it (#5488 removes it).
+    "debug_5478_log",
     // The theme in force for the window that asks, which also points that window's theme watch
     // at the project it answers for (#2324). A link has no window here to watch for: it is
     // served `theme_in_force_at`, the same answer, which watches nothing (#2697).
@@ -763,6 +766,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // "Ask the chat to redo it" on an out-of-date draft (S9, #3690): the redo typed into the
     // chat that drafted it as the person, or a chat started with it typed, as a draft chat is.
     "skill_draft_redo",
+    // The chats the studio started that have closed here (#5248): the person's own chats, read
+    // in their window for a skill's Runs, as its drafts are.
+    "studio_chats_closed",
     "skill_draft_redo_in",
     // A skill's trigger tests started from a template, or a chat opened to write them (#3925):
     // the start is one commit to the project, and the chat starts a program as the person, as

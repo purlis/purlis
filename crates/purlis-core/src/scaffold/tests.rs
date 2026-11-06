@@ -1814,7 +1814,7 @@ fn plane_is_this_repo_scaffolds_the_repo_and_offers_its_first_clone() {
             "You are standing in the git repo 'widget'. Work happens in a workspace, not \
              in the plane root — clone it into the first one:\n      purlis init \
              --clone-this-repo\n  Nothing is cloned unless you run that. It lands in \
-             workspaces/default/widget/, and declining leaves this plane complete."
+             workspaces/default/repos/widget/, and declining leaves this plane complete."
         )))
     );
     assert!(root.join("charter.toml").is_file());
@@ -1837,7 +1837,7 @@ fn a_repository_that_is_already_a_plane_is_healed_and_offered_its_declared_works
     assert_eq!(outcome.code, 0, "{:?}", outcome.said);
     assert!(
         matches!(outcome.said.last(), Some(Say::Info(l))
-            if l.contains("It lands in workspaces/lab/widget/,")),
+            if l.contains("It lands in workspaces/lab/repos/widget/,")),
         "{:?}",
         outcome.said
     );

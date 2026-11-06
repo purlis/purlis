@@ -3238,7 +3238,8 @@ fn revoke_browser_site(
             // After the write, whether or not it was made (#4739).
             held.browser_sites_moved();
             removed.map_err(|why| format!("purlis could not remove {site}: {why}"))?;
-            held.browsers().sites_removed(held.browser_driver())
+            held.browsers()
+                .sites_removed(held.browser_driver(), &|one| one == site)
         }
     };
     for (session, crate::chatbrowsers::Ended { ended, unended }) in ended {
@@ -3300,7 +3301,10 @@ fn revoke_project_site(
     }
     browsers_ended_told(
         plane,
-        held.browsers().sites_removed(held.browser_driver()),
+        held.browsers()
+            .sites_removed(held.browser_driver(), &|one| {
+                sandbox::hosts::Host::parse(&one.to_string()).is_ok_and(|one| host.covers(&one))
+            }),
         told,
     );
     Ok(())

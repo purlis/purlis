@@ -121,7 +121,9 @@ fn an_ordinary_password_and_a_hex_key_fill_with_no_mark() {
     let tmp = project(serde_json::json!({}));
     for value in [
         "CorrectHorseBatteryStaple",
-        "MySecretPassword",
+        // 16 of base32's letters alone is a seed in any case (the ruling of 2026-11-06): a 1 is
+        // none of them.
+        "MySecretPassword1",
         "abcdef2345672345",
         "AbCdEf2345672345",
         "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",

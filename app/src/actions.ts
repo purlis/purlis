@@ -1519,6 +1519,17 @@ export function projectRows(
  */
 export const ENDS_IT = "Ends the program it runs. There is no undo.";
 
+/** **What shows a chat from wherever another place names it** (#5185, #5248): a studio chat's
+ *  line above its skill's tabs, its row on Runs, its job on the Grades card, and its draft. */
+export const OPEN_CHAT = "Open chat";
+
+/** **What opens a studio chat's draft where it waits for review**, on Drafts (#5248). */
+export const REVIEW_DRAFT = "Review draft";
+
+/** **What stops the chat at work on the Grades card's running job** (#5248; the prototype's
+ *  words): it asks first, as the chat's own Stop does. */
+export const STOP_IT = "Stop it";
+
 /** What a close says of the one chat it takes off the screen (#4756): it ends nothing. */
 export const ONE_CHAT_GOES_ON = "Its chat goes on in the sidebar.";
 

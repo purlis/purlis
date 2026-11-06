@@ -49,6 +49,17 @@ pub fn unsigned() -> Command {
 
 /// git, for the test's own setup. Not the code under test.
 pub fn git(dir: &Path, args: &[&str]) -> std::process::Output {
+    let out = git_tried(dir, args);
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    out
+}
+
+/// [`git`], whether or not git succeeds: its output, for a test that expects it to stop.
+pub fn git_tried(dir: &Path, args: &[&str]) -> std::process::Output {
     let mut cmd = unsigned();
     cmd.arg("-C").arg(dir).args(args);
     for (k, v) in WHO {
@@ -57,13 +68,7 @@ pub fn git(dir: &Path, args: &[&str]) -> std::process::Output {
     // A developer's own `init.defaultBranch`, hooks or templates must not reach a fixture.
     cmd.env("GIT_CONFIG_GLOBAL", "/dev/null");
     cmd.env("GIT_CONFIG_SYSTEM", "/dev/null");
-    let out = purlis_core::forklock::output(&mut cmd).expect("git runs");
-    assert!(
-        out.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    out
+    purlis_core::forklock::output(&mut cmd).expect("git runs")
 }
 
 pub fn plane_with_clone(repo: &str) -> Fixture {

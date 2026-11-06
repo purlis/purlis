@@ -387,6 +387,7 @@ macro_rules! app_commands {
                 skillhistory::skill_lifecycle,
                 skillhistory::skill_owners,
                 skilldrafts::skill_drafts,
+                skilldrafts::studio_chats_closed,
                 skilldrafts::skill_draft_accept,
                 skilldrafts::skill_draft_reject,
                 skilldrafts::skill_draft_chat,
@@ -740,6 +741,8 @@ macro_rules! app_commands {
                 usage::chat_usage,
                 slowlog::record_slow,
                 slowlog::slow_log_recent,
+                // [DEBUG-5478] temporary diagnostics.
+                debug5478::debug_5478_log,
                 tasksused::tasks_used,
                 pin::plane_pin,
                 about::about_charter,

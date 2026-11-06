@@ -514,11 +514,11 @@ export const PANE_FOOT_CHIPS = [
 ];
 
 /** What is drawn as part of a strip or a pane's top line, as tall as it is: the ways to end a
- *  pane's task (#1488), the chip a tab wears for its tasks (#1487) and the chips of the pane's
- *  head and foot. */
+ *  pane's task (#1488), the chip a tab wears for its skill run (SK-3; its tasks' chip went to the
+ *  pane head, #5341) and the chips of the pane's head and foot. */
 const STRIP_PARTS = new Set([
   "pane-task-ends",
-  "tab-tasks",
+  "tab-run",
   // The harness's button: inside harness · workspace, a chip of either line.
   "pane-harness",
   ...PANE_LINE_CHIPS,
@@ -835,6 +835,8 @@ export const HEAD_ROW: ChipRow = {
     SandboxMark: "tab-sandbox",
     TaskEndAsked: "pane-task-ends",
     PaneCrumbs: "pane-crumbs",
+    // Its state, and its tasks' button where it has tasks (#5341).
+    PaneTasksWord: "pane-state-mark",
   },
 };
 
@@ -1042,8 +1044,8 @@ export const plantedTall = { minBlockSize: 32 };
       ".find-bar > .closer",
       ".pane-task-ends .task-end",
       ".tab .closer::before",
-      ".tabs .tab:has(> .tab-tasks)",
-      ".tabs .tab > .tab-tasks",
+      ".tabs .tab:has(> .tab-run)",
+      ".tabs .tab > .tab-run",
       ".half-head",
       ".status-line",
       ".panels .panel-head",
@@ -1061,7 +1063,7 @@ export const plantedTall = { minBlockSize: 32 };
       ".bar > .x ~ button",
       ".closer.toolbar-head",
       ".task-end.panel-head",
-      ".tab-tasks.task-end",
+      ".tab-run.task-end",
       ".pane-harness",
     ].map((selector) => subjectKind(selector, controls));
     expect(kinds).toEqual([
@@ -1360,5 +1362,67 @@ export const plantedTall = { minBlockSize: 32 };
       HEIGHT_PROPERTY.test(property),
     );
     expect(read.length).toBeGreaterThan(90);
+  });
+});
+
+/**
+ * **What a chat's tab holds, and how tall it is** (#5341, spec #5339): a tab says which chat
+ * this is and whether it needs you. Its cell on the chat strip (`ChatStrip.tsx`) draws its own
+ * button (its marks and its name), the hand where a chat of it waits off screen, the chips a
+ * tab still wears beside it (a skill run, its browsers, the plane-updated mark) and its `×`, and
+ * never its tasks' counts, which are its pane head's. The tab is the control height, and the `×`
+ * stands out of the tab's flow, so it takes none of the name's room (`ui/tabs/tabs.css`).
+ */
+describe("a chat's tab (#5341)", () => {
+  const strip = readFileSync(join(SRC, "ChatStrip.tsx"), "utf8");
+  const cell = strip.slice(strip.indexOf("<TabCell"), strip.indexOf("</TabCell>"));
+  const family = readFileSync(join(SRC, "ui/tabs/tabs.css"), "utf8").replace(
+    /\/\*[\s\S]*?\*\//g,
+    "",
+  );
+  const rule = (selector: string) => {
+    const at = family.indexOf(`\n${selector} {`);
+    if (at < 0) throw new Error(`no rule ${selector}`);
+    return family.slice(at, family.indexOf("}", at));
+  };
+
+  it("holds its button, its hand, its chips and its ×, and no count", () => {
+    const parts = new Set([...cell.matchAll(/<([A-Z]\w*)/g)].map(([, name]) => name));
+    expect([...parts].sort()).toEqual(
+      [
+        "Closer",
+        "FreshMark",
+        "QueueRead",
+        "SkillRunChip",
+        "StripTab",
+        "TabBrowsers",
+        "TabCell",
+        "TabMarks",
+        "TabNeeds",
+        "TabRename",
+        "Pin",
+      ].sort(),
+    );
+    expect(cell).not.toMatch(/tab-tasks|ChatTasks|TabTasks/);
+  });
+
+  it("is the control height and a step, at every state", () => {
+    expect(rule('[data-scope="tabs"][data-part="tab"]')).toContain(
+      "block-size: calc(var(--size-control) + calc(3rem / 14));",
+    );
+  });
+
+  it("stands its × out of the tab's flow, so the name keeps its room", () => {
+    const closer = rule(
+      '[data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"]',
+    );
+    expect(closer).toContain("position: absolute;");
+    expect(closer).toContain("opacity: 0;");
+    // Seen on the front tab, under the pointer and with the keyboard in the tab, and only there.
+    expect(
+      rule(
+        '[data-scope="tabs"][data-part="tab"]:is([data-selected], [data-hovered], :focus-within)\n  [data-part="closer"][data-scope="tabs"]',
+      ),
+    ).toContain("opacity: 1;");
   });
 });

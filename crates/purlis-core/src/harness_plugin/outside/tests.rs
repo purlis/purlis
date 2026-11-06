@@ -155,6 +155,43 @@ fn codex_finds_the_persons_own_and_each_plugins_newest_version() {
 }
 
 #[test]
+fn a_codex_plugin_its_config_turns_off_brings_no_skills_to_its_chats_and_is_left_out_with_why() {
+    // #4616: measured on codex-cli 0.163.0, `enabled = false` keeps a plugin's skills from the
+    // model, so they are not the chat's.
+    let tmp = tempfile::tempdir().unwrap();
+    let codex = tmp.path().join("codex-home");
+    skill(&codex.join("skills"), "notes", "notes");
+    skill(
+        &codex.join("plugins/cache/zmkt/zp/0.0.2/skills"),
+        "zp-skill",
+        "zp-skill",
+    );
+    std::fs::write(
+        codex.join("config.toml"),
+        "[plugins.\"zp@zmkt\"]\nenabled = false\n",
+    )
+    .unwrap();
+    let chat = [("CODEX_HOME".to_owned(), codex.display().to_string())];
+    let env = env(&chat, tmp.path());
+    let choices = Choices::from_text(None, None);
+
+    let found = harness_skills(&CODEX, &env, &choices, &ChatFolder::default());
+    let off = CODEX
+        .plugins_here(&env, &ChatFolder::default())
+        .unwrap()
+        .off;
+    let (_, lacks) = harness_skills_split(&CODEX, &env, &choices, &off);
+
+    assert_eq!(
+        rows(&found),
+        [("notes", Origin::Harness, "you".to_owned(), true, false)]
+    );
+    assert_eq!(lacks.len(), 1);
+    assert_eq!(lacks[0].0.id, "zp:zp-skill");
+    assert_eq!(lacks[0].1.line("Codex"), "Off in Codex");
+}
+
+#[test]
 fn opencode_finds_the_skills_of_its_own_config_folder() {
     let tmp = tempfile::tempdir().unwrap();
     let config = tmp.path().join("xdg");

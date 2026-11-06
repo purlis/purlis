@@ -4,7 +4,7 @@
 import { $, browser, expect } from "@wdio/globals";
 import { openChatList, pressMenuPath, ROW, SUB } from "../menus.js";
 import { ask } from "../switching.js";
-import { closeTheViewTabsOpenedSince, tabNames } from "../reach.js";
+import { closesTheTabsItOpens } from "../reach.js";
 import { bringChatForward, endChatsStartedHere, startAChat, type Started } from "../started.js";
 
 /**
@@ -151,12 +151,30 @@ const refusal = () =>
 describe("answering a task's question from the Activity tab", function () {
   this.timeout(180_000);
 
-  let wereAlreadyOpen: string[] = [];
   let mine: Started | undefined;
   const answerOf = `button[aria-label="Answer ${TASK}'s question"]`;
 
+  // Each step is tried even when the one before it failed: one app process serves the run.
+  after(async () => {
+    try {
+      await browser.execute((strip: string) => {
+        for (const closer of document.querySelectorAll<HTMLElement>(
+          `${strip} button[aria-label^="Close Activity"]`,
+        ))
+          closer.click();
+      }, STRIP);
+    } catch (trouble) {
+      console.warn("answer-question: the Activity tab was not closed", trouble);
+    }
+    await endChatsStartedHere([mine]);
+  });
+
+  // The Activity tab closed and the chat ended before the view tabs are closed, so this `after`
+  // is registered above the helper; the strip is read before the chat is started, so the
+  // `before` below it.
+  closesTheTabsItOpens();
+
   before(async () => {
-    wereAlreadyOpen = await tabNames();
     mine = await startAChat();
     const { plane, session } = mine;
 
@@ -186,22 +204,6 @@ describe("answering a task's question from the Activity tab", function () {
         asks: 1,
       }),
     ]);
-  });
-
-  // Each step is tried even when the one before it failed: one app process serves the run.
-  after(async () => {
-    try {
-      await browser.execute((strip: string) => {
-        for (const closer of document.querySelectorAll<HTMLElement>(
-          `${strip} button[aria-label^="Close Activity"]`,
-        ))
-          closer.click();
-      }, STRIP);
-    } catch (trouble) {
-      console.warn("answer-question: the Activity tab was not closed", trouble);
-    }
-    await endChatsStartedHere([mine]);
-    await closeTheViewTabsOpenedSince(wereAlreadyOpen);
   });
 
   it("offers Answer on a question its task is paused on, and opens the form with the keyboard in its box", async () => {

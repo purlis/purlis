@@ -1261,7 +1261,12 @@ fn a_rebase_still_running_at_its_deadline_is_stopped_and_said_to_be_out_of_time(
 
     let started = std::time::Instant::now();
     let rebased = with_a_smudge(&smudge, || {
-        rebase_onto_fetched(&fixture.root, false, std::time::Duration::from_secs(1))
+        rebase_onto_fetched(
+            &fixture.root,
+            "FETCH_HEAD",
+            false,
+            std::time::Duration::from_secs(1),
+        )
     });
 
     assert_eq!(rebased, Rebased::OutOfTime);
@@ -1494,6 +1499,30 @@ fn a_signer_that_fails_while_a_signed_save_rebases_is_named_and_nothing_unsigned
         "the rebase was not undone"
     );
     assert_eq!(push_record(&fixture.root).unwrap()["outcome"], "failed");
+}
+
+#[test]
+fn a_saves_retry_rebases_onto_what_its_own_fetch_brought_and_leaves_fetch_head_alone() {
+    // The retry fetches into the remote-tracking branch and rebases onto the commit it read
+    // there, by its id: a `FETCH_HEAD` left by an earlier fetch is neither read nor written.
+    let fixture = Fixture::plane();
+    let bare = fixture.with_a_remote_that_moved();
+    let earlier = ask(&fixture.root, &["rev-parse", "HEAD"]);
+    let earlier = earlier.trim();
+    let fetch_head = fixture.root.join(".git/FETCH_HEAD");
+    let left = format!("{earlier}\t\tbranch 'main' of an earlier fetch\n");
+    std::fs::write(&fetch_head, &left).unwrap();
+    std::fs::write(fixture.root.join("mine.md"), "mine").unwrap();
+    run(&fixture.root, &["add", "-A"]);
+    run(&fixture.root, &["commit", "-q", "-m", "mine"]);
+    let theirs = ask(&bare, &["rev-parse", "main"]);
+
+    let (pushed, said) = push(&fixture, false);
+
+    assert_eq!(pushed.outcome, Outcome::Pushed, "{said}");
+    assert!(said.contains("remote moved"), "{said}");
+    assert_eq!(ask(&bare, &["rev-parse", "main~1"]), theirs, "{said}");
+    assert_eq!(std::fs::read_to_string(&fetch_head).unwrap(), left);
 }
 
 #[test]
@@ -4607,7 +4636,7 @@ fn a_signed_rebase_that_really_conflicts_is_a_conflict_and_not_the_signers_refus
         &["fetch", "-q", &bare.display().to_string(), "main"],
     );
 
-    let rebased = rebase_onto_fetched(&fixture.root, true, Duration::from_secs(30));
+    let rebased = rebase_onto_fetched(&fixture.root, "FETCH_HEAD", true, Duration::from_secs(30));
 
     assert_eq!(rebased, Rebased::Conflict(vec!["theirs.md".into()]));
 }
@@ -4624,7 +4653,7 @@ fn a_rebase_git_did_not_finish_for_a_reason_of_its_own_is_not_called_out_of_time
     );
 
     let rebased = with_a_smudge("kill -9 $PPID; cat", || {
-        rebase_onto_fetched(&fixture.root, false, Duration::from_secs(30))
+        rebase_onto_fetched(&fixture.root, "FETCH_HEAD", false, Duration::from_secs(30))
     });
 
     // Nor a conflict (qw348): nothing is unmerged, so it is git's own failure, in its words.

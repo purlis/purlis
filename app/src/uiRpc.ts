@@ -1168,6 +1168,7 @@ export const commands = {
 	skillLifecycle: __WINDOW_ONLY_RESULT,
 	skillOwners: __WINDOW_ONLY_RESULT,
 	skillDrafts: __WINDOW_ONLY_RESULT,
+	studioChatsClosed: __WINDOW_ONLY_RESULT,
 	skillDraftAccept: __WINDOW_ONLY_RESULT,
 	skillDraftReject: __WINDOW_ONLY_RESULT,
 	skillDraftChat: __WINDOW_ONLY_START_REFUSED,
@@ -2376,6 +2377,7 @@ export const commands = {
 } | null, string>(__TAURI_INVOKE("chat_usage", { plane, session })),
 	recordSlow: __WINDOW_ONLY_RESULT,
 	slowLogRecent: __WINDOW_ONLY_RESULT,
+	debug5478Log: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **What the chats of a tab used** (#1500). `scope` says what for: a row's hover reads its
 	 *  one figure; a tab's menu reads every line, each task's time and the total. `own` is the
@@ -4360,6 +4362,19 @@ export type CloseHanded = {
 };
 
 /**
+ *  **A chat the studio started, closed here** (#5248), as a skill's Runs lists it: its number
+ *  (what a draft names its chat by), its name as it closed, when, and what it was started for.
+ */
+export type ClosedStudioChat = {
+	session: number,
+	name: string,
+	/**  When it closed (RFC 3339). */
+	closed: string,
+	/**  What it was started for, its `finished` always set. */
+	link: StudioLink,
+};
+
+/**
  *  What closing chat `session` would do with the chats below it: what the close dialog says
  *  before it is answered.
  */
@@ -4514,6 +4529,15 @@ export type DeclaredHarness = {
 	acp: boolean,
 };
 
+/**
+ *  **One deleted skill brought back under a new name** (#5457): its id, as Deleted lists it, and
+ *  the name it comes back under, where its own belongs to purlis now.
+ */
+export type DeletedRename = {
+	id: string,
+	to: string,
+};
+
 /**  A set of skills deleted as one change, as the Deleted page groups them. */
 export type DeletedSet = {
 	id: string,
@@ -4551,6 +4575,11 @@ export type DeletedSkill = {
 	reserved: boolean,
 	/**  The set it was deleted with (#5331): what the Deleted page groups it by. */
 	set: DeletedSet | null,
+	/**
+	 *  Where its name belongs to purlis now (#5457): the new name offered, as an install offers
+	 *  one, and the names it cannot take. Bring back waits for the person to confirm a name.
+	 */
+	clash: ReviewClash | null,
 };
 
 /**  What became of the skill deletes a crash or a quit cut short, one line each (SK-35, #3013). */
@@ -9441,6 +9470,24 @@ export type PoolNamedBy = {
 	workspaces: string[],
 };
 
+/**
+ *  **A project an older runner of a pool waits on** (#5461): it still has to bring back what its
+ *  chats left there, and only an open project does.
+ */
+export type PoolOwed = {
+	/**  The path this machine keeps the project under. */
+	path: string,
+	/**  What to call it: the directory's own name. */
+	name: string,
+	/**
+	 *  When it was last opened on this machine, in seconds since the epoch: `u32`, so it is a
+	 *  `number` in TypeScript and not a `bigint`.
+	 */
+	opened: number,
+	/**  Whether it is open in a window now, so it brings the work back on its own. */
+	open_now: boolean,
+};
+
 /**  One of this machine's profiles, as a pool's runner stands with it. */
 export type PoolProfileRow = {
 	name: string,
@@ -9746,6 +9793,14 @@ export type PoolVersion = {
 	 *  could not be read.
 	 */
 	suspends?: PoolSuspends | null,
+	/**
+	 *  **The projects an older runner waits on to bring its work back** (#5461): a draining
+	 *  runner stays until each has fetched what its chats left there (#5393). Empty where none
+	 *  waits.
+	 */
+	owed: PoolOwed[],
+	/**  Why purlis could not read which projects those are, shown safely; none where it could. */
+	owed_why: string | null,
 };
 
 /**  What the Pools group draws: the pools, and the limits a new pool gets by default. */
@@ -13789,7 +13844,11 @@ export type StudioHarness = {
 	plugins_off: PluginOffShown[],
 };
 
-/**  The studio's jobs a chat is started for: [`StudioWork`], by the record's words. */
+/**
+ *  **The studio's jobs, as the window types them**: the core's [`StudioWork`], which writes
+ *  itself as its word, typed for the window here, since purlis-core keeps no UI typing crate.
+ *  Never made: a test holds its words to the core's.
+ */
 export type StudioJobKind = "draft" | "trigger-tests" | "outcome-evals" | "checks" | "improve" | "redo";
 
 /**  A level a skill can be moved to or made at, and its words. */
@@ -13819,6 +13878,13 @@ export type StudioLink = {
 	job: StudioJobKind,
 	/**  Whether the chat wrote its draft: once true, never running again. */
 	done: boolean,
+	/**
+	 *  When the studio started the chat (RFC 3339), where its record knows (#5248): what the
+	 *  Grades card's running job counts from.
+	 */
+	started: string | null,
+	/**  When its job stopped running (#5248): its draft came, its program ended, or it closed. */
+	finished: string | null,
 };
 
 /**

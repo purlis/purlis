@@ -1447,6 +1447,91 @@ fn a_site_allowed_when_asked_reaches_the_next_act_and_one_kept_blocked_does_not(
     assert_eq!(reached.answered, ["app.example.org:443"], "{reached:?}");
 }
 
+/// A site the person allowed when asked lets a page holding a secret leave for it by its server's
+/// redirect (#5230). Removing the site for the chat takes that back: the next browser is told of
+/// no such answer, so such a redirect asks again.
+#[test]
+fn a_site_removed_for_its_chat_no_longer_counts_as_allowed_when_asked() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, click()));
+    assert!(browsers.allow(3, false));
+    *hosted.asks.lock().unwrap() = vec!["app.example.org:443".into()];
+    answered(&browsers, &hosted, &ask(3, click()));
+    hosted.asks.lock().unwrap().clear();
+    let app = site("app.example.org:443");
+    browsers
+        .sites_answered(3, std::slice::from_ref(&app), true)
+        .unwrap();
+    browsers.allowed_when_asked(3, std::slice::from_ref(&app));
+    let driver: Arc<dyn Driver> = hosted.clone();
+
+    browsers.chat_site_removed(Some(&driver), 3, &app).unwrap();
+
+    answered(&browsers, &hosted, &ask(3, click()));
+    let reached = hosted.reached.lock().unwrap().last().cloned().unwrap();
+    assert!(reached.answered.is_empty(), "{reached:?}");
+}
+
+/// The person's ruling of 2026-11-06: only an answer to the ask about a filled page leaving
+/// counts. A site the browser asks about again counts as answered no more, until the person
+/// allows it again.
+#[test]
+fn a_site_asked_about_again_counts_as_allowed_when_asked_only_once_allowed_again() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, click()));
+    assert!(browsers.allow(3, false));
+    *hosted.asks.lock().unwrap() = vec!["app.example.org:443".into()];
+    answered(&browsers, &hosted, &ask(3, click()));
+    let app = site("app.example.org:443");
+    browsers
+        .sites_answered(3, std::slice::from_ref(&app), true)
+        .unwrap();
+    browsers.allowed_when_asked(3, std::slice::from_ref(&app));
+
+    // A filled page asks to leave for it.
+    answered(&browsers, &hosted, &ask(3, click()));
+    hosted.asks.lock().unwrap().clear();
+    answered(&browsers, &hosted, &ask(3, click()));
+    let reached = hosted.reached.lock().unwrap().last().cloned().unwrap();
+    assert!(reached.answered.is_empty(), "{reached:?}");
+
+    browsers
+        .sites_answered(3, std::slice::from_ref(&app), false)
+        .unwrap();
+    browsers.allowed_when_asked(3, std::slice::from_ref(&app));
+    answered(&browsers, &hosted, &ask(3, click()));
+    let reached = hosted.reached.lock().unwrap().last().cloned().unwrap();
+    assert_eq!(reached.answered, ["app.example.org:443"], "{reached:?}");
+}
+
+/// The same for a site removed for everyone here: no chat's next browser counts it as answered,
+/// and a site that stays allowed still counts.
+#[test]
+fn a_site_removed_for_everyone_no_longer_counts_as_allowed_when_asked_in_any_chat() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    answered(&browsers, &hosted, &ask(3, click()));
+    assert!(browsers.allow(3, false));
+    *hosted.asks.lock().unwrap() =
+        vec!["app.example.org:443".into(), "bank.example.org:443".into()];
+    answered(&browsers, &hosted, &ask(3, click()));
+    hosted.asks.lock().unwrap().clear();
+    let (app, bank) = (site("app.example.org:443"), site("bank.example.org:443"));
+    browsers
+        .sites_answered(3, &[app.clone(), bank.clone()], false)
+        .unwrap();
+    browsers.allowed_when_asked(3, &[app.clone(), bank.clone()]);
+    let driver: Arc<dyn Driver> = hosted.clone();
+
+    browsers.sites_removed(Some(&driver), &|one| one == &bank);
+
+    answered(&browsers, &hosted, &ask(3, click()));
+    let reached = hosted.reached.lock().unwrap().last().cloned().unwrap();
+    assert_eq!(reached.answered, ["app.example.org:443"], "{reached:?}");
+}
+
 /// #2242: a chat started without the sandbox gets a browser like a sandboxed one, so a site
 /// new to the project its browser held back waits on the person as any chat's does.
 #[test]

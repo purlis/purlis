@@ -781,17 +781,41 @@ const WAITS_NO_MORE: &str = "That proposed change waits no more: it was answered
 #[tauri::command]
 #[specta::specta]
 pub async fn apply_proposed_change(
+    app: tauri::AppHandle,
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     id: u32,
     from: From,
 ) -> Result<String, String> {
     let held = planes.held(&plane)?;
+    // An export of skills goes where the person picks now, never where the chat said (#5492):
+    // asked only of one that is not stale, which Apply then refuses without asking where.
+    let export = held.proposals().get(id).and_then(|one| {
+        let skills = one.skills.as_ref()?;
+        let SetChange::Export { zip, .. } = skills.change else {
+            return None;
+        };
+        let fresh = !one.stale && !matches!(skills_now(held.root(), skills), Now::Stale);
+        fresh.then_some(zip)
+    });
+    let to = match export {
+        // Not picked is not applied: the window keeps it, to apply or dismiss.
+        Some(zip) => Some(
+            crate::skillpublish::export_place(&app, zip)
+                .await?
+                .ok_or(NO_PLACE_PICKED)?,
+        ),
+        None => None,
+    };
     crate::off_the_window("applying a proposed change", move || {
-        applied(&held, id, from)
+        applied(&held, id, from, to.as_deref())
     })
     .await
 }
+
+/// What Apply on an export says when the person picked no place: it is still held.
+pub const NO_PLACE_PICKED: &str = "Nothing was exported: no place was picked. It is still here to \
+                                   apply or dismiss.";
 
 /// **Where Apply was pressed** (PC-7): a row (the Inbox's, a tab's Notice), which shows a change
 /// whole only up to its length, or the change's own tab, which shows it whole however long.
@@ -803,8 +827,9 @@ pub enum From {
     Tab,
 }
 
-/// [`apply_proposed_change`]'s work, for project `held`.
-pub fn applied(held: &Held, id: u32, from: From) -> Result<String, String> {
+/// [`apply_proposed_change`]'s work, for project `held`: `to` is the place the person picked for
+/// an export of skills.
+pub fn applied(held: &Held, id: u32, from: From, to: Option<&Path>) -> Result<String, String> {
     let one = held.proposals().get(id).ok_or(WAITS_NO_MORE)?;
     let root = held.root();
     let persona = held
@@ -820,13 +845,14 @@ pub fn applied(held: &Held, id: u32, from: From) -> Result<String, String> {
     } else {
         STALE_SAID
     };
-    match apply_in(
+    match apply_in_to(
         root,
         &one,
         persona.as_deref(),
         &audit,
         held.proposals().applying(),
         from,
+        to,
     ) {
         Ok(said) => {
             held.proposals().take(id);
@@ -901,6 +927,20 @@ pub fn apply_in(
     lock: &Mutex<()>,
     from: From,
 ) -> Result<String, Refusal> {
+    apply_in_to(root, one, persona, audit, lock, from, None)
+}
+
+/// [`apply_in`], with `to`, the place the person picked for an export of skills: the only place
+/// one is written.
+pub fn apply_in_to(
+    root: &Path,
+    one: &Proposal,
+    persona: Option<&str>,
+    audit: &dyn Fn(&proposed::Applied<'_>) -> Result<(), String>,
+    lock: &Mutex<()>,
+    from: From,
+    to: Option<&Path>,
+) -> Result<String, Refusal> {
     if one.stale {
         return Err(Refusal::Stale);
     }
@@ -911,7 +951,7 @@ pub fn apply_in(
         return apply_limit(one, change, persona, audit, lock);
     }
     if let Some(skills) = &one.skills {
-        return apply_skills(root, one, skills, persona, audit, lock);
+        return apply_skills(root, one, skills, persona, audit, lock, to);
     }
     let judged = if one.session == BY_PURLIS {
         proposed::proposable_by_purlis
@@ -1052,13 +1092,18 @@ pub(crate) fn apply_skills(
     persona: Option<&str>,
     audit: &dyn Fn(&proposed::Applied<'_>) -> Result<(), String>,
     lock: &Mutex<()>,
+    to: Option<&Path>,
 ) -> Result<String, Refusal> {
+    let exports = matches!(skills.change, SetChange::Export { .. });
     let _held = lock.lock().unwrap_or_else(PoisonError::into_inner);
     let after = match skills_now(root, skills) {
         Now::Made { after, .. } => after,
         Now::Stale => return Err(Refusal::Stale),
         Now::Unprepared => return Err(Refusal::Not(proposed::UNPREPARED.to_owned())),
     };
+    if exports && to.is_none() {
+        return Err(Refusal::Not(NO_PLACE_PICKED.to_owned()));
+    }
     let written = proposed::base_of(Some(after.as_bytes())).unwrap_or_default();
     let record = |outcome, why: Option<&str>| {
         audit(&proposed::Applied {
@@ -1070,7 +1115,12 @@ pub(crate) fn apply_skills(
         })
     };
     record(proposed::Outcome::Intent, None).map_err(Refusal::Not)?;
-    let made = crate::skillchange::heard(root, |cx| skills.change.apply(cx));
+    let made = match to.filter(|_| exports) {
+        Some(to) => skills
+            .change
+            .export_to(root, crate::skillchange::built_in().as_deref(), to),
+        None => crate::skillchange::heard(root, |cx| skills.change.apply(cx)).map(drop),
+    };
     let (outcome, why) = match &made {
         Ok(_) => (proposed::Outcome::Applied, None),
         Err(why) => (proposed::Outcome::Failed, Some(why.as_str())),

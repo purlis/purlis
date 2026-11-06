@@ -16,13 +16,17 @@
 
 use std::path::Path;
 
-use purlis_skills::Lifecycle;
+use purlis_skills::{Grant, Lifecycle};
 use serde::{Deserialize, Serialize};
 
-use super::{Act, Member, delete_set, lifecycle_set, one_line, pin_set, review_set, turn_set};
+use super::{
+    Act, Member, Moving, delete_now, delete_set, lifecycle_set, move_set, one_line, pin_set,
+    restore_set, review_set, turn_set,
+};
 use crate::counts::counted;
 use crate::skills::routing::{self, PinnedBy};
-use crate::skills::verbs::{Ctx, Level, find};
+use crate::skills::source;
+use crate::skills::verbs::{Ctx, Deleted, GRANT_NEEDED, Level, deleted, find, needs_grant};
 
 /// The most skills one change names: a source's whole set fits, and an ask stays bounded.
 pub const MOST_SKILLS: usize = 500;
@@ -47,6 +51,24 @@ pub enum SetChange {
     },
     /// Archive each (`archive`), or put it back in use ([`lifecycle_set`]).
     Archive { members: Vec<Member>, archive: bool },
+    /// Bring each back from Deleted, as one commit ([`restore_set`]): each the one deleted skill
+    /// of its name and level the plane lists ([`listed`]).
+    Restore { members: Vec<Member> },
+    /// Take each off Deleted now, the one change to skills with no undo ([`delete_now`]): each
+    /// as [`Self::Restore`] names it.
+    DeleteNow { members: Vec<Member> },
+    /// Move each to `to`, as one commit ([`move_set`]). `grant` is where each that goes into the
+    /// project's skills reaches, in words ([`Grant::from_words`]), and empty where none does.
+    Move {
+        members: Vec<Member>,
+        to: Level,
+        grant: Vec<String>,
+    },
+    /// Write each, and the project's skills it names, outside purlis: a zip, or a folder of skill
+    /// folders. **It names no place** (#5492, the person's choice of 2026-11-06): it is written
+    /// only where the person picks, at their terminal or at Apply in the window
+    /// ([`Self::export_to`]), never where a chat says.
+    Export { members: Vec<Member>, zip: bool },
 }
 
 /// **A change as the person is shown it**: each skill as it is and as the change leaves it, one
@@ -60,24 +82,33 @@ pub struct Shown {
 }
 
 impl SetChange {
-    /// The act its review reads for.
-    pub fn act(&self) -> Act {
-        match self {
+    /// The act its review reads for: `None` for one of skills in Deleted, which have no review
+    /// of a set but their own lines ([`Self::shown`]).
+    fn act(&self) -> Option<Act> {
+        Some(match self {
+            Self::Restore { .. } | Self::DeleteNow { .. } => return None,
             Self::Delete { .. } => Act::Delete,
+            Self::Move { .. } => Act::Move,
+            Self::Export { .. } => Act::Export,
             Self::Turn { on: false, .. } => Act::TurnOff,
             Self::Turn { on: true, .. } => Act::TurnOn,
             Self::Pin { on: true, .. } => Act::Pin,
             Self::Pin { on: false, .. } => Act::Unpin,
             Self::Archive { archive: true, .. } => Act::Archive,
             Self::Archive { archive: false, .. } => Act::Unarchive,
-        }
+        })
     }
 
     /// The skills it names, each at its level: a turn's and a pin's, by name, are the project's
     /// and as found.
     fn members(&self) -> Vec<Member> {
         match self {
-            Self::Delete { members } | Self::Archive { members, .. } => members.clone(),
+            Self::Delete { members }
+            | Self::Archive { members, .. }
+            | Self::Restore { members }
+            | Self::DeleteNow { members }
+            | Self::Move { members, .. }
+            | Self::Export { members, .. } => members.clone(),
             Self::Turn { names, .. } | Self::Pin { names, .. } => names
                 .iter()
                 .map(|name| Member {
@@ -96,14 +127,14 @@ impl SetChange {
     }
 
     fn count(&self) -> usize {
-        match self {
-            Self::Delete { members } | Self::Archive { members, .. } => members.len(),
-            Self::Turn { names, .. } | Self::Pin { names, .. } => names.len(),
-        }
+        self.members().len()
     }
 
     /// **Whether it may be asked at all**: it names a skill, and no more than [`MOST_SKILLS`].
     pub fn checked(&self) -> Result<(), String> {
+        if let Self::Move { grant, .. } = self {
+            granted(grant)?;
+        }
         match self.count() {
             0 => Err("no skill was named, so nothing was changed".to_owned()),
             n if n > MOST_SKILLS => Err(format!(
@@ -119,6 +150,15 @@ impl SetChange {
         let skills = counted(self.count(), "skill", "skills");
         match self {
             Self::Delete { .. } => format!("Delete {skills}"),
+            Self::Restore { .. } => format!("Bring back {skills}"),
+            Self::DeleteNow { .. } => format!("Delete {skills} now, with no undo"),
+            Self::Move { to, .. } => format!("Move {skills} to the {to} skills"),
+            Self::Export { zip, .. } => {
+                format!(
+                    "Export {skills} to a {}",
+                    if *zip { "zip" } else { "folder" }
+                )
+            }
             Self::Turn { workspace, on, .. } => {
                 let state = if *on { "on" } else { "off" };
                 format!("Turn {skills} {state} in {workspace}")
@@ -136,7 +176,7 @@ impl SetChange {
 
     /// **What the person is shown**, read from the plane at `plane` now.
     pub fn shown(&self, plane: &Path) -> Shown {
-        let review = review_set(plane, self.act(), &self.members(), self.workspace(), None);
+        let review = self.reviewed(plane);
         let (mut before, mut after, mut state) = (String::new(), String::new(), String::new());
         for one in &review.skills {
             let label = self.label(&one.member);
@@ -148,7 +188,7 @@ impl SetChange {
             }
             state.push_str(&format!(
                 "{label}\t{now}\t{}\n",
-                copy_digest(plane, &one.member)
+                self.held_as(plane, &one.member)
             ));
         }
         for naming in &review.names {
@@ -170,6 +210,57 @@ impl SetChange {
         }
     }
 
+    /// **Its review**: each skill with why it cannot be part of it, and each left naming one
+    /// that goes. A skill in Deleted is reviewed by whether the plane lists it there.
+    fn reviewed(&self, plane: &Path) -> super::SetReview {
+        let members = self.members();
+        let Some(act) = self.act() else {
+            return super::SetReview {
+                skills: members
+                    .into_iter()
+                    .map(|member| super::ReviewedMember {
+                        cannot: listed(plane, &member).err(),
+                        changed: false,
+                        member,
+                    })
+                    .collect(),
+                names: Vec::new(),
+            };
+        };
+        let mut review = review_set(plane, act, &members, self.workspace(), self.to());
+        if let Self::Move { to, grant, .. } = self {
+            for one in &mut review.skills {
+                if one.cannot.is_none() && grant.is_empty() && needs_grant(&one.member.level, to) {
+                    one.cannot = Some(format!(
+                        "It goes into the project's skills, and the move names no grant: {}.",
+                        GRANT_NEEDED
+                    ));
+                }
+            }
+        }
+        review
+    }
+
+    /// The level a move goes to.
+    fn to(&self) -> Option<&Level> {
+        match self {
+            Self::Move { to, .. } => Some(to),
+            _ => None,
+        }
+    }
+
+    /// What one skill holds as Apply compares it: its copy's digest, or a skill in Deleted's
+    /// entry there.
+    fn held_as(&self, plane: &Path, member: &Member) -> String {
+        match self {
+            Self::Restore { .. } | Self::DeleteNow { .. } => listed(plane, member)
+                .ok()
+                .and_then(|one| serde_json::to_string(&one).ok())
+                .unwrap_or_default(),
+            _ => copy_digest(plane, member),
+        }
+    }
+
     /// One skill's name as its line starts: a delete's and an archive's with its level.
     fn label(&self, member: &Member) -> String {
         let name = one_line(&member.name);
@@ -183,7 +274,7 @@ impl SetChange {
     fn state_of(&self, plane: &Path, member: &Member) -> String {
         let found = find(plane, &member.level, &member.name).ok();
         match self {
-            Self::Delete { .. } => if found.is_some() {
+            Self::Delete { .. } | Self::Move { .. } | Self::Export { .. } => if found.is_some() {
                 "there"
             } else {
                 "not there"
@@ -207,6 +298,12 @@ impl SetChange {
                 Some(Err(_)) => "in a state purlis does not read".to_owned(),
                 None => "not there".to_owned(),
             },
+            Self::Restore { .. } | Self::DeleteNow { .. } => if listed(plane, member).is_ok() {
+                "deleted"
+            } else {
+                "not in Deleted"
+            }
+            .to_owned(),
         }
     }
 
@@ -221,6 +318,10 @@ impl SetChange {
             Self::Archive { archive, .. } => {
                 if *archive { "archived" } else { "in use" }.to_owned()
             }
+            Self::Restore { .. } => "back".to_owned(),
+            Self::DeleteNow { .. } => "gone for good".to_owned(),
+            Self::Move { to, .. } => format!("moved to the {to} skills"),
+            Self::Export { .. } => "exported".to_owned(),
         }
     }
 
@@ -229,13 +330,7 @@ impl SetChange {
     /// review leaves it.
     pub fn apply(&self, cx: &mut Ctx<'_>) -> Result<(), String> {
         self.checked()?;
-        let review = review_set(
-            cx.plane,
-            self.act(),
-            &self.members(),
-            self.workspace(),
-            None,
-        );
+        let review = self.reviewed(cx.plane);
         let kept: Vec<Member> = review
             .skills
             .into_iter()
@@ -264,8 +359,114 @@ impl SetChange {
                     kept.into_iter().map(|one| (one, to.clone())).collect();
                 lifecycle_set(cx, &changes).map(drop)
             }
+            Self::Restore { .. } => {
+                let set = in_deleted(cx.plane, &kept)?;
+                restore_set(cx, &set, None)
+            }
+            Self::Move { to, grant, .. } => {
+                let grant = granted(grant)?;
+                let moves: Vec<Moving> = kept
+                    .into_iter()
+                    .map(|member| Moving {
+                        member,
+                        to: to.clone(),
+                        grant: grant.clone(),
+                    })
+                    .collect();
+                move_set(cx, &moves).map(drop)
+            }
+            Self::Export { .. } => Err(NO_PLACE.to_owned()),
+            Self::DeleteNow { .. } => {
+                let set = in_deleted(cx.plane, &kept)?;
+                let gone = delete_now(cx.plane, &set)?;
+                for why in gone.failed {
+                    cx.warn(format!("not taken off Deleted: {why}"));
+                }
+                let taken = gone.off_the_list + gone.removed;
+                cx.done(format!(
+                    "{} taken off Deleted",
+                    counted(taken, "skill", "skills")
+                ));
+                Ok(())
+            }
         }
     }
+}
+
+/// Why an export is not written by [`SetChange::apply`].
+const NO_PLACE: &str = "An export is written only where the person picks, so nothing was written. \
+                        Pick where in the window, or say where at your terminal.";
+
+impl SetChange {
+    /// **Writes an export to `to`**, a place the person picked that is not there yet: every skill
+    /// its review keeps, and the project's skills they name. Refused for any other change.
+    pub fn export_to(
+        &self,
+        plane: &Path,
+        built_in: Option<&Path>,
+        to: &Path,
+    ) -> Result<(), String> {
+        let Self::Export { zip, .. } = self else {
+            return Err("only an export is written to a place".to_owned());
+        };
+        self.checked()?;
+        let skills: Vec<(Level, String)> = self
+            .reviewed(plane)
+            .skills
+            .into_iter()
+            .filter(|one| one.cannot.is_none())
+            .map(|one| (one.member.level, one.member.name))
+            .collect();
+        if skills.is_empty() {
+            return Err(
+                "None of these skills can be exported, so nothing was written. `purlis skill \
+                 list` shows which are there."
+                    .to_owned(),
+            );
+        }
+        let out = source::gather_set(plane, built_in, &skills, source::Purpose::Export)?;
+        if *zip {
+            source::export_zip(&out, to)
+        } else {
+            source::export_folder(&out, to)
+        }
+    }
+}
+
+/// **The one deleted skill `member` names**, as the plane lists it in Deleted now: refused where
+/// there is none, or more than one of its name and level, which only the window tells apart.
+fn listed(plane: &Path, member: &Member) -> Result<Deleted, String> {
+    let mut found = deleted(plane)
+        .into_iter()
+        .filter(|one| one.level == member.level && one.name == member.name);
+    match (found.next(), found.next()) {
+        (Some(one), None) => Ok(one),
+        (None, _) => Err("It is not in Deleted.".to_owned()),
+        (Some(_), Some(_)) => Err(
+            "It was deleted more than once: choose which in the Skill studio's Deleted list."
+                .to_owned(),
+        ),
+    }
+}
+
+/// A move's grant in words, read: `None` where it names none.
+fn granted(words: &[String]) -> Result<Option<Grant>, String> {
+    if words.is_empty() {
+        return Ok(None);
+    }
+    Grant::from_words(words)
+        .map(Some)
+        .map_err(|why| format!("{why}, so nothing was moved"))
+}
+
+/// [`listed`] of each of `members`.
+fn in_deleted(plane: &Path, members: &[Member]) -> Result<Vec<Deleted>, String> {
+    members
+        .iter()
+        .map(|member| {
+            listed(plane, member).map_err(|why| format!("{}: {why}", one_line(&member.name)))
+        })
+        .collect()
 }
 
 /// Whose chats `by` names, in words.

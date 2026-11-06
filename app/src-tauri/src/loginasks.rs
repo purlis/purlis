@@ -409,10 +409,12 @@ pub fn before_the_login(
     if held.chats().sandboxed_by_its_host(session) {
         return None;
     }
-    let (asker, unconfined) = held.chats().login_asker(held.root(), session)?;
-    let persona = asker
-        .persona
-        .clone()
+    let (_, unconfined) = held.chats().login_asker(held.root(), session)?;
+    // Whose login grants it reads, and whose tools Always writes in: a narrowed chat's are the
+    // persona it was narrowed to (the decision of 2026-11-06).
+    let persona = held
+        .chats()
+        .secret_grants_of(session)
         .filter(|persona| !persona.is_empty())?;
     if pool.is_some() && unconfined {
         return None;

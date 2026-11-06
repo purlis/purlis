@@ -155,12 +155,15 @@ describe("the window over a day", () => {
   });
 
   it("names every session it is about to end when it is asked to quit", async () => {
+    // Read before the question: the strip's "N more" is a menu, and the Escape that closes it
+    // would answer the question (#5341: at the 160px floor this strip hides tabs).
+    const names = await tabNames();
     await inTheWindow("ask to quit");
 
     const warning = await $('[role="alertdialog"]');
     await warning.waitForExist({ timeout: 10_000 });
     await expect(warning).toHaveText(expect.stringContaining("Quitting ends 2 chats"));
-    for (const name of await tabNames()) {
+    for (const name of names) {
       await expect(warning).toHaveText(expect.stringContaining(name));
     }
   });

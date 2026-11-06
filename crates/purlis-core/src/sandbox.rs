@@ -4346,6 +4346,13 @@ impl Applied {
                         .map(|name| (*name).to_owned())
                 })
                 .collect(),
+            // The one git folder in a chat's folders its sandbox holds whole ([`chain`]).
+            held_git: matches!(*self.form, Form::ClaudeCode(_))
+                .then(|| clones_git_held(&self.root, cwd))
+                .flatten()
+                .map(|denial| denial.path)
+                .into_iter()
+                .collect(),
         }
     }
 

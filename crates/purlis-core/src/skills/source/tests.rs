@@ -1720,7 +1720,7 @@ fn a_reference_to_a_built_in_skills_name_is_met_and_brings_nothing_along() {
         .find(|s| s.name == "purlis-secrets")
         .unwrap();
     let clash = held.clash.as_ref().unwrap();
-    assert_eq!(clash.held_by, "purlis-secrets belongs to purlis");
+    assert_eq!(clash.held_by, "the name purlis-secrets belongs to purlis");
     let (all, _) = whole_and_there(review_all(root, &source, &project).unwrap());
     assert_eq!(all.skills.len(), 3, "deploy, notify and purlis-secrets");
     let (made, _) = on(root, |cx| {

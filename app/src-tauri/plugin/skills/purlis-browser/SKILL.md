@@ -58,7 +58,8 @@ screenshot, and the fields purlis filled are blanked. From then on that browser 
 login's site alone; call `browser_new` for any other site. Where it signs in on another host,
 the browser keeps reaching that host too, so the site's own redirects and token refreshes work,
 but you may read or act on that host's pages only while it signs in: until the browser is back
-on the login's page, for two minutes at most. A step that host asks for after the password is
+on the login's page, for two minutes at most, and only on the page the login ran on and the
+windows it opens. Another tab stays kept off that host. A step that host asks for after the password is
 yours or the user's to take in that time. Outside it, a call on that host's page is refused, and
 where the page asks to sign in again, call `browser_login` again. The login goes into the browser
 you name, or the one you're using. A browser that holds it, on a page of its site that asks for no sign-in, answers "already logged

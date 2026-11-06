@@ -480,6 +480,15 @@ impl Browsers for EngineBrowsers {
         if let Some(sites) = &sites {
             let bound = sites.bound().clone();
             browser.keep_off(Arc::new(move |address: &str| kept_off_at(&bound, address)));
+            // During a sign-in, on every page but its own and the windows related to it (the
+            // person's ruling of 2026-11-06).
+            let bound = sites.bound().clone();
+            browser.keep_sign_in_to_its_page(Arc::new(move |address: &str| {
+                let (host, port) = judge::site_of(address)?;
+                bound
+                    .signing_in_at(&host, port)
+                    .map(|site| site.to_string())
+            }));
         }
         // A click or Back the proxy refused under a fill's hold answers why (#5150).
         let bound = proxy.bound().clone();
@@ -958,6 +967,8 @@ fn field_said(field: drive::FieldInfo) -> wire::FieldSaid {
             drive::FieldKind::Editable => wire::FieldKind::Editable,
             drive::FieldKind::Other => wire::FieldKind::Other,
         },
+        by_get: Some(field.by_get),
+        payment: Some(field.payment),
     }
 }
 
@@ -1319,9 +1330,15 @@ impl FillHolder {
     pub fn of(proxy: &Arc<ReachProxy>, origin: &str) -> Result<Self, String> {
         let (host, port) = judge::site_of(origin)
             .ok_or_else(|| format!("{origin} is not a site purlis can hold a browser to"))?;
+        let site = Site::of(&host, port);
+        // A browser bound to a login takes no secret for another site: refused before anything
+        // is looked for or filled.
+        if let Some(why) = proxy.bound().takes_no_fill_for(&site) {
+            return Err(why);
+        }
         Ok(Self {
             proxy: Arc::downgrade(proxy),
-            site: Site::of(&host, port),
+            site,
             also: Vec::new(),
             sites: None,
             number: Mutex::new(None),
@@ -1384,7 +1401,7 @@ impl drive::FillHold for FillHolder {
 
     fn may_leave_for(&self, address: &str, chain_began: bool) -> drive::Leaving {
         match self.sites.as_ref().and_then(std::sync::Weak::upgrade) {
-            Some(sites) => sites.may_leave_for(address, chain_began),
+            Some(sites) => sites.may_leave_from(&self.site, address, chain_began),
             None => drive::Leaving::No {
                 why: format!(
                     "purlis stopped this page leaving {}: this browser was started with no \
@@ -1784,7 +1801,8 @@ pub fn kept_off_said(site: &str, asks_to_sign_in: bool) -> String {
     };
     format!(
         "nothing was read or sent: this is a page of {site}, the site this browser signs in on, \
-         and you may read or act on its pages only while browser_login signs in. {then}"
+         and you may read or act on its pages only while browser_login signs in, on the page it \
+         signs in on and the windows that page opened. {then}"
     )
 }
 
@@ -1895,7 +1913,47 @@ impl EngineScreen {
                  is brought in only while browser_login signs in"
             )));
         }
+        // One from no site purlis can tell (a sandboxed frame's, say) may be that site's too
+        // (the steward's decision on the person's rulings of 2026-11-06).
+        if one.origin.is_none()
+            && let Some(site) = self
+                .sites
+                .as_ref()
+                .and_then(|sites| sites.bound().keeps_off())
+        {
+            return Err(NotActed::Refused(format!(
+                "download {download} came from no site purlis can tell, and this browser signs in \
+                 on {site}, so it may be that site's: it is brought in only while browser_login \
+                 signs in"
+            )));
+        }
         let from = self.data.join(DOWNLOADS).join(&one.file);
+        // What purlis filled into the browser is kept out of what the chat reads, a file it
+        // brings in among it (#5115), and so is a long text the person typed in it (the
+        // person's ruling of 2026-11-06).
+        match browser.holds_kept_out(&from) {
+            Ok(drive::DownloadHolds::Nothing) => {}
+            Ok(drive::DownloadHolds::Filled) => {
+                return Err(NotActed::Refused(format!(
+                    "download {download} holds a secret purlis filled into this browser, which is \
+                     kept out of what you read, so it is not brought in: ask the person to save \
+                     it if it is needed"
+                )));
+            }
+            Ok(drive::DownloadHolds::Typed) => {
+                return Err(NotActed::Refused(format!(
+                    "download {download} holds something the person typed into this browser, \
+                     which is kept out of what you read, so it is not brought in: ask the person \
+                     to save it if it is needed"
+                )));
+            }
+            Err(why) => {
+                return Err(NotActed::Refused(format!(
+                    "purlis could not read download {download} to check it holds nothing kept \
+                     out of what you read ({why}), so it is not brought in"
+                )));
+            }
+        }
         let bytes = saved_file(project, &from, Path::new(into), to).map_err(NotActed::Refused)?;
         let id = CallId::new(format!("kept:{download}"))
             .map_err(|why| NotActed::Refused(why.to_string()))?;
@@ -2174,6 +2232,7 @@ impl Screen for EngineScreen {
             key: fill.key.clone(),
             value: zeroize::Zeroizing::new(fill.value.expose().to_owned()),
             multi_line: fill.multi_line,
+            under_a_grant: fill.under_a_grant,
         };
         // It waits on the engine: made outside the lock, as an act is.
         let held = {

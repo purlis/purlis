@@ -318,6 +318,8 @@ impl Browser {
             lock(&self.inner.state).current = Some(target.clone());
             target
         };
+        // The page a sign-in this login opens is kept to, with the windows related to it.
+        *lock(&self.inner.sign_in_page) = Some(target.clone());
         let within = self.inner.limits.login_within;
         let deadline = Instant::now() + within;
         // Whether the page shows its form: unknown (`None`) while it cannot be read.
@@ -411,6 +413,7 @@ impl Browser {
         } else {
             self.clean_load(&target, login, &|page| shows_form(self, page))?
         };
+        *lock(&self.inner.sign_in_page) = Some(target.clone());
         // A page that opened since runs no more than the rest.
         if let Some(held) = &mut still
             && let Err(why) = self.hold_still_any_new(&target, held)

@@ -205,11 +205,15 @@ function Lent({ children }: { children: ReactNode }) {
               level: { at: "project", local: false },
               job: "draft",
               done: false,
+              started: null,
+              finished: null,
             },
           },
         ],
         show: () => undefined,
         openSkill: () => undefined,
+        openDraft: () => undefined,
+        stop: () => undefined,
       }}
     >
       <ChatSkillSetsHere.Provider value={{ [SESSION]: OVER }}>

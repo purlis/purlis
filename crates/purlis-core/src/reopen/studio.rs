@@ -3,7 +3,8 @@
 
 //! **What the Skill studio started a chat for** (#5185): the skill, its level and the job, kept
 //! on the chat's own record so the link outlives a relaunch. The chat's header names it, and the
-//! skill's page says the chat while it runs.
+//! skill's page says the chat while it runs. Once the chat closes, [`super::studio_chats`] keeps
+//! it for the skill's Runs.
 //!
 //! **The window's state, kept for it.** Nothing starts, ends or allows anything by it: a value
 //! off the file that does not read whole is no link, and the chat comes back as any other.
@@ -21,6 +22,66 @@ pub struct StudioJob {
     /// **Whether the job is done**: the chat wrote its draft (#5185). Set once and never unset,
     /// so a draft the person then accepts or discards leaves the chat done, not running again.
     pub done: bool,
+    /// **When the studio started the chat** (#5248), as an RFC 3339 time: what the Grades
+    /// card's running job counts from. `None` in a record written before it.
+    pub started: Option<String>,
+    /// **When its job stopped running** (#5248): its draft came, or its program ended. Taken
+    /// out again where a later start runs the chat once more and it is not [`Self::done`].
+    pub finished: Option<String>,
+}
+
+impl StudioJob {
+    /// The job `job` of `skill` at `level`, started `now`: not done, not finished.
+    pub fn new(
+        skill: Option<String>,
+        level: Level,
+        job: StudioWork,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> StudioJob {
+        StudioJob {
+            skill,
+            level,
+            job,
+            done: false,
+            started: Some(time(now)),
+            finished: None,
+        }
+    }
+
+    /// Marks its job stopped `now`, where it had not already: a second stop keeps the first's
+    /// time. Whether anything changed.
+    pub fn finish(&mut self, now: chrono::DateTime<chrono::Utc>) -> bool {
+        if self.finished.is_some() {
+            return false;
+        }
+        self.finished = Some(time(now));
+        true
+    }
+
+    /// Takes the stop back, as a later start of the chat runs it once more, unless its draft
+    /// came: a done job stays finished. Whether anything changed.
+    pub fn runs_again(&mut self) -> bool {
+        if self.done || self.finished.is_none() {
+            return false;
+        }
+        self.finished = None;
+        true
+    }
+}
+
+/// `now` as the record keeps a time: RFC 3339, in UTC, to the second.
+pub fn time(now: chrono::DateTime<chrono::Utc>) -> String {
+    now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+}
+
+/// Whether `said` reads as an RFC 3339 time, as the record keeps one.
+pub(super) fn reads_as_time(said: &str) -> bool {
+    chrono::DateTime::parse_from_rfc3339(said).is_ok()
+}
+
+/// `said` where it reads as an RFC 3339 time, and `None` for anything else.
+fn a_time(said: String) -> Option<String> {
+    reads_as_time(&said).then_some(said)
 }
 
 /// The studio's jobs a chat is started for.
@@ -58,6 +119,11 @@ impl StudioWork {
             .map_or("draft", |(_, word)| word)
     }
 
+    /// Every job, in the record's order.
+    pub fn all() -> impl Iterator<Item = StudioWork> {
+        Self::WORDS.iter().map(|(work, _)| *work)
+    }
+
     /// The job `word` names, or `None` for a word that names none.
     pub fn read(word: &str) -> Option<StudioWork> {
         Self::WORDS
@@ -67,8 +133,16 @@ impl StudioWork {
     }
 }
 
-/// [`StudioJob`] as `reopen.json` keeps it: `{"job", "skill", "at", "name", "local"}`.
-#[derive(serde::Serialize, serde::Deserialize)]
+/// **A job is written as its word** ([`StudioWork::word`]), as the record and the window name it.
+impl serde::Serialize for StudioWork {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.word())
+    }
+}
+
+/// [`StudioJob`] as `reopen.json` keeps it: `{"job", "skill", "at", "name", "local", "done",
+/// "started", "finished"}`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(super) struct StudioOnDisk {
     job: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -82,6 +156,10 @@ pub(super) struct StudioOnDisk {
     local: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     done: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    started: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    finished: Option<String>,
 }
 
 impl StudioOnDisk {
@@ -98,6 +176,8 @@ impl StudioOnDisk {
             name: name.to_owned(),
             local: job.level.local,
             done: job.done,
+            started: job.started.clone(),
+            finished: job.finished.clone(),
         }
     }
 
@@ -122,6 +202,8 @@ impl StudioOnDisk {
             level: level.local(self.local),
             job,
             done: self.done,
+            started: self.started.and_then(a_time),
+            finished: self.finished.and_then(a_time),
         })
     }
 }

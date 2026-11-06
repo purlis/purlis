@@ -34,6 +34,8 @@ fn one_line_on(origin: &str) -> FieldSaid {
         origin: Some(origin.into()),
         label: "API key".into(),
         kind: FieldKind::OneLine,
+        by_get: Some(false),
+        payment: Some(false),
     }
 }
 
@@ -97,6 +99,7 @@ fn allowed_as(
             value: Secret::new(VALUE.into()),
             multi_line,
             also: vec!["https://other.example.test".into()],
+            under_a_grant: false,
         })
     }
 }
@@ -180,6 +183,7 @@ fn a_2fa_code_is_asked_for_as_one_and_only_what_the_vault_side_made_reaches_the_
             value: Secret::new("287082".into()),
             multi_line: false,
             also: Vec::new(),
+            under_a_grant: false,
         })
     };
 
@@ -519,6 +523,7 @@ fn a_browser_taken_over_while_the_person_is_asked_is_filled_nothing() {
             value: Secret::new(VALUE.into()),
             multi_line: false,
             also: Vec::new(),
+            under_a_grant: false,
         })
     };
 

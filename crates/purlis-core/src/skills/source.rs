@@ -154,17 +154,7 @@ impl Remote {
                 .unwrap_or_default()
                 .trim_end_matches(".git"),
         };
-        let spelled: Vec<String> = word
-            .to_ascii_lowercase()
-            .split(|c: char| !c.is_ascii_alphanumeric())
-            .filter(|part| !part.is_empty())
-            .map(str::to_owned)
-            .collect();
-        if spelled.is_empty() {
-            "source".to_owned()
-        } else {
-            spelled.join("-")
-        }
+        spelled(word)
     }
 
     /// Checks it, as a sentence where it cannot be used. `committed` holds it to what a file
@@ -304,6 +294,23 @@ fn branch_problem(branch: &str) -> Option<String> {
         && !branch.contains("//")
         && !branch.contains("/.");
     (!plain).then(|| format!("{branch:?} is not a branch name purlis reads"))
+}
+
+/// **`word` spelled as the start of a skill's name**: lowercase, each run of anything but a
+/// letter or a digit a hyphen, `source` where nothing is left. What [`Remote::label`] answers,
+/// and how a Deleted group's `from` starts the name it offers (#5457).
+pub fn spelled(word: &str) -> String {
+    let spelled: Vec<String> = word
+        .to_ascii_lowercase()
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|part| !part.is_empty())
+        .map(str::to_owned)
+        .collect();
+    if spelled.is_empty() {
+        "source".to_owned()
+    } else {
+        spelled.join("-")
+    }
 }
 
 #[cfg(test)]
