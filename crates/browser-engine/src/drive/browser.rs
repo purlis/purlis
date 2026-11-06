@@ -4113,13 +4113,16 @@ impl Browser {
         let (mut session, mut x, mut y) = (session.to_owned(), x, y);
         // Each step goes one frame deeper, and no page holds more frames than it has.
         for _ in 0..=self.frame_count(target) {
+            // The point is in the viewport input is dispatched in; the engine finds what is at a
+            // point of the document, which the document's scroll moves.
+            let (left, top) = self.scrolled(&session).ok_or_else(refused)?;
             let hit = self
                 .devtools()
                 .call(
                     "DOM.getNodeForLocation",
                     json!({
-                        "x": x.floor() as i64,
-                        "y": y.floor() as i64,
+                        "x": (x + left).floor() as i64,
+                        "y": (y + top).floor() as i64,
                         "includeUserAgentShadowDOM": true,
                         "ignorePointerEventsNone": true,
                     }),
@@ -4186,6 +4189,14 @@ impl Browser {
             (session, x, y) = (inner, x - content[0], y - content[1]);
         }
         Err(refused())
+    }
+
+    /// How far the document on `session` is scrolled, in CSS pixels: what takes a point of its
+    /// viewport to the point of the document `DOM.getNodeForLocation` is asked for. `None` where
+    /// the engine does not say.
+    pub(super) fn scrolled(&self, session: &str) -> Option<(f64, f64)> {
+        self.viewport_of(session, true)
+            .map(|layout| (layout.x, layout.y))
     }
 
     /// How many frames `target`'s page holds, as the driver knows them.
@@ -5793,9 +5804,19 @@ impl Inner {
             let shown = event.session_id.as_deref().and_then(|session| {
                 let state = lock(&self.state);
                 let target = state.page_of_session(session)?;
-                Some((state.aim(&target)?, state.document_address(&target)?))
+                Some((
+                    state.aim(&target)?,
+                    state.document_address(&target)?,
+                    state.every_kept(),
+                ))
             });
-            if let Some((aim, address)) = shown {
+            if let Some((aim, mut address, kept)) = shown {
+                // Where the page's address holds a text kept out, it is named by none: what a
+                // view is told of it is written where a chat can read it (the person's ruling of
+                // 2026-11-06). Worked out with no lock held.
+                if !kept.is_empty() && Scrub::of(&kept).holds(&address) {
+                    address.clear();
+                }
                 self.cast
                     .frame(&event.params, event.session_id.as_deref(), aim, address);
             }

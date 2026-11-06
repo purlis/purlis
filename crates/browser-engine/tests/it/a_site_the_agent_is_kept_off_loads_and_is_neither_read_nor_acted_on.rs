@@ -91,7 +91,10 @@ fn a_click_on_a_scrolled_page_where_a_frame_of_the_site_is_drawn_is_refused() {
         std::thread::sleep(Duration::from_millis(100));
     }
     std::thread::sleep(Duration::from_millis(500));
-    let button = ref_on(&find(&browser, "Press under the frame"), "Press under the frame");
+    let button = ref_on(
+        &find(&browser, "Press under the frame"),
+        "Press under the frame",
+    );
 
     assert_eq!(
         refused(&browser, Call::Click { target: button }),
