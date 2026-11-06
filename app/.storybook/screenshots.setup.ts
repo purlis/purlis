@@ -99,11 +99,55 @@ async function picture(context: TestContext): Promise<void> {
   await document.fonts.ready;
   const probing = story.id.includes("over-a-real-terminal");
   if (probing) probe5463("before", story.id, cell, frame);
+  const watching = probing ? watch5463(frame) : undefined;
   try {
     await expect.element(page.elementLocator(frame)).toMatchScreenshot(pictureOf(story.id, cell));
   } finally {
-    if (probing) probe5463("after", story.id, cell, frame);
+    if (probing) {
+      const changes = watching?.();
+      console.log("PROBE-5463-CHANGES " + JSON.stringify({ id: story.id, cell, changes }));
+      probe5463("after", story.id, cell, frame);
+    }
   }
+}
+
+/** PROBE (#5463, temporary): every frame in which a rect of the story's parts changed, until
+ *  stopped. */
+function watch5463(frame: Element): () => unknown[] {
+  const parts = [
+    frame,
+    frame.querySelector(".pane-frame"),
+    frame.querySelector(".pane-top"),
+    frame.querySelector(".waiting-strip"),
+    frame.querySelector('[data-testid="terminal"]'),
+  ];
+  const read = () =>
+    parts
+      .map((e) => {
+        if (!e) return "-";
+        const b = e.getBoundingClientRect();
+        return `${b.y},${b.height}`;
+      })
+      .join(" ");
+  const changes: unknown[] = [];
+  let last = read();
+  changes.push({ t: 0, at: last, scroll: window.scrollY });
+  const began = performance.now();
+  let going = true;
+  const tick = () => {
+    if (!going) return;
+    const now = read();
+    if (now !== last)
+      changes.push({ t: Math.round(performance.now() - began), at: now, scroll: window.scrollY });
+    last = now;
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+  return () => {
+    going = false;
+    changes.push({ t: Math.round(performance.now() - began), end: read() });
+    return changes;
+  };
 }
 
 /** PROBE (#5463, temporary): where the frame and what it holds stand, to the fraction. */

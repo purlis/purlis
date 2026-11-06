@@ -11,47 +11,6 @@ permissions:
   contents: read
 
 jobs:
-  # #5454: the old shape (a click that closes its own page) and the new one (the opener closes
-  # it), each many times, as they are and with the engine's answers to mouse events held back
-  # while later messages are read.
-  hold:
-    name: probe hold (${{ matrix.late }} ms late)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 40
-    strategy:
-      fail-fast: false
-      matrix:
-        late: ["0", "500"]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/rust-toolchain
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          save-if: false
-      - run: mkdir -p app/dist
-      - name: Build
-        run: cargo test -p purlis-browser-engine --test it --no-run --locked
-      - name: Run each shape 40 times
-        env:
-          LATE: ${{ matrix.late }}
-        run: |
-          set +e
-          bin=$(ls -t target/debug/deps/it-* | grep -v '\.d$' | head -1)
-          for name in probe_old_a_closed_page_ends_the_hold a_closed_page_ends_the_hold; do
-            failed=0
-            for i in $(seq 1 40); do
-              if [ "$LATE" != "0" ]; then export PURLIS_PROBE_LATE_MOUSE_MS=$LATE; fi
-              out=$("$bin" --exact "a_filled_secret_holds_its_browser_while_its_page_lives::$name" --test-threads 1 2>&1)
-              if [ $? -ne 0 ]; then
-                failed=$((failed+1))
-                echo "$out" | grep -E "panicked|acted in part|detached" | head -3
-              fi
-            done
-            echo "::notice title=$name, $LATE ms late::$failed of 40 failed"
-          done
-
   image:
     runs-on: ubuntu-24.04
     outputs:
@@ -72,8 +31,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        how: [alone, shard]
-        rep: [1, 2, 3]
+        how: [alone, loaded]
+        rep: [1, 2, 3, 4]
     container:
       image: ${{ needs.image.outputs.image }}
       options: --init --ipc=host
@@ -100,8 +59,12 @@ jobs:
         run: |
           set +e
           mkdir -p "$RUNNER_TEMP/probe"
-          if [ "$HOW" = alone ]; then
-            for i in $(seq 1 8); do
+          if [ "$HOW" = loaded ]; then
+            # CPU load beside the browser, to widen any race in what the picture waits for.
+            for n in $(seq 1 "$(nproc)"); do (while :; do :; done) & done
+          fi
+          if [ "$HOW" = alone ] || [ "$HOW" = loaded ]; then
+            for i in $(seq 1 12); do
               npx vitest run --project "stories * (webkit)" src/WaitingStrip.stories.tsx 2>&1 | tee -a "$RUNNER_TEMP/probe/log.txt" | grep -E "PROBE-5463|FAIL|dimensions"
             done
           else
