@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { ReviewClash } from "./bindings";
 import { capitalised } from "./saving";
 import { Choice, SettingRow } from "./settings/components";
@@ -184,6 +184,14 @@ function NameTakenChoice({
   busy: boolean;
   onSettle: (change: Settling) => void;
 }) {
+  const renaming = settling?.how === "rename";
+  const field = useRef<HTMLDivElement>(null);
+  // What the choice reveals comes into sight as it appears, so the next Tab, onto the field,
+  // lands where it can be seen: never under a review's bar (WCAG 2.4.11), which WebKit would
+  // otherwise leave it under.
+  useLayoutEffect(() => {
+    if (renaming) field.current?.scrollIntoView?.({ block: "nearest" });
+  }, [renaming]);
   return (
     <div className="skill-clash" data-testid={`clash-${one.name}`}>
       <SettingRow
@@ -206,14 +214,16 @@ function NameTakenChoice({
           />
         )}
       />
-      {settling?.how === "rename" && (
-        <NewNameField
-          one={one}
-          value={newName(one, settling.name)}
-          others={others}
-          busy={busy}
-          onChange={(name) => onSettle({ name })}
-        />
+      {renaming && (
+        <div ref={field}>
+          <NewNameField
+            one={one}
+            value={newName(one, settling.name)}
+            others={others}
+            busy={busy}
+            onChange={(name) => onSettle({ name })}
+          />
+        </div>
       )}
     </div>
   );
