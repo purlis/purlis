@@ -826,7 +826,18 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 Ok(1)
             }
             None => {
-                voice::err(FROM_A_CHAT);
+                // A turn in a workspace rewrites its manifest, which a sandboxed chat is told it
+                // does not write (#2046): that sentence, where it is the one that holds.
+                let manifest = matches!(
+                    &command,
+                    SkillCommand::Grant {
+                        workspace: Some(_),
+                        ..
+                    }
+                )
+                .then(|| crate::brokered::manifest_refused("skill grant --on/--off"))
+                .flatten();
+                voice::err(manifest.unwrap_or_else(|| FROM_A_CHAT.to_owned()));
                 Ok(1)
             }
         };
