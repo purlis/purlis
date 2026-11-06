@@ -347,6 +347,50 @@ fn a_hunk_discarded_on_a_turns_diff_goes_back_as_the_turn_started_and_the_rest_s
     assert!(refused.to_string().contains("'ten.txt'"), "{refused}");
 }
 
+/// The flake of the test above, made to happen every time: the operator's write before the turn
+/// lands in the tick the piece's index was written in, at the same size, so its stat is what the
+/// index holds. git reads such a file again ("racy git") only while the index it is read from is
+/// no newer than the file, so the turn's start is staged in a copy as old as the folder's index.
+/// The tick is put seconds back, because a git built without nanosecond stamps calls every file
+/// of the same second racy. ctime is not trusted here because a test cannot set it; on Linux's
+/// coarse clock it matches too, which is how CI met it. It fails only where `std::fs::copy` gives
+/// the copy a time of its own, as on Linux: macOS's clones the file, time and all.
+#[test]
+fn a_file_written_in_its_indexs_own_tick_at_the_same_size_is_in_the_turns_start() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    let piece = cut(&f, &[("ten.txt", TEN)]);
+    git(&piece, &["config", "core.trustctime", "false"], None);
+    let index = PathBuf::from(
+        git(
+            &piece,
+            &["rev-parse", "--path-format=absolute", "--git-path", "index"],
+            None,
+        )
+        .trim(),
+    );
+    let tick = std::time::SystemTime::now() - std::time::Duration::from_secs(10);
+    let written_at_the_tick = |path: &Path| {
+        std::fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(tick)
+            .unwrap();
+    };
+    // The index holds the file as written at the tick, and is itself newer, so nothing is racy.
+    written_at_the_tick(&piece.join("ten.txt"));
+    git(&piece, &["update-index", "--refresh"], None);
+    // The operator's write, at the same size, in the tick the index was written in.
+    write(&piece, "ten.txt", "A\nb\nc\nd\ne\nf\ng\nh\ni\nj\n");
+    written_at_the_tick(&piece.join("ten.txt"));
+    written_at_the_tick(&index);
+
+    let number = a_turn(&f, || {});
+
+    assert_eq!(against(&piece, &start_of(number)), "");
+}
+
 #[test]
 fn a_file_the_turn_added_goes_and_one_it_deleted_comes_back_when_their_hunks_are_discarded() {
     purlis_core::unsteered!();
