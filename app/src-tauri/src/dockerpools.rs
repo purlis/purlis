@@ -212,6 +212,26 @@ pub struct PoolVersion {
     /// could not be read.
     #[specta(optional)]
     pub suspends: Option<PoolSuspends>,
+    /// **The projects an older runner waits on to bring its work back** (#5461): a draining
+    /// runner stays until each has fetched what its chats left there (#5393). Empty where none
+    /// waits.
+    pub owed: Vec<PoolOwed>,
+    /// Why purlis could not read which projects those are, shown safely; none where it could.
+    pub owed_why: Option<String>,
+}
+
+/// **A project an older runner of a pool waits on** (#5461): it still has to bring back what its
+/// chats left there, and only an open project does.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolOwed {
+    /// The path this machine keeps the project under.
+    pub path: String,
+    /// What to call it: the directory's own name.
+    pub name: String,
+    /// When it was last opened on this machine, in seconds since the epoch.
+    pub opened: u64,
+    /// Whether it is open in a window now, so it brings the work back on its own.
+    pub open_now: bool,
 }
 
 /// **How a pool's runner was made to suspend itself** (#3717), which its row says where it is
@@ -765,16 +785,21 @@ fn left_behind_said(runner: &str, found: u32, left: u32, seen: u32) -> String {
 /// **Which version the pool `name`'s runner runs, against this desktop's** (#2749).
 #[tauri::command]
 #[specta::specta]
-pub async fn docker_pool_version(name: String) -> Result<PoolVersion, String> {
+pub async fn docker_pool_version(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    name: String,
+) -> Result<PoolVersion, String> {
     #[cfg(unix)]
     {
+        let open = planes.roots_open();
         crate::off_the_window("asking a pool's runner its version", move || {
-            version_on(&Machine::here(&config_root()?)?, &name)
+            version_on(&Machine::here(&config_root()?)?, &name, &open)
         })
         .await
     }
     #[cfg(not(unix))]
     {
+        let _ = planes;
         Err(NOT_HERE.to_owned())
     }
 }
@@ -810,8 +835,12 @@ fn is_a_cluster_pool(config: &std::path::Path, name: &str) -> Result<bool, Strin
 }
 
 #[cfg(unix)]
-/// [`docker_pool_version`], on `machine`.
-pub fn version_on(machine: &Machine, name: &str) -> Result<PoolVersion, String> {
+/// [`docker_pool_version`], on `machine`, where the projects at `open` are open in a window.
+pub fn version_on(
+    machine: &Machine,
+    name: &str,
+    open: &[std::path::PathBuf],
+) -> Result<PoolVersion, String> {
     let kept =
         purlis_core::runners::runner_for(&machine.config, name).map_err(|why| why.to_string())?;
     let pool = purlis_core::runners::pools(&machine.config)
@@ -826,6 +855,7 @@ pub fn version_on(machine: &Machine, name: &str) -> Result<PoolVersion, String> 
         .collect();
     let held = older.iter().filter(|kept| kept.held).count();
     let draining = older.len() - held;
+    let (owed, owed_why) = owed_by(&machine.config, &older, open);
     let (runner, why) = version_read(crate::runnerlinks::version_of(machine, &kept));
     Ok(PoolVersion {
         runner,
@@ -842,7 +872,44 @@ pub fn version_on(machine: &Machine, name: &str) -> Result<PoolVersion, String> 
             .ok()
             .flatten()
             .map(suspends_shown),
+        owed,
+        owed_why,
     })
+}
+
+#[cfg(unix)]
+/// **The projects the draining runners `older` wait on** (#5461), each once, as the drain asks
+/// ([`purlis_core::pools::work_owed_from`]): a held runner waits on its conversations and one
+/// already unpaired on nothing, so neither is asked. Why, shown safely, where the records could
+/// not be read.
+pub(crate) fn owed_by(
+    config: &std::path::Path,
+    older: &[purlis_core::runners::Kept],
+    open: &[std::path::PathBuf],
+) -> (Vec<PoolOwed>, Option<String>) {
+    let mut owed: Vec<PoolOwed> = Vec::new();
+    for kept in older.iter().filter(|kept| !kept.held && !kept.unpaired) {
+        let owing = match purlis_core::pools::work_owed_from(config, kept.pool(), kept.name()) {
+            Ok(owing) => owing,
+            Err(why) => return (owed, Some(crate::devices::shown_safely(&why))),
+        };
+        for one in owing {
+            let path = one.plane.display().to_string();
+            if owed.iter().any(|was| was.path == path) {
+                continue;
+            }
+            owed.push(PoolOwed {
+                name: one
+                    .plane
+                    .file_name()
+                    .map_or_else(|| path.clone(), |name| name.to_string_lossy().into_owned()),
+                open_now: open.contains(&one.plane),
+                opened: one.opened,
+                path,
+            });
+        }
+    }
+    (owed, None)
 }
 
 /// **Why adding or removing a pool was refused**, shown safely

@@ -49,6 +49,10 @@ import { PoolProfiles } from "./PoolProfiles";
  * its older runner keeps its chats until they end; a pool of your own image does not, so its
  * row says what to do.
  *
+ * **An older runner that waits on a project says which, and what lets it go** ({@link owedSaid},
+ * #5461): it stays until each project its chats ran for has brought back what they did there,
+ * which only a project open in a window does.
+ *
  * **A project a runner would not hold again is marked here** (#2846): a Notice on the row of
  * each pool its chats run on, in the runner's own words (`<bdi>`, so they cannot turn the
  * sentence around them), until a hold of it is taken. One whose pool this machine cannot name
@@ -168,6 +172,50 @@ export function versionSaid(version: PoolVersion | undefined): string | undefine
     }
   }
   return lines.length === 0 ? undefined : lines.join(" ");
+}
+
+/**
+ * **What a row says of the projects its older runner waits on** (#5461): a draining runner stays
+ * until each project its chats ran for has brought back what they did there, and only a project
+ * open in a window does. Each is named, with what lets the runner go: an open one brings it back
+ * on its own; a closed one says when it was last opened and that opening it brings the work back.
+ * Removing the pool lets the runner go too, and the row says what that costs. Nothing where no
+ * project is owed; why, where purlis could not read which are. `now` is in milliseconds.
+ */
+export function owedSaid(version: PoolVersion | undefined, now: number): string | undefined {
+  if (version === undefined) return undefined;
+  if (version.owed_why !== null) {
+    return `purlis could not read which projects still have work on an older runner, so the runner stays: ${version.owed_why}`;
+  }
+  const owed = version.owed;
+  if (owed.length === 0) return undefined;
+  const lines = [
+    owed.length === 1
+      ? `An older runner stays until project ${owed[0].name} brings back what its chats did there.`
+      : `An older runner stays until ${owed.length} projects bring back what their chats did there: ${owed.map((one) => one.name).join(", ")}.`,
+  ];
+  for (const one of owed) {
+    lines.push(
+      one.open_now
+        ? `${one.name} is open, so purlis brings it back on its own.`
+        : `${one.name} is closed, and was last opened ${openedAgo(one.opened, now)}. Open ${one.name} to bring its work back.`,
+    );
+  }
+  if (owed.some((one) => !one.open_now)) {
+    lines.push(
+      "Removing the pool lets the runner go now too, but anything not brought back is deleted with it.",
+    );
+  }
+  return lines.join(" ");
+}
+
+/** When a project was last opened, `opened` in seconds since the epoch, in whole days before
+ *  `now` in milliseconds: a clock that moved back is today. */
+function openedAgo(opened: number, now: number): string {
+  const days = Math.floor((now / 1000 - opened) / 86_400);
+  if (days < 1) return "today";
+  if (days === 1) return "yesterday";
+  return `${days} days ago`;
 }
 
 /** Whether a pool's link says its runner is on a Docker engine that Docker no longer reaches. */
@@ -464,6 +512,9 @@ function PoolEntry({
       )}
       {versionSaid(version) !== undefined && (
         <p className="ui-setting-help">{versionSaid(version)}</p>
+      )}
+      {owedSaid(version, Date.now()) !== undefined && (
+        <p className="ui-setting-help">{owedSaid(version, Date.now())}</p>
       )}
       {notHeld}
       {profiles}
