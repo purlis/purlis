@@ -4676,7 +4676,9 @@ function footRows(now: Now, session: number, name: string): Offer[] {
           ),
     );
   }
-  const asker = askerRow(now, session, name, listed?.parent ?? now.endedAskedBy?.get(session));
+  // A listed chat says its own lineage; only one the core lists no more is had from its pane.
+  const parent = listed === undefined ? now.endedAskedBy?.get(session) : listed.parent;
+  const asker = askerRow(now, session, name, parent);
   if (asker !== undefined) offers.push(asker);
   if (now.skillStudio)
     offers.push(

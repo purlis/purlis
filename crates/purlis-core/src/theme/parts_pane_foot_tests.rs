@@ -6,7 +6,6 @@
 
 use serde_json::json;
 
-use super::parts;
 use super::*;
 
 #[test]
@@ -74,9 +73,12 @@ fn toned_number_colours() -> Vec<String> {
         .collect()
 }
 
+/// The colours the foot's warning number is drawn in.
+const WARNING: [&str; 2] = ["state.waiting", "state.failed"];
+
 #[test]
 fn the_foot_draws_its_warning_number_in_the_waiting_and_the_failed_colours() {
-    assert_eq!(toned_number_colours(), ["state.waiting", "state.failed"]);
+    assert_eq!(toned_number_colours(), WARNING);
 }
 
 #[test]
@@ -128,7 +130,7 @@ fn a_theme_whose_terminal_hides_the_foot_s_warning_is_warned_by_the_check() {
             _ => None,
         })
         .collect();
-    for front in ["state.waiting", "state.failed"] {
+    for front in WARNING {
         assert!(
             named.contains(&(front, "terminal.background")),
             "{front}: {named:?}"
@@ -151,10 +153,11 @@ fn a_theme_whose_terminal_hides_the_foot_s_warning_is_drawn_as_written() {
 
 #[test]
 fn every_shipped_theme_reads_the_foot_s_warning_on_its_terminal() {
+    let text = check::aa_text(14.0, false);
     for theme in built_ins().iter().chain(&purlis().appearances) {
-        for front in ["state.waiting", "state.failed"] {
+        for front in WARNING {
             let ratio = check::contrast(theme.value(front), theme.value("terminal.background"));
-            assert!(ratio >= 4.5, "{} ({}): {front} {ratio:.2}:1", theme.name, theme.id);
+            assert!(ratio >= text, "{} ({}): {front} {ratio:.2}:1", theme.name, theme.id);
         }
     }
 }
@@ -195,5 +198,25 @@ fn the_foot_s_warning_never_repaints_a_terminal_on_the_other_side_of_the_window(
                 if pair.front == "state.waiting" && pair.back == "terminal.background"
         )),
         "the check names the foot's warning on the light terminal"
+    );
+}
+
+#[test]
+fn only_the_foot_s_warning_is_left_out_of_the_consent_floors() {
+    // Every state, danger and needs-you pair of the check is a consent floor but the two the
+    // foot's number draws: a new one on the terminal is held as the rest are.
+    let consent: Vec<&check::Pair> = floors::pairs().map(|(_, pair)| pair).collect();
+    let left_out: Vec<(&str, &str)> = check::PAIRS
+        .iter()
+        .filter(|pair| ["state.", "danger.", "needs-you."].iter().any(|one| pair.front.starts_with(one)))
+        .filter(|pair| !consent.contains(pair))
+        .map(|pair| (pair.front, pair.back))
+        .collect();
+    assert_eq!(
+        left_out,
+        [
+            ("state.waiting", "terminal.background"),
+            ("state.failed", "terminal.background")
+        ]
     );
 }

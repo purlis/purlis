@@ -263,6 +263,10 @@ describe("a chat's one list (#4753)", () => {
         askable: (session) => session !== 6 && session !== 7,
       });
       expect(unasked.offers.get(FOOT_ROWS.from(7))?.does).toEqual({ verb: "showChat", session: 1 });
+      // A chat the core lists again (a Resume) says its own lineage: listed with no asker, it
+      // came from none, whatever the pane's last path said.
+      const again = footed({ tabs: shown, endedAskedBy: new Map([[3, 1]]) });
+      expect(again.offers.get(FOOT_ROWS.from(3))).toBeUndefined();
       // An asker that has closed has no row to go to: the foot says it in words.
       const closed = footed({ tabs: shown, endedAskedBy: new Map([[7, 9]]) });
       expect(closed.offers.get(FOOT_ROWS.from(7))).toBeUndefined();
