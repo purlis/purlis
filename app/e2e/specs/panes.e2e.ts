@@ -120,12 +120,13 @@ async function tabsOpen(): Promise<number> {
   // more rows than it draws whole, and draws only those in sight (#5501), so a count of the
   // whole list's rows in the document would miss most of them.
   await $("#palette-query").addValue("tab.close");
+  // Narrowed: the query is in, and the list is drawn whole again (no `data-partly`).
   await browser.waitUntil(
     async () =>
-      browser.execute(() =>
-        [...document.querySelectorAll('[id^="palette-row-"]')].every((row) =>
-          row.id.startsWith("palette-row-tab.close:"),
-        ),
+      browser.execute(
+        () =>
+          document.querySelector<HTMLInputElement>("#palette-query")?.value === "tab.close" &&
+          document.querySelector("#palette-rows[data-partly]") === null,
       ),
     { timeout: 10_000, timeoutMsg: "the palette did not narrow to the tabs' closes" },
   );
