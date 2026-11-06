@@ -442,6 +442,11 @@ export const ShortNameInFront: Story = {
       .getByRole("tab", { name: /talk/ })
       .querySelector('[data-part="label"]') as HTMLElement;
     await expect(name.scrollWidth).toBeLessThanOrEqual(name.clientWidth);
+    // Nor a short name behind it: the room kept for its × costs a tab with room none of its name.
+    const behind = canvas
+      .getByRole("tab", { name: /steward 1/ })
+      .querySelector('[data-part="label"]') as HTMLElement;
+    await expect(behind.scrollWidth).toBeLessThanOrEqual(behind.clientWidth);
     expect(name.getBoundingClientRect().right).toBeLessThanOrEqual(
       closerOf(canvas, /talk/).getBoundingClientRect().left,
     );
