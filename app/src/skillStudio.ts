@@ -203,6 +203,8 @@ export type SourcesAt =
   | { at: "update"; source: string; label: string; skill: string }
   | { at: "choose"; source: string; label: string; ticked?: readonly string[] }
   | { at: "install-all"; source: string; label: string; skills: readonly string[] }
+  // Review updates… (#5354): every update waiting from the source, on one page.
+  | { at: "set-update"; source: string; label: string }
   // Delete all… and Turn all off… or on… (#5331): the tick list, then the one review.
   | {
       at: "set-choose";

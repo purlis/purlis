@@ -18,6 +18,7 @@ import { inWorkspace, type StudioPage, type StudioScope } from "./skillStudio";
 import { skill, studio } from "./skillsListing.testkit";
 import { expectFocusInSight, tabInto, untilFocusWithin } from "./stories.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
+import { updateOffer, updateReview } from "./skillUpdates.testkit";
 
 const MP = "mattpocock-skills";
 const SMART_IDE = { at: "workspace" as const, name: "smart-ide" };
@@ -119,6 +120,17 @@ const meta = {
       if (cmd === "skill_studio") return args.answer;
       if (cmd === "skills_deleted") return DELETED;
       if (cmd === "skill_deletes_cut_short") return { settled: [], unsettled: [] };
+      // Review updates (#5354): grilling's adds a hook, tdd's edits its text.
+      if (cmd === "skill_updates")
+        return {
+          offers: [updateOffer("grilling"), updateOffer("tdd")],
+          unasked: [],
+          unconfirmed: [],
+        };
+      if (cmd === "skill_update_review") {
+        const name = asked.name as string;
+        return updateReview(name, name === "grilling" ? ["hook"] : []);
+      }
       if (cmd === "skill_set_review") {
         const members = asked.members as { name: string }[];
         return {
@@ -215,6 +227,44 @@ export const DeleteReview: Story = {
     await expect(within(review).getByRole("button", { name: "Keep grilling" })).toBeVisible();
     await tabInto(() => within(review).getByRole("button", { name: "Keep grilling" }));
     expectFocusInSight();
+  },
+};
+
+/**
+ * **Review updates' review in the selection page's place** (#5354): the update that adds a hook
+ * first and unticked, its box out of reach until its changes are opened; the plain edit ticked;
+ * and those with no update waiting, or not from a source, staying as they are. Opened and ticked
+ * from the keyboard.
+ */
+export const UpdatesReview: Story = {
+  play: async ({ canvas }) => {
+    await canvas.findByRole("grid", { name: "Skills" });
+    await selectOn(canvas);
+    await tabInto(() => canvas.getByRole("grid", { name: "Skills" }));
+    await userEvent.keyboard("{Meta>}a{/Meta}");
+    const page = await canvas.findByTestId("select-page");
+    await tabInto(() => within(page).getByRole("button", { name: "Review updates…" }));
+    await userEvent.keyboard("{Enter}");
+    const review = await canvas.findByTestId("update-set-review");
+    const hooky = await within(review).findByRole("checkbox", {
+      name: "Update grilling (project)",
+    });
+    await expect(hooky).not.toBeChecked();
+    await expect(hooky).toBeDisabled();
+    await expect(
+      within(review).getByRole("checkbox", { name: "Update tdd (project)" }),
+    ).toBeChecked();
+    await expect(within(review).getByTestId("set-stays-deploy")).toHaveTextContent(
+      "It wasn't installed from a source.",
+    );
+    await tabInto(() => within(review).getByRole("button", { name: "What changes in grilling" }));
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(hooky).toBeEnabled());
+    await tabInto(() => hooky);
+    await userEvent.keyboard(" ");
+    expectFocusInSight();
+    await waitFor(() => expect(hooky).toBeChecked());
+    await expect(within(review).getByRole("button", { name: "Accept 2 updates" })).toBeVisible();
   },
 };
 

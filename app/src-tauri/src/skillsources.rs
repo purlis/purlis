@@ -670,6 +670,58 @@ pub struct UpdateReview {
     /// which a workspace it reaches turned off (#4186).
     pub widenings: Vec<SkillWidening>,
     pub accepted: Reviewed,
+    /// What the update newly lets the skill do, beyond an edit of its text (#5354): a review of
+    /// several updates leaves one that gains any of it unticked until it is opened.
+    pub gained: Vec<SkillGained>,
+}
+
+/// **One kind of thing an update newly lets a skill do** (#5354), as the core reads it
+/// (`purlis_core::skills::source::update::Gained`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum SkillGained {
+    Script,
+    Command,
+    Hook,
+    Tool,
+    Network,
+    WritesOutside,
+    Hidden,
+    NotShown,
+    Unread,
+}
+
+impl From<source::update::Gained> for SkillGained {
+    fn from(one: source::update::Gained) -> Self {
+        use source::update::Gained;
+        match one {
+            Gained::Script => Self::Script,
+            Gained::Command => Self::Command,
+            Gained::Hook => Self::Hook,
+            Gained::Tool => Self::Tool,
+            Gained::Network => Self::Network,
+            Gained::WritesOutside => Self::WritesOutside,
+            Gained::Hidden => Self::Hidden,
+            Gained::NotShown => Self::NotShown,
+            Gained::Unread => Self::Unread,
+        }
+    }
+}
+
+impl From<SkillGained> for source::update::Gained {
+    fn from(one: SkillGained) -> Self {
+        match one {
+            SkillGained::Script => Self::Script,
+            SkillGained::Command => Self::Command,
+            SkillGained::Hook => Self::Hook,
+            SkillGained::Tool => Self::Tool,
+            SkillGained::Network => Self::Network,
+            SkillGained::WritesOutside => Self::WritesOutside,
+            SkillGained::Hidden => Self::Hidden,
+            SkillGained::NotShown => Self::NotShown,
+            SkillGained::Unread => Self::Unread,
+        }
+    }
 }
 
 /// **A project skill an install or an update relies on** whose grant it widens, or which a
@@ -1133,6 +1185,7 @@ pub(crate) async fn skill_update_review(
             grant: update.grant.clone().map(Into::into),
             widenings: update.widenings.iter().map(Into::into).collect(),
             accepted: (&update.accepted()).into(),
+            gained: update.gained.iter().copied().map(Into::into).collect(),
         })
     })
     .await

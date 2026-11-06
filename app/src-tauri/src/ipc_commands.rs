@@ -370,6 +370,8 @@ macro_rules! app_commands {
                 skillset::skill_set_lifecycle,
                 skillset::skill_set_move,
                 skillset::skill_set_delete_now,
+                skillset::skill_set_update,
+                skillset::skill_set_update_undo,
                 skillpublish::skill_set_export_review,
                 skillpublish::skill_set_export,
                 skillchange::skill_grant,
