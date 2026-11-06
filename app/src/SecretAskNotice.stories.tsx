@@ -64,6 +64,15 @@ export const TheOneNotice: Story = {
     await expect(canvas.getByTestId("sa-vault-line")).toHaveTextContent(
       "Allow once and Allow for this chat let this program use it for that alone",
     );
+    // The undeclared marks are Tab stops, so their tooltips say why by keyboard too.
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByTestId("sa-undeclared-program"),
+      "the program's undeclared mark",
+    );
+    expectFocusInSight();
+    await userEvent.tab();
+    await untilFocused(() => canvas.getByTestId("sa-undeclared"), "the key's undeclared mark");
     await userEvent.tab();
     await untilFocused(
       () => canvas.getByRole("radio", { name: "New value" }),
@@ -184,7 +193,7 @@ export const ScopeDont: Story = {
     await userEvent.click(canvas.getByLabelText("Value of STRIPE_API_KEY"));
     await userEvent.keyboard("sk_test_v4lue");
     await userEvent.click(canvas.getByRole("radio", { name: "Allow once" }));
-    await userEvent.keyboard("{End}");
+    await userEvent.keyboard("{ArrowRight}{ArrowRight}{ArrowRight}");
     await untilFocused(() => canvas.getByRole("radio", { name: "Don't allow" }), "Don't allow");
     await expect(canvas.getByTestId("sa-scope-said")).toHaveTextContent(
       "STRIPE_API_KEY is still stored",

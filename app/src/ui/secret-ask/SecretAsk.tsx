@@ -21,7 +21,34 @@
  *   `control`, `value`, `scope-said`, `tool-line` and `foot` are a theme's to set; the rest lay
  *   it out.
  */
-import type { ReactNode } from "react";
+import type { FocusEvent, ReactNode } from "react";
+import { capMarks } from "../../combiningMarks";
+import { invisible } from "../../invisible";
+
+/** The nearest ancestor of `at` that scrolls on the block axis, or the page's. */
+function scrollerOf(at: Element): Element {
+  for (let up = at.parentElement; up !== null; up = up.parentElement) {
+    const { overflowY } = getComputedStyle(up);
+    if ((overflowY === "auto" || overflowY === "scroll") && up.scrollHeight > up.clientHeight)
+      return up;
+  }
+  return document.scrollingElement ?? document.documentElement;
+}
+
+/**
+ * **A focused control is never under the action bar** (WCAG 2.4.11): the bar is held at the foot
+ * of whatever scrolls the body, so a control the keyboard reaches under it is scrolled up clear of
+ * it. Only ever a scroll; the keyboard is never moved.
+ */
+function clearOfTheBar(event: FocusEvent<HTMLDivElement>) {
+  const foot = event.currentTarget.querySelector(
+    ':scope > [data-scope="secret-ask"][data-part="foot"]',
+  );
+  const focused = event.target;
+  if (foot === null || !(focused instanceof Element) || foot.contains(focused)) return;
+  const covered = focused.getBoundingClientRect().bottom - foot.getBoundingClientRect().top;
+  if (covered > 0) scrollerOf(event.currentTarget).scrollBy({ top: covered + 8 });
+}
 
 /** **The body**: one notice's parts, in order. Named for a reader by `label`. */
 export function SecretAskBody({
@@ -40,6 +67,7 @@ export function SecretAskBody({
       role="group"
       aria-label={label}
       data-testid={testId}
+      onFocus={clearOfTheBar}
     >
       {children}
     </div>
@@ -122,27 +150,6 @@ export function SecretAskQuote({ who, text }: { who: ReactNode; text: string }) 
   );
 }
 
-/** Controls, and what draws nothing or turns text round: built from code points, so no
- *  invisible character sits in this file. */
-const CONTROL = new RegExp(
-  `([${[
-    [0x00, 0x1f],
-    [0x7f, 0x9f],
-    [0xad, 0xad],
-    [0x061c, 0x061c],
-    [0x180e, 0x180e],
-    [0x200b, 0x200f],
-    [0x2028, 0x202e],
-    [0x2060, 0x206f],
-    [0xfe00, 0xfe0f],
-    [0xfeff, 0xfeff],
-    [0xfff9, 0xfffb],
-  ]
-    .map(([from, to]) => `\\u{${from.toString(16)}}-\\u{${to.toString(16)}}`)
-    .join("")}])`,
-  "u",
-);
-
 /** The names a control is drawn by where it has a short one; any other is `U+XXXX`. */
 const CONTROL_NAMES: Readonly<Record<number, string>> = {
   0: "NUL",
@@ -160,18 +167,66 @@ export function controlName(code: number): string {
   return CONTROL_NAMES[code] ?? `U+${code.toString(16).toUpperCase().padStart(4, "0")}`;
 }
 
-/** **A chat's text, inert**: every control and invisible character drawn as itself, as a
- *  `control` token, on one flow. Nothing in it is obeyed or laid out as it says. */
+/** A mark the core already wrote for a character no reader sees (`purlis_unicode::marked`). */
+const CORE_MARK = /^⟦U\+([0-9A-F]{4,6})⟧/;
+
+/** Whether `ch` is drawn as a token: a control, or what purlis's one rule says no reader sees
+ *  (`invisible.ts`, SK-51). */
+const drawnAsToken = (ch: string) => {
+  const code = ch.codePointAt(0) ?? 0;
+  return code < 0x20 || (code >= 0x7f && code <= 0x9f) || invisible(ch);
+};
+
+/** **`text` in the pieces it is drawn in**: plain runs, and each control or invisible character,
+ *  or the core's mark for one, as its name. */
+/** A piece of a chat's text as it is drawn. */
+export type InertPiece = { plain: string } | { token: string };
+
+export function inertPieces(text: string): InertPiece[] {
+  const capped = capMarks(text).text;
+  const pieces: InertPiece[] = [];
+  let plain = "";
+  const flush = () => {
+    if (plain !== "") pieces.push({ plain });
+    plain = "";
+  };
+  const points = [...capped];
+  for (let at = 0; at < points.length; at++) {
+    const ch = points[at];
+    if (ch === "⟦") {
+      const rest = points.slice(at, at + 10).join("");
+      const mark = CORE_MARK.exec(rest);
+      if (mark) {
+        flush();
+        pieces.push({ token: controlName(parseInt(mark[1], 16)) });
+        at += [...mark[0]].length - 1;
+        continue;
+      }
+    }
+    if (drawnAsToken(ch)) {
+      flush();
+      pieces.push({ token: controlName(ch.codePointAt(0) ?? 0) });
+      continue;
+    }
+    plain += ch;
+  }
+  flush();
+  return pieces;
+}
+
+/** **A chat's text, inert**: every control and invisible character drawn as its name, as a
+ *  `control` token, on one flow, and a run of stacked combining marks cut (`capMarks`), so
+ *  nothing in it is obeyed, laid out as it says, or painted over what is around it. */
 export function Inert({ text }: { text: string }) {
-  const parts = text.split(CONTROL);
+  const pieces = inertPieces(text);
   return (
     <>
-      {parts.map((part, at) =>
-        at % 2 === 0 ? (
-          part
+      {pieces.map((piece, at) =>
+        "plain" in piece ? (
+          piece.plain
         ) : (
           <mark key={at} data-scope="secret-ask" data-part="control" data-testid="sa-control">
-            {controlName(part.codePointAt(0) ?? 0)}
+            {piece.token}
           </mark>
         ),
       )}

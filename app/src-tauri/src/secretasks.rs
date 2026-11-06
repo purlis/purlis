@@ -209,9 +209,10 @@ pub fn run_grant_filled(
 }
 
 /// [`run_grant_filled`], with an entry picked for a field where the person used one (#5080), and
-/// the needs to remember. **A picked entry is held to every check a typed value is**, and one
-/// more: the entry it reads is judged as the key is, so no program is handed a browser's or a
-/// minter's key through a link, before anything is stored.
+/// the needs to remember. **A picked entry is held to every check a typed value is**, and more,
+/// whatever is pressed and before anything is stored: the entry it reads is judged as the key is,
+/// so no program and no tool is handed a browser's or a minter's key through a link, and it is
+/// one in a vault the persona may use, or the run's own.
 pub fn run_grant_given(
     held: &crate::planes::Held,
     network: Option<&purlis_core::sandboxblock::record::Record>,
@@ -343,6 +344,19 @@ pub fn run_grant_given(
             "{} is not a value this notice asks for",
             link.field
         ));
+    }
+    // **Each entry picked, judged for whatever is pressed**, before anything is stored: a link
+    // hands whatever reads the key what the entry holds, for good, so an entry no program may be
+    // handed is never one, and nor is one in a vault the persona may not use.
+    if !links.is_empty() {
+        let ctx =
+            purlis_core::secrets::Ctx::new(held.root(), purlis_core::secrets::Env::from_process());
+        if let Some(why) = links
+            .iter()
+            .find_map(|link| picked_refused(&ctx, &open, link))
+        {
+            return Err(why);
+        }
     }
     if let Some(line) = remember
         .iter()
@@ -503,7 +517,14 @@ pub fn run_grant_given(
                 nudge: Vec::new(),
                 told: answered.told.clone(),
             };
-            crate::proposals::fill_remembered(held, &one, Some(&line.purpose))?;
+            // The answer stands by now: a line that could not be written or held says so, and
+            // that the rest was done.
+            crate::proposals::fill_remembered(held, &one, Some(&line.purpose)).map_err(|why| {
+                format!(
+                    "Your answer went through, but {}'s need wasn't remembered: {why}",
+                    line.key
+                )
+            })?;
         }
     }
     // Keep blocked on the vault's own line holds as a refused vault's does: the chat's later
@@ -512,6 +533,37 @@ pub fn run_grant_given(
         crate::vaultroute::vault_kept_blocked(held, network, open.bound.chat, &open.bound.vault);
     }
     Ok(())
+}
+
+/// **Why `link`'s entry may not fill a field of `open`'s notice**, where it may not (#5080): one
+/// a browser login, a secret-fill line or a `mint` line of any persona holds, or one in a vault the
+/// persona may not use, other than the run's own.
+fn picked_refused(
+    ctx: &purlis_core::secrets::Ctx,
+    open: &purlis_core::secrets::ask::run::OpenRun,
+    link: &RunLink,
+) -> Option<String> {
+    if let Some(why) =
+        purlis_core::secrets::brokered::no_program_is_handed(ctx, &link.vault, &[link.key.as_str()])
+    {
+        let mut said = why.chars();
+        let first = said.next().map(|c| c.to_uppercase().to_string());
+        return Some(format!(
+            "{}{}. Pick another entry, or type a value.",
+            first.unwrap_or_default(),
+            said.as_str()
+        ));
+    }
+    (link.vault != open.bound.vault
+        && purlis_core::secrets::brokered::not_tagged(ctx, Some(&open.persona), &link.vault)
+            .is_some())
+    .then(|| {
+        format!(
+            "{} can't use vault {}, so its entries can't fill this notice. Pick another entry, \
+             or type a value.",
+            open.persona, link.vault
+        )
+    })
 }
 
 /// **Writes the line Always allow showed to the persona's tools** (#5245).
@@ -599,14 +651,26 @@ pub fn run_entries_for(held: &crate::planes::Held, id: u32) -> Result<Vec<Entrie
     let fields = |vault: &str, key: &str| {
         vault == open.bound.vault && open.fills.iter().any(|fill| fill.key == key)
     };
+    let link = |vault: &str, key: &str| RunLink {
+        field: String::new(),
+        vault: vault.to_owned(),
+        key: key.to_owned(),
+    };
     Ok(links::pickable(&ctx, None)
         .map_err(|e| e.message.to_string())?
         .into_iter()
+        // Only a vault the persona may use, and the run's own: what a pick is held to.
+        .filter(|one| {
+            one.vault == open.bound.vault
+                || purlis_core::secrets::brokered::not_tagged(&ctx, Some(&open.persona), &one.vault)
+                    .is_none()
+        })
         .map(|one| match one.keys {
             Ok(keys) => EntriesOf {
                 keys: keys
                     .into_iter()
                     .filter(|key| !fields(&one.vault, key))
+                    .filter(|key| picked_refused(&ctx, &open, &link(&one.vault, key)).is_none())
                     .collect(),
                 vault: one.vault,
                 unlisted: None,

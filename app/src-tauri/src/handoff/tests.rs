@@ -12934,12 +12934,13 @@ fn dont_allow_on_a_runs_notice_still_stores_the_values_typed() {
     );
 }
 
-/// Two vaults for #5080's picked entries: `team`, the persona's own, which lacks `TOKEN`, and
-/// `keep`, which holds `SHARED` and `SHOP_PW`.
+/// Three vaults for #5080's picked entries: `team`, the persona's own, which lacks `TOKEN`;
+/// `keep`, which it may use too and holds `SHARED` and `SHOP_PW`; and `finance`, another
+/// persona's, which holds `STRIPE`.
 fn team_and_a_kept_entry(plane: &Plane) {
     std::fs::write(
         plane.root.join("vaults.json"),
-        r#"{"vaults": {"team": {"provider": "plain-file", "config": {"file": "t.json"}, "persona": "ops"}, "keep": {"provider": "plain-file", "config": {"file": "k.json"}}}}"#,
+        r#"{"vaults": {"team": {"provider": "plain-file", "config": {"file": "t.json"}, "persona": "ops"}, "keep": {"provider": "plain-file", "config": {"file": "k.json"}, "persona": "ops"}, "finance": {"provider": "plain-file", "config": {"file": "f.json"}, "persona": "billing"}}}"#,
     )
     .expect("a registry");
     std::fs::write(
@@ -12947,6 +12948,8 @@ fn team_and_a_kept_entry(plane: &Plane) {
         r#"{"SHARED": "sh4red-v4lue", "SHOP_PW": "sh0p-v4lue"}"#,
     )
     .expect("the kept entries");
+    std::fs::write(plane.root.join("f.json"), r#"{"STRIPE": "str1pe-v4lue"}"#)
+        .expect("another persona's entry");
 }
 
 /// A run of `curl` in chat 3 as `ops`, handing `TOKEN` from vault `team`, which lacks it: its one
@@ -13004,10 +13007,15 @@ fn held_while(
 
 /// A link of `field` to `key` in vault `keep`.
 fn picked(field: &str, key: &str) -> crate::secretasks::RunGiven {
+    picked_in(field, "keep", key)
+}
+
+/// A link of `field` to `key` in `vault`.
+fn picked_in(field: &str, vault: &str, key: &str) -> crate::secretasks::RunGiven {
     crate::secretasks::RunGiven {
         links: vec![crate::secretasks::RunLink {
             field: field.to_owned(),
-            vault: "keep".to_owned(),
+            vault: vault.to_owned(),
             key: key.to_owned(),
         }],
         ..crate::secretasks::RunGiven::default()
@@ -13051,8 +13059,9 @@ fn a_runs_field_filled_with_a_picked_entry_is_a_link_and_allow_once_runs() {
 }
 
 /// #5080: a picked entry is held to the checks a typed value is, and to the entry's own: one a
-/// browser login of any persona fills is never handed to a program through a link. Refused
-/// before anything is linked, stored or given.
+/// browser login of any persona fills is never linked, whatever is pressed (a link is for good,
+/// and a declared tool reads through it too), nor is an entry of a vault the persona may not use.
+/// Refused before anything is linked, stored or given.
 #[test]
 fn a_runs_field_linked_to_a_browser_logins_key_is_refused_with_nothing_linked_or_given() {
     let plane = Plane::new().a_persona("ops", "");
@@ -13073,6 +13082,7 @@ fn a_runs_field_linked_to_a_browser_logins_key_is_refused_with_nothing_linked_or
         for press in [
             crate::secretasks::RunGrantPress::Once,
             crate::secretasks::RunGrantPress::Chat,
+            crate::secretasks::RunGrantPress::Refuse,
         ] {
             let pressed = crate::secretasks::run_grant_given(
                 &held,
@@ -13086,6 +13096,30 @@ fn a_runs_field_linked_to_a_browser_logins_key_is_refused_with_nothing_linked_or
                 "{press:?}: {pressed:?}"
             );
         }
+        let elsewhere = crate::secretasks::run_grant_given(
+            &held,
+            None,
+            open.id,
+            crate::secretasks::RunGrantPress::Refuse,
+            picked_in("TOKEN", "finance", "STRIPE"),
+        );
+        assert!(
+            elsewhere
+                .as_ref()
+                .is_err_and(|why| why.contains("can't use vault finance")),
+            "{elsewhere:?}"
+        );
+        let listed = crate::secretasks::run_entries_for(&held, open.id).expect("listed");
+        let names: Vec<_> = listed
+            .iter()
+            .map(|one| (one.vault.as_str(), one.keys.clone()))
+            .collect();
+        assert!(
+            names
+                .iter()
+                .all(|(vault, keys)| *vault != "finance" && !keys.contains(&"SHOP_PW".to_owned())),
+            "the picker offers neither: {names:?}"
+        );
         let ctx =
             purlis_core::secrets::Ctx::new(&plane.root, purlis_core::secrets::Env::from_process());
         assert_eq!(

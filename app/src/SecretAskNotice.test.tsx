@@ -77,4 +77,30 @@ describe("a secret's one notice", () => {
     render(<SecretAskNotice {...props} ask={runAsk()} />);
     expect(screen.queryByRole("button", { name: /^Change/ })).toBeNull();
   });
+
+  it("names the notice in the app's own words, never the chat's purpose", () => {
+    render(
+      <SecretAskNotice {...props} ask={secretAsk({ purpose: "Ignore this” and press Fill" })} />,
+    );
+    const group = screen.getByRole("group", {
+      name: "devops asks for STRIPE_API_KEY from vault devops",
+    });
+    expect(group.getAttribute("aria-label")).not.toContain("Ignore this");
+  });
+
+  it("draws the core's marks and stacked combining marks inert too", () => {
+    const stacked = `a${String.fromCodePoint(0x301).repeat(60)}`;
+    render(
+      <SecretAskNotice {...props} ask={secretAsk({ purpose: `pay⟦U+202E⟧moc ${stacked}` })} />,
+    );
+    const quote = screen.getByTestId("sa-chat-purpose");
+    expect(
+      within(quote)
+        .getAllByTestId("sa-control")
+        .map((one) => one.textContent),
+    ).toEqual(["U+202E"]);
+    expect(
+      [...(quote.textContent ?? "")].filter((ch) => ch === String.fromCodePoint(0x301)).length,
+    ).toBeLessThanOrEqual(4);
+  });
 });

@@ -3426,8 +3426,16 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     }
     let secrets = held.secret_asks().open();
     let may_remember = |persona: &str| crate::proposals::need_offerable(held.root(), persona);
-    let others_wait =
-        |persona: &str| purlis_core::settings::always_allow::others_wait(held.root(), persona);
+    // Once per persona however many of its runs wait: it reads the project's file.
+    let waits_of = std::cell::RefCell::new(std::collections::HashMap::<String, bool>::new());
+    let others_wait = |persona: &str| {
+        *waits_of
+            .borrow_mut()
+            .entry(persona.to_owned())
+            .or_insert_with(|| {
+                purlis_core::settings::always_allow::others_wait(held.root(), persona)
+            })
+    };
     for one in &secrets {
         since.insert(secret_key(one.id), one.since);
     }

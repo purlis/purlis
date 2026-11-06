@@ -1192,7 +1192,9 @@ impl Asks {
     /// `links` makes its field's key a Linked entry reading the entry, never a copy, as a Secret
     /// ask's link does ([`super::Answer::Link`]), and under the same rule as a value: only where
     /// the vault holds nothing under the key, or a link whose entry is gone. A field is given a
-    /// value or an entry, never both.
+    /// value or an entry, never both. Links are written first, then values; one that fails stops
+    /// there, leaving what was written before it, which a press again finds filled. The caller
+    /// judges every entry before this is called.
     pub fn fill_run_with(
         &self,
         ctx: &super::Ctx,

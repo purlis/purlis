@@ -263,7 +263,15 @@ export function SecretAskNotice({
   })();
 
   return (
-    <SecretAskBody label={ask.says} data-testid="secret-ask">
+    <SecretAskBody
+      label={
+        // The app's own words only: never `says`, which quotes the chat's purpose.
+        secret
+          ? `${persona} asks for ${secret.key} from vault ${vault}`
+          : `${persona} runs ${program} with vault ${vault}`
+      }
+      data-testid="secret-ask"
+    >
       {secret && <SecretReason secret={secret} />}
       <Facts
         secret={secret}
