@@ -456,12 +456,17 @@ describe("the window", function () {
     // **Its own ×, found through its tab**: a background tab's × comes under the pointer
     // (#5341), so the pointer goes onto the tab first, as a person's does, and presses the × it
     // brings. Asks nothing: a close ends nothing, so there is no question to answer.
-    const tabs = await $$('[data-strip="Tabs"] [role="tab"]').getElements();
-    let tab: (typeof tabs)[number] | undefined;
-    for (const one of tabs) if ((await one.getProperty("textContent")) === closing) tab = one;
-    if (tab === undefined) throw new Error(`no tab reads ${closing}`);
-    await tab.moveTo();
-    const closer = await tab.parentElement().$('[data-part="closer"]');
+    const marked = await browser.execute((called: string) => {
+      const tab = [...document.querySelectorAll('[data-strip="Tabs"] [role="tab"]')].find(
+        (one) => one.textContent === called,
+      );
+      const cell = tab?.closest<HTMLElement>('[data-part="tab"]');
+      if (cell) cell.dataset.e2eClosing = "";
+      return cell !== null && cell !== undefined;
+    }, closing);
+    if (!marked) throw new Error(`no tab reads ${closing}`);
+    await $('[data-e2e-closing] [role="tab"]').moveTo();
+    const closer = await $('[data-e2e-closing] [data-part="closer"]');
     await closer.waitForClickable({ timeout: 10_000 });
     await closer.click();
 
