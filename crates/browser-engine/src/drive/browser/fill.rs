@@ -127,7 +127,8 @@ macro_rules! takes_nothing_from_a_filled_field {
 
 /// The function that writes a value into the field it is given, run in purlis's own world in
 /// the field's frame: a constant. In the same step it checks that the field is still in its
-/// document and that the document is on `origin`, answering `moved` where not and writing
+/// document and that the document is on `origin`, by its address and by the origin the document
+/// itself has (a sandboxed one has none), answering `moved` where not and writing
 /// nothing, so no focus and no moment between a check and a write decides where the value goes.
 /// Before the value goes in, a copy, a cut and a drag started on the field are stopped for as
 /// long as the field lives, and so is one anywhere in its document of a field or a selection that
@@ -143,6 +144,9 @@ macro_rules! takes_nothing_from_a_filled_field {
 pub(crate) const WRITE_FIELD: &str = concat!(
     r#"function (field, value, origin, manyLines) {
   if (!field.isConnected || field.ownerDocument.location.origin !== origin) return 'moved';
+  // A sandboxed document's address says an origin its document does not have.
+  const view = field.ownerDocument.defaultView;
+  if (!view || view.origin !== origin) return 'moved';
   let own = null;
   const oneLine = ['password', 'text', 'email', 'number', 'tel', 'url'];
   if (field instanceof HTMLInputElement) {

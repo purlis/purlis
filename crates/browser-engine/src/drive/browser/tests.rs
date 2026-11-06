@@ -2221,6 +2221,58 @@ fn a_page_the_engine_opens_at_a_file_or_app_address_is_closed_and_never_listed()
     );
 }
 
+/// The engine opens page `PAGE-9` blank from the frames page, and the driver sees it: its own
+/// document has said no origin yet.
+fn a_blank_page_opens(browser: &Browser, engine: &Engine) {
+    super::lock(&engine.model)
+        .opened_at
+        .insert("PAGE-9".into(), "about:blank".into());
+    engine.emit(
+        "Target.targetCreated",
+        json!({"targetInfo":{"targetId":"PAGE-9","type":"page","title":"","url":"about:blank","openerId":"PAGE-1","attached":false}}),
+        None,
+    );
+    wait_for("the blank page is seen", || {
+        super::lock(&browser.inner.state).page("PAGE-9").is_some()
+    });
+}
+
+/// The sites the agent is kept off on page `target`'s frames, by frame.
+fn kept_off_on(browser: &Browser, target: &str, site: &'static str) -> HashMap<String, String> {
+    let kept: crate::drive::KeptOff = Arc::new(move |address: &str| {
+        address
+            .starts_with(&format!("http://{site}"))
+            .then(|| format!("{site}:80"))
+    });
+    super::lock(&browser.inner.state).kept_off_frames(target, &kept)
+}
+
+#[test]
+fn a_blank_page_a_kept_off_page_opened_is_kept_off_while_its_own_origin_is_not_known() {
+    let (browser, engine) = browser();
+    a_blank_page_opens(&browser, &engine);
+    assert_eq!(
+        kept_off_on(&browser, "PAGE-9", "fixture.test")
+            .get("PAGE-9")
+            .map(String::as_str),
+        Some("fixture.test:80"),
+        "what the opener wrote into it is the opener's"
+    );
+}
+
+#[test]
+fn a_blank_page_is_not_kept_off_for_a_frame_of_the_page_that_opened_it() {
+    let (browser, engine) = browser();
+    snapshot(&browser, 1);
+    a_blank_page_opens(&browser, &engine);
+    // The frames page holds a frame of other.test; the page itself is not on it.
+    assert!(kept_off_on(&browser, "PAGE-1", "other.test").contains_key("PAYMENT-FRAME"));
+    assert_eq!(
+        kept_off_on(&browser, "PAGE-9", "other.test").get("PAGE-9"),
+        None
+    );
+}
+
 #[test]
 fn a_reference_from_before_its_frame_loaded_another_document_is_refused_as_stale() {
     let (browser, engine) = browser();
