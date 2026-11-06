@@ -219,7 +219,7 @@ fn drawn() -> Vec<Found> {
                 format!("[data-scope=\"{family}\"][data-part=\"{part}\"]"),
                 format!("[data-part=\"{part}\"][data-scope=\"{family}\"]"),
             ];
-            let mut found: Vec<(&String, &String, &String)> = sheets
+            let found: Vec<(&String, &String, &String)> = sheets
                 .iter()
                 .flat_map(|(path, css)| {
                     orders
@@ -228,7 +228,7 @@ fn drawn() -> Vec<Found> {
                         .map(move |selector| (path, css, selector))
                 })
                 .collect();
-            let (Some((path, css, selector)), None) = (found.pop(), found.pop()) else {
+            let [(path, css, selector)] = found[..] else {
                 panic!(
                     "{family}.{part}: no single rule of its own in a stylesheet under \
                      app/src/ui; draw it in one, or give it a row in APART"

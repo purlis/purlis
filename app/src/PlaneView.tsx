@@ -4823,14 +4823,8 @@ export const PlaneView = memo(function PlaneView({
       if (handed === undefined) pressHere(session);
       else {
         setStartedIn((was) => ({ ...was, [session]: handed.filed }));
-        if (handed.started) {
-          const { shell, studio } = handed;
-          const known: StartedAs = {
-            ...(shell ? { shell } : {}),
-            ...(studio === undefined ? {} : { studio }),
-          };
-          showStarted(handed.as, handed.filed, true, undefined, false, known);
-        } else showResumed(handed.as, handed.filed);
+        if (handed.started) showStarted(handed.as, handed.filed, true, undefined, false, handed);
+        else showResumed(handed.as, handed.filed);
       }
       if (tabWindow === undefined) paneUsed();
     };

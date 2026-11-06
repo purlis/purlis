@@ -34,7 +34,7 @@ export type Over = {
  */
 export type HeldBy = "pointer" | "keys";
 
-export type Dragging = {
+type Dragging = {
   source: Source;
   over?: Over;
   base?: PaneBase;
@@ -76,8 +76,8 @@ function placesOf(layout: Layout | undefined): string {
   return `${layout.direction}${layout.share ?? ""}(${placesOf(a)} ${placesOf(b)})`;
 }
 
-/** **What is held and where**, and who hears it change. A change to what it already is tells
- *  nobody. */
+/** **What is held and where**, and who hears it change. Ending a drag that is not under way
+ *  tells nobody. */
 class DragState {
   private state: Dragging | undefined;
   private readonly heard = new Set<() => void>();
@@ -144,6 +144,7 @@ class PointerLabels {
     this.at = { x, y };
   }
 
+  /** The pointer moved: the label and the words go with it. */
   moveTo(x: number, y: number) {
     this.at = { x, y };
     const held = heldAt(x, y);
@@ -158,6 +159,7 @@ class PointerLabels {
     }
   }
 
+  /** Where the pointer was last. */
   pointer() {
     return this.at;
   }
@@ -169,11 +171,13 @@ class WindowHold {
   /** Lets go of the keyboard, while it is held. */
   private keyboard: (() => void) | undefined;
 
+  /** Something is picked up: the root says how, and the keyboard stays where it is. */
   take(by: HeldBy) {
     document.documentElement.dataset.paneDragging = by;
     this.keyboard ??= holdKeyboard();
   }
 
+  /** The drag is over: the root's marks go, and the keyboard is free again. */
   letGo() {
     const root = document.documentElement.dataset;
     delete root.paneDragging;

@@ -30,8 +30,6 @@ import {
  * written straight on its element; a target changing draws this and writes the frames.
  */
 
-export { type HeldBy, type Over, PaneDragStore } from "./paneDragStore";
-
 /** The cells a pane with no terminal yet would have: those of a terminal on screen. */
 function anyCells(base: PaneBase): TerminalCells | undefined {
   for (const seat of base.terminals.values()) {

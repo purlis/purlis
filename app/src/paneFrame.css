@@ -917,7 +917,8 @@
    **Neither is a `pane-preview` part** (#5573). A part is an element its family draws, and these
    are states of `.pane-frame`, which no family draws yet. `lifted` is a dim, and no theme
    property takes an opacity: a part would add one to the theme format for this one value.
-   `moved` is `accent.base` at the focus ring's width, both of which a theme already sets. They become parts when the pane frame becomes a family. */
+   `moved` is `accent.base` at the focus ring's width, both of which a theme already sets. They
+   become parts when the pane frame becomes a family. */
 .pane-frame[data-pane-preview="lifted"] :is(.pane-body, .pane.view) {
   opacity: 0.38;
 }

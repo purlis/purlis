@@ -43,7 +43,7 @@ export const stripTab = (id: number) => `[${STRIP}] [${TAB}="${id}"]:not([${PANE
 /**
  * **What a terminal says of its own grid, to reckon what would fit in a box.** The shape of
  * {@link TerminalCells}, but measured against the terminal and not its pane: {@link cellsIn} adds
- * one to the other. Kept a type of its own so that the two can't be confused and the terminal's
+ * one to the other. Kept a type of its own so that the two cannot be confused and the terminal's
  * own counted twice (#5573).
  */
 export type OwnCells = {
