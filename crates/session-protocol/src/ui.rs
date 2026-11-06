@@ -1324,6 +1324,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "plane_at_launch",
     "plane_doctor",
     "plane_doctor_identity",
+    "plane_doctor_move_into_repos_plan",
     "plane_fetch",
     "plane_pin",
     "plane_pins",

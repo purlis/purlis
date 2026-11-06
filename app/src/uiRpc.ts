@@ -2296,6 +2296,12 @@ export const commands = {
 	 */
 	planeDoctor: (plane: PlaneId, full: boolean) => typedError<DoctorReport, string>(__TAURI_INVOKE("plane_doctor", { plane, full })),
 	planeDoctorFix: __WINDOW_ONLY_RESULT,
+	/**
+	 *  What **Move into repos/** would do in the plane the window names, workspace by workspace,
+	 *  for its confirmation: the core's [`purlis_core::doctor::fix::move_into_repos::plan`], with the
+	 *  chats this window has open in each.
+	 */
+	planeDoctorMoveIntoReposPlan: (plane: PlaneId) => typedError<MoveIntoReposPlan[], string>(__TAURI_INVOKE("plane_doctor_move_into_repos_plan", { plane })),
 	planeDoctorFixIdentity: __WINDOW_ONLY_RESULT,
 	/**
 	 *  What git's global identity holds now: the form locks the keys that are set, because the
@@ -7490,6 +7496,26 @@ export type MouseAct = "moved" | "pressed" | "released" | "wheel";
 
 /**  A mouse button (#2014). */
 export type MouseButton = "none" | "left" | "middle" | "right";
+
+/**
+ *  One workspace **Move into repos/** would move (#5374): what its confirmation shows before
+ *  anything moves.
+ */
+export type MoveIntoReposPlan = {
+	workspace: string,
+	/**  The repos at its root that move, by name. */
+	repos: string[],
+	/**
+	 *  The chats started in one of them that their harness can no longer resume afterwards, by
+	 *  their session record's title. Their records still open.
+	 */
+	unresumable: string[],
+	/**
+	 *  The chats open in it now, by the name each is shown under: while there are any, this
+	 *  workspace is left as it is.
+	 */
+	open: string[],
+};
 
 /**  What the window is told of a move it asked for to switch now. */
 export type MoveNow = {

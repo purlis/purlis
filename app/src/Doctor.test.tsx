@@ -829,3 +829,75 @@ describe("which doctor findings stand as Notices (#1301, D-1301-1)", () => {
     expect(settle.mock.lastCall?.[1]).not.toContain("doctor-finding:persona-agents");
   });
 });
+
+describe("Move into repos/ asks before anything moves (#5374)", () => {
+  function Wired() {
+    return <Health doctor={useDoctor(PLANE)} />;
+  }
+  const outside = row("repos outside repos/", "warn", {
+    detail: "2 repos outside repos/: alpha/api, beta/web",
+    fix: "move-into-repos",
+  });
+  const plans = [
+    { workspace: "alpha", repos: ["api"], unresumable: ["In the clone"], open: [] },
+    { workspace: "beta", repos: ["web"], unresumable: ["Held back"], open: ["steward 2"] },
+  ];
+
+  async function confirmation(asked: string[]) {
+    mockIPC((cmd) => {
+      asked.push(cmd);
+      if (cmd === "plane_doctor") return report([outside]);
+      if (cmd === "plane_doctor_move_into_repos_plan") return plans;
+      if (cmd === "plane_doctor_fix")
+        return {
+          fix: "move-into-repos",
+          refused: null,
+          said: ["✓ alpha: moved api into repos/"],
+          complete: true,
+        };
+      return null;
+    });
+    render(<Wired />);
+    await userEvent.click(button());
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(
+      await within(dialog).findByRole("button", { name: /^Fix repos outside repos\/$/ }),
+    );
+    return screen.findByRole("alertdialog", { name: "Move repos into repos/?" });
+  }
+
+  it("names what moves, the workspaces a chat holds back, and the chats started in a repo", async () => {
+    const asked: string[] = [];
+    const asking = await confirmation(asked);
+
+    expect(within(asking).getByRole("list", { name: "What moves" })).toHaveTextContent(
+      "alpha: api",
+    );
+    expect(within(asking).getByRole("region", { name: "Left as they are" })).toHaveTextContent(
+      "beta: steward 2",
+    );
+    const chats = within(asking).getByRole("region", { name: "Chats that cannot be resumed" });
+    expect(chats).toHaveTextContent("In the clone");
+    // beta does not move, so its chats lose nothing.
+    expect(chats).not.toHaveTextContent("Held back");
+    expect(answersOf(asking)).toEqual(["Cancel", "Move repos"]);
+    expect(asked).not.toContain("plane_doctor_fix");
+  });
+
+  it("moves nothing on Cancel, and applies the fix on Move repos", async () => {
+    const asked: string[] = [];
+    const asking = await confirmation(asked);
+    await userEvent.click(within(asking).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(asked).not.toContain("plane_doctor_fix");
+
+    const dialog = screen.getByRole("dialog");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: /^Fix repos outside repos\/$/ }),
+    );
+    const again = await screen.findByRole("alertdialog", { name: "Move repos into repos/?" });
+    await userEvent.click(within(again).getByRole("button", { name: "Move repos" }));
+
+    await vi.waitFor(() => expect(asked).toContain("plane_doctor_fix"));
+  });
+});

@@ -167,19 +167,97 @@ pub async fn plane_doctor_fix(
     plane: PlaneId,
     fix: String,
 ) -> Result<DoctorFixed, String> {
-    let root = planes.held(&plane)?.root().to_path_buf();
+    let held = planes.held(&plane)?;
+    let root = held.root().to_path_buf();
     let shipped = planes.shipped().clone();
-    tauri::async_runtime::spawn_blocking(move || fixed(&root, &fix, &shipped))
+    let open = open_by_workspace(&held);
+    tauri::async_runtime::spawn_blocking(move || fixed(&root, &fix, &shipped, &open))
         .await
         .map_err(|err| format!("the fix did not finish: {err}"))?
 }
 
+/// The chats this window has open, by the workspace each works in and the name each is shown
+/// under: what `move-into-repos` is refused over in a workspace (#5374). Asked before the fix
+/// runs, as a workspace rename asks it.
+pub(crate) fn open_by_workspace(held: &crate::planes::Held) -> Vec<(String, String)> {
+    let chats = held.chats();
+    let on_disk = purlis_core::workspaces::Plane::open(held.root());
+    chats
+        .open_now()
+        .into_iter()
+        .filter_map(|one| {
+            let ws = on_disk.workspace_of(one.cwd.as_deref()?)?;
+            Some((ws, chats.shown_name(one.session)?))
+        })
+        .collect()
+}
+
+/// One workspace **Move into repos/** would move (#5374): what its confirmation shows before
+/// anything moves.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct MoveIntoReposPlan {
+    pub workspace: String,
+    /// The repos at its root that move, by name.
+    pub repos: Vec<String>,
+    /// The chats started in one of them that their harness can no longer resume afterwards, by
+    /// their session record's title. Their records still open.
+    pub unresumable: Vec<String>,
+    /// The chats open in it now, by the name each is shown under: while there are any, this
+    /// workspace is left as it is.
+    pub open: Vec<String>,
+}
+
+/// What **Move into repos/** would do in the plane the window names, workspace by workspace,
+/// for its confirmation: the core's [`purlis_core::doctor::fix::move_into_repos::plan`], with the
+/// chats this window has open in each.
+#[tauri::command]
+#[specta::specta]
+pub async fn plane_doctor_move_into_repos_plan(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<Vec<MoveIntoReposPlan>, String> {
+    let held = planes.held(&plane)?;
+    let root = held.root().to_path_buf();
+    let open = open_by_workspace(&held);
+    tauri::async_runtime::spawn_blocking(move || move_into_repos_plan(&root, &open))
+        .await
+        .map_err(|err| format!("could not ask what the move would do: {err}"))
+}
+
+/// [`plane_doctor_move_into_repos_plan`], on the calling thread.
+pub(crate) fn move_into_repos_plan(
+    root: &std::path::Path,
+    open: &[(String, String)],
+) -> Vec<MoveIntoReposPlan> {
+    purlis_core::doctor::fix::move_into_repos::plan(root)
+        .into_iter()
+        .map(|one| MoveIntoReposPlan {
+            open: open_in(open, &one.workspace),
+            unresumable: one.unresumable.into_iter().map(|chat| chat.title).collect(),
+            repos: one.repos,
+            workspace: one.workspace,
+        })
+        .collect()
+}
+
+/// The names in `open` of the chats in workspace `ws`.
+fn open_in(open: &[(String, String)], ws: &str) -> Vec<String> {
+    open.iter()
+        .filter(|(of, _)| of == ws)
+        .map(|(_, name)| name.clone())
+        .collect()
+}
+
 /// [`plane_doctor_fix`], on the calling thread. `plugin-install` installs a copy whose hooks run
 /// the `charter` this app ships ([`crate::Shipped`]), never the app's own executable.
+///
+/// `move-into-repos` is refused in a workspace over the chats `open` names there (this window's,
+/// [`open_by_workspace`]), where the terminal reads the app's record.
 fn fixed(
     root: &std::path::Path,
     fix: &str,
     shipped: &crate::Shipped,
+    open: &[(String, String)],
 ) -> Result<DoctorFixed, String> {
     use purlis_core::doctor::fix::{self as registry, FixId, Fixed};
     use purlis_core::plugin_install::Machine;
@@ -195,6 +273,7 @@ fn fixed(
             Ok(machine) => registry::apply_for(root, id, &machine),
             Err(why) => Fixed::Refused(why),
         },
+        FixId::MoveIntoRepos => registry::apply_moving_into_repos(root, &|_, ws| open_in(open, ws)),
         _ => registry::apply_in_the_window(root, id),
     };
     Ok(answered(id, applied))
@@ -845,8 +924,8 @@ mod tests {
         assert_eq!(before.status, DoctorStatus::Warn, "{before:?}");
         assert_eq!(before.fix.as_deref(), Some("reinit"));
 
-        let done =
-            fixed(&root, "reinit", &crate::Shipped::default()).expect("a fix the registry has");
+        let done = fixed(&root, "reinit", &crate::Shipped::default(), &[])
+            .expect("a fix the registry has");
         assert_eq!(done.refused, None, "{done:?}");
         assert!(done.complete, "{done:?}");
         assert!(done.said.iter().any(|l| l.contains("personas")), "{done:?}");
@@ -889,7 +968,7 @@ mod tests {
     #[test]
     fn plugin_install_from_an_app_that_ships_no_charter_is_refused() {
         let (_dir, root) = plane();
-        let done = fixed(&root, "plugin-install", &crate::Shipped::nothing())
+        let done = fixed(&root, "plugin-install", &crate::Shipped::nothing(), &[])
             .expect("a fix the registry has");
         assert!(!done.complete, "{done:?}");
         assert!(
@@ -933,7 +1012,7 @@ mod tests {
     fn a_fix_the_registry_does_not_have_is_refused_by_name() {
         let (_dir, root) = plane();
         let refused =
-            fixed(&root, "index-lock", &crate::Shipped::default()).expect_err("no such fix");
+            fixed(&root, "index-lock", &crate::Shipped::default(), &[]).expect_err("no such fix");
         assert!(
             refused.contains("index-lock") && refused.contains("reinit"),
             "{refused}"

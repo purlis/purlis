@@ -16,8 +16,10 @@ import {
   type DoctorFixed,
   type DoctorReport,
   type DoctorRow,
+  type MoveIntoReposPlan,
   type PlaneId,
 } from "./bindings";
+import { MOVE_INTO_REPOS, MoveIntoReposConfirm } from "./MoveIntoReposConfirm";
 import { said, useSwitches } from "./switchClock";
 import { Button } from "./ui/button/Button";
 import { Dialog } from "./ui/dialog/Dialog";
@@ -105,6 +107,9 @@ export type DoctorState = {
   fixIdentity?: (name: string, email: string) => Promise<IdentityRefused | undefined>;
   /** git's global identity as it stands, for the form to lock what is set. */
   identityNow?: () => Promise<IdentityNow>;
+  /** What `move-into-repos` would do, for its confirmation; `undefined` where it cannot be
+   *  asked, and the fix is then applied for the core to say why (#5374). */
+  movePlan?: () => Promise<MoveIntoReposPlan[] | undefined>;
   /** The fix on its way, by its id. */
   fixing?: string;
   /** What the last fix came to: its lines, or why it was refused. */
@@ -231,6 +236,7 @@ export function useDoctor(plane: PlaneId): DoctorState {
     [plane, run],
   );
   const identityNow = useCallback(() => identityNowOf(plane), [plane]);
+  const movePlan = useCallback(() => movePlanOf(plane), [plane]);
   const forget = useCallback(() => {
     newestFix.current += 1;
     setLastFix(undefined);
@@ -245,6 +251,7 @@ export function useDoctor(plane: PlaneId): DoctorState {
     fix,
     fixIdentity,
     identityNow,
+    movePlan,
     fixing: ours?.fixing,
     fixed: ours?.fixed,
     forget,
@@ -283,6 +290,16 @@ export async function identityNowOf(plane: PlaneId): Promise<IdentityNow> {
     return answer.status === "ok" && answer.data ? answer.data : none;
   } catch {
     return none;
+  }
+}
+
+/** What `move-into-repos` would do in `plane`, or `undefined` where it could not be asked. */
+export async function movePlanOf(plane: PlaneId): Promise<MoveIntoReposPlan[] | undefined> {
+  try {
+    const answer = await commands.planeDoctorMoveIntoReposPlan(plane);
+    return answer.status === "ok" && Array.isArray(answer.data) ? answer.data : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -341,6 +358,8 @@ export type Fixer = {
   identity?: (name: string, email: string) => Promise<IdentityRefused | undefined>;
   /** What the identity is now, read when its form opens. */
   identityNow?: () => Promise<IdentityNow>;
+  /** What `move-into-repos` would do, read when its confirmation opens (#5374). */
+  movePlan?: () => Promise<MoveIntoReposPlan[] | undefined>;
 };
 
 /**
@@ -357,8 +376,15 @@ export function useFixForm(fix: string, fixer: Fixer) {
   const id = useId();
   const withForm = FIXES_WITH_A_FORM.has(fix);
   const open = current !== undefined;
+  // `move-into-repos` asks first, naming what it moves and what it costs (#5374).
+  const [plans, setPlans] = useState<MoveIntoReposPlan[]>();
   const press = () => {
-    if (!withForm) fixer.apply(fix);
+    if (fix === MOVE_INTO_REPOS && fixer.movePlan) {
+      void fixer.movePlan().then((planned) => {
+        if (planned === undefined) fixer.apply(fix);
+        else setPlans(planned);
+      });
+    } else if (!withForm) fixer.apply(fix);
     else if (open) setCurrent(undefined);
     else void (fixer.identityNow?.() ?? Promise.resolve({ name: "", email: "" })).then(setCurrent);
   };
@@ -375,13 +401,27 @@ export function useFixForm(fix: string, fixer: Fixer) {
       }}
     />
   );
+  const confirm = plans !== undefined && (
+    <MoveIntoReposConfirm
+      plans={plans}
+      onCancel={() => setPlans(undefined)}
+      onMove={() => {
+        setPlans(undefined);
+        fixer.apply(fix);
+      }}
+    />
+  );
   return {
-    /** Whether this fix can be pressed here: one with a form needs somewhere to send it. */
-    offered: !withForm || fixer.identity !== undefined,
+    /** Whether this fix can be pressed here: one with a form needs somewhere to send it, and
+     *  `move-into-repos` a way to ask what it would do. */
+    offered:
+      fix === MOVE_INTO_REPOS
+        ? fixer.movePlan !== undefined
+        : !withForm || fixer.identity !== undefined,
     press,
     /** The button's state, for a fix with a form. */
     opens: withForm ? { id, open } : undefined,
-    form: form || undefined,
+    form: form || confirm || undefined,
   };
 }
 
@@ -469,6 +509,7 @@ function FindingNotice({
     busy: doctor.running || doctor.fixing !== undefined,
     identity: doctor.fixIdentity,
     identityNow: doctor.identityNow,
+    movePlan: doctor.movePlan,
   };
   const { offered, press, opens, form } = useFixForm(row.fix, fixer);
   // What the last fix of this finding came to, when it did not mend it: the doctor checks
@@ -642,6 +683,7 @@ export function Health({
     busy: running || fixing !== undefined,
     identity: doctor.fixIdentity,
     identityNow: doctor.identityNow,
+    movePlan: doctor.movePlan,
   };
   const ours = report?.app_rows ?? [];
 

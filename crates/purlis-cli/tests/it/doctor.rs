@@ -926,3 +926,61 @@ fn bare_fix_never_removes_a_generated_sub_agent_and_the_row_offers_the_fix() {
         "{personas}"
     );
 }
+
+// ---- move-into-repos (#5374) ----------------------------------------------------------------
+
+/// `doctor --fix move-into-repos` moves a workspace's clones at its root into its `repos/`, its
+/// branch folder still works, and bare `--fix` never moves anything (ADR 0114, decision 4).
+#[test]
+fn fix_move_into_repos_by_name_moves_the_root_clones_and_bare_fix_does_not() {
+    let (_d, root) = plane();
+    std::fs::write(
+        root.join("home").join(".gitconfig"),
+        "[user]\n\tname = Fixture User\n\temail = fixture@example.invalid\n\
+         [commit]\n\tgpgsign = false\n",
+    )
+    .unwrap();
+    let clone = root.join("workspaces/alpha/api");
+    std::fs::create_dir_all(&clone).unwrap();
+    git(&clone, &["init", "-q", "-b", "main"]);
+    std::fs::write(clone.join("README.md"), "one\n").unwrap();
+    git(&clone, &["add", "README.md"]);
+    git(&clone, &["commit", "-qm", "one"]);
+    let piece = root.join("workspaces/alpha/.worktrees/api/piece");
+    git(
+        &clone,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "piece",
+            piece.to_str().unwrap(),
+        ],
+    );
+
+    let out = doctor(&root, &root.join("home"), &["--json"]);
+    let found = rows(&out);
+    assert_eq!(
+        row(&found, "repos outside repos/")["fix"],
+        "move-into-repos"
+    );
+
+    let bare = doctor(&root, &root.join("home"), &["--fix"]);
+    let said = String::from_utf8_lossy(&bare.stderr);
+    assert!(!said.contains("move-into-repos"), "{said}");
+    assert!(clone.join(".git").is_dir(), "bare --fix moved it: {said}");
+
+    let out = doctor(&root, &root.join("home"), &["--fix", "move-into-repos"]);
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert!(said.contains("fix move-into-repos:"), "{said}");
+    assert!(said.contains("✓ alpha: moved api into repos/"), "{said}");
+    assert!(!clone.exists(), "{said}");
+    assert!(
+        root.join("workspaces/alpha/repos/api/.git").is_dir(),
+        "{said}"
+    );
+    std::fs::write(piece.join("after.txt"), "after\n").unwrap();
+    git(&piece, &["add", "after.txt"]);
+    git(&piece, &["commit", "-qm", "after the move"]);
+}
