@@ -1240,7 +1240,7 @@ fn in_a_host_process_at(home: &Path) -> Target {
     host.0.start_at(place, {
         let inherited = inherited.clone();
         move || {
-            let mut command = crate::sessionhost::command(&charter_app());
+            let mut command = crate::sessionhost::command(&purlis_app());
             command.env_clear().envs(inherited.iter().cloned());
             Ok(command)
         }
@@ -1350,10 +1350,10 @@ impl Drop for Ends {
 /// The window's own binary, which it starts again as its session host, built once beside this
 /// test's binary when it is not there yet.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-fn charter_app() -> PathBuf {
+fn purlis_app() -> PathBuf {
     static BUILT: OnceLock<PathBuf> = OnceLock::new();
     BUILT
-        .get_or_init(|| built_beside("charter-app", "purlis-app"))
+        .get_or_init(|| built_beside("purlis-app", "purlis-app"))
         .clone()
 }
 
@@ -3013,7 +3013,7 @@ fn twenty_live_chats_reattach_after_the_window_is_killed_and_started_again() {
     let starts = {
         let inherited = inherited.clone();
         move || {
-            let mut command = crate::sessionhost::command(&charter_app());
+            let mut command = crate::sessionhost::command(&purlis_app());
             command.env_clear().envs(inherited.iter().cloned());
             Ok(command)
         }
@@ -3053,7 +3053,7 @@ fn a_window_flipped_back_after_a_crash_ends_the_chats_the_host_kept_before_it_pu
     let starts = {
         let inherited = inherited.clone();
         move || {
-            let mut command = crate::sessionhost::command(&charter_app());
+            let mut command = crate::sessionhost::command(&purlis_app());
             command.env_clear().envs(inherited.iter().cloned());
             Ok(command)
         }
@@ -3118,7 +3118,7 @@ fn a_change_written_while_the_window_is_gone_is_committed_by_the_host_process() 
     let (_project, root) = a_project();
     a_plane_saved_after_a_second(&root);
     let window = KilledWindow::start(&place, &root, move || {
-        let mut command = crate::sessionhost::command(&charter_app());
+        let mut command = crate::sessionhost::command(&purlis_app());
         command.env_clear().envs(inherited.iter().cloned());
         Ok(command)
     });

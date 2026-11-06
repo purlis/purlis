@@ -102,7 +102,7 @@ impl World {
         let mut said = Vec::new();
         let code = as_the_window(
             &HostScope::for_a_test(),
-            Path::new("/Applications/purlis.app/Contents/MacOS/charter-app"),
+            Path::new("/Applications/purlis.app/Contents/MacOS/purlis-app"),
             self.home.path(),
             || {
                 clone(
@@ -766,7 +766,7 @@ fn a_chats_clone_never_gets_the_persons_sign_in() {
         forge: &forge,
         watch: None,
     };
-    let exe = Path::new("/Applications/purlis.app/Contents/MacOS/charter-app");
+    let exe = Path::new("/Applications/purlis.app/Contents/MacOS/purlis-app");
     let (window, chat) = as_the_window(&HostScope::for_a_test(), exe, home.path(), || {
         let window = route.helper().is_some_and(|h| h.contains(HELPER_ARG));
         let chat = git::isolated(&git::Isolated::default(), || route.helper())
