@@ -747,6 +747,12 @@
   --pane-actions-room: calc(var(--size-control) * 3 + var(--space-1) * 2 + var(--space-5) * 2);
 }
 
+/* **A view alone in its tab draws no controls** (#5318), so its first row keeps no room for them
+   (#5442): it ends as far in as it starts, the header's own inline padding. */
+.pane-frame.pane-viewed:not(:has(> .pane-head .pane-actions)) {
+  --pane-actions-room: var(--space-5);
+}
+
 /* Where a chat's header is: at the pane's top, a step down (`.pane-head:first-child`), end to
    end. It takes no pointer itself, so the view's first row under it
    stays pressable; only its actions do. */

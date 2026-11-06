@@ -567,14 +567,20 @@ export const Settings: Story = {
 
 /**
  * **A view alone in its tab** (#5318): no splits and no close over its content. Its splits are in
- * the palette and on its tab's menu, and its tab's × closes it.
+ * the palette and on its tab's menu, and its tab's × closes it. Its first row takes the whole
+ * width (#5442): in the narrow pane `Narrow` draws with its controls, it needs no second line.
  */
 export const AloneInItsTab: Story = {
-  args: { shown: "persona", alone: true },
+  args: { shown: "persona", alone: true, width: 400 },
   play: async ({ canvas, canvasElement }) => {
     await canvas.findByRole("tabpanel");
     expect(canvasElement.querySelector(".pane-actions")).toBeNull();
     expect(canvas.queryByRole("button", { name: /^Split |^Close this view$/ })).toBeNull();
+    // **Its first row takes the pane's whole width** (#5442): it keeps no room for controls it
+    // does not draw, so it ends as far in from the pane's end as it starts from its start.
+    const first = canvasElement.querySelector(".view-head") as HTMLElement;
+    const { paddingInlineStart, paddingInlineEnd } = getComputedStyle(first);
+    expect(paddingInlineEnd).toBe(paddingInlineStart);
   },
 };
 
@@ -625,6 +631,13 @@ export const Persona: Story = {
   play: async ({ canvas, canvasElement, userEvent }) => {
     await oneWithItsTab(canvasElement, "steward");
     await nothingScrollsUnderTheActions(canvasElement);
+    // Not alone, its first row keeps the room its pane's controls take at its end (#5442).
+    const first = canvasElement.querySelector(".view-head") as HTMLElement;
+    const { paddingInlineStart, paddingInlineEnd } = getComputedStyle(first);
+    const actions = boxOf(canvasElement.querySelector(".pane-head > .pane-actions"));
+    expect(parseFloat(paddingInlineEnd)).toBeGreaterThanOrEqual(
+      actions.width + parseFloat(paddingInlineStart),
+    );
     canvas.getByRole("button", { name: "Close this view" }).focus();
     for (const name of ["Edit persona.md", "Profile…", "Delete persona…"]) {
       await userEvent.tab();
