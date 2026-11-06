@@ -1112,7 +1112,13 @@ describe("a Notice in a pane", () => {
       const made = await paneIs(0, height);
       const seen = await measured(0);
       const line = seen.notices[0].line as Box;
-      return { made, pane: seen.frame as Box, line, panelScrolls: seen.panelScrolls };
+      return {
+        made,
+        pane: seen.frame as Box,
+        line,
+        panelScrolls: seen.panelScrolls,
+        stackScrolls: seen.stackScrolls,
+      };
     };
     const tall = await at(400);
     const short = await at(Math.min(350, tall.made - 50));
@@ -1130,6 +1136,16 @@ describe("a Notice in a pane", () => {
       1,
     );
     check(`a panel scrolls ${said}`, tall.panelScrolls || short.panelScrolls, "is", false);
+    // **The band scrolls at both heights**, so a scrollbar that takes room (macOS's) narrows the
+    // line at both or neither: what the brief opened is a third of the pane, and the band's room
+    // at most a third, so the Notice is always taller than its band.
+    check(
+      `the band scrolls at one height only ${said}`,
+      tall.stackScrolls,
+      "is",
+      short.stackScrolls,
+    );
+    check(`the band does not scroll ${said}`, tall.stackScrolls, "is", true);
     check(
       `the line's width moved with the pane's height ${said}`,
       Math.abs(tall.line.width - short.line.width),

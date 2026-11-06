@@ -539,6 +539,13 @@ async function nothingScrollsUnderTheActions(canvasElement: HTMLElement) {
   (scroller as HTMLElement).scrollTop = 0;
 }
 
+/** **The room the view's first row keeps at its start and at its end** (#5442), in pixels. */
+function firstRowRoom(canvasElement: HTMLElement): { start: number; end: number } {
+  const first = canvasElement.querySelector(".view-head") as HTMLElement;
+  const { paddingInlineStart, paddingInlineEnd } = getComputedStyle(first);
+  return { start: parseFloat(paddingInlineStart), end: parseFloat(paddingInlineEnd) };
+}
+
 /** Puts the keyboard down, so the picture shows the view at rest. */
 const atRest = () => (document.activeElement as HTMLElement | null)?.blur();
 
@@ -578,9 +585,8 @@ export const AloneInItsTab: Story = {
     expect(canvas.queryByRole("button", { name: /^Split |^Close this view$/ })).toBeNull();
     // **Its first row takes the pane's whole width** (#5442): it keeps no room for controls it
     // does not draw, so it ends as far in from the pane's end as it starts from its start.
-    const first = canvasElement.querySelector(".view-head") as HTMLElement;
-    const { paddingInlineStart, paddingInlineEnd } = getComputedStyle(first);
-    expect(paddingInlineEnd).toBe(paddingInlineStart);
+    const { start, end } = firstRowRoom(canvasElement);
+    expect(end).toBe(start);
   },
 };
 
@@ -632,12 +638,9 @@ export const Persona: Story = {
     await oneWithItsTab(canvasElement, "steward");
     await nothingScrollsUnderTheActions(canvasElement);
     // Not alone, its first row keeps the room its pane's controls take at its end (#5442).
-    const first = canvasElement.querySelector(".view-head") as HTMLElement;
-    const { paddingInlineStart, paddingInlineEnd } = getComputedStyle(first);
+    const { start, end } = firstRowRoom(canvasElement);
     const actions = boxOf(canvasElement.querySelector(".pane-head > .pane-actions"));
-    expect(parseFloat(paddingInlineEnd)).toBeGreaterThanOrEqual(
-      actions.width + parseFloat(paddingInlineStart),
-    );
+    expect(end).toBeGreaterThanOrEqual(actions.width + start);
     canvas.getByRole("button", { name: "Close this view" }).focus();
     for (const name of ["Edit persona.md", "Profile…", "Delete persona…"]) {
       await userEvent.tab();
