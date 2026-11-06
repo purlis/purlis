@@ -2,4 +2,12 @@
 <html lang="en"><head><meta charset="utf-8"><title>Opens the dashboard</title></head>
 <body>
   <a href="/hold.html" target="_blank">Open the dashboard</a>
+  <button id="close-it" type="button">Close the dashboard</button>
+  <script>
+    // The dashboard closes itself when told to on the site's channel (#5454): so the click
+    // that closes it lands on this page, which stays, and its answer never waits on a page
+    // that is going. The link opens it without an opener, so this page can't reach it.
+    const site = new BroadcastChannel('hold');
+    document.getElementById('close-it').addEventListener('click', () => site.postMessage('close'));
+  </script>
 </body></html>

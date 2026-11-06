@@ -6,11 +6,10 @@ import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { appStateOf, projectRoot } from "../acting.js";
 import {
-  closeTheViewTabsOpenedSince,
+  closesTheTabsItOpens,
   endTheSessionsStartedSince,
   focusWorkspace,
   runFromThePalette,
-  tabNames,
 } from "../reach.js";
 import { studioPage } from "../studio.js";
 import { projectInFront, runningIn } from "../running.js";
@@ -67,14 +66,25 @@ describe("a Skill studio start refused for its profile's approval", function () 
   let plane = "";
   /** The Local file as it was, or `null` where there was none. */
   let local: string | null = null;
-  let wereOpen: string[] = [];
   let wereRunning: number[] = [];
 
+  // Hooks of a kind run in the order they are registered: the strip is read once alpha is
+  // focused, and its view tabs are closed once the chats are ended, before the draft and the
+  // Local file are put back.
   before(async () => {
     root = await projectRoot();
     state = appStateOf(root);
     await focusWorkspace("alpha");
-    wereOpen = await tabNames();
+  });
+
+  after(async () => {
+    await endTheSessionsStartedSince(wereRunning);
+    await focusWorkspace("alpha");
+  });
+
+  closesTheTabsItOpens();
+
+  before(async () => {
     plane = await projectInFront();
     wereRunning = await runningIn(plane);
     const file = join(root, "charter.local.toml");
@@ -83,10 +93,7 @@ describe("a Skill studio start refused for its profile's approval", function () 
     drafted(state);
   });
 
-  after(async () => {
-    await endTheSessionsStartedSince(wereRunning);
-    await focusWorkspace("alpha");
-    await closeTheViewTabsOpenedSince(wereOpen);
+  after(() => {
     rmSync(join(state, "skill-drafts", ID), { recursive: true, force: true });
     if (root === "") return;
     const file = join(root, "charter.local.toml");
