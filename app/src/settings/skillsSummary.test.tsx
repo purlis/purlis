@@ -18,6 +18,28 @@ function Line({ setting }: { setting: LiveSetting }) {
   return <>{setting.useControl().control({ id: "summary", describedBy: "help" })}</>;
 }
 
+/**
+ * A loaded runner (#5531): it stalls 3 ms just after `testId` first commits, once Testing
+ * Library's `waitFor` has set the 1 ms timer it hands control back on. React draws a React Aria
+ * table's rows a commit after the rest, from a `setImmediate`, so the timer then fires between
+ * the two commits, as it did in the merge queue.
+ */
+function stallAfter(testId: string) {
+  let stalled = false;
+  const watch = new MutationObserver(() => {
+    if (stalled || document.querySelector(`[data-testid="${testId}"]`) === null) return;
+    stalled = true;
+    let hops = 50;
+    const hop = () => {
+      if (--hops > 0) return queueMicrotask(hop);
+      const until = Date.now() + 3;
+      while (Date.now() < until);
+    };
+    queueMicrotask(hop);
+  });
+  watch.observe(document.body, { childList: true, subtree: true });
+}
+
 afterEach(() => {
   cleanup();
   clearMocks();
@@ -140,8 +162,9 @@ describe("the skill budget's row (#4610, #5353)", () => {
 
   it("says each program's budget, and what a program would drop, in the core's words", async () => {
     const line = "Codex: at 15,000 characters this is past the 8,000 it holds.";
-    mockIPC((command) => {
-      if (command === "skill_studio")
+    mockIPC(async (command) => {
+      if (command === "skill_studio") {
+        await new Promise((resolve) => setTimeout(resolve, 200));
         return {
           ...studio([skill("deploy")]),
           router: {
@@ -160,16 +183,19 @@ describe("the skill budget's row (#4610, #5353)", () => {
             past_limits: [line],
           },
         };
+      }
       return null;
     });
     const [inForce] = projectSkillsGroup("p").settings as LiveSetting[];
+    stallAfter("skill-budget-past-limit");
     render(<Line setting={inForce} />);
-    await waitFor(() =>
-      expect(screen.getByTestId("skill-budget-past-limit")).toHaveTextContent(line),
-    );
-    expect(screen.getByTestId("skill-budget-in-force")).toHaveTextContent(
-      "60, Claude Code's default",
-    );
+    // The table's rows land a commit after the past-limit line: wait for both.
+    await waitFor(() => {
+      expect(screen.getByTestId("skill-budget-past-limit")).toHaveTextContent(line);
+      expect(screen.getByTestId("skill-budget-in-force")).toHaveTextContent(
+        "60, Claude Code's default",
+      );
+    });
   });
 });
 
