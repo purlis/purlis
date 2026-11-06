@@ -186,13 +186,6 @@ async function picture(context: TestContext): Promise<void> {
       };
     throw missed;
   }
-  // PROBE (#5463), to be removed: the measurement, on a picture that did not miss.
-  if (/waitingstrip--over-a-real-terminal/.test(story.id))
-    console.log(
-      "PROBE5463",
-      cell.name,
-      JSON.stringify({ before, after: laidOut(frame), playwright: await playwrightBoxOf(frame) }),
-    );
 }
 
 beforeEach(async (context) => {
