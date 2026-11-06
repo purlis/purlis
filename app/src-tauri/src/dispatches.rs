@@ -172,10 +172,12 @@ pub(crate) fn branch_of(held: &Held, session: u32) -> Option<purlis_core::handba
 /// **How each task ended, by its dispatch record, for one reading of the rows** (#1484).
 ///
 /// The store is listed at most once, and only when a row asks: a sidebar with no settled task
-/// reads nothing, and one with twenty reads the store once, not twenty times.
+/// reads nothing, and one with twenty reads the store once, not twenty times. **Listed by its
+/// summary of what ended** (`dispatchrecord::ledger`, #5502): the running records, and of the
+/// ended ones only each row's newest, so a long history costs nothing.
 pub(crate) struct Outcomes<'a> {
     held: &'a Held,
-    listed: Option<Vec<Record>>,
+    listed: Option<dispatchrecord::Ledger>,
 }
 
 impl<'a> Outcomes<'a> {
@@ -191,12 +193,9 @@ impl<'a> Outcomes<'a> {
         let root = self.held.root();
         let listed = self
             .listed
-            .get_or_insert_with(|| dispatchrecord::list(root));
-        let newest = listed.iter().find(|record| {
-            // A task no chat ever was is nobody's by its number (#1497).
-            !dispatchrecord::never_a_chat(record)
-                && dispatchrecord::same_chat(&record.worker.chat, &me)
-        })?;
+            .get_or_insert_with(|| dispatchrecord::ledger(root));
+        // A task no chat ever was is nobody's by its number (#1497).
+        let newest = &listed.latest_for(root, &me)?;
         // **A task the person ended says which way** (#1488), by the app's own fact and never
         // its report's word: `stopped_by_person` or `closed_by_person`. Every other end is its
         // record's outcome word, as it was.
