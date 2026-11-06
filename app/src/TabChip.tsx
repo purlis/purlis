@@ -231,9 +231,9 @@ function sameWord(one: ReactNode, other: ReactNode): boolean {
   return keys.length === Object.keys(now).length && keys.every((key) => was[key] === now[key]);
 }
 
-/** Whether a chip would be drawn the same: held on what it says, not on the lists' identity,
+/** Whether a tasks button would be drawn the same: held on what it says, not on the lists' identity,
  *  which the window builds again whenever any tab changes. */
-function sameChip(was: Props, now: Props): boolean {
+function sameTasks(was: Props, now: Props): boolean {
   return (
     was.id === now.id &&
     was.name === now.name &&
@@ -324,8 +324,8 @@ export const TabNeeds = memo(
  */
 export const ChatTasks = memo(function ChatTasks(props: Props) {
   if (!hasTasks(props.rows, props.ended)) return props.alone ? null : <>{props.children}</>;
-  return <Chip {...props} />;
-}, sameChip);
+  return <TasksButton {...props} />;
+}, sameTasks);
 
 /** How a menu came to be open: what decides who has the keyboard and what closes it. */
 type OpenedBy = "press" | "rest" | "keys";
@@ -334,7 +334,7 @@ type Point = { x: number; y: number };
 
 const NO_REPORTS: ReadonlySet<string> = new Set();
 
-function Chip({
+function TasksButton({
   id,
   name,
   rows,
@@ -353,7 +353,7 @@ function Chip({
   onActivity,
   children,
 }: Props) {
-  // One reading of the store for the chip and its menu: each row's state, redrawn only when
+  // One reading of the store for the button and its menu: each row's state, redrawn only when
   // one of them changes.
   const kinds = useChatsSelect(useChatsHere(), (states) => kindsOf(states, rows), sameList);
   const counts = countsOf(rows, kinds, ended);
@@ -460,7 +460,7 @@ function Chip({
       show("rest", document.activeElement);
     }, REST_MS);
   };
-  /** The pointer left the chip or the menu: a menu its rest opened closes soon. */
+  /** The pointer left the button or the menu: a menu its rest opened closes soon. */
   const leaveSoon = () => {
     notResting();
     seenAt.current = undefined;
@@ -471,7 +471,7 @@ function Chip({
     leaving.current = window.setTimeout(hide, GRACE_MS);
   };
 
-  // Gone from the window, which an engine may not say on the chip or the menu (#3095).
+  // Gone from the window, which an engine may not say on the button or the menu (#3095).
   useWindowLeft((why) => {
     if (why === "pointer") leaveSoon();
   });
@@ -626,7 +626,7 @@ function Chip({
               } else if (open) hide();
               else show(opened, from === trigger.current ? null : from);
             }}
-            // Coming on arms nothing (see `TabTasks`): it is only where the pointer is.
+            // Coming on arms nothing (see `ChatTasks`): it is only where the pointer is.
             onPointerEnter={(event) => {
               notLeaving();
               seenAt.current = { x: event.clientX, y: event.clientY };

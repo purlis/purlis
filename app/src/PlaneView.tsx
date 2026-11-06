@@ -434,8 +434,8 @@ import {
 import { useChatsListPrefs } from "./chatsListPrefs";
 import { placeRowId, type Place as TaskPlace } from "./TabChip";
 import { ChatTasks } from "./TabChip";
-import { runningByTab } from "./taskLimits";
-import { type Ended, type Needing } from "./tabTasks";
+import { runningSaid } from "./taskLimits";
+import { hasTasks, type Ended, type Needing } from "./tabTasks";
 import { readUsed, type UsedAsk } from "./tasksUsed";
 import { finishedBucketOf, taskBucketOf } from "./taskBuckets";
 import { stateClock } from "./stateClock";
@@ -3496,7 +3496,7 @@ export const PlaneView = memo(function PlaneView({
   /** Unique to this view, so two projects' tabs never name each other's fresh marks. */
   const freshMarks = useId();
   const freshMarkOf = (tab: number) => `${freshMarks}-fresh-${tab}`;
-  /** The id of the counts on a tab's chip (#1487), which the tab is described by. */
+  /** The id of the words a pane head's tasks button is described by: its counts (#5341). */
   const tasksIdOf = useCallback(
     (session: number, pane: number) => `${freshMarks}-tasks-${pane}-${session}`,
     [freshMarks],
@@ -8653,7 +8653,6 @@ export const PlaneView = memo(function PlaneView({
     };
   }, [colourOf, filedIn, listedChats, sandboxOf, tabs, wrapping]);
   /** Each tab menu's footer: how many of its session's tasks run against its limit (#1498). */
-  const runningOfTab = useMemo(() => runningByTab(chatsByTab), [chatsByTab]);
   useEffect(() => {
     chatsListed.current = listedChats;
   }, [listedChats]);
@@ -9924,6 +9923,8 @@ export const PlaneView = memo(function PlaneView({
       const rows = chatsOfChat(chatsByTab.get(at.tab) ?? NO_ROWS, session);
       const below = new Set(rows.map((row) => row.session));
       const ended = (endedByTab.get(at.tab) ?? NO_ENDED).filter((task) => below.has(task.asker));
+      // A head that says no state of its own draws nothing where there is no menu to open.
+      if (alone && !hasTasks(rows, ended)) return null;
       const asked =
         chatTasksAsked?.session === session &&
         chatTasksAsked.tab === at.tab &&
@@ -9945,7 +9946,8 @@ export const PlaneView = memo(function PlaneView({
           onPress={pressTaskEnd}
           onPlace={placeFromChip}
           used={usedFromChip}
-          limits={runningOfTab.get(at.tab)}
+          // The limits of this pane's own chat, the menu's first row (#1498).
+          limits={runningSaid(rows[0])}
           stopAll={stopAllOf}
           onActivity={activityFromChip}
           alone={alone}
@@ -9964,7 +9966,6 @@ export const PlaneView = memo(function PlaneView({
       nameOf,
       placeFromChip,
       pressTaskEnd,
-      runningOfTab,
       showPickedIn,
       stopAllOf,
       taskEndsOf,

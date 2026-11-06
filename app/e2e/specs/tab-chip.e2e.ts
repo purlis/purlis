@@ -11,6 +11,7 @@ import {
   endChatsStartedHere,
   startAChat,
   type Started,
+  HEAD_TASKS,
 } from "../started.js";
 import { KEPT_EMPTY, untilTheStripIsBare } from "../reach.js";
 
@@ -166,9 +167,7 @@ async function pretendLimits(of: number, past: boolean): Promise<void> {
   );
 }
 
-/** **A chat's tasks button** (#5341): the state word on the head of the pane in front, which
- *  opens the menu a tab's chip opened. A tab wears no count. */
-const TASKS = ".pane-frame[data-focused] .pane-tasks-button";
+const TASKS = HEAD_TASKS;
 
 /** Every drawn tab's cell, by its name: its box, and whether it wears a count (never, #5341). */
 async function cells(): Promise<Record<string, { box: Box; chip: boolean }>> {
@@ -392,7 +391,7 @@ async function cross(dwell: number): Promise<{ over: number; chips: number }> {
       if (last !== null) send(last, "pointerout", null);
       return {
         over: stops.length,
-        chips: stops.filter((stop) => stop.classList.contains("pane-tasks-button")).length,
+        chips: stops.filter((stop) => stop.matches(tasks)).length,
       };
     },
     STRIP,
@@ -451,7 +450,6 @@ function check(
   const holds = is === "is" ? value === other : is === "atLeast" ? value >= other : value <= other;
   if (!holds) throw new Error(`${what}: ${String(value)} is not ${is} ${String(other)}`);
 }
-
 
 describe("a session's tasks, from its pane head and not its tab (#5341)", () => {
   let was = { width: 1280, height: 800 };
@@ -732,11 +730,9 @@ describe("a session's tasks, from its pane head and not its tab (#5341)", () => 
       await unwatch();
     }
 
-    const seen = await browser.execute(() => {
+    const seen = await browser.execute((tasks: string) => {
       const menu = document.querySelector<HTMLElement>('.tasks-menu[data-part="root"]');
-      const chip = document.querySelector<HTMLElement>(
-        ".pane-frame[data-focused] .pane-tasks-button",
-      );
+      const chip = document.querySelector<HTMLElement>(tasks);
       if (!menu || !chip) return null;
       const at = menu.getBoundingClientRect();
       return {
@@ -750,7 +746,7 @@ describe("a session's tasks, from its pane head and not its tab (#5341)", () => 
         // It took no keyboard: the pointer opened it, and whoever was typing still is.
         keyboardInIt: menu.contains(document.activeElement),
       };
-    });
+    }, TASKS);
     expect(seen).not.toBeNull();
     // The session's own chat first, then the tasks; the finished one is in the fold.
     expect(seen?.rows.slice(0, 1)).toEqual([mine[0]]);
@@ -784,10 +780,8 @@ describe("a session's tasks, from its pane head and not its tab (#5341)", () => 
     });
 
     // Off the chip and onto the line that opens the ways to end a task, as a hand moves.
-    const onTheLine = await browser.execute(() => {
-      const counts = document.querySelector<HTMLElement>(
-        ".pane-frame[data-focused] .pane-tasks-button",
-      );
+    const onTheLine = await browser.execute((tasks: string) => {
+      const counts = document.querySelector<HTMLElement>(tasks);
       const line = document.querySelector<HTMLElement>(".tasks-menu .tasks-menu-end");
       if (!counts || !line) return false;
       const at = line.getBoundingClientRect();
@@ -806,7 +800,7 @@ describe("a session's tasks, from its pane head and not its tab (#5341)", () => 
       line.dispatchEvent(new PointerEvent("pointermove", here));
       line.dispatchEvent(new PointerEvent("pointermove", { ...here, clientX: here.clientX + 2 }));
       return true;
-    });
+    }, TASKS);
     expect(onTheLine).toBe(true);
     await browser
       .waitUntil(

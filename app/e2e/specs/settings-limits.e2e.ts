@@ -5,10 +5,7 @@ import { $, browser, expect } from "@wdio/globals";
 import { READY } from "../harness.js";
 import { closesTheTabsItOpens } from "../reach.js";
 import { openProjectSettings } from "../settingsTab.js";
-import { endChatsStartedHere, startAChat, type Started } from "../started.js";
-
-/** A chat's tasks button: the state word on the head of the pane in front (#5341). */
-const HEAD_TASKS = ".pane-frame[data-focused] .pane-tasks-button";
+import { endChatsStartedHere, startAChat, type Started, HEAD_TASKS } from "../started.js";
 
 /**
  * **The token and time limits' lines, and the settings set's native controls, in the real

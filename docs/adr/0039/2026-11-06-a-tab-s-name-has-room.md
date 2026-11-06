@@ -32,7 +32,17 @@ on its chat's pane head ("waiting on 3 tasks"), the same component ⌘⇧J opens
 drift: each task with its mark, End a task, Activity, and a summary of the counts at its foot. A
 chat with no tasks keeps its state word as it was. A pick shows the task in that pane, as ⌘⇧J's
 did (#5058); the menu lists the chat first and its tasks under who asked for them, as the chip's
-did, and a keyboard opens it on the first task. A tab's hover says how many of its tasks run.
+did, and a keyboard opens it on the first task. A tab's hover says how many of its tasks run: its open tasks, whose programs run whether they
+work or wait.
+
+**What this changes of ⌘⇧J's own menu (#5058).** It was a menu of its own, floating under the
+focused head, listing the chat's own tasks and those that had finished, a finished one passed by.
+Now it is the head's menu: the chat first, every task under who asked for it (a task's tasks
+too), the finished ones in the fold, and Enter on a finished one opens its report. It goes with
+its pane, so a pick never lands in a pane that has closed. Its foot says the limits of the pane's
+own chat, not of the tab's first.
 **The hand stays on the tab** where a chat of it waits for the person off screen (V100-37): that
 is "whether it needs you". The theme part `tabs.count` keeps its name, since the manifest never
-takes a part away, and draws the summary's counts.
+takes a part away, and draws the summary's counts. ADR 0036's amendment of 2026-10-12, where
+a tab gives up its task chip before its title (#1867), no longer has a chip to give up: a tab at
+its floor keeps its title, and the rest go behind "N more ▾".

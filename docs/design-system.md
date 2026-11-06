@@ -1788,7 +1788,7 @@ the focus rings, #2867):
   `input`, or a class some component gives a control (a list's row is its list's). A strip or a pane header is a class named for one (`-bar`,
   `-strip`, `-head`, `-tabs`, `strip-*`, the three strips, `.pane-chips`, the status line; not
   a chart's bar or a side's column) and the rows of controls a strip or a pane's top line draws
-  as part of itself (`.pane-task-ends`, `.tab-tasks`, and the top line's chips). **The pane's
+  as part of itself (`.pane-task-ends`, `.tab-run`, and the top line's chips). **The pane's
   head and foot are each one height** (#2484, #5202): every chip on the pane line (the
   breadcrumb, its name, its state mark: `PANE_LINE_CHIPS`) and on the pane foot (harness ·
   workspace, where the chat came from, its skills warning, its sandbox, the gauge:

@@ -160,24 +160,6 @@ function paneRowsOf(
 }
 
 /**
- * One pane's frame, three rows each with one job (#3142, the operator's variant A of
- * 2026-10-24; #4754): **the pane's header** with the chat at a glance at its start and the
- * pane's own controls at its end, its bell among them (`PaneHead`, `PaneBell`), **the band** of
- * what purlis has to say of its chats under it (`PaneNotices`), so a Notice arriving never moves
- * the header, then **the terminal**, which has the room the two leave.
- *
- * - **All of it is inside the pane**, on the terminal's own fill, so the chosen tab joins the
- *   pane as one piece whatever the band holds: nothing is drawn between a tab and its pane, and
- *   the top of a pane is always the terminal's fill (`paneFrame.css`).
- * - **Nothing is drawn over the terminal.** The chips and the controls floated in the pane's
- *   two corners over its first lines (charter-app#193), and covered the harness's own banner;
- *   the Notices had a row above the pane (#1647), between the tab and its pane. Each has a row
- *   of its own now, inside the pane.
- * - **The head and the foot are always there**, with a gauge or without, so a pane does not change
- *   height when its first usage arrives (the operator's reason in #207). Only the band comes and goes,
- *   and the terminal is pinned to its bottom: it grows or shrinks from the top.
- */
-/**
  * **What a pane head's state word opens** (#5341): handed chat `session`, the pane it is drawn in
  * and the word, it answers the word inside the button of the chat's tasks menu, or the word as it
  * is, or nothing for a head that says no state (`alone`) where there is no menu.
@@ -232,6 +214,24 @@ function PaneTasksWord({
   return drawn == null ? null : <span className="pane-state-mark">{drawn}</span>;
 }
 
+/**
+ * One pane's frame, three rows each with one job (#3142, the operator's variant A of
+ * 2026-10-24; #4754): **the pane's header** with the chat at a glance at its start and the
+ * pane's own controls at its end, its bell among them (`PaneHead`, `PaneBell`), **the band** of
+ * what purlis has to say of its chats under it (`PaneNotices`), so a Notice arriving never moves
+ * the header, then **the terminal**, which has the room the two leave.
+ *
+ * - **All of it is inside the pane**, on the terminal's own fill, so the chosen tab joins the
+ *   pane as one piece whatever the band holds: nothing is drawn between a tab and its pane, and
+ *   the top of a pane is always the terminal's fill (`paneFrame.css`).
+ * - **Nothing is drawn over the terminal.** The chips and the controls floated in the pane's
+ *   two corners over its first lines (charter-app#193), and covered the harness's own banner;
+ *   the Notices had a row above the pane (#1647), between the tab and its pane. Each has a row
+ *   of its own now, inside the pane.
+ * - **The head and the foot are always there**, with a gauge or without, so a pane does not change
+ *   height when its first usage arrives (the operator's reason in #207). Only the band comes and goes,
+ *   and the terminal is pinned to its bottom: it grows or shrinks from the top.
+ */
 export function PaneFrame({
   plane,
   pane,

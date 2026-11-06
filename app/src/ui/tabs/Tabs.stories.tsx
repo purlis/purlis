@@ -412,13 +412,21 @@ const nameWidth = (canvas: { getByRole: typeof screen.getByRole }, name: RegExp)
  * stays, never a frame of the fade.
  */
 export const CloseAtRest: Story = {
+  // The long name in front, so its × stands over the end of it.
+  args: { chosen: 2 },
   play: async ({ canvas }) => {
-    await waitFor(() => expect(seen(closerOf(canvas, /talk/))).toBe("1"));
-    for (const name of [/steward 1/, /review the tab strip/, /purlis\.toml/])
+    const long = /review the tab strip/;
+    await waitFor(() => expect(seen(closerOf(canvas, long))).toBe("1"));
+    for (const name of [/steward 1/, /talk/, /purlis\.toml/])
       await expect(seen(closerOf(canvas, name))).toBe("0");
-    // It takes no room: the front tab's button runs under its ×.
-    const tab = canvas.getByRole("tab", { name: /talk/ }).getBoundingClientRect();
-    expect(tab.right).toBeGreaterThanOrEqual(closerOf(canvas, /talk/).getBoundingClientRect().left);
+    // It takes no room: the name runs on under the ×, which stands inside the tab's cell.
+    const name = canvas
+      .getByRole("tab", { name: long })
+      .querySelector('[data-part="label"]') as HTMLElement;
+    const closer = closerOf(canvas, long).getBoundingClientRect();
+    expect(name.getBoundingClientRect().right).toBeGreaterThan(closer.left);
+    const cell = name.closest('[data-part="tab"]') as HTMLElement;
+    expect(closer.right).toBeLessThanOrEqual(cell.getBoundingClientRect().right);
   },
 };
 

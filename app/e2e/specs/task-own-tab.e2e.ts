@@ -3,12 +3,15 @@
 
 import { browser, expect, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
-import { bringChatForward, endChatsStartedHere, startAChat, type Started } from "../started.js";
+import {
+  bringChatForward,
+  endChatsStartedHere,
+  startAChat,
+  type Started,
+  HEAD_TASKS,
+} from "../started.js";
 import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
 import { untilTheStripIsBare } from "../reach.js";
-
-/** A chat's tasks button: the state word on the head of the pane in front (#5341). */
-const HEAD_TASKS = ".pane-frame[data-focused] .pane-tasks-button";
 
 /**
  * **A task's own tab draws a minimise and no close, and a task beside its session is two panes
@@ -114,9 +117,9 @@ async function pretend(asker: number, any: boolean): Promise<void> {
 async function openMenuOf(session: number): Promise<void> {
   await bringChatForward(session);
   // Its pane head's state word, which opens its tasks (#5341).
-  await browser.execute(() => {
-    document.querySelector<HTMLElement>(".pane-frame[data-focused] .pane-tasks-button")?.click();
-  });
+  await browser.execute((tasks: string) => {
+    document.querySelector<HTMLElement>(tasks)?.click();
+  }, HEAD_TASKS);
   await browser.waitUntil(
     async () =>
       browser.execute(() => document.querySelector('.tasks-menu[data-part="root"]') !== null),

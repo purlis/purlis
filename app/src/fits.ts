@@ -78,9 +78,10 @@ export const LEAST = {
   /**
    * A chat tab: the innermost, and the one there are fifty of. **160px at the 14px default
    * text** (#5341, ADR 0039 as amended 2026-11-06), which is this at the size the floors were
-   * tuned at: room for its mark and about fifteen letters of its name, since a tab says which
-   * chat it is and whether it needs you and nothing else. Its `×` takes no room at rest, and its
-   * tasks are on its pane's head. A measured value replaces it without a new decision.
+   * tuned at ({@link leastAt}: 149 × 14 / 13 ≈ 160): room for its mark and about fifteen
+   * letters of its name, since a tab says which chat it is and whether it needs you and nothing
+   * else. Its `×` takes no room at rest, and its tasks are on its pane's head. A measured value
+   * replaces it without a new decision.
    */
   chat: 149,
 } as const;
