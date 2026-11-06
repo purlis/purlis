@@ -358,7 +358,12 @@ export const LiveWorkspaceFolder: Story = {
     await expect(rows.at(-1)).toHaveAccessibleName("Save with the project");
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    // The closed menu hands the keyboard back to the row a frame or more later; blurring before
+    // it lands leaves the ring in the picture in one engine and not the other.
+    const row = () => canvas.queryByRole("row", { name: /^deploy\.sh this machine only/ });
+    await untilFocused(row, "deploy.sh, after Esc");
     (document.activeElement as HTMLElement | null)?.blur();
+    await waitFor(() => expect(document.activeElement).not.toBe(row()));
     await settled();
   },
 };
