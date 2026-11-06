@@ -197,6 +197,7 @@ pub mod profilestore;
 pub mod profiletrust;
 pub mod programs;
 pub mod projectgit;
+pub mod projectindex;
 pub mod proposed;
 pub mod proseguard;
 pub mod provenance;

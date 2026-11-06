@@ -7,6 +7,7 @@
 //! archives, moves and takes skills off Deleted the same way. Each change is the window's alone
 //! (`purlis_session_protocol::ui::WINDOW_ONLY`): a chat may propose one, and the person approves.
 
+use purlis_core::skills::source::update::set as set_update;
 use purlis_core::skills::verbs::{self, set};
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -500,4 +501,149 @@ pub(crate) async fn skill_set_delete_now(
         })
     })
     .await
+}
+
+// --- Review updates (#5354) ----------------------------------------------------------------------
+
+/// One set update's Undo, held: its number, the project it was made in, and what it takes back.
+struct HeldUndo {
+    id: u32,
+    plane: crate::planes::PlaneId,
+    undo: set_update::Undo,
+}
+
+/// The Undos held, and the number the last one was given.
+#[derive(Default)]
+struct Undos {
+    last: u32,
+    held: Vec<HeldUndo>,
+}
+
+/// **The Undos of the updates accepted as a set**, held in this process alone: what an Undo puts
+/// back is the copies as they were, which the window never holds. The newest [`UNDOS_HELD`] are
+/// kept; an older one's Undo, or one from before purlis last started, says it is gone.
+#[derive(Default)]
+pub(crate) struct SetUpdateUndos(std::sync::Mutex<Undos>);
+
+/// How many set updates' Undos are held at once.
+const UNDOS_HELD: usize = 8;
+
+/// One update of a set, as the window accepted it: the skill, what its review was accepted as,
+/// the grant it showed, and each kind of new capability the person ticked it with.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct SkillSetUpdating {
+    pub level: SkillLevel,
+    pub name: String,
+    pub reviewed: crate::skillsources::Reviewed,
+    pub grant: Option<SkillGrant>,
+    pub allowed: Vec<crate::skillsources::SkillGained>,
+}
+
+/// What a set's update did, and the Undo that takes it back.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillSetUpdated {
+    pub notes: Vec<String>,
+    /// What [`skill_set_update_undo`] is handed.
+    pub undo: u32,
+}
+
+/// **Accepts every update of `updates` as one change** (#5354): one commit, all or nothing, and
+/// one where a skill gains a kind of capability it was not ticked with is refused whole.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_set_update(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    undos: tauri::State<'_, SetUpdateUndos>,
+    plane: crate::planes::PlaneId,
+    updates: Vec<SkillSetUpdating>,
+) -> Result<SkillSetUpdated, String> {
+    let held = planes.held(&plane)?;
+    let set: Vec<set_update::Updating> = updates
+        .iter()
+        .map(|one| {
+            Ok(set_update::Updating {
+                level: (&one.level).into(),
+                name: one.name.clone(),
+                accepted: purlis_core::skills::source::Accepted::try_from(&one.reviewed)?,
+                grant: one.grant.clone().map(Into::into),
+                allowed: one.allowed.iter().copied().map(Into::into).collect(),
+            })
+        })
+        .collect::<Result<_, String>>()?;
+    let (said, undo) = crate::off_the_window("updating the skills", move || {
+        flag_on()?;
+        let mut undo = None;
+        let said = heard(held.root(), |cx| {
+            undo = Some(set_update::update_set(cx, &set)?);
+            Ok(())
+        })?;
+        // update_set answers an Undo whenever it is done, so this is never met.
+        undo.map(|undo| (said, undo)).ok_or_else(|| {
+            "The skills were updated, but their Undo was lost: update them back one at a time."
+                .to_owned()
+        })
+    })
+    .await?;
+    let mut kept = undos.0.lock().map_err(|_| {
+        "The skills were updated, but their Undo could not be kept: update them back one at a \
+         time."
+            .to_owned()
+    })?;
+    kept.last = kept.last.wrapping_add(1);
+    let id = kept.last;
+    kept.held.push(HeldUndo { id, plane, undo });
+    let over = kept.held.len().saturating_sub(UNDOS_HELD);
+    kept.held.drain(..over);
+    Ok(SkillSetUpdated {
+        notes: said.notes,
+        undo: id,
+    })
+}
+
+/// **Takes back the set's update `undo` names**: each copy as it was and the pins back, as one
+/// commit. Refused whole where one changed since.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_set_update_undo(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    undos: tauri::State<'_, SetUpdateUndos>,
+    plane: crate::planes::PlaneId,
+    undo: u32,
+) -> Result<crate::skillchange::SkillChanged, String> {
+    let held = planes.held(&plane)?;
+    let gone = || {
+        format!(
+            "This update can't be undone now: only the last {UNDOS_HELD} updates can be \
+             undone, and only until the app quits. Update the skills back one at a time."
+        )
+    };
+    let taken = {
+        let mut kept = undos.0.lock().map_err(|_| gone())?;
+        let at = kept
+            .held
+            .iter()
+            .position(|one| one.id == undo && one.plane == plane)
+            .ok_or_else(gone)?;
+        kept.held.remove(at)
+    };
+    let done = crate::off_the_window("undoing the update", move || {
+        flag_on()?;
+        let mut refused = false;
+        let said = heard(held.root(), |cx| {
+            set_update::undo_update_set(cx, &taken.undo).map_err(|why| {
+                refused = matches!(why, set_update::NotUndone::Refused(_));
+                why.to_string()
+            })
+        });
+        Ok((said, refused, taken))
+    });
+    let (said, refused, taken) = done.await?;
+    // Refused with nothing touched: its Undo stays offered. Taken back in part, it is not.
+    if said.is_err()
+        && refused
+        && let Ok(mut kept) = undos.0.lock()
+    {
+        kept.held.push(taken);
+    }
+    said
 }

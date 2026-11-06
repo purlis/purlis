@@ -1152,3 +1152,106 @@ fn only_a_regular_file_is_read_and_nothing_waits() {
     assert_eq!(super::arrived::read_regular(&link, 64), None);
     assert_eq!(super::arrived::read_regular(&pipe, 64), None);
 }
+
+/// A stand-in for `/proc`: one process, whose mounts are `points`.
+fn proc_mounting(fix: &Fixture, points: &[&Path]) -> PathBuf {
+    let proc = fix.plane.join("proc");
+    let lines: String = points
+        .iter()
+        .enumerate()
+        .map(|(n, point)| {
+            let spelled = point.display().to_string().replace(' ', "\\040");
+            format!("{n} 1 0:1 / {spelled} rw - tmpfs tmpfs rw\n")
+        })
+        .collect();
+    file(
+        &proc.join("4242/mountinfo"),
+        &format!("1 0 0:1 / / rw - ext4 x rw\n{lines}"),
+    );
+    file(&proc.join("self-ish/mountinfo"), "not a process\n");
+    proc
+}
+
+/// On Linux, Claude Code's sandbox makes an empty placeholder for each name it holds that isn't
+/// there, while a command runs. One a sandbox killed outright left, that no running sandbox
+/// mounts, is cleared; one a sandbox still mounts, one that holds something, and a name that was
+/// there as the chat started are kept.
+#[test]
+fn a_placeholder_a_killed_sandbox_left_is_cleared_and_one_in_use_is_kept() {
+    let fix = Fixture::new();
+    let left = fix.folder.join(".envrc");
+    let left_folder = fix.folder.join(".vscode");
+    let in_use = fix.folder.join(".husky");
+    let written = fix.folder.join(".mcp.json");
+    let watched = Watched {
+        placeholders: vec![
+            left.clone(),
+            left_folder.clone(),
+            in_use.clone(),
+            written.clone(),
+        ],
+        ..fix.watched()
+    };
+    file(&left, "");
+    fs::create_dir_all(&left_folder).expect("a folder");
+    file(&in_use, "");
+    file(&written, "{}\n");
+    let other = fix.folder.join(".bashrc");
+    file(&other, "");
+    arrived::clear_left(&watched, &proc_mounting(&fix, &[&in_use]));
+    assert!(!left.exists(), "an empty file no sandbox mounts goes");
+    assert!(!left_folder.exists(), "and an empty folder");
+    assert!(in_use.exists(), "a running sandbox still holds it");
+    assert!(written.exists(), "it holds something");
+    assert!(other.exists(), "it is no placeholder of this chat's");
+}
+
+#[test]
+fn where_no_process_s_mounts_can_be_read_nothing_is_cleared() {
+    let fix = Fixture::new();
+    let left = fix.folder.join(".envrc");
+    file(&left, "");
+    let watched = Watched {
+        placeholders: vec![left.clone()],
+        ..fix.watched()
+    };
+    let proc = fix.plane.join("empty-proc");
+    fs::create_dir_all(&proc).expect("a folder");
+    arrived::clear_left(&watched, &proc);
+    arrived::clear_left(&watched, &fix.plane.join("no-proc"));
+    assert!(left.exists());
+}
+
+#[test]
+fn a_mount_point_with_a_space_in_its_path_is_read_as_that_path() {
+    let fix = Fixture::new();
+    let spaced = fix.folder.join("a b/.envrc");
+    file(&spaced, "");
+    let watched = Watched {
+        placeholders: vec![spaced.clone()],
+        ..fix.watched()
+    };
+    arrived::clear_left(&watched, &proc_mounting(&fix, &[&spaced]));
+    assert!(spaced.exists(), "a sandbox holds it");
+}
+
+/// A chat started again after a sandbox of its was killed finds the placeholder there: the
+/// name is still one to clear, as it wasn't there when the chat first started.
+#[test]
+fn a_placeholder_is_still_cleared_after_the_chat_starts_again() {
+    let fix = Fixture::new();
+    let left = fix.folder.join(".envrc");
+    let first = Watched {
+        placeholders: vec![left.clone()],
+        ..fix.watched()
+    };
+    arrived::begin(&fix.plane, CHAT, None, &first).expect("a record");
+    file(&left, "");
+    arrived::begin(&fix.plane, CHAT, None, &fix.watched()).expect("started again");
+    let proc = proc_mounting(&fix, &[]);
+    arrived::clear_left(
+        &arrived::watched_of(&fix.plane, CHAT).expect("a record"),
+        &proc,
+    );
+    assert!(!left.exists());
+}

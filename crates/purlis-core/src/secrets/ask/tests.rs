@@ -850,6 +850,7 @@ fn devops(chat: u32) -> Chat<'static> {
         chat,
         persona: Some("devops"),
         harness: None,
+        asker: None,
     }
 }
 
@@ -860,6 +861,7 @@ fn line(chat: u32, key: &str, vault: Option<&str>) -> SecretAsk {
         purpose: "  charge test cards\nin the checkout e2e ".into(),
         vault: vault.map(str::to_owned),
         replace: None,
+        program: None,
     }
 }
 
@@ -1082,6 +1084,7 @@ fn a_line_that_is_not_one_is_refused_before_anything_is_asked() {
             chat: 7,
             persona: None,
             harness: None,
+            asker: None,
         },
         &line(7, "KEY", None),
         Duration::ZERO,
@@ -1237,6 +1240,7 @@ fn a_persona_that_names_no_vault_is_asked_into_one_named_after_it_made_at_the_fi
         chat,
         persona: Some("shop"),
         harness: None,
+        asker: None,
     };
     let (waits, waiting) = std::sync::mpsc::channel();
     let answered = std::thread::scope(|scope| {

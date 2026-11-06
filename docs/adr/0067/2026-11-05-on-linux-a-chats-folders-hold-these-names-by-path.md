@@ -51,10 +51,20 @@ Everywhere, the look also counts a repository's `.git/info/attributes` as what s
 ## What this costs
 
 Each placeholder is a real empty file or folder on disk while the sandbox command that needs it
-runs, so a person's own tools can see it then, and `git status` lists the ones that aren't ignored.
-They are removed when a command ends as it should. One a sandbox killed outright leaves isn't
-removed by purlis, and an empty one is not told. Measured against the library that builds this
-sandbox, with the same list of commands and no names held: git's results don't change.
+runs, so a person's own tools can see it then. Measured with the library that builds this sandbox,
+in a repository with one file: about 35 at the top of a folder, 32 of them empty files, where the
+library's own names alone make about 12. While a command runs, `git status` lists them, and a
+person's `git add -A` stages them. They are removed when a command ends as it should, and one
+command ending leaves another's that still runs.
+
+A sandbox killed outright leaves them, and the next one doesn't remove them. **The next look does**
+(decided by the person, 2026-11-06): each name held this way that wasn't there as the chat first
+started, where it is an empty file or an empty folder and no process has it mounted, as a running
+sandbox has. Where the mounts of every process can't be read, it removes nothing, since removing
+one a sandbox still holds would free that name inside it. Anything else at such a path is the
+look's to tell.
+
+With the same list of commands and no names held, git's results don't change.
 
 The names make a Claude Code chat's settings on Linux longer than one word of its command line, so
 they go through a file in purlis's data folder, as a project with many workspaces already did.

@@ -558,7 +558,7 @@
       "why": "It writes the updater's own record, which no lane's read draws."
     },
     {
-      "at": "secretasks.rs run_grant_answered",
+      "at": "secretasks.rs run_grant_filled",
       "writes": "this machine's answers about the project (sandbox-grants)",
       "by": ["answerRunGrant", "keepVaultBlocked"]
     },

@@ -2153,7 +2153,9 @@ describe("a tidy Chats list (DS-11, #1843)", () => {
       ).toEqual(["chat-mark"]);
       expect(drawnAs(lead, "inline-size"), name).toBe("var(--chats-mark)");
       const persona = lead.firstElementChild as Element;
-      const mark = persona.querySelector('[data-part="who"]')?.firstElementChild as Element;
+      // Inside the grip that stands in its `who` (#5290).
+      const mark = persona.querySelector('[data-part="who"] [data-scope="grip"][data-part="mark"]')
+        ?.firstElementChild as Element;
       // The one icon's size (#4762, `chat-mark.css`), which the Chats list sets to its mark's.
       const sized = "var(--chat-mark-size, calc(var(--space-6) + var(--space-2)))";
       expect(drawnWith(mark, "inline-size"), name).toBe(sized);
@@ -2165,7 +2167,11 @@ describe("a tidy Chats list (DS-11, #1843)", () => {
     }
     // One wears a persona's mark, the other, with no persona, a shell's.
     expect(
-      rows.map((one) => one.querySelector('[data-part="who"]')?.firstElementChild?.tagName),
+      rows.map(
+        (one) =>
+          one.querySelector('[data-part="who"] [data-scope="grip"][data-part="mark"]')
+            ?.firstElementChild?.tagName,
+      ),
     ).toEqual(["SPAN", "svg"]);
   });
 
@@ -2180,11 +2186,11 @@ describe("a tidy Chats list (DS-11, #1843)", () => {
     move(1, "running", 10);
     move(2, "running", 11);
 
-    const steward = row(tree, "steward 1").querySelector('[data-part="who"] > .persona-mark');
+    const steward = row(tree, "steward 1").querySelector('[data-part="who"] .persona-mark');
     await waitFor(() => expect(tipOf(steward)).toBe("steward, working"));
     const terminal = within(tree)
       .getAllByRole("treeitem")
-      .map((one) => one.querySelector('[data-part="who"] > svg'))
+      .map((one) => one.querySelector('[data-part="who"] [data-part="mark"] > svg'))
       .find((one) => one !== null);
     expect(tipOf(terminal)).toBe("terminal, working");
   });
@@ -2333,16 +2339,31 @@ const threeTasks = () => [
 ];
 
 describe("a chat's row places its chat (#4764)", () => {
-  it("picks its chat up for placement mode on a press of its Place…", async () => {
+  it("picks its chat up for placement mode on a press of its grip, the persona's mark (#5290)", async () => {
     const { move } = core(threeTasks());
     render(<App />);
     const tree = await section();
     await waitFor(() => expect(shape(tree)).toHaveLength(4));
     move(3, "running", 13);
     const one = row(tree, "devops 3");
-    const place = one.querySelector<HTMLElement>(".chat-row-place");
-    expect(place).not.toBeNull();
-    fireEvent.click(place as HTMLElement);
+    // No Place… on the row: its persona's mark is the grip, in the chat mark's `who`, with the
+    // state's badge beside it.
+    expect(one.querySelector(".chat-row-place")).toBeNull();
+    const grip = one.querySelector<HTMLElement>(
+      '[data-scope="chat-mark"][data-part="who"] > [data-scope="grip"][data-part="root"]',
+    );
+    expect(grip).not.toBeNull();
+    expect(grip?.querySelector(".persona-mark")).not.toBeNull();
+    expect(
+      grip
+        ?.closest('[data-scope="chat-mark"][data-part="root"]')
+        ?.querySelector('[data-part="badge"]'),
+    ).not.toBeNull();
+    // Inside the row, which is the control: no control itself, and nothing more is heard.
+    expect(grip).not.toHaveAttribute("role");
+    expect(grip).not.toHaveAttribute("tabindex");
+    expect(grip?.querySelector('[data-part="dots"]')).toHaveAttribute("aria-hidden", "true");
+    fireEvent.click(grip as HTMLElement);
     await waitFor(() =>
       expect(document.querySelector("[data-pane-drag-said]")?.textContent).toMatch(
         /^Picked up devops 3\. Arrow keys choose a side/,
@@ -2355,7 +2376,7 @@ describe("a chat's row places its chat (#4764)", () => {
     await waitFor(() => expect(document.activeElement).toHaveAttribute("data-place-target"));
   });
 
-  it("picks its chat up from its list's Place…, which Shift+F10 opens, and Esc gives the row back the keyboard", async () => {
+  it("picks its chat up from its list's Move…, which Shift+F10 opens, and Esc gives the row back the keyboard", async () => {
     const { move } = core(threeTasks());
     render(<App />);
     const tree = await section();
@@ -2366,7 +2387,7 @@ describe("a chat's row places its chat (#4764)", () => {
     act(() => one.focus());
     fireEvent.keyDown(one, { key: "F10", shiftKey: true });
     await screen.findByRole("menu");
-    const place = menuRow("Place…");
+    const place = menuRow("Move…");
     // Its key, which does the same from the row, said at the row's end.
     expect(place.textContent).toMatch(/(⌘⇧M|Ctrl\+Shift\+M)/);
     await userEvent.click(place);
@@ -2380,7 +2401,7 @@ describe("a chat's row places its chat (#4764)", () => {
 });
 
 describe("a tab's menu places its tab (#4764)", () => {
-  it("picks the tab up from its right-click's Place…, offering the strip's new place", async () => {
+  it("picks the tab up from its right-click's Move…, offering the strip's new place", async () => {
     core(threeDeep());
     render(<App />);
     const tree = await section();
@@ -2388,7 +2409,7 @@ describe("a tab's menu places its tab (#4764)", () => {
     const tab = within(strip()).getByRole("tab", { name: /^steward 1/ });
     fireEvent.contextMenu(tab);
     await screen.findByRole("menu");
-    await userEvent.click(menuRow("Place…"));
+    await userEvent.click(menuRow("Move…"));
     await waitFor(() => expect(placingSaid()).toMatch(/^Picked up steward 1\. Arrow keys/));
     await waitFor(() => expect(document.activeElement).toHaveAttribute("data-place-target"));
 
@@ -2414,20 +2435,17 @@ describe("a chat's row is one line, with a hover card (#1675)", () => {
       // One line, and no second line: the name, then the state, which is drawn first and
       // heard after the name, then the persona's badge at the row's end (DS-11).
       expect(one.querySelector(".line.two")).toBeNull();
-      // The twist and Place… are the pointer's, out of the accessibility tree (#4764).
-      const parts = [...one.children].filter(
-        (part) => !part.matches(".ui-tree-twist, .chat-row-place"),
-      );
+      // The twist is the pointer's, out of the accessibility tree (#4764).
+      const parts = [...one.children].filter((part) => !part.matches(".ui-tree-twist"));
       expect(parts.map((part) => part.className)).toEqual([
         "ui-row-label session ui-text-body",
         "ui-row-lead",
         "ui-row-trail",
       ]);
-      expect(one.querySelector(".chat-row-place")).toHaveAttribute("aria-hidden", "true");
       expect(drawnAs(parts[1], "order")).toBe("-1");
       // The persona's mark leads, with the state on it, and both are said (#3342).
       expect(parts[1].children[0]).toHaveAttribute("data-scope", "chat-mark");
-      expect(parts[1].querySelector('[data-part="who"] > .persona-mark')).not.toBeNull();
+      expect(parts[1].querySelector('[data-part="who"] .persona-mark')).not.toBeNull();
       const persona = name.split(" ")[0];
       expect(one).toHaveAccessibleName(`${name} ${persona}, working`);
       // The state is its mark on the row; its word is out of sight.

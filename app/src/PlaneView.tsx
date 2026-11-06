@@ -8847,6 +8847,18 @@ export const PlaneView = memo(function PlaneView({
     }
     return { frontCrumbs: crumbs, frontEndedPanes: ended, frontUnread: unread };
   }, [chatsByNumber, frontShown, liveCrumbs, recalled, sidebar, tabs.inFront]);
+  /** **The chat each ended task a pane of the tab in front shows was asked by** (#5366), by the
+   *  task: its path's last but one. */
+  const endedAskers = useMemo(
+    () =>
+      new Map(
+        Object.values(frontEndedPanes).flatMap((gone): [number, number][] => {
+          const [asker, task] = gone.path.slice(-2);
+          return task === undefined ? [] : [[task.session, asker.session]];
+        }),
+      ),
+    [frontEndedPanes],
+  );
   /**
    * **The finished row of each task a pane was left on when it ended**, by pane (#1485 under
    * #1486's ended view): its report is drawn on the pane, and the pane says how it ended in
@@ -9455,6 +9467,9 @@ export const PlaneView = memo(function PlaneView({
             wrappingUp: [...wrapping],
             restoring: [...restoringChats],
             endedHere: [...endedHere.keys()],
+            // An ended task's `↳ from` (#5366): the chat that asked it, off the path its pane
+            // last had.
+            endedAskedBy: endedAskers,
             // Close other tabs skips the pinned ones (#4762).
             otherTabs: (tab) => otherTabsToClose(tabs, tab, filedIn, isPinned),
             // Move to window ▸ lists every other window of the project (#4768).
@@ -9535,6 +9550,7 @@ export const PlaneView = memo(function PlaneView({
       wrapping,
       restoringChats,
       endedHere,
+      endedAskers,
       isPinned,
       windowsHere,
       tabWindow,

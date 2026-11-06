@@ -1042,3 +1042,37 @@ describe("what its row says afterwards", () => {
     },
   );
 });
+
+describe("an ended task's foot (#5366)", () => {
+  it("goes to the chat that asked it, on ↳ from, though the core lists the task no more", async () => {
+    const { tree, asked, ended } = await drawn({}, true);
+    const own = within(stripNamed("Tabs"))
+      .queryAllByRole("tab")
+      .find((one) => one.querySelector(".tab-name")?.textContent === "sweep");
+    if (own === undefined) throw new Error("sweep has no tab of its own");
+    await userEvent.click(own);
+    await waitFor(() => expect(onScreen()).toEqual([5]));
+    await menuOf(tree, "sweep");
+    await userEvent.click(screen.getByRole("menuitem", { name: CLOSE_IT }));
+    await userEvent.click(
+      within(await second("Close sweep now, with no report?")).getByRole("button", {
+        name: "Close it",
+      }),
+    );
+    await waitFor(() => expect(ends(asked)).toHaveLength(1));
+    await ended(5);
+    await screen.findByRole("status", { name: /^Ended/ });
+
+    const foot = await waitFor(() => {
+      const found = document.querySelector<HTMLElement>(
+        '[data-scope="pane-foot"][data-part="root"]',
+      );
+      if (found === null) throw new Error("the ended task keeps its foot");
+      return found;
+    });
+    await userEvent.click(
+      await waitFor(() => within(foot).getByRole("button", { name: /↳ from steward 1/ })),
+    );
+    await waitFor(() => expect(onScreen()).toEqual([1]));
+  });
+});

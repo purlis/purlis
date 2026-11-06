@@ -2923,3 +2923,6 @@ fn a_persona_skill_from_a_source_carries_its_label_in_the_personas_rows() {
         .unwrap();
     assert_eq!(row.source_label, Some(source.remote.label()));
 }
+
+/// Several updates as one change (#5354).
+mod update_set;

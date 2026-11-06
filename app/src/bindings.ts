@@ -785,7 +785,7 @@ export const commands = {
 	 *  **The person answers the ask to allow a program `id`** (ADR 0112, #5239): the run that waits
 	 *  on it goes on, or hears it was not allowed, and a chat whose command stopped waiting is nudged.
 	 */
-	answerRunGrant: (plane: PlaneId, id: number, press: RunGrantPress) => typedError<null, string>(__TAURI_INVOKE("answer_run_grant", { plane, id, press })),
+	answerRunGrant: (plane: PlaneId, id: number, press: RunGrantPress, values: RunValue[]) => typedError<null, string>(__TAURI_INVOKE("answer_run_grant", { plane, id, press, values })),
 	/**
 	 *  **The person fills Secret ask `id` with an entry they keep** (#5073): the asked key becomes a
 	 *  Linked entry reading `key` in `vault`, never a copy, and every command that waits on it runs
@@ -2279,6 +2279,16 @@ export const commands = {
 	 *  undo. Refused whole where one is no longer listed.
 	 */
 	skillSetDeleteNow: (plane: PlaneId, ids: string[]) => typedError<SkillSetGone, string>(__TAURI_INVOKE("skill_set_delete_now", { plane, ids })),
+	/**
+	 *  **Accepts every update of `updates` as one change** (#5354): one commit, all or nothing, and
+	 *  one where a skill gains a kind of capability it was not ticked with is refused whole.
+	 */
+	skillSetUpdate: (plane: PlaneId, updates: SkillSetUpdating[]) => typedError<SkillSetUpdated, string>(__TAURI_INVOKE("skill_set_update", { plane, updates })),
+	/**
+	 *  **Takes back the set's update `undo` names**: each copy as it was and the pins back, as one
+	 *  commit. Refused whole where one changed since.
+	 */
+	skillSetUpdateUndo: (plane: PlaneId, undo: number) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_set_update_undo", { plane, undo })),
 	/**  **What an export of the skills `members` would write** (#5332), each once with what they name. */
 	skillSetExportReview: (plane: PlaneId, members: SkillSetMember[]) => typedError<ExportReview, string>(__TAURI_INVOKE("skill_set_export_review", { plane, members })),
 	/**
@@ -13719,6 +13729,15 @@ export type RunEndedOnARunner = {
 	device: string,
 };
 
+/**  **A key a run lacks, as its notice's value field** (#5242). Names only. */
+export type RunFillShown = {
+	key: string,
+	/**  What the persona's definition says it is for, where it declares it. */
+	declared?: string | null,
+	/**  The entry a link read, which is gone, where the key is such a link. */
+	gone?: SecretEntryShown | null,
+};
+
 /**  **What the person pressed on an ask to allow a program** (ADR 0112). */
 export type RunGrantPress = 
 /**  One run of exactly this command. */
@@ -13727,8 +13746,15 @@ export type RunGrantPress =
 "chat" | 
 /**  As [`Self::Chat`], and write its line to the persona's tools (#5245). */
 "always" | 
-/**  Don't allow. */
-"refuse";
+/**  Don't allow; on a notice with no program Allow, Keep blocked or Not now. */
+"refuse" | 
+/**
+ *  The vault's own Allow, on a notice with no program Allow (#5242): the persona is given the
+ *  vault, as a refused vault's Allow gives it (#5160).
+ */
+"allow-vault" | 
+/**  Fill, on a notice of value fields alone (#5242). */
+"fill";
 
 /**
  *  **An ask to allow a program, as its row draws it** (ADR 0112, #5239). Every field is the app's
@@ -13757,6 +13783,20 @@ export type RunShown = {
 	cwd: string,
 	/**  What Always allow would write, where it is offered (#5245). */
 	always?: AlwaysShown | null,
+	/**  **The keys the run lacks**, one value field each (#5242). */
+	fills: RunFillShown[],
+	/**
+	 *  **What the notice asks of the program** (#5242): `program` for an Allow; `vault` where it
+	 *  has none and the vault's line has its own Allow; `fill` for its value fields alone.
+	 */
+	offer: string,
+	/**  Why it offers no Allow for the program, where policy is why: the app's own words. */
+	no_allow?: string | null,
+	/**
+	 *  **Asked ahead of its run** (#5244): no command yet; only Allow for this chat is offered,
+	 *  and the first run fixes how the values are handed.
+	 */
+	ahead: boolean,
 };
 
 /**  What started a skill run, as the Runs panel draws it. */
@@ -13777,6 +13817,15 @@ export type RunStart =
 "grade" | 
 /**  A start a newer purlis wrote. */
 "unknown";
+
+/**
+ *  **A value the person typed in a run's notice** (#5242): for one of its fields, by key. Never
+ *  printed, and wiped as it is dropped.
+ */
+export type RunValue = {
+	key: string,
+	value: SecretValue,
+};
 
 /**  One value a run asks to hand its program ([`RunShown`]). */
 export type RunValueShown = {
@@ -15254,6 +15303,12 @@ export type SkillFolderEntry = {
 	refused: string | null,
 };
 
+/**
+ *  **One kind of thing an update newly lets a skill do** (#5354), as the core reads it
+ *  (`purlis_core::skills::source::update::Gained`).
+ */
+export type SkillGained = "script" | "command" | "hook" | "tool" | "network" | "writes-outside" | "hidden" | "not-shown" | "unread";
+
 /**  A version's grade, once grading lands (SK-16): always null for now. */
 export type SkillGrade = {
 	passed: number,
@@ -15719,6 +15774,25 @@ export type SkillSetTurned = {
 	notes: string[],
 	/**  Those it changed: one that already was so is not among them. */
 	changed: string[],
+};
+
+/**  What a set's update did, and the Undo that takes it back. */
+export type SkillSetUpdated = {
+	notes: string[],
+	/**  What [`skill_set_update_undo`] is handed. */
+	undo: number,
+};
+
+/**
+ *  One update of a set, as the window accepted it: the skill, what its review was accepted as,
+ *  the grant it showed, and each kind of new capability the person ticked it with.
+ */
+export type SkillSetUpdating = {
+	level: SkillLevel,
+	name: string,
+	reviewed: Reviewed,
+	grant: SkillGrant | null,
+	allowed: SkillGained[],
 };
 
 /**  A skill source as the studio shows and adds one. */
@@ -17194,6 +17268,11 @@ export type UpdateReview = {
 	 */
 	widenings: SkillWidening[],
 	accepted: Reviewed,
+	/**
+	 *  What the update newly lets the skill do, beyond an edit of its text (#5354): a review of
+	 *  several updates leaves one that gains any of it unticked until it is opened.
+	 */
+	gained: SkillGained[],
 };
 
 /**  What the person did with updates: Mark read, or Dismiss. */

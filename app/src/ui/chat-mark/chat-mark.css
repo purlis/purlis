@@ -20,7 +20,12 @@
   flex: none;
 }
 
-[data-scope="chat-mark"][data-part="who"] > :is(svg, .persona-mark) {
+/* Its mark, or the same mark inside the grip that stands in its place (#5290, `ui/grip`). */
+[data-scope="chat-mark"][data-part="who"] > :is(svg, .persona-mark),
+[data-scope="chat-mark"][data-part="who"]
+  > [data-scope="grip"][data-part="root"]
+  > [data-part="mark"]
+  > :is(svg, .persona-mark) {
   inline-size: var(--chat-mark-size, calc(var(--space-6) + var(--space-2)));
   block-size: var(--chat-mark-size, calc(var(--space-6) + var(--space-2)));
 }

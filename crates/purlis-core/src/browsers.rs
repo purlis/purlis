@@ -1902,15 +1902,14 @@ impl EngineScreen {
                 state_said(one.state)
             )));
         }
-        // One from the site the browser signs in on is that site's to read (#5152).
-        if let Some(site) = one.origin.as_deref().and_then(|origin| {
-            self.sites
-                .as_ref()
-                .and_then(|sites| kept_off_at(sites.bound(), origin))
-        }) {
+        // One from the site the browser signs in on is that site's to read (#5152), and during
+        // a sign-in, only the sign-in's own page's (the person's ruling of 2026-11-06): it is
+        // judged on the page it began on.
+        if let Some(site) = browser.download_kept_off(download) {
             return Err(NotActed::Refused(format!(
                 "download {download} came from {site}, the site this browser signs in on, so it \
-                 is brought in only while browser_login signs in"
+                 is brought in only while browser_login signs in, and only where the page it signs \
+                 in on, or a window related to it, began it"
             )));
         }
         // One from no site purlis can tell (a sandboxed frame's, say) may be that site's too
@@ -1925,6 +1924,21 @@ impl EngineScreen {
                 "download {download} came from no site purlis can tell, and this browser signs in \
                  on {site}, so it may be that site's: it is brought in only while browser_login \
                  signs in"
+            )));
+        }
+        // And during a sign-in, one begun anywhere but the sign-in's own page may be its site's,
+        // which only that page reads (the person's ruling of 2026-11-06).
+        if one.origin.is_none()
+            && !browser.download_began_on_the_sign_ins_page(download)
+            && let Some(site) = self
+                .sites
+                .as_ref()
+                .and_then(|sites| sites.bound().signing_on())
+        {
+            return Err(NotActed::Refused(format!(
+                "download {download} came from no site purlis can tell, and browser_login signs in \
+                 on {site} now, so it may be that site's: it is brought in only where the page it \
+                 signs in on, or a window related to it, began it"
             )));
         }
         let from = self.data.join(DOWNLOADS).join(&one.file);
