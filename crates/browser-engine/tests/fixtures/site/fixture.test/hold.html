@@ -6,7 +6,6 @@
   <label>API key <input name="api-key" id="key"></label>
   <button id="go-route" type="button">Open the settings route</button>
   <button id="try" type="button">Try to take the key</button>
-  <button id="close" type="button">Close this page</button>
   <a href="hold-next.html">Next page</a>
   <a href="https://elsewhere.test/away?from=dash">Another site</a>
   <p id="tried">Nothing tried yet</p>
@@ -25,7 +24,6 @@
       history.pushState({}, '', 'hold.html?route=settings');
       document.getElementById('route').textContent = 'Settings route';
     });
-    document.getElementById('close').addEventListener('click', () => window.close());
     // Closed by the site's other page (`hold-opener.html`), never by a click on this one.
     new BroadcastChannel('hold').addEventListener('message', ({ data }) => {
       if (data === 'close') window.close();

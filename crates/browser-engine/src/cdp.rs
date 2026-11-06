@@ -722,36 +722,7 @@ pub(crate) fn repaired(message: &[u8]) -> Vec<u8> {
 
 /// Reads messages until the pipe ends or carries something that is not one, then fails every
 /// waiting call and refuses every later one, keeping why it stopped.
-/// PROBE (#5454, temporary): how long an answer to a mouse event is held back before it is
-/// delivered, while every later message is read: as the engine answers after a page's session
-/// detached.
-fn probe_late_mouse() -> Option<std::time::Duration> {
-    std::env::var("PURLIS_PROBE_LATE_MOUSE_MS")
-        .ok()?
-        .parse()
-        .ok()
-        .map(std::time::Duration::from_millis)
-}
-
-fn probe_deliver(shared: &Shared, id: u64, outcome: Result<Value, Value>) {
-    let waiting = lock(&shared.pending).as_mut().and_then(|p| p.remove(&id));
-    if let Some(waiting) = waiting {
-        let answer = outcome.map_err(|error| CallError::Engine {
-            code: error
-                .get("code")
-                .and_then(Value::as_i64)
-                .unwrap_or_default(),
-            message: error
-                .get("message")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_owned(),
-        });
-        let _ = waiting.answer.try_send(answer);
-    }
-}
-
-fn read_until_ended(from_engine: impl Read, shared: &Arc<Shared>, events: &SyncSender<Event>) {
+fn read_until_ended(from_engine: impl Read, shared: &Shared, events: &SyncSender<Event>) {
     let mut frames = Frames::new(from_engine);
     loop {
         let frame = match frames.next_message(|head| most_for(shared, head)) {
@@ -796,20 +767,6 @@ fn read_until_ended(from_engine: impl Read, shared: &Arc<Shared>, events: &SyncS
                     Some(error) => Err(error),
                     None => Ok(read.remove("result").unwrap_or(Value::Null)),
                 };
-                if let Some(late) = probe_late_mouse() {
-                    let mouse = lock(&shared.pending)
-                        .as_ref()
-                        .and_then(|p| p.get(&id))
-                        .is_some_and(|w| w.method == "Input.dispatchMouseEvent");
-                    if mouse {
-                        let shared = Arc::clone(shared);
-                        thread::spawn(move || {
-                            thread::sleep(late);
-                            probe_deliver(&shared, id, outcome);
-                        });
-                        continue;
-                    }
-                }
                 let waiting = lock(&shared.pending).as_mut().and_then(|p| p.remove(&id));
                 if let Some(waiting) = waiting {
                     let answer = outcome.map_err(|error| CallError::Engine {
