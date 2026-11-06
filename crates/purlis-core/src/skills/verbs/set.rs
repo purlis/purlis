@@ -28,9 +28,11 @@ use purlis_skills::change;
 
 mod acts;
 pub mod gone;
+pub mod proposed;
 
 pub use acts::{Moving, lifecycle_set, move_set, pin_set};
 pub use gone::{Gone, delete_now};
+pub use proposed::{SetChange, Shown};
 
 /// The trailer that says which set a commit deleted.
 pub(super) const SET_TRAILER: &str = "Purlis-Skill-Set";
