@@ -37,7 +37,7 @@ import { ReviewPage } from "./ui/review-page/ReviewPage";
 
 /** What a skill newly gains, as the end of "Adds …". */
 const GAINED_SAID: Record<SkillGained, string> = {
-  script: "a script or a change to one",
+  script: "a new or changed script",
   command: "a command it runs as it loads",
   hook: "a hook",
   tool: "a tool it pre-approves",

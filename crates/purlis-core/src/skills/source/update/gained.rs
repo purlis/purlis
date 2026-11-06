@@ -46,7 +46,7 @@ impl Gained {
     /// What it is, as the end of a sentence: "a script".
     pub fn said(self) -> &'static str {
         match self {
-            Self::Script => "a script or a change to one",
+            Self::Script => "a new or changed script",
             Self::Command => "a command it runs as it loads",
             Self::Hook => "a hook",
             Self::Tool => "a tool it pre-approves",
