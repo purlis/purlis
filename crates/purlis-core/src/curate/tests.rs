@@ -273,3 +273,59 @@ fn what_needs_a_person_is_proposed_in_pythons_words() {
     );
     assert_eq!(proposals(&Report::default()), Vec::<String>::new());
 }
+
+/// A store of `fillers` unrelated memories that share a few common words, with planted exact
+/// and near duplicates among them. The planted words appear nowhere else.
+fn planted(fillers: usize) -> (tempfile::TempDir, PathBuf, PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
+    let mem = root.join("workspaces/big/memory");
+    std::fs::create_dir_all(&mem).unwrap();
+    let write = |name: &str, words: &[&str]| {
+        std::fs::write(mem.join(name), format!("{}\n", words.join(" "))).unwrap();
+    };
+    for n in 0..fillers {
+        let own: Vec<String> = (0..6).map(|k| format!("w{n:05}x{k}")).collect();
+        let mut words = vec!["memory", "about", "note"];
+        words.extend(own.iter().map(String::as_str));
+        write(&format!("f{n:05}.md"), &words);
+    }
+    let exact = ["exact", "same", "body", "every", "copy"];
+    for name in ["e1.md", "e2.md", "e3.md"] {
+        write(name, &exact);
+    }
+    // Six shared and two apart each: 6 / 10.
+    let shared6 = ["nalpha", "nbeta", "ngamma", "ndelta", "nepsilon", "nzeta"];
+    write("n1.md", &[&shared6[..], &["nonly1a", "nonly1b"]].concat());
+    write("n2.md", &[&shared6[..], &["nonly2a", "nonly2b"]].concat());
+    // Four shared and two apart each: 4 / 8, the threshold itself.
+    let shared4 = ["malpha", "mbeta", "mgamma", "mdelta"];
+    write("m1.md", &[&shared4[..], &["monly1a", "monly1b"]].concat());
+    write("m2.md", &[&shared4[..], &["monly2a", "monly2b"]].concat());
+    // Four shared and three apart each: 4 / 10, under it.
+    let under = ["balpha", "bbeta", "bgamma", "bdelta"];
+    write("b1.md", &[&under[..], &["bonly1a", "bonly1b", "bonly1c"]].concat());
+    write("b2.md", &[&under[..], &["bonly2a", "bonly2b", "bonly2c"]].concat());
+    (dir, root, mem)
+}
+
+#[test]
+fn a_large_store_s_planted_duplicates_are_found_and_nothing_else() {
+    let (_d, root, mem) = planted(3_000);
+
+    let rep = report(&root, &mem, 90, 0.5, day("2025-09-01")).unwrap();
+
+    assert_eq!(rep.total, 3_009);
+    assert_eq!(rep.exact_dups, vec![names(&["e1.md", "e2.md", "e3.md"])]);
+    assert_eq!(
+        rep.near_dups,
+        vec![
+            // The first two of the exact group are tier 1's; the third pairs with each.
+            (1.0, "e1.md".into(), "e3.md".into()),
+            (1.0, "e2.md".into(), "e3.md".into()),
+            (0.6, "n1.md".into(), "n2.md".into()),
+            (0.5, "m1.md".into(), "m2.md".into()),
+        ]
+    );
+}
