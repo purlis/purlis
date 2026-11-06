@@ -534,6 +534,7 @@ macro_rules! app_commands {
                 workspacewrites::workspace_files_rename,
                 workspacewrites::workspace_files_trash,
                 workspacewrites::workspace_files_import,
+                piecefiles::workspace_save_with_the_project,
                 piecefiles::branch_status,
                 piecefiles::branch_ahead_behind,
                 piecefiles::what_changed,

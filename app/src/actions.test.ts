@@ -348,6 +348,10 @@ function doing(): Doing & { calls: string[] } {
       calls.push(`revealPath:${at.repo}/${at.piece ?? ""}:${at.path}`);
       return { ok: true as const };
     }),
+    saveWithTheProject: vi.fn(async (at: BranchPath) => {
+      calls.push(`saveWithTheProject:${at.workspace}:${at.path}`);
+      return { ok: true as const };
+    }),
     openInEditor: vi.fn(async (at: BranchPath, line: number) => {
       calls.push(`openInEditor:${at.repo}/${at.piece ?? ""}:${at.path},${line}`);
       return { ok: true as const };
@@ -3394,6 +3398,19 @@ describe("a branch's file and folder rows (FM-10)", () => {
     }
     for (const kind of ["file", "folder", "link"] as const)
       expect(menuOn({ on: "file", at: at("a"), kind }).below).toEqual([]);
+  });
+
+  it("offers Save with the project last, only on a row that is saveable (#5377)", async () => {
+    const own = { workspace: "alpha", repo: "", piece: null, path: "notes" };
+    const rows = fileRows({ on: "file", at: own, kind: "folder", saveable: true });
+    expect(titles(rows).at(-1)).toBe("Save with the project");
+    expect(titles(fileRows({ on: "file", at: own, kind: "folder" }))).not.toContain(
+      "Save with the project",
+    );
+    const hands = doing();
+    for (const row of rows.filter((one) => one.does.verb === "saveWithTheProject"))
+      await perform(row, hands);
+    expect(hands.calls).toEqual(["saveWithTheProject:alpha:notes"]);
   });
 
   it("draws a file row's menu from its own rows, not from the catalogue", () => {

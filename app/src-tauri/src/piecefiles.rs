@@ -134,6 +134,29 @@ pub struct FolderEntry {
     /// out where it is not.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub hidden: bool,
+    /// In a LIVE workspace's own files (#5377), where it is kept. Left out everywhere else, a
+    /// LOCAL workspace's files included: they carry no mark.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kept: Option<KeptMark>,
+}
+
+/// Where a LIVE workspace's file is kept (#5377).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum KeptMark {
+    /// Ignored by the project's git: it stays on this machine.
+    ThisMachineOnly,
+    /// In the workspace's LIVE allowlist: a save shares it with the project.
+    WithTheProject,
+}
+
+impl From<workspace::Kept> for KeptMark {
+    fn from(kept: workspace::Kept) -> Self {
+        match kept {
+            workspace::Kept::ThisMachineOnly => Self::ThisMachineOnly,
+            workspace::Kept::WithTheProject => Self::WithTheProject,
+        }
+    }
 }
 
 impl From<Kind> for EntryKind {
@@ -156,6 +179,7 @@ impl From<Entry> for FolderEntry {
             workspace: entry.workspace,
             managed: false,
             hidden: false,
+            kept: None,
         }
     }
 }
@@ -170,6 +194,7 @@ impl From<workspace::Entry> for FolderEntry {
             workspace: None,
             managed: entry.managed,
             hidden: entry.hidden,
+            kept: entry.kept.map(KeptMark::from),
         }
     }
 }
@@ -633,6 +658,38 @@ pub async fn workspace_file(
         workspace_file_of(&root, &workspace, &path, &extension_folders())
     })
     .await
+}
+
+/// **Save with the project** (#5377): one file or folder at the top of a LIVE workspace's folder
+/// gets one line in the workspace's LIVE allowlist, so the next save shares it. `true` when the
+/// line was added, `false` when it was there already.
+// The window's alone (`WINDOW_ONLY`): only the person's press shares a file of theirs, since a
+// script may hold a token, so no link may ask for it. Not a doc comment's place, as above.
+#[tauri::command]
+#[specta::specta]
+pub async fn workspace_save_with_the_project(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    workspace: String,
+    path: String,
+) -> Result<bool, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    crate::off_the_window("saving the file with the project", move || {
+        workspace_save_of(&root, &workspace, &path, &extension_folders())
+    })
+    .await
+}
+
+pub(crate) fn workspace_save_of(
+    plane: &Path,
+    ws: &str,
+    path: &str,
+    extension_folders: &[String],
+) -> Result<bool, String> {
+    in_workspace_files(plane, ws, |files| {
+        files.save_with_the_project(path, extension_folders)
+    })
+    .map_err(|why| why.to_string())
 }
 
 /// The folders the extensions this machine approved keep in a workspace: managed there.

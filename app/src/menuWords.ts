@@ -84,6 +84,8 @@ export const SAID = {
   importFiles: "Import files…",
   startAChatHere: "Start a chat here",
   addToChat: "Add to a chat's context",
+  // A LIVE workspace's own file or folder (#5377).
+  saveWithTheProject: "Save with the project",
   removeFolder: "Remove folder",
   discardAnyway: "Discard that work and remove anyway",
   // A chat's Branch ▸ (#4851): the words of `command-table.md` rows 24 and 25.

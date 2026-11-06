@@ -163,6 +163,7 @@ import {
   type OpenUseSkill,
 } from "./UseSkill";
 import { Explorer, type SearchKeyHere, type Spot } from "./Explorer";
+import { keptChanged } from "./branchFolders";
 import {
   pieceFileTitle,
   pieceFileView,
@@ -3992,6 +3993,19 @@ export const PlaneView = memo(function PlaneView({
       },
       revealPath: (at: BranchPath) =>
         answered(commands.revealBranchPath(plane, at.workspace, at.repo, at.piece, at.path)),
+      // A LIVE workspace's own entry (#5377): its mark is read from the project's `.gitignore`,
+      // which no folder watch sees, so the trees showing the workspace read it again.
+      saveWithTheProject: async (at: BranchPath): Promise<Ran> => {
+        const said = await answered(
+          commands.workspaceSaveWithTheProject(plane, at.workspace, at.path),
+        );
+        if (!said.ok) return said;
+        keptChanged(plane, at.workspace);
+        return {
+          ok: true,
+          said: `${at.path} is saved with the project. Your next save shares it.`,
+        };
+      },
       openInEditor: async (at: BranchPath, line: number): Promise<Ran> => {
         const editor = yourEditor();
         // The refusal names a setting, so it carries the way to it (#1201, #1244).

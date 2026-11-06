@@ -1190,6 +1190,29 @@ key refuses.
     that cannot be read as UTF-8 text is refused rather than rewritten from nothing. The
     same holds for `.gitattributes`.
 
+#### The LIVE block's saved entries — Save with the project
+
+- **Format:** one line per entry inside the managed LIVE block, `!/workspaces/<ws>/<entry>`,
+  after that workspace's own lines, sorted. `<entry>` is one name at the top of the workspace's
+  folder: no `/`, nothing git reads as a pattern (`*`, `?`, `[`, `]`, `\`, `!`), and no trailing
+  whitespace. A file or folder; a folder's contents follow it, because `/workspaces/*/*` ignores
+  only the entries at a workspace's top.
+- **Status:** **stable** — **purlis only** (ADR 0038, amended 2026-11-05; #5377).
+- **Tier:** Plane — committed, as the rest of `.gitignore` is; it shares the entry it names, which
+  is then Plane too while the workspace is LIVE.
+- **Written by:** `purlis_core::wscmd::saved::add`, reached only from the window's Save with the
+  project on one of a LIVE workspace's own entries (`workspace_save_with_the_project`, window
+  only). Nothing else adds one, since a script in a workspace may hold a token. Every rewrite of
+  the block keeps a LIVE workspace's lines: `refresh_live_block` (so `reinit`), `rename`, and
+  another workspace made LIVE or LOCAL. Making the workspace itself LOCAL drops them with its
+  other lines, and `live --off` untracks the entries they named with its other shared paths
+  (`wscmd::meta_paths`).
+- **Read by:** `wscmd::saved::saved_in`: a line of that shape inside the block that the block
+  does not write for every LIVE workspace (`workspace.json`, `memory`, `skills` and the rest) is
+  a saved entry. Explorer's marks (*This machine only*, *Saved with the project*) are read from
+  the whole `.gitignore` as git reads it (`wscmd::saved::Marks`), for a LIVE workspace only.
+- **Git:** committed.
+
 ---
 
 ### `.gitattributes` (plane root)

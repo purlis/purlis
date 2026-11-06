@@ -14,7 +14,7 @@
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
-import { expect, waitFor } from "storybook/test";
+import { expect, screen, waitFor, within } from "storybook/test";
 import { expectFocusInSight, untilFocused } from "./stories.testkit";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { Explorer, type ExplorerPart } from "./Explorer";
@@ -66,15 +66,28 @@ const OWN: Record<string, FolderEntry[]> = {
 };
 const AT_THE_TOP = new Set(["theme-lab"]);
 
-/** The core, as the view asks it: folders, what `purlis` changed, and files found by name. */
-function core() {
+/** Where each of the workspace's own files is kept in a LIVE workspace (#5377): what the LIVE
+ *  block shares, and `notes`, which the person saved with the project. */
+const SHARED = new Set(["memory", "sessions", "workspace.md", "notes"]);
+
+/** `listed`, each entry marked where it is kept as a LIVE workspace's are. */
+const kept = (folder: string, listed: FolderEntry[]): FolderEntry[] =>
+  listed.map((one) => ({
+    ...one,
+    kept: SHARED.has(folder.split("/")[0] || one.name) ? "with-the-project" : "this-machine-only",
+  }));
+
+/** The core, as the view asks it: folders, what `purlis` changed, and files found by name. The
+ *  workspace is LIVE when `live` says (#5377). */
+function core(live = false) {
   mockIPC(
     (cmd, args) => {
       const a = (args ?? {}) as Record<string, unknown>;
       if (cmd === "workspace_tree") {
         const folder = String(a.folder ?? "");
+        const listed = OWN[folder] ?? [];
         return {
-          entries: OWN[folder] ?? [],
+          entries: live ? kept(folder, listed) : listed,
           more: 0,
           repos:
             folder === ""
@@ -315,6 +328,36 @@ export const WorkspaceFolder: Story = {
       "aria-level",
       "1",
     );
+    (document.activeElement as HTMLElement | null)?.blur();
+    await settled();
+  },
+};
+
+/**
+ * **A LIVE workspace's own folder** (#5377): each file says where it is kept, *Saved with the
+ * project* for what the LIVE block shares and `notes`, which the person saved, and *This machine
+ * only* for the rest. Walked with the keyboard: onto `deploy.sh`, and Shift+F10 opens its menu,
+ * whose last row is Save with the project; Esc closes it.
+ */
+export const LiveWorkspaceFolder: Story = {
+  args: { repos: ["purlis", "theme-lab", "k8s-operator"] },
+  beforeEach: () => {
+    core(true);
+    return () => clearMocks();
+  },
+  play: async ({ canvas, userEvent }) => {
+    await canvas.findByRole("row", { name: /^notes saved with the project/ });
+    await canvas.findByRole("row", { name: /^memory managed saved with the project/ });
+    const script = await canvas.findByRole("row", { name: /^deploy\.sh this machine only/ });
+    script.focus();
+    await untilFocused(() => script, "deploy.sh");
+    expectFocusInSight();
+    await userEvent.keyboard("{Shift>}{F10}{/Shift}");
+    const menu = await screen.findByRole("menu", undefined, { timeout: 3_000 });
+    const rows = within(menu).getAllByRole("menuitem");
+    await expect(rows.at(-1)).toHaveAccessibleName("Save with the project");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     (document.activeElement as HTMLElement | null)?.blur();
     await settled();
   },

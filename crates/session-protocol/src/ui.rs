@@ -669,6 +669,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "workspace_files_rename",
     "workspace_files_trash",
     "workspace_files_import",
+    // Save with the project (#5377): it shares one of the person's workspace files with the
+    // project, which a script holding a token would make a leak, so only their press asks it.
+    "workspace_save_with_the_project",
     // A skill's folder, for its page's Files tab (#5183): listed, a file of it opened, and the
     // folder opened in the file manager. A built-in or third-party skill's folder is outside
     // the project, so only the person's own window reads it.

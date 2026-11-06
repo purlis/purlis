@@ -209,6 +209,21 @@ export function useBranchFolders(
     };
   }, [plane]);
 
+  // **Where a workspace's files are kept is read again after a Save with the project** (#5377):
+  // the mark is read from the project's `.gitignore`, which no watch of the workspace's folders
+  // sees move, so each of its open folders is read again.
+  useEffect(() => {
+    if (plane === undefined) return;
+    const again = (saved: PlaneId, ws: string) => {
+      if (saved !== plane || ws !== focused.current) return;
+      for (const ref of byKey.current.values()) {
+        if (isWorkspaceFiles({ workspace: ws, ...ref })) read.current(ref);
+      }
+    };
+    keptReaders.add(again);
+    return () => void keptReaders.delete(again);
+  }, [plane]);
+
   // The folders the core could not watch for this window, by key (#1727), each with whether the
   // platform refused it (#1160): every `files_watch` and every later watch of one of them says
   // the whole list again.
@@ -250,6 +265,15 @@ export function useBranchFolders(
     }
     return marked;
   }, [reads, unwatched, workspace]);
+}
+
+/** Every tree's reader of where its workspace's files are kept (#5377). */
+const keptReaders = new Set<(plane: PlaneId, workspace: string) => void>();
+
+/** **A Save with the project changed where `workspace`'s files are kept** (#5377): every tree
+ *  showing them reads its open folders again. */
+export function keptChanged(plane: PlaneId, workspace: string): void {
+  for (const again of keptReaders) again(plane, workspace);
 }
 
 /** The event naming every folder of this window the core is not watching now (#1727), and
