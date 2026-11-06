@@ -2086,7 +2086,10 @@ fn the_monitor_is_asked_for_only_where_git_ships_its_daemon() {
 
 #[test]
 fn a_gits_version_is_read_from_what_it_says_as_apple_and_linux_spell_it() {
-    assert_eq!(version_of("git version 2.39.5 (Apple Git-154)\n"), Some((2, 39)));
+    assert_eq!(
+        version_of("git version 2.39.5 (Apple Git-154)\n"),
+        Some((2, 39))
+    );
     assert_eq!(version_of("git version 2.43.0\n"), Some((2, 43)));
     assert_eq!(version_of("git version 2.47.1.windows.2\n"), Some((2, 47)));
     assert_eq!(version_of("not git\n"), None);

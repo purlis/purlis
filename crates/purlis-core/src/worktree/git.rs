@@ -1944,7 +1944,9 @@ pub fn run_status_writing_index(dir: &Path, tuning: Tuning) -> Option<Result<Run
         Ok(Err(answer)) => return Some(Ok(as_text(answer))),
         Err(why) => return Some(Err(why)),
     };
-    Some(counted(dir, &args, || Ok(wait(spawn_with(dir, &args, &extra)?, READ)?)))
+    Some(counted(dir, &args, || {
+        Ok(wait(spawn_with(dir, &args, &extra)?, READ)?)
+    }))
 }
 
 /// `run`, counted in the test build's [`tally`]: one git process in `dir` from before it is

@@ -4154,16 +4154,22 @@ fn a_save_leaves_the_index_carrying_gits_untracked_cache() {
 /// untracked cache), or `None` when the read did not use the cache at all.
 fn directories_opened_by_a_read(root: &Path) -> Option<u64> {
     let trace = tempfile::NamedTempFile::new().unwrap();
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(git::Tuning::here().for_a_read())
-        .args(["--no-optional-locks", "status", "--porcelain", "--untracked-files=all"])
-        .env("GIT_TRACE2_EVENT", trace.path())
-        // `read_directory`'s counts are nested deeper than the event target's default.
-        .env("GIT_TRACE2_EVENT_NESTING", "10")
-        .output()
-        .unwrap();
+    let out = crate::forklock::output(
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(git::Tuning::here().for_a_read())
+            .args([
+                "--no-optional-locks",
+                "status",
+                "--porcelain",
+                "--untracked-files=all",
+            ])
+            .env("GIT_TRACE2_EVENT", trace.path())
+            // `read_directory`'s counts are nested deeper than the event target's default.
+            .env("GIT_TRACE2_EVENT_NESTING", "10"),
+    )
+    .unwrap();
     assert!(out.status.success(), "{out:?}");
     std::fs::read_to_string(trace.path())
         .unwrap()

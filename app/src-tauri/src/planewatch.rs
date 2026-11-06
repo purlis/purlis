@@ -1056,7 +1056,9 @@ impl GitTree {
         };
         let parts: Vec<&std::ffi::OsStr> = below.iter().collect();
         match parts.as_slice() {
-            [first, ..] if [".git", ".purlis", ".charter"].contains(&first.to_str().unwrap_or("")) => {
+            [first, ..]
+                if [".git", ".purlis", ".charter"].contains(&first.to_str().unwrap_or("")) =>
+            {
                 false
             }
             [workspaces, workspace, folder, _, ..] if *workspaces == "workspaces" => !self
