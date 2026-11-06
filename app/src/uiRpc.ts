@@ -1190,6 +1190,25 @@ export const commands = {
 	skillDraftGradeStart: __WINDOW_ONLY_RESULT,
 	skillDraftGradeSetCap: __WINDOW_ONLY_RESULT,
 	skillGradeStop: __WINDOW_ONLY_RESULT,
+	/**  **What grading the copies `skills` would run and spend**, before anything runs. */
+	skillGradesPlan: (plane: PlaneId, skills: ([SkillLevel, string])[]) => typedError<SkillGradesPlan, string>(__TAURI_INVOKE("skill_grades_plan", { plane, skills })),
+	/**
+	 *  **Grades the copies `skills`**, a few at a time, under `limit_usd` (see the module). The
+	 *  answer is the batch's id. Refused while any grade runs in the project.
+	 */
+	skillGradesStart: (plane: PlaneId, skills: BatchPick[], limitUsd: number | null) => typedError<string, string>(__TAURI_INVOKE("skill_grades_start", { plane, skills, limitUsd })),
+	/**  **Stops the batch `batch`**: none of its skills starts, and its grades running stop. */
+	skillGradesStop: (plane: PlaneId, batch: string) => typedError<null, string>(__TAURI_INVOKE("skill_grades_stop", { plane, batch })),
+	/**  **The batch running in `plane`**, at its latest step, where one runs. */
+	skillGradesRunning: (plane: PlaneId) => typedError<{
+	plane: PlaneId,
+	batch: string,
+	limit_usd: number | null,
+	spent_usd: number | null,
+	skills: BatchSkillStep[],
+	/**  How it ended, once it has. */
+	ended: BatchEnded | null,
+} | null, string>(__TAURI_INVOKE("skill_grades_running", { plane })),
 	/**  **The scorecard of `skill`'s grade `grade`** (SK-59, #3239), as the eval record holds it. */
 	skillGradeScorecard: (plane: PlaneId, skill: string, grade: string) => typedError<GradeScorecard, string>(__TAURI_INVOKE("skill_grade_scorecard", { plane, skill, grade })),
 	/**
@@ -2451,6 +2470,8 @@ export const SESSION_BUS_ANSWERS = "session-bus://answers" as const;
 
 export const SKILL_GRADE = "skill-grade" as const;
 
+export const SKILL_GRADES = "skill-grades" as const;
+
 export const SKILL_GRADE_AFTER_EDIT = "skill-grade-after-edit" as const;
 
 export const SKILL_NEEDS_IN = "skills.needs:" as const;
@@ -3181,6 +3202,63 @@ export type AwayRefusal = {
 	 */
 	shown: string,
 };
+
+/**  **How a batch ended**, as the window is told it. */
+export type BatchEnded = "whole" | "limit" | "stopped" | "spend-not-reported";
+
+/**  **A skill a batch leaves out**, and why, in a sentence. */
+export type BatchLeftOut = {
+	level: SkillLevel,
+	name: string,
+	why: string,
+};
+
+/**  **A skill a batch is asked to grade**: its copy, and the consent its estimate showed. */
+export type BatchPick = {
+	level: SkillLevel,
+	name: string,
+	consent: string,
+};
+
+/**
+ *  **A skill a batch grades, as its estimate shows it**: its own plan's chats, limit and consent,
+ *  and what its last grade spent, worked out for this one, where there is one.
+ */
+export type BatchSkill = {
+	level: SkillLevel,
+	name: string,
+	chats: number,
+	/**  The most its own grade may spend, in dollars: its plan's limit. */
+	limit_usd: number | null,
+	estimate: GradeEstimate | null,
+	/**
+	 *  What pressing Start consents to for it: handed back, and a grade on another plan is
+	 *  refused.
+	 */
+	consent: string,
+};
+
+/**
+ *  **One skill of a batch, at a step**: where it is, its grade's id once it started, how many of
+ *  its chats ran of how many, what they spent, and how it ended.
+ */
+export type BatchSkillStep = {
+	level: SkillLevel,
+	name: string,
+	state: BatchState,
+	grade: string | null,
+	ran: number,
+	of: number,
+	cost_usd: number | null,
+	ended: GradeEnded | null,
+};
+
+/**  **Where a skill of a batch is**, as the window is told it. */
+export type BatchState = { state: "waiting" } | { state: "running" } | 
+/**  Its grade ended: its `ended` says how. */
+{ state: "ended" } | 
+/**  It was never graded, and why, in a sentence. */
+{ state: "not-run"; why: string };
 
 /**  One file that stays behind. */
 export type BehindFile = {
@@ -12648,6 +12726,35 @@ export type SkillGrades = {
 	evals: number,
 	tests_refused: string | null,
 	running: SkillGradeStep | null,
+};
+
+/**  **What grading several skills would run and spend**, before anything runs. */
+export type SkillGradesPlan = {
+	skills: BatchSkill[],
+	left_out: BatchLeftOut[],
+	/**  The estimates known, added, how many there are, and the names of those with none. */
+	known_usd: number | null,
+	known: number,
+	unknown: string[],
+	/**  Each grade's own limit, added: the most the batch could spend whatever limit is set. */
+	most_usd: number | null,
+	at_once: number,
+	/**  The profile the chats run on, and why no grade can run on it, where none can. */
+	profile: string | null,
+	refused: string | null,
+	/**  Several skills of this project being graded already, where they are. */
+	running: string | null,
+};
+
+/**  **One step of a batch**, as [`EVENT`] tells the window. */
+export type SkillGradesStep = {
+	plane: PlaneId,
+	batch: string,
+	limit_usd: number | null,
+	spent_usd: number | null,
+	skills: BatchSkillStep[],
+	/**  How it ended, once it has. */
+	ended: BatchEnded | null,
 };
 
 /**  Where a project skill reaches, as the studio sets it. */

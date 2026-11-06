@@ -695,6 +695,8 @@ pub struct SkillGradeStep {
 /// One grade running, and its way to be stopped.
 pub(crate) struct Running {
     pub(crate) plane: PlaneId,
+    /// The batch it is one of (#5356), by its id: those of one batch run together.
+    pub(crate) batch: Option<String>,
     pub(crate) stop: Arc<AtomicBool>,
     /// The copy a saved edit of which started it (SK-58), by its opt-in's key (level and
     /// name): the next save of that copy stops it. `None` for a grade pressed by hand.
@@ -889,6 +891,7 @@ pub(crate) async fn skill_grade_start(
                 }),
                 follower: None,
                 draft: None,
+                batch: None,
             },
             planned,
         )
@@ -1055,6 +1058,7 @@ fn answering_a_terminal(
                     grader: None,
                     follower: Some(follower),
                     draft: None,
+                    batch: None,
                 },
                 planned,
             )?;
@@ -1086,6 +1090,14 @@ pub(crate) struct Begin {
     pub follower: Option<Follower>,
     /// The draft it grades (#2780), where it grades one.
     pub draft: Option<DraftBegun>,
+    /// The batch it is one of (#5356), where Select's Grade started it.
+    pub batch: Option<InBatch>,
+}
+
+/// **The batch a grade is one of** (#5356): its id, and what hears each of its steps.
+pub(crate) struct InBatch {
+    pub id: String,
+    pub told: Box<dyn Fn(&SkillGradeStep) + Send + Sync>,
 }
 
 /// **The draft a grade grades**: its id, which the window finds it by, and the mark its row holds.
@@ -1154,6 +1166,7 @@ pub(crate) fn begin(
         grader,
         follower,
         draft,
+        batch,
     } = begin;
     let root = held.root().to_path_buf();
     // The one read of the copy the consent was taken from: laid out and recorded as is.
@@ -1209,8 +1222,18 @@ pub(crate) fn begin(
         }
     };
     {
+        let in_batch = batch.as_ref().map(|one| one.id.clone());
+        if in_batch.is_none()
+            && let Some(why) = batch::holds(&plane)
+        {
+            return Err(why.to_owned());
+        }
         let mut all = running();
-        if all.values().any(|one| one.plane == plane) {
+        // A batch's grades run a few together (#5356); any other runs alone in its project.
+        if all
+            .values()
+            .any(|one| one.plane == plane && (in_batch.is_none() || one.batch != in_batch))
+        {
             return Err(
                 "A grade is running in this project already: stop it, or wait for it to \
                  end."
@@ -1221,6 +1244,7 @@ pub(crate) fn begin(
             id.clone(),
             Running {
                 plane: plane.clone(),
+                batch: in_batch,
                 stop: Arc::clone(&stop),
                 after_edit: after_edit
                     .then(|| grades::after_edit::key(&level, &skill))
@@ -1294,6 +1318,9 @@ pub(crate) fn begin(
                     }
                     if let Some(follower) = &follower {
                         follower((&step).into());
+                    }
+                    if let Some(batch) = &batch {
+                        (batch.told)(&step);
                     }
                     let _ = app.emit(EVENT, step);
                 };
@@ -2658,6 +2685,7 @@ fn gathered(pieces: &std::sync::mpsc::Receiver<String>, begun: Instant) -> Optio
 }
 
 pub(crate) mod after_edit;
+pub(crate) mod batch;
 pub(crate) mod drafted;
 
 #[cfg(test)]

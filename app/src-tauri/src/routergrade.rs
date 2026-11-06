@@ -478,6 +478,9 @@ pub(crate) async fn router_grade_start(
             }
         };
         {
+            if let Some(why) = crate::skillgrade::batch::holds(&plane) {
+                return Err(why.to_owned());
+            }
             let mut all = running();
             if all.values().any(|one| one.plane == plane) {
                 return Err(
@@ -490,6 +493,7 @@ pub(crate) async fn router_grade_start(
                 id.clone(),
                 Running {
                     plane: plane.clone(),
+                    batch: None,
                     stop: Arc::clone(&stop),
                     after_edit: None,
                     draft: None,

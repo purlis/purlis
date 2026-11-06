@@ -275,6 +275,7 @@ fn a_grade_that_panics_ends_as_failed_and_is_not_running_after() {
         running().insert(
             grade.to_owned(),
             Running {
+                batch: None,
                 plane: plane.clone(),
                 stop: Arc::new(AtomicBool::new(false)),
                 after_edit: None,
@@ -714,6 +715,7 @@ fn a_skills_grade_is_read_by_its_id_in_its_plane_and_a_routers_is_not() {
     let plane: PlaneId = serde_json::from_value(serde_json::json!("plane-of-a-read-step")).unwrap();
     let other: PlaneId = serde_json::from_value(serde_json::json!("another-plane")).unwrap();
     let held = |step| Running {
+        batch: None,
         plane: plane.clone(),
         stop: Arc::new(AtomicBool::new(false)),
         after_edit: None,
@@ -831,6 +833,7 @@ fn a_skills_grades_say_its_trigger_tests_and_the_grade_of_it_running() {
         running().insert(
             grade.to_owned(),
             Running {
+                batch: None,
                 plane: at.clone(),
                 stop: Arc::new(AtomicBool::new(false)),
                 after_edit: None,
@@ -843,6 +846,7 @@ fn a_skills_grades_say_its_trigger_tests_and_the_grade_of_it_running() {
     running().insert(
         "g-3928-router".to_owned(),
         Running {
+            batch: None,
             plane: plane.clone(),
             stop: Arc::new(AtomicBool::new(false)),
             after_edit: None,
