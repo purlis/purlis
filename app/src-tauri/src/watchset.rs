@@ -377,6 +377,17 @@ pub(crate) fn follow(
     watched: &mut HashSet<PathBuf>,
     wanted: HashSet<PathBuf>,
 ) -> HashSet<PathBuf> {
+    follow_as(watcher, watched, wanted, RecursiveMode::NonRecursive)
+}
+
+/// [`follow`], each folder watched as `mode` says: a recursive watch is the whole tree under it.
+#[must_use = "a folder the platform would not watch is one nothing hears about"]
+pub(crate) fn follow_as(
+    watcher: &mut impl notify::Watcher,
+    watched: &mut HashSet<PathBuf>,
+    wanted: HashSet<PathBuf>,
+    mode: RecursiveMode,
+) -> HashSet<PathBuf> {
     let stale: Vec<PathBuf> = watched.difference(&wanted).cloned().collect();
     for path in stale {
         // An error is a watch the platform has already dropped with its directory.
@@ -388,7 +399,7 @@ pub(crate) fn follow(
         if watched.contains(&path) {
             continue;
         }
-        match watch_one(watcher, &path) {
+        match watch_one(watcher, &path, mode) {
             Ok(()) => {
                 watched.insert(path);
             }
@@ -411,12 +422,16 @@ fn is_a_dir(path: &Path) -> bool {
 
 /// One folder watched, or why not — refused here in this crate's tests when a test says so
 /// ([`refuse`]).
-fn watch_one(watcher: &mut impl notify::Watcher, path: &Path) -> notify::Result<()> {
+fn watch_one(
+    watcher: &mut impl notify::Watcher,
+    path: &Path,
+    mode: RecursiveMode,
+) -> notify::Result<()> {
     #[cfg(test)]
     if refuse::refused(path) {
         return Err(notify::Error::generic("refused by the test"));
     }
-    watcher.watch(path, RecursiveMode::NonRecursive)
+    watcher.watch(path, mode)
 }
 
 /// The platform refusing a watch, played by the tests: a folder named here is never watched,
@@ -483,9 +498,10 @@ pub(crate) mod raw {
     /// and what the watch makes of them. Made on the test's own thread.
     pub(crate) struct Raw;
 
-    /// Every path a [`Raw`] was asked to watch, from any thread: each test's are its own,
-    /// under a directory of its own.
-    static WATCHES: std::sync::Mutex<Vec<std::path::PathBuf>> = std::sync::Mutex::new(Vec::new());
+    /// Every path a [`Raw`] was asked to watch, and whether recursively, from any thread: each
+    /// test's are its own, under a directory of its own.
+    static WATCHES: std::sync::Mutex<Vec<(std::path::PathBuf, bool)>> =
+        std::sync::Mutex::new(Vec::new());
 
     /// Paths a [`Raw`] refuses to watch, as a platform out of watches or a folder gone would.
     static REFUSED: std::sync::Mutex<Vec<std::path::PathBuf>> = std::sync::Mutex::new(Vec::new());
@@ -498,13 +514,22 @@ pub(crate) mod raw {
             .push(path.to_path_buf());
     }
 
-    /// How many times a [`Raw`] has been asked to watch `path`.
+    /// How many times a [`Raw`] has been asked to watch `path` on its own.
     pub(crate) fn watched(path: &Path) -> usize {
+        asked(path, false)
+    }
+
+    /// How many times a [`Raw`] has been asked to watch `path` and everything under it.
+    pub(crate) fn watched_recursively(path: &Path) -> usize {
+        asked(path, true)
+    }
+
+    fn asked(path: &Path, recursively: bool) -> usize {
         WATCHES
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .iter()
-            .filter(|watched| *watched == path)
+            .filter(|(watched, recursive)| watched == path && *recursive == recursively)
             .count()
     }
 
@@ -513,7 +538,7 @@ pub(crate) mod raw {
             RAW.with(|raw| *raw.borrow_mut() = Some(Box::new(handler)));
             Ok(Raw)
         }
-        fn watch(&mut self, path: &Path, _: notify::RecursiveMode) -> notify::Result<()> {
+        fn watch(&mut self, path: &Path, mode: notify::RecursiveMode) -> notify::Result<()> {
             if REFUSED
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -525,7 +550,7 @@ pub(crate) mod raw {
             WATCHES
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .push(path.to_path_buf());
+                .push((path.to_path_buf(), mode == notify::RecursiveMode::Recursive));
             Ok(())
         }
         fn unwatch(&mut self, _: &Path) -> notify::Result<()> {
