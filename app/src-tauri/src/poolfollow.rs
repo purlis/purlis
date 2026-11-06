@@ -521,7 +521,7 @@ pub fn follow_and_drain(
                 Ok(owed) => {
                     let shown: Vec<String> = owed
                         .iter()
-                        .map(|plane| plane.display().to_string())
+                        .map(|owing| owing.plane.display().to_string())
                         .collect();
                     said.push(format!(
                         "draining runner {} stays until its work is fetched into {}",

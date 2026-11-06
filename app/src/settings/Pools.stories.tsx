@@ -13,7 +13,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { AddDockerPoolHost } from "../AddDockerPool";
-import type { PoolLink, PoolRow, PoolsShown } from "../bindings";
+import type { PoolLink, PoolRow, PoolsShown, PoolVersion } from "../bindings";
 import { askProfiles, startAddingAPool, stopAddingAPool } from "../pools";
 import { expectFocusInSight, pictureNow, untilFocused } from "../stories.testkit";
 import { SettingGroup, SettingRow } from "./components";
@@ -30,9 +30,28 @@ const BUILDS: PoolRow = {
   suspend_after: "24h",
 };
 
-/** The core, faked: this machine keeps `pools`, whose runner answers `link`, and its release
- *  names {@link IMAGE}. */
-function theCore(pools: PoolRow[], link: PoolLink = { state: "linked" }) {
+/** What a pool's runner says of its version where a story says nothing: this machine's, with no
+ *  older runner. */
+const LEVEL: PoolVersion = {
+  runner: "0.4.2",
+  why: null,
+  desktop: "0.4.2",
+  follows: true,
+  draining: 0,
+  held: 0,
+  named: true,
+  waiting: 0,
+  owed: [],
+  owed_why: null,
+};
+
+/** The core, faked: this machine keeps `pools`, whose runner answers `link` and says `version`,
+ *  and its release names {@link IMAGE}. */
+function theCore(
+  pools: PoolRow[],
+  link: PoolLink = { state: "linked" },
+  version: PoolVersion = LEVEL,
+) {
   mockIPC(
     (cmd) => {
       if (cmd === "docker_pools")
@@ -45,17 +64,7 @@ function theCore(pools: PoolRow[], link: PoolLink = { state: "linked" }) {
           clusters: [],
         } satisfies PoolsShown;
       if (cmd === "docker_pool_link") return link;
-      if (cmd === "docker_pool_version")
-        return {
-          runner: "0.4.2",
-          why: null,
-          desktop: "0.4.2",
-          follows: true,
-          draining: 0,
-          held: 0,
-          named: true,
-          waiting: 0,
-        };
+      if (cmd === "docker_pool_version") return version;
       if (cmd === "runner_image_of_this_version") return { state: "ours", image: IMAGE };
       if (cmd === "pool_profiles")
         return {
@@ -115,6 +124,7 @@ const meta = {
     theCore(
       (parameters.pools as PoolRow[] | undefined) ?? [],
       parameters.link as PoolLink | undefined,
+      parameters.version as PoolVersion | undefined,
     );
     // The window's pools are held once for every story drawn in this page: a pool of the same
     // name another story's faked core answered for is asked again here, so its profiles' line is
@@ -151,6 +161,42 @@ export const WithAPool: Story = {
     await within(group).findByText("linked");
     await expect(within(group).queryByText(/No pool yet/)).toBeNull();
     await expect(within(group).getByRole("button", { name: "Add a pool…" })).toBeVisible();
+  },
+};
+
+/** **An older runner waits on a closed project** (#5461): the row names the project, when it was
+ *  last opened, and what lets the runner go, beside the row's Remove. Words only: no new control,
+ *  so no keyboard path of its own. */
+export const OlderRunnerWaitsOnAProject: Story = {
+  parameters: {
+    pools: [BUILDS],
+    version: {
+      ...LEVEL,
+      draining: 1,
+      owed: [
+        {
+          path: "/Users/you/projects/alpha",
+          name: "alpha",
+          opened: Math.floor(Date.now() / 1000) - 12 * 86_400 - 60,
+          open_now: false,
+        },
+      ],
+    } satisfies PoolVersion,
+  },
+  play: async ({ canvas }) => {
+    const group = await canvas.findByRole("region", { name: "Pools" });
+    const said = await within(group).findByText(
+      /An older runner stays until project alpha brings back the work its chats saved on that runner\./,
+    );
+    await expect(said).toHaveTextContent(
+      "alpha is closed, and was last opened 12 days ago. Open alpha to bring its work back.",
+    );
+    await expect(said).toHaveTextContent(/anything not brought back is deleted with it\./);
+    // The way out it names is the row's own Remove, there beside it.
+    await expect(within(group).getByRole("button", { name: "Remove pool builds" })).toBeVisible();
+    await waitFor(() => expect(within(group).queryByText(/Asking the runner about/)).toBeNull(), {
+      timeout: 5000,
+    });
   },
 };
 

@@ -9327,6 +9327,24 @@ export type PoolNamedBy = {
 	workspaces: string[],
 };
 
+/**
+ *  **A project an older runner of a pool waits on** (#5461): it still has to bring back what its
+ *  chats left there, and only an open project does.
+ */
+export type PoolOwed = {
+	/**  The path this machine keeps the project under. */
+	path: string,
+	/**  What to call it: the directory's own name. */
+	name: string,
+	/**
+	 *  When it was last opened on this machine, in seconds since the epoch: `u32`, so it is a
+	 *  `number` in TypeScript and not a `bigint`.
+	 */
+	opened: number,
+	/**  Whether it is open in a window now, so it brings the work back on its own. */
+	open_now: boolean,
+};
+
 /**  One of this machine's profiles, as a pool's runner stands with it. */
 export type PoolProfileRow = {
 	name: string,
@@ -9632,6 +9650,14 @@ export type PoolVersion = {
 	 *  could not be read.
 	 */
 	suspends?: PoolSuspends | null,
+	/**
+	 *  **The projects an older runner waits on to bring its work back** (#5461): a draining
+	 *  runner stays until each has fetched what its chats left there (#5393). Empty where none
+	 *  waits.
+	 */
+	owed: PoolOwed[],
+	/**  Why purlis could not read which projects those are, shown safely; none where it could. */
+	owed_why: string | null,
 };
 
 /**  What the Pools group draws: the pools, and the limits a new pool gets by default. */

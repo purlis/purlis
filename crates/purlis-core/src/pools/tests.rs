@@ -277,7 +277,13 @@ fn work_is_owed_from_a_draining_runner_until_its_fetch_and_a_chat_on_the_next_ru
         workspace: "ide".to_owned(),
         runner: runner.map(str::to_owned),
     };
-    let owed = || work_owed_from(config.path(), "first", "first-old").unwrap();
+    let owed = || -> Vec<std::path::PathBuf> {
+        work_owed_from(config.path(), "first", "first-old")
+            .unwrap()
+            .into_iter()
+            .map(|owing| owing.plane)
+            .collect()
+    };
     crate::machine::update(config.path(), |store| store.remember(plane, 1)).unwrap();
     assert!(owed().is_empty(), "nothing ran there");
 
@@ -292,6 +298,11 @@ fn work_is_owed_from_a_draining_runner_until_its_fetch_and_a_chat_on_the_next_ru
     })
     .unwrap();
     assert_eq!(owed(), [plane], "a chat that ran there may have left work");
+    assert_eq!(
+        work_owed_from(config.path(), "first", "first-old").unwrap()[0].opened,
+        1,
+        "it says when the project was last opened (#5461)"
+    );
 
     crate::machine::update(config.path(), |store| store.forget_chat_on_pool(plane, 2)).unwrap();
     crate::machine::update(config.path(), |store| {
