@@ -186,6 +186,7 @@ pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
             None => "worktree prune".to_owned(),
         },
         GitWork::RootUpdate {} => "worktree update at the project root".to_owned(),
+        GitWork::RootSave { .. } => "save the project".to_owned(),
         // Its own git's claim on a branch folder, asked by the chat's Bash guard (#3931).
         GitWork::WorktreeClaim { repo, piece, act } => {
             format!("hold {repo} {piece} for its own git's {act:?}")
@@ -202,15 +203,18 @@ pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
         )
     };
     let root_update = matches!(ask.work, GitWork::RootUpdate {});
+    let root_save = matches!(ask.work, GitWork::RootSave { .. });
     // The root's update is the window's own Update (#3831), fetched as the window fetches it:
-    // its sign-in, offered to the remote recorded for the project alone.
-    let answered = if root_update {
+    // its sign-in, offered to the remote recorded for the project alone. A chat's save of the
+    // project pushes as the window's automatic save does, held to that same remote.
+    let answered = if root_update || root_save {
         crate::forgeaccounts::window_git(run)
     } else {
         run()
     };
-    // The tree moved under every reader, as after the window's own Update.
-    if root_update && matches!(answered.answer, Answer::Said { code: 0, .. }) {
+    // The tree, or what is saved of it, moved under every reader, as after the window's own
+    // Update and Save.
+    if (root_update || root_save) && matches!(answered.answer, Answer::Said { code: 0, .. }) {
         held.tree_moved();
     }
     let answer = told(held, ask.chat, answered);
