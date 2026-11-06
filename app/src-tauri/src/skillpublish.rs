@@ -394,7 +394,6 @@ pub(crate) async fn skill_set_export_review(
 ) -> Result<ExportReview, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading what an export would write", move || {
-        flag_on()?;
         let out = set_gathered(held.root(), &members)?;
         Ok(ExportReview {
             skills: out.skills.iter().map(|skill| esc(&skill.name)).collect(),
@@ -432,7 +431,6 @@ pub(crate) async fn skill_set_export(
     zip: bool,
 ) -> Result<Option<String>, String> {
     let held = planes.held(&plane)?;
-    flag_on()?;
     let Some(to) = export_place(&app, zip).await? else {
         return Ok(None);
     };
