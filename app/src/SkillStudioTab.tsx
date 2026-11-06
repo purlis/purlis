@@ -121,6 +121,7 @@ import {
   type Selecting,
 } from "./SkillLibrarySelect";
 import { applySet } from "./SkillSetReview";
+import { GradeSetReview, GradesRunningPage } from "./SkillLibraryGrade";
 import { useSkillEditInPlace } from "./SkillEditInPlace";
 
 /** A change in progress: New skill… (#3684), Rename, Move or Delete, each a dialog (S4, #3685),
@@ -450,6 +451,8 @@ export function SkillStudioTab({
     /** Deleted's action under review. */
     deletedAct?: DeletedAct;
   }>();
+  /** **The grades Select started** (#5356), by their batch's id, while their page is shown. */
+  const [gradesShown, setGradesShown] = useState<string>();
   // Whether the Library's built-in skills are folded: those folded away are not shown.
   const [builtInsFolded, setBuiltInsFolded] = useState(true);
   // The studio's own element: where ⌘A takes everything while Select is on.
@@ -1604,8 +1607,53 @@ export function SkillStudioTab({
       </>
     );
     const acting = sel?.acting;
+    // Grade's reach, worked out only while its review is open.
+    const grades =
+      acting === "grade"
+        ? reachOf(
+            "grade",
+            chosenRows.map((one) => one.skill),
+            selectFor,
+          )
+        : undefined;
     item =
-      sel !== undefined && acting !== undefined ? (
+      gradesShown !== undefined ? (
+        <GradesRunningPage
+          key={gradesShown}
+          plane={plane}
+          batch={gradesShown}
+          onBack={() => setGradesShown(undefined)}
+          onOpen={(one) => {
+            const its = skills.find((skill) => {
+              const level = skill.name === one.name ? levelOf(skill, scope) : null;
+              return level !== null && sameLevel(level, one.level);
+            });
+            if (its === undefined) return;
+            setGradesShown(undefined);
+            go({
+              page: "library",
+              scope,
+              skill: skillRowId(its),
+              tab: "grades",
+              ...(one.grade !== null && one.state.state === "ended"
+                ? { grading: { at: "scorecard" as const, grade: one.grade } }
+                : {}),
+            });
+          }}
+        />
+      ) : sel !== undefined && grades !== undefined ? (
+        <GradeSetReview
+          plane={plane}
+          members={grades.will}
+          stays={grades.stays}
+          onCancel={() => setSel((was) => ({ ...was, acting: undefined }))}
+          onStarted={(batch) => {
+            // Select ends once its action is under way, as after any other (#5332).
+            setSelected(undefined);
+            setGradesShown(batch);
+          }}
+        />
+      ) : sel !== undefined && acting !== undefined && acting !== "grade" ? (
         <SelectReviewPage
           key={acting}
           plane={plane}

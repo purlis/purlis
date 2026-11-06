@@ -51,6 +51,11 @@ const REFUSING: Record<string, { grounds: string[]; where: string }> = {
     grounds: ["surface.overlay"],
     where: "SkillBudgetChange: a program's two numbers, in its Change… dialog (#5353)",
   },
+  "SkillLibraryGrade.tsx": {
+    grounds: ["surface.base"],
+    where:
+      "GradeSetReview: the spending limit, in Grade's review in the Library's Select mode, a page of the Skill studio (#5356)",
+  },
   "SkillSources.tsx": {
     grounds: ["surface.base"],
     where: "ClashChoice: a new name in an install's review, a page of the Skills view",

@@ -767,6 +767,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // The person's own press in their window, after the plan showed what it costs.
     "skill_grade_start",
     "skill_grade_stop",
+    // Several skills graded under one limit (#5356): as a skill's grade, a few at a time, on the
+    // person's press in their window after the estimate showed what they may spend.
+    "skill_grades_start",
+    "skill_grades_stop",
     // A grade of a router started (SK-15e, #3233): as a skill's grade, it runs chats on the
     // person's profile and records the grade in the project. Stopped by `skill_grade_stop`.
     "router_grade_start",
@@ -1346,6 +1350,10 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "skill_grade_plan",
     "skill_grade_running",
     "skill_grade_scorecard",
+    // What grading several skills would spend, and how far the batch running is (#5356): read
+    // only.
+    "skill_grades_plan",
+    "skill_grades_running",
     // A skill's grades, for its Grades tab (S6, #3688), and a draft's (#2780): read only.
     "skill_grades",
     "skill_draft_grade",
