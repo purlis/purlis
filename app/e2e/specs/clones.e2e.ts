@@ -478,11 +478,17 @@ describe("cloning from a self-hosted GitLab in the real window", function () {
     await press(WELCOME, SIGN_IN_DOOR);
     await untilSays(WELCOME, "Sign in with GitLab");
     await press(WELCOME, "Sign in with GitLab");
-    await browser.waitUntil(() => existsSync(PAGE), {
-      timeout: 30_000,
-      timeoutMsg: "the sign-in never opened the forge's page",
-    });
-    await forge.playBrowser(readFileSync(PAGE, "utf8"));
+    // The app writes the page's address with a plain write, which makes the file before it fills
+    // it: an empty read there is the moment between, not the page.
+    let page = "";
+    await browser.waitUntil(
+      () => {
+        page = existsSync(PAGE) ? readFileSync(PAGE, "utf8") : "";
+        return /^https?:\/\/\S+$/.test(page);
+      },
+      { timeout: 30_000, timeoutMsg: "the sign-in never opened the forge's page" },
+    );
+    await forge.playBrowser(page);
     await browser.waitUntil(
       async () => (await ask<Account[]>("forge_accounts")).some((a) => a.host === forge.server),
       { timeout: 30_000, timeoutMsg: "the browser's redirect signed no account in" },
