@@ -476,7 +476,7 @@ export async function answerTaken(
         const typedIn = values ?? [];
         const press = RUN_PRESS_OF[option];
         if (press === undefined) break;
-        return commands.answerRunGrant(plane, path.id, press, typedIn);
+        return commands.answerRunGrant(plane, path.id, press, typedIn, [], []);
       }
       case "secret":
         // A key a chat's brokered run missed (#5068, ADR 0109): Fill stores the value typed in

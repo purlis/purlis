@@ -192,6 +192,11 @@ pub struct RunShown {
     /// **Asked ahead of its run** (#5244): no command yet; only Allow for this chat is offered,
     /// and the first run fixes how the values are handed.
     pub ahead: bool,
+    /// **What *Remember this need for the persona* would write** (#5080, #5240), where a field's
+    /// key is one the persona does not declare and it may: the file, and a line per such field.
+    /// No `vault:` line: a run names its vault in its command.
+    #[specta(optional)]
+    pub remember: Option<SecretNeedShown>,
 }
 
 /// **A key a run lacks, as its notice's value field** (#5242). Names only.
@@ -201,6 +206,8 @@ pub struct RunFillShown {
     /// What the persona's definition says it is for, where it declares it.
     #[specta(optional)]
     pub declared: Option<String>,
+    /// The persona declares no Secret need for it: Remember would add one (#5080).
+    pub need: bool,
     /// The entry a link read, which is gone, where the key is such a link.
     #[specta(optional)]
     pub gone: Option<SecretEntryShown>,
@@ -212,6 +219,9 @@ pub struct RunFillShown {
 pub struct AlwaysShown {
     pub line: String,
     pub by_env: bool,
+    /// **Something else of the persona's list waits on the person's Allow** (#5080): Always
+    /// allow approves this line alone, and the persona's usual Notice stays up for the rest.
+    pub others_wait: bool,
 }
 
 /// One value a run asks to hand its program ([`RunShown`]).
@@ -2217,6 +2227,8 @@ pub const RUN_FILL: &str = "fill";
 pub fn run_grant(
     open: &purlis_core::secrets::ask::run::OpenRun,
     locks: &purlis_core::sandbox::policy::Locks,
+    may_remember: bool,
+    others_wait: &dyn Fn(&str) -> bool,
 ) -> Shown {
     use purlis_core::secrets::ask::run::Hosts;
     let bound = &open.bound;
@@ -2246,6 +2258,7 @@ pub fn run_grant(
         .map(|line| AlwaysShown {
             line: line.text,
             by_env: line.by_env,
+            others_wait: others_wait(&open.persona),
         });
     let locked = locks
         .refuses_run_grant(&open.persona, &bound.program_name())
@@ -2332,6 +2345,7 @@ pub fn run_grant(
         .map(|fill| RunFillShown {
             key: fill.key.clone(),
             declared: fill.declared.clone().filter(|purpose| !purpose.is_empty()),
+            need: fill.declared.is_none(),
             gone: match &fill.reason {
                 Some(purlis_core::secrets::ask::Reason::BrokenLink { was }) => {
                     Some(SecretEntryShown {
@@ -2384,6 +2398,15 @@ pub fn run_grant(
             .to_owned(),
             no_allow: open.offer.no_allow().map(str::to_owned),
             ahead: open.ahead,
+            remember: (may_remember
+                && !open.persona.is_empty()
+                && open.fills.iter().any(|fill| fill.declared.is_none()))
+            .then(|| SecretNeedShown {
+                file: crate::proposals::definition_file(&open.persona),
+                need: true,
+                purpose: String::new(),
+                vault: None,
+            }),
         }),
     }
 }
@@ -3048,6 +3071,9 @@ pub struct Waiting<'a> {
     pub secrets: Vec<purlis_core::secrets::ask::Open>,
     /// Whether Remember is offered for this persona (#5240, [`crate::proposals::need_offerable`]).
     pub may_remember: &'a dyn Fn(&str) -> bool,
+    /// Whether anything else of this persona's tools waits on the person's Allow, where Always
+    /// allow is offered (#5080, [`purlis_core::settings::always_allow::others_wait`]).
+    pub others_wait: &'a dyn Fn(&str) -> bool,
     /// The secret fills chats asked for that wait on the person (#5115).
     pub secret_fills: Vec<crate::secretfills::FillWait>,
     /// The vaults chats were refused for their persona, as their Notice shows them (#5160).
@@ -3150,12 +3176,14 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
             .map(|wait| secret_fill(wait, waiting.locks)),
     );
     // A chat whose brokered run names a program its persona does not declare (ADR 0112).
-    asks.extend(
-        waiting
-            .run_grants
-            .iter()
-            .map(|open| run_grant(open, waiting.locks)),
-    );
+    asks.extend(waiting.run_grants.iter().map(|open| {
+        run_grant(
+            open,
+            waiting.locks,
+            (waiting.may_remember)(&open.persona),
+            waiting.others_wait,
+        )
+    }));
     // A runner chat whose declared tool waits on the person's Allow for its pool (#2047).
     asks.extend(waiting.pool_tools.iter().map(pool_tool));
     // A chat whose brokered run missed a key waits on the person to fill it (#5068).
@@ -3398,6 +3426,8 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     }
     let secrets = held.secret_asks().open();
     let may_remember = |persona: &str| crate::proposals::need_offerable(held.root(), persona);
+    let others_wait =
+        |persona: &str| purlis_core::settings::always_allow::others_wait(held.root(), persona);
     for one in &secrets {
         since.insert(secret_key(one.id), one.since);
     }
@@ -3422,6 +3452,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         browser_logins,
         secrets,
         may_remember: &may_remember,
+        others_wait: &others_wait,
         secret_fills,
         vaults,
         sandbox_only,

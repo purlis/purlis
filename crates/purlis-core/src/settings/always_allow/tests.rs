@@ -279,3 +279,24 @@ fn a_program_not_reviewed_is_never_written_and_the_file_stays_as_it_was() {
     assert!(why.contains("kubectl"), "{why}");
     assert_eq!(manifest(tmp.path()), ON);
 }
+
+/// #5080: the notice says, before Always allow is pressed, whether something else of the
+/// persona's waits on the person: then the press approves its own line alone.
+#[test]
+fn the_notice_knows_beforehand_when_something_else_of_the_persona_waits() {
+    let tmp =
+        project("[sandbox]\nmode = \"on\"\n[sandbox.personas.devops]\nhosts = [\"a.example\"]\n");
+    assert!(
+        others_wait(tmp.path(), "devops"),
+        "never allowed: its list waits"
+    );
+    allow_all(tmp.path(), "devops");
+    assert!(!others_wait(tmp.path(), "devops"), "all of it allowed");
+    std::fs::write(
+        tmp.path().join("charter.toml"),
+        "[sandbox]\nmode = \"on\"\n[sandbox.personas.devops]\nhosts = [\"a.example\", \"teammate.example\"]\n",
+    )
+    .unwrap();
+    assert!(others_wait(tmp.path(), "devops"), "a teammate's host waits");
+    assert!(!others_wait(project(ON).path(), "devops"), "nothing listed");
+}
