@@ -52,6 +52,9 @@ Everywhere, the look also counts a repository's `.git/info/attributes` as what s
 
 Each placeholder is a real empty file or folder on disk while the sandbox command that needs it
 runs, so a person's own tools can see it then, and `git status` lists the ones that aren't ignored.
-They are removed when it ends. A sandbox killed outright can leave one, and an empty one is not told.
-Measured against the library that builds this sandbox, with the same list of commands and no names
-held: git's results don't change.
+They are removed when a command ends as it should. One a sandbox killed outright leaves isn't
+removed by purlis, and an empty one is not told. Measured against the library that builds this
+sandbox, with the same list of commands and no names held: git's results don't change.
+
+The names make a Claude Code chat's settings on Linux longer than one word of its command line, so
+they go through a file in purlis's data folder, as a project with many workspaces already did.
