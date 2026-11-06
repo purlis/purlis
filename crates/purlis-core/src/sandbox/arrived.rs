@@ -583,6 +583,8 @@ pub fn begin_since(
     since: std::time::SystemTime,
 ) -> io::Result<()> {
     let path = file(plane, chat)?;
+    // PROBE (#5555), to be removed: a start whose walk outlasts the start's wait.
+    std::thread::sleep(Duration::from_millis(400));
     let had = read(&path).ok().flatten().unwrap_or_default();
     let new_folders: Vec<PathBuf> = watched
         .folders
