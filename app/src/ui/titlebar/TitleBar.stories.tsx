@@ -450,11 +450,16 @@ export const ThousandWorkspaces: Story = {
     const scroller = list.closest<HTMLElement>('[data-scope="popover"][data-part="list"]');
     const seen = scroller?.getBoundingClientRect();
     const row = chosen?.getBoundingClientRect();
-    await expect(
-      row !== undefined && seen !== undefined && row.top >= seen.top && row.bottom <= seen.bottom,
-    ).toBe(true);
+    // Within a pixel: the virtualizer rounds the scroller's height as it brings a row in.
+    await expect(row !== undefined && seen !== undefined).toBe(true);
+    await expect(row?.top ?? 0).toBeGreaterThanOrEqual((seen?.top ?? 0) - 1);
+    await expect(row?.bottom ?? 0).toBeLessThanOrEqual((seen?.bottom ?? 0) + 1);
+    // Rows keep the gap the list draws between them, as a list drawn whole does.
+    const next = chosen?.nextElementSibling?.getBoundingClientRect();
+    if (next !== undefined && row !== undefined)
+      await expect(next.top - row.bottom).toBeGreaterThan(0);
     const pin = screen.getByRole("button", {
-      name: `Pin ${chosen?.textContent ?? ""} to the title bar`,
+      name: `Pin ${chosen?.querySelector("[data-titlebar-name]")?.textContent ?? ""} to the title bar`,
     });
     const centre = (box: DOMRect) => box.top + box.height / 2;
     await expect(

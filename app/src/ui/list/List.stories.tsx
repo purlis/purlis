@@ -616,7 +616,9 @@ export const AimedThousand: Story = {
     await expect(aimed).toHaveAttribute("aria-setsize", "1000");
     const seen = list.getBoundingClientRect();
     const row = aimed.getBoundingClientRect();
-    await expect(row.top >= seen.top && row.bottom <= seen.bottom).toBe(true);
+    // Within a pixel: the virtualizer rounds the scroller's height as it brings a row in.
+    await expect(row.top).toBeGreaterThanOrEqual(seen.top - 1);
+    await expect(row.bottom).toBeLessThanOrEqual(seen.bottom + 1);
     await expect(box).toHaveFocus();
     expectFocusInSight();
   },

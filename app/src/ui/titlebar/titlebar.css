@@ -373,10 +373,11 @@
 
 /* A list of thousands drawn in part (#5501, `ui/list/virtualRows.tsx`): it keeps the whole list's
    height, and each row it draws, and its pin beside it, stands at its own place in it. */
+/* Still a grid, so its row gap is read for the rows it places; its one track is the height. */
 [data-part="listbox"][data-scope="titlebar"][data-partly],
 [data-part="pins"][data-scope="titlebar"][data-partly] {
   position: relative;
-  display: block;
+  grid-auto-rows: auto;
 }
 
 [data-part="listbox"][data-scope="titlebar"][data-partly]::before,
