@@ -1389,7 +1389,8 @@ impl State {
     /// **The frames of `target`'s page on a site the agent is kept off** (#5152), each by its
     /// id, with that site: every frame whose address, or whose document's origin
     /// ([`judged_at`]), `kept_off` names, and every frame inside one. The page's own document is
-    /// judged by its frame's address and the page's both.
+    /// judged by its frame's address and the page's both, and, while it is not known, by the page
+    /// that opened it ([`State::opened_on_kept_off`]).
     fn kept_off_frames(&self, target: &str, kept_off: &KeptOff) -> HashMap<String, String> {
         let Some(page) = self.page(target) else {
             return HashMap::new();
@@ -1407,6 +1408,17 @@ impl State {
             .collect();
         if let Some(site) = kept_off(&page.url).or_else(|| own(target, &page.url)) {
             on.entry(target.to_owned()).or_insert(site);
+        }
+        // A blank page takes the origin of the page that opened it: until its own document is
+        // known, one opened by a page on the site is on it.
+        if !on.contains_key(target)
+            && matches!(
+                judged_at(page, target, &self.document_origins),
+                Err(Unjudged::Unread)
+            )
+            && let Some(site) = self.opened_on_kept_off(page, kept_off)
+        {
+            on.insert(target.to_owned(), site);
         }
         let mut every = on.clone();
         for id in page.frames.keys() {
@@ -1429,6 +1441,29 @@ impl State {
             }
         }
         every
+    }
+
+    /// **The site the agent is kept off that the page which opened `page` is on** (#5152): that
+    /// page's own document's, by its address or its origin; where that is not known either, the
+    /// one of the page that opened it, and so on up.
+    fn opened_on_kept_off(&self, page: &Page, kept_off: &KeptOff) -> Option<String> {
+        let mut at = page;
+        for _ in 0..=self.pages.len() {
+            let by = self.page(at.opener.as_deref()?)?;
+            let address = by
+                .frames
+                .get(&by.target)
+                .map_or(by.url.as_str(), |top| top.url.as_str());
+            if let Some(site) = kept_off(&by.url).or_else(|| kept_off(address)) {
+                return Some(site);
+            }
+            match judged_at(by, &by.target, &self.document_origins) {
+                Ok(Judged::At(origin)) => return kept_off(&origin),
+                Err(Unjudged::Unread) => at = by,
+                _ => return None,
+            }
+        }
+        None
     }
 
     /// Page `target` goes from the list: what it kept stays kept from what is said beside the pages.
