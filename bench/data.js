@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793933106350,
+  "lastUpdate": 1793934727144,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -40782,6 +40782,48 @@ window.BENCHMARK_DATA = {
             "value": 101.164474,
             "unit": "ms",
             "extra": "median of 5 runs: 100.342, 100.990, 101.164, 101.393, 101.818 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "6e1b968bfe32730fa1e528ada0e7f79b33b12cfe",
+          "message": "The head's split and close are always visible, with no Close in a one-pane tab (#5318) (#5392)\n\n* The head's split and close are always drawn, and a tab's only pane has no Close (#5318)\n\nSplit right, Split down and Close were drawn only under the pointer or the\nkeyboard. They are always drawn now, with the divider before them. A tab's only\npane draws no Close, and has no row for it, because the tab's own close does the\nsame. A view alone in its tab draws no controls over its content, and its splits\njoin its tab's menu.\n\nThis reverses the decision on #5221 that the divider hides at rest (ADR 0111).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NW3M259451FA03QHH615F7\nPurlis-Persona: steward\n\n* The tests and stories that read a lone pane's Close, and a lone view's tab menu (#5318)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NW3M259451FA03QHH615F7\nPurlis-Persona: steward\n\n* Review of the head's controls: a background view's splits, and what was left stale (#5318)\n\nA view's tab behind the one in front took its room from the pane in front. Comments\nstill said the controls appear on hover, and the PaneBand Actions picture ended with\nthe keyboard on a control, where a tooltip could land by timing.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NW3M259451FA03QHH615F7\nPurlis-Persona: steward\n\n* The front tab's × puts the keyboard in what is now in front (#5318)\n\nA tab's only pane has no Close any more, so the tab's × is the way to close it, and\nit left the keyboard nowhere where Close pane handed it on. Delete on a tab keeps the\nkeyboard on the strip.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NW3M259451FA03QHH615F7\nPurlis-Persona: steward\n\n* The menu and browser tests that read a lone pane's Close row (#5318)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NW3M259451FA03QHH615F7\nPurlis-Persona: steward\n\n* The pictures of the head at rest, from this pull request's stories run (#5318)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NW3M259451FA03QHH615F7\nPurlis-Persona: steward\n\n* Baselines for the foot after the rebase, from this pull request's stories run (#5318)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DXRMV9Z66A6VB0924XV43K\nPurlis-Persona: steward\n\n* Baselines for the band and view tabs after the rebase onto one mark everywhere, from this pull request's stories run (#5318)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DXRMV9Z66A6VB0924XV43K\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-06T02:13:52Z",
+          "tree_id": "25112c49680eacf97559f18d33312cd300446c64",
+          "url": "https://github.com/purlis/purlis/commit/6e1b968bfe32730fa1e528ada0e7f79b33b12cfe"
+        },
+        "date": 1793934720480,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.31305,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.301, 0.311, 0.313, 0.313, 0.323 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5658685,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.395, 16.420, 16.566, 16.579, 16.682 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.19261900000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.986, 101.125, 101.193, 101.372, 101.770 ms"
           }
         ]
       }
