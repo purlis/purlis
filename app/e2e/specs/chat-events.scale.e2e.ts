@@ -4,9 +4,10 @@
 import { appendFileSync } from "node:fs";
 import process from "node:process";
 import { browser } from "@wdio/globals";
-import { closeEverything, openTab, sleep } from "../bench/window.js";
+import { closeEverything, sleep } from "../bench/window.js";
 import { built, singleQuoted } from "../harness.js";
 import { nextLoad } from "../load.js";
+import { startAChat } from "../started.js";
 
 /**
  * **How many chat events reach the window a second while busy chats stream** (#4883, for
@@ -55,7 +56,9 @@ describe("chat events reaching the window while busy chats stream", () => {
       "--tick-hook",
       aReadFromInsideTheChat,
     ]);
-    for (let n = 0; n < CHATS; n++) await openTab();
+    // The scenario run's own way to start a chat, which answers the picker: the bench's
+    // `next pane` presses New tab and waits for a pane the picker never opens.
+    for (let n = 0; n < CHATS; n++) await startAChat();
     // Every chat streaming and firing before the count starts.
     await sleep(5000);
 
