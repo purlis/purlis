@@ -9,3 +9,5 @@
 
 - **A skill brought back under a new name leaves Deleted.** One whose delete was a commit stayed
   listed after it came back under another name (#5457).
+- **The keyboard reaches a taken name's choice.** In an install's review, *Skip it* and *Install
+  it under a new name* were out of the Tab order until one was clicked (#5457).

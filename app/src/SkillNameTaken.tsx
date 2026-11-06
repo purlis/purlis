@@ -198,7 +198,9 @@ function NameTakenChoice({
               { value: "skip", label: words.skip },
               { value: "rename", label: words.rename },
             ]}
-            value={settling?.how ?? ""}
+            // Unsettled is no value at all: one no radio holds would leave every radio out of
+            // the Tab order, as a group's Tab stop is the radio chosen.
+            value={settling?.how}
             disabled={busy}
             onValueChange={(to) => onSettle({ how: to === "skip" ? "skip" : "rename" })}
           />
