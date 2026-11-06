@@ -630,7 +630,10 @@ export const SplitPictures: Story = {
       ["review", 4],
       ["devops 2", 6],
     ] as const) {
-      const tab = canvas.getByRole("tab", { name: new RegExp(`^${name}, split, ${panes} panes`) });
+      // Its name says its mark's state first, then its own name and how many panes.
+      const tab = canvas.getByRole("tab", {
+        name: new RegExp(`${name}.*split, ${panes} panes`),
+      });
       // After the name, on its line, and drawn whole.
       const label = tab.querySelector('[data-part="label"]') as HTMLElement;
       const picture = tab.querySelector('[data-part="picture"]') as SVGElement;
