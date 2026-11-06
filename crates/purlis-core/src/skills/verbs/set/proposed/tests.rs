@@ -4,7 +4,7 @@
 //! A change to several skills a chat proposes (#5357): what the person is shown, when it reads as
 //! changed since, and what Apply makes, on the plane a set's own tests use (`set::tests::plane`).
 
-use super::super::tests::{commits, did, plane, project, there, write};
+use super::super::tests::{commits, deleted_named, did, plane, project, there, write};
 use super::*;
 use crate::testgit::run;
 
@@ -227,4 +227,153 @@ fn a_proposal_of_no_skill_or_too_many_is_refused() {
         on: true,
     };
     assert!(many.checked().is_err());
+}
+
+/// The plane with `tdd` and `review` deleted as one set.
+fn with_two_deleted() -> tempfile::TempDir {
+    let tmp = plane();
+    did(tmp.path(), |cx| {
+        super::super::delete_set(cx, &[project("tdd"), project("review")], None, None)
+    })
+    .unwrap();
+    tmp
+}
+
+#[test]
+fn a_proposed_restore_shows_each_deleted_skill_and_brings_them_back_as_one_commit() {
+    let tmp = with_two_deleted();
+    let root = tmp.path();
+    let change = SetChange::Restore {
+        members: vec![project("tdd"), project("review")],
+    };
+    assert_eq!(change.title(), "Bring back 2 skills");
+    let shown = change.shown(root);
+    assert!(
+        shown.before.contains("tdd · project: deleted"),
+        "{}",
+        shown.before
+    );
+    assert!(
+        shown.after.contains("tdd · project: back"),
+        "{}",
+        shown.after
+    );
+    assert!(!there(root, "skills", "tdd"), "shown, nothing written");
+    let before = commits(root);
+    did(root, |cx| change.apply(cx)).unwrap();
+    assert!(there(root, "skills", "tdd") && there(root, "skills", "review"));
+    assert_eq!(commits(root), before + 1);
+}
+
+#[test]
+fn a_skill_not_in_deleted_stays_out_of_a_proposed_restore() {
+    let tmp = with_two_deleted();
+    let root = tmp.path();
+    let change = SetChange::Restore {
+        members: vec![project("tdd"), project("grilling")],
+    };
+    let shown = change.shown(root);
+    assert!(
+        shown
+            .after
+            .contains("grilling · project: stays (It is not in Deleted.)"),
+        "{}",
+        shown.after
+    );
+    did(root, |cx| change.apply(cx)).unwrap();
+    assert!(there(root, "skills", "tdd"));
+    assert!(!there(root, "skills", "review"), "only what was named");
+}
+
+#[test]
+fn a_proposed_delete_now_says_it_has_no_undo_and_takes_them_off_deleted() {
+    let tmp = with_two_deleted();
+    let root = tmp.path();
+    let change = SetChange::DeleteNow {
+        members: vec![project("tdd")],
+    };
+    assert_eq!(change.title(), "Delete 1 skill now, with no undo");
+    let shown = change.shown(root);
+    assert!(
+        shown.before.contains("tdd · project: deleted"),
+        "{}",
+        shown.before
+    );
+    assert!(
+        shown.after.contains("tdd · project: gone for good"),
+        "{}",
+        shown.after
+    );
+    assert_eq!(deleted_named(root), ["review", "tdd"]);
+    did(root, |cx| change.apply(cx)).unwrap();
+    assert_eq!(deleted_named(root), ["review"]);
+}
+
+#[test]
+fn a_proposed_move_shows_where_each_goes_and_moves_them_as_one_commit() {
+    let tmp = plane();
+    let root = tmp.path();
+    let change = SetChange::Move {
+        members: vec![project("tdd"), project("review")],
+        to: Level::workspace("ops"),
+        grant: Vec::new(),
+    };
+    assert_eq!(change.title(), "Move 2 skills to the workspace ops skills");
+    let shown = change.shown(root);
+    assert!(
+        shown.before.contains("tdd · project: there"),
+        "{}",
+        shown.before
+    );
+    assert!(
+        shown
+            .after
+            .contains("tdd · project: moved to the workspace ops skills"),
+        "{}",
+        shown.after
+    );
+    assert!(there(root, "skills", "tdd"), "shown, nothing moved");
+    let before = commits(root);
+    did(root, |cx| change.apply(cx)).unwrap();
+    assert!(!there(root, "skills", "tdd") && !there(root, "skills", "review"));
+    assert!(there(root, "workspaces/ops/skills", "tdd"));
+    assert_eq!(commits(root), before + 1);
+}
+
+#[test]
+fn a_proposed_move_into_the_projects_skills_with_no_grant_moves_nothing() {
+    let tmp = plane();
+    let root = tmp.path();
+    write(
+        root,
+        "workspaces/ops/skills",
+        "lint",
+        &super::super::tests::skill_text("lint"),
+    );
+    run(root, &["add", "-A"]);
+    run(root, &["commit", "-q", "-m", "lint"]);
+    let lint = Member {
+        level: Level::workspace("ops"),
+        name: "lint".to_owned(),
+    };
+    let change = SetChange::Move {
+        members: vec![lint.clone()],
+        to: Level::project(),
+        grant: Vec::new(),
+    };
+    assert!(
+        change
+            .shown(root)
+            .after
+            .contains("lint · workspace ops: stays")
+    );
+    assert!(did(root, |cx| change.apply(cx)).is_err());
+    assert!(there(root, "workspaces/ops/skills", "lint"));
+    let granted = SetChange::Move {
+        members: vec![lint],
+        to: Level::project(),
+        grant: vec!["all".to_owned()],
+    };
+    did(root, |cx| granted.apply(cx)).unwrap();
+    assert!(there(root, "skills", "lint"));
 }
