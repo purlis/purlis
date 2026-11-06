@@ -1192,13 +1192,8 @@ export const commands = {
 	skillGradeStop: __WINDOW_ONLY_RESULT,
 	/**  **What grading the copies `skills` would run and spend**, before anything runs. */
 	skillGradesPlan: (plane: PlaneId, skills: ([SkillLevel, string])[]) => typedError<SkillGradesPlan, string>(__TAURI_INVOKE("skill_grades_plan", { plane, skills })),
-	/**
-	 *  **Grades the copies `skills`**, a few at a time, under `limit_usd` (see the module). The
-	 *  answer is the batch's id. Refused while any grade runs in the project.
-	 */
-	skillGradesStart: (plane: PlaneId, skills: BatchPick[], limitUsd: number | null) => typedError<string, string>(__TAURI_INVOKE("skill_grades_start", { plane, skills, limitUsd })),
-	/**  **Stops the batch `batch`**: none of its skills starts, and its grades running stop. */
-	skillGradesStop: (plane: PlaneId, batch: string) => typedError<null, string>(__TAURI_INVOKE("skill_grades_stop", { plane, batch })),
+	skillGradesStart: __WINDOW_ONLY_RESULT,
+	skillGradesStop: __WINDOW_ONLY_RESULT,
 	/**  **The batch running in `plane`**, at its latest step, where one runs. */
 	skillGradesRunning: (plane: PlaneId) => typedError<{
 	plane: PlaneId,
