@@ -498,11 +498,7 @@ fn a_filled_page_leaves_for_a_site_allowed_before_only_once_the_person_answers_i
     let site = "app.example.com:443";
     let mut allowed = reach(&["app.example.com"], false);
     allowed.answered = vec![site.to_owned()];
-    let judge = Arc::new(
-        SiteJudge::of(&allowed)
-            .unwrap()
-            .knowing_this_machine(own()),
-    );
+    let judge = Arc::new(SiteJudge::of(&allowed).unwrap().knowing_this_machine(own()));
 
     assert_eq!(
         judge.may_leave_for(address, false),

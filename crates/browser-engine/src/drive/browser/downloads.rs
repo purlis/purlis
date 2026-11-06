@@ -199,20 +199,16 @@ impl super::Browser {
             let state = lock(&self.inner.state);
             (state.filled.clone(), state.every_kept())
         };
-        let typed = every
-            .at_least(KEPT_WHOLE_FROM)
-            .without(&filled.texts());
+        let typed = every.at_least(KEPT_WHOLE_FROM).without(&filled.texts());
         let forms = [every_form(&filled), every_form(&typed)];
         if forms.iter().all(Vec::is_empty) {
             return Ok(DownloadHolds::Nothing);
         }
-        Ok(
-            match holds_a_form(std::fs::File::open(file)?, &forms)? {
-                Some(0) => DownloadHolds::Filled,
-                Some(_) => DownloadHolds::Typed,
-                None => DownloadHolds::Nothing,
-            },
-        )
+        Ok(match holds_a_form(std::fs::File::open(file)?, &forms)? {
+            Some(0) => DownloadHolds::Filled,
+            Some(_) => DownloadHolds::Typed,
+            None => DownloadHolds::Nothing,
+        })
     }
 }
 

@@ -11,8 +11,7 @@ use serde_json::json;
 
 use super::{a_frame, browser, focus_on, id, ref_of, snapshot, wait_for};
 use crate::drive::{
-    Aim, Call, DownloadHolds, Driver, MouseButton, MouseKind, PageId, Painted, PersonInput,
-    Refusal,
+    Aim, Call, DownloadHolds, Driver, MouseButton, MouseKind, PageId, Painted, PersonInput, Refusal,
 };
 
 /// What the browser's first page shows now, as a frame of it would say.
