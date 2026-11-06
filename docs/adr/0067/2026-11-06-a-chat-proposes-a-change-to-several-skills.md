@@ -2,16 +2,20 @@
 
 Ruled by the operator: a chat can only propose a bulk change to skills, and the person approves it
 in the same review as other proposed changes (#1975). A prompt injection in a skill or a web page
-must never be able to bulk delete or bulk update on its own.
+must never be able to bulk delete or bulk update on its own. And, on 2026-11-06, the person's
+answer to how a chat that detaches is told apart: a bulk change runs directly only from an
+interactive terminal, with no flag to skip its question.
 
 - **The verbs.** `purlis skill rm`, `off`, `on`, `pin` and `archive` take several names, or
   `--source <url>` for every copy installed from a source, as the window's Select mode and a
-  source's page do (#5331, #5332). At the person's terminal the change is printed as its review,
-  asked once (`--yes` skips the question; with no terminal and no `--yes`, nothing changes), and
-  made as one commit through `verbs::set`.
+  source's page do (#5331, #5332). At the person's interactive terminal the change is printed as
+  its review, asked once, and made as one commit through `verbs::set`. No flag skips the
+  question. A caller with no terminal (a script, a pipe, a detached process) proposes, as a chat
+  does.
 - **Who is a person.** The command makes a change only when it is positively at the person's
-  terminal, and every other case, a doubt included, is a chat's. It is a chat's when any of these
-  holds: an environment mark the app sets on everything it starts (the chat's number, its hook
+  terminal, and every other case, a doubt included, is a chat's. A change to several skills also
+  needs standard input and standard error to be a terminal: a process detached from its chat has
+  none. It is a chat's when any of these holds: an environment mark the app sets on everything it starts (the chat's number, its hook
   socket, its session, its sandbox's mark); the sandbox itself, which denies every sandboxed chat
   the project's manifest, whatever its environment says (`sandbox::held::in_a_sandbox`); or where
   the process runs, below a chat's program or in its session by the records of open chats, which
@@ -31,8 +35,9 @@ must never be able to bulk delete or bulk update on its own.
   window's own review calls. A chat's newer proposal of the same name replaces its older one (PC-9), no "always" (PC-13), and
   `sandbox.proposed-changes = "off"` holds none (PC-14). The chat hears fixed words: applied,
   dismissed or stale.
-- **The sandbox stays the boundary for a sandboxed chat.** Its skill folders and manifests are
-  denied to it whatever any command decides. The check above makes the command say so and propose,
-  rather than fail partway. An unsandboxed chat has no such boundary, so for it the check is the
-  rule. It holds against a chat that strips its environment, but not against one that writes the
-  files itself.
+- **The sandbox is the boundary, and the check is not.** A sandboxed chat is denied its skill
+  folders and manifests whatever any command decides, and the sandbox is inherited by everything
+  it starts, a detached process included. The check above makes the command propose rather than
+  fail partway. **An unsandboxed chat can still change the files directly**, by deleting a skill's
+  folder itself, so for it the CLI check is not a boundary: it stops `purlis skill` from making
+  the change, and nothing more.

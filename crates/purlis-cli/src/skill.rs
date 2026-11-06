@@ -176,8 +176,9 @@ pub enum SkillCommand {
     },
     /// Delete a skill, after saying who uses it. `purlis skill restore` brings it back. Several
     /// names, or `--source` (every copy installed from it, at the level named or at every
-    /// level), delete them all as one change, after its review. In a chat, the delete is
-    /// proposed to the person, who alone makes it, in the window.
+    /// level), delete them all as one change, after its review, asked at your terminal. Anywhere
+    /// else (a chat, a script, no terminal) the delete is proposed to the person, who alone makes
+    /// it, in the window.
     Rm {
         /// The skills' names, as `purlis skill list` prints them.
         #[arg(required_unless_present = "source", conflicts_with = "source")]
@@ -495,10 +496,6 @@ pub struct SetArgs {
     /// The source's branch, where it was installed from one.
     #[arg(long, requires = "source")]
     branch: Option<String>,
-    /// Make the change without asking: for a script that printed and read the review itself.
-    /// A chat's change is proposed to the person whatever it says.
-    #[arg(long)]
-    yes: bool,
 }
 
 impl SetArgs {
@@ -591,20 +588,25 @@ fn at_the_persons_terminal(root: &Path) -> bool {
     )
 }
 
-/// The `--yes` of a verb a set has: `None` for any other command.
-fn set_yes(command: &SkillCommand) -> Option<bool> {
+/// Whether `command` is a verb a set has, asked of several skills or of a source's.
+fn set_is_bulk(command: &SkillCommand) -> bool {
     match command {
         SkillCommand::Rm { names, set, .. }
         | SkillCommand::Off { names, set, .. }
         | SkillCommand::On { names, set, .. }
         | SkillCommand::Pin { names, set, .. }
-        | SkillCommand::Archive { names, set, .. }
-            if names.len() > 1 || set.source.is_some() =>
-        {
-            Some(set.yes)
-        }
-        _ => None,
+        | SkillCommand::Archive { names, set, .. } => names.len() > 1 || set.source.is_some(),
+        _ => false,
     }
+}
+
+/// **Whether a person can answer here**: standard input and standard error are both a terminal.
+/// A process detached from its chat has none, and cannot get one without making a terminal of its
+/// own; with the other checks ([`at_the_persons_terminal`]) it is what a change to several skills
+/// takes (#5357).
+fn interactive() -> bool {
+    use std::io::IsTerminal as _;
+    std::io::stdin().is_terminal() && std::io::stderr().is_terminal()
 }
 
 /// **The change to several skills `command` asks for** (#5357), as its review and its proposal
@@ -763,10 +765,9 @@ fn proposed_from_a_chat(change: SetChange) -> Result<Code, String> {
     crate::brokered::propose_skill_set(change)
 }
 
-/// **The person's change to several skills**: its review printed, asked once (`--yes` skips it,
-/// and nothing but a terminal answers it), then made as one commit.
-fn made_here(cx: &mut verbs::Ctx<'_>, change: &SetChange, yes: bool) -> Result<Code, String> {
-    use std::io::IsTerminal as _;
+/// **The person's change to several skills**: its review printed, asked once at their terminal,
+/// then made as one commit. No flag skips the question (#5357).
+fn made_here(cx: &mut verbs::Ctx<'_>, change: &SetChange) -> Result<Code, String> {
     if let Err(why) = change.checked() {
         voice::err(why);
         return Ok(1);
@@ -776,18 +777,9 @@ fn made_here(cx: &mut verbs::Ctx<'_>, change: &SetChange, yes: bool) -> Result<C
     for line in shown.after.lines() {
         println!("  {}", esc(line));
     }
-    if !yes {
-        if !(std::io::stdin().is_terminal() && std::io::stderr().is_terminal()) {
-            voice::err(
-                "Nothing was changed: with no terminal to ask, add --yes once you have read the \
-                 review above.",
-            );
-            return Ok(1);
-        }
-        if !asked("Make this change?") {
-            voice::info("Nothing was changed.");
-            return Ok(1);
-        }
+    if !asked("Make this change?") {
+        voice::info("Nothing was changed.");
+        return Ok(1);
     }
     done(change.apply(cx))
 }
@@ -822,8 +814,11 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 | SkillCommand::Export { .. }
         );
     // A chat never changes a skill itself (#5357): a change to several skills, or to one, by the
-    // verbs a set has, is proposed to the person; any other change is refused.
-    if writes && !at_the_persons_terminal(root) {
+    // verbs a set has, is proposed to the person; any other change is refused. A change to several
+    // is made here only at the person's interactive terminal (the operator's ruling of
+    // 2026-11-06): a caller with no terminal, a detached one included, proposes too.
+    let bulk = set_is_bulk(&command);
+    if writes && !(at_the_persons_terminal(root) && (!bulk || interactive())) {
         return match set_change(root, &command) {
             Some(Ok(change)) => proposed_from_a_chat(change),
             Some(Err(why)) => {
@@ -838,7 +833,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
     }
     // The person's terminal: several skills, or a source's, are one change after its review.
     if writes
-        && let Some(yes) = set_yes(&command)
+        && bulk
         && let Some(change) = set_change(root, &command)
     {
         let mut said = |line: purlis_core::repocmd::Say| crate::speak(line);
@@ -851,7 +846,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
         verbs::interrupted(&mut cx);
         verbs::expire_now(root);
         return match change {
-            Ok(change) => made_here(&mut cx, &change, yes),
+            Ok(change) => made_here(&mut cx, &change),
             Err(why) => {
                 voice::err(esc(&why).to_string());
                 Ok(1)

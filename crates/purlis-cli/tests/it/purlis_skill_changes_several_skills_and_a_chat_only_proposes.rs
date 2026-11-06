@@ -88,11 +88,11 @@ impl Project {
         purlis_core::skills::turned_off(&self.root(), "ops")
     }
 
-    /// `purlis skill …` from a terminal of the person's own, with `env` added: nothing of a chat
-    /// this test may itself run inside reaches it.
-    fn run_with(&self, args: &[&str], env: &[(String, String)]) -> Output {
+    /// `purlis skill …` with nothing of a chat this test may itself run inside, and `env` added.
+    fn command(&self, args: &[&str], env: &[(String, String)]) -> std::process::Command {
         let root = self.root();
-        support::purlis()
+        let mut command = support::purlis();
+        command
             .arg("skill")
             .args(args)
             .current_dir(&root)
@@ -106,10 +106,52 @@ impl Project {
             .env("PURLIS_SKILL_STUDIO", "1")
             .env("CHARTER_NO_BACKGROUND_CHECKS", "1")
             .env("NO_COLOR", "1")
-            .envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+            .envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+        command
+    }
+
+    /// [`Self::command`] with no terminal: standard input is empty.
+    fn run_with(&self, args: &[&str], env: &[(String, String)]) -> Output {
+        self.command(args, env)
             .stdin(Stdio::null())
             .output()
             .unwrap()
+    }
+
+    /// [`Self::command`] on a real terminal a person types `typed` at: what it said, and its exit
+    /// code.
+    fn at_a_terminal(&self, args: &[&str], typed: &str) -> (String, u32) {
+        use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+        use std::io::{Read, Write};
+        let command = self.command(args, &[]);
+        let mut starts = CommandBuilder::new(command.get_program());
+        starts.args(command.get_args());
+        starts.cwd(command.get_current_dir().unwrap());
+        starts.env_clear();
+        for (name, value) in command.get_envs() {
+            if let Some(value) = value {
+                starts.env(name, value);
+            }
+        }
+        let pair = native_pty_system()
+            .openpty(PtySize {
+                rows: 50,
+                cols: 200,
+                ..PtySize::default()
+            })
+            .unwrap();
+        let mut child = pair.slave.spawn_command(starts).unwrap();
+        drop(pair.slave);
+        let mut reader = pair.master.try_clone_reader().unwrap();
+        let mut writer = pair.master.take_writer().unwrap();
+        // It waits on the terminal's line until it asks.
+        writer.write_all(typed.as_bytes()).unwrap();
+        let mut said = Vec::new();
+        // A terminal whose program ended is an end of file on macOS and an error on Linux.
+        let _ = reader.read_to_end(&mut said);
+        let code = child.wait().unwrap().exit_code();
+        drop((writer, pair.master));
+        (String::from_utf8_lossy(&said).into_owned(), code)
     }
 
     fn run(&self, args: &[&str]) -> Output {
@@ -128,33 +170,77 @@ fn said(out: &Output) -> String {
 #[test]
 fn the_person_deletes_several_skills_as_one_change_after_its_review() {
     let project = Project::new();
-    let out = project.run(&["rm", "grilling", "tdd", "--yes"]);
-    assert!(out.status.success(), "{}", said(&out));
-    assert!(said(&out).contains("Delete 2 skills:"), "{}", said(&out));
-    assert!(
-        said(&out).contains("grilling · project: deleted"),
-        "{}",
-        said(&out)
-    );
+    let (said, code) = project.at_a_terminal(&["rm", "grilling", "tdd"], "y\n");
+    assert_eq!(code, 0, "{said}");
+    assert!(said.contains("Delete 2 skills:"), "{said}");
+    assert!(said.contains("grilling · project: deleted"), "{said}");
     assert!(!project.there("grilling"));
     assert!(!project.there("tdd"));
     assert!(project.there("review"));
 }
 
+/// **A person who says no changes nothing.**
 #[test]
-fn with_no_terminal_to_ask_and_no_yes_nothing_is_deleted() {
+fn the_persons_no_changes_nothing() {
+    let project = Project::new();
+    let (said, code) = project.at_a_terminal(&["rm", "grilling", "tdd"], "n\n");
+    assert_ne!(code, 0, "{said}");
+    assert!(said.contains("Nothing was changed"), "{said}");
+    assert!(project.there("grilling") && project.there("tdd"));
+}
+
+/// **No flag stands for the person's yes** to a change to several skills.
+#[test]
+fn a_bulk_change_has_no_flag_to_skip_the_question() {
+    let project = Project::new();
+    for flag in ["--yes", "-y"] {
+        let out = project.run(&["rm", "grilling", "tdd", flag]);
+        assert!(
+            said(&out).contains("unexpected argument"),
+            "{flag}: {}",
+            said(&out)
+        );
+        assert!(project.there("grilling") && project.there("tdd"));
+    }
+}
+
+/// **A caller with no terminal is no person** (the operator's ruling of 2026-11-06): with nothing
+/// of a chat about it, it still proposes, and with no app to take the proposal nothing changes.
+#[test]
+fn a_caller_with_no_terminal_proposes_and_changes_nothing_itself() {
     let project = Project::new();
     let out = project.run(&["rm", "grilling", "tdd"]);
-    assert_eq!(out.status.code(), Some(1), "{}", said(&out));
-    assert!(said(&out).contains("add --yes"), "{}", said(&out));
+    assert!(!out.status.success(), "{}", said(&out));
+    assert!(said(&out).contains("nothing was changed"), "{}", said(&out));
+    assert!(project.there("grilling") && project.there("tdd"));
+}
+
+/// **A caller detached from its chat** (a session of its own, no terminal, every mark gone)
+/// proposes too: it has no terminal to answer at.
+#[test]
+fn a_detached_caller_with_no_terminal_only_proposes() {
+    let project = Project::new();
+    let command = project.command(&["rm", "grilling", "tdd"], &[]);
+    let mut detached = std::process::Command::new("/usr/bin/perl");
+    detached
+        .args(["-MPOSIX", "-e", "POSIX::setsid(); exec @ARGV or die"])
+        .arg(command.get_program())
+        .args(command.get_args())
+        .current_dir(command.get_current_dir().unwrap())
+        .env_clear()
+        .envs(command.get_envs().filter_map(|(k, v)| v.map(|v| (k, v))))
+        .stdin(Stdio::null());
+    let out = detached.output().unwrap();
+    assert!(!out.status.success(), "{}", said(&out));
+    assert!(said(&out).contains("nothing was changed"), "{}", said(&out));
     assert!(project.there("grilling") && project.there("tdd"));
 }
 
 #[test]
 fn the_person_deletes_every_skill_installed_from_a_source() {
     let project = Project::new();
-    let out = project.run(&["rm", "--source", SOURCE, "--yes"]);
-    assert!(out.status.success(), "{}", said(&out));
+    let (said, code) = project.at_a_terminal(&["rm", "--source", SOURCE], "y\n");
+    assert_eq!(code, 0, "{said}");
     assert!(!project.there("grilling"));
     assert!(!project.there("tdd"));
     assert!(project.there("review"), "review was not installed from it");
@@ -163,41 +249,38 @@ fn the_person_deletes_every_skill_installed_from_a_source() {
 #[test]
 fn a_source_nothing_was_installed_from_changes_nothing() {
     let project = Project::new();
-    let out = project.run(&["rm", "--source", "https://example.invalid/other", "--yes"]);
-    assert_eq!(out.status.code(), Some(1), "{}", said(&out));
-    assert!(
-        said(&out).contains("No skill installed from"),
-        "{}",
-        said(&out)
-    );
+    let (said, code) =
+        project.at_a_terminal(&["rm", "--source", "https://example.invalid/other"], "y\n");
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains("No skill installed from"), "{said}");
     assert!(project.there("grilling"));
 }
 
 #[test]
 fn the_person_turns_a_sources_skills_off_and_back_on_in_a_workspace() {
     let project = Project::new();
-    let out = project.run(&["off", "--source", SOURCE, "-w", "ops", "--yes"]);
-    assert!(out.status.success(), "{}", said(&out));
+    let (said, code) = project.at_a_terminal(&["off", "--source", SOURCE, "-w", "ops"], "y\n");
+    assert_eq!(code, 0, "{said}");
     let mut off = project.off_in_ops();
     off.sort();
     assert_eq!(off, ["grilling", "tdd"]);
-    let out = project.run(&["on", "grilling", "tdd", "-w", "ops", "--yes"]);
-    assert!(out.status.success(), "{}", said(&out));
+    let (said, code) = project.at_a_terminal(&["on", "grilling", "tdd", "-w", "ops"], "y\n");
+    assert_eq!(code, 0, "{said}");
     assert!(project.off_in_ops().is_empty());
 }
 
 #[test]
 fn the_person_pins_and_archives_several_skills() {
     let project = Project::new();
-    let out = project.run(&["pin", "grilling", "review", "-w", "ops", "--yes"]);
-    assert!(out.status.success(), "{}", said(&out));
+    let (said, code) = project.at_a_terminal(&["pin", "grilling", "review", "-w", "ops"], "y\n");
+    assert_eq!(code, 0, "{said}");
     let by = purlis_core::skills::PinnedBy::Workspace("ops".to_owned());
     let mut pins = purlis_core::skills::pins_written(&project.root(), &by);
     pins.sort();
     assert_eq!(pins, ["grilling", "review"]);
 
-    let out = project.run(&["archive", "tdd", "review", "--yes"]);
-    assert!(out.status.success(), "{}", said(&out));
+    let (said, code) = project.at_a_terminal(&["archive", "tdd", "review"], "y\n");
+    assert_eq!(code, 0, "{said}");
     for name in ["tdd", "review"] {
         let about = purlis_core::skills::about_of(&project.root().join("skills").join(name));
         assert_eq!(
@@ -242,13 +325,13 @@ fn an_app(
     (env, asked, reading)
 }
 
-/// **The ruling's test**: a chat that runs the bulk delete a skill or a web page told it to, with
-/// `--yes`, deletes nothing. The app is handed the change to show the person, and that is all.
+/// **The ruling's test**: a chat that runs the bulk delete a skill or a web page told it to,
+/// deletes nothing. The app is handed the change to show the person, and that is all.
 #[test]
 fn a_chats_bulk_delete_is_handed_to_the_person_and_deletes_nothing() {
     let project = Project::new();
     let (env, asked, _reading) = an_app(&project);
-    let out = project.run_with(&["rm", "grilling", "tdd", "review", "--yes"], &env);
+    let out = project.run_with(&["rm", "grilling", "tdd", "review"], &env);
     assert!(out.status.success(), "{}", said(&out));
     assert!(said(&out).contains("held for the person"), "{}", said(&out));
     assert!(project.there("grilling") && project.there("tdd") && project.there("review"));
@@ -280,9 +363,9 @@ fn a_chats_bulk_update_is_handed_to_the_person_and_changes_nothing() {
     let project = Project::new();
     let (env, asked, _reading) = an_app(&project);
     for args in [
-        &["off", "--source", SOURCE, "-w", "ops", "--yes"][..],
-        &["pin", "grilling", "tdd", "-w", "ops", "--yes"],
-        &["archive", "--source", SOURCE, "--yes"],
+        &["off", "--source", SOURCE, "-w", "ops"][..],
+        &["pin", "grilling", "tdd", "-w", "ops"],
+        &["archive", "--source", SOURCE],
         &["rm", "tdd"],
     ] {
         let out = project.run_with(args, &env);
@@ -311,7 +394,7 @@ fn a_chat_that_cannot_reach_the_app_deletes_nothing() {
         ),
         (CHAT_ENV.to_owned(), "3".to_owned()),
     ];
-    let out = project.run_with(&["rm", "grilling", "tdd", "--yes"], &env);
+    let out = project.run_with(&["rm", "grilling", "tdd"], &env);
     assert!(!out.status.success(), "{}", said(&out));
     assert!(said(&out).contains("nothing was changed"), "{}", said(&out));
     assert!(project.there("grilling") && project.there("tdd"));
@@ -328,7 +411,7 @@ fn a_chat_with_only_one_of_its_marks_left_still_deletes_nothing() {
         (CHAT_ENV, "3"),
     ] {
         let env = [(mark.0.to_owned(), mark.1.to_owned())];
-        let out = project.run_with(&["rm", "grilling", "tdd", "--yes"], &env);
+        let out = project.run_with(&["rm", "grilling", "tdd"], &env);
         assert!(!out.status.success(), "{mark:?}: {}", said(&out));
         assert!(
             project.there("grilling") && project.there("tdd"),
@@ -357,8 +440,8 @@ fn a_chat_with_every_mark_stripped_is_known_by_where_it_runs_and_changes_nothing
     };
     purlis_core::reopen::write(&project.root(), &record).unwrap();
     for args in [
-        &["rm", "grilling", "tdd", "--yes"][..],
-        &["off", "--source", SOURCE, "-w", "ops", "--yes"],
+        &["rm", "grilling", "tdd"][..],
+        &["off", "--source", SOURCE, "-w", "ops"],
     ] {
         let out = project.run(args);
         assert!(!out.status.success(), "{args:?}: {}", said(&out));
@@ -376,7 +459,7 @@ fn where_purlis_cannot_tell_whether_it_is_a_chat_nothing_changes() {
     let record = purlis_core::reopen::path(&project.root());
     std::fs::create_dir_all(record.parent().unwrap()).unwrap();
     std::fs::write(&record, "not a record").unwrap();
-    let out = project.run(&["rm", "grilling", "tdd", "--yes"]);
+    let out = project.run(&["rm", "grilling", "tdd"]);
     assert!(!out.status.success(), "{}", said(&out));
     assert!(project.there("grilling") && project.there("tdd"));
 }
