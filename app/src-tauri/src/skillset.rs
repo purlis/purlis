@@ -7,6 +7,7 @@
 //! archives, moves and takes skills off Deleted the same way. Each change is the window's alone
 //! (`purlis_session_protocol::ui::WINDOW_ONLY`): a chat may propose one, and the person approves.
 
+use purlis_core::skills::source::update::set as set_update;
 use purlis_core::skills::verbs::{self, set};
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -490,18 +491,28 @@ pub(crate) async fn skill_set_delete_now(
 
 // --- Review updates (#5354) ----------------------------------------------------------------------
 
-/// **The Undos of the updates accepted as a set**, held in this process alone: what an Undo puts
-/// back is the copies as they were, which the window never holds. The newest few are kept;
-/// an older one's Undo says it is gone.
-#[derive(Default)]
-pub(crate) struct SetUpdateUndos {
-    held: std::sync::Mutex<(u64, Vec<(u64, crate::planes::PlaneId, set_update::Undo)>)>,
+/// One set update's Undo, held: its number, the project it was made in, and what it takes back.
+struct HeldUndo {
+    id: u32,
+    plane: crate::planes::PlaneId,
+    undo: set_update::Undo,
 }
+
+/// The Undos held, and the number the last one was given.
+#[derive(Default)]
+struct Undos {
+    last: u32,
+    held: Vec<HeldUndo>,
+}
+
+/// **The Undos of the updates accepted as a set**, held in this process alone: what an Undo puts
+/// back is the copies as they were, which the window never holds. The newest [`UNDOS_HELD`] are
+/// kept; an older one's Undo, or one from before purlis last started, says it is gone.
+#[derive(Default)]
+pub(crate) struct SetUpdateUndos(std::sync::Mutex<Undos>);
 
 /// How many set updates' Undos are held at once.
 const UNDOS_HELD: usize = 8;
-
-use purlis_core::skills::source::update::set as set_update;
 
 /// One update of a set, as the window accepted it: the skill, what its review was accepted as,
 /// the grant it showed, and each kind of new capability the person ticked it with.
@@ -552,22 +563,26 @@ pub(crate) async fn skill_set_update(
             undo = Some(set_update::update_set(cx, &set)?);
             Ok(())
         })?;
-        undo.map(|undo| (said, undo))
-            .ok_or_else(|| "The skills were not updated.".to_owned())
+        // update_set answers an Undo whenever it is done, so this is never met.
+        undo.map(|undo| (said, undo)).ok_or_else(|| {
+            "The skills were updated, but their Undo was lost: update them back one at a time."
+                .to_owned()
+        })
     })
     .await?;
-    let mut kept = undos
-        .held
-        .lock()
-        .map_err(|_| "The update's Undo could not be kept.".to_owned())?;
-    kept.0 += 1;
-    let id = kept.0;
-    kept.1.push((id, plane, undo));
-    let over = kept.1.len().saturating_sub(UNDOS_HELD);
-    kept.1.drain(..over);
+    let mut kept = undos.0.lock().map_err(|_| {
+        "The skills were updated, but their Undo could not be kept: update them back one at a \
+         time."
+            .to_owned()
+    })?;
+    kept.last = kept.last.wrapping_add(1);
+    let id = kept.last;
+    kept.held.push(HeldUndo { id, plane, undo });
+    let over = kept.held.len().saturating_sub(UNDOS_HELD);
+    kept.held.drain(..over);
     Ok(SkillSetUpdated {
         notes: said.notes,
-        undo: u32::try_from(id).unwrap_or(u32::MAX),
+        undo: id,
     })
 }
 
@@ -582,33 +597,39 @@ pub(crate) async fn skill_set_update_undo(
     undo: u32,
 ) -> Result<crate::skillchange::SkillChanged, String> {
     let held = planes.held(&plane)?;
-    let taken = {
-        let mut kept = undos
-            .held
-            .lock()
-            .map_err(|_| "The update's Undo could not be read.".to_owned())?;
-        let at = kept
-            .1
-            .iter()
-            .position(|(id, of, _)| *id == u64::from(undo) && *of == plane)
-            .ok_or_else(|| "This update can't be undone any more.".to_owned())?;
-        kept.1.remove(at)
+    let gone = || {
+        format!(
+            "This update can't be undone now: purlis keeps the Undo of its last {UNDOS_HELD} \
+             updates until it quits. Update the skills back one at a time."
+        )
     };
-    let (id, of, undo) = taken;
+    let taken = {
+        let mut kept = undos.0.lock().map_err(|_| gone())?;
+        let at = kept
+            .held
+            .iter()
+            .position(|one| one.id == undo && one.plane == plane)
+            .ok_or_else(gone)?;
+        kept.held.remove(at)
+    };
     let done = crate::off_the_window("undoing the update", move || {
         flag_on()?;
-        let said = heard(held.root(), |cx| set_update::undo_update_set(cx, &undo));
-        Ok((said, undo))
+        let mut refused = false;
+        let said = heard(held.root(), |cx| {
+            set_update::undo_update_set(cx, &taken.undo).map_err(|why| {
+                refused = matches!(why, set_update::NotUndone::Refused(_));
+                why.to_string()
+            })
+        });
+        Ok((said, refused, taken))
     });
-    let (said, undo) = done.await?;
-    match said {
-        Ok(said) => Ok(said),
-        Err(why) => {
-            // Refused, nothing was undone: its Undo stays offered.
-            if let Ok(mut kept) = undos.held.lock() {
-                kept.1.push((id, of, undo));
-            }
-            Err(why)
-        }
+    let (said, refused, taken) = done.await?;
+    // Refused with nothing touched: its Undo stays offered. Taken back in part, it is not.
+    if said.is_err()
+        && refused
+        && let Ok(mut kept) = undos.0.lock()
+    {
+        kept.held.push(taken);
     }
+    said
 }

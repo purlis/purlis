@@ -89,6 +89,7 @@ describe("Review updates", () => {
     "writes-outside",
     "hidden",
     "not-shown",
+    "unread",
   ])(
     "starts an update that adds %s unticked, and lets it be ticked only once opened",
     async (kind) => {

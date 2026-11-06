@@ -45,6 +45,7 @@ const GAINED_SAID: Record<SkillGained, string> = {
   "writes-outside": "a write outside the workspace",
   hidden: "characters no reader sees",
   "not-shown": "a file the review can't show",
+  unread: "a frontmatter purlis can't read",
 };
 
 /** "Adds a hook and network access." */
@@ -66,6 +67,12 @@ export type UpdateRead = {
 
 /** What the page reads: each update and its review, and each chosen skill with none, and why. */
 export type SetUpdates = { ready: UpdateRead[]; none: Stays[] };
+
+/** An update's own key on the page: its skill, the commit it goes to and what it gains. A read
+ *  again that finds it gaining more is a new row, unticked and unopened. */
+function rowKey(update: UpdateRead): string {
+  return [memberKey(update.member), update.review.newer.id, ...update.review.gained].join("\u0001");
+}
 
 /** Whether an update starts ticked: only one that adds nothing new. */
 export function startsTicked(update: UpdateRead): boolean {
@@ -258,7 +265,7 @@ export function SetUpdateReviewPage({
     ...ready.filter((one) => !startsTicked(one)),
     ...ready.filter((one) => startsTicked(one)),
   ];
-  const isTicked = (one: UpdateRead) => ticks.get(memberKey(one.member)) ?? startsTicked(one);
+  const isTicked = (one: UpdateRead) => ticks.get(rowKey(one)) ?? startsTicked(one);
   const going = rows.filter(isTicked);
   const waiting = rows.filter((one) => !startsTicked(one)).length;
   const why =
@@ -328,7 +335,7 @@ export function SetUpdateReviewPage({
                   Updates
                 </h3>
                 {rows.map((one) => {
-                  const key = memberKey(one.member);
+                  const key = rowKey(one);
                   return (
                     <UpdateRow
                       key={key}

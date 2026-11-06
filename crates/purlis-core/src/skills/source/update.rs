@@ -589,6 +589,15 @@ pub(super) struct Wrote {
 }
 
 impl Wrote {
+    /// Whether every grant it widened still reads as it left it: an Undo that put back the grant
+    /// it had before would lose a change made since.
+    pub(super) fn grants_as_left(&self) -> bool {
+        self.written
+            .widened_to
+            .iter()
+            .all(|(folder, to)| crate::skills::grant_of(folder).is_ok_and(|now| now == *to))
+    }
+
     /// Takes back everything it wrote: the copy's files as they were, and what it brought along.
     /// What could not be, in words.
     pub(super) fn take_back(&self) -> Option<String> {

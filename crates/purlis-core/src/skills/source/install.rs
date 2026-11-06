@@ -54,6 +54,8 @@ pub(super) struct Written {
     pub(super) grants: Vec<String>,
     /// Each project skill whose grant this change widened, and the grant it had (#4172).
     pub(super) widened: Vec<(PathBuf, Grant)>,
+    /// The same, with the grant this change left it with.
+    pub(super) widened_to: Vec<(PathBuf, Grant)>,
 }
 
 impl Written {
@@ -65,6 +67,7 @@ impl Written {
             skills: Vec::new(),
             grants: Vec::new(),
             widened: Vec::new(),
+            widened_to: Vec::new(),
         }
     }
 
@@ -89,6 +92,7 @@ impl Written {
                 )
             })?;
             self.widened.push((one.folder.clone(), one.granted.clone()));
+            self.widened_to.push((one.folder.clone(), to.clone()));
             paths.push(verbs::rel(&self.plane, &crate::skills::beside(&one.folder)));
         }
         Ok(())

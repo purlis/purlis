@@ -6,7 +6,7 @@
 
 use super::*;
 use crate::skills::source::update::Gained;
-use crate::skills::source::update::set::{Updating, undo_update_set, update_set};
+use crate::skills::source::update::set::{NotUndone, Updating, undo_update_set, update_set};
 use crate::testgit::run;
 
 const DEPLOY_V2: &[u8] = b"---\nname: deploy\ndescription: Ships it, then skills:notify.\n---\n\nRun scripts/ship.sh. Then say so.\n";
@@ -207,7 +207,9 @@ fn an_undo_is_refused_whole_where_a_skill_was_edited_since() {
     .unwrap();
 
     let (answer, _) = on(root, |cx| undo_update_set(cx, &undo));
-    let why = answer.unwrap_err();
+    let Err(NotUndone::Refused(why)) = answer else {
+        panic!("{answer:?}");
+    };
     assert!(why.contains("notify changed since it was updated"), "{why}");
     assert_eq!(read(root, "skills/deploy/SKILL.md"), DEPLOY_V2);
 }
@@ -240,4 +242,59 @@ fn an_update_that_brings_a_skill_along_takes_it_away_again_on_undo() {
     assert!(!root.join("skills/format").exists());
     let lock = lock::read(root, Kept::Shared).unwrap().lock;
     assert!(lock.skills.iter().all(|one| one.name != "format"));
+}
+
+#[test]
+fn an_undo_leaves_a_skill_installed_after_the_update_as_it_is() {
+    let tmp = plane();
+    let root = tmp.path();
+    let (remote, first) = installed(root);
+    let format: &[u8] = b"---\nname: format\ndescription: Formats.\n---\n";
+    let tree = remote.tree(&[
+        ("skills/deploy/SKILL.md", "100644", DEPLOY),
+        ("skills/deploy/scripts/ship.sh", "100755", SHIP),
+        ("skills/notify/SKILL.md", "100644", NOTIFY_V2),
+        ("skills/format/SKILL.md", "100644", format),
+    ]);
+    remote.commit(&tree, Some(&first));
+    let undo = on(root, |cx| update_set(cx, &[accepted_whole(root, "notify")]))
+        .0
+        .unwrap();
+    // Installed after the update: no Undo of the update takes it out.
+    let source = remote.source();
+    let review = review(root, &source, &["format".to_owned()], &Level::project()).unwrap();
+    on(root, |cx| {
+        install(cx, &source, &Level::project(), &review.accepted(), None)
+    })
+    .0
+    .unwrap();
+
+    on(root, |cx| undo_update_set(cx, &undo)).0.unwrap();
+    assert_eq!(read(root, "skills/notify/SKILL.md"), NOTIFY);
+    assert_eq!(read(root, "skills/format/SKILL.md"), format);
+    let lock = lock::read(root, Kept::Shared).unwrap().lock;
+    assert!(lock.skills.iter().any(|one| one.name == "format"));
+}
+
+#[test]
+fn an_update_that_gains_a_hook_is_refused_unless_accepted_with_it() {
+    let tmp = plane();
+    let root = tmp.path();
+    let (remote, first) = installed(root);
+    let hooked: &[u8] = b"---\nname: notify\ndescription: Tells the team.\nhooks:\n  Stop:\n    - command: ./x.sh\n---\n\nPost to https://chat.example.com.\n";
+    let tree = remote.tree(&[
+        ("skills/deploy/SKILL.md", "100644", DEPLOY),
+        ("skills/deploy/scripts/ship.sh", "100755", SHIP),
+        ("skills/notify/SKILL.md", "100644", hooked),
+    ]);
+    remote.commit(&tree, Some(&first));
+    let whole = accepted_whole(root, "notify");
+    assert_eq!(whole.allowed, [Gained::Hook]);
+    let unticked = Updating {
+        allowed: vec![Gained::Script],
+        ..whole
+    };
+    let (answer, _) = on(root, |cx| update_set(cx, &[unticked]));
+    assert!(answer.unwrap_err().contains("(a hook)"));
+    assert_eq!(read(root, "skills/notify/SKILL.md"), NOTIFY);
 }

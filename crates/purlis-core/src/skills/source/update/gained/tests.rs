@@ -132,3 +132,18 @@ fn a_hook_taken_away_gains_nothing() {
     );
     assert_eq!(gained(&[skill_md(&hooked)], &[skill_md(SKILL)], &[]), []);
 }
+
+#[test]
+fn a_frontmatter_that_no_longer_reads_is_gained() {
+    // `allowed_tools` reads like a key that widens the chat, spelt another way: refused.
+    let respelled = SKILL.replace(
+        "description: Tells the team.\n",
+        "description: Tells the team.\nallowed_tools: Bash\n",
+    );
+    assert_eq!(gains(&[skill_md(&respelled)]), [Gained::Unread]);
+    // One that did not read before either gains nothing new.
+    assert_eq!(
+        gained(&[skill_md(&respelled)], &[skill_md(&respelled)], &[]),
+        []
+    );
+}

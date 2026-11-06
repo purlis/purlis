@@ -255,24 +255,86 @@ pub fn update_set(cx: &mut Ctx<'_>, set: &[Updating]) -> Result<Undo, String> {
     })
 }
 
-/// **Takes back a set's update** (`undo`): each copy as it was, the skills it brought along
-/// gone, the grants it widened as they were and the pins back, as one commit. Refused whole
-/// where any of them changed since, so nothing done after it is lost.
-pub fn undo_update_set(cx: &mut Ctx<'_>, undo: &Undo) -> Result<(), String> {
-    let plane = cx.plane;
-    crate::settings::writable(plane)?;
-    let (now, _) = lock::every(plane);
-    for after in &undo.updated {
-        let same = now.iter().any(|(_, one)| one == after);
-        if !same || super::edited_since_install(plane, after) {
-            return Err(format!(
-                "{} changed since it was updated, so nothing was undone",
-                after.name
-            ));
+/// Why a set's Undo did not take it back whole.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NotUndone {
+    /// Refused before anything was touched: a skill or a grant changed since. The Undo can be
+    /// offered again once that is put right.
+    Refused(String),
+    /// Taken back but for what the sentence names: it is not offered again.
+    Partly(String),
+}
+
+impl std::fmt::Display for NotUndone {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Refused(why) | Self::Partly(why) => f.write_str(why),
         }
     }
+}
+
+/// Each lockfile entry the update changed or added, put back as it was in the lockfile as it is
+/// now: every entry it did not touch, made since or not, stays. What could not be, in words.
+fn entries_back(plane: &std::path::Path, locks: &[LockMoved]) -> Vec<String> {
+    let mut left = Vec::new();
+    for moved in locks {
+        let result = lock::read(plane, moved.kept).and_then(|held| {
+            let mut now = held.lock.clone();
+            for entry in &moved.after.skills {
+                let was = moved
+                    .before
+                    .skills
+                    .iter()
+                    .find(|old| old.is(&entry.level.0, &entry.name));
+                if was == Some(entry) {
+                    continue;
+                }
+                now.skills
+                    .retain(|one| !one.is(&entry.level.0, &entry.name));
+                if let Some(was) = was {
+                    now.skills.push(was.clone());
+                }
+            }
+            lock::write(plane, moved.kept, held.was.as_deref(), &now)
+        });
+        if let Err(why) = result {
+            left.push(format!("{} ({why})", moved.kept.file()));
+        }
+    }
+    left
+}
+
+/// **Takes back a set's update** (`undo`): each copy as it was, the skills it brought along
+/// gone, the grants it widened as they were and the pins back, as one commit, every lockfile
+/// entry it did not touch left as it is now. Refused whole, with nothing touched, where any skill
+/// it updated or brought along, or any grant it widened, changed since.
+pub fn undo_update_set(cx: &mut Ctx<'_>, undo: &Undo) -> Result<(), NotUndone> {
+    let plane = cx.plane;
+    crate::settings::writable(plane).map_err(NotUndone::Refused)?;
+    let (now, _) = lock::every(plane);
+    let touched = undo.locks.iter().flat_map(|moved| {
+        moved
+            .after
+            .skills
+            .iter()
+            .filter(|entry| !moved.before.skills.contains(entry))
+    });
+    for after in touched {
+        let same = now.iter().any(|(_, one)| one == after);
+        if !same || super::edited_since_install(plane, after) {
+            return Err(NotUndone::Refused(format!(
+                "{} changed since it was updated, so nothing was undone",
+                after.name
+            )));
+        }
+    }
+    if !undo.wrote.iter().all(Wrote::grants_as_left) {
+        return Err(NotUndone::Refused(
+            "a grant the update widened changed since, so nothing was undone".to_owned(),
+        ));
+    }
     let mut left = take_back_all(&undo.wrote);
-    left.extend(locks_back(plane, &undo.locks));
+    left.extend(entries_back(plane, &undo.locks));
     // Only a shared level's copies are committed.
     let mut paths: Vec<String> = undo
         .updated
@@ -287,7 +349,10 @@ pub fn undo_update_set(cx: &mut Ctx<'_>, undo: &Undo) -> Result<(), String> {
         cx.commit(&paths, &format!("skill update undo {count}"));
     }
     if !left.is_empty() {
-        return Err(format!("the update was undone but for {}", left.join(", ")));
+        return Err(NotUndone::Partly(format!(
+            "the update was undone but for {}",
+            left.join(", ")
+        )));
     }
     cx.done(format!(
         "{} back as they were",

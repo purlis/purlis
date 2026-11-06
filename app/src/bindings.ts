@@ -15090,7 +15090,7 @@ export type SkillFolderEntry = {
  *  **One kind of thing an update newly lets a skill do** (#5354), as the core reads it
  *  (`purlis_core::skills::source::update::Gained`).
  */
-export type SkillGained = "script" | "command" | "hook" | "tool" | "network" | "writes-outside" | "hidden" | "not-shown";
+export type SkillGained = "script" | "command" | "hook" | "tool" | "network" | "writes-outside" | "hidden" | "not-shown" | "unread";
 
 /**  A version's grade, once grading lands (SK-16): always null for now. */
 export type SkillGrade = {

@@ -538,8 +538,13 @@ export const ReviewUpdates: Story = {
     await tabInto(() =>
       within(review).getByRole("button", { name: "What changes in writing-plans" }),
     );
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(plans).toBeEnabled());
+    await tabInto(() => plans);
+    await userEvent.keyboard(" ");
     expectFocusInSight();
-    await expect(within(review).getByRole("button", { name: "Accept 1 update" })).toBeVisible();
+    await waitFor(() => expect(plans).toBeChecked());
+    await expect(within(review).getByRole("button", { name: "Accept 2 updates" })).toBeVisible();
   },
 };
 

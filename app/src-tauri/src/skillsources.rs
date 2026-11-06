@@ -682,6 +682,7 @@ pub enum SkillGained {
     WritesOutside,
     Hidden,
     NotShown,
+    Unread,
 }
 
 impl From<source::update::Gained> for SkillGained {
@@ -696,6 +697,7 @@ impl From<source::update::Gained> for SkillGained {
             Gained::WritesOutside => Self::WritesOutside,
             Gained::Hidden => Self::Hidden,
             Gained::NotShown => Self::NotShown,
+            Gained::Unread => Self::Unread,
         }
     }
 }
@@ -711,6 +713,7 @@ impl From<SkillGained> for source::update::Gained {
             SkillGained::WritesOutside => Self::WritesOutside,
             SkillGained::Hidden => Self::Hidden,
             SkillGained::NotShown => Self::NotShown,
+            SkillGained::Unread => Self::Unread,
         }
     }
 }

@@ -37,41 +37,71 @@ pub enum Gained {
     Hidden,
     /// A file that is not text, so the review cannot show it.
     NotShown,
+    /// A `SKILL.md` whose frontmatter does not read, where it read before: what it asks of a
+    /// chat cannot be told, so it is never taken for a plain edit.
+    Unread,
 }
 
 impl Gained {
     /// What it is, as the end of a sentence: "a script".
     pub fn said(self) -> &'static str {
         match self {
-            Self::Script => "a script, or a change to one",
+            Self::Script => "a script or a change to one",
             Self::Command => "a command it runs as it loads",
             Self::Hook => "a hook",
             Self::Tool => "a tool it pre-approves",
             Self::Network => "network access",
             Self::WritesOutside => "a write outside the workspace",
-            Self::Hidden => "a character no reader sees",
-            Self::NotShown => "a file that is not text",
+            Self::Hidden => "characters no reader sees",
+            Self::NotShown => "a file the review can't show",
+            Self::Unread => "a frontmatter purlis can't read",
         }
     }
 }
 
-/// The `SKILL.md` among `files`, read: `None` where there is none, or its frontmatter does not
-/// read, which purlis hands to no chat (fails closed), so it widens none.
-fn frontmatter(files: &[SourceFile]) -> Option<purlis_skills::Frontmatter> {
-    let file = files.iter().find(|f| f.parts == [purlis_skills::FILE])?;
-    let text = std::str::from_utf8(&file.bytes).ok()?;
-    purlis_skills::handed::parse(text).ok()
+/// A skill's frontmatter, as its `SKILL.md` gives it.
+enum Front {
+    /// No `SKILL.md`.
+    Absent,
+    /// One whose frontmatter does not read as purlis reads it.
+    Unread,
+    Parsed(purlis_skills::Frontmatter),
 }
 
-/// What a skill's widening keys gain: `now`'s against `was`'s, or all of `now`'s against none.
-fn widening(
-    now: Option<&purlis_skills::Frontmatter>,
-    was: Option<Option<&purlis_skills::Frontmatter>>,
-) -> Vec<Gained> {
-    let Some(now) = now else {
-        return Vec::new();
+impl Front {
+    fn of_text(text: Option<&str>) -> Front {
+        match text.map(purlis_skills::handed::parse) {
+            None => Front::Unread,
+            Some(Ok(read)) => Front::Parsed(read),
+            Some(Err(_)) => Front::Unread,
+        }
+    }
+
+    fn of(files: &[SourceFile]) -> Front {
+        match files.iter().find(|f| f.parts == [purlis_skills::FILE]) {
+            None => Front::Absent,
+            Some(file) => Front::of_text(std::str::from_utf8(&file.bytes).ok()),
+        }
+    }
+
+    fn parsed(&self) -> Option<&purlis_skills::Frontmatter> {
+        match self {
+            Front::Parsed(read) => Some(read),
+            Front::Absent | Front::Unread => None,
+        }
+    }
+}
+
+/// What a skill's frontmatter gains, `now` against `was` (against nothing for a skill new here):
+/// each widening key added or changed, and a frontmatter that no longer reads.
+fn widening(now: &Front, was: Option<&Front>) -> Vec<Gained> {
+    let now = match now {
+        Front::Absent => return Vec::new(),
+        Front::Unread if was.is_some_and(|was| matches!(was, Front::Unread)) => return Vec::new(),
+        Front::Unread => return vec![Gained::Unread],
+        Front::Parsed(now) => now,
     };
-    now.widens_beyond(was.flatten())
+    now.widens_beyond(was.and_then(Front::parsed))
         .into_iter()
         .filter_map(|field| match field {
             Field::Hooks => Some(Gained::Hook),
@@ -134,17 +164,18 @@ pub(in crate::skills::source) fn gained(
     if script_changed {
         out.push(Gained::Script);
     }
-    let was_read = frontmatter(was);
-    out.extend(widening(frontmatter(now).as_ref(), Some(was_read.as_ref())));
+    out.extend(widening(&Front::of(now), Some(&Front::of(was))));
     for skill in brought {
         out.extend(of_summary(&skill.summary));
-        let read = skill
+        let read = match skill
             .files
             .iter()
             .find(|file| file.path == purlis_skills::FILE)
-            .and_then(|file| file.text.as_deref())
-            .and_then(|text| purlis_skills::handed::parse(text).ok());
-        out.extend(widening(read.as_ref(), None));
+        {
+            None => Front::Absent,
+            Some(file) => Front::of_text(file.text.as_deref()),
+        };
+        out.extend(widening(&read, None));
     }
     out.sort();
     out.dedup();
