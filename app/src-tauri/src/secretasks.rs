@@ -500,6 +500,7 @@ pub fn run_grant_given(
     // The needs the person ticked Remember for, once their keys are stored (#5240): only for a
     // key stored here, and as a Secret ask's Fill writes them.
     if remembers {
+        let mut unremembered = Vec::new();
         for line in remember.iter().filter(|line| stored.contains(&line.key)) {
             let one = purlis_core::secrets::ask::Answered {
                 vault: open.bound.vault.clone(),
@@ -519,12 +520,15 @@ pub fn run_grant_given(
             };
             // The answer stands by now: a line that could not be written or held says so, and
             // that the rest was done.
-            crate::proposals::fill_remembered(held, &one, Some(&line.purpose)).map_err(|why| {
-                format!(
-                    "Your answer went through, but {}'s need wasn't remembered: {why}",
-                    line.key
-                )
-            })?;
+            if let Err(why) = crate::proposals::fill_remembered(held, &one, Some(&line.purpose)) {
+                unremembered.push(format!("{}: {why}", line.key));
+            }
+        }
+        if !unremembered.is_empty() {
+            return Err(format!(
+                "Your answer went through, but these needs weren't remembered. {}",
+                unremembered.join(" ")
+            ));
         }
     }
     // Keep blocked on the vault's own line holds as a refused vault's does: the chat's later
@@ -543,9 +547,14 @@ fn picked_refused(
     open: &purlis_core::secrets::ask::run::OpenRun,
     link: &RunLink,
 ) -> Option<String> {
-    if let Some(why) =
-        purlis_core::secrets::brokered::no_program_is_handed(ctx, &link.vault, &[link.key.as_str()])
-    {
+    use purlis_core::secrets::brokered::{authorise, no_program_is_handed};
+    // Both ends of the link: the entry it reads, and the field's own key, which comes to read it.
+    let refused = no_program_is_handed(ctx, &link.vault, &[link.key.as_str()]).or_else(|| {
+        (!link.field.is_empty())
+            .then(|| no_program_is_handed(ctx, &open.bound.vault, &[link.field.as_str()]))
+            .flatten()
+    });
+    if let Some(why) = refused {
         let mut said = why.chars();
         let first = said.next().map(|c| c.to_uppercase().to_string());
         return Some(format!(
@@ -554,16 +563,16 @@ fn picked_refused(
             said.as_str()
         ));
     }
-    (link.vault != open.bound.vault
-        && purlis_core::secrets::brokered::not_tagged(ctx, Some(&open.persona), &link.vault)
-            .is_some())
-    .then(|| {
-        format!(
-            "{} can't use vault {}, so its entries can't fill this notice. Pick another entry, \
-             or type a value.",
-            open.persona, link.vault
-        )
-    })
+    // The broker's own rule, which fails closed: no persona, an unreadable registry or a vault
+    // it can't read are none the persona may use.
+    (link.vault != open.bound.vault && authorise(ctx, Some(&open.persona), &link.vault).is_err())
+        .then(|| {
+            format!(
+                "{} can't use vault {}, so its entries can't fill this notice. Pick another \
+                 entry, or type a value.",
+                open.persona, link.vault
+            )
+        })
 }
 
 /// **Writes the line Always allow showed to the persona's tools** (#5245).
@@ -662,8 +671,8 @@ pub fn run_entries_for(held: &crate::planes::Held, id: u32) -> Result<Vec<Entrie
         // Only a vault the persona may use, and the run's own: what a pick is held to.
         .filter(|one| {
             one.vault == open.bound.vault
-                || purlis_core::secrets::brokered::not_tagged(&ctx, Some(&open.persona), &one.vault)
-                    .is_none()
+                || purlis_core::secrets::brokered::authorise(&ctx, Some(&open.persona), &one.vault)
+                    .is_ok()
         })
         .map(|one| match one.keys {
             Ok(keys) => EntriesOf {

@@ -103,4 +103,11 @@ describe("a secret's one notice", () => {
       [...(quote.textContent ?? "")].filter((ch) => ch === String.fromCodePoint(0x301)).length,
     ).toBeLessThanOrEqual(4);
   });
+
+  it("draws a mark the core would never write as the chat's own text", () => {
+    render(<SecretAskNotice {...props} ask={secretAsk({ purpose: "⟦U+0041⟧ and ⟦U+FFFFFF⟧" })} />);
+    const quote = screen.getByTestId("sa-chat-purpose");
+    expect(within(quote).queryAllByTestId("sa-control")).toHaveLength(0);
+    expect(quote).toHaveTextContent("⟦U+0041⟧ and ⟦U+FFFFFF⟧");
+  });
 });

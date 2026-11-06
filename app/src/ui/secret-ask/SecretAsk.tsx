@@ -45,7 +45,15 @@ function clearOfTheBar(event: FocusEvent<HTMLDivElement>) {
     ':scope > [data-scope="secret-ask"][data-part="foot"]',
   );
   const focused = event.target;
-  if (foot === null || !(focused instanceof Element) || foot.contains(focused)) return;
+  // Only a control of the notice's own: focus in a popover it opened bubbles here through a
+  // portal, and is that popover's to place.
+  if (
+    foot === null ||
+    !(focused instanceof Element) ||
+    !event.currentTarget.contains(focused) ||
+    foot.contains(focused)
+  )
+    return;
   const covered = focused.getBoundingClientRect().bottom - foot.getBoundingClientRect().top;
   if (covered > 0) scrollerOf(event.currentTarget).scrollBy({ top: covered + 8 });
 }
@@ -177,11 +185,11 @@ const drawnAsToken = (ch: string) => {
   return code < 0x20 || (code >= 0x7f && code <= 0x9f) || invisible(ch);
 };
 
-/** **`text` in the pieces it is drawn in**: plain runs, and each control or invisible character,
- *  or the core's mark for one, as its name. */
 /** A piece of a chat's text as it is drawn. */
 export type InertPiece = { plain: string } | { token: string };
 
+/** **`text` in the pieces it is drawn in**: plain runs, and each control or invisible character,
+ *  or the core's mark for one, as its name. */
 export function inertPieces(text: string): InertPiece[] {
   const capped = capMarks(text).text;
   const pieces: InertPiece[] = [];
@@ -196,7 +204,11 @@ export function inertPieces(text: string): InertPiece[] {
     if (ch === "⟦") {
       const rest = points.slice(at, at + 10).join("");
       const mark = CORE_MARK.exec(rest);
-      if (mark) {
+      // Only a mark the core would write: one for a character no reader sees. Any other is the
+      // chat's own text, drawn as written.
+      const code = mark ? parseInt(mark[1], 16) : -1;
+      const marked = code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : "";
+      if (mark && marked !== "" && drawnAsToken(marked)) {
         flush();
         pieces.push({ token: controlName(parseInt(mark[1], 16)) });
         at += [...mark[0]].length - 1;
