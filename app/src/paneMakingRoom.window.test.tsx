@@ -240,7 +240,7 @@ const drawnFront = () =>
   );
 
 /** ⌘⇧M, or Ctrl+Shift+M off a Mac: the registry's own chord, on what has the keyboard. */
-function pressPlace() {
+function pressMove() {
   const chord = shortcut("pane.move").chords[onAMac() ? "mac" : "other"][0];
   act(() => {
     (document.activeElement ?? document.body).dispatchEvent(keystroke(chord));
@@ -811,7 +811,7 @@ describe("placement mode draws the same preview as a drag (#5293)", () => {
     const window = shown();
     const close = screen.getByText("Close 3");
     close.focus();
-    pressPlace();
+    pressMove();
     act(() => vi.advanceTimersByTime(1));
     return { window, close };
   }

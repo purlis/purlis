@@ -2338,7 +2338,7 @@ const threeTasks = () => [
   chat(4, "alpha", { persona: "devops", from: by(1, "task") }),
 ];
 
-describe("a chat's row places its chat (#4764)", () => {
+describe("a chat's row moves its chat (#4764)", () => {
   it("picks its chat up for placement mode on a press of its grip, the persona's mark (#5290)", async () => {
     const { move } = core(threeTasks());
     render(<App />);

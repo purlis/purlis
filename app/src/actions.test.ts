@@ -124,8 +124,8 @@ function doing(): Doing & { calls: string[] } {
       note("moveToWindow")(...args);
       return { ok: true };
     },
-    move: vi.fn((source: MovedFrom) => {
-      calls.push(`move:${JSON.stringify(source)}`);
+    moveTo: vi.fn((source: MovedFrom) => {
+      calls.push(`moveTo:${JSON.stringify(source)}`);
     }),
     zoomPane: note("zoomPane"),
     undoLayout: note("undoLayout"),
@@ -1987,10 +1987,10 @@ describe("carrying out a row", () => {
         "pinTab:1,true",
         "pinTab:2,true",
         // Move… (#4764): each tab's, and each chat's.
-        `move:${JSON.stringify({ kind: "tab", tab: 1 })}`,
-        `move:${JSON.stringify({ kind: "tab", tab: 2 })}`,
-        `move:${JSON.stringify({ kind: "chat", session: 7 })}`,
-        `move:${JSON.stringify({ kind: "chat", session: 8 })}`,
+        `moveTo:${JSON.stringify({ kind: "tab", tab: 1 })}`,
+        `moveTo:${JSON.stringify({ kind: "tab", tab: 2 })}`,
+        `moveTo:${JSON.stringify({ kind: "chat", session: 7 })}`,
+        `moveTo:${JSON.stringify({ kind: "chat", session: 8 })}`,
         "pinWorkspace:alpha,true",
         "pinWorkspace:beta,true",
         "pinProject:/plane,true",

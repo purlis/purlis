@@ -428,7 +428,7 @@ export type Does =
    */
   | { verb: "moveToWindow"; tab: number; pane: boolean; to: number | null }
   /** Move… (#4764): picks a chat or a tab up for placement mode, the keyboard's drag. */
-  | { verb: "move"; source: MovedFrom }
+  | { verb: "moveTo"; source: MovedFrom }
   /** Focus this pane in a split (#4765): zooms the focused pane, or brings the split back. */
   | { verb: "zoomPane" }
   /** Undo (#4763, #4765): the window's last layout change put back, once. */
@@ -1138,7 +1138,7 @@ export type Doing = {
    *  `to` is null (#4768). Answers the core's refusal, where it refused. */
   moveToWindow: (tab: number, pane: boolean, to: number | null) => Promise<Ran>;
   /** Picks `source` up for placement mode (#4764), as its grip, its row or ⌘⇧M would. */
-  move: (source: MovedFrom) => void;
+  moveTo: (source: MovedFrom) => void;
   /** Zooms the focused pane of the tab in front, or brings its split back (#4765). */
   zoomPane: () => void;
   /** Puts the last layout change back (#4763, #4765): a drop, a split or Tile all. */
@@ -1739,11 +1739,11 @@ export const FOCUS_THIS_PANE = "Focus this pane";
  *  its grip. */
 export type MovedFrom = { kind: "chat"; session: number } | { kind: "tab"; tab: number };
 /** Move…'s row for chat `session` (#4764). */
-export const moveChatId = (session: number) => `chat.moveto:${session}`;
+export const moveToChatId = (session: number) => `chat.moveto:${session}`;
 /** Move…'s row for tab `tab` (#4764). */
-export const moveTabId = (tab: number) => `tab.moveto:${tab}`;
+export const moveToTabId = (tab: number) => `tab.moveto:${tab}`;
 /** What a Move… row says it does (#4764). */
-export const MOVE_NOTE =
+export const MOVE_WITH_KEYS_NOTE =
   "Picked up to move with the keys: the arrows choose a side, Tab the next pane, Enter drops.";
 /** Tile all's row for tab `tab` (#4765). */
 export function tileAllId(tab: number): string {
@@ -2356,12 +2356,12 @@ export function catalogue(now: Now): Offer[] {
     const name = tabNameOf(now.tabs.byId[tab]);
     offers.push({
       ...can(
-        moveTabId(tab),
+        moveToTabId(tab),
         `Move tab ${name}…`,
-        { verb: "move", source: { kind: "tab", tab } },
+        { verb: "moveTo", source: { kind: "tab", tab } },
         name,
       ),
-      note: MOVE_NOTE,
+      note: MOVE_WITH_KEYS_NOTE,
       ...(tab === now.tabs.inFront ? {} : { menuOnly: true as const }),
     });
   }
@@ -3614,8 +3614,8 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return DID;
     case "moveToWindow":
       return doing.moveToWindow(does.tab, does.pane, does.to);
-    case "move":
-      doing.move(does.source);
+    case "moveTo":
+      doing.moveTo(does.source);
       return DID;
     case "zoomPane":
       doing.zoomPane();
@@ -4494,12 +4494,12 @@ function chatRows(now: Now): Offer[] {
     // Every chat's, as Rename is; ⌘⇧M on its row or its pane does the same.
     offers.push({
       ...can(
-        moveChatId(session),
+        moveToChatId(session),
         `Move chat ${name}…`,
-        { verb: "move", source: { kind: "chat", session } },
+        { verb: "moveTo", source: { kind: "chat", session } },
         name,
       ),
-      note: MOVE_NOTE,
+      note: MOVE_WITH_KEYS_NOTE,
     });
 
     // **Use skill…** (#2775), behind the Skill studio's flag. It opens a picker and types
@@ -5709,7 +5709,7 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
           besideId(at),
           backId(at),
           // Where it is drawn, by the keys (#4764).
-          moveChatId(at),
+          moveToChatId(at),
           briefId(at),
           // What its pane foot presses (#5204), then what it said and reached.
           chatHarnessId(at),
@@ -5748,7 +5748,7 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
           `tab.split.right:${what.tab}`,
           `tab.split.down:${what.tab}`,
           tileAllId(what.tab),
-          moveTabId(what.tab),
+          moveToTabId(what.tab),
           `tab.keep:${what.tab}`,
           // Move to window ▸ follows it, one row per window (`menuModel`, `toWindowRows`).
           toNewWindowId(what.tab),

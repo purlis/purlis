@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LayoutPanes } from "./LayoutPanes";
 import { GRIP, GRIP_HANDLE, PlacingHere, type Placing } from "./paneDrag";
@@ -214,7 +215,7 @@ describe("one grip, where a pane has no mark to stand in (#5537)", () => {
   it("leaves a view's blank head to its own first row: only its grip and its actions take the pointer", () => {
     // The window's own stylesheet, which decides what the pointer lands on.
     const style = document.createElement("style");
-    style.textContent = readFileSync("src/paneFrame.css", "utf8");
+    style.textContent = readFileSync(join(process.cwd(), "src", "paneFrame.css"), "utf8");
     document.head.append(style);
     try {
       drawn(row(chat(1), settings(2)));
@@ -234,7 +235,7 @@ describe("one grip, where a pane has no mark to stand in (#5537)", () => {
     }
   });
 
-  it("draws no grip on a chat with no row in the Chats list, whose blank head still drags", () => {
+  it("draws no grip on a chat with no row in the Chats list, and its head stays where a drag starts", () => {
     const pickUp = vi.fn();
     const placing: Placing = { pickUp, gripName: (_tab, pane) => `Move pane ${pane}` };
     render(

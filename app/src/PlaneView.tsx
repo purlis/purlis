@@ -8473,7 +8473,7 @@ export const PlaneView = memo(function PlaneView({
       closePane,
       tileAll: tileAllIn,
       moveToWindow,
-      move: moveFrom,
+      moveTo: moveFrom,
       zoomPane,
       undoLayout: undoLayoutIn,
       closeTab: closeFromItsControl,

@@ -183,7 +183,7 @@ function shown(width?: number, folded?: number): { tabs: () => Tabs; first: Tabs
 }
 
 /** ⌘⇧M, or Ctrl+Shift+M off a Mac: the registry's own chord, on what has the keyboard. */
-function pressPlace() {
+function pressMove() {
   const chord = shortcut("pane.move").chords[onAMac() ? "mac" : "other"][0];
   act(() => {
     (document.activeElement ?? document.body).dispatchEvent(keystroke(chord));
@@ -321,7 +321,7 @@ describe("placement mode: the keyboard route for every drag (#4764)", () => {
   it("picks up the pane whose terminal has the keyboard on ⌘⇧M", async () => {
     shown();
     act(() => screen.getByRole("textbox", { name: "terminal 1" }).focus());
-    pressPlace();
+    pressMove();
     await waitFor(() => expect(said()).toBe(PICKED_1));
   });
 
@@ -330,7 +330,7 @@ describe("placement mode: the keyboard route for every drag (#4764)", () => {
     shown();
     const row = screen.getByRole("button", { name: "chat 7" });
     act(() => row.focus());
-    pressPlace();
+    pressMove();
     await waitFor(() => expect(said()).toMatch(/^Picked up chat 7\./));
     // Every pane of the tab in front takes it: none of them shows it yet.
     expect(screen.getAllByRole("group", { name: /^Places by / })).toHaveLength(2);
@@ -343,7 +343,7 @@ describe("placement mode: the keyboard route for every drag (#4764)", () => {
     const { tabs, first } = shown();
     const second = first.order[1];
     act(() => screen.getByRole("tab", { name: `tab ${second}` }).focus());
-    pressPlace();
+    pressMove();
     await waitFor(() => expect(said()).toMatch(/^Picked up chat 4\./));
     await user.keyboard("{ArrowRight}{Enter}");
     expect(tabs().order).toEqual([first.order[0]]);
@@ -408,7 +408,7 @@ describe("placement mode while the window changes under it (#4764)", () => {
   it("shows a tab picked up in front no targets on its own panes, only the strip's", async () => {
     shown();
     act(() => screen.getByRole("tab", { name: /^tab /, selected: true }).focus());
-    pressPlace();
+    pressMove();
     await waitFor(() => expect(said()).toMatch(/^Picked up chat 1\./));
     expect(screen.queryAllByRole("group", { name: /^Places by / })).toEqual([]);
     expect(screen.getByRole("button", { name: "Move the tab here." })).toBeTruthy();
@@ -455,7 +455,7 @@ describe("placement mode beside a folded side and a hidden grip (#4764, #4766)",
     document.head.append(hide);
     try {
       screen.getByRole("textbox", { name: "terminal " + pane }).focus();
-      pressPlace();
+      pressMove();
       await waitFor(() => expect(said()).toBe(PICKED_1));
       await waitFor(() =>
         expect(document.activeElement?.getAttribute("aria-label")).toBe("Swap chat 1 and chat 3."),
