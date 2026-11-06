@@ -4395,17 +4395,18 @@ pub fn run() {
             // What a project's chats tell its window, sent as one event about every 100 ms
             // rather than one each (#4746): managed before any plane is opened, as the
             // notifier is, since the first chat to move tells the window.
-            let batches = chatevents::Batches::start(chatevents::INTERVAL, {
-                let window = app.handle().clone();
-                move |batch: chatevents::ChatEvents| {
-                    windows::emit_for_plane(
-                        &window,
-                        &batch.plane.clone(),
-                        chatevents::EVENT,
-                        &batch,
-                    );
-                }
-            });
+            let batches =
+                chatevents::Batches::start(chatevents::interval(purlis_core::envvar::var), {
+                    let window = app.handle().clone();
+                    move |batch: chatevents::ChatEvents| {
+                        windows::emit_for_plane(
+                            &window,
+                            &batch.plane.clone(),
+                            chatevents::EVENT,
+                            &batch,
+                        );
+                    }
+                });
             app.manage(batches.clone());
             // The registry is managed BEFORE a plane is opened, because opening one starts
             // programs, and a program that dies at once tells the board, which tells the

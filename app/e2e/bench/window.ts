@@ -10,6 +10,7 @@ import type { Bench, Plan } from "../../src/bench.ts";
 import type { Renderer } from "../../src/renderer.ts";
 import { built } from "../harness.js";
 import { endEveryChat } from "../opening.js";
+import { running } from "../processes.js";
 
 /** What the benchmark measures in, and the pieces every spec shares. */
 
@@ -165,19 +166,19 @@ export async function frames(): Promise<ReturnType<Bench["frames"]>> {
   return drawn;
 }
 
-/** The app's own process: its pid and resident memory, asked of the operating system. */
+/**
+ * The app's own process: its pid and resident memory, asked of the operating system. Its
+ * window's, never its session host's, which runs the same binary (#2384, `running`): counted
+ * by the binary alone, a run whose chats had started a host found two apps.
+ */
 export function appProcess(): { pid: number; rssMb: number } {
   const app = built(process.platform === "win32" ? "charter-app.exe" : "charter-app");
-  const ps = execFileSync("ps", ["-A", "-o", "pid=,rss=,command="], { encoding: "utf8" });
-  const mine = ps
-    .split("\n")
-    .map((line) => line.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/))
-    .filter((found): found is RegExpMatchArray => Boolean(found))
-    .filter((found) => found[3].startsWith(app));
-  if (mine.length !== 1) {
-    throw new Error(`expected one ${app} running, found ${mine.length}`);
+  const windows = running(app);
+  if (windows.length !== 1) {
+    throw new Error(`expected one ${app} window running, found ${windows.length}`);
   }
-  return { pid: Number(mine[0][1]), rssMb: Number(mine[0][2]) / 1024 };
+  const rss = execFileSync("ps", ["-o", "rss=", "-p", String(windows[0])], { encoding: "utf8" });
+  return { pid: windows[0], rssMb: Number(rss.trim()) / 1024 };
 }
 
 /** How many fake harnesses are running, and how much CPU they are using between them. */

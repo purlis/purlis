@@ -50,6 +50,7 @@ export const NOT_SHIPPING = {
   "mutants.yml": "mutation testing of the core crate: its builds are only ever tested",
   "operator.yml": "checks the cluster operator and runs it on a throwaway kind cluster",
   "stress.yml": "the stress and scale measurements: its builds run tests and benchmarks only",
+  "scale.yml": "the nightly scale run (#5497): its release builds measure a generated project and are never handed on",
 };
 
 /** The name a crate gives the feature only another crate's tests turn on; each is in `TEST_ONLY`. */

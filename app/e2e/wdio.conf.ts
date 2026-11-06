@@ -142,6 +142,8 @@ export const config: WebdriverIO.Config = {
     // Pool setup's Docker path needs Docker and the runner image this build makes, which only
     // Linux's pool leg has (`wdio.pool.conf.ts`, #4985).
     "./specs/**/*.pool.e2e.ts",
+    // The nightly scale run opens a project of a thousand workspaces (`wdio.scale.conf.ts`, #5497).
+    "./specs/**/*.scale.e2e.ts",
     ...(process.env.STRESS === "1" ? [] : ["./specs/stress.e2e.ts"]),
   ],
   maxInstances: 1,
