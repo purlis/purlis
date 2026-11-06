@@ -1032,7 +1032,7 @@ struct GitTree {
 impl GitTree {
     /// Whether `event` may move what `git status` says of the plane: anything but a move only
     /// in git's own folder (the standing's stamp holds those), in the state purlis keeps in
-    /// the plane (`.purlis/`, `.charter/`, ignored by every plane), or inside a clone (a
+    /// the plane (`names::STATE_DIR`, ignored by every plane), or inside a clone (a
     /// repository of its own, which the project's status never looks into). A loss, an
     /// error or an event naming no path may be anything.
     fn may_show(&self, event: &notify::Result<notify::Event>) -> bool {
@@ -1057,7 +1057,9 @@ impl GitTree {
         let parts: Vec<&std::ffi::OsStr> = below.iter().collect();
         match parts.as_slice() {
             [first, ..]
-                if [".git", ".purlis", ".charter"].contains(&first.to_str().unwrap_or("")) =>
+                if first.to_str().is_some_and(|first| {
+                    first == ".git" || purlis_core::names::STATE_DIR.recognises(first)
+                }) =>
             {
                 false
             }
