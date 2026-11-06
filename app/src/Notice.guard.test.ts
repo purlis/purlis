@@ -545,13 +545,6 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 2,
     why: "the Sources page's updates still being read (#3687), and Install all's review that is more than one read, with its first part to review in place (#4024)",
   },
-  "SkillStudioDeleted.tsx": {
-    count: 1,
-    why:
-      "Bring back's refusal of a built-in skill's name for a deleted skill whose own a built-in " +
-      "took (#3729), said as it is typed beside the New name field, in the core's sentence. " +
-      "Bring back is the retry",
-  },
   "SessionPane.tsx": {
     count: 1,
     why:

@@ -703,6 +703,6 @@ fn a_deleted_skill_whose_name_purlis_holds_is_offered_a_name_as_an_install_offer
     assert_eq!(source::review::deleted_clash(root, &listed[0]), None);
     let clash = source::review::deleted_clash(root, &listed[1]).expect("its name is taken");
     assert_eq!(clash.offered, "acme-skills-purlis-secrets");
-    assert_eq!(clash.held_by, "purlis-secrets belongs to purlis");
+    assert_eq!(clash.held_by, "the name purlis-secrets belongs to purlis");
     assert!(clash.taken.contains(&"tdd".to_owned()), "{:?}", clash.taken);
 }

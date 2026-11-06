@@ -186,7 +186,7 @@ const HELD: DeletedSkill = {
   in_history: true,
   reserved: true,
   clash: {
-    held_by: "purlis-review belongs to purlis",
+    held_by: "the name purlis-review belongs to purlis",
     offered: "mattpocock-skills-purlis-review",
     taken: ["grilling", "tdd", "to-spec"],
   },
@@ -214,6 +214,8 @@ export const NameTaken: Story = {
     });
     await tabInto(() => back);
     expectFocusInSight();
+    await userEvent.tab({ shift: true });
+    expectFocusInSight();
   },
 };
 
@@ -238,6 +240,8 @@ export const GroupNameTaken: Story = {
     await tabInto(() => box);
     expectFocusInSight();
     await tabInto(() => within(review).getByRole("button", { name: "Bring back 4 skills" }));
+    expectFocusInSight();
+    await userEvent.tab({ shift: true });
     expectFocusInSight();
   },
 };

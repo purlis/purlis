@@ -285,7 +285,7 @@ const gone = (name: string, over: Record<string, unknown> = {}) => ({
 /** What the core says of a deleted skill whose name belongs to purlis now (#5457). */
 const held = (name: string, offered: string) => ({
   reserved: true,
-  clash: { held_by: `${name} belongs to purlis`, offered, taken: ["tdd"] },
+  clash: { held_by: `the name ${name} belongs to purlis`, offered, taken: ["tdd"] },
 });
 
 describe("the Deleted page's Select mode", () => {
@@ -333,7 +333,7 @@ describe("the Deleted page's Select mode", () => {
     await user.click(await within(page()).findByRole("button", { name: "Bring back…" }));
     const review = await screen.findByTestId("set-review");
     expect(within(review).getByTestId("clash-purlis-notes").textContent).toContain(
-      "Purlis-notes belongs to purlis.",
+      "The name purlis-notes belongs to purlis.",
     );
     const main = within(review).getByRole("button", { name: "Bring back 2 skills" });
     expect(main).toHaveAttribute("aria-disabled", "true");

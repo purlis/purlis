@@ -560,7 +560,7 @@ fn held_by(
     name: &str,
 ) -> Option<String> {
     if name_reserved(name) {
-        return Some(format!("{name} belongs to purlis"));
+        return Some(format!("the name {name} belongs to purlis"));
     }
     if !has(plane, level, name) {
         return None;
@@ -589,7 +589,7 @@ pub fn deleted_clash(plane: &Path, deleted: &crate::skills::verbs::Deleted) -> O
         None => format!("my-{}", name.strip_prefix("purlis-").unwrap_or(name)),
     };
     Some(Clash {
-        held_by: format!("{name} belongs to purlis"),
+        held_by: format!("the name {name} belongs to purlis"),
         offered,
         taken: names_at(plane, &deleted.level),
     })

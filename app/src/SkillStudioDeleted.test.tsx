@@ -37,7 +37,7 @@ const gone = (name: string, over: Record<string, unknown> = {}) => ({
 /** What the core says of a deleted skill whose name belongs to purlis now (#5457). */
 const held = (name: string, offered: string) => ({
   reserved: true,
-  clash: { held_by: `${name} belongs to purlis`, offered, taken: ["vault"] },
+  clash: { held_by: `the name ${name} belongs to purlis`, offered, taken: ["vault"] },
 });
 
 /** The built-in skills the studio lists, whose names a skill cannot come back under. */
@@ -274,6 +274,14 @@ describe("a set deleted together (#5331)", () => {
     );
     expect(await screen.findByRole("status", { name: /Skills brought back/ })).toHaveTextContent(
       "3 skills are back.",
+    );
+    // Its Undo deletes them again as one group: the renamed one under the name it came back as.
+    await user.click(await screen.findByRole("button", { name: "Undo" }));
+    await waitFor(() =>
+      expect(asked.find((one) => one.cmd === "skill_set_delete")?.args).toMatchObject({
+        members: [{ name: "grilling" }, { name: "tdd" }, { name: "acme-skills-purlis-review" }],
+        from: SET.from,
+      }),
     );
   });
 

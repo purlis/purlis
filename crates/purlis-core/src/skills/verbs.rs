@@ -1240,7 +1240,9 @@ pub(super) fn restored_trailer(plane: &Path, deleted: &Deleted, folder: &Path) -
 fn restored_marks(plane: &Path) -> Vec<String> {
     let format = format!("--format=%(trailers:key={RESTORED_TRAILER},valueonly,separator=%x1e)");
     let grep = format!("--grep=^{RESTORED_TRAILER}: ");
-    git(plane, &["log", &format, &grep, "-n", "200"])
+    // Every one, however old: a delete further back than the listing reads is listed no more
+    // anyway, and one within it must never come back to the list.
+    git(plane, &["log", &format, &grep])
         .unwrap_or_default()
         .split(['\u{1e}', '\n'])
         .map(str::trim)

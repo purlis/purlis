@@ -21,7 +21,7 @@ import { whoGets } from "./SkillChangeDialogs";
 import { GrantPicker } from "./SkillLevelPickers";
 import { BUSY, useRead } from "./SkillRead";
 import { SetReviewPage, memberKey, setVerb, type Stays } from "./SkillSetReview";
-import { BRING_BACK_WORDS, useNameTaken } from "./SkillNameTaken";
+import { BRING_BACK_WORDS, useNameTaken, type Taking } from "./SkillNameTaken";
 import { levelKey, levelOf, sameLevel } from "./skillChanges";
 import type { StudioScope } from "./skillStudio";
 import { Badge } from "./ui/badge/Badge";
@@ -680,6 +680,11 @@ export function DeletedSelectionPage({
   );
 }
 
+/** A deleted skill, as the name-taken step asks of it (#5457): by its id, each one named. */
+function taking(one: DeletedSkill): Taking {
+  return { key: one.id, name: one.name, clash: one.clash, named: true };
+}
+
 /**
  * **The review of Bring back or Delete now**, in the selection page's place. Bring back asks a
  * new name of each skill whose name belongs to purlis now, as an install asks one of a skill
@@ -702,12 +707,7 @@ export function DeletedSetReview({
   onApply: (going: DeletedSkill[], under: DeletedRename[]) => void;
 }) {
   const now = act === "delete-now";
-  const taken = useNameTaken(
-    now
-      ? []
-      : chosen.map((one) => ({ key: one.id, name: one.name, clash: one.clash, named: true })),
-    BRING_BACK_WORDS,
-  );
+  const taken = useNameTaken(now ? [] : chosen.map(taking), BRING_BACK_WORDS);
   const going = now ? [...chosen] : chosen.filter((one) => !taken.skipped.has(one.id));
   const asking = now ? [] : going.filter((one) => one.clash !== null);
   const why = busy ? BUSY : now ? undefined : taken.why;
@@ -769,7 +769,7 @@ export function DeletedSetReview({
                 <p className="honest">
                   <code>{one.name}</code> ({one.label})
                 </p>
-                {taken.choice({ key: one.id, name: one.name, clash: one.clash, named: true }, busy)}
+                {taken.choice(taking(one), busy)}
               </div>
             ))}
         </section>
