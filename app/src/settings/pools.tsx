@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useId, useState, type ReactNode } from "react";
+import { useNow } from "../stateClock";
 import type { ClusterPoolRow, PoolLink, PoolRow, PoolVersion, ProjectNotHeld } from "../bindings";
 import { Notice } from "../Notice";
 import { useProjectsNotHeld } from "../notheld";
@@ -484,6 +485,7 @@ function PoolEntry({
   plane: string | undefined;
 }) {
   const remove = onAsk;
+  const owed = owedSaid(version, useNow());
   return (
     <li className="ui-machine-entry">
       <span className="ui-machine-name">{pool.name}</span>
@@ -519,9 +521,7 @@ function PoolEntry({
       {versionSaid(version) !== undefined && (
         <p className="ui-setting-help">{versionSaid(version)}</p>
       )}
-      {owedSaid(version, Date.now()) !== undefined && (
-        <p className="ui-setting-help">{owedSaid(version, Date.now())}</p>
-      )}
+      {owed !== undefined && <p className="ui-setting-help">{owed}</p>}
       {notHeld}
       {profiles}
       <PoolLimits pool={pool.name} plane={plane} />
