@@ -1792,28 +1792,33 @@ export function tabNameOf(tab: Tab): string {
   return tab.own ?? tab.name;
 }
 
+/** Which tabs {@link namedForFirstPanes} renames beyond those whose first pane is another
+ *  pane: `inPlace` also renames one whose first pane shows something else, as a drop's swap
+ *  does. Every other change that puts something in a first pane in place names the tab itself. */
+export type Renaming = { inPlace?: boolean };
+
 /**
  * **`after`, a change made to `before`, with each tab whose first pane is another pane named
- * for what that pane shows** (#5342, #5308), by `nameOf`, read against `before`: the first chat
- * closed or moved out, so the tab takes the next one's name, or a chat put left of it, which is
- * first now. `byContent` also renames a tab whose first pane shows something else in place, as a
- * drop's swap does; every other change that puts a chat in a first pane names the tab itself.
+ * for what that pane shows** (#5342, #5308), by `nameOf`, read against `before`. The first chat
+ * closed or moved out, so the tab takes the next one's name; or a chat was put left of it, and
+ * is first now.
+ *
  * A change that named the tab itself, as Undo does, keeps the name it gave. A tab's own name
- * ({@link Tab.own}) is kept: only the name under it moves. Answers `after`
- * itself where no tab is renamed.
+ * ({@link Tab.own}) is kept: only the name under it moves. Answers `after` itself where no tab
+ * is renamed.
  */
 export function namedForFirstPanes(
   before: Tabs,
   after: Tabs,
   nameOf: (content: Content, before: Tabs) => TabName,
-  byContent = false,
+  { inPlace = false }: Renaming = {},
 ): Tabs {
   let byId: Record<number, Tab> | undefined;
   for (const id of after.order) {
     const was = before.byId[id] && panes(before.byId[id].layout)[0];
     const is = after.byId[id] && panes(after.byId[id].layout)[0];
     if (was === undefined || is === undefined) continue;
-    const other = was.pane !== is.pane || (byContent && !sameContent(was.content, is.content));
+    const other = was.pane !== is.pane || (inPlace && !sameContent(was.content, is.content));
     if (!other) continue;
     const tab = after.byId[id];
     // A change that named the tab itself, as Undo does, knew what to call it.

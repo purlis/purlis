@@ -170,10 +170,12 @@ export function TabMarks({
       ...(factsOf?.(session) ?? NO_FACTS),
     })),
   );
-  const marked = urgent ?? (lead.kind === "chat" ? lead.session : undefined);
+  const first = lead.kind === "chat" ? lead.session : undefined;
+  const marked = urgent ?? first;
   if (marked === undefined) {
-    const focused = contentsOf(tabs, id).find((one) => one.pane === tabs.byId[id]?.focused);
-    const preview = focused?.content.kind === "view" && focused.content.preview === true;
+    // In italics while its first pane is the preview tab's view: the face is the first pane's.
+    const shown = contentsOf(tabs, id)[0]?.content;
+    const preview = shown?.kind === "view" && shown.preview === true;
     return (
       <>
         {pin}
@@ -210,7 +212,7 @@ export function TabMarks({
         {...facts}
         heard={false}
         who={
-          taskOf !== undefined && lead.kind === "chat" && chat === lead.session ? (
+          taskOf !== undefined && chat === first ? (
             <ListTodo className="tab-mark" data-mark="task" aria-hidden="true" />
           ) : undefined
         }
@@ -220,7 +222,7 @@ export function TabMarks({
       </span>
       <SplitMore more={face.more} zoomed={face.zoomed} />
       {/* No sandbox badge: it moved to the chat's pane head and its row (#4760). */}
-      <PlaneUpdatedMark files={updates?.[lead.kind === "chat" ? lead.session : chat]} />
+      <PlaneUpdatedMark files={updates?.[chat]} />
       {/* **What the tab is doing, said after what it is**: its own element, so a tab whose text
           changed every time a turn began would not be unreadable, and before the task's name
           where it shows one (#1486). Heard and not seen: its mark is the icon's corner. */}

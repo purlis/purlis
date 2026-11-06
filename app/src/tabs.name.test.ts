@@ -3,13 +3,14 @@
 
 import { describe, expect, it } from "vitest";
 import { recorded, undoLayout } from "./layoutUndo";
-import { dropOn, type DropContext } from "./paneDrop";
+import { dropOn, firstPaneNameOf, type DropContext } from "./paneDrop";
 import {
   closePane,
   focusPane,
   insertPane,
   namedForFirstPanes,
   noTabs,
+  openViewBeside,
   openTab,
   panes,
   splitFocusedPane,
@@ -32,10 +33,7 @@ const nameOf = (content: Content) =>
 const ctx: DropContext = { filedIn: () => "ops", name: nameOf };
 /** What the window does after every change: a tab whose first pane is another names it so. */
 const named = (before: Tabs, after: Tabs) =>
-  namedForFirstPanes(before, after, (content) => {
-    const name = nameOf(content);
-    return { name, defaultName: name };
-  });
+  namedForFirstPanes(before, after, (content, was) => firstPaneNameOf(content, was, ctx));
 
 const ID = 1;
 const one = () => openTab(noTabs(), 1, "1", "steward");
@@ -110,6 +108,16 @@ const table: readonly [string, () => Tabs, string][] = [
       });
     },
     "given",
+  ],
+  [
+    // A view beside a chat has no title of its own: the tab says its word, as a drop does.
+    "a view left first by its chat's close is called by its word, never the closed chat's",
+    () => {
+      const view = { from: null, view: "activity", key: "1" };
+      const before = openViewBeside(one(), 1, view, "ops");
+      return closed(before, 1);
+    },
+    "activity",
   ],
   ["its own name is its name", () => ownNamed(one()), "the build"],
   [

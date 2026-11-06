@@ -370,8 +370,8 @@ import {
   type TabName,
   type ViewRef,
   sessionOf,
-  EMPTY_TAB,
   namedForFirstPanes,
+  tabNameOf,
 } from "./tabs";
 import { tileAll, zoomedLayout, zoomFocusedPane } from "./tiling";
 import { recorded } from "./layoutUndo";
@@ -1024,7 +1024,8 @@ export const PlaneView = memo(function PlaneView({
 }) {
   const [tabs, setTabs] = useState<Tabs>(noTabs);
   // The tab in front of the project in front, for what the stall log writes (`slowLog.ts`).
-  const frontTabName = tabs.inFront === undefined ? undefined : tabs.byId[tabs.inFront]?.name;
+  const inFrontTab = tabs.inFront === undefined ? undefined : tabs.byId[tabs.inFront];
+  const frontTabName = inFrontTab === undefined ? undefined : tabNameOf(inFrontTab);
   useEffect(() => (inFront ? frontTabIs(frontTabName) : undefined), [inFront, frontTabName]);
   const signingOutIn = useSignOutTerminals(tabs, plane);
   // **A pane closed for good lets its band's memory go** (#3167): a pane's number is never
@@ -1843,16 +1844,16 @@ export const PlaneView = memo(function PlaneView({
     [tabWindow],
   );
   /** What a tab is called when a content is its first pane (`paneDrop.firstPaneNameOf`), as the
-   *  drop context below names it: read by {@link change}, which is made before it. */
-  const firstPaneNameNow = useRef<(content: Content, before: Tabs) => TabName>((content) => {
-    const name = content.kind === "session" ? content.chat : EMPTY_TAB;
-    return { name, defaultName: name };
-  });
+   *  drop context below names it, once it is made: nothing renames a tab before then. */
+  const firstPaneNameNow = useRef<(content: Content, before: Tabs) => TabName>(undefined);
   const change = useCallback(
     (how: (tabs: Tabs) => Tabs): Tabs => {
       // **A tab whose first pane is another is named for it** (#5342, #5308): its first chat
       // closed or moved out, so it takes the next one's name. One rule, for every change.
-      const done = namedForFirstPanes(now.current, how(now.current), firstPaneNameNow.current);
+      const changed = how(now.current);
+      const nameOf = firstPaneNameNow.current;
+      const done =
+        nameOf === undefined ? changed : namedForFirstPanes(now.current, changed, nameOf);
       // **The pane in front was used** (#4757): what a press with a view focused goes by.
       const next = done === now.current ? done : noteUsed(done);
       // **A chat given a new pane keeps what its band remembered** (#3271): its Notices were

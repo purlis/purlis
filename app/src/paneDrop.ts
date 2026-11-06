@@ -238,7 +238,7 @@ export function dropOn(tabs: Tabs, from: Source, to: Target, ctx: DropContext, s
     tabs,
     after,
     (content, before) => firstPaneNameOf(content, before, ctx),
-    true,
+    { inPlace: true },
   );
 }
 

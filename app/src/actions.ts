@@ -139,6 +139,7 @@ import {
   type Tabs,
   type ViewRef,
   type Tab,
+  tabNameOf,
 } from "./tabs";
 import { canTileAll, isSplit, zoomedOf } from "./tiling";
 import { canUndoLayout } from "./layoutUndo";
@@ -2253,7 +2254,7 @@ export function catalogue(now: Now): Offer[] {
   const pinned = now.pinned ?? { workspaces: [], projects: [] };
 
   for (const tab of now.tabs.order) {
-    const name = now.tabs.byId[tab].name;
+    const name = tabNameOf(now.tabs.byId[tab]);
     const title = `Switch to tab ${name}`;
     offers.push(
       tab === now.tabs.inFront
@@ -2267,7 +2268,7 @@ export function catalogue(now: Now): Offer[] {
   // pin is a deliberate, occasional act — which is what the palette is for. What a pinned
   // thing gets on its strip is a mark, and pressing the mark runs this same row.
   for (const tab of now.tabs.order) {
-    const name = now.tabs.byId[tab].name;
+    const name = tabNameOf(now.tabs.byId[tab]);
     // **The one pin is the tab's** (#4762, #4935): its own, whatever its panes hold, so a tab
     // whose only pane is empty is pinned as any other.
     const held = now.tabs.byId[tab].pinned === true;
@@ -2285,7 +2286,7 @@ export function catalogue(now: Now): Offer[] {
   // **Tile all** (#4765): one row per tab, as Pin tab's, so the tab menu of a tab behind has its
   // own; it evens only that tab's panes, and a tab of one pane has nothing to even.
   for (const tab of now.tabs.order) {
-    const name = now.tabs.byId[tab].name;
+    const name = tabNameOf(now.tabs.byId[tab]);
     const id = tileAllId(tab);
     const title = `Tile all in ${name}`;
     offers.push(
@@ -2303,7 +2304,7 @@ export function catalogue(now: Now): Offer[] {
   // tab's, so a tab's menu has its own; the palette lists the tab in front's. Nothing ends.
   const windows = now.otherWindows ?? [];
   for (const tab of now.tabs.order) {
-    const name = now.tabs.byId[tab].name;
+    const name = tabNameOf(now.tabs.byId[tab]);
     const behind = tab !== now.tabs.inFront ? { menuOnly: true as const } : {};
     const holds = contentsOf(now.tabs, tab).some(
       (one) => one.content.kind === "session" || one.content.kind === "view",
@@ -2338,7 +2339,7 @@ export function catalogue(now: Now): Offer[] {
   // **Place…** (#4764): the keyboard's drag of a tab, from its right-click, onto the strip or
   // another tab's pane. The palette lists the tab in front's alone, as Close other tabs'.
   for (const tab of now.tabs.order) {
-    const name = now.tabs.byId[tab].name;
+    const name = tabNameOf(now.tabs.byId[tab]);
     offers.push({
       ...can(
         placeTabId(tab),
@@ -2367,7 +2368,7 @@ export function catalogue(now: Now): Offer[] {
   for (const tab of now.tabs.order) {
     const lead = contentsOf(now.tabs, tab)[0]?.content;
     if (lead?.kind !== "view" || !lead.preview) continue;
-    const name = now.tabs.byId[tab].name;
+    const name = tabNameOf(now.tabs.byId[tab]);
     offers.push({
       ...can(`tab.keep:${tab}`, `Keep tab ${name} open`, { verb: "keepTab", tab }, name),
       note: "The next memory you click opens in a tab of its own instead of replacing this one.",
@@ -3212,7 +3213,7 @@ export function catalogue(now: Now): Offer[] {
   // on in the sidebar, so nothing is asked and nothing is drawn in the danger colour. It used
   // to end them (charter-app#130), which is why the chat's own End… exists apart (#4753).
   for (const tab of now.tabs.order) {
-    const name = now.tabs.byId[tab].name;
+    const name = tabNameOf(now.tabs.byId[tab]);
     const chats = panesOf(now.tabs, tab).length;
     // **A task's own tab has no close** (#1489, V100-38): the row its `−` runs sends the task
     // back into its session's tab, and ends nothing. The same id, so the tab's key, its menu
