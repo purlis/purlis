@@ -70,6 +70,11 @@ const ALLOWED: &[(&str, usize, &str)] = &[
         "names a workspace's own store, never a repo",
     ),
     (
+        "crates/purlis-core/src/planegit/bringin.rs",
+        1,
+        "names a workspace's own sessions store in a plane save's tree, never a repo",
+    ),
+    (
         "crates/purlis-core/src/memstore/holding.rs",
         1,
         "names a workspace's own store, never a repo",
