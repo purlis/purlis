@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793925183214,
+  "lastUpdate": 1793927879732,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -40656,6 +40656,48 @@ window.BENCHMARK_DATA = {
             "value": 101.07260400000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.406, 100.886, 101.073, 101.606, 101.789 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "2829d637833e1444bf5599385c787fa3a9ed2615",
+          "message": "The core's hand-built repo paths use the resolver (#5370) (#5426)\n\n* The core's hand-built repo paths use the resolver (#5370)\n\nEvery place in the core that joined workspaces/<ws>/<repo> by hand, or\nread a clone as sitting exactly one level under its workspace, asks\npurlis_core::repofolder instead (ADR 0114), so a clone in repos/ works\nas one at the root does:\n\n- the git broker (in_a_checked_clone, in_a_checked_folder, touched, and\n  the commit route's recorded clone);\n- a chat started in a clone (chatpiece::clone_at, keyed by names);\n- branch folders and their clone (worktree::clone_dir, link::cut_from,\n  locate_clone, pieces::unclaimed, piececmd remove);\n- Changes and the branch's files (files::status, place_branch_folder,\n  repos::clone_at), and the plane root's guard, which now keeps a clone\n  in repos/ out of the project's Files as it keeps one at the root;\n- the code-link parser (repo_in), dispatch placement, scaffolding,\n  workspace restore and drop.\n\nNew clones still land where they did: that is #5373.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6PHZWD1CP9PAY61XXMC5J0J\nPurlis-Persona: steward\n\n* Review of #5426: adopt refuses rather than loops, clone_at resolves the plane, a shadowed root folder is no clone a dispatch stands in\n\n- adopt_as_workspace ends its name search on the resolver's first refusal\n- chatpiece::clone_at canonicalizes the plane, so a plane named through a link finds its clones\n- dispatchplace::stands_in refuses an old root folder that repos/<repo> shadows, as clone_at does\n- drop says the resolver's own refusal\n- repofolder::entry replaces the fallback repos::clone_at and restore::child each repeated\n- doc comments say both layouts\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6NJKMBSPD5DVKH82AMJ8F4Y\nPurlis-Persona: steward\n\n* Adopt's test runs git through the test helper, as clippy's disallowed-methods asks\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6NJKMBSPD5DVKH82AMJ8F4Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-05T23:34:09Z",
+          "tree_id": "25937865b9da6d0458ea53ee280850a589c4f5fe",
+          "url": "https://github.com/purlis/purlis/commit/2829d637833e1444bf5599385c787fa3a9ed2615"
+        },
+        "date": 1793927874212,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6708965,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.643, 0.649, 0.671, 0.676, 0.678 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.556771499999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.343, 16.543, 16.557, 16.561, 16.748 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.2464,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.810, 102.218, 102.246, 102.918, 103.637 ms"
           }
         ]
       }
