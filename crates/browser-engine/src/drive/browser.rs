@@ -5652,11 +5652,20 @@ impl Inner {
             match event.method.as_str() {
                 "Browser.downloadWillBegin" => {
                     let frame = text("/frameId").unwrap_or_default();
-                    let page_address = state
-                        .pages
-                        .iter()
-                        .find_map(|page| page.frames.get(&frame))
-                        .map(|frame| frame.url.clone());
+                    // A download at no web address is from its frame's document: at the frame's
+                    // own web address, or, for a blank or srcdoc one, the nearest document around
+                    // it that has an origin (the steward's decision on the person's rulings of
+                    // 2026-11-06). A sandboxed one, or one not known yet, is from nowhere known.
+                    let page_address = state.pages.iter().find_map(|page| {
+                        let url = &page.frames.get(&frame)?.url;
+                        if at_web_address(url) {
+                            return Some(url.clone());
+                        }
+                        match judged_at(page, &frame, &state.document_origins) {
+                            Ok(Judged::At(address)) => Some(address),
+                            _ => None,
+                        }
+                    });
                     if let Some(guid) = text("/guid")
                         && let Some(cancel) = state.downloads.began(
                             &guid,

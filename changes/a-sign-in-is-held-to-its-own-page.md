@@ -6,3 +6,6 @@
 - **A sign-in that asks for a second secret on its provider's site finishes by itself.** Once
   that site's server sends the page back to the login's own site, the page goes there without
   asking, while the sign-in is open.
+- **A file a blank or embedded frame made is said to come from the site around it.** In a browser
+  that signs in on another site, one from a frame with no site of its own is brought into the
+  chat's folder only during a sign-in.

@@ -633,6 +633,18 @@ impl Bound {
         self.refuses(host, port).is_none()
     }
 
+    /// **The site the agent is kept off now, wherever it is** (#5152): the site its login signs
+    /// in on, while no sign-in is open. What can't be placed on a site may be of that one.
+    pub fn keeps_off(&self) -> Option<Site> {
+        let bound = self.lock();
+        let holding = bound.login.as_ref()?;
+        holding
+            .sign_in
+            .is_none()
+            .then(|| holding.form.clone())
+            .flatten()
+    }
+
     /// **The site the agent is kept off at `host` on `port`, now** (#5152, the person's ruling
     /// of 2026-11-04): the site its login signs in on, where that is `host` on `port`, while no
     /// sign-in is open. The browser loads that site's documents (the page's own redirects,

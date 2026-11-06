@@ -890,3 +890,32 @@ fn a_fill_hold_keeps_a_logged_in_browser_off_its_sign_in_providers_site_until_re
     assert!(bound.fill_released(held));
     assert!(bound.lets("auth.example.test", 443));
 }
+
+/// #5152, with the steward's decision on the person's rulings of 2026-11-06: what the agent is
+/// kept off wherever it is, for what can't be placed on a site: the form's site, outside a
+/// sign-in alone.
+#[test]
+fn a_browser_keeps_the_agent_off_its_form_site_outside_a_sign_in_alone() {
+    let bound = Bound::default();
+    assert_eq!(bound.keeps_off(), None, "unbound");
+    let number = bound
+        .to(&LoginSites {
+            page: Site::of("app.example.test", 443),
+            form: Some(Site::of("auth.example.test", 443)),
+        })
+        .unwrap()
+        .expect("a sign-in");
+    assert_eq!(bound.keeps_off(), None, "signing in");
+    bound.sign_in_over(number).expect("it was open");
+    assert_eq!(bound.keeps_off(), Some(Site::of("auth.example.test", 443)));
+
+    let page_only = Bound::default();
+    page_only
+        .to(&LoginSites::page(Site::of("app.example.test", 443)))
+        .unwrap();
+    assert_eq!(
+        page_only.keeps_off(),
+        None,
+        "a login whose form is on its page"
+    );
+}

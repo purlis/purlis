@@ -12,3 +12,9 @@ and [A filled page holds its browser to its site](2026-11-04-a-filled-page-holds
   about the hold changes: it still reaches the form's site alone, a link or a script still can't
   take the page away, and any other site still asks or stays refused. Outside a sign-in, the way
   back asks as before, unless the sign-in's chain began on the login's page.
+- **A download at no web address is from the nearest document around it that has an origin**
+  (decided by the steward). A `data:` or `blob:` download a blank or srcdoc frame began is from the
+  origin that frame's document has, so one inside a page of the form's site is that site's. One
+  that still can't be placed, as a sandboxed frame's can't, isn't brought into the chat's folder
+  while the browser keeps the chat off a site: the refusal says it can be brought in while
+  `browser_login` signs in.

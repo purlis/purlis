@@ -10,7 +10,9 @@
 //! **Where a download comes from** is the origin of the address the engine names it by, which
 //! is the last of its redirects (Chrome's `DownloadItem::GetURL`), never the first: a site's yes
 //! is never stretched by its open redirect to a file of another. Only a download at no web
-//! address (`blob:`, `data:`) is from the page that began it.
+//! address (`blob:`, `data:`) is from the document that began it: its frame's own web address,
+//! or, for a blank or srcdoc frame, the nearest document around it that has an origin. One begun
+//! in a sandboxed frame, or one whose document is not known yet, is from nowhere known.
 
 use std::io::Read;
 

@@ -1901,6 +1901,20 @@ impl EngineScreen {
                  is brought in only while browser_login signs in"
             )));
         }
+        // One from no site purlis can tell (a sandboxed frame's, say) may be that site's too
+        // (the steward's decision on the person's rulings of 2026-11-06).
+        if one.origin.is_none()
+            && let Some(site) = self
+                .sites
+                .as_ref()
+                .and_then(|sites| sites.bound().keeps_off())
+        {
+            return Err(NotActed::Refused(format!(
+                "download {download} came from no site purlis can tell, and this browser signs in \
+                 on {site}, so it may be that site's: it is brought in only while browser_login \
+                 signs in"
+            )));
+        }
         let from = self.data.join(DOWNLOADS).join(&one.file);
         // What purlis filled into the browser is kept out of what the chat reads, a file it
         // brings in among it (#5115).
