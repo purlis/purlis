@@ -1,0 +1,31 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "scale-project"
+description = "A developer's tool: writes a seeded project at the scale spec's target size, and times what the nightly scale run asks of purlis-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+# **Developer-only, never shipped** (#5497). Nothing in the release builds names it: the app and
+# `purlis` are built by package, and this is neither. It writes through purlis-core's own
+# writers, given a stamp, so what it makes is the plane format by construction and the same
+# seed gives the same bytes.
+[dependencies]
+purlis-core.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+ulid = "3"
+
+[dev-dependencies]
+# Fenced, as every crate's tests are (`purlis-core/src/fence.rs`).
+purlis-core = { workspace = true, features = ["fenced"] }
+tempfile.workspace = true
+
+[lints]
+workspace = true

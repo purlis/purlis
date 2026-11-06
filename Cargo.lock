@@ -6699,6 +6699,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "scale-project"
+version = "0.5.0"
+dependencies = [
+ "chrono",
+ "clap",
+ "purlis-core",
+ "serde_json",
+ "tempfile",
+ "ulid",
+]
+
+[[package]]
 name = "schannel"
 version = "0.1.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
