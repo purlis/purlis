@@ -14,6 +14,7 @@ fn scrub() -> Keeping {
         filled: kept.clone(),
         named_by_their_sites: Vec::new(),
         browser: kept,
+        long: Kept::default(),
         pages: Vec::new(),
     }
 }
@@ -211,6 +212,7 @@ fn what_the_person_typed_on_a_page_does_not_hide_a_site_that_has_it_in_its_name(
         filled: Kept::default(),
         named_by_their_sites: Vec::new(),
         browser: Kept::default(),
+        long: typed.at_least(KEPT_WHOLE_FROM),
         pages: Vec::new(),
     };
     let told = keeping.answer(Answer {
@@ -227,6 +229,32 @@ fn what_the_person_typed_on_a_page_does_not_hide_a_site_that_has_it_in_its_name(
         panic!("a field");
     };
     assert_eq!(field.origin.as_deref(), Some("https://github.com"));
+}
+
+/// The person's ruling of 2026-11-06: a text typed on one page hides a site whose name holds it
+/// where it is 8 characters or more, as its name would show it, and a shorter one still doesn't.
+#[test]
+fn what_the_person_typed_on_a_page_hides_a_site_with_it_in_its_name_from_eight_characters() {
+    let mut typed = Kept::default();
+    typed.run(&["github", "plumtree"]);
+    let keeping = Keeping {
+        every: Scrub::of(&typed),
+        filled: Kept::default(),
+        named_by_their_sites: Vec::new(),
+        browser: Kept::default(),
+        long: typed.at_least(KEPT_WHOLE_FROM),
+        pages: Vec::new(),
+    };
+    let told = keeping.answer(Answer {
+        asked: vec![
+            "api.github.com:443".to_owned(),
+            "plumtree.example.test:443".to_owned(),
+            "a.plumtree.test:443".to_owned(),
+        ],
+        ..answer()
+    });
+    assert_eq!(told.asked, ["api.github.com:443"]);
+    assert!(told.note.expect("said").contains("nobody is asked"));
 }
 
 /// #5152: a page on the site the agent is kept off, whose host holds a text kept out, as a login's
@@ -248,6 +276,7 @@ fn a_page_kept_off_is_judged_by_its_address_before_a_text_is_taken_out_of_it() {
         filled: kept.clone(),
         named_by_their_sites: Vec::new(),
         browser: kept,
+        long: Kept::default(),
         pages: Vec::new(),
     };
     let on_it = page("https://login.acme.test/account?id=7", "Your account");
@@ -293,6 +322,7 @@ fn user_name_on_its_own_site() -> Keeping {
         filled: state.filled.clone(),
         named_by_their_sites: state.named_by_their_sites.clone(),
         browser: state.kept.clone(),
+        long: Kept::default(),
         pages: Vec::new(),
     }
 }
@@ -362,6 +392,7 @@ fn what_the_person_typed_while_driving_hides_a_site_asked_about_and_takes_no_ori
         filled: state.filled.clone(),
         named_by_their_sites: Vec::new(),
         browser: state.kept.clone(),
+        long: Kept::default(),
         pages: Vec::new(),
     };
     let told = keeping.answer(Answer {

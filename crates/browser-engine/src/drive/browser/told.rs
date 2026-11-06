@@ -16,14 +16,16 @@
 //! was filled on that very site, or one it is under: such a name says nothing of the text that the
 //! site's own name did not. **A field's origin**, which the window alone reads and compares, is held
 //! to what purlis filled, by the same exception: what the person typed takes no origin from a fill.
-//! What they typed on one page alone hides no site.
+//! What they typed on one page alone hides a site only where it is [`KEPT_WHOLE_FROM`] characters
+//! or more (the person's ruling of 2026-11-06): a shorter text is often a word of a site's name,
+//! and a longer one rarely is, while that name would show it.
 //!
 //! **What the chat wrote itself is said back as it wrote it** (a reference, a page's name, a key,
 //! an option). It holds nothing the chat did not have, and an echo with a guess blanked would tell
 //! the chat its guess was right, in one call and with no page, so a refusal's echoes are left
 //! alone (D-5115-13).
 
-use super::super::kept::Kept;
+use super::super::kept::{KEPT_WHOLE_FROM, Kept};
 use super::super::scrub::Scrub;
 use super::super::{
     Answer, Content, DownloadInfo, FieldInfo, KeptOff, MOST_FILE_NAME_CHARS, PageId, PageInfo,
@@ -84,6 +86,9 @@ struct Keeping {
     /// Each text of `filled` that the name of the site it went to holds, with that site's host.
     named_by_their_sites: Vec<(zeroize::Zeroizing<String>, String)>,
     browser: Kept,
+    /// Every text kept, of the browser and of each page, that is [`KEPT_WHOLE_FROM`] characters
+    /// or more: what hides a site asked about too (module docs).
+    long: Kept,
     pages: Vec<(PageId, Kept)>,
 }
 
@@ -207,7 +212,9 @@ impl Keeping {
         let told = asked.len();
         let asked: Vec<String> = asked
             .into_iter()
-            .filter(|site| !self.holds_back(&self.browser, site))
+            .filter(|site| {
+                !self.holds_back(&self.browser, site) && !self.holds_back(&self.long, site)
+            })
             .collect();
         note = note.map(|note| every.text(&note));
         if asked.len() < told {
@@ -412,6 +419,7 @@ impl Browser {
             filled,
             named_by_their_sites,
             browser,
+            long: every.at_least(KEPT_WHOLE_FROM),
             pages,
         })
     }
