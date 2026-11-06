@@ -77,7 +77,8 @@ pub struct FillWait {
     /// A 2FA code the seed under `key` makes, not the value itself (#5118).
     pub code: bool,
     pub since: u64,
-    /// The persona the chat was started as: whose tools Always writes in.
+    /// The persona whose grants the chat fills under: whose tools Always writes in. A narrowed
+    /// chat's is the persona it was narrowed to ([`crate::chats::Chats::secret_grants_of`]).
     pub persona: Option<String>,
     /// **A card's or payment value's key** (SF-4): Allow once and Keep blocked alone.
     pub card: bool,
@@ -368,6 +369,7 @@ fn judged(held: &Held, session: u32, asked: &FillAsked) -> Result<(String, Vec<S
              editable area takes a secret"
         ));
     }
+    // Whose vaults it reads: the persona it was started as, narrowed or not (#2599, #2691).
     let persona = held
         .chats()
         .persona_of(session)
@@ -459,10 +461,9 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<A
     if fills.kept(session, &asked.vault, &asked.key, &origin) {
         return Err(kept_said(&asked.key, &origin, None));
     }
-    let persona = held
-        .chats()
-        .persona_of(session)
-        .and_then(|persona| persona.started_as);
+    // Whose grants it fills under, and whose tools Always writes in: a narrowed chat's are the
+    // persona it was narrowed to (the decision of 2026-11-06).
+    let persona = held.chats().secret_grants_of(session);
     // A browser on a runner is asked about each time: a grant here holds this machine's
     // browsers (#5122).
     let asks_the_person = runner.is_some()
@@ -551,11 +552,9 @@ fn by_get_said(target: &str, origin: &str) -> String {
     )
 }
 
-/// The persona chat `session` was started as.
+/// The persona whose fill grants chat `session` reads ([`crate::chats::Chats::secret_grants_of`]).
 fn persona_of_fill(held: &Held, session: u32) -> Option<String> {
-    held.chats()
-        .persona_of(session)
-        .and_then(|persona| persona.started_as)
+    held.chats().secret_grants_of(session)
 }
 
 /// **The other origins this key is approved for** (#5230, SF-15): a line of the persona's, or the

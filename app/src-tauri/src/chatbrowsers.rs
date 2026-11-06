@@ -4263,7 +4263,13 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
     // Before any notice or vault read (#5121).
     if matches!(browse.asked, Browsing::LogIn { .. }) {
         let persona = as_persona_of(held, browse.chat).persona;
-        let origin = origin_asked(held, browse, persona.as_deref());
+        // Its login grants are the narrowed persona's, as every read of them takes them (the
+        // decision of 2026-11-06).
+        let origin = origin_asked(
+            held,
+            browse,
+            held.chats().secret_grants_of(browse.chat).as_deref(),
+        );
         if let Some(answer) = held.browsers().before_a_login(
             held.browser_driver(),
             held.root(),
@@ -4323,7 +4329,7 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk) -> Answer {
     // An Allow once its read took is spent, unless the login never ran (#5251).
     if let Browsing::LogIn { login, .. } = &browse.asked {
         let ran = !held.browsers().login_never_ran(browse.chat, login);
-        let persona = as_persona_of(held, browse.chat).persona;
+        let persona = held.chats().secret_grants_of(browse.chat);
         held.login_grants()
             .answered(browse.chat, persona.as_deref(), login, ran);
     }
@@ -4775,13 +4781,16 @@ fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> ReadLogin {
     })?;
     // A value its vault holds none of is asked of the person, and the read waits (#5074).
     let moved = || held.chats().asks_may_have_moved();
+    // Whose login grants it reads: a narrowed chat's are the persona it was narrowed to (the
+    // decision of 2026-11-06); its vaults stay the persona it was started as.
+    let grants = held.chats().secret_grants_of(session);
     // One the person allowed from its notice (#4595): nothing of it is kept, on disk or sealed.
     if let Some(tool) = held
         .login_grants()
-        .granted(session, asker.persona.as_deref(), name)
+        .granted(session, grants.as_deref(), name)
     {
         // Policy changed since the press holds a grant too.
-        let persona = asker.persona.as_deref().unwrap_or_default();
+        let persona = grants.as_deref().unwrap_or_default();
         if let Some(why) = crate::loginasks::refused_now(held.root(), persona, &tool) {
             return Err(why);
         }
@@ -4792,8 +4801,7 @@ fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> ReadLogin {
             &tool,
             Some(&secret_missing(held, &asker, &moved)),
         );
-        let (login, identity) =
-            taken_as_read(held, session, asker.persona.as_deref(), name, &tool, read)?;
+        let (login, identity) = taken_as_read(held, session, grants.as_deref(), name, &tool, read)?;
         // And since the read, which may have waited on the person.
         if let Some(why) = crate::loginasks::refused_now(held.root(), persona, &tool) {
             return Err(why);
@@ -4804,6 +4812,12 @@ fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> ReadLogin {
             identity,
             granted: true,
         });
+    }
+    // A chat with no sandbox reads its persona's declarations at the call: a narrowed one's
+    // login is one the persona it was narrowed to declares and this machine allowed too. A
+    // sandboxed one's is one its start armed, for that persona already.
+    if unconfined && grants != asker.persona && !allowed_login_of(held, grants.as_deref(), name) {
+        return Err(narrowed_without(grants.as_deref(), name));
     }
     let persona = asker.persona.clone().unwrap_or_default();
     let (mut login, identity) = purlis_core::secrets::brokered::login_and_identity_for(
@@ -4845,13 +4859,41 @@ fn login_of(held: &crate::planes::Held, session: u32, name: &str) -> ReadLogin {
     // after it: as much the chat's choice as one allowed once (#5121).
     login.suggested |=
         held.login_grants()
-            .allowed_from_a_notice(asker.persona.as_deref(), name, &login.address);
+            .allowed_from_a_notice(grants.as_deref(), name, &login.address);
     Ok(LoginRead {
         login,
         opens,
         identity,
         granted: false,
     })
+}
+
+/// **Whether `persona` declares browser login `name` and this machine allowed it**, as a chat
+/// with no sandbox reads its declarations at the call: never for no persona.
+fn allowed_login_of(held: &crate::planes::Held, persona: Option<&str>, name: &str) -> bool {
+    persona
+        .filter(|persona| !persona.is_empty())
+        .is_some_and(|persona| {
+            purlis_core::sandbox::tools::declared_and_allowed_here(held.root(), persona)
+                .1
+                .iter()
+                .any(|tool| tool.name == name && tool.login.is_some())
+        })
+}
+
+/// What a narrowed chat with no sandbox is told where the persona it was narrowed to has no such
+/// login (the decision of 2026-11-06).
+fn narrowed_without(persona: Option<&str>, name: &str) -> String {
+    match persona {
+        Some(persona) => format!(
+            "this chat runs with {persona}'s grants, and {persona} has no browser login {name} \
+             allowed on this machine, so nothing was filled"
+        ),
+        None => format!(
+            "this chat runs with no persona's grants, so purlis performs no browser login {name} \
+             for it, and nothing was filled"
+        ),
+    }
 }
 
 /// **Runner chat `session`'s browser login `name`, on the runner of `pool`** (#2050): read only

@@ -69,10 +69,16 @@ impl Project {
 
     /// A chat that runs as persona qa.
     fn a_chat(&self) -> u32 {
+        self.a_chat_holding(None)
+    }
+
+    /// A chat started as persona qa that a handoff narrowed to `held`'s grants, where it says.
+    fn a_chat_holding(&self, held: Option<purlis_core::reopen::HeldGrants>) -> u32 {
         let chat = Chat {
             program: "/bin/sh".to_owned(),
             name: "1".to_owned(),
             persona: Some("qa".to_owned()),
+            held,
             cwd: Some(self.held.root().to_path_buf()),
             unsandboxed: true,
             ..Default::default()
@@ -501,4 +507,54 @@ fn a_payment_field_raises_the_notice_with_allow_once_alone_under_either_grant() 
             assert_eq!(handed_under_a_grant(&hosted), [false, false]);
         }
     }
+}
+
+/// The steward's decision of 2026-11-06: a chat narrowed to another persona's grants fills under
+/// that persona's, never under the Always of the persona it was started as, and its notice's
+/// Always would write in the persona it was narrowed to (none, where it holds none).
+#[test]
+fn a_narrowed_chat_fills_under_the_grants_it_was_narrowed_to() {
+    let project = Project::holding(&the_key_held());
+    let own = project.a_chat();
+    let to_devops = project.a_chat_holding(Some(purlis_core::reopen::HeldGrants {
+        persona: Some("devops".to_owned()),
+    }));
+    let to_none = project.a_chat_holding(Some(purlis_core::reopen::HeldGrants { persona: None }));
+    let (browsers, hosted) = (ChatBrowsers::default(), Arc::new(Hosted::default()));
+    for chat in [own, to_devops, to_none] {
+        opens_a_browser(&browsers, &hosted, chat);
+    }
+    let person = Person::saying(
+        &project,
+        &[
+            Says::Presses(Press::Always),
+            Says::Presses(Press::Keep),
+            Says::Presses(Press::Keep),
+        ],
+    );
+
+    let granted = fills(&project, &browsers, &hosted, own, FieldKind::OneLine);
+    let again = fills(&project, &browsers, &hosted, own, FieldKind::OneLine);
+    let devops = fills(&project, &browsers, &hosted, to_devops, FieldKind::OneLine);
+    let none = fills(&project, &browsers, &hosted, to_none, FieldKind::OneLine);
+
+    let came_up = person.came_up();
+    told_it_filled(&granted);
+    told_it_filled(&again);
+    refusal(devops);
+    refusal(none);
+    let asked: Vec<(u32, Option<&str>)> = came_up
+        .notices
+        .iter()
+        .map(|notice| (notice.session, notice.persona.as_deref()))
+        .collect();
+    assert_eq!(
+        asked,
+        [
+            (own, Some("qa")),
+            (to_devops, Some("devops")),
+            (to_none, None)
+        ]
+    );
+    assert_eq!(handed(&hosted).len(), 2, "the narrowed chats' went nowhere");
 }
