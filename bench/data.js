@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793934727144,
+  "lastUpdate": 1793957870345,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -40824,6 +40824,48 @@ window.BENCHMARK_DATA = {
             "value": 101.19261900000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.986, 101.125, 101.193, 101.372, 101.770 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "d4cbbfe27c5dd6c227b21d2a163dc628bf054666",
+          "message": "Library Select: Grade several skills, with an estimate and a spending limit (#5356) (#5464)\n\n* Skills: grade several under one limit, a few at a time (#5356)\n\npurlis_core::skills::grades::batch decides: which grade starts next, at most\nthree together; what they spent together against the person's limit; and,\nonce it is reached (or a chat does not say what it spent, or Stop), none\nstarts and those running stop, which scores and records what they ran. The\napp's skillgrade::batch drives it: skill_grades_plan is each skill's plan as\nGrade shows it, its last grade's estimate added, those with none named and\nthose with no tests left out with why; skill_grades_start begins each through\nthe one check a press takes, on its consent; skill-grades tells each step.\nWhile a batch runs no other grade starts in the project.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6Q3C7XSBTGWXT3YNZTZB90N\nPurlis-Persona: steward\n\n* Library Select: Grade several skills, estimate first, under a limit you set (#5356)\n\nSelect's actions gain Grade. Its review, in the selection page's place, shows\nwhat each skill's last grade spent, added, names those with nothing to go on\nand those left out (no tests, a built-in), and waits for a spending limit;\nStart ends Select and shows the grades running three at a time, each skill\nwith where it is, what they spent against the limit, Stop, and how it ended.\nThe ADR 0105 amendment records the decision; the core's next is start_next,\nas clippy asks.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6Q3C7XSBTGWXT3YNZTZB90N\nPurlis-Persona: steward\n\n* Grade several: what the two-axis review found (#5356)\n\nA grade a fault ends keeps what its chats spent in the batch, as a grade's\nspend only grows; a driver that faults leaves no batch holding the project;\na lone grade that starts as a batch begins gives way to it; the estimate is\nread on the profile the chats run on and says where a last grade ran on\nanother; skills are keyed by level and name; the running page says when it\ncannot follow; Show them says why it shows nothing; the copy guards and the\nsession protocol's lists name the new commands and field. The refusal while a\ngrade runs is one sentence, A_GRADE_RUNS.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6Q3C7XSBTGWXT3YNZTZB90N\nPurlis-Persona: steward\n\n* Bindings: the batch's start and stop are the window's alone (#5356)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6Q3C7XSBTGWXT3YNZTZB90N\nPurlis-Persona: steward\n\n* Stories: the baselines this pull request's stories run drew (#5356)\n\nSelect's page gains its Grade row; Grade's estimate, its grades running and\nstopped at the limit are new. Taken with tools/story-baselines-pull.mjs 5464\nand reviewed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6Q3C7XSBTGWXT3YNZTZB90N\nPurlis-Persona: steward\n\n* Stories: Grade's new baselines, from this pull request's stories run (#5356)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6Q3C7XSBTGWXT3YNZTZB90N\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-06T09:07:52Z",
+          "tree_id": "9d1bb657bc3a92e2064fe44c2f5148c6eb0673b1",
+          "url": "https://github.com/purlis/purlis/commit/d4cbbfe27c5dd6c227b21d2a163dc628bf054666"
+        },
+        "date": 1793957864511,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4160705,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.407, 0.415, 0.416, 0.433, 0.447 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.608758,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.521, 16.597, 16.609, 16.622, 16.633 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.151697,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.974, 102.078, 102.152, 102.462, 102.825 ms"
           }
         ]
       }
