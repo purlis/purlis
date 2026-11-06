@@ -2841,8 +2841,14 @@ impl ChatBrowsers {
     }
 
     /// **A browser site allowed for every chat here was removed** (#2018): every chat's
-    /// browsers end, as a narrowing ends them. Answers each chat whose browsers that ended.
-    pub fn sites_removed(&self, driver: Option<&Arc<dyn Driver>>) -> Vec<(u32, Ended)> {
+    /// browsers end, as a narrowing ends them. `removed` says which sites it was. Answers each
+    /// chat whose browsers that ended.
+    pub fn sites_removed(
+        &self,
+        driver: Option<&Arc<dyn Driver>>,
+        removed: &dyn Fn(&Site) -> bool,
+    ) -> Vec<(u32, Ended)> {
+        let _ = removed;
         let browsing: Vec<u32> = self
             .lock()
             .iter()
