@@ -1135,6 +1135,8 @@ export const commands = {
 	skillSetLifecycle: __WINDOW_ONLY_RESULT,
 	skillSetMove: __WINDOW_ONLY_RESULT,
 	skillSetDeleteNow: __WINDOW_ONLY_RESULT,
+	skillSetUpdate: __WINDOW_ONLY_RESULT,
+	skillSetUpdateUndo: __WINDOW_ONLY_RESULT,
 	skillSetExportReview: __WINDOW_ONLY_RESULT,
 	skillSetExport: __WINDOW_ONLY_RESULT,
 	skillGrant: __WINDOW_ONLY_RESULT,
@@ -12680,6 +12682,12 @@ export type SkillFolderEntry = {
 	refused: string | null,
 };
 
+/**
+ *  **One kind of thing an update newly lets a skill do** (#5354), as the core reads it
+ *  (`purlis_core::skills::source::update::Gained`).
+ */
+export type SkillGained = "script" | "command" | "hook" | "tool" | "network" | "writes-outside" | "hidden" | "not-shown" | "unread";
+
 /**  A version's grade, once grading lands (SK-16): always null for now. */
 export type SkillGrade = {
 	passed: number,
@@ -13145,6 +13153,25 @@ export type SkillSetTurned = {
 	notes: string[],
 	/**  Those it changed: one that already was so is not among them. */
 	changed: string[],
+};
+
+/**  What a set's update did, and the Undo that takes it back. */
+export type SkillSetUpdated = {
+	notes: string[],
+	/**  What [`skill_set_update_undo`] is handed. */
+	undo: number,
+};
+
+/**
+ *  One update of a set, as the window accepted it: the skill, what its review was accepted as,
+ *  the grant it showed, and each kind of new capability the person ticked it with.
+ */
+export type SkillSetUpdating = {
+	level: SkillLevel,
+	name: string,
+	reviewed: Reviewed,
+	grant: SkillGrant | null,
+	allowed: SkillGained[],
 };
 
 /**  A skill source as the studio shows and adds one. */
@@ -14620,6 +14647,11 @@ export type UpdateReview = {
 	 */
 	widenings: SkillWidening[],
 	accepted: Reviewed,
+	/**
+	 *  What the update newly lets the skill do, beyond an edit of its text (#5354): a review of
+	 *  several updates leaves one that gains any of it unticked until it is opened.
+	 */
+	gained: SkillGained[],
 };
 
 /**  What the person did with updates: Mark read, or Dismiss. */

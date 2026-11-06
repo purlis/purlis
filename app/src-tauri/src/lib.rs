@@ -4192,6 +4192,7 @@ pub fn run() {
             }
             app.manage(Quitting::default());
             app.manage(updates::Installed::default());
+            app.manage(skillset::SetUpdateUndos::default());
             // The extension executor (ADR 0041 stage 2). Managed for the table of
             // programs it is running, which `Exit` below empties. It starts the app's own
             // built-in extensions, found here in its resources and nowhere else

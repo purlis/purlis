@@ -2279,6 +2279,16 @@ export const commands = {
 	 *  undo. Refused whole where one is no longer listed.
 	 */
 	skillSetDeleteNow: (plane: PlaneId, ids: string[]) => typedError<SkillSetGone, string>(__TAURI_INVOKE("skill_set_delete_now", { plane, ids })),
+	/**
+	 *  **Accepts every update of `updates` as one change** (#5354): one commit, all or nothing, and
+	 *  one where a skill gains a kind of capability it was not ticked with is refused whole.
+	 */
+	skillSetUpdate: (plane: PlaneId, updates: SkillSetUpdating[]) => typedError<SkillSetUpdated, string>(__TAURI_INVOKE("skill_set_update", { plane, updates })),
+	/**
+	 *  **Takes back the set's update `undo` names**: each copy as it was and the pins back, as one
+	 *  commit. Refused whole where one changed since.
+	 */
+	skillSetUpdateUndo: (plane: PlaneId, undo: number) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_set_update_undo", { plane, undo })),
 	/**  **What an export of the skills `members` would write** (#5332), each once with what they name. */
 	skillSetExportReview: (plane: PlaneId, members: SkillSetMember[]) => typedError<ExportReview, string>(__TAURI_INVOKE("skill_set_export_review", { plane, members })),
 	/**
@@ -15293,6 +15303,12 @@ export type SkillFolderEntry = {
 	refused: string | null,
 };
 
+/**
+ *  **One kind of thing an update newly lets a skill do** (#5354), as the core reads it
+ *  (`purlis_core::skills::source::update::Gained`).
+ */
+export type SkillGained = "script" | "command" | "hook" | "tool" | "network" | "writes-outside" | "hidden" | "not-shown" | "unread";
+
 /**  A version's grade, once grading lands (SK-16): always null for now. */
 export type SkillGrade = {
 	passed: number,
@@ -15758,6 +15774,25 @@ export type SkillSetTurned = {
 	notes: string[],
 	/**  Those it changed: one that already was so is not among them. */
 	changed: string[],
+};
+
+/**  What a set's update did, and the Undo that takes it back. */
+export type SkillSetUpdated = {
+	notes: string[],
+	/**  What [`skill_set_update_undo`] is handed. */
+	undo: number,
+};
+
+/**
+ *  One update of a set, as the window accepted it: the skill, what its review was accepted as,
+ *  the grant it showed, and each kind of new capability the person ticked it with.
+ */
+export type SkillSetUpdating = {
+	level: SkillLevel,
+	name: string,
+	reviewed: Reviewed,
+	grant: SkillGrant | null,
+	allowed: SkillGained[],
 };
 
 /**  A skill source as the studio shows and adds one. */
@@ -17233,6 +17268,11 @@ export type UpdateReview = {
 	 */
 	widenings: SkillWidening[],
 	accepted: Reviewed,
+	/**
+	 *  What the update newly lets the skill do, beyond an edit of its text (#5354): a review of
+	 *  several updates leaves one that gains any of it unticked until it is opened.
+	 */
+	gained: SkillGained[],
 };
 
 /**  What the person did with updates: Mark read, or Dismiss. */

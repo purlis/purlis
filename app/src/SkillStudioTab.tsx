@@ -118,6 +118,7 @@ import {
 } from "./SkillLibrarySelect";
 import { applySet } from "./SkillSetReview";
 import { GradeSetReview, GradesRunningPage } from "./SkillLibraryGrade";
+import { SetUpdateReviewPage, applySetUpdate } from "./SkillSetUpdateReview";
 import { useSkillEditInPlace } from "./SkillEditInPlace";
 
 /** A change in progress: New skill… (#3684), Rename, Move or Delete, each a dialog (S4, #3685),
@@ -153,6 +154,7 @@ function sourcesPath(at: SourcesAt): Crumb[] {
   if (at.at === "install-all") return [source, choose, { id: at.at, label: "Review" }];
   if (at.at === "set-choose") return [source, { id: at.at, label: SET_PATH[at.act] }];
   if (at.at === "set-review") return [source, { id: at.at, label: `Review: ${SET_PATH[at.act]}` }];
+  if (at.at === "set-update") return [source, { id: at.at, label: "Review updates" }];
   return [
     source,
     { id: at.at, label: `${at.at === "install" ? "Install" : "Update"} ${at.skill}` },
@@ -1619,11 +1621,21 @@ export function SkillStudioTab({
       </>
     );
     const acting = sel?.acting;
-    // Grade's reach, worked out only while its review is open.
+    // Grade's reach (#5356) and Review updates' (#5354), each worked out only while its review
+    // is open; any other act is a set's change.
+    const setAct = acting === "grade" || acting === "update" ? undefined : acting;
     const grades =
       acting === "grade"
         ? reachOf(
             "grade",
+            chosenRows.map((one) => one.skill),
+            selectFor,
+          )
+        : undefined;
+    const updating =
+      acting === "update"
+        ? reachOf(
+            acting,
             chosenRows.map((one) => one.skill),
             selectFor,
           )
@@ -1665,13 +1677,26 @@ export function SkillStudioTab({
             setGradesShown(batch);
           }}
         />
-      ) : sel !== undefined && acting !== undefined && acting !== "grade" ? (
-        <SelectReviewPage
-          key={acting}
+      ) : sel !== undefined && updating !== undefined ? (
+        <SetUpdateReviewPage
+          key="update"
           plane={plane}
-          act={acting}
+          title={`Review updates for ${counted(chosenRows.length, "skill", "skills")}`}
+          members={updating.will}
+          stays={updating.stays}
+          busy={busy}
+          onCancel={() => setSel((was) => ({ ...was, acting: undefined }))}
+          onApply={(updates) =>
+            applySetUpdate({ plane, updates, change: changeThenEnd, undo: change })
+          }
+        />
+      ) : sel !== undefined && setAct !== undefined ? (
+        <SelectReviewPage
+          key={setAct}
+          plane={plane}
+          act={setAct}
           reach={reachOf(
-            acting,
+            setAct,
             chosenRows.map((one) => one.skill),
             selectFor,
           )}
@@ -1683,7 +1708,7 @@ export function SkillStudioTab({
           onApply={({ members, to, grant, zip }) =>
             applySet({
               plane,
-              act: acting,
+              act: setAct,
               members,
               from: null,
               removes: null,
