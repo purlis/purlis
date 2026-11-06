@@ -3,6 +3,7 @@
 
 import { useCallback, useLayoutEffect, useMemo, useSyncExternalStore } from "react";
 import { boxOfRect, cellsIn, HeldPanes, type PaneBase, PANES_ROOM, stripTab } from "./paneHeld";
+import { holdKeyboard } from "./paneKeyboard";
 import {
   type Box,
   type DropContext,
@@ -99,6 +100,8 @@ export class PaneDragStore {
   private state: Dragging | undefined;
   private readonly heard = new Set<() => void>();
   readonly held = new HeldPanes();
+  /** Lets go of the keyboard the drag holds where it is (#5523), while it lasts. */
+  private keyboard: (() => void) | undefined;
   /** What was measured: the tab in front, and the places of its panes. */
   private measuredFor = "";
   private at = { x: 0, y: 0 };
@@ -125,9 +128,11 @@ export class PaneDragStore {
     for (const listener of this.heard) listener();
   }
 
-  /** Something is picked up: the window is read, and every terminal is held at its size. */
+  /** Something is picked up: the window is read, every terminal is held at its size, and the
+   *  keyboard where it is: no terminal of a tab brought forward takes it (`holdKeyboard`). */
   start(source: Source, tabs: Tabs, x: number, y: number, by: HeldBy = "pointer") {
     document.documentElement.dataset.paneDragging = by;
+    this.keyboard ??= holdKeyboard();
     this.at = { x, y };
     const shown = shownIn(tabs);
     this.measuredFor = measuredAs(shown);
@@ -185,6 +190,8 @@ export class PaneDragStore {
     delete root.panePreviewing;
     delete root.paneRefused;
     this.held.letGo();
+    this.keyboard?.();
+    this.keyboard = undefined;
     this.measuredFor = "";
     if (this.state !== undefined) this.set(undefined);
   }

@@ -13,6 +13,11 @@
  * So the window says which chat is owed the keyboard ({@link giveKeyboardTo}) and the pane
  * says when its terminal is there ({@link paneDrawn}). Whichever comes second hands it over.
  * Nothing else is held: a chat that is never drawn is owed nothing once another is asked for.
+ *
+ * **A drag holds the keyboard where it is** (#5523, {@link holdKeyboard}): a tab it brings forward
+ * is a preview, and a terminal that took the keyboard there would be typed into, and its pane
+ * counted as used, before anything has moved. What is asked for meanwhile is dropped as the drag
+ * ends: its drop or its cancel puts the keyboard where the person's hand leaves it.
  */
 import { inADialog } from "./keys/contexts";
 
@@ -21,6 +26,9 @@ const drawn = new Map<string, () => void>();
 
 /** The chat whose terminal takes the keyboard when it is drawn. */
 let owed: string | undefined;
+
+/** How many drags hold the keyboard where it is: one at a time, but each lets go of its own. */
+let holds = 0;
 
 /** A session number names a chat only inside its project. */
 const chatKey = (plane: string, session: number) => `${plane}\n${session}`;
@@ -56,7 +64,7 @@ export { inADialog } from "./keys/contexts";
 export function paneDrawn(plane: string, session: number, take: () => void): () => void {
   const key = chatKey(plane, session);
   drawn.set(key, take);
-  if (owed === key) {
+  if (owed === key && holds === 0) {
     // The terminal's own focus is a focus like any other: it must not read as the person
     // having moved on, in the turn a pane is drawn twice.
     document.removeEventListener("focusin", movedOn);
@@ -78,7 +86,7 @@ export function paneDrawn(plane: string, session: number, take: () => void): () 
 export function giveKeyboardTo(plane: string, session: number): void {
   const key = chatKey(plane, session);
   const take = drawn.get(key);
-  if (take === undefined) {
+  if (take === undefined || holds > 0) {
     owe(key);
     return;
   }
@@ -86,8 +94,24 @@ export function giveKeyboardTo(plane: string, session: number): void {
   if (!inADialog()) take();
 }
 
-/** Nothing is owed and nothing is drawn: what a test starts from. */
+/**
+ * **A drag holds the keyboard where it is** until the answer is called: no terminal takes it, by
+ * being drawn or by being asked for. What was asked for meanwhile is owed nothing after.
+ */
+export function holdKeyboard(): () => void {
+  holds += 1;
+  let held = true;
+  return () => {
+    if (!held) return;
+    held = false;
+    holds -= 1;
+    if (holds === 0) forgive();
+  };
+}
+
+/** Nothing is owed, nothing is drawn and nothing holds the keyboard: what a test starts from. */
 export function forgetKeyboard(): void {
   drawn.clear();
+  holds = 0;
   forgive();
 }
