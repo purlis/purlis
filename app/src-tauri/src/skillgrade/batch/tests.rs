@@ -159,7 +159,7 @@ fn each_step_says_where_every_skill_is_and_what_the_batch_spent() {
         ],
         1.0,
     );
-    let at = held.batch.next().unwrap();
+    let at = held.batch.start_next().unwrap();
     held.begun(at, "g1".into());
     held.told(at, 2, 6, Some(0.4), None);
     let step = held.step();

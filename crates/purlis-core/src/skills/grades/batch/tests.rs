@@ -8,7 +8,7 @@ use super::*;
 
 /// Starts every grade the batch lets start now, by their places.
 fn start_all(batch: &mut Batch) -> Vec<usize> {
-    std::iter::from_fn(|| batch.next()).collect()
+    std::iter::from_fn(|| batch.start_next()).collect()
 }
 
 #[test]
@@ -100,7 +100,7 @@ fn stop_ends_those_running_and_none_waiting_starts() {
     let mut batch = Batch::new(4, 5.0, 2);
     start_all(&mut batch);
     batch.stop();
-    assert_eq!(batch.next(), None);
+    assert_eq!(batch.start_next(), None);
     batch.ended(0, 0.1);
     batch.ended(1, 0.1);
     assert_eq!(batch.ending(), Some(Ending::Stopped));
@@ -115,11 +115,11 @@ fn stop_ends_those_running_and_none_waiting_starts() {
 #[test]
 fn a_grade_refused_at_its_start_is_named_with_why_and_the_next_takes_its_place() {
     let mut batch = Batch::new(3, 5.0, 1);
-    assert_eq!(batch.next(), Some(0));
+    assert_eq!(batch.start_next(), Some(0));
     batch.refused(0, "It changed since the estimate.".to_owned());
-    assert_eq!(batch.next(), Some(1));
+    assert_eq!(batch.start_next(), Some(1));
     batch.ended(1, 0.2);
-    assert_eq!(batch.next(), Some(2));
+    assert_eq!(batch.start_next(), Some(2));
     batch.ended(2, 0.2);
     assert_eq!(batch.ending(), Some(Ending::Whole));
     assert_eq!(

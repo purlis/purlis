@@ -579,7 +579,7 @@ fn drive(
         let _ = app.emit(EVENT, step);
     };
     loop {
-        while let Some(at) = driving.batch.next() {
+        while let Some(at) = driving.batch.start_next() {
             match start_one(&app, &held, &driving, at, &tell) {
                 Ok(grade) => driving.begun(at, grade),
                 Err(why) => driving.batch.refused(at, why),

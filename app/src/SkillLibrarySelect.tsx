@@ -47,13 +47,18 @@ import { ViewPageHeader } from "./ui/panel/ViewFrame";
  * - **Off, it costs nothing**: the Library draws exactly what it drew before, and nothing here
  *   is read until Select is pressed.
  *
- * {@link SELECT_ACTS} is the one list of what can be done, in its order: Bulk Grade (#5356),
- * Review updates (#5354) and Make room (#5355) join it as rows of their own.
+ * {@link SELECT_ACTS} is the one list of what can be done, in its order: Grade's review and its
+ * grades running (#5356) are `SkillLibraryGrade.tsx`'s, and Review updates (#5354) and Make room (#5355) join it as rows of
+ * their own.
  */
+
+/** **What Select can do**: a change to the set (#5331's), or Grade (#5356), which changes no
+ *  skill. */
+export type SelectAct = SkillSetAct | "grade";
 
 /** **What Select can do to the skills chosen**, in the page's order, each with the line under
  *  it. */
-export const SELECT_ACTS: readonly { act: SkillSetAct; label: string; says: string }[] = [
+export const SELECT_ACTS: readonly { act: SelectAct; label: string; says: string }[] = [
   { act: "turn-off", label: "Turn off", says: "Chats started after this don't get them." },
   { act: "turn-on", label: "Turn on", says: "Chats started after this get them again." },
   { act: "pin", label: "Pin", says: "Always in the chat's list, whatever the budget." },
@@ -61,6 +66,7 @@ export const SELECT_ACTS: readonly { act: SkillSetAct; label: string; says: stri
   { act: "archive", label: "Archive", says: "They never load until they are restored." },
   { act: "unarchive", label: "Unarchive", says: "They load again." },
   { act: "move", label: "Move to another level", says: "Skills keep their history and grades." },
+  { act: "grade", label: "Grade", says: "A few at a time, under a limit you set." },
   { act: "export", label: "Export", says: "A zip or a folder." },
   { act: "delete", label: "Delete", says: "They stay in Deleted for 30 days." },
 ];
@@ -72,7 +78,7 @@ export type Selecting = {
   /** The list shows only what is chosen: "3 not shown" was pressed. */
   only: boolean;
   /** The action whose review is open in the selection page's place. */
-  acting?: SkillSetAct;
+  acting?: SelectAct;
 };
 
 /** **What an action reaches of those chosen**: the skills it changes, as a set's members, and
@@ -95,13 +101,17 @@ function pinnedBy(skill: StudioSkill, by: SkillPinner): boolean {
 }
 
 /** Why `skill` stays as it is under `act`, or `null` where `act` changes it. */
-function staysWhy(act: SkillSetAct, skill: StudioSkill, at: SelectFor): string | null {
+function staysWhy(act: SelectAct, skill: StudioSkill, at: SelectFor): string | null {
   if (skill.level === "built-in")
     return act === "export"
       ? "Built-in skills come with purlis, so there is nothing to export."
-      : "Built-in skills can't be changed.";
+      : act === "grade"
+        ? "Built-in skills come with purlis, so they are not graded here."
+        : "Built-in skills can't be changed.";
   if (levelOf(skill, at.scope) === null)
-    return "It comes from outside the project, so its program changes it.";
+    return act === "grade"
+      ? "It comes from outside the project, so it is not graded here."
+      : "It comes from outside the project, so its program changes it.";
   switch (act) {
     case "turn-off":
     case "turn-on":
@@ -124,7 +134,7 @@ function staysWhy(act: SkillSetAct, skill: StudioSkill, at: SelectFor): string |
 }
 
 /** **What `act` reaches of `chosen`**: those it changes, and those it leaves, with why. */
-export function reachOf(act: SkillSetAct, chosen: readonly StudioSkill[], at: SelectFor): Reach {
+export function reachOf(act: SelectAct, chosen: readonly StudioSkill[], at: SelectFor): Reach {
   const will: SkillSetMember[] = [];
   const stays: Stays[] = [];
   for (const skill of chosen) {
@@ -138,7 +148,7 @@ export function reachOf(act: SkillSetAct, chosen: readonly StudioSkill[], at: Se
 
 /** Whether `act` can be asked at all from where the studio is: a turn needs a workspace, a pin a
  *  workspace or a persona. */
-function askable(act: SkillSetAct, at: SelectFor): boolean {
+function askable(act: SelectAct, at: SelectFor): boolean {
   if (act === "turn-off" || act === "turn-on") return at.workspace !== null;
   if (act === "pin" || act === "unpin") return at.pinner !== null;
   return true;
@@ -327,7 +337,7 @@ export function SelectionPage({
   only: boolean;
   at: SelectFor;
   busy: boolean;
-  onAct: (act: SkillSetAct) => void;
+  onAct: (act: SelectAct) => void;
   onOut: (key: string) => void;
   onClear: () => void;
   onOnly: () => void;

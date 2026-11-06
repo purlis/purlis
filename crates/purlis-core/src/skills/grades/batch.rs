@@ -5,7 +5,7 @@
 //! Library's Select mode grades the skills chosen a few at a time, each a grade of its own as a
 //! press of Grade starts it, and the person's dollar limit holds them all.
 //!
-//! A [`Batch`] decides, and its host does: the host asks [`Batch::next`] which grade to start,
+//! A [`Batch`] decides, and its host does: the host asks [`Batch::start_next`] which grade to start,
 //! tells it what each grade has spent so far ([`Batch::spent`]) and when one ends
 //! ([`Batch::ended`]). Once what they spent together reaches the limit, no grade starts and those
 //! running are to be stopped, which scores and records what they ran: **a grade that ended is
@@ -88,7 +88,7 @@ impl Batch {
 
     /// **The next skill to start**, by its place, marked running; `None` while as many run as
     /// may, or once nothing more starts.
-    pub fn next(&mut self) -> Option<usize> {
+    pub fn start_next(&mut self) -> Option<usize> {
         if self.stopping.is_some() || self.running() >= self.at_once {
             return None;
         }
