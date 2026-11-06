@@ -15,7 +15,7 @@ import {
 } from "./bindings";
 import { counted } from "./dispatches";
 import { Notice } from "./Notice";
-import { dollarsSaid as dollars, GradingHeading } from "./SkillGrade";
+import { dollarsSaid, GradingHeading } from "./SkillGrade";
 import { NotRead, ReadingRows } from "./SkillPanels";
 import { useRead } from "./SkillRead";
 import { memberKey, type Stays } from "./SkillSetReview";
@@ -42,8 +42,12 @@ import { ReviewPage } from "./ui/review-page/ReviewPage";
  *   tab. The core decides it all (`grades::batch`); this page says it.
  */
 
-/** Dollars as the window says them, a figure the core could not say as `null` being none. */
-const dollarsSaid = (usd: number | null): string => dollars(usd ?? 0);
+/** **Dollars a batch says**: the core sends each as a number that may be `null` (a float it could
+ *  not say), which is said as none. */
+const usdSaid = (usd: number | null): string => dollarsSaid(usd ?? 0);
+
+/** A skill of a batch, by its level and name: two copies of one name are two skills (#3978). */
+const batchKey = (one: { level: SkillSetMember["level"]; name: string }) => memberKey(one);
 
 /** **The estimate in a sentence**: what is known, added, and how many have nothing to go on. */
 export function estimateSaid(
@@ -51,7 +55,7 @@ export function estimateSaid(
 ): string {
   if (plan.known === 0)
     return "purlis has nothing to go on: none of these has a last grade that said what it spent.";
-  const about = `About ${dollarsSaid(plan.known_usd)}`;
+  const about = `About ${usdSaid(plan.known_usd)}`;
   if (plan.unknown.length === 0) return `${about} in all, from each skill's last grade.`;
   const graded = plan.known === 1 ? "the one graded before" : `the ${plan.known} graded before`;
   const others = plan.unknown.length === 1 ? "the other one" : `the other ${plan.unknown.length}`;
@@ -63,6 +67,17 @@ function noEstimateWhy(estimate: GradeEstimate | null): string {
   return estimate === null
     ? "It has not been graded here before."
     : "Its last grade did not say what it spent.";
+}
+
+/** What a skill's own line says of its estimate: its figure, and where its last grade ran on
+ *  another profile, which spends otherwise. */
+function ownEstimateSaid(estimate: GradeEstimate | null): string {
+  if (estimate?.cost_usd == null) return "";
+  const elsewhere =
+    estimate.same_profile === false
+      ? `, from a grade on ${estimate.profile ?? "another profile"}`
+      : "";
+  return `, about ${usdSaid(estimate.cost_usd)}${elsewhere}`;
 }
 
 /** A limit as typed, in dollars, or `undefined` where it is no amount above nothing. */
@@ -99,15 +114,13 @@ export function GradeSetReview({
   stays,
   onCancel,
   onStarted,
-  onRunning,
 }: {
   plane: string;
   members: readonly SkillSetMember[];
   stays: readonly Stays[];
   onCancel: () => void;
+  /** A batch started, or one already running in the project that the person asked to see. */
   onStarted: (batch: string) => void;
-  /** Several skills of this project are being graded already: show them. */
-  onRunning: () => void;
 }) {
   const { read, again } = useRead(members.map(memberKey).join("\u0001"), () =>
     commands.skillGradesPlan(
@@ -125,7 +138,7 @@ export function GradeSetReview({
   const title = `Grade ${counted(skills.length || members.length, "skill", "skills")}?`;
   const unready =
     plan === undefined
-      ? "Reading what it would spend."
+      ? "Reading what it would spend…"
       : (plan.refused ??
         plan.running ??
         (skills.length === 0
@@ -153,7 +166,20 @@ export function GradeSetReview({
         setRefused(String(err));
       });
   };
+  const showRunning = () => {
+    setRefused(undefined);
+    void commands
+      .skillGradesRunning(plane)
+      .then((answer) => {
+        if (answer.status !== "ok") setRefused(answer.error);
+        else if (answer.data === null)
+          setRefused("Those grades have ended. Each is on its skill's Grades tab.");
+        else onStarted(answer.data.batch);
+      })
+      .catch((err: unknown) => setRefused(String(err)));
+  };
   const atMost = limit === undefined ? undefined : dollarsSaid(limit);
+  const unknown = skills.filter((one) => one.estimate?.cost_usd == null);
   return (
     <ReviewPage
       label={title}
@@ -191,7 +217,7 @@ export function GradeSetReview({
           cause="skill-grades-running"
           tone="news"
           label="Grading already"
-          fixes={[{ label: "Show them", onPress: onRunning }]}
+          fixes={[{ label: "Show them", onPress: showRunning }]}
         >
           {plan.running}
         </Notice>
@@ -205,7 +231,7 @@ export function GradeSetReview({
         <Notice
           cause="skill-grades-start"
           tone="trouble"
-          label="Not started"
+          label="Not done"
           onDismiss={() => setRefused(undefined)}
         >
           {refused}
@@ -217,26 +243,26 @@ export function GradeSetReview({
             <PanelSectionTitle id="grades-cost">What it should spend</PanelSectionTitle>
             <p data-testid="grades-estimate">
               {estimateSaid(plan)} Each grade is held to its own limit too, so together they can
-              spend at most {dollarsSaid(plan.most_usd)}.
+              spend at most {usdSaid(plan.most_usd)}.
             </p>
-            {plan.unknown.length > 0 && (
+            {unknown.length > 0 && (
               <div data-testid="grades-unknown">
-                {skills
-                  .filter((one) => plan.unknown.includes(one.name))
-                  .map((one) => (
-                    <NamedLine
-                      key={one.name}
-                      name={one.name}
-                      said={noEstimateWhy(one.estimate)}
-                      testid={`grades-unknown-${one.name}`}
-                    />
-                  ))}
+                {unknown.map((one) => (
+                  <NamedLine
+                    key={batchKey(one)}
+                    name={one.name}
+                    said={noEstimateWhy(one.estimate)}
+                    testid={`grades-unknown-${one.name}`}
+                  />
+                ))}
               </div>
             )}
+            <p className="honest">
+              The limit is in dollars, for all of them together. Once their chats have spent it, no
+              more start and those running stop.
+            </p>
             <TextField
               label="Spending limit"
-              help="In dollars, for all of them together. Once their chats have spent it, no more start and those running stop."
-              inputMode="numeric"
               value={shown}
               onChange={setTyped}
               isDisabled={busy}
@@ -251,13 +277,9 @@ export function GradeSetReview({
             <PanelSectionTitle id="grades-going">{`Will be graded (${skills.length})`}</PanelSectionTitle>
             {skills.map((one) => (
               <NamedLine
-                key={one.name}
+                key={batchKey(one)}
                 name={one.name}
-                said={`${counted(one.chats, "chat", "chats")}${
-                  one.estimate?.cost_usd == null
-                    ? ""
-                    : `, about ${dollarsSaid(one.estimate.cost_usd)}`
-                }`}
+                said={`${counted(one.chats, "chat", "chats")}${ownEstimateSaid(one.estimate)}`}
                 testid={`grades-going-${one.name}`}
               />
             ))}
@@ -267,7 +289,7 @@ export function GradeSetReview({
               <PanelSectionTitle id="grades-left-out">Left out</PanelSectionTitle>
               {plan.left_out.map((one) => (
                 <NamedLine
-                  key={one.name}
+                  key={batchKey(one)}
                   name={one.name}
                   said={one.why}
                   testid={`grades-left-out-${one.name}`}
@@ -275,7 +297,7 @@ export function GradeSetReview({
               ))}
               {stays.map((one) => (
                 <NamedLine
-                  key={one.name}
+                  key={`stays:${one.name}:${one.label}`}
                   name={one.name}
                   said={one.why}
                   testid={`grades-left-out-${one.name}`}
@@ -288,6 +310,14 @@ export function GradeSetReview({
     </ReviewPage>
   );
 }
+
+/** Where a skill of a batch is, in a word, as its row's badge says it. */
+const STATE_SAID: Record<BatchSkillStep["state"]["state"], string> = {
+  waiting: "Waiting",
+  running: "Running",
+  ended: "Ended",
+  "not-run": "Not graded",
+};
 
 /** How a grade of a batch that ended is said, in a few words. */
 const ENDED_SAID: Record<GradeEnded, string> = {
@@ -308,12 +338,12 @@ export function skillStepSaid(one: BatchSkillStep): string {
     case "running":
       return `Running: ${one.ran} of ${counted(one.of, "chat", "chats")}`;
     case "not-run":
-      return `Not graded: ${one.state.why}`;
+      return `Not graded. ${one.state.why}`;
     case "ended": {
       const ended = one.ended ?? "whole";
       const said =
         ended === "stopped" ? `Stopped after ${one.ran} of ${one.of} chats` : ENDED_SAID[ended];
-      return one.cost_usd === null ? said : `${said}, ${dollarsSaid(one.cost_usd)}`;
+      return one.cost_usd === null ? said : `${said}, ${usdSaid(one.cost_usd)}`;
     }
   }
 }
@@ -322,15 +352,16 @@ export function skillStepSaid(one: BatchSkillStep): string {
 function batchEndedSaid(step: SkillGradesStep): string {
   const ended = step.skills.filter((one) => one.state.state === "ended").length;
   const kept = `${counted(ended, "grade", "grades")} ended and ${ended === 1 ? "is" : "are"} on ${ended === 1 ? "its skill's" : "their skills'"} Grades tab.`;
+  if (ended === 0 && step.ended === "whole") return "None of them was graded: each says why below.";
   switch (step.ended) {
     case "limit":
-      return `Stopped at your limit: ${dollarsSaid(step.spent_usd)} of ${dollarsSaid(step.limit_usd)}. ${kept}`;
+      return `Stopped at your limit: ${usdSaid(step.spent_usd)} of ${usdSaid(step.limit_usd)}. ${kept}`;
     case "stopped":
-      return `You stopped it at ${dollarsSaid(step.spent_usd)}. ${kept}`;
+      return `You stopped it at ${usdSaid(step.spent_usd)}. ${kept}`;
     case "spend-not-reported":
-      return `A chat did not say what it spent, so your limit could not hold, and it stopped at ${dollarsSaid(step.spent_usd)}. ${kept}`;
+      return `A chat did not say what it spent, so your limit could not hold, and it stopped at ${usdSaid(step.spent_usd)}. ${kept}`;
     default:
-      return `Done: ${dollarsSaid(step.spent_usd)} of ${dollarsSaid(step.limit_usd)}. ${kept}`;
+      return `Done: ${usdSaid(step.spent_usd)} of ${usdSaid(step.limit_usd)}. ${kept}`;
   }
 }
 
@@ -356,6 +387,8 @@ export function GradesRunningPage({
   const [again, setAgain] = useState(0);
   const [stopping, setStopping] = useState(false);
   const [stopRefused, setStopRefused] = useState<string>();
+  // Why its steps cannot be heard, where they cannot: what it shows may be going stale.
+  const [deaf, setDeaf] = useState<string>();
   const latest = useRef({ plane, batch });
   useLayoutEffect(() => {
     latest.current = { plane, batch };
@@ -367,7 +400,14 @@ export function GradesRunningPage({
       if (!live || told.payload.plane !== plane || told.payload.batch !== batch) return;
       toldSince = true;
       setStep(told.payload);
-    }).catch(() => undefined);
+    })
+      .then((stop) => {
+        if (live) setDeaf(undefined);
+        return stop;
+      })
+      .catch((err: unknown) => {
+        if (live) setDeaf(String(err));
+      });
     void listening
       .then(() => commands.skillGradesRunning(latest.current.plane))
       .then((answer) => {
@@ -450,6 +490,24 @@ export function GradesRunningPage({
           {stopRefused}
         </Notice>
       )}
+      {deaf !== undefined && !over && (
+        <Notice
+          cause={`skill-grades-not-listening:${batch}`}
+          tone="trouble"
+          label="Not following"
+          fixes={[
+            {
+              label: "Try again",
+              onPress: () => {
+                setDeaf(undefined);
+                setAgain((n) => n + 1);
+              },
+            },
+          ]}
+        >
+          {`This page can't follow the grades: ${deaf}`}
+        </Notice>
+      )}
       {step === undefined ? (
         <p className="honest" data-testid="grades-gone">
           These grades are not running any more. Each that ended is on its skill's Grades tab.
@@ -464,8 +522,8 @@ export function GradesRunningPage({
           <Totals live aria-label="How far the grades are">
             <Tile
               label="Spent"
-              value={dollarsSaid(step.spent_usd)}
-              line={`of at most ${dollarsSaid(step.limit_usd)}`}
+              value={usdSaid(step.spent_usd)}
+              line={`of at most ${usdSaid(step.limit_usd)}`}
             />
             <Tile
               label="Grades"
@@ -477,28 +535,20 @@ export function GradesRunningPage({
             aria-label="Each skill"
             data-testid="grades-skills"
             onAction={(key) => {
-              const one = step.skills.find((skill) => skill.name === String(key));
+              const one = step.skills.find((skill) => batchKey(skill) === String(key));
               if (one !== undefined) onOpen(one);
             }}
           >
             {step.skills.map((one) => (
               <ListRow
-                key={one.name}
-                id={one.name}
+                key={batchKey(one)}
+                id={batchKey(one)}
                 textValue={`${one.name}, ${skillStepSaid(one)}`}
                 data-testid={`grades-skill-${one.name}`}
               >
                 <RowLabel>{one.name}</RowLabel>
                 <RowTrail>
-                  <Badge>
-                    {one.state.state === "running"
-                      ? "Running"
-                      : one.state.state === "ended"
-                        ? "Ended"
-                        : one.state.state === "waiting"
-                          ? "Waiting"
-                          : "Not graded"}
-                  </Badge>
+                  <Badge>{STATE_SAID[one.state.state]}</Badge>
                 </RowTrail>
                 <RowBelow clamp={1}>{skillStepSaid(one)}</RowBelow>
               </ListRow>

@@ -183,3 +183,25 @@ fn each_step_says_where_every_skill_is_and_what_the_batch_spent() {
     );
     assert_eq!(step.ended, Some(BatchEnded::Limit));
 }
+
+#[test]
+fn a_grade_a_fault_ends_keeps_what_its_chats_spent_in_the_batch() {
+    let mut held = Driving::new(
+        "b1".into(),
+        PlaneId::for_tests(std::path::Path::new("/planes/p")),
+        vec![BatchPick {
+            level: project(),
+            name: "deploy".into(),
+            consent: "a".into(),
+        }],
+        1.0,
+    );
+    let at = held.batch.start_next().unwrap();
+    held.told(at, 2, 6, Some(0.7), None);
+    // A fault in purlis tells its end with nothing spent and no chat run (`held_to_its_end`).
+    held.told(at, 0, 6, None, Some(GradeEnded::Failed));
+    let step = held.step();
+    assert!((step.spent_usd - 0.7).abs() < 1e-9, "{}", step.spent_usd);
+    assert_eq!(step.skills[0].cost_usd, Some(0.7));
+    assert_eq!(step.skills[0].ran, 2);
+}

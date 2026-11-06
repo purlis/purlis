@@ -93,7 +93,7 @@ pub struct SkillGradesPlan {
 /// **Why `plan` leaves its skill out of a batch**, or `None` where a batch grades it.
 fn left_out_why(plan: &SkillGradePlan) -> Option<String> {
     if let Some(why) = &plan.tests_refused {
-        return Some(format!("Its trigger tests could not be read: {why}"));
+        return Some(format!("purlis could not read its trigger tests: {why}"));
     }
     if plan.tests.is_empty() {
         return Some(if plan.evals.is_empty() {
@@ -317,11 +317,12 @@ impl Driving {
         let Some(one) = self.skills.get_mut(at) else {
             return false;
         };
-        (one.ran, one.of, one.cost_usd) = (ran, of, cost_usd.or(one.cost_usd));
+        // An end that says nothing of what ran (a fault in purlis) keeps what its steps said.
+        (one.ran, one.of, one.cost_usd) = (ran.max(one.ran), of, cost_usd.or(one.cost_usd));
         let stop = self.batch.spent(at, ran, cost_usd);
         if let Some(ended) = ended {
             one.ended = Some(ended);
-            self.batch.ended(at, cost_usd.unwrap_or_default());
+            self.batch.ended(at, one.cost_usd.unwrap_or_default());
         }
         stop
     }
@@ -416,16 +417,25 @@ pub(crate) async fn skill_grades_plan(
             .into_iter()
             .map(|(level, name)| {
                 let on = chats_on(root, None, None);
-                let plan =
-                    grades::planned_with(root, &(&level).into(), &name, None, &[]).map(|planned| {
-                        plan_by(
-                            &planned,
-                            super::running_of(&plane, &name),
-                            on,
-                            Vec::new(),
-                            None,
-                        )
-                    });
+                // On the profile its chats run on, so its estimate says whether its last grade
+                // ran there too.
+                let estimated_on = on.profile.clone();
+                let plan = grades::planned_with(
+                    root,
+                    &(&level).into(),
+                    &name,
+                    estimated_on.as_deref(),
+                    &[],
+                )
+                .map(|planned| {
+                    plan_by(
+                        &planned,
+                        super::running_of(&plane, &name),
+                        on,
+                        Vec::new(),
+                        None,
+                    )
+                });
                 (level, name, plan)
             })
             .collect();
@@ -456,18 +466,17 @@ pub(crate) async fn skill_grades_start(
         if skills.is_empty() {
             return Err("No skill was picked to grade: nothing was started.".to_owned());
         }
-        if running().values().any(|one| one.plane == plane) {
-            return Err(
-                "A grade is running in this project already: stop it, or wait for it to end."
-                    .to_owned(),
-            );
-        }
         let id = purlis_core::reopen::mint();
         let (tell, heard) = channel();
         let driving = Driving::new(id.clone(), plane.clone(), skills, limit_usd);
+        // The grades running are read while the batches are held, always in that order: a grade
+        // that starts alone after this sees the batch, and its own start refuses it.
         batches(|all| {
             if all.values().any(|one| one.plane == plane) {
                 return Err(A_BATCH_RUNS.to_owned());
+            }
+            if running().values().any(|one| one.plane == plane) {
+                return Err(super::A_GRADE_RUNS.to_owned());
             }
             all.insert(
                 id.clone(),
@@ -481,7 +490,21 @@ pub(crate) async fn skill_grades_start(
         })?;
         std::thread::Builder::new()
             .name("purlis-grades".to_owned())
-            .spawn(move || drive(app, held, driving, tell, heard))
+            .spawn({
+                let id = id.clone();
+                move || {
+                    let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        drive(app, held, driving, tell, heard)
+                    }));
+                    // A fault in the driver leaves no batch holding the project: its grades
+                    // stop and end as grades do, and the Library can start others.
+                    if ran.is_err() {
+                        tracing::warn!("purlis: the batch of grades {id} ended on a fault");
+                        batches(|all| all.remove(&id));
+                        stop_its_grades(&id);
+                    }
+                }
+            })
             .map_err(|why| {
                 batches(|all| all.remove(&id));
                 format!("The grades did not start: {why}")

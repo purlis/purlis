@@ -154,3 +154,17 @@ fn the_estimate_adds_what_is_known_and_counts_what_is_not() {
         }
     );
 }
+
+#[test]
+fn a_grade_that_ends_on_a_fault_keeps_what_it_spent_in_the_batch() {
+    let mut batch = Batch::new(2, 1.0, 1);
+    assert_eq!(batch.start_next(), Some(0));
+    assert!(!batch.spent(0, 2, Some(0.7)));
+    // A fault in purlis ends it with nothing said of its spend: what it said before stands.
+    batch.ended(0, 0.0);
+    assert!(
+        (batch.spent_usd() - 0.7).abs() < 1e-9,
+        "{}",
+        batch.spent_usd()
+    );
+}

@@ -1607,11 +1607,15 @@ export function SkillStudioTab({
       </>
     );
     const acting = sel?.acting;
-    const grades = reachOf(
-      "grade",
-      chosenRows.map((one) => one.skill),
-      selectFor,
-    );
+    // Grade's reach, worked out only while its review is open.
+    const grades =
+      acting === "grade"
+        ? reachOf(
+            "grade",
+            chosenRows.map((one) => one.skill),
+            selectFor,
+          )
+        : undefined;
     item =
       gradesShown !== undefined ? (
         <GradesRunningPage
@@ -1637,7 +1641,7 @@ export function SkillStudioTab({
             });
           }}
         />
-      ) : sel !== undefined && acting === "grade" ? (
+      ) : sel !== undefined && grades !== undefined ? (
         <GradeSetReview
           plane={plane}
           members={grades.will}
@@ -1647,13 +1651,6 @@ export function SkillStudioTab({
             // Select ends once its action is under way, as after any other (#5332).
             setSelected(undefined);
             setGradesShown(batch);
-          }}
-          onRunning={() => {
-            void commands.skillGradesRunning(plane).then((answer) => {
-              if (answer.status !== "ok" || answer.data === null) return;
-              setSelected(undefined);
-              setGradesShown(answer.data.batch);
-            });
           }}
         />
       ) : sel !== undefined && acting !== undefined && acting !== "grade" ? (

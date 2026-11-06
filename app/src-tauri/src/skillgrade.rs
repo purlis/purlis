@@ -48,6 +48,10 @@ use crate::skillrun::Watched;
 /// The event the window is told each step of a grade by.
 pub const EVENT: &str = "skill-grade";
 
+/// What a grade's start is refused with while another runs in its project.
+pub(crate) const A_GRADE_RUNS: &str =
+    "A grade is running in this project already: stop it, or wait for it to end.";
+
 /// The longest one grade's chat runs before purlis ends it.
 pub const CHAT_TIME: Duration = Duration::from_secs(5 * 60);
 
@@ -1234,12 +1238,9 @@ pub(crate) fn begin(
             .values()
             .any(|one| one.plane == plane && (in_batch.is_none() || one.batch != in_batch))
         {
-            return Err(
-                "A grade is running in this project already: stop it, or wait for it to \
-                 end."
-                    .to_owned(),
-            );
+            return Err(A_GRADE_RUNS.to_owned());
         }
+        let alone = in_batch.is_none();
         all.insert(
             id.clone(),
             Running {
@@ -1253,6 +1254,13 @@ pub(crate) fn begin(
                 step: RunningStep::Skill(step_of(Spent::default(), 0, None, None)),
             },
         );
+        drop(all);
+        // A batch that began between the check above and this insert holds the project: the
+        // batch read the grades running as it began, so it saw none, and this one gives way.
+        if alone && let Some(why) = batch::holds(&plane) {
+            running().remove(&id);
+            return Err(why.to_owned());
+        }
     }
     let grade = id.clone();
     // A draft's chats are kept apart: its grades never push out the skill's own.

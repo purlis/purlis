@@ -114,7 +114,7 @@ impl Batch {
             return false;
         }
         match cost_usd {
-            Some(cost) => self.spent[at] = cost.max(0.0),
+            Some(cost) => self.spent[at] = self.spent[at].max(cost),
             None if chats > 0 => return self.stop_for(Ending::SpendNotReported),
             None => {}
         }
@@ -122,15 +122,17 @@ impl Batch {
     }
 
     /// **The grade at `at` ended**, having spent `cost_usd` in all: it is kept, and its place
-    /// may go to the next.
+    /// may go to the next. A grade's spend only grows, so an end that says less than a step
+    /// before it (a fault in purlis, which says nothing of what ran) keeps what was said.
     pub fn ended(&mut self, at: usize, cost_usd: f64) {
         let Some(state) = self.states.get_mut(at) else {
             return;
         };
         *state = State::Ended;
-        self.spent[at] = cost_usd.max(0.0);
+        self.spent[at] = self.spent[at].max(cost_usd);
         if self.over() {
-            self.stop_for(Ending::Limit);
+            // Stopping already or not, nothing runs to be stopped by this end: its own ended.
+            let _ = self.stop_for(Ending::Limit);
         }
     }
 
