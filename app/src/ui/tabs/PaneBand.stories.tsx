@@ -1164,8 +1164,30 @@ export const Narrow: Story = {
     }
     stack.scrollTop = 0;
     expect(boxOf(block.parentElement).right).toBeLessThanOrEqual(pane.right + 1);
+    // **Its last row whole** (#5443): what the row says and its ways out stand inside its own
+    // edge, with the row's room around them, its ways never on its bottom edge.
+    roomInsideTheRow(block);
   },
 };
+
+/**
+ * **A band row keeps its room inside its edge** (#5443): its mark, its words and its ways out
+ * each stand at least 1px inside the row's border on every side, so the row's last line is never
+ * drawn on its edge, cut (it stood at 0px when the row's own padding was lost). Measured inside the row, so no runner's fonts or window decide it.
+ */
+function roomInsideTheRow(line: HTMLElement) {
+  const row = line.closest('[data-scope="notice"][data-part="root"]') as HTMLElement;
+  const edge = boxOf(row);
+  const border = parseFloat(getComputedStyle(row).borderTopWidth) || 0;
+  for (const part of ["mark", "words", "ways"]) {
+    const at = boxOf(line.querySelector(`:scope > [data-part="${part}"]`));
+    const said = `the row's ${part} at ${JSON.stringify(at)} in its edge at ${JSON.stringify(edge)}`;
+    expect(at.top - (edge.top + border), said).toBeGreaterThanOrEqual(1);
+    expect(edge.bottom - border - at.bottom, said).toBeGreaterThanOrEqual(1);
+    expect(at.left - (edge.left + border), said).toBeGreaterThanOrEqual(1);
+    expect(edge.right - border - at.right, said).toBeGreaterThanOrEqual(1);
+  }
+}
 
 /** The panes the stories below draw: each a pane never drawn before. */
 let drawnPanes = 0;

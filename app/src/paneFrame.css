@@ -253,7 +253,12 @@
 /* **The words above their ways out** (variant A): the sentence takes the line's whole first
    row, and the ways out wrap under it, side by side while they fit and under one another when
    they do not (rule 13). */
-.pane-top :is(.notice-pane-box, [data-scope="notice"][data-placement="pane"]) > [role="status"] {
+/* A box's line only: a band's row lays its line out itself (below). Matching a row too, this
+   rule's padding of 0 and its gaps outranked the row's own, so a row's ways stood on its bottom
+   edge, cut, and its words and mark on its top and start edges (#5443). */
+.pane-top
+  :is(.notice-pane-box, [data-scope="notice"][data-placement="pane"]):not([data-layout="row"])
+  > [role="status"] {
   gap: var(--space-3) var(--space-2);
   margin: 0;
   padding: 0;
