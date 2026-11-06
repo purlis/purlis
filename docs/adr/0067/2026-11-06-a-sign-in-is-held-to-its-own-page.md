@@ -29,5 +29,3 @@ and [A filled page holds its browser to its site](2026-11-04-a-filled-page-holds
 - The browser's driver keeps the page the last login ran on, and asks the browser's binding which
   site a sign-in is open on now; it judges each page by both. Until a login has run in the
   browser, no page is a sign-in's own.
-- A download from the form's site is brought into the chat's folder during a sign-in, as before,
-  whichever page began it: a download says the site it came from, not the page.
