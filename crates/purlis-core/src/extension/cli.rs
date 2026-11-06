@@ -72,6 +72,7 @@ pub const CORE_WORDS: [&str; 50] = [
     "serve",
     "session",
     "shell-guard",
+    "signing",
     "skill",
     "status",
     "statusline",
