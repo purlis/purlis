@@ -1367,6 +1367,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "skill_templates",
     "skill_text",
     "skill_users",
+    // Each skill's runs of the last 30 days, which Make room sorts by (#5355): read only.
+    "skill_uses",
     "skills_deleted",
     "smart_close_offer",
     "smart_closing",
