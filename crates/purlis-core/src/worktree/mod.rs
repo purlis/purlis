@@ -1720,10 +1720,14 @@ pub fn is_own_git_dir(dot_git: &Path) -> bool {
 /// appends to the file a reflog links to, or makes it, and `--prune` rewrites the file
 /// `packed-refs` links to (git 2.50, measured). A link there, or a file with a second name,
 /// is a file elsewhere written by the app's git. `None` where there is none.
+///
+/// What cannot be looked at is answered as a link: a `commondir` that is a link or cannot be
+/// read, one naming no folder, and a `logs/` folder, or one below it, that cannot be listed.
 pub fn ref_records_linked(git_dir: &Path) -> Option<PathBuf> {
-    let common = std::fs::read_to_string(git_dir.join("commondir"))
-        .ok()
-        .map(|said| git_dir.join(said.trim_end_matches(['\n', '\r'])));
+    let common = match common_dir(git_dir) {
+        Ok(common) => common,
+        Err(unread) => return Some(unread),
+    };
     std::iter::once(git_dir.to_path_buf())
         .chain(common)
         .find_map(|dir| {
@@ -1733,6 +1737,28 @@ pub fn ref_records_linked(git_dir: &Path) -> Option<PathBuf> {
             }
             linked_below(&dir.join("logs"))
         })
+}
+
+/// The common directory `git_dir`'s `commondir` names, as git reads it (relative to `git_dir`,
+/// or absolute), `None` where there is no `commondir`, or the path that could not be read.
+fn common_dir(git_dir: &Path) -> Result<Option<PathBuf>, PathBuf> {
+    let file = git_dir.join("commondir");
+    match std::fs::symlink_metadata(&file) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Ok(meta) if meta.is_file() && !linked(&file) => {}
+        _ => return Err(file),
+    }
+    let said = std::fs::read_to_string(&file).map_err(|_| file.clone())?;
+    let said = said.trim_end_matches(['\n', '\r']);
+    if said.is_empty() {
+        return Err(file);
+    }
+    let common = git_dir.join(said);
+    if std::fs::metadata(&common).is_ok_and(|meta| meta.is_dir()) {
+        Ok(Some(common))
+    } else {
+        Err(file)
+    }
 }
 
 /// Whether `path` is a link, or a file with a second name.
@@ -1750,19 +1776,35 @@ fn linked(path: &Path) -> bool {
     meta.file_type().is_symlink() || second_name
 }
 
-/// The first link at or below `dir` ([`linked`]), never through one.
+/// The first link at or below `dir` ([`linked`]), never through one, or the first folder there
+/// that cannot be listed. `None` where `dir` is not there.
 fn linked_below(dir: &Path) -> Option<PathBuf> {
     if linked(dir) {
         return Some(dir.to_path_buf());
     }
-    let entries = std::fs::read_dir(dir).ok()?;
-    entries.flatten().find_map(|entry| {
-        let path = entry.path();
-        match entry.file_type() {
-            Ok(kind) if kind.is_dir() => linked_below(&path),
-            _ => linked(&path).then_some(path),
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+        // A file git keeps there is a file, not a folder of records: a link it is not.
+        Err(_) if std::fs::symlink_metadata(dir).is_ok_and(|meta| meta.is_file()) => {
+            return None;
         }
-    })
+        Err(_) => return Some(dir.to_path_buf()),
+    };
+    entries
+        .map(|entry| entry.map_err(|_| dir.to_path_buf()))
+        .find_map(|entry| {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(unread) => return Some(unread),
+            };
+            let path = entry.path();
+            match entry.file_type() {
+                Ok(kind) if kind.is_dir() => linked_below(&path),
+                Ok(_) => linked(&path).then_some(path),
+                Err(_) => Some(path),
+            }
+        })
 }
 
 /// Why the app's git does not record a ref's move in the repository whose git directory is
@@ -1771,9 +1813,9 @@ pub fn ref_records_refused(git_dir: &Path) -> Result<(), String> {
     match ref_records_linked(git_dir) {
         None => Ok(()),
         Some(link) => Err(format!(
-            "{} is a link, or a file with a second name, and git would write through it to \
-             another file, so purlis does not move a ref there. Remove it, then run the command \
-             again",
+            "{} is a link, a file with a second name, or cannot be read, and git would write \
+             through it to another file, so purlis does not move a ref there. Remove it, or make \
+             it readable, then run the command again",
             link.display()
         )),
     }

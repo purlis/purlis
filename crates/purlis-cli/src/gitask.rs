@@ -386,7 +386,11 @@ fn answered(answer: std::io::Result<hookwire::Answer>) -> Forwarded {
     use std::io::ErrorKind;
     match answer {
         Ok(hookwire::Answer::Said { lines, code }) => Forwarded::Said { lines, code },
-        Ok(hookwire::Answer::No { why }) if why == hookwire::NOTHING_ANSWERS => Forwarded::NotTaken,
+        Ok(hookwire::Answer::No { why })
+            if why == hookwire::NOTHING_ANSWERS || why == hookwire::LEFT_TO_THE_CHAT =>
+        {
+            Forwarded::NotTaken
+        }
         Ok(hookwire::Answer::No { why }) => Forwarded::Refused(why),
         Ok(_) => Forwarded::NotTaken,
         Err(e)

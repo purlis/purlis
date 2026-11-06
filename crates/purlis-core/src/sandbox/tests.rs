@@ -3377,6 +3377,39 @@ fn a_project_root_whose_git_is_a_file_keeps_it_as_it_was() {
     );
 }
 
+#[test]
+fn only_a_chat_whose_sandbox_holds_the_project_roots_git_whole_records_it_so() {
+    let plane = plane_saying(ON);
+    let root = plane.path().canonicalize().expect("real");
+    std::fs::create_dir_all(root.join(".git")).unwrap();
+    let started = |harness| {
+        for_start(harness, &root, &machine(Os::MacOs), &|_| true)
+            .expect("starts")
+            .expect("sandboxed")
+    };
+    assert_eq!(
+        started(Harness::ClaudeCode).confines().roots_git,
+        Some(root.join(".git"))
+    );
+    // Their wraps hold the folder by its name alone: the app saves nothing there for them.
+    for harness in [Harness::Codex, Harness::Opencode] {
+        assert_eq!(started(harness).confines().roots_git, None, "{harness:?}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_project_root_whose_git_is_a_link_records_no_held_git() {
+    let plane = plane_saying(ON);
+    let root = plane.path().canonicalize().expect("real");
+    let elsewhere = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink(elsewhere.path(), root.join(".git")).unwrap();
+    let applied = for_start(Harness::ClaudeCode, &root, &machine(Os::MacOs), &|_| true)
+        .expect("starts")
+        .expect("sandboxed");
+    assert_eq!(applied.confines().roots_git, None);
+}
+
 /// Whether `settings` deny writing `path`, to Claude Code's sandbox and to its Edit tool.
 fn claude_holds(settings: &claude::Settings, path: &Path) -> bool {
     let path = path.display().to_string();
