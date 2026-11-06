@@ -4,7 +4,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { CHAT_ROW, dropPane, GRIP, STRIP, TAB, usePaneDrag } from "./paneDrag";
+import { CHAT_ROW, dropPane, GRIP, HOLD_MS, STRIP, TAB, usePaneDrag } from "./paneDrag";
+import { keystroke, shortcut } from "./keys/registry";
+import { onAMac } from "./tabKeys";
 import { PANES_ROOM, TERMINAL_HOLDER, terminalInPane } from "./paneHeld";
 import type { DropContext } from "./paneDrop";
 import { boxesOf } from "./panePreview";
@@ -77,10 +79,13 @@ function Window({
 }) {
   const [tabs, setTabs] = useState(first);
   const now = useRef(first);
+  /** What the window last told: what `heard` was given. */
+  const told = useRef(first);
   const change = useCallback(
     (how: (tabs: Tabs) => Tabs) => {
       const next = how(now.current);
       now.current = next;
+      told.current = next;
       setTabs(next);
       heard(next);
       return next;
@@ -90,9 +95,27 @@ function Window({
   useEffect(() => {
     control?.(change);
   }, [change, control]);
-  const hold = useCallback((id: number) => change((t) => selectTab(t, id)), [change]);
+  // As the window does (#5294): a tab a drag rests on is drawn in front and told to nobody until
+  // the drag is over, when what is drawn is told if it differs from what was.
+  const hold = useCallback((id: number) => {
+    now.current = selectTab(now.current, id);
+    setTabs(now.current);
+  }, []);
+  const holdOver = useCallback(() => {
+    if (JSON.stringify(now.current) === JSON.stringify(told.current)) return;
+    told.current = now.current;
+    heard(now.current);
+  }, [heard]);
   const own = useCallback((session: number) => String(session), []);
-  const drag = usePaneDrag({ tabs, change, ctx, onHoldTab: hold, chatNameOf: own, active });
+  const drag = usePaneDrag({
+    tabs,
+    change,
+    ctx,
+    onHoldTab: hold,
+    onHoldOver: holdOver,
+    chatNameOf: own,
+    active,
+  });
   const front = tabs.inFront ?? tabs.order[0];
   const boxes = boxesOf(tabs.byId[front].layout, tabs.byId[front].focused, room, GAPS);
   return (
@@ -183,17 +206,44 @@ afterEach(() => {
 
 function shown(props: { room?: typeof ROOM; active?: boolean } = {}) {
   let last = start();
+  let tells = 0;
   let change: (how: (tabs: Tabs) => Tabs) => Tabs = () => last;
   render(
     <Window
       first={last}
-      heard={(tabs) => (last = tabs)}
+      heard={(tabs) => {
+        last = tabs;
+        tells += 1;
+      }}
       control={(given) => (change = given)}
       {...props}
     />,
   );
-  return { tabs: () => last, change: (how: (tabs: Tabs) => Tabs) => change(how) };
+  return {
+    /** The tabs as the window last told them. */
+    tabs: () => last,
+    /** How many times the window has told its tabs. */
+    tells: () => tells,
+    change: (how: (tabs: Tabs) => Tabs) => change(how),
+  };
 }
+
+/** The tab drawn in front on the strip, whatever the window has told. */
+const drawnFront = () =>
+  Number(
+    document.querySelector('[role="tab"][aria-selected="true"]')?.parentElement?.getAttribute(TAB),
+  );
+
+/** ⌘⇧M, or Ctrl+Shift+M off a Mac: the registry's own chord, on what has the keyboard. */
+function pressPlace() {
+  const chord = shortcut("pane.place").chords[onAMac() ? "mac" : "other"][0];
+  act(() => {
+    (document.activeElement ?? document.body).dispatchEvent(keystroke(chord));
+  });
+}
+
+const key = (name: string) =>
+  act(() => void fireEvent.keyDown(document.activeElement ?? document.body, { key: name }));
 
 const at = (x: number, y: number) => ({ clientX: x, clientY: y, button: 0, isPrimary: true });
 const frame = (session: number) => screen.getByTestId(`frame ${session}`);
@@ -546,17 +596,6 @@ describe("cancelling restores exactly (#5291)", () => {
     expect(document.activeElement).toBe(field);
   });
 
-  it("brings back the tab in front, when holding over a tab brought another forward", () => {
-    const window = shown();
-    const [first, second] = window.tabs().order;
-    fireEvent.pointerDown(head(3), at(900, 50));
-    fireEvent.pointerMove(document, at(150, 10));
-    act(() => vi.advanceTimersByTime(500));
-    expect(window.tabs().inFront).toBe(second);
-    fireEvent.keyDown(document, { key: "Escape" });
-    expect(window.tabs().inFront).toBe(first);
-  });
-
   it("gives the keyboard to the focused pane when what had it has gone", () => {
     const window = shown();
     const [, second] = window.tabs().order;
@@ -639,5 +678,164 @@ describe("a project behind the one in front (#5291)", () => {
     settle();
     expect(part("words")).toBeNull();
     expect(root().hasAttribute("data-pane-dragging")).toBe(false);
+  });
+});
+
+describe("resting on a tab during a drag brings it forward, as a preview (#5294)", () => {
+  /** A pane picked up and rested on the second tab until it comes forward. */
+  function restedOn() {
+    const window = shown();
+    const [first, second] = window.tabs().order;
+    fireEvent.pointerDown(head(3), at(900, 50));
+    fireEvent.pointerMove(document, at(150, 10));
+    act(() => vi.advanceTimersByTime(HOLD_MS));
+    expect(drawnFront()).toBe(second);
+    return { window, first, second };
+  }
+
+  it("brings the tab rested on forward once the time is up, drawn and told to nobody", () => {
+    const window = shown();
+    const [first, second] = window.tabs().order;
+    const before = window.tabs();
+    fireEvent.pointerDown(head(3), at(900, 50));
+    fireEvent.pointerMove(document, at(150, 10));
+    act(() => vi.advanceTimersByTime(HOLD_MS - 1));
+    expect(drawnFront()).toBe(first);
+    act(() => vi.advanceTimersByTime(1));
+    expect(drawnFront()).toBe(second);
+    expect(window.tabs()).toBe(before);
+    expect(window.tells()).toBe(0);
+  });
+
+  it("brings nothing forward when the pointer moves off the tab before the time", () => {
+    const window = shown();
+    const [first] = window.tabs().order;
+    fireEvent.pointerDown(head(3), at(900, 50));
+    fireEvent.pointerMove(document, at(150, 10));
+    act(() => vi.advanceTimersByTime(HOLD_MS - 1));
+    fireEvent.pointerMove(document, at(60, 300));
+    act(() => vi.advanceTimersByTime(HOLD_MS));
+    expect(drawnFront()).toBe(first);
+  });
+
+  it("marks the tab while it is about to come forward, and not the tab already in front", () => {
+    shown();
+    fireEvent.pointerDown(head(3), at(900, 50));
+    fireEvent.pointerMove(document, at(50, 10));
+    act(() => vi.advanceTimersByTime(HOLD_MS));
+    expect(part("opening")).toBeNull();
+    fireEvent.pointerMove(document, at(150, 10));
+    act(() => vi.advanceTimersByTime(1));
+    const mark = part("opening") as HTMLElement | null;
+    expect(mark).not.toBeNull();
+    // Along the bottom of the second tab, as the strip draws it at 100, 0, 100 × 30.
+    expect([mark?.style.left, mark?.style.width]).toEqual(["100px", "100px"]);
+    act(() => vi.advanceTimersByTime(HOLD_MS));
+    expect(part("opening")).toBeNull();
+  });
+
+  it("retakes the zones for the tab now in front, and a drop lands in it, told once", () => {
+    const { window, first, second } = restedOn();
+    fireEvent.pointerMove(document, at(1590, 340));
+    settle();
+    expect(screen.getByText("chat 3 right of chat 4.")).toBeTruthy();
+    fireEvent.pointerUp(document, at(1590, 340));
+    expect(window.tells()).toBe(1);
+    const sessions = (tab: number) =>
+      contentsOf(window.tabs(), tab).map(({ content }) =>
+        content.kind === "session" ? content.session : undefined,
+      );
+    expect(window.tabs().inFront).toBe(second);
+    expect(sessions(second)).toEqual([4, 3]);
+    expect(sessions(first)).toEqual([1]);
+  });
+
+  it("returns to the tab that was in front on Esc, and has told nothing", () => {
+    const { window, first } = restedOn();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(drawnFront()).toBe(first);
+    expect(window.tells()).toBe(0);
+    expect(frame(3).style.transform).toBe("");
+  });
+
+  it("closes the tab whose last pane leaves for the tab rested on", () => {
+    const window = shown();
+    const [first, second] = window.tabs().order;
+    act(() => void window.change((t) => selectTab(t, second)));
+    fireEvent.pointerDown(head(4), at(100, 50));
+    fireEvent.pointerMove(document, at(50, 10));
+    act(() => vi.advanceTimersByTime(HOLD_MS));
+    expect(drawnFront()).toBe(first);
+    fireEvent.pointerMove(document, at(1590, 340));
+    settle();
+    fireEvent.pointerUp(document, at(1590, 340));
+    expect(window.tabs().order).toEqual([first]);
+    expect(
+      contentsOf(window.tabs(), first).map(({ content }) =>
+        content.kind === "session" ? content.session : undefined,
+      ),
+    ).toEqual([1, 3, 4]);
+  });
+});
+
+describe("placement mode draws the same preview as a drag (#5293)", () => {
+  /** Chat 3 picked up with ⌘⇧M from its pane, the keyboard on the first target. */
+  function picked() {
+    const window = shown();
+    const close = screen.getByText("Close 3");
+    close.focus();
+    pressPlace();
+    act(() => vi.advanceTimersByTime(1));
+    return { window, close };
+  }
+  const words = () => part("words")?.textContent;
+  const onTarget = () => document.activeElement?.getAttribute("aria-label");
+
+  it("draws the preview of the place the keyboard is on, with its words, at each step", () => {
+    const { window } = picked();
+    const before = window.tabs();
+    // The keyboard starts on chat 1's middle: the two change places.
+    expect(onTarget()).toBe("Swap chat 3 and chat 1.");
+    expect(words()).toBe("Swap chat 3 and chat 1.");
+    expect(drawn(3)).toEqual(LEFT_HALF);
+    expect(drawn(1)).toEqual(RIGHT_HALF);
+    key("ArrowDown");
+    expect(words()).toBe(onTarget());
+    expect(drawn(1)).toEqual({ left: 0, top: 40, width: 1600, height: 300 });
+    expect(drawn(3)).toEqual({ left: 0, top: 340, width: 1600, height: 300 });
+    expect(allParts("size").map((one) => one.textContent)).toEqual(["160 × 12", "160 × 12"]);
+    expect(window.tabs()).toBe(before);
+    expect(root().getAttribute("data-pane-dragging")).toBe("keys");
+  });
+
+  it("drops on Enter where the preview drew it, and lets go of the panes", () => {
+    const { window } = picked();
+    key("ArrowDown");
+    key("Enter");
+    const front = window.tabs().inFront as number;
+    expect(window.tabs().byId[front].layout).toMatchObject({ direction: "column" });
+    expect(frame(3).style.transform).toBe("");
+    expect(part("words")).toBeNull();
+    expect(root().hasAttribute("data-pane-dragging")).toBe(false);
+  });
+
+  it("restores sizes, the front tab and the keyboard on Esc, having told nothing", () => {
+    const { window, close } = picked();
+    const [first, second] = window.tabs().order;
+    fireEvent.pointerDown(screen.getByText(`tab ${second}`), at(150, 10));
+    fireEvent.pointerUp(screen.getByText(`tab ${second}`), at(150, 10));
+    act(() => vi.advanceTimersByTime(1));
+    expect(drawnFront()).toBe(second);
+    // The tab in front is the one whose panes take it now.
+    expect(onTarget()).toBe("Swap chat 3 and chat 4.");
+    key("Escape");
+    act(() => vi.advanceTimersByTime(1));
+    expect(drawnFront()).toBe(first);
+    expect(window.tells()).toBe(0);
+    for (const session of [1, 3]) expect(frame(session).style.transform).toBe("");
+    expect(part("words")).toBeNull();
+    // Its pane is drawn again with its tab, and its own control has the keyboard there.
+    expect(close.isConnected).toBe(false);
+    expect(document.activeElement).toBe(screen.getByText("Close 3"));
   });
 });

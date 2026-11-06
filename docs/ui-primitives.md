@@ -930,7 +930,8 @@ error (Get project's clone progress is still off, until it moves).
 
 **What a drag draws over the panes is the pane preview family** (`app/src/ui/pane-preview/`, #5291,
 spec #5288, ADR 0113): `PanePreviewArriving`, a pane the drop would make or a side that would fold;
-`PanePreviewLine`, on the strip, where a tab would go; `PanePreviewSize`, the columns and rows a
+`PanePreviewLine`, on the strip, where a tab would go; `PanePreviewOpening`, the mark along a tab a
+drag rests on until it comes forward (#5294); `PanePreviewSize`, the columns and rows a
 terminal will take; `PanePreviewRefused`, the mark on the pane a refused place means; and
 `PanePreviewHeld` and `PanePreviewWords`, what is held and what letting go would do, by the pointer.
 Only the wrapper writes `data-scope="pane-preview"`: `purlis/pane-preview-family` is an error.
@@ -939,7 +940,8 @@ Only the wrapper writes `data-scope="pane-preview"`: `purlis/pane-preview-family
   where each part goes is the drag's (`paneDragLayer.tsx`).
 - **None is read by a reader or takes the pointer.** A reader hears the drag from the window's status
   line, and the pointer has to reach what is under them.
-- **Its parts** are `arriving`, `name`, `line`, `size`, `refused`, `held` and `words`, in
+- **It is placement mode's preview too** (#5293): the keys' target is drawn as the pointer's place.
+- **Its parts** are `arriving`, `name`, `line`, `opening`, `size`, `refused`, `held` and `words`, in
   `pane-preview.css`; a theme's parts reach the same attributes (`pane-preview.*`, the next release's
   manifest version).
 

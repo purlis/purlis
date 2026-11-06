@@ -2,7 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useLayoutEffect, useMemo, useSyncExternalStore } from "react";
-import { cellsIn, HeldPanes, type PaneBase, PANES_ROOM } from "./paneHeld";
+import {
+  boxOfRect,
+  cellsIn,
+  HeldPanes,
+  PANE,
+  type PaneBase,
+  PANES_ROOM,
+  STRIP,
+  TAB,
+} from "./paneHeld";
 import {
   type Box,
   type DropContext,
@@ -20,6 +29,7 @@ import {
   PanePreviewArriving,
   PanePreviewHeld,
   PanePreviewLine,
+  PanePreviewOpening,
   PanePreviewRefused,
   PanePreviewSize,
   PanePreviewWords,
@@ -47,7 +57,19 @@ export type Over = {
   line?: Box;
 };
 
-type Dragging = { source: Source; over?: Over; base?: PaneBase };
+/**
+ * How it is held: by a pointer, or by the keys and single presses of placement mode (#5293), which
+ * draw the same preview and want no grabbing cursor.
+ */
+export type HeldBy = "pointer" | "keys";
+
+type Dragging = {
+  source: Source;
+  over?: Over;
+  base?: PaneBase;
+  /** The tab on the strip a drag rests on, until it comes forward (#5294): it wears a mark. */
+  opening?: number;
+};
 
 /** What a tab draws, as the window asks for it (`PlaneView`'s `LayoutPanes`). */
 function shownIn(tabs: Tabs): { front: number; layout: Layout } | undefined {
@@ -113,8 +135,8 @@ export class PaneDragStore {
   }
 
   /** Something is picked up: the window is read, and every terminal is held at its size. */
-  start(source: Source, tabs: Tabs, x: number, y: number) {
-    document.documentElement.dataset.paneDragging = "";
+  start(source: Source, tabs: Tabs, x: number, y: number, by: HeldBy = "pointer") {
+    document.documentElement.dataset.paneDragging = by;
     this.at = { x, y };
     const shown = shownIn(tabs);
     this.measuredFor = measuredAs(shown);
@@ -157,6 +179,12 @@ export class PaneDragStore {
   /** The place it is over has changed. */
   overPlace(over: Over | undefined) {
     if (this.state !== undefined) this.set({ ...this.state, over });
+  }
+
+  /** The tab it rests on, about to come forward, or none (#5294). */
+  restOn(tab: number | undefined) {
+    if (this.state !== undefined && this.state.opening !== tab)
+      this.set({ ...this.state, opening: tab });
   }
 
   /** **The drag is over**: everything it wrote is taken off, in this very event. */
@@ -256,8 +284,10 @@ export function PaneDragLayer({
   const name = sourceName(tabs, drag.source, ctx);
   const refusedZone =
     refused && over?.target.kind === "pane" ? base?.zones.get(over.target.pane) : undefined;
+  const opening = drag.opening === undefined ? undefined : markUnder(drag.opening);
   return (
     <>
+      {opening !== undefined && <PanePreviewOpening box={opening} />}
       {over?.line !== undefined && <PanePreviewLine box={over.line} refused={refused} />}
       {refusedZone !== undefined && <PanePreviewRefused box={refusedZone} />}
       {plan?.arriving.map(({ pane, box, content }) => (
@@ -295,4 +325,15 @@ export function PaneDragLayer({
       </PanePreviewWords>
     </>
   );
+}
+
+/** How thick the mark under a tab about to come forward is, in CSS pixels. */
+const MARK = 2;
+
+/** The mark along the bottom of tab `id` on the strip, where it is drawn. */
+function markUnder(id: number): Box | undefined {
+  const tab = document.querySelector(`[${STRIP}] [${TAB}="${id}"]:not([${PANE}])`);
+  if (tab === null) return undefined;
+  const box = boxOfRect(tab.getBoundingClientRect());
+  return { left: box.left, top: box.top + box.height - MARK, width: box.width, height: MARK };
 }

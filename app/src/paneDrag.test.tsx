@@ -75,8 +75,17 @@ function Window({
     [heard],
   );
   const hold = useCallback((id: number) => change((t) => selectTab(t, id)), [change]);
+  // What a hold brought forward was told as it came: there is nothing more to tell.
+  const told = useCallback(() => undefined, []);
   const own = useCallback((session: number) => String(session), []);
-  const drag = usePaneDrag({ tabs, change, ctx, onHoldTab: hold, chatNameOf: own });
+  const drag = usePaneDrag({
+    tabs,
+    change,
+    ctx,
+    onHoldTab: hold,
+    onHoldOver: told,
+    chatNameOf: own,
+  });
   const front = tabs.inFront ?? tabs.order[0];
   const panes = contentsOf(tabs, front);
   return (
@@ -167,7 +176,7 @@ describe("dragging a pane in the window (#4763)", () => {
     fireEvent.pointerUp(document, at(60, 300));
     expect(shape(window.tabs().byId[front].layout)).toBe("row(3 1)");
     await waitFor(() => expect(heard()).toBe("Put chat 3 left of chat 1."));
-    expect(document.querySelector(".pane-drop-preview")).toBeNull();
+    expect(document.querySelector('[data-scope="pane-preview"]')).toBeNull();
   });
 
   it("swaps in a pane's middle", () => {
@@ -189,7 +198,7 @@ describe("dragging a pane in the window (#4763)", () => {
     fireEvent.pointerUp(document, at(60, 300));
     expect(window.tabs()).toBe(before);
     await waitFor(() => expect(heard()).toBe("Put back. Nothing moved."));
-    expect(document.querySelector(".pane-drop-preview")).toBeNull();
+    expect(document.querySelector('[data-scope="pane-preview"]')).toBeNull();
   });
 
   it("is no drag at all for a press that does not move", () => {
@@ -261,7 +270,7 @@ describe("dragging a pane in the window (#4763)", () => {
     // Along the strip, and just under it, it is still the strip's own drag.
     fireEvent.pointerMove(document, at(400, 20));
     fireEvent.pointerMove(document, at(400, 50));
-    expect(document.querySelector(".pane-drop-preview")).toBeNull();
+    expect(document.querySelector('[data-scope="pane-preview"]')).toBeNull();
     fireEvent.pointerMove(document, at(1500, 340));
     // The strip's drag is told to end as the tab leaves it.
     expect(escapes).toEqual(["Escape"]);
@@ -280,7 +289,7 @@ describe("dragging a pane in the window (#4763)", () => {
     fireEvent.pointerMove(document, at(1500, 340));
     fireEvent.pointerUp(document, at(1500, 340));
     expect(window.tabs()).toBe(before);
-    expect(document.querySelector(".pane-drop-preview")).toBeNull();
+    expect(document.querySelector('[data-scope="pane-preview"]')).toBeNull();
   });
 
   it("hides the Undo line after a few seconds, and ⌘Z still puts the layout back", () => {
@@ -325,7 +334,11 @@ describe("dragging a pane in the window (#4763)", () => {
 
 // Where the panes are drawn while a drag holds them is `paneMakingRoom.window.test.tsx`'s.
 describe("what is dragged over its own place (#5284, #5291)", () => {
-  const preview = () => document.querySelector<HTMLElement>(".pane-drop-preview");
+  /** A danger mark or a pane drawn in a place: what a drop somewhere else would draw. */
+  const preview = () =>
+    document.querySelector<HTMLElement>(
+      '[data-scope="pane-preview"]:is([data-part="refused"], [data-part="arriving"])',
+    );
 
   it.each([
     ["its edge", 10, 340],

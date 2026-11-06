@@ -88,3 +88,8 @@ chat replaced what the focused pane showed, even in a tab the person had split (
 - **The feel of it is the person's to judge on hardware:** a terminal's WebGL surface moved and
   clipped, WebKit's cursors and animation, and a screen reader on the words. Each is filed
   `needs-hardware` in the milestone.
+
+## Amendments
+
+The amendments to this decision are files of their own in [`0113/`](0113/), one per amendment,
+named `<yyyy-mm-dd>-<slug>.md`.

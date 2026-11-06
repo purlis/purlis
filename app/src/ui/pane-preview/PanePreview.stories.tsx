@@ -14,6 +14,7 @@ import {
   PanePreviewArriving,
   PanePreviewHeld,
   PanePreviewLine,
+  PanePreviewOpening,
   PanePreviewRefused,
   PanePreviewSize,
   PanePreviewWords,
@@ -255,6 +256,24 @@ export const OnTheStrip: Story = {
       <PanePreviewLine box={{ left: 120, top: 0, width: 2, height: 32 }} />
       <PanePreviewHeld at={{ left: 130, top: 40 }}>codeql-issues</PanePreviewHeld>
       <PanePreviewWords at={{ left: 130, top: 70 }}>A new tab with codeql-issues.</PanePreviewWords>
+    </Room>
+  ),
+};
+
+/**
+ * Resting on another tab (#5294): it wears a mark along its bottom until it comes forward. The
+ * strip is the window's; here, the mark is drawn where a tab of the strip would end.
+ */
+export const RestingOnATab: Story = {
+  play: still,
+  render: () => (
+    <Room>
+      <Pane name="copy-past-crash" {...LEFT} />
+      <Pane name="codeql-issues" {...RIGHT} doing="lifted" />
+      <PanePreviewOpening box={{ left: 120, top: 30, width: 120, height: 2 }} />
+      <PanePreviewLine box={{ left: 240, top: 0, width: 2, height: 32 }} />
+      <PanePreviewHeld at={{ left: 190, top: 40 }}>codeql-issues</PanePreviewHeld>
+      <PanePreviewWords at={{ left: 190, top: 70 }}>A new tab with codeql-issues.</PanePreviewWords>
     </Room>
   ),
 };
