@@ -968,7 +968,7 @@ test("a job that only asks whether it is needed is not started on a pull request
 
 // By the operator's choice of 2026-11-01: what the bars measure and the suite itself. A regression
 // from anywhere else shows on main's push, which always runs it.
-test("the outcome bars run on a pull request that touches what they measure, and on main", () => {
+test("the outcome bars run on a pull request that touches what they measure, and on main; Linux's in the merge queue too", () => {
   const on = (path) => gatesOf({ event: "pull_request", paths: [path] })["outcome-bars"];
   for (const path of [
     "app/src/SkillStudioTab.tsx",
@@ -1000,12 +1000,32 @@ test("the outcome bars run on a pull request that touches what they measure, and
     assert.equal(on(path), false, path);
 
   const ci = read(".github/workflows/ci.yml");
-  const job = ci.slice(ci.indexOf("\n  outcome-bars:\n"), ci.indexOf("\n  scenario-linux-checks:\n"));
+  const job = ci.slice(ci.indexOf("\n  outcome-bars:\n"), ci.indexOf("\n  outcome-bars-linux:\n"));
   assert.ok(
     job.includes(
       "github.event_name == 'push' || (github.event_name == 'pull_request' && needs.changes.outputs.outcome-bars != 'false')",
     ),
     "main's push and a pull request its gate lets in, and not the merge group",
+  );
+  assert.match(job, /\n        os: \[macos-latest\]\n/);
+  assert.match(job, /\n    continue-on-error: true\n/);
+  // The Linux leg is required since #5277, so it runs wherever a required check is read: every
+  // run but a pull request's, and a pull request its gate lets in.
+  const linux = ci.slice(ci.indexOf("\n  outcome-bars-linux:\n"), ci.indexOf("\n  outcome-bars-linux-checks:\n"));
+  assert.ok(
+    linux.includes("(github.event_name != 'pull_request' || needs.changes.outputs.outcome-bars != 'false')"),
+    "every run but a pull request's, and a pull request its gate lets in",
+  );
+  assert.match(linux, /\n        os: \[ubuntu-24\.04\]\n/);
+  assert.doesNotMatch(linux, /continue-on-error/);
+  // Its required check passes on a pull request only where its leg was skipped by that gate or the draft.
+  const checks = ci.slice(ci.indexOf("\n  outcome-bars-linux-checks:\n"), ci.indexOf("\n  pool-setup-scenario:\n"));
+  assert.match(checks, /\n    name: outcome bars \(ubuntu-24\.04\)\n/);
+  assert.match(checks, /\n    needs: \[changes, outcome-bars-linux\]\n/);
+  assert.match(checks, /RESULT: \$\{\{ needs\.outcome-bars-linux\.result \}\}/);
+  assert.match(
+    checks,
+    /\n          if \[ "\$EVENT" = pull_request \] && \{ \[ "\$SCOPE" = false \] \|\| \[ "\$DRAFT" = true \]; \}; then want=skipped; fi\n/,
   );
   assert.match(
     ci.slice(ci.indexOf("\n  changes:\n"), ci.indexOf("\n  rust:\n")),
