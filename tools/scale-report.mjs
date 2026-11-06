@@ -84,7 +84,7 @@ export function verdicts(rows, { only } = {}) {
         continue;
       }
       const status = !held ? "reported" : (spec.strict ? value < spec.limit : value <= spec.limit) ? "met" : "missed";
-      found.push({ ...base, value, samples: row.samples?.length, status });
+      found.push({ ...base, value, samples: row.samples?.length, told: row.tellingsPerSecond, chats: row.chats, status });
     }
   }
   return found;
@@ -110,7 +110,8 @@ const number = (value) => (Number.isInteger(value) ? String(value) : value.toFix
 function shown(v) {
   if (v.value === undefined) return "—";
   const unit = v.spec.unit === "ms" || v.spec.unit === "/s" ? ` ${v.spec.unit}`.replace(" /s", "/s") : v.spec.unit;
-  return `${v.spec.stat} ${number(v.value)}${unit}`;
+  const told = v.told === undefined ? "" : `, ${number(v.told)}/s told by ${v.chats} chats`;
+  return `${v.spec.stat} ${number(v.value)}${unit}${told}`;
 }
 
 function budgetOf(v) {

@@ -158,3 +158,21 @@ fn a_batch_carries_the_plane_and_each_event_as_its_kind_and_what_it_told() {
         })
     );
 }
+
+#[test]
+#[cfg(not(feature = "e2e"))]
+fn a_build_anyone_is_given_batches_at_its_interval_whatever_its_environment_says() {
+    assert_eq!(interval(|_| Some("0".to_owned())), INTERVAL);
+}
+
+#[test]
+#[cfg(feature = "e2e")]
+fn the_scenario_build_batches_at_the_interval_its_run_names_and_at_its_own_otherwise() {
+    let named = |value: &'static str| {
+        move |name: &str| (name == INTERVAL_VARIABLE).then(|| value.to_owned())
+    };
+    assert_eq!(interval(named("0")), Duration::ZERO);
+    assert_eq!(interval(named("250")), Duration::from_millis(250));
+    assert_eq!(interval(named("soon")), INTERVAL);
+    assert_eq!(interval(|_| None), INTERVAL);
+}

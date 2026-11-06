@@ -9,7 +9,9 @@ name: scale
 # budget of #5486's targets table at the highest seam there is: the real `purlis` binary's
 # SessionStart hook and `recall` (`tools/scale-run.mjs`), and the real app's sidebar answer,
 # watcher setup and a minute of idle CPU with its window shown (`app/e2e/wdio.scale.conf.ts`). One
-# git standing look is timed as the app takes it (`scale-project look`).
+# git standing look is timed as the app takes it (`scale-project look`). And, folding in #4883,
+# how many chat events reach the window a second while ten busy chats fire hooks, batched as the
+# app sends them (#4746) and each sent as it comes.
 #
 # **Evidence only (V70), never on a pull request**, in the style of `stress.yml`: there is no
 # `pull_request` trigger, so a pull request pays nothing for it and no branch protection can name
@@ -21,7 +23,7 @@ name: scale
 #
 # **Release builds, and no Rust cache.** A debug build's timings say nothing about the budgets, and
 # the repository's caches are already at the 10 GB they may hold (`stress.yml`): each night builds
-# from scratch, about twenty minutes an OS.
+# from scratch, about twenty minutes an OS, and writing the project takes about as long again.
 on:
   schedule:
     # 03:23 UTC, after `stress`'s nightly (02:41) has had its runners.
@@ -46,7 +48,8 @@ env:
 jobs:
   measure:
     name: scale (${{ matrix.os }}, evidence only)
-    timeout-minutes: 120
+    # About twenty minutes of build, twenty-five of generation, and three app launches.
+    timeout-minutes: 180
     permissions:
       contents: read
     strategy:
@@ -86,6 +89,7 @@ jobs:
       # The `e2e` feature puts WebdriverIO's embedded WebDriver server inside the app; it is in no
       # build anyone is given. Release, with no bundle, as the timings need.
       - name: The app, in release, for the window's measurements
+        id: built
         run: npx tauri build --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json
         working-directory: app
       - name: The project at the target size, from seed 5497, committed
@@ -102,18 +106,30 @@ jobs:
           echo "PURLIS_SCALE_WORKSPACES=$(node -p 'require("./generated.json").workspaces')" >> "$GITHUB_ENV"
       - name: The hook, recall and one git standing look
         run: node tools/scale-run.mjs --project "$PURLIS_SCALE_PLANE" --os "$OS_WORD" --out scale-rows.jsonl
-      - name: The window's sidebar answer, watcher setup and idle CPU
-        if: runner.os == 'macOS'
+      # Each window run is its own app launch: WebdriverIO keeps one app for a run, and the two
+      # chat-event runs differ in the app's environment. Each runs even if one before it broke.
+      - name: The window on the project, its sidebar answer, watcher setup and idle CPU
+        id: window
+        if: always() && steps.built.outcome == 'success'
         working-directory: app
         env:
           PURLIS_SCALE_OUT: ${{ github.workspace }}/scale-rows.jsonl
-        run: npm run e2e:scale
-      - name: The window's sidebar answer, watcher setup and idle CPU
-        if: runner.os == 'Linux'
+        run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}npm run e2e:scale
+      - name: Chat events reaching the window, batched (#4883)
+        if: always() && steps.built.outcome == 'success'
         working-directory: app
         env:
           PURLIS_SCALE_OUT: ${{ github.workspace }}/scale-rows.jsonl
-        run: xvfb-run -a npm run e2e:scale
+          PURLIS_SCALE_RUN: chat-events
+        run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}npm run e2e:scale
+      - name: Chat events reaching the window, each telling sent as it comes (#4883)
+        if: always() && steps.built.outcome == 'success'
+        working-directory: app
+        env:
+          PURLIS_SCALE_OUT: ${{ github.workspace }}/scale-rows.jsonl
+          PURLIS_SCALE_RUN: chat-events
+          PURLIS_E2E_CHAT_EVENTS_MS: "0"
+        run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}npm run e2e:scale
       - name: This system's numbers, in the job summary
         if: always()
         run: |

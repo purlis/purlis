@@ -102,16 +102,23 @@ pub fn persona_name(n: usize) -> String {
 }
 
 /// Writes the project `plan` describes into `root`, an empty directory.
+///
+/// **Each workspace and each persona's memory is written on a thread of its own pool**, from a
+/// generator seeded by the plan's seed and its own number ([`Rng::of`]), so what each holds does
+/// not depend on which thread wrote it or when. Almost all of a project's time is the disk's: a
+/// store's writer takes its lock and writes each file whole. What the plane holds once (`init`,
+/// the personas' definitions and the roster they rewrite, the LIVE block, the dispatch records)
+/// is written in order, by this thread.
 pub fn generate(plan: &Plan, root: &Path) -> io::Result<()> {
     let size = plan.size;
-    let mut rng = Rng(plan.seed);
     let now = plan.at.and_utc();
     init(root)?;
     let plane = Plane::open(root);
 
     let per_workspace = spread(size.workspace_memories, size.workspaces);
-    let mut names = Vec::with_capacity(size.workspaces);
-    for n in 1..=size.workspaces {
+    in_parallel(size.workspaces, |i| {
+        let n = i + 1;
+        let mut rng = Rng::of(plan.seed, Stream::Workspace, n);
         let name = workspace_name(n);
         purlis_core::wscmd::ensure::ensure(root, &name, now, "Scale Generator")
             .map_err(io::Error::other)?;
@@ -120,38 +127,90 @@ pub fn generate(plan: &Plan, root: &Path) -> io::Result<()> {
         for t in 0..size.todos_per_workspace {
             workspace.add_todo(&rng.title(t), rng.before(plan.at, 60))?;
         }
-        for m in 0..per_workspace[n - 1] {
+        for m in 0..per_workspace[i] {
             let title = rng.title(m);
             workspace.remember_titled(&rng.body(), Some(&title), rng.before(plan.at, 365))?;
         }
         for _ in 0..size.sessions_per_workspace {
             session(root, &name, &mut rng, plan.at)?;
         }
-        names.push(name);
-    }
+        Ok(())
+    })?;
+    let names: Vec<String> = (1..=size.workspaces).map(workspace_name).collect();
     purlis_core::wscmd::write_live_block(root, names.iter().map(String::as_str))?;
 
-    let per_persona = spread(size.persona_memories, size.personas);
     for n in 1..=size.personas {
-        let name = persona_name(n);
-        define(root, &name, &rng.sentence(2, 4), &rng.sentence(4, 8))?;
+        let mut rng = Rng::of(plan.seed, Stream::Definition, n);
+        define(
+            root,
+            &persona_name(n),
+            &rng.sentence(2, 4),
+            &rng.sentence(4, 8),
+        )?;
+    }
+    let per_persona = spread(size.persona_memories, size.personas);
+    // The shared store is the one after the personas.
+    in_parallel(size.personas + 1, |i| {
+        let n = i + 1;
+        let mut rng = Rng::of(plan.seed, Stream::Persona, n);
+        let (name, count) = if n > size.personas {
+            ("_shared".to_owned(), size.shared_memories)
+        } else {
+            (persona_name(n), per_persona[i])
+        };
         let persona = plane.persona(&name).map_err(io::Error::other)?;
-        for m in 0..per_persona[n - 1] {
+        for m in 0..count {
             let title = rng.title(m);
             persona.remember_titled(&rng.body(), Some(&title), rng.before(plan.at, 365))?;
         }
-    }
-    let shared = plane.persona("_shared").map_err(io::Error::other)?;
-    for m in 0..size.shared_memories {
-        let title = rng.title(m);
-        shared.remember_titled(&rng.body(), Some(&title), rng.before(plan.at, 365))?;
-    }
+        Ok(())
+    })?;
 
+    let mut rng = Rng::of(plan.seed, Stream::Dispatch, 0);
     for d in 0..size.dispatches {
         let running = d < size.running_dispatches;
         dispatch(root, &mut rng, plan.at, size, running)?;
     }
     Ok(())
+}
+
+/// Runs `work(i)` for every `i` in `0..count` on a pool of threads, and answers the first
+/// failure, if any. Four threads a core: the work waits on the disk far more than it computes.
+fn in_parallel(count: usize, work: impl Fn(usize) -> io::Result<()> + Sync) -> io::Result<()> {
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let failed = std::sync::Mutex::new(None);
+    let threads = std::thread::available_parallelism()
+        .map_or(4, std::num::NonZeroUsize::get)
+        .saturating_mul(4)
+        .clamp(1, 32);
+    std::thread::scope(|scope| {
+        for _ in 0..threads {
+            scope.spawn(|| {
+                loop {
+                    let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    if i >= count {
+                        return;
+                    }
+                    if let Err(why) = work(i) {
+                        failed
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .get_or_insert(why);
+                        // Nothing more is started once one has failed.
+                        next.store(count, std::sync::atomic::Ordering::Relaxed);
+                        return;
+                    }
+                }
+            });
+        }
+    });
+    match failed
+        .into_inner()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+    {
+        Some(why) => Err(why),
+        None => Ok(()),
+    }
 }
 
 /// `n` spread over `over` as evenly as whole numbers allow, the first ones taking the rest.
@@ -298,7 +357,23 @@ fn dispatch(
 /// release can change what a seed gives.
 struct Rng(u64);
 
+/// What a generator is for: each thing the project holds draws from its own.
+#[derive(Clone, Copy)]
+enum Stream {
+    Workspace = 1,
+    Definition = 2,
+    Persona = 3,
+    Dispatch = 4,
+}
+
 impl Rng {
+    /// The generator for thing `n` of `stream`, from the plan's `seed`.
+    fn of(seed: u64, stream: Stream, n: usize) -> Self {
+        let mut mixed = Self(seed ^ ((stream as u64) << 56));
+        let from = mixed.next() ^ n as u64;
+        Self(Self(from).next())
+    }
+
     fn next(&mut self) -> u64 {
         self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
         let mut z = self.0;

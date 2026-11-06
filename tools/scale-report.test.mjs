@@ -140,3 +140,14 @@ test("a report of one system holds that system's verdicts alone", () => {
   assert.ok(found.length > 0);
   assert.ok(found.every((v) => v.os === "linux"));
 });
+
+test("chat events are reported with what they carried, batched beside unbatched", () => {
+  const text = summary(
+    verdicts([
+      { budget: "chat-events", os: "linux", value: 9.8, tellingsPerSecond: 80, chats: 10 },
+      { budget: "chat-events-unbatched", os: "linux", value: 78.4, tellingsPerSecond: 80, chats: 10 },
+    ]),
+  );
+  assert.match(text, /\| Chat events reaching the window, batched \| Linux \| mean 9.80\/s, 80\/s told by 10 chats \| none \| reported \|/);
+  assert.match(text, /\| Chat events reaching the window, unbatched \| Linux \| mean 78\/s, 80\/s told by 10 chats \| none \| reported \|/);
+});
