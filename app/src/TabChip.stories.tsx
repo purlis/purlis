@@ -123,8 +123,13 @@ export const Opened: Story = {
       () => within(menu).getByRole("menuitem", { name: /talk/ }),
       "It opens on the chat's first task",
     );
-    await expect(within(menu).getByRole("menuitem", { name: "End a task" })).toBeVisible();
-    await expect(within(menu).getByRole("menuitem", { name: "Activity" })).toBeVisible();
+    // Once the menu has come in: a row is not visible while its surface fades in.
+    await waitFor(() =>
+      expect(within(menu).getByRole("menuitem", { name: "End a task" })).toBeVisible(),
+    );
+    await waitFor(() =>
+      expect(within(menu).getByRole("menuitem", { name: "Activity" })).toBeVisible(),
+    );
     await expect(screen.getByTestId("tasks-summary")).toHaveTextContent(/1 working, 1 waiting/);
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull(), { timeout: 3_000 });
