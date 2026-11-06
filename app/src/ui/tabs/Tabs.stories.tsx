@@ -419,12 +419,13 @@ export const CloseAtRest: Story = {
     await waitFor(() => expect(seen(closerOf(canvas, long))).toBe("1"));
     for (const name of [/steward 1/, /talk/, /purlis\.toml/])
       await expect(seen(closerOf(canvas, name))).toBe("0");
-    // It takes no room: the name runs on under the ×, which stands inside the tab's cell.
+    // It takes no room of its own: the name runs on to the ×, or under it where the tab is cut
+    // short, and the × stands inside the tab's cell.
     const name = canvas
       .getByRole("tab", { name: long })
       .querySelector('[data-part="label"]') as HTMLElement;
     const closer = closerOf(canvas, long).getBoundingClientRect();
-    expect(name.getBoundingClientRect().right).toBeGreaterThan(closer.left);
+    expect(name.getBoundingClientRect().right).toBeGreaterThanOrEqual(closer.left - 1);
     const cell = name.closest('[data-part="tab"]') as HTMLElement;
     expect(closer.right).toBeLessThanOrEqual(cell.getBoundingClientRect().right);
   },

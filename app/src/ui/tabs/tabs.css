@@ -312,8 +312,8 @@
 }
 
 /* **Room for the ×, given up first** (#5341): a tab with room to spare keeps the end of its
-   name clear of its ×, where a tab is as wide as its words (Purlis's sizing), and only the fade
-   runs over its last letters. The room is a spacer after the name that gives way a thousand
+   name clear of its × and its narrow fade, where a tab is as wide as its words (Purlis's
+   sizing). The room is a spacer after the name that gives way a thousand
    times sooner than the name, so a tab at its floor gives it all up and the × takes none of the
    name's room there. The same at rest
    and in every state, so nothing moves when the × comes. */
@@ -347,7 +347,8 @@
   position: absolute;
   inset-block: 0;
   inset-inline-end: 100%;
-  inline-size: var(--space-6);
+  /* Narrow, so a name with room ends clear of it, and a name cut short goes out softly. */
+  inline-size: var(--space-3);
   background:
     linear-gradient(to right, transparent, var(--tabs-closer-over)),
     linear-gradient(to right, transparent, var(--tabs-closer-ground));
