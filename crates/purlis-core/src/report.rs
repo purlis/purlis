@@ -332,6 +332,13 @@ fn names_in(plane: &Path) -> Vec<(String, &'static str)> {
             for row in held.repos.iter().chain(&held.shadowed).chain(&held.others) {
                 out.push((row.repo.name.clone(), "[repo]"));
             }
+            // A name purlis takes for no repo's, a link, or one whose `.git` could not be read
+            // may still be a clone of the reporter's.
+            for said in held.refused.iter().chain(&held.unreadable) {
+                if !said.name.is_empty() {
+                    out.push((said.name.clone(), "[repo]"));
+                }
+            }
         }
         out.push((ws, "[workspace]"));
     }

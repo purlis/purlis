@@ -18,6 +18,11 @@
 //! A workspace's own store (`workspaces/{ws}/{store}`) has that shape too, and is allowed by
 //! name. The list may only shrink: an entry whose file no longer has the sites it allows fails
 //! too, so a site that is routed comes off the list in the same change.
+//!
+//! **What it does not read.** A path built in steps (the workspace's folder into a variable,
+//! the repo joined later), a join whose argument holds a call (`.join(repo.as_str())`),
+//! `PathBuf::push`, and TypeScript concatenation or `path.join` pass unseen. The guard holds the
+//! one-expression shapes a new site is most likely to copy; review holds the rest.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
