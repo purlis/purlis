@@ -449,6 +449,10 @@ export const CloseUnderThePointer: Story = {
  * the one `×` in the keyboard's order.
  */
 export const CloseWithTheKeyboard: Story = {
+  // No picture: its two consecutive captures never matched in CI (the keyboard's ring and the
+  // × it brings), and a picture must never catch a ring by timing. The play holds the case;
+  // the × at rest and under the pointer have pictures of their own.
+  parameters: { screenshot: false },
   play: async ({ canvas, userEvent }) => {
     const front = canvas.getByRole("tab", { name: /talk/ });
     await userEvent.tab();

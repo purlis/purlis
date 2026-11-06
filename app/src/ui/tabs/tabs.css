@@ -290,12 +290,13 @@
 [data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"] {
   position: absolute;
   inset-block-start: 50%;
-  inset-inline-end: calc(var(--space-4) + var(--space-1));
+  inset-inline-end: var(--space-3);
   z-index: 1;
   display: grid;
   place-items: center;
-  inline-size: calc(16rem / 14);
-  block-size: calc(16rem / 14);
+  /* WCAG 2.2's 24px target (2.5.8): the front tab's × is a Tab stop, and it takes no room. */
+  inline-size: calc(24rem / 14);
+  block-size: calc(24rem / 14);
   padding: 0;
   border: 0;
   border-radius: var(--radius-md);
@@ -328,12 +329,6 @@
     linear-gradient(to right, transparent, var(--tabs-closer-over)),
     linear-gradient(to right, transparent, var(--tabs-closer-ground));
   pointer-events: none;
-}
-
-[data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"]::after {
-  content: "";
-  position: absolute;
-  inset: calc(var(--space-2) * -1);
 }
 
 [data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"] > svg {
