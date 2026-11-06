@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793966570605,
+  "lastUpdate": 1793970690557,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -40992,6 +40992,48 @@ window.BENCHMARK_DATA = {
             "value": 102.1587845,
             "unit": "ms",
             "extra": "median of 5 runs: 100.634, 102.157, 102.159, 102.969, 103.436 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "aa04b847944b77dbedf157f9f1439b6d57e9c527",
+          "message": "A sandboxed chat's clone update is run by its own git, and a save's retry rebases onto its own fetch (#5489)\n\n* A sandboxed chat's clone update is run by its own git\n\nFor a sandboxed chat standing in or above a workspace's clone, `purlis worktree update` no longer rebases in the app. The app fetches, works out the rebase and names the exact `git` command, settings included, for the chat to run in the clone. `--continue`, or the update run again, then moves the branch from the commit recorded to the result; `--abort` before the step ran puts the folder back. Branch folders, chats that are not sandboxed and the terminal are unchanged.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6R2CSD5E610F15JAC5JVJ6A\nPurlis-Persona: steward\n\n* A save's retry rebases onto the commit its own fetch brought\n\nWhen a save's push finds the remote moved, the retry fetches into the remote-tracking branch with no FETCH_HEAD written, reads the commit once, and rebases onto it and puts back from it by its id.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6R2CSD5E610F15JAC5JVJ6A\nPurlis-Persona: steward\n\n* The named rebase in a test runs with the fixtures' own identity\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6R2CSD5E610F15JAC5JVJ6A\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-06T12:01:07Z",
+          "tree_id": "cc80429d38e3f799692ab6ac3e4959986521ae70",
+          "url": "https://github.com/purlis/purlis/commit/aa04b847944b77dbedf157f9f1439b6d57e9c527"
+        },
+        "date": 1793970685255,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.33465,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.307, 0.334, 0.335, 0.336, 0.337 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.580361,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.125, 16.154, 16.580, 16.719, 16.738 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5599105,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.809, 101.022, 101.560, 101.934, 102.253 ms"
           }
         ]
       }
