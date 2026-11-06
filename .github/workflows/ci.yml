@@ -1586,6 +1586,7 @@ jobs:
           a_no_seed_mark_is_made_only_in_the_window::
           no_old_name_is_spelled_in_the_window_or_its_assets::
           every_deferral_names_its_ticket::
+          every_repo_path_comes_from_the_resolver::
       - name: The plane writes, hooks, status line and doctor, as recorded
         if: needs.changes.outputs.rust != 'false'
         run: cargo test --locked -p purlis-cli --test recorded_behaviour
