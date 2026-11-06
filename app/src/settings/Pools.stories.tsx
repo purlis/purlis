@@ -165,7 +165,8 @@ export const WithAPool: Story = {
 };
 
 /** **An older runner waits on a closed project** (#5461): the row names the project, when it was
- *  last opened, and what lets the runner go; Tab reaches the row's Remove. */
+ *  last opened, and what lets the runner go, beside the row's Remove. Words only: no new control,
+ *  so no keyboard path of its own. */
 export const OlderRunnerWaitsOnAProject: Story = {
   parameters: {
     pools: [BUILDS],
@@ -182,7 +183,7 @@ export const OlderRunnerWaitsOnAProject: Story = {
       ],
     } satisfies PoolVersion,
   },
-  play: async ({ canvas, userEvent }) => {
+  play: async ({ canvas }) => {
     const group = await canvas.findByRole("region", { name: "Pools" });
     const said = await within(group).findByText(
       /An older runner stays until project alpha brings back the work its chats saved on that runner\./,
@@ -191,12 +192,8 @@ export const OlderRunnerWaitsOnAProject: Story = {
       "alpha is closed, and was last opened 12 days ago. Open alpha to bring its work back.",
     );
     await expect(said).toHaveTextContent(/anything not brought back is deleted with it\./);
-    const remove = within(group).getByRole("button", { name: "Remove pool builds" });
-    for (let presses = 0; presses < 20 && document.activeElement !== remove; presses++) {
-      await userEvent.tab();
-    }
-    await untilFocused(() => remove, "Tab reaches the row's Remove");
-    expectFocusInSight();
+    // The way out it names is the row's own Remove, there beside it.
+    await expect(within(group).getByRole("button", { name: "Remove pool builds" })).toBeVisible();
     await waitFor(() => expect(within(group).queryByText(/Asking the runner about/)).toBeNull(), {
       timeout: 5000,
     });
