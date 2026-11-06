@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! The check probe: a test-only **Check reporter** (ADR 0114, #5410), proven end to end through
+//! The check probe: a test-only **Check reporter** (ADR 0115, #5410), proven end to end through
 //! purlis's real registry, executor and check store, as `extension-probe` and `studio-probe`
 //! prove theirs.
 //!

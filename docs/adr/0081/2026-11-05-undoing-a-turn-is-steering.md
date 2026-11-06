@@ -29,7 +29,7 @@ folder is not idle, and is a Human edit.
 
 Language intelligence while reviewing (hover, go to definition, diagnostics on an agent's diff)
 was the one gap that passed §1's test. It is met without a language server: a branch's checks
-(typecheck, lint, tests; ED-8, ED-9) are drawn on the diff as diagnostics, from SARIF (ADR 0114).
+(typecheck, lint, tests; ED-8, ED-9) are drawn on the diff as diagnostics, from SARIF (ADR 0115).
 An extension that supplies hover and definitions as data, drawn by purlis, is reconsidered once
 the review loop (RC-4, RC-7) has shipped and shows whether people still leave purlis to
 understand a diff. purlis never runs a language server itself.

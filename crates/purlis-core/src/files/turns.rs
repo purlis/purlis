@@ -100,9 +100,11 @@ pub struct Place {
 }
 
 /// **The repo and the branch folder `cwd` is in**, read off the path alone, because a chat is
-/// removed after its folder may be: `workspaces/<ws>/<repo>/…` or
+/// removed after its folder may be: `workspaces/<ws>/repos/<repo>/…`, `workspaces/<ws>/<repo>/…`
+/// (a clone made before structure version 6, ADR 0114) or
 /// `workspaces/<ws>/.worktrees/<repo>/<piece>/…`, below `plane`. `None` for anywhere else: the
-/// project's root, or a workspace's folder above its repos.
+/// project's root, or a workspace's folder above its repos. A `repos/` with `.git` directly in it
+/// is an old clone named `repos` ([`crate::repofolder`]), and while it is there it is read as one.
 pub fn place_of(plane: &Path, cwd: &Path) -> Option<Place> {
     let resolved = |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     let (plane, cwd) = (resolved(plane), resolved(cwd));
@@ -125,6 +127,21 @@ pub fn place_of(plane: &Path, cwd: &Path) -> Option<Place> {
     // A workspace's own folders hold no branch: its memory, its todos, its dotted state.
     if first.starts_with('.') {
         return None;
+    }
+    let old_clone_named_repos = || {
+        plane
+            .join("workspaces")
+            .join(&ws)
+            .join(crate::repofolder::REPOS)
+            .join(".git")
+            .exists()
+    };
+    if first == crate::repofolder::REPOS && !old_clone_named_repos() {
+        return Some(Place {
+            ws,
+            repo: parts.next()??.to_owned(),
+            piece: None,
+        });
     }
     Some(Place {
         ws,
@@ -511,6 +528,9 @@ mod tests {
         };
         assert_eq!(place("workspaces/ws/app"), of("app", None));
         assert_eq!(place("workspaces/ws/app/src/deep"), of("app", None));
+        // A clone made from structure version 6 on is in `repos/` (ADR 0114).
+        assert_eq!(place("workspaces/ws/repos/app"), of("app", None));
+        assert_eq!(place("workspaces/ws/repos/app/src/deep"), of("app", None));
         assert_eq!(
             place("workspaces/ws/.worktrees/app/fix/src"),
             of("app", Some("fix"))
@@ -521,6 +541,7 @@ mod tests {
             "workspaces",
             "workspaces/ws",
             "workspaces/ws/.worktrees",
+            "workspaces/ws/repos",
             "workspaces/ws/.worktrees/app",
             "workspaces/ws/.charter",
         ] {

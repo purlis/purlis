@@ -671,12 +671,13 @@ impl Held {
     }
 
     /// Chat `session`'s id and folder, where a turn of it is recorded here: not a chat on a
-    /// runner, whose folder is the runner's, and not one with no id or folder.
+    /// runner, whose folder is the runner's, and not one with no id or folder. A chat whose start
+    /// is under way is one too, as its first prompt can be heard before it is open (#5411).
     fn turn_place(&self, session: u32) -> Option<(String, PathBuf)> {
         if self.chats.runner_of(session).is_some() || self.chats.pool_of(session).is_some() {
             return None;
         }
-        let at = self.chats.chat_at(session)?;
+        let at = self.chats.chat_at_or_starting(session)?;
         Some((at.id?, at.cwd?))
     }
 

@@ -396,7 +396,7 @@ pub struct WhatChanged {
     pub diff: FileDiff,
     /// What a discard of a hunk here is checked against (`null` for a file past what is drawn).
     pub stamp: Option<String>,
-    /// The branch's check results as this file shows them (ADR 0114).
+    /// The branch's check results as this file shows them (ADR 0115).
     pub checks: Box<CheckResults>,
     /// On a turn's diff, that the file changed since the turn ended: it is drawn from the turn's
     /// start to the file as it is now (#5411).

@@ -199,7 +199,7 @@ export function MergeViewer({
   base: string;
   head: string;
   hunks: readonly GitHunk[];
-  /** The check results to mark in the head's gutter (ADR 0114). */
+  /** The check results to mark in the head's gutter (ADR 0115). */
   marks?: readonly CheckMark[];
   /** Its accessible name: which file, and against what (#1189). */
   label?: string;

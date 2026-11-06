@@ -63,7 +63,7 @@ pub enum Capability {
     /// charter passes back unchanged ([`super::cli`], charter-app#342, protocol 2). Its shape is
     /// `contributes.cli`.
     Cli,
-    /// **A Check reporter** (ADR 0114, #5410): it turns one tool's output into SARIF. purlis hands
+    /// **A Check reporter** (ADR 0115, #5410): it turns one tool's output into SARIF. purlis hands
     /// its program what a check printed and its exit status, and reads the SARIF 2.1.0 it answers
     /// on stdout into the branch's check results, as `purlis check report` records a SARIF file
     /// ([`crate::checks`]). It has no shape: which tool it converts is the extension's own
@@ -164,8 +164,8 @@ impl Capability {
             ),
             Self::CheckReporter => (
                 "check-reporter",
-                "turns a check's output into SARIF: purlis hands its program what a check \
-                 printed and its exit status, and draws the results it answers on the branch's \
+                "turns a check's output into SARIF. Its program is handed what a check printed \
+                 and its exit status, and purlis draws the results it answers on the branch's \
                  diff",
             ),
             Self::SkillSource => (
@@ -211,7 +211,7 @@ impl Capability {
             // The studio questions are protocol 3's (ADR 0101, #2777), but for the Grader's, a
             // question of many lines, which is protocol 4's (#3236).
             Self::Grader => 4,
-            // A check's output, answered in SARIF on stdout (ADR 0114, #5410).
+            // A check's output, answered in SARIF on stdout (ADR 0115, #5410).
             Self::CheckReporter => 5,
             Self::SkillSource
             | Self::SkillLint

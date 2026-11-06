@@ -124,7 +124,10 @@ export const TheFileChangedOnDisk: Story = {
     const stale = await page.findByRole("alertdialog", {
       name: "src/lib.rs changed on disk since this diff was drawn",
     });
-    await expect(within(stale).getByRole("button", { name: "Overwrite" })).toBeVisible();
+    // The dialog fades in as it opens, and nothing in it is visible until it has.
+    await waitFor(() =>
+      expect(within(stale).getByRole("button", { name: "Overwrite" })).toBeVisible(),
+    );
     await untilFocused(
       () => page.getByRole("button", { name: "Reload" }),
       "the question starts on Reload",

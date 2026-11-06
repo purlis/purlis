@@ -144,7 +144,7 @@ use crate::skills::grade;
 ///   grade report (`report`). Each answer has [`DEADLINE`] from the line before it; while purlis
 ///   runs a chat the Grader has no deadline, and the question ends when the person stops the
 ///   grade ([`Executor::grade`]).
-/// - **5** (#5410, ADR 0114) — a Check reporter's question: `check`, holding what a check printed
+/// - **5** (#5410, ADR 0115) — a Check reporter's question: `check`, holding what a check printed
 ///   (`output`, as text) and its exit `status` ([`Executor::check`]). Its answer is not a line of
 ///   JSON but what the program prints on stdout, SARIF 2.1.0, and its exit status, read whole as a
 ///   command's are.
@@ -567,7 +567,7 @@ impl Executor {
         })
     }
 
-    /// **Hand a Check reporter a check's output and exit status** (protocol 5, ADR 0114, #5410), or
+    /// **Hand a Check reporter a check's output and exit status** (protocol 5, ADR 0115, #5410), or
     /// say why charter did not: the same gate, bounds and watch on the plane every question takes.
     /// Refused for an extension that does not ask for the capability `check-reporter`, and for
     /// output past [`MOST_CHECK_OUTPUT_BYTES`].

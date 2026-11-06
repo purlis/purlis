@@ -44,6 +44,7 @@ fn lines(placed: &[purlis_core::checks::Placed]) -> Vec<Option<u32>> {
 
 #[test]
 fn codeql_s_real_output_is_read_with_its_tool_severity_file_line_and_message() {
+    purlis_core::unsteered!();
     let read = read_sarif(&fixture("codeql-2.27.4-actions.sarif"), None).unwrap();
     assert_eq!(read.len(), 1);
     assert_eq!(read[0].tool, "CodeQL");
@@ -65,6 +66,7 @@ fn codeql_s_real_output_is_read_with_its_tool_severity_file_line_and_message() {
 
 #[test]
 fn a_result_on_a_hunk_line_is_placed_on_it_and_one_past_every_hunk_is_listed_under_its_file() {
+    purlis_core::unsteered!();
     let sets = sets_of(read_sarif(&fixture("codeql-2.27.4-actions.sarif"), None).unwrap());
     // The results run 352-354 and 354-368 in this file, and 147-150 in another.
     let shown = on_file(
@@ -84,6 +86,7 @@ fn a_result_on_a_hunk_line_is_placed_on_it_and_one_past_every_hunk_is_listed_und
 
 #[test]
 fn a_result_that_only_runs_into_a_hunk_is_placed_on_it() {
+    purlis_core::unsteered!();
     let sets = sets_of(read_sarif(&fixture("codeql-2.27.4-actions.sarif"), None).unwrap());
     let shown = on_file(
         &sets,
@@ -106,6 +109,7 @@ fn a_result_that_only_runs_into_a_hunk_is_placed_on_it() {
 
 #[test]
 fn a_hunk_with_no_line_on_the_head_s_side_shows_no_result() {
+    purlis_core::unsteered!();
     let sets = sets_of(read_sarif(&fixture("codeql-2.27.4-actions.sarif"), None).unwrap());
     // git's `+352,0`: lines were deleted after line 352, and line 352 is not the hunk's.
     let shown = on_file(
@@ -120,6 +124,7 @@ fn a_hunk_with_no_line_on_the_head_s_side_shows_no_result() {
 
 #[test]
 fn no_result_of_scorecard_s_real_output_is_dropped_whatever_file_is_compared() {
+    purlis_core::unsteered!();
     let read = read_sarif(&fixture("scorecard-5.6.0.sarif"), None).unwrap();
     assert_eq!(read[0].tool, "Scorecard");
     let total = read[0].diagnostics.len();
@@ -145,6 +150,7 @@ fn no_result_of_scorecard_s_real_output_is_dropped_whatever_file_is_compared() {
 
 #[test]
 fn each_set_says_the_head_it_was_reported_for_and_is_out_of_date_once_the_head_moves() {
+    purlis_core::unsteered!();
     let sets = sets_of(read_sarif(&fixture("codeql-2.27.4-actions.sarif"), None).unwrap());
     let path = ".github/workflows/release.yml";
     let now = on_file(&sets, path, &[hunk(350, 3)], Some(HEAD));
@@ -162,6 +168,7 @@ fn each_set_says_the_head_it_was_reported_for_and_is_out_of_date_once_the_head_m
 /// Every malformed fixture is refused, naming the file's defect in the sentence.
 #[test]
 fn a_malformed_file_is_refused_saying_what_is_wrong() {
+    purlis_core::unsteered!();
     for (name, says) in [
         ("not-json.sarif", "not JSON"),
         ("wrong-version.sarif", "2.0.0"),
@@ -192,6 +199,7 @@ fn path_of(location: &str, base_ids: &str, folder: Option<&std::path::Path>) -> 
 
 #[test]
 fn a_file_uri_under_the_branch_s_folder_is_read_relative_to_it() {
+    purlis_core::unsteered!();
     let folder = std::path::Path::new("/work/my repo");
     assert_eq!(
         path_of(
@@ -206,6 +214,7 @@ fn a_file_uri_under_the_branch_s_folder_is_read_relative_to_it() {
 
 #[test]
 fn a_file_uri_outside_the_branch_s_folder_keeps_the_tool_s_spelling() {
+    purlis_core::unsteered!();
     let folder = std::path::Path::new("/work/repo");
     assert_eq!(
         path_of(
@@ -220,6 +229,7 @@ fn a_file_uri_outside_the_branch_s_folder_keeps_the_tool_s_spelling() {
 
 #[test]
 fn a_relative_uri_joins_the_base_its_run_names() {
+    purlis_core::unsteered!();
     let bases = r#""originalUriBaseIds":{"SRC":{"uri":"pkg/"}},"#;
     assert_eq!(
         path_of(r#"{"uri":"./a%20b.ts","uriBaseId":"SRC"}"#, bases, None).as_deref(),
@@ -234,6 +244,7 @@ fn a_relative_uri_joins_the_base_its_run_names() {
 
 #[test]
 fn a_result_with_no_location_is_kept_with_no_file() {
+    purlis_core::unsteered!();
     let sarif = br#"{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"t"}},
         "results":[{"message":{"text":"the whole project"}}]}]}"#;
     let read = read_sarif(sarif, None).unwrap();
@@ -249,6 +260,7 @@ fn a_result_with_no_location_is_kept_with_no_file() {
 
 #[test]
 fn a_level_comes_from_the_rule_when_the_result_has_none_and_a_pass_has_no_severity() {
+    purlis_core::unsteered!();
     let sarif = br#"{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"t","rules":[
         {"id":"r1","defaultConfiguration":{"level":"note"}}]}},"results":[
         {"ruleId":"r1","message":{"text":"from the rule"}},
@@ -260,6 +272,7 @@ fn a_level_comes_from_the_rule_when_the_result_has_none_and_a_pass_has_no_severi
 
 #[test]
 fn past_the_most_a_list_holds_the_rest_are_counted_and_never_lost_without_a_word() {
+    purlis_core::unsteered!();
     let many = purlis_core::checks::MOST_LISTED + 7;
     let set = Set {
         tool: "t".into(),
@@ -305,6 +318,7 @@ fn reader() -> purlis_core::files::Reader {
 #[test]
 fn reader_child() {
     purlis_core::unsteered!();
+    purlis_core::unsteered!();
     if let Some(code) = purlis_core::files::serve_if_asked() {
         std::process::exit(code);
     }
@@ -341,6 +355,7 @@ mod the_store {
     #[test]
     fn a_report_records_each_tool_with_the_head_it_was_reported_for() {
         purlis_core::unsteered!();
+        purlis_core::unsteered!();
         let f = support::plane_with_clone("thing");
         let cut = purlis_core::worktree::add(&f.plane, &f.ws, &f.repo, "feature", None).unwrap();
         let dir = tempfile::tempdir().unwrap();
@@ -363,6 +378,7 @@ mod the_store {
     #[test]
     fn a_second_tool_is_kept_beside_the_first_and_the_same_tool_replaces_its_own() {
         purlis_core::unsteered!();
+        purlis_core::unsteered!();
         let f = support::plane_with_clone("thing");
         purlis_core::worktree::add(&f.plane, &f.ws, &f.repo, "feature", None).unwrap();
         let dir = tempfile::tempdir().unwrap();
@@ -381,6 +397,7 @@ mod the_store {
 
     #[test]
     fn invalid_sarif_is_refused_saying_what_to_do_and_leaves_the_record_alone() {
+        purlis_core::unsteered!();
         purlis_core::unsteered!();
         let f = support::plane_with_clone("thing");
         purlis_core::worktree::add(&f.plane, &f.ws, &f.repo, "feature", None).unwrap();
@@ -404,6 +421,7 @@ mod the_store {
     #[test]
     fn a_check_reporter_s_sarif_is_recorded_as_a_reported_file_is() {
         purlis_core::unsteered!();
+        purlis_core::unsteered!();
         let f = support::plane_with_clone("thing");
         purlis_core::worktree::add(&f.plane, &f.ws, &f.repo, "feature", None).unwrap();
         let branch = Branch::piece(&f.ws, &f.repo, "feature");
@@ -424,6 +442,7 @@ mod the_store {
 
     #[test]
     fn a_check_reporter_s_invalid_sarif_is_a_fault_naming_it_and_the_results_before_stay() {
+        purlis_core::unsteered!();
         purlis_core::unsteered!();
         let f = support::plane_with_clone("thing");
         purlis_core::worktree::add(&f.plane, &f.ws, &f.repo, "feature", None).unwrap();
@@ -454,6 +473,7 @@ mod the_store {
     #[test]
     fn a_check_reporter_that_failed_to_answer_is_a_fault_too() {
         purlis_core::unsteered!();
+        purlis_core::unsteered!();
         let f = support::plane_with_clone("thing");
         purlis_core::worktree::add(&f.plane, &f.ws, &f.repo, "feature", None).unwrap();
         let branch = Branch::piece(&f.ws, &f.repo, "feature");
@@ -472,6 +492,7 @@ mod the_store {
 
     #[test]
     fn a_check_reporter_s_next_good_answer_clears_its_fault_and_leaves_another_s() {
+        purlis_core::unsteered!();
         purlis_core::unsteered!();
         let f = support::plane_with_clone("thing");
         purlis_core::worktree::add(&f.plane, &f.ws, &f.repo, "feature", None).unwrap();
@@ -530,6 +551,7 @@ mod the_store {
     #[test]
     fn for_a_chat_the_output_in_the_branch_s_folder_is_handed_to_the_reporter_and_recorded() {
         purlis_core::unsteered!();
+        purlis_core::unsteered!();
         let f = support::plane_with_clone("thing");
         let dir = tempfile::tempdir().unwrap();
         let config = dir.path().join("config");
@@ -557,6 +579,7 @@ mod the_store {
     #[cfg(unix)]
     #[test]
     fn for_a_chat_output_through_a_link_is_never_read_or_handed() {
+        purlis_core::unsteered!();
         purlis_core::unsteered!();
         let f = support::plane_with_clone("thing");
         let dir = tempfile::tempdir().unwrap();
@@ -587,6 +610,7 @@ mod the_store {
 
     #[test]
     fn what_changed_in_a_file_carries_its_results_placed_on_its_own_hunks_and_marks_them_stale() {
+        purlis_core::unsteered!();
         purlis_core::unsteered!();
         let f = support::plane_with_clone("thing");
         let cut = purlis_core::worktree::add(&f.plane, &f.ws, &f.repo, "feature", None).unwrap();
@@ -637,6 +661,7 @@ mod the_store {
     #[test]
     fn a_branch_is_found_by_its_name_in_a_piece_or_in_the_clone() {
         purlis_core::unsteered!();
+        purlis_core::unsteered!();
         let f = support::plane_with_clone("thing");
         purlis_core::worktree::add(&f.plane, &f.ws, &f.repo, "feature", None).unwrap();
         assert_eq!(
@@ -665,6 +690,7 @@ mod the_store {
     #[test]
     #[cfg(unix)]
     fn a_link_at_the_record_is_refused_and_never_written_through() {
+        purlis_core::unsteered!();
         purlis_core::unsteered!();
         let f = support::plane_with_clone("thing");
         purlis_core::worktree::add(&f.plane, &f.ws, &f.repo, "feature", None).unwrap();

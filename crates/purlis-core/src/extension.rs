@@ -463,7 +463,7 @@ pub const THEMES_ONLY_KEYS: (&[&str], &[&str]) = (
 );
 
 impl Manifest {
-    /// Whether it asks for the Check reporter capability (ADR 0114, #5410): purlis may hand its
+    /// Whether it asks for the Check reporter capability (ADR 0115, #5410): purlis may hand its
     /// program a check's output and read the SARIF it answers.
     pub fn reports_checks(&self) -> bool {
         self.capabilities.contains(&Capability::CheckReporter)

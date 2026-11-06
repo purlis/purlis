@@ -17506,7 +17506,7 @@ export type WhatChanged = {
 	diff: FileDiff,
 	/**  What a discard of a hunk here is checked against (`null` for a file past what is drawn). */
 	stamp: string | null,
-	/**  The branch's check results as this file shows them (ADR 0114). */
+	/**  The branch's check results as this file shows them (ADR 0115). */
 	checks: CheckResults,
 	/**
 	 *  On a turn's diff, that the file changed since the turn ended: it is drawn from the turn's

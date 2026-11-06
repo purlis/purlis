@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! A branch's check results, read from SARIF 2.1.0, kept per branch folder, and placed on a
-//! comparison (ADR 0114, #5407).
+//! comparison (ADR 0115, #5407).
 //!
 //! **purlis runs no check here and has no parser for any one tool.** `purlis check report` hands a
 //! SARIF file over; the store (`docs/plane-format.md`) keeps what each tool last said, with the
@@ -254,7 +254,7 @@ struct Record {
     faults: Vec<Fault>,
 }
 
-/// **A Check reporter whose last answer could not be recorded** (ADR 0114, #5410): what the
+/// **A Check reporter whose last answer could not be recorded** (ADR 0115, #5410): what the
 /// window draws as a Notice naming it. The results recorded before stay; its next answer that is
 /// recorded takes this away.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -337,7 +337,7 @@ pub fn report_inside(
     recorded(plane, branch, &folder, results, None, now)
 }
 
-/// **A Check reporter's answer, recorded for `branch`** (ADR 0114, #5410): `answered` is the SARIF
+/// **A Check reporter's answer, recorded for `branch`** (ADR 0115, #5410): `answered` is the SARIF
 /// it printed, or why it gave none. SARIF 2.1.0 is recorded as [`report`] records a file, and
 /// takes away the reporter's fault. Anything else is kept as its fault, naming it, and refused
 /// in the same sentence; the results recorded before stay, so the review goes on.
@@ -370,7 +370,7 @@ pub fn report_converted(
     }
 }
 
-/// **What a Check reporter answers for a check's `output` and exit `status`** (ADR 0114, #5410),
+/// **What a Check reporter answers for a check's `output` and exit `status`** (ADR 0115, #5410),
 /// asked through `executor` as its own process, never inside the window.
 ///
 /// The outer `Err` is a refusal before anything ran: no extension by that name, one not approved,
@@ -659,7 +659,7 @@ pub fn branch_named(
             found.push((repo.clone(), Some(piece.piece)));
             continue;
         }
-        let clone = plane.join("workspaces").join(ws).join(repo);
+        let clone = crate::repofolder::folder(plane, ws, repo).map_err(|e| e.to_string())?;
         if line_of(&clone, &["symbolic-ref", "--short", "--quiet", "HEAD"]).as_deref() == Some(name)
         {
             found.push((repo.clone(), None));
@@ -677,19 +677,11 @@ pub fn branch_named(
     }
 }
 
-/// The clones of workspace `ws`, by name.
+/// The clones of workspace `ws`, by name, in either layout (ADR 0114).
 fn clones_of(plane: &Path, ws: &str) -> Vec<String> {
-    let Ok(entries) = std::fs::read_dir(plane.join("workspaces").join(ws)) else {
-        return Vec::new();
-    };
-    let mut names: Vec<String> = entries
-        .flatten()
-        .filter(|entry| crate::worktree::is_own_git_dir(&entry.path().join(".git")))
-        .filter_map(|entry| entry.file_name().into_string().ok())
-        .filter(|name| crate::contain::repo_name_ok(name))
-        .collect();
-    names.sort();
-    names
+    crate::repofolder::repos(plane, ws)
+        .map(|rows| rows.into_iter().map(|row| row.repo.name).collect())
+        .unwrap_or_default()
 }
 
 /// A result placed on one file of a comparison.

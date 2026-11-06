@@ -1,18 +1,18 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **`purlis check report <branch> <file.sarif>`** (#5407, ADR 0114): how a branch's check results
+//! **`purlis check report <branch> <file.sarif>`** (#5407, ADR 0115): how a branch's check results
 //! arrive. From a terminal it writes the store; a bad file is refused saying what to do.
 
 use crate::support;
 
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Output, Stdio};
 
 const COMMITTER: [&str; 4] = ["-c", "user.name=t", "-c", "user.email=t@example.invalid"];
 
 fn git(dir: &Path, args: &[&str]) {
-    let done = Command::new("git")
+    let done = support::command("git")
         .args(COMMITTER)
         .args(args)
         .current_dir(dir)

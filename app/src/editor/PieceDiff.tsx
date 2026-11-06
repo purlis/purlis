@@ -41,7 +41,7 @@
  * the latest turn, and the [`TurnPicker`] steps back through that chat's turns, newest first. No
  * turn to show, a turn that changed no file, and a file the turn left alone are each a sentence.
  *
- * **The branch's check results come with the comparison** (ADR 0114, #5407): each one on a line a
+ * **The branch's check results come with the comparison** (ADR 0115, #5407): each one on a line a
  * hunk shows is marked in the gutter, and every one is listed with its tool, severity and message,
  * so the keyboard and a screen reader reach them all (`CheckResults.tsx`).
  *

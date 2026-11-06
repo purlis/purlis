@@ -175,7 +175,7 @@ second one ends the grade.
 
 ## A Check reporter (protocol 5)
 
-**`check-reporter` turns one tool's output into SARIF** (ADR 0114, #5410). It is not a studio
+**`check-reporter` turns one tool's output into SARIF** (ADR 0115, #5410). It is not a studio
 word: it is known on every purlis, and an extension that declares it is watched, not confined, like
 any extension. It has no shape under `contributes`, and it needs a program (`runs`) and `version` 5:
 
