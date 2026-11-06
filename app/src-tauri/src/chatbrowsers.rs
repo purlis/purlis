@@ -2833,6 +2833,8 @@ impl ChatBrowsers {
         site: &Site,
     ) -> Option<Ended> {
         let was = self.lock().get_mut(&session).is_some_and(|chat| {
+            // Allowed when asked no more either: a held page's redirect there asks again (#5230).
+            chat.sites_answered.retain(|one| one != site);
             let before = chat.sites.len();
             chat.sites.retain(|one| one != site);
             chat.sites.len() != before
@@ -2841,14 +2843,25 @@ impl ChatBrowsers {
     }
 
     /// **A browser site allowed for every chat here was removed** (#2018): every chat's
-    /// browsers end, as a narrowing ends them. Answers each chat whose browsers that ended.
-    pub fn sites_removed(&self, driver: Option<&Arc<dyn Driver>>) -> Vec<(u32, Ended)> {
-        let browsing: Vec<u32> = self
-            .lock()
-            .iter()
-            .filter(|(_, chat)| !chat.browsers.is_empty())
-            .map(|(session, _)| *session)
-            .collect();
+    /// browsers end, as a narrowing ends them. `removed` says which sites it was. Answers each
+    /// chat whose browsers that ended.
+    pub fn sites_removed(
+        &self,
+        driver: Option<&Arc<dyn Driver>>,
+        removed: &dyn Fn(&Site) -> bool,
+    ) -> Vec<(u32, Ended)> {
+        let browsing: Vec<u32> = {
+            let mut chats = self.lock();
+            // Allowed when asked no more either: a held page's redirect there asks again (#5230).
+            for chat in chats.values_mut() {
+                chat.sites_answered.retain(|one| !removed(one));
+            }
+            chats
+                .iter()
+                .filter(|(_, chat)| !chat.browsers.is_empty())
+                .map(|(session, _)| *session)
+                .collect()
+        };
         browsing
             .into_iter()
             .map(|session| (session, self.narrowed(driver, session)))
