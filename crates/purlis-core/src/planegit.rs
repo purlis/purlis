@@ -1617,7 +1617,8 @@ enum Rebased {
     Held(Vec<String>),
 }
 
-/// Rebase the plane root onto `FETCH_HEAD`, giving up at `deadline`.
+/// Rebase the plane root onto the commit a save's retry fetched ([`fetched_for_the_retry`]),
+/// giving up at `deadline`.
 ///
 /// **Signed exactly when the commit was** (charter-app#242). A rebase REPLAYS commits and a
 /// replay is a commit, so it reads `commit.gpgsign` as the commit did. Unless the operator
@@ -1643,11 +1644,39 @@ enum Rebased {
 /// a file git could not write, a full disk or a git that died sent the reader to settle a
 /// conflict that did not exist. A conflict is a rebase that stopped with unmerged files; any
 /// other failure is [`Rebased::Failed`], in git's words.
-fn rebase_onto_fetched(root: &Path, sign: bool, deadline: Duration) -> Rebased {
-    rebase_onto(root, "FETCH_HEAD", sign, deadline)
+fn rebase_onto_fetched(root: &Path, onto_id: &str, sign: bool, deadline: Duration) -> Rebased {
+    rebase_onto(root, onto_id, sign, deadline)
 }
 
-/// [`rebase_onto_fetched`], onto `onto`: `FETCH_HEAD` for a save's retry, the remote-tracking
+/// The remote's `branch` fetched for a save's retry into its remote-tracking branch, never
+/// into `FETCH_HEAD`, and the commit it is at read once, as the id the rebase is run on and
+/// put back from: what moves is what was fetched, whatever a ref of the plane's git directory
+/// names by the time git runs. `None` where the fetch failed or brought no commit.
+fn fetched_for_the_retry(root: &Path, helper: &str, https: &str, branch: &str) -> Option<String> {
+    let tracking = format!("refs/remotes/origin/{branch}");
+    let fetched = git::run_network(
+        root,
+        Some(helper),
+        &[
+            "fetch",
+            "--no-recurse-submodules",
+            "--no-write-fetch-head",
+            https,
+            &format!("+refs/heads/{branch}:{tracking}"),
+        ],
+    );
+    if !fetched.is_ok_and(|run| run.ok()) {
+        return None;
+    }
+    let spec = format!("{tracking}^{{commit}}");
+    git::run(root, &["rev-parse", "--verify", "-q", &spec], git::READ)
+        .ok()
+        .filter(git::Run::ok)
+        .map(|run| run.line().trim().to_string())
+        .filter(|id| !id.is_empty())
+}
+
+/// [`rebase_onto_fetched`], onto `onto`: the fetched commit for a save's retry, the remote-tracking
 /// branch for the window's Update ([`update::update`]).
 fn rebase_onto(root: &Path, onto: &str, sign: bool, deadline: Duration) -> Rebased {
     let stops = sandbox_would_stop(root, onto);
@@ -1721,12 +1750,13 @@ fn rebase_undone(
     root: &Path,
     branch: &str,
     head: &str,
+    onto_id: &str,
     detail: String,
     next: &str,
     say: Sink,
 ) -> PushResult {
     // The save's own commit is HEAD, and the tree was clean when it was made: put back to it.
-    let detail = match update::put_back(root, head, "FETCH_HEAD") {
+    let detail = match update::put_back(root, head, onto_id) {
         Ok(()) => detail,
         Err(left) => format!("{detail}; {}", update::said_not_put_back(&left)),
     };
@@ -1970,118 +2000,123 @@ fn push_head_within(
         say(Say::Info(
             "remote moved — fetching + rebasing, then retrying …".into(),
         ));
-        let fetched = git::run_network(root, Some(helper.as_str()), &["fetch", &https, &branch]);
-        if !fetched.is_ok_and(|r| r.ok()) {
-            // A failed fetch leaves NO FETCH_HEAD to rebase onto, so rebasing anyway fails for
-            // a reason that has nothing to do with a conflict. Calling that `conflict` would
-            // send the reader to resolve one that does not exist while the real answer — the
-            // push failure below, in git's own words — is discarded.
-            say(Say::Warn(
-                "Could not reach origin to fetch, so the retry was skipped.".into(),
-            ));
-        } else {
-            match rebase_onto_fetched(root, sign, deadline) {
-                Rebased::Replayed => {}
-                Rebased::Conflict(conflicts) => {
-                    let _ = git::run(root, &["rebase", "--abort"], WRITE);
-                    say(Say::Warn(
+        match fetched_for_the_retry(root, &helper, &https, &branch) {
+            None => {
+                // A failed fetch leaves no commit to rebase onto, so rebasing anyway fails for
+                // a reason that has nothing to do with a conflict. Calling that `conflict` would
+                // send the reader to resolve one that does not exist while the real answer — the
+                // push failure below, in git's own words — is discarded.
+                say(Say::Warn(
+                    "Could not reach origin to fetch, so the retry was skipped.".into(),
+                ));
+            }
+            Some(onto_id) => {
+                match rebase_onto_fetched(root, &onto_id, sign, deadline) {
+                    Rebased::Replayed => {}
+                    Rebased::Conflict(conflicts) => {
+                        let _ = git::run(root, &["rebase", "--abort"], WRITE);
+                        say(Say::Warn(
                         "Committed locally, but rebase hit a conflict — resolve manually, then \
                          `purlis save`."
                             .into(),
                     ));
-                    let detail = if conflicts.is_empty() {
-                        String::new()
-                    } else {
-                        format!(
-                            "the remote changed the same lines in: {}",
-                            conflicts.join(", ")
-                        )
-                    };
-                    return record_push(
-                        root,
-                        PushResult {
-                            detail,
-                            conflicts,
-                            ..PushResult::of(Outcome::Conflict, &branch)
-                        },
-                        &head,
-                    );
-                }
-                Rebased::Unsigned(signer) => {
-                    // Stopped, not retried unsigned as the commit is: the commit stays on this
-                    // laptop, where re-signing it is the operator's to do, while a push is
-                    // public and final. The remote never gets an unsigned copy of a commit the
-                    // operator asked to sign.
-                    return rebase_undone(
-                        root,
-                        &branch,
-                        &head,
-                        format!("the rebase could not sign the replayed commit: {signer}"),
-                        "Nothing was pushed, so nothing unsigned reached the remote. Fix the \
+                        let detail = if conflicts.is_empty() {
+                            String::new()
+                        } else {
+                            format!(
+                                "the remote changed the same lines in: {}",
+                                conflicts.join(", ")
+                            )
+                        };
+                        return record_push(
+                            root,
+                            PushResult {
+                                detail,
+                                conflicts,
+                                ..PushResult::of(Outcome::Conflict, &branch)
+                            },
+                            &head,
+                        );
+                    }
+                    Rebased::Unsigned(signer) => {
+                        // Stopped, not retried unsigned as the commit is: the commit stays on this
+                        // laptop, where re-signing it is the operator's to do, while a push is
+                        // public and final. The remote never gets an unsigned copy of a commit the
+                        // operator asked to sign.
+                        return rebase_undone(
+                            root,
+                            &branch,
+                            &head,
+                            &onto_id,
+                            format!("the rebase could not sign the replayed commit: {signer}"),
+                            "Nothing was pushed, so nothing unsigned reached the remote. Fix the \
                          signer, then rebase onto the remote and push by hand.",
-                        say,
-                    );
-                }
-                Rebased::Failed(said) => {
-                    // Not a conflict, and not called one (qw348): git's own words say what
-                    // stopped it. Whatever the failed checkout wrote is put back.
-                    return rebase_undone(
-                        root,
-                        &branch,
-                        &head,
-                        format!("the rebase onto the remote did not go through: {said}"),
-                        "Nothing was pushed. Settle what git names, then `purlis save`.",
-                        say,
-                    );
-                }
-                Rebased::Held(files) => {
-                    // Nothing was started, so there is nothing to undo. Recorded as failed,
-                    // not blocked: the window's own save runs under no sandbox and lands it.
-                    let detail = said_sandbox_stops(&files);
-                    say(Say::Warn(
-                        format!("Committed locally, but {detail}.").into(),
-                    ));
-                    say(Say::Info(
+                            say,
+                        );
+                    }
+                    Rebased::Failed(said) => {
+                        // Not a conflict, and not called one (qw348): git's own words say what
+                        // stopped it. Whatever the failed checkout wrote is put back.
+                        return rebase_undone(
+                            root,
+                            &branch,
+                            &head,
+                            &onto_id,
+                            format!("the rebase onto the remote did not go through: {said}"),
+                            "Nothing was pushed. Settle what git names, then `purlis save`.",
+                            say,
+                        );
+                    }
+                    Rebased::Held(files) => {
+                        // Nothing was started, so there is nothing to undo. Recorded as failed,
+                        // not blocked: the window's own save runs under no sandbox and lands it.
+                        let detail = said_sandbox_stops(&files);
+                        say(Say::Warn(
+                            format!("Committed locally, but {detail}.").into(),
+                        ));
+                        say(Say::Info(
                         "  Nothing was rebased or pushed. The window's save brings the remote's \
                          commits in and pushes this one, or the person runs `purlis save` in \
                          their own terminal."
                             .into(),
                     ));
-                    return record_push(
-                        root,
-                        PushResult {
-                            detail,
-                            ..PushResult::of(Outcome::Failed, &branch)
-                        },
-                        &head,
-                    );
-                }
-                Rebased::OutOfTime => {
-                    // Not a conflict, and not called one: nothing says the trees disagree,
-                    // only that git did not finish. The push that started this is what failed
-                    // to land.
-                    return rebase_undone(
-                        root,
-                        &branch,
-                        &head,
-                        format!(
-                            "the rebase onto the remote did not finish within {} seconds, so \
+                        return record_push(
+                            root,
+                            PushResult {
+                                detail,
+                                ..PushResult::of(Outcome::Failed, &branch)
+                            },
+                            &head,
+                        );
+                    }
+                    Rebased::OutOfTime => {
+                        // Not a conflict, and not called one: nothing says the trees disagree,
+                        // only that git did not finish. The push that started this is what failed
+                        // to land.
+                        return rebase_undone(
+                            root,
+                            &branch,
+                            &head,
+                            &onto_id,
+                            format!(
+                                "the rebase onto the remote did not finish within {} seconds, so \
                              purlis stopped it",
-                            deadline.as_secs()
-                        ),
-                        "Rebase by hand, then `purlis save`.",
-                        say,
-                    );
+                                deadline.as_secs()
+                            ),
+                            "Rebase by hand, then `purlis save`.",
+                            say,
+                        );
+                    }
                 }
-            }
-            // The rebase rewrote it, so the commit the record names is a different one now.
-            head = git::run(root, &["rev-parse", "HEAD"], git::READ)
-                .map(|r| r.line().trim().to_string())
-                .unwrap_or_default();
-            match push(root, &head) {
-                Ok(again) => run = again,
-                Err(_) => {
-                    return record_push(root, PushResult::of(Outcome::Failed, &branch), &head);
+                // The rebase rewrote it, so the commit the record names is a different one now.
+                head = git::run(root, &["rev-parse", "HEAD"], git::READ)
+                    .map(|r| r.line().trim().to_string())
+                    .unwrap_or_default();
+                match push(root, &head) {
+                    Ok(again) => run = again,
+                    Err(_) => {
+                        return record_push(root, PushResult::of(Outcome::Failed, &branch), &head);
+                    }
                 }
             }
         }
