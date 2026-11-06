@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793973909671,
+  "lastUpdate": 1793975988221,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -41076,6 +41076,48 @@ window.BENCHMARK_DATA = {
             "value": 101.4419585,
             "unit": "ms",
             "extra": "median of 5 runs: 101.031, 101.347, 101.442, 101.937, 103.187 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "fa6c99f200a3b5b8957d8884c25e88627906ea45",
+          "message": "Research note: where the release build's time and memory go (#5277) (#5519)\n\n* Research note: where the release build's time and memory go, and the levers for it (#5277)\n\nThe ~26 GB peak is one rustc, the one compiling purlis_app_lib. Tauri expands every command's\nwrapper where generate_handler! is called, and in a release build gives each of the 573 async\ncommands its own copy of its task code (debug boxes them into one, \"for a faster compile\ntime\"). The note ranks the levers by payoff for purlis: measure first; a larger runner and the\nmacOS time limit; a per-package profile override; Tauri plugins in their own crates, Tauri's\nown unit for splitting commands; asking upstream for the boxed path in release. Each claim is\ntagged by its source.\n\nSigned-off-by: Aaron Yordanyan <aharon@purlis.com>\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N6P0CBBHAZVBQGVM68JTGJ\nPurlis-Persona: steward\n\n* The research note starts with its title, as every docs page must, and its sidebar group is called Research\n\nSigned-off-by: Aaron Yordanyan <aharon@purlis.com>\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6N6P0CBBHAZVBQGVM68JTGJ\nPurlis-Persona: steward\n\n---------\n\nSigned-off-by: Aaron Yordanyan <aharon@purlis.com>\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-06T13:31:58Z",
+          "tree_id": "ed50ae13afbe9edf12c5387bf59719e419735567",
+          "url": "https://github.com/purlis/purlis/commit/fa6c99f200a3b5b8957d8884c25e88627906ea45"
+        },
+        "date": 1793975983058,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5528474999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.540, 0.549, 0.553, 0.558, 0.559 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.340116,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.195, 16.256, 16.340, 16.422, 16.914 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.286284,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.006, 100.946, 101.286, 101.318, 102.486 ms"
           }
         ]
       }
