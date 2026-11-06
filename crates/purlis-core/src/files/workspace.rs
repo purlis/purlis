@@ -42,8 +42,10 @@ const WORKTREES: &str = ".worktrees";
 const ALSO_KEPT: [&str; 2] = ["skills.local", ".claude"];
 
 /// The prefixes of the files purlis generates in a workspace (`.purlis-structure`, and the same
-/// files from before the rename).
-const GENERATED: [&str; 2] = [".purlis", ".charter"];
+/// files from before the rename): its state folder's name, in each spelling it has had.
+fn generated() -> impl Iterator<Item = &'static str> {
+    crate::names::STATE_DIR.spellings()
+}
 
 /// One entry of a folder of the workspace files.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,9 +126,7 @@ pub fn managed(path: &str, extension_folders: &[String]) -> bool {
     let lower = first.to_lowercase();
     crate::contain::workspace_keeps(first)
         || ALSO_KEPT.contains(&lower.as_str())
-        || GENERATED
-            .iter()
-            .any(|prefix| lower == *prefix || lower.starts_with(&format!("{prefix}-")))
+        || generated().any(|prefix| lower == prefix || lower.starts_with(&format!("{prefix}-")))
         || extension_folders
             .iter()
             .any(|folder| folder.eq_ignore_ascii_case(first))
