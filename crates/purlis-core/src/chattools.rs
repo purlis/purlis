@@ -137,10 +137,13 @@ pub const SECRET_ASK: &str = "secret_ask";
 /// session-start line ([`crate::briefing`]), the `secret_ask` tool's description and the
 /// purlis-secrets skill, word for word.
 pub const SECRET_ASK_SAID: &str = "Never ask the person for a password, token or key in this \
-     conversation, and never have them paste one: raise a Secret ask for any credential you \
-     lack, declared or not, with the `secret_ask` tool or `purlis secret ask <KEY> --purpose \
-     \"<what for>\"`, and the person fills it in purlis's window. You hear only filled, with \
-     the vault and key to use, or declined.";
+     conversation, and never have them paste one. Prefer simply running the command that needs \
+     it with `purlis secret exec`: the person is asked in purlis's window for whatever the run \
+     lacks, a key or an Allow for its program, in one notice, and the command goes on once they \
+     answer. To ask ahead, raise a Secret ask for any credential you lack, declared or not, with \
+     the `secret_ask` tool or `purlis secret ask <KEY> --purpose \"<what for>\"`, naming the \
+     program you will run with `--program` where you know it. You hear only filled, with the \
+     vault and key to use and whether the program was allowed, or declined.";
 
 /// What [`WORKTREE_REMOVE`] is asked to remove: the `repo` and `piece` of a branch folder of
 /// the chat's own workspace, and whether to delete its branch too, as `git branch -d` does.
@@ -639,12 +642,19 @@ pub static TOOLS: [Tool; 29] = [
     },
     Tool {
         name: "memory_search",
-        description: "Search the memory of the workspace this chat works in. With no query, \
-                      list every memory.",
+        description: "Search the memory of the workspace this chat works in: the best 8 \
+                      matches for a query. With no query, the newest 20 memories, newest first, \
+                      and a cursor to the 20 before them.",
         schema: || {
             json!({
                 "type": "object",
-                "properties": { "query": { "type": "string", "description": "Words to look for." } },
+                "properties": {
+                    "query": { "type": "string", "description": "Words to look for." },
+                    "cursor": {
+                        "type": "string",
+                        "description": "With no query: the cursor the last answer gave, for the memories older than it showed.",
+                    },
+                },
                 "additionalProperties": false,
             })
         },
@@ -1144,11 +1154,18 @@ pub static TOOLS: [Tool; 29] = [
         name: SECRET_ASK,
         description: "Ask the person, in purlis's window, for a credential this chat lacks: \
                       an API key, a token, a password. Never ask the person for a password, \
-                      token or key in this conversation, and never have them paste one: raise \
-                      a Secret ask for any credential you lack, declared or not, with the \
-                      `secret_ask` tool or `purlis secret ask <KEY> --purpose \"<what for>\"`, \
-                      and the person fills it in purlis's window. You hear only filled, with \
-                      the vault and key to use, or declined. The vault is your persona's unless \
+                      token or key in this conversation, and never have them paste one. Prefer \
+                      simply running the command that needs it with `purlis secret exec`: \
+                      the person is asked in purlis's window for whatever the run lacks, a key \
+                      or an Allow for its program, in one notice, and the command goes on \
+                      once they answer. To ask ahead, raise a Secret ask for any credential \
+                      you lack, declared or not, with the `secret_ask` tool or `purlis secret ask \
+                      <KEY> --purpose \"<what for>\"`, naming the program you will run with \
+                      `--program` where you know it. You hear only filled, with the vault and \
+                      key to use and whether the program was allowed, or declined. Naming a \
+                      program purlis has reviewed (curl) lets the person allow it for this chat \
+                      on the same notice; any other is asked about as it runs. The vault is your \
+                      persona's unless \
                       you name one. A key the vault holds already answers filled at once. \
                       Pending means the person has not answered yet: you are told when they \
                       do. A value that doesn't work: ask again with `replace` saying why, and \
@@ -1176,6 +1193,12 @@ pub static TOOLS: [Tool; 29] = [
                         "description": "Why the value you have doesn't work (a 401, say), \
                                         in one line: the person is asked to replace it even \
                                         though the vault holds it.",
+                    },
+                    "program": {
+                        "type": "string",
+                        "description": "The program you will run with it, as you will name \
+                                        it to `purlis secret exec` (curl, say): the person may \
+                                        allow it on the same notice.",
                     },
                 },
                 "required": ["key", "purpose"],
@@ -1406,11 +1429,20 @@ fn run(
         }
         "memory_search" => {
             let ws = workspace_name(place)?;
-            let found = match held::Store::open(root, place, "memory", false)? {
-                Some(memory) => memories(&memory)?,
-                None => Vec::new(),
-            };
-            memory_search(ws, found, args)
+            let memory = held::Store::open(root, place, "memory", false)?;
+            match optional_string(args, "query")?
+                .map(str::trim)
+                .filter(|q| !q.is_empty())
+            {
+                Some(query) => {
+                    let found = match memory {
+                        Some(memory) => memories(&memory)?,
+                        None => Vec::new(),
+                    };
+                    memory_search(ws, found, query)
+                }
+                None => newest_memories(ws, memory.as_ref(), optional_string(args, "cursor")?),
+            }
         }
         "memory_add" => {
             let ws = workspace_name(place)?;
@@ -1921,29 +1953,90 @@ fn todo_list(store: &held::Store, ws: &str, now: chrono::NaiveDateTime) -> Resul
 fn memory_search(
     ws: &str,
     found: Vec<crate::memstore::Found>,
-    args: &Map<String, Value>,
+    query: &str,
 ) -> Result<String, String> {
-    let query = optional_string(args, "query")?
-        .map(str::trim)
-        .filter(|q| !q.is_empty());
-    let found: Vec<crate::memstore::Found> = match query {
-        Some(q) => crate::memstore::rank(found, q, 8)
-            .into_iter()
-            .map(|(found, _)| found)
-            .collect(),
-        None => found,
-    };
+    let found: Vec<crate::memstore::Found> = crate::memstore::rank(found, query, 8)
+        .into_iter()
+        .map(|(found, _)| found)
+        .collect();
     if found.is_empty() {
-        return Ok(match query {
-            Some(q) => format!("No memories in '{ws}' match {}.", crate::shown::short(q)),
+        return Ok(format!(
+            "No memories in '{ws}' match {}.",
+            crate::shown::short(query)
+        ));
+    }
+    Ok(shown_memories(&found))
+}
+
+/// How many memories a search with no query shows at a time.
+const MEMORY_PAGE: usize = 20;
+
+/// The newest [`MEMORY_PAGE`] memories of the workspace, newest first, older than `cursor` when
+/// one is given, and the cursor to the page after when there is one. Only the page's files are
+/// read, so the answer is the same size however much the workspace remembers (#5500).
+///
+/// Newest is by the journal's `YYYYMMDD-HHMMSS-` prefix, which every memory written by purlis
+/// has; a file a person named by hand has none and comes after them all. The cursor is the
+/// last file name shown, so a memory written between two pages never moves one already shown
+/// onto the next.
+#[cfg(unix)]
+fn newest_memories(
+    ws: &str,
+    store: Option<&held::Store>,
+    cursor: Option<&str>,
+) -> Result<String, String> {
+    let order = |name: &str| {
+        (
+            std::cmp::Reverse(crate::memstore::unstamped(name) != name),
+            std::cmp::Reverse(name.to_owned()),
+        )
+    };
+    let mut names = match store {
+        Some(store) => entry_names(store)?,
+        None => Vec::new(),
+    };
+    names.sort_by_cached_key(|name| order(name));
+    let older = match cursor {
+        Some(cursor) => {
+            let after = order(cursor);
+            names.partition_point(|name| order(name) <= after)
+        }
+        None => 0,
+    };
+    let page = &names[older..];
+    let mut found = Vec::new();
+    for name in page.iter().take(MEMORY_PAGE) {
+        if let Some(text) = store.map(|store| store.read(name)).transpose()?.flatten() {
+            let path = std::path::PathBuf::from(name);
+            let title = crate::memstore::title_in(&path, &text);
+            found.push(crate::memstore::Found { path, title, text });
+        }
+    }
+    if found.is_empty() {
+        return Ok(match cursor {
+            Some(_) => format!("No memories in '{ws}' older than the cursor."),
             None => format!("'{ws}' has no memories yet."),
         });
     }
-    Ok(found
+    let mut out = shown_memories(&found);
+    match page.get(MEMORY_PAGE - 1).filter(|_| page.len() > MEMORY_PAGE) {
+        Some(last) => out.push_str(&format!(
+            "\n\n{MEMORY_PAGE} of the newest shown. Older ones: memory_search with cursor \"{last}\", \
+             or a query."
+        )),
+        None => out.push_str("\n\nThat is the oldest memory."),
+    }
+    Ok(out)
+}
+
+/// Memories as a search shows them: each title as a heading, then its text.
+#[cfg_attr(not(unix), allow(dead_code))]
+fn shown_memories(found: &[crate::memstore::Found]) -> String {
+    found
         .iter()
         .map(|f| format!("## {}\n{}", crate::shown::line(&f.title), f.text.trim()))
         .collect::<Vec<_>>()
-        .join("\n\n"))
+        .join("\n\n")
 }
 
 /// One line per change, as `charter change list` draws them.

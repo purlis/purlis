@@ -191,6 +191,24 @@ impl Frontmatter {
         out
     }
 
+    /// **Each key that widens a chat ([`Field::widens`]) it sets that `was` does not set to the
+    /// same value** (#5354): what an update newly asks of a chat, `allowed-tools` or `hooks`
+    /// added or changed. Against no frontmatter, every one it sets. One taken away is none.
+    pub fn widens_beyond(&self, was: Option<&Frontmatter>) -> Vec<Field> {
+        self.entries
+            .iter()
+            .filter_map(|(key, node)| Field::of(key).filter(|f| f.widens()).map(|f| (f, node)))
+            .filter(|(field, node)| {
+                was.is_none_or(|was| {
+                    !was.entries
+                        .iter()
+                        .any(|(key, old)| Field::of(key) == Some(*field) && old == *node)
+                })
+            })
+            .map(|(field, _)| field)
+            .collect()
+    }
+
     /// Whether its `context` is `fork`.
     pub fn fork(&self) -> bool {
         self.entries.iter().any(|(key, node)| {

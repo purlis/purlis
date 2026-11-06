@@ -6,6 +6,7 @@ import { afterPaint } from "./projectShown";
 import { MessageSquarePlus, Plus, Search, Sparkle, Sparkles } from "lucide-react";
 import {
   commands,
+  type DeletedRename,
   type DeletedSkill,
   type NeedsYou,
   type SkillGrant,
@@ -46,12 +47,7 @@ import { proposeOldKeysRemoval } from "./oldHarnessPlugins";
 import { GradingPage, gradingCrumbTo, gradingPath, type GradingGo } from "./SkillGrades";
 import { Notice } from "./Notice";
 import { DraftPage, DraftsList } from "./SkillStudioDrafts";
-import {
-  DeletedList,
-  DeletedPage,
-  NAME_TAKEN_STAYS,
-  type DeletedGroup,
-} from "./SkillStudioDeleted";
+import { DeletedList, DeletedPage, type DeletedGroup } from "./SkillStudioDeleted";
 import { DRAFT_WITH_A_CHAT, NEW_SKILL_MENU } from "./SkillStarts";
 import { NewSkillDialog } from "./NewSkillDialog";
 import { askDraft, askSkillChat, draftLevel, useSkillDraftsRead } from "./skillDraftAsks";
@@ -122,6 +118,7 @@ import {
 } from "./SkillLibrarySelect";
 import { applySet } from "./SkillSetReview";
 import { GradeSetReview, GradesRunningPage } from "./SkillLibraryGrade";
+import { SetUpdateReviewPage, applySetUpdate } from "./SkillSetUpdateReview";
 import { useSkillEditInPlace } from "./SkillEditInPlace";
 
 /** A change in progress: New skill… (#3684), Rename, Move or Delete, each a dialog (S4, #3685),
@@ -157,6 +154,7 @@ function sourcesPath(at: SourcesAt): Crumb[] {
   if (at.at === "install-all") return [source, choose, { id: at.at, label: "Review" }];
   if (at.at === "set-choose") return [source, { id: at.at, label: SET_PATH[at.act] }];
   if (at.at === "set-review") return [source, { id: at.at, label: `Review: ${SET_PATH[at.act]}` }];
+  if (at.at === "set-update") return [source, { id: at.at, label: "Review updates" }];
   return [
     source,
     { id: at.at, label: `${at.at === "install" ? "Install" : "Update"} ${at.skill}` },
@@ -450,6 +448,9 @@ export function SkillStudioTab({
     sel: Selecting;
     /** Deleted's action under review. */
     deletedAct?: DeletedAct;
+    /** What the group under review was deleted from, where its Bring all back opened it
+     *  (#5457): what its Undo says the group is from again. */
+    from?: string | null;
   }>();
   /** **The grades Select started** (#5356), by their batch's id, while their page is shown. */
   const [gradesShown, setGradesShown] = useState<string>();
@@ -732,28 +733,41 @@ export function SkillStudioTab({
    *  a new name where its own is a built-in skill's now (#3729). */
   const bringBack = (id: string, under: string | null = null) =>
     change("The skill was not brought back", () => commands.skillRestore(plane, id, under));
-  /** **Bring all back** (#5331): those of a group that can come back, as one change, with one
-   *  Undo that deletes them again as the group they were. */
-  const bringAllBack = (group: DeletedGroup) => bringSetBack(group.skills, group.from, change);
-  /** **Brings `skills` back as one change** (#5331, and Select's Bring back, #5332), leaving out
-   *  those whose names belong to purlis now, with one Undo that deletes them again as one group
-   *  said to be `from`. */
-  const bringSetBack = (skills: readonly DeletedSkill[], from: string | null, asked: Change) => {
-    const back = skills.filter((skill) => !skill.reserved);
+  /** **Bring all back** (#5331): a group, as one change, with one Undo that deletes them again
+   *  as the group they were. Where a name of one of them belongs to purlis now, the group's
+   *  review opens instead, for its new name (#5457). */
+  const bringAllBack = (group: DeletedGroup) => {
+    if (group.skills.every((skill) => skill.clash === null))
+      bringSetBack(group.skills, group.from, change);
+    else
+      setSelected({
+        page: "deleted",
+        scope: key,
+        sel: { keys: new Set(group.skills.map((skill) => skill.id)), only: false },
+        deletedAct: "bring-back",
+        from: group.from,
+      });
+  };
+  /** **Brings `skills` back as one change** (#5331, and Select's Bring back, #5332), each
+   *  `under` the new name the review gave it where its own belongs to purlis now (#5457), with
+   *  one Undo that deletes them again as one group said to be `from`. */
+  const bringSetBack = (
+    back: readonly DeletedSkill[],
+    from: string | null,
+    asked: Change,
+    under: readonly DeletedRename[] = [],
+  ) => {
     const ids = back.map((skill) => skill.id);
-    const stay = skills.filter((skill) => skill.reserved);
-    const staying =
-      stay.length === 0
-        ? []
-        : [`${stay.map((skill) => skill.name).join(", ")} ${NAME_TAKEN_STAYS}`];
+    const nameOf = (skill: DeletedSkill) =>
+      under.find((one) => one.id === skill.id)?.to ?? skill.name;
     asked(
       "The skills were not brought back",
-      () => commands.skillSetRestore(plane, ids, null),
+      () => commands.skillSetRestore(plane, ids, null, [...under]),
       async (notes) => ({
         ...resultOf(
           "Skills brought back",
           `${counted(back.length, "skill is", "skills are")} back.`,
-          [...staying, ...notes],
+          notes,
         ),
         undo: () =>
           change(
@@ -763,7 +777,7 @@ export function SkillStudioTab({
                 plane,
                 back.map((skill) => ({
                   level: skill.level,
-                  name: skill.name,
+                  name: nameOf(skill),
                   label: skill.label,
                 })),
                 from,
@@ -1183,7 +1197,7 @@ export function SkillStudioTab({
     >
       {studio === undefined
         ? DRAFT_WITH_A_CHAT
-        : askAChat(draftLevel(scope, studio.levels), "draft a skill")}
+        : askAChat(draftLevel(scope, studio.levels), "draft a skill", plane)}
     </Button>
   );
   // What is chosen on Harness skills (#3692): a program's own skill, by its place's id.
@@ -1607,11 +1621,21 @@ export function SkillStudioTab({
       </>
     );
     const acting = sel?.acting;
-    // Grade's reach, worked out only while its review is open.
+    // Grade's reach (#5356) and Review updates' (#5354), each worked out only while its review
+    // is open; any other act is a set's change.
+    const setAct = acting === "grade" || acting === "update" ? undefined : acting;
     const grades =
       acting === "grade"
         ? reachOf(
             "grade",
+            chosenRows.map((one) => one.skill),
+            selectFor,
+          )
+        : undefined;
+    const updating =
+      acting === "update"
+        ? reachOf(
+            acting,
             chosenRows.map((one) => one.skill),
             selectFor,
           )
@@ -1653,13 +1677,26 @@ export function SkillStudioTab({
             setGradesShown(batch);
           }}
         />
-      ) : sel !== undefined && acting !== undefined && acting !== "grade" ? (
-        <SelectReviewPage
-          key={acting}
+      ) : sel !== undefined && updating !== undefined ? (
+        <SetUpdateReviewPage
+          key="update"
           plane={plane}
-          act={acting}
+          title={`Review updates for ${counted(chosenRows.length, "skill", "skills")}`}
+          members={updating.will}
+          stays={updating.stays}
+          busy={busy}
+          onCancel={() => setSel((was) => ({ ...was, acting: undefined }))}
+          onApply={(updates) =>
+            applySetUpdate({ plane, updates, change: changeThenEnd, undo: change })
+          }
+        />
+      ) : sel !== undefined && setAct !== undefined ? (
+        <SelectReviewPage
+          key={setAct}
+          plane={plane}
+          act={setAct}
           reach={reachOf(
-            acting,
+            setAct,
             chosenRows.map((one) => one.skill),
             selectFor,
           )}
@@ -1671,7 +1708,7 @@ export function SkillStudioTab({
           onApply={({ members, to, grant, zip }) =>
             applySet({
               plane,
-              act: acting,
+              act: setAct,
               members,
               from: null,
               removes: null,
@@ -1970,10 +2007,10 @@ export function SkillStudioTab({
           onCancel={() =>
             setSelected((was) => (was === undefined ? was : { ...was, deletedAct: undefined }))
           }
-          onApply={(going) =>
+          onApply={(going, under) =>
             deletedAct === "delete-now"
               ? deleteNow(going, changeThenEnd)
-              : bringSetBack(going, null, changeThenEnd)
+              : bringSetBack(going, selectedHere?.from ?? null, changeThenEnd, under)
           }
         />
       ) : sel !== undefined ? (

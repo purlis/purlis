@@ -464,10 +464,9 @@ fn the_operators_pick_wins_over_what_the_repo_looks_like() {
     assert_eq!(taken.template.as_deref(), Some("docs"));
     assert!(root.join("personas/docs-writer/persona.md").is_file());
     let text = read(
-        &taken
-            .clone
-            .parent()
-            .expect("the workspace")
+        &root
+            .join("workspaces")
+            .join(&taken.workspace)
             .join("workspace.md"),
     );
     assert!(text.contains("`docs-writer` makes changes"), "{text}");

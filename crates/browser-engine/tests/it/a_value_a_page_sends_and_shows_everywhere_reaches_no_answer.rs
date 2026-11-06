@@ -206,6 +206,7 @@ fn filled() -> Option<(Browser, tempfile::TempDir, common::site::Site, Ref, Answ
         key: "search-key".to_owned(),
         value: VALUE.to_owned().into(),
         multi_line: false,
+        under_a_grant: false,
     };
     let answer = browser
         .fill_secret(browser.epoch(), &fill, Arc::new(Holds))

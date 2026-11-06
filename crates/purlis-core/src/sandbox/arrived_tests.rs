@@ -43,6 +43,16 @@ impl Fixture {
             .expect("a record");
     }
 
+    /// [`Self::begin`], the chat's sandbox holding the git folders `held` whole, as it holds a
+    /// branch folder's clone.
+    fn begin_holding(&self, held: &[PathBuf]) {
+        let watched = Watched {
+            held_git: held.to_vec(),
+            ..self.watched()
+        };
+        arrived::begin(&self.plane, CHAT, Some("Fix the build"), &watched).expect("a record");
+    }
+
     fn look_of(&self) -> arrived::Looked {
         arrived::look(&self.plane, CHAT, None)
             .expect("a look")
@@ -661,13 +671,91 @@ fn clone_behind(fix: &Fixture) -> PathBuf {
 }
 
 #[test]
-fn what_an_update_of_a_clone_brings_from_its_remote_is_not_told() {
+fn what_an_update_of_a_clone_the_sandbox_holds_brings_from_its_remote_is_not_told() {
+    let fix = Fixture::new();
+    let clone = clone_behind(&fix);
+    fix.begin_holding(&[clone.join(".git")]);
+    git(&clone, &["pull", "-q", "--ff-only"]);
+    assert!(clone.join(".vscode/tasks.json").exists());
+    assert_eq!(fix.look(), Vec::<String>::new());
+}
+
+/// A chat that may write a clone's `.git` may write its remote-tracking branches, so what one
+/// of them holds vouches for nothing: an update from its remote is told as much as a file the
+/// chat committed and called a remote's.
+#[test]
+fn in_a_clone_the_chat_may_write_no_branch_vouches_for_what_appears() {
     let fix = Fixture::new();
     let clone = clone_behind(&fix);
     fix.begin();
     git(&clone, &["pull", "-q", "--ff-only"]);
-    assert!(clone.join(".vscode/tasks.json").exists());
-    assert_eq!(fix.look(), Vec::<String>::new());
+    assert_eq!(fix.look(), ["clone/.vscode"]);
+
+    file(&clone.join(".husky/pre-commit"), "x\n");
+    git(&clone, &["add", "."]);
+    git(&clone, &["commit", "-q", "-m", "local"]);
+    git(&clone, &["update-ref", "refs/remotes/origin/main", "HEAD"]);
+    assert_eq!(fix.look(), ["clone/.husky"]);
+}
+
+/// A branch folder there as the chat starts, of a clone whose `.git` the chat may write: what
+/// is staged in its index, kept in that `.git`, vouches for nothing.
+#[test]
+fn a_branch_folders_index_in_a_clone_the_chat_may_write_vouches_for_nothing() {
+    let fix = Fixture::new();
+    let clone = clone_behind(&fix);
+    let branch = fix.folder.join("branch");
+    git(
+        &clone,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "lane",
+            branch.to_str().expect("a path"),
+        ],
+    );
+    fix.begin();
+    file(&branch.join(".envrc"), "x\n");
+    git(&branch, &["add", ".envrc"]);
+    assert_eq!(fix.look(), ["branch/.envrc"]);
+}
+
+/// Nor do a branch folder or a submodule the chat registered in a `.git` it may write: its own
+/// `worktrees` and `modules`, and the index there.
+#[test]
+fn a_branch_folder_or_submodule_of_a_clone_the_chat_may_write_vouches_for_nothing() {
+    let fix = Fixture::new();
+    let clone = clone_behind(&fix);
+    git(&clone, &["pull", "-q", "--ff-only"]);
+    fix.begin();
+    let branch = fix.folder.join("branch");
+    git(
+        &clone,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "lane",
+            branch.to_str().expect("a path"),
+        ],
+    );
+    let module = clone.join(".git/modules/sub");
+    file(&module.join("HEAD"), "ref: refs/heads/main\n");
+    file(
+        &module.join("config"),
+        "[core]\n\tworktree = ../../../sub\n",
+    );
+    file(
+        &clone.join("sub/.git"),
+        &format!("gitdir: {}\n", module.display()),
+    );
+    assert_eq!(
+        fix.look(),
+        ["branch/.git", "branch/.vscode", "clone/sub/.git"]
+    );
 }
 
 #[test]
@@ -696,7 +784,7 @@ fn a_branch_folder_the_clone_registers_is_not_told_and_a_file_its_index_does_not
     let fix = Fixture::new();
     let clone = clone_behind(&fix);
     git(&clone, &["pull", "-q", "--ff-only"]);
-    fix.begin();
+    fix.begin_holding(&[clone.join(".git")]);
     let branch = fix.folder.join("branch");
     git(
         &clone,
@@ -732,7 +820,7 @@ fn a_git_file_that_only_says_it_is_a_branch_folder_is_told() {
 }
 
 #[test]
-fn a_clone_the_app_says_it_made_is_not_told_with_what_its_remote_has_and_another_is() {
+fn a_clone_the_app_says_it_made_is_not_told_and_what_it_holds_is_where_the_chat_may_write_it() {
     let fix = Fixture::new();
     let remote = fix.plane.join("remote");
     fs::create_dir_all(&remote).expect("a folder");
@@ -750,7 +838,8 @@ fn a_clone_the_app_says_it_made_is_not_told_with_what_its_remote_has_and_another
         &fix.folder,
         &["clone", "-q", remote.to_str().expect("a path"), "other"],
     );
-    assert_eq!(fix.look(), ["other/.git", "other/.vscode"]);
+    // Its `.git` is the app's; its branches, in the chat's folder, are the chat's to write.
+    assert_eq!(fix.look(), ["made/.vscode", "other/.git", "other/.vscode"]);
 }
 
 #[test]
@@ -851,7 +940,7 @@ fn a_git_file_naming_a_submodule_it_is_not_is_told() {
         &module.join("config"),
         "[core]\n\tworktree = ../../../sub\n",
     );
-    fix.begin();
+    fix.begin_holding(&[clone.join(".git")]);
     file(
         &fix.folder.join("elsewhere/.git"),
         &format!("gitdir: {}\n", module.display()),
@@ -1062,4 +1151,107 @@ fn only_a_regular_file_is_read_and_nothing_waits() {
     );
     assert_eq!(super::arrived::read_regular(&link, 64), None);
     assert_eq!(super::arrived::read_regular(&pipe, 64), None);
+}
+
+/// A stand-in for `/proc`: one process, whose mounts are `points`.
+fn proc_mounting(fix: &Fixture, points: &[&Path]) -> PathBuf {
+    let proc = fix.plane.join("proc");
+    let lines: String = points
+        .iter()
+        .enumerate()
+        .map(|(n, point)| {
+            let spelled = point.display().to_string().replace(' ', "\\040");
+            format!("{n} 1 0:1 / {spelled} rw - tmpfs tmpfs rw\n")
+        })
+        .collect();
+    file(
+        &proc.join("4242/mountinfo"),
+        &format!("1 0 0:1 / / rw - ext4 x rw\n{lines}"),
+    );
+    file(&proc.join("self-ish/mountinfo"), "not a process\n");
+    proc
+}
+
+/// On Linux, Claude Code's sandbox makes an empty placeholder for each name it holds that isn't
+/// there, while a command runs. One a sandbox killed outright left, that no running sandbox
+/// mounts, is cleared; one a sandbox still mounts, one that holds something, and a name that was
+/// there as the chat started are kept.
+#[test]
+fn a_placeholder_a_killed_sandbox_left_is_cleared_and_one_in_use_is_kept() {
+    let fix = Fixture::new();
+    let left = fix.folder.join(".envrc");
+    let left_folder = fix.folder.join(".vscode");
+    let in_use = fix.folder.join(".husky");
+    let written = fix.folder.join(".mcp.json");
+    let watched = Watched {
+        placeholders: vec![
+            left.clone(),
+            left_folder.clone(),
+            in_use.clone(),
+            written.clone(),
+        ],
+        ..fix.watched()
+    };
+    file(&left, "");
+    fs::create_dir_all(&left_folder).expect("a folder");
+    file(&in_use, "");
+    file(&written, "{}\n");
+    let other = fix.folder.join(".bashrc");
+    file(&other, "");
+    arrived::clear_left(&watched, &proc_mounting(&fix, &[&in_use]));
+    assert!(!left.exists(), "an empty file no sandbox mounts goes");
+    assert!(!left_folder.exists(), "and an empty folder");
+    assert!(in_use.exists(), "a running sandbox still holds it");
+    assert!(written.exists(), "it holds something");
+    assert!(other.exists(), "it is no placeholder of this chat's");
+}
+
+#[test]
+fn where_no_process_s_mounts_can_be_read_nothing_is_cleared() {
+    let fix = Fixture::new();
+    let left = fix.folder.join(".envrc");
+    file(&left, "");
+    let watched = Watched {
+        placeholders: vec![left.clone()],
+        ..fix.watched()
+    };
+    let proc = fix.plane.join("empty-proc");
+    fs::create_dir_all(&proc).expect("a folder");
+    arrived::clear_left(&watched, &proc);
+    arrived::clear_left(&watched, &fix.plane.join("no-proc"));
+    assert!(left.exists());
+}
+
+#[test]
+fn a_mount_point_with_a_space_in_its_path_is_read_as_that_path() {
+    let fix = Fixture::new();
+    let spaced = fix.folder.join("a b/.envrc");
+    file(&spaced, "");
+    let watched = Watched {
+        placeholders: vec![spaced.clone()],
+        ..fix.watched()
+    };
+    arrived::clear_left(&watched, &proc_mounting(&fix, &[&spaced]));
+    assert!(spaced.exists(), "a sandbox holds it");
+}
+
+/// A chat started again after a sandbox of its was killed finds the placeholder there: the
+/// name is still one to clear, as it wasn't there when the chat first started.
+#[test]
+fn a_placeholder_is_still_cleared_after_the_chat_starts_again() {
+    let fix = Fixture::new();
+    let left = fix.folder.join(".envrc");
+    let first = Watched {
+        placeholders: vec![left.clone()],
+        ..fix.watched()
+    };
+    arrived::begin(&fix.plane, CHAT, None, &first).expect("a record");
+    file(&left, "");
+    arrived::begin(&fix.plane, CHAT, None, &fix.watched()).expect("started again");
+    let proc = proc_mounting(&fix, &[]);
+    arrived::clear_left(
+        &arrived::watched_of(&fix.plane, CHAT).expect("a record"),
+        &proc,
+    );
+    assert!(!left.exists());
 }

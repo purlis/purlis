@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { press, projectRoot, stateOf, untilSays } from "../acting.js";
 import { showView } from "../opening.js";
-import { closeTheViewTabsOpenedSince, tabNames } from "../reach.js";
+import { closesTheTabsItOpens } from "../reach.js";
 import { studioPage, studioMore, studioSkill } from "../studio.js";
 
 /**
@@ -46,13 +46,15 @@ describe("changing a persona's own skills", function () {
   let file = "";
   let was = "";
   let keptBefore: string[] = [];
-  let wereOpen: string[] = [];
   const kept = () => {
     const dir = join(stateOf(root), "skills-deleted");
     return existsSync(dir) ? readdirSync(dir) : [];
   };
   const own = (name: string) => join(root, "personas", PERSONA, "skills", name);
 
+  // Hooks of a kind run in the order they are registered: the strip is read once the skill is
+  // written and before the persona's page is opened, and its view tabs are closed once the files
+  // are put back and before the Inbox is shown again.
   before(async () => {
     root = await projectRoot();
     file = join(root, "personas", PERSONA, "persona.md");
@@ -64,14 +66,9 @@ describe("changing a persona's own skills", function () {
       join(own(SEED), "SKILL.md"),
       `---\nname: ${SEED}\ndescription: Probes ${SEED}.\n---\n\nSay hello.\n`,
     );
-    wereOpen = await tabNames();
-    await showView("Personas");
-    await untilSays('[data-testid="panel-personas"]', PERSONA);
-    await press('[data-testid="panel-personas"]', PERSONA, "containing");
-    await untilSays(PANE, "into every workspace");
   });
 
-  after(async () => {
+  after(() => {
     writeFileSync(file, was);
     for (const name of [SEED, MADE, RENAMED]) {
       rmSync(own(name), { recursive: true, force: true });
@@ -81,7 +78,18 @@ describe("changing a persona's own skills", function () {
     for (const one of kept())
       if (!keptBefore.includes(one))
         rmSync(join(stateOf(root), "skills-deleted", one), { recursive: true, force: true });
-    await closeTheViewTabsOpenedSince(wereOpen);
+  });
+
+  closesTheTabsItOpens();
+
+  before(async () => {
+    await showView("Personas");
+    await untilSays('[data-testid="panel-personas"]', PERSONA);
+    await press('[data-testid="panel-personas"]', PERSONA, "containing");
+    await untilSays(PANE, "into every workspace");
+  });
+
+  after(async () => {
     await showView("Inbox");
   });
 

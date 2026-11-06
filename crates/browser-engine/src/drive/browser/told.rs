@@ -16,14 +16,16 @@
 //! was filled on that very site, or one it is under: such a name says nothing of the text that the
 //! site's own name did not. **A field's origin**, which the window alone reads and compares, is held
 //! to what purlis filled, by the same exception: what the person typed takes no origin from a fill.
-//! What they typed on one page alone hides no site.
+//! What they typed on one page alone hides a site only where it is [`KEPT_WHOLE_FROM`] characters
+//! or more (the person's ruling of 2026-11-06): a shorter text is often a word of a site's name,
+//! and a longer one rarely is, while that name would show it.
 //!
 //! **What the chat wrote itself is said back as it wrote it** (a reference, a page's name, a key,
 //! an option). It holds nothing the chat did not have, and an echo with a guess blanked would tell
 //! the chat its guess was right, in one call and with no page, so a refusal's echoes are left
 //! alone (D-5115-13).
 
-use super::super::kept::Kept;
+use super::super::kept::{KEPT_WHOLE_FROM, Kept};
 use super::super::scrub::Scrub;
 use super::super::{
     Answer, Content, DownloadInfo, FieldInfo, KeptOff, MOST_FILE_NAME_CHARS, PageId, PageInfo,
@@ -49,11 +51,8 @@ fn on_kept_off_said(site: &str) -> String {
 /// **`answer`, with each page on the site the agent is kept off said by its origin alone, and no
 /// title** (#5152), and the chat told where the page it acted on is one. Judged by each address as
 /// it is: taken out of first, an address may no longer be on the site it is on.
-fn kept_off_told(mut answer: Answer, kept_off: &KeptOff) -> Answer {
-    let on = answer
-        .page
-        .as_ref()
-        .and_then(|page| kept_off(&page.address));
+fn kept_off_told(mut answer: Answer, kept_off: &dyn Fn(&PageInfo) -> Option<String>) -> Answer {
+    let on = answer.page.as_ref().and_then(kept_off);
     let listed = match &mut answer.content {
         Content::Pages(pages) => pages.as_mut_slice(),
         _ => &mut [],
@@ -64,7 +63,7 @@ fn kept_off_told(mut answer: Answer, kept_off: &KeptOff) -> Answer {
         .chain(answer.opened.iter_mut())
         .chain(listed)
     {
-        if kept_off(&page.address).is_some() {
+        if kept_off(page).is_some() {
             page.address = login::origin_of(&page.address).unwrap_or_default();
             page.title.clear();
         }
@@ -87,6 +86,9 @@ struct Keeping {
     /// Each text of `filled` that the name of the site it went to holds, with that site's host.
     named_by_their_sites: Vec<(zeroize::Zeroizing<String>, String)>,
     browser: Kept,
+    /// Every text kept, of the browser and of each page, that is [`KEPT_WHOLE_FROM`] characters
+    /// or more: what hides a site asked about too (module docs).
+    long: Kept,
     pages: Vec<(PageId, Kept)>,
 }
 
@@ -193,6 +195,8 @@ impl Keeping {
                 origin,
                 label,
                 kind,
+                by_get,
+                payment,
             }) => Content::Field(FieldInfo {
                 // An origin is compared and approved exactly, so one that holds what purlis
                 // filled, past what its own name accounts for, is one the engine can't name, and
@@ -200,6 +204,8 @@ impl Keeping {
                 origin: origin.filter(|_| field_origin.is_some()),
                 label: every.text(&label),
                 kind,
+                by_get,
+                payment,
             }),
             kept @ (Content::Nothing
             | Content::Image(_)
@@ -210,7 +216,9 @@ impl Keeping {
         let told = asked.len();
         let asked: Vec<String> = asked
             .into_iter()
-            .filter(|site| !self.holds_back(&self.browser, site))
+            .filter(|site| {
+                !self.holds_back(&self.browser, site) && !self.holds_back(&self.long, site)
+            })
             .collect();
         note = note.map(|note| every.text(&note));
         if asked.len() < told {
@@ -357,10 +365,31 @@ fn refusal_kept_out(refusal: Refusal, scrub: &Scrub) -> Refusal {
 impl Browser {
     /// [`kept_off_told`], where this browser keeps the agent off a site.
     pub(super) fn with_kept_off_told(&self, answer: Answer) -> Answer {
-        match lock(&self.inner.kept_off).clone() {
-            Some(kept_off) => kept_off_told(answer, &kept_off),
-            None => answer,
+        // Each page by what it is kept off: a sign-in's own page and its windows act on its site.
+        let (each, new): (Vec<(PageId, Option<KeptOff>)>, Option<KeptOff>) = {
+            let state = lock(&self.inner.state);
+            let each = state
+                .pages
+                .iter()
+                .map(|page| {
+                    (
+                        page.id.clone(),
+                        self.inner.kept_off_on(&state, Some(&page.target)),
+                    )
+                })
+                .collect();
+            (each, self.inner.kept_off_on(&state, None))
+        };
+        if new.is_none() && each.iter().all(|(_, kept_off)| kept_off.is_none()) {
+            return answer;
         }
+        kept_off_told(answer, &|page: &PageInfo| {
+            let kept_off = each
+                .iter()
+                .find(|(id, _)| *id == page.id)
+                .map_or_else(|| new.clone(), |(_, kept_off)| kept_off.clone());
+            kept_off.and_then(|kept_off| kept_off(&page.address))
+        })
     }
 
     /// What is kept out now, or `None` where nothing is.
@@ -394,6 +423,7 @@ impl Browser {
             filled,
             named_by_their_sites,
             browser,
+            long: every.at_least(KEPT_WHOLE_FROM),
             pages,
         })
     }

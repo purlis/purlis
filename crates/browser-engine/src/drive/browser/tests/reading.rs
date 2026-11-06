@@ -18,7 +18,7 @@ fn a_large_page(
     takes: Duration,
     call_waits: Duration,
     read_may_take: Duration,
-) -> (super::Browser, Arc<super::Engine>) {
+) -> (super::StandIn, Arc<super::Engine>) {
     let (browser, engine) = browser_with(crate::drive::Limits {
         page_reads_within: call_waits,
         tree_reads_within: read_may_take,
@@ -235,7 +235,7 @@ fn a_large_page_kept_for(
     takes: Duration,
     call_waits: Duration,
     kept_for: Duration,
-) -> (super::Browser, Arc<super::Engine>) {
+) -> (super::StandIn, Arc<super::Engine>) {
     let (browser, engine) = browser_with(crate::drive::Limits {
         page_reads_within: call_waits,
         page_read_kept_for: kept_for,

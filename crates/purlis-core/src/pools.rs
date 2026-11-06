@@ -407,12 +407,9 @@ pub fn keep_chat_found_on_pool(
 /// **The projects whose work on the draining runner `runner` of `pool` may not have come back**
 /// (#5393), by their folders: each that still owes a fetch from the pool, or keeps a chat that may
 /// be on that runner. A chat kept on the pool's next runner holds nothing back. Why, where the
-/// records can't be read, which says nothing of what is owed.
-pub fn work_owed_from(
-    config_root: &Path,
-    pool: &str,
-    runner: &str,
-) -> Result<Vec<std::path::PathBuf>, String> {
+/// records can't be read, which says nothing of what is owed. Each comes with when it was last
+/// opened, which the Pools group says beside it (#5461).
+pub fn work_owed_from(config_root: &Path, pool: &str, runner: &str) -> Result<Vec<Owing>, String> {
     let loaded = crate::machine::read(config_root);
     if let Some(why) = loaded.unreadable {
         return Err(why);
@@ -427,8 +424,21 @@ pub fn work_owed_from(
                     chat.pool == pool && chat.runner.as_deref().is_none_or(|on| on == runner)
                 })
         })
-        .map(|recent| recent.plane.clone())
+        .map(|recent| Owing {
+            plane: recent.plane.clone(),
+            opened: recent.opened,
+        })
         .collect())
+}
+
+/// **A project that may still have work to fetch from a draining runner** ([`work_owed_from`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Owing {
+    /// The project's folder.
+    pub plane: std::path::PathBuf,
+    /// When it was last opened on this machine, in seconds since the epoch: only an open project
+    /// fetches, so the Pools group says how long it has been (#5461).
+    pub opened: u64,
 }
 
 /// **Chat `number` no longer runs where it was kept** (#4590): no restart asks for it, and its

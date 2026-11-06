@@ -14,7 +14,7 @@
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Fragment, useState, type CSSProperties } from "react";
-import { expect, waitFor } from "storybook/test";
+import { expect, screen, waitFor } from "storybook/test";
 import { Bot, Plus, X } from "lucide-react";
 import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 import { useTabIds } from "../../StripTablist";
@@ -55,7 +55,7 @@ function DockedStrip({
   width?: number;
   /** The chosen tab split in two, the second pane with the keyboard. */
   split?: boolean;
-  /** The strip's other marks, as the chat strip draws them: a task chip on the first tab and
+  /** The strip's other marks, as the chat strip draws them: a skill run chip on the first tab and
    *  `N more` at the row's end (#3361). */
   marks?: boolean;
 }) {
@@ -85,13 +85,13 @@ function DockedStrip({
               first={at === 0}
             >
               {marks && at === 0 && (
-                // A tab's task chip, as `SkillRunChip` draws it.
-                <span className="tab-tasks">
-                  <span className="tab-tasks-pill">
+                // A tab's skill run chip, as `SkillRunChip` draws it.
+                <span className="tab-run">
+                  <span className="tab-run-pill">
                     <Button
                       variant="quiet"
                       size="sm"
-                      className="tab-tasks-counts"
+                      className="tab-run-counts"
                       tooltip="Using the skill review: 3 tool calls so far. Open its runs."
                     >
                       <span className="count">3</span>
@@ -117,7 +117,8 @@ function DockedStrip({
                 type="button"
                 className="closer"
                 {...tabPart("closer")}
-                tabIndex={-1}
+                // The front tab's × is the one Tab stop after the strip, as on the chat strip.
+                tabIndex={at === inFront ? 0 : -1}
                 aria-label={`Close ${one.name}`}
                 onClick={() => {
                   setOpen(open.filter((_, there) => there !== at));
@@ -301,6 +302,8 @@ export const Hovered: Story = {
     await waitFor(() =>
       expect(tab.closest('[data-part="tab"]')).toHaveAttribute("data-hovered", "true"),
     );
+    // Its × has come over the end of its name (#5341): the picture is after its fade.
+    await waitFor(() => expect(seen(closerOf(canvas, /review the tab strip/))).toBe("1"));
     expect(placesOf(canvasElement)).toEqual(before);
   },
 };
@@ -389,6 +392,104 @@ export const Split: Story = {
   },
 };
 
+/** The `×` of the tab named like `name`, and the opacity it is drawn at. */
+function closerOf(canvas: { getByRole: typeof screen.getByRole }, name: RegExp) {
+  const cell = canvas.getByRole("tab", { name }).closest('[data-part="tab"]');
+  const closer = cell?.querySelector<HTMLElement>('[data-part="closer"]');
+  if (!closer) throw new Error(`no × on the tab ${String(name)}`);
+  return closer;
+}
+const seen = (closer: HTMLElement) => getComputedStyle(closer).opacity;
+/** The width a tab's name is drawn at. */
+const nameWidth = (canvas: { getByRole: typeof screen.getByRole }, name: RegExp) =>
+  (
+    canvas.getByRole("tab", { name }).querySelector('[data-part="label"]') as HTMLElement
+  ).getBoundingClientRect().width;
+
+/**
+ * **The `×` at rest** (#5341): seen on the front tab only, standing over the end of its name, so
+ * every other tab's name has that room. Waited for until its fade has run: the picture is what
+ * stays, never a frame of the fade.
+ */
+export const CloseAtRest: Story = {
+  // The long name in front, so its × stands over the end of it.
+  args: { chosen: 2 },
+  play: async ({ canvas }) => {
+    const long = /review the tab strip/;
+    await waitFor(() => expect(seen(closerOf(canvas, long))).toBe("1"));
+    for (const name of [/steward 1/, /talk/, /purlis\.toml/])
+      await expect(seen(closerOf(canvas, name))).toBe("0");
+    // It takes no room of its own: the name runs on to the ×, or under it where the tab is cut
+    // short, and the × stands inside the tab's cell.
+    const name = canvas
+      .getByRole("tab", { name: long })
+      .querySelector('[data-part="label"]') as HTMLElement;
+    const closer = closerOf(canvas, long).getBoundingClientRect();
+    expect(name.getBoundingClientRect().right).toBeGreaterThanOrEqual(closer.left - 1);
+    const cell = name.closest('[data-part="tab"]') as HTMLElement;
+    expect(closer.right).toBeLessThanOrEqual(cell.getBoundingClientRect().right);
+  },
+};
+
+/**
+ * **A short name in front is never cut by its `×`** (#5341): where the strip has room, the end of
+ * the name is kept clear of the `×` and its fade, whether the theme shares the strip out or sizes
+ * each tab to its words.
+ */
+export const ShortNameInFront: Story = {
+  play: async ({ canvas }) => {
+    await waitFor(() => expect(seen(closerOf(canvas, /talk/))).toBe("1"));
+    const name = canvas
+      .getByRole("tab", { name: /talk/ })
+      .querySelector('[data-part="label"]') as HTMLElement;
+    await expect(name.scrollWidth).toBeLessThanOrEqual(name.clientWidth);
+    // Nor a short name behind it: the room kept for its × costs a tab with room none of its name.
+    const behind = canvas
+      .getByRole("tab", { name: /steward 1/ })
+      .querySelector('[data-part="label"]') as HTMLElement;
+    await expect(behind.scrollWidth).toBeLessThanOrEqual(behind.clientWidth);
+    expect(name.getBoundingClientRect().right).toBeLessThanOrEqual(
+      closerOf(canvas, /talk/).getBoundingClientRect().left,
+    );
+  },
+};
+
+/**
+ * **Under the pointer, a background tab's `×` comes over the end of its name**, and the name keeps
+ * its width: nothing moves. Waited for until it is drawn whole.
+ */
+export const CloseUnderThePointer: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const long = /review the tab strip/;
+    const before = nameWidth(canvas, long);
+    await userEvent.hover(canvas.getByRole("tab", { name: long }));
+    await waitFor(() => expect(seen(closerOf(canvas, long))).toBe("1"));
+    expect(nameWidth(canvas, long)).toBe(before);
+  },
+};
+
+/**
+ * **With the keyboard on a background tab, its `×` comes too**, and Tab reaches the front tab's,
+ * the one `×` in the keyboard's order.
+ */
+export const CloseWithTheKeyboard: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const front = canvas.getByRole("tab", { name: /talk/ });
+    await userEvent.tab();
+    await untilFocused(() => front, "Tab onto the strip, on the front tab");
+    await userEvent.tab();
+    await untilFocused(() => closerOf(canvas, /talk/), "Tab on to the front tab's ×");
+    await userEvent.tab({ shift: true });
+    await untilFocused(() => front, "Back onto the front tab");
+    // Left to a short name: a cut name's tooltip comes up after a rest, which no picture waits
+    // on by timing.
+    await userEvent.keyboard("{ArrowLeft}");
+    const next = /steward 1/;
+    await untilFocused(() => canvas.getByRole("tab", { name: next }), "Left to the tab before");
+    await waitFor(() => expect(seen(closerOf(canvas, next))).toBe("1"));
+  },
+};
+
 /** The vertical centre of `element`'s box, in px. */
 function middleOf(element: Element): number {
   const box = element.getBoundingClientRect();
@@ -397,7 +498,7 @@ function middleOf(element: Element): number {
 
 /**
  * **The strip's marks on the tabs' line, their tooltips clear of it** (#3361): the `+`, `N more`
- * and a tab's task chip are each centred on a tab's line, within a pixel, in every cell; and the
+ * and a tab's skill run chip are each centred on a tab's line, within a pixel, in every cell; and the
  * `+`'s tooltip, opened from the keyboard, stands below the strip, never on its row.
  */
 export const MarksOnTheTabsLine: Story = {
@@ -408,12 +509,12 @@ export const MarksOnTheTabsLine: Story = {
     const line = middleOf(tab);
     const plus = canvas.getByRole("button", { name: "New tab" });
     const more = canvas.getByRole("button", { name: "2 more" });
-    const chip = canvasElement.querySelector(".tab-tasks-counts");
-    if (chip === null) throw new Error("no task chip drawn");
+    const chip = canvasElement.querySelector(".tab-run-counts");
+    if (chip === null) throw new Error("no skill run chip drawn");
     for (const [what, one] of [
       ["the +", plus],
       ["N more", more],
-      ["the task chip", chip],
+      ["the skill run chip", chip],
     ] as const)
       await expect(
         Math.abs(middleOf(one) - line),
@@ -426,7 +527,7 @@ export const MarksOnTheTabsLine: Story = {
     const shown = () =>
       document.querySelector<HTMLElement>('[role="tooltip"][data-scope="tooltip"]');
     const marks = new Map<Element, [string, string]>([
-      [chip, ["the task chip", "Using the skill review"]],
+      [chip, ["the skill run chip", "Using the skill review"]],
       [plus, ["the +", "New tab"]],
       [more, ["N more", "2 tabs past the edge"]],
     ]);
@@ -447,6 +548,6 @@ export const MarksOnTheTabsLine: Story = {
       await waitFor(() => expect(shown()).toBeNull(), { timeout: 3000 });
       measured.push(what);
     }
-    await expect(measured).toEqual(["the task chip", "the +", "N more"]);
+    await expect(measured).toEqual(["the skill run chip", "the +", "N more"]);
   },
 };

@@ -11,7 +11,6 @@ import {
   type OfferedSkill,
   type OfferedSource,
   type ReviewSkill,
-  type ReviewSummary,
   type SkillChanged,
   type SkillGrant,
   type SkillLevel,
@@ -24,23 +23,22 @@ import {
   type SkillUpdates,
   type SkillWidening,
   type StudioLevel,
-  type UpdateFile,
   type UpdateReview,
 } from "./bindings";
 import { counted } from "./dispatches";
 import { Notice, type NoticeAction } from "./Notice";
 import { Choice, Field, SettingRow } from "./settings/components";
 import { labelOf, picking, sameLevel } from "./skillChanges";
-import { nameProblem } from "./SkillChangeDialogs";
+import { INSTALL_WORDS, useNameTaken, type Taking } from "./SkillNameTaken";
 import { GrantPicker } from "./SkillLevelPickers";
-import { capitalised } from "./saving";
-import { TextField } from "./ui/field/Field";
 import { BUSY, Held, reading, useRead, type Read } from "./SkillRead";
 import { NotRead } from "./SkillPanels";
 import { sourceKey, type SourcesAt } from "./skillStudio";
 import type { Change as StudioChange } from "./SkillPage";
 import { SetChoosePage, SetReviewPage, applySet, memberKey, setTitle } from "./SkillSetReview";
+import { SetUpdateReviewPage, applySetUpdate } from "./SkillSetUpdateReview";
 import { Badge } from "./ui/badge/Badge";
+import { Changes, LOOK_CLOSELY, Summary } from "./SkillChangesShown";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Card, CardTitle } from "./ui/card/Card";
 import { Checkbox } from "./ui/choice/Checkbox";
@@ -366,6 +364,26 @@ export function SkillSourcesPage({
             label: at.label,
             members,
             ticked,
+          })
+        }
+      />
+    );
+  else if (at.at === "set-update")
+    page = (
+      <SetUpdateReviewPage
+        plane={plane}
+        title={`Review updates from ${sourceAt.label}`}
+        members={(updates?.offers ?? [])
+          .filter((one) => sourceKey(one.remote) === at.source)
+          .map((one) => ({ level: one.level, name: one.name, label: one.label }))}
+        busy={busy}
+        onCancel={() => onGo(toSource(at))}
+        onApply={(chosen) =>
+          applySetUpdate({
+            plane,
+            updates: chosen,
+            change: (label, run, then) => changeThen(label, run, toSource(at), then),
+            undo: change,
           })
         }
       />
@@ -899,6 +917,15 @@ function SourcePage({
   const openSet = (act: SkillSetAct) =>
     onGo({ at: "set-choose", act, source: key, label: source.label });
   const unconfirmed = updates?.unconfirmed.some((one) => sourceKey(one.remote) === key) === true;
+  /** Why Review updates… cannot be pressed: the updates are not read yet, or none waits here. */
+  const updatesWhy =
+    updates === undefined
+      ? "The updates are being read."
+      : updates.offers.some((one) => sourceKey(one.remote) === key)
+        ? busy
+          ? BUSY
+          : undefined
+        : "No update is waiting from this source.";
   const at = (skill: string) => ({ source: key, label: source.label, skill });
   const offered = (skill: OfferedSkill) => offerFor(updates, key, skill.name);
   /** Why Install all… cannot be pressed: the skills are not read yet, or none is left. */
@@ -942,6 +969,14 @@ function SourcePage({
             onPress={() => onGo({ at: "choose", source: key, label: source.label })}
           >
             Install all…
+          </Button>
+          <Button
+            size="sm"
+            isDisabled={updatesWhy !== undefined}
+            tooltip={updatesWhy}
+            onPress={() => onGo({ at: "set-update", source: key, label: source.label })}
+          >
+            Review updates…
           </Button>
           <Button
             size="sm"
@@ -1200,57 +1235,6 @@ function SetChooseRead({
   );
 }
 
-/** The mark of a risky item and of a risky file: in the waiting tone, never a colour alone. */
-const LOOK_CLOSELY = <Badge variant="waiting">Look closely</Badge>;
-
-/** A summary, risky items marked, as the core reads and marks it. */
-export function Summary({ summary, testid }: { summary: ReviewSummary; testid?: string }) {
-  if (summary.empty)
-    return (
-      <p className="honest" data-testid={testid}>
-        Instructions only: no scripts, network hosts, ! commands or writes outside the workspace.
-      </p>
-    );
-  const mark = (risky: boolean) => (risky ? LOOK_CLOSELY : null);
-  return (
-    <ul className="skill-summary" data-testid={testid}>
-      {summary.scripts.map((one) => (
-        <li key={`s${one.path}`} data-risky={one.risks.length > 0}>
-          {mark(one.risks.length > 0)} Script <code>{one.path}</code> runs with {one.runs}
-          {one.risks.length > 0 && `: ${one.risks.map((risk) => risk.said).join(", ")}`}
-        </li>
-      ))}
-      {summary.hosts.map((one) => (
-        <li key={`h${one.host}`} data-risky={one.risky}>
-          {mark(one.risky)} Network host <code>{one.host}</code>, named in {one.files.join(", ")}
-        </li>
-      ))}
-      {summary.commands.map((one) => (
-        <li key={`c${one.path}${one.line}${one.text}`} data-risky={true}>
-          {mark(true)} ! command <code>{one.text}</code> ({one.path}, line {one.line})
-        </li>
-      ))}
-      {summary.outside.map((one) => (
-        <li key={`o${one.path}${one.line}${one.text}`} data-risky={true}>
-          {mark(true)} Writes outside the workspace: <code>{one.text}</code> ({one.path}, line{" "}
-          {one.line})
-        </li>
-      ))}
-      {summary.unseen.map((one) => (
-        <li key={`u${one.path}${one.line}`} data-risky={true}>
-          {mark(true)} Hidden text in {one.path}, line {one.line}:{" "}
-          {one.kinds.map((kind) => kind.said).join(", ")}
-        </li>
-      ))}
-      {summary.not_text.map((path) => (
-        <li key={`n${path}`}>
-          <code>{path}</code> is not text, so it is not shown
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 /** The change a review is of, as its lines name it. */
 type Change = "install" | "update";
 
@@ -1303,134 +1287,26 @@ function Relies({
   );
 }
 
-/** How the person settled a skill's name clash: unsettled until they choose. */
-type Settling = { how?: "skip" | "rename"; name?: string };
-
-/** The new name offered, or what the person typed over it. */
-function newName(skill: ReviewSkill, settling: Settling | undefined): string {
-  return settling?.name ?? skill.clash?.offered ?? "";
-}
-
-/** The longest name a skill may have, as the core's `name_problem` holds it. */
-const MOST_NAME = 64;
-
-/** Why `skill`'s new name cannot be used, as it is typed: `others` are the rest of the review's
- *  names. The core checks again at Install. */
-function newNameProblem(
-  skill: ReviewSkill,
-  settling: Settling | undefined,
-  others: readonly string[],
-): string | undefined {
-  const wanted = newName(skill, settling).trim();
-  if (wanted === "") return "Give it a name.";
-  if (wanted.length > MOST_NAME) return `Use at most ${MOST_NAME} characters.`;
-  return nameProblem(wanted, "", [skill.name, ...(skill.clash?.taken ?? []), ...others]);
-}
-
-/**
- * **The choices a review's name clashes wait for** (ADR 0100, amended 2026-11-01): each clash
- * unsettled until the person skips it or names it, and the renames Install hands the core.
- */
-function useClashes(skills: readonly ReviewSkill[], onSkip?: (name: string) => void) {
-  const [settled, setSettled] = useState<Readonly<Record<string, Settling>>>({});
-  const clashing = skills.filter((skill) => skill.clash !== null);
-  const skipped = clashing.filter((skill) => settled[skill.name]?.how === "skip");
-  // What a skipped skill alone brings along is not installed, so naming none leaves nothing.
-  const named = skills.filter((skill) => skill.brought_by === null);
-  const nothing = named.length > 0 && named.every((skill) => skipped.includes(skill));
-  const others = (skill: ReviewSkill) =>
-    skills.filter((one) => one !== skill).map((one) => one.name);
-  const renaming = clashing.filter((skill) => settled[skill.name]?.how === "rename");
-  const open = clashing.filter((skill) => settled[skill.name]?.how === undefined);
-  const bad = renaming.some(
-    (skill) => newNameProblem(skill, settled[skill.name], others(skill)) !== undefined,
-  );
-  const wanted = renaming.map((skill) => newName(skill, settled[skill.name]).trim());
-  const twice = wanted.some((name, at) => wanted.indexOf(name) !== at);
-  const settle = (name: string, change: Settling) =>
-    setSettled((was) => ({ ...was, [name]: { ...was[name], ...change } }));
+/** A review's skill, as the name-taken step asks of it: by its name, named unless another
+ *  brings it along. */
+function taking(skill: ReviewSkill): Taking {
   return {
-    renames: renaming.map((skill) => ({
-      from: skill.name,
-      to: newName(skill, settled[skill.name]).trim(),
-    })),
-    why:
-      open.length > 0
-        ? open.length === 1
-          ? `Choose what to do with ${open[0]?.name}: its name is taken.`
-          : `Choose what to do with the ${open.length} skills whose names are taken.`
-        : bad
-          ? "Fix the new name."
-          : twice
-            ? "Two skills cannot have the same name."
-            : nothing
-              ? "It is skipped, so there is nothing to install."
-              : undefined,
-    choice: (skill: ReviewSkill, busy: boolean) =>
-      skill.clash === null ? undefined : (
-        <ClashChoice
-          skill={skill}
-          settling={settled[skill.name]}
-          others={others(skill)}
-          busy={busy}
-          onSettle={(change) => {
-            // A skip that takes it out of the review settles nothing to remember: ticked again,
-            // it asks again.
-            if (change.how === "skip" && onSkip !== undefined) onSkip(skill.name);
-            else settle(skill.name, change);
-          }}
-        />
-      ),
+    key: skill.name,
+    name: skill.name,
+    clash: skill.clash,
+    named: skill.brought_by === null,
   };
 }
 
-/** **A name that is taken**: what holds it, and the two ways on, in the skill's own review. */
-function ClashChoice({
-  skill,
-  settling,
-  others,
-  busy,
-  onSettle,
-}: {
-  skill: ReviewSkill;
-  settling: Settling | undefined;
-  others: readonly string[];
-  busy: boolean;
-  onSettle: (change: Settling) => void;
-}) {
-  const problem = settling?.how === "rename" ? newNameProblem(skill, settling, others) : undefined;
-  return (
-    <div className="skill-clash" data-testid={`clash-${skill.name}`}>
-      <SettingRow
-        label="This name is taken"
-        grouped
-        help={`${capitalised(skill.clash?.held_by ?? "")}. A new name changes only its name line and folder: its text stays as the source wrote it.`}
-        control={(ids) => (
-          <Choice
-            kind="radio"
-            ids={ids}
-            options={[
-              { value: "skip", label: "Skip it" },
-              { value: "rename", label: "Install it under a new name" },
-            ]}
-            value={settling?.how ?? ""}
-            disabled={busy}
-            onValueChange={(to) => onSettle({ how: to === "skip" ? "skip" : "rename" })}
-          />
-        )}
-      />
-      {settling?.how === "rename" && (
-        <TextField
-          label={`New name for ${skill.name}`}
-          value={newName(skill, settling)}
-          isDisabled={busy}
-          onChange={(name) => onSettle({ name })}
-          error={problem}
-          data-testid={`new-name-${skill.name}`}
-        />
-      )}
-    </div>
-  );
+/** **The choices a review's name clashes wait for** (ADR 0100, amended 2026-11-01), in the
+ *  install's words, and the renames Install hands the core. */
+function useClashes(skills: readonly ReviewSkill[], onSkip?: (name: string) => void) {
+  const taken = useNameTaken(skills.map(taking), INSTALL_WORDS, onSkip);
+  return {
+    renames: taken.renames.map(({ key, to }) => ({ from: key, to })),
+    why: taken.why,
+    choice: (skill: ReviewSkill, busy: boolean) => taken.choice(taking(skill), busy),
+  };
 }
 
 /** The grant an install starts with: chats at the project's root alone (ADR 0100 §2). */
@@ -2169,27 +2045,6 @@ function InstallSetReviewPage({
         </section>
       )}
     </ReviewPage>
-  );
-}
-
-/** Each file's change, folded, its kind of change after its path. */
-function Changes({ files, open = false }: { files: readonly UpdateFile[]; open?: boolean }) {
-  return (
-    <>
-      {files.map((file) => (
-        <Disclosure
-          key={file.path}
-          size="sm"
-          defaultExpanded={open}
-          label={file.path}
-          trail={<Badge>{file.change}</Badge>}
-        >
-          <pre className="skill-review-file">
-            {file.diff === "" ? "Not text, so not shown." : file.diff}
-          </pre>
-        </Disclosure>
-      ))}
-    </>
   );
 }
 

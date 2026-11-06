@@ -26,6 +26,10 @@
 // `restarted-to-update` word beside the machine store — and that the launch reading them says
 // so, with Reopen all as the answer in front, and spends the word.
 //
+// **And a chat the Skill studio started stays linked to its skill across a relaunch** (#5248):
+// a record holding a studio chat brings it back with the chip on its pane foot that names its
+// skill and its job, and the record the app writes again still holds the link and its start.
+//
 // **And the upgrade to chats in the session host** (#2004): the first launch runs its chats in
 // the window's own process, as every build before #2004 did (`PURLIS_CHATS_IN_THE_HOST=0`), and
 // every launch after it runs them in the session host, this build's default, so the second
@@ -189,7 +193,7 @@ const idOf = (element) => Object.values(element)[0];
  * question is up" — and what the question said, and the text of the control that had the
  * keyboard, which is the answer a stray Return would give.
  */
-function pressing(answer, argvFile, hold = 2_000) {
+function pressing(answer, argvFile, hold = 2_000, reading) {
   return async (port, until, steps) => {
     steps.step("waiting for the app's WebDriver server");
     let session;
@@ -229,11 +233,36 @@ function pressing(answer, argvFile, hold = 2_000) {
       if (text.trim() === answer) {
         steps.step(`pressing ${answer}`);
         await webdriver(port, "POST", `/session/${session}/element/${idOf(button)}/click`, {});
-        return { startedWhileAsking, said, focused: focused.trim() };
+        const read =
+          reading === undefined
+            ? undefined
+            : await readingOnceDrawn(port, session, until, steps, reading);
+        return { startedWhileAsking, said, focused: focused.trim(), read };
       }
     }
     throw new Error(`the launch's question has no "${answer}" button`);
   };
+}
+
+/**
+ * The text of the first element `selector` finds once it holds `wanted`, or the last text it had
+ * (`undefined` where none was drawn) once `until` passes.
+ */
+async function readingOnceDrawn(port, session, until, steps, { selector, wanted }) {
+  steps.step(`waiting for ${selector}`);
+  let text;
+  while (Date.now() < until) {
+    const found = await webdriver(port, "POST", `/session/${session}/elements`, {
+      using: "css selector",
+      value: selector,
+    });
+    if (found.length > 0) {
+      text = await webdriver(port, "GET", `/session/${session}/element/${idOf(found[0])}/text`);
+      if (text.includes(wanted)) return text;
+    }
+    await new Promise((tick) => setTimeout(tick, 250));
+  }
+  return text;
 }
 
 /**
@@ -580,6 +609,71 @@ check(
   `${RESTARTED} is still there`,
 );
 rmSync(RESTARTED, { force: true });
+
+// A chat the Skill studio started for test-design's outcome evals (#5248), as the app records
+// one (`chats[].studio`, docs/plane-format.md): the relaunch brings it back linked to its job.
+const STUDIO = {
+  job: "outcome-evals",
+  skill: "test-design",
+  at: "project",
+  started: "2026-11-04T17:31:00Z",
+};
+writeFileSync(
+  record,
+  JSON.stringify(
+    {
+      version: 1,
+      at: STAMPED,
+      chats: [
+        {
+          program: claude,
+          args: [],
+          cwd: plane,
+          name: "ide.8",
+          resume: CONVERSATION,
+          active: true,
+          studio: STUDIO,
+        },
+      ],
+    },
+    null,
+    2,
+  ),
+);
+const beforeStudio = argvSeen(argvFile).length;
+const fifth = await theAppRuns(
+  "the fifth launch, with a chat the Skill studio started",
+  plane,
+  () => argvSeen(argvFile).length > beforeStudio,
+  pressing("Reopen all sessions", argvFile, 0, {
+    selector: '[data-testid="pane-studio"]',
+    wanted: "test-design · writing outcome evals",
+  }),
+  { PURLIS_SKILL_STUDIO: "1" },
+);
+check(
+  "a studio chat comes back on its conversation",
+  fifth.ok && argvSeen(argvFile).at(-1)?.includes(`--resume ${CONVERSATION}`),
+  fifth.ok
+    ? `it was given: ${JSON.stringify(argvSeen(argvFile).at(-1) ?? "")}`
+    : fifth.output,
+);
+check(
+  "and its pane foot names its skill and its job, as before the relaunch",
+  fifth.answered?.read?.includes("test-design · writing outcome evals") ===
+    true,
+  `its foot said: ${JSON.stringify(fifth.answered?.read)}`,
+);
+const studioKept = JSON.parse(readFileSync(record, "utf8")).chats?.[0]?.studio;
+check(
+  "and the record the app wrote again still holds the link, with when it started",
+  studioKept?.job === STUDIO.job &&
+    studioKept?.skill === STUDIO.skill &&
+    studioKept?.at === STUDIO.at &&
+    studioKept?.started === STUDIO.started,
+  `the record holds ${JSON.stringify(studioKept)}`,
+);
+
 
 console.log(failures.length === 0 ? "\nall good" : `\n${failures.length} failed`);
 finish(failures.length === 0 ? 0 : 1);

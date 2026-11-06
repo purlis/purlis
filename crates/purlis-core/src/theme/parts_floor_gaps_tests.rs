@@ -740,13 +740,21 @@ fn a_chip_s_count_stands_on_the_bar_s_ground_whatever_the_chip_s_fill() {
     );
 }
 
-/// Purlis's dark with a light counts button under each tab's count, and `count` on it.
-fn on_a_light_counts_button(count: Value) -> ResolvedTheme {
+/// `count`, and a hover fill of the tab's own: the overlay is the hover pill's too, and a light
+/// one would make the tab fall back and repaint its words, which is no measure of the count.
+fn with_a_tab_hover_of_its_own(count: Value) -> Value {
+    let mut parts = count;
+    parts["tabs.tab.hover.fill"] = json!("surface.raised");
+    parts
+}
+
+/// Purlis's dark with a light menu under each tasks menu's count, and `count` on it.
+fn on_a_light_menu(count: Value) -> ResolvedTheme {
     let loaded = load(&json!({
-        "name": "Light counts",
+        "name": "Light menu",
         "extends": "purlis",
-        "appearances": [{ "id": "dark", "tokens": { "surface.sunken": "#e8e8e8" } }],
-        "parts": count,
+        "appearances": [{ "id": "dark", "tokens": { "surface.overlay": "#e8e8e8" } }],
+        "parts": with_a_tab_hover_of_its_own(count),
     }));
     assert!(!loaded.refused, "{:?}", loaded.complaints);
     loaded
@@ -764,10 +772,10 @@ fn tab_count_fell(theme: &ResolvedTheme) -> bool {
 }
 
 #[test]
-fn a_see_through_tab_count_is_measured_over_the_counts_button() {
-    // Light words read on the wash over the dark tab, and not on it over the light button the
-    // tab's chip paints under its counts (#4406).
-    let theme = on_a_light_counts_button(json!({
+fn a_see_through_tab_count_is_measured_over_the_menu_it_sums_up() {
+    // Light words read on the wash over the dark tab, and not on it over the light menu whose
+    // summary the counts are drawn in now that a tab wears none (#4406, #5341).
+    let theme = on_a_light_menu(json!({
         "tabs.count.fill": "accent.wash",
         "tabs.count.text": "text.primary",
     }));
@@ -775,10 +783,10 @@ fn a_see_through_tab_count_is_measured_over_the_counts_button() {
 }
 
 #[test]
-fn a_tab_count_that_only_reads_over_the_counts_button_keeps_the_theme_s_colours() {
+fn a_tab_count_that_only_reads_over_the_menu_keeps_the_theme_s_colours() {
     // The opposite way round, and the control: dark words read on the wash over the light
-    // button, though not over the dark tab.
-    let theme = on_a_light_counts_button(json!({
+    // menu, though not over the dark tab.
+    let theme = on_a_light_menu(json!({
         "tabs.count.fill": "accent.wash",
         "tabs.count.text": "surface.deep",
     }));

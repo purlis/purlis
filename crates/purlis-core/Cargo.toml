@@ -111,6 +111,12 @@ serde_json = { workspace = true, features = ["preserve_order", "arbitrary_precis
 # from unicode-rs, the authors of the unicode-* crates the tree already has.
 unicode-properties = { version = "0.1", default-features = false, features = ["general-category"] }
 sha2 = "0.11"
+# The project index (ADR 0079 §9, #5498): SQLite FTS5 with its bundled library, so FTS5,
+# `contentless_delete` (3.43 or later) and one known SQLite version hold on every platform. No
+# default features: their `cache` is a statement cache the index does not need, and the
+# `sqlite-wasm-rs` backend is for a target purlis never builds. rusqlite and libsqlite3-sys are
+# MIT; SQLite itself is in the public domain.
+rusqlite = { version = "0.41", default-features = false, features = ["bundled"] }
 # A branch's changes, read in-process (FM-4, D-88f): the explorer reads them by itself after
 # every write an agent makes, so no git process may start in a repository whose config the agent
 # can write. gitoxide reads the index, the working tree and the trees with no program run:
@@ -144,6 +150,12 @@ data-encoding = "2"
 # feature is the one-entry API charter needs and picks the platform's store itself.
 keyring = "4"
 getrandom = "0.4"
+# The key the app signs a chat's commits with (#5480): git's own SSH signature format
+# (`gpg.format = ssh`, an `SSHSIG` over the commit object), made in this process from an
+# Ed25519 key kept in the Keyring tier, so no signer program runs and no key file is written.
+# RustCrypto's, the family `sha2` and `hmac` above are of; `encryption` reads a key of the
+# person's own that has a passphrase, once, at setup. Apache-2.0 OR MIT.
+ssh-key = { version = "0.6.7", default-features = false, features = ["std", "ed25519", "encryption"] }
 # The hook channel compares a line's chat token with the one the chat was given in constant
 # time (`hookwire::ChatTokens`). Already in this workspace's lockfile through `hmac`'s `digest`,
 # so it adds no crate to the tree.

@@ -195,6 +195,13 @@ impl Engine {
         let _ = super::lock(&self.events).send(event);
     }
 
+    /// Its pipe closes, as a stopped engine's does: the browser's events end, and nothing it
+    /// sends later is read.
+    fn close_pipe(&self) {
+        let (closed, _) = mpsc::sync_channel(1);
+        *super::lock(&self.events) = closed;
+    }
+
     /// Says, now, that the engine's own drag started: the word it held back
     /// (`drag_told_when_asked`). Fails the test when no drag has started.
     fn tell_of_the_held_drag(&self) {
@@ -755,21 +762,48 @@ fn white_png() -> Vec<u8> {
     out
 }
 
+/// **A browser over the stand-in that ends with its engine** (#5540): dropped, it is stopped as
+/// any browser is, and then the stand-in's pipe closes, as a real engine's does once it is
+/// stopped. Until that pipe closes the browser's event reader holds the browser, and the stand-in
+/// holds the pipe, so neither would end and each test would keep the browser's threads until the
+/// process ends.
+struct StandIn {
+    browser: Option<Browser>,
+    engine: Arc<Engine>,
+}
+
+impl std::ops::Deref for StandIn {
+    type Target = Browser;
+
+    fn deref(&self) -> &Browser {
+        self.browser
+            .as_ref()
+            .expect("a stand-in browser is held until it is dropped")
+    }
+}
+
+impl Drop for StandIn {
+    fn drop(&mut self) {
+        drop(self.browser.take());
+        self.engine.close_pipe();
+    }
+}
+
 /// A browser over the stand-in, with the frames page open and set up.
-fn browser() -> (Browser, Arc<Engine>) {
+fn browser() -> (StandIn, Arc<Engine>) {
     browser_with(limits())
 }
 
-fn browser_with(limits: Limits) -> (Browser, Arc<Engine>) {
+fn browser_with(limits: Limits) -> (StandIn, Arc<Engine>) {
     browser_over(limits, None)
 }
 
 /// A browser over the stand-in whose every request is told to `judge` (#2018).
-fn browser_judged(judge: crate::drive::Judge) -> (Browser, Arc<Engine>) {
+fn browser_judged(judge: crate::drive::Judge) -> (StandIn, Arc<Engine>) {
     browser_over(limits(), Some(judge))
 }
 
-fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (Browser, Arc<Engine>) {
+fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (StandIn, Arc<Engine>) {
     let (events, receiver) = mpsc::sync_channel(1024);
     let nodes = |text: &str| serde_json::from_str::<Value>(text).unwrap()["nodes"].clone();
     let engine = Arc::new(Engine {
@@ -844,6 +878,10 @@ fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (Browser,
         std::thread::sleep(Duration::from_millis(5));
     }
     std::thread::sleep(Duration::from_millis(20));
+    let browser = StandIn {
+        browser: Some(browser),
+        engine: Arc::clone(&engine),
+    };
     (browser, engine)
 }
 
@@ -2273,6 +2311,182 @@ fn a_blank_page_is_not_kept_off_for_a_frame_of_the_page_that_opened_it() {
     );
 }
 
+/// The engine opens page `target` blank from the frames page, able to reach its opener by script
+/// where `linked`.
+fn a_window_opens_from_the_frames_page(
+    browser: &Browser,
+    engine: &Engine,
+    target: &str,
+    linked: bool,
+) {
+    super::lock(&engine.model)
+        .opened_at
+        .insert(target.into(), "about:blank".into());
+    engine.emit(
+        "Target.targetCreated",
+        json!({"targetInfo":{"targetId":target,"type":"page","title":"","url":"about:blank","openerId":"PAGE-1","canAccessOpener":linked,"attached":false}}),
+        None,
+    );
+    wait_for("the window is seen", || {
+        super::lock(&browser.inner.state).page(target).is_some()
+    });
+}
+
+/// The person's ruling of 2026-11-06: during a sign-in, only the page the login was performed on
+/// and the windows related to it act on the site it is open on; every other page is kept off it,
+/// and so is an address the agent opens a page at.
+#[test]
+fn during_a_sign_in_only_its_own_page_and_its_related_windows_act_on_its_site() {
+    let (browser, engine) = browser();
+    snapshot(&browser, 1);
+    a_window_opens_from_the_frames_page(&browser, &engine, "PAGE-7", true);
+    a_window_opens_from_the_frames_page(&browser, &engine, "PAGE-6", false);
+    browser.keep_sign_in_to_its_page(Arc::new(|address: &str| {
+        address
+            .starts_with("http://other.test")
+            .then(|| "other.test:80".to_owned())
+    }));
+    // No login has run here: no page is the sign-in's.
+    assert!(
+        browser
+            .kept_off_frames("PAGE-1")
+            .contains_key("PAYMENT-FRAME"),
+        "kept off before a login"
+    );
+
+    *super::lock(&browser.inner.sign_in_page) = Some("PAGE-1".to_owned());
+    assert!(browser.kept_off_frames("PAGE-1").is_empty(), "its own page");
+
+    // The window related to it is the sign-in's too: the page around it then acts as well.
+    *super::lock(&browser.inner.sign_in_page) = Some("PAGE-7".to_owned());
+    assert!(
+        browser.kept_off_frames("PAGE-1").is_empty(),
+        "related to it"
+    );
+
+    // A page with no such link to it is another tab: kept off the sign-in's site.
+    *super::lock(&browser.inner.sign_in_page) = Some("PAGE-6".to_owned());
+    assert_eq!(
+        browser
+            .kept_off_frames("PAGE-1")
+            .get("PAYMENT-FRAME")
+            .map(String::as_str),
+        Some("other.test:80"),
+        "another tab"
+    );
+
+    // A page the agent opens at the sign-in's site is no page of the sign-in's.
+    *super::lock(&browser.inner.sign_in_page) = Some("PAGE-1".to_owned());
+    assert_eq!(
+        browser.call(
+            &id(2),
+            Call::Open {
+                address: crate::WebAddress::parse("http://other.test/account").unwrap()
+            }
+        ),
+        Err(Refusal::KeptOff {
+            site: "other.test:80".to_owned(),
+            asks_to_sign_in: false,
+        })
+    );
+}
+
+/// A download is judged by the page it began on: during a sign-in, one of the sign-in's site
+/// begun on another tab is kept off as that tab is, and so is one begun on a page not known.
+#[test]
+fn during_a_sign_in_a_download_of_its_site_is_kept_off_unless_its_own_page_began_it() {
+    let (browser, engine) = browser();
+    snapshot(&browser, 1);
+    a_window_opens_from_the_frames_page(&browser, &engine, "PAGE-6", false);
+    browser.keep_sign_in_to_its_page(Arc::new(|address: &str| {
+        address
+            .starts_with("http://other.test")
+            .then(|| "other.test:80".to_owned())
+    }));
+    for (frame, guid) in [("PAYMENT-FRAME", "GUID-1"), ("NO-SUCH-FRAME", "GUID-2")] {
+        engine.emit(
+            "Browser.downloadWillBegin",
+            json!({ "frameId": frame, "guid": guid, "url": "http://other.test/statement.pdf", "suggestedFilename": "statement.pdf" }),
+            None,
+        );
+    }
+    wait_for("both downloads are seen", || browser.downloads().len() == 2);
+
+    *super::lock(&browser.inner.sign_in_page) = Some("PAGE-1".to_owned());
+    assert_eq!(
+        browser.download_kept_off("d1"),
+        None,
+        "its own page began it"
+    );
+    assert_eq!(
+        browser.download_kept_off("d2").as_deref(),
+        Some("other.test:80"),
+        "no page known began it"
+    );
+    assert!(browser.download_began_on_the_sign_ins_page("d1"));
+    assert!(!browser.download_began_on_the_sign_ins_page("d2"));
+
+    *super::lock(&browser.inner.sign_in_page) = Some("PAGE-6".to_owned());
+    assert_eq!(
+        browser.download_kept_off("d1").as_deref(),
+        Some("other.test:80"),
+        "another tab began it"
+    );
+    assert!(!browser.download_began_on_the_sign_ins_page("d1"));
+}
+
+/// A frame of a site the agent is kept off, inside a frame of another site that runs in a process
+/// of its own, takes the input drawn on it: the point is followed into that frame's document.
+#[test]
+fn input_on_a_kept_off_frame_inside_another_sites_own_process_frame_is_refused() {
+    let (browser, engine) = browser();
+    engine.emit(
+        "Page.frameAttached",
+        json!({"frameId":"INNER-FRAME","parentFrameId":"PAYMENT-FRAME"}),
+        Some("S-PAYMENT"),
+    );
+    engine.emit(
+        "Page.frameNavigated",
+        json!({"frame":{"id":"INNER-FRAME","parentId":"PAYMENT-FRAME","loaderId":"LOADER-9","url":"http://inner.test/consent","securityOrigin":"http://inner.test","mimeType":"text/html","name":""},"type":"Navigation"}),
+        Some("S-PAYMENT"),
+    );
+    wait_for("the inner frame is seen", || {
+        super::lock(&browser.inner.state)
+            .page("PAGE-1")
+            .and_then(|page| page.frames.get("INNER-FRAME"))
+            .is_some_and(|frame| frame.url.starts_with("http://inner.test"))
+    });
+    browser.keep_off(Arc::new(|address: &str| {
+        address
+            .starts_with("http://inner.test")
+            .then(|| "inner.test:80".to_owned())
+    }));
+    // The payment frame's document holds the inner frame on its left half, as it lays it out.
+    engine.on(|sent, _| {
+        (sent.method == "DOM.getNodeForLocation" && sent.session.as_deref() == Some("S-PAYMENT"))
+            .then(|| {
+                Ok(if sent.params["x"].as_f64().unwrap_or(0.0) < 100.0 {
+                    json!({"backendNodeId": 70, "frameId": "INNER-FRAME"})
+                } else {
+                    json!({"backendNodeId": 71, "frameId": "PAYMENT-FRAME"})
+                })
+            })
+    });
+    assert_eq!(
+        browser.not_kept_off_at("PAGE-1", "S-PAGE-1", (150.0, 230.0)),
+        Err(Refusal::KeptOff {
+            site: "inner.test:80".to_owned(),
+            asks_to_sign_in: false,
+        }),
+        "drawn on the inner frame"
+    );
+    assert_eq!(
+        browser.not_kept_off_at("PAGE-1", "S-PAGE-1", (250.0, 230.0)),
+        Ok(()),
+        "drawn on the payment frame's own document"
+    );
+}
+
 #[test]
 fn a_reference_from_before_its_frame_loaded_another_document_is_refused_as_stale() {
     let (browser, engine) = browser();
@@ -3441,8 +3655,7 @@ fn whoever_asked_is_told_once_the_engine_ends() {
     browser.when_it_ends(Box::new(move |_| *super::lock(&counting) += 1));
 
     // The engine's pipe closes: its events end.
-    let (closed, _) = mpsc::sync_channel(1);
-    *super::lock(&engine.events) = closed;
+    engine.close_pipe();
 
     wait_for("told", || *super::lock(&told) == 1);
 }
@@ -3462,8 +3675,7 @@ fn whoever_asked_is_told_the_connection_closed_and_why() {
         most: 64 << 20,
     };
     *super::lock(&engine.closed) = Some(why.clone());
-    let (closed, _) = mpsc::sync_channel(1);
-    *super::lock(&engine.events) = closed;
+    engine.close_pipe();
 
     wait_for("told", || super::lock(&told).is_some());
     assert_eq!(
@@ -3485,8 +3697,7 @@ fn one_who_asks_after_the_end_is_told_at_once_how_it_ended() {
         *super::lock(&telling) = Some(ending)
     }));
     *super::lock(&engine.closed) = Some(Closed::PipeEnded);
-    let (closed, _) = mpsc::sync_channel(1);
-    *super::lock(&engine.events) = closed;
+    engine.close_pipe();
     wait_for("told", || super::lock(&first).is_some());
 
     let later: Arc<Mutex<Option<Ending>>> = Arc::default();
@@ -3563,12 +3774,42 @@ fn a_stop_while_the_engine_ends_by_itself_returns_once_its_end_is_told() {
     browser.when_it_ends(Box::new(move |_| {
         telling.store(true, std::sync::atomic::Ordering::SeqCst);
     }));
-    let (closed, _) = mpsc::sync_channel(1);
-    *super::lock(&engine.events) = closed;
+    engine.close_pipe();
     // The event reader has taken the engine, and waits for it to end by itself.
     wait_for("taken", || browser.process().is_none());
 
     browser.stop(Duration::from_millis(100));
 
     assert!(told.load(std::sync::atomic::Ordering::SeqCst));
+}
+
+/// **A stand-in browser's threads end once it is dropped** (#5540), as a real one's do once its
+/// engine's pipe closes: many opened and dropped in one process leave its thread count where it
+/// was, so the lib suite does not grow by four or five threads with each test.
+#[test]
+fn many_stand_in_browsers_dropped_leave_no_threads_behind() {
+    const MANY: usize = 100;
+    let threads = || num_threads::num_threads().map_or(0, std::num::NonZeroUsize::get);
+    let before = threads();
+    assert!(before > 0, "this platform does not count its threads");
+    let mut gone = Vec::new();
+    for _ in 0..MANY {
+        let (browser, engine) = browser();
+        gone.push(Arc::downgrade(&browser.inner));
+        drop(browser);
+        drop(engine);
+    }
+    // Other tests open and end threads beside this one, so the count is held to less than one
+    // thread for each browser: each one left behind would leave four or five.
+    let start = std::time::Instant::now();
+    while gone.iter().any(|inner| inner.strong_count() > 0) || threads() >= before + MANY {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "{} of {MANY} dropped browsers still live, and the process has {} threads, {before} \
+             before they were opened",
+            gone.iter().filter(|inner| inner.strong_count() > 0).count(),
+            threads(),
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }

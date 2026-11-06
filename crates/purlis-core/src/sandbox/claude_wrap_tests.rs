@@ -120,6 +120,15 @@ fn a_claude_code_chat_on_a_runner_needs_the_kernel_and_no_program() {
 }
 
 #[test]
+fn a_wrapped_claude_code_chat_records_no_held_project_git() {
+    let place = place(FULL, true);
+    std::fs::create_dir_all(place.plane.path().join(".git")).unwrap();
+    let applied = started(&place, &place.home.join("work"));
+    assert!(matches!(applied.form(), Form::ClaudeWrapped(_)));
+    assert_eq!(applied.confines().roots_git, None);
+}
+
+#[test]
 fn a_runner_whose_kernel_cannot_apply_the_wrap_refuses_the_chat_in_words() {
     let place = place(FULL, true);
     let refused = for_start(

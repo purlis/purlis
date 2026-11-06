@@ -372,6 +372,37 @@ pub struct Codex;
 
 pub static CODEX: Codex = Codex;
 
+impl Codex {
+    /// **Each plugin `config.toml` records, by id, and whether its table has it on**: only an
+    /// `enabled = false` is off, and a table that does not say is on (its plugin docs, and the
+    /// operator's 0.147.0 install). A file that is not there records nothing.
+    fn plugins_in_config(&self, env: &Env<'_>) -> Result<Vec<(String, bool)>, String> {
+        let Some(path) = self.record(env) else {
+            return Ok(Vec::new());
+        };
+        let Some(text) = read(&path)? else {
+            return Ok(Vec::new());
+        };
+        let doc: toml::Table = text
+            .parse()
+            .map_err(|err| format!("{} is not TOML purlis can read: {err}", path.display()))?;
+        Ok(doc
+            .get("plugins")
+            .and_then(toml::Value::as_table)
+            .into_iter()
+            .flatten()
+            .filter(|(id, _)| id_ok(id))
+            .map(|(id, table)| {
+                let on = table
+                    .get("enabled")
+                    .and_then(toml::Value::as_bool)
+                    .unwrap_or(true);
+                (id.clone(), on)
+            })
+            .collect())
+    }
+}
+
 impl Adapter for Codex {
     fn harness(&self) -> &'static str {
         "codex"
@@ -390,35 +421,19 @@ impl Adapter for Codex {
     }
 
     fn installed(&self, env: &Env<'_>) -> Result<Vec<Plugin>, String> {
-        let Some(path) = self.record(env) else {
-            return Ok(Vec::new());
-        };
-        let Some(text) = read(&path)? else {
-            return Ok(Vec::new());
-        };
-        let doc: toml::Table = text
-            .parse()
-            .map_err(|err| format!("{} is not TOML purlis can read: {err}", path.display()))?;
-        let mut out: Vec<Plugin> = doc
-            .get("plugins")
-            .and_then(toml::Value::as_table)
+        let mut out: Vec<Plugin> = self
+            .plugins_in_config(env)?
             .into_iter()
-            .flatten()
-            .filter(|(id, _)| id_ok(id))
-            .map(|(id, table)| {
-                let on = table
-                    .get("enabled")
-                    .and_then(toml::Value::as_bool)
-                    .unwrap_or(true);
-                let (name, marketplace) = split(id);
+            .map(|(id, on)| {
+                let (name, marketplace) = split(&id);
                 Plugin {
-                    id: id.clone(),
                     harness: self.harness(),
                     name: name.to_owned(),
                     source: format!(
                         "{marketplace}, {} in config.toml",
                         if on { "on" } else { "off" }
                     ),
+                    id,
                 }
             })
             .collect();
@@ -433,6 +448,11 @@ impl Adapter for Codex {
 
     fn skills_at(&self, env: &Env<'_>) -> Vec<SkillsAt> {
         skills::codex(self, env)
+    }
+
+    /// Its folder is not read (`on_here::codex`).
+    fn plugins_here(&self, env: &Env<'_>, _at: &ChatFolder) -> Option<Plugins> {
+        on_here::codex(self, env)
     }
 
     /// A repo's `.agents/skills` and `.codex/skills` (`host_roots.rs` at `rust-v0.163.0`: the

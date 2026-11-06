@@ -66,6 +66,9 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+pub(crate) mod ended;
+pub use ended::{Ledger, SUMMARY_NAME, ledger, running};
+
 /// The record's version: a file of another is listed by nobody and left as it is.
 pub const VERSION: u32 = 1;
 
@@ -2166,18 +2169,18 @@ pub fn read(root: &Path, id: &str) -> Option<Record> {
     parse(&text).filter(|record| record.id == id)
 }
 
-/// The running dispatch whose persona chat is `chat`, where there is one: the newest.
+/// The running dispatch whose persona chat is `chat`, where there is one: the newest. Read
+/// from the running records alone ([`running`], #5502).
 pub fn running_for(root: &Path, chat: &ChatRef) -> Option<Record> {
-    list(root)
+    running(root)
         .into_iter()
-        .find(|record| record.running() && same_chat(&record.worker.chat, chat))
+        .find(|record| same_chat(&record.worker.chat, chat))
 }
 
-/// The newest dispatch whose persona chat is `chat`, running or ended.
+/// The newest dispatch whose persona chat is `chat`, running or ended: of the ended ones,
+/// only that one is read whole ([`Ledger::latest_for`], #5502).
 pub fn latest_for(root: &Path, chat: &ChatRef) -> Option<Record> {
-    list(root)
-        .into_iter()
-        .find(|record| !never_a_chat(record) && same_chat(&record.worker.chat, chat))
+    ledger(root).latest_for(root, chat)
 }
 
 /// **How many dispatches each persona was given**, by the records this machine keeps: every
@@ -2250,9 +2253,9 @@ pub fn settle_asked(
     asker_back: impl Fn(&Record) -> bool,
     now: chrono::DateTime<chrono::Utc>,
 ) -> usize {
-    list(root)
+    running(root)
         .into_iter()
-        .filter(|record| record.running() && !still_open(&record.worker.chat))
+        .filter(|record| !still_open(&record.worker.chat))
         .filter(|record| {
             let by = record.report_owed.then_some(EndedBy::Unreported);
             let owed = record.mode == Mode::Task && record.report_owed && !record.asker.by_person;
@@ -2372,7 +2375,7 @@ pub fn older_owing_handoffs_are_tasks(
                 .is_some_and(|from| from.report == crate::reopen::Owed::Due)
         })
     };
-    list(root)
+    running(root)
         .into_iter()
         .filter(owing)
         .filter(still_owes)
@@ -2479,7 +2482,7 @@ pub(crate) fn a_record_s_temp(name: &str) -> bool {
             let (tag, pid, record) = (parts.next(), parts.next(), parts.next());
             tag.is_some_and(|tag| !tag.is_empty())
                 && pid.is_some_and(|pid| !pid.is_empty())
-                && record.is_some_and(a_record)
+                && record.is_some_and(|record| a_record(record) || record == SUMMARY_NAME)
         })
 }
 
@@ -2590,6 +2593,8 @@ pub struct Running {
     seen: Option<Seen>,
     running: Vec<Record>,
     ended: std::collections::BTreeSet<String>,
+    /// Whether the summary's ended ids were taken ([`ended`]): at the first look.
+    seeded: bool,
 }
 
 impl Running {
@@ -2630,7 +2635,14 @@ impl Running {
             return;
         }
         let ids = ids(root);
-        self.ended.retain(|id| ids.contains(id));
+        // Once a launch, the summary's word for what has ended (#5502): those are not read.
+        if !self.seeded {
+            self.ended.extend(ended::ended_ids(root));
+            self.seeded = true;
+        }
+        // A set, so a long history costs one pass and not one per ended record (#5502).
+        let present: std::collections::HashSet<&str> = ids.iter().map(String::as_str).collect();
+        self.ended.retain(|id| present.contains(id.as_str()));
         self.running.clear();
         let unread: Vec<&String> = ids.iter().filter(|id| !self.ended.contains(*id)).collect();
         for id in unread {

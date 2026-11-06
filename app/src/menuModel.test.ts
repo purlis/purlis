@@ -475,7 +475,7 @@ describe("a chat's list (#4753)", () => {
       // Its work went to qa 12, and chat 7 needs you, so it can be ignored until it asks again.
       [
         "Go to qa 12",
-        "Place…",
+        "Move…",
         "Open ▸ [Focus workspace beta, Activity, Network]",
         "Ignore until it asks again",
       ],
@@ -536,7 +536,7 @@ describe("a chat's list (#4753)", () => {
     // Place…'s key picks the chat up from its row or its pane (#4764).
     expect(keys).toEqual({
       "Rename…": "F2",
-      "Place…": expect.stringMatching(/^(⌘⇧M|Ctrl\+Shift\+M)$/),
+      "Move…": expect.stringMatching(/^(⌘⇧M|Ctrl\+Shift\+M)$/),
     });
   });
 
@@ -589,7 +589,7 @@ describe("a tab's menu (#4753)", () => {
     // Close other tabs (#4760), and its own Tile all (#4765).
     expect(said(menuOf({ on: "tab", tab: behind }, offers))).toEqual([
       // Move to new window (#4768): a tab into a tab window of its project.
-      ["Pinned", "Tile all", "Place…", "Move to new window"],
+      ["Pinned", "Tile all", "Move…", "Move to new window"],
       ["Close other tabs", "Close"],
     ]);
     const inFront = rowsOf(menuOf({ on: "tab", tab: front }, offers));
@@ -615,7 +615,7 @@ describe("a tab's menu (#4753)", () => {
     expect(keys).toEqual({
       Close: expect.stringMatching(/^(⌫|Delete)$/),
       // Placement mode's key, which picks the tab up from the strip (#4764).
-      "Place…": expect.stringMatching(/^(⌘⇧M|Ctrl\+Shift\+M)$/),
+      "Move…": expect.stringMatching(/^(⌘⇧M|Ctrl\+Shift\+M)$/),
     });
   });
 
@@ -637,7 +637,7 @@ describe("a tab's menu (#4753)", () => {
       ["Split down", false],
       // Greyed: a tab of one pane has nothing to tile (#4765).
       ["Tile all", false],
-      ["Place…", false],
+      ["Move…", false],
       ["Move to new window", false],
       ["Close other tabs", false],
       ["Close", false],
@@ -680,7 +680,7 @@ describe("the other tabs' menus", () => {
       [
         "Move to its own tab",
         "Open beside console-developer 16",
-        "Place…",
+        "Move…",
         "Brief",
         "Open ▸ [Focus workspace beta, Go to console-developer 16, Activity, Network]",
       ],

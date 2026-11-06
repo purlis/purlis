@@ -3,6 +3,7 @@
 
 //! **A Run grant** (ADR 0112, #5239): a `secret exec` line in, a run or a notice out.
 
+use super::PolicySays as Policy;
 use super::*;
 use crate::secrets::ask::Asks;
 use crate::secrets::ask::run::{OpenRun, RunAnswer};
@@ -592,25 +593,6 @@ fn allow_for_this_chat_runs_the_program_with_other_arguments_and_no_more_asks() 
 // ----------------------------------------------------------------------------------------
 // Under policy (#5243)
 
-/// Policy says `said` for this test, and no longer once it ends.
-struct Policy;
-
-impl Policy {
-    fn says(said: &str) -> Self {
-        crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::parse(
-            said,
-            Path::new("/etc/purlis/policy.json"),
-        ));
-        Self
-    }
-}
-
-impl Drop for Policy {
-    fn drop(&mut self) {
-        crate::sandbox::policy::set_for_this_test(crate::sandbox::policy::Locks::none());
-    }
-}
-
 #[test]
 fn locked_a_command_raises_no_allow_and_the_chat_hears_why_and_to_declare_it() {
     for said in [
@@ -662,16 +644,13 @@ fn locked_a_key_the_vault_lacks_is_still_asked_for_saying_why_no_allow_is_offere
     want.env = vec!["X=NOT_THERE_YET".into()];
     let frames = run_with(&the_chat(project.path()), want, &asks, Duration::ZERO);
     assert_eq!(refusal(&frames).1, WAITING_ON_THE_PERSON, "{frames:?}");
-    assert!(asks.open_runs().is_empty(), "no Allow");
-    let open = asks.open();
+    assert!(asks.open().is_empty(), "one notice (#5242)");
+    let open = asks.open_runs();
     assert_eq!(open.len(), 1, "Fill");
-    assert_eq!(open[0].key, "NOT_THERE_YET");
+    assert_eq!(open[0].fills[0].key, "NOT_THERE_YET");
     assert!(
-        open[0]
-            .no_allow
-            .as_deref()
-            .is_some_and(|why| why.contains("policy")),
-        "{open:?}"
+        matches!(&open[0].offer, crate::secrets::ask::run::Offer::Fill { no_allow: Some(why) } if why.contains("policy")),
+        "no Allow, saying why: {open:?}"
     );
 }
 
@@ -943,14 +922,43 @@ fn no_persona_an_unknown_vault_and_policys_vault_lock_open_nothing_and_ask_nothi
 }
 
 #[test]
-fn a_key_a_vault_opened_by_a_grant_lacks_is_never_asked_for() {
+fn a_key_a_vault_opened_by_a_grant_lacks_is_asked_on_its_one_notice_and_stored_on_allow() {
     let project = project();
     let root = project.path();
     let asks = Asks::new(root);
     let mut want = on_another_vault(root);
     want.env = vec!["X=NOT_THERE".into()];
-    let frames = answered(root, want, &asks, RunAnswer::Once);
-    assert!(asks.open().is_empty(), "no Fill: {frames:?}");
+    let frames = answered_with(root, want, &asks, |open| {
+        assert_eq!(open.fills[0].key, "NOT_THERE", "one notice, with its field");
+        asks.fill_run(
+            &Ctx::new(root, Env::of(&[])),
+            open.id,
+            vec![("NOT_THERE".into(), "v4lue".to_owned().into())],
+            window(),
+        )
+        .unwrap();
+        RunAnswer::Once
+    });
+    assert!(asks.open().is_empty(), "no Fill beside it: {frames:?}");
+    let other = std::fs::read_to_string(root.join("other.json")).unwrap();
+    assert!(other.contains("NOT_THERE"), "stored where the run reads it");
+    no_vault_was_kept(root);
+}
+
+#[test]
+fn dont_allow_on_a_vault_the_persona_may_not_use_stores_nothing_there() {
+    let project = project();
+    let root = project.path();
+    let asks = Asks::new(root);
+    let mut want = on_another_vault(root);
+    want.env = vec!["X=NOT_THERE".into()];
+    run_with(&the_chat(root), want, &asks, Duration::ZERO);
+    let open = asks.open_runs().remove(0);
+    assert!(open.not_its_vault);
+    asks.answer_run(open.id, RunAnswer::Refuse, window())
+        .unwrap();
+    let other = std::fs::read_to_string(root.join("other.json")).unwrap();
+    assert!(!other.contains("NOT_THERE"), "{other}");
 }
 
 // ----------------------------------------------------------------------------------------
@@ -982,8 +990,15 @@ fn the_tools_lock_still_lets_a_missing_key_be_filled() {
     let mut want = printenv(project.path(), &["X"]);
     want.env = vec!["X=NOT_THERE_YET".into()];
     run_with(&the_chat(project.path()), want, &asks, Duration::ZERO);
-    assert_eq!(asks.open().len(), 1, "Fill");
-    assert!(asks.open_runs().is_empty(), "no Allow");
+    let open = asks.open_runs();
+    assert_eq!(open.len(), 1, "Fill");
+    assert!(
+        matches!(
+            open[0].offer,
+            crate::secrets::ask::run::Offer::Fill { no_allow: Some(_) }
+        ),
+        "no Allow: {open:?}"
+    );
 }
 
 #[test]
@@ -1333,9 +1348,9 @@ fn a_lock_set_while_a_fill_waits_stops_the_run_the_value_was_for() {
                 Missing {
                     asks: &asks,
                     within: Duration::from_secs(60),
-                    // Policy comes to lock them once the Fill is up, on the run's own thread.
+                    // Policy comes to lock them once the notice is up, on the run's own thread.
                     moved: &|| {
-                        if !asks.open().is_empty() {
+                        if !asks.open_runs().is_empty() {
                             crate::sandbox::policy::set_for_this_test(
                                 crate::sandbox::policy::Locks::parse(
                                     r#"{"sandbox": {"run-grants": false}}"#,
@@ -1355,27 +1370,19 @@ fn a_lock_set_while_a_fill_waits_stops_the_run_the_value_was_for() {
                 .collect::<Vec<Frame>>()
         });
         let open = open_ask(&asks, || run.is_finished());
-        asks.answer_run(open.id, RunAnswer::Once, window()).unwrap();
-        let id = loop {
-            if let Some(one) = asks.open().first() {
-                break one.id;
-            }
-            assert!(
-                !run.is_finished(),
-                "the run ended without asking for its key"
-            );
-            std::thread::yield_now();
-        };
-        asks.answer(
+        asks.fill_run(
             &Ctx::new(root, Env::of(&[])),
-            id,
-            crate::secrets::ask::Answer::Fill("fr3sh-v4lue".to_owned().into()),
+            open.id,
+            vec![("NOT_THERE_YET".into(), "fr3sh-v4lue".to_owned().into())],
             window(),
         )
         .unwrap();
+        asks.answer_run(open.id, RunAnswer::Once, window()).unwrap();
         run.join().unwrap()
     });
     assert!(refusal(&frames).0.contains("olicy"), "{frames:?}");
+    let team = std::fs::read_to_string(root.join("team.json")).unwrap();
+    assert!(team.contains("NOT_THERE_YET"), "the value stays stored");
     assert!(
         !frames
             .iter()
@@ -1569,6 +1576,9 @@ fn a_key_a_login_came_to_hold_while_the_ask_was_up_is_not_handed_on_allow() {
             .any(|frame| matches!(frame, Frame::Exit { .. })),
         "nothing ran: {frames:?}"
     );
+    // The person's ruling (#5242): a check after Allow that refuses the run drops its Allow
+    // once, which no retry may use.
+    assert!(asks.given_runs().is_empty(), "{:?}", asks.given_runs());
 }
 
 /// A key the run misses may be filled with an entry the person keeps already, as a link: one a
@@ -1584,12 +1594,30 @@ fn a_missing_key_filled_with_a_link_to_a_browsers_key_is_not_handed_on() {
     )
     .unwrap();
     let asks = Asks::new(root);
-    let mut want = printenv(root, &["X"]);
-    want.env = vec!["X=SHOP_PASSWORD".into()];
+    // Allowed for the chat on a notice whose field was filled; then the key goes again, so a run
+    // the grant covers asks for it alone, as before, where a link may be picked.
+    let want = || {
+        let mut want = curl(root, &["--version"]);
+        want.env = vec!["X=SHOP_PASSWORD".into()];
+        want
+    };
+    answered_with(root, want(), &asks, |open| {
+        asks.fill_run(
+            &Ctx::new(root, Env::of(&[])),
+            open.id,
+            vec![("SHOP_PASSWORD".into(), "first".to_owned().into())],
+            window(),
+        )
+        .unwrap();
+        RunAnswer::ForChat
+    });
+    std::fs::write(
+        root.join("team.json"),
+        serde_json::json!({"TOKEN": TOKEN}).to_string(),
+    )
+    .unwrap();
     let frames = std::thread::scope(|scope| {
-        let run = scope.spawn(|| run_with(&the_chat(root), want, &asks, Duration::from_secs(60)));
-        let open = open_ask(&asks, || run.is_finished());
-        asks.answer_run(open.id, RunAnswer::Once, window()).unwrap();
+        let run = scope.spawn(|| run_with(&the_chat(root), want(), &asks, Duration::from_secs(60)));
         let id = loop {
             if let Some(one) = asks.open().first() {
                 break one.id;
@@ -1622,4 +1650,128 @@ fn a_missing_key_filled_with_a_link_to_a_browsers_key_is_not_handed_on() {
             .any(|frame| matches!(frame, Frame::Exit { .. })),
         "nothing ran: {frames:?}"
     );
+}
+
+#[test]
+fn a_key_a_vault_its_persona_may_not_use_lacks_under_a_grant_is_asked_with_the_vaults_own_allow() {
+    use crate::secrets::ask::run::Offer;
+    let project = project();
+    let root = project.path();
+    let asks = Asks::new(root);
+    run_with(
+        &the_chat(root),
+        on_another_vault(root),
+        &asks,
+        Duration::ZERO,
+    );
+    let open = asks.open_runs().remove(0);
+    asks.answer_run(open.id, RunAnswer::ForChat, window())
+        .unwrap();
+    std::fs::write(root.join("other.json"), "{}").unwrap();
+    let frames = run_with(
+        &the_chat(root),
+        on_another_vault(root),
+        &asks,
+        Duration::ZERO,
+    );
+    let open = asks.open_runs();
+    assert_eq!(open.len(), 1, "one notice: {frames:?}");
+    assert_eq!(
+        open[0].offer,
+        Offer::Vault { no_allow: None },
+        "only an Allow stores in a vault the persona may not use"
+    );
+    assert!(
+        !format!("{frames:?}").contains("TOKEN"),
+        "the chat is not told which keys it lacks: {frames:?}"
+    );
+}
+
+#[test]
+fn an_allow_once_a_lock_refuses_after_its_retrys_fill_is_dropped() {
+    let project = project();
+    let root = project.path();
+    let asks = Asks::new(root);
+    let want = || {
+        let mut want = printenv(root, &["X"]);
+        want.env = vec!["X=NOT_A".into()];
+        want
+    };
+    // Allow once given after its run stopped waiting: kept for the retry.
+    run_with(&the_chat(root), want(), &asks, Duration::ZERO);
+    let open = asks.open_runs().remove(0);
+    asks.fill_run(
+        &Ctx::new(root, Env::of(&[])),
+        open.id,
+        vec![("NOT_A".into(), "first".to_owned().into())],
+        window(),
+    )
+    .unwrap();
+    asks.answer_run(open.id, RunAnswer::Once, window()).unwrap();
+    assert_eq!(asks.given_runs().len(), 1);
+    // The key goes again, so the retry asks for it alone; policy locks while it is filled.
+    std::fs::write(
+        root.join("team.json"),
+        serde_json::json!({"TOKEN": TOKEN}).to_string(),
+    )
+    .unwrap();
+    let frames = std::thread::scope(|scope| {
+        let run = scope.spawn(|| {
+            crate::sandbox::tools::SEARCH_HERE
+                .with(|dirs| *dirs.borrow_mut() = Some(vec!["/usr/bin".into(), "/bin".into()]));
+            let wire = Wire::default();
+            let (reader, _keep) = held_open();
+            serve_asking(
+                &the_chat(root),
+                want(),
+                reader,
+                Box::new(wire.clone()),
+                Wrap::Unwrapped,
+                Missing {
+                    asks: &asks,
+                    within: Duration::from_secs(60),
+                    moved: &|| {
+                        if !asks.open().is_empty() {
+                            crate::sandbox::policy::set_for_this_test(
+                                crate::sandbox::policy::Locks::parse(
+                                    r#"{"sandbox": {"run-grants": false}}"#,
+                                    Path::new("/etc/purlis/policy.json"),
+                                ),
+                            );
+                        }
+                    },
+                    run_gate: None,
+                },
+            );
+            let bytes = wire.0.lock().unwrap().clone();
+            String::from_utf8(bytes)
+                .unwrap()
+                .lines()
+                .map(|line| serde_json::from_str(line).expect("every line is a frame"))
+                .collect::<Vec<Frame>>()
+        });
+        let id = loop {
+            if let Some(one) = asks.open().first() {
+                break one.id;
+            }
+            if run.is_finished() {
+                panic!(
+                    "the run ended without asking for its key: {:?}",
+                    run.join().unwrap()
+                );
+            }
+            std::thread::yield_now();
+        };
+        asks.answer(
+            &Ctx::new(root, Env::of(&[])),
+            id,
+            crate::secrets::ask::Answer::Fill("second".to_owned().into()),
+            window(),
+        )
+        .unwrap();
+        run.join().unwrap()
+    });
+    assert!(refusal(&frames).0.contains("olicy"), "{frames:?}");
+    // The person's ruling (#5242): refused after its Allow, the Allow once goes unused.
+    assert!(asks.given_runs().is_empty(), "{:?}", asks.given_runs());
 }

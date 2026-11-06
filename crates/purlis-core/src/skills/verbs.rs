@@ -276,6 +276,7 @@ impl Ctx<'_> {
                 no_push: false,
                 cwd: self.plane,
                 provenance: None,
+                for_a_chat: false,
             },
             crate::planegit::Trigger::Skill(self.by),
             &unique,
@@ -1223,6 +1224,34 @@ const DELETED_DIR: &str = "skills-deleted";
 /// The file in a kept delete's folder that names the level its skill came from.
 const KEPT_FROM: &str = "from";
 
+/// **The trailer of a restore under a new name** (#3729, #5457, `docs/plane-format.md`): the
+/// commit that deleted it and its folder, which [`deleted`] lists no more, as nothing at its old
+/// folder or name says it is back.
+pub(super) const RESTORED_TRAILER: &str = "Purlis-Skill-Restored";
+
+/// The trailer that says `deleted` came back under a new name, where a commit deleted it.
+pub(super) fn restored_trailer(plane: &Path, deleted: &Deleted, folder: &Path) -> Option<String> {
+    match &deleted.kept.0 {
+        Source::Commit(sha) => Some(format!("{RESTORED_TRAILER}: {sha} {}", rel(plane, folder))),
+        Source::Here(_) => None,
+    }
+}
+
+/// Each delete a restore under a new name took back, as its trailer's value says it.
+fn restored_marks(plane: &Path) -> Vec<String> {
+    let format = format!("--format=%(trailers:key={RESTORED_TRAILER},valueonly,separator=%x1e)");
+    let grep = format!("--grep=^{RESTORED_TRAILER}: ");
+    // Every one, however old: a delete further back than the listing reads is listed no more
+    // anyway, and one within it must never come back to the list.
+    git(plane, &["log", &format, &grep])
+        .unwrap_or_default()
+        .split(['\u{1e}', '\n'])
+        .map(str::trim)
+        .filter(|one| !one.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
 /// The folder in this machine's state that holds a note for each delete by git while it runs,
 /// held locked by the delete (SK-35, #3013, `docs/plane-format.md`): one left unlocked is a delete
 /// a crash, a quit or a failed git cut short, which [`interrupted`] finishes or undoes.
@@ -1443,7 +1472,7 @@ fn tracked(plane: &Path, rel_path: &str) -> bool {
 }
 
 /// The commit the plane's `HEAD` names, or empty.
-fn head(plane: &Path) -> String {
+pub(in crate::skills) fn head(plane: &Path) -> String {
     git(plane, &["rev-parse", "HEAD"])
         .map(|out| out.trim().to_owned())
         .unwrap_or_default()
@@ -1897,6 +1926,7 @@ fn deleted_with_text(plane: &Path) -> Vec<(Deleted, String)> {
     }
     // Those Delete now took off this list on this machine (#5332): git still holds them.
     let gone = set::gone::read(plane);
+    let restored = restored_marks(plane);
     let globs = shared_globs();
     let format = format!(
         "--format=%x01%H%x1f%ct%x1f%(trailers:key={},valueonly,separator=%x2C)%x1f%(trailers:key={},valueonly,separator=%x2C)",
@@ -1965,6 +1995,9 @@ fn deleted_with_text(plane: &Path) -> Vec<(Deleted, String)> {
                 .any(|(one, _): &(Deleted, String)| one.level == level && one.folder == folder);
             if here_too
                 || set::gone::marked(&gone, sha, folder_rel)
+                || restored
+                    .iter()
+                    .any(|one| *one == format!("{sha} {folder_rel}"))
                 || taken_again(plane, &level, &name, folder, true)
             {
                 continue;
@@ -2051,29 +2084,7 @@ pub fn restore(
                  names it follows"
             ));
         }
-        Some(new) => {
-            if let Some(why) = change::name_problem(new) {
-                return Err(format!("{new:?} cannot be a skill's name: {why}"));
-            }
-            cx.not_built_in(new)?;
-            if new == deleted.folder {
-                if deleted.level.named(plane, new).is_some() {
-                    return Err(format!(
-                        "the {} skills already have one named {new}: pick another name",
-                        deleted.level
-                    ));
-                }
-            } else {
-                free_at(plane, &deleted.level, new, new)?;
-            }
-            // Its text has a name to rewrite, or nothing comes back.
-            let text = deleted_text(plane, deleted)?;
-            if change::with_name(&text, new).is_none() {
-                return Err(format!(
-                    "{name}'s instructions have no name: line to change, so it was not restored"
-                ));
-            }
-        }
+        Some(new) => under_checked(cx, deleted, new)?,
     }
     let dir = level_is_there(plane, &deleted.level)?;
     let folder = dir.join(&deleted.folder);
@@ -2127,8 +2138,42 @@ pub fn restore(
         deleted.level,
         rel(plane, &landed)
     ));
-    cx.commit(&touched, &format!("skill restore {name} as {new}"));
+    let message = match restored_trailer(plane, deleted, &folder) {
+        Some(trailer) => format!("skill restore {name} as {new}\n\n{trailer}"),
+        None => format!("skill restore {name} as {new}"),
+    };
+    cx.commit(&touched, &message);
     Ok(landed)
+}
+
+/// **Whether the deleted skill `deleted` can come back as `new`** (#3729): a name the format
+/// allows, not one of purlis's own ([`Ctx::not_built_in`]), free at its level, with a `name:`
+/// line in its text to rewrite. What [`restore`] and a set's restore under new names ask first.
+pub(super) fn under_checked(cx: &Ctx<'_>, deleted: &Deleted, new: &str) -> Result<(), String> {
+    let plane = cx.plane;
+    let name = &deleted.name;
+    if let Some(why) = change::name_problem(new) {
+        return Err(format!("{new:?} cannot be a skill's name: {why}"));
+    }
+    cx.not_built_in(new)?;
+    if new == deleted.folder {
+        if deleted.level.named(plane, new).is_some() {
+            return Err(format!(
+                "the {} skills already have one named {new}: pick another name",
+                deleted.level
+            ));
+        }
+    } else {
+        free_at(plane, &deleted.level, new, new)?;
+    }
+    // Its text has a name to rewrite, or nothing comes back.
+    let text = deleted_text(plane, deleted)?;
+    if change::with_name(&text, new).is_none() {
+        return Err(format!(
+            "{name}'s instructions have no name: line to change, so it was not restored"
+        ));
+    }
+    Ok(())
 }
 
 /// **Puts the deleted skill's files back at `folder`**: from the commit that removed it, or from
@@ -2183,7 +2228,12 @@ fn kept_emptied(plane: &Path, kept: &str) {
 /// then its folder, and the file beside it, moved to `new` beside it where it is named otherwise.
 /// Answers where it is now; [`Unmoved::Nothing`] where it is still where it came back to, for
 /// [`taken_back`] to take away.
-fn renamed_back(plane: &Path, folder: &Path, name: &str, new: &str) -> Result<PathBuf, Unmoved> {
+pub(super) fn renamed_back(
+    plane: &Path,
+    folder: &Path,
+    name: &str,
+    new: &str,
+) -> Result<PathBuf, Unmoved> {
     let what = format!("{name}'s instructions");
     let file = format!("{}/SKILL.md", rel(plane, folder));
     let text = text_in(plane, folder, name).map_err(Unmoved::Nothing)?;
@@ -2196,6 +2246,29 @@ fn renamed_back(plane: &Path, folder: &Path, name: &str, new: &str) -> Result<Pa
     let to = folder.with_file_name(new);
     move_skill(plane, folder, plane, &to, usize::MAX)?;
     Ok(to)
+}
+
+/// **Undoes [`renamed_back`]**: the skill named `new` at `landed` named `old` again, its folder
+/// moved back to `folder`, so [`taken_back`] can take it away as it came back.
+pub(super) fn renamed_away(
+    plane: &Path,
+    landed: &Path,
+    folder: &Path,
+    new: &str,
+    old: &str,
+) -> Result<(), String> {
+    let what = format!("{new}'s instructions");
+    let file = format!("{}/SKILL.md", rel(plane, landed));
+    let text = text_in(plane, landed, new)?;
+    let back = change::with_name(&text, old)
+        .ok_or_else(|| format!("{what} has no name: line to change"))?;
+    write(plane, &file, &what, Some(&text), &back, usize::MAX)?;
+    if landed != folder {
+        move_skill(plane, landed, plane, folder, usize::MAX).map_err(|unmoved| match unmoved {
+            Unmoved::Nothing(why) | Unmoved::Stranded(why) => why,
+        })?;
+    }
+    Ok(())
 }
 
 /// **Takes away what a restore of `deleted` put back at `folder`**, where it could not be named

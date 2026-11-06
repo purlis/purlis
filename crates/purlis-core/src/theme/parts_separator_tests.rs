@@ -72,15 +72,11 @@ fn the_panel_separator_comes_in_the_next_release_s_manifest() {
             "focused": ":focus-visible",
         })
     );
-    // Only this family says so: every other one is drawn in words, on React Aria's marks.
-    let others = manifest["families"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter(|one| one["name"] != "panel-separator");
-    for one in others {
-        assert!(one.get("marks").is_none(), "{}", one["name"]);
-        assert!(one.get("attributes").is_none(), "{}", one["name"]);
+    // A family drawn in words is keyed on React Aria's marks: only one drawn in marks says its
+    // own attributes, and then it says them all.
+    for one in manifest["families"].as_array().unwrap() {
+        let marked = one.get("marks").is_some();
+        assert_eq!(one.get("attributes").is_some(), marked, "{}", one["name"]);
     }
 }
 

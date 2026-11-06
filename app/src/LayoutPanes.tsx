@@ -70,7 +70,7 @@ import { TaskEndAsked } from "./TaskEnd";
 import { SAID } from "./menuWords";
 import { giveKeyboardTo } from "./paneKeyboard";
 import { StateShown } from "./StateShown";
-import { ViewPane } from "./Views";
+import { ViewMark, ViewPane } from "./Views";
 import type { FirstTaskDoes } from "./FirstTaskTab";
 import type { ExtensionView, Shown } from "./bindings";
 import { qualifierOf, shownOf } from "./finished";
@@ -160,6 +160,61 @@ function paneRowsOf(
 }
 
 /**
+ * **What a pane head's state word opens** (#5341): handed chat `session`, the pane it is drawn in
+ * and the word, it answers the word inside the button of the chat's tasks menu, or the word as it
+ * is, or nothing for a head that says no state (`alone`) where there is no menu.
+ */
+export type TasksOn = (
+  session: number,
+  at: { tab: number; pane: number } | undefined,
+  word: ReactNode,
+  /** The head says no state: draw nothing where there is no menu to open. */
+  alone: boolean,
+) => ReactNode;
+
+/** The word as it is: a head with nothing to open. */
+const asItIs: TasksOn = (_session, _at, word, alone) => (alone ? null : word);
+
+/**
+ * **Its state**, as its row says it: the mark and its word, the word going first in a narrow pane
+ * and then the mark (`paneHead.ts`). **And its tasks, from that word** (#5341): where the chat has
+ * tasks, the word is the button their menu opens from, as ⌘⇧J's is. A head that says no state
+ * (a task's path says it, or the pane is too narrow) still draws the mark alone as that button
+ * where the chat has tasks, so ⌘⇧J always has its menu to open.
+ */
+function PaneTasksWord({
+  tasksOn = asItIs,
+  session,
+  at,
+  word,
+  markWord,
+  chat,
+}: {
+  tasksOn?: TasksOn;
+  session: number;
+  at: { tab: number; pane: number } | undefined;
+  /** Whether the head says the state. */
+  word: boolean;
+  markWord: boolean;
+  chat: ChatHead["chat"];
+}) {
+  const drawn = tasksOn(
+    session,
+    at,
+    <ChatShownState
+      session={session}
+      shell={chat.shell}
+      report={chat.report}
+      outcome={chat.outcome}
+      harness={chat.harness}
+      markOnly={!word || !markWord}
+    />,
+    !word,
+  );
+  return drawn == null ? null : <span className="pane-state-mark">{drawn}</span>;
+}
+
+/**
  * One pane's frame, three rows each with one job (#3142, the operator's variant A of
  * 2026-10-24; #4754): **the pane's header** with the chat at a glance at its start and the
  * pane's own controls at its end, its bell among them (`PaneHead`, `PaneBell`), **the band** of
@@ -197,6 +252,7 @@ export function PaneFrame({
   headMenu,
   ended,
   said,
+  tasksOn,
   focused = false,
   oneJob = false,
   shell = false,
@@ -205,6 +261,8 @@ export function PaneFrame({
   children,
 }: {
   plane: PlaneId;
+  /** What the head's state word opens: its chat's tasks menu, where it has tasks (#5341). */
+  tasksOn?: TasksOn;
   /** **How the path is said for a task that has ended** (#4757, #4756): its state after the
    *  path and the names of chats no longer open. Its Brief is its state button's (#4760). */
   said?: { state?: ReactNode; gone?: (session: number) => boolean };
@@ -334,6 +392,19 @@ export function PaneFrame({
   /** The terminal the pane draws, for Copy and Paste on its head's right-click (#4760). */
   const terminalAt = useRef<PaneTerminal | null>(null);
   const focusBell = useCallback(() => bellAt.current?.focus(), []);
+  /** **The pane's grip** (#5290): its persona's mark, but a one-job program's. The same function
+   *  from one drawing of the head to the next, so the mark (a memo) is not drawn again for it. */
+  const grip = useMemo(
+    () =>
+      oneJob || tab === undefined || pane === undefined
+        ? undefined
+        : (mark: ReactNode) => (
+            <PaneGrip tab={tab} pane={pane}>
+              {mark}
+            </PaneGrip>
+          ),
+    [oneJob, tab, pane],
+  );
   return (
     <div
       ref={frame}
@@ -357,7 +428,6 @@ export function PaneFrame({
         <PaneActionsOf.Provider value={lines.actions}>
           <PaneHead
             grip={!oneJob}
-            at={tab === undefined || pane === undefined ? undefined : { tab, pane }}
             menu={
               headMenu &&
               ((element) => (
@@ -381,10 +451,12 @@ export function PaneFrame({
           >
             <div className="pane-chips">
               {/* **Who it runs as, with its state on it** (#4760, #4762): the one icon its row
-              and its tab wear, first on the head. */}
+              and its tab wear, first on the head. It is the pane's grip (#5290), but a one-job
+              program's, which stays beside the pane it opened from. */}
               {head && line.has("persona") && (
                 <span className="pane-persona">
                   <ChatPersonaState
+                    grip={grip}
                     persona={head.chat.persona}
                     session={session}
                     shell={head.chat.shell}
@@ -424,17 +496,15 @@ export function PaneFrame({
               )}
               {/* **Its state**, as its row says it: the mark and its word, the word going
               first in a narrow pane and then the mark (`paneHead.ts`). */}
-              {head && line.has("mark") && (
-                <span className="pane-state-mark">
-                  <ChatShownState
-                    session={session}
-                    shell={head.chat.shell}
-                    report={head.chat.report}
-                    outcome={head.chat.outcome}
-                    harness={head.chat.harness}
-                    markOnly={!line.has("markWord")}
-                  />
-                </span>
+              {head && (
+                <PaneTasksWord
+                  tasksOn={tasksOn}
+                  session={session}
+                  at={tab === undefined || pane === undefined ? undefined : { tab, pane }}
+                  word={line.has("mark")}
+                  markWord={line.has("markWord")}
+                  chat={head.chat}
+                />
               )}
               {/* **Wrapping up** (ADR 0064, #4760): the breathing mark, where the strip's chip
               was. */}
@@ -577,7 +647,7 @@ export function ChatFoot({
             <SkillsChip
               plane={plane}
               session={session}
-              onOpen={rowOf("skills")?.press}
+              row={rowOf("skills")}
               markOnly={foot.has("skillsMark")}
             />
           </PaneFootJoined>
@@ -625,7 +695,7 @@ export function PaneHead({
   menu,
   children,
   grip = true,
-  at,
+  lead,
 }: {
   doing: ReactNode;
   /** Puts the head's right-click around it (#4760): the chat's list, then the pane's rows. */
@@ -633,16 +703,18 @@ export function PaneHead({
   children?: ReactNode;
   /** Whether a press on it, outside its controls, picks the pane up to drag (#4763). */
   grip?: boolean;
-  /** The pane it heads, whose grip control picks it up for placement mode (#4764). */
-  at?: { tab: number; pane: number };
+  /** **A view's grip** (#5290): its mark, first in the head, where a chat's is its persona's in
+   *  `children`. Only a view in a split has one: alone in its tab, it moves by its tab. */
+  lead?: ReactNode;
 }) {
   const drawn = (
     // Its hints open below it (#5189): one at a control's end would stand on the row, over the
     // next control, as the bell's did over Split right.
     <div className="pane-head" {...TIPS_BELOW} {...(grip ? { [GRIP]: "" } : {})}>
-      {/* **The grip, first in the head** (#4764): a press, Enter or Space on it picks the pane up
-          to place it with the keys, and a drag from it moves the pane. */}
-      {grip && at !== undefined && <PaneGrip tab={at.tab} pane={at.pane} />}
+      {/* **The grip, first in the head** (#4764, #5290): the pane's mark, which turns into dots; a
+          press, Enter or Space on it picks the pane up to place it with the keys, and a drag
+          from it moves the pane. A chat's is its persona's mark, in `children`. */}
+      {lead}
       {children}
       {doing}
     </div>
@@ -1101,6 +1173,7 @@ export function LayoutPanes({
   unread,
   finished,
   explaining,
+  tasksOn,
   others,
   asked,
   asks,
@@ -1170,6 +1243,9 @@ export function LayoutPanes({
   placed: Readonly<Record<number, Crumbs>>;
   /** The session of the tab whose chip the first dispatch explains, on its own pane (#1501). */
   explaining?: ChipToExplain;
+  /** **What the head's state word opens** (#5341): the chat's tasks menu, around the word, for
+   *  a chat that has tasks; the word as it is for one that has none. */
+  tasksOn?: TasksOn;
   /** **The panes left on a task that has ended** (#4757), by pane: the path it last had. Each
    *  keeps the task's last screen, read-only, under the ended band (#4756). */
   endedTasks: Readonly<Record<number, Crumbs>>;
@@ -1383,7 +1459,19 @@ export function LayoutPanes({
               the view's first row, which keeps the room it takes (`paneFrame.css`). */}
           <PaneActionsOf.Provider value={viewActions}>
             <PaneHead
-              at={{ tab, pane: layout.pane }}
+              // **A view's grip** (#5290): in a split, its mark at the head's start, as a chat's
+              // pane has its persona's. Alone in its tab it has none, so nothing stands on its
+              // own first row, and it moves by its tab.
+              grip={!alone}
+              lead={
+                alone ? undefined : (
+                  <span className="pane-view-grip">
+                    <PaneGrip tab={tab} pane={layout.pane}>
+                      <ViewMark view={content.view} />
+                    </PaneGrip>
+                  </span>
+                )
+              }
               // A view alone in its tab has none of them (#5318): its splits are the palette's and
               // its tab's menu's.
               doing={
@@ -1521,6 +1609,7 @@ export function LayoutPanes({
     return (
       <PaneFrame
         plane={plane}
+        tasksOn={tasksOn}
         pane={layout.pane}
         tab={tab}
         session={content.session}
@@ -1678,6 +1767,7 @@ export function LayoutPanes({
       unread={unread}
       finished={finished}
       explaining={explaining}
+      tasksOn={tasksOn}
       others={others}
       asked={asked}
       asks={asks}

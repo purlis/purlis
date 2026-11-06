@@ -1456,8 +1456,7 @@ fn a_srcdoc_frame_in_the_pages_session_whose_document_has_ended_is_not_judged_un
 
 /// A blank frame in the page's session whose document is of `http://third.test`, not the
 /// page's, read for its sandbox.
-fn a_blank_frame_of_another_origin_in_the_pages_session()
--> (crate::drive::Browser, Arc<super::Engine>) {
+fn a_blank_frame_of_another_origin_in_the_pages_session() -> (super::StandIn, Arc<super::Engine>) {
     let (judge, _) = judge(&[]);
     let (browser, engine) = browser_judged(judge);
     the_page_shows_a_frame(&engine, &browser, "BLANK", "PAGE-1", "about:blank");
@@ -1826,7 +1825,7 @@ const WEB_FRAME: &str = "http://other.test/inner.html";
 
 /// A frame in the page's session at [`WEB_FRAME`], whose document's context says so, that
 /// starts another document.
-fn a_web_frame_that_starts_another_document() -> (crate::drive::Browser, Arc<super::Engine>) {
+fn a_web_frame_that_starts_another_document() -> (super::StandIn, Arc<super::Engine>) {
     let (judge, _) = judge(&[]);
     let (browser, engine) = browser_judged(judge);
     the_page_shows_a_frame(&engine, &browser, "WEB", "PAGE-1", WEB_FRAME);
@@ -2801,4 +2800,40 @@ fn a_secret_is_filled_into_no_frame_whose_document_ended() {
     let (browser, engine) = a_web_frame_that_starts_another_document();
     the_pages_context_ends(&engine, &browser, 92);
     assert_eq!(fill_origin(&browser, "WEB"), None);
+}
+
+/// The steward's decision on the person's rulings of 2026-11-06: a `data:` download a blank frame
+/// began is from the origin its document has, the nearest one around it, not from nowhere.
+#[test]
+fn a_download_a_blank_frame_began_is_from_the_origin_its_document_has() {
+    let (judge, _) = judge(&["http://third.test/"]);
+    let (browser, engine) = browser_judged(judge);
+    the_frame_shows(&engine, &browser, "about:blank", Some("://"));
+    the_document_has(&engine, &browser, "http://third.test");
+    engine.emit(
+        "Browser.downloadWillBegin",
+        json!({ "frameId": "PAYMENT-FRAME", "guid": "GUID-B", "url": "data:text/plain,hi", "suggestedFilename": "hi.txt" }),
+        None,
+    );
+    events_taken_in(&browser, &engine);
+    let listed = browser.downloads();
+    assert_eq!(listed.len(), 1, "{listed:?}");
+    assert_eq!(listed[0].origin.as_deref(), Some("http://third.test"));
+}
+
+/// And one a sandboxed frame began is from nowhere known: its document has no origin.
+#[test]
+fn a_download_a_sandboxed_srcdoc_frame_began_is_from_nowhere_known() {
+    let (judge, _) = judge(&[]);
+    let (browser, engine) = browser_judged(judge);
+    chrome_shows_a_srcdoc_frame(&engine, &browser, "://");
+    engine.emit(
+        "Browser.downloadWillBegin",
+        json!({ "frameId": "PAYMENT-FRAME", "guid": "GUID-S", "url": "data:text/plain,hi", "suggestedFilename": "hi.txt" }),
+        None,
+    );
+    events_taken_in(&browser, &engine);
+    let listed = browser.downloads();
+    assert_eq!(listed.len(), 1, "{listed:?}");
+    assert_eq!(listed[0].origin, None);
 }

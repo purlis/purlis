@@ -23,6 +23,8 @@
 //!    they should travel.
 //! 4. **The workspace's open todos**, three oldest.
 //! 5. **The other workspaces on the plane**, as background.
+//!    Then, in a workspace, **where its own files go**: in its folder, never inside `repos/`
+//!    (ADR 0114).
 //! 6. **The piece** this session stands in, when it stands in one — last, because it is the
 //!    most specific thing here.
 //!
@@ -205,6 +207,7 @@ pub fn parts(ask: &Ask, piece_note: Option<String>) -> Vec<String> {
         if let Some(neighbours) = other_workspaces_digest(ask, &workspace) {
             parts.push(neighbours);
         }
+        parts.push(workspace_files_note(&workspace));
     }
     if let Some(piece) = piece_note {
         parts.push(piece);
@@ -236,6 +239,18 @@ pub fn parts(ask: &Ask, piece_note: Option<String>) -> Vec<String> {
         parts.push(skills);
     }
     parts
+}
+
+/// **Where a workspace's own files go** (ADR 0114): in its folder, never in a clone. A chat that
+/// cannot tell `repos/` from the workspace's own folder writes its notes into a repo, where they
+/// are that repo's and go out with its commits. Said in every workspace, whatever it holds, so a
+/// chat is told before its first clone lands there.
+fn workspace_files_note(workspace: &str) -> String {
+    format!(
+        "⬢ **Where this workspace's own files go.** Notes, scripts and artifacts go in \
+         `workspaces/{workspace}/`, never inside `repos/`: each folder there is a clone of a \
+         repo, and what is written in it is that repo's."
+    )
 }
 
 /// **What a sandboxed chat is told about its sandbox** (#1342, the 2026-10-06 comment): how a

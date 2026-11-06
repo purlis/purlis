@@ -51,7 +51,11 @@ fn plane(toml: &str) -> (tempfile::TempDir, PathBuf) {
         std::fs::write(wd.join("workspace.json"), "{}\n").unwrap();
         std::fs::write(wd.join("memory/MEMORY.md"), "# memory\n").unwrap();
         std::fs::write(wd.join("refs/README.md"), "# refs\n").unwrap();
-        std::fs::write(wd.join(".charter-structure"), "5\n").unwrap();
+        std::fs::write(
+            wd.join(".charter-structure"),
+            format!("{}\n", crate::wslayer::STRUCTURE_VERSION),
+        )
+        .unwrap();
     }
     (dir, root)
 }
@@ -61,7 +65,7 @@ const HEALTHY: &str = "schema = 1\n\n[persona]\ndefault = \"steward\"\n";
 fn stale(root: &Path, ws: &str) {
     std::fs::write(
         root.join("workspaces").join(ws).join(".charter-structure"),
-        "4\n",
+        format!("{}\n", crate::wslayer::STRUCTURE_VERSION - 1),
     )
     .unwrap();
 }

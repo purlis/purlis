@@ -56,6 +56,9 @@
 //! each to, so a pair is measured in one place. Each holds as the theme is and tinted by every
 //! colour a workspace can name, by the theme's own tint recipe, as [`super::check`] measures.
 //!
+//! **A state colour on the terminal's fill is no consent floor** ([`CHECKED_ONLY`], #5262): the
+//! check holds it and says when a theme falls short, and the theme is drawn as written.
+//!
 //! **A theme that breaks one is drawn with purlis's own values for those tokens**: Purlis
 //! Classic's of the same appearance, for the selection's tokens of a pair drawn on a selection
 //! (the platform's, so the pair is no longer drawn), else for the consent and state tokens of
@@ -194,9 +197,23 @@ fn is_consent(token: &str) -> bool {
         .any(|prefix| token.starts_with(prefix))
 }
 
+/// **The state pairs no consent floor is held on** (#5262): the pane foot's warning number, in
+/// the waiting or the failed colour on the terminal's fill, which the person reads a program's
+/// output on. They are held by the check alone, as the text tiers are there: a theme that falls
+/// short is drawn as written and the check names the pair, so a theme with a light terminal in a
+/// dark window never has its terminal, or its amber everywhere else, drawn as purlis's for a
+/// number in the foot. Named pair by pair, so a new state pair on the terminal is a consent
+/// floor until it is named here.
+pub(super) const CHECKED_ONLY: [(&str, &str); 2] = [
+    ("state.waiting", "terminal.background"),
+    ("state.failed", "terminal.background"),
+];
+
 /// The floor a pair of [`PAIRS`] is held to as a consent floor, if it is one.
 fn floor_of(pair: &Pair) -> Option<Floor> {
-    if (pair.front, pair.back) == ("selection.text", "selection.background") {
+    if pair.under.is_none() && CHECKED_ONLY.contains(&(pair.front, pair.back)) {
+        None
+    } else if (pair.front, pair.back) == ("selection.text", "selection.background") {
         SELECTED
             .iter()
             .find(|(ground, _)| pair.under == Some(*ground))

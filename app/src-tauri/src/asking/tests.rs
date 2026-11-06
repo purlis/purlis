@@ -260,11 +260,129 @@ fn a_held_permission_prompt_is_an_ask_answered_on_its_own_hook() {
     assert_eq!(shown.answer, AnswerPath::Hook);
 }
 
+/// A run's notice for `curl` handing over `TOKEN` and `OTHER` from vault `team`, lacking `OTHER`,
+/// offering `offer` (#5242).
+fn a_runs_notice(
+    offer: purlis_core::secrets::ask::run::Offer,
+) -> purlis_core::secrets::ask::run::OpenRun {
+    use purlis_core::secrets::ask::run::{Bound, Fill, Hosts, OpenRun};
+    OpenRun {
+        ahead: false,
+        fills: vec![Fill {
+            key: "OTHER".to_owned(),
+            declared: Some("the API it calls".to_owned()),
+            reason: None,
+        }],
+        offer,
+        id: 9,
+        persona: "devops".to_owned(),
+        bound: Bound {
+            chat: 3,
+            name: "curl".to_owned(),
+            program: "/usr/bin/curl".into(),
+            vault: "team".to_owned(),
+            env: vec!["A=TOKEN".to_owned(), "B=OTHER".to_owned()],
+            file: Vec::new(),
+            cwd: "/work".into(),
+            args: vec!["https://api.example.test".to_owned()],
+        },
+        hosts: Hosts::Listed(vec!["api.example.test".to_owned()]),
+        caution: None,
+        not_its_vault: false,
+        command: "curl https://api.example.test".to_owned(),
+        since: 0,
+    }
+}
+
+#[test]
+fn a_runs_one_notice_has_a_field_for_each_key_it_lacks_beside_the_programs_allow() {
+    use purlis_core::secrets::ask::run::Offer;
+    let none = purlis_core::sandbox::policy::Locks::none();
+    let shown = run_grant(&a_runs_notice(Offer::Program), &none);
+    let run = shown.run.as_ref().expect("the facts");
+    assert_eq!(run.fills.len(), 1);
+    assert_eq!(run.fills[0].key, "OTHER");
+    assert_eq!(run.fills[0].declared.as_deref(), Some("the API it calls"));
+    assert_eq!(run.offer, "program");
+    assert_eq!(
+        ids(&shown),
+        ["allow-once", "allow-chat", "allow-always", "keep"]
+    );
+    assert!(
+        shown.says.contains("lacks OTHER") && shown.says.contains("whatever you allow"),
+        "{}",
+        shown.says
+    );
+}
+
+#[test]
+fn a_notice_with_no_program_allow_gives_the_vaults_line_its_own_allow_as_a_refused_vault_does() {
+    use purlis_core::secrets::ask::run::Offer;
+    let none = purlis_core::sandbox::policy::Locks::none();
+    let mut open = a_runs_notice(Offer::Vault { no_allow: None });
+    open.not_its_vault = true;
+    let shown = run_grant(&open, &none);
+    assert_eq!(ids(&shown), ["allow-vault", "keep"]);
+    assert_eq!(shown.options[0].label, "Allow devops to use this vault");
+    let run = shown.run.as_ref().expect("the facts");
+    assert_eq!(run.offer, "vault");
+    assert!(run.always.is_none(), "no Always allow line to read");
+    // Never past policy's vault lock: Keep blocked alone.
+    let locked = purlis_core::sandbox::policy::Locks::parse(
+        r#"{"sandbox": {"vault-grants": false}}"#,
+        std::path::Path::new("/etc/purlis/policy.json"),
+    );
+    assert_eq!(ids(&run_grant(&open, &locked)), ["keep"]);
+}
+
+#[test]
+fn an_ask_ahead_of_its_run_offers_allow_for_this_chat_alone_and_says_no_command_yet() {
+    use purlis_core::secrets::ask::run::Offer;
+    let none = purlis_core::sandbox::policy::Locks::none();
+    let mut open = a_runs_notice(Offer::Program);
+    open.ahead = true;
+    open.bound.env = Vec::new();
+    open.bound.args = Vec::new();
+    open.command = "curl".to_owned();
+    let shown = run_grant(&open, &none);
+    assert_eq!(
+        ids(&shown),
+        ["allow-chat", "keep"],
+        "no command to allow once, nothing written"
+    );
+    let run = shown.run.as_ref().expect("the facts");
+    assert!(run.ahead);
+    assert!(run.always.is_none());
+    assert!(shown.says.contains("asks for OTHER"), "{}", shown.says);
+}
+
+#[test]
+fn a_notice_of_fields_alone_offers_fill_and_not_now_saying_why_no_allow() {
+    use purlis_core::secrets::ask::run::Offer;
+    let none = purlis_core::sandbox::policy::Locks::none();
+    let shown = run_grant(
+        &a_runs_notice(Offer::Fill {
+            no_allow: Some("Policy turns off allowing a program".to_owned()),
+        }),
+        &none,
+    );
+    assert_eq!(ids(&shown), ["fill", "keep"]);
+    let run = shown.run.as_ref().expect("the facts");
+    assert_eq!(run.offer, "fill");
+    assert_eq!(
+        run.no_allow.as_deref(),
+        Some("Policy turns off allowing a program")
+    );
+}
+
 #[test]
 fn a_run_grant_shows_the_apps_facts_apart_from_the_chats_inert_command() {
     use purlis_core::secrets::ask::run::{Bound, Hosts, OpenRun};
     let none = purlis_core::sandbox::policy::Locks::none();
     let open = OpenRun {
+        ahead: false,
+        fills: Vec::new(),
+        offer: purlis_core::secrets::ask::run::Offer::Program,
         id: 7,
         persona: "devops".to_owned(),
         bound: Bound {
@@ -2679,6 +2797,9 @@ fn a_refused_vault_policy_locks_offers_keep_blocked_alone_and_says_why() {
 fn a_run_grants_folder_is_spelled_so_it_cant_read_as_another() {
     use purlis_core::secrets::ask::run::{Bound, Hosts, OpenRun};
     let open = OpenRun {
+        ahead: false,
+        fills: Vec::new(),
+        offer: purlis_core::secrets::ask::run::Offer::Program,
         id: 7,
         persona: "devops".to_owned(),
         bound: Bound {

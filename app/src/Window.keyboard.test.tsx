@@ -225,10 +225,10 @@ describe("a strip is one Tab stop", () => {
     expect(one).toHaveAttribute("tabindex", "-1");
   });
 
-  it("the chat strip's `+`: Tab reaches it from the tabs, the arrows pass over it", async () => {
+  it("the chat strip's `+`: Tab reaches it from the tabs past the front tab's ×, the arrows pass over it", async () => {
     // DS-7 (#1839): the `+` is inside the strip, right after the last tab. It is a Tab stop of
-    // its own after the tab that holds the stop, never a roving item, and Shift+Tab back out
-    // of it lands on the selected tab.
+    // its own after the tab that holds the stop and that tab's `×` (#5341), never a roving item,
+    // and Shift+Tab back out of them lands on the selected tab.
     core();
     render(<App />);
     await waitFor(() => expect(tabsOf("Tabs")).toHaveLength(3));
@@ -244,7 +244,10 @@ describe("a strip is one Tab stop", () => {
 
     selected.focus();
     await userEvent.tab();
+    expect(document.activeElement?.getAttribute("data-part")).toBe("closer");
+    await userEvent.tab();
     expect(plus).toHaveFocus();
+    await userEvent.tab({ shift: true });
     await userEvent.tab({ shift: true });
     expect(selected).toHaveFocus();
   });
@@ -415,8 +418,10 @@ describe("the window's tab order", () => {
       // The handle between it and the centre — `react-resizable-panels`' keyboard resize.
       "separator Resize the left sidebar",
       // The editor (DS-6, #1836): its chat strip first, at the top of the centre column — the
-      // selected chat's tab, and the `+`. A tab's `×` is not a stop.
+      // selected chat's tab, its `×` (the front tab's is the one `×` that is a stop, #5341), and
+      // the `+`.
       "tab steward two",
+      "button Close steward two",
       "button New tab",
       // No Tile all at the strip's end (#4765): the tab in front has one pane, so it is not
       // drawn.

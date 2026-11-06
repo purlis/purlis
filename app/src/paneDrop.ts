@@ -562,27 +562,6 @@ const firstPane = (layout: Layout): number => panes(layout)[0].pane;
 export type Box = { left: number; top: number; width: number; height: number };
 
 /**
- * **Where the result of a drop is drawn before it** (#4583): the half of the pane the source
- * would take for an edge, the whole pane for its middle.
- */
-export function previewOf(pane: Box, place: Place): Box {
-  const halfWidth = pane.width / 2;
-  const halfHeight = pane.height / 2;
-  switch (place) {
-    case "left":
-      return { ...pane, width: halfWidth };
-    case "right":
-      return { ...pane, left: pane.left + halfWidth, width: halfWidth };
-    case "top":
-      return { ...pane, height: halfHeight };
-    case "bottom":
-      return { ...pane, top: pane.top + halfHeight, height: halfHeight };
-    case "middle":
-      return pane;
-  }
-}
-
-/**
  * **The smallest a side of a split may be, in pixels, along `direction`** (#4763): a pane's
  * floor, and a split along the same direction the sum of its sides', since each of them keeps
  * its own. A separator stops there, so it keeps the floor a drop keeps.

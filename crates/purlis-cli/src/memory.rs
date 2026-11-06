@@ -515,6 +515,15 @@ pub fn recall(here: &crate::Here, args: RecallArgs) -> Result<Code, String> {
     };
     let got = recall::recall(root, &ask);
     voice::unread(root, &got.unread);
+    // Served anyway, and said (ADR 0079 §5): the index may be behind the files.
+    if let Some(index) = got.index.as_ref().filter(|index| index.behind()) {
+        voice::info(if index.refreshing {
+            "refreshing: the project index is catching up, so the newest changes may be missing."
+        } else {
+            "refreshing: no purlis host is keeping the project index now, so this answer may be \
+             behind the files."
+        });
+    }
     let skipped = if got.unread.is_empty() {
         String::new()
     } else {

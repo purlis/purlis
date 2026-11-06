@@ -178,6 +178,7 @@ fn filled_with(browser: &Browser, holder: &Arc<Holder>, label: &str, value: &str
         key: "the-api-key".to_owned(),
         value: value.to_owned().into(),
         multi_line: false,
+        under_a_grant: false,
     };
     let filled = browser.fill_secret(
         browser.epoch(),
@@ -656,6 +657,7 @@ fn a_fill_is_refused_beside_a_window_the_page_opened() {
         key: "the-api-key".to_owned(),
         value: VALUE.to_owned().into(),
         multi_line: false,
+        under_a_grant: false,
     };
 
     let filled = browser.fill_secret(

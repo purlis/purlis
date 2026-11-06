@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import { X } from "lucide-react";
 import {
   commands,
+  type DeletedRename,
   type DeletedSkill,
   type SkillGrant,
   type SkillLevel,
@@ -18,9 +19,9 @@ import { counted } from "./dispatches";
 import { Choice, SettingRow } from "./settings/components";
 import { whoGets } from "./SkillChangeDialogs";
 import { GrantPicker } from "./SkillLevelPickers";
-import { useRead } from "./SkillRead";
+import { BUSY, useRead } from "./SkillRead";
 import { SetReviewPage, memberKey, setVerb, type Stays } from "./SkillSetReview";
-import { NAME_TAKEN_STAYS } from "./SkillStudioDeleted";
+import { BRING_BACK_WORDS, useNameTaken, type Taking } from "./SkillNameTaken";
 import { levelKey, levelOf, sameLevel } from "./skillChanges";
 import type { StudioScope } from "./skillStudio";
 import { Badge } from "./ui/badge/Badge";
@@ -48,13 +49,13 @@ import { ViewPageHeader } from "./ui/panel/ViewFrame";
  *   is read until Select is pressed.
  *
  * {@link SELECT_ACTS} is the one list of what can be done, in its order: Grade's review and its
- * grades running (#5356) are `SkillLibraryGrade.tsx`'s, and Review updates (#5354) and Make room (#5355) join it as rows of
- * their own.
+ * grades running (#5356) are `SkillLibraryGrade.tsx`'s, Review updates' review (#5354) is
+ * `SetUpdateReviewPage`, and Make room (#5355) joins it as a row of its own.
  */
 
-/** **What Select can do**: a change to the set (#5331's), or Grade (#5356), which changes no
- *  skill. */
-export type SelectAct = SkillSetAct | "grade";
+/** **What Select can do**: a change to the set (#5331's), Grade (#5356), which changes no
+ *  skill, or Review updates (#5354), whose review is its own page. */
+export type SelectAct = SkillSetAct | "grade" | "update";
 
 /** **What Select can do to the skills chosen**, in the page's order, each with the line under
  *  it. */
@@ -68,6 +69,11 @@ export const SELECT_ACTS: readonly { act: SelectAct; label: string; says: string
   { act: "move", label: "Move to another level", says: "Skills keep their history and grades." },
   { act: "grade", label: "Grade", says: "A few at a time, under a limit you set." },
   { act: "export", label: "Export", says: "A zip or a folder." },
+  {
+    act: "update",
+    label: "Review updates",
+    says: "Anything that adds a script, hook, tool or network access starts unticked.",
+  },
   { act: "delete", label: "Delete", says: "They stay in Deleted for 30 days." },
 ];
 
@@ -128,6 +134,8 @@ function staysWhy(act: SelectAct, skill: StudioSkill, at: SelectFor): string | n
       return skill.archived ? "Archived already." : null;
     case "unarchive":
       return skill.archived ? null : "Not archived.";
+    case "update":
+      return skill.source_label === null ? "It wasn't installed from a source." : null;
     default:
       return null;
   }
@@ -632,7 +640,7 @@ export function DeletedSelectionPage({
         testid="select-none"
       />
     );
-  const back = chosen.filter((one) => !one.reserved).length;
+  const back = chosen.length;
   const count = (n: number) => `${n} of ${chosen.length}`;
   return (
     <div className="skill-studio-item" data-testid="select-page">
@@ -679,11 +687,17 @@ export function DeletedSelectionPage({
   );
 }
 
+/** A deleted skill, as the name-taken step asks of it (#5457): by its id, each one named. */
+function taking(one: DeletedSkill): Taking {
+  return { key: one.id, name: one.name, clash: one.clash, named: true };
+}
+
 /**
- * **The review of Bring back or Delete now**, in the selection page's place. Bring back leaves
- * out a skill whose name belongs to purlis now, which comes back only on its own (#5331's D-7);
- * Delete now says which leave only this list and which leave this machine for good, and is the
- * one change on the page with no undo.
+ * **The review of Bring back or Delete now**, in the selection page's place. Bring back asks a
+ * new name of each skill whose name belongs to purlis now, as an install asks one of a skill
+ * whose name is taken (#5457): filled in as the core offers it, confirmed or left in Deleted,
+ * the rest coming back as named in the same change. Delete now says which leave only this list
+ * and which leave this machine for good, and is the one change on the page with no undo.
  */
 export function DeletedSetReview({
   act,
@@ -696,11 +710,14 @@ export function DeletedSetReview({
   chosen: readonly DeletedSkill[];
   busy: boolean;
   onCancel: () => void;
-  onApply: (going: DeletedSkill[]) => void;
+  /** Apply it to `going`, each of `under` coming back under its new name. */
+  onApply: (going: DeletedSkill[], under: DeletedRename[]) => void;
 }) {
   const now = act === "delete-now";
-  const going = now ? [...chosen] : chosen.filter((one) => !one.reserved);
-  const stay = now ? [] : chosen.filter((one) => one.reserved);
+  const taken = useNameTaken(now ? [] : chosen.map(taking), BRING_BACK_WORDS);
+  const going = now ? [...chosen] : chosen.filter((one) => !taken.skipped.has(one.id));
+  const asking = now ? [] : going.filter((one) => one.clash !== null);
+  const why = busy ? BUSY : now ? undefined : taken.why;
   const skills = counted(going.length, "skill", "skills");
   const kept = going.filter((one) => one.in_history).length;
   const gone = going.length - kept;
@@ -714,8 +731,13 @@ export function DeletedSetReview({
       main={{
         children: now ? `Delete ${skills} now` : `Bring back ${skills}`,
         ...(now ? { variant: "danger" as const } : { byReturn: false }),
-        isDisabled: busy || going.length === 0,
-        onPress: () => onApply(going),
+        isDisabled: why !== undefined || going.length === 0,
+        tooltip: why,
+        onPress: () =>
+          onApply(
+            going,
+            taken.renames.map(({ key, to }) => ({ id: key, to })),
+          ),
       }}
     >
       <h2 className="ui-text-strong">{title}</h2>
@@ -734,22 +756,29 @@ export function DeletedSetReview({
         <h3 id="set-going" className="ui-text-small ui-text-strong">
           {now ? "Will be deleted now" : "Will come back"}
         </h3>
-        {going.map((one) => (
-          <p key={one.id} className="honest">
-            <code>{one.name}</code> ({one.label})
-          </p>
-        ))}
-      </section>
-      {stay.length > 0 && (
-        <section aria-labelledby="set-stays" className="skill-review" data-testid="set-stays">
-          <h3 id="set-stays" className="ui-text-small ui-text-strong">
-            Stay as they are
-          </h3>
-          {stay.map((one) => (
-            <p key={one.id} className="honest" data-testid={`set-stays-${one.name}`}>
-              <code>{one.name}</code> {NAME_TAKEN_STAYS}
+        {going
+          .filter((one) => !asking.includes(one))
+          .map((one) => (
+            <p key={one.id} className="honest">
+              <code>{one.name}</code> ({one.label})
             </p>
           ))}
+      </section>
+      {!now && chosen.some((one) => one.clash !== null) && (
+        <section aria-labelledby="set-taken" className="skill-review" data-testid="set-taken">
+          <h3 id="set-taken" className="ui-text-small ui-text-strong">
+            Names that belong to purlis now
+          </h3>
+          {chosen
+            .filter((one) => one.clash !== null)
+            .map((one) => (
+              <div key={one.id}>
+                <p className="honest">
+                  <code>{one.name}</code> ({one.label})
+                </p>
+                {taken.choice(taking(one), busy)}
+              </div>
+            ))}
         </section>
       )}
     </ReviewPage>

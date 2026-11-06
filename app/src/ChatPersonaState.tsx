@@ -100,11 +100,15 @@ export const ChatPersonaState = memo(function ChatPersonaState({
   changed = false,
   who: standIn,
   heard = true,
+  grip,
 }: ShownOf & {
   persona: string | null;
   changed?: boolean;
   who?: ReactNode;
   heard?: boolean;
+  /** **The grip that stands in its `who`** (#5290, `ui/grip`): what its row or its pane is picked
+   *  up by, handed the mark it turns into dots in place of. The badge stays beside it. */
+  grip?: (mark: ReactNode) => ReactNode;
 }) {
   const shown = useShownState({ session, shell, report, outcome, harness });
   const who = persona ?? "terminal";
@@ -128,7 +132,7 @@ export const ChatPersonaState = memo(function ChatPersonaState({
       changed={changed}
       who={
         <>
-          {drawn}
+          {grip === undefined ? drawn : grip(drawn)}
           {/* Heard after the chat's name, as the persona and then the state. */}
           {heard && <span className="hidden-words">{shown === undefined ? who : `${who},`}</span>}
         </>

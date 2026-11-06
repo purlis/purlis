@@ -973,6 +973,10 @@ export type Now = {
    *  has closed them, so they have no rows, and the band's Resume and Clear pane are their ways
    *  out. */
   endedHere?: readonly number[];
+  /** **The chat each ended task a pane still shows was asked by** (#5366), by the task: the last
+   *  but one of the path its pane last had (#4757). The core lists the task no more, so its
+   *  `↳ from` row is had from here, while the chat that asked is listed. */
+  endedAskedBy?: ReadonlyMap<number, number>;
   /** The tabs Close other tabs on tab `tab` would close (#4762): every other tab on its strip
    *  but the pinned ones (`tabs.otherTabsToClose`). None where the window does not say. */
   otherTabs?: (tab: number) => readonly number[];
@@ -1519,6 +1523,17 @@ export function projectRows(
  */
 export const ENDS_IT = "Ends the program it runs. There is no undo.";
 
+/** **What shows a chat from wherever another place names it** (#5185, #5248): a studio chat's
+ *  line above its skill's tabs, its row on Runs, its job on the Grades card, and its draft. */
+export const OPEN_CHAT = "Open chat";
+
+/** **What opens a studio chat's draft where it waits for review**, on Drafts (#5248). */
+export const REVIEW_DRAFT = "Review draft";
+
+/** **What stops the chat at work on the Grades card's running job** (#5248; the prototype's
+ *  words): it asks first, as the chat's own Stop does. */
+export const STOP_IT = "Stop it";
+
 /** What a close says of the one chat it takes off the screen (#4756): it ends nothing. */
 export const ONE_CHAT_GOES_ON = "Its chat goes on in the sidebar.";
 
@@ -1714,7 +1729,7 @@ export const placeChatId = (session: number) => `chat.place:${session}`;
 export const placeTabId = (tab: number) => `tab.place:${tab}`;
 /** What a Place… row says it does (#4764). */
 export const PLACE_NOTE =
-  "Picked up to place with the keys: the arrows choose a side, Tab the next pane, Enter drops.";
+  "Picked up to move with the keys: the arrows choose a side, Tab the next pane, Enter drops.";
 /** Tile all's row for tab `tab` (#4765). */
 export function tileAllId(tab: number): string {
   return `tab.tile:${tab}`;
@@ -2327,7 +2342,7 @@ export function catalogue(now: Now): Offer[] {
     offers.push({
       ...can(
         placeTabId(tab),
-        `Place tab ${name}…`,
+        `Move tab ${name}…`,
         { verb: "place", source: { kind: "tab", tab } },
         name,
       ),
@@ -4457,7 +4472,7 @@ function chatRows(now: Now): Offer[] {
     offers.push({
       ...can(
         placeChatId(session),
-        `Place chat ${name}…`,
+        `Move chat ${name}…`,
         { verb: "place", source: { kind: "chat", session } },
         name,
       ),
@@ -4525,6 +4540,12 @@ function chatRows(now: Now): Offer[] {
     // **Its Activity** (#1495) and **its Network** (#1662), each in a tab of its own. They only
     // read, so they sit above the line.
     if (harnessed) offers.push(...footRows(now, session, name));
+    // **An ended task's `↳ from`** (#5366): the core lists it no more, so no harness is asked of
+    // it, but the chat that asked it is still there to go to.
+    else if (now.endedAskedBy?.has(session)) {
+      const asker = askerRow(now, session, name, now.endedAskedBy.get(session));
+      if (asker !== undefined) offers.push(asker);
+    }
     offers.push(...readingRows(session, name));
 
     // **Restart**: the chat's program ends and starts again on the same conversation, with the
@@ -4655,16 +4676,10 @@ function footRows(now: Now, session: number, name: string): Offer[] {
           ),
     );
   }
-  const asker = now.listed?.find((chat) => chat.session === listed?.parent);
-  if (asker !== undefined)
-    offers.push(
-      can(
-        askerId(session),
-        `Go to ${asker.name} (${name} came from it)`,
-        { verb: "showChat", session: asker.session },
-        asker.name,
-      ),
-    );
+  // A listed chat says its own lineage; only one the core lists no more is had from its pane.
+  const parent = listed === undefined ? now.endedAskedBy?.get(session) : listed.parent;
+  const asker = askerRow(now, session, name, parent);
+  if (asker !== undefined) offers.push(asker);
   if (now.skillStudio)
     offers.push(
       can(chatSkillsId(session), `Skills of ${name}`, { verb: "showChatSkills", session }, name),
@@ -4679,6 +4694,25 @@ function footRows(now: Now, session: number, name: string): Offer[] {
       ),
     );
   return offers;
+}
+
+/** **`↳ from`'s row**: the chat `session` came from, `parent`, while it is listed; none once it
+ *  has closed, and the foot says it in words. */
+function askerRow(
+  now: Now,
+  session: number,
+  name: string,
+  parent: number | null | undefined,
+): Offer | undefined {
+  const asker = now.listed?.find((chat) => chat.session === parent);
+  return asker === undefined
+    ? undefined
+    : can(
+        askerId(session),
+        `Go to ${asker.name} (${name} came from it)`,
+        { verb: "showChat", session: asker.session },
+        asker.name,
+      );
 }
 
 /** **A chat's Activity (#1495) and Network (#1662) rows**: each opens a view in a tab of its

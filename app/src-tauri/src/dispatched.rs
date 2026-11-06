@@ -2585,11 +2585,10 @@ pub fn question_brought_back(held: &Held, task: u32) {
     // Asked only where the record of questions could not say: it reads the dispatch records.
     let asked = || {
         me.as_ref().is_some_and(|me| {
-            purlis_core::dispatchrecord::list(held.root())
+            purlis_core::dispatchrecord::running(held.root())
                 .iter()
                 .any(|record| {
-                    record.running()
-                        && purlis_core::dispatchrecord::same_chat(&record.worker.chat, me)
+                    purlis_core::dispatchrecord::same_chat(&record.worker.chat, me)
                         && purlis_core::dispatchrecord::asked_and_unanswered(&record.talk)
                 })
         })

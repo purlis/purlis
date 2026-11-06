@@ -31,12 +31,11 @@ import {
   chatOf,
   contentsOf,
   panesOf,
-  shownIn,
   taskShownIn,
   type Pinned,
   type Tabs,
 } from "./tabs";
-import { TabTasks, type Place as TaskPlace } from "./TabChip";
+import { TabNeeds } from "./TabChip";
 import { SkillRunChip } from "./SkillRunChip";
 import { type Ended, type Needing } from "./tabTasks";
 import { TabCell, tabsPart, type TabVariant } from "./ui/tabs/Tabs";
@@ -52,8 +51,6 @@ import { STRIP, TAB } from "./paneDrag";
 import { showsStopping, TabMarks, type TabFacts } from "./ChatRows";
 import { faceOf, type Naming, type TabFace } from "./tabFace";
 import type { Ref } from "./fits";
-import type { StateClock } from "./stateClock";
-import type { UsedReader } from "./tasksUsed";
 import type { RefObject } from "react";
 import { Doer, ShowMore, Pin, Closer } from "./StripMarks";
 import { TIPS_BELOW } from "./ui/tooltip/Tooltip";
@@ -119,7 +116,6 @@ export function ChatStrip({
   draggedAtRef,
   notGoingBack,
   isPinned,
-  isDragging,
   nameBoxFor,
   saveName,
   endRename,
@@ -132,26 +128,12 @@ export function ChatStrip({
   factsOf,
   naming,
   pinsIconOnly,
-  narrow,
   taskNameOf,
   taskTabOf,
-  tabHasTasks,
-  showTabTasks,
-  tasksIdOf,
-  tasksAsked,
-  chatsByTab,
-  endedByTab,
-  runningOfTab,
-  chatClock,
   hiddenIn,
+  tasksRunningOf,
   waitingOn,
   showFromChip,
-  taskEndsOf,
-  pressTaskEnd,
-  placeFromChip,
-  usedFromChip,
-  stopAllOf,
-  activityFromChip,
   freshOf,
   freshMarkOf,
   planeUpdates,
@@ -279,8 +261,6 @@ export function ChatStrip({
                       // A pinned tab at its icon only, where pins alone would take over half
                       // the strip; its name is in its tooltip (#4762).
                       data-icon-only={(pinsIconOnly && isPinned(id)) || undefined}
-                      // A crowded strip: the `×` only in front or under the pointer (#4762).
-                      data-narrow={narrow || undefined}
                       // A task's own tab (#1489): what its look is hung on.
                       data-task-tab={taskTabOf(id) === undefined ? undefined : ""}
                       // A file, a folder, lines or a search hit dropped on a chat's tab is
@@ -326,12 +306,16 @@ export function ChatStrip({
                               ? WRAPPING_UP
                               : panesOf(tabs, id).some((one) => restoring.has(one.session))
                                 ? RESTORING
-                                : // A split lists its panes on hover, in reading order (#4762).
-                                  (splitTip(faceAt(id)) ??
-                                  tabTip(
-                                    handedFrom[chatOf(tabs, id) ?? -1],
-                                    workItems[chatOf(tabs, id) ?? -1],
-                                  ))
+                                : // A split lists its panes on hover, in reading order (#4762),
+                                  // and a tab says how many of its tasks run (#5341).
+                                  tipLines(
+                                    splitTip(faceAt(id)) ??
+                                      tabTip(
+                                        handedFrom[chatOf(tabs, id) ?? -1],
+                                        workItems[chatOf(tabs, id) ?? -1],
+                                      ),
+                                    runningSaid(tasksRunningOf(id)),
+                                  )
                           }
                           id={chatTabId(place)}
                           // What a press does that the tab's name does not say (#1486):
@@ -341,8 +325,6 @@ export function ChatStrip({
                               ? `Press to go back to ${tabs.byId[id].name}`
                               : undefined
                           }
-                          // Down opens the menu of its tasks, where it has any (#1487).
-                          aria-haspopup={tabHasTasks(id) ? "menu" : undefined}
                           // The fresh mark beside it as well (#1246): it is outside the tab.
                           aria-describedby={
                             [
@@ -350,9 +332,6 @@ export function ChatStrip({
                               freshMarkShown(freshOf(id), planeUpdates[chatOf(tabs, id) ?? -1])
                                 ? freshMarkOf(id)
                                 : undefined,
-                              // And its tasks' counts, which are beside it too
-                              // (#1487): "Tasks of steward 4: 2 working".
-                              tabHasTasks(id) ? tasksIdOf(id) : undefined,
                             ]
                               .filter(Boolean)
                               .join(" ") || undefined
@@ -368,18 +347,6 @@ export function ChatStrip({
                             if (sortable.isDragging) return;
                             closeOnDelete(event, by(`tab.close:${id}`), press);
                             renameOnF2(event, renameOf(id), press);
-                            // **Down on a tab with tasks opens their menu** (#1487),
-                            // as Down opens the menu under an item of a menu bar. The
-                            // strip runs across, so Down was nothing's.
-                            if (
-                              event.key === "ArrowDown" &&
-                              !(event.altKey || event.ctrlKey || event.metaKey) &&
-                              !event.shiftKey &&
-                              tabHasTasks(id)
-                            ) {
-                              event.preventDefault();
-                              showTabTasks(id);
-                            }
                           }}
                           // The catalogue's row, not a second copy of it. The tab already in front
                           // has a row that says so and cannot run — a tab is never disabled, because
@@ -416,35 +383,12 @@ export function ChatStrip({
                           />
                         </StripTab>
                       )}
-                      {/* **The chip of the session's tasks** (#1487): their counts, the
-                            hand where one waits off screen, and the menu to switch
-                            between them. Beside the tab's button: a button holds no
-                            button. Nothing for a tab with no tasks. */}
+                      {/* **A chat of the tab waits for you off screen** (V100-37): the hand,
+                            and a press goes to the one that has waited longest. All a tab draws
+                            of its tasks (#5341): their counts and their menu are on the chat's
+                            pane head. Beside the tab's button: a button holds no button. */}
                       <QueueRead>
-                        {(queue) => (
-                          <TabTasks
-                            id={tasksIdOf(id)}
-                            name={tabs.byId[id].name}
-                            rows={chatsByTab.get(id) ?? NO_ROWS}
-                            ended={endedByTab.get(id) ?? NO_ENDED}
-                            current={
-                              shownIn(tabs, id).find((one) => one.pane === tabs.byId[id].focused)
-                                ?.session ?? chatShownBy(tabs, id)
-                            }
-                            needs={hiddenIn(queue, id)}
-                            asked={tasksAsked?.tab === id ? tasksAsked.count : 0}
-                            clock={chatClock}
-                            dragging={isDragging}
-                            onShow={showFromChip}
-                            ends={taskEndsOf}
-                            onPress={pressTaskEnd}
-                            onPlace={placeFromChip}
-                            used={usedFromChip}
-                            limits={runningOfTab.get(id)}
-                            stopAll={stopAllOf}
-                            onActivity={activityFromChip}
-                          />
-                        )}
+                        {(queue) => <TabNeeds needs={hiddenIn(queue, id)} onShow={showFromChip} />}
                       </QueueRead>
                       {/* **The skill run open in the tab's chat** (SK-3): pressed, it
                             opens the skill's Runs in the studio on that run. Beside the tab's button, as
@@ -466,7 +410,11 @@ export function ChatStrip({
                         files={planeUpdates[chatOf(tabs, id) ?? -1]}
                         onPress={press}
                       />
-                      <Closer offer={by(`tab.close:${id}`)} onPress={press} />
+                      <Closer
+                        offer={by(`tab.close:${id}`)}
+                        onPress={press}
+                        reachable={id === tabs.inFront}
+                      />
                     </TabCell>
                   </Menued>
                 )}
@@ -568,6 +516,17 @@ export function ChatStrip({
   );
 }
 
+/** A tab's hover, line by line: what it has to say, nothing where it has nothing. */
+function tipLines(...lines: (string | undefined)[]): string | undefined {
+  const said = lines.filter((line): line is string => line !== undefined);
+  return said.length === 0 ? undefined : said.join("\n");
+}
+
+/** **How many of a tab's tasks run, on its hover** (#5341): the count it no longer wears. */
+export function runningSaid(running: number): string | undefined {
+  return running === 0 ? undefined : `${running} ${running === 1 ? "task" : "tasks"} running`;
+}
+
 /** What a split tab says on hover: every pane, in reading order. Nothing for one pane. */
 function splitTip(face: TabFace): string | undefined {
   return face.more > 0 ? face.panes.join(" · ") : undefined;
@@ -635,7 +594,6 @@ type ChatStripProps = {
   draggedAtRef: RefObject<number>;
   notGoingBack: () => void;
   isPinned: Pinned;
-  isDragging: () => boolean;
   nameBoxFor: (id: number) => boolean;
   saveName: (id: number, typed: string) => Promise<string | undefined>;
   endRename: (back: boolean) => void;
@@ -650,31 +608,16 @@ type ChatStripProps = {
   /** Whether the pins go icon-only: alone at their floor they would take over half the strip
    *  (`fits.pinnedFirst`, #4762). */
   pinsIconOnly: boolean;
-  /** Whether the tabs' equal share is under 140px, where a tab shows its `×` only in front or
-   *  under the pointer (`fits.narrowTabs`, #4762). */
-  narrow: boolean;
   /** What chat `session`'s row reads its state from beside the board, so its tab says the
    *  row's word (#4935). */
   factsOf?: (session: number) => TabFacts | undefined;
   taskNameOf: (id: number) => string | undefined;
   taskTabOf: (id: number) => { asker: string | undefined } | undefined;
-  tabHasTasks: (id: number) => boolean;
-  showTabTasks: (tab: number) => void;
-  tasksIdOf: (tab: number) => string;
-  tasksAsked: { tab: number; count: number } | undefined;
-  chatsByTab: ReadonlyMap<number, ChatRow[]>;
-  endedByTab: ReadonlyMap<number, Ended[]>;
-  runningOfTab: ReadonlyMap<number, string>;
-  chatClock: StateClock;
   hiddenIn: (queue: readonly number[], id: number) => readonly Needing[];
+  /** How many of tab `id`'s tasks are open: what its hover says (#5341). */
+  tasksRunningOf: (id: number) => number;
   waitingOn: (queue: readonly number[], id: number) => number;
   showFromChip: (session: number) => void;
-  taskEndsOf: (session: number) => Offer[];
-  pressTaskEnd: (offer: Offer) => void;
-  placeFromChip: (session: number, where: TaskPlace) => void;
-  usedFromChip: UsedReader;
-  stopAllOf: (session: number) => Offer | undefined;
-  activityFromChip: (session: number) => void;
   freshOf: (id: number) => Offer | undefined;
   freshMarkOf: (tab: number) => string;
   planeUpdates: Readonly<Record<number, readonly string[]>>;

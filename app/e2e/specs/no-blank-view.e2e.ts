@@ -2,12 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { $, browser, expect } from "@wdio/globals";
-import {
-  closeTheViewTabsOpenedSince,
-  focusWorkspace,
-  runFromThePalette,
-  tabNames,
-} from "../reach.js";
+import { closesTheTabsItOpens, focusWorkspace, runFromThePalette, tabNames } from "../reach.js";
 
 /**
  * **No view is ever a blank pane** (#614 l1, FR-19): every view of every side, both halves of
@@ -293,7 +288,6 @@ describe("no blank view", function () {
   this.timeout(300_000);
 
   let found: { bar: string; views: string[]; open: string | null }[] = [];
-  let wereAlreadyOpen: string[] = [];
 
   before(async () => {
     await focusWorkspace("alpha");
@@ -303,7 +297,6 @@ describe("no blank view", function () {
       timeoutMsg: "no activity bar was drawn",
     });
     found = await bars();
-    wereAlreadyOpen = await tabNames();
   });
 
   after(async () => {
@@ -320,8 +313,11 @@ describe("no blank view", function () {
           }
       }
     }
-    await closeTheViewTabsOpenedSince(wereAlreadyOpen);
   });
+
+  // Below both: the strip is read once the bars are drawn, and its view tabs are closed once
+  // each bar is back on its view.
+  closesTheTabsItOpens();
 
   it("draws every view of every bar, or its empty state", async () => {
     expect(found.flatMap((one) => one.views).length).toBeGreaterThan(0);

@@ -234,7 +234,7 @@ export const Empty: Story = {
   play: async ({ canvas }) => {
     const none = await canvas.findByTestId("skill-drafts-none");
     const ask = within(none).getByRole("button", {
-      name: "Ask a chat at the project's root to draft a skill",
+      name: "Ask a chat at plane to draft a skill",
     });
     await tabInto(() => ask);
     expectFocusInSight();

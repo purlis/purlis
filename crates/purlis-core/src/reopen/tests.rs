@@ -3039,6 +3039,8 @@ fn what_the_studio_started_a_chat_for_survives_a_relaunch_5185() {
         level: crate::skills::verbs::Level::workspace("purlis-demo"),
         job: StudioWork::OutcomeEvals,
         done: false,
+        started: None,
+        finished: None,
     };
     // A job whose draft came is done, and stays so across a relaunch.
     let draft = StudioJob {
@@ -3046,6 +3048,8 @@ fn what_the_studio_started_a_chat_for_survives_a_relaunch_5185() {
         level: crate::skills::verbs::Level::persona("steward").local(true),
         job: StudioWork::Draft,
         done: true,
+        started: None,
+        finished: None,
     };
     let record = Record {
         chats: vec![
@@ -3098,4 +3102,73 @@ fn a_studio_link_that_does_not_read_whole_reads_as_none_5185() {
         assert_eq!(back.len(), 1, "{studio}");
         assert_eq!(back[0].studio, None, "{studio}");
     }
+}
+
+#[test]
+fn a_studio_chat_keeps_when_it_started_and_finished_across_a_relaunch_5248() {
+    let plane = tempfile::tempdir().unwrap();
+    let now = |time: &str| {
+        chrono::DateTime::parse_from_rfc3339(time)
+            .unwrap()
+            .with_timezone(&chrono::Utc)
+    };
+    let mut evals = StudioJob::new(
+        Some("test-design".to_owned()),
+        crate::skills::verbs::Level::project(),
+        StudioWork::OutcomeEvals,
+        now("2026-11-04T17:31:00Z"),
+    );
+    assert!(evals.finish(now("2026-11-04T17:42:00Z")));
+    // A second stop keeps the first's time.
+    assert!(!evals.finish(now("2026-11-04T17:50:00Z")));
+    let record = Record {
+        chats: vec![Chat {
+            studio: Some(evals.clone()),
+            ..claude("3", None)
+        }],
+        ..Default::default()
+    };
+    write(plane.path(), &record).unwrap();
+
+    let back = read(plane.path()).chats;
+    let job = back[0].studio.clone().unwrap();
+    assert_eq!(job.started.as_deref(), Some("2026-11-04T17:31:00Z"));
+    assert_eq!(job.finished.as_deref(), Some("2026-11-04T17:42:00Z"));
+    assert_eq!(job, evals);
+}
+
+#[test]
+fn a_studio_job_runs_again_with_its_chat_unless_its_draft_came_5248() {
+    let now = chrono::DateTime::parse_from_rfc3339("2026-11-04T17:31:00Z")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    let mut job = StudioJob::new(
+        None,
+        crate::skills::verbs::Level::project(),
+        StudioWork::Draft,
+        now,
+    );
+    job.finish(now);
+    assert!(job.runs_again());
+    assert_eq!(job.finished, None);
+    job.finish(now);
+    job.done = true;
+    assert!(!job.runs_again());
+    assert!(job.finished.is_some());
+}
+
+#[test]
+fn a_studio_time_that_does_not_read_is_absent_and_the_link_stands_5248() {
+    let plane = tempfile::tempdir().unwrap();
+    let file = path(plane.path());
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(
+        &file,
+        r#"{"version": 1, "at": 0, "chats": [{"program": "claude", "name": "3", "studio": {"job": "checks", "skill": "deploy", "at": "project", "started": "soon", "finished": "2026-11-04T17:42:00Z"}}]}"#,
+    )
+    .unwrap();
+
+    let job = read(plane.path()).chats[0].studio.clone().unwrap();
+    assert_eq!(job.started, None);
+    assert_eq!(job.finished.as_deref(), Some("2026-11-04T17:42:00Z"));
 }

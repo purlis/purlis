@@ -98,6 +98,9 @@ pub enum Left {
     /// move the chat's sandbox would not let it make, a move purlis could not judge, or a
     /// project whose update goes through its pull request. Nothing was started.
     NotForAChat(String),
+    /// A file the app's git writes in the project's git directory is a link, a file with a
+    /// second name, or cannot be read, in this sentence. Nothing was started.
+    Linked(String),
     /// A request mode, and commits here that an open request carries: `mine` of them.
     WaitsOnRequest {
         mine: u32,
@@ -142,6 +145,7 @@ impl Left {
             Self::Unwritable(_) => "unwritable",
             Self::HeldFromChats(_) => "held-from-chats",
             Self::NotForAChat(_) => "not-for-a-chat",
+            Self::Linked(_) => "linked",
             Self::WaitsOnRequest { .. } => "waits-on-request",
             Self::Conflict(_) => "conflict",
             Self::Unsigned(_) => "unsigned",
@@ -205,6 +209,7 @@ impl Left {
         match self {
             Self::HeldFromChats(_)
             | Self::NotForAChat(_)
+            | Self::Linked(_)
             | Self::Conflict(_)
             | Self::Stopped(_)
             | Self::NotPutBack { .. }
@@ -271,6 +276,7 @@ impl Left {
                  updates it with Update in the window, or in their own terminal. {AS_IT_WAS}",
                 named(files),
             ),
+            Self::Linked(why) => format!("Nothing was updated: {}. {AS_IT_WAS}", why.trim_end()),
             Self::NotForAChat(why) => format!(
                 "Nothing was updated: {} The person updates the project with Update in the \
                  window. {AS_IT_WAS}",
@@ -428,6 +434,9 @@ fn update_as(root: &Path, for_a_chat: Option<&Path>, say: Sink) -> Updated {
     let Some(_claim) = Claim::of(root) else {
         return Updated::Left(Left::Busy);
     };
+    if let Err(why) = super::git_files_refused(root) {
+        return Updated::Left(Left::Linked(why));
+    }
     let plane = crate::planesave::Settings::read(root).plane;
     let here = git::run(root, &["rev-parse", "--abbrev-ref", "HEAD"], git::READ)
         .ok()

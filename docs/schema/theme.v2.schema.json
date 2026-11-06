@@ -4937,6 +4937,15 @@
         "field.error.disabled.text": {
           "$ref": "#/$defs/part-text"
         },
+        "grip.dot.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "grip.dot.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "grip.dot.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
         "list.root.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -6999,6 +7008,9 @@
           "$ref": "#/$defs/part-padding"
         },
         "pane-preview.line.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "pane-preview.opening.fill": {
           "$ref": "#/$defs/part-fill"
         },
         "pane-preview.size.fill": {

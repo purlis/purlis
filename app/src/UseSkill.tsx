@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import type { FootPress } from "./paneHead";
 import {
   createContext,
   memo,
@@ -457,9 +458,6 @@ const NO_SETS: ChatSkillSets = {};
 /** No chat's skills changed since it started. */
 const NOTHING_CHANGED: SkillsChangedHere = {};
 
-/** What the Skills chip's tooltip says it does (S8, #3694). */
-export const SHOW_THIS_CHATS_SKILLS = "Show this chat's skills";
-
 /**
  * **The skills warning on a chat's pane foot** (#2775; spec #3679 S8, #3694, #3953, #5204): drawn
  * only while the Skills view's Needs you holds a card of the chat's own (`chatNeedsOf`, the view's
@@ -467,7 +465,8 @@ export const SHOW_THIS_CHATS_SKILLS = "Show this chat's skills";
  * its start or on its latest prompt, skills it started without, or its skills changed since it
  * started. It says how many skills the set holds, and its tooltip names each need. Pressed, it runs
  * the chat's Skills row, the sidebar Skills view, the one answer to what the chat gets and why,
- * where each need has its fix. With no such row it is its words alone. Its set is the window's
+ * where each need has its fix, and says that row's title as every part of the foot does (#5366).
+ * With no such row it is its words alone, and says no press. Its set is the window's
  * ({@link ChatSkillSetsHere}). Nothing while the Skill studio is off, or for a chat purlis knows no
  * skills of. A narrow pane shrinks it to its ⚠, named all the same; a chat with nothing wrong says
  * nothing here, and the Skills row and the Skills view say the budget (`⌘⇧X`).
@@ -475,21 +474,21 @@ export const SHOW_THIS_CHATS_SKILLS = "Show this chat's skills";
 export const SkillsChip = memo(function SkillsChip({
   plane,
   session,
-  onOpen,
+  row,
   markOnly = false,
 }: {
   /** The project whose Routing its `of 60` opens (#5353): where it is left out, so is that. */
   plane?: PlaneId;
   session: number;
   /** The row a press runs (#5204): the chat's Skills, in the sidebar's Skills view. */
-  onOpen?: () => void;
+  row?: FootPress;
   /** A narrow pane's: its ⚠ alone, named all the same (#5206, story 31). */
   markOnly?: boolean;
 }) {
   const warning = useChatSkillsWarn(session);
   const said = useContext(ChatSkillSetsHere)[session];
   if (warning === undefined || said === undefined) return null;
-  const tip = `${warning}. ${SHOW_THIS_CHATS_SKILLS}.`;
+  const tip = row === undefined ? `${warning}.` : `${warning}. ${row.title}.`;
   const count = counted(skillsInTheSet(said.budget), "skill", "skills");
   const named = { "data-testid": "pane-skills", "aria-label": `${count}. ${tip}` };
   // The budget counts what is listed, and a manual-only skill is free: so the number it is out of
@@ -511,7 +510,7 @@ export const SkillsChip = memo(function SkillsChip({
       {most}
     </Button>
   );
-  if (onOpen === undefined)
+  if (row === undefined)
     return (
       <>
         <Tooltip tip={tip}>
@@ -531,7 +530,7 @@ export const SkillsChip = memo(function SkillsChip({
       className="pane-skills"
       icon={<TriangleAlert aria-hidden="true" />}
       tooltip={tip}
-      onPress={onOpen}
+      onPress={row.press}
     />
   ) : (
     <>
@@ -541,7 +540,7 @@ export const SkillsChip = memo(function SkillsChip({
         variant="warning-soft"
         className="pane-skills"
         tooltip={tip}
-        onPress={onOpen}
+        onPress={row.press}
       >
         {`${SIGN} ${count}`}
       </Button>

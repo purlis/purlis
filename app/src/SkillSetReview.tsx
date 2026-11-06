@@ -154,7 +154,12 @@ export function setTitle(act: SkillSetAct, from: string): string {
 }
 
 /** What the studio says after a change to several skills. */
-function saidOf(label: string, text: string, notes: readonly string[], undo?: () => void): Said {
+export function saidOf(
+  label: string,
+  text: string,
+  notes: readonly string[],
+  undo?: () => void,
+): Said {
   return {
     tone: "news",
     label,
@@ -217,7 +222,7 @@ export function applySet({
         saidOf("Skills deleted", `${count} deleted. They stay in Deleted for 30 days.`, notes, () =>
           undo(
             "The delete was not undone",
-            () => commands.skillSetRestore(plane, ids, removes),
+            () => commands.skillSetRestore(plane, ids, removes, []),
             async (undone) => saidOf("Delete undone", `${count} back.`, undone),
           ),
         ),

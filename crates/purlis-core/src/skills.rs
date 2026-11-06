@@ -103,6 +103,26 @@ pub const LISTED_ENV: &str = "PURLIS_SKILLS_DIR";
 /// the plane where arming did not.
 pub const PLANE_LISTED_ENV: &str = "PURLIS_SKILLS_PLANE";
 
+/// **The variable a chat whose harness loads the plane's skills from a set's folder is started
+/// with** (#4510): that folder ([`lay_out`]), the one its harness's own skill tool knows them from.
+/// purlis's MCP server, which the harness starts with its environment, reads it so `skill_load`
+/// never sends a chat to that tool for a skill the folder does not hold: one the router hid, or
+/// one made since the chat started. Set by the adapter of a harness whose own start
+/// `skill_load` sends a chat to ([`crate::harness::HarnessAdapter::narrowed_start`]), where its
+/// set holds plane skills.
+pub const HANDED_ENV: &str = "PURLIS_SKILLS_HANDED";
+
+/// **Whether `folder`, a set's folder its harness was handed, holds the skill `name`** of the
+/// plane: the `SKILL.md` purlis wrote for it there ([`lay_out`]).
+pub fn handed_in(folder: &Path, name: &str) -> bool {
+    plain_name(name)
+        && folder
+            .join(DIR_IN_BUNDLE)
+            .join(name)
+            .join(purlis_skills::FILE)
+            .is_file()
+}
+
 /// The plane a chat's skills come from beside the built-in ones (ADR 0099), as a chat is armed.
 #[derive(Debug, Clone, Copy)]
 pub struct PlaneSkills<'a> {

@@ -345,6 +345,7 @@ pub fn save_as(
                     no_push: false,
                     cwd: root,
                     provenance: None,
+                    for_a_chat: false,
                 },
                 trigger,
                 &mut say,

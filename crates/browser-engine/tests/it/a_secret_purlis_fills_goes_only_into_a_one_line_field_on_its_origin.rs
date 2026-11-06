@@ -35,6 +35,7 @@ fn fill_of(target: Ref, origin: &str) -> SecretFill {
         key: "dash-api-key".to_owned(),
         value: VALUE.to_owned().into(),
         multi_line: false,
+        under_a_grant: false,
     }
 }
 
@@ -75,6 +76,26 @@ fn described(browser: &Browser, target: Ref) -> FieldInfo {
     }
 }
 
+/// The reference of the element named `label` that is no plain text, whatever its role, read
+/// from the page's whole snapshot, waiting for it to show: a failure says the snapshot.
+fn field_named(browser: &Browser, label: &str) -> Ref {
+    let named = format!("\"{label}\"");
+    let start = Instant::now();
+    loop {
+        let seen = snapshot(browser);
+        if let Some(line) = seen.lines().find(|line| {
+            line.contains(&named) && line.contains("[e") && !line.contains(&format!("text {named}"))
+        }) {
+            return ref_on(line, &named);
+        }
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "{label} never showed: {seen}"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
 /// The reference of the element labelled `label`, waiting for it to show.
 fn ref_of(browser: &Browser, line: &str) -> Ref {
     let label = line.split('"').nth(1).unwrap_or(line);
@@ -105,6 +126,8 @@ fn a_secret_goes_into_a_one_line_field_and_nothing_read_after_shows_it() {
             origin: Some("http://fixture.test".to_owned()),
             label: "API key".to_owned(),
             kind: FieldKind::OneLine,
+            by_get: false,
+            payment: false,
         }
     );
     let answer = filled(&browser, key, "http://fixture.test");
@@ -268,6 +291,7 @@ fn a_multi_line_box_or_an_editable_area_takes_a_secret_the_person_was_asked_abou
         let field = ref_of(&browser, label);
         let fill = SecretFill {
             multi_line: true,
+            under_a_grant: false,
             ..fill_of(field, "http://fixture.test")
         };
         let answer = browser.fill_secret(browser.epoch(), &fill, Arc::new(Holds));
@@ -319,4 +343,63 @@ fn a_backspace_into_the_filled_field_is_refused_and_nothing_of_the_value_shows()
         "the page's echo shows none of the value"
     );
     assert_eq!(red_pixels(&screenshot(&browser)), 0);
+}
+
+/// The rulings of 2026-11-06: the engine reads whether a field's form sends it by GET (its own
+/// `method`, or a submit button's `formmethod`, never a control that names itself `method`) and
+/// whether the page marks it a card's or payment field; and under a grant it fills neither,
+/// judged as it writes, while a fill the person was asked about goes into both.
+#[test]
+fn under_a_grant_a_field_sent_by_get_or_marked_for_payment_takes_nothing() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    open(&browser, "fill-forms.html");
+    // Each by its name before anything is filled: a field a fill went into is blanked after, and
+    // said with no name.
+    let refs: std::collections::HashMap<&str, Ref> = [
+        "Search",
+        "Secret word",
+        "Token",
+        "Card number",
+        "Recovery word",
+        "Loose",
+    ]
+    .into_iter()
+    .map(|label| (label, field_named(&browser, label)))
+    .collect();
+    let field = |label: &str| refs[label].clone();
+    for (label, by_get, payment) in [
+        ("Search", true, false),
+        ("Secret word", false, false),
+        ("Token", true, false),
+        ("Card number", false, true),
+        ("Recovery word", false, false),
+        ("Loose", false, false),
+    ] {
+        let read = described(&browser, field(label));
+        assert_eq!((read.by_get, read.payment), (by_get, payment), "{label}");
+    }
+    let granted = |label: &str| {
+        browser.fill_secret(
+            browser.epoch(),
+            &SecretFill {
+                under_a_grant: true,
+                ..fill_of(field(label), "http://fixture.test")
+            },
+            Arc::new(Holds),
+        )
+    };
+    for label in ["Search", "Token", "Card number"] {
+        let outcome = granted(label);
+        assert!(
+            matches!(outcome, Err(Refusal::NotFilled(_))),
+            "{label}: {}",
+            ended_as(&outcome)
+        );
+    }
+    let outcome = granted("Secret word");
+    assert!(outcome.is_ok(), "{}", ended_as(&outcome));
+    let outcome = filled(&browser, field("Card number"), "http://fixture.test");
+    assert!(outcome.is_ok(), "asked about: {}", ended_as(&outcome));
 }

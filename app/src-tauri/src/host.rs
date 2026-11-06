@@ -980,6 +980,8 @@ pub(crate) mod pretend {
         /// The chats left running from before this window, and the plan each ran in
         /// ([`Pretend::leaves_running`], #2006).
         left: Mutex<Vec<(u32, Option<purlis_core::sandbox::plan::Plan>)>>,
+        /// The plans chats were confined from, in order ([`Pretend::plans_confined`]).
+        confined: Mutex<Vec<purlis_core::sandbox::plan::Plan>>,
         /// How each chat left running is sandboxed, as its host recorded it (#2636).
         ran_in: Mutex<Vec<(u32, Option<purlis_session_protocol::session::RunSandbox>)>>,
         /// The chats reattached, in order.
@@ -1132,6 +1134,11 @@ pub(crate) mod pretend {
                     "seatbelt".to_owned(),
                 )),
             );
+        }
+
+        /// The plans the chats it started were confined from, in order.
+        pub fn plans_confined(&self) -> Vec<purlis_core::sandbox::plan::Plan> {
+            lock(&self.seen.confined).clone()
         }
 
         /// [`Self::leaves_running`], its run sandboxed as `ran` says, as the host recorded it:
@@ -1324,6 +1331,14 @@ pub(crate) mod pretend {
     }
 
     impl SessionHost for Pretend {
+        fn confine(
+            &self,
+            plan: &purlis_core::sandbox::plan::Plan,
+            hearing: purlis_core::sandbox::plan::Hearing,
+        ) -> Result<purlis_core::sandbox::Confinement, String> {
+            lock(&self.seen.confined).push(plan.clone());
+            plan.start(hearing.here()).map_err(|why| why.to_string())
+        }
         fn open(
             &self,
             wanted: Option<u32>,

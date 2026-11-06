@@ -25,6 +25,9 @@ fn bound(chat: u32, args: &[&str]) -> Bound {
 
 fn need(bound: Bound) -> RunNeed {
     RunNeed {
+        ahead: false,
+        fills: Vec::new(),
+        offer: Offer::Program,
         command: format!("curl {}", bound.args.join(" ")),
         not_its_vault: false,
         bound,
@@ -41,6 +44,16 @@ fn hold(asks: &Asks, bound: Bound, within: Duration) -> RunHeld {
 /// The chat runs `bound` with no time to wait: an ask stays open, if none covers it.
 fn stopped(asks: &Asks, bound: Bound) -> RunHeld {
     hold(asks, bound, Duration::ZERO)
+}
+
+/// [`hold`], and, where it may go on, the run starting, which uses the grant (#5242).
+fn started(asks: &Asks, bound: Bound, within: Duration) -> RunHeld {
+    match hold(asks, bound.clone(), within) {
+        RunHeld::Allowed if !asks.granted(&bound) => RunHeld::Refused {
+            line: "taken".into(),
+        },
+        held => held,
+    }
 }
 
 #[test]
@@ -98,13 +111,36 @@ fn allow_once_outlives_the_wait_is_good_for_one_run_of_that_command_and_nudges()
         stopped(&asks, bound(7, &["b"])),
         RunHeld::StillOpen { .. }
     ));
-    assert_eq!(stopped(&asks, bound(7, &["a"])), RunHeld::Allowed);
+    assert_eq!(
+        started(&asks, bound(7, &["a"]), Duration::ZERO),
+        RunHeld::Allowed
+    );
     assert!(
         matches!(stopped(&asks, bound(7, &["a"])), RunHeld::StillOpen { .. }),
         "used"
     );
     let other = asks.answer_run(99, RunAnswer::Once, window()).unwrap_err();
     assert!(other.contains("already been answered"), "{other}");
+}
+
+#[test]
+fn allow_once_is_used_as_its_run_starts_so_one_that_stops_short_keeps_it_for_its_retry() {
+    let tmp = tempfile::tempdir().unwrap();
+    let asks = Asks::new(tmp.path());
+    stopped(&asks, bound(7, &["a"]));
+    asks.answer_run(asks.open_runs()[0].id, RunAnswer::Once, window())
+        .unwrap();
+    // The run told it may go stops short: its slots are full, or it waits on a value.
+    assert_eq!(stopped(&asks, bound(7, &["a"])), RunHeld::Allowed);
+    assert_eq!(
+        started(&asks, bound(7, &["a"]), Duration::ZERO),
+        RunHeld::Allowed,
+        "its retry runs with no new ask"
+    );
+    assert!(
+        matches!(stopped(&asks, bound(7, &["a"])), RunHeld::StillOpen { .. }),
+        "and then it is used"
+    );
 }
 
 #[test]
@@ -126,8 +162,8 @@ fn allow_once_reaches_one_of_two_runs_holding_on_it_and_the_other_hears_so() {
     let tmp = tempfile::tempdir().unwrap();
     let asks = Asks::new(tmp.path());
     let (first, second) = std::thread::scope(|scope| {
-        let one = scope.spawn(|| hold(&asks, bound(7, &["a"]), Duration::from_secs(60)));
-        let two = scope.spawn(|| hold(&asks, bound(7, &["a"]), Duration::from_secs(60)));
+        let one = scope.spawn(|| started(&asks, bound(7, &["a"]), Duration::from_secs(60)));
+        let two = scope.spawn(|| started(&asks, bound(7, &["a"]), Duration::from_secs(60)));
         let id = loop {
             let open = asks.open_runs();
             let waiting = asks
@@ -343,6 +379,11 @@ fn an_allow_once_not_yet_used_is_listed_and_goes_when_it_is_used() {
     answer_open(&asks, RunAnswer::Once);
     assert!(asks.given_runs()[0].once);
     assert_eq!(stopped(&asks, bound(1, &["get"])), RunHeld::Allowed);
+    assert!(
+        asks.given_runs()[0].once,
+        "a run told it may go is yet to start: it is not used until then (#5242)"
+    );
+    assert!(asks.granted(&bound(1, &["get"])), "the run starts");
     assert!(asks.given_runs().is_empty());
 }
 
@@ -389,7 +430,7 @@ fn a_kept_ask_comes_back_but_never_a_chat_grant() {
 fn what_the_audit_says_names_the_program_keys_vault_scope_and_chat_and_nothing_of_the_command() {
     let mut one = bound(4, &["--token", "s3cret-in-an-argument"]);
     one.file.push("KUBECONFIG=config".into());
-    let audited = Audited::granted(&one, RunAnswer::ForChat);
+    let audited = Audited::granted(&one, RunAnswer::ForChat).expect("a Run grant's");
     assert_eq!(audited.kind(), GRANT_AUDITED);
     let body = audited.body();
     assert_eq!(body["program"], "/usr/bin/curl");
@@ -401,7 +442,9 @@ fn what_the_audit_says_names_the_program_keys_vault_scope_and_chat_and_nothing_o
     assert_eq!(Audited::revoked(&one, true).kind(), REVOKE_AUDITED);
     assert_eq!(Audited::revoked(&one, true).body()["level"], "once");
     assert_eq!(
-        Audited::granted(&one, RunAnswer::Refuse).kind(),
+        Audited::granted(&one, RunAnswer::Refuse)
+            .expect("a Run grant's")
+            .kind(),
         REFUSE_AUDITED
     );
 }
