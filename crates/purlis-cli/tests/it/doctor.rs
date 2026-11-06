@@ -934,18 +934,19 @@ fn bare_fix_never_removes_a_generated_sub_agent_and_the_row_offers_the_fix() {
 #[test]
 fn fix_move_into_repos_by_name_moves_the_root_clones_and_bare_fix_does_not() {
     let (_d, root) = plane();
-    std::fs::write(
-        root.join("home").join(".gitconfig"),
-        "[user]\n\tname = Fixture User\n\temail = fixture@example.invalid\n\
-         [commit]\n\tgpgsign = false\n",
-    )
-    .unwrap();
     let clone = root.join("workspaces/alpha/api");
     std::fs::create_dir_all(&clone).unwrap();
     git(&clone, &["init", "-q", "-b", "main"]);
     std::fs::write(clone.join("README.md"), "one\n").unwrap();
     git(&clone, &["add", "README.md"]);
-    git(&clone, &["commit", "-qm", "one"]);
+    // The helper's HOME is the folder git runs in, so a commit in the clone is told who.
+    let who = [
+        "-c",
+        "user.name=Fixture User",
+        "-c",
+        "user.email=fixture@example.invalid",
+    ];
+    git(&clone, &[&who[..], &["commit", "-qm", "one"][..]].concat());
     let piece = root.join("workspaces/alpha/.worktrees/api/piece");
     git(
         &clone,
@@ -982,5 +983,8 @@ fn fix_move_into_repos_by_name_moves_the_root_clones_and_bare_fix_does_not() {
     );
     std::fs::write(piece.join("after.txt"), "after\n").unwrap();
     git(&piece, &["add", "after.txt"]);
-    git(&piece, &["commit", "-qm", "after the move"]);
+    git(
+        &piece,
+        &[&who[..], &["commit", "-qm", "after the move"][..]].concat(),
+    );
 }
