@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793999629044,
+  "lastUpdate": 1794002056252,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -41412,6 +41412,48 @@ window.BENCHMARK_DATA = {
             "value": 101.47472050000002,
             "unit": "ms",
             "extra": "median of 5 runs: 100.454, 101.362, 101.475, 101.497, 102.130 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "dda9410611445824366fd5bf7b50f4d3baefc1e1",
+          "message": "Dispatch history stays cheap: ended dispatches summarised in one index file (#5502) (#5562)\n\nEnded dispatches are summarised in app/dispatches/ended.json, which holds only\nwhat never changes once a dispatch ends (its id, its worker chat, whether that\nwas never a chat). Callers that need only running tasks (the sidebar's task\nstatus, each turn's roster, running_for, settling chats that are gone) read the\nrunning records plus that summary. The roster's ended.retain is O(D) with a set.\nRetention drops the entries of the records it collects.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6RWHS5XHV5VJENE0XGKCD2B\nPurlis-Persona: steward\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-06T20:39:11Z",
+          "tree_id": "a68a55a0b11b0f1f691431a434ec683b25d7337e",
+          "url": "https://github.com/purlis/purlis/commit/dda9410611445824366fd5bf7b50f4d3baefc1e1"
+        },
+        "date": 1794002051263,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4116355,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.406, 0.411, 0.412, 0.416, 0.418 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5396075,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.473, 16.495, 16.540, 16.595, 16.710 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.0953045,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.594, 101.918, 102.095, 102.549, 102.817 ms"
           }
         ]
       }
