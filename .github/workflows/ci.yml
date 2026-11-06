@@ -267,11 +267,20 @@ jobs:
         uses: ./.github/actions/studio-probe-names
       # Built in a step of its own, so the run's step timings say how much of this job is
       # compiling and linking the test binaries and how much is running them, with no log to read.
-      # It takes 5 to 9 minutes. On 2026-11-03 (job 125815923694, in the merge queue) it finished
-      # building and then hung for 36 minutes listing a binary's tests, until the job's 45-minute
-      # limit cancelled it and the queue waited on it; twenty minutes ends such a hang sooner.
+      # On 2026-11-03 (job 125815923694, in the merge queue) it finished building and then hung for
+      # 36 minutes listing a binary's tests, until the job's 45-minute limit cancelled it and the
+      # queue waited on it: this step's own limit ends such a hang sooner.
+      #
+      # **The limit is set from what the step takes** (#5535). Over 882 builds from 2026-10-31 to
+      # 2026-11-07: p50 9.2 minutes, p95 10.3, p99 11.9, the longest 15.7. One with no cache to
+      # restore takes about 3 minutes more (20 of them: p50 11.9, longest 12.4), so a cache miss
+      # is not what makes one slow. The one build that ran out of the old 20 minutes (job
+      # 128025376476, a pull request that changed no Rust) had restored the cache whole, on a
+      # runner where every step before it took 2 to 12 times as long as on its sibling parts. 30
+      # minutes is p99 two and a half times over, room for a runner that slow, and still ends a
+      # hang a quarter of an hour before the job's limit.
       - name: Build the tests
-        timeout-minutes: 20
+        timeout-minutes: 30
         run: cargo nextest run --workspace --locked --no-run
       # Every test's result, never the first red only (`fail-fast = false` in the profile): a
       # flake in one test (charter-app#39) must not hide the rest of the suite.
