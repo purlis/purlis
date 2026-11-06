@@ -355,9 +355,20 @@ fn under_a_grant_a_field_sent_by_get_or_marked_for_payment_takes_nothing() {
         return;
     };
     open(&browser, "fill-forms.html");
-    // By its name, whatever role the engine gives it: Chrome may say a card's field as other than
-    // a text box, for its autofill.
-    let field = |label: &str| field_named(&browser, label);
+    // Each by its name before anything is filled: a field a fill went into is blanked after, and
+    // said with no name.
+    let refs: std::collections::HashMap<&str, Ref> = [
+        "Search",
+        "Secret word",
+        "Token",
+        "Card number",
+        "Recovery word",
+        "Loose",
+    ]
+    .into_iter()
+    .map(|label| (label, field_named(&browser, label)))
+    .collect();
+    let field = |label: &str| refs[label].clone();
     for (label, by_get, payment) in [
         ("Search", true, false),
         ("Secret word", false, false),

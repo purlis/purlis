@@ -199,17 +199,27 @@ impl super::Browser {
             let state = lock(&self.inner.state);
             (state.filled.clone(), state.every_kept())
         };
-        let typed = every.at_least(KEPT_WHOLE_FROM).without(&filled.texts());
-        let forms = [every_form(&filled), every_form(&typed)];
-        if forms.iter().all(Vec::is_empty) {
-            return Ok(DownloadHolds::Nothing);
-        }
-        Ok(match holds_a_form(std::fs::File::open(file)?, &forms)? {
-            Some(0) => DownloadHolds::Filled,
-            Some(_) => DownloadHolds::Typed,
-            None => DownloadHolds::Nothing,
-        })
+        file_holds(file, &filled, &every)
     }
+}
+
+/// What the file at `file` holds of `filled`, the values purlis filled, and of `every` text kept
+/// out ([`super::Browser::holds_kept_out`]).
+fn file_holds(
+    file: &std::path::Path,
+    filled: &crate::drive::kept::Kept,
+    every: &crate::drive::kept::Kept,
+) -> std::io::Result<DownloadHolds> {
+    let typed = every.at_least(KEPT_WHOLE_FROM).without(&filled.texts());
+    let forms = [every_form(filled), every_form(&typed)];
+    if forms.iter().all(Vec::is_empty) {
+        return Ok(DownloadHolds::Nothing);
+    }
+    Ok(match holds_a_form(std::fs::File::open(file)?, &forms)? {
+        Some(0) => DownloadHolds::Filled,
+        Some(_) => DownloadHolds::Typed,
+        None => DownloadHolds::Nothing,
+    })
 }
 
 /// Which of `sets` of forms what `from` reads holds one of first, whatever its case: read
@@ -287,6 +297,47 @@ mod tests {
     fn a_file_holding_only_a_part_of_a_filled_value_is_not() {
         assert!(!holds(b"open-sesame-4 and sesame-42", "open-sesame-42"));
         assert!(!holds(b"", "open-sesame-42"));
+    }
+
+    /// The person's ruling of 2026-11-06: a file holding a text kept out of 8 characters or
+    /// more, typed by the person, in any case or in its base64, holds a typed text; a shorter
+    /// one, or a part of one shorter than 8, holds nothing back; a filled value is said first.
+    #[test]
+    fn a_file_holding_a_long_text_the_person_typed_is_said_to_hold_one() {
+        let held = tempfile::tempdir().unwrap();
+        let file = |name: &str, holds: &str| {
+            let at = held.path().join(name);
+            std::fs::write(&at, holds).unwrap();
+            at
+        };
+        let mut every = crate::drive::kept::Kept::default();
+        every.run(&["plumtreewalker", "themes"]);
+        let none = crate::drive::kept::Kept::default();
+        let said = |at: &std::path::Path| file_holds(at, &none, &every).unwrap();
+
+        assert_eq!(
+            said(&file("whole.txt", "note: PlumTreeWalker\n")),
+            DownloadHolds::Typed
+        );
+        assert_eq!(
+            said(&file("encoded.txt", "cGx1bXRyZWV3YWxrZXI=")),
+            DownloadHolds::Typed
+        );
+        assert_eq!(
+            said(&file("part.txt", "plumtre walker")),
+            DownloadHolds::Nothing
+        );
+        assert_eq!(
+            said(&file("short.txt", "your themes")),
+            DownloadHolds::Nothing
+        );
+        let mut filled = crate::drive::kept::Kept::default();
+        filled.run(&["plumtreewalker"]);
+        assert_eq!(
+            file_holds(&file("filled.txt", "plumtreewalker"), &filled, &every).unwrap(),
+            DownloadHolds::Filled
+        );
+        assert!(file_holds(&held.path().join("gone.txt"), &none, &every).is_err());
     }
 
     #[test]

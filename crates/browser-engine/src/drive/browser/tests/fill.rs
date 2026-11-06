@@ -9,7 +9,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::super::fill::{FIELD_KIND, WRITE_FIELD};
 use super::{Engine, browser, id, ref_of, snapshot, wait_for};
@@ -1016,65 +1016,35 @@ fn a_multi_line_box_or_an_editable_area_takes_it_where_the_person_was_asked_abou
 }
 
 /// The rulings of 2026-11-06: the write is told whether the fill goes in under a grant, and a
-/// field it then finds sent by GET, or marked for payment, takes nothing, in words that say why.
+/// field it then finds sent by GET takes nothing, in words that say why; asked about, it goes in.
+/// One browser for both, as each stand-in browser here costs threads.
 #[test]
-fn under_a_grant_a_field_the_write_finds_sent_by_get_or_for_payment_takes_nothing() {
-    for (said, why) in [("get", "by GET"), ("payment", "card or payment")] {
-        for under_a_grant in [true, false] {
-            let (browser, engine) = browser();
-            as_fields(&engine, "one_line", Twist::Grantless(said));
-            let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
-
-            let filled = filling(
-                &browser,
-                &SecretFill {
-                    under_a_grant,
-                    ..fill_of(secret, "http://fixture.test")
-                },
-            );
-
-            let write = engine
-                .sent("Runtime.callFunctionOn")
-                .into_iter()
-                .find(|sent| sent.params["functionDeclaration"] == WRITE_FIELD)
-                .expect("the write was run");
-            assert_eq!(
-                write.params["arguments"][4]["value"], under_a_grant,
-                "{said}"
-            );
-            match (under_a_grant, filled) {
-                (true, Err(Refusal::NotFilled(told))) => {
-                    assert!(told.contains(why), "{said}: {told}");
-                }
-                (false, Ok(_)) => {}
-                (_, other) => panic!("{said}, {under_a_grant}: {}", ended_as(&other)),
-            }
-        }
-    }
-}
-
-/// What the field's read can't say of its form or its mark is said as the stricter: a grant then
-/// fills nothing without the person.
-#[test]
-fn a_field_read_that_says_nothing_of_its_form_or_mark_is_said_sent_by_get_and_for_payment() {
+fn under_a_grant_a_field_the_write_finds_sent_by_get_takes_nothing() {
     let (browser, engine) = browser();
-    engine.on(|sent, _engine| {
-        (sent.method == "Runtime.callFunctionOn"
-            && sent.params["functionDeclaration"] == FIELD_KIND)
-            .then(|| {
-                Ok(json!({ "result": { "type": "object", "value": { "kind": "one_line", "label": "Secret word" } } }))
-            })
-    });
+    as_fields(&engine, "one_line", Twist::Grantless("get"));
     let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
 
-    let read = browser
-        .call(&id(2), Call::DescribeField { target: secret })
-        .unwrap_or_else(|why| panic!("{}", ended_as(&Err::<(), _>(why))));
+    let granted = filling(
+        &browser,
+        &SecretFill {
+            under_a_grant: true,
+            ..fill_of(secret.clone(), "http://fixture.test")
+        },
+    );
+    let asked = filling(&browser, &fill_of(secret, "http://fixture.test"));
 
-    let Content::Field(field) = read.content else {
-        panic!("a field");
-    };
-    assert!(field.by_get && field.payment, "{field:?}");
+    let grants: Vec<Value> = engine
+        .sent("Runtime.callFunctionOn")
+        .into_iter()
+        .filter(|sent| sent.params["functionDeclaration"] == WRITE_FIELD)
+        .map(|sent| sent.params["arguments"][4]["value"].clone())
+        .collect();
+    assert_eq!(grants, [json!(true), json!(false)]);
+    match granted {
+        Err(Refusal::NotFilled(told)) => assert!(told.contains("by GET"), "{told}"),
+        other => panic!("refused otherwise: {}", ended_as(&other)),
+    }
+    asked.unwrap_or_else(|why| panic!("{}", ended_as(&Err::<(), _>(why))));
 }
 
 /// A one-line fill tells the write so: a field that is a multi-line one when the value is

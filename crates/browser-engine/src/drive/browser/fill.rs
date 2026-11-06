@@ -558,29 +558,35 @@ impl Browser {
             });
         }
         let value = read.pointer("/result/value").ok_or(Refusal::Unknown)?;
-        let kind = match value.get("kind").and_then(Value::as_str) {
-            Some("one_line") => FieldKind::OneLine,
-            Some("multi_line") => FieldKind::MultiLine,
-            Some("editable") => FieldKind::Editable,
-            _ => FieldKind::Other,
-        };
-        let label = value
-            .get("label")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_owned();
-        // What it can't say is said as the stricter: a grant fills neither.
-        let fact = |name: &str| value.get(name).and_then(Value::as_bool).unwrap_or(true);
-        Ok(FieldRead {
-            kind,
-            label,
-            by_get: fact("by_get"),
-            payment: fact("payment"),
-        })
+        Ok(field_read_of(value))
+    }
+}
+
+/// **What [`FIELD_KIND`] answered, read**: what it can't say of the field's form or its mark is
+/// said as the stricter, so a grant fills neither.
+fn field_read_of(value: &Value) -> FieldRead {
+    let kind = match value.get("kind").and_then(Value::as_str) {
+        Some("one_line") => FieldKind::OneLine,
+        Some("multi_line") => FieldKind::MultiLine,
+        Some("editable") => FieldKind::Editable,
+        _ => FieldKind::Other,
+    };
+    let label = value
+        .get("label")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    let fact = |name: &str| value.get(name).and_then(Value::as_bool).unwrap_or(true);
+    FieldRead {
+        kind,
+        label,
+        by_get: fact("by_get"),
+        payment: fact("payment"),
     }
 }
 
 /// A field as [`FIELD_KIND`] reads it.
+#[derive(Debug)]
 struct FieldRead {
     kind: FieldKind,
     label: String,
@@ -687,5 +693,35 @@ mod tests {
         assert_eq!(plain_label("  API\n key\u{200b} "), "API key");
         let long = "k".repeat(MOST_LABEL_CHARS + 20);
         assert_eq!(plain_label(&long).chars().count(), MOST_LABEL_CHARS);
+    }
+}
+
+#[cfg(test)]
+mod facts_tests {
+    use super::*;
+
+    /// What the field's read can't say of its form or its mark is said as the stricter: a grant
+    /// then fills nothing without the person (the rulings of 2026-11-06).
+    #[test]
+    fn a_field_read_that_says_nothing_of_its_form_or_mark_is_said_sent_by_get_and_for_payment() {
+        let silent = field_read_of(&json!({ "kind": "one_line", "label": "Secret word" }));
+        assert!(silent.by_get && silent.payment, "{silent:?}");
+        let said = field_read_of(
+            &json!({ "kind": "one_line", "label": "Secret word", "by_get": false, "payment": false }),
+        );
+        assert!(!said.by_get && !said.payment, "{said:?}");
+    }
+
+    /// A card or payment field refused under a grant says why, in words of its own.
+    #[test]
+    fn a_payment_field_refused_under_a_grant_says_it_is_asked_about_each_time() {
+        let Refusal::NotFilled(told) = payment_field(&Ref::new("e4"), "https://shop.test") else {
+            panic!("not filled");
+        };
+        assert!(told.contains("card or payment"), "{told}");
+        let Refusal::NotFilled(told) = sent_by_get(&Ref::new("e4"), "https://shop.test") else {
+            panic!("not filled");
+        };
+        assert!(told.contains("by GET"), "{told}");
     }
 }
