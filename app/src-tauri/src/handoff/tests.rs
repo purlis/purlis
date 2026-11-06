@@ -12813,6 +12813,104 @@ fn a_run_the_gate_asks_about_is_one_ask_in_the_inbox_and_dont_allow_leaves_none(
     assert_eq!(inbox_of_a_run(&held), [], "and trying again raises nothing");
 }
 
+/// #5242: a run on a vault its persona may not use that lacks its key is one notice, with the key's
+/// field and the program's Allow, and no vault ask beside it. Allow once with the value typed
+/// stores it there and lets the run go on.
+#[cfg(unix)]
+#[test]
+fn a_run_lacking_a_key_on_a_refused_vault_is_one_notice_and_allow_once_stores_it_and_runs() {
+    use crate::asking::AskSource;
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let chat = a_chat_refused_vault_team(&plane, &held);
+
+    std::thread::scope(|scope| {
+        let run = scope.spawn(|| run_on_team(&held, &id, chat, "curl"));
+        let open = loop {
+            if let Some(open) = held.secret_asks().open_runs().into_iter().next() {
+                break open;
+            }
+            assert!(!run.is_finished(), "the run ended without asking");
+            std::thread::yield_now();
+        };
+        assert_eq!(inbox_of_a_run(&held), [AskSource::RunGrant], "one notice");
+        let shown = crate::asking::every_ask(&held)
+            .asks
+            .into_iter()
+            .find(|ask| ask.source == AskSource::RunGrant)
+            .expect("its notice");
+        let fields: Vec<_> = shown
+            .run
+            .expect("the facts")
+            .fills
+            .into_iter()
+            .map(|fill| fill.key)
+            .collect();
+        assert_eq!(fields, ["TOKEN"]);
+        crate::secretasks::run_grant_filled(
+            &held,
+            None,
+            open.id,
+            crate::secretasks::RunGrantPress::Once,
+            vec![("TOKEN".to_owned(), "t0ken-v4lue".to_owned().into())],
+        )
+        .expect("allowed");
+        run.join().expect("it ends");
+    });
+    let stored = std::fs::read_to_string(plane.root.join("t.json")).expect("stored");
+    assert!(
+        stored.contains("t0ken-v4lue"),
+        "stored where the run reads it"
+    );
+    assert_eq!(inbox_of_a_run(&held), [], "nothing more was asked");
+}
+
+/// #5242: Don't allow on a run's notice on the persona's own vault keeps what the person typed.
+#[cfg(unix)]
+#[test]
+fn dont_allow_on_a_runs_notice_still_stores_the_values_typed() {
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    std::fs::write(
+        plane.root.join("vaults.json"),
+        r#"{"vaults": {"team": {"provider": "plain-file", "config": {"file": "t.json"}, "persona": "ops"}}}"#,
+    )
+    .expect("a registry");
+    let chat = a_chat_as(&held, &plane.root, Some("ops"), &plane.root);
+
+    std::thread::scope(|scope| {
+        let run = scope.spawn(|| run_on_team(&held, &id, chat, "curl"));
+        let open = loop {
+            if let Some(open) = held.secret_asks().open_runs().into_iter().next() {
+                break open;
+            }
+            assert!(!run.is_finished(), "the run ended without asking");
+            std::thread::yield_now();
+        };
+        crate::secretasks::run_grant_filled(
+            &held,
+            None,
+            open.id,
+            crate::secretasks::RunGrantPress::Refuse,
+            vec![("TOKEN".to_owned(), "t0ken-v4lue".to_owned().into())],
+        )
+        .expect("answered");
+        run.join().expect("it ends");
+    });
+    let stored = std::fs::read_to_string(plane.root.join("t.json")).expect("stored");
+    assert!(stored.contains("t0ken-v4lue"), "{stored}");
+    assert!(
+        held.secret_asks().given_runs().is_empty(),
+        "and nothing was allowed"
+    );
+}
+
 /// A program no Run grant may be keeps the vault's own ask, and Keep blocked ends it for that chat:
 /// its next try can't bring the persona-wide Allow back, and another chat's is its own.
 #[cfg(unix)]

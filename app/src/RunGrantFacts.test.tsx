@@ -17,6 +17,8 @@ function run(over: Partial<RunShown> = {}): RunShown {
     not_its_vault: false,
     command: "curl https://api.example.com",
     cwd: "/work",
+    fills: [],
+    offer: "program",
     ...over,
   };
 }

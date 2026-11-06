@@ -16,6 +16,8 @@ const run: RunShown = {
   not_its_vault: false,
   command: "curl https://api.example.com/status",
   cwd: "/Users/you/work/shop",
+  fills: [],
+  offer: "program",
 };
 
 const meta = {

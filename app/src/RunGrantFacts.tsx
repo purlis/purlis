@@ -17,7 +17,7 @@ export function RunGrantFacts({ run }: { run: RunShown }) {
         Runs <code data-testid="run-grant-program">{run.program}</code>, in this chat's own sandbox,
         with vault <code>{run.vault}</code>:
       </p>
-      {run.not_its_vault && (
+      {run.not_its_vault && run.offer === "program" && (
         <p className="ui-text-meta" data-testid="run-grant-not-its-vault">
           {run.persona} can't use this vault otherwise. Allow once and Allow for this chat open it
           for that alone. Always allow also lets every chat as {run.persona} use it on this machine.

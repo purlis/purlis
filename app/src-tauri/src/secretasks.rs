@@ -93,8 +93,21 @@ pub enum RunGrantPress {
     Chat,
     /// As [`Self::Chat`], and write its line to the persona's tools (#5245).
     Always,
-    /// Don't allow.
+    /// Don't allow; on a notice with no program Allow, Keep blocked or Not now.
     Refuse,
+    /// The vault's own Allow, on a notice with no program Allow (#5242): the persona is given the
+    /// vault, as a refused vault's Allow gives it (#5160).
+    AllowVault,
+    /// Fill, on a notice of value fields alone (#5242).
+    Fill,
+}
+
+/// **A value the person typed in a run's notice** (#5242): for one of its fields, by key. Never
+/// printed, and wiped as it is dropped.
+#[derive(Debug, serde::Deserialize, specta::Type)]
+pub struct RunValue {
+    pub key: String,
+    pub value: crate::vaults::SecretValue,
 }
 
 /// **The person answers the ask to allow a program `id`** (ADR 0112, #5239): the run that waits
@@ -106,28 +119,50 @@ pub async fn answer_run_grant(
     plane: crate::planes::PlaneId,
     id: u32,
     press: RunGrantPress,
+    values: Vec<RunValue>,
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
     let network = planes.network().cloned();
     crate::off_the_window("answering a run grant", move || {
-        run_grant_answered(&held, network.as_ref(), id, press)
+        let values = values
+            .into_iter()
+            .map(|one| (one.key, one.value.into_value()))
+            .collect();
+        run_grant_filled(&held, network.as_ref(), id, press, values)
     })
     .await
 }
 
-/// [`answer_run_grant`]'s work.
+/// [`run_grant_answered`] with no values: the window's own answers that store nothing, such as
+/// Keep blocked on a refused vault answering a Run grant's ask on it.
 pub fn run_grant_answered(
     held: &crate::planes::Held,
     network: Option<&purlis_core::sandboxblock::record::Record>,
     id: u32,
     press: RunGrantPress,
 ) -> Result<(), String> {
-    use purlis_core::secrets::ask::run::{Audited, RunAnswer};
+    run_grant_filled(held, network, id, press, Vec::new())
+}
+
+/// [`answer_run_grant`]'s work: the checks first, then the values stored, then the grant audited
+/// and given (#5242). The values stay stored whatever the person answers, but on Keep blocked and
+/// Not now, which store nothing, and on Don't allow for a vault the persona may not use, which is
+/// not this persona's to fill.
+pub fn run_grant_filled(
+    held: &crate::planes::Held,
+    network: Option<&purlis_core::sandboxblock::record::Record>,
+    id: u32,
+    press: RunGrantPress,
+    values: Vec<(String, purlis_core::secrets::Zeroizing<String>)>,
+) -> Result<(), String> {
+    use purlis_core::secrets::ask::run::{Audited, Offer, RunAnswer};
     let answer = match press {
         RunGrantPress::Once => RunAnswer::Once,
         RunGrantPress::Chat => RunAnswer::ForChat,
         RunGrantPress::Always => RunAnswer::Always,
         RunGrantPress::Refuse => RunAnswer::Refuse,
+        RunGrantPress::AllowVault => RunAnswer::AllowVault,
+        RunGrantPress::Fill => RunAnswer::Fill,
     };
     let Some(open) = held
         .secret_asks()
@@ -137,8 +172,18 @@ pub fn run_grant_answered(
     else {
         return Err("This ask has already been answered, or its chat has closed.".to_owned());
     };
+    // The vault's own Allow holds to what a refused vault's does: never past policy's lock.
+    if answer == RunAnswer::AllowVault {
+        let locks = purlis_core::sandbox::policy::Locks::of(held.root());
+        if let Some(why) = locks.vault_grants_refused() {
+            return Err(why);
+        }
+    }
     // Policy holds here as it holds at the run: it may have come to lock this since it was shown.
-    if answer != RunAnswer::Refuse {
+    if matches!(
+        answer,
+        RunAnswer::Once | RunAnswer::ForChat | RunAnswer::Always
+    ) {
         use purlis_core::sandbox::grant::Level;
         // Before any audit: nothing was given. The core holds to it again as it answers.
         if answer != RunAnswer::Once && !open.bound.reviewed_for_any_arguments() {
@@ -155,7 +200,9 @@ pub fn run_grant_answered(
         let level = match answer {
             RunAnswer::Once => Level::Once,
             RunAnswer::Always => Level::Project,
-            RunAnswer::ForChat | RunAnswer::Refuse => Level::Chat,
+            RunAnswer::ForChat | RunAnswer::Refuse | RunAnswer::AllowVault | RunAnswer::Fill => {
+                Level::Chat
+            }
         };
         if let Some(why) = locks.scope_removed(level) {
             return Err(why);
@@ -188,18 +235,68 @@ pub fn run_grant_answered(
             ));
         }
     }
-    let audited = held.hooks().record_run_grant(
-        held.root(),
-        open.bound.chat,
-        &Audited::granted(&open.bound, answer),
-    );
-    // Nothing is granted unrecorded. A Don't allow stands either way: it gives nothing.
-    match (answer, audited) {
-        (_, Ok(())) => {}
-        (RunAnswer::Refuse, Err(why)) => {
-            tracing::warn!("purlis: a run grant's Don't allow was not audited ({why})");
+    // Every field filled before anything is given, stored or audited: the run reads them all.
+    if answer.goes_on()
+        && let Some(fill) = open.fills.iter().find(|fill| {
+            !values
+                .iter()
+                .any(|(key, value)| *key == fill.key && !value.is_empty())
+        })
+    {
+        return Err(format!(
+            "Type a value for {}, or choose {}.",
+            fill.key,
+            match open.offer {
+                Offer::Program => "Don't allow",
+                Offer::Vault { .. } => "Keep blocked",
+                Offer::Fill { .. } => "Not now",
+            }
+        ));
+    }
+    if answer == RunAnswer::AllowVault && open.persona.is_empty() {
+        return Err("purlis allowed nothing: this chat runs as no persona.".to_owned());
+    }
+    // The values, stored before anything is given: what the person typed is kept whatever the
+    // rest comes to, and a value the provider refuses leaves the notice up with nothing given.
+    let stores = match (answer, &open.offer) {
+        (RunAnswer::Refuse, Offer::Program) => !open.not_its_vault,
+        (RunAnswer::Refuse, _) => false,
+        _ => true,
+    };
+    if stores && !values.is_empty() {
+        let ctx =
+            purlis_core::secrets::Ctx::new(held.root(), purlis_core::secrets::Env::from_process());
+        let filled = held
+            .secret_asks()
+            .fill_run(&ctx, id, values, crate::asking::the_window())?;
+        for (chat, told) in &filled.nudge {
+            told_each(held, &[*chat], told);
         }
-        (_, Err(why)) => return Err(why),
+    }
+    // Nothing is granted unrecorded. A Don't allow stands either way: it gives nothing. The
+    // vault's own Allow is audited as a vault's, below, and a Fill grants nothing.
+    if let Some(audit) = Audited::granted(&open.bound, answer) {
+        let audited = held
+            .hooks()
+            .record_run_grant(held.root(), open.bound.chat, &audit);
+        match (answer, audited) {
+            (_, Ok(())) => {}
+            (RunAnswer::Refuse, Err(why)) => {
+                tracing::warn!("purlis: a run grant's Don't allow was not audited ({why})");
+            }
+            (_, Err(why)) => return Err(why),
+        }
+    }
+    // The vault's own Allow: the persona is given it, audited first, and every chat its
+    // refusal held is answered by it (#5160).
+    if answer == RunAnswer::AllowVault {
+        let grant = purlis_core::sandbox::local::VaultGrant {
+            vault: open.bound.vault.clone(),
+            persona: open.persona.clone(),
+        };
+        give_the_vault(held, network, open.bound.chat, &grant)?;
+        held.vault_refusals()
+            .put_away_cured(&grant.persona, &grant.vault);
     }
     // Written before any grant: a write that fails says why, the ask stays open, and nothing is
     // given. Where the person had allowed all of the persona's list, the Allow moves with the line.
@@ -244,6 +341,11 @@ pub fn run_grant_answered(
     held.chats().asks_may_have_moved();
     let answered = answered?;
     told_each(held, &answered.nudge, &answered.told);
+    // Keep blocked on the vault's own line holds as a refused vault's does: the chat's later
+    // tries raise nothing, and a Run grant's ask open on it is answered Don't allow.
+    if answer == RunAnswer::Refuse && matches!(open.offer, Offer::Vault { .. }) {
+        crate::vaultroute::vault_kept_blocked(held, network, open.bound.chat, &open.bound.vault);
+    }
     Ok(())
 }
 

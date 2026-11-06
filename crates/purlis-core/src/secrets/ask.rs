@@ -519,7 +519,7 @@ fn vault_and_key(vault: &str, key: &str) -> String {
 }
 
 /// What a chat whose ask was declined hears.
-fn declined_said(vault: &str, key: &str) -> String {
+pub(super) fn declined_said(vault: &str, key: &str) -> String {
     format!("declined {}", vault_and_key(vault, key))
 }
 
@@ -572,6 +572,17 @@ enum Unheld {
 }
 
 /// Whether policy's lock refuses asking for a key its persona does not declare (#5078).
+/// **What a run's notice could not ask for `key` of `vault`** (#5242): policy turns off asks for a
+/// key its persona does not declare, which [`Asks::hold`] refuses with these words.
+pub(crate) fn refused_by_policy(
+    root: &Path,
+    vault: &str,
+    key: &str,
+    declared: Option<&String>,
+) -> Option<String> {
+    declined_by_policy(root, declared).then(|| refused_said(vault, key))
+}
+
 fn declined_by_policy(root: &Path, declared: Option<&String>) -> bool {
     declared.is_none() && crate::sandbox::policy::Locks::of(root).forbids_undeclared_secret_asks()
 }
@@ -1349,6 +1360,34 @@ impl Asks {
         })
     }
 
+    /// **`key` of `vault` was filled by a run's notice** (#5242): an open Secret ask for it is
+    /// settled as filled, its waiters told and the chats that stopped waiting nudged by the
+    /// caller's one line, as the notice's own are.
+    pub(super) fn settle_filled(&self, vault: &str, key: &str) -> Vec<u32> {
+        let mut inner = self.inner();
+        let Some(asked) = inner.open.remove(&(vault.to_owned(), key.to_owned())) else {
+            return Vec::new();
+        };
+        let mut nudge = Vec::new();
+        for waiter in asked.waiters {
+            let told = waiter.tell.is_some_and(|tell| {
+                tell.send(Settled::Filled {
+                    vault: vault.to_owned(),
+                    key: key.to_owned(),
+                })
+                .is_ok()
+            });
+            if let Some(chat) = waiter.chat
+                && !told
+                && !nudge.contains(&chat)
+            {
+                nudge.push(chat);
+            }
+        }
+        self.save(&inner);
+        nudge
+    }
+
     /// **Chat `chat` has closed**: it waits on nothing, and what it declined goes with it. An ask
     /// nobody waits on any more goes.
     pub fn forget(&self, chat: u32) {
@@ -1747,7 +1786,7 @@ pub fn ask_the_window(
 /// **A value written for an ask** (#5075): into the vault under the key; or, for a replace of a
 /// Linked entry, into the entry it reads, so the rotation reaches every key linked to it. A
 /// broken link is given the value in its place (a write to a link replaces it).
-fn filled_with(
+pub(super) fn filled_with(
     ctx: &Ctx,
     vault: &str,
     key: &str,
