@@ -34,8 +34,8 @@ describe("the window's lint on a screen (#3129)", () => {
     // one class (#3012): a crumb, a chip's hand and counts, a closer.
     `<button type="button" className="bare">x</button>`,
     `<button type="button" className="crumb own">x</button>`,
-    `<button type="button" className="tab-tasks-hand">x</button>`,
-    `<button type="button" className="tab-tasks-counts">x</button>`,
+    `<button type="button" className="tab-needs-hand">x</button>`,
+    `<button type="button" className="tab-run-counts">x</button>`,
     `<button type="button" className="closer">x</button>`,
     // The other families' controls by the words views gave them, before each family's one
     // class (#3523): a list's, a card's and the title bar's.

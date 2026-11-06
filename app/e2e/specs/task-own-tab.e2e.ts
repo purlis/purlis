@@ -4,11 +4,11 @@
 import { browser, expect, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
 import {
-  SELECTED_TAB,
   bringChatForward,
   endChatsStartedHere,
   startAChat,
   type Started,
+  HEAD_TASKS,
 } from "../started.js";
 import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
 import { untilTheStripIsBare } from "../reach.js";
@@ -113,16 +113,13 @@ async function pretend(asker: number, any: boolean): Promise<void> {
   );
 }
 
-/** Opens the menu of the chip on chat `session`'s own tab, by a press of its counts. */
+/** Opens the tasks menu of chat `session`, by a press of its pane head's state word (#5341). */
 async function openMenuOf(session: number): Promise<void> {
   await bringChatForward(session);
-  await browser.execute((selected: string) => {
-    document
-      .querySelector(selected)
-      ?.closest("span.tab")
-      ?.querySelector<HTMLElement>(".tab-tasks-counts")
-      ?.click();
-  }, SELECTED_TAB);
+  // Its pane head's state word, which opens its tasks (#5341).
+  await browser.execute((tasks: string) => {
+    document.querySelector<HTMLElement>(tasks)?.click();
+  }, HEAD_TASKS);
   await browser.waitUntil(
     async () =>
       browser.execute(() => document.querySelector('.tasks-menu[data-part="root"]') !== null),
@@ -223,11 +220,12 @@ describe("a task in a tab of its own, and beside its session", () => {
     await pretend(asker, true);
     await browser.waitUntil(
       async () =>
-        browser.execute(
-          (strip: string) => document.querySelector(`${strip} .tab-tasks-counts`) !== null,
-          STRIP,
-        ),
-      { timeout: 10_000, interval: 100, timeoutMsg: "the session's tab never wore its chip" },
+        browser.execute((tasks: string) => document.querySelector(tasks) !== null, HEAD_TASKS),
+      {
+        timeout: 10_000,
+        interval: 100,
+        timeoutMsg: "the session's pane head never drew its tasks button",
+      },
     );
   });
 
@@ -287,10 +285,7 @@ describe("a task in a tab of its own, and beside its session", () => {
     });
     expect(await tabNames()).toContain(mine?.name);
     expect(
-      await browser.execute(
-        (strip: string) => document.querySelector(`${strip} .tab-tasks-counts`) !== null,
-        STRIP,
-      ),
+      await browser.execute((tasks: string) => document.querySelector(tasks) !== null, HEAD_TASKS),
     ).toBe(true);
   });
 

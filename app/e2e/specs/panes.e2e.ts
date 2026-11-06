@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { pressAndStart, pressOnly } from "../opening.js";
+import { pressAndStart } from "../opening.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 import { browser, expect, $, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
@@ -453,8 +453,22 @@ describe("the window", function () {
     const names = await tabTexts();
     const closing = names[names.length - 1];
 
-    // Asks nothing: a close ends nothing, so there is no question to answer.
-    await pressOnly(`Close ${closing}`);
+    // **Its own ×, found through its tab**: a background tab's × comes under the pointer
+    // (#5341), so the pointer goes onto the tab first, as a person's does, and presses the × it
+    // brings. Asks nothing: a close ends nothing, so there is no question to answer.
+    const marked = await browser.execute((called: string) => {
+      const tab = [...document.querySelectorAll('[data-strip="Tabs"] [role="tab"]')].find(
+        (one) => one.textContent === called,
+      );
+      const cell = tab?.closest<HTMLElement>('[data-part="tab"]');
+      if (cell) cell.dataset.e2eClosing = "";
+      return cell !== null && cell !== undefined;
+    }, closing);
+    if (!marked) throw new Error(`no tab reads ${closing}`);
+    await $('[data-e2e-closing] [role="tab"]').moveTo();
+    const closer = await $('[data-e2e-closing] [data-part="closer"]');
+    await closer.waitForClickable({ timeout: 10_000 });
+    await closer.click();
 
     await browser.waitUntil(async () => (await tabsOpen()) === open - 1, {
       timeout: 15_000,

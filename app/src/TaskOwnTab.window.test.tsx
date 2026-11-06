@@ -16,6 +16,7 @@ import { userEvent } from "@testing-library/user-event";
 import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import { describedAs, findTasksButton, theTasksButton } from "./paneTasks.testkit";
 import { TASKS_START_FRESH } from "./actions";
 import type { LaidOut, OpenChat } from "./bindings";
 import { chatsOf } from "./laidOut";
@@ -481,13 +482,14 @@ describe("moving a task to a tab of its own", () => {
   it("is still listed by its session's chip and menu, marked, and picking it brings its tab forward", async () => {
     const { tree } = await drawn(withTasks());
     await toOwnTab(tree, "talk");
-    await userEvent.click(tab("steward 2"));
-    await waitFor(() => expect(onScreen()).toEqual([2]));
+    // Its menu is its pane head's (#5341): steward 1's tab, in front.
+    await userEvent.click(tab("steward 1"));
+    await waitFor(() => expect(onScreen()).toEqual([1]));
 
-    const chip = within(cell("steward 1")).getByRole("button", { name: /^Tasks of steward 1/ });
+    const chip = theTasksButton("steward 1");
     // Its three tasks are counted, the one in its own tab among them. What is below that
     // one (deep) is its own tab's.
-    expect(chip.getAttribute("aria-label")).toBe("Tasks of steward 1: 3 working");
+    expect(describedAs(chip)).toBe("Tasks of steward 1: 3 working");
     press(chip);
     const menu = await screen.findByRole("menu", { name: /^Tasks of steward 1/ });
     const line = within(menu)
@@ -507,8 +509,9 @@ describe("moving a task to a tab of its own", () => {
   it("is offered on the task's line in its tab's menu: Enter with a modifier, and a button at the line's end", async () => {
     const { asked } = await drawn(withTasks());
     const open = async () => {
-      // By its chip, which says the session's name whatever pane the tab wears (#4762).
-      press(within(strip()).getByRole("button", { name: /^Tasks of steward 1/ }));
+      // By the state word on steward 1's pane head (#5341), on its tab, the strip's first.
+      await userEvent.click(within(strip()).getAllByRole("tab")[0]);
+      press(await findTasksButton("steward 1"));
       return screen.findByRole("menu", { name: /^Tasks of steward 1/ });
     };
     const lineOf = (menu: HTMLElement, name: string) => {
@@ -683,7 +686,7 @@ describe("opening a task beside its session", () => {
     await userEvent.keyboard(" ");
     await waitFor(() => expect(onScreen()).toEqual([1, 4]));
 
-    press(within(cell("talk")).getByRole("button", { name: /^Tasks of steward 1/ }));
+    press(theTasksButton("steward 1"));
     const menu = await screen.findByRole("menu", { name: /^Tasks of steward 1/ });
     const names = within(menu)
       .getAllByRole("menuitem")
@@ -1105,7 +1108,7 @@ describe("what the core is told is on screen (M1, M4)", () => {
 
   it("says the key in the tooltip of a line's own buttons", async () => {
     await drawn(withTasks());
-    press(within(cell("steward 1")).getByRole("button", { name: /^Tasks of steward 1/ }));
+    press(theTasksButton("steward 1"));
     const menu = await screen.findByRole("menu", { name: /^Tasks of steward 1/ });
     // The pointer's buttons at a line's end: their tooltips, read as the pointer reads them.
     const titles: (string | null)[] = [];

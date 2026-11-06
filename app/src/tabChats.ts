@@ -66,6 +66,26 @@ export function chatsOfPane(
 }
 
 /**
+ * **One chat and every task below it** (#5341): the rows of a tab's tree (`chatsOfTabs`) from
+ * chat `session` down, that chat at level 1 and alone at it. What its pane head's tasks menu
+ * lists, whether the pane shows the tab's session or a task of it. Nothing for a chat the rows do
+ * not hold.
+ */
+export function chatsOfChat(rows: readonly ChatRow[], session: number): ChatRow[] {
+  const at = rows.findIndex((row) => row.session === session);
+  if (at < 0) return [];
+  const top = rows[at].level;
+  const end = rows.findIndex((row, there) => there > at && row.level <= top);
+  return rows
+    .slice(at, end < 0 ? rows.length : end)
+    .map((row, there) =>
+      there === 0
+        ? { ...row, level: 1, posinset: 1, setsize: 1 }
+        : { ...row, level: row.level - top + 1 },
+    );
+}
+
+/**
  * **The chats of every tab, each as {@link chatsOfTab} lists its own**, by tab (#1487): what
  * the strip draws each tab's chip from. One walk of the list for all of them, since a strip
  * of fifty tabs asking {@link chatsOfTab} fifty times reads every chat fifty times.

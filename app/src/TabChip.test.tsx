@@ -7,7 +7,7 @@ import type { ReactNode } from "react";
 import { drawnWith } from "./cascade.testkit";
 import { ChatsHere, fixedChats, nothingKnown } from "./chatState";
 import type { ChatRow } from "./chatsTree";
-import { TabTasks } from "./TabChip";
+import { ChatTasks, TabNeeds } from "./TabChip";
 import type { Said } from "./shownState";
 import { stateClock } from "./stateClock";
 import { REST_MS, type Ended, type Needing } from "./tabTasks";
@@ -16,9 +16,10 @@ import type { UsedAsk, UsedReader } from "./tasksUsed";
 import { eventually, tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
- * **A tab's chip, drawn alone** (#1487): what it does that the window has no way to bring
- * about in a test, a tab being carried, a touch, and the footer later tickets fill.
- * `TabChip.window.test.tsx` holds it in the window.
+ * **A chat's tasks button, drawn alone** (#1487, #5341): the pane head's state word, which opens
+ * the menu a tab's chip opened, and what it does that the window has no way to bring about in a
+ * test, a tab being carried, a touch, and the footer later tickets fill. And the hand a tab still
+ * wears. `TabChip.window.test.tsx` holds them in the window.
  */
 
 function row(session: number, level: number, name: string): ChatRow {
@@ -91,26 +92,29 @@ function chip(
     <ChatsHere.Provider
       value={fixedChats({ ...nothingKnown, bySession: { 1: "running", 2: "running" } })}
     >
-      <TabTasks
+      <TabNeeds needs={over.needs ?? []} onShow={onShow} />
+      <ChatTasks
         id="the-counts"
         name="steward 1"
         rows={over.rows ?? ROWS}
         ended={over.ended ?? []}
         current={1}
-        needs={over.needs ?? []}
         asked={0}
         clock={stateClock()}
         dragging={over.dragging ?? (() => false)}
         onShow={onShow}
         limits={over.limits}
         used={over.used}
-      />
+      >
+        <span className="word">working</span>
+      </ChatTasks>
     </ChatsHere.Provider>,
   );
   return onShow;
 }
 
-const counts = () => screen.getByRole("button", { name: /^Tasks of steward 1/ });
+/** The head's state word, as the button of its tasks menu. */
+const counts = () => screen.getByRole("button", { name: "working" });
 const menu = () => screen.queryByRole("menu");
 /** The surface the open menu stands on, which holds its footer under its list. */
 const surface = () =>
@@ -121,23 +125,24 @@ afterEach(() => {
   cleanup();
 });
 
-describe("a tab's chip", () => {
-  it("is nothing at all for a session with no tasks", () => {
+describe("a chat's tasks button", () => {
+  it("is the state word as it was, and no button, for a chat with no tasks", () => {
     chip({ rows: [row(1, 1, "steward 1")] });
 
-    expect(document.body.querySelector(".tab-tasks")).toBeNull();
+    expect(document.body.querySelector(".pane-tasks")).toBeNull();
     expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.getByText("working")).toBeTruthy();
   });
 
-  it("says its counts in words, under the id its tab is described by", () => {
+  it("is named by the word it says, and described by its tasks' counts in words", () => {
     chip();
 
-    expect(counts().getAttribute("aria-label")).toBe("Tasks of steward 1: 1 working");
-    expect(counts().id).toBe("the-counts");
+    expect(counts()).toHaveAccessibleDescription("Tasks of steward 1: 1 working");
+    expect(counts()).toHaveAttribute("aria-haspopup", "menu");
     // No tooltip of its own: it would come up over the menu the same rest opened.
     expect(tipOf(counts())).toBeNull();
-    // The drawn count is decoration to a screen reader: the name has said it.
-    expect(counts().querySelector("[data-count]")?.getAttribute("aria-hidden")).toBe("true");
+    // It draws no count: they are its menu's summary.
+    expect(counts().querySelector("[data-count]")).toBeNull();
   });
 
   it("opens no menu while a tab is being carried, by a rest or by the press that ends it", () => {
@@ -216,7 +221,7 @@ describe("a tab's chip", () => {
     expect(menu()).toBeNull();
   });
 
-  it("draws a count for each of the four ways its tasks stand, in order, none for a zero", () => {
+  it("sums up a count for each of the four ways its tasks stand, in order, none for a zero", () => {
     render(
       <ChatsHere.Provider
         value={fixedChats({
@@ -225,26 +230,34 @@ describe("a tab's chip", () => {
           needsYou: [4],
         })}
       >
-        <TabTasks
+        <ChatTasks
           id="the-counts"
           name="steward 1"
           rows={[ROWS[0], row(2, 2, "talk"), row(3, 2, "idle one"), row(4, 2, "asks you")]}
           ended={[finished("probe", { shown: FAILED, folds: false }), finished("old")]}
           current={1}
-          needs={[]}
           asked={0}
           clock={stateClock()}
           dragging={() => false}
           onShow={() => undefined}
-        />
+        >
+          working
+        </ChatTasks>
       </ChatsHere.Provider>,
     );
 
-    expect(counts().getAttribute("aria-label")).toBe(
+    expect(counts()).toHaveAccessibleDescription(
       "Tasks of steward 1: 1 working, 2 waiting, 1 failed, 1 done",
     );
+    fireEvent.click(counts());
+    const summary = within(surface()).getByTestId("tasks-summary");
+    expect(summary.querySelector(".hidden-words")?.textContent).toBe(
+      "1 working, 2 waiting, 1 failed, 1 done",
+    );
+    // The drawn counts are decoration to a screen reader: the words have said them.
+    expect(summary.querySelector("[data-count]")?.getAttribute("aria-hidden")).toBe("true");
     expect(
-      [...counts().querySelectorAll("[data-count]")].map(
+      [...summary.querySelectorAll("[data-count]")].map(
         (count) => `${count.getAttribute("data-count")} ${count.textContent}`,
       ),
     ).toEqual(["working 1", "waiting 2", "failed 1", "done 1"]);
@@ -347,11 +360,14 @@ describe("a tab's chip", () => {
     expect(menu()).toBeNull();
   });
 
-  it("draws no footer in its menu until something has a line for it", () => {
+  it("sums its tasks up at the foot of its menu, with the key that opens it too, and no more until something has a line", () => {
     chip();
     fireEvent.click(counts());
 
-    expect(surface().querySelector(".tasks-menu-foot")).toBeNull();
+    const foot = surface().querySelector(".tasks-menu-foot") as HTMLElement;
+    expect(within(foot).getByTestId("tasks-summary").textContent).toMatch(/^1 working1Also /);
+    expect(foot.querySelector(".tasks-menu-limits")).toBeNull();
+    expect(foot.querySelector(".tasks-menu-totals")).toBeNull();
   });
 
   it("draws the limits it is handed and what the tasks used at the foot of its menu, under the rows", async () => {
@@ -434,56 +450,31 @@ describe("what a session's tasks used (#1500)", () => {
   });
 });
 
-describe("the chip's pill (#3264, D-3264-3)", () => {
-  /** A tab's chip as `TabTasks` draws it, in its strip: the hand's box, then the counts' pill. */
-  function chip(open: boolean) {
+describe("the hand's box on a tab (#3264, D-3264-3)", () => {
+  /** A tab's hand as `TabNeeds` draws it, in its strip. */
+  function hand() {
     const strip = document.createElement("div");
     strip.className = "tabs";
-    strip.innerHTML = `<div class="tab"><span class="tab-tasks"${open ? " data-open" : ""}>
-      <span class="tab-tasks-mark"><button class="tab-tasks-hand"></button></span>
-      <span class="tab-tasks-pill"><button class="tab-tasks-counts" data-scope="button"
-        data-part="root" data-variant="quiet" data-size="sm"${open ? " data-open" : ""}></button></span>
+    strip.innerHTML = `<div class="tab"><span class="tab-needs">
+      <span class="tab-needs-mark"><button class="tab-needs-hand"></button></span>
     </span></div>`;
     document.body.append(strip);
-    const [mark, pill] = ["tab-tasks-mark", "tab-tasks-pill"].map(
-      (one) => strip.querySelector(`.${one}`) as HTMLElement,
-    );
-    return { strip, mark, pill };
+    return { strip, mark: strip.querySelector(".tab-needs-mark") as HTMLElement };
   }
 
-  it("is the sunken ground, and the counts draw their open menu from the family (#3524)", () => {
-    const shut = chip(false);
-    expect(drawnWith(shut.pill, "background")).toBe("var(--surface-sunken)");
-    expect(drawnWith(shut.pill, "border-radius")).toBe("var(--radius-full)");
-    // It clips the quiet button's hover fill, and its open one, to its ends.
-    expect(drawnWith(shut.pill, "overflow")).toBe("hidden");
-    const counts = (one: { pill: HTMLElement }) => one.pill.querySelector("button") as HTMLElement;
-    expect(drawnWith(counts(shut), "background")).toBe("transparent");
-    // Open, the pill is as it was, and the button family draws the counts as under the pointer.
-    const open = chip(true);
-    expect(drawnWith(open.pill, "background")).toBe("var(--surface-sunken)");
-    expect(drawnWith(counts(open), "background")).toBe("var(--surface-hover)");
-    expect(drawnWith(counts(open), "color")).toBe("var(--text-primary)");
-    shut.strip.remove();
-    open.strip.remove();
-  });
-
-  it("draws the keyboard's ring on the pill and the hand's box, inside them, as a strip's are", () => {
-    const { strip, mark, pill } = chip(false);
-    for (const box of [pill, mark]) {
-      // The state React Aria writes on the button inside, as the cascade testkit reads it.
-      box.querySelector("button")?.setAttribute("data-cascade-focus", "");
-      expect(drawnWith(box, "outline-offset", { focusVisible: true })).toBe(
-        "var(--focus-ring-inset)",
-      );
-      expect(drawnWith(box, "outline", { focusVisible: true })).toBe(
-        "var(--focus-ring-width) solid var(--focus-ring)",
-      );
-    }
+  it("draws the keyboard's ring on the hand's box, inside it, as a strip's are", () => {
+    const { strip, mark } = hand();
+    // The state React Aria writes on the button inside, as the cascade testkit reads it.
+    mark.querySelector("button")?.setAttribute("data-cascade-focus", "");
+    expect(drawnWith(mark, "outline-offset", { focusVisible: true })).toBe(
+      "var(--focus-ring-inset)",
+    );
+    expect(drawnWith(mark, "outline", { focusVisible: true })).toBe(
+      "var(--focus-ring-width) solid var(--focus-ring)",
+    );
     // Without the keyboard's focus inside, no ring.
-    for (const box of [pill, mark])
-      box.querySelector("button")?.removeAttribute("data-cascade-focus");
-    expect(drawnWith(pill, "outline")).toBeUndefined();
+    mark.querySelector("button")?.removeAttribute("data-cascade-focus");
+    expect(drawnWith(mark, "outline")).toBeUndefined();
     strip.remove();
   });
 });

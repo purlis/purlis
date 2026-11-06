@@ -160,6 +160,61 @@ function paneRowsOf(
 }
 
 /**
+ * **What a pane head's state word opens** (#5341): handed chat `session`, the pane it is drawn in
+ * and the word, it answers the word inside the button of the chat's tasks menu, or the word as it
+ * is, or nothing for a head that says no state (`alone`) where there is no menu.
+ */
+export type TasksOn = (
+  session: number,
+  at: { tab: number; pane: number } | undefined,
+  word: ReactNode,
+  /** The head says no state: draw nothing where there is no menu to open. */
+  alone: boolean,
+) => ReactNode;
+
+/** The word as it is: a head with nothing to open. */
+const asItIs: TasksOn = (_session, _at, word, alone) => (alone ? null : word);
+
+/**
+ * **Its state**, as its row says it: the mark and its word, the word going first in a narrow pane
+ * and then the mark (`paneHead.ts`). **And its tasks, from that word** (#5341): where the chat has
+ * tasks, the word is the button their menu opens from, as ⌘⇧J's is. A head that says no state
+ * (a task's path says it, or the pane is too narrow) still draws the mark alone as that button
+ * where the chat has tasks, so ⌘⇧J always has its menu to open.
+ */
+function PaneTasksWord({
+  tasksOn = asItIs,
+  session,
+  at,
+  word,
+  markWord,
+  chat,
+}: {
+  tasksOn?: TasksOn;
+  session: number;
+  at: { tab: number; pane: number } | undefined;
+  /** Whether the head says the state. */
+  word: boolean;
+  markWord: boolean;
+  chat: ChatHead["chat"];
+}) {
+  const drawn = tasksOn(
+    session,
+    at,
+    <ChatShownState
+      session={session}
+      shell={chat.shell}
+      report={chat.report}
+      outcome={chat.outcome}
+      harness={chat.harness}
+      markOnly={!word || !markWord}
+    />,
+    !word,
+  );
+  return drawn == null ? null : <span className="pane-state-mark">{drawn}</span>;
+}
+
+/**
  * One pane's frame, three rows each with one job (#3142, the operator's variant A of
  * 2026-10-24; #4754): **the pane's header** with the chat at a glance at its start and the
  * pane's own controls at its end, its bell among them (`PaneHead`, `PaneBell`), **the band** of
@@ -197,6 +252,7 @@ export function PaneFrame({
   headMenu,
   ended,
   said,
+  tasksOn,
   focused = false,
   oneJob = false,
   shell = false,
@@ -205,6 +261,8 @@ export function PaneFrame({
   children,
 }: {
   plane: PlaneId;
+  /** What the head's state word opens: its chat's tasks menu, where it has tasks (#5341). */
+  tasksOn?: TasksOn;
   /** **How the path is said for a task that has ended** (#4757, #4756): its state after the
    *  path and the names of chats no longer open. Its Brief is its state button's (#4760). */
   said?: { state?: ReactNode; gone?: (session: number) => boolean };
@@ -424,17 +482,15 @@ export function PaneFrame({
               )}
               {/* **Its state**, as its row says it: the mark and its word, the word going
               first in a narrow pane and then the mark (`paneHead.ts`). */}
-              {head && line.has("mark") && (
-                <span className="pane-state-mark">
-                  <ChatShownState
-                    session={session}
-                    shell={head.chat.shell}
-                    report={head.chat.report}
-                    outcome={head.chat.outcome}
-                    harness={head.chat.harness}
-                    markOnly={!line.has("markWord")}
-                  />
-                </span>
+              {head && (
+                <PaneTasksWord
+                  tasksOn={tasksOn}
+                  session={session}
+                  at={tab === undefined || pane === undefined ? undefined : { tab, pane }}
+                  word={line.has("mark")}
+                  markWord={line.has("markWord")}
+                  chat={head.chat}
+                />
               )}
               {/* **Wrapping up** (ADR 0064, #4760): the breathing mark, where the strip's chip
               was. */}
@@ -1101,6 +1157,7 @@ export function LayoutPanes({
   unread,
   finished,
   explaining,
+  tasksOn,
   others,
   asked,
   asks,
@@ -1170,6 +1227,9 @@ export function LayoutPanes({
   placed: Readonly<Record<number, Crumbs>>;
   /** The session of the tab whose chip the first dispatch explains, on its own pane (#1501). */
   explaining?: ChipToExplain;
+  /** **What the head's state word opens** (#5341): the chat's tasks menu, around the word, for
+   *  a chat that has tasks; the word as it is for one that has none. */
+  tasksOn?: TasksOn;
   /** **The panes left on a task that has ended** (#4757), by pane: the path it last had. Each
    *  keeps the task's last screen, read-only, under the ended band (#4756). */
   endedTasks: Readonly<Record<number, Crumbs>>;
@@ -1521,6 +1581,7 @@ export function LayoutPanes({
     return (
       <PaneFrame
         plane={plane}
+        tasksOn={tasksOn}
         pane={layout.pane}
         tab={tab}
         session={content.session}
@@ -1678,6 +1739,7 @@ export function LayoutPanes({
       unread={unread}
       finished={finished}
       explaining={explaining}
+      tasksOn={tasksOn}
       others={others}
       asked={asked}
       asks={asks}
