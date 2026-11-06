@@ -410,6 +410,7 @@ fn isolated_answer(
                     &crate::planegit::Request {
                         root,
                         message: message.as_deref(),
+                        // Never signed for a chat ([`crate::planegit::SIGN_LEFT_FOR_A_CHAT`]).
                         sign: *sign,
                         no_push: *no_push,
                         cwd: asker.cwd.as_deref().unwrap_or(root),

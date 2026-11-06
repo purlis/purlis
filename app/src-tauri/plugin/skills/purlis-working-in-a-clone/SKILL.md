@@ -49,7 +49,8 @@ The plane's own tracked files are a separate concern — `purlis save` commits a
 those. In a sandboxed Claude Code chat the project root's `.git` is the app's too, so `purlis save` is run
 by the app, and plain `git commit` at the root is refused. That save brings nothing in from the
 remote: `--pull` is refused, so run `purlis worktree update` at the root first, then
-`purlis save`. A chat the app did not start, such as a terminal `claude`, gets no auto-save: there
+`purlis save`. It is never signed, whatever `--sign` or `[plane] sign` says: the person signs
+a save from the window or their own terminal. A chat the app did not start, such as a terminal `claude`, gets no auto-save: there
 the plane is saved only when `purlis save` runs, and `purlis save --pull` first brings in
 what the remote has.
 

@@ -4,7 +4,7 @@ A Claude Code chat has the project root's `.git` denied by path, wherever in the
 stands, as a chat in a branch folder has its clone's: the app is the one writer of the root's
 refs, index, logs and rebase state. Read-only git works there as before. `purlis save` in a chat
 the app started is handed to the app over the chat's hook socket, which saves the project as the
-terminal's `purlis save` does, with `-m`, `--sign`, `--no-push` and `--pull`, and credits the
+terminal's `purlis save` does, with `-m` and `--no-push` (below), and credits the
 commit to the chat by the app's own record of it. `purlis worktree update` at the root is the
 window's Update run for the chat, as before. A skill change or a workspace rename made by a chat
 is left on disk for the next save, as those commands already say when a save cannot finish. A
@@ -28,6 +28,10 @@ A save the app makes for a chat brings none of the remote's commits into the pro
 chat's `purlis save --pull` is refused, naming the update; where the remote moved, the commit
 stays here, unpushed, and the save says to update and then save; and in a project that saves
 through a pull request, the save commits and leaves the push to the person's own save.
+
+A save the app makes for a chat is never signed (the person's ruling of 2026-11-06): `--sign`
+and `[plane] sign` are not taken for it, and the save says it was left unsigned and that the
+person signs a save by saving from the window or in their own terminal.
 
 Where the app's git moves a ref in a git folder a chat may write, it first refuses a link, or a
 file with a second name, at `packed-refs` or under `logs/`, there and in the folder's common

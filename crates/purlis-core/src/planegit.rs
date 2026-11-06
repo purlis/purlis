@@ -1881,6 +1881,12 @@ fn push_for_a_request(
     prsave::push(root, plane, sign, caller, say)
 }
 
+/// What a save the app makes for a chat says where it was asked to sign, by `--sign` or by
+/// `[plane] sign`: it is left unsigned.
+pub const SIGN_LEFT_FOR_A_CHAT: &str = "This save is left unsigned: purlis does not sign a save it \
+     makes for a chat. The person signs a save by saving from the window, or with \
+     `purlis save --sign` in their own terminal.";
+
 /// What a save the app makes for a chat says when the remote moved: what brings it in.
 pub const MOVED_FOR_A_CHAT: &str = "Run `purlis worktree update` to bring them in, then \
      `purlis save` to push this commit.";
@@ -3307,7 +3313,13 @@ fn commit_push(
 ) -> u8 {
     let root = request.root;
     // `--sign` asks for it this once; `[plane] sign` asks for it every time.
-    let sign = request.sign || plane.sign.value;
+    // A save for a chat is never signed, whatever `--sign` or `[plane] sign` says: the
+    // person's key signs only the person's own saves, from the window or a terminal.
+    let asked_to_sign = request.sign || plane.sign.value;
+    let sign = asked_to_sign && !request.for_a_chat;
+    if asked_to_sign && request.for_a_chat {
+        say(Say::Info(SIGN_LEFT_FOR_A_CHAT.into()));
+    }
     if let Staging::Add(add_cmd) = staging
         && stages_the_whole_tree(add_cmd)
     {

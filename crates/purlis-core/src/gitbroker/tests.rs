@@ -1072,3 +1072,67 @@ fn a_project_whose_commit_message_file_is_a_link_is_not_saved_by_the_app() {
     assert_eq!(last_subject(&root), "one");
     assert_eq!(std::fs::read_to_string(&outside).unwrap(), "untouched\n");
 }
+
+#[test]
+fn a_chats_save_with_sign_is_committed_unsigned_and_says_so() {
+    let (_dir, root) = saved_project();
+    std::fs::write(root.join("notes.md"), "a chat's work\n").unwrap();
+
+    let answered = answer(
+        &root,
+        &held_chat(&root),
+        &GitAsk {
+            chat: 4,
+            workspace: String::new(),
+            alive: false,
+            work: GitWork::RootSave {
+                message: Some("from a chat".to_owned()),
+                sign: true,
+                no_push: true,
+                pull: false,
+            },
+        },
+        &git::Isolated::default(),
+        chrono::Utc::now(),
+    );
+
+    let Answer::Said { code, lines } = answered else {
+        panic!("not run");
+    };
+    assert_eq!(code, 0, "{lines:?}");
+    assert!(
+        lines.iter().any(|line| line
+            .to_string()
+            .contains(crate::planegit::SIGN_LEFT_FOR_A_CHAT)),
+        "{lines:?}"
+    );
+    assert_eq!(last_subject(&root), "from a chat");
+    let commit = crate::testgit::run(&root, &["cat-file", "commit", "HEAD"]).out;
+    assert!(!commit.contains("\ngpgsig "), "{commit}");
+}
+
+#[test]
+fn a_chats_save_in_a_project_that_signs_every_save_is_committed_unsigned_and_says_so() {
+    let (_dir, root) = saved_project();
+    std::fs::write(
+        root.join("charter.toml"),
+        "[plane]\nmode = \"commit\"\nsign = true\n",
+    )
+    .unwrap();
+    crate::testgit::run(&root, &["commit", "-q", "-am", "signs"]);
+    std::fs::write(root.join("notes.md"), "a chat's work\n").unwrap();
+
+    let Answer::Said { code, lines } = saved_for(&root, &held_chat(&root), "from a chat") else {
+        panic!("not run");
+    };
+    assert_eq!(code, 0, "{lines:?}");
+    assert!(
+        lines.iter().any(|line| line
+            .to_string()
+            .contains(crate::planegit::SIGN_LEFT_FOR_A_CHAT)),
+        "{lines:?}"
+    );
+    assert_eq!(last_subject(&root), "from a chat");
+    let commit = crate::testgit::run(&root, &["cat-file", "commit", "HEAD"]).out;
+    assert!(!commit.contains("\ngpgsig "), "{commit}");
+}
