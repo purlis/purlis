@@ -60,11 +60,20 @@ pub(crate) enum Waited {
 /// one writer of two waited out the whole bound behind the other's many short holds.
 ///
 /// A wait given up leaves its thread blocked until the holder lets go: it then lets go at once.
-/// Where no thread can be had, the lock is asked for every [`LOOKED_EVERY`] instead.
+/// So a caller waits on an open file no later lock is taken on (`held::Store::lock`), as that
+/// thread holds the lock for that file. Where no thread can be had, or 16 already wait (a holder
+/// that never lets go keeps each wait given up on it), the lock is asked for every
+/// [`LOOKED_EVERY`] instead.
 #[cfg(unix)]
 pub(crate) fn in_turn(fd: std::os::fd::BorrowedFd<'_>, most: std::time::Duration) -> Waited {
     use rustix::fs::{FlockOperation, flock};
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Condvar, Mutex, PoisonError};
+
+    /// The threads waiting in turn now, those of waits given up among them.
+    static QUEUED: AtomicUsize = AtomicUsize::new(0);
+    /// The most that wait at once: a holder that never lets go keeps each wait given up on it.
+    const MOST_QUEUED: usize = 16;
 
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum Turn {
@@ -78,8 +87,14 @@ pub(crate) fn in_turn(fd: std::os::fd::BorrowedFd<'_>, most: std::time::Duration
         Err(rustix::io::Errno::WOULDBLOCK | rustix::io::Errno::INTR) => {}
         Err(_) => return Waited::Unlockable,
     }
+    // Waits given up on a holder that never lets go each leave a thread: past a few, ask instead.
+    if QUEUED.fetch_add(1, Ordering::SeqCst) >= MOST_QUEUED {
+        QUEUED.fetch_sub(1, Ordering::SeqCst);
+        return asked_for(fd, most);
+    }
     // The same open file, so what the thread takes the caller holds.
     let Ok(queued) = rustix::io::fcntl_dupfd_cloexec(fd, 0) else {
+        QUEUED.fetch_sub(1, Ordering::SeqCst);
         return asked_for(fd, most);
     };
     let turn = Arc::new((Mutex::new(Turn::Waiting), Condvar::new()));
@@ -104,8 +119,10 @@ pub(crate) fn in_turn(fd: std::os::fd::BorrowedFd<'_>, most: std::time::Duration
                 *now = Turn::Ended(ended);
                 ended_here.notify_all();
             }
+            QUEUED.fetch_sub(1, Ordering::SeqCst);
         });
     if waiting.is_err() {
+        QUEUED.fetch_sub(1, Ordering::SeqCst);
         return asked_for(fd, most);
     }
     let (now, ended_here) = &*turn;
