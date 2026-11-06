@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793978911561,
+  "lastUpdate": 1793986133827,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -41160,6 +41160,48 @@ window.BENCHMARK_DATA = {
             "value": 102.2440115,
             "unit": "ms",
             "extra": "median of 5 runs: 101.794, 101.838, 102.244, 102.581, 103.172 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "dd28c2f5be6c62e3513af2f8b585fc2a6ac0dfce",
+          "message": "Skills view: a Codex plugin its config.toml turns off lists as off, with why (#5526)\n\n* Red tests: a Codex plugin its config.toml turns off is listed as the chat's (#4616)\n\nCodex's adapter reads no plugin as off, so a plugin whose table says enabled = false\n(measured on codex-cli 0.163.0 to reach no model) lists as on. These fail on purpose.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6RKEF5DXJPMJDBQE9W73ZRA\nPurlis-Persona: steward\n\n* Skills view: a Codex plugin its config.toml turns off lists as off, with why (#4616)\n\nCodex's adapter now reads config.toml at a chat's start, as Claude Code's reads its settings:\na plugin whose table says enabled = false (measured on codex-cli 0.163.0 to reach no model)\nis one the chat lacks, folded under Left out as \"Off in Codex\", its run naming the file and\nkey to change. No command is offered, since none was measured.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6RKEF5DXJPMJDBQE9W73ZRA\nPurlis-Persona: steward\n\n* Codex: one reading of config.toml's plugins for both answers, and the review's copy (#4616)\n\nCodex::installed and on_here::codex now share plugins_in_config, so an unset enabled is read as on\nin one place; the chat's folder, unread, is no parameter; the said line names the key; the ADR\namendment says the unset default was not measured, and nothing was measured again.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6RKEF5DXJPMJDBQE9W73ZRA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-06T16:45:26Z",
+          "tree_id": "2ee0a14950efffc516c06dfd9d5307a640e77a79",
+          "url": "https://github.com/purlis/purlis/commit/dd28c2f5be6c62e3513af2f8b585fc2a6ac0dfce"
+        },
+        "date": 1793986129756,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5347605,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.530, 0.531, 0.535, 0.548, 0.549 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.353198499999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.136, 16.291, 16.353, 16.497, 16.710 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.6513915,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.083, 101.215, 101.651, 102.417, 102.853 ms"
           }
         ]
       }
