@@ -1,0 +1,15 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The grip in forced colours** (#5290, #3387): forced colours take a fill away, so its dots ask
+   to keep the system's own, the words' colour, and the grip still draws no ground. */
+@media (forced-colors: active) {
+  [data-scope="grip"][data-part="dot"] {
+    forced-color-adjust: none;
+  }
+
+  [data-scope="grip"][data-part="root"]:is(:hover, :focus-visible, :focus-visible *)
+    [data-scope="grip"][data-part="dot"] {
+    background-color: CanvasText;
+  }
+}

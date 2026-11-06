@@ -502,13 +502,6 @@
   .pane-head {
     padding-inline: var(--space-5) var(--space-3);
   }
-
-  /* **And a task's line keeps the grip's room too** (#4764): with a breadcrumb on it, the grip
-     is not drawn in a narrow pane, so the state word stays whole (it needs about 17px more in a
-     pane of two in the narrowest window). ⌘⇧M and a drag of the head still pick the pane up. */
-  .pane-head:has(> .pane-chips > .pane-crumbs) > [data-pane-grip-handle] {
-    display: none;
-  }
 }
 
 /* **The header is the top of the pane** (#4754): it keeps the runway, band or none. */
@@ -530,6 +523,14 @@
   font-weight: var(--font-weight-strong);
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* **A pane's grip** (#5290, `ui/grip`): the mark in its head, the tab's size, and a 24px target
+   (WCAG 2.5.8) that reaches past the mark and moves nothing around it. */
+.pane-chips > .pane-persona,
+.pane-frame.pane-viewed > .pane-head > .pane-view-grip {
+  --grip-mark: var(--space-6);
+  --grip-reach: var(--space-7);
 }
 
 /* The chat's persona and state icon (`ChatPersonaState`, #4762): the tab's size, its badge
@@ -761,6 +762,21 @@
   pointer-events: auto;
 }
 
+/* **A view's grip, in a split** (#5290): its mark at the head's start, the tab's size, pressable
+   over the view's first row, which keeps its room at its start as it keeps the actions' at its
+   end. Alone in its tab a view has none, and its first row starts where it always did. */
+.pane-frame.pane-viewed > .pane-head > .pane-view-grip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  pointer-events: auto;
+}
+
+.pane-frame.pane-viewed:has(> .pane-head > .pane-view-grip) {
+  /* The grip's reach (`--grip-reach`, above) and the gap after it. */
+  --pane-grip-room: calc(var(--space-7) + var(--space-3));
+}
+
 /* **The view's first row is the header's row**: the same step from the top, the same height and
    the same start, and it keeps the actions' room at its end, so nothing in it is ever under
    them. */
@@ -773,7 +789,7 @@
   min-block-size: var(--size-chrome);
   margin-block-start: var(--space-2);
   padding-block: var(--space-2);
-  padding-inline: var(--space-5) var(--pane-actions-room);
+  padding-inline: calc(var(--space-5) + var(--pane-grip-room, 0px)) var(--pane-actions-room);
 }
 
 /* **A view that draws its own first row** (Settings' levels, its words beside them) keeps the
@@ -790,7 +806,7 @@
   inset-block-start: 0;
   z-index: 1;
   padding-block-start: var(--space-4);
-  padding-inline-end: var(--pane-actions-room);
+  padding-inline: var(--pane-grip-room, 0px) var(--pane-actions-room);
   background-color: var(--surface-raised);
 }
 
@@ -799,7 +815,7 @@
 .pane-frame.pane-viewed .view-body > .piece-file > .piece-files-head:first-child {
   box-sizing: content-box;
   min-block-size: var(--size-chrome);
-  padding-inline-end: var(--pane-actions-room);
+  padding-inline: calc(var(--space-5) + var(--pane-grip-room, 0px)) var(--pane-actions-room);
 }
 
 /* ---------------------------------------------------------------------------------------------

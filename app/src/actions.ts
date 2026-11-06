@@ -1729,7 +1729,7 @@ export const placeChatId = (session: number) => `chat.place:${session}`;
 export const placeTabId = (tab: number) => `tab.place:${tab}`;
 /** What a Place… row says it does (#4764). */
 export const PLACE_NOTE =
-  "Picked up to place with the keys: the arrows choose a side, Tab the next pane, Enter drops.";
+  "Picked up to move with the keys: the arrows choose a side, Tab the next pane, Enter drops.";
 /** Tile all's row for tab `tab` (#4765). */
 export function tileAllId(tab: number): string {
   return `tab.tile:${tab}`;
@@ -2342,7 +2342,7 @@ export function catalogue(now: Now): Offer[] {
     offers.push({
       ...can(
         placeTabId(tab),
-        `Place tab ${name}…`,
+        `Move tab ${name}…`,
         { verb: "place", source: { kind: "tab", tab } },
         name,
       ),
@@ -4472,7 +4472,7 @@ function chatRows(now: Now): Offer[] {
     offers.push({
       ...can(
         placeChatId(session),
-        `Place chat ${name}…`,
+        `Move chat ${name}…`,
         { verb: "place", source: { kind: "chat", session } },
         name,
       ),

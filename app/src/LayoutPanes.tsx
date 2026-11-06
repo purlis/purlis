@@ -70,7 +70,7 @@ import { TaskEndAsked } from "./TaskEnd";
 import { SAID } from "./menuWords";
 import { giveKeyboardTo } from "./paneKeyboard";
 import { StateShown } from "./StateShown";
-import { ViewPane } from "./Views";
+import { ViewMark, ViewPane } from "./Views";
 import type { FirstTaskDoes } from "./FirstTaskTab";
 import type { ExtensionView, Shown } from "./bindings";
 import { qualifierOf, shownOf } from "./finished";
@@ -392,6 +392,19 @@ export function PaneFrame({
   /** The terminal the pane draws, for Copy and Paste on its head's right-click (#4760). */
   const terminalAt = useRef<PaneTerminal | null>(null);
   const focusBell = useCallback(() => bellAt.current?.focus(), []);
+  /** **The pane's grip** (#5290): its persona's mark, but a one-job program's. The same function
+   *  from one drawing of the head to the next, so the mark (a memo) is not drawn again for it. */
+  const grip = useMemo(
+    () =>
+      oneJob || tab === undefined || pane === undefined
+        ? undefined
+        : (mark: ReactNode) => (
+            <PaneGrip tab={tab} pane={pane}>
+              {mark}
+            </PaneGrip>
+          ),
+    [oneJob, tab, pane],
+  );
   return (
     <div
       ref={frame}
@@ -415,7 +428,6 @@ export function PaneFrame({
         <PaneActionsOf.Provider value={lines.actions}>
           <PaneHead
             grip={!oneJob}
-            at={tab === undefined || pane === undefined ? undefined : { tab, pane }}
             menu={
               headMenu &&
               ((element) => (
@@ -439,10 +451,12 @@ export function PaneFrame({
           >
             <div className="pane-chips">
               {/* **Who it runs as, with its state on it** (#4760, #4762): the one icon its row
-              and its tab wear, first on the head. */}
+              and its tab wear, first on the head. It is the pane's grip (#5290), but a one-job
+              program's, which stays beside the pane it opened from. */}
               {head && line.has("persona") && (
                 <span className="pane-persona">
                   <ChatPersonaState
+                    grip={grip}
                     persona={head.chat.persona}
                     session={session}
                     shell={head.chat.shell}
@@ -681,7 +695,7 @@ export function PaneHead({
   menu,
   children,
   grip = true,
-  at,
+  lead,
 }: {
   doing: ReactNode;
   /** Puts the head's right-click around it (#4760): the chat's list, then the pane's rows. */
@@ -689,16 +703,18 @@ export function PaneHead({
   children?: ReactNode;
   /** Whether a press on it, outside its controls, picks the pane up to drag (#4763). */
   grip?: boolean;
-  /** The pane it heads, whose grip control picks it up for placement mode (#4764). */
-  at?: { tab: number; pane: number };
+  /** **A view's grip** (#5290): its mark, first in the head, where a chat's is its persona's in
+   *  `children`. Only a view in a split has one: alone in its tab, it moves by its tab. */
+  lead?: ReactNode;
 }) {
   const drawn = (
     // Its hints open below it (#5189): one at a control's end would stand on the row, over the
     // next control, as the bell's did over Split right.
     <div className="pane-head" {...TIPS_BELOW} {...(grip ? { [GRIP]: "" } : {})}>
-      {/* **The grip, first in the head** (#4764): a press, Enter or Space on it picks the pane up
-          to place it with the keys, and a drag from it moves the pane. */}
-      {grip && at !== undefined && <PaneGrip tab={at.tab} pane={at.pane} />}
+      {/* **The grip, first in the head** (#4764, #5290): the pane's mark, which turns into dots; a
+          press, Enter or Space on it picks the pane up to place it with the keys, and a drag
+          from it moves the pane. A chat's is its persona's mark, in `children`. */}
+      {lead}
       {children}
       {doing}
     </div>
@@ -1443,7 +1459,19 @@ export function LayoutPanes({
               the view's first row, which keeps the room it takes (`paneFrame.css`). */}
           <PaneActionsOf.Provider value={viewActions}>
             <PaneHead
-              at={{ tab, pane: layout.pane }}
+              // **A view's grip** (#5290): in a split, its mark at the head's start, as a chat's
+              // pane has its persona's. Alone in its tab it has none, so nothing stands on its
+              // own first row, and it moves by its tab.
+              grip={!alone}
+              lead={
+                alone ? undefined : (
+                  <span className="pane-view-grip">
+                    <PaneGrip tab={tab} pane={layout.pane}>
+                      <ViewMark view={content.view} />
+                    </PaneGrip>
+                  </span>
+                )
+              }
               // A view alone in its tab has none of them (#5318): its splits are the palette's and
               // its tab's menu's.
               doing={

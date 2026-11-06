@@ -122,7 +122,9 @@ function Window({
         ) : (
           <div key={pane} {...dropPane(front, pane)} data-box={`${at * width},40,${width},600`}>
             <div {...{ [GRIP]: "" }} data-box={`${at * width},40,${width},20`}>
-              <PaneGrip tab={front} pane={pane} />
+              <PaneGrip tab={front} pane={pane}>
+                <span>chat {pane}</span>
+              </PaneGrip>
               {`head ${pane}`}
             </div>
             <textarea aria-label={`terminal ${pane}`} />
