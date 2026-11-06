@@ -345,8 +345,8 @@ fn the_app_prunes_for_a_chat_and_keeps_the_folder_the_chat_stands_in() {
 #[test]
 fn a_folder_already_gone_goes_where_its_branch_loses_nothing_and_else_is_listed_with_how_to_clear_it()
  {
-    // #5439: only git's record of it is left; its branch is read alone.
     purlis_core::unsteered!();
+    // #5439: only git's record of it is left; its branch is read alone.
     let f = support::plane_with_clone("api");
     let gone = plain(&f, "gone");
     std::fs::remove_dir_all(&gone).unwrap();
@@ -573,9 +573,9 @@ fn git_ok(dir: &Path, args: &[&str]) -> bool {
 
 #[test]
 fn a_plain_remove_lets_a_lane_inside_a_merged_head_go_and_deletes_its_branch_when_asked() {
+    purlis_core::unsteered!();
     // #5439: `flakes-4672-5126` was refused, listing commits "that exist nowhere else", though
     // they were part of a request that merged.
-    purlis_core::unsteered!();
     let f = support::plane_with_clone("api");
     let (lane, head) = a_lane_inside_a_merged_head(&f);
     let forge = merged_at(&head);
@@ -672,8 +672,8 @@ fn gone_by_hand(f: &support::Fixture, folder: &Path) {
 
 #[test]
 fn a_branch_purlis_cut_whose_folder_is_gone_is_deleted_with_its_config_where_nothing_is_lost() {
-    // #5439: a removal by another chat left both branches behind, and nothing deleted them.
     purlis_core::unsteered!();
+    // #5439: a removal by another chat left both branches behind, and nothing deleted them.
     let f = support::plane_with_clone("api");
     let on_base = plain(&f, "on-base");
     gone_by_hand(&f, &on_base);
@@ -752,9 +752,9 @@ fn the_app_deletes_a_branch_whose_folder_is_gone_for_a_chat_config_and_all() {
 
 #[test]
 fn remove_delete_branch_on_a_gone_task_folder_deletes_its_carried_branch_and_keeps_an_ahead_one() {
+    purlis_core::unsteered!();
     // #5439: it refused with "Run this again without --delete-branch to remove the folder",
     // and the folder was already gone.
-    purlis_core::unsteered!();
     let f = support::plane_with_clone("api");
     let removed = |piece: &str| {
         let mut said = Vec::new();
@@ -806,9 +806,9 @@ fn remove_delete_branch_on_a_gone_task_folder_deletes_its_carried_branch_and_kee
 
 #[test]
 fn a_chats_remove_delete_branch_on_a_gone_folder_deletes_its_branch_config_and_all() {
+    purlis_core::unsteered!();
     // #5439: by the brokered route, so the branch's section of `.git/config` goes too, which a
     // sandboxed chat's own `git branch -D` could not write.
-    purlis_core::unsteered!();
     use purlis_core::hookwire::{Answer, GitAsk, GitWork};
     let f = support::plane_with_clone("api");
     let carried = task_folder(&f, "a carried task", true);

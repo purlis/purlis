@@ -1100,7 +1100,16 @@ pub fn kept_from_removal(
             }
             // Its folder already gone (#5439): the removal reads its branch alone, and deletes
             // it only where that loses nothing ([`crate::piececmd::remove`]).
-            if worktree::path_for(root, workspace, repo, piece)
+            // Read by the name its record gives it, as git keeps it: a name typed in another
+            // case finds no folder on a file system that does not fold case.
+            let (own_repo, own_piece) = record
+                .place
+                .worktree
+                .as_ref()
+                .map_or((repo, piece), |tree| {
+                    (tree.repo.as_str(), tree.piece.as_str())
+                });
+            if worktree::path_for(root, workspace, own_repo, own_piece)
                 .is_ok_and(|folder| folder.symlink_metadata().is_err())
             {
                 return None;
