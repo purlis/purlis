@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793994179489,
+  "lastUpdate": 1793996547232,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -41328,6 +41328,48 @@ window.BENCHMARK_DATA = {
             "value": 102.4781885,
             "unit": "ms",
             "extra": "median of 5 runs: 102.348, 102.427, 102.478, 102.708, 102.862 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f4523d041992c4157d40440143de181beba06974",
+          "message": "The pane foot's warning number holds a contrast floor, and the foot's leftovers (#5262, #5366) (#5539)\n\n* The theme check holds the pane foot's warning number on the terminal (#5262)\n\nstate.waiting and state.failed are held at 4.5:1 on terminal.background, read\nfrom pane-foot.css by a test. They are check-only, never a consent floor, so a\ntheme that falls short is drawn as written and never has its terminal or its\namber repainted for the foot. A theme's pane-foot.value colour no longer\nreaches a toned number.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6RTY163VQ3HJT7EEAJH4ZDZ\nPurlis-Persona: steward\n\n* The pane foot's leftovers (#5366)\n\n- An ended task's ↳ from is a press: the catalogue gives it its asker row from\n  the path its pane last had (Now.endedAskedBy), while the asker is listed.\n- PaneRail draws from the pane model's answer for a folded pane.\n- The skills warning says its row's title, as every foot part does, and no\n  press where it has none.\n- The foot's presses keep the muted tier as a standing rule, pinned by a test:\n  #3214's quiet variant is the quiet tier, not the foot's.\n\nThe outcome bars runner loss was fixed by #5379 (#5277): memory, not GitHub.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6RTY163VQ3HJT7EEAJH4ZDZ\nPurlis-Persona: steward\n\n* The review's fixes (#5262, #5366)\n\n- floors::CHECKED_ONLY names its two pairs, not the terminal's ground, and a test\n  pins that they are the only state, danger or needs-you pairs left out of the\n  consent floors.\n- design-system.md says the exception.\n- A listed chat with no asker never takes one from its pane's last path.\n- The leftovers' fragment attributes each entry, the words change as Changed.\n- The foot tests share one list of the warning's colours and the text floor.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6RTY163VQ3HJT7EEAJH4ZDZ\nPurlis-Persona: steward\n\n* CI scope: a change to pane-foot.css runs Rust, whose test reads it (#5262)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6RTY163VQ3HJT7EEAJH4ZDZ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-06T19:00:37Z",
+          "tree_id": "317462bdc3f96b429e19ac455dae51b37763a2d5",
+          "url": "https://github.com/purlis/purlis/commit/f4523d041992c4157d40440143de181beba06974"
+        },
+        "date": 1793996542216,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.717212,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.680, 0.690, 0.717, 0.738, 0.750 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5442845,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.235, 16.458, 16.544, 16.576, 16.636 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.10404199999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.728, 102.075, 102.104, 102.146, 102.726 ms"
           }
         ]
       }
