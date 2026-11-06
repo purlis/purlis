@@ -134,14 +134,22 @@ jobs:
         working-directory: app
         env:
           PURLIS_SCALE_OUT: ${{ github.workspace }}/scale-rows.jsonl
-        run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}npm run e2e:scale
+        run: |
+          # The app's session host outlives its window by design: one left by the run before
+          # would be a second app, and a load nobody measures.
+          pkill -f "$CHARTER_TARGET_DIR/charter-app" || true
+          ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}npm run e2e:scale
       - name: Chat events reaching the window, batched (#4883)
         if: always() && steps.built.outcome == 'success'
         working-directory: app
         env:
           PURLIS_SCALE_OUT: ${{ github.workspace }}/scale-rows.jsonl
           PURLIS_SCALE_RUN: chat-events
-        run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}npm run e2e:scale
+        run: |
+          # The app's session host outlives its window by design: one left by the run before
+          # would be a second app, and a load nobody measures.
+          pkill -f "$CHARTER_TARGET_DIR/charter-app" || true
+          ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}npm run e2e:scale
       - name: Chat events reaching the window, each telling sent as it comes (#4883)
         if: always() && steps.built.outcome == 'success'
         working-directory: app
@@ -149,7 +157,11 @@ jobs:
           PURLIS_SCALE_OUT: ${{ github.workspace }}/scale-rows.jsonl
           PURLIS_SCALE_RUN: chat-events
           PURLIS_E2E_CHAT_EVENTS_MS: "0"
-        run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}npm run e2e:scale
+        run: |
+          # The app's session host outlives its window by design: one left by the run before
+          # would be a second app, and a load nobody measures.
+          pkill -f "$CHARTER_TARGET_DIR/charter-app" || true
+          ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}npm run e2e:scale
       - name: This system's numbers, in the job summary
         if: always()
         run: |

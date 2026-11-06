@@ -6,8 +6,9 @@ import { appendFileSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
 import { browser } from "@wdio/globals";
-import { appProcess, sleep } from "../bench/window.js";
-import { LOGS } from "../processes.js";
+import { sleep } from "../bench/window.js";
+import { built } from "../harness.js";
+import { LOGS, appProcesses } from "../processes.js";
 
 /**
  * **What only the real app can measure on a project at scale** (#5497, spec #5486): the
@@ -89,13 +90,13 @@ function watcherSetupMs(): number | undefined {
 }
 
 /**
- * CPU seconds the app's process and every process under it have used, the children already
- * ended counted in (a `git status` the app ran and reaped is the app's cost): `/proc`'s
- * `cutime`/`cstime` on Linux, `ps -S` on macOS.
+ * CPU seconds the app's processes (`roots`: its window and its session host) and every process
+ * under them have used, the children already ended counted in (a `git status` the app ran and
+ * reaped is the app's cost): `/proc`'s `cutime`/`cstime` on Linux, `ps -S` on macOS.
  */
-function cpuSeconds(pid: number): number {
+function cpuSeconds(roots: number[]): number {
   const tree = (rows: [number, number][]): Set<number> => {
-    const mine = new Set([pid]);
+    const mine = new Set(roots);
     for (let grew = true; grew;) {
       grew = false;
       for (const [child, parent] of rows) {
@@ -180,11 +181,16 @@ describe("the app on a project at scale", () => {
   it("sits idle for a minute with its window shown", async () => {
     // Its first git standing and the rest of the launch's work done, so the minute is idle.
     await sleep(20_000);
-    const { pid } = appProcess();
-    const before = cpuSeconds(pid);
+    const app = appProcesses(
+      built(process.platform === "win32" ? "charter-app.exe" : "charter-app"),
+    );
+    if (app.windows.length !== 1)
+      throw new Error(`expected one app window, found ${app.windows.length}`);
+    const roots = [...app.windows, ...app.sessionHosts];
+    const before = cpuSeconds(roots);
     const started = Date.now();
     await sleep(60_000);
-    const used = cpuSeconds(pid) - before;
+    const used = cpuSeconds(roots) - before;
     const seconds = (Date.now() - started) / 1000;
     row("idle-cpu", { value: Math.round((used / seconds) * 1000) / 10 });
   });
