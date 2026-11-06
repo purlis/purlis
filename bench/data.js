@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793927879732,
+  "lastUpdate": 1793929884817,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -40698,6 +40698,48 @@ window.BENCHMARK_DATA = {
             "value": 102.2464,
             "unit": "ms",
             "extra": "median of 5 runs: 101.810, 102.218, 102.246, 102.918, 103.637 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "241002739d66222fc0a91a7d1409cf92178acc40",
+          "message": "The browser engine pin is 157.0.8103.38, issued 2026-11-05 (#5452)\n\n* The browser engine pin is 157.0.8103.38, issued 2026-11-05\n\nRefreshes crates/browser-engine/engine-pin.json from 155.0.8059.79 (issued\n2026-10-14, past the 21-day limit) to the newest engine-manifest release\nasset, byte for byte, after cosign verify-blob accepted it against the\nshipped Sigstore trusted root as engine-manifest.yml on main (#2297, #5413).\nThe trusted root TUF serves today is identical to the shipped one.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6PVR3AKQ2Z3MEXZCNH63YCB\nPurlis-Persona: steward\n\n* A redirect holding the filled value: what was refused is checked before its note\n\nThe redirect is judged on a thread of its own, so the refusal's note can\nreach the click's answer or, where the click answered first, the next\none. On 157 one run saw the note late; the test failed at its first\nassert and said nothing of what was refused. It now checks first that\nnothing reached the other site, the hold lives and the page stays, then\nthat the refusal is said on one of the two answers and the value on\nneither, and a failure says what each answer carried and what reached\nthe site (#5413).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6PVR3AKQ2Z3MEXZCNH63YCB\nPurlis-Persona: steward\n\n* TEMPORARY: twenty rounds of the redirect-holding-the-value test on 157\n\nReverted before landing (#5452).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6PVR3AKQ2Z3MEXZCNH63YCB\nPurlis-Persona: steward\n\n* Revert the temporary twenty rounds: the test runs once again\n\nTwenty rounds of both cases passed on 157 in run 42135123278 (#5452).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6PVR3AKQ2Z3MEXZCNH63YCB\nPurlis-Persona: steward\n\n* DevTools tests wait for the end to be told, not only for the inspection to go\n\nstop_inspecting takes the inspection, tears it down, then tells why it\nended, so inspecting() is false a moment before the end is told. Seven\ntests read the ends as soon as inspecting() was false; on a slow runner\none read nothing (job 127627634470, left: [] right: [Ended]). With the\ntell delayed 300 ms all seven fail that way; they now wait for both and\nstill require exactly the one end. Fake engine only: not the engine pin.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6PVR3AKQ2Z3MEXZCNH63YCB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-06T01:16:38Z",
+          "tree_id": "2b499d45d6cae4ad3921353fd30304363ffa2a4d",
+          "url": "https://github.com/purlis/purlis/commit/241002739d66222fc0a91a7d1409cf92178acc40"
+        },
+        "date": 1793929880676,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5298005,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.517, 0.530, 0.530, 0.532, 0.534 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.244190500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.084, 16.232, 16.244, 16.504, 16.721 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.57438350000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.638, 101.429, 101.574, 102.028, 102.181 ms"
           }
         ]
       }
