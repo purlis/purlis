@@ -2554,7 +2554,11 @@ fn keys_with_no_known_focus_read_at_most_one_chains_worth_of_frames_per_act() {
         n += 1;
     }
     assert!(!engine.sent("Input.dispatchKeyEvent").is_empty());
-    assert_eq!(sandboxes_read(&engine), 50, "each frame is read once");
+    assert_eq!(
+        sandboxes_read(&engine),
+        51,
+        "each frame is read once, the payment frame at its web address among them"
+    );
 }
 
 /// A fresh tab: its own document is blank, and its own context has no web origin.
