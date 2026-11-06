@@ -13,7 +13,7 @@ use serde_json::json;
 
 use super::super::fill::{FIELD_KIND, WRITE_FIELD};
 use super::{Engine, browser, id, ref_of, snapshot, wait_for};
-use crate::drive::{Call, Content, FillHold, Ref, Refusal, SecretFill};
+use crate::drive::{Call, Content, DownloadHolds, FillHold, Ref, Refusal, SecretFill};
 
 const VALUE: &str = "open sesame";
 
@@ -408,21 +408,24 @@ fn a_file_is_said_to_hold_a_filled_value_once_that_value_is_filled() {
     std::fs::write(&holding, format!("key = {}\n", VALUE.to_uppercase())).unwrap();
     let other = folder.join("other.txt");
     std::fs::write(&other, "open and sesame, apart").unwrap();
-    assert!(
-        !browser.holds_a_filled_value(&holding).unwrap(),
+    assert_eq!(
+        browser.holds_kept_out(&holding).unwrap(),
+        DownloadHolds::Nothing,
         "nothing filled yet"
     );
 
     filling(&browser, &fill_of(secret, "http://fixture.test"))
         .unwrap_or_else(|why| panic!("{}", ended_as(&Err::<(), _>(why))));
 
-    assert!(browser.holds_a_filled_value(&holding).unwrap());
-    assert!(!browser.holds_a_filled_value(&other).unwrap());
-    assert!(
-        browser
-            .holds_a_filled_value(&folder.join("gone.txt"))
-            .is_err()
+    assert_eq!(
+        browser.holds_kept_out(&holding).unwrap(),
+        DownloadHolds::Filled
     );
+    assert_eq!(
+        browser.holds_kept_out(&other).unwrap(),
+        DownloadHolds::Nothing
+    );
+    assert!(browser.holds_kept_out(&folder.join("gone.txt")).is_err());
 }
 
 /// The person takes the browser over the moment the value is in its field, before the fill

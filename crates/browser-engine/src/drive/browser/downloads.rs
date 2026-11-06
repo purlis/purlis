@@ -18,8 +18,9 @@ use std::io::Read;
 
 use zeroize::Zeroizing;
 
+use crate::drive::kept::KEPT_WHOLE_FROM;
 use crate::drive::scrub::every_form;
-use crate::drive::{DownloadInfo, DownloadState, Limits, lock, plain_file_name};
+use crate::drive::{DownloadHolds, DownloadInfo, DownloadState, Limits, lock, plain_file_name};
 
 use super::login::origin_of;
 
@@ -183,34 +184,62 @@ impl Downloads {
 const READ_AT_A_TIME: usize = 1 << 20;
 
 impl super::Browser {
-    /// **Whether the file at `file` holds a value purlis filled into this browser** (#5115), in
-    /// any of the forms a string a chat reads has it taken out in ([`every_form`]), whatever its
-    /// case: a download is brought into a chat's folder only where it holds none. Read in pieces,
-    /// so a large download is never held whole.
+    /// **What the file at `file` holds of what this browser keeps out of a chat's reads**: a value
+    /// purlis filled into it (#5115), or a text of [`KEPT_WHOLE_FROM`] characters or more the
+    /// person typed in it (the person's ruling of 2026-11-06), in any of the forms a string a
+    /// chat reads has it taken out in ([`every_form`]), whatever its case: a download is brought
+    /// into a chat's folder only where it holds neither. Read once, in pieces, so a large
+    /// download is never held whole.
     ///
     /// # Errors
     ///
     /// Where the file can't be read.
-    pub fn holds_a_filled_value(&self, file: &std::path::Path) -> std::io::Result<bool> {
-        let filled = lock(&self.inner.state).filled.clone();
-        let forms = every_form(&filled);
-        if forms.is_empty() {
-            return Ok(false);
+    pub fn holds_kept_out(&self, file: &std::path::Path) -> std::io::Result<DownloadHolds> {
+        let (filled, every) = {
+            let state = lock(&self.inner.state);
+            (state.filled.clone(), state.every_kept())
+        };
+        let typed = every
+            .at_least(KEPT_WHOLE_FROM)
+            .without(&filled.texts());
+        let forms = [every_form(&filled), every_form(&typed)];
+        if forms.iter().all(Vec::is_empty) {
+            return Ok(DownloadHolds::Nothing);
         }
-        holds_a_form(std::fs::File::open(file)?, &forms)
+        Ok(
+            match holds_a_form(std::fs::File::open(file)?, &forms)? {
+                Some(0) => DownloadHolds::Filled,
+                Some(_) => DownloadHolds::Typed,
+                None => DownloadHolds::Nothing,
+            },
+        )
     }
 }
 
-/// Whether what `from` reads holds any of `forms`, whatever its case: read
+/// Which of `sets` of forms what `from` reads holds one of first, whatever its case: read
 /// [`READ_AT_A_TIME`] bytes at a time, each piece with the end of the one before, so a form
-/// across two pieces is found.
-fn holds_a_form(mut from: impl Read, forms: &[Zeroizing<String>]) -> std::io::Result<bool> {
-    let needles: Vec<Zeroizing<String>> = forms
+/// across two pieces is found. An earlier set is looked for first in each piece.
+fn holds_a_form(
+    mut from: impl Read,
+    sets: &[Vec<Zeroizing<String>>],
+) -> std::io::Result<Option<usize>> {
+    let needles: Vec<Vec<Zeroizing<String>>> = sets
         .iter()
-        .map(|form| Zeroizing::new(form.to_lowercase()))
+        .map(|forms| {
+            forms
+                .iter()
+                .map(|form| Zeroizing::new(form.to_lowercase()))
+                .collect()
+        })
         .collect();
     // A form's bytes, and a character cut at the piece's start.
-    let carried = needles.iter().map(|one| one.len()).max().unwrap_or(0) + 4;
+    let carried = needles
+        .iter()
+        .flatten()
+        .map(|one| one.len())
+        .max()
+        .unwrap_or(0)
+        + 4;
     let mut piece: Zeroizing<Vec<u8>> = Zeroizing::new(Vec::with_capacity(READ_AT_A_TIME));
     let mut read = Zeroizing::new(vec![0u8; READ_AT_A_TIME]);
     loop {
@@ -220,12 +249,15 @@ fn holds_a_form(mut from: impl Read, forms: &[Zeroizing<String>]) -> std::io::Re
             Err(why) => return Err(why),
         };
         if got == 0 {
-            return Ok(false);
+            return Ok(None);
         }
         piece.extend_from_slice(&read[..got]);
         let text = Zeroizing::new(String::from_utf8_lossy(&piece).to_lowercase());
-        if needles.iter().any(|needle| text.contains(needle.as_str())) {
-            return Ok(true);
+        if let Some(set) = needles
+            .iter()
+            .position(|set| set.iter().any(|needle| text.contains(needle.as_str())))
+        {
+            return Ok(Some(set));
         }
         let keep = piece.len().min(carried);
         let from_here = piece.len() - keep;
@@ -244,7 +276,7 @@ mod tests {
     }
 
     fn holds(bytes: &[u8], of: &str) -> bool {
-        holds_a_form(bytes, &forms(of)).unwrap()
+        holds_a_form(bytes, &[forms(of)]).unwrap().is_some()
     }
 
     #[test]
@@ -259,6 +291,15 @@ mod tests {
     fn a_file_holding_only_a_part_of_a_filled_value_is_not() {
         assert!(!holds(b"open-sesame-4 and sesame-42", "open-sesame-42"));
         assert!(!holds(b"", "open-sesame-42"));
+    }
+
+    #[test]
+    fn a_filled_value_is_said_before_a_typed_text_in_the_same_file() {
+        let both = [forms("open-sesame-42"), forms("plumtreewalker")];
+        let found = |bytes: &[u8]| holds_a_form(bytes, &both).unwrap();
+        assert_eq!(found(b"plumtreewalker open-sesame-42"), Some(0));
+        assert_eq!(found(b"plumtreewalker"), Some(1));
+        assert_eq!(found(b"neither"), None);
     }
 
     #[test]

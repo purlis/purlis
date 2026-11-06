@@ -11,7 +11,8 @@ use serde_json::json;
 
 use super::{a_frame, browser, focus_on, id, ref_of, snapshot, wait_for};
 use crate::drive::{
-    Aim, Call, Driver, MouseButton, MouseKind, PageId, Painted, PersonInput, Refusal,
+    Aim, Call, DownloadHolds, Driver, MouseButton, MouseKind, PageId, Painted, PersonInput,
+    Refusal,
 };
 
 /// What the browser's first page shows now, as a frame of it would say.
@@ -1289,6 +1290,50 @@ fn a_long_value_typed_key_by_key_stays_out_when_the_page_shows_it_cut_short() {
     let text = snapshot(&browser, 1);
 
     assert!(!text.contains("plumtreew"), "{text}");
+}
+
+/// The person's ruling of 2026-11-06: a download holding a text the person typed of 8 characters
+/// or more is not brought into a chat's folder, in any case or in its base64; a shorter text, or
+/// a shorter part of one, holds nothing back.
+#[test]
+fn a_file_holding_a_long_text_the_person_typed_is_said_to_hold_one() {
+    let (browser, engine) = browser();
+    browser.take_over();
+    type_key_by_key(&browser, &engine, "plumtreewalker");
+    browser.hand_back();
+    let (short, short_engine) = super::browser();
+    short.take_over();
+    type_key_by_key(&short, &short_engine, "themes");
+    short.hand_back();
+    let held = tempfile::tempdir().unwrap();
+    let file = |name: &str, holds: &str| {
+        let at = held.path().join(name);
+        std::fs::write(&at, holds).unwrap();
+        at
+    };
+    let whole = file("whole.txt", "note: PlumTreeWalker\n");
+    let encoded = file("encoded.txt", "cGx1bXRyZWV3YWxrZXI=");
+    // What it held on the way, from 8 characters, stays kept (the ruling of 2026-10-17).
+    let part = file("part.txt", "plumtre walker");
+
+    assert_eq!(
+        browser.holds_kept_out(&whole).unwrap(),
+        DownloadHolds::Typed
+    );
+    assert_eq!(
+        browser.holds_kept_out(&encoded).unwrap(),
+        DownloadHolds::Typed
+    );
+    assert_eq!(
+        browser.holds_kept_out(&part).unwrap(),
+        DownloadHolds::Nothing
+    );
+    let themes = file("themes.txt", "your themes");
+    assert_eq!(
+        short.holds_kept_out(&themes).unwrap(),
+        DownloadHolds::Nothing,
+        "under 8 characters"
+    );
 }
 
 #[test]

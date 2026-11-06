@@ -644,6 +644,19 @@ pub struct Answer {
     pub downloads: Vec<DownloadInfo>,
 }
 
+/// **What a download's file holds of what the browser keeps out of a chat's reads**
+/// ([`Browser::holds_kept_out`]): what is found first, a value purlis filled before a text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DownloadHolds {
+    /// Nothing it keeps out.
+    Nothing,
+    /// A value purlis filled into the browser or logged in with (#5115).
+    Filled,
+    /// A text kept out of 8 characters or more, that the person typed into the browser (the
+    /// person's ruling of 2026-11-06): a shorter one is often an ordinary word of a file.
+    Typed,
+}
+
 /// **One download of a browser's** (#2020): held in the folder the browser was given
 /// ([`Browser::hold_downloads_in`]), under the name the engine made for it, never the page's.
 #[derive(Debug, Clone, PartialEq, Eq)]
