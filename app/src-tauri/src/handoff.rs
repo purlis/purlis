@@ -144,8 +144,8 @@ pub struct Arrived {
 pub const CANT_REPORT_ASKS: &str =
     "its harness can't report asks, so tell the person they must look at it themselves";
 
-/// [`CANT_REPORT_ASKS`] for a task on a program purlis has no adapter for (#5271), which has no
-/// harness of purlis's to blame: purlis has no hooks into it at all.
+/// What is said instead of [`CANT_REPORT_ASKS`] for a task on a program purlis has no adapter
+/// for (#5271): no harness is to blame, since purlis has no hooks into it at all.
 pub const NO_ADAPTER_CANT_REPORT_ASKS: &str = "purlis has no adapter for its program, so it \
 can't report asks: tell the person they must look at it themselves";
 
@@ -153,16 +153,16 @@ can't report asks: tell the person they must look at it themselves";
 /// can't report its asks, and nothing for a handoff, whose asking chat hears nothing back, or
 /// a task whose harness reports its asks.
 fn cant_report_note(arrived: &Arrived) -> Option<String> {
-    let said = if arrived.no_adapter {
-        NO_ADAPTER_CANT_REPORT_ASKS
-    } else {
-        CANT_REPORT_ASKS
-    };
     arrived
         .from
         .as_ref()
         .is_some_and(|from| from.task && arrived.cant_report_asks)
-        .then(|| said.to_owned())
+        .then_some(if arrived.no_adapter {
+            NO_ADAPTER_CANT_REPORT_ASKS
+        } else {
+            CANT_REPORT_ASKS
+        })
+        .map(str::to_owned)
 }
 
 /// Told when a handoff has opened a chat. The event carries its plane.

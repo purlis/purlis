@@ -53,8 +53,8 @@ default. `purlis persona list` says so and names the way out: `purlis persona us
 2. Take credentials from its vault and nowhere else, and never print them. See the `secrets`
    skill.
 3. Stay in role. **A chat's persona does not change.** In a chat purlis started, `purlis
-   persona use` is refused and says the two ways forward: the operator allows the vault on
-   this chat's tab, or you dispatch to the persona that owns the work.
+   persona use` is refused and says the two ways forward: the operator allows the vault, in
+   the Inbox or on this chat's pane, or you dispatch to the persona that owns the work.
 
 ## Give work to another persona: dispatch
 
@@ -93,8 +93,8 @@ shows who exists.
   `this_machine: true` (`--this-machine`). A place other than the workspace's own waits for the
   person's Approve in the window, and so does every dispatch from a chat on a pool's runner.
 
-  **A reply noting that the task's harness can't report asks** means nothing the task asks
-  reaches the operator, and it is in no pane. Tell the operator to look at it themselves.
+  **A reply noting that the task can't report asks**, because of its harness or because purlis
+  has no adapter for its program, means nothing the task asks reaches the operator, and it is in no pane. Tell the operator to look at it themselves.
 
   **Before you dispatch, check what is already open**: the roster purlis adds to each turn
   while this chat has open tasks, or `dispatch_list`. A task still at work is waited on

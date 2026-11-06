@@ -60,7 +60,7 @@ export type Place =
  *   where it has none, as a notice about that workspace is.
  *
  * **A chat in no pane is not placed here** (#5271): nothing would read the answer. Its notes
- * are its pane's Notices, drawn in the Notices centre under `NoticeInCentre`, which marks its
+ * are the Notices a pane would draw for it, drawn in the Notices centre under `NoticeInCentre`, which marks its
  * row; its asks are the asks registry's, so the ✋, its workspace's chip count and the Inbox
  * list them whether it has a pane or not (`HandoffArrives.window.test.tsx`).
  */

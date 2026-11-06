@@ -74,13 +74,12 @@ fn a_task_on_a_program_purlis_has_no_adapter_for_is_told_so_rather_than_blaming_
 }
 
 /// **A task started on a program purlis has no adapter for** (#5271), the whole start: a chat
-/// on `work` dispatches a task on `sh`, a profile of `shelly`, a harness this machine declares on
-/// its own. The
-/// asking chat is told why the person must look at it, the window announces it, and its row
-/// keeps the faint hand and the "new" mark.
+/// on `work` dispatches a task on `sh`, a profile of `shelly`, a harness this machine declares
+/// on its own. The asking chat is told why the person must look at it, the window announces
+/// it, and its row keeps the faint hand and the "new" mark.
 #[cfg(unix)]
 #[test]
-fn a_task_started_on_a_program_with_no_adapter_is_announced_and_keeps_the_faint_hand() {
+fn a_task_started_on_a_program_with_no_adapter_tells_why_is_announced_and_keeps_the_faint_hand() {
     let plane = Plane::new();
     let runs = plane.root.join("runs");
     let program = stand_in::program(
@@ -102,13 +101,12 @@ fn a_task_started_on_a_program_with_no_adapter_is_announced_and_keeps_the_faint_
     std::fs::write(&local, text).expect("the declaration");
     // Nothing compiles a sandbox for a harness with no adapter: this is about the start.
     crate::sandboxing::no_sandbox_here_for_tests(&plane.root);
+    // The operator's yes, as the window's dialog records it: to the profile, and to the
+    // declaration it runs on.
     let set = purlis_core::profiles::current(&plane.root);
-    purlis_core::profiletrust::record_launched(
-        &plane.root,
-        "sh",
-        &purlis_core::profiletrust::fingerprint(set.get("sh").expect("sh is a profile")),
-    )
-    .expect("approved");
+    let sh = set.get("sh").expect("sh is a profile");
+    let shown = purlis_core::profiletrust::shown(&plane.root, sh);
+    purlis_core::profiletrust::approve(&plane.root, sh, &shown).expect("approved");
     // An opt-out of the sandbox is always recorded, so the event log is open.
     let planes = planes_recording_events(&plane.root.join("events"));
     let id = planes.open(&plane.root);

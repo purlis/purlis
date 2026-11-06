@@ -495,8 +495,9 @@ pub fn reports_asks(declaration: Option<&Declaration>) -> bool {
 
 /// **Whether purlis has an adapter for the harness a chat started on** (#5271): a built-in, or
 /// this machine's replacement of one's facts. A harness a project or this machine declares on
-/// its own has none, and neither has a chat on no harness. Which of [`reports_asks`]'s two
-/// reasons a chat that can't report asks has: its harness's own, or purlis's.
+/// its own has none, and neither has a chat on no harness. A chat that can't report asks
+/// ([`reports_asks`]) can't because of its harness where this holds, and because of purlis
+/// where it doesn't.
 pub fn has_adapter(declaration: Option<&Declaration>) -> bool {
     declaration.and_then(built_in).is_some()
 }

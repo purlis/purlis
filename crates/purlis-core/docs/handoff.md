@@ -835,7 +835,7 @@ purlis dispatch pass-on <chat> --note "..." # the asking chat, on to you, in the
   for that question is refused from then on, saying you already answered. A question is
   answered once, and one send is final: if the asking chat answers first, you are told so,
   your text stays in the form, and nothing of yours is sent; to add to an answer you sent,
-  type in the task's own tab. An answer is for the question it was written under: if the
+  type in the task's own pane. An answer is for the question it was written under: if the
   task has asked another since, even in the same words, it is refused and not delivered to
   the new one. Your text is sent whole or not at all (4,096 bytes; line breaks and tabs, no
   other control character and no invisible one, and a refused character is named with where
@@ -1006,8 +1006,8 @@ another workspace. The window says *branch* where the command says worktree.
 - **No command a chat runs and no line it sends starts one.** A chat that wants another
   persona's help uses `purlis dispatch`, and needs the grant.
 - **A vault refused for a chat's persona offers it**: where the vault is tagged for a persona
-  the project defines, the Notice on that chat's tab has *Dispatch to <persona>…*, which opens
-  the same dialog, empty, for you to type in.
+  the project defines, the Notice that says so on that chat's pane has *Dispatch to
+  <persona>…*, which opens the same dialog, empty, for you to type in.
 
 The project's dispatch limits hold for it as well, and a refusal says what you can change.
 **An administrator's policy binds it too.** Where policy locks all dispatch, the entry is not
@@ -1120,9 +1120,10 @@ chat:
 - **To this chat's own persona: no grant, and nothing asks you.** A chat splitting its own work
   across chats widens nothing.
 - **To another persona: a dispatch grant**, which only you give. The first time one persona's
-  chat hands off or dispatches to another's, purlis holds it and raises a Notice on the asking
-  chat's tab, with **that first brief in full**. You allow the pair for this chat, for you on
-  this machine, or for everyone in this project, or keep it blocked. The command has already
+  chat hands off or dispatches to another's, purlis holds it and asks you in the Inbox, and on
+  the asking chat's pane when it is on screen, with **that first brief in full**. You allow the
+  pair for this chat, for you on this machine, or for everyone in this project, or keep it
+  blocked. The command has already
   returned by then, saying the handoff is held: on Allow the app opens the chat, creating the
   workspace then where the handoff said to, and the asking chat is told on its next turn either
   way. After that, a handoff across the pair opens with no prompt.
@@ -1350,7 +1351,8 @@ dispatch from such a chat is never one that asks.
   `--yolo`): the dispatch is refused, and says to dispatch from a chat on a profile that asks.
   A wrapper script that adds such a flag itself is not seen.
 - **When the persona chat needs you, it waits.** Every command of its that asks still asks, in
-  its own tab, and the chat is shown as needing you, like any chat that asks. Nothing in a
+  the Inbox and on its pane when it is on screen, and the chat is shown as needing you, like
+  any chat that asks. Nothing in a
   brief answers for you.
 
 ## What purlis's hook does not see
