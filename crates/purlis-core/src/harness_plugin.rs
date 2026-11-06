@@ -435,6 +435,10 @@ impl Adapter for Codex {
         skills::codex(self, env)
     }
 
+    fn plugins_here(&self, env: &Env<'_>, at: &ChatFolder) -> Option<Plugins> {
+        on_here::codex(self, env, at)
+    }
+
     /// A repo's `.agents/skills` and `.codex/skills` (`host_roots.rs` at `rust-v0.163.0`: the
     /// repo roots, and a trusted project's own `.codex/`).
     fn repo_skill_dirs(&self) -> &'static [&'static str] {

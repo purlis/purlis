@@ -352,4 +352,3 @@ fn a_codex_config_that_is_not_there_is_nothing_installed_and_one_unreadable_says
     assert_eq!(codex_with(None).1, Some(Plugins::default()));
     assert_eq!(codex_with(Some("not = [toml")).1, None);
 }
-

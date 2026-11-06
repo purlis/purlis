@@ -17,11 +17,15 @@
 //!   `plugins/known_marketplaces.json` or a settings file's `extraKnownMarketplaces`;
 //! - a running chat keeps what it started with, and a resumed one reads these again. So a chat's
 //!   answer is read at its start and held (`hoststart::ChatSkills::plugins`).
+//!
+//! Codex, measured on codex-cli 0.163.0 (ADR 0050 as amended 2026-10-21): a plugin whose table in
+//! `config.toml` says `enabled = false` reaches no model, and a session's `-c` cannot turn it back
+//! on (#4616). A table that does not say is on, as [`super::Adapter::installed`] reads it.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use super::{ClaudeCode, Env, split};
+use super::{ClaudeCode, Codex, Env, split};
 
 /// **Where a chat reads its settings**, for one chat or for a chat that would start.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -293,6 +297,47 @@ pub(super) fn claude(adapter: &ClaudeCode, env: &Env<'_>, at: &ChatFolder) -> Op
                 name: name.to_owned(),
                 why,
             }),
+        }
+    }
+    let on = out.on.clone();
+    out.off.retain(|one| !on.contains(&one.name));
+    Some(out)
+}
+
+/// **What a Codex chat has of the plugins `env`'s `config.toml` holds** (#4616), or `None` where
+/// it cannot tell: no home to look in, or a file that is not TOML. A file that is not there is an
+/// answer: nothing is installed. Its folder is not read: what a project's own config says of a
+/// plugin was never measured.
+pub(super) fn codex(adapter: &Codex, env: &Env<'_>, _at: &ChatFolder) -> Option<Plugins> {
+    use super::Adapter as _;
+    let record = adapter.record(env)?;
+    let Some(text) = super::read(&record).ok()? else {
+        return Some(Plugins::default());
+    };
+    let doc: toml::Table = text.parse().ok()?;
+    let mut out = Plugins::default();
+    for (id, table) in doc
+        .get("plugins")
+        .and_then(toml::Value::as_table)
+        .into_iter()
+        .flatten()
+    {
+        if !super::id_ok(id) || super::purlis_s_own(adapter, id) {
+            continue;
+        }
+        let (name, _) = split(id);
+        let on = table
+            .get("enabled")
+            .and_then(toml::Value::as_bool)
+            .unwrap_or(true);
+        if on {
+            out.on.push(name.to_owned());
+        } else {
+            out.off.push(PluginOff {
+                id: id.clone(),
+                name: name.to_owned(),
+                why: OffWhy::OffInConfig(record.clone()),
+            });
         }
     }
     let on = out.on.clone();
