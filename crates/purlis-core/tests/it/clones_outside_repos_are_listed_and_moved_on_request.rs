@@ -266,6 +266,7 @@ fn clones_at_the_root_of_a_workspace_at_the_current_layout_raise_no_layout_notic
 
 #[test]
 fn the_move_runs_only_by_its_name() {
+    purlis_core::unsteered!();
     assert_eq!(FixId::parse("move-into-repos"), Some(FixId::MoveIntoRepos));
     assert!(FixId::MoveIntoRepos.by_name_only());
 }
