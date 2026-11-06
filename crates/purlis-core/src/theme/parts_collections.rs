@@ -68,33 +68,33 @@ pub(super) const LIST: Family = Family {
         },
         Part {
             name: "shortcut",
-            since: super::NEXT,
+            since: 13,
             description: "The key that does the same, at its end: a palette row's, a cheat sheet's.",
             properties: &[Prop::Text, Prop::FontSize],
         },
         Part {
             name: "summary",
-            since: super::NEXT,
+            since: 13,
             description: "A card row's two lines about it, under its first line: its description, \
                           or a reason in its place (#3669).",
             properties: &[Prop::Text, Prop::FontSize],
         },
         Part {
             name: "count",
-            since: super::NEXT,
+            since: 13,
             description: "How many rows a group holds, at the end of its name (#3670).",
             properties: &[Prop::Text, Prop::FontSize],
         },
         Part {
             name: "run",
-            since: super::NEXT,
+            since: 13,
             description: "A run of rows folded to one quiet line, and its closing line once it is \
                           unfolded: \"6 built-in skills\" (#3670).",
             properties: &[Prop::Text, Prop::FontSize],
         },
         Part {
             name: "actions",
-            since: super::NEXT,
+            since: 13,
             description: "A card row's action line, under its summary: its one fix (#3669).",
             properties: &[Prop::Gap],
         },
@@ -102,13 +102,13 @@ pub(super) const LIST: Family = Family {
     variants: &[
         Variant {
             name: "row",
-            since: super::NEXT,
+            since: 13,
             description: "A row of one line: its words cut with an ellipsis.",
             consent: None,
         },
         Variant {
             name: "card",
-            since: super::NEXT,
+            since: 13,
             description: "A card row of a side view's list, as tall as its lines: its name, its \
                           two lines about it and its fix (#3669).",
             consent: None,

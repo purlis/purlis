@@ -14,7 +14,7 @@ fn the_code_box_is_in_the_manifest_since_next() {
         .iter()
         .find(|one| one["name"] == "code")
         .expect("the code family is in the manifest");
-    assert_eq!(code["since"], parts::NEXT);
+    assert_eq!(code["since"], 13);
     let parts_named: Vec<_> = code["parts"]
         .as_array()
         .unwrap()

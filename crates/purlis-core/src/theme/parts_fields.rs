@@ -146,7 +146,7 @@ pub(super) const TEXTAREA: Family = Family {
     },
     Part {
         name: "hint",
-        since: super::NEXT,
+        since: 13,
         description: "A strip's hint, small at its foot, shown while it holds the caret (#5214).",
         properties: &[Prop::Text],
     }],

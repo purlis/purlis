@@ -19,31 +19,31 @@ pub(super) const DISCLOSURE: Family = Family {
     name: "disclosure",
     description: "A button that shows and hides the region under it: Add source's More, a file \
                   to read under its risk mark, a deleted skill's last text.",
-    since: super::NEXT,
+    since: 13,
     parts: &[
         Part {
             name: "root",
-            since: super::NEXT,
+            since: 13,
             description: "The disclosure: its trigger's row and, open, the panel under it.",
             properties: &[Prop::Gap],
         },
         Part {
             name: "trigger",
-            since: super::NEXT,
+            since: 13,
             description: "The row the trigger stands in, with any mark after it: the room around \
                           and between them. The trigger is a button of the button family.",
             properties: &[Prop::Padding, Prop::Gap],
         },
         Part {
             name: "twist",
-            since: super::NEXT,
+            since: 13,
             description: "The chevron in the trigger, which turns as it opens and never swaps \
                           for another.",
             properties: &[Prop::Text],
         },
         Part {
             name: "panel",
-            since: super::NEXT,
+            since: 13,
             description: "The region it shows, under its trigger: its ground, its edge, its \
                           corners and the room in it.",
             properties: &[

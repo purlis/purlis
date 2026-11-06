@@ -19,38 +19,38 @@ pub(super) const REVIEW_PAGE: Family = Family {
     description: "A page whose body scrolls over a fixed action bar: what pressing its main \
                   action does and spends, then its answers. The install review, the update \
                   review and the grade plan.",
-    since: super::NEXT,
+    since: 13,
     parts: &[
         Part {
             name: "root",
-            since: super::NEXT,
+            since: 13,
             description: "The page: its body over its bar, on the panel's fill.",
             properties: &[Prop::Fill],
         },
         Part {
             name: "body",
-            since: super::NEXT,
+            since: 13,
             description: "What is reviewed, which scrolls: the room around and between what it \
                           holds.",
             properties: &[Prop::Padding, Prop::Gap],
         },
         Part {
             name: "bar",
-            since: super::NEXT,
+            since: 13,
             description: "The action bar, always in view at the page's foot: its ground and its \
                           room. Its edge is the window's, never a theme's.",
             properties: &[Prop::Fill, Prop::Padding, Prop::Gap],
         },
         Part {
             name: "summary",
-            since: super::NEXT,
+            since: 13,
             description: "The sentence at the bar's start: what pressing the main action does \
                           and what it spends.",
             properties: &[Prop::Text, Prop::FontSize],
         },
         Part {
             name: "answers",
-            since: super::NEXT,
+            since: 13,
             description: "The bar's answers, in a dialog's places: the room between them.",
             properties: &[Prop::Gap],
         },

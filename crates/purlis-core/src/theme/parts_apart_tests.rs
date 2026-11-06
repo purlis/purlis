@@ -258,7 +258,7 @@ fn a_row_s_count_is_its_own_part_reached_by_its_own_attributes() {
         .find(|one| one["name"] == "row-count")
         .expect("row-count is in the manifest")
         .clone();
-    assert_eq!(part["since"], parts::NEXT);
+    assert_eq!(part["since"], 13);
     assert_eq!(part["apart"], json!([]));
 }
 
