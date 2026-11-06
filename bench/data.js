@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793970690557,
+  "lastUpdate": 1793973909671,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -41034,6 +41034,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5599105,
             "unit": "ms",
             "extra": "median of 5 runs: 100.809, 101.022, 101.560, 101.934, 102.253 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "9ec066f6622f823f8955c6496f4918aa5809c490",
+          "message": "Studio chats: Runs keeps them with their finish, Stop and time on the Grades card, the project named (#5248) (#5453)\n\n* A studio chat keeps when it started and finished, and stays for Runs once closed (#5248)\n\nThe core's StudioJob records started and finished (RFC 3339); a finish is stamped as its\ndraft comes or its program ends, and taken back when a later start runs it again unless\ndone. A studio chat that closes is kept in this machine's app state, studio-chats.json\n(Machine, device-bound; docs/plane-format.md), read by studio_chats_closed, window-only.\nThe window's StudioJobKind is type-only now: StudioWork writes itself as its own word, and\na test holds the two to the same words.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6PS1FDQR4XV57XWW70WTAK1\nPurlis-Persona: steward\n\n* The closed studio chats' store and its tests (#5248)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6PS1FDQR4XV57XWW70WTAK1\nPurlis-Persona: steward\n\n* Runs keeps a closed studio chat; the Grades card's job gets Stop it and its time (#5248)\n\n- Runs' \"Chats the studio started\" lists the open chats, then those closed here, each with\n  when it finished, and Review draft while its draft waits on Drafts.\n- The Grades card's running job says how long it has run, with Open chat and Stop it, which\n  asks first as the chat's own Stop does.\n- A project's own skill names the project: \"Ask a chat at purlis-demo to write these\".\n- \"Open chat\" and \"Review draft\" are said once, in actions.ts.\n- tools/relaunch.mjs drives a studio chat through a relaunch of the real app: it comes back\n  with its chip, and the record keeps its link and its start.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6PS1FDQR4XV57XWW70WTAK1\nPurlis-Persona: steward\n\n* The project's name in a module of its own, and the changelog fragment (#5248)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6PS1FDQR4XV57XWW70WTAK1\nPurlis-Persona: steward\n\n* Review fixes (#5248): a held-apart start is never kept for Runs, one time reader, Stop it in actions.ts\n\n- A start held apart for a restart or a move that is ended (restarted, let_go_of_start) closes\n  without keeping a studio chat for Runs: the job stays with the chat (close_held_start).\n- studio-chats reads a time with the record's own reads_as_time.\n- \"Stop it\" joins Open chat and Review draft in actions.ts.\n- projectName is imported from its own module; the status line no longer re-exports it.\n- tools/relaunch.mjs carries only its new lines, not a rewrap of the file.\n\nNot cargo-checked locally: the disk was short, and building was stopped at the dispatcher's\nask; CI's checks build it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6PS1FDQR4XV57XWW70WTAK1\nPurlis-Persona: steward\n\n* A closed studio chats' answer that is not a list draws none (#5248)\n\ntheme/views.test's core answers an unlisted command with null, and the Runs section read it\nas a list. Only a list is taken now.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6PS1FDQR4XV57XWW70WTAK1\nPurlis-Persona: steward\n\n* The studio chats' close tests start their chat in a project that leaves the sandbox off (#5248)\n\nThey ran in a project with schema = 1, which sandboxes every chat, with the stand-in inside\nit, so the start was refused. Each now has a project of its own with an empty manifest, as\nno_project has, and its program outside it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6PS1FDQR4XV57XWW70WTAK1\nPurlis-Persona: steward\n\n* Story baselines from this pull request's stories run (#5248)\n\nDrawn by run 42133222478 on the head they go in with: the studio chat stories (running card,\nRuns once done, the new Runs once closed) and the button wording that names the project.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6PS1FDQR4XV57XWW70WTAK1\nPurlis-Persona: steward\n\n* Story baselines for Runs once closed, from this pull request's stories run (#5248)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6PS1FDQR4XV57XWW70WTAK1\nPurlis-Persona: steward\n\n* Story baselines drawn again on main's pictures (#5248)\n\nMain re-drew SkillGrades, SkillPage and the studio chat stories' page (#5426's base); these are\nthis pull request's stories run 42139584572 on the rebased head.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6PS1FDQR4XV57XWW70WTAK1\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-06T12:45:25Z",
+          "tree_id": "a097e4f425505c95913fc48526da785fc25aff54",
+          "url": "https://github.com/purlis/purlis/commit/9ec066f6622f823f8955c6496f4918aa5809c490"
+        },
+        "date": 1793973904289,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.533263,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.512, 0.530, 0.533, 0.536, 0.537 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2539285,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.102, 16.246, 16.254, 16.399, 16.457 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.4419585,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.031, 101.347, 101.442, 101.937, 103.187 ms"
           }
         ]
       }
