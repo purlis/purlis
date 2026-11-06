@@ -16,7 +16,13 @@ import {
 import { PlaneUpdatedMark, type PlaneUpdates } from "./PlaneUpdated";
 import { contentsOf, panesOf, shownIn, type Tabs } from "./tabs";
 import type { TabFace } from "./tabFace";
-import { ChatPersonaState, sameShown, useShownState, type ShownOf } from "./ChatPersonaState";
+import {
+  ChatPersonaState,
+  sameShown,
+  useShownState,
+  useUrgentChat,
+  type ShownOf,
+} from "./ChatPersonaState";
 import { ViewMark } from "./Views";
 import { MARK_SAID, shownState, type RowFacts, type Shown } from "./shownState";
 import { StateShown } from "./StateShown";
@@ -133,7 +139,8 @@ export function TabMarks({
    *  room for. **Left out on the strip** (#1487): there the hand is on the tab's chip, beside
    *  the tab, and is pressed (`TabChip.tsx`). */
   needs?: readonly string[];
-  /** What the tab wears (`tabFace.ts`): its focused pane's icon and name, and `⊟+N`. */
+  /** What the tab wears (`tabFace.ts`): its first pane's name, its panes' chats for its mark,
+   *  and `⊟+N`. */
   face: TabFace;
   /** The persona a chat runs as, when it runs as one: its mark is the combined icon's. */
   personaOf: (session: number) => string | null | undefined;
@@ -153,7 +160,18 @@ export function TabMarks({
   pin?: ReactNode;
 }) {
   const lead = face.lead;
-  if (lead.kind !== "chat") {
+  // **Its mark is its most urgent pane's** (#5342): of every chat its panes hold, a task shown in
+  // a pane's place too, the one whose state comes first in the one order, so a pane that needs
+  // the person can't hide behind the focused one. Its first pane's where none has a state.
+  const urgent = useUrgentChat(
+    face.chats.map((session) => ({
+      session,
+      shell: shells.has(session),
+      ...(factsOf?.(session) ?? NO_FACTS),
+    })),
+  );
+  const marked = urgent ?? (lead.kind === "chat" ? lead.session : undefined);
+  if (marked === undefined) {
     const focused = contentsOf(tabs, id).find((one) => one.pane === tabs.byId[id]?.focused);
     const preview = focused?.content.kind === "view" && focused.content.preview === true;
     return (
@@ -173,7 +191,7 @@ export function TabMarks({
       </>
     );
   }
-  const chat = lead.session;
+  const chat = marked;
   const shell = shells.has(chat);
   const persona = personaOf(chat);
   // What its row reads its state from beside the board (#4935), so the two say one word.
@@ -182,7 +200,7 @@ export function TabMarks({
     <>
       {/* **A pinned tab shows its pin before its icon** (#4762), and the pin is the tab's. */}
       {pin}
-      {/* **The focused pane's chat's mark** (#4762, #5340): the one its row wears, by the one
+      {/* **The most urgent pane's chat's mark** (#5342, #5340): the one its row wears, by the one
           component, so the two cannot disagree. A task's own tab wears the task mark in the who's
           place (#1489), with the same state on it. The tab says its state after its name, below. */}
       <ChatPersonaState
@@ -192,7 +210,7 @@ export function TabMarks({
         {...facts}
         heard={false}
         who={
-          taskOf !== undefined ? (
+          taskOf !== undefined && lead.kind === "chat" && chat === lead.session ? (
             <ListTodo className="tab-mark" data-mark="task" aria-hidden="true" />
           ) : undefined
         }
@@ -202,7 +220,7 @@ export function TabMarks({
       </span>
       <SplitMore more={face.more} zoomed={face.zoomed} />
       {/* No sandbox badge: it moved to the chat's pane head and its row (#4760). */}
-      <PlaneUpdatedMark files={updates?.[chat]} />
+      <PlaneUpdatedMark files={updates?.[lead.kind === "chat" ? lead.session : chat]} />
       {/* **What the tab is doing, said after what it is**: its own element, so a tab whose text
           changed every time a turn began would not be unreadable, and before the task's name
           where it shows one (#1486). Heard and not seen: its mark is the icon's corner. */}

@@ -367,8 +367,11 @@ import {
   type AskedBy,
   type Pinned,
   type Tabs,
+  type TabName,
   type ViewRef,
   sessionOf,
+  EMPTY_TAB,
+  namedForFirstPanes,
 } from "./tabs";
 import { tileAll, zoomedLayout, zoomFocusedPane } from "./tiling";
 import { recorded } from "./layoutUndo";
@@ -483,7 +486,7 @@ import { usePlaneEdits } from "./PlaneEdits";
 import { MemoryStores, useMemoryEdits, useMemoryStores } from "./MemoryEdits";
 import { PlacingHere, usePaneDrag } from "./paneDrag";
 import { PANES_ROOM } from "./paneHeld";
-import type { DropContext } from "./paneDrop";
+import { firstPaneNameOf, type DropContext } from "./paneDrop";
 import type { MemoryTargets } from "./memoryMoves";
 import { AddToAChat } from "./AddToAChat";
 import { handReferences } from "./referencesMany";
@@ -1839,9 +1842,17 @@ export const PlaneView = memo(function PlaneView({
     },
     [tabWindow],
   );
+  /** What a tab is called when a content is its first pane (`paneDrop.firstPaneNameOf`), as the
+   *  drop context below names it: read by {@link change}, which is made before it. */
+  const firstPaneNameNow = useRef<(content: Content, before: Tabs) => TabName>((content) => {
+    const name = content.kind === "session" ? content.chat : EMPTY_TAB;
+    return { name, defaultName: name };
+  });
   const change = useCallback(
     (how: (tabs: Tabs) => Tabs): Tabs => {
-      const done = how(now.current);
+      // **A tab whose first pane is another is named for it** (#5342, #5308): its first chat
+      // closed or moved out, so it takes the next one's name. One rule, for every change.
+      const done = namedForFirstPanes(now.current, how(now.current), firstPaneNameNow.current);
       // **The pane in front was used** (#4757): what a press with a view focused goes by.
       const next = done === now.current ? done : noteUsed(done);
       // **A chat given a new pane keeps what its band remembered** (#3271): its Notices were
@@ -5472,6 +5483,9 @@ export const PlaneView = memo(function PlaneView({
     }),
     [filedIn, isPinned, nameOf, pressedOf, tabs],
   );
+  useEffect(() => {
+    firstPaneNameNow.current = (content, before) => firstPaneNameOf(content, before, dropContext);
+  }, [dropContext]);
   /**
    * A tab a drag brings forward, drawn and not told (#5294), until {@link holdOver}; and the one
    * that was in front, drawn again as it is put back. Not a `change`: no pane is noted as used

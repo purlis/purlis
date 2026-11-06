@@ -11,14 +11,15 @@ import {
   type Layout,
   nothingPinned,
   isOneJob,
+  namedForFirstPanes,
   ONE_JOB_STAYS,
   type Pane,
   panes,
   type Pinned,
   replace,
-  sameContent,
   showIn,
   type Tab,
+  type TabName,
   type Tabs,
   without,
   workspaceOf,
@@ -82,7 +83,6 @@ export type DropContext = {
   pinned?: Pinned;
 };
 
-type TabName = { name: string; defaultName: string };
 
 /** What a drop would do, said, or why it is refused. */
 export type Verdict =
@@ -234,7 +234,8 @@ export function judgeDrop(
 /** **`tabs` after dropping `from` on `to`**, or `tabs` itself when the drop is refused. */
 export function dropOn(tabs: Tabs, from: Source, to: Target, ctx: DropContext, size?: Size): Tabs {
   if (!judgeDrop(tabs, from, to, ctx, size).ok) return tabs;
-  return namedForFirstPanes(tabs, apply(tabs, asDropped(tabs, from, to), to, ctx), ctx);
+  const after = apply(tabs, asDropped(tabs, from, to), to, ctx);
+  return namedForFirstPanes(tabs, after, (content, before) => firstPaneNameOf(content, before, ctx), true);
 }
 
 /**
@@ -243,7 +244,7 @@ export function dropOn(tabs: Tabs, from: Source, to: Target, ctx: DropContext, s
  * it says its own word, as the layout records it (`laidOut.nodeOf`), never the name of the chat
  * beside it, which the record would then keep as its title.
  */
-function tabNameOf(content: Content, tabs: Tabs, ctx: DropContext): TabName {
+export function firstPaneNameOf(content: Content, tabs: Tabs, ctx: DropContext): TabName {
   if (content.kind === "empty") return { name: EMPTY_TAB, defaultName: EMPTY_TAB };
   if (content.kind === "view") {
     const at = findView(tabs, content.view);
@@ -257,18 +258,6 @@ function tabNameOf(content: Content, tabs: Tabs, ctx: DropContext): TabName {
   if (named !== undefined) return named;
   const name = ctx.name(content);
   return { name, defaultName: name };
-}
-
-/** `after`, with each tab whose first pane shows something else than `before` named for it. */
-function namedForFirstPanes(before: Tabs, after: Tabs, ctx: DropContext): Tabs {
-  const byId = { ...after.byId };
-  for (const id of after.order) {
-    const was = contentsOf(before, id)[0]?.content;
-    const is = contentsOf(after, id)[0]?.content;
-    if (was === undefined || is === undefined || sameContent(was, is)) continue;
-    byId[id] = { ...byId[id], ...tabNameOf(is, before, ctx) };
-  }
-  return { ...after, byId };
 }
 
 /** What is said over what is being moved's own place, where letting go moves nothing. */
@@ -396,7 +385,7 @@ function toStrip(tabs: Tabs, source: Source, at: number, ctx: DropContext): Tabs
   const id = next.named.tabs + 1;
   const tab: Tab = {
     id,
-    ...tabNameOf(panes(lifted.moved)[0].content, tabs, ctx),
+    ...firstPaneNameOf(panes(lifted.moved)[0].content, tabs, ctx),
     layout: lifted.moved,
     focused: firstPane(lifted.moved),
   };
