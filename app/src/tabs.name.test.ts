@@ -52,12 +52,19 @@ const ownNamed = (tabs: Tabs): Tabs => ({
   byId: { ...tabs.byId, [ID]: { ...tabs.byId[ID], own: "the build" } },
 });
 const closed = (tabs: Tabs, session: number) =>
-  named(tabs, closePane(tabs, ID, paneOf(tabs, session), () => "ops"));
+  named(
+    tabs,
+    closePane(tabs, ID, paneOf(tabs, session), () => "ops"),
+  );
 
 const table: readonly [string, () => Tabs, string][] = [
   ["one pane is its chat's", one, "steward 1"],
   ["a split keeps the first chat's", split, "steward 1"],
-  ["moving focus to the second pane keeps it", () => focusPane(split(), paneOf(split(), 2)), "steward 1"],
+  [
+    "moving focus to the second pane keeps it",
+    () => focusPane(split(), paneOf(split(), 2)),
+    "steward 1",
+  ],
   ["the first chat leaving gives it the next one's", () => closed(split(), 1), "devops 2"],
   ["the second chat leaving keeps it", () => closed(split(), 2), "steward 1"],
   [
@@ -91,9 +98,30 @@ const table: readonly [string, () => Tabs, string][] = [
     },
     "steward 1",
   ],
+  [
+    "a change that names the tab itself keeps the name it gave",
+    () => {
+      // As Undo of a closed last tab does: its first pane is another, named as it was.
+      const before = split();
+      const after = closePane(before, ID, paneOf(before, 1), () => "ops");
+      return named(before, {
+        ...after,
+        byId: { ...after.byId, [ID]: { ...after.byId[ID], name: "given", defaultName: "given" } },
+      });
+    },
+    "given",
+  ],
   ["its own name is its name", () => ownNamed(one()), "the build"],
-  ["its own name stays through a split", () => named(ownNamed(one()), splitFocusedPane(ownNamed(one()), "row", 2)), "the build"],
-  ["its own name stays when the first chat leaves", () => closed(ownNamed(split()), 1), "the build"],
+  [
+    "its own name stays through a split",
+    () => named(ownNamed(one()), splitFocusedPane(ownNamed(one()), "row", 2)),
+    "the build",
+  ],
+  [
+    "its own name stays when the first chat leaves",
+    () => closed(ownNamed(split()), 1),
+    "the build",
+  ],
 ];
 
 describe("a tab's name", () => {

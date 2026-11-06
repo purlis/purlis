@@ -1798,7 +1798,8 @@ export function tabNameOf(tab: Tab): string {
  * closed or moved out, so the tab takes the next one's name, or a chat put left of it, which is
  * first now. `byContent` also renames a tab whose first pane shows something else in place, as a
  * drop's swap does; every other change that puts a chat in a first pane names the tab itself.
- * A tab's own name ({@link Tab.own}) is kept: only the name under it moves. Answers `after`
+ * A change that named the tab itself, as Undo does, keeps the name it gave. A tab's own name
+ * ({@link Tab.own}) is kept: only the name under it moves. Answers `after`
  * itself where no tab is renamed.
  */
 export function namedForFirstPanes(
@@ -1814,8 +1815,11 @@ export function namedForFirstPanes(
     if (was === undefined || is === undefined) continue;
     const other = was.pane !== is.pane || (byContent && !sameContent(was.content, is.content));
     if (!other) continue;
-    const { name, defaultName } = nameOf(is.content, before);
     const tab = after.byId[id];
+    // A change that named the tab itself, as Undo does, knew what to call it.
+    const kept = before.byId[id];
+    if (tab.name !== kept.name || tab.defaultName !== kept.defaultName) continue;
+    const { name, defaultName } = nameOf(is.content, before);
     if (tab.name === name && tab.defaultName === defaultName) continue;
     byId ??= { ...after.byId };
     byId[id] = { ...tab, name, defaultName };

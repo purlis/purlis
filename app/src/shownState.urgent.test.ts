@@ -22,12 +22,11 @@ const table: readonly [string, Pane[], string | undefined][] = [
   ["waiting on tasks beats idle", [pane("a", "idle"), pane("b", "waiting")], "b"],
   ["idle beats ended", [pane("a", "ended"), pane("b", "idle")], "b"],
   ["of two in one state, the first in reading order", [pane("a", "idle"), pane("b", "idle")], "a"],
-  ["needs you wins from the third of four panes", [
-    pane("a", "working"),
-    pane("b", "failed"),
-    pane("c", "needs"),
-    pane("d", "needs"),
-  ], "c"],
+  [
+    "needs you wins from the third of four panes",
+    [pane("a", "working"), pane("b", "failed"), pane("c", "needs"), pane("d", "needs")],
+    "c",
+  ],
   ["a pane with no state is passed over", [pane("view", null), pane("b", "ended")], "b"],
   ["no pane with a state is no mark", [pane("view", null), pane("empty", null)], undefined],
   ["no panes is no mark", [], undefined],

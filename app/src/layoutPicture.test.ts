@@ -39,9 +39,21 @@ const GRID = [
 
 const table: readonly [string, Layout, { panes: number; lines: Divider[] } | undefined][] = [
   ["one pane has no picture", chat(), undefined],
-  ["two side by side: a line down the middle", row(chat(), chat()), { panes: 2, lines: [line(0.5, 0, 0.5, 1)] }],
-  ["two one over the other: a line across", column(chat(), chat()), { panes: 2, lines: [line(0, 0.5, 1, 0.5)] }],
-  ["a split moved to 30%: its line at 30%", row(chat(), chat(), 300), { panes: 2, lines: [line(0.3, 0, 0.3, 1)] }],
+  [
+    "two side by side: a line down the middle",
+    row(chat(), chat()),
+    { panes: 2, lines: [line(0.5, 0, 0.5, 1)] },
+  ],
+  [
+    "two one over the other: a line across",
+    column(chat(), chat()),
+    { panes: 2, lines: [line(0, 0.5, 1, 0.5)] },
+  ],
+  [
+    "a split moved to 30%: its line at 30%",
+    row(chat(), chat(), 300),
+    { panes: 2, lines: [line(0.3, 0, 0.3, 1)] },
+  ],
   [
     "three, the right half split again: the second line on the right only",
     row(chat(), column(chat(), chat())),

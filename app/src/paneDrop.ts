@@ -83,7 +83,6 @@ export type DropContext = {
   pinned?: Pinned;
 };
 
-
 /** What a drop would do, said, or why it is refused. */
 export type Verdict =
   /** `says` what it would do, before the drop; `did` what it did, after it. */
@@ -235,7 +234,12 @@ export function judgeDrop(
 export function dropOn(tabs: Tabs, from: Source, to: Target, ctx: DropContext, size?: Size): Tabs {
   if (!judgeDrop(tabs, from, to, ctx, size).ok) return tabs;
   const after = apply(tabs, asDropped(tabs, from, to), to, ctx);
-  return namedForFirstPanes(tabs, after, (content, before) => firstPaneNameOf(content, before, ctx), true);
+  return namedForFirstPanes(
+    tabs,
+    after,
+    (content, before) => firstPaneNameOf(content, before, ctx),
+    true,
+  );
 }
 
 /**

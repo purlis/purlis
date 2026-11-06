@@ -119,7 +119,9 @@ const theTab = () => within(stripNamed("Tabs")).getAllByRole("tab")[0];
 const tabName = () => theTab().querySelector(".tab-name")?.textContent;
 /** The state the tab's mark wears (`ui/chat-mark`'s `data-variant`). */
 const tabMark = () =>
-  theTab().querySelector('[data-scope="chat-mark"][data-part="root"]')?.getAttribute("data-variant");
+  theTab()
+    .querySelector('[data-scope="chat-mark"][data-part="root"]')
+    ?.getAttribute("data-variant");
 const focusedSession = () => document.querySelector(".pane.focused")?.getAttribute("data-session");
 
 beforeEach(() => {
