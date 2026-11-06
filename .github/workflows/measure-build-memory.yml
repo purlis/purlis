@@ -28,18 +28,22 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # `baseline` (the build as release.yml makes it) ran in 42220570914: purlis_app_lib
-          # peaked at 14.5 GB in 553 s, and the whole build took 22 min.
-          - variant: boxed
-            # `tauri` alone does not compile: it reads debug-only fields and methods of its
-            # sibling crates, so they take the same switch.
-            extra: >-
-              --config profile.dev-release.package.tauri.debug-assertions=true
-              --config profile.dev-release.package.tauri-utils.debug-assertions=true
-              --config profile.dev-release.package.tauri-runtime.debug-assertions=true
-              --config profile.dev-release.package.tauri-runtime-wry.debug-assertions=true
-              --config profile.dev-release.package.wry.debug-assertions=true
-              --config profile.dev-release.build-override.debug-assertions=true
+          # Measured so far (#5277): `baseline`, the build as release.yml makes it (run
+          # 42220570914): purlis_app_lib 14.5 GB, 553 s. `boxed`, Tauri's debug-only boxing of async
+          # commands switched on (run 42225597973): 14.6 GB, 743 s, so not the peak.
+          #
+          # `opt1`: purlis-app's own code at opt-level 1, everything else as shipped. A large drop
+          # means LLVM's optimisation is the peak.
+          - variant: opt1
+            toolchain: ""
+            cmd: build
+            extra: --config profile.dev-release.package.purlis-app.opt-level=1
+          # `passes`: nightly's -Z time-passes on purlis_app_lib alone, which prints RSS before and
+          # after each compiler pass, naming the phase that holds the memory. Measurement only.
+          - variant: passes
+            toolchain: +nightly
+            cmd: rustc
+            extra: --lib -- -Z time-passes
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -60,6 +64,10 @@ jobs:
           sudo swapon /swapfile-build
 
       - uses: ./.github/actions/rust-toolchain
+
+      - name: The nightly toolchain, for -Z time-passes
+        if: matrix.toolchain == '+nightly'
+        run: rustup toolchain install nightly --profile minimal
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -92,8 +100,21 @@ jobs:
           RSS_LOG: ${{ runner.temp }}/rss.log
         run: |
           free -g
-          /usr/bin/time -v cargo build --profile dev-release -p purlis-app --timings ${{ matrix.extra }} 2> "$RUNNER_TEMP/whole.txt"
+          /usr/bin/time -v cargo ${{ matrix.toolchain }} ${{ matrix.cmd }} --profile dev-release -p purlis-app --timings ${{ matrix.extra }} 2> "$RUNNER_TEMP/whole.txt"
           tail -25 "$RUNNER_TEMP/whole.txt"
+
+      - name: The passes that took the most memory
+        if: always() && matrix.variant == 'passes'
+        run: |
+          {
+            echo "## passes: purlis_app_lib's 25 compiler passes with the highest RSS after them"
+            echo
+            echo '```'
+            grep -E '^time: .*rss:' "$RUNNER_TEMP/whole.txt" |
+              awk '{for (i=1;i<=NF;i++) if ($i=="->") { v=$(i+1); u=v; gsub(/[0-9.]/,"",u); n=v+0; if (u ~ /^GB/) n*=1024; print n, $0 } }' |
+              sort -rn | head -25 | cut -d' ' -f2-
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: The heaviest crates
         if: always()
