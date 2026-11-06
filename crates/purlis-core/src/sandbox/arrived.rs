@@ -145,6 +145,12 @@ pub struct Watched {
     /// them, so they say nothing.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub lifted: Vec<String>,
+    /// The git folders in or below these folders that the chat's sandbox refuses it writing at
+    /// all, such as the clone of a branch folder it works in. A repository whose git folder is
+    /// in these folders and not one of these vouches for nothing ([`Known`]): the chat could
+    /// have written its branches and its index.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub held_git: Vec<PathBuf>,
 }
 
 /// **Which thing is at a path**: its device and inode, its folder's, and when it last changed. A
@@ -539,6 +545,7 @@ pub fn begin(plane: &Path, chat: &str, name: Option<&str>, watched: &Watched) ->
         home: watched.home.clone().filter(|_| had.watched.home.is_none()),
         contents: watched.contents,
         lifted: watched.lifted.clone(),
+        held_git: watched.held_git.clone(),
     });
     let repos = repos_at_start(&new_folders, &walked);
     holding(plane, || {
@@ -553,6 +560,7 @@ pub fn begin(plane: &Path, chat: &str, name: Option<&str>, watched: &Watched) ->
         record.watched.home = watched.home.clone().or(record.watched.home);
         record.watched.contents = watched.contents;
         record.watched.lifted.clone_from(&watched.lifted);
+        record.watched.held_git.clone_from(&watched.held_git);
         record
             .baseline
             .extend(walked.found.iter().map(|(p, found)| (key(p), found.pin)));
@@ -1167,10 +1175,17 @@ enum Repo {
 /// A repository is known where the record pinned its `.git`, as the chat started or as one of the
 /// above made it, and it is still that `.git`. A `.git` file's git directory must be in the
 /// `worktrees` or `modules` of a `.git` so pinned. Anything else is never opened.
+///
+/// **Nor is a repository whose git folder the chat may write**: one in the folders it watches,
+/// unless its sandbox holds that git folder whole ([`Watched::held_git`]). Its branches, its
+/// index and its `worktrees` and `modules` are the chat's to write, so they vouch for nothing.
 struct Known {
     tops: Vec<(PathBuf, Repo)>,
     git_dirs: Vec<PathBuf>,
     pinned: BTreeMap<String, Pin>,
+    /// The folders the chat may write, and the git folders in them its sandbox holds.
+    folders: Vec<PathBuf>,
+    held_git: Vec<PathBuf>,
 }
 
 impl Known {
@@ -1181,6 +1196,8 @@ impl Known {
             tops: Vec::new(),
             git_dirs: Vec::new(),
             pinned,
+            folders: record.watched.folders.clone(),
+            held_git: record.watched.held_git.clone(),
         };
         for top in record.repos.keys() {
             known.add_as_it_is(Path::new(top));
@@ -1195,7 +1212,19 @@ impl Known {
         })
     }
 
-    /// `top`, read as its `.git` says, where that is a repository.
+    /// Whether the chat may write the git folder `git`: it is in a folder the chat may write,
+    /// by its path or the kernel's, and not in one its sandbox holds.
+    fn chat_may_write(&self, git: &Path) -> bool {
+        let real_git = std::fs::canonicalize(git).unwrap_or_else(|_| git.to_path_buf());
+        let within = |folder: &PathBuf| {
+            git.starts_with(folder)
+                || std::fs::canonicalize(folder).is_ok_and(|folder| real_git.starts_with(folder))
+        };
+        self.folders.iter().any(within) && !self.held_git.iter().any(within)
+    }
+
+    /// `top`, read as its `.git` says, where that is a repository whose git folder the chat
+    /// may not write.
     fn add_as_it_is(&mut self, top: &Path) {
         let dot_git = top.join(".git");
         let Ok(kind) = std::fs::symlink_metadata(&dot_git) else {
@@ -1205,11 +1234,16 @@ impl Known {
             return;
         }
         if kind.is_dir() {
+            if self.chat_may_write(&dot_git) {
+                return;
+            }
             self.git_dirs.push(dot_git);
             self.tops.push((top.to_path_buf(), Repo::Clone));
         } else if let Some(git_dir) = pointed(&dot_git)
             && let Some(common) = common_of(&git_dir)
             && common.parent().is_some_and(|clone| self.is_pinned(clone))
+            && !self.chat_may_write(&common)
+            && !self.chat_may_write(&git_dir)
         {
             self.git_dirs.push(common);
             self.tops.push((
