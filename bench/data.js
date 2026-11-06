@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793922937286,
+  "lastUpdate": 1793925183214,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -40614,6 +40614,48 @@ window.BENCHMARK_DATA = {
             "value": 101.3101005,
             "unit": "ms",
             "extra": "median of 5 runs: 100.877, 101.300, 101.310, 101.854, 103.775 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b70f241542be2de709f6d1110efdf8b5b9482074",
+          "message": "Library: a Select mode for acting on several skills (#5332) (#5429)\n\n* Skills: pin, archive, move, export and Delete now for a set, as one change each (#5332)\n\nThe core and window commands the Library's Select mode needs: verbs::set::{pin_set,\nlifecycle_set, move_set, delete_now}, source::gather_set, the one review reading each act,\nand StudioSkill.archived. A committed delete Delete now takes off the list is marked in a new\nClone state store, skills-deleted-gone/ (docs/plane-format.md).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6PKWYAW56VSHYA45SQ0KESA\nPurlis-Persona: steward\n\n* Skills: the set verbs' new modules, acts and gone (#5332)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6PKWYAW56VSHYA45SQ0KESA\nPurlis-Persona: steward\n\n* Library: a Select mode for acting on several skills, and the Deleted page's (#5332)\n\nThe selection page beside the list (prototype/library-select, variant B): the count and how\nmany the list does not show, every action with how many it reaches, the names; each action's\nreview in its place through SetReviewPage; one commit and one Undo, after which Select ends.\n⌘A takes every skill the search and filters keep, drawn or not. Deleted gets Select with Bring\nback and Delete now. The list family takes onEscape; the view frame's list head takes one action\non its heading line (a new part, heading).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6PKWYAW56VSHYA45SQ0KESA\nPurlis-Persona: steward\n\n* Library Select: the new module, its tests, stories and changelog fragment (#5332)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6PKWYAW56VSHYA45SQ0KESA\nPurlis-Persona: steward\n\n* Library Select: the review's first line says why others stay; nothing read while Select is off; a cancelled export keeps Select (#5332)\n\nFrom the two-axis review: the lead reads \"12 will be deleted, 2 are built-in and stay\", the\nnot-shown set is built only while Select is on, an export with no place chosen leaves Select as\nit was, a built-in in an export says there is nothing to export, the Deleted page reuses the\nactions list, Delete now's comment says what it does on a part failure, and the core reuses\nrouter::capitalised.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6PKWYAW56VSHYA45SQ0KESA\nPurlis-Persona: steward\n\n* Library Select: picking where a move goes keeps the keyboard on the choice (#5332)\n\nThe review took the level by being drawn anew, which dropped the focus to the page (the\nMoveReview story's keyboard gate). It now takes what it is handed in place.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6PKWYAW56VSHYA45SQ0KESA\nPurlis-Persona: steward\n\n* Library Select: the stories' baselines from this PR's run (#5332)\n\nDrawn by stories run 42116660407 on 30f2b22: the seven new Select stories in every cell, and\nthe studio stories whose Library or Deleted heading now has Select.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6PKWYAW56VSHYA45SQ0KESA\nPurlis-Persona: steward\n\n* Library Select: the new stories' baselines (#5332)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6PKWYAW56VSHYA45SQ0KESA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-05T23:15:15Z",
+          "tree_id": "935c832443366651a9451978ad9cd3e6601ca8d7",
+          "url": "https://github.com/purlis/purlis/commit/b70f241542be2de709f6d1110efdf8b5b9482074"
+        },
+        "date": 1793925176474,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.33087900000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.323, 0.324, 0.331, 0.332, 0.340 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.539521,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.461, 16.482, 16.540, 16.639, 16.708 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.07260400000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.406, 100.886, 101.073, 101.606, 101.789 ms"
           }
         ]
       }
