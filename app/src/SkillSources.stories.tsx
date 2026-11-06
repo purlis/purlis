@@ -16,6 +16,7 @@ import { AT_THE_ROOT, sourceKey, type SourcesAt } from "./skillStudio";
 import { PROJECT } from "./skillChanges";
 import { memberKey } from "./SkillSetReview";
 import { studio } from "./skillsListing.testkit";
+import { updateOffer, updateReview } from "./skillUpdates.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
 import { expectFocusInSight, tabInto, untilFocusWithin } from "./stories.testkit";
 
@@ -223,7 +224,7 @@ function core({ tooMuch = false }: { tooMuch?: boolean } = {}) {
         ];
       case "skill_updates":
         return {
-          offers: [OFFER],
+          offers: [OFFER, updateOffer("writing-plans", SUPERPOWERS.remote)],
           unasked: [],
           unconfirmed: [{ remote: PLATFORM.remote, skills: ["deploy-checks"] }],
         };
@@ -310,6 +311,9 @@ function core({ tooMuch = false }: { tooMuch?: boolean } = {}) {
         };
       }
       case "skill_update_review":
+        // Review updates… (#5354): writing-plans' update newly reaches the network.
+        if ((args as { name: string }).name === "writing-plans")
+          return updateReview("writing-plans", ["script", "network"]);
         return {
           name: "brainstorming",
           pinned: commit("3"),
@@ -342,6 +346,7 @@ function core({ tooMuch = false }: { tooMuch?: boolean } = {}) {
           grant: null,
           widenings: [],
           accepted: { commit: "8".repeat(40), skills: [] },
+          gained: [],
         };
       case "skill_source_installed":
         return COPIES;
@@ -511,6 +516,30 @@ export const UpdateReview: Story = {
     const review = await canvas.findByTestId("update-review");
     await within(review).findByTestId("update-edited");
     await expect(within(review).getByRole("button", { name: "Accept update" })).toBeVisible();
+  },
+};
+
+/** **Review updates…, from a source's page** (#5354): every update waiting from it on one page,
+ *  the one that adds a script and network access first and unticked, the plain edit ticked. */
+export const ReviewUpdates: Story = {
+  args: { at: { at: "set-update", source: SOURCE, label: SUPERPOWERS.label } },
+  play: async ({ canvas }) => {
+    const review = await canvas.findByTestId("update-set-review");
+    const plans = await within(review).findByRole("checkbox", {
+      name: "Update writing-plans (project)",
+    });
+    await expect(plans).not.toBeChecked();
+    await expect(
+      within(review).getByRole("checkbox", { name: "Update brainstorming (project)" }),
+    ).toBeChecked();
+    await expect(within(review).getByTestId("update-set-lead")).toHaveTextContent(
+      "2 updates waiting.",
+    );
+    await tabInto(() =>
+      within(review).getByRole("button", { name: "What changes in writing-plans" }),
+    );
+    expectFocusInSight();
+    await expect(within(review).getByRole("button", { name: "Accept 1 update" })).toBeVisible();
   },
 };
 

@@ -719,6 +719,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_set_lifecycle",
     "skill_set_move",
     "skill_set_delete_now",
+    // Several updates accepted as one commit, and their Undo (#5354): the person's own press,
+    // each new capability ticked on its own.
+    "skill_set_update",
+    "skill_set_update_undo",
     "skill_set_export_review",
     "skill_set_export",
     "skill_grant",

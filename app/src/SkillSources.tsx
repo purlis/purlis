@@ -11,7 +11,6 @@ import {
   type OfferedSkill,
   type OfferedSource,
   type ReviewSkill,
-  type ReviewSummary,
   type SkillChanged,
   type SkillGrant,
   type SkillLevel,
@@ -24,7 +23,6 @@ import {
   type SkillUpdates,
   type SkillWidening,
   type StudioLevel,
-  type UpdateFile,
   type UpdateReview,
 } from "./bindings";
 import { counted } from "./dispatches";
@@ -40,7 +38,9 @@ import { NotRead } from "./SkillPanels";
 import { sourceKey, type SourcesAt } from "./skillStudio";
 import type { Change as StudioChange } from "./SkillPage";
 import { SetChoosePage, SetReviewPage, applySet, memberKey, setTitle } from "./SkillSetReview";
+import { SetUpdateReviewPage, applySetUpdate } from "./SkillSetUpdateReview";
 import { Badge } from "./ui/badge/Badge";
+import { Changes, LOOK_CLOSELY, Summary } from "./SkillChangesShown";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Card, CardTitle } from "./ui/card/Card";
 import { Checkbox } from "./ui/choice/Checkbox";
@@ -366,6 +366,26 @@ export function SkillSourcesPage({
             label: at.label,
             members,
             ticked,
+          })
+        }
+      />
+    );
+  else if (at.at === "set-update")
+    page = (
+      <SetUpdateReviewPage
+        plane={plane}
+        title={`Review updates from ${sourceAt.label}`}
+        members={(updates?.offers ?? [])
+          .filter((one) => sourceKey(one.remote) === at.source)
+          .map((one) => ({ level: one.level, name: one.name, label: one.label }))}
+        busy={busy}
+        onCancel={() => onGo(toSource(at))}
+        onApply={(chosen) =>
+          applySetUpdate({
+            plane,
+            updates: chosen,
+            change: (label, run, then) => changeThen(label, run, toSource(at), then),
+            undo: change,
           })
         }
       />
@@ -899,6 +919,15 @@ function SourcePage({
   const openSet = (act: SkillSetAct) =>
     onGo({ at: "set-choose", act, source: key, label: source.label });
   const unconfirmed = updates?.unconfirmed.some((one) => sourceKey(one.remote) === key) === true;
+  /** Why Review updates… cannot be pressed: the updates are not read yet, or none waits here. */
+  const updatesWhy =
+    updates === undefined
+      ? "The updates are being read."
+      : updates.offers.some((one) => sourceKey(one.remote) === key)
+        ? busy
+          ? BUSY
+          : undefined
+        : "No update is waiting from this source.";
   const at = (skill: string) => ({ source: key, label: source.label, skill });
   const offered = (skill: OfferedSkill) => offerFor(updates, key, skill.name);
   /** Why Install all… cannot be pressed: the skills are not read yet, or none is left. */
@@ -942,6 +971,14 @@ function SourcePage({
             onPress={() => onGo({ at: "choose", source: key, label: source.label })}
           >
             Install all…
+          </Button>
+          <Button
+            size="sm"
+            isDisabled={updatesWhy !== undefined}
+            tooltip={updatesWhy}
+            onPress={() => onGo({ at: "set-update", source: key, label: source.label })}
+          >
+            Review updates…
           </Button>
           <Button
             size="sm"
@@ -1197,57 +1234,6 @@ function SetChooseRead({
       onCancel={onCancel}
       onReview={onReview}
     />
-  );
-}
-
-/** The mark of a risky item and of a risky file: in the waiting tone, never a colour alone. */
-const LOOK_CLOSELY = <Badge variant="waiting">Look closely</Badge>;
-
-/** A summary, risky items marked, as the core reads and marks it. */
-export function Summary({ summary, testid }: { summary: ReviewSummary; testid?: string }) {
-  if (summary.empty)
-    return (
-      <p className="honest" data-testid={testid}>
-        Instructions only: no scripts, network hosts, ! commands or writes outside the workspace.
-      </p>
-    );
-  const mark = (risky: boolean) => (risky ? LOOK_CLOSELY : null);
-  return (
-    <ul className="skill-summary" data-testid={testid}>
-      {summary.scripts.map((one) => (
-        <li key={`s${one.path}`} data-risky={one.risks.length > 0}>
-          {mark(one.risks.length > 0)} Script <code>{one.path}</code> runs with {one.runs}
-          {one.risks.length > 0 && `: ${one.risks.map((risk) => risk.said).join(", ")}`}
-        </li>
-      ))}
-      {summary.hosts.map((one) => (
-        <li key={`h${one.host}`} data-risky={one.risky}>
-          {mark(one.risky)} Network host <code>{one.host}</code>, named in {one.files.join(", ")}
-        </li>
-      ))}
-      {summary.commands.map((one) => (
-        <li key={`c${one.path}${one.line}${one.text}`} data-risky={true}>
-          {mark(true)} ! command <code>{one.text}</code> ({one.path}, line {one.line})
-        </li>
-      ))}
-      {summary.outside.map((one) => (
-        <li key={`o${one.path}${one.line}${one.text}`} data-risky={true}>
-          {mark(true)} Writes outside the workspace: <code>{one.text}</code> ({one.path}, line{" "}
-          {one.line})
-        </li>
-      ))}
-      {summary.unseen.map((one) => (
-        <li key={`u${one.path}${one.line}`} data-risky={true}>
-          {mark(true)} Hidden text in {one.path}, line {one.line}:{" "}
-          {one.kinds.map((kind) => kind.said).join(", ")}
-        </li>
-      ))}
-      {summary.not_text.map((path) => (
-        <li key={`n${path}`}>
-          <code>{path}</code> is not text, so it is not shown
-        </li>
-      ))}
-    </ul>
   );
 }
 
@@ -2169,27 +2155,6 @@ function InstallSetReviewPage({
         </section>
       )}
     </ReviewPage>
-  );
-}
-
-/** Each file's change, folded, its kind of change after its path. */
-function Changes({ files, open = false }: { files: readonly UpdateFile[]; open?: boolean }) {
-  return (
-    <>
-      {files.map((file) => (
-        <Disclosure
-          key={file.path}
-          size="sm"
-          defaultExpanded={open}
-          label={file.path}
-          trail={<Badge>{file.change}</Badge>}
-        >
-          <pre className="skill-review-file">
-            {file.diff === "" ? "Not text, so not shown." : file.diff}
-          </pre>
-        </Disclosure>
-      ))}
-    </>
   );
 }
 
