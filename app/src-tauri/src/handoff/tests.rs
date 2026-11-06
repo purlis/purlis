@@ -13045,3 +13045,181 @@ fn always_allow_is_refused_for_a_key_a_login_came_to_hold_while_its_ask_was_up()
         run.join().expect("it ends");
     });
 }
+
+/// A press its notice does not offer is refused before anything is stored, granted, declared or
+/// audited (#5242): the core's own check comes only as it answers, after every side effect.
+#[test]
+fn a_press_its_run_notice_does_not_offer_changes_nothing() {
+    use crate::secretasks::RunGrantPress as Press;
+    use purlis_core::secrets::ask::run::{Bound, Fill, Hosts, Offer, RunNeed};
+    let cases = [
+        (Offer::Program, Press::AllowVault, false),
+        (Offer::Program, Press::Fill, true),
+        (Offer::Vault { no_allow: None }, Press::Always, false),
+        (Offer::Vault { no_allow: None }, Press::Once, false),
+        (Offer::Fill { no_allow: None }, Press::Always, false),
+        (Offer::Fill { no_allow: None }, Press::Chat, false),
+        (Offer::Fill { no_allow: None }, Press::AllowVault, false),
+    ];
+    for (offer, press, not_its_vault) in cases {
+        let plane = Plane::new().a_persona("ops", "");
+        std::fs::write(
+            plane.root.join("vaults.json"),
+            r#"{"vaults": {"team": {"provider": "plain-file", "config": {"file": "t.json"}}}}"#,
+        )
+        .expect("a registry");
+        let host = Pretend::default();
+        let planes = planes_on(&host);
+        let id = planes.open(&plane.root);
+        let held = planes.held(&id).expect("held");
+        let manifest = plane.root.join(purlis_core::plane::MANIFEST);
+        let before = std::fs::read_to_string(&manifest).ok();
+        let need = RunNeed {
+            ahead: false,
+            fills: vec![Fill {
+                key: "TOKEN".to_owned(),
+                declared: None,
+                reason: None,
+            }],
+            offer: offer.clone(),
+            not_its_vault,
+            bound: Bound {
+                chat: 3,
+                name: "curl".to_owned(),
+                program: "/usr/bin/curl".into(),
+                vault: "team".to_owned(),
+                env: vec!["TOKEN=TOKEN".to_owned()],
+                file: Vec::new(),
+                cwd: plane.root.clone(),
+                args: vec!["--version".to_owned()],
+            },
+            persona: "ops".to_owned(),
+            hosts: Hosts::Listed(Vec::new()),
+            caution: None,
+            command: "curl --version".to_owned(),
+        };
+        std::thread::scope(|scope| {
+            let asks = held.secret_asks();
+            let waits = scope.spawn(move || {
+                asks.allowed_or_held(need, std::time::Duration::from_secs(30), &mut |_| {})
+            });
+            let open = loop {
+                if let Some(open) = held.secret_asks().open_runs().into_iter().next() {
+                    break open;
+                }
+                std::thread::yield_now();
+            };
+            let pressed = crate::secretasks::run_grant_filled(
+                &held,
+                None,
+                open.id,
+                press,
+                vec![("TOKEN".to_owned(), "t0ken-v4lue".to_owned().into())],
+            );
+            assert_eq!(
+                pressed,
+                Err("That answer isn't offered on this notice.".to_owned()),
+                "{offer:?} {press:?}"
+            );
+            assert!(
+                !plane.root.join("t.json").exists(),
+                "{offer:?} {press:?}: nothing stored"
+            );
+            assert_eq!(
+                purlis_core::sandbox::local::granted_vaults(&plane.root),
+                [],
+                "{offer:?} {press:?}: no vault given"
+            );
+            assert_eq!(
+                std::fs::read_to_string(&manifest).ok(),
+                before,
+                "{offer:?} {press:?}: no tool declared"
+            );
+            crate::secretasks::run_grant_filled(&held, None, open.id, Press::Refuse, Vec::new())
+                .expect("kept off");
+            waits.join().expect("it settles");
+        });
+    }
+}
+
+/// A key that came to be a browser login's while an ask ahead of its run was up is not allowed
+/// (#5244): the after-Allow check names the fields' keys, as the run has no variables yet.
+#[test]
+fn allow_for_this_chat_ahead_of_a_run_is_refused_once_its_key_is_a_browser_logins() {
+    use purlis_core::secrets::ask::run::{Bound, Fill, Hosts, Offer, RunNeed};
+    let plane = Plane::new().a_persona("ops", "");
+    std::fs::write(
+        plane.root.join("vaults.json"),
+        r#"{"vaults": {"team": {"provider": "plain-file", "config": {"file": "t.json"}}}}"#,
+    )
+    .expect("a registry");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let manifest = plane.root.join(purlis_core::plane::MANIFEST);
+    let need = RunNeed {
+        ahead: true,
+        fills: vec![Fill {
+            key: "TOKEN".to_owned(),
+            declared: None,
+            reason: None,
+        }],
+        offer: Offer::Program,
+        not_its_vault: false,
+        bound: Bound {
+            chat: 3,
+            name: "curl".to_owned(),
+            program: "/usr/bin/curl".into(),
+            vault: "team".to_owned(),
+            env: Vec::new(),
+            file: Vec::new(),
+            cwd: std::path::PathBuf::new(),
+            args: Vec::new(),
+        },
+        persona: "ops".to_owned(),
+        hosts: Hosts::Listed(Vec::new()),
+        caution: None,
+        command: String::new(),
+    };
+    std::thread::scope(|scope| {
+        let asks = held.secret_asks();
+        let waits = scope.spawn(move || {
+            asks.allowed_or_held(need, std::time::Duration::from_secs(30), &mut |_| {})
+        });
+        let open = loop {
+            if let Some(open) = held.secret_asks().open_runs().into_iter().next() {
+                break open;
+            }
+            std::thread::yield_now();
+        };
+        // A teammate's login line comes in with a pull while the person reads the notice.
+        let mut file = std::fs::read_to_string(&manifest).unwrap_or_default();
+        file.push_str(
+            "\n[sandbox.personas.qa.tools.shop]\nvault = \"team\"\nbrowser = \
+             \"https://shop.example.test/login\"\nkey = \"TOKEN\"\n",
+        );
+        std::fs::write(&manifest, &file).expect("the login line");
+        let pressed = crate::secretasks::run_grant_filled(
+            &held,
+            None,
+            open.id,
+            crate::secretasks::RunGrantPress::Chat,
+            vec![("TOKEN".to_owned(), "t0ken-v4lue".to_owned().into())],
+        );
+        assert!(
+            pressed.as_ref().is_err_and(|why| why.contains("browser")),
+            "{pressed:?}"
+        );
+        assert!(held.secret_asks().given_runs().is_empty(), "nothing given");
+        crate::secretasks::run_grant_filled(
+            &held,
+            None,
+            open.id,
+            crate::secretasks::RunGrantPress::Refuse,
+            Vec::new(),
+        )
+        .expect("kept off");
+        waits.join().expect("it settles");
+    });
+}

@@ -832,8 +832,30 @@ pub fn asked_ahead(
     let Some(confines) = &asker.confines else {
         return Ahead::Declared;
     };
-    let persona = asker.persona.as_deref().unwrap_or_default();
+    // The chat's words, which the window would show in purlis's: only a plain program name or
+    // path is named, and anything else is never repeated (#5244).
+    let plain = |name: &str| {
+        name.chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphanumeric())
+            && name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '+'))
+    };
     let named = command_name(program);
+    if program.len() > 256
+        || !plain(&named)
+        || !program
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '+' | '/'))
+    {
+        return Ahead::FillOnly(
+            "the program named isn't a plain program name, so no Allow is offered ahead: its run \
+             asks for the Allow on the command it runs"
+                .to_owned(),
+        );
+    }
+    let persona = asker.persona.as_deref().unwrap_or_default();
     // Judged as a run handing that key by a variable named for it would be.
     let wanted = Wanted {
         vault: vault.to_owned(),
@@ -1197,7 +1219,15 @@ fn run_granted(
             }
             return Ok((ready, bound));
         }
-        Offer::Fill { no_allow: None }
+        if not_its_vault {
+            // Only an Allow stores in a vault its persona may not use: the vault's own.
+            if missing.run_gate.is_some_and(|gate| gate.kept_blocked) {
+                return Err((1, why));
+            }
+            Offer::Vault { no_allow: None }
+        } else {
+            Offer::Fill { no_allow: None }
+        }
     } else {
         Offer::Program
     };

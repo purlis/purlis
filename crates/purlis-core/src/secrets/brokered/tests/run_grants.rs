@@ -1648,3 +1648,38 @@ fn a_missing_key_filled_with_a_link_to_a_browsers_key_is_not_handed_on() {
         "nothing ran: {frames:?}"
     );
 }
+
+#[test]
+fn a_key_a_vault_its_persona_may_not_use_lacks_under_a_grant_is_asked_with_the_vaults_own_allow() {
+    use crate::secrets::ask::run::Offer;
+    let project = project();
+    let root = project.path();
+    let asks = Asks::new(root);
+    run_with(
+        &the_chat(root),
+        on_another_vault(root),
+        &asks,
+        Duration::ZERO,
+    );
+    let open = asks.open_runs().remove(0);
+    asks.answer_run(open.id, RunAnswer::ForChat, window())
+        .unwrap();
+    std::fs::write(root.join("other.json"), "{}").unwrap();
+    let frames = run_with(
+        &the_chat(root),
+        on_another_vault(root),
+        &asks,
+        Duration::ZERO,
+    );
+    let open = asks.open_runs();
+    assert_eq!(open.len(), 1, "one notice: {frames:?}");
+    assert_eq!(
+        open[0].offer,
+        Offer::Vault { no_allow: None },
+        "only an Allow stores in a vault the persona may not use"
+    );
+    assert!(
+        !format!("{frames:?}").contains("TOKEN"),
+        "the chat is not told which keys it lacks: {frames:?}"
+    );
+}

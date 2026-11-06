@@ -219,10 +219,22 @@ pub struct OpenRun {
 }
 
 impl OpenRun {
-    /// Each key its command hands over, once, in order.
+    /// Each key its command hands over, once, sorted: asked ahead of its run, with no variables
+    /// yet, its fields' keys, which its grant would cover (#5244).
     pub fn keys(&self) -> Vec<String> {
-        keys_of(&self.bound)
+        if !self.ahead {
+            return keys_of(&self.bound);
+        }
+        fill_keys(&self.fills)
     }
+}
+
+/// Each key `fills` names, once, sorted.
+fn fill_keys(fills: &[Fill]) -> Vec<String> {
+    let mut keys: Vec<String> = fills.iter().map(|fill| fill.key.clone()).collect();
+    keys.sort();
+    keys.dedup();
+    keys
 }
 
 /// Each key `bound` hands over, once, sorted.
@@ -259,7 +271,7 @@ pub enum RunAnswer {
 
 impl RunAnswer {
     /// Whether a notice offering `offer` offers it.
-    fn is_offered_by(self, offer: &Offer) -> bool {
+    pub fn is_offered_by(self, offer: &Offer) -> bool {
         match offer {
             Offer::Program => matches!(
                 self,
@@ -300,6 +312,8 @@ pub struct Audited<'a> {
     kind: &'static str,
     level: &'static str,
     bound: &'a Bound,
+    /// The keys it covers where its bound has no variables yet ([`Self::handing`]).
+    keys: Option<&'a [String]>,
 }
 
 impl<'a> Audited<'a> {
@@ -313,7 +327,22 @@ impl<'a> Audited<'a> {
             RunAnswer::Refuse => (REFUSE_AUDITED, "chat"),
             RunAnswer::AllowVault | RunAnswer::Fill => return None,
         };
-        Some(Self { kind, level, bound })
+        Some(Self {
+            kind,
+            level,
+            bound,
+            keys: None,
+        })
+    }
+
+    /// The same, naming `keys` as what it covers: a grant asked ahead of its run (#5244), whose
+    /// bound has no variables until its first run fixes them ([`OpenRun::keys`]).
+    #[must_use]
+    pub fn handing(self, keys: &'a [String]) -> Self {
+        Self {
+            keys: Some(keys),
+            ..self
+        }
     }
 
     /// The person took back `bound`'s grant, which was good `once` or for the chat.
@@ -322,6 +351,7 @@ impl<'a> Audited<'a> {
             kind: REVOKE_AUDITED,
             level: if once { "once" } else { "chat" },
             bound,
+            keys: None,
         }
     }
 
@@ -331,6 +361,7 @@ impl<'a> Audited<'a> {
             kind: REVOKE_AUDITED,
             level: "project",
             bound,
+            keys: None,
         }
     }
 
@@ -347,7 +378,7 @@ impl<'a> Audited<'a> {
             "scope": "local-ui",
             "level": self.level,
             "program": self.bound.program.display().to_string(),
-            "keys": keys_of(self.bound),
+            "keys": self.keys.map_or_else(|| keys_of(self.bound), <[String]>::to_vec),
             "vault": self.bound.vault,
             "chat": self.bound.chat,
         })
@@ -440,6 +471,27 @@ struct Given {
     at: u64,
 }
 
+impl Given {
+    /// Whether it covers `bound`: Allow once exactly; a grant ahead its keys, by any variables;
+    /// any other whatever the arguments.
+    fn covers(&self, bound: &Bound) -> bool {
+        if let Some(keys) = &self.ahead_keys {
+            // The same program, vault and chat, handing exactly those keys, by any variables.
+            (
+                &self.bound.chat,
+                &self.bound.name,
+                &self.bound.program,
+                &self.bound.vault,
+            ) == (&bound.chat, &bound.name, &bound.program, &bound.vault)
+                && keys_of(bound) == *keys
+        } else if self.once {
+            self.bound == *bound
+        } else {
+            self.bound.same_but_args(bound)
+        }
+    }
+}
+
 /// The Run grants half of [`Inner`].
 #[derive(Debug, Default)]
 pub(super) struct Runs {
@@ -452,22 +504,7 @@ pub(super) struct Runs {
 impl Runs {
     /// Where the grant that covers `bound` is held, if one does.
     fn covers(&self, bound: &Bound) -> Option<usize> {
-        self.given.iter().position(|given| {
-            if let Some(keys) = &given.ahead_keys {
-                // The same program, vault and chat, handing exactly those keys, by any variables.
-                (
-                    &given.bound.chat,
-                    &given.bound.name,
-                    &given.bound.program,
-                    &given.bound.vault,
-                ) == (&bound.chat, &bound.name, &bound.program, &bound.vault)
-                    && keys_of(bound) == *keys
-            } else if given.once {
-                given.bound == *bound
-            } else {
-                given.bound.same_but_args(bound)
-            }
-        })
+        self.given.iter().position(|given| given.covers(bound))
     }
 
     /// Takes what covers `bound`, where a grant does: Allow once goes as it is taken.
@@ -667,12 +704,13 @@ impl Asks {
                 tell: Some(tell),
                 n,
             };
-            let id = if let Some(asked) = inner
-                .runs
-                .open
-                .iter_mut()
-                .find(|asked| asked.open.bound == bound && asked.open.offer == offer)
-            {
+            let id = if let Some(asked) = inner.runs.open.iter_mut().find(|asked| {
+                // Ahead of its run a bound names no variables: its fields say which keys.
+                asked.open.bound == bound
+                    && asked.open.offer == offer
+                    && asked.open.ahead == ahead
+                    && (!ahead || fill_keys(&asked.open.fills) == fill_keys(&fills))
+            }) {
                 asked.waiters.push(waiter);
                 asked.open.id
             } else {
@@ -800,7 +838,7 @@ impl Asks {
             .runs
             .given
             .iter()
-            .any(|given| !given.once && given.bound.same_but_args(bound))
+            .any(|given| !given.once && given.covers(bound))
     }
 
     /// **Every Run grant given and not used up**, oldest first, for the Granted list.

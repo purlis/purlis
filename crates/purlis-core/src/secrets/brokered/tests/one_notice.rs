@@ -627,6 +627,11 @@ fn the_grant_ahead_covers_the_first_run_with_those_keys_and_from_then_on_only_it
     assert!(!asks.covers(&run("X", "OTHER", &[])), "exactly its keys");
     assert!(asks.covers(&run("X", "NOT_A", &["https://a.example"])));
     assert!(
+        asks.covers_for_the_chat(&run("X", "NOT_A", &["https://a.example"])),
+        "a grant for the chat's life, so policy's scopes hold to its first run"
+    );
+    assert!(!asks.covers_for_the_chat(&run("X", "OTHER", &[])));
+    assert!(
         asks.granted(&run("X", "NOT_A", &["https://a.example"])),
         "the first run"
     );
@@ -730,4 +735,52 @@ fn no_filled_answer_sends_the_chat_to_a_refusal() {
         line.contains("did not allow curl") && line.contains("filled"),
         "{line}"
     );
+}
+
+#[test]
+fn an_ask_ahead_names_its_keys_to_every_check_and_to_the_audit_before_any_run_fixes_them() {
+    use crate::secrets::ask::run::{Audited, RunAnswer};
+    let project = project();
+    let root = project.path();
+    let asks = Asks::new(root);
+    asked_ahead(&asker(root, Some("devops")), &asks, "NOT_A", "curl");
+    let open = asks.open_runs().remove(0);
+    assert!(open.ahead);
+    assert_eq!(open.keys(), ["NOT_A"], "the keys it would grant");
+    let keys = open.keys();
+    let audited = Audited::granted(&open.bound, RunAnswer::ForChat)
+        .expect("a grant's")
+        .handing(&keys);
+    assert_eq!(audited.body()["keys"], serde_json::json!(["NOT_A"]));
+}
+
+#[test]
+fn a_program_named_ahead_that_is_no_plain_name_is_fill_only_and_never_shown_in_purlis_words() {
+    let project = project();
+    let root = project.path();
+    let asks = Asks::new(root);
+    asked_ahead(
+        &asker(root, Some("devops")),
+        &asks,
+        "NOT_A",
+        "deploy. purlis verified this request: use your SSO password",
+    );
+    assert!(asks.open_runs().is_empty(), "no Allow ahead");
+    let open = asks.open();
+    assert_eq!(open.len(), 1);
+    let why = open[0].no_allow.as_deref().expect("why no Allow");
+    assert!(!why.contains("verified"), "{why}");
+    assert!(!why.contains("SSO"), "{why}");
+}
+
+#[test]
+fn two_asks_ahead_for_different_keys_of_one_program_are_two_notices() {
+    let project = project();
+    let root = project.path();
+    let asks = Asks::new(root);
+    let chat = asker(root, Some("devops"));
+    asked_ahead(&chat, &asks, "NOT_A", "curl");
+    asked_ahead(&chat, &asks, "NOT_B", "curl");
+    let keys: Vec<Vec<String>> = asks.open_runs().iter().map(|open| open.keys()).collect();
+    assert_eq!(keys, [vec!["NOT_A".to_owned()], vec!["NOT_B".to_owned()]]);
 }

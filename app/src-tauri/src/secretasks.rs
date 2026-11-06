@@ -172,6 +172,11 @@ pub fn run_grant_filled(
     else {
         return Err("This ask has already been answered, or its chat has closed.".to_owned());
     };
+    // Only what the notice offers, before anything is stored, granted, declared or audited: the
+    // core's own check comes only as it answers.
+    if !answer.is_offered_by(&open.offer) {
+        return Err("That answer isn't offered on this notice.".to_owned());
+    }
     // The vault's own Allow holds to what a refused vault's does: never past policy's lock.
     if answer == RunAnswer::AllowVault {
         let locks = purlis_core::sandbox::policy::Locks::of(held.root());
@@ -222,13 +227,9 @@ pub fn run_grant_filled(
         }
         // A key may have come to be a browser login's while the notice was up: Always allow would
         // declare the program a tool for it, which is never asked about again.
-        let keys: Vec<&str> = open
-            .bound
-            .env
-            .iter()
-            .chain(&open.bound.file)
-            .filter_map(|spec| spec.split_once('=').map(|(_, key)| key))
-            .collect();
+        // Asked ahead of its run, the keys its fields name: it has no variables yet (#5244).
+        let handed = open.keys();
+        let keys: Vec<&str> = handed.iter().map(String::as_str).collect();
         let ctx =
             purlis_core::secrets::Ctx::new(held.root(), purlis_core::secrets::Env::from_process());
         if let Some(why) =
@@ -283,7 +284,8 @@ pub fn run_grant_filled(
     }
     // Nothing is granted unrecorded. A Don't allow stands either way: it gives nothing. The
     // vault's own Allow is audited as a vault's, below, and a Fill grants nothing.
-    if let Some(audit) = Audited::granted(&open.bound, answer) {
+    let keys = open.keys();
+    if let Some(audit) = Audited::granted(&open.bound, answer).map(|audit| audit.handing(&keys)) {
         let audited = held
             .hooks()
             .record_run_grant(held.root(), open.bound.chat, &audit);
@@ -561,11 +563,14 @@ pub fn asked(
         confines: held.chats().confines_now(asked.chat),
         harness: open.harness,
     };
+    // A chat on a pool's runner runs its commands there, where no Run grant reaches: a program
+    // it names ahead is asked about as any Secret ask is, by the link the line came over.
+    let on_a_runner = crate::hooks::heard_from_a_pool().is_some();
     let chat = purlis_core::secrets::ask::Chat {
         chat: asked.chat,
         persona: open.persona.as_deref(),
         harness: open.harness,
-        asker: Some(&asker),
+        asker: (!on_a_runner).then_some(&asker),
     };
     match purlis_core::secrets::ask::raised(&ctx, held.secret_asks(), chat, asked, &|| {
         held.chats().asks_may_have_moved();
