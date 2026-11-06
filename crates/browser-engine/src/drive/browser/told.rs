@@ -265,10 +265,18 @@ impl Keeping {
     }
 }
 
-/// A download's name as said once anything is kept out. A name as long as a name is cut to says
-/// `download`: what it cut may have left part of a text, which no scrub knows.
+/// The bytes from which a download's name may be one the engine cut: Chrome cuts a name the
+/// page suggests to what a file system takes, 255 bytes, and a name of letters of many bytes
+/// each reaches that well before [`MOST_FILE_NAME_CHARS`] characters. Below 255 by the most a
+/// cut at a letter's edge, and a mark or a space made plain since, could take off it.
+const ENGINE_MAY_HAVE_CUT_FROM_BYTES: usize = 255 - 32;
+
+/// A download's name as said once anything is kept out. A name as long as a name is cut to,
+/// by purlis or by the engine, says `download`: what it cut may have left part of a text, which
+/// no scrub knows.
 fn name_shown(name: &str, scrub: &Scrub) -> String {
-    if name.chars().count() >= MOST_FILE_NAME_CHARS {
+    if name.chars().count() >= MOST_FILE_NAME_CHARS || name.len() >= ENGINE_MAY_HAVE_CUT_FROM_BYTES
+    {
         return plain_file_name("");
     }
     plain_file_name(&scrub.text(name))

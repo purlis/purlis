@@ -1896,6 +1896,24 @@ impl EngineScreen {
             )));
         }
         let from = self.data.join(DOWNLOADS).join(&one.file);
+        // What purlis filled into the browser is kept out of what the chat reads, a file it
+        // brings in among it (#5115).
+        match browser.holds_a_filled_value(&from) {
+            Ok(false) => {}
+            Ok(true) => {
+                return Err(NotActed::Refused(format!(
+                    "download {download} holds a secret purlis filled into this browser, which is \
+                     kept out of what you read, so it is not brought in: ask the person to save \
+                     it if it is needed"
+                )));
+            }
+            Err(why) => {
+                return Err(NotActed::Refused(format!(
+                    "purlis could not read download {download} to check it holds no secret it \
+                     filled ({why}), so it is not brought in"
+                )));
+            }
+        }
         let bytes = saved_file(project, &from, Path::new(into), to).map_err(NotActed::Refused)?;
         let id = CallId::new(format!("kept:{download}"))
             .map_err(|why| NotActed::Refused(why.to_string()))?;

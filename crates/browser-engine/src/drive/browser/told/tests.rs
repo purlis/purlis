@@ -131,6 +131,26 @@ fn a_download_name_as_long_as_one_is_cut_to_says_nothing_of_it() {
 }
 
 #[test]
+fn a_download_name_as_long_in_bytes_as_the_engine_cuts_one_to_says_nothing_of_it() {
+    // Chrome cuts a name by its bytes: 75 letters of three bytes each, well short of purlis's
+    // cut in characters, may have left a part of the value.
+    let name = format!("{}hunter", "\u{65e5}".repeat(75));
+    assert!(name.chars().count() < MOST_FILE_NAME_CHARS);
+    let told = scrub().answer(Answer {
+        downloads: vec![
+            download(&name, "http://a.test"),
+            download("report hunter.csv", "http://a.test"),
+        ],
+        ..answer()
+    });
+    assert_eq!(told.downloads[0].name, "download");
+    assert_eq!(
+        told.downloads[1].name, "report hunter.csv",
+        "a short name is said"
+    );
+}
+
+#[test]
 fn what_a_page_or_the_engine_gave_a_refusal_has_the_value_taken_out_and_its_own_words_stay() {
     let every = &scrub().every;
     for refusal in [
