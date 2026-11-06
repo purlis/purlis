@@ -1576,6 +1576,9 @@ fn a_key_a_login_came_to_hold_while_the_ask_was_up_is_not_handed_on_allow() {
             .any(|frame| matches!(frame, Frame::Exit { .. })),
         "nothing ran: {frames:?}"
     );
+    // The person's ruling (#5242): a check after Allow that refuses the run drops its Allow
+    // once, which no retry may use.
+    assert!(asks.given_runs().is_empty(), "{:?}", asks.given_runs());
 }
 
 /// A key the run misses may be filled with an entry the person keeps already, as a link: one a

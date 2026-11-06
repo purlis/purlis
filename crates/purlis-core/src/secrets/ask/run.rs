@@ -817,6 +817,16 @@ impl Asks {
         );
     }
 
+    /// **Drops an Allow once given for exactly `bound`**, unused: a check after the Allow
+    /// refused its run, so no retry may use it (the person's ruling, #5242). A run that only
+    /// waited keeps it.
+    pub fn drop_once(&self, bound: &Bound) {
+        self.inner()
+            .runs
+            .given
+            .retain(|given| !(given.once && given.bound == *bound));
+    }
+
     /// **Whether the person did not allow `bound`'s program with its vault in its chat**, which
     /// is not asked about again (#5244).
     pub fn refused_run(&self, bound: &Bound) -> bool {

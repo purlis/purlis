@@ -1266,14 +1266,19 @@ fn run_granted(
     );
     held_on(missing, need, say)?;
     // Allowed, or its values filled under a grant. Policy may have come to lock them while it
-    // waited, and a line may have come to make a key a browser's.
+    // waited, and a line may have come to make a key a browser's: refused so, its Allow once
+    // goes unused, and no retry may use it (the person's ruling, #5242).
+    let refused_after = |why: String| {
+        missing.asks.drop_once(&bound);
+        Err((1, why))
+    };
     if let Some(locked) = run_grant_locked(
         asker,
         wanted,
         command,
         &crate::sandbox::policy::Locks::of(&asker.root),
     ) {
-        return Err((1, locked));
+        return refused_after(locked);
     }
     let keys: Vec<&str> = ready
         .tool
@@ -1282,7 +1287,7 @@ fn run_granted(
         .map(|value| value.key.as_str())
         .collect();
     match no_program_is_handed(&reading_for(asker), &wanted.vault, &keys) {
-        Some(why) => Err((1, why)),
+        Some(why) => refused_after(why),
         None => Ok((ready, bound)),
     }
 }
