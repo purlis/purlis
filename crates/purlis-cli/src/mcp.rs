@@ -304,6 +304,15 @@ fn this_harness() -> Option<String> {
     purlis_core::hookwire::chat_harness(&purlis_core::envvar::var)
 }
 
+/// The set's folder this chat's harness was handed the plane's skills in, where the app named
+/// one ([`purlis_core::skills::HANDED_ENV`]).
+fn handed_here() -> Option<std::path::PathBuf> {
+    purlis_core::envvar::var(purlis_core::skills::HANDED_ENV)
+        .filter(|folder| !folder.is_empty())
+        .map(std::path::PathBuf::from)
+        .filter(|folder| folder.is_absolute())
+}
+
 /// The route this chat's skills take, by its harness and the project's harness declarations.
 fn route_here(here: &crate::Here) -> Option<purlis_core::skills::Route> {
     purlis_core::skills::route_of(
@@ -323,6 +332,7 @@ fn skill_tool(
     let persona = here.active_persona(None);
     let harness = this_harness();
     let built_in = purlis_core::skills::built_in_here();
+    let handed = handed_here();
     let chat = purlis_core::skilltools::Asking {
         plane: here.plane.root(),
         workspace: workspace.as_deref(),
@@ -330,6 +340,7 @@ fn skill_tool(
         harness: harness.as_deref(),
         route: route_here(&here),
         built_in: built_in.as_deref(),
+        handed: handed.as_deref(),
     };
     purlis_core::skilltools::call(&chat, name, args, &|skill| {
         crate::hooks::with_hook("", None, |hook| {
