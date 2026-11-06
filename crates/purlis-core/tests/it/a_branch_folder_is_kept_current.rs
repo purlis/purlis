@@ -22,6 +22,7 @@ use purlis_core::worktree::git;
 use support::git;
 
 mod by_a_merge;
+mod signed;
 
 struct World {
     _dir: tempfile::TempDir,
