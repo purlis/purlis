@@ -5,7 +5,7 @@ import { browser } from "@wdio/globals";
 import { specOf } from "./chatsLeft.js";
 import { recordFailure } from "./failures.js";
 import { openedSince, pressClose, TABS, tabNames } from "./reach.js";
-import { CURRENT_CHIP, goToWorkspace } from "./titleBarWorkspaces.js";
+import { CURRENT_CHIP, goToWorkspace, workspacesListed } from "./titleBarWorkspaces.js";
 
 /**
  * **Every spec file closes the tabs it opened** (#5111), as {@link ./chatsLeft.ts} has every
@@ -129,22 +129,38 @@ export async function stripInFront(): Promise<Strip> {
   return { ...where, tabs: await tabNames() };
 }
 
-/** Brings strip `to`'s project and workspace to the front, as a person does. */
+/**
+ * Brings strip `to`'s project and workspace to the front, as a person does. A project no longer
+ * on the rail, or a workspace no longer listed, fails at once: a file that closed a project or
+ * removed a workspace took its strip with it, and there is nothing there to judge.
+ */
 async function goTo(to: Strip): Promise<void> {
   if (to.project !== "") {
-    await browser.execute((project: string) => {
-      document
-        .querySelector<HTMLElement>(
-          `[data-strip="Projects"] [role="tab"][data-directory="${CSS.escape(project)}"]`,
-        )
-        ?.click();
+    const there = await browser.execute((project: string) => {
+      const tab = document.querySelector<HTMLElement>(
+        `[data-strip="Projects"] [role="tab"][data-directory="${CSS.escape(project)}"]`,
+      );
+      tab?.click();
+      return tab !== null;
     }, to.project);
+    if (!there) throw new Error(`${to.project} is no longer on the rail`);
     await browser.waitUntil(async () => (await stripInFront()).project === to.project, {
       timeout: 10_000,
       interval: 250,
     });
   }
-  await goToWorkspace(to.workspace === "" ? "Plane root" : to.workspace);
+  const name = to.workspace === "" ? "Plane root" : to.workspace;
+  const listed = await browser
+    .waitUntil(async () => (await workspacesListed()).some((one) => one.name === name), {
+      timeout: 3_000,
+      interval: 500,
+    })
+    .then(
+      () => true,
+      () => false,
+    );
+  if (!listed) throw new Error(`${name} is no longer listed`);
+  await goToWorkspace(name);
 }
 
 /**
