@@ -1669,7 +1669,7 @@ export const commands = {
 	 */
 	whatChanged: (plane: PlaneId, workspace: string, repo: string, piece: string | null, path: string) => typedError<WhatChanged, string>(__TAURI_INVOKE("what_changed", { plane, workspace, repo, piece, path })),
 	discardHunk: __WINDOW_ONLY_RESULT,
-	undoTurn: (plane: PlaneId, workspace: string, repo: string, piece: string | null, turn: TurnPick) => typedError<UndoAnswer, string>(__TAURI_INVOKE("undo_turn", { plane, workspace, repo, piece, turn })),
+	undoTurn: __WINDOW_ONLY_RESULT,
 	/**
 	 *  One file of a branch across a turn that ended there, the latest when `turn` is null, or why
 	 *  there is none.

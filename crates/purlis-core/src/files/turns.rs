@@ -11,7 +11,7 @@
 //! untracked files git does not ignore are in it, what git ignores is not, and the folder's own
 //! index, branch and files do not move. A commit is minted even where nothing is uncommitted,
 //! because its message says which branch the state is of and its date which turn is the latest
-//! ([`latest_of`]). **Nothing is left out of it**, unlike a code link's snapshot, which leaves
+//! ([`ended_on`]). **Nothing is left out of it**, unlike a code link's snapshot, which leaves
 //! the machine: these refs do not, and a turn's undo has to put back every file the turn changed.
 //!
 //! **Nothing the repo names runs**: every git call goes through `worktree::git`'s hardened
@@ -29,7 +29,7 @@ use crate::worktree::git;
 /// Where every turn's refs live.
 const NAMESPACE: &str = "refs/purlis/turns/";
 
-/// The line of a state's message that says which branch it is of: what [`latest_of`] reads.
+/// The line of a state's message that says which branch it is of: what [`ended_on`] reads.
 const BRANCH_LINE: &str = "Branch: ";
 
 /// The longest chat id a ref is made from.
@@ -198,7 +198,7 @@ pub fn forget(plane: &Path, ws: &str, repo: &str, chat: &str) -> Result<(), Refu
 }
 
 /// **Turn `number` of `chat` in `branch` is undone** (#5411): its `undone` ref is written at its
-/// end, so the turn offered next is the one before it ([`offered_on`]). The app writes it in the
+/// end, so the turn offered next is the one before it ([`Ended::offered`]). The app writes it in the
 /// step that put the turn's files back, through the git runner.
 pub fn undone(plane: &Path, branch: Branch<'_>, chat: &str, number: u32) -> Result<(), Refused> {
     checked(chat)?;
@@ -381,15 +381,16 @@ fn failed(doing: &str, ran: &git::Run) -> Refused {
     ))
 }
 
-/// **Each turn that ended on `branch`**, whichever chat's it was, with its end's date: an end ref
-/// whose state's message names the branch. Read by gitoxide in the bounded reader's child; a ref
-/// that is not one purlis wrote is passed over.
-fn ended_on(repo: &gix::Repository, branch: &str) -> Vec<(i64, super::TurnKey)> {
+/// **Each turn that ended on `branch`**, whichever chat's it was, newest first: an end ref whose
+/// state's message names the branch, ordered by its end's date, ties going to the higher number.
+/// Read by gitoxide in the bounded reader's child; a ref that is not one purlis wrote is passed
+/// over. One walk of the refs answers every question the file diff asks of them ([`Ended`]).
+pub(super) fn ended_on(repo: &gix::Repository, branch: &str) -> Ended {
     let Ok(platform) = repo.references() else {
-        return Vec::new();
+        return Ended(Vec::new());
     };
     let Ok(prefixed) = platform.prefixed(NAMESPACE) else {
-        return Vec::new();
+        return Ended(Vec::new());
     };
     let mut ended = Vec::new();
     for mut found in prefixed.flatten() {
@@ -426,7 +427,39 @@ fn ended_on(repo: &gix::Repository, branch: &str) -> Vec<(i64, super::TurnKey)> 
             },
         ));
     }
-    ended
+    ended.sort_unstable_by_key(|(when, turn)| std::cmp::Reverse((*when, turn.number)));
+    Ended(ended.into_iter().map(|(_, turn)| turn).collect())
+}
+
+/// The turns that ended on a branch, newest first ([`ended_on`]).
+pub(super) struct Ended(Vec<super::TurnKey>);
+
+impl Ended {
+    /// **The turn Undo is offered on** (#5411; ADR 0081 as amended 2026-11-05): the latest turn
+    /// that ended on the branch not yet undone, whichever chat's it was. Only that one, since
+    /// undoing an older turn whose files a later one changed would need a merge.
+    pub(super) fn offered(&self, repo: &gix::Repository) -> Option<&super::TurnKey> {
+        self.0.iter().find(|turn| !is_undone(repo, turn))
+    }
+
+    /// **The turn the file diff opens on**: the one Undo is offered on, so that after an undo the
+    /// turn before it is drawn with its Undo; and where every turn is undone, the latest.
+    pub(super) fn opened(&self, repo: &gix::Repository) -> Option<&super::TurnKey> {
+        self.offered(repo).or_else(|| self.0.first())
+    }
+
+    /// **The turns of `chat`, newest first** (#5408): what the file diff's turn picker lists,
+    /// undone ones included, as they stay reviewable.
+    pub(super) fn of(&self, chat: &str) -> Vec<u32> {
+        let mut numbers: Vec<u32> = self
+            .0
+            .iter()
+            .filter(|turn| turn.chat == chat)
+            .map(|turn| turn.number)
+            .collect();
+        numbers.sort_unstable_by(|a, b| b.cmp(a));
+        numbers
+    }
 }
 
 /// Whether turn `turn` has its `undone` mark.
@@ -435,39 +468,6 @@ fn is_undone(repo: &gix::Repository, turn: &super::TurnKey) -> bool {
         && repo
             .find_reference(reference(&turn.chat, turn.number, Side::Undone).as_str())
             .is_ok()
-}
-
-/// **The turn Undo is offered on** (#5411; ADR 0081 as amended 2026-11-05): the latest turn that
-/// ended on `branch` not yet undone, whichever chat's it was. Only that one, since undoing an older
-/// turn whose files a later one changed would need a merge.
-pub(super) fn offered_on(repo: &gix::Repository, branch: &str) -> Option<super::TurnKey> {
-    let mut ended = ended_on(repo, branch);
-    ended.sort_unstable_by_key(|(when, turn)| std::cmp::Reverse((*when, turn.number)));
-    ended
-        .into_iter()
-        .map(|(_, turn)| turn)
-        .find(|turn| !is_undone(repo, turn))
-}
-
-/// **The latest turn that ended on `branch`**, whichever chat's it was: the end state of the
-/// newest date, ties going to the higher number.
-pub(super) fn latest_of(repo: &gix::Repository, branch: &str) -> Option<super::TurnKey> {
-    ended_on(repo, branch)
-        .into_iter()
-        .max_by_key(|(when, turn)| (*when, turn.number))
-        .map(|(_, turn)| turn)
-}
-
-/// **The turns of `chat` that ended on `branch`, newest first** (#5408): what the file diff's
-/// turn picker lists.
-pub(super) fn ended_of(repo: &gix::Repository, branch: &str, chat: &str) -> Vec<u32> {
-    let mut numbers: Vec<u32> = ended_on(repo, branch)
-        .into_iter()
-        .filter(|(_, turn)| turn.chat == chat)
-        .map(|(_, turn)| turn.number)
-        .collect();
-    numbers.sort_unstable_by(|a, b| b.cmp(a));
-    numbers
 }
 
 #[cfg(test)]

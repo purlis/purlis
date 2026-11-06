@@ -5,7 +5,7 @@ use purlis_core::state::State;
 
 use crate::host::Glance;
 
-use super::state_of;
+use super::{state_of, undo_waits_on};
 
 fn glance(state: State) -> Glance {
     Glance {
@@ -46,5 +46,18 @@ fn a_chat_whose_turn_ended_is_idle_and_one_running_or_asking_is_named_with_its_s
     assert_eq!(
         state_of(&glance(State::Unknown)).as_deref(),
         Some("has not been heard from yet")
+    );
+}
+
+#[test]
+fn an_undo_waits_on_an_idle_chat_whose_turn_is_still_being_recorded() {
+    assert_eq!(undo_waits_on(&glance(State::Waiting), false), None);
+    assert_eq!(
+        undo_waits_on(&glance(State::Waiting), true).as_deref(),
+        Some("is still recording its last turn")
+    );
+    assert_eq!(
+        undo_waits_on(&glance(State::Running), true).as_deref(),
+        Some("is running")
     );
 }

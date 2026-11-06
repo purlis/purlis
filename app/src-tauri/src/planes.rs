@@ -638,7 +638,6 @@ impl Held {
         &self.held_dispatches
     }
 
-    /// Which chats run with their harness's permission prompts off (#1446).
     /// Chat `session`'s id and folder, where a turn of it is recorded here: not a chat on a
     /// runner, whose folder is the runner's, and not one with no id or folder.
     fn turn_place(&self, session: u32) -> Option<(String, PathBuf)> {
@@ -656,6 +655,12 @@ impl Held {
         }
     }
 
+    /// The turns of its chats, recorded as refs (#5405).
+    pub fn turns(&self) -> &crate::turns::TurnRecorder {
+        &self.turns
+    }
+
+    /// Which chats run with their harness's permission prompts off (#1446).
     pub fn unattended(&self) -> &crate::handoff::Unattended {
         &self.unattended
     }

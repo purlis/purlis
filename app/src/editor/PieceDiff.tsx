@@ -145,6 +145,10 @@ export function PieceDiffTab({ plane, cut, path }: { plane: PlaneId; cut: Place;
     const told = (got: Read) => {
       if (gone) return;
       flight.current = undefined;
+      // A turn that did not read holds no Undo, and the picker holds the turn picked: never the
+      // last turn read, whose number and files would be offered under the turn picked.
+      if (comparedTo === "turn" && got.kind === "refused")
+        setOfTurn((was) => was && { ...was, ...pick, undo: null });
       setRead({ asked, moved, comparedTo, pick, read: got });
       if (now.again) setMoved((n) => n + 1);
     };

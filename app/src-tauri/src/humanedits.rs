@@ -206,10 +206,15 @@ pub(crate) fn undo_in(
     let folder = placed_of(&reader, root, at, "")?.absolute;
     let chats = crate::staleclones::chats_placed_in(held, &folder);
     held.hooks().while_held(|glance| {
+        let recording = |number: u32| {
+            held.chats()
+                .id_of(number)
+                .is_some_and(|id| held.turns().recording(&id))
+        };
         let busy: Vec<BusyChat> = chats
             .iter()
             .filter_map(|(number, name)| {
-                state_of(&glance(*number)).map(|state| BusyChat {
+                undo_waits_on(&glance(*number), recording(*number)).map(|state| BusyChat {
                     name: name.clone(),
                     state,
                 })
@@ -253,6 +258,13 @@ pub(crate) fn line_for(held: &Held, chat: u32) -> Option<String> {
             None
         }
     }
+}
+
+/// How a sentence says what an undo waits on in a chat working in the folder; `None` for nothing.
+/// `recording`: a boundary of its turn is still being recorded, so the turn's refs, and the turn
+/// Undo is offered on, may not be its latest yet (#5411).
+fn undo_waits_on(glance: &crate::host::Glance, recording: bool) -> Option<String> {
+    state_of(glance).or_else(|| recording.then(|| "is still recording its last turn".to_string()))
 }
 
 /// How a sentence says a chat is not idle (ADR 0084 §8 names the chat and its state); `None` for
