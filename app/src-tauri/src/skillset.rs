@@ -273,23 +273,37 @@ pub(crate) async fn skill_set_restore(
     plane: crate::planes::PlaneId,
     ids: Vec<String>,
     source: Option<SkillSource>,
+    under: Vec<DeletedRename>,
 ) -> Result<crate::skillchange::SkillChanged, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("bringing the skills back", move || {
         flag_on()?;
-        let set_of: Vec<verbs::Deleted> = ids
+        let set_of: Vec<(verbs::Deleted, Option<String>)> = ids
             .iter()
             .map(|id| {
-                serde_json::from_str(id)
-                    .map_err(|_| "That deleted skill is not one this project lists.".to_owned())
+                let one = serde_json::from_str(id)
+                    .map_err(|_| "That deleted skill is not one this project lists.".to_owned())?;
+                let new = under
+                    .iter()
+                    .find(|rename| rename.id == *id)
+                    .map(|rename| rename.to.clone());
+                Ok((one, new))
             })
             .collect::<Result<_, String>>()?;
         let core = source.as_ref().map(|one| (one.core(), one.kept.into()));
         heard(held.root(), |cx| {
-            set::restore_set(cx, &set_of, core.as_ref().map(|(one, which)| (one, *which)))
+            set::restore_set_as(cx, &set_of, core.as_ref().map(|(one, which)| (one, *which)))
         })
     })
     .await
+}
+
+/// **One deleted skill brought back under a new name** (#5457): its id, as Deleted lists it, and
+/// the name it comes back under, where its own belongs to purlis now.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct DeletedRename {
+    pub id: String,
+    pub to: String,
 }
 
 /// **Turns `names` off or on in `workspace` as one change.** All or nothing.

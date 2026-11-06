@@ -617,3 +617,107 @@ fn the_review_of_an_archive_warns_of_a_skill_left_naming_one_that_goes() {
     let pins = review_set(root, Act::Pin, &[project("grilling")], None, None);
     assert!(pins.names.is_empty(), "a pin takes nothing away");
 }
+
+/// #5457: the plane with a skill of its own whose name purlis holds now, deleted with `grilling`
+/// as one set from `acme/skills`, as a newer purlis lists them.
+fn deleted_with_a_name_purlis_holds(root: &Path) -> Vec<Deleted> {
+    write(
+        root,
+        "skills",
+        "purlis-secrets",
+        &skill_text("purlis-secrets"),
+    );
+    run(root, &["add", "-A"]);
+    run(root, &["commit", "-q", "-m", "purlis-secrets"]);
+    did(root, |cx| {
+        delete_set(
+            cx,
+            &[project("grilling"), project("purlis-secrets")],
+            Some("acme/skills"),
+            None,
+        )
+    })
+    .unwrap();
+    let mut listed = deleted(root);
+    listed.sort_by(|a, b| a.name.cmp(&b.name));
+    listed
+}
+
+#[test]
+fn a_set_brings_one_whose_name_purlis_holds_back_under_its_new_name_and_the_rest_as_named() {
+    let tmp = plane();
+    let root = tmp.path();
+    let listed = deleted_with_a_name_purlis_holds(root);
+    let before = commits(root);
+
+    let set = [
+        (listed[0].clone(), None),
+        (listed[1].clone(), Some("acme-skills-secrets".to_owned())),
+    ];
+    did(root, |cx| restore_set_as(cx, &set, None)).unwrap();
+
+    assert_eq!(commits(root), before + 1, "one commit, one Undo");
+    assert!(there(root, "skills", "grilling"));
+    assert!(there(root, "skills", "acme-skills-secrets"));
+    assert!(!root.join("skills/purlis-secrets").exists());
+    let text = std::fs::read_to_string(root.join("skills/acme-skills-secrets/SKILL.md")).unwrap();
+    assert!(text.contains("name: acme-skills-secrets\n"), "{text}");
+    assert!(deleted(root).is_empty(), "{:?}", deleted(root));
+    let status = run(root, &["status", "--porcelain", "--", "skills"]);
+    assert_eq!(status.out, "", "everything it brought back is committed");
+}
+
+#[test]
+fn a_set_whose_new_name_cannot_be_taken_brings_none_back() {
+    let tmp = plane();
+    let root = tmp.path();
+    let listed = deleted_with_a_name_purlis_holds(root);
+    let before = commits(root);
+    let named = |under: Option<&str>| {
+        [
+            (listed[0].clone(), None),
+            (listed[1].clone(), under.map(str::to_owned)),
+        ]
+    };
+
+    let unnamed = did(root, |cx| restore_set_as(cx, &named(None), None)).unwrap_err();
+    assert!(
+        unnamed.contains("purlis-secrets belongs to purlis now"),
+        "{unnamed}"
+    );
+    let taken = did(root, |cx| restore_set_as(cx, &named(Some("tdd")), None)).unwrap_err();
+    assert!(taken.contains("already have one named tdd"), "{taken}");
+    let reserved = did(root, |cx| {
+        restore_set_as(cx, &named(Some("purlis-browser")), None)
+    })
+    .unwrap_err();
+    assert!(
+        reserved.contains(crate::skills::NAME_RESERVED),
+        "{reserved}"
+    );
+    let twice = did(root, |cx| {
+        restore_set_as(cx, &named(Some("grilling")), None)
+    })
+    .unwrap_err();
+    assert!(twice.contains("two skills"), "{twice}");
+    let free = [(listed[0].clone(), Some("grill".to_owned()))];
+    let free = did(root, |cx| restore_set_as(cx, &free, None)).unwrap_err();
+    assert!(free.contains("under its own name"), "{free}");
+
+    assert_eq!(commits(root), before);
+    assert!(!there(root, "skills", "grilling"));
+    assert_eq!(deleted_named(root), ["grilling", "purlis-secrets"]);
+}
+
+#[test]
+fn a_deleted_skill_whose_name_purlis_holds_is_offered_a_name_as_an_install_offers_one() {
+    let tmp = plane();
+    let root = tmp.path();
+    let listed = deleted_with_a_name_purlis_holds(root);
+
+    assert_eq!(source::review::deleted_clash(root, &listed[0]), None);
+    let clash = source::review::deleted_clash(root, &listed[1]).expect("its name is taken");
+    assert_eq!(clash.offered, "acme-skills-purlis-secrets");
+    assert_eq!(clash.held_by, "the name purlis-secrets belongs to purlis");
+    assert!(clash.taken.contains(&"tdd".to_owned()), "{:?}", clash.taken);
+}

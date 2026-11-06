@@ -412,6 +412,16 @@ pub struct ReviewClash {
     pub taken: Vec<String>,
 }
 
+impl From<&source::Clash> for ReviewClash {
+    fn from(clash: &source::Clash) -> Self {
+        ReviewClash {
+            held_by: esc(&clash.held_by),
+            offered: esc(&clash.offered),
+            taken: clash.taken.iter().map(|one| esc(one)).collect(),
+        }
+    }
+}
+
 /// One skill installed under a new name: its name at the source, and the one it lands under.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct SkillRename {
@@ -447,11 +457,7 @@ impl From<&source::SkillReview> for ReviewSkill {
             folder: esc(&skill.folder),
             brought_by: skill.brought_by.as_deref().map(esc),
             already: skill.already.iter().map(|one| esc(one)).collect(),
-            clash: skill.clash.as_ref().map(|clash| ReviewClash {
-                held_by: esc(&clash.held_by),
-                offered: esc(&clash.offered),
-                taken: clash.taken.iter().map(|one| esc(one)).collect(),
-            }),
+            clash: skill.clash.as_ref().map(ReviewClash::from),
             notes: skill.notes.iter().map(|one| esc(one)).collect(),
             summary: (&skill.summary).into(),
             files: skill

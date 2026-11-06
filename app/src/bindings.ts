@@ -2265,7 +2265,7 @@ export const commands = {
 	kept: SourceKept,
 	/**  As a person reads it. */
 	label: string,
-} | null) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_set_restore", { plane, ids, source })),
+} | null, under: DeletedRename[]) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_set_restore", { plane, ids, source, under })),
 	/**  **Turns `names` off or on in `workspace` as one change.** All or nothing. */
 	skillSetTurn: (plane: PlaneId, workspace: string, names: string[], on: boolean) => typedError<SkillSetTurned, string>(__TAURI_INVOKE("skill_set_turn", { plane, workspace, names, on })),
 	/**  **Pins `names` for `by`'s chats, or unpins them, as one change** (#5332). All or nothing. */
@@ -7058,6 +7058,15 @@ export type DeclaredHarness = {
 	acp: boolean,
 };
 
+/**
+ *  **One deleted skill brought back under a new name** (#5457): its id, as Deleted lists it, and
+ *  the name it comes back under, where its own belongs to purlis now.
+ */
+export type DeletedRename = {
+	id: string,
+	to: string,
+};
+
 /**  A set of skills deleted as one change, as the Deleted page groups them. */
 export type DeletedSet = {
 	id: string,
@@ -7095,6 +7104,11 @@ export type DeletedSkill = {
 	reserved: boolean,
 	/**  The set it was deleted with (#5331): what the Deleted page groups it by. */
 	set: DeletedSet | null,
+	/**
+	 *  Where its name belongs to purlis now (#5457): the new name offered, as an install offers
+	 *  one, and the names it cannot take. Bring back waits for the person to confirm a name.
+	 */
+	clash: ReviewClash | null,
 };
 
 /**  What became of the skill deletes a crash or a quit cut short, one line each (SK-35, #3013). */

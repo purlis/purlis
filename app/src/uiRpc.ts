@@ -4449,6 +4449,15 @@ export type DeclaredHarness = {
 	acp: boolean,
 };
 
+/**
+ *  **One deleted skill brought back under a new name** (#5457): its id, as Deleted lists it, and
+ *  the name it comes back under, where its own belongs to purlis now.
+ */
+export type DeletedRename = {
+	id: string,
+	to: string,
+};
+
 /**  A set of skills deleted as one change, as the Deleted page groups them. */
 export type DeletedSet = {
 	id: string,
@@ -4486,6 +4495,11 @@ export type DeletedSkill = {
 	reserved: boolean,
 	/**  The set it was deleted with (#5331): what the Deleted page groups it by. */
 	set: DeletedSet | null,
+	/**
+	 *  Where its name belongs to purlis now (#5457): the new name offered, as an install offers
+	 *  one, and the names it cannot take. Bring back waits for the person to confirm a name.
+	 */
+	clash: ReviewClash | null,
 };
 
 /**  What became of the skill deletes a crash or a quit cut short, one line each (SK-35, #3013). */

@@ -18,7 +18,8 @@ use serde::{Deserialize, Serialize};
 use super::{
     Ctx, DeleteSet, Deleted, Deleting, Level, Source, Unmoved, Whose, after_edit_dropped, beside,
     bring_back, deleted, find, git, head, keep_in_set, kept_emptied, pending_in, put_back, rel,
-    specs_of, taken_back, tracked, unstage,
+    renamed_away, renamed_back, restored_trailer, specs_of, taken_back, tracked, under_checked,
+    unstage,
 };
 use crate::counts::counted;
 use crate::settings::Which;
@@ -531,12 +532,25 @@ pub fn delete_set(
         .collect())
 }
 
-/// **Brings every skill of `set` back as one change**, one commit of those git holds: refused
-/// whole where one is no longer listed, or its name belongs to purlis now. `source`, what a delete
-/// took out with them, goes back in the same commit.
+/// **Brings every skill of `set` back as one change**, each under its own name: see
+/// [`restore_set_as`].
 pub fn restore_set(
     cx: &mut Ctx<'_>,
     set: &[Deleted],
+    source: Option<(&source::Source, Which)>,
+) -> Result<(), String> {
+    let named: Vec<(Deleted, Option<String>)> = set.iter().map(|one| (one.clone(), None)).collect();
+    restore_set_as(cx, &named, source)
+}
+
+/// **Brings every skill of `set` back as one change**, one commit of those git holds: each under
+/// its own name, or under the new name beside it where its own belongs to purlis now (#5457),
+/// checked as [`super::restore`]'s is and against the rest of the set. Refused whole where one is
+/// no longer listed, or comes back under a name it cannot take. `source`, what a delete took out
+/// with them, goes back in the same commit.
+pub fn restore_set_as(
+    cx: &mut Ctx<'_>,
+    set: &[(Deleted, Option<String>)],
     source: Option<(&source::Source, Which)>,
 ) -> Result<(), String> {
     let plane = cx.plane;
@@ -545,7 +559,13 @@ pub fn restore_set(
         return Err("no skill was named to bring back".to_owned());
     }
     let listed = deleted(plane);
-    for one in set {
+    let landing = |one: &Deleted, under: &Option<String>| -> (Level, String) {
+        (
+            one.level.clone(),
+            under.clone().unwrap_or_else(|| one.name.clone()),
+        )
+    };
+    for (at, (one, under)) in set.iter().enumerate() {
         let name = &one.name;
         if !listed.contains(one) {
             return Err(format!(
@@ -553,17 +573,47 @@ pub fn restore_set(
                  so none was brought back"
             ));
         }
-        if cx.reserved(name) {
+        match under.as_deref() {
+            None if cx.reserved(name) => {
+                return Err(format!(
+                    "{name} belongs to purlis now and comes back only under a new name, so none \
+                     was brought back"
+                ));
+            }
+            None => {}
+            Some(_) if !cx.reserved(name) => {
+                return Err(format!(
+                    "{name} is brought back under its own name: bring it back, then rename it, \
+                     so what names it follows"
+                ));
+            }
+            Some(new) => {
+                under_checked(cx, one, new)
+                    .map_err(|why| format!("{why}, so none was brought back"))?;
+            }
+        }
+        let lands = landing(one, under);
+        if set[..at]
+            .iter()
+            .any(|(other, theirs)| landing(other, theirs) == lands)
+        {
             return Err(format!(
-                "{name} belongs to purlis now and comes back only under a new name, so none was \
-                 brought back: bring it back on its own"
+                "{} is the name of another skill coming back to the {} skills: two skills cannot \
+                 have one name, so none was brought back",
+                lands.1, lands.0
             ));
         }
     }
-    let undo = |back: &[(&Deleted, PathBuf, bool)]| -> Vec<String> {
+    // What came back, where it landed, and whether the file beside it came from a commit.
+    type Back<'a> = (&'a Deleted, PathBuf, PathBuf, Option<&'a str>, bool);
+    let undo = |back: &[Back<'_>]| -> Vec<String> {
         let mut left = Vec::new();
-        for (one, folder, toml_there) in back.iter().rev() {
-            if let Err(why) = taken_back(plane, one, folder, *toml_there) {
+        for (one, folder, landed, under, toml_there) in back.iter().rev() {
+            let away = match under {
+                Some(new) => renamed_away(plane, landed, folder, new, &one.name),
+                None => Ok(()),
+            };
+            if let Err(why) = away.and_then(|()| taken_back(plane, one, folder, *toml_there)) {
                 left.push(format!("{} ({why})", one.name));
             }
         }
@@ -576,24 +626,55 @@ pub fn restore_set(
             format!("{why}, and {} could not be taken back", left.join(", "))
         }
     };
-    let mut back: Vec<(&Deleted, PathBuf, bool)> = Vec::new();
-    for one in set {
+    let mut back: Vec<Back<'_>> = Vec::new();
+    for (one, under) in set {
         let brought = super::level_is_there(plane, &one.level).and_then(|dir| {
             let folder = dir.join(one.folder_name());
             bring_back(plane, one, &folder).map(|toml_there| (folder, toml_there))
         });
-        match brought {
-            Ok((folder, toml_there)) => back.push((one, folder, toml_there)),
+        let (folder, toml_there) = match brought {
+            Ok(brought) => brought,
             Err(why) => {
                 let left = undo(&back);
                 return Err(say_none(why, &left));
+            }
+        };
+        let Some(new) = under.as_deref() else {
+            back.push((one, folder.clone(), folder, None, toml_there));
+            continue;
+        };
+        match renamed_back(plane, &folder, &one.name, new) {
+            Ok(landed) => back.push((one, folder, landed, Some(new), toml_there)),
+            Err(unmoved) => {
+                let (mut left, why) = match unmoved {
+                    Unmoved::Nothing(why) => (
+                        taken_back(plane, one, &folder, toml_there)
+                            .err()
+                            .map(|left| format!("{} ({left})", one.name))
+                            .into_iter()
+                            .collect::<Vec<_>>(),
+                        why,
+                    ),
+                    Unmoved::Stranded(what) => (vec![format!("{} ({what})", one.name)], what),
+                };
+                left.extend(undo(&back));
+                return Err(say_none(
+                    format!("{} could not be named {new} ({why})", one.name),
+                    &left,
+                ));
             }
         }
     }
     let mut paths: Vec<String> = back
         .iter()
-        .filter(|(one, _, _)| !one.level.local)
-        .flat_map(|(_, folder, _)| [rel(plane, folder), rel(plane, &beside(folder))])
+        .filter(|(one, ..)| !one.level.local)
+        .flat_map(|(_, folder, landed, ..)| {
+            let mut paths = vec![rel(plane, folder), rel(plane, &beside(folder))];
+            if landed != folder {
+                paths.extend([rel(plane, landed), rel(plane, &beside(landed))]);
+            }
+            paths
+        })
         .collect();
     if let Some((source, which)) = source {
         match source::listed::put_in(plane, source, which) {
@@ -608,7 +689,17 @@ pub fn restore_set(
     let before = head(plane);
     let count = set.len();
     if !paths.is_empty() {
-        cx.commit(&paths, &format!("skill restore {count}"));
+        let trailers: Vec<String> = back
+            .iter()
+            .filter(|(_, _, _, under, _)| under.is_some())
+            .filter_map(|(one, folder, ..)| restored_trailer(plane, one, folder))
+            .collect();
+        let message = if trailers.is_empty() {
+            format!("skill restore {count}")
+        } else {
+            format!("skill restore {count}\n\n{}", trailers.join("\n"))
+        };
+        cx.commit(&paths, &message);
     }
     if commits_now && head(plane) == before {
         let mut left = undo(&back);
@@ -619,12 +710,13 @@ pub fn restore_set(
         }
         return Err(say_none("its commit could not be made".to_owned(), &left));
     }
-    for (one, _, _) in &back {
+    for (one, _, _, under, _) in &back {
         if let Source::Here(kept) = &one.kept.0 {
             kept_emptied(plane, kept);
-        } else if let Err(why) =
-            crate::skills::grades::earlier::refound(plane, &one.level, &one.name)
+        } else if under.is_none()
+            && let Err(why) = crate::skills::grades::earlier::refound(plane, &one.level, &one.name)
         {
+            // One under a new name is another skill now, as [`super::restore`] leaves it.
             cx.warn(why);
         }
     }
