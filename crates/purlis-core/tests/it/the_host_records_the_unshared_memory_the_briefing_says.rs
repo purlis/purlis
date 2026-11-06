@@ -56,6 +56,7 @@ fn unshared(root: &Path) -> Option<(usize, usize)> {
 
 #[test]
 fn the_keeper_records_what_memory_git_has_not_committed_and_records_it_again_after_a_save() {
+    purlis_core::unsteered!();
     let (_dir, root) = project();
     std::fs::write(root.join("workspaces/alpha/memory/a.md"), "# A\n").unwrap();
     let keeper = Keeper::start(root.clone(), Arc::new(|_: &str| {}));
