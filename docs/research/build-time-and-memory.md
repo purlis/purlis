@@ -1,6 +1,3 @@
-<!-- Copyright 2026 Purlis -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
-
 # Build time and peak build memory: the levers, what they cost, and their order for purlis
 
 Research note, 2026-11-06. It answers one question: what are the standard levers for cutting
