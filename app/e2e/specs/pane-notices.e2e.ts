@@ -336,6 +336,9 @@ async function measured(pane: number) {
             };
           }),
           under: box(raised.querySelector("[data-scope=notice][data-part=under]")),
+          // Its ways pinned at its foot, and whether it is opened whole (#5215).
+          ways: box(raised.querySelector("[data-part=ways]")),
+          whole: raised.querySelector("[data-whole]") !== null || raised.hasAttribute("data-whole"),
           also: box(raised.querySelector(".dispatch-also")),
           options: [
             ...raised.querySelectorAll('.dispatch-also [data-scope="checkbox"][data-part="root"]'),
@@ -374,6 +377,7 @@ async function measured(pane: number) {
       // The stack's width inside its scrollbar, which a card takes whole.
       stackInside: stack ? stack.clientWidth : 0,
       stackScrolls: stack ? stack.scrollHeight > stack.clientHeight + 1 : false,
+      stackScrollTop: stack ? stack.scrollTop : 0,
       notices,
     };
   }, pane);
@@ -1036,10 +1040,17 @@ describe("a Notice in a pane", () => {
     await paneIs(0, (above - 22.75) / 0.67);
     const seen = await measured(0);
     const [notice, frame] = [seen.notices[1].box as Box, seen.frame as Box];
+    // What moved between the two heights, should it run past (#5350's macOS queue drop).
+    const parts = (at: typeof seen) => {
+      const top = (at.frame as Box).top;
+      const of = (b: Box | null) => (b ? `${Math.round(b.top - top)}+${Math.round(b.height)}` : "-");
+      const [one, two] = at.notices;
+      return `pane ${Math.round((at.frame as Box).height)}, head ${of(at.head)}, row ${of(at.row)}, stack ${of(at.stack)} scrolls ${at.stackScrolls} at ${Math.round(at.stackScrollTop)}, first ${of(one?.box ?? null)}, notice ${of(two.box)} whole ${two.whole}, line ${of(two.line)}, under ${of(two.under)}, ways ${of(two.ways)}`;
+    };
     inside(
       notice,
       frame,
-      `the long Notice ${notice.height}px tall, ${notice.top - frame.top}px down its ${frame.height}px pane,`,
+      `the long Notice ${notice.height}px tall, ${notice.top - frame.top}px down its ${frame.height}px pane (tall: ${parts(tall)}; short: ${parts(seen)}),`,
     );
   });
 
