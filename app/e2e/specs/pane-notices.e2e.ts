@@ -1043,7 +1043,8 @@ describe("a Notice in a pane", () => {
     // What moved between the two heights, should it run past (#5350's macOS queue drop).
     const parts = (at: typeof seen) => {
       const top = (at.frame as Box).top;
-      const of = (b: Box | null) => (b ? `${Math.round(b.top - top)}+${Math.round(b.height)}` : "-");
+      const of = (b: Box | null) =>
+        b ? `${Math.round(b.top - top)}+${Math.round(b.height)}` : "-";
       const [one, two] = at.notices;
       return `pane ${Math.round((at.frame as Box).height)}, head ${of(at.head)}, row ${of(at.row)}, stack ${of(at.stack)} scrolls ${at.stackScrolls} at ${Math.round(at.stackScrollTop)}, first ${of(one?.box ?? null)}, notice ${of(two.box)} whole ${two.whole}, line ${of(two.line)}, under ${of(two.under)}, ways ${of(two.ways)}`;
     };
