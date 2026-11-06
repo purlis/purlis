@@ -103,6 +103,11 @@
 
 [data-scope="notice"][data-part="root"][data-placement="pane"] > [data-scope="button-row"] {
   flex: none;
+}
+
+/* A box's line: a band's row has its own room (`paneFrame.css`), which this would outrank (#5443). */
+[data-scope="notice"][data-part="root"][data-placement="pane"]:not([data-layout="row"])
+  > [data-scope="button-row"] {
   padding-block: var(--space-1);
   padding-inline: var(--space-3);
 }

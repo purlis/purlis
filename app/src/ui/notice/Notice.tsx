@@ -288,7 +288,8 @@ export function NoticeWays({ children, ref }: { children: ReactNode; ref?: Ref<H
   );
 }
 
-/** **The room a row's toggle would take** (#5215), kept where a way out must not move for it. */
+/** **The room one of a row's icon ways takes** (#5215): its toggle, kept where a way out must not
+ *  move for it, or the × a note with no other home has none of (#5311). */
 export function NoticeWaySlot() {
   return <span data-scope="notice" data-part="way-slot" aria-hidden="true" />;
 }

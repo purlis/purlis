@@ -253,7 +253,12 @@
 /* **The words above their ways out** (variant A): the sentence takes the line's whole first
    row, and the ways out wrap under it, side by side while they fit and under one another when
    they do not (rule 13). */
-.pane-top :is(.notice-pane-box, [data-scope="notice"][data-placement="pane"]) > [role="status"] {
+/* A box's line only: a band's row lays its line out itself (below). Matching a row too, this
+   rule's padding of 0 and its gaps outranked the row's own, so a row's ways stood on its bottom
+   edge, cut, and its words and mark on its top and start edges (#5443). */
+.pane-top
+  :is(.notice-pane-box, [data-scope="notice"][data-placement="pane"]):not([data-layout="row"])
+  > [role="status"] {
   gap: var(--space-3) var(--space-2);
   margin: 0;
   padding: 0;
@@ -745,6 +750,12 @@
      two gaps between them and the header's own inline padding. A reserve, not a step of the
      scale. */
   --pane-actions-room: calc(var(--size-control) * 3 + var(--space-1) * 2 + var(--space-5) * 2);
+}
+
+/* **A view alone in its tab draws no controls** (#5318), so its first row keeps no room for them
+   (#5442): it ends as far in as it starts, the header's own inline padding. */
+.pane-frame.pane-viewed:not(:has(> .pane-head .pane-actions)) {
+  --pane-actions-room: var(--space-5);
 }
 
 /* Where a chat's header is: at the pane's top, a step down (`.pane-head:first-child`), end to
