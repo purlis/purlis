@@ -525,6 +525,7 @@ fn a_merge_for_a_sandboxed_chat_that_would_write_a_denied_file_does_not_start() 
     let reach = Reach {
         hosts: None,
         sandboxed_at: Some(&chat),
+        for_a_chat: true,
     };
 
     let (code, said) = update(&w, "p1", &merge(None), &reach);
@@ -562,6 +563,7 @@ fn an_abort_for_a_sandboxed_chat_that_would_write_a_denied_file_does_not_run() {
     let reach = Reach {
         hosts: None,
         sandboxed_at: Some(&chat),
+        for_a_chat: true,
     };
 
     let (code, said) = update(&w, "p1", &UpdateStep::Abort, &reach);
@@ -584,6 +586,7 @@ fn an_abort_for_a_sandboxed_chat_that_writes_only_what_it_may_goes_back() {
     let reach = Reach {
         hosts: None,
         sandboxed_at: Some(&chat),
+        for_a_chat: true,
     };
 
     let (code, said) = update(&w, "p1", &UpdateStep::Abort, &reach);

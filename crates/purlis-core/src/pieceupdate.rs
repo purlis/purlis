@@ -80,6 +80,9 @@ pub struct Reach<'a> {
     /// Where a sandboxed chat that asks was started: an update is judged for the files its
     /// sandbox denies. `None` from a terminal or a chat that is not sandboxed.
     pub sandboxed_at: Option<&'a Path>,
+    /// Whether the app runs the verb for a chat: its push is then never signed, whatever
+    /// `push.gpgSign` says. `false` from a terminal, where the person's own config holds.
+    pub for_a_chat: bool,
 }
 
 /// The settings every rebase here runs with, whatever the repository's config says: no editor,
@@ -1847,6 +1850,10 @@ fn pushed(
         .as_deref()
         .map(|theirs| format!("--force-with-lease={local_ref}:{theirs}"));
     let mut args = vec!["push"];
+    // The person's key signs only what the person pushes.
+    if reach.for_a_chat {
+        args.push("--no-signed");
+    }
     if let Some(leased) = &leased {
         args.push(leased);
     }

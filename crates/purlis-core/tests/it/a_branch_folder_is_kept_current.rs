@@ -395,6 +395,30 @@ fn a_piece_pushes_its_own_branch_and_a_plain_push_after_an_update_goes_through()
 }
 
 #[test]
+fn a_push_the_app_makes_for_a_chat_is_not_signed_where_the_clone_signs_every_push() {
+    purlis_core::unsteered!();
+    let w = world();
+    let (code, cut) = add(&w, "p1", None);
+    assert_eq!(code, 0, "{cut}");
+    let piece = w.piece("p1");
+    commit_in(&piece, "mine.txt", "mine\n");
+    // A signed push needs a remote that takes one, and this forge does not: a push that asks
+    // for a signature is refused before anything is sent.
+    git(&w.clone, &["config", "push.gpgSign", "true"]);
+
+    let mut lines = Vec::new();
+    let reach = Reach {
+        for_a_chat: true,
+        ..Reach::default()
+    };
+    let code = brokered(|| pieceupdate::push(&w.at("p1"), &reach, &mut |l| lines.push(l)));
+
+    let said = said(&lines);
+    assert_eq!(code, 0, "{said}");
+    assert_eq!(forge_has(&w, "p1"), out(&piece, &["rev-parse", "HEAD"]));
+}
+
+#[test]
 fn a_branch_the_update_rewrote_is_pushed_with_commits_added_after_it() {
     purlis_core::unsteered!();
     let w = world();
@@ -536,6 +560,7 @@ fn an_update_for_a_sandboxed_chat_that_would_write_a_denied_file_does_not_start(
     let reach = Reach {
         hosts: None,
         sandboxed_at: Some(&chat),
+        for_a_chat: true,
     };
 
     let (code, said) = update(&w, "p1", &start(None), &reach);
@@ -916,6 +941,7 @@ fn sandboxed(chat: &Path) -> Reach<'_> {
     Reach {
         hosts: None,
         sandboxed_at: Some(chat),
+        for_a_chat: true,
     }
 }
 
@@ -1147,6 +1173,7 @@ fn a_clone_update_for_a_sandboxed_chat_that_would_write_a_denied_file_does_not_s
     let reach = Reach {
         hosts: None,
         sandboxed_at: Some(&chat),
+        for_a_chat: true,
     };
 
     let (code, said) = update_clone(&w, &start(None), &reach);

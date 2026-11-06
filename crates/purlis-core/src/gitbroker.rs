@@ -222,6 +222,7 @@ fn isolated_answer(
             let reach = crate::pieceupdate::Reach {
                 hosts: hosts.as_deref(),
                 sandboxed_at: asker.cwd.as_deref().filter(|_| sandboxed),
+                for_a_chat: true,
             };
             let at = crate::pieceupdate::Piece {
                 root,
@@ -430,6 +431,7 @@ fn isolated_answer(
             let reach = crate::pieceupdate::Reach {
                 hosts: hosts.as_deref(),
                 sandboxed_at: asker.cwd.as_deref().filter(|_| sandboxed),
+                for_a_chat: true,
             };
             let at = crate::pieceupdate::CloneAt {
                 root,

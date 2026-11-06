@@ -1324,7 +1324,6 @@ pub(crate) fn said_sandbox_stops(files: &[String]) -> String {
     )
 }
 
-/// The repository's own directory, which is a file's target for a worktree plane.
 /// Why the app's git does not write in the project at `root` now, or `Ok`: a file it writes in
 /// the project's git directory is a link, a file with a second name, or cannot be read
 /// ([`crate::worktree::git_files_refused`]). **Fails closed**: where git cannot name the git
@@ -1333,6 +1332,7 @@ pub fn git_files_refused(root: &Path) -> Result<(), String> {
     crate::worktree::git_files_refused(&git_dir_of(root))
 }
 
+/// The repository's own directory, which is a file's target for a worktree plane.
 fn git_dir_of(root: &Path) -> PathBuf {
     git::run(root, &["rev-parse", "--absolute-git-dir"], git::READ)
         .ok()
@@ -2001,9 +2001,15 @@ fn push_head_within(
             .filter(|run| run.ok() && run.line().starts_with("refs/heads/"))
             .map_or_else(|| "HEAD".to_owned(), |run| run.line().trim().to_owned()),
     };
+    // A push for a chat is never signed, whatever `push.gpgSign` says: the person's key signs
+    // only what the person pushes.
+    let options: &[&str] = match incoming {
+        TheirCommits::LeftThere => &["--no-signed"],
+        TheirCommits::BroughtIn => &[],
+    };
     // The commit scanned, by its id: one landing since sends nothing unscanned.
     let push = |root: &Path, head: &str| {
-        git::push_commit(root, Some(helper.as_str()), &[], &https, head, &to)
+        git::push_commit(root, Some(helper.as_str()), options, &https, head, &to)
     };
 
     let mut run = match push(root, &head) {

@@ -160,3 +160,97 @@ fn a_link_inside_a_state_folder_is_refused() {
     std::os::unix::fs::symlink(dir.path().join("target"), &message).unwrap();
     assert_eq!(git_files_linked(&git), Some(message));
 }
+
+/// The files git reads its settings, its hooks and its tree from, each a plain file.
+fn git_dir_with_its_own_files() -> (tempfile::TempDir, PathBuf) {
+    let (dir, git) = git_dir();
+    std::fs::create_dir_all(git.join("hooks")).unwrap();
+    std::fs::create_dir_all(git.join("info")).unwrap();
+    std::fs::create_dir_all(git.join("objects/info")).unwrap();
+    for file in [
+        "config",
+        "HEAD",
+        "index",
+        "hooks/pre-commit",
+        "info/exclude",
+        "objects/info/alternates",
+    ] {
+        std::fs::write(git.join(file), "").unwrap();
+    }
+    (dir, git)
+}
+
+#[test]
+fn a_settings_hook_or_tree_file_with_a_second_name_is_refused() {
+    for planted in [
+        "config",
+        "HEAD",
+        "index",
+        "hooks/pre-commit",
+        "info/exclude",
+        "objects/info/alternates",
+    ] {
+        let (dir, git) = git_dir_with_its_own_files();
+        assert_eq!(git_files_linked(&git), None, "{planted}");
+        let path = git.join(planted);
+        std::fs::hard_link(&path, dir.path().join("second-name")).unwrap();
+
+        assert_eq!(git_files_linked(&git), Some(path.clone()), "{planted}");
+        let refused = ref_records_refused(&git).unwrap_err();
+        assert!(refused.contains(&path.display().to_string()), "{refused}");
+        assert!(refused.contains("a second name"), "{refused}");
+    }
+}
+
+#[test]
+fn a_branch_folders_shared_settings_with_a_second_name_are_refused() {
+    let (dir, common) = git_dir_with_its_own_files();
+    let own = common.join("worktrees/p1");
+    std::fs::create_dir_all(&own).unwrap();
+    std::fs::write(own.join("commondir"), "../..\n").unwrap();
+    std::fs::write(own.join("HEAD"), "").unwrap();
+    assert_eq!(git_files_linked(&own), None);
+
+    std::fs::hard_link(own.join("HEAD"), dir.path().join("head")).unwrap();
+    assert_eq!(git_files_linked(&own), Some(own.join("HEAD")));
+    std::fs::remove_file(dir.path().join("head")).unwrap();
+
+    std::fs::hard_link(common.join("config"), dir.path().join("config")).unwrap();
+    assert_eq!(
+        git_files_linked(&own),
+        Some(own.join("../..").join("config"))
+    );
+}
+
+#[test]
+fn a_hook_or_settings_file_that_is_a_link_is_left_to_git() {
+    // A link in a folder git does not write through is the person's own arrangement: a hook
+    // linked to a script the repository tracks, or a shared `info/exclude`.
+    let (dir, git) = git_dir_with_its_own_files();
+    let script = dir.path().join("pre-commit.sh");
+    std::fs::write(&script, "").unwrap();
+    std::fs::remove_file(git.join("hooks/pre-commit")).unwrap();
+    std::os::unix::fs::symlink(&script, git.join("hooks/pre-commit")).unwrap();
+    assert_eq!(git_files_linked(&git), None);
+
+    // Where the file it names has a second name, it is refused all the same.
+    std::fs::hard_link(&script, dir.path().join("second-name")).unwrap();
+    assert_eq!(git_files_linked(&git), Some(git.join("hooks/pre-commit")));
+}
+
+#[test]
+fn a_ref_folder_shared_by_a_link_is_refused_with_what_shares_one_without() {
+    // git-new-workdir's layout: `refs` a link to another repository's.
+    let (dir, git) = git_dir();
+    let theirs = dir.path().join("theirs/.git/refs");
+    std::fs::create_dir_all(&theirs).unwrap();
+    std::os::unix::fs::symlink(&theirs, git.join("refs")).unwrap();
+
+    let refused = git_files_refused(&git).unwrap_err();
+    assert!(
+        refused.contains(&git.join("refs").display().to_string()),
+        "{refused}"
+    );
+    assert!(refused.contains("is a link"), "{refused}");
+    assert!(refused.contains("git worktree add"), "{refused}");
+}
