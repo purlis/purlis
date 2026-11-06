@@ -4,6 +4,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LayoutPanes } from "./LayoutPanes";
 import { GRIP, GRIP_HANDLE, PlacingHere, type Placing } from "./paneDrag";
@@ -206,5 +207,49 @@ describe("a pane's grip (#5290)", () => {
     expect(grip.querySelector(".tab-mark")).not.toBeNull();
     fireEvent.click(grip);
     expect(pickUp).toHaveBeenCalledWith({ kind: "pane", tab: 1, pane: 2 }, grip);
+  });
+});
+
+describe("one grip, where a pane has no mark to stand in (#5537)", () => {
+  it("leaves a view's blank head to its own first row: only its grip and its actions take the pointer", () => {
+    // The window's own stylesheet, which decides what the pointer lands on.
+    const style = document.createElement("style");
+    style.textContent = readFileSync("src/paneFrame.css", "utf8");
+    document.head.append(style);
+    try {
+      drawn(row(chat(1), settings(2)));
+      const paneHead = frameOf(2).querySelector(".pane-head") as HTMLElement;
+      // A press on the head's blank part goes through to the view's first row beneath it.
+      expect(getComputedStyle(paneHead).pointerEvents).toBe("none");
+      const grip = paneHead.querySelector(".pane-view-grip") as HTMLElement;
+      expect(getComputedStyle(grip).pointerEvents).toBe("auto");
+      const actions = paneHead.querySelector(".pane-actions") as HTMLElement;
+      expect(getComputedStyle(actions).pointerEvents).toBe("auto");
+      // A chat's head has no first row under it: all of it takes the pointer, and drags.
+      expect(
+        getComputedStyle(frameOf(1).querySelector(".pane-head") as HTMLElement).pointerEvents,
+      ).not.toBe("none");
+    } finally {
+      style.remove();
+    }
+  });
+
+  it("draws no grip on a chat with no row in the Chats list, whose blank head still drags", () => {
+    const pickUp = vi.fn();
+    const placing: Placing = { pickUp, gripName: (_tab, pane) => `Move pane ${pane}` };
+    render(
+      <PlacingHere placing={placing}>
+        <LayoutPanes
+          {...propsOf(row(chat(1), chat(2)), false)}
+          heads={(session: number) => (session === 2 ? undefined : head(session))}
+        />
+      </PlacingHere>,
+    );
+
+    expect(gripsIn(1)).toHaveLength(1);
+    // No row, so no persona and no state: no mark for a grip to stand in, and none made up.
+    expect(gripsIn(2)).toHaveLength(0);
+    expect(frameOf(2).querySelector(".persona-mark")).toBeNull();
+    expect(frameOf(2).querySelector(".pane-head")).toHaveAttribute(GRIP);
   });
 });

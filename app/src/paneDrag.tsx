@@ -625,7 +625,7 @@ export function usePaneDrag({
   useEffect(() => {
     if (!active) return;
     const heard = (event: KeyboardEvent) => {
-      if (pressed(event, ["pane.place"]) === undefined) return;
+      if (pressed(event, ["pane.move"]) === undefined) return;
       event.preventDefault();
       event.stopPropagation();
       if (event.repeat || now.current.held !== undefined) return;
@@ -1044,7 +1044,7 @@ export function PaneGrip({
       gripRef={self}
       label={gripName(tab, pane)}
       // The key that does the same, which its tooltip said before it was the mark (#5290).
-      description={`Drag it, or press it or ${keySaid("pane.place")} to move it with the keys`}
+      description={`Drag it, or press it or ${keySaid("pane.move")} to move it with the keys`}
       // F6 into the editor passes over it to the pane's own controls, as over the strip; Tab
       // still stops on it.
       marks={{ [GRIP_HANDLE]: "", [REGION_CHROME]: "" }}

@@ -2346,7 +2346,7 @@ describe("a chat's row places its chat (#4764)", () => {
     await waitFor(() => expect(shape(tree)).toHaveLength(4));
     move(3, "running", 13);
     const one = row(tree, "devops 3");
-    // No Place… on the row: its persona's mark is the grip, in the chat mark's `who`, with the
+    // No Move… on the row: its persona's mark is the grip, in the chat mark's `who`, with the
     // state's badge beside it.
     expect(one.querySelector(".chat-row-place")).toBeNull();
     const grip = one.querySelector<HTMLElement>(

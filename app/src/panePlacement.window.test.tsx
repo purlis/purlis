@@ -184,7 +184,7 @@ function shown(width?: number, folded?: number): { tabs: () => Tabs; first: Tabs
 
 /** ⌘⇧M, or Ctrl+Shift+M off a Mac: the registry's own chord, on what has the keyboard. */
 function pressPlace() {
-  const chord = shortcut("pane.place").chords[onAMac() ? "mac" : "other"][0];
+  const chord = shortcut("pane.move").chords[onAMac() ? "mac" : "other"][0];
   act(() => {
     (document.activeElement ?? document.body).dispatchEvent(keystroke(chord));
   });

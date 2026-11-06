@@ -658,7 +658,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
     matches: (e, mac) => isChord(e, mac ? cmd("z") : ctl("z")),
   },
   {
-    id: "pane.place",
+    id: "pane.move",
     does: "Pick up the focused pane, chat or tab to move it with the keys",
     group: "Tabs and chats",
     where: "window",
