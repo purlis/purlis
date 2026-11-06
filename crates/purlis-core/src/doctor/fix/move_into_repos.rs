@@ -14,13 +14,18 @@
 //!    will reopen starts where its record says. The caller says which chats are open, because
 //!    only the caller knows: the window from its own chats, the terminal from the app's record
 //!    ([`open_in_record`]). Refused too where a clone's place in `repos/` is taken, or `repos`
-//!    is no folder new repos go in ([`crate::repofolder::new_folder`]).
+//!    is no folder new repos go in ([`crate::repofolder::new_folder`]). And refused where a
+//!    branch folder has a submodule checked out, naming each: its `.git` file and its module's
+//!    `core.worktree` are relative paths between the branch folder and the clone's `.git`, so
+//!    the move puts both a level off, and `git worktree repair` mends neither. Refusing is the
+//!    simpler safe answer than rewriting them.
 //! 2. The bytes of every file `git worktree repair` may rewrite are kept: each linked worktree's
 //!    `.git` file, and each `.git/worktrees/<id>/gitdir` in the clone.
 //! 3. Each clone is moved with one `rename(2)`, then `git worktree repair` runs in it with the
 //!    new path of each linked worktree that moved with it, which mends both directions: a branch
 //!    folder in `.worktrees/` finds its clone again, and a worktree inside the clone (Claude
-//!    Code's own) is found by it. Each branch folder is then asked whether git reads it.
+//!    Code's own) is found by it. Each branch folder is then asked whether git reads it, and
+//!    every submodule checked out in the clone or a branch folder is asked for its `git status`.
 //! 4. **On any failure everything is put back**: each clone moved back, every kept file written
 //!    back as it was, and a `repos/` this made removed. The workspace is then exactly as it was.
 //!
@@ -261,6 +266,22 @@ pub fn move_workspace(
         }
         moves.push((row, to));
     }
+    let held: Vec<String> = moves
+        .iter()
+        .flat_map(|(row, _)| linked(&row.repo.path))
+        .filter_map(|tree| {
+            let subs = submodules(&tree);
+            (!subs.is_empty()).then(|| format!("{} ({})", tree.display(), subs.join(", ")))
+        })
+        .collect();
+    if !held.is_empty() {
+        return Err(format!(
+            "workspace '{ws}' has submodules in its branch folders, whose links git worktree \
+             repair does not mend after a move: {}. Run git submodule deinit --all in each, or \
+             move the workspace by hand; nothing was moved",
+            held.join("; ")
+        ));
+    }
     let kept: Vec<(PathBuf, Vec<u8>)> = moves
         .iter()
         .flat_map(|(row, _)| repairable(&row.repo.path))
@@ -390,7 +411,8 @@ fn linked(clone: &Path) -> Vec<PathBuf> {
 
 /// `git worktree repair` in the clone moved from `from` (as the filesystem resolves it) to `to`,
 /// handing it the new path of each linked worktree that was inside the clone, then each linked
-/// worktree asked whether git reads it. How many there are, or what failed.
+/// worktree asked whether git reads it, and every submodule checked out in the clone or in one
+/// of them asked for its status. How many linked worktrees there are, or what failed.
 fn repair(from: &Path, to: &Path) -> Result<usize, String> {
     let real = std::fs::canonicalize(to).map_err(|why| format!("its new folder ({why})"))?;
     let trees = linked(&real);
@@ -418,5 +440,54 @@ fn repair(from: &Path, to: &Path) -> Result<usize, String> {
             ));
         }
     }
+    for tree in std::iter::once(&real).chain(&trees) {
+        unreadable_submodule(tree)?;
+    }
     Ok(trees.len())
+}
+
+/// The submodules checked out in the working tree at `tree`, by path: each gitlink in its index
+/// whose folder holds a `.git`.
+fn submodules(tree: &Path) -> Vec<String> {
+    let Ok(run) = git::run(tree, &["ls-files", "--stage", "-z"], git::READ) else {
+        return Vec::new();
+    };
+    if !run.ok() {
+        return Vec::new();
+    }
+    run.out
+        .split('\0')
+        .filter_map(|entry| entry.strip_prefix("160000 "))
+        .filter_map(|rest| rest.split_once('\t').map(|(_, path)| path.to_owned()))
+        .filter(|path| std::fs::symlink_metadata(tree.join(path).join(".git")).is_ok())
+        .collect()
+}
+
+/// `git status` in every submodule checked out under `tree`, and theirs in turn, without writing
+/// an index: the first git cannot read, by its path.
+fn unreadable_submodule(tree: &Path) -> Result<(), String> {
+    for sub in submodules(tree) {
+        let at = tree.join(&sub);
+        match git::run(
+            &at,
+            &["--no-optional-locks", "status", "--porcelain"],
+            git::READ,
+        ) {
+            Ok(run) if run.ok() => unreadable_submodule(&at)?,
+            Ok(run) => {
+                return Err(format!(
+                    "git does not read its submodule {} after the move ({})",
+                    at.display(),
+                    run.err.trim()
+                ));
+            }
+            Err(why) => {
+                return Err(format!(
+                    "git status could not run in its submodule {} ({why})",
+                    at.display()
+                ));
+            }
+        }
+    }
+    Ok(())
 }

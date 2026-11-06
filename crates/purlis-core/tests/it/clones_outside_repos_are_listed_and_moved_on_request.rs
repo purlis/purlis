@@ -431,3 +431,160 @@ fn the_confirmation_lists_chats_started_in_a_clone_and_not_those_started_in_a_br
     // Newest first, as the Sessions panel lists them.
     assert_eq!(chats, ["Deep in the clone", "In the clone"]);
 }
+
+// ---- submodules, and a repair that fails ----------------------------------------------------
+
+/// A repo with one commit outside the plane, in `dir`, for a clone to take as its submodule.
+fn library(dir: &Path) -> PathBuf {
+    let lib = dir.join("lib");
+    std::fs::create_dir_all(&lib).unwrap();
+    support::git(&lib, &["init", "-q", "-b", "main", "."]);
+    std::fs::write(lib.join("lib.txt"), "lib\n").unwrap();
+    support::git(&lib, &["add", "lib.txt"]);
+    support::git(&lib, &["commit", "-q", "-m", "lib"]);
+    lib
+}
+
+/// `lib` added to `clone` as its submodule `sub`, committed, and checked out in the clone.
+fn with_submodule(clone: &Path, lib: &Path) {
+    let lib = lib.to_str().unwrap();
+    support::git(
+        clone,
+        &[
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            "-q",
+            lib,
+            "sub",
+        ],
+    );
+    support::git(clone, &["commit", "-q", "-m", "sub"]);
+}
+
+/// A submodule git reads: its status, without writing its index.
+fn reads(sub: &Path) -> bool {
+    support::git_tried(sub, &["--no-optional-locks", "status", "--porcelain"])
+        .status
+        .success()
+}
+
+/// A branch folder's submodule keeps a relative `gitdir` into the clone's `.git/worktrees/<id>/
+/// modules/`, and that module a relative `core.worktree` back: moving the clone puts both a
+/// level off, and `git worktree repair` mends neither. So such a workspace is refused, by name.
+#[test]
+fn a_workspace_whose_branch_folders_hold_submodules_is_refused_naming_them_and_nothing_moves() {
+    purlis_core::unsteered!();
+    let (_d, root) = plane();
+    let outside = tempfile::tempdir().unwrap();
+    let lib = library(outside.path());
+    let clone = clone_at(&root, "api");
+    with_submodule(&clone, &lib);
+    let piece = worktree::add(&root, "alpha", "api", "piece", None)
+        .expect("a branch folder of api")
+        .path;
+    support::git(
+        &piece,
+        &[
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "update",
+            "--init",
+            "-q",
+        ],
+    );
+    assert!(reads(&piece.join("sub")), "the submodule works before");
+    let before = tree(&ws(&root));
+
+    let applied = fix::apply(&root, FixId::MoveIntoRepos);
+
+    let why = refused(&applied);
+    assert!(why.contains("alpha"), "{why}");
+    assert!(
+        why.contains(&piece.display().to_string()),
+        "it names the branch folder: {why}"
+    );
+    assert!(why.contains("sub"), "it names the submodule: {why}");
+    assert!(why.contains("nothing was moved"), "{why}");
+    assert_eq!(tree(&ws(&root)), before, "something moved");
+    assert!(reads(&piece.join("sub")));
+}
+
+#[test]
+fn a_clones_own_submodule_moves_with_it_and_still_works() {
+    purlis_core::unsteered!();
+    let (_d, root) = plane();
+    let outside = tempfile::tempdir().unwrap();
+    let lib = library(outside.path());
+    let clone = clone_at(&root, "api");
+    with_submodule(&clone, &lib);
+    let piece = worktree::add(&root, "alpha", "api", "piece", None)
+        .expect("a branch folder of api")
+        .path;
+
+    said(&fix::apply(&root, FixId::MoveIntoRepos));
+
+    assert!(reads(&ws(&root).join("repos/api/sub")));
+    works(&piece);
+}
+
+/// After the move every submodule is asked for its status, and one git cannot read puts the
+/// workspace back. Here, a submodule whose `.git` names its module by an absolute path, as git
+/// wrote them before 1.7.10: right before the move, and nowhere after it.
+#[test]
+fn a_submodule_git_cannot_read_after_the_move_puts_the_workspace_back_as_it_was() {
+    purlis_core::unsteered!();
+    let (_d, root) = plane();
+    let outside = tempfile::tempdir().unwrap();
+    let lib = library(outside.path());
+    let clone = clone_at(&root, "api");
+    with_submodule(&clone, &lib);
+    std::fs::write(
+        clone.join("sub/.git"),
+        format!("gitdir: {}\n", clone.join(".git/modules/sub").display()),
+    )
+    .unwrap();
+    assert!(reads(&clone.join("sub")), "the submodule works before");
+    let before = tree(&ws(&root));
+
+    let applied = fix::apply(&root, FixId::MoveIntoRepos);
+
+    let why = refused(&applied);
+    assert!(why.contains("sub"), "it names the submodule: {why}");
+    assert!(why.contains("put back"), "{why}");
+    assert_eq!(tree(&ws(&root)), before);
+    assert!(reads(&clone.join("sub")));
+}
+
+/// `git worktree repair` reports an error, and exits so, for a branch folder whose `.git` is a
+/// folder: here one someone made a repo of its own. The clone has already moved by then.
+#[test]
+fn a_repair_that_fails_after_the_clone_moved_leaves_the_workspace_exactly_as_it_was() {
+    purlis_core::unsteered!();
+    let (_d, root) = plane();
+    clone_at(&root, "api");
+    let piece = worktree::add(&root, "alpha", "api", "piece", None)
+        .expect("a branch folder of api")
+        .path;
+    let odd = worktree::add(&root, "alpha", "api", "odd", None)
+        .expect("a second branch folder of api")
+        .path;
+    std::fs::remove_file(odd.join(".git")).unwrap();
+    support::git(&odd, &["init", "-q", "-b", "main", "."]);
+    let before = tree(&ws(&root));
+
+    let mut moves = 0;
+    let moved = move_into_repos::move_workspace(&root, "alpha", &[], &mut |from, to| {
+        moves += 1;
+        std::fs::rename(from, to)
+    });
+
+    let why = moved.expect_err("the repair failed");
+    assert_eq!(moves, 1, "the clone moved before the repair ran");
+    assert!(why.contains("git worktree repair failed"), "{why}");
+    assert!(why.contains("put back"), "{why}");
+    assert_eq!(tree(&ws(&root)), before);
+    works(&piece);
+}

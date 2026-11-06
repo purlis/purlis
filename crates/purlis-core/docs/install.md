@@ -197,16 +197,18 @@ commits nothing. It reads both files before it writes either. It waits to be ask
 files are ones every teammate pulls, and a teammate on an older purlis is still asked by that
 rule and by nothing else.
 
-**`move-into-repos` runs only by name**, as `purlis doctor --fix move-into-repos` or the
-`repos outside repos/` row's Fix button, because moving a repo is your choice: a repo cloned at
-a workspace's root keeps working there for ever. It moves each workspace's repos at its root
-into its `repos/` folder, one workspace at a time and all or nothing for each. A workspace with
-a chat open in it, or one the app will reopen, is left as it is and named. After each move it
-runs `git worktree repair`, so every branch folder cut from the repo finds it again, and a
-failure partway puts every repo and link back as it was. It never touches a harness's own
-files: a chat started in a repo itself (not in a branch folder) cannot be resumed by Claude Code
-afterwards, and the fix names those chats, whose session records still open. A folder beside
-the repo of its name in `repos/`, and an old repo named `repos`, are left; the doctor's
+**`move-into-repos` runs only by name**, as `purlis doctor --fix move-into-repos` or the `repos
+outside repos/` row's Fix button, because moving a repo is your choice: a repo cloned at a
+workspace's root keeps working there for ever. It moves each workspace's repos at its root into its
+`repos/` folder, one workspace at a time and all or nothing for each. A workspace with a chat open
+in it, or one the app will reopen, is left as it is and named, and so is one with a submodule
+checked out in a branch folder: its links are relative paths that the move would put a level off,
+and `git worktree repair` does not mend them. After each move it runs `git worktree repair`, so
+every branch folder cut from the repo finds it again, then asks git for the status of every
+submodule, and a failure partway puts every repo and link back as it was. It never touches a
+harness's own files: a chat started in a repo itself (not in a branch folder) cannot be resumed by
+Claude Code afterwards, and the fix names those chats, whose session records still open. A folder
+beside the repo of its name in `repos/`, and an old repo named `repos`, are left; the doctor's
 `repos beside repos/` and `repo named repos` rows say what to do about each. It commits nothing.
 
 **`discover` runs only by name**, as `purlis doctor --fix discover` or the inventory row's
