@@ -192,6 +192,39 @@ describe("[DEBUG-5478] the freeze watchdog", () => {
     expect(logged).toHaveLength(2);
   });
 
+  it("writes its line while a write waits unparsed, though the cursor's row is redrawn", async () => {
+    const pane = await openPane();
+    vi.spyOn(pane, "write").mockImplementation(() => {});
+    const redrawn = vi.fn();
+    pane.onRender(redrawn);
+
+    await send("never parsed");
+    frame();
+    for (let blink = 0; blink < 8; blink++) {
+      // What a cursor's blink or a change of focus asks xterm for: one row drawn again.
+      pane.refresh(pane.buffer.active.cursorY, pane.buffer.active.cursorY);
+      frame();
+      await later(500);
+    }
+
+    expect(redrawn).toHaveBeenCalled();
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toContain('"unparsed":1');
+  });
+
+  it("writes nothing for a kept terminal that no holder shows", async () => {
+    const pane = await openPane();
+    vi.spyOn(pane, "write").mockImplementation(() => {});
+    // What keeping a terminal does as its chat leaves the pane (`SessionPane.tsx`).
+    pane.element?.remove();
+
+    await send("taken while kept");
+    frame();
+    await later(10_000);
+
+    expect(logged).toEqual([]);
+  });
+
   it("notes an exception the write path threw, and throws it on", async () => {
     const pane = await openPane();
     const thrown = new Error("the parser broke");

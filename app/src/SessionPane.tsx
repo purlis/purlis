@@ -535,7 +535,6 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
   // [DEBUG-5478] Watches the pane for #5478's freeze, and writes one line to the log if so.
   const freeze = watchForFreeze(
     pane,
-    where,
     session,
     (line) =>
       // A line that cannot be written (a link has no log here) is let go.

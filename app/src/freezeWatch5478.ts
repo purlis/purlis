@@ -7,9 +7,10 @@
  * watches the real app for it and writes down what xterm's state was when it did.
  *
  * A pane is **frozen** here when input was sent to its program, or output arrived from it, and
- * xterm drew nothing ({@link Terminal.onRender}) for {@link FROZEN_MS} while the window was
- * visible and the pane on screen. A hidden window or a pane scrolled away draws nothing on
- * purpose, so the clock starts again there. It fires at most once per pane per
+ * xterm drew nothing after parsing what it was written ({@link Terminal.onRender} once
+ * {@link Terminal.onWriteParsed} has caught up) for {@link FROZEN_MS} while the window was
+ * visible and the terminal in the page. A hidden window, or a kept terminal no holder shows,
+ * draws nothing on purpose, so the clock starts again there. It fires at most once per pane per
  * {@link AT_MOST_EVERY_MS}, and fires one line to the diagnostic log through `debug5478Log`,
  * which the core prefixes `[DEBUG-5478]`.
  *
@@ -76,12 +77,12 @@ interface Insides {
 }
 
 /**
- * [DEBUG-5478] Watches `pane` (drawn in `holder`) for a freeze, and hands {@link log} one line
- * when it sees one. `session` names the chat in the line.
+ * [DEBUG-5478] Watches `pane` for a freeze, and hands {@link log} one line when it sees one.
+ * `session` names the chat in the line. What is watched is the terminal's own element, which
+ * moves with it when it is kept (`keptTerminals.ts`), never the holder it was first drawn in.
  */
 export function watchForFreeze(
   pane: Terminal,
-  holder: Element,
   session: number,
   log: (line: string) => void,
   clock: Clock = realClock,
@@ -92,6 +93,8 @@ export function watchForFreeze(
   let inputs = 0;
   let outputs = 0;
   let writes = 0;
+  /** Writes handed to xterm and not yet parsed: a draw while any is left is not of them. */
+  let unparsed = 0;
   let lastDrawn: number | undefined;
   let lastFired: number | undefined;
   let lastResize: { cols: number; rows: number } | null = null;
@@ -107,9 +110,14 @@ export function watchForFreeze(
     outputs = 0;
     writes = 0;
   };
+  // A draw counts only once what was written is parsed: the cursor's blink or a change of
+  // focus redraws a row while a stalled write buffer holds everything else back.
   const drew = pane.onRender(() => {
     lastDrawn = clock.now();
-    waitingSince = undefined;
+    if (unparsed === 0) waitingSince = undefined;
+  });
+  const parsed = pane.onWriteParsed(() => {
+    unparsed = 0;
   });
 
   let observer: IntersectionObserver | undefined;
@@ -118,7 +126,7 @@ export function watchForFreeze(
       const last = entries[entries.length - 1];
       if (last) intersecting = last.isIntersecting;
     });
-    observer.observe(holder);
+    if (pane.element) observer.observe(pane.element);
   }
 
   const threw = (where: string, err: unknown) => {
@@ -159,6 +167,7 @@ export function watchForFreeze(
       inputs,
       outputs,
       writes,
+      unparsed,
       lastDrawnMsAgo: lastDrawn === undefined ? null : now - lastDrawn,
       isPaused: core?._renderService?._isPaused ?? null,
       synchronizedOutputMode,
@@ -172,14 +181,16 @@ export function watchForFreeze(
       lastResizeSent: lastResize,
       visibilityState: page.visibilityState,
       intersecting,
-      connected: holder.isConnected,
+      connected: pane.element?.isConnected ?? null,
     })}`;
   };
 
   const look = () => {
     if (waitingSince === undefined) return;
-    // Nothing is drawn while the window is hidden or the pane is off screen, on purpose.
-    if (page.visibilityState !== "visible" || intersecting === false) {
+    // Nothing is drawn while the window is hidden, or for a kept terminal no holder shows, on
+    // purpose. A pane the observer says is off screen is still watched, and the line says so:
+    // xterm pauses its renderer on its own observer's word, which may be the freeze itself.
+    if (page.visibilityState !== "visible" || pane.element?.isConnected !== true) {
       waitingSince = undefined;
       return;
     }
@@ -207,6 +218,7 @@ export function watchForFreeze(
     },
     written() {
       writes += 1;
+      unparsed += 1;
     },
     resizeSent(cols, rows) {
       lastResize = { cols, rows };
@@ -215,6 +227,7 @@ export function watchForFreeze(
     dispose() {
       stop();
       drew.dispose();
+      parsed.dispose();
       observer?.disconnect();
       if (buffer && inner) buffer._innerWrite = inner;
     },
