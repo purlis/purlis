@@ -326,15 +326,11 @@ fn replace_word(text: &str, name: &str, with: &str) -> (String, bool) {
 fn names_in(plane: &Path) -> Vec<(String, &'static str)> {
     let mut out: Vec<(String, &'static str)> = Vec::new();
     for ws in subdirs(&plane.join("workspaces")) {
-        for clone in subdirs(&plane.join("workspaces").join(&ws)) {
-            if plane
-                .join("workspaces")
-                .join(&ws)
-                .join(&clone)
-                .join(".git")
-                .exists()
-            {
-                out.push((clone, "[repo]"));
+        // Every folder with a `.git` the workspace holds, in `repos/` or at its root (ADR 0114),
+        // repo or not: a name too many is masked, a name too few is told.
+        if let Ok(held) = crate::repofolder::holdings(plane, &ws) {
+            for row in held.repos.iter().chain(&held.shadowed).chain(&held.others) {
+                out.push((row.repo.name.clone(), "[repo]"));
             }
         }
         out.push((ws, "[workspace]"));
