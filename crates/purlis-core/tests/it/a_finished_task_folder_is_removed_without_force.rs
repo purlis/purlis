@@ -30,6 +30,7 @@ fn from_a_terminal(f: &support::Fixture, cut: &Cut, force: bool, delete: bool) -
         &cut.piece,
         force,
         delete,
+        purlis_core::finished::Forge::none(),
         &mut |line| said.push(spoken(&line)),
     );
     (code, said.join("\n"))
@@ -216,6 +217,7 @@ fn the_explorer_s_remove_reads_a_finished_task_folder_as_the_command_does() {
             merging,
             force,
             || false,
+            purlis_core::finished::Forge::none(),
         )
     };
 

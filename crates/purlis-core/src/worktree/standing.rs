@@ -268,9 +268,10 @@ pub fn drop_if_merged(plane: &Path, ws: &str, repo: &str, branch: &str) -> bool 
     git::run(&clone, &["branch", "-d", "--", branch], git::READ).is_ok_and(|seen| seen.ok())
 }
 
-/// Deletes `branch`, **read [`Landed::Carried`] before its folder went**, in `repo`'s clone
-/// with `git branch -D` (ADR 0110): git's `-d` never finds a squash-landed branch merged, yet
-/// every file it changed reads in its base as it has it. The local branch only; a remote branch
+/// Deletes `branch`, **read as losing nothing**, in `repo`'s clone with `git branch -D` (ADR
+/// 0110): [`Landed::Carried`], whose every file reads in its base as it has it though git's `-d`
+/// never finds a squash-landed branch merged; or inside a merged request's head, or on its base
+/// with its folder gone (#5439). git takes the branch's section of the clone's config with it. The local branch only; a remote branch
 /// is the forge's. Whether it went.
 pub fn drop_carried(plane: &Path, ws: &str, repo: &str, branch: &str) -> bool {
     if name::branch_name_ok(branch).is_err() {
@@ -323,6 +324,29 @@ pub fn landed(plane: &Path, ws: &str, repo: &str, piece: &str, branch: &str) -> 
         Ok(Base::Branch(on)) if on == branch => {}
         _ => return Landed::Unknown,
     }
+    landed_in_clone(&clone, branch)
+}
+
+/// **Whether `branch` of `repo`, a branch purlis cut, has landed in the branch it was cut
+/// from**, read from the clone alone, as [`landed`] reads a piece's branch once it has found the
+/// piece on it: for a branch whose folder is gone (#5439). [`Landed::Unknown`] where the branch
+/// it was cut from was not recorded, so for a branch purlis did not cut.
+pub fn branch_landed(plane: &Path, ws: &str, repo: &str, branch: &str) -> Landed {
+    let Ok(()) = relocation_refusal(plane) else {
+        return Landed::Unknown;
+    };
+    let Ok(clone) = clone_dir(plane, ws, repo) else {
+        return Landed::Unknown;
+    };
+    if name::branch_name_ok(branch).is_err() {
+        return Landed::Unknown;
+    }
+    landed_in_clone(&clone, branch)
+}
+
+/// [`landed`]'s reading of `branch` against its recorded base, in `clone`.
+fn landed_in_clone(clone: &Path, branch: &str) -> Landed {
+    let clone = clone.to_path_buf();
     // `--get-all`, for `merge`'s reason: a key holding two values is somebody else choosing.
     let Ok(recorded) = git::run(
         &clone,

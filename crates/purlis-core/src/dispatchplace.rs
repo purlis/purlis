@@ -1063,8 +1063,11 @@ fn cut_before_the_piece(text: &str) -> bool {
 /// The explorer's two exceptions hold here too: a folder already gone (only git's stale
 /// registration is left, and nothing in it to lose), and the folder of a task that has ended
 /// in a repo the brokered route runs no git in (`no_discard_there`, asked only then): Discard
-/// is refused there and its sentence sends the person to a Remove of their own. Neither takes
-/// `--delete-branch`: the branch can hold commits that exist nowhere else.
+/// is refused there and its sentence sends the person to a Remove of their own. The second
+/// does not take `--delete-branch`: the branch can hold commits that exist nowhere else. The
+/// first does (#5439): with its folder gone, the removal reads the branch alone and deletes it
+/// only where that loses nothing ([`crate::piececmd::remove`]).
+#[allow(clippy::too_many_arguments)]
 pub fn kept_from_removal(
     root: &Path,
     workspace: &str,
@@ -1073,6 +1076,7 @@ pub fn kept_from_removal(
     force: bool,
     delete_branch: bool,
     no_discard_there: impl FnOnce() -> bool,
+    forge: crate::finished::Forge<'_>,
 ) -> Option<String> {
     let (held, goes) = holding(root, workspace, repo, piece, no_discard_there)?;
     match held {
@@ -1086,13 +1090,20 @@ pub fn kept_from_removal(
                 .clone()
                 .unwrap_or(record.worker.chat.name.clone());
             let tab = "Changes tab in the purlis window";
-            match finished_for_its_task(root, workspace, repo, piece, &record, force) {
+            match finished_for_its_task(root, workspace, repo, piece, &record, force, forge) {
                 Some(Ok(())) => return None,
                 Some(Err(why)) if !goes => return Some(not_finished(&task, piece, &why, tab)),
                 _ => {}
             }
             if !goes {
                 return Some(left_to(&task, piece, false, tab));
+            }
+            // Its folder already gone (#5439): the removal reads its branch alone, and deletes
+            // it only where that loses nothing ([`crate::piececmd::remove`]).
+            if worktree::path_for(root, workspace, repo, piece)
+                .is_ok_and(|folder| folder.symlink_metadata().is_err())
+            {
+                return None;
             }
             delete_branch.then(|| {
                 format!(
@@ -1119,6 +1130,7 @@ fn finished_for_its_task(
     piece: &str,
     record: &Record,
     force: bool,
+    forge: crate::finished::Forge<'_>,
 ) -> Option<Result<(), String>> {
     let there = worktree::path_for(root, workspace, repo, piece)
         .is_ok_and(|folder| folder.symlink_metadata().is_ok());
@@ -1129,7 +1141,7 @@ fn finished_for_its_task(
         return Some(Err("its task has not ended".to_owned()));
     }
     Some(
-        crate::finished::as_it_stands(root, workspace, repo, piece)
+        crate::finished::as_it_stands(root, workspace, repo, piece, forge)
             .map(|_| ())
             .map_err(|why| why.why()),
     )
@@ -1157,6 +1169,7 @@ fn not_finished(task: &str, piece: &str, why: &str, tab: &str) -> String {
 /// A Merge is never let through. A Remove is, in the two cases [`kept_from_removal`] lets one
 /// through: a folder already gone, and an ended task's folder in a repo the brokered route
 /// runs no git in (`no_discard_there`, asked only then). The window never deletes a branch.
+#[allow(clippy::too_many_arguments)]
 pub fn kept_from_the_explorer(
     root: &Path,
     workspace: &str,
@@ -1165,6 +1178,7 @@ pub fn kept_from_the_explorer(
     merging: bool,
     force: bool,
     no_discard_there: impl FnOnce() -> bool,
+    forge: crate::finished::Forge<'_>,
 ) -> Option<String> {
     let (held, goes) = if merging {
         (held_in_folder(root, workspace, repo, piece)?, false)
@@ -1178,7 +1192,7 @@ pub fn kept_from_the_explorer(
             .task
             .clone()
             .unwrap_or(record.worker.chat.name.clone());
-        match finished_for_its_task(root, workspace, repo, piece, record, force) {
+        match finished_for_its_task(root, workspace, repo, piece, record, force, forge) {
             Some(Ok(())) => return None,
             Some(Err(why)) if !goes => {
                 return Some(not_finished(&task, piece, &why, "Changes tab"));

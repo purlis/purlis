@@ -148,12 +148,14 @@ _Avoid_: task, slot, branch (for the directory), worktree (on screen)
 
 **Finished folder**:
 A branch folder whose removal loses nothing and takes nothing from under anyone: no uncommitted
-changes; every commit on its base, or carried there by a squash merge; no ignored files beyond
-the folders only a build or the harness writes, and links; its task, if any, ended (done,
-failed, blocked, cancelled, stopped or ended without a report; working, needs you, asking and
-idle are not ended); no open chat that has declared neither `done` nor `abandoned` holds it; and
-no other remaining folder links into it. `purlis worktree remove` takes one without `--force`,
-a task's folder too, and `purlis worktree prune` removes every one (ADR 0110).
+changes; every commit on its base, or carried there by a squash merge, or inside the head of a
+pull request the forge says merged; no ignored files beyond the folders only a build or the
+harness writes, and links; its task, if any, ended (done, failed, blocked, cancelled, stopped or
+ended without a report; working, needs you, asking and idle are not ended); no open chat that
+has declared neither `done` nor `abandoned` holds it; and no other remaining folder links into
+it. `purlis worktree remove` takes one without `--force`, a task's folder too, and `purlis
+worktree prune` removes every one, and deletes each branch purlis cut whose folder is gone
+where that loses nothing (ADR 0110, amended 2026-11-06).
 _Avoid_: landed (for a branch: that is a change member's word; say *on its base* or *carried*),
 merged (git's `-d` does not find a carried branch merged), clean (that is only its files)
 

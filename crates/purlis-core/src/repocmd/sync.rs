@@ -192,6 +192,46 @@ pub fn fetch_remote(
     }
 }
 
+/// Fetches `refspec`, one ref of `remote` such as a request's head (#5439), into `clone`'s
+/// objects alone: no ref is written for it, and no `FETCH_HEAD`. Reached as [`fetch_remote`]
+/// reaches the remote.
+pub fn fetch_ref(
+    root: &Path,
+    clone: &Path,
+    remote: &str,
+    refspec: &str,
+    hosts: Option<&[String]>,
+) -> Result<(), String> {
+    if !refspec.starts_with("refs/") || refspec.chars().any(|c| c.is_control() || c == ':') {
+        return Err(format!(
+            "'{}' cannot name a ref to fetch",
+            crate::shown::short(refspec)
+        ));
+    }
+    let (_, helper) = reach(root, clone, remote, hosts, false)?;
+    let fetched = git::run_network(
+        clone,
+        helper.as_deref(),
+        &[
+            "fetch",
+            "--no-tags",
+            "--no-recurse-submodules",
+            "--no-write-fetch-head",
+            remote,
+            refspec,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    if fetched.ok() {
+        Ok(())
+    } else {
+        Err(format!(
+            "git could not fetch {refspec} from '{remote}' (access or network): {}",
+            fetched.err.lines().next().unwrap_or("").trim()
+        ))
+    }
+}
+
 /// Whether a remote URL goes over SSH: `ssh://…`, or scp-style `host:path`.
 fn is_ssh(url: &str) -> bool {
     if url.starts_with("ssh://") || url.starts_with("git+ssh://") || url.starts_with("ssh+git://") {

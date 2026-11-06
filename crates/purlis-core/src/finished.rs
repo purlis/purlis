@@ -20,6 +20,9 @@ use std::path::{Path, PathBuf};
 use crate::hookwire::alive;
 use crate::worktree::{self, git, standing};
 
+pub mod merged;
+pub use merged::{Forge, Request};
+
 /// How a finished folder's commits stand against its base.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Commits {
@@ -33,6 +36,23 @@ pub enum Commits {
     InHistory,
     /// On no branch, at a commit its base has.
     NoBranch,
+    /// Neither on its base nor carried, but its tip is inside the head of a request that
+    /// merged, by its number ([`merged::holding`], #5439): its commits are part of what merged.
+    /// Only `git branch -D` deletes it.
+    InMergedRequest(u64),
+}
+
+impl Commits {
+    /// Why deleting a branch that stands so loses nothing, as a clause: "it is on its base".
+    pub fn why_its_branch_goes(self) -> String {
+        match self {
+            Self::Carried => "it is carried by a squash merge".to_owned(),
+            Self::InMergedRequest(number) => {
+                format!("its commits are in pull request {number}, which merged")
+            }
+            Self::OnBase | Self::InHistory | Self::NoBranch => "it is on its base".to_owned(),
+        }
+    }
 }
 
 /// Why a folder is not finished, as it is said.
@@ -44,6 +64,9 @@ pub enum NotFinished {
     Uncommitted(Vec<String>),
     /// A commit its base does not have, by any reading.
     Ahead,
+    /// A commit its base does not have, and whether a merged request holds it could not be
+    /// told, and why: offline, or no forge for the clone (#5439).
+    AheadUnasked(String),
     /// Ignored paths that are the task's, not a build's.
     Ignored(Vec<String>),
     /// Other folders link into it, each as `<repo> · <piece>`.
@@ -66,6 +89,10 @@ impl NotFinished {
                 format!("it holds uncommitted changes ({})", named(paths))
             }
             Self::Ahead => "its branch holds commits its base does not have".to_owned(),
+            Self::AheadUnasked(why) => format!(
+                "its branch holds commits its base does not have, and whether a merged pull \
+                 request holds them could not be told ({why})"
+            ),
             Self::Ignored(paths) => format!(
                 "it holds files git ignores that are not a build's ({})",
                 named(paths)
@@ -77,8 +104,15 @@ impl NotFinished {
 
 /// **How the folder `piece` of `repo` stands by its own files and commits**: `Ok` with how
 /// its commits stand where nothing in it would be lost with it, else the first reason it is
-/// not finished. Links into it, its task and its chat are read apart.
-pub fn own(plane: &Path, ws: &str, repo: &str, piece: &str) -> Result<Commits, NotFinished> {
+/// not finished. A branch neither on its base nor carried is asked of `forge`: its tip may be
+/// inside a merged request's head. Links into it, its task and its chat are read apart.
+pub fn own(
+    plane: &Path,
+    ws: &str,
+    repo: &str,
+    piece: &str,
+    forge: Forge<'_>,
+) -> Result<Commits, NotFinished> {
     let unread = |why: String| NotFinished::Unread(why);
     let found = worktree::list(plane, ws, repo)
         .map_err(|why| unread(why.to_string()))?
@@ -107,7 +141,11 @@ pub fn own(plane: &Path, ws: &str, repo: &str, piece: &str) -> Result<Commits, N
             standing::Landed::Yes { .. } => Commits::OnBase,
             standing::Landed::Carried { .. } => Commits::Carried,
             _ if standing::change_in_history(plane, ws, repo, piece, branch) => Commits::InHistory,
-            _ => return Err(NotFinished::Ahead),
+            _ => match merged::holding(plane, ws, repo, branch, forge) {
+                Ok(Some(number)) => Commits::InMergedRequest(number),
+                Ok(None) => return Err(NotFinished::Ahead),
+                Err(why) => return Err(NotFinished::AheadUnasked(why)),
+            },
         },
         None if detached_on_its_base(plane, ws, repo, &found.path) => Commits::NoBranch,
         None => return Err(NotFinished::Ahead),
@@ -118,6 +156,90 @@ pub fn own(plane: &Path, ws: &str, repo: &str, piece: &str) -> Result<Commits, N
         Some(Err(why)) => Err(unread(why)),
         None => Err(unread(format!("{repo} · {piece} is not there"))),
     }
+}
+
+/// **How `branch` of `repo` stands, a branch purlis cut whose folder is gone** (#5439): `Ok`
+/// where deleting it loses nothing, as it is on its base, carried there, or inside a merged
+/// request's head ([`merged::holding`]), else why it stays. `None` where it is not a branch
+/// purlis cut: no base is recorded for it.
+pub fn branch_only(
+    plane: &Path,
+    ws: &str,
+    repo: &str,
+    branch: &str,
+    forge: Forge<'_>,
+) -> Option<Result<Commits, NotFinished>> {
+    Some(match standing::branch_landed(plane, ws, repo, branch) {
+        standing::Landed::Unknown => return None,
+        standing::Landed::Yes { .. } => Ok(Commits::OnBase),
+        standing::Landed::Carried { .. } => Ok(Commits::Carried),
+        standing::Landed::No => match merged::holding(plane, ws, repo, branch, forge) {
+            Ok(Some(number)) => Ok(Commits::InMergedRequest(number)),
+            Ok(None) => Err(NotFinished::Ahead),
+            Err(why) => Err(NotFinished::AheadUnasked(why)),
+        },
+    })
+}
+
+/// **The branches of `repo` purlis cut whose folder is gone** (#5439), sorted: each local
+/// branch with a base recorded for it (`branch.<name>.charterBase`) that no folder of the
+/// clone, the clone's own checkout included, is on. A removal by hand, or by an older purlis,
+/// takes the folder and leaves its branch.
+pub fn branches_without_a_folder(
+    plane: &Path,
+    ws: &str,
+    repo: &str,
+) -> Result<Vec<String>, String> {
+    let clone = worktree::clone_dir(plane, ws, repo).map_err(|why| why.to_string())?;
+    let read = |args: &[&str]| -> Result<String, String> {
+        let run = git::run(&clone, args, git::READ).map_err(|why| why.to_string())?;
+        // `config --get-regexp` exits 1 where nothing matches.
+        if run.ok() || (run.code == Some(1) && run.err.trim().is_empty()) {
+            Ok(run.out)
+        } else {
+            Err(format!(
+                "git would not list the branches of {repo}: {}",
+                run.err.lines().next().unwrap_or("").trim()
+            ))
+        }
+    };
+    let recorded = read(&["config", "--get-regexp", r"^branch\..*\.charterbase$"])?;
+    let on: Vec<String> = git::run(&clone, &["worktree", "list", "--porcelain"], git::READ)
+        .ok()
+        .filter(git::Run::ok)
+        .ok_or_else(|| format!("git would not list the folders of {repo}"))?
+        .out
+        .lines()
+        .filter_map(|line| line.strip_prefix("branch refs/heads/"))
+        .map(str::to_owned)
+        .collect();
+    let mut found: Vec<String> = recorded
+        .lines()
+        .filter_map(|line| line.split_once(' ').map(|(key, _)| key))
+        .filter_map(|key| {
+            key.strip_prefix("branch.")
+                .and_then(|rest| rest.strip_suffix(".charterbase"))
+        })
+        .filter(|branch| worktree::name::branch_name_ok(branch).is_ok())
+        .filter(|branch| {
+            git::run(
+                &clone,
+                &[
+                    "show-ref",
+                    "--verify",
+                    "--quiet",
+                    &worktree::name::as_ref(branch),
+                ],
+                git::READ,
+            )
+            .is_ok_and(|run| run.ok())
+        })
+        .filter(|branch| !on.iter().any(|held| held == branch))
+        .map(str::to_owned)
+        .collect();
+    found.sort();
+    found.dedup();
+    Ok(found)
 }
 
 /// Whether the folder at `path`, on no branch, is at a commit its base has: the branch the
@@ -312,8 +434,9 @@ pub fn as_it_stands(
     ws: &str,
     repo: &str,
     piece: &str,
+    forge: Forge<'_>,
 ) -> Result<Commits, NotFinished> {
-    let commits = own(plane, ws, repo, piece)?;
+    let commits = own(plane, ws, repo, piece, forge)?;
     let by = linking_into(
         &links(plane, ws),
         &Folder {

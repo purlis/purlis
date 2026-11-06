@@ -36,6 +36,9 @@ pub struct Asked<'a> {
     pub repo: Option<&'a str>,
     pub dry_run: bool,
     pub keep_branches: bool,
+    /// The forge a branch neither on its base nor carried is asked of: its tip may be inside a
+    /// merged request's head (#5439).
+    pub forge: finished::Forge<'a>,
 }
 
 /// Who asks, as an open chat's hold on a folder is judged.
@@ -56,6 +59,8 @@ pub struct Asker<'a> {
 struct Candidate {
     folder: Folder,
     commits: Commits,
+    /// Its folder is already gone, and only git's record of it is left.
+    gone: bool,
 }
 
 /// **Prunes `asked.ws`**, saying what went and what stayed. `0` where every finished folder
@@ -98,22 +103,19 @@ pub fn prune(
         .collect();
     let judged = finished::each_at_once(&in_scope, |(folder, gone)| {
         if *gone {
-            Err(format!(
-                "its folder is already gone, and only git's record of it is left: `purlis \
-                 worktree remove {} {}` clears it",
-                folder.repo, folder.piece
-            ))
+            gone_folder(plane, ws, folder, asked.forge)
         } else if asker.stands_in == Some(folder) {
             Err("this chat stands in it".to_owned())
         } else {
-            why_kept(plane, ws, folder, asker)
+            why_kept(plane, ws, folder, asker, asked.forge)
         }
     });
-    for ((folder, _), judged) in in_scope.into_iter().zip(judged) {
+    for ((folder, gone), judged) in in_scope.into_iter().zip(judged) {
         match judged {
             Ok(commits) => candidates.push(Candidate {
                 folder: folder.clone(),
                 commits,
+                gone: *gone,
             }),
             Err(why) => kept.push((folder.clone(), why)),
         }
@@ -165,6 +167,16 @@ pub fn prune(
     for (folder, why) in &kept {
         say(Say::Info(format!("Kept {}: {why}", folder.named()).into()));
     }
+    if !asked.keep_branches {
+        let repos: Vec<&String> = listed
+            .repos
+            .iter()
+            .filter(|repo| asked.repo.is_none_or(|asked| asked == repo.as_str()))
+            .collect();
+        if branches(plane, ws, &repos, asked, asker, say) != 0 {
+            code = 1;
+        }
+    }
     say(Say::Info(
         if asked.dry_run {
             format!(
@@ -184,8 +196,156 @@ pub fn prune(
     code
 }
 
+/// **The branches purlis cut whose folder is gone, in `repos`** (#5439): each one deleting
+/// loses nothing from goes (on its base, carried, or inside a merged request's head), with
+/// `git branch -D`, which takes its `branch.<name>` section of the clone's config with it;
+/// every other stays, saying why. A branch a task that has not ended names stays too. In a
+/// chat's prune the app deletes each in its checked clone, as it removes a folder. `0` where
+/// every branch that may go went, or would in a dry run.
+fn branches(
+    plane: &Path,
+    ws: &str,
+    repos: &[&String],
+    asked: &Asked<'_>,
+    asker: &Asker<'_>,
+    say: &mut dyn FnMut(Say),
+) -> u8 {
+    let mut code = 0;
+    let (mut went, mut stayed) = (0, 0);
+    for repo in repos {
+        let found = match finished::branches_without_a_folder(plane, ws, repo) {
+            Ok(found) => found,
+            Err(why) => {
+                say(Say::Fail(format!("{repo}: {why}").into()));
+                code = 1;
+                continue;
+            }
+        };
+        let judged = finished::each_at_once(&found, |branch| {
+            if let Some(InFolder::Task(record)) =
+                dispatchplace::held_in_folder(plane, ws, repo, branch)
+                && record.running()
+            {
+                return Some(Err(format!(
+                    "its task '{}' has not ended",
+                    crate::shown::short(&record.task.unwrap_or(record.worker.chat.name))
+                )));
+            }
+            finished::branch_only(plane, ws, repo, branch, asked.forge)
+                .map(|judged| judged.map_err(|why| why.why()))
+        });
+        for (branch, judged) in found.iter().zip(judged) {
+            let commits = match judged {
+                None => continue,
+                Some(Err(why)) => {
+                    stayed += 1;
+                    say(Say::Info(
+                        format!("Kept branch {branch} of {repo}: {why}").into(),
+                    ));
+                    continue;
+                }
+                Some(Ok(commits)) => commits,
+            };
+            let why = commits.why_its_branch_goes();
+            if asked.dry_run {
+                went += 1;
+                say(Say::Info(
+                    format!("Would delete branch {branch} of {repo}, whose folder is gone ({why})")
+                        .into(),
+                ));
+                continue;
+            }
+            let drop = || standing::drop_carried(plane, ws, repo, branch);
+            let dropped = if asker.brokered {
+                let held = worktree::git::isolation().unwrap_or_default();
+                crate::gitbroker::in_a_checked_clone(plane, ws, repo, &held, drop)
+            } else {
+                Ok(drop())
+            };
+            alive::beat();
+            match dropped {
+                Ok(true) => {
+                    went += 1;
+                    say(Say::Done(
+                        format!("Deleted branch {branch} of {repo}, whose folder was gone ({why})")
+                            .into(),
+                    ));
+                }
+                Ok(false) => {
+                    code = 1;
+                    say(Say::Fail(
+                        format!("Kept branch {branch} of {repo}: git would not delete it").into(),
+                    ));
+                }
+                Err(not_run) => {
+                    code = 1;
+                    say(Say::Fail(
+                        format!("Kept branch {branch} of {repo}: {not_run}").into(),
+                    ));
+                }
+            }
+        }
+    }
+    if went + stayed > 0 {
+        let deleted = counted(
+            went,
+            "branch whose folder is gone",
+            "branches whose folders are gone",
+        );
+        say(Say::Info(
+            if asked.dry_run {
+                format!("Would delete {deleted}, and keep {stayed}.")
+            } else {
+                format!("Deleted {deleted}, kept {stayed}.")
+            }
+            .into(),
+        ));
+    }
+    code
+}
+
+/// How the branch of `folder`, whose folder is already gone, stands where git's record of it
+/// may be cleared and the branch deleted with it (#5439), else why it stays: its task has not
+/// ended, or its branch holds what would be lost.
+fn gone_folder(
+    plane: &Path,
+    ws: &str,
+    folder: &Folder,
+    forge: finished::Forge<'_>,
+) -> Result<Commits, String> {
+    let clears = format!(
+        "its folder is already gone, and only git's record of it is left: `purlis worktree \
+         remove {} {}` clears it",
+        folder.repo, folder.piece
+    );
+    if let Some(InFolder::Task(record)) =
+        dispatchplace::held_in_folder(plane, ws, &folder.repo, &folder.piece)
+        && record.running()
+    {
+        return Err(clears);
+    }
+    let Some(branch) = worktree::list(plane, ws, &folder.repo)
+        .ok()
+        .and_then(|found| found.into_iter().find(|p| p.piece == folder.piece))
+        .and_then(|found| found.branch)
+    else {
+        return Err(clears);
+    };
+    match finished::branch_only(plane, ws, &folder.repo, &branch, forge) {
+        Some(Ok(commits)) => Ok(commits),
+        Some(Err(why)) => Err(format!("{clears}, and {}", why.why())),
+        None => Err(clears),
+    }
+}
+
 /// How `folder`'s commits stand where it may go but for links, else why it stays.
-fn why_kept(plane: &Path, ws: &str, folder: &Folder, asker: &Asker<'_>) -> Result<Commits, String> {
+fn why_kept(
+    plane: &Path,
+    ws: &str,
+    folder: &Folder,
+    asker: &Asker<'_>,
+    forge: finished::Forge<'_>,
+) -> Result<Commits, String> {
     match dispatchplace::held_in_folder(plane, ws, &folder.repo, &folder.piece) {
         Some(InFolder::Task(record)) if record.running() => {
             return Err(format!(
@@ -209,7 +369,7 @@ fn why_kept(plane: &Path, ws: &str, folder: &Folder, asker: &Asker<'_>) -> Resul
     if let Some(why) = piececlaim::held_open(plane, &at, asker.who.chat.as_deref(), asker.live) {
         return Err(why);
     }
-    finished::own(plane, ws, &folder.repo, &folder.piece).map_err(|why| why.why())
+    finished::own(plane, ws, &folder.repo, &folder.piece, forge).map_err(|why| why.why())
 }
 
 /// What a dry run says of `one`.
@@ -218,6 +378,13 @@ fn would_go(one: &Candidate, keep_branches: bool) -> String {
         (_, true) | (Commits::NoBranch, _) => "",
         (Commits::InHistory, false) => ", keeping its branch (its base has changed it since)",
         (Commits::OnBase | Commits::Carried, false) => ", and delete its branch",
+        (Commits::InMergedRequest(_), false) => {
+            return format!(
+                "Would remove {}, and delete its branch ({})",
+                one.folder.named(),
+                one.commits.why_its_branch_goes()
+            );
+        }
     };
     format!("Would remove {}{branch}", one.folder.named())
 }
@@ -247,10 +414,11 @@ fn remove_one(
     let named = one.folder.named();
     let run = || -> (u8, Vec<Say>) {
         let removed = match one.commits {
+            _ if one.gone => worktree::remove_keeping_branch(plane, ws, repo, piece),
             Commits::OnBase | Commits::NoBranch => {
                 worktree::remove(plane, ws, repo, piece, false, delete)
             }
-            Commits::Carried | Commits::InHistory => {
+            Commits::Carried | Commits::InHistory | Commits::InMergedRequest(_) => {
                 worktree::remove_keeping_branch(plane, ws, repo, piece)
             }
         };
@@ -262,7 +430,8 @@ fn remove_one(
         if let Some(branch) = removed.branch.as_deref() {
             let gone = removed.branch_deleted
                 || (delete
-                    && one.commits == Commits::Carried
+                    && (one.gone
+                        || matches!(one.commits, Commits::Carried | Commits::InMergedRequest(_)))
                     && standing::drop_carried(plane, ws, repo, branch));
             if gone {
                 lines.push(Say::Done(format!("Deleted branch {branch}").into()));
