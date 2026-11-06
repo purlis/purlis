@@ -185,7 +185,7 @@ export const OlderRunnerWaitsOnAProject: Story = {
   play: async ({ canvas, userEvent }) => {
     const group = await canvas.findByRole("region", { name: "Pools" });
     const said = await within(group).findByText(
-      /An older runner stays until project alpha brings back what its chats did there\./,
+      /An older runner stays until project alpha brings back the work its chats saved on that runner\./,
     );
     await expect(said).toHaveTextContent(
       "alpha is closed, and was last opened 12 days ago. Open alpha to bring its work back.",

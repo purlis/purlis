@@ -935,7 +935,9 @@ describe("You › This machine › Pools", () => {
       await within(group).findByText(
         /Its runner runs purlis 0\.4\.2-dev\.16, and this machine runs 0\.4\.2-dev\.17\. New chats start on a runner of 0\.4\.2-dev\.17 once that version's runner image is published\./,
       ),
-    ).toHaveTextContent(/1 older runner keeps its chats until they end, then purlis removes it\./);
+    ).toHaveTextContent(
+      /1 older runner keeps its chats until they end, then purlis removes it once their work is brought back\./,
+    );
     expect(
       within(group).getByText(
         /2 chats still run there: end them to let purlis remove the older runners\./,
@@ -964,7 +966,7 @@ describe("You › This machine › Pools", () => {
     await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
     const group = await screen.findByRole("region", { name: "Pools" });
     const said = await within(group).findByText(
-      /An older runner stays until 2 projects bring back what their chats did there: alpha, beta\./,
+      /An older runner stays until 2 projects bring back the work their chats saved on that runner: alpha, beta\./,
     );
     expect(said).toHaveTextContent(
       "alpha is closed, and was last opened 12 days ago. Open alpha to bring its work back.",
@@ -996,7 +998,7 @@ describe("You › This machine › Pools", () => {
     const group = await screen.findByRole("region", { name: "Pools" });
     expect(
       await within(group).findByText(
-        "An older runner stays until project alpha brings back what its chats did there. alpha is open, so purlis brings it back on its own.",
+        "An older runner stays until project alpha brings back the work its chats saved on that runner. alpha is open, so purlis brings it back on its own.",
       ),
     ).toBeInTheDocument();
     expect(group).not.toHaveTextContent(/Removing the pool lets the runner go/);
@@ -1361,11 +1363,20 @@ describe("owedSaid", () => {
     owed_why: null,
   });
 
-  it("says a project closed under a day ago was last opened today, then yesterday, then in days", () => {
-    expect(owedSaid(owing(3600), now)).toContain("was last opened today.");
-    expect(owedSaid(owing(-3600), now)).toContain("was last opened today.");
-    expect(owedSaid(owing(86_400 + 1), now)).toContain("was last opened yesterday.");
+  it("says how many whole days ago a closed project was last opened", () => {
+    expect(owedSaid(owing(3600), now)).toContain("was last opened less than a day ago.");
+    expect(owedSaid(owing(-3600), now)).toContain("was last opened less than a day ago.");
+    expect(owedSaid(owing(86_400 + 1), now)).toContain("was last opened 1 day ago.");
     expect(owedSaid(owing(2 * 86_400), now)).toContain("was last opened 2 days ago.");
+  });
+
+  it("tells two projects in folders of the same name apart by where they are", () => {
+    const two = owing(0);
+    two.owed = [
+      { path: "/a/app", name: "app", opened: opened(0), open_now: true },
+      { path: "/b/app", name: "app", opened: opened(0), open_now: true },
+    ];
+    expect(owedSaid(two, now)).toContain("on that runner: /a/app, /b/app.");
   });
 
   it("says nothing where no project is waited on", () => {

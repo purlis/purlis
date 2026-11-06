@@ -159,8 +159,8 @@ export function versionSaid(version: PoolVersion | undefined): string | undefine
   if (version.draining > 0) {
     lines.push(
       version.draining === 1
-        ? "1 older runner keeps its chats until they end, then purlis removes it."
-        : `${version.draining} older runners keep their chats until they end, then purlis removes them.`,
+        ? "1 older runner keeps its chats until they end, then purlis removes it once their work is brought back."
+        : `${version.draining} older runners keep their chats until they end, then purlis removes them once their work is brought back.`,
     );
     // What they still wait on, as purlis last found it (#2865).
     if (version.waiting > 0) {
@@ -176,7 +176,7 @@ export function versionSaid(version: PoolVersion | undefined): string | undefine
 
 /**
  * **What a row says of the projects its older runner waits on** (#5461): a draining runner stays
- * until each project its chats ran for has brought back what they did there, and only a project
+ * until each project its chats ran for has brought back the work they saved on it, and only a project
  * open in a window does. Each is named, with what lets the runner go: an open one brings it back
  * on its own; a closed one says when it was last opened and that opening it brings the work back.
  * Removing the pool lets the runner go too, and the row says what that costs. Nothing where no
@@ -187,12 +187,18 @@ export function owedSaid(version: PoolVersion | undefined, now: number): string 
   if (version.owed_why !== null) {
     return `purlis could not read which projects still have work on an older runner, so the runner stays: ${version.owed_why}`;
   }
-  const owed = version.owed;
-  if (owed.length === 0) return undefined;
+  if (version.owed.length === 0) return undefined;
+  // Two projects in folders of the same name are told apart by where they are.
+  const owed = version.owed.map((one) => ({
+    ...one,
+    name: version.owed.some((other) => other.path !== one.path && other.name === one.name)
+      ? one.path
+      : one.name,
+  }));
   const lines = [
     owed.length === 1
-      ? `An older runner stays until project ${owed[0].name} brings back what its chats did there.`
-      : `An older runner stays until ${owed.length} projects bring back what their chats did there: ${owed.map((one) => one.name).join(", ")}.`,
+      ? `An older runner stays until project ${owed[0].name} brings back the work its chats saved on that runner.`
+      : `An older runner stays until ${owed.length} projects bring back the work their chats saved on that runner: ${owed.map((one) => one.name).join(", ")}.`,
   ];
   for (const one of owed) {
     lines.push(
@@ -210,11 +216,11 @@ export function owedSaid(version: PoolVersion | undefined, now: number): string 
 }
 
 /** When a project was last opened, `opened` in seconds since the epoch, in whole days before
- *  `now` in milliseconds: a clock that moved back is today. */
+ *  `now` in milliseconds, never calendar days: a clock that moved back is under a day. */
 function openedAgo(opened: number, now: number): string {
   const days = Math.floor((now / 1000 - opened) / 86_400);
-  if (days < 1) return "today";
-  if (days === 1) return "yesterday";
+  if (days < 1) return "less than a day ago";
+  if (days === 1) return "1 day ago";
   return `${days} days ago`;
 }
 

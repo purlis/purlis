@@ -228,8 +228,9 @@ pub struct PoolOwed {
     pub path: String,
     /// What to call it: the directory's own name.
     pub name: String,
-    /// When it was last opened on this machine, in seconds since the epoch.
-    pub opened: u64,
+    /// When it was last opened on this machine, in seconds since the epoch: `u32`, so it is a
+    /// `number` in TypeScript and not a `bigint`.
+    pub opened: u32,
     /// Whether it is open in a window now, so it brings the work back on its own.
     pub open_now: bool,
 }
@@ -904,7 +905,7 @@ pub(crate) fn owed_by(
                     .file_name()
                     .map_or_else(|| path.clone(), |name| name.to_string_lossy().into_owned()),
                 open_now: open.contains(&one.plane),
-                opened: one.opened,
+                opened: u32::try_from(one.opened).unwrap_or(u32::MAX),
                 path,
             });
         }

@@ -11826,7 +11826,10 @@ export type PoolOwed = {
 	path: string,
 	/**  What to call it: the directory's own name. */
 	name: string,
-	/**  When it was last opened on this machine, in seconds since the epoch. */
+	/**
+	 *  When it was last opened on this machine, in seconds since the epoch: `u32`, so it is a
+	 *  `number` in TypeScript and not a `bigint`.
+	 */
 	opened: number,
 	/**  Whether it is open in a window now, so it brings the work back on its own. */
 	open_now: boolean,
