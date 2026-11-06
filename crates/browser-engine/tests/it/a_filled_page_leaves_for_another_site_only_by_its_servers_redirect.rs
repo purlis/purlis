@@ -359,16 +359,10 @@ fn what_a_script_sends_the_destination_as_the_page_leaves_is_refused() {
 /// and the note was late, or the page went.
 #[test]
 fn a_redirect_whose_address_holds_the_value_is_refused() {
-    // TEMPORARY (#5452): twenty rounds on the real engine, reverted before landing.
-    for (label, line) in std::iter::repeat_n(
-        [
-            ("Key named", "button \"Sign in named\""),
-            ("Key encoded", "button \"Sign in encoded\""),
-        ],
-        20,
-    )
-    .flatten()
-    {
+    for (label, line) in [
+        ("Key named", "button \"Sign in named\""),
+        ("Key encoded", "button \"Sign in encoded\""),
+    ] {
         let Some((browser, _data, site)) = browser() else {
             return;
         };
