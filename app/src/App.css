@@ -1663,6 +1663,55 @@ body {
   color: var(--text-quiet);
 }
 
+/* **The skill run open in a tab's chat** (SK-3): beside the tab's button, inside its cell, on a
+   sunken pill whose ring of the keyboard's focus is drawn inside it, as a strip's are. It does
+   not shrink: the name gives way. */
+.tabs .tab > .tab-run {
+  display: flex;
+  flex: none;
+  align-items: center;
+  align-self: center;
+  min-height: var(--size-chrome);
+  margin-inline-end: var(--space-2);
+}
+
+.tabs .tab-run-pill {
+  display: flex;
+  flex: none;
+  align-items: center;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--surface-sunken);
+}
+
+.tabs .tab-run-pill:has(> [data-focus-visible]) {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
+}
+
+.tabs .tab-run-counts {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.tab-run-counts .count {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-1);
+  align-items: center;
+  height: var(--size-chrome);
+  color: var(--text-secondary);
+}
+
+.tab-run-counts > .count + .count {
+  margin-inline-start: var(--space-2);
+}
+
+.tab-run-counts .count svg {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
 /* The skill run open in a tab's chat (SK-3): the skill's name, cut short where it is long. */
 .tab-skill-run .skill-run-name {
   max-width: 12ch;

@@ -605,10 +605,14 @@ function Chip({
             onPointerCancel={() => {
               pressedFrom.current = undefined;
             }}
-            // A press by any pointer, or a screen reader's, which sends none and lands where
-            // the keyboard's own open does (#4304).
+            // A press by any pointer, by the keyboard, or by a screen reader.
             onPress={(event) => {
-              const opened = event.pointerType === "virtual" ? "keys" : "press";
+              // Enter or Space on it, and a screen reader's, which sends no pointer, land where
+              // the keyboard's own open does (#4304, #5341).
+              const opened =
+                event.pointerType === "virtual" || event.pointerType === "keyboard"
+                  ? "keys"
+                  : "press";
               const from = pressedFrom.current ?? document.activeElement;
               pressedFrom.current = undefined;
               notResting();

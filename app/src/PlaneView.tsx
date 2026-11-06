@@ -3497,7 +3497,10 @@ export const PlaneView = memo(function PlaneView({
   const freshMarks = useId();
   const freshMarkOf = (tab: number) => `${freshMarks}-fresh-${tab}`;
   /** The id of the counts on a tab's chip (#1487), which the tab is described by. */
-  const tasksIdOf = (session: number, pane: number) => `${freshMarks}-tasks-${pane}-${session}`;
+  const tasksIdOf = useCallback(
+    (session: number, pane: number) => `${freshMarks}-tasks-${pane}-${session}`,
+    [freshMarks],
+  );
   const strip = useCallback(
     (element: HTMLElement | null) => {
       chatStrip.current = element;

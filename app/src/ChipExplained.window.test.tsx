@@ -329,8 +329,8 @@ describe("the first dispatch on a machine explains the chip (#1501)", () => {
     await held.dispatched(talk());
     const notice = await theNotice();
     expect(said(notice)).toBe(
-      "This chat started a task, and it works inside this tab. The chip beside the tab's " +
-        "name says whether it is working, waiting, failed or done; press the chip to switch to it.",
+      "This chat started a task, and it works inside this tab. The state at the top of this " +
+        "pane says whether it is working, waiting, failed or done; press it to switch to the task.",
     );
     // On the pane of the session that asked: the Notices of a pane are its corner's.
     expect(notice.closest("[data-scope=notice-row][data-part=stack]")).not.toBeNull();
@@ -343,9 +343,9 @@ describe("the first dispatch on a machine explains the chip (#1501)", () => {
     await drawn([chat(1, "alpha"), talk(), sweep()]);
     const notice = await theNotice();
     expect(said(notice)).toBe(
-      "This chat started 2 tasks, and they work inside this tab. The chip beside the tab's " +
-        "name counts them as working, waiting, failed and done; press the chip to switch " +
-        "between them.",
+      "This chat started 2 tasks, and they work inside this tab. Press the state at the top of " +
+        "this pane to switch between them; its menu counts them as working, waiting, failed and " +
+        "done.",
     );
     expect(within(notice).getByRole("button", { name: "Show the tasks" })).toBeInTheDocument();
   });
@@ -375,7 +375,7 @@ describe("the first dispatch on a machine explains the chip (#1501)", () => {
     expect(held.asked.some((one) => one.cmd === "chat_attended")).toBe(false);
   });
 
-  it("goes on its own action, which opens the chip's menu, and is not shown again", async () => {
+  it("goes on its own action, which opens the head's tasks menu, and is not shown again", async () => {
     const held = await drawn([chat(1, "alpha"), talk()]);
     fireEvent.click(within(await theNotice()).getByRole("button", { name: "Show the task" }));
     expect(await screen.findByRole("menu", { name: /^Tasks of / })).toBeInTheDocument();

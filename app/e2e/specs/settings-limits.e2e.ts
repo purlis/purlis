@@ -7,6 +7,9 @@ import { closesTheTabsItOpens } from "../reach.js";
 import { openProjectSettings } from "../settingsTab.js";
 import { endChatsStartedHere, startAChat, type Started } from "../started.js";
 
+/** A chat's tasks button: the state word on the head of the pane in front (#5341). */
+const HEAD_TASKS = ".pane-frame[data-focused] .pane-tasks-button";
+
 /**
  * **The token and time limits' lines, and the settings set's native controls, in the real
  * WebView** (#1545 line 2; #626's train 27 follow-up 2).
@@ -31,7 +34,6 @@ import { endChatsStartedHere, startAChat, type Started } from "../started.js";
  * steps is stepped back, and the chat it opens is ended.
  */
 
-const STRIP = '[data-strip="Tabs"]';
 const NOTE = '[data-testid="dispatch-tokens-time-note"]';
 
 type Box = { left: number; right: number; top: number; bottom: number };
@@ -425,17 +427,17 @@ describe("the limits' lines and the set's native controls, in the real WebView",
       );
     }, asker);
 
-    // The pointer rests on the chip, as a person's would (dispatched: see `tab-chip.e2e.ts`).
+    // The pointer rests on the pane head's tasks button, as a person's would (dispatched: see `tab-chip.e2e.ts`).
     await browser.waitUntil(
       async () =>
-        browser.execute(
-          (strip: string) => document.querySelector(`${strip} .tab-tasks-counts`) !== null,
-          STRIP,
-        ),
-      { timeout: 10_000, timeoutMsg: "the tab never wore a chip for the pretended task" },
+        browser.execute((tasks: string) => document.querySelector(tasks) !== null, HEAD_TASKS),
+      {
+        timeout: 10_000,
+        timeoutMsg: "the pane head never drew a tasks button for the pretended task",
+      },
     );
-    await browser.execute((strip: string) => {
-      const counts = document.querySelector<HTMLElement>(`${strip} .tab-tasks-counts`);
+    await browser.execute((tasks: string) => {
+      const counts = document.querySelector<HTMLElement>(tasks);
       if (!counts) return;
       const at = counts.getBoundingClientRect();
       const send = (type: string, dx = 0) =>
@@ -452,7 +454,7 @@ describe("the limits' lines and the set's native controls, in the real WebView",
         );
       send("pointerover");
       send("pointermove", 2);
-    }, STRIP);
+    }, HEAD_TASKS);
     await browser.waitUntil(
       async () =>
         browser.execute(() => document.querySelector('.tasks-menu[data-part="root"]') !== null),

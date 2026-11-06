@@ -10,8 +10,9 @@ import { Notice } from "./Notice";
  * **The first dispatch on a machine explains the chip, once** (#1501, V100-55).
  *
  * The first time a session the person is at has a task, one Notice on that session's tab says
- * that its tasks work inside the tab, and how to see them: the chip beside the tab's name. It
- * goes on Dismiss and on its own action (which opens the chip's menu), and either is kept as
+ * that its tasks work inside the tab, and how to see them: the state word on the pane's head
+ * (#5341), which opens their menu. It goes on Dismiss and on its own action (which opens that
+ * menu), and either is kept as
  * seen **on this machine** (`dismissals.ts`, {@link useSeenOnThisMachine}): the person's own
  * layout file, where what they have dismissed is already kept, and never a project, which
  * would carry it to every clone. It is added by the core under the file's lock, on the
@@ -38,14 +39,14 @@ export type ChipToExplain = { session: number; tasks: number; onShow: () => void
 /** The Notice's cause: what the person has seen, kept on this machine. */
 export const CHIP_EXPLAINED = "chip-explained";
 
-/** What it says, for `tasks` tasks: the four states are the chip's (`taskBuckets.ts`). */
+/** What it says, for `tasks` tasks: the four states are the menu's (`taskBuckets.ts`). */
 export function chipExplained(tasks: number): string {
   return tasks === 1
-    ? "This chat started a task, and it works inside this tab. The chip beside the tab's name " +
-        "says whether it is working, waiting, failed or done; press the chip to switch to it."
-    : `This chat started ${tasks} tasks, and they work inside this tab. The chip beside the ` +
-        "tab's name counts them as working, waiting, failed and done; press the chip to switch " +
-        "between them.";
+    ? "This chat started a task, and it works inside this tab. The state at the top of this " +
+        "pane says whether it is working, waiting, failed or done; press it to switch to the task."
+    : `This chat started ${tasks} tasks, and they work inside this tab. Press the state at the ` +
+        "top of this pane to switch between them; its menu counts them as working, waiting, " +
+        "failed and done.";
 }
 
 /** The Notice, on the pane showing chat `session`, when `chip` is that chat's. */
