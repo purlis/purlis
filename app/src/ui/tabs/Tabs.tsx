@@ -18,7 +18,8 @@
  * - **`tab`** is one tab's cell ({@link TabCell}): the tab's own button, its marks and its `×`.
  *   Choosing a tab changes its colour and its fill and nothing else, so no tab moves. An unchosen
  *   tab under the pointer draws a pill inset from its cell, which never touches the panel.
- * - **`label`**, **`closer`**, **`count`** and **`indicator`** are inside a tab.
+ * - **`label`**, **`closer`**, **`count`**, **`picture`** and **`indicator`** are inside a tab.
+ *   The picture is a split tab's small picture of its layout's shape ({@link TabPicture}).
  * - **`toolbar`** (family `editor`) is the bar over a file, named by its file tab, which joins it
  *   while it is chosen ({@link editorToolbar}).
  *
@@ -27,6 +28,7 @@
  * (`sortable.tsx`). This layer is how it is drawn.
  */
 import { useState, type ComponentPropsWithRef, type PointerEvent, type ReactNode } from "react";
+import type { Picture } from "../../layoutPicture";
 
 /** The tab's variants, in the order the manifest names them. */
 export const TAB_VARIANTS = ["chat", "view", "file", "background"] as const;
@@ -54,6 +56,41 @@ export function tabPanelOf(namedBy: string | undefined) {
 /** The attributes of a part inside a tab: its name, its × and its counts. */
 export function tabPart(part: "label" | "closer" | "count") {
   return { "data-scope": "tabs", "data-part": part } as const;
+}
+
+/** Where a picture's box sits on the 16 its icon is drawn on, and how wide it is. */
+const BOX_AT = 2.5;
+const BOX_SIDE = 11;
+const placed = (at: number) => BOX_AT + BOX_SIDE * at;
+
+/**
+ * **A split tab's small picture of its layout's shape** (#5342, spec #5339): its box, and the
+ * lines between its panes where they divide it, in place of `+1`. Drawn at the size of the tab's
+ * other marks, in the quiet tier, and out of what a screen reader reads: the tab says how many
+ * panes it holds in words.
+ */
+export function TabPicture({ picture }: { picture: Picture }) {
+  return (
+    <svg
+      data-scope="tabs"
+      data-part="picture"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      aria-hidden="true"
+    >
+      <rect x={BOX_AT} y={BOX_AT} width={BOX_SIDE} height={BOX_SIDE} rx="1.5" />
+      {picture.lines.map((line) => (
+        <line
+          key={`${line.x1} ${line.y1} ${line.x2} ${line.y2}`}
+          x1={placed(line.x1)}
+          y1={placed(line.y1)}
+          x2={placed(line.x2)}
+          y2={placed(line.y2)}
+        />
+      ))}
+    </svg>
+  );
 }
 
 /** The attributes of the bar over a file, which its file tab joins. */

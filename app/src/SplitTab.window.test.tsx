@@ -190,3 +190,35 @@ describe("a split tab's mark (#5342)", () => {
     await waitFor(() => expect(tabMark()).toBe("working"));
   });
 });
+
+describe("a split tab's picture (#5342)", () => {
+  /** The lines the tab's picture draws between its panes, each as `x1 y1 x2 y2`. */
+  const pictureLines = () =>
+    [...theTab().querySelectorAll('[data-scope="tabs"][data-part="picture"] line')].map((line) =>
+      ["x1", "y1", "x2", "y2"].map((at) => line.getAttribute(at)).join(" "),
+    );
+
+  it("is drawn after the name in place of +1: one line down the middle of two side by side", async () => {
+    core([chat(1), chat(2)], twoPanes("a"));
+    render(<App />);
+    await waitFor(() => expect(focusedSession()).toBe("1"));
+
+    expect(pictureLines()).toEqual(["8 2.5 8 13.5"]);
+    expect(theTab()).not.toHaveTextContent("+1");
+    // To a screen reader the picture is words: how many panes the tab holds.
+    expect(theTab()).toHaveTextContent("ide.1, split, 2 panes");
+  });
+
+  it("is gone once the tab is down to one pane", async () => {
+    core([chat(1), chat(2)], twoPanes("a"));
+    render(<App />);
+    await waitFor(() => expect(focusedSession()).toBe("1"));
+
+    const second = screen.getByRole("region", { name: "Right pane" });
+    await userEvent.click(within(second).getByRole("button", { name: "Close this pane" }));
+
+    await waitFor(() => expect(screen.getAllByTestId("pane")).toHaveLength(1));
+    expect(pictureLines()).toEqual([]);
+    expect(theTab()).not.toHaveTextContent("split");
+  });
+});

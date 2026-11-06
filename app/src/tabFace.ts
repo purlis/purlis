@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { pictureOf, type Picture } from "./layoutPicture";
 import { contentsOf, tabNameOf, type Tabs, type ViewRef } from "./tabs";
 import { zoomedOf } from "./tiling";
 
@@ -10,7 +11,8 @@ import { zoomedOf } from "./tiling";
  * whichever pane has the keyboard, so a split or a move between panes never renames it; **its
  * mark is its most urgent pane's**, chosen from {@link TabFace.chats} by the one state order
  * (`shownState.urgentOf`), so a pane that needs the person can't hide behind the focused one;
- * `⊟+N` where N other panes share the tab; and every pane's name, in reading order, on hover.
+ * a small picture of its layout where it is split (`layoutPicture.ts`); and, on hover, how many
+ * panes it holds and every pane's name, in reading order.
  *
  * - A chat's pane: the chat's icon (`ChatPersonaState`) and the name its row has; the first
  *   pane, the tab's own name, which a rename sets and which says the task a pane shows in its
@@ -31,8 +33,11 @@ export type TabFace = {
    * reaches the tab's mark (#5342). No view and no empty pane: neither has a state.
    */
   chats: number[];
-  /** How many other panes share the tab: `⊟+N`, none for a tab of one pane. */
+  /** How many other panes share the tab: none for a tab of one pane. */
   more: number;
+  /** **A split tab's small picture of its layout** (#5342), drawn in place of `+N`; none for a
+   *  tab of one pane. */
+  picture?: Picture;
   /** Every pane's name, in reading order (each split's first child first): the tooltip. */
   panes: string[];
   /** One pane is zoomed to fill the tab for now (#4765): the tab wears the zoom mark. */
@@ -81,12 +86,14 @@ export function faceOf(tabs: Tabs, id: number, naming: Naming): TabFace {
     const shown = tab?.shows?.[pane];
     return shown === undefined || shown === lead.session ? [lead.session] : [lead.session, shown];
   });
+  const picture = tab === undefined ? undefined : pictureOf(tab.layout);
   return {
     lead: lead.lead,
     name: tab === undefined ? NEW_CHAT : tabNameOf(tab),
     chats,
     more: panes.length - 1,
     panes: panes.map(nameOf),
+    ...(picture === undefined ? {} : { picture }),
     ...(zoomedOf(tabs, id) === undefined ? {} : { zoomed: true }),
   };
 }

@@ -9857,6 +9857,51 @@
         "tabs.count.background.selected.text": {
           "$ref": "#/$defs/part-text"
         },
+        "tabs.picture.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tabs.picture.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tabs.picture.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tabs.picture.chat.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tabs.picture.chat.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tabs.picture.chat.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tabs.picture.view.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tabs.picture.view.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tabs.picture.view.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tabs.picture.file.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tabs.picture.file.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tabs.picture.file.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tabs.picture.background.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tabs.picture.background.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "tabs.picture.background.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
         "tabs.indicator.fill": {
           "$ref": "#/$defs/part-fill"
         },

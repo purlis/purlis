@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { memo, useMemo, type ReactNode } from "react";
-import { Columns2, Hand, ListTodo, Maximize2, Plus } from "lucide-react";
+import { Hand, ListTodo, Maximize2, Plus } from "lucide-react";
 import { StoppingMark, WrappingUp } from "./NeedsYou";
 import {
   asksThePerson,
@@ -28,7 +28,7 @@ import { MARK_SAID, shownState, type RowFacts, type Shown } from "./shownState";
 import { StateShown } from "./StateShown";
 import { needsSaid } from "./tabTasks";
 import { Tooltip } from "./ui/tooltip/Tooltip";
-import { tabPart } from "./ui/tabs/Tabs";
+import { TabPicture, tabPart } from "./ui/tabs/Tabs";
 
 /*
  * **The rows that draw a chat** (SC-3): split out of `PlaneView`, whose rendering they no longer
@@ -140,7 +140,7 @@ export function TabMarks({
    *  the tab, and is pressed (`TabChip.tsx`). */
   needs?: readonly string[];
   /** What the tab wears (`tabFace.ts`): its first pane's name, its panes' chats for its mark,
-   *  and `⊟+N`. */
+   *  and its picture of its layout. */
   face: TabFace;
   /** The persona a chat runs as, when it runs as one: its mark is the combined icon's. */
   personaOf: (session: number) => string | null | undefined;
@@ -189,7 +189,7 @@ export function TabMarks({
         <span className={preview ? "tab-name is-preview" : "tab-name"} {...tabPart("label")}>
           {face.name}
         </span>
-        <SplitMore more={face.more} zoomed={face.zoomed} />
+        <SplitMore face={face} />
       </>
     );
   }
@@ -220,7 +220,7 @@ export function TabMarks({
       <span className="tab-name" {...tabPart("label")}>
         {face.name}
       </span>
-      <SplitMore more={face.more} zoomed={face.zoomed} />
+      <SplitMore face={face} />
       {/* No sandbox badge: it moved to the chat's pane head and its row (#4760). */}
       <PlaneUpdatedMark files={updates?.[chat]} />
       {/* **What the tab is doing, said after what it is**: its own element, so a tab whose text
@@ -278,17 +278,18 @@ export function TabMarks({
 }
 
 /**
- * **`⊟+N`: how many other panes share a split tab** (#4762), after its name and never giving way
- * to it: the name is cut first. A screen reader hears it as words.
+ * **A split tab's small picture of its layout** (#5342, spec #5339), after its name and never
+ * giving way to it: the name is cut first. It took the place of `⊟+N` (#4762): it tells the
+ * shape as well as that the tab is split. A screen reader hears how many panes in words.
  */
-function SplitMore({ more, zoomed }: { more: number; zoomed?: true }) {
-  if (more <= 0) return null;
+function SplitMore({ face }: { face: TabFace }) {
+  const { picture, zoomed } = face;
+  if (picture === undefined) return null;
   return (
     <>
       <span className="tab-split-more" data-mark="split">
-        <Columns2 aria-hidden="true" />
-        <span aria-hidden="true">+{more}</span>
-        <span className="hidden-words">, split, {more + 1} panes</span>
+        <TabPicture picture={picture} />
+        <span className="hidden-words">, split, {picture.panes} panes</span>
       </span>
       {/* **A zoomed pane's mark** (#4765): one pane fills the tab for now, and Focus this pane
           brings the others back. */}
