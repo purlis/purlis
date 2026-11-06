@@ -665,13 +665,14 @@ static IN_THE_HOST: LazyLock<Arc<Windows>> = LazyLock::new(|| {
 });
 
 impl Watch {
-    /// Starts watching `root` in the session host, for its saver (`crate::hostsaving`): what
-    /// moved marks the plane's git standing to be read again, and nobody else is told.
-    pub fn in_the_host(root: &Path) -> notify::Result<Self> {
+    /// Starts watching `root` in the session host, for its saver and its project index
+    /// (`crate::hostsaving`): what moved marks the plane's git standing to be read again, and is
+    /// told to `changed`, which hands it to the index (ADR 0079 §4). No window is told.
+    pub fn in_the_host(root: &Path, changed: Changed) -> notify::Result<Self> {
         Self::start_with(
             crate::planes::PlaneId::saved_in_the_host(root),
             root,
-            Arc::new(|_, _| {}),
+            changed,
             platform_config(),
             Arc::clone(&IN_THE_HOST),
             SWEEP_EVERY,

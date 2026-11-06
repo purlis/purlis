@@ -1157,7 +1157,7 @@ pub fn is_word(c: char) -> bool {
 }
 
 /// `re.split(r"\W+", text.lower())` without the empty strings at either end.
-fn tokens(text: &str) -> Vec<String> {
+pub(crate) fn tokens(text: &str) -> Vec<String> {
     text.to_lowercase()
         .split(|c: char| !is_word(c))
         .filter(|t| !t.is_empty())
