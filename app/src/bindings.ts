@@ -2097,6 +2097,12 @@ export const commands = {
 	 */
 	skillStats: (plane: PlaneId, skill: string) => typedError<SkillStats, string>(__TAURI_INVOKE("skill_stats", { plane, skill })),
 	/**
+	 *  **How much each skill was used lately** (#5355): its runs in the last 30 days, which Make room
+	 *  sorts the Library by, least used first. None while the flag is off. On a blocking thread, as
+	 *  it reads the project's skill log.
+	 */
+	skillUses: (plane: PlaneId) => typedError<SkillRunsLately[], string>(__TAURI_INVOKE("skill_uses", { plane })),
+	/**
 	 *  **The panels on skill `skill`'s tab** (ADR 0101 §6): purlis's Runs panel, which lists every
 	 *  run of the skill, newest first, then each extension's. A skill's grades are no panel: its
 	 *  Grades tab reads them whole ([`crate::skillgrade::skill_grades`]). None while the flag is off.
@@ -15736,6 +15742,12 @@ export type SkillRouting = {
 	 *  one. Optional in the window's type, as most routers never are.
 	 */
 	last_prompt?: SkillPromptRouting | null,
+};
+
+/**  **One skill's runs in the last [`USES_DAYS`] days**, by its own name (#5355). */
+export type SkillRunsLately = {
+	skill: string,
+	runs: number,
 };
 
 /**  What is asked of a set. */

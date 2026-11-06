@@ -22,6 +22,7 @@ import {
   type SkillSetMember,
   type SkillUpdates,
   type SkillWidening,
+  type StudioBudget,
   type StudioLevel,
   type UpdateReview,
 } from "./bindings";
@@ -37,6 +38,7 @@ import { sourceKey, type SourcesAt } from "./skillStudio";
 import type { Change as StudioChange } from "./SkillPage";
 import { SetChoosePage, SetReviewPage, applySet, memberKey, setTitle } from "./SkillSetReview";
 import { SetUpdateReviewPage, applySetUpdate } from "./SkillSetUpdateReview";
+import { installGoesOver } from "./makeRoom";
 import { Badge } from "./ui/badge/Badge";
 import { Changes, LOOK_CLOSELY, Summary } from "./SkillChangesShown";
 import { Button, ButtonRow } from "./ui/button/Button";
@@ -249,8 +251,11 @@ export function SkillSourcesPage({
   change,
   changed,
   workspace = null,
+  room,
 }: {
   plane: string;
+  /** What an install would cost the studio's chats, and Make room (#5355). */
+  room?: InstallRoom;
   /** The workspace the studio shows, which is what a skill is turned off or on in. */
   workspace?: string | null;
   /** The page inside Sources, or none for Sources itself. */
@@ -453,6 +458,7 @@ export function SkillSourcesPage({
         plane={plane}
         source={sourceAt}
         named={at.skills}
+        room={room}
         levels={levels}
         workspaces={workspaces}
         start={start}
@@ -1793,6 +1799,96 @@ function firstPart(n: number): string {
   return n === 1 ? "the first skill" : `the first ${n} skills`;
 }
 
+/** **What an install would cost the studio's chats** (#5355): their budget on each program,
+ *  whose chats they are, and Make room. */
+export type InstallRoom = {
+  workspace: string | null;
+  persona: string | null;
+  budget: readonly StudioBudget[];
+  /** Opens the Library's Select, least used first. */
+  onMakeRoom: () => void;
+};
+
+/**
+ * **An install past the budget** (#5355): which programs these skills would take past the most
+ * skills a chat lists, counted as the core counts a chat's list now (`skill_budget_preview` at
+ * the numbers in force), and Make room…. Nothing is drawn while it fits.
+ */
+function InstallOver({
+  plane,
+  room,
+  adding,
+}: {
+  plane: string;
+  room: InstallRoom;
+  adding: number;
+}) {
+  const { read } = useRead(
+    JSON.stringify([room.workspace, room.persona, room.budget.map((one) => one.key)]),
+    async () => ({
+      status: "ok" as const,
+      data: await Promise.all(
+        room.budget.map(async (program) => {
+          const answer = await commands.skillBudgetPreview(
+            plane,
+            room.workspace,
+            room.persona,
+            program.key,
+            program.skills_here,
+            program.chars_here,
+          );
+          return answer.status === "ok"
+            ? { program, counted: answer.data }
+            : { program, refused: answer.error };
+        }),
+      ),
+    }),
+  );
+  const programs = read?.data ?? [];
+  const over = installGoesOver(
+    programs.flatMap((one) =>
+      one.counted === undefined ? [] : [{ program: one.program, counted: one.counted }],
+    ),
+    adding,
+  );
+  // What could not be worked out is said, so it never reads as fitting.
+  const unknown = programs.flatMap((one) =>
+    one.refused !== undefined
+      ? [
+          `purlis could not work out whether this goes past ${one.program.program}'s skill budget: ${one.refused}`,
+        ]
+      : [],
+  );
+  if (over.length + unknown.length === 0) return null;
+  return (
+    <section
+      aria-labelledby="install-all-over-head"
+      className="skill-review"
+      data-testid="install-all-over"
+    >
+      <h3 id="install-all-over-head" className="ui-text-small ui-text-strong">
+        Past the skill budget
+      </h3>
+      {[...over, ...unknown].map((line) => (
+        <p key={line} className="honest">
+          {line}
+        </p>
+      ))}
+      {over.length > 0 && (
+        <p className="honest">
+          Past it, the router moves what it can into an index skill. Make room first, or install
+          them and choose after.
+        </p>
+      )}
+      {over.length > 0 && (
+        <ButtonRow size="sm">
+          <Button onPress={room.onMakeRoom}>Make room…</Button>
+        </ButtonRow>
+      )}
+    </section>
+  );
+}
+
 /** How many risky items `review` marks, over all its skills. */
 function riskyIn(review: InstallReview): number {
   return review.skills.reduce((n, skill) => n + skill.summary.marked, 0);
@@ -1810,6 +1906,7 @@ function InstallSetReviewPage({
   plane,
   source,
   named,
+  room,
   levels,
   workspaces,
   start,
@@ -1821,6 +1918,7 @@ function InstallSetReviewPage({
   source: SkillSource;
   /** The skills ticked on the list, in its order. */
   named: readonly string[];
+  room?: InstallRoom;
   levels: readonly StudioLevel[];
   workspaces: readonly string[];
   start: SkillLevel;
@@ -1969,6 +2067,9 @@ function InstallSetReviewPage({
                   read from the files: a script can do more when it runs, and the chat&apos;s
                   sandbox bounds that. Installing copies all of them or none.
                 </p>
+                {room !== undefined && data.review.skills.length > 0 && (
+                  <InstallOver plane={plane} room={room} adding={data.review.skills.length} />
+                )}
                 {data.review.skills.map((skill) => (
                   <SkillReviewed
                     key={skill.name}

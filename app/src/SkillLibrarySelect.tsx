@@ -22,6 +22,7 @@ import { GrantPicker } from "./SkillLevelPickers";
 import { BUSY, useRead } from "./SkillRead";
 import { SetReviewPage, memberKey, setVerb, type Stays } from "./SkillSetReview";
 import { BRING_BACK_WORDS, useNameTaken, type Taking } from "./SkillNameTaken";
+import { MAKE_ROOM_ACTS } from "./makeRoom";
 import { levelKey, levelOf, sameLevel } from "./skillChanges";
 import type { StudioScope } from "./skillStudio";
 import { Badge } from "./ui/badge/Badge";
@@ -49,8 +50,9 @@ import { ViewPageHeader } from "./ui/panel/ViewFrame";
  *   is read until Select is pressed.
  *
  * {@link SELECT_ACTS} is the one list of what can be done, in its order: Grade's review and its
- * grades running (#5356) are `SkillLibraryGrade.tsx`'s, Review updates' review (#5354) is
- * `SetUpdateReviewPage`, and Make room (#5355) joins it as a row of its own.
+ * grades running (#5356) are `SkillLibraryGrade.tsx`'s, and Review updates' review (#5354) is
+ * `SetUpdateReviewPage`. **Make room** (#5355) is this mode opened least used first, offering
+ * only `MAKE_ROOM_ACTS` of it (`makeRoom.ts`).
  */
 
 /** **What Select can do**: a change to the set (#5331's), Grade (#5356), which changes no
@@ -85,6 +87,9 @@ export type Selecting = {
   only: boolean;
   /** The action whose review is open in the selection page's place. */
   acting?: SelectAct;
+  /** **Make room** (#5355): opened from an over budget, least used first, with only
+   *  {@link MAKE_ROOM_ACTS}. */
+  room?: boolean;
 };
 
 /** **What an action reaches of those chosen**: the skills it changes, as a set's members, and
@@ -337,7 +342,10 @@ export function SelectionPage({
   onOut,
   onClear,
   onOnly,
+  room = false,
 }: {
+  /** Make room (#5355): only its actions are offered. */
+  room?: boolean;
   /** Every skill chosen, the list's order. */
   chosen: readonly { key: string; skill: StudioSkill }[];
   /** Those of them the list does not draw now: filtered out, or a built-in folded away. */
@@ -354,12 +362,17 @@ export function SelectionPage({
     return (
       <EmptyState
         headline="Nothing selected"
-        body="Click a row, or press Space on it; Shift-click takes a range. ⌘A takes everything the search and filters match, and Esc leaves Select."
+        body={
+          room
+            ? "The skills least used in the last 30 days are listed first. Tick what goes, to turn it off or archive it, or what stays, to pin it. Esc leaves Make room."
+            : "Click a row, or press Space on it; Shift-click takes a range. ⌘A takes everything the search and filters match, and Esc leaves Select."
+        }
         testid="select-none"
       />
     );
   const skills = chosen.map((one) => one.skill);
   const acts = SELECT_ACTS.filter((one) => askable(one.act, at))
+    .filter((one) => !room || MAKE_ROOM_ACTS.includes(one.act))
     .map((one) => ({ ...one, reach: reachOf(one.act, skills, at).will.length }))
     .filter((one) => one.reach > 0)
     .map((one) => ({
