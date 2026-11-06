@@ -455,7 +455,7 @@ describe("the window", function () {
 
     // A background tab's × comes under the pointer (#5341): the pointer goes onto its tab first,
     // as a person's does.
-    const closer = await $(`button=Close ${closing}`);
+    const closer = await $(`button[aria-label="Close ${closing}"]`);
     await (await closer.parentElement()).moveTo();
     await closer.waitForClickable({ timeout: 10_000 });
     // Asks nothing: a close ends nothing, so there is no question to answer.

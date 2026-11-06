@@ -431,6 +431,24 @@ export const CloseAtRest: Story = {
 };
 
 /**
+ * **A short name in front is never cut by its `×`** (#5341): where the strip has room, the end of
+ * the name is kept clear of the `×` and its fade, whether the theme shares the strip out or sizes
+ * each tab to its words.
+ */
+export const ShortNameInFront: Story = {
+  play: async ({ canvas }) => {
+    await waitFor(() => expect(seen(closerOf(canvas, /talk/))).toBe("1"));
+    const name = canvas
+      .getByRole("tab", { name: /talk/ })
+      .querySelector('[data-part="label"]') as HTMLElement;
+    await expect(name.scrollWidth).toBeLessThanOrEqual(name.clientWidth);
+    expect(name.getBoundingClientRect().right).toBeLessThanOrEqual(
+      closerOf(canvas, /talk/).getBoundingClientRect().left,
+    );
+  },
+};
+
+/**
  * **Under the pointer, a background tab's `×` comes over the end of its name**, and the name keeps
  * its width: nothing moves. Waited for until it is drawn whole.
  */

@@ -21,7 +21,9 @@ behaves so at every width, so there is no second rule to keep.
 
 **The × takes no room.** It stands over the end of the name, out of the tab's flow, on a fade of
 the tab's own ground, so the name never moves when it comes and has that room at rest. It is
-seen on the front tab, under the pointer and with the keyboard in the tab. **The front tab's × is
+seen on the front tab, under the pointer and with the keyboard in the tab. **A tab with room to spare keeps the end of its name clear of the ×**: the room after the
+name gives way before the name does, so where a theme sizes a tab to its words a short name is
+never cut by its ×, and at the floor that room is the name's. **The front tab's × is
 the one Tab stop after the strip**, so a keyboard reaches it without fifty stops (charter-app#189
 still holds for every other tab's); Delete on a tab, its menu and the palette still close it.
 

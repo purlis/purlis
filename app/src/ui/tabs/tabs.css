@@ -311,6 +311,23 @@
   transition: opacity var(--motion-duration-quick) var(--motion-easing-standard);
 }
 
+/* **Room for the ×, given up first** (#5341): a tab with room to spare keeps the end of its
+   name clear of its × and its fade, where a tab is as wide as its words (Purlis's sizing). The
+   room is a spacer after the name that gives way a thousand times sooner than the name, so a tab
+   at its floor gives it all up and the × takes none of the name's room there. The same at rest
+   and in every state, so nothing moves when the × comes. */
+[data-scope="tabs"][data-part="tab"] > [role="tab"]::after {
+  content: "";
+  flex: 0 1000 calc(24rem / 14 + var(--space-3) + var(--space-6) - var(--space-4) - var(--space-1));
+  min-inline-size: 0;
+}
+
+/* A tab drawn as its icon alone has no name to keep clear, and draws no ×. */
+[data-scope="tabs"][data-part="tab"]:is([data-icon-only], [data-variant="background"])
+  > [role="tab"]::after {
+  display: none;
+}
+
 /* Seen, and pressable, on the front tab, under the pointer, and with the keyboard in the tab. */
 [data-scope="tabs"][data-part="tab"]:is([data-selected], [data-hovered], :focus-within)
   [data-part="closer"][data-scope="tabs"] {
