@@ -84,14 +84,19 @@ export function problems(dir) {
     const m = e.isFile() && ADR.exec(e.name);
     if (m) held.set(m[1], [...(held.get(m[1]) ?? []), e.name].sort());
   }
-  const next = String(Math.max(0, ...[...held.keys()].map(Number)) + 1).padStart(4, "0");
+  // Each record to move gets a number of its own, so two that move never meet again.
+  let next = Math.max(0, ...[...held.keys()].map(Number)) + 1;
   for (const [number, names] of [...held].sort()) {
     adrs.set(number, names[0]);
     if (names.length > 1) {
+      const free = names.slice(1).map(() => String(next++).padStart(4, "0"));
+      const to =
+        free.length === 1
+          ? `the next free number, ${free[0]}`
+          : `the next free numbers, ${free.slice(0, -1).join(", ")} and ${free.at(-1)}`;
       out.push(
-        `ADR ${number} is held by ${names.length} records: ${names.join(", ")}; ` +
-          `keep the one that landed first and move each other to the next free number, ${next}, ` +
-          `correcting what cites it`,
+        `ADR ${number} is held by ${names.length} records: ${names.join(", ")}; keep the one ` +
+          `that landed first and move the others to ${to}; correct what cites them`,
       );
     }
   }

@@ -143,7 +143,7 @@ test("two ADRs that share a number are refused, naming both files and the next f
   assert.equal(found.length, 1);
   assert.match(found[0], /0111-a-chats-pane\.md/);
   assert.match(found[0], /0111-one-notice\.md/);
-  assert.match(found[0], /next free number, 0112/);
+  assert.match(found[0], /next free number, 0112;/);
 });
 
 test("three ADRs that share a number are named in one refusal", () => {
@@ -156,7 +156,21 @@ test("three ADRs that share a number are named in one refusal", () => {
   const found = problems(dir);
   assert.equal(found.length, 1);
   assert.match(found[0], /0090-a\.md.*0090-b\.md.*0090-c\.md/);
-  assert.match(found[0], /next free number, 0094/);
+  assert.match(found[0], /next free numbers, 0094 and 0095/);
+});
+
+test("each record to move is given a free number of its own, across every clash", () => {
+  const dir = adrs({
+    "0001-a.md": "# A\n",
+    "0001-b.md": "# B\n",
+    "0003-c.md": "# C\n",
+    "0003-d.md": "# D\n",
+    "0003-e.md": "# E\n",
+  });
+  const found = problems(dir);
+  assert.equal(found.length, 2);
+  assert.match(found[0], /^ADR 0001 .*next free number, 0004;/);
+  assert.match(found[1], /^ADR 0003 .*next free numbers, 0005 and 0006;/);
 });
 
 test("the repository's own ADRs hold to the rule", () => {
