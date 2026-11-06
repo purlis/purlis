@@ -901,3 +901,41 @@ describe("Move into repos/ asks before anything moves (#5374)", () => {
     await vi.waitFor(() => expect(asked).toContain("plane_doctor_fix"));
   });
 });
+
+describe("Move into repos/ applies nothing when what it would do cannot be read (#5374)", () => {
+  function Wired() {
+    return <Health doctor={useDoctor(PLANE)} />;
+  }
+
+  it("says why, offers only Cancel, and never sends the fix", async () => {
+    const asked: string[] = [];
+    mockIPC((cmd) => {
+      asked.push(cmd);
+      if (cmd === "plane_doctor")
+        return report([
+          row("repos outside repos/", "warn", {
+            detail: "1 repo outside repos/: alpha/api",
+            fix: "move-into-repos",
+          }),
+        ]);
+      if (cmd === "plane_doctor_move_into_repos_plan") throw new Error("the plane is locked");
+      if (cmd === "plane_doctor_fix")
+        return { fix: "move-into-repos", refused: null, said: [], complete: true };
+      return null;
+    });
+    render(<Wired />);
+    await userEvent.click(button());
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(
+      await within(dialog).findByRole("button", { name: /^Fix repos outside repos\/$/ }),
+    );
+
+    const asking = await screen.findByRole("alertdialog", { name: "Move repos into repos/?" });
+    expect(asking).toHaveTextContent("the plane is locked");
+    expect(answersOf(asking)).toEqual(["Cancel"]);
+    await userEvent.click(within(asking).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(asked).toContain("plane_doctor_move_into_repos_plan");
+    expect(asked).not.toContain("plane_doctor_fix");
+  });
+});

@@ -107,9 +107,9 @@ export type DoctorState = {
   fixIdentity?: (name: string, email: string) => Promise<IdentityRefused | undefined>;
   /** git's global identity as it stands, for the form to lock what is set. */
   identityNow?: () => Promise<IdentityNow>;
-  /** What `move-into-repos` would do, for its confirmation; `undefined` where it cannot be
-   *  asked, and the fix is then applied for the core to say why (#5374). */
-  movePlan?: () => Promise<MoveIntoReposPlan[] | undefined>;
+  /** What `move-into-repos` would do, for its confirmation, or why it could not be read: the
+   *  confirmation then says so and the fix is not applied (#5374). */
+  movePlan?: () => Promise<MovePlanRead>;
   /** The fix on its way, by its id. */
   fixing?: string;
   /** What the last fix came to: its lines, or why it was refused. */
@@ -293,13 +293,20 @@ export async function identityNowOf(plane: PlaneId): Promise<IdentityNow> {
   }
 }
 
-/** What `move-into-repos` would do in `plane`, or `undefined` where it could not be asked. */
-export async function movePlanOf(plane: PlaneId): Promise<MoveIntoReposPlan[] | undefined> {
+/** What `move-into-repos` would do, or why that could not be read. */
+export type MovePlanRead = { plans: MoveIntoReposPlan[] } | { failed: string };
+
+/** What `move-into-repos` would do in `plane`, or why it could not be asked. A failure is never
+ *  a reason to move without asking (#5374). */
+export async function movePlanOf(plane: PlaneId): Promise<MovePlanRead> {
   try {
     const answer = await commands.planeDoctorMoveIntoReposPlan(plane);
-    return answer.status === "ok" && Array.isArray(answer.data) ? answer.data : undefined;
-  } catch {
-    return undefined;
+    if (answer.status !== "ok") return { failed: answer.error };
+    return Array.isArray(answer.data)
+      ? { plans: answer.data }
+      : { failed: "the core gave no answer" };
+  } catch (err: unknown) {
+    return { failed: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -359,7 +366,7 @@ export type Fixer = {
   /** What the identity is now, read when its form opens. */
   identityNow?: () => Promise<IdentityNow>;
   /** What `move-into-repos` would do, read when its confirmation opens (#5374). */
-  movePlan?: () => Promise<MoveIntoReposPlan[] | undefined>;
+  movePlan?: () => Promise<MovePlanRead>;
 };
 
 /**
@@ -377,13 +384,10 @@ export function useFixForm(fix: string, fixer: Fixer) {
   const withForm = FIXES_WITH_A_FORM.has(fix);
   const open = current !== undefined;
   // `move-into-repos` asks first, naming what it moves and what it costs (#5374).
-  const [plans, setPlans] = useState<MoveIntoReposPlan[]>();
+  const [plans, setPlans] = useState<MovePlanRead>();
   const press = () => {
     if (fix === MOVE_INTO_REPOS && fixer.movePlan) {
-      void fixer.movePlan().then((planned) => {
-        if (planned === undefined) fixer.apply(fix);
-        else setPlans(planned);
-      });
+      void fixer.movePlan().then(setPlans);
     } else if (!withForm) fixer.apply(fix);
     else if (open) setCurrent(undefined);
     else void (fixer.identityNow?.() ?? Promise.resolve({ name: "", email: "" })).then(setCurrent);
@@ -403,7 +407,7 @@ export function useFixForm(fix: string, fixer: Fixer) {
   );
   const confirm = plans !== undefined && (
     <MoveIntoReposConfirm
-      plans={plans}
+      {...plans}
       onCancel={() => setPlans(undefined)}
       onMove={() => {
         setPlans(undefined);

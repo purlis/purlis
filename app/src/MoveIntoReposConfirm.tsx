@@ -14,17 +14,29 @@ export const MOVE_INTO_REPOS = "move-into-repos";
  * itself rather than in a branch folder. Their session records still open.
  *
  * An alert dialog: the move puts a repo somewhere else on disk, so the keyboard starts on Cancel
- * and Return never presses Move.
+ * and Return never presses Move. Where what would move could not be read, it says why and offers
+ * only Cancel: nothing moves without being asked.
  */
-export function MoveIntoReposConfirm({
-  plans,
-  onCancel,
-  onMove,
-}: {
-  plans: readonly MoveIntoReposPlan[];
-  onCancel: () => void;
-  onMove: () => void;
-}) {
+export function MoveIntoReposConfirm(
+  props: ({ plans: readonly MoveIntoReposPlan[] } | { failed: string }) & {
+    onCancel: () => void;
+    onMove: () => void;
+  },
+) {
+  const { onCancel, onMove } = props;
+  if ("failed" in props)
+    return (
+      <AlertDialog
+        onClose={onCancel}
+        title="Move repos into repos/?"
+        description={
+          <p>
+            {`Could not read what would move: ${props.failed}. Nothing was moved. Run the doctor again, and press Fix once it shows the row.`}
+          </p>
+        }
+      />
+    );
+  const { plans } = props;
   const moving = plans.filter((plan) => plan.open.length === 0);
   const held = plans.filter((plan) => plan.open.length > 0);
   const unresumable = moving.flatMap((plan) => plan.unresumable);
