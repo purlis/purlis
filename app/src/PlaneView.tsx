@@ -400,6 +400,7 @@ import {
   PRESS_HERE,
   type PressHere,
   pressInProjectWindow,
+  type HandedChat,
 } from "./tabWindows";
 import type { TabFacts } from "./ChatRows";
 import { rowFactsOf } from "./shownState";
@@ -2588,11 +2589,35 @@ export const PlaneView = memo(function PlaneView({
     }),
     [pressing],
   );
+  /**
+   * **A tab window keeps its strip on a chat started or resumed here** (#5533), as it does on a
+   * press (#5330): a chat filed on another strip and in no pane here is opened by the project
+   * window, which comes forward, and is told where the chat is filed, since no list has it yet.
+   * Where no window holds the project, it lands here after all.
+   */
+  const landOrHandOn = useCallback(
+    (session: number, handed: HandedChat, land: () => void) => {
+      const elsewhere =
+        tabWindow !== undefined &&
+        wouldLeaveStrip(now.current, session, filedAs(session, handed.filed).filedIn);
+      if (!elsewhere) {
+        land();
+        return;
+      }
+      void pressInProjectWindow(plane, session, handed).then((held) => {
+        if (!held) land();
+      });
+    },
+    [filedAs, plane, tabWindow],
+  );
   const showStarted = useCallback(
     (chat: PressedChat, workspace: string, named = false, asked?: PaneAt) => {
-      landOn((tabs) => openNew(tabs, chat, filedAs(chat.session, workspace), { named, asked }));
+      const land = () =>
+        landOn((tabs) => openNew(tabs, chat, filedAs(chat.session, workspace), { named, asked }));
+      if (asked !== undefined) land();
+      else landOrHandOn(chat.session, { filed: workspace, started: true }, land);
     },
-    [filedAs, landOn],
+    [filedAs, landOn, landOrHandOn],
   );
   /**
    * **A chat that came back is a press** (#5289; spec #4750): a resumed chat or a reopened task
@@ -2601,9 +2626,11 @@ export const PlaneView = memo(function PlaneView({
    */
   const showResumed = useCallback(
     (chat: PressedChat, workspace: string) => {
-      landOn((tabs) => pressChat(tabs, chat, filedAs(chat.session, workspace)));
+      landOrHandOn(chat.session, { filed: workspace, started: false }, () =>
+        landOn((tabs) => pressChat(tabs, chat, filedAs(chat.session, workspace))),
+      );
     },
-    [filedAs, landOn],
+    [filedAs, landOn, landOrHandOn],
   );
   /**
    * **A chat the core started and placed** (#4758): a curation, a Fix, a theme, a skill, a
@@ -3661,10 +3688,15 @@ export const PlaneView = memo(function PlaneView({
 
   /** **A press in another of the project's windows landed on a chat this one has in a pane**
    *  (#4768): it is shown here, in its pane, and this window has come forward. */
-  const showChatHere = useRef<(session: number) => void>(() => undefined);
+  const showChatHere = useRef<(session: number, handed?: HandedChat) => void>(() => undefined);
   useEffect(() => {
     const listening = listen<PressHere>(PRESS_HERE, (event) => {
-      if (event.payload.plane === plane) showChatHere.current(event.payload.chat);
+      const { plane: of, chat, filed, started } = event.payload;
+      if (of !== plane) return;
+      showChatHere.current(
+        chat,
+        filed === undefined ? undefined : { filed, started: started === true },
+      );
     }).catch(() => undefined);
     return () => void listening.then((stop) => stop?.()).catch(() => undefined);
   }, [plane]);
@@ -4663,12 +4695,14 @@ export const PlaneView = memo(function PlaneView({
   const pressHere = useCallback(
     (session: number, into?: PaneAt) => {
       const land = () => landOn((tabs) => pressChat(tabs, pressedOf(session), pressing, into));
-      // Until the list of chats is read, nothing says which strip a chat is on.
+      // **Until the list of chats is read, nothing says which strip a chat is on** (#5533): a
+      // chat no tab here holds is the project window's, which holds every strip.
       const elsewhere =
         tabWindow !== undefined &&
         into === undefined &&
-        sidebar !== undefined &&
-        wouldLeaveStrip(now.current, session, pressing.filedIn);
+        (sidebar === undefined
+          ? tabHolding(now.current, session) === undefined
+          : wouldLeaveStrip(now.current, session, pressing.filedIn));
       if (!elsewhere) {
         land();
         return;
@@ -4740,11 +4774,18 @@ export const PlaneView = memo(function PlaneView({
   // **The pane it lands in counts as used** (#5330): a press a tab window handed over says so
   // to the core, which counted the tab window's pane, so the next press comes straight here.
   useEffect(() => {
-    showChatHere.current = (session) => {
-      pressHere(session);
+    showChatHere.current = (session, handed) => {
+      // A chat a tab window started or resumed (#5533), filed where it said: no list has it yet.
+      if (handed === undefined) pressHere(session);
+      else {
+        setStartedIn((was) => ({ ...was, [session]: handed.filed }));
+        const chat = pressedOf(session);
+        if (handed.started) showStarted(chat, handed.filed, true);
+        else showResumed(chat, handed.filed);
+      }
       if (tabWindow === undefined) paneUsed();
     };
-  }, [paneUsed, pressHere, tabWindow]);
+  }, [paneUsed, pressedOf, pressHere, showResumed, showStarted, tabWindow]);
   // **Go to it, on a chat's arrival card** (#4759): a press on a card said before it was drawn,
   // heard here, where the press as it stands now is. Every project this window holds hears it,
   // and a chat's number means something only in its own.

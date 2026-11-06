@@ -98,18 +98,32 @@ export function withStartHanded(held: StartNotes | undefined, handed: StartNotes
  *  project window for a chat of another strip ({@link pressInProjectWindow}, #5330). */
 export const PRESS_HERE = "press-here";
 
-/** What {@link PRESS_HERE} carries: the core's `tabwindows::PressHere`. */
-export type PressHere = { plane: string; chat: number };
+/** What {@link PRESS_HERE} carries: the core's `tabwindows::PressHere`, and from a tab window,
+ *  for a chat no list has yet (#5533), where it is filed and whether it was started. */
+export type PressHere = { plane: string; chat: number; filed?: string; started?: true };
+
+/** A chat a tab window hands on that no list has yet (#5533): started, or resumed (a press). */
+export type HandedChat = { filed: string; started: boolean };
 
 /**
  * **A press a tab window does not take goes to the project window** (#5330): the window holding
  * `plane` comes forward and is sent {@link PRESS_HERE}, so it opens chat `chat` by the rule
- * there (#5289). Answers whether any window holds the project.
+ * there (#5289). A chat started or resumed here and not listed yet (#5533) is sent with where it
+ * is filed, which the project window's list does not say yet. Answers whether any window holds
+ * the project.
  */
-export async function pressInProjectWindow(plane: PlaneId, chat: number): Promise<boolean> {
+export async function pressInProjectWindow(
+  plane: PlaneId,
+  chat: number,
+  handed?: HandedChat,
+): Promise<boolean> {
   const label = await commands.showWindowHolding(plane).catch(() => null);
   if (label === null) return false;
-  await emitTo(label, PRESS_HERE, { plane, chat } satisfies PressHere).catch(() => undefined);
+  const said: PressHere =
+    handed === undefined
+      ? { plane, chat }
+      : { plane, chat, filed: handed.filed, ...(handed.started ? { started: true } : {}) };
+  await emitTo(label, PRESS_HERE, said).catch(() => undefined);
   return true;
 }
 
