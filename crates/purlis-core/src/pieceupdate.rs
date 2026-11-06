@@ -31,8 +31,10 @@
 //!   and fast-forward the branch to it or rebase the branch's own commits onto it, with the
 //!   same `--continue` and `--abort`, the same judging for a sandboxed chat, and the same
 //!   refusal of uncommitted changes. Never the project's root folder, which is the person's.
-//!   For a sandboxed chat, a rebase stopped there goes on or back by its own git, in its own
-//!   sandbox, and the app then only puts the branch where it belongs ([`settled_by_the_chat`]).
+//!   For a sandboxed chat, the app runs no rebase there, since the chat may write the clone's
+//!   git directory: it fetches, works out the rebase and names it, for the chat's own git to run
+//!   in its own sandbox, and goes on or back the same way; the app then only puts the branch
+//!   where it belongs, from the commit it recorded ([`settled_by_the_chat`]).
 //!   Either kind is refused where it would write over a file on disk that the current commit
 //!   does not track (an ignored `.env`, an untracked file): someone's work, which git would
 //!   overwrite or stop on halfway.
@@ -152,14 +154,26 @@ pub fn update_clone(
     say: &mut dyn FnMut(Say),
 ) -> u8 {
     mended(at.root, at.ws, at.repo, say);
-    let on_a_branch = matches!(step, UpdateStep::Start { .. });
+    let chat_resumes = reach.sandboxed_at.is_some();
+    // For a sandboxed chat, a re-run after its own git ran the step finds the clone on no
+    // branch, and settles it as `--continue` does.
+    let on_a_branch = matches!(step, UpdateStep::Start { .. }) && !chat_resumes;
     let ran = Here::of_clone(at, on_a_branch).and_then(|mut here| {
-        here.chat_resumes = reach.sandboxed_at.is_some();
+        here.chat_resumes = chat_resumes;
         let lock = broker::lock_of(&here.git_dir);
         let _held = lock
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         match step {
+            UpdateStep::Start { .. } if here.chat_resumes && here.branch.is_empty() => {
+                if Record::read(&here.notes).is_none() {
+                    return Err(format!(
+                        "{} is on no branch (a detached HEAD), so there is no branch to update",
+                        here.label
+                    ));
+                }
+                settled_by_the_chat(&here, &UpdateStep::Continue, say)
+            }
             UpdateStep::Start { base } => start_clone(at, &here, base.as_deref(), reach, say),
             UpdateStep::Merge { .. } => Err(format!(
                 "{} is a clone, brought up to the remote branch its own branch follows: `--merge` \
@@ -789,6 +803,12 @@ fn rebased(
         &from_id,
         &head_id,
     ]);
+    // A clone a sandboxed chat may write: its git directory can hold what changes what a
+    // rebase does, so the app runs none there. The chat's own git runs it, in its sandbox, and
+    // the app then only moves the branch from the commit recorded ([`settled_by_the_chat`]).
+    if here.chat_resumes {
+        return Ok(Moved::Stopped(named_for_the_chat(here, &args, say)));
+    }
     // Untimed: a rebase checks trees out, and one killed halfway is left half done.
     let went = git::run_untimed(&here.folder, &args).map_err(|e| e.to_string())?;
     if !went.ok() {
@@ -1461,6 +1481,29 @@ const GO_ON_YOURSELF: &str = "run `git -c core.editor=: rebase --continue` in th
 const GO_BACK_YOURSELF: &str = "run `git rebase --abort` in the clone, then `purlis worktree \
      update --abort`, which puts the folder back on its branch";
 
+/// The rebase `args` (git's own, after `git`) named for a sandboxed chat to run in the clone
+/// with its own git, and what follows it: the status to exit with, since nothing has moved yet.
+fn named_for_the_chat(here: &Here, args: &[&str], say: &mut dyn FnMut(Say)) -> u8 {
+    say(Say::Warn(
+        format!(
+            "{} is not moved yet: run `git {}` in the clone, then `purlis worktree update \
+             --continue`, which puts the branch on the result. Should it stop on a conflict, \
+             resolve and `git add` the files, then {GO_ON_YOURSELF}; or {GO_BACK_YOURSELF}",
+            here.label,
+            args.join(" ")
+        )
+        .into(),
+    ));
+    1
+}
+
+/// Whether the folder is still on `branch`, at `head`: a step named for the chat not yet run.
+fn still_on(here: &Here, branch: &str, head: &str) -> bool {
+    let on = git::run(&here.folder, &["symbolic-ref", "-q", "HEAD"], git::READ)
+        .is_ok_and(|run| run.ok() && run.line().trim() == name::as_ref(branch));
+    on && commit_of(&here.folder, "HEAD").as_deref() == Some(head)
+}
+
 /// `--continue` or `--abort` in a clone, for a sandboxed chat: it resumes git's rebase with its
 /// own git, in its own sandbox, and is told so while one is stopped. Once none is, all that is
 /// left is purlis's: the branch moved from the commit recorded, and the folder put back on it.
@@ -1488,6 +1531,12 @@ fn settled_by_the_chat(
     let Some(record) = record else {
         return Err(format!("no rebase is stopped in {label}"));
     };
+    if going_on && still_on(here, &record.branch, &record.head) {
+        return Err(format!(
+            "the rebase purlis named for {label} has not run: run it in the clone, then `purlis \
+             worktree update --continue`. `purlis worktree update` names it again"
+        ));
+    }
     if going_on {
         finish(here, &record)?;
         NewBase::recorded(here, &record.branch, say);
