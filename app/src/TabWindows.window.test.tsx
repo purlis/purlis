@@ -584,7 +584,15 @@ describe("a tab window's strip on a chat it did not press (#5533)", () => {
         new Set([
           JSON.stringify([
             { kind: "AnyLabel", label: "main" },
-            { plane: ONE, chat: 5, filed: "beta", started: true },
+            {
+              plane: ONE,
+              chat: 5,
+              handed: {
+                filed: "beta",
+                started: true,
+                as: { session: 5, chat: "5", who: "claude", label: "5" },
+              },
+            },
           ]),
         ]),
       ),
@@ -604,14 +612,24 @@ describe("a tab window's strip on a chat it did not press (#5533)", () => {
     expect(toProjectWindow(asked)).toEqual([]);
   });
 
-  it("handed on to the project window with where it is filed, opens there on that strip", async () => {
+  it("handed on to the project window with where it is filed, opens there on that strip, named", async () => {
     const { fire, said } = core({ ...handed, tabWindow: undefined });
     render(<App />);
     await screen.findByText("session 1");
 
-    fire(PRESS_HERE, { plane: ONE, chat: 5, filed: "beta", started: true });
+    fire(PRESS_HERE, {
+      plane: ONE,
+      chat: 5,
+      handed: {
+        filed: "beta",
+        started: true,
+        as: { session: 5, chat: "5", who: "claude", label: "fix the save" },
+      },
+    });
 
     await screen.findByText("session 5");
+    // Named as the tab window knew it, though no list here has it yet.
+    expect(screen.getAllByText("fix the save").length).toBeGreaterThan(0);
     await waitFor(() =>
       expect(said().at(-1)?.tabs).toContainEqual(
         expect.objectContaining({ window: 0, workspace: "beta", tree: { kind: "chat", chat: 5 } }),

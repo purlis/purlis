@@ -10,6 +10,7 @@ import {
   type Content,
   type FiledIn,
   type Layout,
+  type PressedChat,
   type Tabs,
   closePane,
   closeTab,
@@ -98,19 +99,22 @@ export function withStartHanded(held: StartNotes | undefined, handed: StartNotes
  *  project window for a chat of another strip ({@link pressInProjectWindow}, #5330). */
 export const PRESS_HERE = "press-here";
 
-/** What {@link PRESS_HERE} carries: the core's `tabwindows::PressHere`, and from a tab window,
- *  for a chat no list has yet (#5533), where it is filed and whether it was started. */
-export type PressHere = { plane: string; chat: number; filed?: string; started?: true };
+/** What {@link PRESS_HERE} carries. The core's `tabwindows::PressHere` is `plane` and `chat`
+ *  alone; `handed` is added only by a tab window sending it on to the project window (#5533). */
+export type PressHere = { plane: string; chat: number; handed?: HandedChat };
 
-/** A chat a tab window hands on that no list has yet (#5533): started, or resumed (a press). */
-export type HandedChat = { filed: string; started: boolean };
+/**
+ * **A chat a tab window started or resumed and hands on** (#5533): no list has it yet, so it
+ * carries where it is filed, whether it was started (which replaces nothing) or resumed (which
+ * lands as a press does), and what its tab is named by.
+ */
+export type HandedChat = { filed: string; started: boolean; as: PressedChat };
 
 /**
  * **A press a tab window does not take goes to the project window** (#5330): the window holding
  * `plane` comes forward and is sent {@link PRESS_HERE}, so it opens chat `chat` by the rule
- * there (#5289). A chat started or resumed here and not listed yet (#5533) is sent with where it
- * is filed, which the project window's list does not say yet. Answers whether any window holds
- * the project.
+ * there (#5289), with what {@link HandedChat} says of a chat no list has yet (#5533). Answers
+ * whether any window holds the project.
  */
 export async function pressInProjectWindow(
   plane: PlaneId,
@@ -119,10 +123,7 @@ export async function pressInProjectWindow(
 ): Promise<boolean> {
   const label = await commands.showWindowHolding(plane).catch(() => null);
   if (label === null) return false;
-  const said: PressHere =
-    handed === undefined
-      ? { plane, chat }
-      : { plane, chat, filed: handed.filed, ...(handed.started ? { started: true } : {}) };
+  const said: PressHere = handed === undefined ? { plane, chat } : { plane, chat, handed };
   await emitTo(label, PRESS_HERE, said).catch(() => undefined);
   return true;
 }

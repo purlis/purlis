@@ -2596,7 +2596,8 @@ export const PlaneView = memo(function PlaneView({
    * Where no window holds the project, it lands here after all.
    */
   const landOrHandOn = useCallback(
-    (session: number, handed: HandedChat, land: () => void) => {
+    (handed: HandedChat, land: () => void) => {
+      const { session } = handed.as;
       const elsewhere =
         tabWindow !== undefined &&
         wouldLeaveStrip(now.current, session, filedAs(session, handed.filed).filedIn);
@@ -2615,7 +2616,7 @@ export const PlaneView = memo(function PlaneView({
       const land = () =>
         landOn((tabs) => openNew(tabs, chat, filedAs(chat.session, workspace), { named, asked }));
       if (asked !== undefined) land();
-      else landOrHandOn(chat.session, { filed: workspace, started: true }, land);
+      else landOrHandOn({ filed: workspace, started: true, as: chat }, land);
     },
     [filedAs, landOn, landOrHandOn],
   );
@@ -2626,7 +2627,7 @@ export const PlaneView = memo(function PlaneView({
    */
   const showResumed = useCallback(
     (chat: PressedChat, workspace: string) => {
-      landOrHandOn(chat.session, { filed: workspace, started: false }, () =>
+      landOrHandOn({ filed: workspace, started: false, as: chat }, () =>
         landOn((tabs) => pressChat(tabs, chat, filedAs(chat.session, workspace))),
       );
     },
@@ -3691,12 +3692,8 @@ export const PlaneView = memo(function PlaneView({
   const showChatHere = useRef<(session: number, handed?: HandedChat) => void>(() => undefined);
   useEffect(() => {
     const listening = listen<PressHere>(PRESS_HERE, (event) => {
-      const { plane: of, chat, filed, started } = event.payload;
-      if (of !== plane) return;
-      showChatHere.current(
-        chat,
-        filed === undefined ? undefined : { filed, started: started === true },
-      );
+      if (event.payload.plane === plane)
+        showChatHere.current(event.payload.chat, event.payload.handed);
     }).catch(() => undefined);
     return () => void listening.then((stop) => stop?.()).catch(() => undefined);
   }, [plane]);
@@ -4779,13 +4776,12 @@ export const PlaneView = memo(function PlaneView({
       if (handed === undefined) pressHere(session);
       else {
         setStartedIn((was) => ({ ...was, [session]: handed.filed }));
-        const chat = pressedOf(session);
-        if (handed.started) showStarted(chat, handed.filed, true);
-        else showResumed(chat, handed.filed);
+        if (handed.started) showStarted(handed.as, handed.filed, true);
+        else showResumed(handed.as, handed.filed);
       }
       if (tabWindow === undefined) paneUsed();
     };
-  }, [paneUsed, pressedOf, pressHere, showResumed, showStarted, tabWindow]);
+  }, [paneUsed, pressHere, showResumed, showStarted, tabWindow]);
   // **Go to it, on a chat's arrival card** (#4759): a press on a card said before it was drawn,
   // heard here, where the press as it stands now is. Every project this window holds hears it,
   // and a chat's number means something only in its own.
