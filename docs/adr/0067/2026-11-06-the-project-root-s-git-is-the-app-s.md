@@ -21,10 +21,21 @@ the root with its own git, as it would outside a chat. A save the app makes for 
 project's git configuration as a clone's is checked before the app runs git there, stages nothing
 the chat's sandbox keeps it from reading, and writes the commit's trailers itself: lines of the
 chat's `-m` spelled as `Purlis-Chat:`, `Purlis-Persona:`, `Purlis-Change:`, `Co-Authored-By:` or
-`Assisted-by:` are left out.
+`Assisted-by:` are left out, in any case and with or without space before the colon.
+
+A save the app makes for a chat brings none of the remote's commits into the project: the chat's
+`purlis worktree update` does, judged for that chat as the window's Update for a chat is. So a
+chat's `purlis save --pull` is refused, naming the update; where the remote moved, the commit
+stays here, unpushed, and the save says to update and then save; and in a project that saves
+through a pull request, the save commits and leaves the push to the person's own save.
 
 Where the app's git moves a ref in a git folder a chat may write, it first refuses a link, or a
 file with a second name, at `packed-refs` or under `logs/`, there and in the folder's common
-directory: git writes through either. A `commondir` that is a link, cannot be read or names no
-folder, and a folder under `logs/` that cannot be listed, are refused the same way. Its fetches
-there run no automatic maintenance.
+directory. A `commondir` that is a link, cannot be read or names no folder, and a folder under
+`logs/` that cannot be listed, are refused the same way. Its fetches there run no automatic
+maintenance. Every save, update, pull, push and resolve the app runs at the project root, for a
+chat or for the person, also refuses where the files git keeps beside them are not the
+repository's own plain files: the commit message, the merge and rebase state and pseudo-refs
+(`COMMIT_EDITMSG`, `MERGE_MSG`, `ORIG_HEAD`, `FETCH_HEAD` and the like), and the `refs/`,
+`rebase-merge/`, `rebase-apply/`, `sequencer/` and `rr-cache/` folders. It names the file, and
+nothing is run.

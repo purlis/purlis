@@ -37,7 +37,7 @@ fn a_clone() -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf) {
 
 #[cfg(unix)]
 #[test]
-fn a_fetch_never_writes_through_a_reflog_that_links_elsewhere() {
+fn a_fetch_refuses_a_git_folder_whose_ref_records_are_links() {
     let (dir, root, _upstream, clone) = a_clone();
     let fixed = dir.path().join("fixed");
     std::fs::write(&fixed, "fixed\n").unwrap();

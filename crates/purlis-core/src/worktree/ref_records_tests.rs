@@ -107,3 +107,56 @@ fn a_logs_folder_that_cannot_be_listed_is_refused() {
         assert_eq!(found, Some(logs));
     }
 }
+
+#[test]
+fn plain_git_files_are_written() {
+    let (_dir, git) = git_dir();
+    std::fs::write(git.join("COMMIT_EDITMSG"), "one\n").unwrap();
+    std::fs::create_dir_all(git.join("refs/heads")).unwrap();
+    std::fs::write(git.join("refs/heads/main"), "0\n").unwrap();
+    assert_eq!(git_files_linked(&git), None);
+    assert_eq!(git_files_refused(&git), Ok(()));
+}
+
+#[test]
+fn a_message_pseudo_ref_or_state_folder_that_links_elsewhere_is_refused() {
+    for planted in [
+        "COMMIT_EDITMSG",
+        "MERGE_MSG",
+        "ORIG_HEAD",
+        "FETCH_HEAD",
+        "rebase-merge",
+        "refs",
+        "packed-refs",
+    ] {
+        let (dir, git) = git_dir();
+        let path = git.join(planted);
+        if path.is_dir() {
+            std::fs::remove_dir_all(&path).unwrap();
+        } else if path.exists() {
+            std::fs::remove_file(&path).unwrap();
+        }
+        std::os::unix::fs::symlink(dir.path().join("target"), &path).unwrap();
+        assert_eq!(git_files_linked(&git), Some(path.clone()), "{planted}");
+        let refused = git_files_refused(&git).unwrap_err();
+        assert!(refused.contains(&path.display().to_string()), "{refused}");
+    }
+}
+
+#[test]
+fn a_commit_message_file_with_a_second_name_is_refused() {
+    let (dir, git) = git_dir();
+    let other = dir.path().join("other");
+    std::fs::write(&other, "fixed\n").unwrap();
+    std::fs::hard_link(&other, git.join("COMMIT_EDITMSG")).unwrap();
+    assert_eq!(git_files_linked(&git), Some(git.join("COMMIT_EDITMSG")));
+}
+
+#[test]
+fn a_link_inside_a_state_folder_is_refused() {
+    let (dir, git) = git_dir();
+    std::fs::create_dir_all(git.join("rebase-merge")).unwrap();
+    let message = git.join("rebase-merge/message");
+    std::os::unix::fs::symlink(dir.path().join("target"), &message).unwrap();
+    assert_eq!(git_files_linked(&git), Some(message));
+}

@@ -10604,3 +10604,36 @@ fn a_discard_during_a_check_lets_the_runner_go_whatever_the_check_found() {
         (Vec::new(), false)
     );
 }
+
+/// A chat reattached on the plan it started with keeps its confines, but whether its start held
+/// the project's git is not on record: the chat saves and updates the project with its own git.
+#[test]
+fn a_reattached_chat_leaves_the_projects_git_to_itself() {
+    use purlis_session_protocol::session::RunSandbox;
+    let plane = a_sandboxed_plane();
+    std::fs::create_dir_all(plane.path().join(".git")).expect("a git folder");
+    let first = Pretend::default();
+    let chats = restartable_chats_of(plane.path(), first.clone());
+    let session = chats
+        .start(&a_resumable_chat_in(plane.path()), SIZE)
+        .expect("starts");
+    let started = chats.confines_of(session).expect("it started sandboxed");
+    assert!(
+        started.roots_git.is_some(),
+        "its start holds the project's git"
+    );
+    // The plan its start was confined from, where anything runs beside it.
+    let plan = first.plans_confined().pop();
+
+    let host = Pretend::default();
+    host.leaves_running_in(3, plan, Some(RunSandbox::By("seatbelt".to_owned())));
+    let chats = restartable_chats_of(plane.path(), host.clone());
+    chats.put_back(
+        &left_running_in(plane.path(), a_resumable_chat_in(plane.path())),
+        SIZE,
+    );
+
+    assert_eq!(host.reattached(), [3]);
+    let reattached = chats.confines_of(3).expect("its confines are kept");
+    assert_eq!(reattached.roots_git, None);
+}

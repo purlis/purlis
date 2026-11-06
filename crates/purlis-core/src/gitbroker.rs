@@ -172,7 +172,7 @@ fn isolated_answer(
         if !asker.roots_git_held || !crate::worktree::is_own_git_dir(&root.join(".git")) {
             return no(crate::hookwire::LEFT_TO_THE_CHAT.to_owned());
         }
-        if let Err(why) = crate::worktree::ref_records_refused(&root.join(".git")) {
+        if let Err(why) = crate::worktree::git_files_refused(&root.join(".git")) {
             return no(why);
         }
     }
@@ -393,8 +393,10 @@ fn isolated_answer(
             no_push,
             pull,
         } => {
-            // A pull that failed, or met conflicts, stops the save: it would stage the markers.
-            if *pull && crate::planegit::pull(root, &mut say) != 0 {
+            // A save for a chat brings nothing of the remote's in: the chat's update does, as
+            // judged for that chat. So `--pull` is refused before anything is staged.
+            if *pull {
+                say(Say::Fail(SAVE_PULL_FOR_A_CHAT.into()));
                 1
             } else {
                 // The chat's own trailers, from the app's record of the chat that asked.
@@ -412,6 +414,7 @@ fn isolated_answer(
                         no_push: *no_push,
                         cwd: asker.cwd.as_deref().unwrap_or(root),
                         provenance: provenance.as_ref(),
+                        for_a_chat: true,
                     },
                     &unread_below(root, &asker.unreadable),
                     &mut say,
@@ -721,26 +724,36 @@ pub fn saved_from(root: &Path, cwd: Option<&Path>) -> Result<(), String> {
 /// one a harness adds: a line of a chat's message that starts with one of them, in any case, is
 /// not the chat's to write.
 const TRAILERS_THE_APP_WRITES: [&str; 5] = [
-    "purlis-chat:",
-    "purlis-persona:",
-    "purlis-change:",
-    "co-authored-by:",
-    "assisted-by:",
+    "purlis-chat",
+    "purlis-persona",
+    "purlis-change",
+    "co-authored-by",
+    "assisted-by",
 ];
 
-/// `message` without its lines spelled as a trailer the app writes ([`TRAILERS_THE_APP_WRITES`]).
+/// `message` without its lines spelled as a trailer the app writes ([`TRAILERS_THE_APP_WRITES`]):
+/// the token before the first `:`, with any spaces or tabs around it, read the way git reads a
+/// trailer's ([`crate::provenance`]) and in any case.
 pub fn without_trailers(message: &str) -> String {
     message
         .lines()
         .filter(|line| {
-            let line = line.trim_start().to_ascii_lowercase();
+            let Some((token, _)) = line.split_once(':') else {
+                return true;
+            };
+            let token = token.trim();
             !TRAILERS_THE_APP_WRITES
                 .iter()
-                .any(|trailer| line.starts_with(trailer))
+                .any(|trailer| token.eq_ignore_ascii_case(trailer))
         })
         .collect::<Vec<_>>()
         .join("\n")
 }
+
+/// What a chat's `purlis save --pull` is told: a save for a chat brings nothing in.
+pub const SAVE_PULL_FOR_A_CHAT: &str = "Not saved: a save the app makes for a chat brings \
+     nothing of the remote's in. Run `purlis worktree update` first, then `purlis save` without \
+     --pull.";
 
 /// The paths below `root` of `unreadable`, relative to it with `/` between their parts: what a
 /// save the app makes for a chat leaves unstaged. Each is held whole, whatever its reach.

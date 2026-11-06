@@ -1716,10 +1716,9 @@ pub fn is_own_git_dir(dot_git: &Path) -> bool {
 
 /// **The first link among the files git writes as it records a ref's move** in the repository
 /// whose git directory is `git_dir`: `packed-refs` and everything under `logs/`, there and in
-/// the common directory it shares. git follows a link to those as it writes them: a fetch
-/// appends to the file a reflog links to, or makes it, and `--prune` rewrites the file
-/// `packed-refs` links to (git 2.50, measured). A link there, or a file with a second name,
-/// is a file elsewhere written by the app's git. `None` where there is none.
+/// the common directory it shares. These are files of the repository's own, and the app's git
+/// moves a ref only where each of them is one: never a link, nor a file with a second name.
+/// `None` where there is none.
 ///
 /// What cannot be looked at is answered as a link: a `commondir` that is a link or cannot be
 /// read, one naming no folder, and a `logs/` folder, or one below it, that cannot be listed.
@@ -1813,9 +1812,84 @@ pub fn ref_records_refused(git_dir: &Path) -> Result<(), String> {
     match ref_records_linked(git_dir) {
         None => Ok(()),
         Some(link) => Err(format!(
-            "{} is a link, a file with a second name, or cannot be read, and git would write \
-             through it to another file, so purlis does not move a ref there. Remove it, or make \
-             it readable, then run the command again",
+            "{} is a link, a file with a second name, or cannot be read, where git \
+             keeps a file of the repository's own, so purlis does not move a ref there. Remove it, \
+             or make it readable, then run the command again",
+            link.display()
+        )),
+    }
+}
+
+/// The files of a git directory that a commit, merge, rebase, pull or fetch writes where they
+/// are rather than by renaming a new file over them: a message, a pseudo-ref, the fetch's
+/// record.
+const WRITTEN_IN_PLACE: [&str; 14] = [
+    "COMMIT_EDITMSG",
+    "MERGE_MSG",
+    "MERGE_HEAD",
+    "MERGE_MODE",
+    "MERGE_RR",
+    "SQUASH_MSG",
+    "ORIG_HEAD",
+    "FETCH_HEAD",
+    "AUTO_MERGE",
+    "REBASE_HEAD",
+    "CHERRY_PICK_HEAD",
+    "REVERT_HEAD",
+    "BISECT_LOG",
+    "gc.log",
+];
+
+/// The folders of a git directory those commands write files in: a rebase's and a sequence's
+/// state, recorded resolutions, and the refs themselves.
+const WRITTEN_IN: [&str; 5] = [
+    "rebase-merge",
+    "rebase-apply",
+    "sequencer",
+    "rr-cache",
+    "refs",
+];
+
+/// **The first link among the files the app's git writes in the repository whose git
+/// directory is `git_dir`** as it commits, merges, rebases, pulls or fetches: its ref records
+/// ([`ref_records_linked`]), the files of [`WRITTEN_IN_PLACE`], and everything in the folders
+/// of [`WRITTEN_IN`], there and in the common directory it shares. `None` where there is none.
+///
+/// What cannot be looked at is answered as a link, as [`ref_records_linked`] answers it.
+pub fn git_files_linked(git_dir: &Path) -> Option<PathBuf> {
+    if let Some(linked) = ref_records_linked(git_dir) {
+        return Some(linked);
+    }
+    let common = common_dir(git_dir).ok().flatten();
+    std::iter::once(git_dir.to_path_buf())
+        .chain(common)
+        .find_map(|dir| {
+            WRITTEN_IN_PLACE
+                .iter()
+                .map(|name| dir.join(name))
+                .find(|file| linked(file) || unreadable_entry(file))
+                .or_else(|| {
+                    WRITTEN_IN
+                        .iter()
+                        .find_map(|name| linked_below(&dir.join(name)))
+                })
+        })
+}
+
+/// Whether `path` is there but cannot be looked at.
+fn unreadable_entry(path: &Path) -> bool {
+    matches!(std::fs::symlink_metadata(path), Err(e) if e.kind() != std::io::ErrorKind::NotFound)
+}
+
+/// Why the app's git does not commit, merge, rebase, pull or fetch in the repository whose git
+/// directory is `git_dir` ([`git_files_linked`]), or nothing where it may.
+pub fn git_files_refused(git_dir: &Path) -> Result<(), String> {
+    match git_files_linked(git_dir) {
+        None => Ok(()),
+        Some(link) => Err(format!(
+            "{} is a link, a file with a second name, or cannot be read, where git \
+             keeps a file of the repository's own, so purlis does not run git there. Remove it, \
+             or make it readable, then run the command again",
             link.display()
         )),
     }

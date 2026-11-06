@@ -2940,6 +2940,7 @@ fn plane_command(command: &Command) -> Option<ExitCode> {
                         no_push: *no_push,
                         cwd: &cwd,
                         provenance: provenance.as_ref(),
+                        for_a_chat: false,
                     },
                     &mut say,
                 )

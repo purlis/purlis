@@ -4938,8 +4938,17 @@ impl Chats {
             (true, Some(number), Some(purlis_session_protocol::session::RunSandbox::By(_))) => {
                 let now = sandbox.and_then(purlis_core::sandbox::Applied::plan);
                 let then = self.sessions.ran_with(number);
+                // The plan is its network's alone, and says nothing of the files its start
+                // denied: whether that start held the project's git is not on record, so the
+                // chat saves and updates the project with its own git, as one this window did
+                // not compile does.
                 (now == then)
-                    .then(|| sandbox.map(|applied| applied.confines().clone()))
+                    .then(|| {
+                        sandbox.map(|applied| purlis_core::sandbox::Confines {
+                            roots_git: None,
+                            ..applied.confines().clone()
+                        })
+                    })
                     .flatten()
             }
             (true, _, _) => None,

@@ -1006,3 +1006,69 @@ fn a_chats_save_of_the_project_is_committed_by_the_app() {
     let tracked = crate::testgit::run(&root, &["ls-files", "notes.md"]);
     assert_eq!(tracked.out.trim(), "notes.md");
 }
+
+#[test]
+fn a_chats_save_with_pull_is_refused_and_names_the_update() {
+    let (_dir, root) = saved_project();
+    std::fs::write(root.join("notes.md"), "a chat's work\n").unwrap();
+
+    let answered = answer(
+        &root,
+        &held_chat(&root),
+        &GitAsk {
+            chat: 4,
+            workspace: String::new(),
+            alive: false,
+            work: GitWork::RootSave {
+                message: Some("from a chat".to_owned()),
+                sign: false,
+                no_push: true,
+                pull: true,
+            },
+        },
+        &git::Isolated::default(),
+        chrono::Utc::now(),
+    );
+
+    let Answer::Said { code, lines } = answered else {
+        panic!("not run");
+    };
+    assert_eq!(code, 1, "{lines:?}");
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.to_string().contains(SAVE_PULL_FOR_A_CHAT)),
+        "{lines:?}"
+    );
+    assert_eq!(last_subject(&root), "one");
+}
+
+#[test]
+fn a_trailer_spelled_with_space_before_its_colon_is_left_out_of_a_chats_message() {
+    let message = "from a chat\n\nPurlis-Chat : 01OTHER\npurlis-persona\t: another\n  \
+                   ASSISTED-BY:x\nkept: a line of the chat's own";
+
+    assert_eq!(
+        without_trailers(message),
+        "from a chat\n\nkept: a line of the chat's own"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_project_whose_commit_message_file_is_a_link_is_not_saved_by_the_app() {
+    let (dir, root) = saved_project();
+    std::fs::write(root.join("notes.md"), "a chat's work\n").unwrap();
+    let outside = dir.path().join("outside");
+    std::fs::write(&outside, "untouched\n").unwrap();
+    let message = root.join(".git/COMMIT_EDITMSG");
+    let _ = std::fs::remove_file(&message);
+    std::os::unix::fs::symlink(&outside, &message).unwrap();
+
+    let Answer::No { why } = saved_for(&root, &held_chat(&root), "from a chat") else {
+        panic!("run");
+    };
+    assert!(why.contains(&message.display().to_string()), "{why}");
+    assert_eq!(last_subject(&root), "one");
+    assert_eq!(std::fs::read_to_string(&outside).unwrap(), "untouched\n");
+}
