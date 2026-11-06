@@ -45,7 +45,7 @@ export const DRAWN_WHOLE = 250;
 const OVERSCAN = 8;
 
 /** **Where one drawn row stands**, read by the row of a family that is drawn in part. */
-type RowPlace = {
+export type RowPlace = {
   /** Its place in the whole, from 0. */
   index: number;
   /** How many rows the whole holds. */
@@ -72,8 +72,13 @@ export function useRowPlace(): {
   if (place === undefined) return { aria: {}, at: {} };
   return {
     aria: { "aria-posinset": place.index + 1, "aria-setsize": place.of },
-    at: { "data-placed": "", style: { insetBlockStart: place.start } },
+    at: placedAt(place),
   };
+}
+
+/** **What an element spreads to stand at `place`**: marked placed, at its top. */
+export function placedAt(place: RowPlace): { "data-placed": ""; style: CSSProperties } {
+  return { "data-placed": "", style: { insetBlockStart: place.start } };
 }
 
 /** **The rows a list draws**, and what its own element carries to keep the whole's height. */

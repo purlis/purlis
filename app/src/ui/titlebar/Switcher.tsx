@@ -18,6 +18,7 @@
  *   filter aims at always among them (`ui/list/virtualRows.tsx`).
  */
 import {
+  Fragment,
   useLayoutEffect,
   useRef,
   type CSSProperties,
@@ -28,7 +29,7 @@ import {
 import { Pin } from "lucide-react";
 import { mergeProps, useFocusRing, useHover, useId } from "react-aria";
 import { TextField } from "../field/Field";
-import { RowPlaced, useDrawnRows, useRowPlace } from "../list/virtualRows";
+import { placedAt, RowPlaced, useDrawnRows, useRowPlace } from "../list/virtualRows";
 import { PopoverFilter, PopoverList } from "../popover/Popover";
 import { Tooltip } from "../tooltip/Tooltip";
 
@@ -130,12 +131,6 @@ export function SwitcherList({
   const listbox = useRef<HTMLDivElement>(null);
   const drawn = useDrawnRows({ count, list: listbox, scroller, aimed });
   const none = nothing ?? count === 0;
-  const each = (draw: (index: number) => ReactNode) =>
-    drawn.rows.map(({ index, place }) => (
-      <RowPlaced key={index} value={place}>
-        {draw(index)}
-      </RowPlaced>
-    ));
   return (
     <PopoverList ref={scroller}>
       {header !== undefined && (
@@ -153,7 +148,11 @@ export function SwitcherList({
           data-scope="titlebar"
           data-part="listbox"
         >
-          {each(row)}
+          {drawn.rows.map(({ index, place }) => (
+            <RowPlaced key={index} value={place}>
+              {row(index)}
+            </RowPlaced>
+          ))}
         </div>
         {pin !== undefined && (
           <div
@@ -163,7 +162,17 @@ export function SwitcherList({
             data-scope="titlebar"
             data-part="pins"
           >
-            {each(pin)}
+            {/* A pin is no option, so it says no place; drawn in part, each stands in a slot of
+                its row's height, centred as the grid centres it. */}
+            {drawn.rows.map(({ index, place }) =>
+              place === undefined ? (
+                <Fragment key={index}>{pin(index)}</Fragment>
+              ) : (
+                <span key={index} {...placedAt(place)}>
+                  {pin(index)}
+                </span>
+              ),
+            )}
           </div>
         )}
       </div>
@@ -179,8 +188,7 @@ export function SwitcherList({
 /** **The room of a pin a row has none of** (the plane root, New workspace…), so the pins stay
  *  row for row with the list. */
 export function PinSpace() {
-  const { at } = useRowPlace();
-  return <span {...at} aria-hidden="true" />;
+  return <span aria-hidden="true" />;
 }
 
 /**
@@ -278,11 +286,9 @@ export function PinToggle({
 }) {
   const { hoverProps, isHovered } = useHover({});
   const { focusProps, isFocusVisible } = useFocusRing();
-  const { at } = useRowPlace();
   return (
     <Tooltip tip={pinned ? "Unpin" : "Pin to the title bar"}>
       <button
-        {...at}
         type="button"
         {...mergeProps(hoverProps, focusProps, {
           onClick: () => onChange(!pinned),

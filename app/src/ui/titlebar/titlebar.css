@@ -401,9 +401,11 @@
   block-size: 32px;
 }
 
-/* A 28px toggle in the middle of its 32px row, as the grid centres it. */
+/* A pin's slot is its row's height, and centres the 28px toggle in it as the grid does. */
 [data-part="pins"][data-scope="titlebar"][data-partly] > [data-placed] {
-  margin-block-start: 2px;
+  display: grid;
+  place-items: center;
+  block-size: 32px;
 }
 
 /* ---------------------------------------------------------------------------------------------
