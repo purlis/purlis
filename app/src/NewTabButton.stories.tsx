@@ -174,7 +174,7 @@ export const ChoosesARow: Story = {
 
 /**
  * **A long list has a filter**, which takes the keyboard as the list opens and narrows the rows;
- * the picture shows it narrowed, with the arrows on the row they reached.
+ * the picture shows it narrowed, aimed at its first row.
  */
 export const Filtered: Story = {
   args: { rows: LONG },
@@ -192,8 +192,8 @@ export const Filtered: Story = {
           .map((one) => one.querySelector('[data-part="label"]')?.textContent),
       ).toEqual(["New chat", "New shell", "New browser"]),
     );
-    await userEvent.keyboard("{ArrowDown}");
-    // The arrows aim from the field, which names the row it aims at: the picture waits for it.
+    // React Aria aims the first row from the field a moment after the typing: the picture
+    // waits for that aim, and no key races it.
     const aimed = within(theList()).getByRole("menuitem", { name: /New chat/ });
     await waitFor(() => expect(filter).toHaveAttribute("aria-activedescendant", aimed.id));
     expectFocusInSight();

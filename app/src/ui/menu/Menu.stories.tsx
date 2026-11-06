@@ -529,7 +529,7 @@ function Filtered() {
 /**
  * **A filter row** (#5292): it takes the keyboard as the menu opens, what is typed narrows the
  * rows, the arrows go from the field to them, and with nothing left it says so; the baseline
- * shows it narrowed, the arrows on its first row.
+ * shows it narrowed, aimed at its first row.
  */
 export const AFilter: Story = {
   render: () => <Filtered />,
@@ -552,8 +552,8 @@ export const AFilter: Story = {
           .map((one) => one.textContent),
       ).toEqual(["design", "devops"]),
     );
-    await userEvent.keyboard("{ArrowDown}");
-    // The arrows aim from the field, which names the row it aims at.
+    // React Aria aims the first row from the field a moment after the typing: the picture
+    // waits for that aim, and no key races it.
     const design = within(openMenu()).getByRole("menuitem", { name: "design" });
     await waitFor(() => expect(filter).toHaveAttribute("aria-activedescendant", design.id));
     expectFocusInSight();
