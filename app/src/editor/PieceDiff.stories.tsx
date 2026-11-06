@@ -10,7 +10,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { PlaneId, WhatChanged } from "../bindings";
-import { expectFocusInSight, untilFocused } from "../stories.testkit";
+import { expectFocusInSight, pictureNow, untilFocused } from "../stories.testkit";
 import { PieceDiffTab } from "./PieceDiff";
 
 const DRAWN: WhatChanged = {
@@ -93,6 +93,8 @@ export const EachChangeHasItsDiscard: Story = {
 
 /** A chat that is not idle: named with its state, the keyboard on the safe answer, Esc leaves it. */
 export const AChatIsWorkingThere: Story = {
+  // The warning draws over the page, outside the story's frame, and Esc takes it away.
+  parameters: { screenshot: "page" },
   beforeEach: () =>
     core({ kind: "busy", chats: [{ name: "Fix the parser", state: "is running" }] }),
   play: async ({ canvasElement, userEvent }) => {
@@ -107,6 +109,7 @@ export const AChatIsWorkingThere: Story = {
       "the warning starts on Cancel",
     );
     expectFocusInSight();
+    await pictureNow();
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(page.queryByRole("alertdialog")).toBeNull());
   },
@@ -114,6 +117,8 @@ export const AChatIsWorkingThere: Story = {
 
 /** A file changed on disk: Reload or Overwrite, the keyboard on Reload, which is safe. */
 export const TheFileChangedOnDisk: Story = {
+  // The question draws over the page, outside the story's frame, and Esc takes it away.
+  parameters: { screenshot: "page" },
   beforeEach: () => core({ kind: "stale" }),
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
@@ -133,6 +138,7 @@ export const TheFileChangedOnDisk: Story = {
       "the question starts on Reload",
     );
     expectFocusInSight();
+    await pictureNow();
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(page.queryByRole("alertdialog")).toBeNull());
   },
