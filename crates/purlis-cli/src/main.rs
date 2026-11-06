@@ -1347,8 +1347,7 @@ fn read_only_standing(command: &Command) -> ReadOnly {
         | Command::Persona(memory::PersonaCommand::List)
         | Command::Skill(
             skill::SkillCommand::List { .. }
-            | skill::SkillCommand::Show { .. }
-            | skill::SkillCommand::Restore { name: None, .. },
+            | skill::SkillCommand::Show { .. },
         )
         | Command::Change(change::ChangeCommand::List { .. })
         | Command::Session(session::SessionCommand::List { .. })
@@ -1359,6 +1358,10 @@ fn read_only_standing(command: &Command) -> ReadOnly {
         // Its read tools answer and every tool that writes is refused at the call (#1051):
         // `tests/it/the_mcp_server_on_a_read_only_project_changes_nothing.rs` calls every tool.
         | Command::Mcp { .. } => ReadOnly::RunsAndSays,
+        // With no name it lists what can be restored.
+        Command::Skill(skill::SkillCommand::Restore { names, .. }) if names.is_empty() => {
+            ReadOnly::RunsAndSays
+        }
         _ => ReadOnly::Refused,
     }
 }
