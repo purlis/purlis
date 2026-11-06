@@ -263,6 +263,123 @@ fn a_memory_added_through_the_tools_is_found_by_a_search() {
     assert!(!missed.contains("sandbox"), "{missed}");
 }
 
+/// A project whose workspace `alpha` holds `n` memories, `Memory 1` the oldest and `Memory n`
+/// the newest, each written a minute after the one before.
+fn project_with_memories(n: u32) -> tempfile::TempDir {
+    let p = project(&["alpha"]);
+    let dir = p.path().join("workspaces/alpha/memory");
+    std::fs::create_dir_all(&dir).unwrap();
+    for i in 1..=n {
+        let when = at(8, 0) + chrono::Duration::minutes(i64::from(i));
+        std::fs::write(
+            dir.join(format!("{}memory-{i}.md", when.format("%Y%m%d-%H%M%S-"))),
+            format!(
+                "# Memory {i}\n\n_{} · memory_\n\nBody of memory {i}.\n",
+                when.format("%Y-%m-%d %H:%M")
+            ),
+        )
+        .unwrap();
+    }
+    p
+}
+
+/// The titles of the memories an answer shows, in the order it shows them.
+fn titles_in(answer: &str) -> Vec<String> {
+    answer
+        .lines()
+        .filter_map(|line| line.strip_prefix("## "))
+        .map(str::to_owned)
+        .collect()
+}
+
+#[test]
+fn a_search_with_no_query_shows_only_the_newest_twenty_memories_newest_first() {
+    let p = project_with_memories(45);
+    let answer = call_ok(p.path(), &in_ws("alpha"), "memory_search", json!({}));
+    let expected: Vec<String> = (26..=45).rev().map(|i| format!("Memory {i}")).collect();
+    assert_eq!(titles_in(&answer), expected, "{answer}");
+}
+
+/// The cursor an answer gives to the page after it, if it gives one.
+fn cursor_in(answer: &str) -> Option<String> {
+    let (_, rest) = answer.split_once("cursor \"")?;
+    Some(rest.split_once('"')?.0.to_owned())
+}
+
+#[test]
+fn following_the_cursor_shows_the_next_twenty_memories_and_then_the_end() {
+    let p = project_with_memories(45);
+    let first = call_ok(p.path(), &in_ws("alpha"), "memory_search", json!({}));
+    let cursor = cursor_in(&first).unwrap_or_else(|| panic!("no cursor in {first}"));
+
+    let second = call_ok(
+        p.path(),
+        &in_ws("alpha"),
+        "memory_search",
+        json!({ "cursor": cursor }),
+    );
+    let expected: Vec<String> = (6..=25).rev().map(|i| format!("Memory {i}")).collect();
+    assert_eq!(titles_in(&second), expected, "{second}");
+    let cursor = cursor_in(&second).unwrap_or_else(|| panic!("no cursor in {second}"));
+
+    let last = call_ok(
+        p.path(),
+        &in_ws("alpha"),
+        "memory_search",
+        json!({ "cursor": cursor }),
+    );
+    let expected: Vec<String> = (1..=5).rev().map(|i| format!("Memory {i}")).collect();
+    assert_eq!(titles_in(&last), expected, "{last}");
+    assert_eq!(cursor_in(&last), None, "{last}");
+    assert!(last.contains("oldest"), "{last}");
+}
+
+#[test]
+fn a_memory_written_between_two_pages_never_moves_one_onto_the_next() {
+    let p = project_with_memories(25);
+    let first = call_ok(p.path(), &in_ws("alpha"), "memory_search", json!({}));
+    let cursor = cursor_in(&first).unwrap_or_else(|| panic!("no cursor in {first}"));
+    call_ok(
+        p.path(),
+        &in_ws("alpha"),
+        "memory_add",
+        json!({"text": "Written while the chat read"}),
+    );
+
+    let second = call_ok(
+        p.path(),
+        &in_ws("alpha"),
+        "memory_search",
+        json!({ "cursor": cursor }),
+    );
+    let expected: Vec<String> = (1..=5).rev().map(|i| format!("Memory {i}")).collect();
+    assert_eq!(titles_in(&second), expected, "{second}");
+}
+
+#[test]
+fn a_workspace_with_twenty_memories_or_fewer_gives_no_cursor() {
+    let p = project_with_memories(20);
+    let answer = call_ok(p.path(), &in_ws("alpha"), "memory_search", json!({}));
+    assert_eq!(titles_in(&answer).len(), 20, "{answer}");
+    assert_eq!(cursor_in(&answer), None, "{answer}");
+}
+
+#[test]
+fn a_search_with_a_query_ranks_every_memory_and_gives_no_cursor() {
+    let p = project_with_memories(45);
+    let answer = call_ok(
+        p.path(),
+        &in_ws("alpha"),
+        "memory_search",
+        json!({ "query": "memory 3" }),
+    );
+    assert!(
+        titles_in(&answer).contains(&"Memory 3".to_owned()),
+        "{answer}"
+    );
+    assert_eq!(cursor_in(&answer), None, "{answer}");
+}
+
 #[test]
 fn a_tool_that_needs_a_workspace_says_so_at_the_project_root() {
     let p = project(&[]);
