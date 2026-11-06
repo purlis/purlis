@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793996547232,
+  "lastUpdate": 1793999629044,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -41370,6 +41370,48 @@ window.BENCHMARK_DATA = {
             "value": 102.10404199999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.728, 102.075, 102.104, 102.146, 102.726 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4cc79b935e412461bbe34575f40d45ddfa907c70",
+          "message": "A chat leaves the project root's git to the app; a save for a chat brings nothing in (#5550)\n\n* A chat leaves the project root's git to the app, which saves the project for it\n\nThe changes of the branch private-project-root-git-left-to-the-app-nrzyjb1k\n(b23abf041), brought onto main as one commit.\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6S0QJTVDATP4H7EFY3ZXZ4K\nPurlis-Persona: steward\n\n* A chat leaves the project root's git to the app: its new tests, record and fragment\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6S0QJTVDATP4H7EFY3ZXZ4K\nPurlis-Persona: steward\n\n* The app saves and updates the project only for a chat whose sandbox holds its git\n\nThe app runs purlis save and purlis worktree update at the project root for\na chat only where that chat's sandbox, as its start compiled it in this\nwindow, held the root's .git whole (a Claude Code chat on its own sandbox).\nCodex, opencode, Claude Code on a runner, a chat with no sandbox and one this\nwindow did not compile run them with their own git, as outside a chat.\n\nA save the app makes for a chat checks the project's git configuration as a\nclone's is checked, refuses where its ref records are links, stages nothing\nthe chat's sandbox keeps it from reading, and leaves trailer lines of the\nchat's message out. A commondir that is a link, cannot be read or names no\nfolder, and a logs folder that cannot be listed, are refused as links are.\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6S0QJTVDATP4H7EFY3ZXZ4K\nPurlis-Persona: steward\n\n* A save the app makes for a chat brings nothing in, and the app's git runs only on the repository's own files\n\nA save the app makes for a chat at the project root no longer brings the\nremote's commits in: --pull is refused and names purlis worktree update; a\nremote that moved leaves the commit unpushed, saying to update and then\nsave; and a project that saves through a pull request is committed and left\nfor the person's own save to push.\n\nEvery save, update, pull, push and resolve the app runs at the project root\nstops, naming the file, where the commit message, the merge or rebase state,\na pseudo-ref, or the refs and state folders git keeps there are a link, a\nfile with a second name, or cannot be read.\n\nA chat reattached after the window restarts keeps its confines, and saves\nand updates the project with its own git, since whether its start held the\nproject's git is not on record.\n\nA chat's message leaves out a trailer the app writes however its token is\nspaced before the colon, in any case.\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6S0QJTVDATP4H7EFY3ZXZ4K\nPurlis-Persona: steward\n\n* A save the app makes for a chat is never signed\n\n--sign and [plane] sign are not taken for a save the app makes for a chat:\nthe commit is left unsigned, and the save says so and that the person signs\na save by saving from the window or in their own terminal.\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6S0QJTVDATP4H7EFY3ZXZ4K\nPurlis-Persona: steward",
+          "timestamp": "2026-11-06T20:05:36Z",
+          "tree_id": "013fe8d15e98ff53b9c8955126ec26f05f050bf9",
+          "url": "https://github.com/purlis/purlis/commit/4cc79b935e412461bbe34575f40d45ddfa907c70"
+        },
+        "date": 1793999624191,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.349599,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.337, 0.343, 0.350, 0.351, 0.355 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2392525,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.128, 16.208, 16.239, 16.486, 16.503 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.47472050000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.454, 101.362, 101.475, 101.497, 102.130 ms"
           }
         ]
       }
