@@ -24,10 +24,11 @@ terminal, with no flag to skip its question, and every other caller only propose
   the chat's sandbox, so a place the chat named would be one a chat picks for the app to write.
   The ask names the skills and whether it is a folder or a zip, and nothing else. At Apply the
   window asks the person where, in the save or folder dialog Select's Export uses. A place not
-  picked writes nothing, and the proposal stays held. A chat's export of several skills with `--to`
-  is refused, and says why. At the person's terminal, `--to` is where it goes, after the
-  question. An export of one skill is as it was: it writes where its caller can, and is no change
-  to skills.
+  picked writes nothing, and the proposal stays held. A stale one is refused before the dialog
+  opens. An export of several skills with `--to` is refused anywhere but the person's interactive
+  terminal, a chat's or a script's alike, and says why. At the person's terminal, `--to` is where
+  it goes, after the question. An export of one skill is as it was: it writes where its caller
+  can, and is no change to skills.
 - **Restore and Delete now take no `--source`.** A deleted skill keeps no record of the source it
   was installed from that purlis reads, so the names are the only way to name one.
 - **The boundary is unchanged.** The sandbox is the boundary for a sandboxed chat, and the check

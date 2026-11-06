@@ -732,13 +732,16 @@ fn delete_now_asks_first_even_at_the_persons_terminal() {
     assert_eq!(project.in_deleted(), ["grilling"]);
 }
 
+/// What makes a caller what it is, done to its project and its command.
+type SetUp = fn(&Project, &mut std::process::Command);
+
 /// **A place for an export of several skills is the person's to pick** (#5492, the person's choice
 /// of 2026-11-06): with `--to`, a chat, a chat with its marks stripped, a caller with no terminal,
 /// a detached one and one purlis can't place are each refused, and nothing is written there or
 /// handed to the app.
 #[test]
 fn an_export_of_several_skills_to_a_place_anyone_but_the_person_names_writes_nothing() {
-    let callers: [(&str, fn(&Project, &mut std::process::Command)); 4] = [
+    let callers: [(&str, SetUp); 4] = [
         ("no terminal", |_, _| {}),
         ("stripped", |project, _| {
             let record = purlis_core::reopen::Record {
@@ -832,4 +835,83 @@ fn the_person_exports_a_sources_skills_after_its_review() {
         !to.join("review").exists(),
         "review was not installed from it"
     );
+}
+
+/// **One skill brought back or moved from a chat is proposed too** (#5492), as one deleted is: a
+/// loop of singles would be a bulk change.
+#[test]
+fn a_chats_restore_or_move_of_one_skill_is_proposed_too() {
+    for (args, deleted, expected) in [
+        (
+            &["restore", "tdd"][..],
+            true,
+            SetChange::Restore {
+                members: project_skills(&["tdd"]),
+            },
+        ),
+        (
+            &["mv", "tdd", "--to", "ops"],
+            false,
+            SetChange::Move {
+                members: project_skills(&["tdd"]),
+                to: Level::workspace("ops"),
+                grant: Vec::new(),
+            },
+        ),
+    ] {
+        let project = for_case(deleted);
+        let (env, asked, _reading) = an_app(&project);
+        let before = project.snapshot();
+        let out = project.run_with(args, &env);
+        assert!(out.status.success(), "{args:?}: {}", said(&out));
+        assert_eq!(project.snapshot(), before, "{args:?}");
+        match asked.try_recv() {
+            Ok(Ask::ProposeSkillSet(ask)) => assert_eq!(ask.change, expected, "{args:?}"),
+            _ => panic!("{args:?}: the app was asked nothing"),
+        }
+    }
+}
+
+/// A chat whose app is not there is refused for these verbs too: never made instead.
+#[test]
+fn a_chat_that_cannot_reach_the_app_restores_moves_and_deletes_now_nothing() {
+    for (args, deleted) in LATER_VERBS {
+        let project = for_case(*deleted);
+        let env = [
+            (
+                SOCKET_ENV.to_owned(),
+                project.at.join("none.sock").display().to_string(),
+            ),
+            (CHAT_ENV.to_owned(), "3".to_owned()),
+        ];
+        let before = project.snapshot();
+        let out = project.run_with(args, &env);
+        assert!(!out.status.success(), "{args:?}: {}", said(&out));
+        assert!(
+            said(&out).contains("nothing was changed"),
+            "{args:?}: {}",
+            said(&out)
+        );
+        assert_eq!(project.snapshot(), before, "{args:?}");
+    }
+}
+
+/// A rename and a restore under a new name are of one skill: with several, nothing changes.
+#[test]
+fn a_rename_or_a_new_name_with_several_skills_changes_nothing() {
+    for (args, deleted) in [
+        (&["mv", "grilling", "tdd", "--name", "x"][..], false),
+        (&["restore", "grilling", "tdd", "--as", "x"], true),
+    ] {
+        let project = for_case(deleted);
+        let before = project.snapshot();
+        let out = project.run(args);
+        assert_eq!(out.status.code(), Some(2), "{args:?}: {}", said(&out));
+        assert!(
+            said(&out).contains("nothing was changed"),
+            "{args:?}: {}",
+            said(&out)
+        );
+        assert_eq!(project.snapshot(), before, "{args:?}");
+    }
 }

@@ -788,20 +788,23 @@ pub async fn apply_proposed_change(
     from: From,
 ) -> Result<String, String> {
     let held = planes.held(&plane)?;
-    // An export of skills goes where the person picks now, never where the chat said (#5492).
-    let export = held
-        .proposals()
-        .get(id)
-        .and_then(|one| one.skills)
-        .and_then(|skills| match skills.change {
-            SetChange::Export { zip, .. } => Some(zip),
-            _ => None,
-        });
+    // An export of skills goes where the person picks now, never where the chat said (#5492):
+    // asked only of one that is not stale, which Apply then refuses without asking where.
+    let export = held.proposals().get(id).and_then(|one| {
+        let skills = one.skills.as_ref()?;
+        let SetChange::Export { zip, .. } = skills.change else {
+            return None;
+        };
+        let fresh = !one.stale && !matches!(skills_now(held.root(), skills), Now::Stale);
+        fresh.then_some(zip)
+    });
     let to = match export {
-        Some(zip) => match crate::skillpublish::export_place(&app, zip).await? {
-            Some(to) => Some(to),
-            None => return Ok(NO_PLACE_PICKED.to_owned()),
-        },
+        // Not picked is not applied: the window keeps it, to apply or dismiss.
+        Some(zip) => Some(
+            crate::skillpublish::export_place(&app, zip)
+                .await?
+                .ok_or(NO_PLACE_PICKED)?,
+        ),
         None => None,
     };
     crate::off_the_window("applying a proposed change", move || {
@@ -1092,15 +1095,15 @@ pub(crate) fn apply_skills(
     to: Option<&Path>,
 ) -> Result<String, Refusal> {
     let exports = matches!(skills.change, SetChange::Export { .. });
-    if exports && to.is_none() {
-        return Err(Refusal::Not(NO_PLACE_PICKED.to_owned()));
-    }
     let _held = lock.lock().unwrap_or_else(PoisonError::into_inner);
     let after = match skills_now(root, skills) {
         Now::Made { after, .. } => after,
         Now::Stale => return Err(Refusal::Stale),
         Now::Unprepared => return Err(Refusal::Not(proposed::UNPREPARED.to_owned())),
     };
+    if exports && to.is_none() {
+        return Err(Refusal::Not(NO_PLACE_PICKED.to_owned()));
+    }
     let written = proposed::base_of(Some(after.as_bytes())).unwrap_or_default();
     let record = |outcome, why: Option<&str>| {
         audit(&proposed::Applied {
@@ -1115,7 +1118,7 @@ pub(crate) fn apply_skills(
     let made = match to.filter(|_| exports) {
         Some(to) => skills
             .change
-            .exported(root, crate::skillchange::built_in().as_deref(), to),
+            .export_to(root, crate::skillchange::built_in().as_deref(), to),
         None => crate::skillchange::heard(root, |cx| skills.change.apply(cx)).map(drop),
     };
     let (outcome, why) = match &made {

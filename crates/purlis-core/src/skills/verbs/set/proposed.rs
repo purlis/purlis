@@ -26,7 +26,7 @@ use super::{
 use crate::counts::counted;
 use crate::skills::routing::{self, PinnedBy};
 use crate::skills::source;
-use crate::skills::verbs::{Ctx, Deleted, Level, deleted, find};
+use crate::skills::verbs::{Ctx, Deleted, GRANT_NEEDED, Level, deleted, find, needs_grant};
 
 /// The most skills one change names: a source's whole set fits, and an ask stays bounded.
 pub const MOST_SKILLS: usize = 500;
@@ -67,7 +67,7 @@ pub enum SetChange {
     /// Write each, and the project's skills it names, outside purlis: a zip, or a folder of skill
     /// folders. **It names no place** (#5492, the person's choice of 2026-11-06): it is written
     /// only where the person picks, at their terminal or at Apply in the window
-    /// ([`Self::exported`]), never where a chat says.
+    /// ([`Self::export_to`]), never where a chat says.
     Export { members: Vec<Member>, zip: bool },
 }
 
@@ -127,15 +127,7 @@ impl SetChange {
     }
 
     fn count(&self) -> usize {
-        match self {
-            Self::Delete { members }
-            | Self::Archive { members, .. }
-            | Self::Restore { members }
-            | Self::DeleteNow { members }
-            | Self::Move { members, .. }
-            | Self::Export { members, .. } => members.len(),
-            Self::Turn { names, .. } | Self::Pin { names, .. } => names.len(),
-        }
+        self.members().len()
     }
 
     /// **Whether it may be asked at all**: it names a skill, and no more than [`MOST_SKILLS`].
@@ -238,13 +230,10 @@ impl SetChange {
         let mut review = review_set(plane, act, &members, self.workspace(), self.to());
         if let Self::Move { to, grant, .. } = self {
             for one in &mut review.skills {
-                if one.cannot.is_none()
-                    && grant.is_empty()
-                    && super::super::needs_grant(&one.member.level, to)
-                {
+                if one.cannot.is_none() && grant.is_empty() && needs_grant(&one.member.level, to) {
                     one.cannot = Some(format!(
                         "It goes into the project's skills, and the move names no grant: {}.",
-                        super::super::GRANT_NEEDED
+                        GRANT_NEEDED
                     ));
                 }
             }
@@ -405,13 +394,18 @@ impl SetChange {
 }
 
 /// Why an export is not written by [`SetChange::apply`].
-const NO_PLACE: &str = "An export is written only where the person picks, so nothing was written: \
-                        pick where in the window, or give --to at your terminal";
+const NO_PLACE: &str = "An export is written only where the person picks, so nothing was written. \
+                        Pick where in the window, or say where at your terminal.";
 
 impl SetChange {
     /// **Writes an export to `to`**, a place the person picked that is not there yet: every skill
     /// its review keeps, and the project's skills they name. Refused for any other change.
-    pub fn exported(&self, plane: &Path, built_in: Option<&Path>, to: &Path) -> Result<(), String> {
+    pub fn export_to(
+        &self,
+        plane: &Path,
+        built_in: Option<&Path>,
+        to: &Path,
+    ) -> Result<(), String> {
         let Self::Export { zip, .. } = self else {
             return Err("only an export is written to a place".to_owned());
         };
@@ -424,7 +418,11 @@ impl SetChange {
             .map(|one| (one.member.level, one.member.name))
             .collect();
         if skills.is_empty() {
-            return Err("None of these skills can be exported, so nothing was written.".to_owned());
+            return Err(
+                "None of these skills can be exported, so nothing was written. `purlis skill \
+                 list` shows which are there."
+                    .to_owned(),
+            );
         }
         let out = source::gather_set(plane, built_in, &skills, source::Purpose::Export)?;
         if *zip {

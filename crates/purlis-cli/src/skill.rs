@@ -916,7 +916,7 @@ fn made_here(
         return Ok(1);
     }
     match to {
-        Some(to) => match change.exported(cx.plane, cx.built_in, to) {
+        Some(to) => match change.export_to(cx.plane, cx.built_in, to) {
             Ok(()) => {
                 voice::info(esc(&format!("Exported to {}.", to.display())).to_string());
                 Ok(0)
@@ -933,12 +933,13 @@ fn made_here(
 /// What an export with no place is told.
 const SAY_WHERE: &str = "Say where with --to <a path that is not there yet>.";
 
-/// **What a chat's export of several skills with `--to` is told** (#5492): the person picks where
-/// it goes, never the chat.
-const NO_PLACE_FROM_A_CHAT: &str = "A chat's export of several skills goes only where the person \
-                                    picks, so --to is not taken and nothing was written. Run it \
-                                    without --to: it is proposed to the person, who picks where \
-                                    in the window.";
+/// **What an export of several skills with `--to` is told anywhere but the person's interactive
+/// terminal** (#5492): the person picks where it goes, never a chat or a script.
+const NO_PLACE_BUT_AT_THE_TERMINAL: &str = "An export of several skills goes only where the person \
+                                    picks: --to is taken only at your own terminal, after its \
+                                    question, so nothing was written. Run it there, or without \
+                                    --to to propose it to the person, who picks where in the \
+                                    window.";
 
 /// What a person is told when the flag is off.
 const NOT_ON: &str = "The Skill studio is not turned on on this machine yet. Turn it on in \
@@ -985,7 +986,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
     let gated = writes || exports_several;
     if gated && !(at_the_persons_terminal(root) && (!bulk || interactive())) {
         if exports_several && matches!(command, SkillCommand::Export { to: Some(_), .. }) {
-            voice::err(NO_PLACE_FROM_A_CHAT);
+            voice::err(NO_PLACE_BUT_AT_THE_TERMINAL);
             return Ok(1);
         }
         return match set_change(root, &command) {
@@ -1357,10 +1358,13 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             };
             done(verbs::restore(&mut cx, &one, under.as_deref()))
         }
-        // Made above, as a change to skills after its question, or proposed: never here.
-        SkillCommand::DeleteNow { .. } => {
-            Err("Delete now is made only after its question at your terminal".to_owned())
-        }
+        // Made above, after its question at the person's terminal, or proposed: never here. Were
+        // it reached, it would delete nothing.
+        SkillCommand::DeleteNow { .. } => Err(
+            "purlis did not ask you first, so nothing was deleted. Run `purlis skill delete-now` \
+             again at your terminal."
+                .to_owned(),
+        ),
         SkillCommand::Grant {
             name,
             workspace: Some(workspace),

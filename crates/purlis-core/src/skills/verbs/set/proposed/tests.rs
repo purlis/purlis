@@ -404,7 +404,7 @@ fn a_proposed_export_names_no_place_and_writes_only_where_it_is_given_one() {
     );
     let out = tempfile::tempdir().unwrap();
     let to = out.path().join("skills");
-    change.exported(root, None, &to).unwrap();
+    change.export_to(root, None, &to).unwrap();
     assert!(to.join("tdd/SKILL.md").exists() && to.join("review/SKILL.md").exists());
     assert!(!to.join("grilling").exists(), "only what was named");
 }
