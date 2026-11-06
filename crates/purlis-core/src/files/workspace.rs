@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **The workspace files** (CONTEXT.md; ADR 0038 and ADR 0081, both amended 2026-11-05): a
-//! workspace's own folder as Explorer draws it with the workspace picked, read here and written
-//! nowhere (#5375).
+//! workspace's own folder as Explorer draws it with the workspace picked, read here (#5375), and
+//! written where the files are the person's own ([`write`], #5376).
 //!
 //! **What they are.** Everything in `workspaces/<ws>/` but its repos and their branches' folders:
 //! `repos/`, `.worktrees/`, and each folder at the top that [`crate::repofolder::holdings`] names
@@ -116,6 +116,46 @@ pub enum NotHere {
     ThroughALink(String),
 }
 
+/// Why a write to the workspace files was not made, as the sentence the window shows.
+#[derive(Debug, thiserror::Error)]
+pub enum NotWritten {
+    #[error(transparent)]
+    Here(#[from] NotHere),
+    #[error(
+        "purlis does not change '{0}': it is one of the files kept by purlis in the workspace. \
+         Change it from its own view, or leave it as it is."
+    )]
+    Managed(String),
+    #[error(
+        "purlis does not change '{0}': it is a link, and purlis writes through no link in the \
+         workspace's files. Change it in your file manager or a terminal."
+    )]
+    ALink(String),
+    #[error("purlis does not change the workspace's folder itself. Choose a file or folder in it.")]
+    TheFolderItself,
+    #[error("'{0}' is not a name a file can have here: {1}. Choose another name.")]
+    BadName(String, &'static str),
+    #[error("'{0}' is a name kept by purlis for itself in the workspace. Choose another name.")]
+    Reserved(String),
+    #[error("'{0}' is already taken in this folder. Choose another name.")]
+    Taken(String),
+    #[error(
+        "purlis did not delete '{path}': the system would not put it in the Trash ({why}). \
+         purlis never deletes a file for good, so it is still there. Delete it in Finder or a \
+         terminal if you mean to."
+    )]
+    NoTrash { path: String, why: String },
+    #[error(
+        "purlis imports files, and '{0}' is not one. Pick the files themselves, or copy a folder \
+         in your file manager or a terminal."
+    )]
+    NotAFileToImport(String),
+    #[error(
+        "purlis could not {what}: {why}. Try again, or do it in your file manager or a terminal."
+    )]
+    Failed { what: String, why: String },
+}
+
 /// Whether `path`, a path of the workspace files, is one purlis keeps: a reserved workspace name
 /// ([`crate::contain::workspace_keeps`]), its local skills, its generated `.claude/` and
 /// `.purlis-*` files, or a folder an approved extension keeps there (`extension_folders`, from
@@ -123,13 +163,24 @@ pub enum NotHere {
 /// managed folder holds is managed too.
 pub fn managed(path: &str, extension_folders: &[String]) -> bool {
     let first = path.split('/').next().unwrap_or("");
-    let lower = first.to_lowercase();
-    crate::contain::workspace_keeps(first)
+    let lower = folded(first);
+    crate::contain::workspace_keeps(&lower)
         || ALSO_KEPT.contains(&lower.as_str())
         || generated().any(|prefix| lower == prefix || lower.starts_with(&format!("{prefix}-")))
         || extension_folders
             .iter()
-            .any(|folder| folder.eq_ignore_ascii_case(first))
+            .any(|folder| folded(folder) == lower)
+}
+
+/// **`name` as a disk that ignores case and Unicode's forms reads it** (#5513's review): its
+/// decomposed form, each letter's case folded through its capital, so `ſ` (U+017F) is `s` and
+/// the Kelvin sign (U+212A) is `k`, as APFS takes them. Rust's lowercase alone keeps both, so a
+/// name such as `repoſ` would pass for the person's and reach `repos/` on the disk. Every name
+/// purlis keeps, and every repo's at the top, is told by this.
+pub(crate) fn folded(name: &str) -> String {
+    use unicode_normalization::UnicodeNormalization as _;
+    let decomposed: String = name.nfd().collect();
+    decomposed.to_uppercase().to_lowercase().nfd().collect()
 }
 
 /// The view a managed file at `path` has of its own, if the window has one.
@@ -177,7 +228,7 @@ impl Files {
             .chain(&holdings.shadowed)
             .chain(&holdings.others)
             .filter(|row| row.layout == Layout::Root);
-        outside.extend(at_root.map(|row| row.repo.name.to_lowercase()));
+        outside.extend(at_root.map(|row| folded(&row.repo.name)));
         let repos = holdings
             .repos
             .iter()
@@ -211,7 +262,7 @@ impl Files {
         let spelled = super::spelled_inside(path)?;
         let first = spelled.split('/').next().unwrap_or("");
         if self.is_outside(first) {
-            return Err(if first.eq_ignore_ascii_case(WORKTREES) {
+            return Err(if folded(first) == WORKTREES {
                 NotHere::OfABranch(path.to_string())
             } else {
                 NotHere::OfARepo(path.to_string())
@@ -223,8 +274,7 @@ impl Files {
 
     /// Whether `name`, at the top, is a repo's or the branches' folders.
     fn is_outside(&self, name: &str) -> bool {
-        let lower = name.to_lowercase();
-        self.outside.contains(&lower)
+        self.outside.contains(&folded(name))
     }
 
     /// `relative`, judged, resolved as the disk spells it and required to be that very path: no
@@ -472,6 +522,10 @@ impl Files {
         (found, more)
     }
 }
+
+#[path = "workspace/write.rs"]
+mod write;
+pub use write::{SystemTrash, Trash};
 
 #[cfg(test)]
 #[path = "workspace/tests.rs"]

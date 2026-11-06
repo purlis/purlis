@@ -103,6 +103,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "words, under the form it refused; the form, kept as it was typed, and Add pool or Check " +
       "its key are the way on",
   },
+  "WorkspaceWrites.tsx": {
+    count: 3,
+    why: ACTION,
+  },
   "ui/notice/Notice.tsx": {
     count: 4,
     why:

@@ -78,6 +78,10 @@ export const SAID = {
   copyAbsolutePath: "Copy absolute path",
   shellHere: "Open a shell tab here",
   openInEditor: "Open in your editor",
+  // The person's own workspace files' writes (#5376): each asks first, so each has its ellipsis.
+  newFile: "New file…",
+  newFolder: "New folder…",
+  importFiles: "Import files…",
   startAChatHere: "Start a chat here",
   addToChat: "Add to a chat's context",
   removeFolder: "Remove folder",

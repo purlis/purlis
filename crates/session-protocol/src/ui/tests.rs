@@ -205,3 +205,19 @@ fn a_call_that_names_a_workspaces_own_files_is_not_a_links_to_ask() {
     // A branch's read names a branch whatever its args say; the core refuses one with no repo.
     assert!(!names_a_workspaces_own_files("branch_tree", &path("")));
 }
+
+/// #5376: the person's own workspace files are written from their window alone. No link and
+/// no chat makes, renames, deletes or imports one.
+#[test]
+fn a_workspaces_own_files_are_written_from_the_window_alone() {
+    for command in [
+        "workspace_files_new_file",
+        "workspace_files_new_folder",
+        "workspace_files_rename",
+        "workspace_files_trash",
+        "workspace_files_import",
+    ] {
+        assert!(window_only(command), "{command}");
+        assert!(!served_on_a_link(command), "{command}");
+    }
+}

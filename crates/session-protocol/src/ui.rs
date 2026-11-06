@@ -661,6 +661,14 @@ pub const WINDOW_ONLY: &[&str] = &[
     // purlis keeps there, listed and opened in the person's window alone.
     "workspace_tree",
     "workspace_file",
+    // Writing a workspace's own files (#5376): new file, new folder, rename, delete to the
+    // Trash and import, each the person's own press in their window. An import's picker is the
+    // system's, opened by the command itself.
+    "workspace_files_new_file",
+    "workspace_files_new_folder",
+    "workspace_files_rename",
+    "workspace_files_trash",
+    "workspace_files_import",
     // A skill's folder, for its page's Files tab (#5183): listed, a file of it opened, and the
     // folder opened in the file manager. A built-in or third-party skill's folder is outside
     // the project, so only the person's own window reads it.

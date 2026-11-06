@@ -3440,6 +3440,29 @@ export const commands = {
 	 */
 	workspaceFile: (plane: PlaneId, workspace: string, path: string) => typedError<WorkspaceFile, string>(__TAURI_INVOKE("workspace_file", { plane, workspace, path })),
 	/**
+	 *  A new empty file `name` in `folder` of a workspace's own files (`""` for its top): its path.
+	 *  Refused where the files are not the person's, and for a name already taken.
+	 */
+	workspaceFilesNewFile: (plane: PlaneId, workspace: string, folder: string, name: string) => typedError<string, string>(__TAURI_INVOKE("workspace_files_new_file", { plane, workspace, folder, name })),
+	/**  A new empty folder `name` in `folder` of a workspace's own files: its path. */
+	workspaceFilesNewFolder: (plane: PlaneId, workspace: string, folder: string, name: string) => typedError<string, string>(__TAURI_INVOKE("workspace_files_new_folder", { plane, workspace, folder, name })),
+	/**
+	 *  A file or folder of a workspace's own files renamed to `name`, in its folder: its new path.
+	 *  Never over anything that has the name already.
+	 */
+	workspaceFilesRename: (plane: PlaneId, workspace: string, path: string, name: string) => typedError<string, string>(__TAURI_INVOKE("workspace_files_rename", { plane, workspace, path, name })),
+	/**
+	 *  A file or folder of a workspace's own files sent to the system's Trash. Refused, and left
+	 *  where it is, when the Trash will not take it: never deleted for good.
+	 */
+	workspaceFilesTrash: (plane: PlaneId, workspace: string, path: string) => typedError<null, string>(__TAURI_INVOKE("workspace_files_trash", { plane, workspace, path })),
+	/**
+	 *  Import files…: the system's file picker, then each file picked copied into `folder` of a
+	 *  workspace's own files, a name already taken given a ` (2)` suffix. The paths they were given;
+	 *  none when the picker was cancelled.
+	 */
+	workspaceFilesImport: (plane: PlaneId, workspace: string, folder: string) => typedError<string[], string>(__TAURI_INVOKE("workspace_files_import", { plane, workspace, folder })),
+	/**
 	 *  What a branch changed against the branch it was cut from, committed or not, file by file and
 	 *  rolled up onto its folders: the explorer's markers and its "Changed only" (FM-4).
 	 */

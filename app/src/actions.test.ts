@@ -18,6 +18,7 @@ import {
   ONE_CHAT_GOES_ON,
   PANE_CLOSE,
   FILE_VERBS,
+  WORKSPACE_WRITE_VERBS,
   fileRows,
   KEEPS_THE_BRANCH,
   matches,
@@ -3352,12 +3353,21 @@ describe("a branch's file and folder rows (FM-10)", () => {
     expect(revealSaid("Linux x86_64")).toBe("Reveal in Files");
   });
 
-  it("offers no row that creates, renames, moves or deletes, on any row (V86 F8, ADR 0081)", () => {
+  it("offers no write action on repo, branch or managed rows, and still refuses them there (V86 F8, ADR 0081 as amended 2026-11-05)", () => {
+    const repo = (path: string): BranchPath => ({ ...at(path), piece: null });
+    const own = (path: string): BranchPath => ({ workspace: "alpha", repo: "", piece: null, path });
     const every = [
       ...file,
       ...folder,
       ...link,
       ...fileRows({ on: "file", at: at("x"), kind: "file", refused: "ignored" }),
+      // A repo's own folder, and what purlis keeps in a workspace: read-only as a branch is.
+      ...fileRows({ on: "file", at: repo("src"), kind: "folder" }),
+      ...fileRows({ on: "file", at: repo("src/lib.rs"), kind: "file" }),
+      ...fileRows({ on: "file", at: own("memory"), kind: "folder", managed: true }),
+      ...fileRows({ on: "file", at: own("workspace.md"), kind: "file", managed: true }),
+      // A link among the person's own files is never written through.
+      ...fileRows({ on: "file", at: own("notes/link.md"), kind: "link" }),
     ];
     const writes = /creat|new|renam|mov|delet|remov|trash|archiv|discard|writ|save|edit\b/i;
 
@@ -4834,5 +4844,71 @@ describe("a chat's browser timeline (#2017)", () => {
 
   it("is no row for a chat with no id, which keeps no timeline", () => {
     expect(by(catalogue(now({ browsers: [browser(null)] })), "browser.timeline:3")).toBeUndefined();
+  });
+});
+
+describe("a workspace's own file and folder rows (#5376)", () => {
+  const own = (path: string): BranchPath => ({ workspace: "alpha", repo: "", piece: null, path });
+  const titles = (rows: readonly Offer[]) => rows.map((row) => row.title);
+  const writes = (rows: readonly Offer[]) =>
+    rows.filter((row) => (WORKSPACE_WRITE_VERBS as readonly string[]).includes(row.does.verb));
+
+  it("offers the person's own folder New file…, New folder…, Import files…, Rename… and Delete…", () => {
+    const rows = fileRows({ on: "file", at: own("notes"), kind: "folder" });
+
+    expect(titles(writes(rows))).toEqual([
+      "New file…",
+      "New folder…",
+      "Import files…",
+      "Rename…",
+      "Delete…",
+    ]);
+    expect(titles(rows).slice(0, 4)).toEqual(
+      titles(rows.filter((row) => !writes(rows).includes(row))).slice(0, 4),
+    );
+  });
+
+  it("offers the person's own file Rename… and Delete…, after what every file row offers", () => {
+    const rows = fileRows({ on: "file", at: own("notes/plan.md"), kind: "file" });
+
+    expect(titles(rows).slice(-2)).toEqual(["Rename…", "Delete…"]);
+    expect(titles(writes(rows))).toEqual(["Rename…", "Delete…"]);
+  });
+
+  it("offers the workspace's folder itself only what makes or brings in an entry", () => {
+    const rows = fileRows({ on: "file", at: own(""), kind: "folder" });
+
+    expect(titles(writes(rows))).toEqual(["New file…", "New folder…", "Import files…"]);
+  });
+
+  it("offers no write on a managed row or a link", () => {
+    for (const on of [
+      { at: own("memory"), kind: "folder", managed: true },
+      { at: own("workspace.md"), kind: "file", managed: true },
+      { at: own("notes/link.md"), kind: "link" },
+    ] as const)
+      expect(writes(fileRows({ on: "file", ...on }))).toEqual([]);
+  });
+
+  it("carries out each write with the workspace, the path and the chats writing it", async () => {
+    const asked: unknown[] = [];
+    const hands = { ...doing(), askWorkspaceWrite: (does: unknown) => asked.push(does) };
+    const touchedBy = ["console-developer 16"];
+    const rows = [
+      ...writes(fileRows({ on: "file", at: own("notes"), kind: "folder" })),
+      ...writes(fileRows({ on: "file", at: own("notes/plan.md"), kind: "file", touchedBy })),
+    ];
+
+    for (const row of rows) await perform(row, hands);
+
+    expect(asked).toEqual([
+      { verb: "newWorkspaceEntry", at: own("notes"), folder: false },
+      { verb: "newWorkspaceEntry", at: own("notes"), folder: true },
+      { verb: "importWorkspaceFiles", at: own("notes") },
+      { verb: "renameWorkspaceEntry", at: own("notes"), folder: true, touchedBy: [] },
+      { verb: "trashWorkspaceEntry", at: own("notes"), folder: true, touchedBy: [] },
+      { verb: "renameWorkspaceEntry", at: own("notes/plan.md"), folder: false, touchedBy },
+      { verb: "trashWorkspaceEntry", at: own("notes/plan.md"), folder: false, touchedBy },
+    ]);
   });
 });

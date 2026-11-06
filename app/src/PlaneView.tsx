@@ -131,6 +131,7 @@ import { FORGE_LOGIN, typableLogin, type LoginAsk } from "./RepoPicker";
 import { NewBranch } from "./NewBranch";
 import { LinkWorkItem } from "./LinkWorkItem";
 import { RenameChat } from "./RenameChat";
+import { useWorkspaceWrites } from "./WorkspaceWrites";
 import { RenameWorkspace } from "./RenameWorkspace";
 import { AddVision } from "./AddVision";
 import { failedNotNamed } from "./NotCloned";
@@ -166,6 +167,7 @@ import {
   pieceFileView,
   pieceFilesTitle,
   pieceFilesView,
+  workspaceFiles,
   type Place,
 } from "./pieceViews";
 import { searchFromFocus, searchOf, searchView } from "./contentSearch";
@@ -4938,6 +4940,13 @@ export const PlaneView = memo(function PlaneView({
     },
     [plane, present],
   );
+  /** A write on the person's own workspace files (#5376), while it asks; a new file opens in
+   *  its file tab once made. */
+  const workspaceWrites = useWorkspaceWrites(plane, (does, path) => {
+    if (does.verb !== "newWorkspaceEntry" || does.folder) return;
+    const place = workspaceFiles(does.at.workspace);
+    showView(pieceFileView(place, path), pieceFileTitle(place, path));
+  });
 
   /** A browser in the session host, opened in a view tab of its own (#2012); a refusal (Stop
    *  all, no host) is said on the window's trouble line. */
@@ -8497,6 +8506,7 @@ export const PlaneView = memo(function PlaneView({
       // A region's row in focus mode leaves it first (D-2921-19).
       showSideView: showSideViewSeen,
       editVision: (workspace: string) => setAddingVision({ workspace, busy: false }),
+      askWorkspaceWrite: workspaceWrites.ask,
       toggleRegion: toggleRegionSeen,
       moveView: moveSideView,
       // F6 and Shift+F6 from the palette (#1751): once the palette has closed and given the
@@ -8533,6 +8543,7 @@ export const PlaneView = memo(function PlaneView({
     }),
     [
       studioChats,
+      workspaceWrites.ask,
       studioLinks,
       beginRename,
       showSideViewSeen,
@@ -11929,6 +11940,8 @@ export const PlaneView = memo(function PlaneView({
                     onCancel={() => setPickingVault(false)}
                   />
                 )}
+
+                {workspaceWrites.dialog}
 
                 {renamingChat && (
                   <RenameChat
