@@ -195,6 +195,13 @@ impl Engine {
         let _ = super::lock(&self.events).send(event);
     }
 
+    /// Its pipe closes, as a stopped engine's does: the browser's events end, and nothing it
+    /// sends later is read.
+    fn close_pipe(&self) {
+        let (closed, _) = mpsc::sync_channel(1);
+        *super::lock(&self.events) = closed;
+    }
+
     /// Says, now, that the engine's own drag started: the word it held back
     /// (`drag_told_when_asked`). Fails the test when no drag has started.
     fn tell_of_the_held_drag(&self) {
@@ -755,21 +762,48 @@ fn white_png() -> Vec<u8> {
     out
 }
 
+/// **A browser over the stand-in that ends with its engine** (#5540): dropped, it is stopped as
+/// any browser is, and then the stand-in's pipe closes, as a real engine's does once it is
+/// stopped. Until that pipe closes the browser's event reader holds the browser, and the stand-in
+/// holds the pipe, so neither would end and each test would keep the browser's threads until the
+/// process ends.
+struct StandIn {
+    browser: Option<Browser>,
+    engine: Arc<Engine>,
+}
+
+impl std::ops::Deref for StandIn {
+    type Target = Browser;
+
+    fn deref(&self) -> &Browser {
+        self.browser
+            .as_ref()
+            .expect("a stand-in browser is held until it is dropped")
+    }
+}
+
+impl Drop for StandIn {
+    fn drop(&mut self) {
+        drop(self.browser.take());
+        self.engine.close_pipe();
+    }
+}
+
 /// A browser over the stand-in, with the frames page open and set up.
-fn browser() -> (Browser, Arc<Engine>) {
+fn browser() -> (StandIn, Arc<Engine>) {
     browser_with(limits())
 }
 
-fn browser_with(limits: Limits) -> (Browser, Arc<Engine>) {
+fn browser_with(limits: Limits) -> (StandIn, Arc<Engine>) {
     browser_over(limits, None)
 }
 
 /// A browser over the stand-in whose every request is told to `judge` (#2018).
-fn browser_judged(judge: crate::drive::Judge) -> (Browser, Arc<Engine>) {
+fn browser_judged(judge: crate::drive::Judge) -> (StandIn, Arc<Engine>) {
     browser_over(limits(), Some(judge))
 }
 
-fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (Browser, Arc<Engine>) {
+fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (StandIn, Arc<Engine>) {
     let (events, receiver) = mpsc::sync_channel(1024);
     let nodes = |text: &str| serde_json::from_str::<Value>(text).unwrap()["nodes"].clone();
     let engine = Arc::new(Engine {
@@ -844,6 +878,10 @@ fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (Browser,
         std::thread::sleep(Duration::from_millis(5));
     }
     std::thread::sleep(Duration::from_millis(20));
+    let browser = StandIn {
+        browser: Some(browser),
+        engine: Arc::clone(&engine),
+    };
     (browser, engine)
 }
 
@@ -3521,8 +3559,7 @@ fn whoever_asked_is_told_once_the_engine_ends() {
     browser.when_it_ends(Box::new(move |_| *super::lock(&counting) += 1));
 
     // The engine's pipe closes: its events end.
-    let (closed, _) = mpsc::sync_channel(1);
-    *super::lock(&engine.events) = closed;
+    engine.close_pipe();
 
     wait_for("told", || *super::lock(&told) == 1);
 }
@@ -3542,8 +3579,7 @@ fn whoever_asked_is_told_the_connection_closed_and_why() {
         most: 64 << 20,
     };
     *super::lock(&engine.closed) = Some(why.clone());
-    let (closed, _) = mpsc::sync_channel(1);
-    *super::lock(&engine.events) = closed;
+    engine.close_pipe();
 
     wait_for("told", || super::lock(&told).is_some());
     assert_eq!(
@@ -3565,8 +3601,7 @@ fn one_who_asks_after_the_end_is_told_at_once_how_it_ended() {
         *super::lock(&telling) = Some(ending)
     }));
     *super::lock(&engine.closed) = Some(Closed::PipeEnded);
-    let (closed, _) = mpsc::sync_channel(1);
-    *super::lock(&engine.events) = closed;
+    engine.close_pipe();
     wait_for("told", || super::lock(&first).is_some());
 
     let later: Arc<Mutex<Option<Ending>>> = Arc::default();
@@ -3643,12 +3678,42 @@ fn a_stop_while_the_engine_ends_by_itself_returns_once_its_end_is_told() {
     browser.when_it_ends(Box::new(move |_| {
         telling.store(true, std::sync::atomic::Ordering::SeqCst);
     }));
-    let (closed, _) = mpsc::sync_channel(1);
-    *super::lock(&engine.events) = closed;
+    engine.close_pipe();
     // The event reader has taken the engine, and waits for it to end by itself.
     wait_for("taken", || browser.process().is_none());
 
     browser.stop(Duration::from_millis(100));
 
     assert!(told.load(std::sync::atomic::Ordering::SeqCst));
+}
+
+/// **A stand-in browser's threads end once it is dropped** (#5540), as a real one's do once its
+/// engine's pipe closes: many opened and dropped in one process leave its thread count where it
+/// was, so the lib suite does not grow by four or five threads with each test.
+#[test]
+fn many_stand_in_browsers_dropped_leave_no_threads_behind() {
+    const MANY: usize = 100;
+    let threads = || num_threads::num_threads().map_or(0, std::num::NonZeroUsize::get);
+    let before = threads();
+    assert!(before > 0, "this platform does not count its threads");
+    let mut gone = Vec::new();
+    for _ in 0..MANY {
+        let (browser, engine) = browser();
+        gone.push(Arc::downgrade(&browser.inner));
+        drop(browser);
+        drop(engine);
+    }
+    // Other tests open and end threads beside this one, so the count is held to less than one
+    // thread for each browser: each one left behind would leave four or five.
+    let start = std::time::Instant::now();
+    while gone.iter().any(|inner| inner.strong_count() > 0) || threads() >= before + MANY {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "{} of {MANY} dropped browsers still live, and the process has {} threads, {before} \
+             before they were opened",
+            gone.iter().filter(|inner| inner.strong_count() > 0).count(),
+            threads(),
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }

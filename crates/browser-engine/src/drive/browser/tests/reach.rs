@@ -1456,8 +1456,7 @@ fn a_srcdoc_frame_in_the_pages_session_whose_document_has_ended_is_not_judged_un
 
 /// A blank frame in the page's session whose document is of `http://third.test`, not the
 /// page's, read for its sandbox.
-fn a_blank_frame_of_another_origin_in_the_pages_session()
--> (crate::drive::Browser, Arc<super::Engine>) {
+fn a_blank_frame_of_another_origin_in_the_pages_session() -> (super::StandIn, Arc<super::Engine>) {
     let (judge, _) = judge(&[]);
     let (browser, engine) = browser_judged(judge);
     the_page_shows_a_frame(&engine, &browser, "BLANK", "PAGE-1", "about:blank");
@@ -1826,7 +1825,7 @@ const WEB_FRAME: &str = "http://other.test/inner.html";
 
 /// A frame in the page's session at [`WEB_FRAME`], whose document's context says so, that
 /// starts another document.
-fn a_web_frame_that_starts_another_document() -> (crate::drive::Browser, Arc<super::Engine>) {
+fn a_web_frame_that_starts_another_document() -> (super::StandIn, Arc<super::Engine>) {
     let (judge, _) = judge(&[]);
     let (browser, engine) = browser_judged(judge);
     the_page_shows_a_frame(&engine, &browser, "WEB", "PAGE-1", WEB_FRAME);

@@ -4946,6 +4946,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "num_threads"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cabcc654086861f9e1bc5115258de62ef92c79b20f4615a1b0cc57c4e82027d4"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "objc2"
 version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5911,6 +5920,7 @@ dependencies = [
  "hmac 0.13.0",
  "minisign",
  "nix 0.31.3",
+ "num_threads",
  "p256 0.14.0",
  "png",
  "psl",

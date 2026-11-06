@@ -433,7 +433,7 @@ fn a_fill_cut_by_a_take_over_after_its_write_says_the_value_went_in() {
     let (browser, engine) = browser();
     let browser = Arc::new(browser);
     let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
-    let taker: Arc<Mutex<Option<Arc<crate::drive::Browser>>>> =
+    let taker: Arc<Mutex<Option<Arc<super::StandIn>>>> =
         Arc::new(Mutex::new(Some(Arc::clone(&browser))));
     let takes = Arc::clone(&taker);
     let mut wrote = false;
@@ -515,7 +515,7 @@ fn main_frame_loads(engine: &Engine, url: &str) {
 }
 
 /// The stand-in's page, filled under `holding`, which holds.
-fn filled_under(holding: &Arc<Holding>) -> (crate::drive::Browser, Arc<Engine>) {
+fn filled_under(holding: &Arc<Holding>) -> (super::StandIn, Arc<Engine>) {
     let (browser, engine) = browser();
     as_fields(&engine, "one_line", Twist::None);
     *super::super::super::lock(&holding.engine) = Some(Arc::clone(&engine));
