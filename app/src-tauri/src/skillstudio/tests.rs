@@ -755,3 +755,38 @@ fn the_studio_says_the_budget_and_what_its_scope_writes_as_its_router_3692() {
         "a persona's own line"
     );
 }
+
+#[test]
+fn make_room_counts_a_skills_runs_of_the_last_30_days_and_none_older() {
+    let tmp = tempfile::tempdir().unwrap();
+    let log = tmp
+        .path()
+        .join("personas")
+        .join(purlis_core::skilluse::DIR_NAME);
+    std::fs::create_dir_all(&log).unwrap();
+    std::fs::write(
+        log.join("2026-10.laptop.jsonl"),
+        "{\"skill\": \"deploy\", \"ts\": \"2026-10-06T23:00:00+00:00\"}\n\
+         {\"skill\": \"deploy\", \"ts\": \"2026-10-07T01:00:00+00:00\"}\n\
+         {\"skill\": \"triage\", \"ts\": \"2026-11-05T09:00:00+00:00\"}\n",
+    )
+    .unwrap();
+    let now = chrono::DateTime::parse_from_rfc3339("2026-11-06T00:00:00+00:00")
+        .unwrap()
+        .timestamp();
+
+    assert_eq!(
+        uses(tmp.path(), u64::try_from(now).unwrap()),
+        vec![
+            SkillRunsLately {
+                skill: "deploy".into(),
+                runs: 1
+            },
+            SkillRunsLately {
+                skill: "triage".into(),
+                runs: 1
+            },
+        ],
+        "30 days before 6 November is 7 October at midnight"
+    );
+}
