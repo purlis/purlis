@@ -205,17 +205,25 @@ fn going_back_to_a_site_the_hold_refuses_answers_why() {
     );
 }
 
+/// The page is closed by its site's other page, which tells it to close itself (#5454). A click
+/// on a button that closes its own page raced the close: the engine may drop its answer to the
+/// click's last mouse event as the page's session detaches, and the click then says it acted in
+/// part. Here the click lands on the opener, which stays.
 #[test]
 fn a_closed_page_ends_the_hold() {
     let Some((browser, _data, _site)) = started() else {
         return;
     };
-    open(&browser, "hold-opener.html");
+    let opener = open(&browser, "hold-opener.html")
+        .page
+        .expect("the opener's page")
+        .id;
     click(&browser, "link \"Open the dashboard\"");
     let told = Arc::new(Told::default());
     filled(&browser, &told);
+    call(&browser, Call::SwitchPage { page: opener });
 
-    click(&browser, "button \"Close this page\"");
+    click(&browser, "button \"Close the dashboard\"");
 
     told.comes_to(&["held", "released"]);
 }
