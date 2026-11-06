@@ -62,14 +62,18 @@ jobs:
         os: [macos-latest, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     env:
-      # The scenario harness's run tree (`app/e2e/harness.ts`): the project is made inside it, so
-      # the app's fence holds it as it holds every other run's plane.
-      CHARTER_SCENARIO_RUN: ${{ runner.temp }}/scale-run
-      PURLIS_SCALE_PLANE: ${{ runner.temp }}/scale-run/project
       # Every binary the run starts, the app's own among them, from the release build.
       CHARTER_TARGET_DIR: ${{ github.workspace }}/target/release
-      OS_WORD: ${{ runner.os == 'macOS' && 'macos' || 'linux' }}
+      OS_WORD: ${{ startsWith(matrix.os, 'macos') && 'macos' || 'linux' }}
     steps:
+      # The scenario harness's run tree (`app/e2e/harness.ts`): the project is made inside it, so
+      # the app's fence holds it as it holds every other run's plane. Here and not in the job's
+      # `env`, which cannot read the runner's own context.
+      - name: Where the run's tree and its project are
+        shell: bash
+        run: |
+          echo "CHARTER_SCENARIO_RUN=$RUNNER_TEMP/scale-run" >> "$GITHUB_ENV"
+          echo "PURLIS_SCALE_PLANE=$RUNNER_TEMP/scale-run/project" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
