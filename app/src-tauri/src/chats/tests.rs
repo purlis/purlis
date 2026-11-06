@@ -2570,6 +2570,9 @@ fn a_restart_keeps_the_conversation_and_compiles_the_sandbox_the_project_has_now
         .start(&a_resumable_chat_in(plane.path()), SIZE)
         .expect("starts");
     let id = chats.record().chats[0].identity.id.clone();
+    // Its record written, as a slow walk finishes it after the start (#5555): the record's folder
+    // under `.charter` is part of what a start compiles.
+    crate::arrived::recorded(id.as_deref().expect("an id"));
     let before = chats.confines_of(session).expect("it started sandboxed");
     assert!(!reaches(&before, "a.example"), "{before:?}");
 
