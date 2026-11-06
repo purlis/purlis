@@ -151,6 +151,11 @@ pub struct Watched {
     /// have written its branches and its index.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub held_git: Vec<PathBuf>,
+    /// The names the chat's sandbox holds by path that weren't there as the chat first started,
+    /// where it makes an empty placeholder for each while a command runs: Claude Code's on
+    /// Linux. One a sandbox killed outright leaves is cleared by the next look ([`clear_left`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub placeholders: Vec<PathBuf>,
 }
 
 /// **Which thing is at a path**: its device and inode, its folder's, and when it last changed. A
@@ -546,6 +551,7 @@ pub fn begin(plane: &Path, chat: &str, name: Option<&str>, watched: &Watched) ->
         contents: watched.contents,
         lifted: watched.lifted.clone(),
         held_git: watched.held_git.clone(),
+        placeholders: Vec::new(),
     });
     let repos = repos_at_start(&new_folders, &walked);
     holding(plane, || {
@@ -561,6 +567,12 @@ pub fn begin(plane: &Path, chat: &str, name: Option<&str>, watched: &Watched) ->
         record.watched.contents = watched.contents;
         record.watched.lifted.clone_from(&watched.lifted);
         record.watched.held_git.clone_from(&watched.held_git);
+        // Kept from the chat's first start: one left by a sandbox killed then is there by now.
+        for path in &watched.placeholders {
+            if !record.watched.placeholders.contains(path) {
+                record.watched.placeholders.push(path.clone());
+            }
+        }
         record
             .baseline
             .extend(walked.found.iter().map(|(p, found)| (key(p), found.pin)));
@@ -640,6 +652,96 @@ fn read_made(plane: &Path) -> BTreeMap<String, Pin> {
         .unwrap_or_default()
 }
 
+/// Where the kernel lists each process's mounts, as `<pid>/mountinfo`.
+const PROC: &str = "/proc";
+
+/// **What a sandbox killed outright left in a chat's folders**: each of `watched`'s placeholders
+/// that is an empty file or an empty folder, and that no process has mounted, as a running
+/// sandbox has its own. Removing one a sandbox still holds would free that name inside it, so
+/// where the mounts of `proc` can't be read, nothing is removed. Anything else at such a path,
+/// a file with something in it or a link, is kept and is the look's to tell.
+pub(super) fn clear_left(watched: &Watched, proc: &Path) {
+    if watched.placeholders.is_empty() {
+        return;
+    }
+    let Some(mounted) = mount_points(proc) else {
+        return;
+    };
+    for path in &watched.placeholders {
+        let Ok(kind) = std::fs::symlink_metadata(path) else {
+            continue;
+        };
+        if mounted.iter().any(|at| at.starts_with(path)) {
+            continue;
+        }
+        // A folder goes only while it is empty; a file only while it holds nothing.
+        let _ = if kind.is_dir() {
+            std::fs::remove_dir(path)
+        } else if kind.is_file() && kind.len() == 0 {
+            std::fs::remove_file(path)
+        } else {
+            continue;
+        };
+    }
+}
+
+/// What chat `chat`'s record watches, as the look reads it.
+#[cfg(test)]
+pub(super) fn watched_of(plane: &Path, chat: &str) -> Option<Watched> {
+    read(&file(plane, chat).ok()?)
+        .ok()
+        .flatten()
+        .map(|record| record.watched)
+}
+
+/// Every mount point any process in `proc` has, or `None` where none could be read.
+fn mount_points(proc: &Path) -> Option<Vec<PathBuf>> {
+    let mut points = Vec::new();
+    let mut read_any = false;
+    for entry in std::fs::read_dir(proc).ok()?.flatten() {
+        let name = entry.file_name();
+        if !name
+            .to_str()
+            .is_some_and(|pid| pid.bytes().all(|b| b.is_ascii_digit()))
+        {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(entry.path().join("mountinfo")) else {
+            continue;
+        };
+        read_any = true;
+        // `id parent major:minor root mount-point ...`, spaces in a path written as `\040`.
+        points.extend(
+            text.lines()
+                .filter_map(|line| line.split(' ').nth(4))
+                .map(|point| PathBuf::from(unescaped(point))),
+        );
+    }
+    read_any.then_some(points)
+}
+
+/// A mountinfo field with its octal escapes (`\040` for a space) read back.
+fn unescaped(field: &str) -> String {
+    let bytes = field.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] == b'\\'
+            && let Some(code) = bytes
+                .get(at + 1..at + 4)
+                .and_then(|digits| std::str::from_utf8(digits).ok())
+                .and_then(|digits| u8::from_str_radix(digits, 8).ok())
+        {
+            out.push(code);
+            at += 4;
+        } else {
+            out.push(bytes[at]);
+            at += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 /// **At the end of a turn of chat `chat`**: what has appeared since its last look, or `None` for a
 /// chat with no record, which is one purlis started with no sandbox. Each path on one Notice only:
 /// one another chat's Notice has told, and that has not changed since, goes on none here.
@@ -648,6 +750,7 @@ pub fn look(plane: &Path, chat: &str, name: Option<&str>) -> io::Result<Option<L
     let Some(before) = read(&path)? else {
         return Ok(None);
     };
+    clear_left(&before.watched, Path::new(PROC));
     let walked = walk(&before.watched);
     // What no look has been sure of before says nothing, and is known from here on.
     let mut first_reached = BTreeSet::new();
