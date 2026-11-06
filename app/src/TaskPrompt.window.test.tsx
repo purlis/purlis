@@ -601,7 +601,7 @@ describe("putting a waiting chat's Notice away (qw386)", () => {
   });
 
   it("a dismissed permission keeps the stopped line hidden once the hold ends, for that wait", async () => {
-    const { said, move } = await drawn(withTasks());
+    const { said, move, asked } = await drawn(withTasks());
     await waitFor(() => expect(onScreen()).toEqual([1]));
     await move(5, "running", 1);
     await asks(said, [prompt(5, "Run purlis persona where")]);
@@ -617,6 +617,19 @@ describe("putting a waiting chat's Notice away (qw386)", () => {
     await move(5, "waiting", 2, [5], { asking: true });
     await asks(said, []);
     expect(promptNotice(5)).toBeNull();
+    // Kept away in every window of the project, which never saw it carried (#5363).
+    await waitFor(() =>
+      expect(
+        asked
+          .filter((one) => one.cmd === "plugin:event|emit" && one.args.event === "note-cleared")
+          .map((one) => (one.args.payload as { note: unknown }).note)
+          .at(-1),
+      ).toEqual({ kind: "hidden", causes: [expect.stringMatching(/^task-permission:5:asked:/)] }),
+    );
+    const told = asked.filter(
+      (one) => one.cmd === "plugin:event|emit" && one.args.event === "note-cleared",
+    );
+    expect(told).toHaveLength(2);
 
     // Answered, it goes on; its next stop is a new wait and shows.
     await move(5, "running", 3);

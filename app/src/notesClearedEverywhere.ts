@@ -27,35 +27,42 @@ export function clearedHere(plane: string, session: number, note: NoteCleared["n
   } satisfies NoteCleared).catch(() => undefined);
 }
 
+/** **How each note kept outside PlaneView is let go here**, by its kind: one list, which both
+ *  {@link letGoHere} and {@link keptOutside} read. */
+const LET_GO: {
+  [K in KeptOutside["kind"]]: (
+    plane: string,
+    session: number,
+    note: Extract<KeptOutside, { kind: K }>,
+  ) => void;
+} = {
+  "input-refused": (plane, session) => forgetInputRefused(plane, session),
+  move: (plane, session) => forgetMove(plane, session),
+  moved: (plane, session) => dismissMovedAfterSignIn(plane, session),
+  hidden: (plane, _session, note) => {
+    for (const cause of note.causes) hideForNow(plane, cause);
+  },
+  "draft-ready": (plane, session, note) => putAwayDraftsReady(plane, session, note.drafts),
+};
+
 /** Lets go here of chat `session`'s note that another window of `plane`'s project put away,
  *  where this window keeps it in a store of its own. The core is told nothing: that window was. */
 export function letGoHere(plane: string, session: number, note: KeptOutside): void {
-  switch (note.kind) {
-    case "input-refused":
-      forgetInputRefused(plane, session);
-      return;
-    case "move":
-      forgetMove(plane, session);
-      return;
-    case "moved":
-      dismissMovedAfterSignIn(plane, session);
-      return;
-    case "hidden":
-      for (const cause of note.causes) hideForNow(plane, cause);
-      return;
-    case "draft-ready":
-      putAwayDraftsReady(plane, session, note.drafts);
-      return;
-  }
+  (LET_GO[note.kind] as (plane: string, session: number, note: KeptOutside) => void)(
+    plane,
+    session,
+    note,
+  );
+}
+
+/** **Puts chat `session`'s `note` away here and in every window of the project**: what a Notice
+ *  whose note a store of the window's own keeps does on its Dismiss. */
+export function putAwayEverywhere(plane: string, session: number, note: KeptOutside): void {
+  letGoHere(plane, session, note);
+  clearedHere(plane, session, note);
 }
 
 /** Whether `note` is one a store of the window's own keeps, which {@link letGoHere} lets go. */
 export function keptOutside(note: NoteCleared["note"]): note is KeptOutside {
-  return (
-    note.kind === "input-refused" ||
-    note.kind === "move" ||
-    note.kind === "moved" ||
-    note.kind === "hidden" ||
-    note.kind === "draft-ready"
-  );
+  return note.kind in LET_GO;
 }

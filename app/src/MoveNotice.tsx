@@ -5,8 +5,6 @@ import { useEffect, useRef, useState } from "react";
 import { type ChatMove, type MoveSignIn, type PlaneId, type PlanRow } from "./bindings";
 import {
   askMove,
-  dismissMovedAfterSignIn,
-  forgetMove,
   moveCancellable,
   moveSaid,
   placeSaid,
@@ -16,7 +14,7 @@ import {
   useMovedAfterSignIn,
 } from "./chatMoves";
 import { Notice, type NoticeAction } from "./Notice";
-import { clearedHere } from "./notesClearedEverywhere";
+import { clearedHere, putAwayEverywhere } from "./notesClearedEverywhere";
 import { saveLimits } from "./pools";
 import { RaiseLimit } from "./RaiseLimit";
 import { askProfileSignIn } from "./settings/links";
@@ -54,10 +52,7 @@ export function MoveNotice({ plane, session }: { plane: PlaneId; session: number
         cause={`chat-moved:${session}`}
         at="pane"
         label="Move"
-        onDismiss={() => {
-          dismissMovedAfterSignIn(plane, session);
-          clearedHere(plane, session, { kind: "moved" });
-        }}
+        onDismiss={() => putAwayEverywhere(plane, session, { kind: "moved" })}
       >
         {`Moved to ${placeSaid(movedTo)}.`}
       </Notice>
@@ -81,10 +76,7 @@ export function MoveNotice({ plane, session }: { plane: PlaneId; session: number
         cause={`chat-move:${session}`}
         at="pane"
         label="Move"
-        onDismiss={() => {
-          forgetMove(plane, session);
-          clearedHere(plane, session, { kind: "move" });
-        }}
+        onDismiss={() => putAwayEverywhere(plane, session, { kind: "move" })}
         dismissSays="Hides this line. The move is being made, and goes on."
       >
         {said.words}

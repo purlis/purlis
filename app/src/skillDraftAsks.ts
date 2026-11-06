@@ -159,4 +159,5 @@ export function useDraftsReadyPutAway(plane: string, session: number): string | 
 /** Forgets every put-away, as a new launch would. For tests. */
 export function forgetDraftsPutAway(): void {
   draftsPutAway = {};
+  for (const one of putAwayListeners) one();
 }

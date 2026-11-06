@@ -7503,7 +7503,8 @@ export const PlaneView = memo(function PlaneView({
     for (const session of shownElsewhere) {
       const held = heldOf(session);
       const { start, blocks, byHand: banner, restart } = held;
-      if (start === undefined && blocks.length === 0 && banner === undefined && !restart) continue;
+      const none = start === undefined && blocks.length === 0 && banner === undefined;
+      if (none && restart === undefined) continue;
       const said = JSON.stringify(held);
       holding.set(session, said);
       if (notesHeldElsewhere.current.get(session) !== said) handNotes(session, held);
@@ -8861,6 +8862,7 @@ export const PlaneView = memo(function PlaneView({
     const askers = new Map<number, number>();
     // **In every tab, not the front one's alone** (#5543): the palette lists a task a pane
     // behind still shows, and the path each pane last had is remembered for every tab.
+    // Until the list is read every chat would look gone, so none is taken for ended yet.
     if (sidebar === undefined) return askers;
     for (const said of recalled.values()) {
       const [asker, task] = said.path.slice(-2);

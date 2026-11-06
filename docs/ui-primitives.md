@@ -842,12 +842,13 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
   `head`: its mark, its `title` (what it names, whose it is, its label, or else its state), its
   state and age muted beneath (`sub`), Go to chat a quiet link and its ×. Under it, what it says at
   the card's size, in purlis's plain words (no Notice in the centre carries a chat's own prose;
-  `chatWords` went for want of a caller, #5363); and its ways. One primary, where it has an answer, every other way a quiet link. **A
-  consent takes no primary** (ADR 0097 §6): Allow keeps `grants`, what stands beside it stays
-  `secondary`, and its card keeps its full waiting edge (`data-consent`), where any other Notice's
-  outline is softer, in its kind's colour. A sandbox block says it is one (`consent`), as an
-  answer that `allows` says it of itself, and says "Waiting on you" only where it has something
-  to answer. A pane's band and a Notice alone on a page do not take this layout.
+  `chatWords` went for want of a caller, #5363); and its ways. One primary, where it has an
+  answer, every other way a quiet link. **A consent takes no primary** (ADR 0097 §6): Allow keeps
+  `grants`, what stands beside it stays `secondary`, and its card keeps its full waiting edge
+  (`data-consent`), where any other Notice's outline is softer, in its kind's colour. A sandbox
+  block says it is one (`consent`), as an answer that `allows` says it of itself, and says
+  "Waiting on you" only where it has something to answer. A pane's band and a Notice alone on a
+  page do not take this layout.
 - **Three tones** (#3678): `news` (nothing is wrong, the person is being told), `attention`
   (nothing is wrong, but the person must decide: a change a chat made to review, a grade plan
   that changed under them, a draft out of date) and `trouble` (something failed, and only then).

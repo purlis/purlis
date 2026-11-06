@@ -3,9 +3,9 @@
 
 import { useContext } from "react";
 import type { PlaneId } from "./bindings";
-import { forgetInputRefused, useInputRefused } from "./inputRefused";
+import { useInputRefused } from "./inputRefused";
 import { Notice, NoticeOf } from "./Notice";
-import { clearedHere } from "./notesClearedEverywhere";
+import { putAwayEverywhere } from "./notesClearedEverywhere";
 
 /**
  * **What a chat was not sent, on its pane** (#4734, ADR 0108). What a pane sends its chat waits
@@ -25,10 +25,7 @@ export function InputRefusedNotice({ plane, session }: { plane: PlaneId; session
       at="pane"
       tone="trouble"
       label="Not sent"
-      onDismiss={() => {
-        forgetInputRefused(plane, session);
-        clearedHere(plane, session, { kind: "input-refused" });
-      }}
+      onDismiss={() => putAwayEverywhere(plane, session, { kind: "input-refused" })}
     >
       purlis could not send {chat} what you typed, or anything after it: {why}. Type it again once
       the chat answers.

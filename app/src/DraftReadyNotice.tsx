@@ -4,13 +4,8 @@
 import { useContext } from "react";
 import type { PlaneId } from "./bindings";
 import { Notice, NoticeOf } from "./Notice";
-import { clearedHere } from "./notesClearedEverywhere";
-import {
-  draftReadySays,
-  putAwayDraftsReady,
-  useDraftsReadyPutAway,
-  useSkillDrafts,
-} from "./skillDraftAsks";
+import { putAwayEverywhere } from "./notesClearedEverywhere";
+import { draftReadySays, useDraftsReadyPutAway, useSkillDrafts } from "./skillDraftAsks";
 import { AT_THE_ROOT, askSkillStudio, useSkillStudioOn } from "./skillStudio";
 
 /** What the notice's one action is called (S8, #3694): one draft is opened, several are listed. */
@@ -55,10 +50,7 @@ export function DraftReadyNotice({ plane, session }: { plane: PlaneId; session: 
             ),
         },
       ]}
-      onDismiss={() => {
-        putAwayDraftsReady(plane, session, key);
-        clearedHere(plane, session, { kind: "draft-ready", drafts: key });
-      }}
+      onDismiss={() => putAwayEverywhere(plane, session, { kind: "draft-ready", drafts: key })}
     >
       {draftReadySays(mine, offScreen)}
     </Notice>
