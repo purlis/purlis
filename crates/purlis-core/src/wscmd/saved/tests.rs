@@ -196,21 +196,21 @@ fn a_workspace_made_local_drops_its_saved_lines_and_its_shared_paths_name_them()
     );
 }
 
-/// What git would add from the plane at `root`: every file not ignored, as git reads the
-/// `.gitignore`.
-fn unignored(root: &Path) -> Vec<String> {
-    let git = |args: &[&str]| {
-        crate::forklock::output(
-            std::process::Command::new("git")
-                .args(args)
-                .current_dir(root)
-                .env("GIT_CONFIG_GLOBAL", "/dev/null")
-                .env("GIT_CONFIG_NOSYSTEM", "1"),
-        )
-        .unwrap()
-    };
-    assert!(git(&["init", "-q"]).status.success());
-    let listed = git(&["ls-files", "--others", "--exclude-standard"]);
+/// `git <args>` in the plane at `root`, read with no config of the person's.
+fn git(root: &Path, args: &[&str]) -> std::process::Output {
+    crate::forklock::output(
+        std::process::Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1"),
+    )
+    .unwrap()
+}
+
+/// What `git ls-files <args>` lists of workspace `alpha`.
+fn listed(root: &Path, args: &[&str]) -> Vec<String> {
+    let listed = git(root, &[&["ls-files"], args].concat());
     assert!(listed.status.success());
     String::from_utf8(listed.stdout)
         .unwrap()
@@ -218,6 +218,79 @@ fn unignored(root: &Path) -> Vec<String> {
         .filter(|line| line.starts_with("workspaces/alpha/"))
         .map(str::to_string)
         .collect()
+}
+
+/// What git would add from the plane at `root`: every file not ignored, as git reads the
+/// `.gitignore`.
+fn unignored(root: &Path) -> Vec<String> {
+    assert!(git(root, &["init", "-q"]).status.success());
+    listed(root, &["--others", "--exclude-standard"])
+}
+
+#[test]
+fn a_saved_entry_git_never_tracked_does_not_stop_live_off_untracking_the_rest() {
+    let dir = plane();
+    let root = dir.path();
+    std::fs::create_dir_all(root.join("workspaces/alpha/drafts")).unwrap();
+    add(root, "alpha", "drafts").unwrap();
+    add(root, "alpha", "deploy.sh").unwrap();
+    assert!(git(root, &["init", "-q"]).status.success());
+    assert!(git(root, &["add", "-A"]).status.success());
+    assert!(
+        git(
+            root,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "-qm",
+                "saved"
+            ]
+        )
+        .status
+        .success()
+    );
+    // Saved after the last commit, so git has never tracked it: an empty `drafts/` is the same.
+    std::fs::write(root.join("workspaces/alpha/later.md"), "new\n").unwrap();
+    add(root, "alpha", "later.md").unwrap();
+    assert_eq!(
+        listed(root, &[]),
+        [
+            "workspaces/alpha/deploy.sh",
+            "workspaces/alpha/memory/MEMORY.md"
+        ]
+    );
+
+    let mut said = Vec::new();
+    let code = wscmd::live::live(root, "alpha", true, &mut |line| said.push(line.to_string()));
+
+    assert_eq!(code, 0, "{said:?}");
+    assert_eq!(listed(root, &[]), Vec::<String>::new(), "{said:?}");
+    assert!(!wscmd::live_workspaces(root).contains("alpha"));
+}
+
+#[test]
+fn an_entry_that_holds_a_repo_is_never_saved_and_its_line_goes_when_it_becomes_one() {
+    let dir = plane();
+    let root = dir.path();
+    std::fs::create_dir_all(root.join("workspaces/alpha/tool/.git")).unwrap();
+    let before = gitignore(root);
+    assert!(matches!(
+        add(root, "alpha", "tool"),
+        Err(NotSaved::IsARepo(_))
+    ));
+    assert_eq!(gitignore(root), before);
+
+    add(root, "alpha", "notes").unwrap();
+    std::fs::create_dir_all(root.join("workspaces/alpha/notes/.git")).unwrap();
+    wscmd::set_live(root, "beta", true).unwrap();
+    assert!(
+        !gitignore(root).contains("!/workspaces/alpha/notes"),
+        "{}",
+        gitignore(root)
+    );
 }
 
 #[test]

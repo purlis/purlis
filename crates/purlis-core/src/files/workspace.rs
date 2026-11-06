@@ -250,6 +250,19 @@ impl Files {
             .chain(&holdings.others)
             .filter(|row| row.layout == Layout::Root);
         outside.extend(at_root.map(|row| folded(&row.repo.name)));
+        // A folder with a `.git` whose name purlis takes for no repo's (`My Tool`), or whose
+        // `.git` could not be read, is still a repo to git, and never the person's own file.
+        // `refused` also names a link, which is listed as one, so only one holding a `.git`.
+        let refused = holdings
+            .refused
+            .iter()
+            .filter(|said| dir.join(&said.name).join(".git").symlink_metadata().is_ok());
+        outside.extend(
+            refused
+                .chain(&holdings.unreadable)
+                .filter(|said| said.layout == Layout::Root && !said.name.is_empty())
+                .map(|said| folded(&said.name)),
+        );
         let repos = holdings
             .repos
             .iter()

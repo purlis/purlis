@@ -81,13 +81,14 @@ const ALLOWED: &[(&str, usize, &str)] = &[
         "crates/purlis-core/src/wscmd/mod.rs",
         2,
         "names a workspace's own folders (memory, sessions, skills) and the entries saved with \
-         the project (#5377), which a save refuses to be a repo, never a repo",
+         the project (#5377), which `saved::add` refuses when it holds a `.git`, never a repo",
     ),
     (
         "crates/purlis-core/src/wscmd/saved.rs",
         1,
         "the LIVE block's line for one of a workspace's own files saved with the project \
-         (#5377): `files::workspace` refuses a repo's name before it is written, never a repo",
+         (#5377): `add` refuses an entry holding a `.git` and `block_for` drops one that has \
+         become one, so never a repo",
     ),
     (
         "crates/purlis-core/src/wscmd/rename.rs",

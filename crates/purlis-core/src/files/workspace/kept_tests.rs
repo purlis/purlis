@@ -126,3 +126,20 @@ fn what_purlis_keeps_a_repo_a_file_below_the_top_and_one_not_there_are_never_sav
     }
     assert_eq!(gitignore(&plane), before);
 }
+
+#[test]
+fn a_repo_whose_name_is_no_repos_is_still_a_repo_and_never_saved() {
+    let (_dir, plane) = project(true);
+    std::fs::create_dir_all(plane.join("workspaces/alpha/My Tool/.git")).unwrap();
+    let before = gitignore(&plane);
+    let files = Files::of(&plane, "alpha").unwrap();
+    let why = files.save_with_the_project("My Tool", &[]).unwrap_err();
+    assert!(matches!(why, NotHere::OfARepo(_)), "{why}");
+    assert_eq!(gitignore(&plane), before);
+    assert!(
+        !kept_at(&plane, "")
+            .iter()
+            .any(|(name, _)| name == "My Tool"),
+        "a repo is not listed as the person's own"
+    );
+}

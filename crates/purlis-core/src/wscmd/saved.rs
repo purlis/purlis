@@ -85,6 +85,14 @@ pub fn saved(root: &Path, ws: &str) -> BTreeSet<String> {
         .unwrap_or_default()
 }
 
+/// Whether `entry` of workspace `ws` holds a `.git` of any kind. git would commit such a folder
+/// as a gitlink, never its files, so no line saves it, and a saved entry that has since become
+/// one loses its line at the block's next rewrite.
+pub(crate) fn holds_a_repo(root: &Path, ws: &str, entry: &str) -> bool {
+    let dir = root.join("workspaces").join(ws);
+    dir.join(entry).join(".git").symlink_metadata().is_ok()
+}
+
 /// Why an entry was not saved with the project.
 #[derive(Debug, thiserror::Error)]
 pub enum NotSaved {
@@ -99,6 +107,11 @@ pub enum NotSaved {
     )]
     NotOneEntry(String),
     #[error(
+        "'{0}' holds a repo, which has its own history, so purlis does not save it with the \
+         project. Save the files beside it instead."
+    )]
+    IsARepo(String),
+    #[error(
         "purlis could not write the project's .gitignore, so '{entry}' is still kept on this \
          machine only ({why}). Check the file can be written, then try again."
     )]
@@ -112,6 +125,9 @@ pub enum NotSaved {
 pub fn add(root: &Path, ws: &str, entry: &str) -> Result<bool, NotSaved> {
     if !one_entry(entry) {
         return Err(NotSaved::NotOneEntry(entry.to_string()));
+    }
+    if holds_a_repo(root, ws, entry) {
+        return Err(NotSaved::IsARepo(entry.to_string()));
     }
     let mut not_live = false;
     let changed = super::rewrite_gitignore(root, |text| {
