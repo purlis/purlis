@@ -622,6 +622,11 @@ export type Does =
   /** Opens the editor of a workspace's vision (#3344): what `workspace.md` opened from the
    *  workspace's own files links to (#5375). */
   | { verb: "editVision"; workspace: string }
+  /** **A write on the person's own workspace files** (#5376, ADR 0081 amended 2026-11-05),
+   *  each asked first: the name of a new file or folder, a rename's new name, a delete's one
+   *  confirmation, or the system's file picker. Only ever on a row of the person's own (never
+   *  a repo's, a branch's or one purlis keeps), and refused there too by the core. */
+  | WorkspaceWrite
   /** Puts a region away or brings it back, as its status-line toggle and ⌘B do. */
   | { verb: "toggleRegion"; region: Toggled }
   /** Moves the keyboard to the next region drawn, or with `back` the one before, as F6 and
@@ -1256,6 +1261,9 @@ export type Doing = {
   showSideView: (view: ViewId) => void;
   /** The vision editor of `workspace` (#3344). Absent where no project is open. */
   editVision?: (workspace: string) => void;
+  /** Asks what a write on the person's own workspace files needs, then makes it (#5376). Absent
+   *  where no project is open. */
+  askWorkspaceWrite?: (does: WorkspaceWrite) => void;
   toggleRegion: (region: Toggled) => void;
   /** `SAID.toPanel` or `SAID.toSidebar` (#1740). Absent where no project is open, and so no
    *  side has views to move: its row is never offered there. */
@@ -3771,6 +3779,12 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
     case "editVision":
       doing.editVision?.(does.workspace);
       return DID;
+    case "newWorkspaceEntry":
+    case "renameWorkspaceEntry":
+    case "trashWorkspaceEntry":
+    case "importWorkspaceFiles":
+      doing.askWorkspaceWrite?.(does);
+      return DID;
     case "toggleRegion":
       doing.toggleRegion(does.region);
       return DID;
@@ -6067,13 +6081,100 @@ export type FileOn = {
   /** The rows picked in the tree (#1151), in the order it draws them: *Add to a chat's context*
    *  on one of them hands them all, as the picked rows' own button does. */
   picked?: readonly FileRef[];
+  /** In a workspace's own files (#5375), whether purlis keeps it: then no write is offered. */
+  managed?: boolean;
+  /** The chats writing it right now (FM-6), by name: a rename or delete of it asks first. */
+  touchedBy?: readonly string[];
 };
 
+/** A write on the person's own workspace files, as a row carries it (#5376). */
+export type WorkspaceWrite =
+  /** New file… or New folder… in the folder at `at` (`""` for the workspace's own). */
+  | { verb: "newWorkspaceEntry"; at: BranchPath; folder: boolean }
+  /** Import files… into the folder at `at`, through the system's file picker. */
+  | { verb: "importWorkspaceFiles"; at: BranchPath }
+  | {
+      verb: "renameWorkspaceEntry";
+      at: BranchPath;
+      folder: boolean;
+      touchedBy: readonly string[];
+    }
+  /** Delete…, to the system's Trash after one confirmation. */
+  | {
+      verb: "trashWorkspaceEntry";
+      at: BranchPath;
+      folder: boolean;
+      touchedBy: readonly string[];
+    };
+
 /**
- * Every verb a file or folder row offers, and nothing else (FM-10, V86 F8).
+ * **Every verb that writes the person's own workspace files** (#5376), and nothing else: ADR
+ * 0081's amendment of 2026-11-05 allows these on the workspace's own files and no other row.
+ * {@link FILE_VERBS} stays every other file row's whole list.
+ */
+export const WORKSPACE_WRITE_VERBS = [
+  "newWorkspaceEntry",
+  "importWorkspaceFiles",
+  "renameWorkspaceEntry",
+  "trashWorkspaceEntry",
+] as const;
+
+/** Whether `what` is a row of the person's own workspace files: in a workspace's folder (no
+ *  repo, no branch), none purlis keeps, and no link, which nothing writes through. */
+function personsOwn(what: FileOn): boolean {
+  const { at } = what;
+  return (
+    at.workspace !== "" &&
+    at.repo === "" &&
+    at.piece === null &&
+    what.managed !== true &&
+    what.kind !== "link"
+  );
+}
+
+/** The writes a row of the person's own workspace files offers (#5376): into a folder, a new
+ *  file, a new folder or an import; on any entry but the folder itself, a rename and a delete. */
+function workspaceWriteRows(what: FileOn, key: string): Offer[] {
+  if (!personsOwn(what)) return [];
+  const { at } = what;
+  const folder = what.kind === "folder";
+  const touchedBy = what.touchedBy ?? [];
+  const into = folder
+    ? [
+        can(`file.newfile:${key}`, SAID.newFile, { verb: "newWorkspaceEntry", at, folder: false }),
+        can(`file.newfolder:${key}`, SAID.newFolder, {
+          verb: "newWorkspaceEntry",
+          at,
+          folder: true,
+        }),
+        can(`file.import:${key}`, SAID.importFiles, { verb: "importWorkspaceFiles", at }),
+      ]
+    : [];
+  if (at.path === "") return into;
+  return [
+    ...into,
+    can(`file.rename:${key}`, SAID.rename, {
+      verb: "renameWorkspaceEntry",
+      at,
+      folder,
+      touchedBy,
+    }),
+    can(`file.trash:${key}`, SAID.deleteAsks, {
+      verb: "trashWorkspaceEntry",
+      at,
+      folder,
+      touchedBy,
+    }),
+  ];
+}
+
+/**
+ * Every verb a file or folder row offers, and nothing else (FM-10, V86 F8), but the writes on
+ * the person's own workspace files ({@link WORKSPACE_WRITE_VERBS}, #5376).
  *
  * **Each changes nothing in the branch**: charter never creates, renames, moves or deletes a
- * file (ADR 0081), so it never races an agent writing the same tree. A copy, a reveal, your
+ * file in a repo or a branch's folder (ADR 0081), so it never races an agent writing the same
+ * tree. A copy, a reveal, your
  * editor and a shell are where a person changes files, and each is theirs. A test holds this
  * list to exactly these verbs, so a row that writes cannot be added to it quietly.
  */
@@ -6166,6 +6267,7 @@ export function fileRows(what: FileOn): Offer[] {
       }),
       can(`file.reveal:${key}`, REVEAL_SAID, { verb: "revealPath", at }),
       can(`file.shell:${key}`, SAID.shellHere, { verb: "shellInFolder", at }),
+      ...workspaceWriteRows(what, key),
     ];
   const placed = (id: string, title: string, does: Does): Offer =>
     kind === "link" ? cannot(id, title, NO_LINK_FOLLOWED) : can(id, title, does);
@@ -6215,5 +6317,7 @@ export function fileRows(what: FileOn): Offer[] {
           rows: together,
         }),
   );
+  // The person's own workspace files are also written here (#5376), after every row above.
+  rows.push(...workspaceWriteRows(what, key));
   return rows;
 }
