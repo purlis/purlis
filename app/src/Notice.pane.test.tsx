@@ -283,6 +283,35 @@ describe("a pane's row of Notices", () => {
       await waitFor(() => expect(seen()).toEqual(["dispatch"]));
     });
 
+    it("gives a note with no Dismiss of its own no ×, so nothing hides the only place it is shown (#5311)", async () => {
+      PANE_NOTICES.keep("expanded");
+      render(
+        <Band>
+          <Notice
+            cause="move:4"
+            at="pane"
+            label="Moving"
+            fixes={[{ label: "Cancel move", onPress: () => undefined }]}
+          >
+            Moving this chat to the runner
+          </Notice>
+        </Band>,
+      );
+      const note = await screen.findByRole("status", { name: "Moving" });
+      expect(
+        within(note)
+          .getAllByRole("button")
+          .map((one) => one.getAttribute("aria-label") ?? one.textContent),
+      ).toEqual(["Cancel move"]);
+    });
+
+    it("keeps the × of an ask with no Dismiss: closed here, it stays in the Inbox (#5311)", async () => {
+      PANE_NOTICES.keep("expanded");
+      render(<Band>{ask("dispatch-grant:1", "dispatch")}</Band>);
+      const asking = await screen.findByRole("status", { name: "dispatch" });
+      expect(within(asking).getByRole("button", { name: "Close" })).toBeVisible();
+    });
+
     it("draws no band while minimised it holds only notes", async () => {
       const { container } = render(<Band>{one("a:1", "first")}</Band>);
       await waitFor(() => expect(holds()).toEqual({ notes: 1, trouble: 0, asks: 0 }));
