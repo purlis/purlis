@@ -459,6 +459,9 @@ impl Bound {
     /// (#5230, SF-15).
     pub fn hold_for_fill_also(&self, site: &Site, also: &[Site]) -> Result<u64, String> {
         let mut bound = self.lock();
+        if let Some(why) = login_takes_no_fill_for(&bound, site) {
+            return Err(why);
+        }
         if let Some(other) = bound.fills.iter().find(|held| held.site != *site) {
             return Err(format!(
                 "this browser is held to {} while a page holding a secret purlis filled there \
@@ -474,6 +477,14 @@ impl Bound {
             number,
         });
         Ok(number)
+    }
+
+    /// **Why this browser takes no secret for `site`, where it takes none** (the steward's
+    /// decision on the person's rulings of 2026-11-06): a browser bound to a login signs in to
+    /// its page's site and its form's alone, so a fill on any other site would leave it reaching
+    /// nothing. Asked before anything is filled.
+    pub fn takes_no_fill_for(&self, site: &Site) -> Option<String> {
+        login_takes_no_fill_for(&self.lock(), site)
     }
 
     /// **Fill hold `number` is over** (#5117): its page loaded another document in its main frame,
@@ -1133,6 +1144,23 @@ fn login_refuses(bound: &Binding, host: &str, port: u16) -> Option<String> {
         .as_ref()
         .is_none_or(|holding| holding.page == site || holding.form.as_ref() == Some(&site));
     (!login_lets).then(|| bound_said(host, port))
+}
+
+/// Why the login `bound` holds keeps a fill on `site` out, if it does: one that is neither its
+/// page's site nor its form's.
+fn login_takes_no_fill_for(bound: &Binding, site: &Site) -> Option<String> {
+    let holding = bound.login.as_ref()?;
+    if holding.page == *site || holding.form.as_ref() == Some(site) {
+        return None;
+    }
+    let signs_in_to = match &holding.form {
+        Some(form) => format!("{} and {form}", holding.page),
+        None => holding.page.to_string(),
+    };
+    Some(format!(
+        "this browser holds a login and signs in to {signs_in_to} only, so it takes no secret \
+         for {site}, and nothing was filled: fill it in a browser of its own (browser_new)"
+    ))
 }
 
 /// Why a site was refused to a browser held while a page holding a secret purlis filled lives

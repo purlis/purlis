@@ -806,18 +806,58 @@ fn a_fill_hold_in_a_browser_holding_a_login_reaches_no_more_than_both() {
         .expect("held");
     assert!(bound.lets("shop.example.test", 443));
     assert!(!bound.lets("elsewhere.example.test", 443));
+}
 
-    let other = Bound::default();
-    other
-        .to(&LoginSites::page(Site::of("shop.example.test", 443)))
+/// The steward's decision on the person's rulings of 2026-11-06: a browser bound to a login
+/// takes no secret for a site that is neither its page's nor its form's, so it is never left
+/// reaching nothing; it takes one for either of those.
+#[test]
+fn a_browser_holding_a_login_takes_no_fill_for_a_site_besides_its_page_and_form() {
+    let bound = Bound::default();
+    bound
+        .to(&LoginSites {
+            page: Site::of("app.example.test", 443),
+            form: Some(Site::of("auth.example.test", 443)),
+        })
         .expect("bound to the login");
-    let held = other
+
+    let said = bound
+        .takes_no_fill_for(&Site::of("pay.example.test", 443))
+        .expect("refused");
+    assert!(
+        said.contains("app.example.test:443 and auth.example.test:443"),
+        "{said}"
+    );
+    assert!(said.contains("nothing was filled"), "{said}");
+    let refused = bound
         .hold_for_fill(&Site::of("pay.example.test", 443))
-        .expect("held");
-    assert!(!other.lets("shop.example.test", 443), "the fill's hold");
-    assert!(!other.lets("pay.example.test", 443), "the login's hold");
-    other.fill_released(held);
-    assert!(other.lets("shop.example.test", 443));
+        .unwrap_err();
+    assert_eq!(refused, said);
+    assert_eq!(bound.held_for_fill(), None, "nothing held");
+    assert!(
+        bound.lets("app.example.test", 443),
+        "the login's reach stands"
+    );
+
+    assert_eq!(
+        bound.takes_no_fill_for(&Site::of("app.example.test", 443)),
+        None
+    );
+    assert_eq!(
+        bound.takes_no_fill_for(&Site::of("auth.example.test", 443)),
+        None
+    );
+    assert!(
+        bound
+            .hold_for_fill(&Site::of("auth.example.test", 443))
+            .is_ok()
+    );
+
+    let unbound = Bound::default();
+    assert_eq!(
+        unbound.takes_no_fill_for(&Site::of("pay.example.test", 443)),
+        None
+    );
 }
 
 /// #5117 with #5152: a login whose form is on another site reaches that site for the browser's

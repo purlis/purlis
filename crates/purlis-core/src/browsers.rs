@@ -1319,9 +1319,15 @@ impl FillHolder {
     pub fn of(proxy: &Arc<ReachProxy>, origin: &str) -> Result<Self, String> {
         let (host, port) = judge::site_of(origin)
             .ok_or_else(|| format!("{origin} is not a site purlis can hold a browser to"))?;
+        let site = Site::of(&host, port);
+        // A browser bound to a login takes no secret for another site: refused before anything
+        // is looked for or filled.
+        if let Some(why) = proxy.bound().takes_no_fill_for(&site) {
+            return Err(why);
+        }
         Ok(Self {
             proxy: Arc::downgrade(proxy),
-            site: Site::of(&host, port),
+            site,
             also: Vec::new(),
             sites: None,
             number: Mutex::new(None),
