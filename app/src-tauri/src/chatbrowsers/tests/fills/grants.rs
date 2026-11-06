@@ -466,3 +466,39 @@ fn a_field_whose_read_says_nothing_of_its_form_raises_the_notice_under_a_grant()
     assert_eq!(came_up.notices.len(), 2, "{:?}", came_up.notices);
     assert_eq!(handed_under_a_grant(&hosted), [false, false]);
 }
+
+/// The steward's decision of 2026-11-06: a field the page marks a card's or payment one raises
+/// the notice under either grant, with Allow once and Keep blocked alone, though its key is no
+/// card's; and so does one whose read doesn't say.
+#[test]
+fn a_payment_field_raises_the_notice_with_allow_once_alone_under_either_grant() {
+    for grant in [Press::Always, Press::Chat] {
+        for payment in [Some(true), None] {
+            let project = Project::holding(&the_key_held());
+            let chat = project.a_chat();
+            let (browsers, hosted) = (ChatBrowsers::default(), Arc::new(Hosted::default()));
+            opens_a_browser(&browsers, &hosted, chat);
+            let person = Person::saying(
+                &project,
+                &[Says::Presses(grant), Says::Presses(Press::Once)],
+            );
+            let card = FieldSaid {
+                payment,
+                ..field(FieldKind::OneLine)
+            };
+
+            let granted = fills(&project, &browsers, &hosted, chat, FieldKind::OneLine);
+            let asked = fills_into(&project, &browsers, &hosted, chat, card);
+
+            let came_up = person.came_up();
+            told_it_filled(&granted);
+            told_it_filled(&asked);
+            assert_eq!(came_up.notices.len(), 2, "{grant:?}, {payment:?}");
+            let notice = &came_up.notices[1];
+            assert!(notice.payment && !notice.card, "{grant:?}, {payment:?}");
+            assert!(notice.once_only(), "only Allow once and Keep blocked");
+            assert_eq!(notice.line, None, "Always isn't offered on it");
+            assert_eq!(handed_under_a_grant(&hosted), [false, false]);
+        }
+    }
+}

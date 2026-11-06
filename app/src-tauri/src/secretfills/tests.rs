@@ -27,6 +27,7 @@ fn wait(origin: &str) -> FillWait {
         since: 1,
         persona: None,
         card: false,
+        payment: false,
         multi_line: false,
         line: None,
         // As the notice is offered to a chat that runs as no persona.
@@ -784,6 +785,31 @@ fn a_cards_key_is_offered_allow_once_alone_and_shows_no_line() {
     assert_eq!(options, ["Allow once", "Keep blocked"]);
     let fill = shown.fill.expect("a fill");
     assert!(fill.card);
+    assert_eq!(fill.line, None);
+}
+
+/// The steward's decision of 2026-11-06: a field the page marks for payment is shown as a card
+/// or payment value, offered Allow once and Keep blocked alone, with no line.
+#[test]
+fn a_payment_field_is_offered_allow_once_alone_and_shows_no_line() {
+    let dir = project("[sandbox]\nmode = \"on\"\n");
+    let one = FillWait {
+        payment: true,
+        ..offered_in(
+            dir.path(),
+            "qa",
+            "dash-api-key",
+            "https://shop.example.test",
+        )
+    };
+    let locks = purlis_core::sandbox::policy::Locks::of(dir.path());
+
+    let shown = crate::asking::secret_fill(&one, &locks);
+
+    let options: Vec<&str> = shown.options.iter().map(|o| o.label.as_str()).collect();
+    assert_eq!(options, ["Allow once", "Keep blocked"]);
+    let fill = shown.fill.expect("a fill");
+    assert!(fill.card, "said as a card or payment value");
     assert_eq!(fill.line, None);
 }
 

@@ -1664,7 +1664,8 @@ pub fn secret_fill(
             label: purlis_core::shown::short(&wait.label),
             browser: wait.browser.clone(),
             warnings: wait.warnings.clone(),
-            card: wait.card,
+            // A field the page marks for payment is said as a card's (the decision of 2026-11-06).
+            card: wait.card || wait.payment,
             multi_line: wait.multi_line,
             line: (!wait.once_only()).then(|| wait.line.clone()).flatten(),
             under: wait

@@ -20,6 +20,9 @@
 //!   ([`crate::loginasks::written`]); `sandbox.proposed-changes = "off"` holds it back.
 //! - **A card's key is offered Allow once alone** (SF-4): a secret-fill line of any persona's
 //!   with `card = true` marks it, on every origin, and no grant of it fills without a notice.
+//! - **A field the page marks for payment is offered Allow once alone** (the steward's decision of
+//!   2026-11-06): an `autocomplete` token that begins `cc-` asks each time, as a card's key does,
+//!   whatever its key is marked.
 //! - **A grant fills no field whose form sends it by GET** (the person's ruling of 2026-11-06):
 //!   in the page's address, which the site's logs and the browser's history keep. Under Allow for
 //!   this chat or Always, such a fill is refused; asked about, Allow once fills it.
@@ -78,6 +81,10 @@ pub struct FillWait {
     pub persona: Option<String>,
     /// **A card's or payment value's key** (SF-4): Allow once and Keep blocked alone.
     pub card: bool,
+    /// **A field the page marks a card's or payment one** (`autocomplete="cc-…"`, the steward's
+    /// decision of 2026-11-06), or whose read doesn't say: asked each time, with Allow once and
+    /// Keep blocked alone, whatever the key is marked.
+    pub payment: bool,
     /// **A multi-line text box or an editable area** (#5120, SF-5): asked each time, whatever
     /// was allowed, with Allow once and Keep blocked alone.
     pub multi_line: bool,
@@ -93,7 +100,7 @@ impl FillWait {
     /// Whether only Allow once and Keep blocked are offered: a card's key, or a field that asks
     /// each time.
     pub fn once_only(&self) -> bool {
-        self.card || self.multi_line || !held_open(&self.origin)
+        self.card || self.payment || self.multi_line || !held_open(&self.origin)
     }
 
     /// **The digest of what the notice draws**: a press names it, so a notice drawn of anything
@@ -126,6 +133,7 @@ impl FillWait {
         }
         hash.update([
             u8::from(self.card),
+            u8::from(self.payment),
             u8::from(self.vault_too),
             u8::from(self.multi_line),
             // A press on the notice of a value never allows a code, nor one on a code a value.
@@ -488,6 +496,7 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<A
                 since: now,
                 persona,
                 card: false,
+                payment: asked.field.payment != Some(false),
                 multi_line,
                 line: None,
                 no_always: None,
@@ -584,9 +593,9 @@ pub struct Allowed {
 }
 
 /// **Whether the person is asked about this fill**: a multi-line text box or an editable area
-/// each time, whatever was allowed (SF-5, #5120); a field whose read doesn't say whether its
-/// form sends it by GET (a host that doesn't read it); any other field unless it is
-/// [`granted`].
+/// each time, whatever was allowed (SF-5, #5120); a field the page marks a card's or payment one
+/// (the steward's decision of 2026-11-06); a field whose read doesn't say either of those (a
+/// host that doesn't read them); any other field unless it is [`granted`].
 fn asks(
     root: &std::path::Path,
     fills: &Fills,
@@ -596,6 +605,7 @@ fn asks(
     origin: &str,
 ) -> bool {
     asked.field.kind != FieldKind::OneLine
+        || asked.field.payment != Some(false)
         || asked.field.by_get.is_none()
         || !granted(root, fills, session, persona, asked, origin)
 }
