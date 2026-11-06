@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793929884817,
+  "lastUpdate": 1793933106350,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -40740,6 +40740,48 @@ window.BENCHMARK_DATA = {
             "value": 101.57438350000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.638, 101.429, 101.574, 102.028, 102.181 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "6a0adc12a2da31fef21dbd6cd4ec2109da612321",
+          "message": "Browser login: related windows, a path on the notice, no Allow once spent on a refusal, a reopened browser reaches its sign-in host (#5441)\n\n* A browser login holds its page's related windows as a secret fill does\n\nThe person's ruling of 2026-11-05: a login fills nothing while a window on\nits site, or on none yet, is related to its page, and every other related\nwindow closes once the page shows another document or closes, a window\nopened from one of them since too. The chat is told on its next answer.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6PVXDCPEXQM04PW9EQZR3B4\nPurlis-Persona: steward\n\n* A login a chat suggests on a page but the front one shows that page and says why\n\nThe person's ruling of 2026-11-05: any path but the root is warned of, a\nusual sign-in address too, and the notice shows it on its own line as\nlarge as the site. A site typed over the notice is drawn again only for a\nwarning it hadn't shown.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6PVXDCPEXQM04PW9EQZR3B4\nPurlis-Persona: steward\n\n* A frame of a login's site in another page runs nothing while the login clears\n\nA real-Chrome check that a frame of the login's site, in a page of another\nsite or of another origin of its own, is held still with its page while\nthe login clears and fills: its timer sends nothing in that time, and the\nlogin's page shows no earlier session.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6PVXDCPEXQM04PW9EQZR3B4\nPurlis-Persona: steward\n\n* Browser login: no Allow once spent on a login that never ran; a reopened browser reaches its sign-in host\n\nSession protocol 1.76 (#5251): a login refused before it began says\nlogin_not_run: the browser had another login's site, a page holding a\nfilled secret held it, or the person or another login had it. The window\nholds a read's Allow once aside until the login answers, gives it back\nwhere the login never ran, there or because its browser had ended, and\nkeeps what it knows of the browser's session.\n\nAnd a kept login names its form's origin where that's another site\n(#5167): a browser reopened from it is held to both from its start, with\nno sign-in open, so the agent stays off the form's pages.\n\nThe notice's site line keeps the front page's slash (from the path item).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6PVXDCPEXQM04PW9EQZR3B4\nPurlis-Persona: steward\n\n* Changelog fragments for the login that never ran and the reopened browser\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6PVXDCPEXQM04PW9EQZR3B4\nPurlis-Persona: steward\n\n* Browser login: review fixes for related windows and a login that never ran\n\nA login's page's family is known from before each value goes in, so a step\non a document of its own still closes its windows. A refusal by the\nengine's lease is no longer said to be before the login ran: what the\nbrowser keeps was told of it already. A refused login never forgets a held\nlogin of the same running beside it, and each call's not-run is its own.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6PVXDCPEXQM04PW9EQZR3B4\nPurlis-Persona: steward\n\n* Tests and story baselines follow a login refused as the person drives\n\nA login refused because the person drives the browser is refused before it\nran (1.76, #5251): the host's and the window's tests say login_not_run.\nThe browser login notice's baselines are those its pull request's stories\nrun drew, reviewed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6PVXDCPEXQM04PW9EQZR3B4\nPurlis-Persona: steward\n\n* Story baselines for a login notice on a page the chat chose\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6PVXDCPEXQM04PW9EQZR3B4\nPurlis-Persona: steward\n\n* The person-drives login test, not the act test, says login_not_run\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6PVXDCPEXQM04PW9EQZR3B4\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-06T02:11:19Z",
+          "tree_id": "3893401d2f9f7c88f5886324f77a5b94ea6a3bf2",
+          "url": "https://github.com/purlis/purlis/commit/6a0adc12a2da31fef21dbd6cd4ec2109da612321"
+        },
+        "date": 1793933099638,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.45518749999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.433, 0.447, 0.455, 0.461, 0.464 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3312655,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.176, 16.235, 16.331, 16.403, 16.510 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.164474,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.342, 100.990, 101.164, 101.393, 101.818 ms"
           }
         ]
       }
