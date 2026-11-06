@@ -167,7 +167,7 @@ export async function frames(): Promise<ReturnType<Bench["frames"]>> {
 
 /** The app's own process: its pid and resident memory, asked of the operating system. */
 export function appProcess(): { pid: number; rssMb: number } {
-  const app = built(process.platform === "win32" ? "charter-app.exe" : "charter-app");
+  const app = built(process.platform === "win32" ? "purlis-app.exe" : "purlis-app");
   const ps = execFileSync("ps", ["-A", "-o", "pid=,rss=,command="], { encoding: "utf8" });
   const mine = ps
     .split("\n")

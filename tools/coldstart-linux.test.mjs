@@ -178,7 +178,7 @@ test("the bench's own verdict inside the X server is the step's, softened by not
 });
 
 test("a build that is not where the job put it fails, report-only or not", () => {
-  const run = script(["bare"], { env: { EVIDENCE_ONLY: "1", APP: "/nowhere/charter-app" } });
+  const run = script(["bare"], { env: { EVIDENCE_ONLY: "1", APP: "/nowhere/purlis-app" } });
   assert.equal(run.status, 1);
   assert.match(run.out, /^::error title=Cold start%2C bare%3A the script could not run::the app to launch is not at/m);
   const main = script(["bare"], { env: { EVIDENCE_ONLY: "1", BASELINE_APP: "/nowhere/main" } });

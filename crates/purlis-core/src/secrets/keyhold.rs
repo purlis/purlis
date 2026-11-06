@@ -46,9 +46,11 @@ use crate::tui::Markup;
 /// The argument that starts the app's binary as the one-item writer.
 pub const HOLD_ARG: &str = "charter-hold-a-keyring-item";
 
-/// The name of the app's binary, beside the `charter` command in the app's bundle and in a
-/// build's target directory.
-pub const APP_BINARY: &str = "charter-app";
+/// The name of the app's binary, beside the `purlis` command in the app's bundle and in a
+/// build's target directory. Only this name: a bundle never holds a new command beside an app
+/// built before #1309, and a `charter-app` left in a target directory is a stale build, never
+/// handed a value.
+pub const APP_BINARY: &str = crate::names::APP_BINARY.write;
 
 /// The most bytes the writer reads from its standard input: an item, never more.
 const MOST_INPUT: u64 = 1024 * 1024;

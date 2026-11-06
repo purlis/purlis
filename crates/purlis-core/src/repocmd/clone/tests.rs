@@ -502,7 +502,7 @@ fn the_account_on_that_server_signs_the_clone_and_one_on_another_port_never_does
     let (_dir, root, record) = plane_on_a_port();
     let url = https_url(&record, &root).unwrap();
     let forge = Forge::for_clone(&record, &url);
-    let exe = Path::new("/Applications/purlis.app/Contents/MacOS/charter-app");
+    let exe = Path::new("/Applications/purlis.app/Contents/MacOS/purlis-app");
 
     let on_it = account_on("gitlab.corp.example:8443");
     // Only whether purlis's helper is named leaves the closure: the helper line itself is never
