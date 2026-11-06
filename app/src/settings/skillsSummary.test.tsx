@@ -29,6 +29,7 @@ function stallAfter(testId: string) {
   const watch = new MutationObserver(() => {
     if (stalled || document.querySelector(`[data-testid="${testId}"]`) === null) return;
     stalled = true;
+    watch.disconnect();
     let hops = 50;
     const hop = () => {
       if (--hops > 0) return queueMicrotask(hop);

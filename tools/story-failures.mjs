@@ -315,6 +315,7 @@ export function failedIn(report, browser, root) {
     const title = `${story} in ${browser}${cell ? `, ${cell}` : ""}`;
     const gates = [...new Set(errors.map(gateOf).filter((gate) => gate !== "screenshot"))];
     const why = `${gateOf(first)}: ${whyOf(first)}${broke}`;
+    const measured = failure.measured ? measuredOf(failure.measured) : undefined;
     return {
       blocks,
       line: error(
@@ -324,14 +325,14 @@ export function failedIn(report, browser, root) {
       ),
       named: `${title} (${file})${blocks ? `: ${gates.join(", ") || "renders"}` : ""}`,
       why,
-      // The summary's line: its gate leads its why already, and a picture that missed on size
-      // says where it stood.
-      listed: `${title} (${file}): ${why}${failure.measured ? ` (${measuredOf(failure.measured)})` : ""}`,
+      // The summary's line: its gate leads its why already.
+      listed: `${title} (${file}): ${why}`,
       // The headline names the story once, with the browsers and the cells it failed in.
       once: `${story} (${file}): ${gates.join(", ") || "renders"}`,
       browser,
       cell,
-      measured: failure.measured ? measuredOf(failure.measured) : undefined,
+      // Where a picture that missed on size stood, on its line among the pictures alone.
+      measured,
     };
   });
   const outside = report.errors.map((one) => {

@@ -73,13 +73,23 @@ impl Drop for Recording {
     }
 }
 
+/// How long a look waits for its chat's start to record ([`recorded`]): a walk held up past it,
+/// on a filesystem that stopped answering, says so in the log, and the look goes on without.
+const RECORD_WAITS_AT_MOST: std::time::Duration = std::time::Duration::from_secs(60);
+
 /// **Once chat `id`'s start has recorded its folders**, or found it can't (#5555): a look before
-/// then would find no record, and say nothing of what the chat's first moments made.
+/// then would find no record, and say nothing of what the chat's first moments made. Waited
+/// for [`RECORD_WAITS_AT_MOST`] at most.
 pub fn recorded(id: &str) {
     let recording = RECORDING.lock().unwrap_or_else(PoisonError::into_inner);
-    let _done = RECORDED
-        .wait_while(recording, |recording| recording.iter().any(|one| one == id))
+    let (_done, waited) = RECORDED
+        .wait_timeout_while(recording, RECORD_WAITS_AT_MOST, |recording| {
+            recording.iter().any(|one| one == id)
+        })
         .unwrap_or_else(PoisonError::into_inner);
+    if waited.timed_out() {
+        tracing::warn!("purlis: chat {id}'s folders are still being recorded; looked without");
+    }
 }
 
 /// What a chat's looks are at, by its id.
