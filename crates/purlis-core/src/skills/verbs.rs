@@ -1994,7 +1994,9 @@ fn deleted_with_text(plane: &Path) -> Vec<(Deleted, String)> {
                 .any(|(one, _): &(Deleted, String)| one.level == level && one.folder == folder);
             if here_too
                 || set::gone::marked(&gone, sha, folder_rel)
-                || restored.iter().any(|one| *one == format!("{sha} {folder_rel}"))
+                || restored
+                    .iter()
+                    .any(|one| *one == format!("{sha} {folder_rel}"))
                 || taken_again(plane, &level, &name, folder, true)
             {
                 continue;
@@ -2225,7 +2227,12 @@ fn kept_emptied(plane: &Path, kept: &str) {
 /// then its folder, and the file beside it, moved to `new` beside it where it is named otherwise.
 /// Answers where it is now; [`Unmoved::Nothing`] where it is still where it came back to, for
 /// [`taken_back`] to take away.
-pub(super) fn renamed_back(plane: &Path, folder: &Path, name: &str, new: &str) -> Result<PathBuf, Unmoved> {
+pub(super) fn renamed_back(
+    plane: &Path,
+    folder: &Path,
+    name: &str,
+    new: &str,
+) -> Result<PathBuf, Unmoved> {
     let what = format!("{name}'s instructions");
     let file = format!("{}/SKILL.md", rel(plane, folder));
     let text = text_in(plane, folder, name).map_err(Unmoved::Nothing)?;

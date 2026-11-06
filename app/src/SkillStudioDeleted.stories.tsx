@@ -233,8 +233,10 @@ export const GroupNameTaken: Story = {
     await userEvent.keyboard("{Enter}");
     const review = await canvas.findByTestId("set-review");
     const rename = within(review).getByRole("radio", { name: "Bring it back under a new name" });
-    await tabInto(() => rename);
-    await userEvent.keyboard(" ");
+    // A radio group is one stop for Tab; the arrows move within it, and choose as they move.
+    await tabInto(() => rename.closest('[role="radiogroup"]'));
+    await userEvent.keyboard("{ArrowDown}");
+    await waitFor(() => expect(rename).toBeChecked());
     const box = await within(review).findByRole("textbox", { name: "New name for purlis-review" });
     await expect(box).toHaveValue("mattpocock-skills-purlis-review");
     await tabInto(() => box);

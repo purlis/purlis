@@ -18,7 +18,8 @@ use serde::{Deserialize, Serialize};
 use super::{
     Ctx, DeleteSet, Deleted, Deleting, Level, Source, Unmoved, Whose, after_edit_dropped, beside,
     bring_back, deleted, find, git, head, keep_in_set, kept_emptied, pending_in, put_back, rel,
-    renamed_away, renamed_back, restored_trailer, specs_of, taken_back, tracked, under_checked, unstage,
+    renamed_away, renamed_back, restored_trailer, specs_of, taken_back, tracked, under_checked,
+    unstage,
 };
 use crate::counts::counted;
 use crate::settings::Which;
@@ -538,8 +539,7 @@ pub fn restore_set(
     set: &[Deleted],
     source: Option<(&source::Source, Which)>,
 ) -> Result<(), String> {
-    let named: Vec<(Deleted, Option<String>)> =
-        set.iter().map(|one| (one.clone(), None)).collect();
+    let named: Vec<(Deleted, Option<String>)> = set.iter().map(|one| (one.clone(), None)).collect();
     restore_set_as(cx, &named, source)
 }
 
@@ -588,11 +588,15 @@ pub fn restore_set_as(
                 ));
             }
             Some(new) => {
-                under_checked(cx, one, new).map_err(|why| format!("{why}, so none was brought back"))?;
+                under_checked(cx, one, new)
+                    .map_err(|why| format!("{why}, so none was brought back"))?;
             }
         }
         let lands = landing(one, under);
-        if set[..at].iter().any(|(other, theirs)| landing(other, theirs) == lands) {
+        if set[..at]
+            .iter()
+            .any(|(other, theirs)| landing(other, theirs) == lands)
+        {
             return Err(format!(
                 "{} is the name of another skill coming back to the {} skills: two skills cannot \
                  have one name, so none was brought back",
