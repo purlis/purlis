@@ -8,6 +8,7 @@ import type { Offer } from "./actions";
 import type { Shown } from "./bindings";
 import { LayoutPanes } from "./LayoutPanes";
 import { PaneRail } from "./PaneRail";
+import { RAIL } from "./paneHeld";
 import type { Layout } from "./tabs";
 
 /**
@@ -98,6 +99,15 @@ describe("a split below the minimum (#4766)", () => {
     expect(rails()).toHaveLength(1);
     expect(screen.getByRole("button", { name: "chat 2, folded" })).toBeInTheDocument();
     expect(screen.getByText("An empty pane")).toBeInTheDocument();
+  });
+
+  it("marks a rail as no place a drop lands in, for a drag to say why over it (#5415)", () => {
+    render(
+      <LayoutPanes {...propsOf(row(empty(1), chat(2)), { room: { width: 500, height: 600 } })} />,
+    );
+
+    expect(rails()[0].hasAttribute(RAIL)).toBe(true);
+    expect(rails()[0].closest("[data-drop-pane]")).toBeNull();
   });
 
   it("opens a folded pane on its press, with the keyboard, which folds the other side instead", async () => {

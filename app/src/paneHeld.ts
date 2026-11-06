@@ -34,6 +34,9 @@ export const PANE = "data-drop-pane";
 export const TAB = "data-drop-tab";
 /** The strip: a drop on it makes a tab. Its tabs carry {@link TAB}. */
 export const STRIP = "data-drop-strip";
+/** A side folded to a rail or a bar (`PaneRail`, #4766): no pane a drop can land in, and the drag
+ *  says why over it (#5415). */
+export const RAIL = "data-drop-rail";
 /** A tab on the strip, by its id: one that is not a pane, which carries its tab's id too. */
 export const stripTab = (id: number) => `[${STRIP}] [${TAB}="${id}"]:not([${PANE}])`;
 

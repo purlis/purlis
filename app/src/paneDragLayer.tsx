@@ -61,6 +61,8 @@ type Dragging = {
   base?: PaneBase;
   /** The tab on the strip a drag rests on, until it comes forward (#5294): it wears a mark. */
   opening?: number;
+  /** Over a side folded to a rail, which takes no drop and says why (#5415). */
+  onRail?: boolean;
 };
 
 /** What a tab draws, as the window asks for it (`PlaneView`'s `LayoutPanes`). */
@@ -177,6 +179,12 @@ export class PaneDragStore {
     if (this.state !== undefined) this.set({ ...this.state, over });
   }
 
+  /** Whether it is over a side folded to a rail (#5415): no place, and a refusal that says why. */
+  overRail(on: boolean) {
+    if (this.state !== undefined && (this.state.onRail ?? false) !== on)
+      this.set({ ...this.state, onRail: on });
+  }
+
   /** The tab it rests on, about to come forward, or none (#5294). */
   restOn(tab: number | undefined) {
     if (this.state !== undefined && this.state.opening !== tab)
@@ -263,7 +271,9 @@ export function PaneDragLayer({
     return planOf(after, onScreen, base.room, base.gaps);
   }, [base, ctx, drag, layout, over, tabs, verdict]);
   const overItself = verdict !== undefined && !verdict.ok && verdict.overItself === true;
-  const refused = verdict !== undefined && !verdict.ok && !overItself;
+  // A rail is no place, so it has no verdict: it refuses all the same, and says why (#5415).
+  const onRail = verdict === undefined && drag?.onRail === true;
+  const refused = (verdict !== undefined && !verdict.ok && !overItself) || onRail;
   const held = drag === undefined ? undefined : heldPane(tabs, drag.source)?.pane;
 
   useLayoutEffect(() => {
@@ -315,15 +325,21 @@ export function PaneDragLayer({
         </PanePreviewHeld>
       )}
       <PanePreviewWords at={wordsAt(x, y)} refused={refused} ref={wordsHere}>
-        {verdict === undefined
-          ? "Let go here to cancel. Esc also cancels."
-          : verdict.ok
-            ? verdict.says
-            : verdict.why}
+        {onRail
+          ? ON_A_RAIL
+          : verdict === undefined
+            ? "Let go here to cancel. Esc also cancels."
+            : verdict.ok
+              ? verdict.says
+              : verdict.why}
       </PanePreviewWords>
     </>
   );
 }
+
+/** What the words say over a side folded to a rail (spec #5288, story 58): why letting go there
+ *  cancels. Its panes are a line of buttons too narrow to show a drop's place in. */
+const ON_A_RAIL = "A folded pane takes no drop. Let go here to cancel.";
 
 /** How thick the mark under a tab about to come forward is, in CSS pixels. */
 const MARK = 2;

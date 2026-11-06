@@ -25,7 +25,7 @@ import {
 import { keySaid, pressed } from "./keys/registry";
 import { Notice } from "./Notice";
 import { type Over, PaneDragLayer, PaneDragStore } from "./paneDragLayer";
-import { boxOfRect, PANE, STRIP, stripTab, TAB } from "./paneHeld";
+import { boxOfRect, PANE, RAIL, STRIP, stripTab, TAB } from "./paneHeld";
 import { REGION_CHROME } from "./RegionFrame";
 import {
   type Box,
@@ -384,6 +384,10 @@ export function usePaneDrag({
         }
         store.moveTo(at.clientX, at.clientY);
         const over = hit(at.clientX, at.clientY);
+        store.overRail(
+          over === undefined &&
+            document.elementFromPoint(at.clientX, at.clientY)?.closest(`[${RAIL}]`) != null,
+        );
         // Resting on another tab brings it forward (#5294); the one in front is where it is.
         const under = tabUnder(at.clientX, at.clientY);
         const tab = under === now.current.tabs.inFront ? undefined : under;
