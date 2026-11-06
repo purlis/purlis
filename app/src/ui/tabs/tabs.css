@@ -127,19 +127,6 @@
   justify-content: center;
 }
 
-/* **A crowded strip** (#4762): where the tabs' equal share is under 140px, a tab shows its `×`
-   only when it is the front tab or under the pointer, or the keyboard is on it or on its `×`, so
-   a row of names is not a row of close buttons. The `×` keeps its room, so nothing moves when it
-   appears. */
-[data-scope="tabs"][data-part="tab"][data-narrow]:not(
-    [data-selected],
-    [data-hovered],
-    :focus-within
-  )
-  [data-part="closer"][data-scope="tabs"] {
-  visibility: hidden;
-}
-
 /* **A pinned tab at its icon only** (#4762): where the pins alone would take over half the strip,
    a pin is its mark and its icon, a chip's width, and its name is in its tooltip. */
 [data-scope="tabs"][data-part="tab"][data-icon-only] {
@@ -174,18 +161,6 @@
   color: inherit;
   font: inherit;
   cursor: pointer;
-}
-
-/* **A tab with a task chip** (#1487): its name gives way a thousand times sooner than the chip
-   and stops at its floor, clear of a pin's corner (`App.css`, the chip's own rules). */
-[data-scope="tabs"][data-part="tab"]:has(> .tab-tasks) > [role="tab"] {
-  flex-shrink: 1000;
-  min-inline-size: var(--size-control);
-  padding-inline-end: var(--space-2);
-}
-
-[data-scope="tabs"][data-part="tab"]:has(> .tab-tasks) > [role="tab"]:has(> .pinned) {
-  padding-inline-end: var(--space-5);
 }
 
 /* The keyboard's ring, inside the cell: a strip clips what is outside it (a deliberate inset,
@@ -291,21 +266,68 @@
 
 /* **The `×`**: 16px, in the faint tier (a mark), taking the hover fill under the pointer. One
    that ends a chat takes the danger surface instead, since the look may not say less than the
-   act does (charter-app#130). Reached by a 24px target around it, inside the cell. */
+   act does (charter-app#130). Reached by a 24px target around it, inside the cell.
+
+   **It takes no room** (#5341, ADR 0039 as amended 2026-11-06): it stands over the end of the
+   name, out of the tab's flow, so the name has its room at rest and never shifts when the `×`
+   comes. It is seen on the front tab, under the pointer and with the keyboard in the tab, and
+   fades in there. What it stands on is the tab's own ground (`--tabs-closer-ground`, under a
+   hovered tab's pill `--tabs-closer-over`), and a fade of it runs back over the name, so the
+   cut letters go out softly instead of under a box. */
+[data-scope="tabs"][data-part="tab"] {
+  --tabs-closer-ground: var(--surface-deep);
+  --tabs-closer-over: transparent;
+}
+
+[data-scope="tabs"][data-part="tab"][data-hovered]:not([data-selected]) {
+  --tabs-closer-over: var(--surface-overlay);
+}
+
+[data-scope="tabs"][data-part="tab"][data-selected] {
+  --tabs-closer-ground: var(--chat-mark-ground);
+}
+
 [data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"] {
-  position: relative;
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-end: calc(var(--space-4) + var(--space-1));
+  z-index: 1;
   display: grid;
-  flex: none;
   place-items: center;
   inline-size: calc(16rem / 14);
   block-size: calc(16rem / 14);
   padding: 0;
   border: 0;
   border-radius: var(--radius-md);
-  background: transparent;
+  translate: 0 -50%;
+  background-color: var(--tabs-closer-ground);
+  background-image: linear-gradient(var(--tabs-closer-over), var(--tabs-closer-over));
   color: var(--text-faint);
   line-height: 1;
   cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-duration-quick) var(--motion-easing-standard);
+}
+
+/* Seen, and pressable, on the front tab, under the pointer, and with the keyboard in the tab. */
+[data-scope="tabs"][data-part="tab"]:is([data-selected], [data-hovered], :focus-within)
+  [data-part="closer"][data-scope="tabs"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* The fade back over the end of the name, out of the `×`'s own box. */
+[data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"]::before {
+  content: "";
+  position: absolute;
+  inset-block: calc(var(--space-2) * -1);
+  inset-inline-end: 100%;
+  inline-size: var(--space-6);
+  background:
+    linear-gradient(to right, transparent, var(--tabs-closer-over)),
+    linear-gradient(to right, transparent, var(--tabs-closer-ground));
+  pointer-events: none;
 }
 
 [data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"]::after {
@@ -322,6 +344,7 @@
 /* A tab's close ends nothing (#4756), so it has the quiet hover and never the danger one. */
 [data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"]:hover {
   background-color: var(--surface-hover);
+  background-image: none;
   color: var(--text-primary);
 }
 

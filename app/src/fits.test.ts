@@ -2,17 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import {
-  capacity,
-  fitting,
-  LEAST,
-  LEAST_CHIP,
-  LEAST_TUNED_AT,
-  leastAt,
-  NARROW_TAB,
-  narrowTabs,
-  pinnedFirst,
-} from "./fits";
+import { capacity, fitting, LEAST, LEAST_CHIP, LEAST_TUNED_AT, leastAt, pinnedFirst } from "./fits";
+import { DEFAULT_TEXT } from "./textDefaults";
 
 /**
  * The arithmetic that decides what a strip draws.
@@ -186,27 +177,28 @@ describe("a pinned tab never collapses (ADR 0039, amended 2026-11-02)", () => {
   });
 });
 
-describe("a narrow tab (#4702)", () => {
-  it("is one whose equal share of the strip is under 140px", () => {
-    expect(NARROW_TAB).toBe(140);
-    expect(narrowTabs(5 * 139, 5)).toBe(true);
-    expect(narrowTabs(5 * 140, 5)).toBe(false);
-  });
-
-  it("leaves the pins' room out of the others' share", () => {
-    // Two icon-only pins at 40 leave 620 for four tabs, 155 each; at 630, 137.5 each.
-    expect(narrowTabs(700, 4, 2 * LEAST_CHIP)).toBe(false);
-    expect(narrowTabs(630, 4, 2 * LEAST_CHIP)).toBe(true);
-  });
-
-  it("is never said of a strip nobody has measured", () => {
-    expect(narrowTabs(0, 30)).toBe(false);
-  });
-});
-
 describe("the floor a chat tab fits by", () => {
-  it("is 120px, room for the icon, about eight letters and the split's mark (#4702)", () => {
-    expect(LEAST.chat).toBe(120);
+  it("is 160px at the default text size, room for about fifteen letters of a name (#5341)", () => {
+    expect(leastAt(LEAST.chat, DEFAULT_TEXT.window)).toBe(160);
+  });
+
+  it("fits seven tabs where 120px fitted nine, the rest behind show-more", () => {
+    const many = Array.from({ length: 12 }, (_, at) => at);
+    const floor = leastAt(LEAST.chat, DEFAULT_TEXT.window);
+    const { shown, hidden } = fitting(many, 11, 9 * 120 + 40, floor);
+    expect(shown).toEqual([0, 1, 2, 3, 4, 5, 11]);
+    expect(hidden).toEqual([6, 7, 8, 9, 10]);
+  });
+
+  it("keeps a pin and the front tab on the strip at the new floor", () => {
+    const floor = leastAt(LEAST.chat, DEFAULT_TEXT.window);
+    const strip = ["p", "a", "b", "c", "d", "e"];
+    const pins = { is: (one: string) => one === "p", iconWidth: LEAST_CHIP };
+    expect(pinnedFirst(strip, "e", 3 * floor, floor, pins)).toEqual({
+      shown: ["p", "a", "e"],
+      hidden: ["b", "c", "d"],
+      pinsIconOnly: false,
+    });
   });
 });
 

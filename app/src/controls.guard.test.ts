@@ -835,6 +835,8 @@ export const HEAD_ROW: ChipRow = {
     SandboxMark: "tab-sandbox",
     TaskEndAsked: "pane-task-ends",
     PaneCrumbs: "pane-crumbs",
+    // Its state, and its tasks' button where it has tasks (#5341).
+    PaneTasksWord: "pane-state-mark",
   },
 };
 

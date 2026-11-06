@@ -527,7 +527,7 @@ pub struct Family {
     fills: &'static [(&'static str, &'static str)],
     /// **Where a part's words stand without a fill of their own**, by the part's name, for a part
     /// drawn on other grounds than the family's (#3099, #3384). One ground is what its parent
-    /// paints: a tab's count on the counts button, a switcher's row on the popover it is drawn in.
+    /// paints: a tab's count on the tasks menu it sums up, a switcher's row on the popover it is drawn in.
     /// Several are the fewer the window draws it on: a field's error, on where a field that can
     /// refuse stands ([`FIELD_ERROR_GROUNDS`]), and its help, on where a field given help stands
     /// ([`FIELD_HELP_GROUNDS`]). Its words are held to these, but a fallback never
@@ -2704,15 +2704,17 @@ fn unreadable(
     unreadable_by(0.0, theme, on, rules, family, variant, states, look)
 }
 
-/// **Parts drawn inside their root on an opaque ground of their own**, so the root's fill is not
-/// under them: a chip's count, on the bar's ground in the count's shape (`titlebar.css`, D-3345-3).
-const ON_A_GROUND_OF_THEIR_OWN: &[(&str, &str)] = &[("titlebar", "count")];
+/// **Parts drawn on an opaque ground of their own**, so the root's fill is not under them: a
+/// chip's count, on the bar's ground in the count's shape (`titlebar.css`, D-3345-3); and a tab's
+/// count, which a tab no longer wears and which sums up a chat's tasks menu, on the menu's surface
+/// whatever state its tab is in (#5341).
+const ON_A_GROUND_OF_THEIR_OWN: &[(&str, &str)] = &[("titlebar", "count"), ("tabs", "count")];
 
 /// **What part `at` is laid on, as drawn** (#3303): the root's own fill over the family's grounds
 /// `on`, so a see-through part fill is measured where it is. A part with no ground of its own
 /// reads the root's fill itself, and one drawn around the root, on a ground of its own or on its
 /// variant's stands on `on` alone. A part with a fill of a theme's own over what its parent paints
-/// ([`Family::under`]) is laid over that too (#4406): a tab's count over its counts button. A
+/// ([`Family::under`]) is laid over that too (#4406): a tab's count over the tasks menu it sums up (#5341). A
 /// part drawn on fewer grounds than its family stands on those in place of `on` (#3384), which
 /// keeps it off any surface a theme fills: no such family is in [`STANDS_ON`].
 fn under_part(
@@ -2729,6 +2731,10 @@ fn under_part(
     if let Some([parent]) = stands_on
         && ground != *parent
     {
+        // On a ground of its own, that ground alone is under it, not its root's fill.
+        if ON_A_GROUND_OF_THEIR_OWN.contains(&(family.name, name)) {
+            return laid_over(theme, parent, on);
+        }
         return laid_over(theme, parent, &laid_over(theme, look.fill, on));
     }
     let fewer = stands_on

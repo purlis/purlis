@@ -15,6 +15,7 @@ import {
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import { findTasksButton } from "./paneTasks.testkit";
 import type { FinishedTask, OpenChat, TaskEnding } from "./bindings";
 import { forgetKeyboard } from "./paneKeyboard";
 import { forgetThisLaunch } from "./regions";
@@ -882,7 +883,7 @@ describe("a tab chip's menu (#1487)", () => {
     const { asked } = await drawn();
     // Pressed plainly: a pointer event at 0,0 is read by the region dividers (see
     // `TabChip.window.test.tsx`).
-    fireEvent.click(await screen.findByRole("button", { name: /^Tasks of steward 1/ }));
+    fireEvent.click(await findTasksButton("steward 1"));
     const menu = await screen.findByRole("menu", { name: /^Tasks of steward 1/ });
 
     // One line of the menu opens to them: never one stray press from a way to go to a chat.
@@ -921,7 +922,7 @@ describe("a tab chip's menu (#1487)", () => {
 
   it("ends with Stop all tasks, which asks once naming how many and keeps the session (#1498)", async () => {
     const { asked } = await drawn();
-    fireEvent.click(await screen.findByRole("button", { name: /^Tasks of steward 1/ }));
+    fireEvent.click(await findTasksButton("steward 1"));
     const menu = await screen.findByRole("menu", { name: /^Tasks of steward 1/ });
     fireEvent.click(within(menu).getByRole("menuitem", { name: "End a task" }));
     const ways = await screen.findByRole("menu", { name: "End a task" });
@@ -974,7 +975,7 @@ describe("a tab chip's menu (#1487)", () => {
   it("says why a way cannot be taken, and takes no press on it", async () => {
     const { asked, stopping } = await drawn();
     await stopping(5);
-    fireEvent.click(await screen.findByRole("button", { name: /^Tasks of steward 1/ }));
+    fireEvent.click(await findTasksButton("steward 1"));
     const menu = await screen.findByRole("menu", { name: /^Tasks of steward 1/ });
     fireEvent.click(within(menu).getByRole("menuitem", { name: "End a task" }));
     const ways = await screen.findByRole("menu", { name: "End a task" });

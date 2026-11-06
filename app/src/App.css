@@ -1602,109 +1602,65 @@ body {
   flex: none;
 }
 
-/* **The chip a session's tab wears for its tasks** (#1487, V100-32): the hand where a chat
-   of the tab waits off screen, then the counts, each with its state's shape. Beside the tab's
-   button, inside the tab's cell.
-
-   **A tab's width is its share of the strip, with or without a chip** (`fits.ts`): the chip
-   takes its room from the name, never from the strip, so a tab with no tasks is the size it
-   was and the arithmetic of what fits is untouched.
-
-   **What gives way, in order, as a tab narrows**:
-   1. the name, to an ellipsis, as a tab's name always has, down to a floor of `2rem` for the
-      tab's button (its mark and the start of its name);
-   2. then the counts, whole and from the end: finished first, then failed, then waiting, so
-      the count of what is still working is the last one standing;
-   3. only in a cell too narrow for the hand and one count beside the floor (under `7.5rem`,
-      the narrowest a tab is drawn), the counts go and the hand stays: a chat waiting for the
-      person is said before a number is;
-   4. and in a cell too narrow for even the one count beside the floor and the close, the
-      whole chip, never the title (#1867): the centre column at 900px with both sidebars open
-      draws its tabs at their floor, and a chip that stayed ran the close out of the cell.
-   Nothing is cut through: a count that does not fit whole is not drawn (`wholeWays.ts`). */
-.tabs .tab > .tab-tasks {
+/* **The hand a tab wears where a chat of it waits off screen** (V100-37, #5341): all a tab
+   draws of its tasks, beside its button, inside its cell. It does not shrink: the name gives way.
+   The ring of a keyboard's focus is drawn on its box, inside it, as a strip's are
+   (`theme/geometry.css`): the strip clips. */
+.tabs .tab > .tab-needs {
   display: flex;
-  /* It does not shrink: the name gives way, and then the counts go whole (`wholeWays.ts`). */
   flex: none;
-  gap: var(--space-1);
   align-items: center;
   align-self: center;
-  min-width: min-content;
-  /* At least the chrome's height, and as tall as its marks: the family's small buttons are
-     never under 24px (#3210), which the compact density's chrome is (#3264). */
+  /* At least the chrome's height: the family's small buttons are never under 24px (#3210),
+     which the compact density's chrome is (#3264). */
   min-height: var(--size-chrome);
-  /* Clear of the tab's close, whose press ends the chat: a press a pixel off a count must
-     not be one. */
-  margin-inline-end: var(--space-2);
 }
 
-/* The fourth step: the chip set aside whole (`wholeWays.fitCounts`), out of the cell's flow
-   and out of the tab sequence, so the tab's title and close keep the cell. Never while its menu
-   is open: the keyboard (Down on the tab, the palette) still opens it, and a menu needs its
-   counts drawn to hang from, or it would open at the window's corner. */
-.tabs .tab > .tab-tasks[data-away]:not([data-open]) {
-  display: none;
-}
-
-/* The name gives way a thousand times sooner than the chip, and stops at its floor: the tabs
-   family's (`ui/tabs/tabs.css`), which draws the tab's button. */
-
-/* **The chip's pill** (#3264): the sunken ground the counts stand on. The counts are the button
-   family's quiet ghost, which draws no ground of its own at rest, so the pill shows through it;
-   under the pointer, and while their menu is open (the family's open state, #3524), its hover
-   fill is clipped to the pill's ends. The ring of a keyboard's focus is drawn on the pill, inside it,
-   as a strip's are (`theme/geometry.css`): the strip clips, and the pill clips the button's
-   own. The hand stands in a box of its own (`.tab-tasks-mark`) for the same ring. */
-.tabs .tab-tasks-pill {
-  display: flex;
-  flex: none;
-  align-items: center;
-  overflow: hidden;
-  border-radius: var(--radius-full);
-  background: var(--surface-sunken);
-}
-
-.tabs .tab-tasks-mark {
+.tabs .tab-needs-mark {
   display: flex;
   flex: none;
   overflow: hidden;
   border-radius: var(--radius-control);
 }
 
-.tabs :is(.tab-tasks-pill, .tab-tasks-mark):has(> [data-focus-visible]) {
+.tabs .tab-needs-mark:has(> [data-focus-visible]) {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-inset);
 }
 
-/* The counts are one line, and which are drawn is measured (`wholeWays.ts`): one that does
-   not fit is set aside, below the line, where the clip hides it. */
-.tabs .tab-tasks-counts {
-  position: relative;
-  flex: none;
-  overflow: hidden;
+/* **A chat's tasks, from its pane head's state word** (#5341): the word, its mark and its
+   words, as the head says them, on the button family's quiet ghost, which opens their menu. */
+.pane-state-mark .pane-tasks {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* **The menu's summary** (#5341): a count for each way its tasks stand, each with its state's
+   mark, in the secondary words, as a tab's chip drew them, then the key that opens it too. */
+.tasks-menu-summary {
+  display: flex;
+  flex-basis: 100%;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
 }
 
-/* A count: its state's mark and its number, in the secondary words on the pill, a step from
-   the count before it (the button's own gap is the small size's). */
-.tab-tasks-counts .count {
+.tasks-menu-summary .count {
   display: inline-flex;
   flex: none;
   gap: var(--space-1);
   align-items: center;
-  height: var(--size-chrome);
-  color: var(--text-secondary);
 }
 
-.tab-tasks-counts > .count + .count {
-  margin-inline-start: var(--space-2);
+.tasks-menu-summary .count svg {
+  width: 0.75rem;
+  height: 0.75rem;
 }
 
-.tab-tasks-counts > .count[data-away] {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  visibility: hidden;
+.tasks-menu-summary .tasks-menu-key {
+  margin-inline-start: auto;
+  color: var(--text-quiet);
 }
 
 /* The skill run open in a tab's chat (SK-3): the skill's name, cut short where it is long. */
@@ -1713,11 +1669,6 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.tab-tasks-counts .count svg {
-  width: 0.75rem;
-  height: 0.75rem;
 }
 
 /* **A tab wears its focused pane's chat's mark** (#4762, #5340, `ui/chat-mark`): the one its row
@@ -1757,21 +1708,8 @@ body {
   block-size: var(--space-5);
 }
 
-/* The narrowest tab that also wears the hand has no room for a count beside it (the third
-   step above). Asked of the tab's own cell, and only of a cell that wears the hand, so no
-   other tab is measured any differently than it was. */
-.tabs .tab:has(> .tab-tasks > .tab-tasks-mark) {
-  container: tab-with-hand / inline-size;
-}
-
-@container tab-with-hand (max-width: 7.5rem) {
-  .tab-tasks > .tab-tasks-mark ~ .tab-tasks-pill {
-    display: none;
-  }
-}
-
-/* **The menu a chip opens** (#1487, V100-33): the chats that live in the tab, the session's
-   own first and its tasks under who asked for them. The show-more menu's surface. A row is
+/* **The menu of a chat's tasks** (#1487, V100-33, #5341): the chat a pane head shows first, and
+   its tasks under who asked for them. The show-more menu's surface. A row is
    one line: its name gives way to an ellipsis, and its state word is never cut
    (`.shown-state` does not shrink). */
 .tasks-menu {
@@ -1964,7 +1902,8 @@ body {
 /* The menu's last line, for what binds and what was used (#1498, #1500). */
 .tasks-menu-foot {
   display: flex;
-  gap: var(--space-5);
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-5);
   justify-content: space-between;
   margin-top: var(--space-1);
   padding: var(--space-2) var(--space-3) var(--space-1);
@@ -6346,7 +6285,7 @@ nav.piece-files-head {
 }
 
 /* A chat's sandbox level after its name (#2071): drawn as the tab's other marks are. In a tab
-   squeezed to its floor (`.tab-tasks`) it gives way before the name does, so the name, which is
+   squeezed to its floor it gives way before the name does, so the name, which is
    what the tab is, keeps its room; the level is still in the mark's title and the window's other
    places that say it. */
 .tab-sandbox {

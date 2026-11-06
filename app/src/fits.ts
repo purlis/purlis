@@ -76,11 +76,13 @@ export const LEAST = {
   /** A workspace: inside a project, and narrower than one. */
   workspace: 104,
   /**
-   * A chat tab: the innermost, and the one there are fifty of. Its floor holds the tab's icon,
-   * about eight letters of its name and a split's `⊟+N` (#4702, ADR 0039 as amended
-   * 2026-11-02): the name gives way first, `⊟+N` never.
+   * A chat tab: the innermost, and the one there are fifty of. **160px at the 14px default
+   * text** (#5341, ADR 0039 as amended 2026-11-06), which is this at the size the floors were
+   * tuned at: room for its mark and about fifteen letters of its name, since a tab says which
+   * chat it is and whether it needs you and nothing else. Its `×` takes no room at rest, and its
+   * tasks are on its pane's head. A measured value replaces it without a new decision.
    */
-  chat: 120,
+  chat: 149,
 } as const;
 
 export type Least = (typeof LEAST)[keyof typeof LEAST];
@@ -170,28 +172,6 @@ export function fitting<T>(
 
 /** Which of a strip's tabs are chips ({@link LEAST_CHIP}), and how wide one is drawn. */
 export type Chips<T> = { is: (one: T) => boolean; width: number };
-
-/**
- * **Below this, a tab shows its `×` only when it is the front tab or under the pointer** (#4702,
- * ADR 0039 as amended 2026-11-02), in pixels at {@link LEAST_TUNED_AT}: a crowded strip is a row
- * of names, not a row of close buttons a pointer can land on by mistake.
- */
-export const NARROW_TAB = 140;
-
-/**
- * Whether `drawn` tabs sharing a strip `width` wide, less what its pins take (`pinned`), each get
- * less than {@link NARROW_TAB}. Equal shares, as the strip is drawn (ADR 0039, amended
- * 2026-09-22). Never of a strip nobody has measured.
- */
-export function narrowTabs(
-  width: number,
-  drawn: number,
-  pinned = 0,
-  narrow: number = NARROW_TAB,
-): boolean {
-  if (width <= 0 || drawn <= 0) return false;
-  return (width - pinned) / drawn < narrow;
-}
 
 /** Which of a strip's tabs are pinned, and how wide one is drawn when it shows its icon only. */
 export type Pins<T> = { is: (one: T) => boolean; iconWidth: number };

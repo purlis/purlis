@@ -114,13 +114,14 @@ pub(super) const TABS: Family = Family {
     defaults: tabs_look_in,
     states: &[State::Hover, State::Selected],
     focused: "[data-focus-visible]",
-    // Its ×, a faint mark on the tab, and its count, secondary words on the sunken pill of the
-    // tab's chip (`App.css`, #3264), which the count itself does not paint (#3099).
+    // Its ×, a faint mark on the tab, and its count, secondary words on the menu of a chat's
+    // tasks, whose summary it draws since a tab wears no count (`App.css`, #5341), and which the
+    // count itself does not paint (#3099).
     words: &[("closer", "text.faint"), ("count", "text.secondary")],
     around: &["strip", "layout"],
     corner_most: None,
     fills: &[],
-    under: &[("count", &["surface.sunken"])],
+    under: &[("count", &["surface.overlay"])],
 };
 
 pub(super) const EDITOR: Family = Family {

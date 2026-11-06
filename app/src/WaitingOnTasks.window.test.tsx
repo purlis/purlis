@@ -15,6 +15,7 @@ import {
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import { findTasksButton } from "./paneTasks.testkit";
 import type { FinishedTask, Moved, OpenChat } from "./bindings";
 import type { State } from "./chatState";
 import { cardOf, theCard } from "./chatCard.testkit";
@@ -577,7 +578,7 @@ describe("a limit, said where it binds (#1498)", () => {
     await rows(3);
 
     // Pressed plainly, as the chip's own window tests press it.
-    fireEvent.click(await screen.findByRole("button", { name: /^Tasks of steward 1/ }));
+    fireEvent.click(await findTasksButton("steward 1"));
     const menu = await screen.findByRole("menu", { name: /^Tasks of steward 1/ });
 
     // At the menu's foot, under its rows, on the surface it stands on.
