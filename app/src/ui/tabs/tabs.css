@@ -151,6 +151,8 @@
   inline-size: var(--space-5);
   block-size: var(--space-5);
   color: var(--text-quiet);
+  /* The prototype's stroke: finer than a Lucide icon's 2, so the lines between panes stay apart
+     in a box this small. */
   stroke-width: 1.3;
 }
 

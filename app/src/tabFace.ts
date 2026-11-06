@@ -33,8 +33,6 @@ export type TabFace = {
    * reaches the tab's mark (#5342). No view and no empty pane: neither has a state.
    */
   chats: number[];
-  /** How many other panes share the tab: none for a tab of one pane. */
-  more: number;
   /** **A split tab's small picture of its layout** (#5342), drawn in place of `+N`; none for a
    *  tab of one pane. */
   picture?: Picture;
@@ -80,7 +78,7 @@ export function faceOf(tabs: Tabs, id: number, naming: Naming): TabFace {
           : NEW_CHAT;
   const lead = panes[0];
   if (lead === undefined)
-    return { lead: { kind: "empty" }, name: NEW_CHAT, chats: [], more: 0, panes: [NEW_CHAT] };
+    return { lead: { kind: "empty" }, name: NEW_CHAT, chats: [], panes: [NEW_CHAT] };
   const chats = panes.flatMap(({ pane, lead }) => {
     if (lead.kind !== "chat") return [];
     const shown = tab?.shows?.[pane];
@@ -91,7 +89,6 @@ export function faceOf(tabs: Tabs, id: number, naming: Naming): TabFace {
     lead: lead.lead,
     name: tab === undefined ? NEW_CHAT : tabNameOf(tab),
     chats,
-    more: panes.length - 1,
     panes: panes.map(nameOf),
     ...(picture === undefined ? {} : { picture }),
     ...(zoomedOf(tabs, id) === undefined ? {} : { zoomed: true }),

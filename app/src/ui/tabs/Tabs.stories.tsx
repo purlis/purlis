@@ -219,15 +219,14 @@ function SplitPicture({ layout }: { layout?: Layout }) {
   return (
     <span className="tab-split-more" data-mark="split">
       <TabPicture picture={picture} />
-      <span className="hidden-words">, split, {picture.panes} panes</span>
     </span>
   );
 }
 
-let pane = 0;
-const leaf = (): Layout => ({
+/** A chat's pane: the id tells it from the others in one tab. */
+const leaf = (pane: number): Layout => ({
   kind: "pane",
-  pane: ++pane,
+  pane,
   content: { kind: "session", session: pane, chat: String(pane) },
 });
 const row = (...children: [Layout, Layout]): Layout => ({
@@ -595,8 +594,8 @@ export const MarksOnTheTabsLine: Story = {
 
 /**
  * **A split tab's small picture of its layout** (#5342, spec #5339), after its name in place of
- * `+1`: two side by side, three with the right half split again, four in a quad, and past four a
- * grid. Each picture is the tab's own shape, in the quiet tier, and never cut: a name gives way
+ * `+1`: two side by side, three with the right half split again, four in a quad, and past four
+ * the quad. Each picture is the tab's own shape, in the quiet tier, and never cut: a name gives way
  * first. A screen reader hears how many panes in words.
  */
 export const SplitPictures: Story = {
@@ -604,17 +603,17 @@ export const SplitPictures: Story = {
     width: 900,
     chosen: 0,
     tabs: [
-      { name: "steward 1", state: "working", layout: row(leaf(), leaf()) },
-      { name: "talk", state: "needs", layout: row(leaf(), column(leaf(), leaf())) },
+      { name: "steward 1", state: "working", layout: row(leaf(1), leaf(2)) },
+      { name: "talk", state: "needs", layout: row(leaf(1), column(leaf(2), leaf(3))) },
       {
         name: "review",
         state: "idle",
-        layout: row(column(leaf(), leaf()), column(leaf(), leaf())),
+        layout: row(column(leaf(1), leaf(2)), column(leaf(3), leaf(4))),
       },
       {
         name: "devops 2",
         state: "waiting",
-        layout: row(leaf(), row(leaf(), row(leaf(), row(leaf(), row(leaf(), leaf()))))),
+        layout: row(leaf(1), row(leaf(2), row(leaf(3), row(leaf(4), row(leaf(5), leaf(6)))))),
       },
       { name: "purlis.toml", variant: "file" },
     ],
@@ -624,7 +623,7 @@ export const SplitPictures: Story = {
       ...canvasElement.querySelectorAll<SVGElement>('[data-scope="tabs"][data-part="picture"]'),
     ];
     // One per split tab, none on the tab of one pane, each its own shape.
-    await expect(pictures.map((one) => one.querySelectorAll("line").length)).toEqual([1, 2, 3, 4]);
+    await expect(pictures.map((one) => one.querySelectorAll("line").length)).toEqual([1, 2, 3, 2]);
     for (const [name, panes] of [
       ["steward 1", 2],
       ["talk", 3],

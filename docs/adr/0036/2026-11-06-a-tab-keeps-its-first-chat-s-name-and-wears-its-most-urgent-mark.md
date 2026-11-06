@@ -46,5 +46,5 @@ focused one.
 ## A split tab shows its shape
 
 `⊟+N` gives way to a small picture of the layout's shape, drawn from the tab's layout tree as an
-icon in the family: past four panes it's a grid. Its text alternative says how many panes there
-are, and a hover says how many and lists them.
+icon in the family: past four panes it's a grid, the prototype's quad. Its text alternative says
+how many panes there are, and a hover says how many and lists them.

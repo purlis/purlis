@@ -31,7 +31,6 @@ describe("a tab's face", () => {
       lead: { kind: "chat", session: 1 },
       name: "steward 1",
       chats: [1],
-      more: 0,
       panes: ["steward 1"],
     });
   });
@@ -46,7 +45,7 @@ describe("a tab's face", () => {
     const face = faceOf(tabs, front(tabs), naming);
     expect(face.lead).toEqual({ kind: "chat", session: 1 });
     expect(face.name).toBe("steward 1");
-    expect(face.more).toBe(2);
+    expect(face.picture?.panes).toBe(3);
   });
 
   it("offers every pane's chat to its mark, in reading order (#5342)", () => {
@@ -87,7 +86,10 @@ describe("a tab's face", () => {
     const zoomed = zoomFocusedPane(split);
 
     expect(faceOf(split, front(split), naming).zoomed).toBeUndefined();
-    expect(faceOf(zoomed, front(zoomed), naming)).toMatchObject({ zoomed: true, more: 1 });
+    expect(faceOf(zoomed, front(zoomed), naming)).toMatchObject({
+      zoomed: true,
+      picture: { panes: 2 },
+    });
     expect(faceOf(zoomFocusedPane(zoomed), front(zoomed), naming).zoomed).toBeUndefined();
   });
 
@@ -123,7 +125,6 @@ describe("a tab's face", () => {
     expect(faceOf(tabs, front(tabs), naming)).toMatchObject({
       lead: { kind: "view", view: { view: "settings" } },
       name: "Settings",
-      more: 0,
     });
   });
 
@@ -184,7 +185,6 @@ describe("a tab's face", () => {
       lead: { kind: "empty" },
       name: "New chat",
       chats: [],
-      more: 0,
       panes: ["New chat"],
     });
   });

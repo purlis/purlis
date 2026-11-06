@@ -8,7 +8,7 @@ import type { Layout } from "./tabs";
 /**
  * **A split tab's small picture of its layout** (#5342, spec #5339): the lines that divide its
  * box, drawn from the tab's layout tree in a box of side 1, each split at its share. Past four
- * panes it is a grid, which no layout of four or fewer draws. A tab of one pane has no picture.
+ * panes it is a grid, the quad the prototype draws. A tab of one pane has no picture.
  */
 let next = 0;
 const chat = (): Layout => ({
@@ -30,12 +30,7 @@ const column = (a: Layout, b: Layout, share?: number): Layout => ({
 });
 /** A line from (x1, y1) to (x2, y2). */
 const line = (x1: number, y1: number, x2: number, y2: number): Divider => ({ x1, y1, x2, y2 });
-const GRID = [
-  line(1 / 3, 0, 1 / 3, 1),
-  line(2 / 3, 0, 2 / 3, 1),
-  line(0, 1 / 3, 1, 1 / 3),
-  line(0, 2 / 3, 1, 2 / 3),
-];
+const GRID = [line(0.5, 0, 0.5, 1), line(0, 0.5, 1, 0.5)];
 
 const table: readonly [string, Layout, { panes: number; lines: Divider[] } | undefined][] = [
   ["one pane has no picture", chat(), undefined],
@@ -73,7 +68,7 @@ const table: readonly [string, Layout, { panes: number; lines: Divider[] } | und
     },
   ],
   [
-    "five: a grid, whatever their shape",
+    "five: a grid, the quad, whatever their shape",
     row(chat(), row(chat(), row(chat(), row(chat(), chat())))),
     { panes: 5, lines: GRID },
   ],

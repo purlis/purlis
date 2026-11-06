@@ -162,7 +162,7 @@ const shape = (laid: LaidOut | undefined) =>
   laid?.tabs.map((one) => [one.window, chatsOf(one.tree)]) ?? [];
 
 describe("a split tab in a tab window (#5342)", () => {
-  it("draws the same face: its first chat's name, and the mark of the pane that needs you", async () => {
+  it("draws the same face: its first chat's name, the mark of the pane that needs you, its picture", async () => {
     mockWindows("window-1");
     const split: LaidTab = {
       ...tab(1, true, 2),
@@ -205,6 +205,9 @@ describe("a split tab in a tab window (#5342)", () => {
           ?.getAttribute("data-variant"),
       ).toBe("needs"),
     );
+    // And its picture of the layout in place of `+1`: two side by side.
+    expect(only.querySelectorAll('[data-scope="tabs"][data-part="picture"] line')).toHaveLength(1);
+    expect(only).toHaveTextContent("2, split, 2 panes");
   });
 });
 

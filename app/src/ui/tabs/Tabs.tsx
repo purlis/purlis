@@ -53,8 +53,8 @@ export function tabPanelOf(namedBy: string | undefined) {
   return namedBy === undefined ? {} : ({ role: "tabpanel", "aria-labelledby": namedBy } as const);
 }
 
-/** The attributes of a part inside a tab: its name, its × and its counts. */
-export function tabPart(part: "label" | "closer" | "count") {
+/** The attributes of a part inside a tab: its name, its ×, its counts and a split's picture. */
+export function tabPart(part: "label" | "closer" | "count" | "picture") {
   return { "data-scope": "tabs", "data-part": part } as const;
 }
 
@@ -66,30 +66,31 @@ const placed = (at: number) => BOX_AT + BOX_SIDE * at;
 /**
  * **A split tab's small picture of its layout's shape** (#5342, spec #5339): its box, and the
  * lines between its panes where they divide it, in place of `+1`. Drawn at the size of the tab's
- * other marks, in the quiet tier, and out of what a screen reader reads: the tab says how many
- * panes it holds in words.
+ * other marks, in the quiet tier. A screen reader hears it as words: how many panes it holds.
  */
 export function TabPicture({ picture }: { picture: Picture }) {
   return (
-    <svg
-      data-scope="tabs"
-      data-part="picture"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      aria-hidden="true"
-    >
-      <rect x={BOX_AT} y={BOX_AT} width={BOX_SIDE} height={BOX_SIDE} rx="1.5" />
-      {picture.lines.map((line) => (
-        <line
-          key={`${line.x1} ${line.y1} ${line.x2} ${line.y2}`}
-          x1={placed(line.x1)}
-          y1={placed(line.y1)}
-          x2={placed(line.x2)}
-          y2={placed(line.y2)}
-        />
-      ))}
-    </svg>
+    <>
+      <svg
+        {...tabPart("picture")}
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        aria-hidden="true"
+      >
+        <rect x={BOX_AT} y={BOX_AT} width={BOX_SIDE} height={BOX_SIDE} rx="1.5" />
+        {picture.lines.map((line) => (
+          <line
+            key={`${line.x1} ${line.y1} ${line.x2} ${line.y2}`}
+            x1={placed(line.x1)}
+            y1={placed(line.y1)}
+            x2={placed(line.x2)}
+            y2={placed(line.y2)}
+          />
+        ))}
+      </svg>
+      <span className="hidden-words">, split, {picture.panes} panes</span>
+    </>
   );
 }
 

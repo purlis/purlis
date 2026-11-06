@@ -14,13 +14,11 @@ export type Picture = { panes: number; lines: Divider[] };
  *  and a grid says "many" instead. */
 export const DRAWN_UP_TO = 4;
 
-/** A three-by-three grid: no layout of four or fewer panes draws it, so it can't be misread as
- *  one. */
+/** A quad, as the prototype draws every tab of four panes or more (spec #5339: "past four
+ *  panes it's a grid, as the prototype does"): how many is the hover's and the words'. */
 const GRID: readonly Divider[] = [
-  { x1: 1 / 3, y1: 0, x2: 1 / 3, y2: 1 },
-  { x1: 2 / 3, y1: 0, x2: 2 / 3, y2: 1 },
-  { x1: 0, y1: 1 / 3, x2: 1, y2: 1 / 3 },
-  { x1: 0, y1: 2 / 3, x2: 1, y2: 2 / 3 },
+  { x1: 0.5, y1: 0, x2: 0.5, y2: 1 },
+  { x1: 0, y1: 0.5, x2: 1, y2: 0.5 },
 ];
 
 type Box = { x: number; y: number; w: number; h: number };

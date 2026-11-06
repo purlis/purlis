@@ -289,7 +289,6 @@ function SplitMore({ face }: { face: TabFace }) {
     <>
       <span className="tab-split-more" data-mark="split">
         <TabPicture picture={picture} />
-        <span className="hidden-words">, split, {picture.panes} panes</span>
       </span>
       {/* **A zoomed pane's mark** (#4765): one pane fills the tab for now, and Focus this pane
           brings the others back. */}

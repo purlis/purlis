@@ -531,7 +531,9 @@ export function runningSaid(running: number): string | undefined {
 function splitTip(face: TabFace): string | undefined {
   // How many panes, then which (#5342): the picture after the name says the shape, and hovering
   // says the rest.
-  return face.more > 0 ? `${face.panes.length} panes: ${face.panes.join(" · ")}` : undefined;
+  return face.picture !== undefined
+    ? `${face.picture.panes} panes: ${face.panes.join(" · ")}`
+    : undefined;
 }
 
 /**
