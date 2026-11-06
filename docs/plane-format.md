@@ -333,6 +333,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`app/reopen.json`](#appreopenjson)
   - [`app/worktree-updates/<id>/`](#appworktree-updatesid)
   - [`app/dispatches/<id>.json` — a dispatch's record](#appdispatchesidjson--a-dispatchs-record)
+  - [`app/dispatches/ended.json` — the summary of ended dispatches](#appdispatchesendedjson--the-summary-of-ended-dispatches)
   - [`app/dispatches/refused-while-away.json`](#appdispatchesrefused-while-awayjson)
   - [`app/spend/<chat>.json` — what a chat's harness says its session has cost](#appspendchatjson--what-a-chats-harness-says-its-session-has-cost)
   - [`app/arrived/<chat>.json` — what can run later and has appeared in a chat's folders](#apparrivedchatjson--what-can-run-later-and-has-appeared-in-a-chats-folders)
@@ -6959,6 +6960,30 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   open`, with no duration: it is not running, and runs again when its chat is opened.
 - **Tier:** Clone state — session data, not readable by a sandboxed chat: collected 30 days after its dispatch ended (one that has not ended, whose end does not read as a time, or that still owes its asking chat a report, 30 days after it was last written), unless the chat that asked or the chat that worked is one the reopen record brings back (`retention::on_open`, `dispatchrecord::aged_from`). What the two chats said to each other is kept in it for 30 days after the dispatch ended, and for no longer where the record lives on (`dispatchrecord::expire_talk`). Deleting one costs its row in the Dispatches tab and its lines in the Activity tab of the chat that asked (the dispatch, what was said, the report), and nothing else: a task still running loses its record and reports to its asking chat as before.
 - **Git:** gitignored (under `/.charter/`).
+
+### `app/dispatches/ended.json` — the summary of ended dispatches
+- **What:** one small index of the dispatches in this store that have ended (#5502, spec
+  #5486), so what needs only the running tasks (the sidebar's task status, each turn's list of
+  open tasks, ending the dispatches of chats that are gone) reads the running records and this
+  file, and not every record in full. **It holds only what never changes once a dispatch has
+  ended**: a dispatch ends once and never runs again, and an entry names it, the chat that
+  worked it and whether that was never a chat. Its report and everything else are read from
+  its record where a caller needs them, so the summary is never kept in step with a record's
+  later writes. Nothing a chat wrote is in it.
+- **Format:** JSON on one line, trailing `\n`, mode 0600, replaced whole
+  (`rewrite::replace`). Not a ULID, so never read as a record.
+- **Keys:** `v` — `1`; `ended` — newest first, a list of `{"id", "chat", "chat_id"?,
+  "never_a_chat"?}`: `id`, the record's id; `chat`, the worker chat's number when the
+  dispatch started; `chat_id`, its ULID, absent for a chat given none; `never_a_chat`,
+  `true` for a task that did not start and was never a chat, absent otherwise.
+- **Read and written by the reads it serves** (`dispatchrecord::ledger`): a read lists the
+  store's names, takes the summary's entry for each name it holds, reads every other record,
+  and writes the summary again where it found an ended dispatch it did not hold or holds one
+  whose record is gone. A summary of another version, or one that does not read, is read as
+  none. When `retention` collects ended records, it drops their entries
+  (`dispatchrecord::ended::in_step`).
+- **Tier:** Clone state, rebuildable — derived from the records beside it. Deleting it costs
+  one full read of the store, which writes it again; nothing else is lost.
 
 ### `app/dispatches/refused-while-away.json`
 - **What:** the dispatches a chat nobody was at was refused **for lack of a standing grant**
