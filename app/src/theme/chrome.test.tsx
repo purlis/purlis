@@ -81,6 +81,7 @@ import { RelaunchAsk } from "../RelaunchAsk";
 import { RemoveFromWorkspace } from "../RemoveFromWorkspace";
 import { RemovePersona } from "../RemovePersona";
 import { RenameChat } from "../RenameChat";
+import { WorkspaceWriteDialog } from "../WorkspaceWrites";
 import { RenameWorkspace } from "../RenameWorkspace";
 import { AddVision } from "../AddVision";
 import { DeprecateDialog, OwnersDialog } from "../SkillPage";
@@ -1303,6 +1304,30 @@ const DIALOGS: Opened[] = [
           renaming={false}
           onRename={nothing}
           onCancel={nothing}
+        />,
+      ),
+  },
+  {
+    name: "deleting the person's own workspace file, which a chat is writing (#5376)",
+    file: "WorkspaceWrites.tsx",
+    open: async () =>
+      render(
+        <WorkspaceWriteDialog
+          asking={{
+            does: {
+              verb: "trashWorkspaceEntry",
+              at: { workspace: "alpha", repo: "", piece: null, path: "notes/plan.md" },
+              folder: false,
+              touchedBy: ["steward 3"],
+            },
+            busy: false,
+            trouble:
+              "purlis did not delete 'notes/plan.md': the system would not put it in the Trash.",
+          }}
+          onName={nothing}
+          onGoOn={nothing}
+          onTrash={nothing}
+          onClose={nothing}
         />,
       ),
   },

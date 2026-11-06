@@ -331,13 +331,13 @@ fn every_write_is_refused_on_what_purlis_keeps() {
     let files = files(&f);
     std::fs::create_dir_all(ws.join("ext-data")).unwrap();
 
-    all_refused(&every_write(&files, "memory"), "purlis keeps it");
+    all_refused(&every_write(&files, "memory"), "kept by purlis");
     for kept in ["workspace.md", ".purlis-structure", "memory/one.md"] {
         for (what, answer) in &every_write(&files, kept)[2..4] {
             assert!(
                 answer
                     .as_ref()
-                    .is_err_and(|why| why.contains("purlis keeps it")),
+                    .is_err_and(|why| why.contains("kept by purlis")),
                 "{what} {kept}: {answer:?}"
             );
         }

@@ -122,8 +122,8 @@ pub enum NotWritten {
     #[error(transparent)]
     Here(#[from] NotHere),
     #[error(
-        "purlis does not change '{0}': purlis keeps it in the workspace. Change it from its own \
-         view, or leave it as it is."
+        "purlis does not change '{0}': it is one of the files kept by purlis in the workspace. \
+         Change it from its own view, or leave it as it is."
     )]
     Managed(String),
     #[error(
@@ -135,7 +135,7 @@ pub enum NotWritten {
     TheFolderItself,
     #[error("'{0}' is not a name a file can have here: {1}. Choose another name.")]
     BadName(String, &'static str),
-    #[error("purlis keeps the name '{0}' for itself in the workspace. Choose another name.")]
+    #[error("'{0}' is a name kept by purlis for itself in the workspace. Choose another name.")]
     Reserved(String),
     #[error("'{0}' is already taken in this folder. Choose another name.")]
     Taken(String),

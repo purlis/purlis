@@ -61,7 +61,7 @@ import {
 } from "./branchStatus";
 import { PLANE_ROOT, isPlaneRoot, type Place } from "./pieceViews";
 import { Badge } from "./ui/badge/Badge";
-import { catalogueMenu } from "./Menus";
+import { CatalogueMenu, catalogueMenu } from "./Menus";
 import { NotClonedHere, notClonedRows, type Cloning } from "./NotCloned";
 import { stopRepoClones } from "./repoClones";
 import { WorktreeMark } from "./Worktree";
@@ -2357,11 +2357,30 @@ function fileMenu(on: FileOn, at: FileRows, line?: number): RowMenu | undefined 
   // them all when it is one of them (`actions.fileRows`).
   const picks = at.pick?.picks ?? [];
   const picked = picks.length > 1 ? { picked: picks.map(refOf) } : {};
-  return catalogueMenu(
-    on.kind === "file" ? { ...on, line, ...picked } : { ...on, ...picked },
-    NO_CATALOGUE,
-    at.onPress,
-  );
+  const whole: FileOn = on.kind === "file" ? { ...on, line, ...picked } : { ...on, ...picked };
+  const menu = catalogueMenu(whole, NO_CATALOGUE, at.onPress);
+  if (menu === undefined || typeof menu === "function" || !isWsRef(on.at)) return menu;
+  // In the workspace's own files (#5376), the chats writing the row are read as its menu opens,
+  // so a rename or delete of it asks first, and no row draws again for a touch.
+  const onPress = at.onPress;
+  return {
+    ...menu,
+    menu: () => <TouchedFileMenu on={whole} touching={at.files.touching} onPress={onPress} />,
+  };
+}
+
+/** A file row's menu, with the chats writing it right now (#5376): read while it is open. */
+function TouchedFileMenu({
+  on,
+  touching,
+  onPress,
+}: {
+  on: FileOn;
+  touching: TouchingOf | undefined;
+  onPress: (offer: Offer) => void;
+}) {
+  const touchedBy = useTouchedBy(touching, branchKey(on.at), on.at.path);
+  return <CatalogueMenu on={{ ...on, touchedBy }} offers={NO_CATALOGUE} onPress={onPress} />;
 }
 
 /**
@@ -2465,7 +2484,6 @@ function FilesRow({
   const open = isOpen(at.files, branch, always);
   const level = open ? levelOf(at.files, branch) : undefined;
   const marked = at.files.indexes.get(branchKey(branch))?.marks.get(branch.folder);
-  const touchedBy = useTouchedBy(at.files.touching, branchKey(branch), branch.folder);
   const picked = bare ? undefined : pickOf(at, branch.folder, true);
   const press = usePickingPress(at, picked, () => {
     if (!always) at.fold(key, !open);
@@ -2488,10 +2506,7 @@ function FilesRow({
       menu={
         bare
           ? undefined
-          : fileMenu(
-              { on: "file", at: pathOn(at, branch.folder), kind: "folder", managed, touchedBy },
-              at,
-            )
+          : fileMenu({ on: "file", at: pathOn(at, branch.folder), kind: "folder", managed }, at)
       }
       carries={bare ? undefined : carriedBy(at, branch.folder, true)}
       content={
@@ -2759,7 +2774,6 @@ function FileRow({ branch, entry, at }: { branch: BranchFolderRef; entry: Child;
   const refused = entry.refused;
   // Where its preview was last read, so *Open in your editor* opens there (#1143).
   const line = useLastRead(at.plane, at.place, path);
-  const touchedBy = useTouchedBy(at.files.touching, branchKey(branch), path);
   // Refused and linked files keep their own marks: what they say is that this row is not an
   // ordinary file, which matters more than what kind of file it would be.
   const Mark = refused !== undefined ? FileX : entry.kind === "link" ? FileSymlink : null;
@@ -2791,7 +2805,6 @@ function FileRow({ branch, entry, at }: { branch: BranchFolderRef; entry: Child;
           kind: entry.kind,
           refused,
           managed: entry.managed,
-          touchedBy,
         },
         at,
         line,

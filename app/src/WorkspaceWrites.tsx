@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { WorkspaceWrite } from "./actions";
 import { commands, type PlaneId } from "./bindings";
 import { Field, SettingRow } from "./settings/components";
@@ -224,6 +224,12 @@ export function useWorkspaceWrites(
 ): { ask: (does: WorkspaceWrite) => void; dialog: ReactNode } {
   const [asking, setAsking] = useState<Asking>();
   const close = useCallback(() => setAsking(undefined), []);
+  // Heard through a ref, so `ask` stays one function across renders: the window's `doing` is
+  // memoised on it, and a new one each render would draw every row that reads it again.
+  const written = useRef(onWritten);
+  useEffect(() => {
+    written.current = onWritten;
+  }, [onWritten]);
 
   const run = useCallback(
     async (does: WorkspaceWrite, write: () => Promise<WriteAnswer>) => {
@@ -235,9 +241,9 @@ export function useWorkspaceWrites(
         return;
       }
       setAsking(undefined);
-      for (const path of answer.data) onWritten?.(does, path);
+      for (const path of answer.data) written.current?.(does, path);
     },
-    [plane, onWritten],
+    [plane],
   );
 
   const ask = useCallback(
