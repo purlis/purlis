@@ -133,6 +133,7 @@ function doing(): Doing & { calls: string[] } {
       return { ok: true };
     },
     split: note("split"),
+    splitTab: (tab: number, direction: string) => calls.push(`splitTab:${tab}:${direction}`),
     closePane: note("closePane"),
     closeTab: note("closeTab"),
     closeOtherTabs: note("closeOtherTabs"),
@@ -455,7 +456,7 @@ describe("the one list of actions", () => {
   });
 
   it("puts the destructive rows last, so Enter on a fresh palette never closes a chat", () => {
-    const tabs = openTab(noTabs(), 7, "one");
+    const tabs = splitFocusedPane(openTab(noTabs(), 7, "one"), "row", 8);
     const offers = ids(catalogue(now({ tabs, plane: "/plane", worktreeOf: () => PIECE })));
 
     for (const gentle of ["chat.new", "pane.split.right", "chat.branch.merge:7"]) {
@@ -551,7 +552,7 @@ describe("the one list of actions", () => {
   });
 
   it("clears a pane on Close pane and ends nothing, saying its chat goes on (#4756)", () => {
-    const offers = catalogue(now({ tabs: openTab(noTabs(), 7, "3") }));
+    const offers = catalogue(now({ tabs: splitFocusedPane(openTab(noTabs(), 7, "3"), "row", 8) }));
 
     expect(by(offers, "pane.close")?.title).toBe(PANE_CLOSE);
     expect(by(offers, "pane.close")?.does).toEqual({ verb: "closePane" });
@@ -560,13 +561,78 @@ describe("the one list of actions", () => {
 
   it("closes a pane that shows a task too, since that ends nothing either", () => {
     // Chat 9 is a task of chat 7, shown inside chat 7's tab (#1486).
-    const tabs = switchTabTo(openTab(noTabs(), 7, "3", "steward"), 9, (session) =>
-      session === 9 ? 7 : undefined,
-    );
+    const split = splitFocusedPane(openTab(noTabs(), 7, "3", "steward"), "row", 8);
+    const tabs = switchTabTo(split, 9, (session) => (session === 9 ? 8 : undefined));
     const offers = catalogue(now({ tabs, nameOf: () => "steward 3" }));
 
     expect(by(offers, "pane.close")).toMatchObject({ available: true, title: PANE_CLOSE });
     expect(by(offers, "tab.close:1")?.does).toEqual({ verb: "closeTab", tab: 1 });
+  });
+
+  it("has no Close pane row on a tab with one pane, whose own close does the same (#5318)", () => {
+    const tabs = openTab(noTabs(), 7, "3", "steward");
+    const offers = catalogue(now({ tabs, nameOf: () => "steward 3" }));
+
+    expect(by(offers, "pane.close")).toBeUndefined();
+    expect(by(offers, "tab.close:1")?.does).toEqual({ verb: "closeTab", tab: 1 });
+  });
+
+  it("has the row for both panes of a split, and for one zoomed to fill its tab (#5318, #4765)", async () => {
+    const split = splitFocusedPane(openTab(noTabs(), 7, "3", "steward"), "row", 8);
+    expect(by(catalogue(now({ tabs: split })), "pane.close")?.available).toBe(true);
+    const hands = doing();
+    await run(catalogue(now({ tabs: split })), "pane.close", hands);
+    expect(hands.calls).toEqual(["closePane"]);
+
+    // Drawn alone for now, and the tab's close would still take both.
+    const zoomed = {
+      ...split,
+      byId: { ...split.byId, 1: { ...split.byId[1], zoomed: split.byId[1].focused } },
+    };
+    expect(by(catalogue(now({ tabs: zoomed })), "pane.close")?.available).toBe(true);
+  });
+
+  describe("a view alone in its tab keeps its splits, off its content (#5318)", () => {
+    const aView = () =>
+      openView(noTabs(), { from: null, view: "persona", key: "steward" }, "steward", "alpha");
+
+    it("in the palette, on the pane in front", () => {
+      const offers = catalogue(now({ tabs: aView() }));
+      for (const id of ["pane.split.right", "pane.split.down"])
+        expect(by(offers, id)?.available).toBe(true);
+    });
+
+    it("on its tab's menu only, each row bringing that tab forward and splitting it", async () => {
+      const offers = catalogue(now({ tabs: aView() }));
+      const right = by(offers, "tab.split.right:1");
+      const down = by(offers, "tab.split.down:1");
+      expect(right).toMatchObject({ title: "Split right", available: true, menuOnly: true });
+      expect(down).toMatchObject({ title: "Split down", available: true, menuOnly: true });
+
+      const hands = doing();
+      for (const row of [right, down]) await perform(row as Offer, hands);
+      expect(hands.calls).toEqual(["splitTab:1:row", "splitTab:1:column"]);
+    });
+
+    it("has no such row on a chat's tab, or on a view's tab once it is split", () => {
+      const chat = catalogue(now({ tabs: openTab(noTabs(), 7, "3", "steward") }));
+      expect(by(chat, "tab.split.right:1")).toBeUndefined();
+      const split = catalogue(now({ tabs: splitFocusedPane(aView(), "row", 8) }));
+      expect(by(split, "tab.split.right:1")).toBeUndefined();
+    });
+
+    it("greys a row where a half would be under the minimum, as the palette's", () => {
+      const offers = catalogue(now({ tabs: aView(), paneRoom: { width: 100, height: 100 } }));
+      expect(by(offers, "tab.split.right:1")?.available).toBe(false);
+      expect(by(offers, "tab.split.right:1")?.reason).toBe(by(offers, "pane.split.right")?.reason);
+    });
+
+    it("takes no answer about room from the pane in front when its tab is behind it", () => {
+      const tabs = openTab(aView(), 7, "3", "steward");
+      const offers = catalogue(now({ tabs, paneRoom: { width: 100, height: 100 } }));
+      expect(by(offers, "pane.split.right")?.available).toBe(false);
+      expect(by(offers, "tab.split.right:1")?.available).toBe(true);
+    });
   });
 
   it("decides a pane's close for that pane, and closes the one showing a task too", () => {
@@ -1585,7 +1651,9 @@ describe("the one list of actions", () => {
     });
 
     it("closes the view's pane with words that say so, and ends nothing", () => {
-      const row = by(catalogue(now({ tabs: withView() })), "pane.close");
+      // In a split: a view alone in its tab has its tab's close and no row of its own (#5318).
+      const tabs = withView();
+      const row = paneCloseOf(tabs, tabs.byId[tabs.inFront as number].focused, () => "");
 
       expect(row?.title).toBe("Close this view");
       expect(row?.does).toEqual({ verb: "closePane" });
@@ -1780,6 +1848,8 @@ describe("carrying out a row", () => {
   it("reaches every verb it can be given", async () => {
     // Nothing in the catalogue is a verb `perform` has no arm for, and nothing in `perform`
     // is an arm no row reaches: a row that fell through would silently do nothing.
+    // Each tab has one pane, so Close pane's row and a view's tab's splits are reached by their
+    // own tests (#5318).
     const tabs = selectTab(openTab(openTab(noTabs(), 7, "one"), 8, "two"), 1);
     const hands = doing();
     const offers = catalogue(
@@ -1828,7 +1898,6 @@ describe("carrying out a row", () => {
         "ignoreNeedsYou:8",
         "selectTab:2",
         "focusWorkspace:beta",
-        "closePane",
         "closeTab:1",
         "closeTab:2",
         // Move to new window, each tab's and the focused pane's (#4768).
@@ -2640,8 +2709,9 @@ describe("the palette at fifty chats", () => {
     // focused pane's (+1). 1124 since #4484: Add a cluster pool…. 1125 since #4758: New tab,
     // the strip's `+`, apart from New chat. 1225 since #4764: Place…, each of the fifty chats'
     // own row, and each of the fifty tabs' right-click, whose forty-nine behind are menu-only,
-    // as Close other tabs' are.
-    expect(offers).toHaveLength(1225);
+    // as Close other tabs' are. 1224 since #5318: no Close pane row, the tab in front having one
+    // pane.
+    expect(offers).toHaveLength(1224);
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.closeOthers:"))).toHaveLength(
       1,
     );
@@ -2688,19 +2758,20 @@ describe("the palette at fifty chats", () => {
       return offers.lookups;
     }
 
-    it("asks for seven rows per tab and never walks the list", () => {
+    it("asks for nine rows per tab and never walks the list", () => {
       const offers = new Counting(loaded().map((offer) => [offer.id, offer]));
 
-      // 50 tabs × the seven ids a tab's menu lists: Pin, Tile all (#4765), Place… (#4764), Keep
-      // open, Move to new window (#4768), Close other tabs and Close (#4760). A
+      // 50 tabs × the nine ids a tab's menu lists: Pin, a lone view's two splits (#5318), Tile all
+      // (#4765), Place… (#4764), Keep open, Move to new window (#4768), Close other tabs and Close
+      // (#4760). A
       // chat's rows are its own list's since #4753, which a strip never draws.
       // **Not fifty scans of 291 rows**, which is
       // what this cost before the lookup was built once for the window — and the number that
       // does not move when the catalogue grows again.
-      expect(strip(offers)).toBe(350);
+      expect(strip(offers)).toBe(450);
     });
 
-    it("is the same 350 whether the catalogue carries the pieces or not", () => {
+    it("is the same 450 whether the catalogue carries the pieces or not", () => {
       // The property, not the timing: the cost of a menu is flat in the length of the list it
       // reads. A scan is not, which is why #174's hundred rows needed this first.
       const small = new Counting(
@@ -2709,7 +2780,7 @@ describe("the palette at fifty chats", () => {
         ),
       );
 
-      expect(strip(small)).toBe(350);
+      expect(strip(small)).toBe(450);
     });
   });
 });
@@ -3826,7 +3897,16 @@ describe("stopping a chat (#1448)", () => {
     it("holds Pin tab, Tile all, Place…, Keep open, Move to new window, Close other tabs and Close tab, and nothing else", () => {
       expect(menuOn({ on: "tab", tab: 7 })).toEqual({
         // Move to new window (#4768): the tab into a tab window of its project.
-        above: ["tab.pin:7", "tab.tile:7", "tab.place:7", "tab.keep:7", "tab.newWindow:7"],
+        // A lone view's splits (#5318): no other tab's catalogue has their rows.
+        above: [
+          "tab.pin:7",
+          "tab.split.right:7",
+          "tab.split.down:7",
+          "tab.tile:7",
+          "tab.place:7",
+          "tab.keep:7",
+          "tab.newWindow:7",
+        ],
         below: ["tab.closeOthers:7", "tab.close:7"],
       });
     });
@@ -3990,8 +4070,17 @@ describe("ending a task by hand (#1488)", () => {
       title: "Close chat 1",
       does: { verb: "closeTab", tab: session },
     });
-    // The pane's close of the tab in front (the task's) says the same.
-    expect(by(offers, "pane.close")).toMatchObject({
+    // The pane's close of the tab in front (the task's) says the same, and so is not a row of its
+    // own while the tab has this one pane (#5318).
+    expect(by(offers, "pane.close")).toBeUndefined();
+    expect(
+      paneCloseOf(
+        tabs,
+        tabs.byId[task].focused,
+        () => "",
+        () => 1,
+      ),
+    ).toMatchObject({
       does: { verb: "sendBack", session: 2 },
     });
   });

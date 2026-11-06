@@ -489,8 +489,7 @@
 /* **A pane's actions** (`PaneActions`, shared with a view's pane, #3147, #5203): the chat's
    actions, then split side by side, split stacked and close, one cluster in its own place at the
    pane's top right. Plain marks in
-   the quiet tier with no box around them. When they are drawn is the window's rule (`App.css`,
-   `.pane-doing`). */
+   the quiet tier with no box around them, always drawn (#5318). */
 .pane-actions {
   display: flex;
   flex: none;

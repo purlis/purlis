@@ -102,9 +102,8 @@ function PaneLine() {
             </PaneActionsOf.Provider>
           </BriefOpener>
         </div>
-        {/* **The focused pane**, as the window draws it (`App.css`, `.pane-doing`): its own
-            controls are in the keyboard's reach, and out of sight until the pointer or the
-            keyboard is on them. Another pane's are hidden from both. */}
+        {/* **The focused pane**, as the window draws it: its own controls are always drawn, and
+            in the keyboard's reach (#5318). */}
         <div className="pane-body">
           <div className="pane focused" />
         </div>

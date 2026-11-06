@@ -26,8 +26,8 @@ import {
  * **A view tab and its view are one piece** (#3147, the operator's ruling of 2026-10-24): every
  * view tab it opens, Settings, a vault, a persona and the shared memory among them, carries no
  * title of its own (no heading, and nowhere its tab's name as words of its own), starts with no
- * band of its own fill, draws its pane's actions where a chat's pane draws them, and is in the
- * panel its chosen tab names.
+ * band of its own fill, draws none of its pane's actions while it is alone in its tab (#5318), and
+ * is in the panel its chosen tab names.
  *
  * **It leaves the window as it found it**: each bar is put back on the view it had open (or put
  * away, where it was), and each view tab it opened is closed. The vault it makes for its vault
@@ -195,18 +195,15 @@ async function aroundOf(region: string, tab = region): Promise<Around | null> {
   );
 }
 
-/** A view tab is one piece with its tab: no title, no band, the pane's actions in their place,
- *  in the panel its tab names. */
+/** A view tab is one piece with its tab: no title, no band, no pane's actions, it being alone in
+ *  its tab (#5318), in the panel its tab names. */
 async function onePiece(region: string, tab = region): Promise<void> {
   const around = await aroundOf(region, tab);
   if (around === null) throw new Error(`no view tab called ${tab} on screen`);
   expect(around.titles).toEqual([]);
   if (around.firstFill !== null) expect(around.firstFill).toBe("rgba(0, 0, 0, 0)");
   expect(around.namedByItsTab).toBe(true);
-  expect(around.actions).not.toBeNull();
-  // At the pane's top right, where a chat's pane draws them (`paneFrame.css`).
-  expect(around.actions?.top).toBeLessThanOrEqual(16);
-  expect(around.actions?.right).toBeLessThanOrEqual(16);
+  expect(around.actions).toBeNull();
 }
 
 /** What the view tab called `title` holds below its first row, read once. */
@@ -364,7 +361,7 @@ describe("no blank view", function () {
     // A vault's region is named for a screen reader as `Vault <name>`; its tab is its name.
     const named = `Vault ${VAULT}`;
     drawn(`the ${VAULT} tab`, await settled(VAULT, () => viewTab(named)));
-    // No title, no band, the actions in place, and in the panel its tab, the vault's name,
+    // No title, no band, no actions, and in the panel its tab, the vault's name,
     // names.
     await onePiece(named, VAULT);
   });

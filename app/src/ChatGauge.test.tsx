@@ -273,11 +273,10 @@ describe("the gauge's place", () => {
     expect(head).not.toMatch(/position:/);
   });
 
-  it("never takes the controls' hover-only rule", () => {
+  it("is never hidden by a rule", () => {
     const hidden = [...css.matchAll(/([^{}]*)\{[^{}]*visibility:\s*hidden[^{}]*\}/g)]
       .map((hit) => hit[1])
       .join(",");
-    expect(hidden).toContain(".pane-doing");
     expect(hidden).not.toContain("gauge");
   });
 

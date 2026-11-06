@@ -1301,6 +1301,21 @@ export const plantedTall = { minBlockSize: 32 };
     ]);
   });
 
+  it("keeps the pane's controls last on the head's own row, written in order (#5318)", () => {
+    const source = readFileSync(join(SRC, "LayoutPanes.tsx"), "utf8");
+    // The row: `PaneHead` draws what it is handed inside `.pane-head`, and `PaneActions` draws
+    // `.pane-actions` with `PaneDoing` the last thing in it.
+    expect(source).toMatch(/className="pane-head"[\s\S]{0,400}\{doing\}/);
+    const order = headActionsOrder(source);
+    expect(order.slice(-3)).toEqual(["PaneDoing", "Divider", "rows"]);
+    // Their order: Split right, Split down, then Close last.
+    expect(
+      [...source.matchAll(/parts\.includes\("(splitRight|splitDown|close)"\)/g)].map(
+        (hit) => hit[1],
+      ),
+    ).toEqual(["splitRight", "splitDown", "close"]);
+  });
+
   it("reads the head's right side as the chat's actions, a divider, then the pane's controls (#5203)", () => {
     const source = readFileSync(join(SRC, "LayoutPanes.tsx"), "utf8");
     // The state button, the bell and ⋯ last; then the divider and Split right, Split down and

@@ -118,6 +118,7 @@ import {
   changesView,
   chatOf,
   contentsOf,
+  hasOnePane,
   ONE_JOB_STAYS,
   focusedChat,
   focusedContent,
@@ -370,6 +371,8 @@ export type Does =
    *  nothing by itself; the picker is the only path ADR 0022 admits. */
   | { verb: "newChatIn"; path: string }
   | { verb: "split"; direction: Direction }
+  /** Brings tab `tab` forward and splits its pane (#5318), from the menu of a view's tab. */
+  | { verb: "splitTab"; tab: number; direction: Direction }
   /** Hands a key the palette claimed to the chat in front, rather than swallowing it. */
   | { verb: "sendKey"; key: string }
   /** **A close never ends a chat** (#4756): Close pane clears the focused pane, Close tab closes
@@ -1079,6 +1082,7 @@ export type Doing = {
   /** A browser, in a view tab of its own (#2012). */
   newBrowser: () => void;
   split: (direction: Direction) => void;
+  splitTab: (tab: number, direction: Direction) => void;
   closePane: () => void;
   closeTab: (tab: number) => void;
   /** Closes each of `tabs`, as its own close does (#4762). */
@@ -2152,9 +2156,9 @@ export function catalogue(now: Now): Offer[] {
     });
   }
 
-  for (const [id, title, direction] of [
-    ["pane.split.right", "Split right", "row"],
-    ["pane.split.down", "Split down", "column"],
+  for (const [id, onTab, title, direction] of [
+    ["pane.split.right", "tab.split.right", "Split right", "row"],
+    ["pane.split.down", "tab.split.down", "Split down", "column"],
   ] as const) {
     const refused = splitRefused(now.paneRoom, direction);
     offers.push(
@@ -2164,6 +2168,21 @@ export function catalogue(now: Now): Offer[] {
           ? cannot(id, title, refused)
           : can(id, title, { verb: "split", direction }),
     );
+    // **A view alone in its tab has no controls over its content** (#5318), so its splits are its
+    // tab's menu's too. The menu's alone: the palette has the rows above, for the pane in front.
+    for (const tab of now.tabs.order) {
+      if (!hasOnePane(now.tabs, tab) || contentsOf(now.tabs, tab)[0].content.kind !== "view")
+        continue;
+      const row = `${onTab}:${tab}`;
+      // The room is the focused pane's in front, which says nothing of a tab behind it.
+      const noRoom = tab === now.tabs.inFront ? refused : undefined;
+      offers.push({
+        ...(noRoom !== undefined
+          ? cannot(row, title, noRoom)
+          : can(row, title, { verb: "splitTab", tab, direction })),
+        menuOnly: true,
+      });
+    }
   }
 
   // The key the palette claimed, handed back. Not destructive and not below the line: it is
@@ -3162,9 +3181,12 @@ export function catalogue(now: Now): Offer[] {
 
   // ----- destructive, and therefore last -----
 
-  // A pane's close clears the pane and ends nothing, as a tab's does (#4756).
+  // A pane's close clears the pane and ends nothing, as a tab's does (#4756). On a tab's only
+  // pane the tab's own close does the same, so there is one row for it and not two, as its head
+  // has one × (#5318).
   const askedBy = now.askedBy ?? askedByOf(now.listed ?? []);
-  offers.push(paneCloseOf(now.tabs, front?.focused, now.nameOf, askedBy, now.restoring));
+  if (front === undefined || !hasOnePane(now.tabs, front.id))
+    offers.push(paneCloseOf(now.tabs, front?.focused, now.nameOf, askedBy, now.restoring));
 
   // **Close tab closes a layout and ends nothing** (#4756, spec #4750 story 18): its chats go
   // on in the sidebar, so nothing is asked and nothing is drawn in the danger colour. It used
@@ -3502,6 +3524,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return DID;
     case "split":
       doing.split(does.direction);
+      return DID;
+    case "splitTab":
+      doing.splitTab(does.tab, does.direction);
       return DID;
     case "closePane":
       doing.closePane();
@@ -5649,6 +5674,9 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
       return {
         above: [
           `tab.pin:${what.tab}`,
+          // A lone view's splits (#5318): no other tab has these rows.
+          `tab.split.right:${what.tab}`,
+          `tab.split.down:${what.tab}`,
           tileAllId(what.tab),
           placeTabId(what.tab),
           `tab.keep:${what.tab}`,
