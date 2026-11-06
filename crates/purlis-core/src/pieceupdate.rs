@@ -31,10 +31,10 @@
 //!   and fast-forward the branch to it or rebase the branch's own commits onto it, with the
 //!   same `--continue` and `--abort`, the same judging for a sandboxed chat, and the same
 //!   refusal of uncommitted changes. Never the project's root folder, which is the person's.
-//!   For a sandboxed chat, the app runs no rebase there, since the chat may write the clone's
-//!   git directory: it fetches, works out the rebase and names it, for the chat's own git to run
-//!   in its own sandbox, and goes on or back the same way; the app then only puts the branch
-//!   where it belongs, from the commit it recorded ([`settled_by_the_chat`]).
+//!   For a sandboxed chat, the app runs no rebase in a clone: it fetches, works out the rebase
+//!   and names it, for the chat's own git to run in its own sandbox, and goes on or back the
+//!   same way; the app then only puts the branch where it belongs, from the commit it recorded
+//!   ([`settled_by_the_chat`]).
 //!   Either kind is refused where it would write over a file on disk that the current commit
 //!   does not track (an ignored `.env`, an untracked file): someone's work, which git would
 //!   overwrite or stop on halfway.
@@ -803,9 +803,9 @@ fn rebased(
         &from_id,
         &head_id,
     ]);
-    // A clone a sandboxed chat may write: its git directory can hold what changes what a
-    // rebase does, so the app runs none there. The chat's own git runs it, in its sandbox, and
-    // the app then only moves the branch from the commit recorded ([`settled_by_the_chat`]).
+    // A clone, for a sandboxed chat: the app runs no rebase there. The chat's own git runs it,
+    // in its sandbox, and the app then only moves the branch from the commit recorded
+    // ([`settled_by_the_chat`]).
     if here.chat_resumes {
         return Ok(Moved::Stopped(named_for_the_chat(here, &args, say)));
     }

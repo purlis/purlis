@@ -1180,7 +1180,7 @@ fn fetch_branch(root: &Path, branch: &str) -> Result<(), String> {
         &[
             "fetch",
             "--no-recurse-submodules",
-            // A save's rebase reads FETCH_HEAD; a fetch of charter's own leaves it alone.
+            // What came is in the remote-tracking branch: nothing of purlis's reads FETCH_HEAD.
             "--no-write-fetch-head",
             &https,
             &format!("+refs/heads/{branch}:refs/remotes/origin/{branch}"),
@@ -1985,8 +1985,8 @@ fn push_head_within(
         // prints its own `! [remote rejected]` line above a server-side hook decline, so the
         // word "rejected" in the retry test below matches a protected branch too. Measured
         // against a real bare remote with a pre-receive hook refusing `refs/heads/main`:
-        // taking the retry first fetched an unreachable origin, which REMOVES FETCH_HEAD, so
-        // the rebase failed and the outcome was recorded as `conflict` — the pull-request path
+        // taking the retry first fetched an unreachable origin, so the rebase had nothing to
+        // go onto and the outcome was recorded as `conflict` — the pull-request path
         // never reached and charter telling the operator to resolve a conflict that did not
         // exist.
         return record_push(
