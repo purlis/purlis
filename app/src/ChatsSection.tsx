@@ -1473,6 +1473,19 @@ const Row = memo(function Row({
   const self = useRef<HTMLButtonElement>(null);
   /** Placement mode's pick-up, for the row's grip (#4764, #5290): it never changes. */
   const pickUp = useContext(PickUpHere);
+  /** **The row's grip** (#5290): the persona's mark it stands in, the same function from one
+   *  drawing of the row to the next, so the mark (a memo) is not drawn again for it. */
+  const grip = useMemo(
+    () =>
+      pickUp === undefined
+        ? undefined
+        : (mark: ReactNode) => (
+            <Grip onPress={() => pickUp({ kind: "chat", session, chat: "" }, self.current)}>
+              {mark}
+            </Grip>
+          ),
+    [pickUp, session],
+  );
   // Asked once, as the row is drawn: whether its chat's state changed while it was not.
   const [changed] = useState(() => clock.missed(session));
   // A task's tokens, in its card (#1500): read as the pointer or the keyboard rests on the
@@ -1647,17 +1660,7 @@ const Row = memo(function Row({
                 // press on it picks the chat up for placement mode, the single press for what
                 // dragging the row does (WCAG 2.5.7). Inside the row, which is a button, so no
                 // control itself: the keyboard's way is the row's ⌘⇧M and its list's Move….
-                grip={
-                  pickUp === undefined
-                    ? undefined
-                    : (mark) => (
-                        <Grip
-                          onPress={() => pickUp({ kind: "chat", session, chat: "" }, self.current)}
-                        >
-                          {mark}
-                        </Grip>
-                      )
-                }
+                grip={grip}
               />
             </span>
             <span className="ui-row-trail" data-gives-way={questioned || undefined}>

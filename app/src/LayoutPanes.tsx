@@ -392,6 +392,19 @@ export function PaneFrame({
   /** The terminal the pane draws, for Copy and Paste on its head's right-click (#4760). */
   const terminalAt = useRef<PaneTerminal | null>(null);
   const focusBell = useCallback(() => bellAt.current?.focus(), []);
+  /** **The pane's grip** (#5290): its persona's mark, but a one-job program's. The same function
+   *  from one drawing of the head to the next, so the mark (a memo) is not drawn again for it. */
+  const grip = useMemo(
+    () =>
+      oneJob || tab === undefined || pane === undefined
+        ? undefined
+        : (mark: ReactNode) => (
+            <PaneGrip tab={tab} pane={pane}>
+              {mark}
+            </PaneGrip>
+          ),
+    [oneJob, tab, pane],
+  );
   return (
     <div
       ref={frame}
@@ -443,15 +456,7 @@ export function PaneFrame({
               {head && line.has("persona") && (
                 <span className="pane-persona">
                   <ChatPersonaState
-                    grip={
-                      oneJob || tab === undefined || pane === undefined
-                        ? undefined
-                        : (mark) => (
-                            <PaneGrip tab={tab} pane={pane}>
-                              {mark}
-                            </PaneGrip>
-                          )
-                    }
+                    grip={grip}
                     persona={head.chat.persona}
                     session={session}
                     shell={head.chat.shell}

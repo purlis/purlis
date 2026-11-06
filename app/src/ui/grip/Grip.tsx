@@ -23,7 +23,7 @@
  * - **Drawn by its parts**: `root`, `mark`, `dots` and each `dot`, whose fill a theme reaches
  *   (`grip.dot.hover.fill`, `grip.dot.focused.fill`; ADR 0103).
  */
-import type { ReactNode, Ref } from "react";
+import { useId, type ReactNode, type Ref } from "react";
 import { Button as AriaButton } from "react-aria-components";
 
 /** **How many dots, in rows of two** (the person's ask on the prototype, 3×2). */
@@ -37,6 +37,10 @@ export type GripProps = {
   /** Its name, "Move" and what it moves, which makes it a control of its own (a pane's head).
    *  Left out inside a control that is pressable itself (a chat's row). */
   label?: string;
+  /** What a reader is told after its name, on a grip that is a control: the key that picks up
+   *  too. React Aria's button takes no `aria-keyshortcuts`, so it is its description, read from
+   *  words hidden beside it. */
+  description?: string;
   /** The grip as drawn, where the keyboard goes back to it. */
   gripRef?: Ref<HTMLElement>;
   /** Marks a screen puts on it so a drag or a region knows it (`data-*`), never a look. */
@@ -44,7 +48,8 @@ export type GripProps = {
 };
 
 /** **A grip**: its mark at rest, dots to be picked up by. */
-export function Grip({ children, onPress, label, gripRef, marks }: GripProps) {
+export function Grip({ children, onPress, label, description, gripRef, marks }: GripProps) {
+  const describedBy = useId();
   const inside = (
     <>
       <span data-scope="grip" data-part="mark">
@@ -59,16 +64,24 @@ export function Grip({ children, onPress, label, gripRef, marks }: GripProps) {
   );
   if (label !== undefined)
     return (
-      <AriaButton
-        {...marks}
-        ref={gripRef as Ref<HTMLButtonElement>}
-        data-scope="grip"
-        data-part="root"
-        aria-label={label}
-        onPress={onPress}
-      >
-        {inside}
-      </AriaButton>
+      <>
+        <AriaButton
+          {...marks}
+          ref={gripRef as Ref<HTMLButtonElement>}
+          data-scope="grip"
+          data-part="root"
+          aria-label={label}
+          aria-describedby={description === undefined ? undefined : describedBy}
+          onPress={onPress}
+        >
+          {inside}
+        </AriaButton>
+        {description !== undefined && (
+          <span id={describedBy} hidden>
+            {description}
+          </span>
+        )}
+      </>
     );
   return (
     <span

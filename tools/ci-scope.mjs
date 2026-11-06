@@ -145,6 +145,7 @@ export const READ_BY_RUST = [
   "app/src/ui/disclosure/disclosure.css",
   "app/src/ui/empty-state/empty-state.css",
   "app/src/ui/field/field.css",
+  "app/src/ui/grip/grip.css",
   "app/src/ui/list/list.css",
   "app/src/ui/menu/menu.css",
   "app/src/ui/meter/meter.css",

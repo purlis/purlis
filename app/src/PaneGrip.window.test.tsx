@@ -146,6 +146,10 @@ describe("a pane's grip (#5290)", () => {
     const grip = screen.getByRole("button", { name: "Move pane 1" });
     expect(grip).toHaveAttribute("data-scope", "grip");
     expect(grip).toHaveAttribute(GRIP_HANDLE);
+    // ⌘⇧M does the same, and a reader is told so after its name.
+    expect(grip).toHaveAccessibleDescription(
+      /^Drag it, or press it or (⌘⇧M|Ctrl\+Shift\+M) to move it with the keys$/,
+    );
     // It stands in the chat mark's `who`, so the badge stays the mark's, beside it.
     const who = grip.closest('[data-scope="chat-mark"][data-part="who"]');
     expect(who).not.toBeNull();

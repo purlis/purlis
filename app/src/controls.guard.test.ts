@@ -1490,8 +1490,10 @@ describe("the grip (#5290)", () => {
       /\| (inline-size|block-size|width|height|min-|max-)/.test(one),
     );
     expect(sizes).toEqual([
-      'ui/grip/grip.css | [data-scope="grip"][data-part="root"] | inline-size: var(--grip-reach, auto)',
-      'ui/grip/grip.css | [data-scope="grip"][data-part="root"] | block-size: var(--grip-reach, auto)',
+      // Never under 24px where it has a reach, in the compact density too, as the button family's
+      // smallest; with none, as big as its mark.
+      'ui/grip/grip.css | [data-scope="grip"][data-part="root"] | inline-size: max(24px, var(--grip-reach))',
+      'ui/grip/grip.css | [data-scope="grip"][data-part="root"] | block-size: max(24px, var(--grip-reach))',
     ]);
     // Every place that gives it a reach gives it the one target size (WCAG 2.5.8).
     const reaches = Object.values(sheets).flatMap((css) =>
