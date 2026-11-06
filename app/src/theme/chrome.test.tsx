@@ -106,6 +106,7 @@ import { RouterChange } from "../SkillStudioRouting";
 import { KeepAsk } from "../ThemeDraftStrip";
 import { forgetThisLaunch } from "../regions";
 import { complaints } from "./complaints.testkit";
+import { MoveIntoReposConfirm } from "../MoveIntoReposConfirm";
 import { BUILT_IN, DEFAULT_THEME, drawIn, drawTint, inForce, tinted } from "./theme";
 import { themeInForce } from "./inForce.testkit";
 import { aTabForEachChat } from "../laidOut.testkit";
@@ -802,6 +803,21 @@ const DIALOGS: Opened[] = [
     file: "ChangeActions.tsx",
     open: async () =>
       render(<PushAsk plane={P} workspace="alpha" change="tokens" onClose={nothing} />),
+  },
+  {
+    name: "Move into repos/",
+    file: "MoveIntoReposConfirm.tsx",
+    open: async () =>
+      render(
+        <MoveIntoReposConfirm
+          plans={[
+            { workspace: "alpha", repos: ["api"], unresumable: ["In the clone"], open: [] },
+            { workspace: "beta", repos: ["web"], unresumable: [], open: ["steward 2"] },
+          ]}
+          onCancel={nothing}
+          onMove={nothing}
+        />,
+      ),
   },
   {
     name: "Land",

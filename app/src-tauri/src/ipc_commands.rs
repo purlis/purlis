@@ -725,6 +725,7 @@ macro_rules! app_commands {
                 changes::change_land,
                 doctor::plane_doctor,
                 doctor::plane_doctor_fix,
+                doctor::plane_doctor_move_into_repos_plan,
                 doctor::plane_doctor_fix_identity,
                 doctor::plane_doctor_identity,
                 settings::project_settings,

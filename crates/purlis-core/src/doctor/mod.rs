@@ -51,6 +51,7 @@ mod plane;
 mod plugin;
 mod profiles;
 mod remote;
+mod repos_folder;
 mod rules;
 mod sandbox;
 pub(crate) mod session;
@@ -508,6 +509,7 @@ impl Doctor {
         .into_iter()
         .chain(plane::behind_the_layout(self))
         .chain(plane::live_skills(self))
+        .chain(repos_folder::rows(self))
         .filter_map(|row| row.fix)
         .collect();
         ids.sort();
@@ -547,6 +549,7 @@ impl Doctor {
         rows.extend(plane::renamed_leftovers(self));
         rows.extend(extensions::renamed_manifests(self));
         rows.push(clones::workspace_clones(self));
+        rows.extend(repos_folder::rows(self));
         rows.extend(clones::hidden_agents_md(self));
         rows.extend(clones::clone_git_config(self));
         rows.extend(plane::behind_the_layout(self));
