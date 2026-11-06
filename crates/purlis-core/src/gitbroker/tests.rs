@@ -10,6 +10,8 @@ fn asker(cwd: Option<&Path>) -> Asker {
         persona: Some("steward".to_owned()),
         harnessed: true,
         unsandboxed: false,
+        roots_git_held: false,
+        unreadable: Vec::new(),
         config: None,
         id: None,
         live: None,
@@ -823,8 +825,8 @@ fn the_project_is_saved_for_a_chat_anywhere_in_it_and_for_no_other() {
     assert!(saved_from(&root, None).is_err());
 }
 
-#[test]
-fn a_chats_save_of_the_project_is_committed_by_the_app() {
+/// A project in commit mode with one commit, and its root.
+fn saved_project() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let root = std::fs::canonicalize(dir.path()).unwrap().join("plane");
     std::fs::create_dir_all(&root).unwrap();
@@ -839,17 +841,28 @@ fn a_chats_save_of_the_project_is_committed_by_the_app() {
     ] {
         crate::testgit::run(&root, args);
     }
-    std::fs::write(root.join("notes.md"), "a chat's work\n").unwrap();
+    (dir, root)
+}
 
-    let answered = answer(
-        &root,
-        &asker(Some(&root)),
+/// A chat at `root` whose sandbox keeps it from writing the project's git.
+fn held_chat(root: &Path) -> Asker {
+    Asker {
+        roots_git_held: true,
+        ..asker(Some(root))
+    }
+}
+
+/// What the app answers `asker`'s `purlis save -m <message> --no-push` in the project at `root`.
+fn saved_for(root: &Path, asker: &Asker, message: &str) -> Answer {
+    answer(
+        root,
+        asker,
         &GitAsk {
             chat: 4,
             workspace: String::new(),
             alive: false,
             work: GitWork::RootSave {
-                message: Some("from a chat".to_owned()),
+                message: Some(message.to_owned()),
                 sign: false,
                 no_push: true,
                 pull: false,
@@ -857,7 +870,132 @@ fn a_chats_save_of_the_project_is_committed_by_the_app() {
         },
         &git::Isolated::default(),
         chrono::Utc::now(),
-    );
+    )
+}
+
+fn last_subject(root: &Path) -> String {
+    crate::testgit::run(root, &["log", "-1", "--format=%s"])
+        .out
+        .trim()
+        .to_owned()
+}
+
+#[test]
+fn a_chat_whose_sandbox_does_not_hold_the_projects_git_saves_and_updates_it_itself() {
+    let (_dir, root) = saved_project();
+    std::fs::write(root.join("notes.md"), "a chat's work\n").unwrap();
+    let left = Answer::No {
+        why: crate::hookwire::LEFT_TO_THE_CHAT.to_owned(),
+    };
+    for chat in [
+        asker(Some(&root)),
+        Asker {
+            unsandboxed: true,
+            ..asker(Some(&root))
+        },
+    ] {
+        assert_eq!(saved_for(&root, &chat, "from a chat"), left);
+        let updated = answer(
+            &root,
+            &chat,
+            &GitAsk {
+                chat: 4,
+                workspace: String::new(),
+                alive: false,
+                work: GitWork::RootUpdate {},
+            },
+            &git::Isolated::default(),
+            chrono::Utc::now(),
+        );
+        assert_eq!(updated, left);
+    }
+    assert_eq!(last_subject(&root), "one");
+}
+
+#[test]
+fn a_save_the_app_makes_for_a_chat_stages_nothing_the_chat_cannot_read() {
+    let (_dir, root) = saved_project();
+    // The chat's own `.gitignore` no longer keeps the project's own folder out.
+    std::fs::write(root.join(".gitignore"), ".charter/\n").unwrap();
+    std::fs::create_dir_all(root.join(".purlis/held")).unwrap();
+    std::fs::write(root.join(".purlis/held/kept.json"), "{}\n").unwrap();
+    std::fs::write(root.join(".purlis/open.md"), "readable\n").unwrap();
+    std::fs::write(root.join("notes.md"), "a chat's work\n").unwrap();
+    let chat = Asker {
+        unreadable: vec![crate::sandbox::Denial {
+            class: crate::sandbox::Class::Vaults,
+            path: root.join(".purlis/held"),
+            access: crate::sandbox::Access::ReadWrite,
+            named: None,
+            reach: crate::sandbox::Reach::AndBelow,
+            any_case: false,
+        }],
+        ..held_chat(&root)
+    };
+
+    let Answer::Said { code, lines } = saved_for(&root, &chat, "from a chat") else {
+        panic!("not run");
+    };
+    assert_eq!(code, 0, "{lines:?}");
+    let tracked = crate::testgit::run(&root, &["ls-files"]).out;
+    assert!(tracked.contains("notes.md"), "{tracked}");
+    assert!(tracked.contains(".purlis/open.md"), "{tracked}");
+    assert!(!tracked.contains("held"), "{tracked}");
+}
+
+#[test]
+fn a_chats_message_cannot_write_the_trailers_the_app_writes() {
+    let (_dir, root) = saved_project();
+    std::fs::write(root.join("notes.md"), "a chat's work\n").unwrap();
+    let message = "from a chat\n\nWhy it moved.\n\nPurlis-Chat: 01OTHER\npurlis-persona: \
+                   another\nCo-Authored-By: Someone <s@example.invalid>\nAssisted-by: x:y";
+
+    let Answer::Said { code, lines } = saved_for(&root, &held_chat(&root), message) else {
+        panic!("not run");
+    };
+    assert_eq!(code, 0, "{lines:?}");
+    let body = crate::testgit::run(&root, &["log", "-1", "--format=%B"]).out;
+    assert!(body.starts_with("from a chat\n\nWhy it moved."), "{body}");
+    for trailer in ["01OTHER", "another", "Someone", "x:y"] {
+        assert!(!body.contains(trailer), "{body}");
+    }
+}
+
+#[test]
+fn a_project_whose_git_names_a_program_is_not_saved_by_the_app() {
+    let (_dir, root) = saved_project();
+    crate::testgit::run(&root, &["config", "core.sshCommand", "/bin/false"]);
+    std::fs::write(root.join("notes.md"), "a chat's work\n").unwrap();
+
+    let Answer::No { why } = saved_for(&root, &held_chat(&root), "from a chat") else {
+        panic!("run");
+    };
+    assert!(why.contains("core.sshcommand"), "{why}");
+    assert_eq!(last_subject(&root), "one");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_project_whose_ref_records_link_elsewhere_is_not_saved_by_the_app() {
+    let (dir, root) = saved_project();
+    std::fs::write(root.join("notes.md"), "a chat's work\n").unwrap();
+    let reflog = root.join(".git/logs/HEAD");
+    std::fs::remove_file(&reflog).unwrap();
+    std::os::unix::fs::symlink(dir.path().join("elsewhere"), &reflog).unwrap();
+
+    let Answer::No { why } = saved_for(&root, &held_chat(&root), "from a chat") else {
+        panic!("run");
+    };
+    assert!(why.contains(&reflog.display().to_string()), "{why}");
+    assert_eq!(last_subject(&root), "one");
+}
+
+#[test]
+fn a_chats_save_of_the_project_is_committed_by_the_app() {
+    let (_dir, root) = saved_project();
+    std::fs::write(root.join("notes.md"), "a chat's work\n").unwrap();
+
+    let answered = saved_for(&root, &held_chat(&root), "from a chat");
 
     let Answer::Said { code, lines } = answered else {
         panic!("not run: {answered:?}");

@@ -1429,7 +1429,8 @@ fn clones_git_held(root: &Path, cwd: Option<&Path>) -> Option<Denial> {
 /// The project root's git folder, for a chat wherever it stands: written by the app alone, which
 /// saves the project for a chat (`purlis save`) and updates it (`purlis worktree update` at the
 /// root), as the window's Save and Update do. Read-only git works. A project root whose `.git` is
-/// a file (a worktree of another repository) keeps it as it was: that git is not the app's.
+/// a file (a worktree of another repository) or a link keeps it as it was: that git is not the
+/// app's, and the app saves and updates nothing there for a chat ([`Confines::roots_git`]).
 fn roots_git_held(root: &Path) -> Option<Denial> {
     let dot_git = root.join(".git");
     crate::worktree::is_own_git_dir(&dot_git).then_some(())?;
@@ -6712,6 +6713,11 @@ pub(crate) fn applied_of(
     {
         held.push(keychains);
     }
+    // Held for a Claude Code chat wherever it stands ([`Applied::chain`]).
+    let roots_git = matches!(form, Form::ClaudeCode(_))
+        .then(|| roots_git_held(root))
+        .flatten()
+        .map(|denial| denial.path);
     Ok(Applied {
         harness,
         os: machine.os,
@@ -6731,6 +6737,7 @@ pub(crate) fn applied_of(
             tools: Vec::new(),
             wrap: None,
             clones: crate::forge::apptoken::clones_now(root),
+            roots_git,
         }),
         reach: Box::new(compiled.reach.clone()),
         // Claude Code on its own sandbox waits for its program's answer ([`Applied::answered`]).
@@ -6848,6 +6855,12 @@ pub struct Confines {
     /// `.git` as it was then. Only these name the chat's repos for a GitHub App's token
     /// ([`crate::forge::apptoken`]).
     pub clones: Vec<crate::forge::apptoken::Started>,
+    /// **The project root's `.git`, where the chat's sandbox keeps it from writing anything in
+    /// it** ([`roots_git_held`]): a Claude Code chat on its own sandbox, in a project whose
+    /// `.git` is a folder. `None` for every other chat, whose harness holds that folder by its
+    /// name alone, and for a project whose `.git` is a file or a link, which is not held. Only
+    /// where it is set does the app save or update the project for the chat.
+    pub roots_git: Option<PathBuf>,
 }
 
 impl Confines {

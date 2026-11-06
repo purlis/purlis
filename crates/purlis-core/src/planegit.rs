@@ -2697,6 +2697,30 @@ pub fn save_claimed(request: &Request, trigger: Trigger, claim: &Claim, say: Sin
     save_staging(request, trigger, claim, Staging::Add(&stages), say)
 }
 
+/// **[`save`], staging nothing at or below any of `kept_out`**: each a path relative to the
+/// plane, `/` between its parts, with whether it is held under every spelling of its case. A
+/// save the app makes for a chat leaves out what the chat's sandbox keeps it from reading, so
+/// git never reads it back to the chat.
+pub fn save_keeping_out(request: &Request, kept_out: &[(String, bool)], say: Sink) -> u8 {
+    let Some(claim) = Claim::of(request.root) else {
+        say(Say::Fail(ALREADY_SAVING.into()));
+        return 1;
+    };
+    let stages: Vec<String> = save_stages()
+        .into_iter()
+        .chain(kept_out.iter().map(|(path, any_case)| {
+            let magic = if *any_case {
+                "exclude,literal,icase"
+            } else {
+                "exclude,literal"
+            };
+            format!(":({magic}){path}")
+        }))
+        .collect();
+    let stages: Vec<&str> = stages.iter().map(String::as_str).collect();
+    save_staging(request, Trigger::Cli, &claim, Staging::Add(&stages), say)
+}
+
 /// What a save of exactly some paths says when something else is staged already.
 pub const OTHERS_STAGED: &str = "Not saved: other changes are staged in this project, and this \
      save commits only its own files. Commit or unstage them, and the next save takes this one \

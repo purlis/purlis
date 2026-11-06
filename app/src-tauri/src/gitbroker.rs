@@ -78,6 +78,7 @@ fn asker(held: &Held, chat: u32) -> Result<Asker, Answer> {
             why: format!("chat {chat} is not one this app has open"),
         });
     };
+    let confines = held.chats().confines_of(chat);
     Ok(Asker {
         chat,
         cwd: open.cwd,
@@ -86,6 +87,17 @@ fn asker(held: &Held, chat: u32) -> Result<Asker, Answer> {
         // Started without the sandbox by the record of how its run started (#2692): a run with
         // no record is held as sandboxed here, where a chat with no sandbox is let reach more.
         unsandboxed: held.chats().started_unsandboxed(chat),
+        // The project's git is held whole only where this window compiled the chat's sandbox
+        // and the chat runs in it.
+        roots_git_held: held.chats().runs_sandboxed(chat)
+            && confines.as_ref().and_then(|c| c.roots_git.as_deref())
+                == Some(held.root().join(".git").as_path()),
+        unreadable: confines
+            .map(|c| c.denied)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|denial| denial.access == purlis_core::sandbox::Access::ReadWrite)
+            .collect(),
         config: held.config().map(std::path::Path::to_path_buf),
         id: held.chats().id_of(chat),
         live: Some(live_chats(held)),
