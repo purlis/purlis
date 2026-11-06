@@ -647,7 +647,7 @@ mod tests {
         let outside = tempfile::tempdir().expect("somewhere else");
         std::fs::write(outside.path().join("secret.md"), "not the repo's\n").expect("a file");
         let (_dir, root) = a_workspace(&[("README.md", "# svc\n")]);
-        let clone = root.join("workspaces/svc/svc");
+        let clone = root.join("workspaces/svc/repos/svc");
         std::os::unix::fs::symlink(outside.path().join("secret.md"), clone.join("CLAUDE.md"))
             .expect("a link");
         std::os::unix::fs::symlink(outside.path(), clone.join(".cursor")).expect("a link");
@@ -679,7 +679,7 @@ mod tests {
     fn importing_writes_nothing_into_the_repo_or_its_clone() {
         let (dir, root) = a_workspace(&[("CLAUDE.md", "Run the tests first.\n")]);
         let repo = dir.path().join("svc");
-        let clone = root.join("workspaces/svc/svc");
+        let clone = root.join("workspaces/svc/repos/svc");
         let listing = |at: &Path| {
             let mut names: Vec<String> = std::fs::read_dir(at)
                 .expect("listed")

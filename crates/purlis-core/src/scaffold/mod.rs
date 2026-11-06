@@ -1918,7 +1918,7 @@ fn first_clone_step(run: &mut Run, root: &Path, args: &InitArgs) -> u8 {
                     "      purlis init --clone-this-repo".into(),
                     format!(
                         "  Nothing is cloned unless you run that. It lands in \
-                         workspaces/{ws}/{name}/, and declining leaves this plane complete."
+                         workspaces/{ws}/repos/{name}/, and declining leaves this plane complete."
                     )
                     .into(),
                 ]));

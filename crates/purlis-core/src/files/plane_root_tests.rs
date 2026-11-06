@@ -330,6 +330,36 @@ fn a_workspaces_clone_is_one_row_that_names_its_workspace() {
 }
 
 #[test]
+fn a_clone_in_a_workspaces_repos_folder_is_one_row_that_names_its_workspace() {
+    // ADR 0114: where a new clone lands. `repos/` is a folder of the plane's, opened as one;
+    // each clone in it is one row leading to its workspace, and none of its files is read here.
+    let (_dir, plane) = project();
+    std::fs::create_dir_all(plane.join("workspaces/alpha/repos/api/.git")).unwrap();
+    std::fs::write(plane.join("workspaces/alpha/repos/api/main.rs"), "\n").unwrap();
+
+    let alpha = level(&plane, "workspaces/alpha", 3);
+    assert_eq!(
+        names(&alpha),
+        [".worktrees", "repos", "svc", "workspace.md"]
+    );
+    assert!(alpha[1].workspace.is_none(), "{:?}", alpha[1]);
+
+    let repos = level(&plane, "workspaces/alpha/repos", 0);
+    assert_eq!(names(&repos), ["api"]);
+    assert_eq!(repos[0].kind, Kind::Folder);
+    assert_eq!(repos[0].workspace.as_deref(), Some("alpha"));
+    assert_eq!(
+        repos[0].refused.as_deref(),
+        Some("a repo of workspace 'alpha', whose files are on that workspace's tab")
+    );
+    let (_answers, reader, root) = root(&plane, &["workspaces/alpha/repos/api/main.rs"], 0);
+    assert!(
+        root.open(&reader, "workspaces/alpha/repos/api/main.rs")
+            .is_err()
+    );
+}
+
+#[test]
 fn nothing_of_a_workspaces_clone_is_listed_or_opened_at_the_plane_root() {
     let (_dir, plane) = project();
     let (_answers, reader, root) = root(&plane, &["workspaces/alpha/svc/main.rs"], 0);

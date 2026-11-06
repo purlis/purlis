@@ -1217,7 +1217,7 @@ mod tests {
             firstrun::local_plane(&data).canonicalize().expect("made")
         );
         assert_eq!(taken.workspace, "widget");
-        assert_eq!(taken.clone, root.join("workspaces/widget/widget"));
+        assert_eq!(taken.clone, root.join("workspaces/widget/repos/widget"));
     }
 
     #[test]
@@ -1244,7 +1244,7 @@ mod tests {
 
         assert_eq!(first, second);
         assert_eq!(taken.workspace, "two");
-        assert!(first.join("workspaces/one/one/.git").exists());
+        assert!(first.join("workspaces/one/repos/one/.git").exists());
     }
 
     #[test]

@@ -789,7 +789,7 @@ fn clone_this_repo_makes_the_plane_here_and_clones_the_repo_into_the_first_works
 
     assert!(out.status.success(), "{}", stderr(&out));
     assert!(scene.plane.join("charter.toml").is_file());
-    let clone = scene.plane.join("workspaces/default/widget");
+    let clone = scene.plane.join("workspaces/default/repos/widget");
     assert!(clone.join(".git").exists(), "{}", stderr(&out));
     // Named from the origin, and the origin is repointed at the source's own upstream: left
     // at the plane root it would look right and fail at the first push.
@@ -803,7 +803,7 @@ fn clone_this_repo_makes_the_plane_here_and_clones_the_repo_into_the_first_works
         "!gh auth git-credential"
     );
     assert!(
-        stderr(&out).contains("widget → workspaces/default/widget"),
+        stderr(&out).contains("widget → workspaces/default/repos/widget"),
         "{}",
         stderr(&out)
     );
@@ -839,7 +839,7 @@ fn adopt_makes_the_plane_here_and_the_repo_its_first_clone_and_writes_nothing_in
 
     assert!(out.status.success(), "{}", stderr(&out));
     assert!(scene.plane.join("charter.toml").is_file());
-    let clone = scene.plane.join("workspaces/default/widget");
+    let clone = scene.plane.join("workspaces/default/repos/widget");
     assert!(clone.join(".git").exists(), "{}", stderr(&out));
     assert_eq!(
         scene.git_config(&clone, "remote.origin.url"),

@@ -1794,3 +1794,32 @@ fn the_unattended_stop_names_both_workspace_variables() {
     assert!(unlocked.contains("with no workspace confirmed and none pinned"));
     assert!(unlocked.contains("silently claim `default`. Do no repo work."));
 }
+
+#[test]
+fn every_harness_is_told_the_workspace_s_own_files_go_in_its_folder_and_never_in_repos() {
+    // ADR 0114: a chat that cannot tell a clone from the workspace's own folder puts its notes
+    // in a repo, where they are committed with it. Every harness's briefing is this one.
+    let (_d, root) = plane();
+    let ws = root.join("workspaces/alpha");
+    for harness in ["claude-code", "opencode", "codex"] {
+        let got = told_at(
+            &root,
+            &ws,
+            &[
+                ("PURLIS_SESSION_ID", "s1"),
+                (crate::hookwire::HARNESS_ENV, harness),
+            ],
+            serde_json::json!({}),
+        );
+        let said: Vec<&String> = got
+            .iter()
+            .filter(|part| part.contains("never inside `repos/`"))
+            .collect();
+        assert_eq!(said.len(), 1, "{harness}: {got:#?}");
+        assert!(
+            said[0].contains("`workspaces/alpha/`"),
+            "{harness}: {}",
+            said[0]
+        );
+    }
+}
