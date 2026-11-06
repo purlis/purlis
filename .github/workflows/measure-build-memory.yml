@@ -1,0 +1,114 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# A measurement, never merged: where the `dev-release` build's ~26 GB peak goes (#5277).
+# Two builds of `purlis-app` side by side on `ubuntu-24.04`, each `rustc` run under GNU time so
+# its peak RSS is recorded:
+#   - `baseline`: the build as release.yml makes it.
+#   - `boxed`: the same, with `debug-assertions` on for the `tauri` crate alone, which switches
+#     Tauri's async command replies to the boxed, dynamically dispatched path it uses in debug
+#     (tauri 2.12.5 `src/ipc/mod.rs`, "for a faster compile time"). For measuring only: that build
+#     also turns on Tauri's devtools API and must never ship.
+# Runs on a push to this branch only; holds no secret and publishes nothing.
+name: measure build memory
+
+on:
+  push:
+    branches: [measure-build-memory]
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    name: measure (${{ matrix.variant }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: baseline
+            extra: ""
+          - variant: boxed
+            extra: --config profile.dev-release.package.tauri.debug-assertions=true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Tauri's Linux build dependencies, and GNU time
+        timeout-minutes: 9
+        run: |
+          tools/linux-packages.sh install --tauri
+          sudo apt-get install -y time
+
+      - name: More swap for the build
+        timeout-minutes: 2
+        run: |
+          sudo fallocate -l 32G /swapfile-build
+          sudo chmod 600 /swapfile-build
+          sudo mkswap /swapfile-build
+          sudo swapon /swapfile-build
+
+      - uses: ./.github/actions/rust-toolchain
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - name: The frontend the app embeds
+        working-directory: app
+        run: |
+          npm ci
+          npm run build
+
+      - name: A rustc wrapper that records each crate's peak RSS
+        run: |
+          cat > "$RUNNER_TEMP/rss-rustc" <<'EOF'
+          #!/bin/sh
+          crate=unknown
+          prev=""
+          for a in "$@"; do
+            [ "$prev" = "--crate-name" ] && crate="$a"
+            prev="$a"
+          done
+          exec /usr/bin/time -a -o "$RSS_LOG" -f "%M KB %e s $crate" "$@"
+          EOF
+          chmod +x "$RUNNER_TEMP/rss-rustc"
+
+      - name: Build purlis-app (dev-release, ${{ matrix.variant }})
+        env:
+          RUSTC_WRAPPER: ${{ runner.temp }}/rss-rustc
+          RSS_LOG: ${{ runner.temp }}/rss.log
+        run: |
+          free -g
+          /usr/bin/time -v cargo build --profile dev-release -p purlis-app --timings ${{ matrix.extra }} 2> "$RUNNER_TEMP/whole.txt"
+          tail -25 "$RUNNER_TEMP/whole.txt"
+
+      - name: The heaviest crates
+        if: always()
+        run: |
+          {
+            echo "## ${{ matrix.variant }}: the 15 crates with the largest peak RSS"
+            echo
+            echo '| peak RSS | wall | crate |'
+            echo '|---|---|---|'
+            sort -n "$RUNNER_TEMP/rss.log" | tail -15 | sort -rn |
+              awk '{printf "| %.1f GB | %s s | %s |\n", $1/1048576, $3, $5}'
+            echo
+            grep -E 'Elapsed|Maximum resident' "$RUNNER_TEMP/whole.txt" | sed 's/^\s*/- /'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          ls -la target/dev-release/charter-app target/dev-release/purlis-app 2>/dev/null || ls -la target/dev-release | head
+
+      - name: Keep the logs and cargo's timings
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: measure-${{ matrix.variant }}
+          path: |
+            ${{ runner.temp }}/rss.log
+            ${{ runner.temp }}/whole.txt
+            target/cargo-timings/
+          retention-days: 14
