@@ -320,6 +320,9 @@ workspaces/*/changes/log/*.jsonl merge=union
 workspaces/*/work/*.jsonl merge=union
 personas/*/memory/MEMORY.md merge=union
 workspaces/*/memory/MEMORY.md merge=union
+workspaces/*/todos/MEMORY.md merge=union
+workspaces/*/sessions/index.md merge=union
+sessions/index.md merge=union
 # <<< charter merge rules <<<
 ";
 

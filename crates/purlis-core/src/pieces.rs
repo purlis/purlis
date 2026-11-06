@@ -693,6 +693,28 @@ fn latest(plane: &Path, ws: &str, kinds: &[&str]) -> BTreeMap<(String, String), 
     out
 }
 
+/// **The folders of `ws` the log records removed at `since` or after** (#5439), of `repo`
+/// alone where one is named, each as `(repo, piece)` in the order the log has them, whoever
+/// removed them. The log keeps whole seconds, so a removal in the second of `since` counts. A
+/// line whose stamp does not read is left out.
+pub fn removed_since(
+    plane: &Path,
+    ws: &str,
+    repo: Option<&str>,
+    since: DateTime<Utc>,
+) -> Vec<(String, String)> {
+    let from = since - chrono::Duration::nanoseconds(i64::from(since.timestamp_subsec_nanos()));
+    events(plane, ws)
+        .iter()
+        .filter(|event| event["event"].as_str() == Some(Event::Removed.word()))
+        .filter(|event| matches!(parse(event.get("ts")), Stamp::At(at) if at >= from))
+        .filter_map(|event| {
+            let (at, piece) = (event["repo"].as_str()?, event["piece"].as_str()?);
+            repo.is_none_or(|repo| repo == at)
+                .then(|| (at.to_owned(), piece.to_owned()))
+        })
+        .collect()
+}
 /// The latest declaration per piece.
 pub fn declarations(plane: &Path, ws: &str) -> BTreeMap<(String, String), Value> {
     latest(plane, ws, &DECLARATIONS)

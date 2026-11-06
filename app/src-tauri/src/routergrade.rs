@@ -478,18 +478,18 @@ pub(crate) async fn router_grade_start(
             }
         };
         {
+            if let Some(why) = crate::skillgrade::batch::holds(&plane) {
+                return Err(why.to_owned());
+            }
             let mut all = running();
             if all.values().any(|one| one.plane == plane) {
-                return Err(
-                    "A grade is running in this project already: stop it, or wait for it to \
-                     end."
-                        .to_owned(),
-                );
+                return Err(crate::skillgrade::A_GRADE_RUNS.to_owned());
             }
             all.insert(
                 id.clone(),
                 Running {
                     plane: plane.clone(),
+                    batch: None,
                     stop: Arc::clone(&stop),
                     after_edit: None,
                     draft: None,

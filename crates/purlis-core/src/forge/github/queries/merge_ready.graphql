@@ -9,6 +9,7 @@ query MergeReady($owner: String!, $name: String!, $number: Int!) {
       isDraft
       headRefOid
       mergeStateStatus
+      canBeRebased
       reviewDecision
       isMergeQueueEnabled
       baseRefName

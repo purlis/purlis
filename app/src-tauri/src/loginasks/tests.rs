@@ -972,3 +972,36 @@ fn a_login_allowed_from_a_notice_is_known_by_its_name_and_its_page() {
     assert!(!grants.allowed_from_a_notice(Some("devops"), "shop-login", &page));
     assert!(!grants.allowed_from_a_notice(None, "shop-login", &page));
 }
+
+/// #5251: an Allow once a read took is the chat's again where its login was refused before it
+/// ran, and spent where it ran, whatever came of it.
+#[test]
+fn allow_once_is_given_back_only_to_a_login_that_never_ran() {
+    let dir = project("");
+    let grants = Grants::default();
+    let (id, proposal, _heard) = raised(dir.path(), &grants, "https://shop.example.test/login");
+    let audited = Audited::default();
+    answered(
+        dir.path(),
+        &grants,
+        &audited,
+        &press(id, Press::Once, &proposal.digest()),
+    )
+    .expect("allowed");
+
+    assert!(grants.take(7, Some("qa"), "shop-login").is_some());
+    assert!(
+        tool_of(&grants, "shop-login").is_none(),
+        "taken by its read"
+    );
+    grants.answered(7, Some("qa"), "shop-login", false);
+    assert!(tool_of(&grants, "shop-login").is_some(), "the chat's again");
+    // Another chat's or persona's answer gives nothing back to this one.
+    grants.answered(8, Some("qa"), "shop-login", false);
+
+    assert!(grants.take(7, Some("qa"), "shop-login").is_some());
+    grants.answered(7, Some("qa"), "shop-login", true);
+    assert!(tool_of(&grants, "shop-login").is_none(), "spent");
+    grants.answered(7, Some("qa"), "shop-login", false);
+    assert!(tool_of(&grants, "shop-login").is_none(), "answered once");
+}

@@ -178,6 +178,9 @@ describe("a tab window's panes (#5205, story 27)", () => {
     ) as HTMLElement;
     expect(frame.querySelector(".pane-head")).not.toBeNull();
     await waitFor(() => expect(frame.lastElementChild).toHaveAttribute("data-scope", "pane-foot"));
+    // The tab's only pane: its two splits and no Close, as anywhere (#5318).
+    expect(within(frame).getByRole("button", { name: "Split right" })).toBeInTheDocument();
+    expect(within(frame).queryByRole("button", { name: "Close this pane" })).toBeNull();
   });
 });
 

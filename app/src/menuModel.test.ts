@@ -32,7 +32,7 @@ import { memoryKey } from "./memories";
 import { SAID, SUBMENU, WARNS } from "./menuWords";
 import { terminalGroup, terminalRows } from "./terminalRows";
 import { GRANT_WORDS } from "../eslint.ui-rules.js";
-import { noTabs, openTab, openView, selectTab, setPinned } from "./tabs";
+import { noTabs, openTab, openView, selectTab, setPinned, splitFocusedPane } from "./tabs";
 
 /**
  * **How every context menu is drawn** (`menuModel.ts`; `docs/ui-primitives.md`, "Menus").
@@ -167,6 +167,12 @@ function everyMenu(): { said: string; on: MenuOn; offers: Catalogued }[] {
     { said: "a vault", on: { on: "vault", vault: "forge" }, offers },
     { said: "a todo", on: { on: "todo", slug: "ship-it" }, offers },
     { said: "the panes", on: { on: "pane" }, offers },
+    // A split's, whose Close pane row a tab's only pane does not have (#5318).
+    {
+      said: "the panes of a split",
+      on: { on: "pane" },
+      offers: world({ tabs: splitFocusedPane(tabs, "row", 12) }).offers,
+    },
     {
       said: "a file",
       on: {
@@ -613,7 +619,7 @@ describe("a tab's menu (#4753)", () => {
     });
   });
 
-  it("on a view's tab is Pinned, Tile all, Place…, Move to new window, Close other tabs and Close, and its Close is not coloured", () => {
+  it("on a view's tab is Pinned, its splits, Tile all, Place…, Move to new window, Close other tabs and Close, and its Close is not coloured", () => {
     const withView = openView(tabs, { from: null, view: "vault", key: "forge" }, "forge", "beta");
     const view = withView.order[withView.order.length - 1];
     const menu = menuOf(
@@ -626,6 +632,9 @@ describe("a tab's menu (#4753)", () => {
     // greyed and so uncoloured.
     expect(rows.map((row) => [row.said, row.danger])).toEqual([
       ["Pinned", false],
+      // A view alone in its tab has no controls over it, so its splits are here (#5318).
+      ["Split right", false],
+      ["Split down", false],
       // Greyed: a tab of one pane has nothing to tile (#4765).
       ["Tile all", false],
       ["Place…", false],
@@ -681,10 +690,12 @@ describe("the other tabs' menus", () => {
   });
 
   it("the panes hold the pane's rows in the catalogue's words, and not the window's New tab or New shell (#4760)", () => {
+    // A tab's only pane: its Close is its tab's (#5318).
     expect(said(menuOf({ on: "pane" }, offers))).toEqual([
       ["Split right", "Split down", "Move to new window", "Send F2 to the chat in front"],
-      ["Close this pane"],
     ]);
+    const split = world({ tabs: splitFocusedPane(world().tabs, "row", 12) }).offers;
+    expect(said(menuOf({ on: "pane" }, split)).at(-1)).toEqual(["Close this pane"]);
     // The panes of a tab list that tab's Tile all, greyed at one pane (#4765).
     const [tab] = world().tabs.order;
     expect(said(menuOf({ on: "pane", tab }, offers))).toEqual([
@@ -695,7 +706,6 @@ describe("the other tabs' menus", () => {
         "Move to new window",
         "Send F2 to the chat in front",
       ],
-      ["Close this pane"],
     ]);
     // A workspace's tab opens a shell in that workspace, which has no key.
     expect(

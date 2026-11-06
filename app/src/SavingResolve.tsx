@@ -102,7 +102,8 @@ export function SaveConflict({
     onPress: () => askWayOut(plane, "terminal"),
   };
 
-  if (saving.stoppedBy === "rebase") {
+  if (saving.stoppedBy === "rebase" || saving.stoppedBy === "merge") {
+    const stop = saving.stoppedBy === "merge" ? "merge" : "replay";
     const chat: NoticeAction = { label: "Resolve in a chat", onPress: inAChat, busy: !!busy };
     const carryOn: NoticeAction = {
       label: "Continue",
@@ -126,8 +127,8 @@ export function SaveConflict({
         under={files || undefined}
       >
         {saving.conflicts.length > 0
-          ? "The replay is stopped on a conflict. Settle the files below, in a chat or by hand, then Continue. Abort puts the project back where it was."
-          : "The replay is stopped, with nothing left in conflict. Continue carries it on, and Abort puts the project back where it was."}
+          ? `The ${stop} is stopped on a conflict. Settle the files below, in a chat or by hand, then Continue. Abort puts the project back where it was.`
+          : `The ${stop} is stopped, with nothing left in conflict. Continue carries it on, and Abort puts the project back where it was.`}
         {outcome}
       </Notice>
     );
@@ -146,7 +147,7 @@ export function SaveConflict({
       link={terminal}
       under={files || undefined}
     >
-      {`Resolve replays this project's own commits onto the remote's and stops where they conflict, for you or a chat to settle. ${saving.byHand}`}
+      {`Resolve brings the remote's commits and this project's own together and stops where they conflict, for you or a chat to settle. ${saving.byHand}`}
       {outcome}
     </Notice>
   );

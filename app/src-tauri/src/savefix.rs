@@ -118,7 +118,7 @@ fn resolve_request(held: &Arc<Held>, size: Size) -> Result<Fixing, String> {
     let root = held.root().to_path_buf();
     let standing = planegit::standing(&root);
     let found = planegit::resolve::conflicts(&root);
-    if standing.stopped_by != Some("rebase")
+    if !matches!(standing.stopped_by, Some("rebase" | "merge"))
         || (found.marked.is_empty() && found.by_hand.is_empty())
     {
         return Err(

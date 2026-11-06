@@ -60,8 +60,9 @@ const SCRIPT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tools/seatbelt-
 const PROBES: usize = 34;
 
 /// The probes `--repositories-here` asserts, as it is run on Linux: the repositories' thirteen,
-/// four of the other harnesses' default sign-ins, and two of a chat's temp folder at work.
-const REPOSITORY_PROBES: usize = 19;
+/// seven of the names in the chat's folder, four of the other harnesses' default sign-ins, and two
+/// of a chat's temp folder at work.
+const REPOSITORY_PROBES: usize = 26;
 
 /// The id of the stand-in's one Bash call.
 const CALL: &str = "toolu_seatbelt_case";

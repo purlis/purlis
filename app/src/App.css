@@ -810,9 +810,9 @@ body {
 
 /* **The find bar** (SI-4, `app/src/FindBar.tsx`): what `⌘F` opens over the focused pane. A
    sibling of the terminal like the corners, positioned against the same frame — and under the
-   end corner rather than in it, so the pane's own controls, which appear there on hover, never
-   land on top of the field being typed into. It is drawn only while open, and it is where the
-   keyboard is while it is, so it is always visible and never takes the corners' hover rule. */
+   end corner rather than in it, so the pane's own controls, which are there, never land on top
+   of the field being typed into. It is drawn only while open, and it is where the keyboard is
+   while it is. */
 .pane-find {
   position: absolute;
   top: var(--space-8);
@@ -2099,32 +2099,14 @@ body {
 }
 
 /* **A pane's own controls, in its top right corner** — the operator: *"harnesses panes should
-   each have close button and spliting buttons in pane right top corner — and its visible when
-   hovering harness only … buttons should not have texts — only tooltips on hovering"*. They
-   replace `Split right`, `Split down` and `End this pane's chat` on the bar, which all acted
-   on the focused pane and gave no sign of which that was.
+   each have close button and spliting buttons in pane right top corner … buttons should not have
+   texts — only tooltips on hovering"*. They replace `Split right`, `Split down` and `End this
+   pane's chat` on the bar, which all acted on the focused pane and gave no sign of which that was.
 
-   **`visibility` and not `opacity`, which is the whole of the accessibility of this.** An
-   `opacity: 0` button is still under the pointer and still in the tab order: a stray press on
-   an invisible `End this pane's chat` is the defect charter-app#130 was about, made invisible.
-   `visibility: hidden` takes it out of hit-testing, out of the tab order and out of the
-   accessibility tree — so a hidden control cannot be pressed by accident or found by a reader
-   that cannot see it either.
-
-   **Drawn on hover, and while the keyboard is ON them — not while it is merely in the pane**
-   (charter-app#189). The operator asked for them *"visible when hovering harness only"* and
-   objected to that corner being cluttered; the focused pane is the one he is typing in, so a
-   rule that drew them for the focused pane, or whenever the terminal had the keyboard
-   (`.pane-frame:focus-within`, which is what was here before), drew them all day.
-
-   **But a keyboard has to be able to reach them**, and `visibility: hidden` is out of the tab
-   sequence. So the FOCUSED pane's controls are hidden by `opacity` instead: still in the
-   sequence — they are written before the terminal, so Tab from the strip arrives at them — but
-   not seen and not clickable (`pointer-events: none`, so a stray press cannot end a chat it
-   cannot see). The moment one has the keyboard, `.pane-doing:focus-within` draws the group;
-   leave it and it goes again. Every other pane's controls stay `visibility: hidden`: the
-   palette and the buttons act on the focused pane, so those are the only ones a keyboard
-   needs. */
+   **Always drawn** (#5318, the person's ask of 2026-11-05, ADR 0111): nothing appears or moves as
+   the pointer comes or the keyboard goes by, and every pane's are in the tab sequence, written
+   before its terminal so Tab from the strip arrives at them. They were once drawn only under the
+   pointer or the keyboard (charter-app#189). */
 .pane-doing {
   display: flex;
   gap: var(--space-1);
@@ -2132,18 +2114,6 @@ body {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   background: var(--surface-raised);
-  visibility: hidden;
-}
-
-.pane-frame:hover .pane-doing,
-.pane-doing:focus-within {
-  visibility: visible;
-}
-
-.pane-frame:has(.pane.focused):not(:hover) .pane-doing:not(:focus-within) {
-  visibility: visible;
-  opacity: 0;
-  pointer-events: none;
 }
 
 /* The handle between two panes: thin, and easier to hit than it looks. Its box, which straddles
