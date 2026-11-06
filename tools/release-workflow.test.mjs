@@ -445,3 +445,16 @@ test("the runs list names the commit a run builds, not main's head when ci ended
     "on demand, try",
   );
 });
+
+// Every dev build on main from 2026-11-05T21:36Z lost its Linux runner while compiling
+// `purlis-app`: the build needs about 26 GB and the runner has 16 of memory and 3 of swap (#5277).
+test("the Linux build turns on more swap before anything compiles", () => {
+  const steps = job("build").join("\n");
+  const swap = steps.indexOf("swapon /swapfile-build");
+  assert.notEqual(swap, -1, "the build job turns on no swap file");
+  const head = steps.slice(0, swap);
+  const name = head.lastIndexOf("- name:");
+  assert.match(head.slice(name), /if: runner\.os == 'Linux'/);
+  assert.ok(swap < steps.indexOf("rust-toolchain"), "the swap is turned on before the toolchain is installed");
+  assert.ok(swap < steps.indexOf("Build the app"), "the swap is turned on before the app is built");
+});
