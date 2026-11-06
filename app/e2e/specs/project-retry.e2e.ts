@@ -16,8 +16,6 @@ import { copyFixturePlane } from "../harness.js";
  * `src/ProjectsLoad.window.test.tsx`. The project is closed at the end, as it found the window.
  */
 
-const project = copyFixturePlane();
-const folder = join(project, "a-folder-that-comes-back");
 
 async function ask<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
   const answer = await browser.executeAsync(
@@ -55,7 +53,11 @@ async function projectsReady(): Promise<string[]> {
   );
 }
 
-describe("retrying a project", () => {
+// TEMPORARY (#5460 evidence, reverted before merge): the whole scenario, 25 rounds in a row.
+for (let round = 1; round <= 25; round++) {
+const project = copyFixturePlane();
+const folder = join(project, "a-folder-that-comes-back");
+describe(`retrying a project, round ${round}`, () => {
   let plane = "";
 
   before(async () => {
@@ -120,3 +122,4 @@ describe("retrying a project", () => {
     expect(open.map((chat) => chat.session)).toContain(retried.started[0].session);
   });
 });
+}
