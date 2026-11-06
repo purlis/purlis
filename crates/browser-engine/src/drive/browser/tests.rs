@@ -2493,32 +2493,39 @@ fn input_on_a_kept_off_frame_inside_another_sites_own_process_frame_is_refused()
 #[test]
 fn input_on_a_kept_off_frame_of_a_scrolled_page_is_refused_where_it_is_drawn() {
     let (browser, engine) = browser();
+    snapshot(&browser, 1);
     browser.keep_off(Arc::new(|address: &str| {
         address
             .starts_with("http://other.test")
             .then(|| "other.test:80".to_owned())
     }));
+    assert!(
+        browser
+            .kept_off_frames("PAGE-1")
+            .contains_key("PAYMENT-FRAME"),
+        "the payment frame is known and kept off"
+    );
     // Scrolled 500 down: the payment frame's element, laid out at 700 to 760 down the
-    // document, is drawn at 200 to 260 down the viewport.
+    // document, is drawn at 200 to 260 down the viewport. (The stand-in keeps one hook.)
     engine.on(|sent, _| {
-        (sent.method == "Page.getLayoutMetrics" && sent.session.as_deref() == Some("S-PAGE-1"))
-            .then(|| {
-                Ok(json!({
-                    "cssLayoutViewport":{"pageX":0,"pageY":500,"clientWidth":800,"clientHeight":600},
-                    "cssVisualViewport":{"offsetX":0,"offsetY":0,"pageX":0,"pageY":500,"clientWidth":800,"clientHeight":600,"scale":1,"zoom":1}
-                }))
-            })
-    });
-    engine.on(|sent, _| {
-        (sent.method == "DOM.getNodeForLocation" && sent.session.as_deref() == Some("S-PAGE-1"))
-            .then(|| {
+        if sent.session.as_deref() != Some("S-PAGE-1") {
+            return None;
+        }
+        match sent.method.as_str() {
+            "Page.getLayoutMetrics" => Some(Ok(json!({
+                "cssLayoutViewport":{"pageX":0,"pageY":500,"clientWidth":800,"clientHeight":600},
+                "cssVisualViewport":{"offsetX":0,"offsetY":0,"pageX":0,"pageY":500,"clientWidth":800,"clientHeight":600,"scale":1,"zoom":1}
+            }))),
+            "DOM.getNodeForLocation" => {
                 let y = sent.params["y"].as_f64().unwrap_or(0.0);
-                Ok(if (700.0..760.0).contains(&y) {
+                Some(Ok(if (700.0..760.0).contains(&y) {
                     json!({"backendNodeId": 50, "frameId": "PAGE-1"})
                 } else {
                     json!({"backendNodeId": 3, "frameId": "PAGE-1"})
-                })
-            })
+                }))
+            }
+            _ => None,
+        }
     });
     assert_eq!(
         browser.not_kept_off_at("PAGE-1", "S-PAGE-1", (150.0, 230.0)),
