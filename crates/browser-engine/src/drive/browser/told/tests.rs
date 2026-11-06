@@ -82,6 +82,8 @@ fn a_page_listed_and_a_fields_label_have_the_value_taken_out() {
             origin: Some("http://a.test".to_owned()),
             label: "hunter-5310".to_owned(),
             kind: FieldKind::OneLine,
+            by_get: false,
+            payment: false,
         }),
         ..answer()
     });
@@ -99,6 +101,8 @@ fn an_origin_that_holds_the_value_is_one_the_engine_cannot_name() {
             origin: Some("http://hunter-5310.test".to_owned()),
             label: String::new(),
             kind: FieldKind::OneLine,
+            by_get: false,
+            payment: false,
         }),
         ..answer()
     });
@@ -221,6 +225,8 @@ fn what_the_person_typed_on_a_page_does_not_hide_a_site_that_has_it_in_its_name(
             origin: Some("https://github.com".to_owned()),
             label: String::new(),
             kind: FieldKind::OneLine,
+            by_get: false,
+            payment: false,
         }),
         ..answer()
     });
@@ -336,6 +342,8 @@ fn a_site_named_by_what_was_filled_on_it_is_still_said_and_filled() {
             origin: Some("https://acme.com".to_owned()),
             label: String::new(),
             kind: FieldKind::OneLine,
+            by_get: false,
+            payment: false,
         }),
         ..answer()
     });
@@ -366,6 +374,8 @@ fn a_site_named_by_what_was_filled_elsewhere_stays_unsaid() {
             origin: Some("https://acme.evil.test".to_owned()),
             label: String::new(),
             kind: FieldKind::OneLine,
+            by_get: false,
+            payment: false,
         }),
         ..answer()
     });
@@ -404,6 +414,8 @@ fn what_the_person_typed_while_driving_hides_a_site_asked_about_and_takes_no_ori
             origin: Some("https://any.test".to_owned()),
             label: String::new(),
             kind: FieldKind::OneLine,
+            by_get: false,
+            payment: false,
         }),
         ..answer()
     });

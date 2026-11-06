@@ -187,7 +187,18 @@ fn fills(
     chat: u32,
     kind: FieldKind,
 ) -> Answer {
-    *hosted.field.lock().unwrap() = Some(field(kind));
+    fills_into(project, browsers, hosted, chat, field(kind))
+}
+
+/// [`fills`], of a field the browser reads as `said`.
+fn fills_into(
+    project: &Project,
+    browsers: &ChatBrowsers,
+    hosted: &Arc<Hosted>,
+    chat: u32,
+    said: FieldSaid,
+) -> Answer {
+    *hosted.field.lock().unwrap() = Some(said);
     let held = &project.held;
     answered_filling(
         browsers,
@@ -218,6 +229,25 @@ fn handed(hosted: &Hosted) -> Vec<(String, bool)> {
         .iter()
         .map(|(_, fill)| (fill.value.expose().to_owned(), fill.multi_line))
         .collect()
+}
+
+/// Whether each fill the browser was handed went in under a grant, with no notice for it.
+fn handed_under_a_grant(hosted: &Hosted) -> Vec<bool> {
+    hosted
+        .fills
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(_, fill)| fill.under_a_grant)
+        .collect()
+}
+
+/// A one-line field whose form sends it by GET where `by_get` says.
+fn sent(by_get: Option<bool>) -> FieldSaid {
+    FieldSaid {
+        by_get,
+        ..field(FieldKind::OneLine)
+    }
 }
 
 fn the_key_held() -> serde_json::Value {
@@ -368,4 +398,71 @@ fn a_key_the_person_declines_to_add_fills_nothing_and_says_declined() {
     assert!(told.contains("declined"), "{told}");
     assert!(told.contains("nothing was filled"), "{told}");
     assert!(handed(&hosted).is_empty());
+}
+
+/// The person's ruling of 2026-11-06: under Allow for this chat or Always, a fill into a field
+/// whose form sends it by GET is refused, with no notice; a fill the person is asked about goes
+/// in, and the browser is told which went in under a grant.
+#[test]
+fn under_a_grant_a_field_whose_form_sends_it_by_get_is_refused() {
+    for grant in [Press::Always, Press::Chat] {
+        let project = Project::holding(&the_key_held());
+        let chat = project.a_chat();
+        let (browsers, hosted) = (ChatBrowsers::default(), Arc::new(Hosted::default()));
+        opens_a_browser(&browsers, &hosted, chat);
+        let person = Person::saying(&project, &[Says::Presses(grant)]);
+
+        let granted = fills(&project, &browsers, &hosted, chat, FieldKind::OneLine);
+        let by_post = fills_into(&project, &browsers, &hosted, chat, sent(Some(false)));
+        let by_get = fills_into(&project, &browsers, &hosted, chat, sent(Some(true)));
+
+        let came_up = person.came_up();
+        told_it_filled(&granted);
+        told_it_filled(&by_post);
+        let told = refusal(by_get);
+        assert!(told.contains("by GET"), "{grant:?}: {told}");
+        assert!(told.contains("standing Allow"), "{grant:?}: {told}");
+        assert_eq!(came_up.notices.len(), 1, "{grant:?}: no notice for it");
+        assert_eq!(handed_under_a_grant(&hosted), [false, true], "{grant:?}");
+    }
+}
+
+/// Asked about, a field whose form sends it by GET takes the value on Allow once.
+#[test]
+fn a_field_whose_form_sends_it_by_get_fills_on_allow_once() {
+    let project = Project::holding(&the_key_held());
+    let chat = project.a_chat();
+    let (browsers, hosted) = (ChatBrowsers::default(), Arc::new(Hosted::default()));
+    opens_a_browser(&browsers, &hosted, chat);
+    let person = Person::saying(&project, &[Says::Presses(Press::Once)]);
+
+    let answer = fills_into(&project, &browsers, &hosted, chat, sent(Some(true)));
+
+    let came_up = person.came_up();
+    told_it_filled(&answer);
+    assert_eq!(came_up.notices.len(), 1);
+    assert_eq!(handed_under_a_grant(&hosted), [false]);
+}
+
+/// A field whose read doesn't say how its form sends it (a host that doesn't read it) is asked
+/// about, whatever was allowed.
+#[test]
+fn a_field_whose_read_says_nothing_of_its_form_raises_the_notice_under_a_grant() {
+    let project = Project::holding(&the_key_held());
+    let chat = project.a_chat();
+    let (browsers, hosted) = (ChatBrowsers::default(), Arc::new(Hosted::default()));
+    opens_a_browser(&browsers, &hosted, chat);
+    let person = Person::saying(
+        &project,
+        &[Says::Presses(Press::Chat), Says::Presses(Press::Once)],
+    );
+
+    let granted = fills(&project, &browsers, &hosted, chat, FieldKind::OneLine);
+    let unknown = fills_into(&project, &browsers, &hosted, chat, sent(None));
+
+    let came_up = person.came_up();
+    told_it_filled(&granted);
+    told_it_filled(&unknown);
+    assert_eq!(came_up.notices.len(), 2, "{:?}", came_up.notices);
+    assert_eq!(handed_under_a_grant(&hosted), [false, false]);
 }

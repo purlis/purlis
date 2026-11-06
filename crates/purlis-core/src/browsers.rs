@@ -967,6 +967,8 @@ fn field_said(field: drive::FieldInfo) -> wire::FieldSaid {
             drive::FieldKind::Editable => wire::FieldKind::Editable,
             drive::FieldKind::Other => wire::FieldKind::Other,
         },
+        by_get: Some(field.by_get),
+        payment: Some(field.payment),
     }
 }
 
@@ -2230,6 +2232,7 @@ impl Screen for EngineScreen {
             key: fill.key.clone(),
             value: zeroize::Zeroizing::new(fill.value.expose().to_owned()),
             multi_line: fill.multi_line,
+            under_a_grant: fill.under_a_grant,
         };
         // It waits on the engine: made outside the lock, as an act is.
         let held = {

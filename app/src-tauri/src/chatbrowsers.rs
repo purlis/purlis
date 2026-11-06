@@ -3932,6 +3932,9 @@ impl ChatBrowsers {
                 multi_line: allowed.multi_line,
                 // A form on the page may be sent to these, and to no other site (#5230, SF-15).
                 also: allowed.also,
+                // With no notice for this fill: the engine judges the field again as it writes
+                // (the rulings of 2026-11-06).
+                under_a_grant: allowed.under_a_grant,
             },
         )?;
         // The person's view marks it, by key and site (#5119, SF-8).

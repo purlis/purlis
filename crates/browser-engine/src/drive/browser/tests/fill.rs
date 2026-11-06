@@ -28,6 +28,10 @@ enum Twist {
     /// The field is a multi-line one by the time the value is written (#5120): it takes it only
     /// where the write is told the person was asked about one.
     TurnsMultiLine,
+    /// The field is in a form sent by GET, or is a payment field, by the time the value is
+    /// written (the rulings of 2026-11-06): it takes it only where the write is told the fill is
+    /// under no grant.
+    Grantless(&'static str),
 }
 
 /// The stand-in's fields, each read as `kind`, and what each write into them answers.
@@ -36,7 +40,7 @@ fn as_fields(engine: &Arc<Engine>, kind: &'static str, twist: Twist) {
         let p = &sent.params;
         match sent.method.as_str() {
             "Runtime.callFunctionOn" if p["functionDeclaration"] == FIELD_KIND => Some(Ok(
-                json!({ "result": { "type": "object", "value": { "kind": kind, "label": "Secret word" } } }),
+                json!({ "result": { "type": "object", "value": { "kind": kind, "label": "Secret word", "by_get": false, "payment": false } } }),
             )),
             "Runtime.callFunctionOn" if p["functionDeclaration"] == WRITE_FIELD => {
                 let value = p["arguments"][1]["value"].as_str().unwrap_or_default();
@@ -49,6 +53,12 @@ fn as_fields(engine: &Arc<Engine>, kind: &'static str, twist: Twist) {
                         json!({ "result": { "type": "string", "value": "kind" } })
                     }
                     Twist::TurnsMultiLine => {
+                        json!({ "result": { "type": "number", "value": held } })
+                    }
+                    Twist::Grantless(said) if p["arguments"][4]["value"] == true => {
+                        json!({ "result": { "type": "string", "value": said } })
+                    }
+                    Twist::Grantless(_) => {
                         json!({ "result": { "type": "number", "value": held } })
                     }
                 }))
@@ -65,6 +75,7 @@ fn fill_of(target: Ref, origin: &str) -> SecretFill {
         key: "dash-api-key".to_owned(),
         value: VALUE.to_owned().into(),
         multi_line: false,
+        under_a_grant: false,
     }
 }
 
@@ -444,7 +455,7 @@ fn a_fill_cut_by_a_take_over_after_its_write_says_the_value_went_in() {
         let p = &sent.params;
         match sent.method.as_str() {
             "Runtime.callFunctionOn" if p["functionDeclaration"] == FIELD_KIND => Some(Ok(
-                json!({ "result": { "type": "object", "value": { "kind": "one_line", "label": "Secret word" } } }),
+                json!({ "result": { "type": "object", "value": { "kind": "one_line", "label": "Secret word", "by_get": false, "payment": false } } }),
             )),
             "Runtime.callFunctionOn" if p["functionDeclaration"] == WRITE_FIELD => {
                 wrote = true;
@@ -987,6 +998,7 @@ fn a_multi_line_box_or_an_editable_area_takes_it_where_the_person_was_asked_abou
         let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
         let fill = SecretFill {
             multi_line: true,
+            under_a_grant: false,
             ..fill_of(secret, "http://fixture.test")
         };
 
@@ -1001,6 +1013,68 @@ fn a_multi_line_box_or_an_editable_area_takes_it_where_the_person_was_asked_abou
             .expect("written");
         assert_eq!(write.params["arguments"][3]["value"], true, "{kind}");
     }
+}
+
+/// The rulings of 2026-11-06: the write is told whether the fill goes in under a grant, and a
+/// field it then finds sent by GET, or marked for payment, takes nothing, in words that say why.
+#[test]
+fn under_a_grant_a_field_the_write_finds_sent_by_get_or_for_payment_takes_nothing() {
+    for (said, why) in [("get", "by GET"), ("payment", "card or payment")] {
+        for under_a_grant in [true, false] {
+            let (browser, engine) = browser();
+            as_fields(&engine, "one_line", Twist::Grantless(said));
+            let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
+
+            let filled = filling(
+                &browser,
+                &SecretFill {
+                    under_a_grant,
+                    ..fill_of(secret, "http://fixture.test")
+                },
+            );
+
+            let write = engine
+                .sent("Runtime.callFunctionOn")
+                .into_iter()
+                .find(|sent| sent.params["functionDeclaration"] == WRITE_FIELD)
+                .expect("the write was run");
+            assert_eq!(
+                write.params["arguments"][4]["value"], under_a_grant,
+                "{said}"
+            );
+            match (under_a_grant, filled) {
+                (true, Err(Refusal::NotFilled(told))) => {
+                    assert!(told.contains(why), "{said}: {told}");
+                }
+                (false, Ok(_)) => {}
+                (_, other) => panic!("{said}, {under_a_grant}: {}", ended_as(&other)),
+            }
+        }
+    }
+}
+
+/// What the field's read can't say of its form or its mark is said as the stricter: a grant then
+/// fills nothing without the person.
+#[test]
+fn a_field_read_that_says_nothing_of_its_form_or_mark_is_said_sent_by_get_and_for_payment() {
+    let (browser, engine) = browser();
+    engine.on(|sent, _engine| {
+        (sent.method == "Runtime.callFunctionOn"
+            && sent.params["functionDeclaration"] == FIELD_KIND)
+            .then(|| {
+                Ok(json!({ "result": { "type": "object", "value": { "kind": "one_line", "label": "Secret word" } } }))
+            })
+    });
+    let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
+
+    let read = browser
+        .call(&id(2), Call::DescribeField { target: secret })
+        .unwrap_or_else(|why| panic!("{}", ended_as(&Err::<(), _>(why))));
+
+    let Content::Field(field) = read.content else {
+        panic!("a field");
+    };
+    assert!(field.by_get && field.payment, "{field:?}");
 }
 
 /// A one-line fill tells the write so: a field that is a multi-line one when the value is

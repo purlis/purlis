@@ -184,6 +184,7 @@ fn a_fill() -> FillSecret {
         value: Secret::new("fixture-key-5122".into()),
         multi_line: false,
         also: Vec::new(),
+        under_a_grant: false,
     }
 }
 

@@ -20,6 +20,9 @@
 //!   ([`crate::loginasks::written`]); `sandbox.proposed-changes = "off"` holds it back.
 //! - **A card's key is offered Allow once alone** (SF-4): a secret-fill line of any persona's
 //!   with `card = true` marks it, on every origin, and no grant of it fills without a notice.
+//! - **A grant fills no field whose form sends it by GET** (the person's ruling of 2026-11-06):
+//!   in the page's address, which the site's logs and the browser's history keep. Under Allow for
+//!   this chat or Always, such a fill is refused; asked about, Allow once fills it.
 //! - **A key the vault doesn't hold goes to the Secret ask** (#5054, ADR 0109) once the person
 //!   allowed the fill: the call waits on that too, and fills what they add.
 //! - **What's filled is what the person pressed on.** A press names the notice and carries its
@@ -454,7 +457,7 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<A
         .and_then(|persona| persona.started_as);
     // A browser on a runner is asked about each time: a grant here holds this machine's
     // browsers (#5122).
-    if runner.is_some()
+    let asks_the_person = runner.is_some()
         || asks(
             held.root(),
             fills,
@@ -462,8 +465,13 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<A
             persona.as_deref(),
             asked,
             &origin,
-        )
-    {
+        );
+    // A grant fills no field whose form sends it in the page's address (the person's ruling of
+    // 2026-11-06).
+    if !asks_the_person && asked.field.by_get == Some(true) {
+        return Err(by_get_said(&asked.target, &origin));
+    }
+    if asks_the_person {
         let wait = offered(
             held.root(),
             FillWait {
@@ -519,7 +527,19 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<A
         value,
         multi_line,
         also,
+        under_a_grant: !asks_the_person,
     })
+}
+
+/// **What a chat is told where a grant would fill a field whose form sends it by GET** (the
+/// person's ruling of 2026-11-06): in the page's address, which the site's logs and the browser's
+/// history keep.
+fn by_get_said(target: &str, origin: &str) -> String {
+    format!(
+        "{target} on {origin} is in a form that sends what it holds in the page's address (by \
+         GET), so purlis fills nothing there under the person's standing Allow: tell them what \
+         needs it"
+    )
 }
 
 /// The persona chat `session` was started as.
@@ -558,10 +578,15 @@ pub struct Allowed {
     pub multi_line: bool,
     /// The other origins the key is approved for (#5230, SF-15).
     pub also: Vec<String>,
+    /// **It goes in under a grant, with no notice for this fill**: the engine judges the field
+    /// again as it writes (the rulings of 2026-11-06).
+    pub under_a_grant: bool,
 }
 
 /// **Whether the person is asked about this fill**: a multi-line text box or an editable area
-/// each time, whatever was allowed (SF-5, #5120); any other field unless it is [`granted`].
+/// each time, whatever was allowed (SF-5, #5120); a field whose read doesn't say whether its
+/// form sends it by GET (a host that doesn't read it); any other field unless it is
+/// [`granted`].
 fn asks(
     root: &std::path::Path,
     fills: &Fills,
@@ -570,7 +595,9 @@ fn asks(
     asked: &FillAsked,
     origin: &str,
 ) -> bool {
-    asked.field.kind != FieldKind::OneLine || !granted(root, fills, session, persona, asked, origin)
+    asked.field.kind != FieldKind::OneLine
+        || asked.field.by_get.is_none()
+        || !granted(root, fills, session, persona, asked, origin)
 }
 
 /// **Whether a fill goes in without a notice** (#5116): a line Always wrote, allowed here, or the

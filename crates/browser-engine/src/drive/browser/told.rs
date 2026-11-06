@@ -195,6 +195,8 @@ impl Keeping {
                 origin,
                 label,
                 kind,
+                by_get,
+                payment,
             }) => Content::Field(FieldInfo {
                 // An origin is compared and approved exactly, so one that holds what purlis
                 // filled, past what its own name accounts for, is one the engine can't name, and
@@ -202,6 +204,8 @@ impl Keeping {
                 origin: origin.filter(|_| field_origin.is_some()),
                 label: every.text(&label),
                 kind,
+                by_get,
+                payment,
             }),
             kept @ (Content::Nothing
             | Content::Image(_)
