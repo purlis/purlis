@@ -41,10 +41,22 @@ export const NOTE_CLEARED = "note-cleared";
 export type NoteCleared = {
   plane: string;
   session: number;
-  note: { kind: "start" | "by-hand" | "restart" } | { kind: "block"; block: HeldBlock };
+  note:
+    { kind: "start" | "by-hand" | "restart" } | { kind: "block"; block: HeldBlock } | KeptOutside;
   /** The window it was cleared in, which hears it too. */
   from: string;
 };
+
+/**
+ * **A note a window keeps outside PlaneView's state, in a store of its own** (#5363): a send
+ * that was refused, a move's line, a line hidden for this wait (`hideForNow`, by the causes put
+ * away together) and a draft ready in the Skill studio (by the drafts it named). Put away in one
+ * window, each is let go in every other (`notesClearedEverywhere.ts`).
+ */
+export type KeptOutside =
+  | { kind: "input-refused" | "move" | "moved" }
+  | { kind: "hidden"; causes: readonly string[] }
+  | { kind: "draft-ready"; drafts: string };
 
 /** **The event a window sends as it comes to hold notes of a chat another window shows** (#5225):
  *  that window may have heard none of them, having shown the chat only since. */
@@ -56,6 +68,10 @@ export type NotesHanded = {
   session: number;
   start?: StartNotes;
   blocks: readonly HeldBlock[];
+  /** A harness started by hand in the chat's shell (ADR 0062), as its banner says it (#5363). */
+  byHand?: { harness: string; cwd: string | null };
+  /** Why its restart did not happen, as its restart line says it (#5363). */
+  restart?: string;
   /** The window that holds them, which hears it too. */
   from: string;
 };

@@ -16,6 +16,7 @@ import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import App, { TAB_WINDOW } from "./App";
 import type { LaidOut, LaidTab, OpenChat } from "./bindings";
+import { forgetInputRefused, heardInputRefused } from "./inputRefused";
 import { chatsOf } from "./laidOut";
 import { LAYOUT_MOVED, PRESS_HERE } from "./tabWindows";
 
@@ -643,6 +644,67 @@ describe("a note of a chat shown only in a tab window (#5225)", () => {
     await screen.findByText("session 2");
     expect(screen.queryByText(/The sandbox blocked a write/)).toBeNull();
     expect(project.sent("forget_sandbox_block")).toEqual([]);
+  });
+
+  it("hands over the by-hand banner and the restart line it held before the tear-off (#5363)", async () => {
+    const project = await windowOf(undefined, 1);
+    project.fire("harness-by-hand", { plane: ONE, session: 3, harness: "codex", cwd: null });
+    project.fire("chat-project-settings-changed", {
+      plane: ONE,
+      session: 3,
+      chat: null,
+      ended: "It would not start again.",
+      notices: [],
+    });
+
+    project.fire("layout-reported", {
+      plane: ONE,
+      layout: { strip: null, tabs: [tab(0, true, 1), tab(1, true, 3)] },
+    });
+    await waitFor(() =>
+      expect(told(project, "notes-handed")).toContainEqual({
+        plane: ONE,
+        session: 3,
+        from: "main",
+        start: undefined,
+        blocks: [],
+        byHand: { harness: "codex", cwd: null },
+        restart: "It would not start again.",
+      }),
+    );
+  });
+
+  it("says the by-hand banner and the restart line it was handed, on the chat's pane (#5363)", async () => {
+    const shows = await windowOf(1, 2);
+    shows.fire("notes-handed", {
+      plane: ONE,
+      session: 2,
+      from: "main",
+      blocks: [],
+      byHand: { harness: "codex", cwd: null },
+      restart: "It would not start again.",
+    });
+    const banner = await screen.findByText(/codex runs outside purlis/);
+    expect(banner.closest('[data-placement="pane"]')).not.toBeNull();
+    expect(screen.getByText("It would not start again.")).toBeInTheDocument();
+  });
+
+  it("a note kept in a store of the window's own, cleared in another window, is let go here (#5363)", async () => {
+    try {
+      const project = await windowOf(undefined, 1);
+      heardInputRefused({ plane: ONE, session: 2, why: "the runner is reconnecting" });
+      project.fire("note-cleared", {
+        plane: ONE,
+        session: 2,
+        note: { kind: "input-refused" },
+        from: "window-1",
+      });
+      project.fire(LAYOUT_MOVED, { plane: ONE, layout: BACK });
+      await screen.findByText("session 2");
+      expect(screen.queryByText(/could not send/)).toBeNull();
+    } finally {
+      forgetInputRefused(ONE, 2);
+    }
   });
 
   it("a note cleared in another project's window stays here", async () => {

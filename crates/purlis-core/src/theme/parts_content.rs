@@ -196,12 +196,6 @@ pub(super) const NOTICE: Family = Family {
                           under its title (#5217), and a band row's sub-line (#5215).",
             properties: &[Prop::Text, Prop::FontSize],
         },
-        Part {
-            name: "chat-words",
-            since: super::NEXT,
-            description: "A chat's own words on a Notices centre card (#5217).",
-            properties: &[Prop::Text, Prop::FontSize],
-        },
     ],
     variants: &[
         Variant {

@@ -444,7 +444,7 @@ describe("the Skills chip on a chat's pane", () => {
           plane="p"
           session={4}
           markOnly
-          row={{ title: "Skills of chat 4", press: () => undefined }}
+          row={{ title: "Show skills of chat 4", press: () => undefined }}
         />
         <SkillsChip plane="p" session={5} />
       </ChatSkillSetsHere.Provider>,
@@ -488,7 +488,7 @@ describe("the Skills chip on a chat's pane", () => {
     render(
       <UseSkillOpener value={opener}>
         <ChatSkillSetsHere.Provider value={{ 4: warned, 6: held() }}>
-          <SkillsChip session={4} row={{ title: "Skills of chat 4", press: pressed }} />
+          <SkillsChip session={4} row={{ title: "Show skills of chat 4", press: pressed }} />
           <SkillsChip session={5} />
           <SkillsChip session={6} />
         </ChatSkillSetsHere.Provider>
@@ -510,7 +510,7 @@ describe("the Skills chip on a chat's pane", () => {
 
   it("says its row's title where it presses one, and promises no press where it has none (#5366)", async () => {
     studioOn();
-    const row = { title: "Skills of chat 4", press: vi.fn() };
+    const row = { title: "Show skills of chat 4", press: vi.fn() };
     render(
       <ChatSkillSetsHere.Provider value={{ 4: held({ budget: { ...BUDGET, warns: "chars" } }) }}>
         <SkillsChip session={4} row={row} />
@@ -518,7 +518,7 @@ describe("the Skills chip on a chat's pane", () => {
     );
     const chip = await screen.findByTestId("pane-skills");
     expect(chip.getAttribute("aria-label")).toBe(
-      "4 skills. Near the skill budget. Skills of chat 4.",
+      "4 skills. Near the skill budget. Show skills of chat 4.",
     );
     fireEvent.click(chip);
     expect(row.press).toHaveBeenCalled();

@@ -232,16 +232,6 @@ export function NoticeSaid({
   );
 }
 
-/** **A chat's own words on a Notices centre card** (#5217), through `ChatText`. Their fold's words
- *  change as it opens, which is nothing to read the whole card out again for. */
-export function NoticeChatWords({ children }: { children: ReactNode }) {
-  return (
-    <div data-scope="notice" data-part="chat-words" aria-live="off">
-      {children}
-    </div>
-  );
-}
-
 /** **A card's title** (#3344): what happened, before its one sentence. */
 export function NoticeTitle({ children }: { children: ReactNode }) {
   return (

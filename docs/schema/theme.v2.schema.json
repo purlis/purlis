@@ -6413,30 +6413,6 @@
         "notice.sub.attention.font-size": {
           "$ref": "#/$defs/part-font-size"
         },
-        "notice.chat-words.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "notice.chat-words.font-size": {
-          "$ref": "#/$defs/part-font-size"
-        },
-        "notice.chat-words.news.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "notice.chat-words.news.font-size": {
-          "$ref": "#/$defs/part-font-size"
-        },
-        "notice.chat-words.trouble.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "notice.chat-words.trouble.font-size": {
-          "$ref": "#/$defs/part-font-size"
-        },
-        "notice.chat-words.attention.text": {
-          "$ref": "#/$defs/part-text"
-        },
-        "notice.chat-words.attention.font-size": {
-          "$ref": "#/$defs/part-font-size"
-        },
         "option-card.root.fill": {
           "$ref": "#/$defs/part-fill"
         },
