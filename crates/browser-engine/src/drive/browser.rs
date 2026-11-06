@@ -2470,6 +2470,21 @@ impl Browser {
         self.names_kept_out(all)
     }
 
+    /// **The site the agent is kept off that download `id` is of, now** (#5152, the person's
+    /// ruling of 2026-11-06): its origin, judged on the page it began on as a call on that page
+    /// is ([`Browser::keep_off`], [`Browser::keep_sign_in_to_its_page`]), so that during a
+    /// sign-in one of its site is the agent's only where the sign-in's own page or a window
+    /// related to it began it. One begun on no page the browser knew is judged as on a page not
+    /// opened yet. `None` where nothing keeps it off, or the browser has no such download, or it
+    /// came from no origin (its caller judges that).
+    pub fn download_kept_off(&self, id: &str) -> Option<String> {
+        let state = lock(&self.inner.state);
+        let (origin, page) = state.downloads.whence(id)?;
+        let kept_off = self.inner.kept_off_on(&state, page.as_deref())?;
+        drop(state);
+        kept_off(&origin?)
+    }
+
     /// **Holds every download of the browser's in `folder`** (#2020), each under the engine's
     /// own name for it, and has the engine tell of each as it goes. Browser-wide: every page's,
     /// one opened later included. Refused where the engine will not, so a browser never runs
@@ -4064,8 +4079,10 @@ impl Browser {
 
     /// **Refuses the agent's input at `point` of `target`'s page, on `session`, where what is
     /// drawn there is a frame of a site the agent is kept off** (#5152): an element of one, or the
-    /// element holding one, as a frame drawn over what was aimed at takes the input. Where the
-    /// page holds such a frame and what is drawn there cannot be told, refused too.
+    /// element holding one, as a frame drawn over what was aimed at takes the input. Where what is
+    /// drawn there is a frame with a document in a process of its own that holds such a frame,
+    /// the point is followed into that document, through as many such frames as there are. Where
+    /// the page holds such a frame and what is drawn there cannot be told, refused too.
     fn not_kept_off_at(
         &self,
         target: &str,
@@ -4080,42 +4097,119 @@ impl Browser {
             site: site.clone(),
             asks_to_sign_in: false,
         };
-        let hit = self
-            .devtools()
-            .call(
-                "DOM.getNodeForLocation",
-                json!({
-                    "x": x.floor() as i64,
-                    "y": y.floor() as i64,
-                    "includeUserAgentShadowDOM": true,
-                    "ignorePointerEventsNone": true,
-                }),
-                Some(session),
-            )
-            .map_err(|_| refused())?;
-        let frame = hit.get("frameId").and_then(Value::as_str);
-        if frame.is_some_and(|frame| kept.contains_key(frame)) {
-            return Err(refused());
+        let (mut session, mut x, mut y) = (session.to_owned(), x, y);
+        // Each step goes one frame deeper, and no page holds more frames than it has.
+        for _ in 0..=self.frame_count(target) {
+            let hit = self
+                .devtools()
+                .call(
+                    "DOM.getNodeForLocation",
+                    json!({
+                        "x": x.floor() as i64,
+                        "y": y.floor() as i64,
+                        "includeUserAgentShadowDOM": true,
+                        "ignorePointerEventsNone": true,
+                    }),
+                    Some(&session),
+                )
+                .map_err(|_| refused())?;
+            let frame = hit.get("frameId").and_then(Value::as_str);
+            if frame.is_some_and(|frame| kept.contains_key(frame)) {
+                return Err(refused());
+            }
+            // The element holding a frame says which frame it holds.
+            let backend = hit
+                .get("backendNodeId")
+                .and_then(Value::as_i64)
+                .ok_or_else(refused)?;
+            let described = self
+                .devtools()
+                .call(
+                    "DOM.describeNode",
+                    json!({ "backendNodeId": backend }),
+                    Some(&session),
+                )
+                .map_err(|_| refused())?;
+            let Some(held) = described.pointer("/node/frameId").and_then(Value::as_str) else {
+                return Ok(());
+            };
+            if kept.contains_key(held) {
+                return Err(refused());
+            }
+            let Some(inner) = self.holds_kept_off_apart(target, &session, held, &kept) else {
+                return Ok(());
+            };
+            // Into the frame's own document, through its element's content box: only one drawn
+            // upright at its own size is followed, and any other refused.
+            let model = self
+                .devtools()
+                .call(
+                    "DOM.getBoxModel",
+                    json!({ "backendNodeId": backend }),
+                    Some(&session),
+                )
+                .map_err(|_| refused())?;
+            let quad = |name: &str| -> Option<[f64; 8]> {
+                let numbers: Vec<f64> = model
+                    .pointer(&format!("/model/{name}"))?
+                    .as_array()?
+                    .iter()
+                    .map(Value::as_f64)
+                    .collect::<Option<_>>()?;
+                numbers.try_into().ok()
+            };
+            let size = |name: &str| model.pointer(&format!("/model/{name}"))?.as_f64();
+            let (Some(content), Some(border), Some(width), Some(height)) = (
+                quad("content"),
+                quad("border"),
+                size("width"),
+                size("height"),
+            ) else {
+                return Err(refused());
+            };
+            if !upright(&border, width, height) {
+                return Err(refused());
+            }
+            (session, x, y) = (inner, x - content[0], y - content[1]);
         }
-        // The element holding a frame says which frame it holds.
-        let backend = hit
-            .get("backendNodeId")
-            .and_then(Value::as_i64)
-            .ok_or_else(refused)?;
-        let described = self
-            .devtools()
-            .call(
-                "DOM.describeNode",
-                json!({ "backendNodeId": backend }),
-                Some(session),
-            )
-            .map_err(|_| refused())?;
-        let holds = described.pointer("/node/frameId").and_then(Value::as_str);
-        if holds.is_some_and(|held| kept.contains_key(held)) {
-            Err(refused())
-        } else {
-            Ok(())
+        Err(refused())
+    }
+
+    /// How many frames `target`'s page holds, as the driver knows them.
+    fn frame_count(&self, target: &str) -> usize {
+        lock(&self.inner.state)
+            .page(target)
+            .map_or(0, |page| page.frames.len())
+    }
+
+    /// **The session of `held`'s own document**, a frame of `target`'s page drawn in the document
+    /// on `session`, where that document is in another session and a frame of `kept` is inside
+    /// it: what is drawn there is then told only by that document.
+    fn holds_kept_off_apart(
+        &self,
+        target: &str,
+        session: &str,
+        held: &str,
+        kept: &HashMap<String, String>,
+    ) -> Option<String> {
+        let state = lock(&self.inner.state);
+        let page = state.page(target)?;
+        let inner = page.frames.get(held)?.session.clone();
+        if inner == session {
+            return None;
         }
+        let inside = |frame: &str| {
+            let mut at = page.frames.get(frame).and_then(|f| f.parent.as_deref());
+            for _ in 0..=page.frames.len() {
+                match at {
+                    Some(here) if here == held => return true,
+                    Some(here) => at = page.frames.get(here).and_then(|f| f.parent.as_deref()),
+                    None => return false,
+                }
+            }
+            false
+        };
+        kept.keys().any(|frame| inside(frame)).then_some(inner)
     }
 
     /// Whether `point`, in CSS pixels of the page on `session`, lies inside what the page's own
@@ -5716,7 +5810,13 @@ impl Inner {
                     // own web address, or, for a blank or srcdoc one, the nearest document around
                     // it that has an origin (the steward's decision on the person's rulings of
                     // 2026-11-06). A sandboxed one, or one not known yet, is from nowhere known.
-                    let page_address = state.pages.iter().find_map(|page| {
+                    // It is judged by the page it began on (a sign-in's own page, say).
+                    let began_on = state
+                        .pages
+                        .iter()
+                        .find(|page| page.frames.contains_key(&frame));
+                    let page = began_on.map(|page| page.target.clone());
+                    let page_address = began_on.and_then(|page| {
                         let url = &page.frames.get(&frame)?.url;
                         if at_web_address(url) {
                             return Some(url.clone());
@@ -5731,6 +5831,7 @@ impl Inner {
                             &guid,
                             &text("/url").unwrap_or_default(),
                             &text("/suggestedFilename").unwrap_or_default(),
+                            page.as_deref(),
                             page_address.as_deref(),
                             &self.limits,
                         )

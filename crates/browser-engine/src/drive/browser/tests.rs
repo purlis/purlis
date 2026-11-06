@@ -2353,6 +2353,99 @@ fn during_a_sign_in_only_its_own_page_and_its_related_windows_act_on_its_site() 
     );
 }
 
+/// A download is judged by the page it began on: during a sign-in, one of the sign-in's site
+/// begun on another tab is kept off as that tab is, and so is one begun on a page not known.
+#[test]
+fn during_a_sign_in_a_download_of_its_site_is_kept_off_unless_its_own_page_began_it() {
+    let (browser, engine) = browser();
+    snapshot(&browser, 1);
+    a_window_opens_from_the_frames_page(&browser, &engine, "PAGE-6", false);
+    browser.keep_sign_in_to_its_page(Arc::new(|address: &str| {
+        address
+            .starts_with("http://other.test")
+            .then(|| "other.test:80".to_owned())
+    }));
+    for (frame, guid) in [("PAYMENT-FRAME", "GUID-1"), ("NO-SUCH-FRAME", "GUID-2")] {
+        engine.emit(
+            "Browser.downloadWillBegin",
+            json!({ "frameId": frame, "guid": guid, "url": "http://other.test/statement.pdf", "suggestedFilename": "statement.pdf" }),
+            None,
+        );
+    }
+    wait_for("both downloads are seen", || browser.downloads().len() == 2);
+
+    *super::lock(&browser.inner.sign_in_page) = Some("PAGE-1".to_owned());
+    assert_eq!(
+        browser.download_kept_off("d1"),
+        None,
+        "its own page began it"
+    );
+    assert_eq!(
+        browser.download_kept_off("d2").as_deref(),
+        Some("other.test:80"),
+        "no page known began it"
+    );
+
+    *super::lock(&browser.inner.sign_in_page) = Some("PAGE-6".to_owned());
+    assert_eq!(
+        browser.download_kept_off("d1").as_deref(),
+        Some("other.test:80"),
+        "another tab began it"
+    );
+}
+
+/// A frame of a site the agent is kept off, inside a frame of another site that runs in a process
+/// of its own, takes the input drawn on it: the point is followed into that frame's document.
+#[test]
+fn input_on_a_kept_off_frame_inside_another_sites_own_process_frame_is_refused() {
+    let (browser, engine) = browser();
+    engine.emit(
+        "Page.frameAttached",
+        json!({"frameId":"INNER-FRAME","parentFrameId":"PAYMENT-FRAME"}),
+        Some("S-PAYMENT"),
+    );
+    engine.emit(
+        "Page.frameNavigated",
+        json!({"frame":{"id":"INNER-FRAME","parentId":"PAYMENT-FRAME","loaderId":"LOADER-9","url":"http://inner.test/consent","securityOrigin":"http://inner.test","mimeType":"text/html","name":""},"type":"Navigation"}),
+        Some("S-PAYMENT"),
+    );
+    wait_for("the inner frame is seen", || {
+        super::lock(&browser.inner.state)
+            .page("PAGE-1")
+            .and_then(|page| page.frames.get("INNER-FRAME"))
+            .is_some_and(|frame| frame.url.starts_with("http://inner.test"))
+    });
+    browser.keep_off(Arc::new(|address: &str| {
+        address
+            .starts_with("http://inner.test")
+            .then(|| "inner.test:80".to_owned())
+    }));
+    // The payment frame's document holds the inner frame on its left half, as it lays it out.
+    engine.on(|sent, _| {
+        (sent.method == "DOM.getNodeForLocation" && sent.session.as_deref() == Some("S-PAYMENT"))
+            .then(|| {
+                Ok(if sent.params["x"].as_f64().unwrap_or(0.0) < 100.0 {
+                    json!({"backendNodeId": 70, "frameId": "INNER-FRAME"})
+                } else {
+                    json!({"backendNodeId": 71, "frameId": "PAYMENT-FRAME"})
+                })
+            })
+    });
+    assert_eq!(
+        browser.not_kept_off_at("PAGE-1", "S-PAGE-1", (150.0, 230.0)),
+        Err(Refusal::KeptOff {
+            site: "inner.test:80".to_owned(),
+            asks_to_sign_in: false,
+        }),
+        "drawn on the inner frame"
+    );
+    assert_eq!(
+        browser.not_kept_off_at("PAGE-1", "S-PAGE-1", (250.0, 230.0)),
+        Ok(()),
+        "drawn on the payment frame's own document"
+    );
+}
+
 #[test]
 fn a_reference_from_before_its_frame_loaded_another_document_is_refused_as_stale() {
     let (browser, engine) = browser();

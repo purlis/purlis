@@ -1902,15 +1902,14 @@ impl EngineScreen {
                 state_said(one.state)
             )));
         }
-        // One from the site the browser signs in on is that site's to read (#5152).
-        if let Some(site) = one.origin.as_deref().and_then(|origin| {
-            self.sites
-                .as_ref()
-                .and_then(|sites| kept_off_at(sites.bound(), origin))
-        }) {
+        // One from the site the browser signs in on is that site's to read (#5152), and during
+        // a sign-in, only the sign-in's own page's (the person's ruling of 2026-11-06): it is
+        // judged on the page it began on.
+        if let Some(site) = browser.download_kept_off(download) {
             return Err(NotActed::Refused(format!(
                 "download {download} came from {site}, the site this browser signs in on, so it \
-                 is brought in only while browser_login signs in"
+                 is brought in only while browser_login signs in, and only where the page it signs \
+                 in on, or a window that page opened, began it"
             )));
         }
         // One from no site purlis can tell (a sandboxed frame's, say) may be that site's too
