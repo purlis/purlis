@@ -1655,7 +1655,9 @@ fn a_sandboxed_chat_starts_on_a_record_of_its_folder_and_what_appears_after_is_t
     let session = chats.start_ready(&chat, &ready, SIZE).expect("starts");
     let id = chats.id_of(session).expect("an id");
 
+    // At once, as a chat's program may, while the start may still be recording (#5555).
     std::fs::write(plane.path().join(".mcp.json"), "{}\n").expect("a name");
+    crate::arrived::recorded(&id);
     let looked = arrived::look(plane.path(), &id, None)
         .expect("a look")
         .expect("its record");
