@@ -286,7 +286,7 @@ function OptionList({
       data-scope="popover"
       data-part="list"
       renderEmptyState={() => (
-        <span data-scope="select" data-part="none">
+        <span data-scope="popover" data-part="none">
           {none}
         </span>
       )}

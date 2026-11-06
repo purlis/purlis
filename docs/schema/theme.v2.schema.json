@@ -7397,6 +7397,30 @@
         "popover.header.notice.font-weight": {
           "$ref": "#/$defs/part-font-weight"
         },
+        "popover.none.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "popover.none.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "popover.none.popover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "popover.none.popover.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "popover.none.menu.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "popover.none.menu.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "popover.none.notice.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "popover.none.notice.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
         "popover.footer.fill": {
           "$ref": "#/$defs/part-fill"
         },

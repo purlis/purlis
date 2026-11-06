@@ -61,12 +61,12 @@ function propsOf(layout: Layout, tab: number, onPaneDoes: Props["onPaneDoes"] = 
 }
 
 describe("a pane that shows nothing (#4755, #5292)", () => {
-  it("asks what goes here, says a chat can be dragged in and how many run here", () => {
+  it("says it holds nothing yet, that a chat can be dragged in, and how many run here", () => {
     render(<LayoutPanes {...propsOf(empty(1), 1)} />);
 
-    expect(screen.getByText("What goes here?")).toBeInTheDocument();
+    expect(screen.getByText("Nothing in this pane yet")).toBeInTheDocument();
     expect(
-      screen.getByText("Drag a chat here from the list. 3 chats are running here."),
+      screen.getByText("Drag a chat here from the sidebar, or start one. 3 chats are running here."),
     ).toBeInTheDocument();
   });
 
@@ -83,10 +83,10 @@ describe("a pane that shows nothing (#4755, #5292)", () => {
     ]);
   });
 
-  it("asks the same of each side of a split", () => {
+  it("says the same on each side of a split", () => {
     render(<LayoutPanes {...propsOf(split, 1)} />);
 
-    expect(screen.getAllByText("What goes here?")).toHaveLength(2);
+    expect(screen.getAllByText("Nothing in this pane yet")).toHaveLength(2);
   });
 });
 

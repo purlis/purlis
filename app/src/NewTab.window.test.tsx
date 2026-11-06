@@ -185,7 +185,7 @@ describe("pressing + (#5292; stories 73, 86 and 88)", () => {
 
     await waitFor(() => expect(tabCount()).toBe(2));
     expect(onScreen()).toEqual([]);
-    expect(screen.getByText("What goes here?")).toBeInTheDocument();
+    expect(screen.getByText("Nothing in this pane yet")).toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "Start a chat" })).toBeNull();
   });
 
@@ -224,7 +224,7 @@ describe("the + list's rows, each a new tab (#5292, the call from #5297)", () =>
     await choose(/Empty tab/);
 
     await waitFor(() => expect(tabCount()).toBe(2));
-    expect(screen.getByText("What goes here?")).toBeInTheDocument();
+    expect(screen.getByText("Nothing in this pane yet")).toBeInTheDocument();
   });
 
   it("New chat gets a tab of its own, even with an empty pane in front", async () => {
@@ -267,7 +267,7 @@ describe("the keys (#5292; stories 82 and 83)", () => {
     fireEvent.keyDown(screen.getByTestId("pane"), { key: "t", metaKey: true });
 
     await waitFor(() => expect(tabCount()).toBe(2));
-    expect(screen.getByText("What goes here?")).toBeInTheDocument();
+    expect(screen.getByText("Nothing in this pane yet")).toBeInTheDocument();
   });
 
   it("⌘N asks for a new chat, which fills an empty pane first", async () => {

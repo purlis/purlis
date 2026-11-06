@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **A pane that shows nothing** (#4755, #5292): it asks what goes here, offers New chat and New
- * shell, says a chat can be dragged in and how many chats run here. Alone in its tab and as one
- * side of a split it asks the same. Drawn in every cell of the theme matrix.
+ * **A pane that shows nothing** (#4755, #5292): it says it holds nothing yet, offers New chat and
+ * New shell, says a chat can be dragged in and how many chats run here. Alone in its tab and as
+ * one side of a split it says the same. Drawn in every cell of the theme matrix.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn } from "storybook/test";
@@ -52,13 +52,13 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** **With chats running here**: it asks what goes here and says one can be dragged in. New
+/** **With chats running here**: it says one can be dragged in. New
  *  chat and New shell are reached and pressed by the keyboard. */
 export const Alone: Story = {
   play: async ({ canvas, args, userEvent }) => {
-    await expect(canvas.getByText("What goes here?")).toBeVisible();
+    await expect(canvas.getByText("Nothing in this pane yet")).toBeVisible();
     await expect(
-      canvas.getByText("Drag a chat here from the list. 3 chats are running here."),
+      canvas.getByText("Drag a chat here from the sidebar, or start one. 3 chats are running here."),
     ).toBeVisible();
     await userEvent.tab();
     await untilFocused(() => canvas.getByRole("button", { name: "New chat" }), "Tab to New chat");
@@ -82,7 +82,7 @@ export const Alone: Story = {
 export const NothingRunningYet: Story = {
   args: { running: 0 },
   play: async ({ canvas, userEvent }) => {
-    await expect(canvas.getByText("What goes here?")).toBeVisible();
+    await expect(canvas.getByText("Nothing in this pane yet")).toBeVisible();
     await expect(canvas.getByText("Nothing runs in this workspace yet.")).toBeVisible();
     await userEvent.tab();
     await untilFocused(() => canvas.getByRole("button", { name: "New chat" }), "Tab to New chat");

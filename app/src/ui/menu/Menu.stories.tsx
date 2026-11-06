@@ -497,3 +497,67 @@ export const ARowThatTurnsUnavailable: Story = {
     );
   },
 };
+
+const WORKSPACES = ["alpha", "beta", "design", "devops", "docs", "infra", "release", "web", "zeta"];
+
+/** A long menu with a filter row (#5292): its owner narrows the rows by what is typed. */
+function Filtered() {
+  const [typed, setTyped] = useState("");
+  const shown = WORKSPACES.filter((one) => one.includes(typed.trim().toLowerCase()));
+  return (
+    <MenuTrigger onOpenChange={() => setTyped("")}>
+      <Button>Go to a workspace</Button>
+      <Menu
+        aria-label="Workspaces"
+        filter={{
+          typed,
+          onTyped: setTyped,
+          takesKeyboard: true,
+          none: "Nothing matches what you typed.",
+        }}
+      >
+        {shown.map((one) => (
+          <MenuItem key={one} id={one} textValue={one}>
+            <MenuWords said={one} />
+          </MenuItem>
+        ))}
+      </Menu>
+    </MenuTrigger>
+  );
+}
+
+/**
+ * **A filter row** (#5292): it takes the keyboard as the menu opens, what is typed narrows the
+ * rows, the arrows go from the field to them, and with nothing left it says so; the baseline
+ * shows it narrowed, the arrows on its first row.
+ */
+export const AFilter: Story = {
+  render: () => <Filtered />,
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "Go to a workspace" }),
+      "AFilter: Tab onto the trigger",
+    );
+    await userEvent.keyboard("{Enter}");
+    const filter = await screen.findByRole("textbox", { name: "Filter" });
+    await untilFocused(() => filter, "AFilter: the filter takes the keyboard");
+    await userEvent.keyboard("zz");
+    await waitFor(() => expect(openMenu()).toHaveTextContent("Nothing matches what you typed."));
+    await userEvent.keyboard("{Backspace}{Backspace}de");
+    await waitFor(() =>
+      expect(
+        within(openMenu())
+          .getAllByRole("menuitem")
+          .map((one) => one.textContent),
+      ).toEqual(["design", "devops"]),
+    );
+    await userEvent.keyboard("{ArrowDown}");
+    await waitFor(() =>
+      expect(within(openMenu()).getByRole("menuitem", { name: "design" })).toHaveAttribute(
+        "data-focused",
+      ),
+    );
+    expectFocusInSight();
+  },
+};

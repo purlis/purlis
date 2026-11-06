@@ -436,7 +436,7 @@ describe("a chat wrapping up", () => {
     await step(1, "closed");
     const band = await screen.findByRole("status", { name: /ended/i });
     await userEvent.click(within(band).getByRole("button", { name: "Clear pane" }));
-    await screen.findByText("What goes here?");
+    await screen.findByText("Nothing in this pane yet");
     await openAChat();
     // The core numbers it 1 again; the window names it afresh.
     await waitFor(() => expect(tabOf("steward 2")).toBeDefined());

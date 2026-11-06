@@ -1129,8 +1129,8 @@ anything (ADR 0111, #5202, #5204).
 _Avoid_: footer, status bar, gauge row
 
 **Empty pane**:
-A pane that holds nothing. It asks "What goes here?", offers **New chat** and **New shell**, and,
-while chats run in the workspace, says one can be dragged in from the list and how many are
+A pane that holds nothing. It says "Nothing in this pane yet", offers **New chat** and **New shell**, and,
+while chats run in the workspace, says one can be dragged in from the sidebar and how many are
 running. Splitting a pane gives one, and the strip's `+` opens a tab of one, an **Empty tab**,
 named so until it holds something. A strip's last tab keeps one when its last pane closes, so
 a strip always has a pane for a sidebar pick. In a plane with no workspace it says

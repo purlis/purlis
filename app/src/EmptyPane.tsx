@@ -8,10 +8,11 @@ import { EmptyState } from "./ui/empty-state/EmptyState";
 
 /**
  * **A pane that shows nothing** (#4755, spec #4750 story 10; #5292, spec #5288 stories 84, 85
- * and 89): it asks what goes here, offers New chat and New shell, says a chat can be dragged in
- * from the list, and how many chats run in its workspace. A pane shows a chat, a view, or this,
- * so an empty window is never a dead end. Alone in its tab and as one side of a split, it asks
- * the same, as the moving-panes prototype draws it (accepted 2026-11-05).
+ * and 89): it says it holds nothing yet, offers New chat and New shell, says a chat can be dragged in
+ * from the sidebar, and how many chats run in its workspace. A pane shows a chat, a view, or this,
+ * so an empty window is never a dead end. Alone in its tab and as one side of a split, it says
+ * the same, as the moving-panes prototype draws it (accepted 2026-11-05). Its headline is a claim,
+ * as `docs/ui-copy.md` asks of every empty state, where the prototype asked "What goes here?".
  *
  * New chat and New shell are the catalogue's `chat.new` and `shell.new` rows drawn by `Doer`, as
  * the centre's own empty states draw them, so each stops existing where the catalogue stops
@@ -58,7 +59,7 @@ export function EmptyPane({
   return (
     <EmptyState
       mark={MessageSquarePlus}
-      headline="What goes here?"
+      headline="Nothing in this pane yet"
       body={running === 0 ? runningHere(running) : `${DRAG_ONE_IN} ${runningHere(running)}`}
       action={
         <>
@@ -72,7 +73,7 @@ export function EmptyPane({
 }
 
 /** **A chat can be dragged in** (spec #5288 story 85): said only while one runs here to drag. */
-const DRAG_ONE_IN = "Drag a chat here from the list.";
+const DRAG_ONE_IN = "Drag a chat here from the sidebar, or start one.";
 
 /**
  * How many chats run here, in a sentence. **The body says a count**, because the spec asks for

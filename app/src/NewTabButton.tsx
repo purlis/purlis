@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus } from "lucide-react";
 import type { Offer } from "./actions";
 import {
@@ -185,7 +185,6 @@ export function NewTabButton({
       >
         <Menu
           aria-label="Open in a new tab"
-          className="new-tab-list"
           takesNoKeyboard={!byKeys}
           onPointerEnter={notClosing}
           onPointerLeave={leaveSoon}
@@ -202,9 +201,7 @@ export function NewTabButton({
         >
           {starts.map(row)}
           {starts.length > 0 && views.length > 0 && <MenuSeparator />}
-          {views.map((one) => (
-            <Fragment key={one.offer.id}>{row(one)}</Fragment>
-          ))}
+          {views.map(row)}
         </Menu>
       </AnchoredMenu>
     </>

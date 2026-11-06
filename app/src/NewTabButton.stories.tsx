@@ -193,6 +193,12 @@ export const Filtered: Story = {
       ).toEqual(["New chat", "New shell", "New browser"]),
     );
     await userEvent.keyboard("{ArrowDown}");
+    // The arrows aim from the field: the picture waits for the aimed row, never on a clock.
+    await waitFor(() =>
+      expect(within(theList()).getByRole("menuitem", { name: /New chat/ })).toHaveAttribute(
+        "data-focused",
+      ),
+    );
     expectFocusInSight();
   },
 };

@@ -406,7 +406,7 @@ export function Menu<T extends object = object>({
                     ? {}
                     : {
                         renderEmptyState: () => (
-                          <span data-scope="popover" data-part="header">
+                          <span data-scope="popover" data-part="none">
                             {filter.none}
                           </span>
                         ),

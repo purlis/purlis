@@ -7,9 +7,10 @@ on its prototype, kept on `prototype/moving-panes` (stories 73 to 89), and the c
 In the amendment of 2026-11-02, "an empty pane reads 'Nothing in this pane' and offers **New chat**"
 changes:
 
-- **An empty pane asks "What goes here?"** and offers **New chat** and **New shell**. While chats
-  run in its workspace it says one can be dragged in from the list, and how many run. Alone in its
-  tab and as one side of a split it asks the same. The no-workspace case is unchanged.
+- **An empty pane says "Nothing in this pane yet"** and offers **New chat** and **New shell**,
+  the prototype's "What goes here?" as a claim, which `docs/ui-copy.md` asks of a headline. While
+  chats run in its workspace it says one can be dragged in from the sidebar, and how many run.
+  Alone in its tab and as one side of a split it says the same. The no-workspace case is unchanged.
 - **A tab whose only pane is empty is named "Empty tab"** until it holds something, so the strip
   says what is there. It was named "New chat" (spec #4750 story 44), after the empty pane's button,
   while the strip's `+` was the way to a new chat.
