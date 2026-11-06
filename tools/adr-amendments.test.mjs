@@ -131,6 +131,34 @@ test("an amendment file is named by its date and a slug, and starts with its hea
   assert.match(found, /0067\/2026-10-07-no-heading\.md: .*heading/);
 });
 
+// Two pull requests each take the next free number and pass apart; once both are on main the
+// number is held twice (#5329). The merge queue runs this on the group, so the second one fails.
+test("two ADRs that share a number are refused, naming both files and the next free number", () => {
+  const dir = adrs({
+    "0110-a-finished-folder.md": "# A finished folder\n",
+    "0111-a-chats-pane.md": "# A chat's pane\n",
+    "0111-one-notice.md": "# One notice\n",
+  });
+  const found = problems(dir);
+  assert.equal(found.length, 1);
+  assert.match(found[0], /0111-a-chats-pane\.md/);
+  assert.match(found[0], /0111-one-notice\.md/);
+  assert.match(found[0], /next free number, 0112/);
+});
+
+test("three ADRs that share a number are named in one refusal", () => {
+  const dir = adrs({
+    "0090-a.md": "# A\n",
+    "0090-b.md": "# B\n",
+    "0090-c.md": "# C\n",
+    "0093-d.md": "# D\n",
+  });
+  const found = problems(dir);
+  assert.equal(found.length, 1);
+  assert.match(found[0], /0090-a\.md.*0090-b\.md.*0090-c\.md/);
+  assert.match(found[0], /next free number, 0094/);
+});
+
 test("the repository's own ADRs hold to the rule", () => {
   const dir = fileURLToPath(new URL("../docs/adr", import.meta.url));
   assert.deepEqual(problems(dir), []);
