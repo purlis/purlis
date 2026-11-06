@@ -184,7 +184,8 @@ pub(crate) fn pins_together(
 }
 
 /// **Whose pins a pin changes** (SK-15, ADR 0102 §4): a workspace's or a persona's.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum PinnedBy {
     Workspace(String),
     Persona(String),

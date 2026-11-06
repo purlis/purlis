@@ -360,6 +360,31 @@ pub fn propose_limit(
     }
 }
 
+/// **A chat's change to several skills, handed to the app as a proposal** (#5357): held for the
+/// person, who alone makes it. Nothing is written here, and a chat the app does not answer is
+/// refused, never written for.
+pub fn propose_skill_set(change: purlis_core::skills::verbs::set::SetChange) -> Result<u8, String> {
+    let answered = asked(
+        |chat| Ask::ProposeSkillSet(Box::new(hookwire::ProposeSkillSetAsk { chat, change })),
+        A_WRITE_TAKES_AT_MOST,
+    );
+    let nothing = "so nothing was changed: ask the person to make the change in the window";
+    match answered {
+        Ok(Ok(Answer::Said { lines, code })) => {
+            for line in lines {
+                crate::speak(line);
+            }
+            Ok(code)
+        }
+        Ok(Ok(Answer::No { why })) => Err(why),
+        Ok(Ok(_)) => Err(format!(
+            "this app can't take a proposed change to skills, {nothing}"
+        )),
+        Ok(Err(e)) => Err(format!("the app did not answer ({e}), {nothing}")),
+        Err(_) => Err(format!("this chat could not reach the app, {nothing}")),
+    }
+}
+
 /// The sentence a sandboxed chat is refused with when a command would change a workspace other
 /// than its own, or every workspace (#1408): nothing is changed, and `instead`, the way round,
 /// is named.
