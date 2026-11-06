@@ -484,3 +484,51 @@ fn the_workspaces_folder_itself_is_never_renamed_or_deleted() {
     ));
     assert!(ws.is_dir());
 }
+
+/// #5513's review: a name the disk folds onto a repo's, the branches' folders' or a name purlis
+/// keeps is that name. APFS folds `ſ` (U+017F) to `s` and the Kelvin sign (U+212A) to `k`, which
+/// Rust's lowercase does not; each such spelling is refused as the name it folds to, whatever
+/// the disk below does.
+#[test]
+fn a_name_the_disk_folds_onto_a_kept_one_is_refused_as_that_name() {
+    purlis_core::unsteered!();
+    let (f, ws) = plane();
+    let files = files(&f);
+    let bin = Bin::new();
+
+    for (path, said) in [
+        ("repoſ", "it is in a repo"),
+        ("repoſ/api", "it is in a repo"),
+        (".wor\u{212A}trees", "it is in a branch's folder"),
+        (".worKtrees", "it is in a branch's folder"),
+    ] {
+        let trashed = files.trash(path, &[], &bin).unwrap_err().to_string();
+        assert!(trashed.contains(said), "trash {path}: {trashed}");
+        let renamed = files
+            .rename(path, "elsewhere", &[])
+            .unwrap_err()
+            .to_string();
+        assert!(renamed.contains(said), "rename {path}: {renamed}");
+    }
+    // A new name, there or not yet: refused as the name it folds to, on any disk.
+    for name in ["workſpace.md", "todoſ", "repoſ", ".wor\u{212A}trees"] {
+        let made = files.new_file("", name, &[]).unwrap_err();
+        assert!(matches!(made, NotWritten::Reserved(_)), "{name}: {made}");
+    }
+    // A rename onto one: of a file at the top, so the new name lands beside workspace.md.
+    std::fs::write(ws.join("draft.md"), "draft\n").unwrap();
+    for name in ["workſpace.md", "todoſ", "repoſ"] {
+        let renamed = files.rename("draft.md", name, &[]).unwrap_err();
+        assert!(
+            matches!(renamed, NotWritten::Reserved(_)),
+            "{name}: {renamed}"
+        );
+    }
+    assert!(bin.took.borrow().is_empty());
+    assert!(ws.join("repos/api/README.md").is_file());
+    assert!(ws.join(".worktrees/api/fix/main.rs").is_file());
+    assert_eq!(
+        std::fs::read_to_string(ws.join("workspace.md")).unwrap(),
+        "# alpha\n"
+    );
+}

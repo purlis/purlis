@@ -123,6 +123,35 @@ fn same_file(one: &Path, other: &Path) -> bool {
     }
 }
 
+/// The name, in `folder`, of the entry `step` reaches there: the one that is that very file. The
+/// step itself when the disk spells it so; nothing when it reaches nothing, or its name is not
+/// UTF-8.
+fn spelling_in(folder: &Path, step: &str) -> Option<String> {
+    let reached = std::fs::symlink_metadata(folder.join(step)).ok()?;
+    let entries: Vec<std::fs::DirEntry> = std::fs::read_dir(folder).ok()?.flatten().collect();
+    if entries.iter().any(|one| one.file_name() == step) {
+        return Some(step.to_string());
+    }
+    entries
+        .into_iter()
+        .find(|one| std::fs::symlink_metadata(one.path()).is_ok_and(|meta| same(&meta, &reached)))
+        .and_then(|one| one.file_name().into_string().ok())
+}
+
+/// Whether two entries' metadata are of one file.
+fn same(one: &std::fs::Metadata, other: &std::fs::Metadata) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        one.dev() == other.dev() && one.ino() == other.ino()
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (one, other);
+        false
+    }
+}
+
 /// `from` renamed to `to`, refused when something already has the name `to`, with no moment in
 /// which the other is replaced.
 fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
@@ -148,7 +177,7 @@ impl Files {
         folder: &str,
         kept: &[String],
     ) -> Result<(PathBuf, String), NotWritten> {
-        let relative = self.judged(folder)?;
+        let relative = self.judged(&self.on_disk(&self.judged(folder)?))?;
         if relative.is_empty() {
             return Ok((self.dir.clone(), relative));
         }
@@ -160,6 +189,30 @@ impl Files {
             return Err(NotHere::from(Refused::NotAFolder(folder.to_string())).into());
         }
         Ok((absolute, relative))
+    }
+
+    /// **`relative` as the disk spells it**, step by step: each step that is there is the name
+    /// of the entry in its folder that is that very file (by device and inode), so a spelling the
+    /// disk folds (`repoſ` on APFS) is read as the name it reaches (`repos`). A step that is not
+    /// there, and every step after it, is kept as it was asked.
+    fn on_disk(&self, relative: &str) -> String {
+        let mut folder = self.dir.clone();
+        let mut spelled: Vec<String> = Vec::new();
+        let mut steps = relative.split('/').filter(|step| !step.is_empty());
+        for step in steps.by_ref() {
+            match spelling_in(&folder, step) {
+                Some(name) => {
+                    folder.push(&name);
+                    spelled.push(name);
+                }
+                None => {
+                    spelled.push(step.to_string());
+                    break;
+                }
+            }
+        }
+        spelled.extend(steps.map(str::to_string));
+        spelled.join("/")
     }
 
     /// **A new name in the folder at `relative`**: a name a file may have, never one that is a
@@ -187,7 +240,9 @@ impl Files {
         path: &str,
         kept: &[String],
     ) -> Result<(PathBuf, String, PathBuf), NotWritten> {
-        let relative = self.judged(path)?;
+        // Judged as the disk spells it, so a spelling the disk folds onto a repo's or a name
+        // purlis keeps is judged as that name, whatever folding the disk does.
+        let relative = self.judged(&self.on_disk(&self.judged(path)?))?;
         if relative.is_empty() {
             return Err(NotWritten::TheFolderItself);
         }
