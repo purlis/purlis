@@ -3,7 +3,13 @@
 
 import process from "node:process";
 import { config as base } from "./wdio.conf.js";
-import { anEmptyRecord, built, copyFixturePlane, theRunsEnvironment } from "./harness.js";
+import {
+  anEmptyRecord,
+  built,
+  copyFixturePlane,
+  declareAProfile,
+  theRunsEnvironment,
+} from "./harness.js";
 import { writeBenchShell } from "./load.js";
 import { PANIC_LOG } from "./processes.js";
 
@@ -33,6 +39,11 @@ const plane = chatEvents
 
 const knob = process.env.PURLIS_E2E_CHAT_EVENTS_MS;
 
+// A chat's program is the fake harness, with the load the spec chose: the project's default
+// profile runs it, as `wdio.conf.ts`'s runs its harness, and a new tab's `$SHELL` is it too.
+const loaded = chatEvents ? writeBenchShell(built("fake-harness")) : undefined;
+if (loaded) declareAProfile(plane, loaded);
+
 export const config: WebdriverIO.Config = {
   ...base,
   specs: [chatEvents ? "./specs/chat-events.scale.e2e.ts" : "./specs/scale.scale.e2e.ts"],
@@ -53,7 +64,7 @@ export const config: WebdriverIO.Config = {
         env: theRunsEnvironment(plane, {
           CHARTER_PANIC_LOG: PANIC_LOG,
           // A new tab's pane runs `$SHELL`: the fake harness, with the load the spec chose.
-          ...(chatEvents ? { SHELL: writeBenchShell(built("fake-harness")) } : {}),
+          ...(loaded ? { SHELL: loaded } : {}),
           ...(knob === undefined ? {} : { PURLIS_E2E_CHAT_EVENTS_MS: knob }),
         }),
       },
