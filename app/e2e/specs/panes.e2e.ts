@@ -116,6 +116,19 @@ async function tabsOpen(): Promise<number> {
   await browser.keys(["F2"]);
   const palette = await $('[role="dialog"][aria-label="Command palette"]');
   await palette.waitForDisplayed({ timeout: 20_000 });
+  // Narrowed to the tabs' closes by their verb first: with fifty chats open the palette holds
+  // more rows than it draws whole, and draws only those in sight (#5501), so a count of the
+  // whole list's rows in the document would miss most of them.
+  await $("#palette-query").addValue("tab.close");
+  await browser.waitUntil(
+    async () =>
+      browser.execute(() =>
+        [...document.querySelectorAll('[id^="palette-row-"]')].every((row) =>
+          row.id.startsWith("palette-row-tab.close:"),
+        ),
+      ),
+    { timeout: 10_000, timeoutMsg: "the palette did not narrow to the tabs' closes" },
+  );
   const counted = await browser.execute(
     (kept: string) =>
       // A tab's close, by its row's id (#4756): one per tab, and never a chat's End…. Not a
