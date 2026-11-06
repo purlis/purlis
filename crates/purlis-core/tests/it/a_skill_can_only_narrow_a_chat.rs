@@ -131,8 +131,8 @@ fn opencode_folder(env: &[(String, String)]) -> PathBuf {
 
 #[test]
 fn a_claude_code_chat_names_the_folder_its_harness_holds_the_plane_s_skills_in() {
-    // #4510: `skill_load` sends a chat to `skills:<name>` only for a skill this folder holds.
     purlis_core::unsteered!();
+    // #4510: `skill_load` sends a chat to `skills:<name>` only for a skill this folder holds.
     let here = here();
     let (args, env) = host_armed(Harness::ClaudeCode, &here);
     let folder = claude_folder(&args);
