@@ -8101,36 +8101,52 @@ semantics below.
 
 ### `index/<clone-key>/` — the project's search index
 
-- **Format:** **decided, not yet written** ([ADR 0079](adr/0079-search-runs-on-derived-sqlite-indexes-one-per-project-clone-and-one-per-machine.md)).
+- **Format:** ([ADR 0079](adr/0079-search-runs-on-derived-sqlite-indexes-one-per-project-clone-and-one-per-machine.md),
+  [as amended 2026-11-06](adr/0079/2026-11-06-scale-targets-one-stream-and-the-scans-words.md)).
   `<clone-key>` is the first 16 hex characters of the SHA-256 of the clone's canonical root path, so
   two clones sharing a state directory through `$CHARTER_HOME` never share an index. Inside it:
-  `current`, a plain-text file naming the live generation, and one directory per generation
-  holding `search.sqlite` (SQLite in WAL mode, with its `-wal` and `-shm`): an item table (path,
-  kind, owner, audience, approval state, workspace, persona, content hash, size, modification
-  time), an FTS5 contentless table (`detail=full`: each term with its row, column and position,
-  enough to reconstruct much of the wording, but no text as written), and a `meta` table (schema
-  version, redaction rules version, the commit last reconciled, the time built). A span the
-  shape scanner flags is indexed as its kind. A deleted item's rows stop answering at once, and
-  its terms leave the file at the next FTS5 `optimize` plus `wal_checkpoint(TRUNCATE)` with
-  `secure_delete` on; an unlinked old generation is not overwritten. A chat is answered only
-  from its own `<clone-key>`
+  `current`, a plain-text file naming the live generation (a name of letters, digits and `-`), and
+  one directory per generation holding `search.sqlite` (SQLite in WAL mode, with its `-wal` and
+  `-shm`):
+  - `item`: one row per indexed file (path and the source folder it was listed from, both
+    relative to the root; kind, one of `workspace`, `persona`, `shared`, `refs`, `sessions`,
+    `todos`; owner, the workspace or persona, `_shared` for the shared store and `""` for the
+    root's sessions; audience, `project` for every row until V4's audience settings land; its
+    title after the shape scanner; its recorded date; size, modification time and content hash);
+  - `words`: an FTS5 contentless table (`content=''`, `contentless_delete=1`, `detail=full`, the
+    `ascii` tokeniser with `_` a token character, prefix indexes of 2 and 3) of each row's title,
+    text and reach. Title and text are handed in as purlis's own word split, the one the file scan
+    matches by. Each term is kept with its row, column and position, enough to reconstruct much of
+    the wording, but no text as written;
+  - `unread`: each folder or entry the last sweep could not look at, by source;
+  - `workspace`: each workspace's summary for the briefing (the first line of its vision, after
+    the shape scanner, and its own files' newest modification time);
+  - `meta`: schema version, rules version (the shape scanner's rules and the word split), the
+    commit last reconciled, when it was built, whether work is queued (`pending`) and when the
+    writer last finished (`as_of`).
+
+  A span the shape scanner flags is indexed as its kind. A deleted item's rows stop answering at
+  once, and its terms leave the file at the next FTS5 `optimize` plus `wal_checkpoint(TRUNCATE)`
+  with `secure_delete` on (at the writer's start, and after ten idle minutes); an unlinked old
+  generation is not overwritten. A chat is answered only from its own `<clone-key>`
 - **Status:** **internal**. Derived from the project's memory bases, session records and todos,
-  read through `memstore::read_files`' gate. Deleted ⇒ `recall` and the briefing scan the files
-  until `purlisd` has rebuilt it. A version it did not write is discarded and rebuilt, never
-  migrated
+  read through `memstore::read_files`' gate. Deleted ⇒ `recall` scans the files until `purlisd`
+  has rebuilt it. A version it did not write is discarded and rebuilt, never migrated
 - **Tier:** Clone state, rebuildable
-- **Written by:** `purlisd`, its only writer (KN-2). A full rebuild writes a new generation and
-  swaps `current` in one rename
-- **Read by:** the app's panels, the hooks, the CLI and the palette, read-only
+- **Written by:** `purlisd`, its only writer (`purlis_core::projectindex::Keeper`, #5498), for each
+  project it saves. A full rebuild writes a new generation and swaps `current` in one rename
+- **Read by:** `recall` in the CLI, read-only (`SQLITE_OPEN_READ_ONLY`, `query_only`); the
+  briefing, the panels and the palette next (#5503)
 - **Git:** gitignored, with the rest of `.charter/`
 
 ### `index/<clone-key>/writer.lock`
 
-- **Format:** an empty file, held with an advisory `flock` by the index's writer. **Decided, not
-  yet written** (ADR 0079)
+- **Format:** an empty file, held with an advisory `flock` by the index's writer. A reader takes a
+  shared lock for a moment to tell whether a writer holds it, and says an answer may be behind
+  when none does
 - **Status:** **internal**. A second writer waits on it rather than writing alongside
 - **Tier:** Clone state, transient
-- **Written by:** `purlisd` (KN-2)
+- **Written by:** `purlisd` (#5498)
 - **Git:** gitignored
 
 ---

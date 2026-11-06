@@ -390,3 +390,45 @@ fn a_memory_title_in_recall_is_shown_escaped_and_cannot_hide_the_hits_after_it()
         "{text}"
     );
 }
+
+#[test]
+fn recall_answers_from_the_project_index_and_says_when_it_may_be_behind() {
+    // ADR 0079 §3, #5498: with the index there and no host keeping it, the CLI reads it, never
+    // writes it, finds what the scan found, and says the answer may be behind the files.
+    let tmp = daily();
+    let root = root(&tmp);
+    let args = ["recall", "--persona", "devops", "--limit", "0"];
+    let scanned = charter(&root, &args);
+    let paths = |out: &Output| -> std::collections::BTreeSet<String> {
+        stdout(out)
+            .lines()
+            .map(str::trim)
+            .filter(|l| l.ends_with(".md"))
+            .map(str::to_string)
+            .collect()
+    };
+
+    drop(purlis_core::projectindex::Writer::open(&root).unwrap());
+    let db_before = std::fs::read(purlis_core::projectindex::home(&root).join("current")).unwrap();
+    let indexed = charter(&root, &args);
+
+    assert_eq!(scanned.status.code(), Some(0), "{}", stderr(&scanned));
+    assert_eq!(indexed.status.code(), Some(0), "{}", stderr(&indexed));
+    assert!(!paths(&scanned).is_empty(), "{}", stdout(&scanned));
+    assert_eq!(paths(&scanned), paths(&indexed));
+    assert!(
+        !stderr(&scanned).contains("refreshing"),
+        "{}",
+        stderr(&scanned)
+    );
+    assert!(
+        stderr(&indexed).contains("refreshing: no purlis host is keeping the project index"),
+        "{}",
+        stderr(&indexed)
+    );
+    assert_eq!(
+        std::fs::read(purlis_core::projectindex::home(&root).join("current")).unwrap(),
+        db_before,
+        "the CLI wrote no new generation"
+    );
+}
