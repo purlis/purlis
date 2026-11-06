@@ -454,6 +454,7 @@ fn where_a_new_chat_would_run_names_the_pools_its_workspace_has_run_on() {
             purlis_core::machine::ChatOnPool {
                 pool: "builds".to_owned(),
                 workspace: "app".to_owned(),
+                runner: None,
             },
         );
     })

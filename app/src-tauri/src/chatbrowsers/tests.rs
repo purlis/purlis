@@ -589,6 +589,26 @@ fn a_browser_of_another_chat_is_never_reached_by_its_name() {
 }
 
 #[test]
+fn a_chat_closes_no_browser_the_person_has_taken_over_and_is_told_why() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    allowed_and_acting(&browsers, &hosted, 3);
+    browsers.driven("program-1", true, 1000);
+
+    let why = refusal(answered(&browsers, &hosted, &ask(3, Browsing::Close)).0);
+
+    assert!(why.contains("taken b1 over"), "{why}");
+    assert!(why.contains("stays open"), "{why}");
+    assert!(hosted.closed.lock().unwrap().is_empty());
+    assert!(browsers.holds(3, "program-1"), "the chat still has it");
+
+    // Handed back, the chat's close ends it as ever.
+    browsers.driven("program-1", false, 1001);
+    answered(&browsers, &hosted, &ask(3, Browsing::Close));
+    assert_eq!(*hosted.closed.lock().unwrap(), ["program-1"]);
+}
+
+#[test]
 fn a_project_holds_at_most_three_browsers_across_its_chats() {
     let browsers = ChatBrowsers::default();
     let hosted = Arc::new(Hosted::default());
@@ -3516,6 +3536,7 @@ fn an_open_ask(chat: u32, vault: &str, key: &str) -> purlis_core::secrets::ask::
         declared: Some(String::new()),
         names_no_vault: false,
         reason: None,
+        no_allow: None,
         chats: vec![chat],
         starts: 0,
         cannot_receive: Vec::new(),

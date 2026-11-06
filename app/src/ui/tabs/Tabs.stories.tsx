@@ -15,11 +15,11 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Fragment, useState, type CSSProperties } from "react";
 import { expect, waitFor } from "storybook/test";
-import { Plus, X } from "lucide-react";
+import { Bot, Plus, X } from "lucide-react";
 import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 import { useTabIds } from "../../StripTablist";
-import { ChatMark } from "../../NeedsYou";
-import type { State } from "../../chatState";
+import { ChatMark } from "../chat-mark/ChatMark";
+import type { MarkState } from "../../shownState";
 import { Button, IconButton } from "../button/Button";
 import { TIPS_BELOW } from "../tooltip/Tooltip";
 import { editorToolbar, TabCell, tabPart, tabsPart, ToolbarFile, type TabVariant } from "./Tabs";
@@ -29,10 +29,10 @@ import { Separator } from "../panel/Separator";
 import { StripTab, TabStripRow, useTabStrip } from "./TabStrip";
 
 /** One tab as a story draws it: its name, what it holds, and its chat's state, if any. */
-type Shown = { name: string; variant?: TabVariant; state?: State };
+type Shown = { name: string; variant?: TabVariant; state?: MarkState };
 
 const CHATS: Shown[] = [
-  { name: "steward 1", state: "running" },
+  { name: "steward 1", state: "working" },
   { name: "talk", state: "waiting" },
   { name: "review the tab strip prototype" },
   { name: "purlis.toml", variant: "file" },
@@ -108,7 +108,7 @@ function DockedStrip({
                 id={idOf(at)}
                 onClick={() => setInFront(at)}
               >
-                {one.state && <ChatMark state={one.state} />}
+                {one.state && <ChatMark state={one.state} who={<Bot aria-hidden="true" />} />}
                 <span className="tab-name" {...tabPart("label")}>
                   {one.name}
                 </span>
@@ -334,7 +334,7 @@ export const Narrow: Story = {
     tabs: [
       ...CHATS,
       { name: "dispatch the docked tabs lane" },
-      { name: "steward 2", state: "running" },
+      { name: "steward 2", state: "working" },
     ],
   },
   play: async ({ canvas, canvasElement }) => {

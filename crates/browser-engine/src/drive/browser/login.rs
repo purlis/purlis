@@ -303,7 +303,7 @@ impl Browser {
             .chain(std::iter::once(login.password.as_str()))
             .collect();
         held.run(&values);
-        lock(&self.inner.state).keep_out_everywhere(&held);
+        lock(&self.inner.state).keep_filled_out(&held, origin);
         hold.begins().map_err(|why| {
             not_logged_in(format!(
                 "purlis could not let this browser reach {origin} ({why}), so nothing was filled"

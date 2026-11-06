@@ -21,7 +21,7 @@
  *   waiting on tasks, and the hand on a task rolls up instead.
  */
 import type { FinishedTask } from "./bindings";
-import { markOf, ownWorkOf, type ChatStates } from "./chatState";
+import { failedUnseen, failuresUnseenOf, markOf, ownWorkOf, type ChatStates } from "./chatState";
 import type { ListedChat } from "./chatsTree";
 import { shownState, type RowFacts, type Shown } from "./shownState";
 import {
@@ -163,7 +163,9 @@ export function kindsOf(states: ChatStates, chats: readonly Read[]): Stood[] {
     const atWork = working.get(chat.session) ?? 0;
     const shown = shownState({
       board: markOf(states, chat.session, chat.shell),
-      needsYou: queue.has(chat.session),
+      needsYou: queue.has(chat.session) && states.onlyFailures[chat.session] !== true,
+      failuresUnseen: failuresUnseenOf(states, chat.session),
+      failedUnseen: failedUnseen(states, chat.session),
       task:
         chat.report === null
           ? null

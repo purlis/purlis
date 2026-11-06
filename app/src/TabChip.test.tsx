@@ -8,7 +8,7 @@ import { drawnWith } from "./cascade.testkit";
 import { ChatsHere, fixedChats, nothingKnown } from "./chatState";
 import type { ChatRow } from "./chatsTree";
 import { TabTasks } from "./TabChip";
-import type { Shown } from "./shownState";
+import type { Said } from "./shownState";
 import { stateClock } from "./stateClock";
 import { REST_MS, type Ended, type Needing } from "./tabTasks";
 import type { TasksUsed } from "./bindings";
@@ -46,9 +46,9 @@ function row(session: number, level: number, name: string): ChatRow {
 
 const ROWS = [row(1, 1, "steward 1"), row(2, 2, "talk")];
 
-const DONE: Shown = { kind: "done", word: "done", shape: "tick", token: "text.muted" };
-const FAILED: Shown = { kind: "failed", word: "failed", shape: "cross", token: "state.failed" };
-const CANCELLED: Shown = {
+const DONE: Said = { kind: "done", word: "done", shape: "tick", token: "text.muted" };
+const FAILED: Said = { kind: "failed", word: "failed", shape: "cross", token: "state.failed" };
+const CANCELLED: Said = {
   kind: "cancelled",
   word: "cancelled",
   shape: "dash",

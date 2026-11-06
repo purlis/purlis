@@ -1632,6 +1632,323 @@ pub fn declared<'a>(
     Ok(ready)
 }
 
+/// Whether `program`, as a chat named it, is a tool of its persona's in any standing: armed for
+/// the chat, or listed by the project now though not armed. Such a program is never one a Run
+/// grant is asked for (ADR 0112): a declared tool behaves exactly as before, and one a teammate
+/// declared runs nothing here until this machine's own Allow.
+pub fn is_declared(armed: &[Ready], listed: &[Tool], program: &str) -> bool {
+    let named = Path::new(program)
+        .file_name()
+        .map_or_else(|| program.to_owned(), |n| n.to_string_lossy().into_owned());
+    // Whatever its case: macOS finds `CURL` as `curl`, and no spelling escapes a line.
+    armed
+        .iter()
+        .any(|ready| names(ready, program) || ready.tool.name.eq_ignore_ascii_case(&named))
+        || listed
+            .iter()
+            .any(|tool| tool.name.eq_ignore_ascii_case(&named))
+}
+
+/// Whether a line written for `program` limits its arguments, which no grant for any arguments may
+/// then go past (#5245): a teammate's narrowing holds from the chat's next run.
+pub fn limits_its_arguments(listed: &[Tool], program: &str) -> bool {
+    let named = Path::new(program)
+        .file_name()
+        .map_or_else(|| program.to_owned(), |n| n.to_string_lossy().into_owned());
+    listed
+        .iter()
+        .any(|tool| tool.name.eq_ignore_ascii_case(&named) && tool.args.is_some())
+}
+
+/// **Programs no Run grant is offered for, though a declared tool may be one** (ADR 0112, #5239):
+/// each runs other programs as its arguments, its files or its prompt say, which [`REFUSED_NAMES`]
+/// keeps off every tool. A person who declares one chose it in a reviewed line; a person asked in a
+/// notice by a chat should not be asked. Not a complete list: every Run grant's notice says a
+/// program may run others.
+const NOT_FOR_A_RUN_GRANT: &[&str] = &[
+    // run what their arguments name
+    "find",
+    "gfind",
+    "fd",
+    "apply",
+    "lockf",
+    "taskset",
+    "ionice",
+    "unshare",
+    "nsenter",
+    "pkexec",
+    "at",
+    "batch",
+    "crontab",
+    "rlwrap",
+    "ssh-agent",
+    "xcrun",
+    "toybox",
+    "git",
+    "git-upload-pack",
+    "git-receive-pack",
+    "screen",
+    "tmux",
+    "m4",
+    // build and run what their files say, files a chat writes
+    "make",
+    "gmake",
+    "bmake",
+    "cmake",
+    "ninja",
+    "rake",
+    "ant",
+    "mvn",
+    "gradle",
+    "bazel",
+    "just",
+    "npm",
+    "npx",
+    "yarn",
+    "pnpm",
+    "corepack",
+    "pip",
+    "pip3",
+    "pipx",
+    "uv",
+    "uvx",
+    "poetry",
+    "gem",
+    "bundle",
+    "cargo",
+    "rustc",
+    "rustup",
+    "go",
+    "gcc",
+    "g++",
+    "cc",
+    "c++",
+    "clang",
+    "clang++",
+    "ld",
+    "docker",
+    "podman",
+    "nerdctl",
+    "swift",
+    "java",
+    "javac",
+    "dotnet",
+    // drive a program, or run commands from their own prompt
+    "gdb",
+    "lldb",
+    "strace",
+    "ltrace",
+    "dtrace",
+    "dtruss",
+    "vi",
+    "vim",
+    "nvim",
+    "view",
+    "ex",
+    "emacs",
+    "nano",
+    "ed",
+    "less",
+    "more",
+    "man",
+    "ftp",
+    "sqlite3",
+    "tcpdump",
+];
+
+/// **The programs a Run grant may be wider than one exact command for** (the person's ruling on
+/// ADR 0112): Allow for this chat and Always allow, which take any arguments, so the arguments are
+/// no longer read by anyone. Every other program [`for_run_grant`] takes gets Allow once alone.
+/// **Each addition is its own review of whether that program can run others.** `wget` is out as it
+/// stands: its `--use-askpass` runs a command. A program here can still print or send what it is
+/// handed, as its notice's caution says.
+const REVIEWED_FOR_ANY_ARGUMENTS: &[&str] = &["curl"];
+
+/// Whether `name` is a program a grant of any arguments may be given for, spelled exactly so.
+pub fn reviewed_for_any_arguments(name: &str) -> bool {
+    REVIEWED_FOR_ANY_ARGUMENTS.contains(&name)
+}
+
+/// Whether `program`'s spelling is the one its folder holds: macOS finds `CURL` for `curl`, and a
+/// grant bound to a spelling the person never sees elsewhere would escape every check by name.
+fn spelled_as_it_is_held(program: &Path) -> bool {
+    let (Some(parent), Some(name)) = (program.parent(), program.file_name()) else {
+        return false;
+    };
+    std::fs::read_dir(parent)
+        .is_ok_and(|mut entries| entries.any(|one| one.is_ok_and(|one| one.file_name() == name)))
+}
+
+/// **The program and values a chat's command names, as a Run grant would hand them** (ADR 0112,
+/// #5239): read as a declared tool is, by the same refusals, so nothing a tool may not be is
+/// offered to the person. `written` is every folder the asking chat may write. Refused, with a
+/// sentence and with nothing asked:
+///
+/// - a program named by anything but its plain name or its absolute path as the app finds it, so
+///   the path the person is shown is never one the chat picked ([`names`]);
+/// - a program that runs what it is told, or purlis itself, by name, as found and as its links
+///   resolve ([`refused_name`], [`refused_at`]);
+/// - one found only where a chat writes, or not at all ([`resolve_beside`]);
+/// - a `--dotenv`, which names no variable; a variable that steers what runs ([`refused_var`]);
+///   a key no Secret ask takes;
+/// - a key a `mint` line names ([`mint::raw`]), or one that `listed` hands only to a browser login
+///   or a secret-fill line: purlis fills those on one origin itself, and no program is handed them.
+///   The gate holds every persona's such key too, through a link and in any case
+///   ([`crate::secretfill::a_browsers`]).
+pub fn for_run_grant(
+    root: &Path,
+    persona: &str,
+    asked: &Asked<'_>,
+    listed: &[Tool],
+    locks: &super::policy::Locks,
+    written: &[PathBuf],
+) -> Result<Ready, String> {
+    let name = Path::new(asked.program)
+        .file_name()
+        .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+    if let Some(why) = refused_name(&name) {
+        return Err(why);
+    }
+    let runs_others = |name: &str| {
+        format!(
+            "{name} runs other programs as it is told, so purlis does not offer to allow it: \
+             declare what it's for as a tool, with the arguments it takes"
+        )
+    };
+    if not_for_a_run_grant(&name) {
+        return Err(runs_others(&name));
+    }
+    if !asked.dotenv.is_empty() {
+        return Err(format!(
+            "--dotenv names no variable, so {name} can't be allowed with it: hand each key with              --file VARIABLE=key or --env VARIABLE=key"
+        ));
+    }
+    let mut values = Vec::new();
+    for (specs, handed) in [(asked.file, Handed::File), (asked.env, Handed::Env)] {
+        for spec in specs {
+            let Some((var, key)) = spec.split_once('=') else {
+                return Err(format!("{} expects VARIABLE=key", handed.flag()));
+            };
+            if let Some(why) = refused_var(var) {
+                return Err(why);
+            }
+            if var.len() > MOST_VARIABLE_SHOWN {
+                return Err(format!(
+                    "a variable's name can be at most {MOST_VARIABLE_SHOWN} characters for the \
+                     person to read it, so purlis did not ask: use a shorter one"
+                ));
+            }
+            if loads_code(var) {
+                return Err(format!(
+                    "{var} steers what a program loads, so purlis does not offer to hand it a value"
+                ));
+            }
+            if !crate::secrets::needs::is_key(key) {
+                return Err(format!(
+                    "{} is not a key name a run grant takes: use letters, digits, _, - and ., \
+                     starting with a letter or _",
+                    crate::shown::one_line(key, 40)
+                ));
+            }
+            if values.iter().any(|value: &Value| value.var == var) {
+                return Err(format!("{var} is handed two values"));
+            }
+            if let mint::Raw::Refused(why) = mint::raw(root, asked.vault, key) {
+                return Err(why);
+            }
+            let only_a_browser_fills_it = |tool: &Tool| {
+                tool.vault == asked.vault
+                    && (tool.fill.as_ref().is_some_and(|fill| fill.key == key)
+                        || (tool.login.is_some()
+                            && tool.values.iter().any(|value| value.key == key)))
+            };
+            if listed.iter().any(only_a_browser_fills_it) {
+                return Err(format!(
+                    "{key} in vault {} is one purlis fills in a browser itself, on the one site \
+                     {persona} declares, so no program is handed it",
+                    asked.vault
+                ));
+            }
+            values.push(Value {
+                var: var.to_owned(),
+                handed,
+                key: key.to_owned(),
+            });
+        }
+    }
+    if values.is_empty() {
+        return Err(format!(
+            "the command hands {name} no key, so there is nothing to allow"
+        ));
+    }
+    if values.len() > MOST_VALUES {
+        return Err(format!(
+            "a run is handed at most {MOST_VALUES} values, so {name} can't be allowed with more"
+        ));
+    }
+    let tool = Tool {
+        name: name.clone(),
+        vault: asked.vault.to_owned(),
+        values,
+        login: None,
+        args: None,
+        mint: None,
+        host: None,
+        fill: None,
+    };
+    let resolved = resolve_beside(
+        root,
+        persona,
+        std::slice::from_ref(&tool),
+        locks,
+        &search_dirs(),
+        written,
+        &temp_folders(),
+    );
+    let Some(mut resolved) = resolved else {
+        return Err(format!(
+            "no {name} was found outside the folders a chat may write"
+        ));
+    };
+    let Some(ready) = resolved.ready.pop() else {
+        return Err(resolved.left.pop().unwrap_or_else(|| {
+            format!("no {name} was found outside the folders a chat may write")
+        }));
+    };
+    // A link may lead to one: `vimdiff` to `vim`, `editor` to `vim.basic`.
+    if not_for_a_run_grant(&file_name_of(&ready.program)) {
+        return Err(runs_others(&name));
+    }
+    if !names(&ready, asked.program) {
+        return Err(format!(
+            "{} is not the {name} purlis finds outside the folders a chat may write: name it {name}",
+            crate::shown::one_line(asked.program, 120)
+        ));
+    }
+    if !spelled_as_it_is_held(&ready.program) {
+        return Err(format!(
+            "{name} is not how its folder spells it, so purlis did not ask: name the program as \
+             it is spelled"
+        ));
+    }
+    Ok(ready)
+}
+
+/// The longest variable name a person is asked to allow: it is drawn among the app's own facts.
+const MOST_VARIABLE_SHOWN: usize = 64;
+
+/// Whether `name` is on [`NOT_FOR_A_RUN_GRANT`], as itself or as a build of it (`vim.basic`).
+fn not_for_a_run_grant(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    let stem = name.split('.').next().unwrap_or_default();
+    NOT_FOR_A_RUN_GRANT.contains(&name.as_str()) || NOT_FOR_A_RUN_GRANT.contains(&stem)
+}
+
+/// **The caution beside a Run grant's Allow** ([`caution`]), on the app's own search path.
+pub fn caution_here(tool: &Tool) -> Option<String> {
+    caution(tool, &search_dirs())
+}
+
 /// **What a declared tool's run is**, once [`declared`] took it: the tool's own program by its
 /// absolute path, then the chat's arguments. Refused for a browser login, which runs no program:
 /// purlis performs it in the chat's own browser (#2016).
@@ -1868,6 +2185,35 @@ const A_RUN_STARTS_FROM: &[&str] = &[
 /// `LC_*`).
 pub fn a_run_starts_from(var: &str) -> bool {
     A_RUN_STARTS_FROM.contains(&var) || var.starts_with("LC_")
+}
+
+/// **What a run under a Run grant leaves of the chat's variables** (ADR 0112, amended
+/// 2026-11-05): where it connects and whom it trusts. The person read a command and a program,
+/// and neither shows these, so a chat that wants a host, a port, a region or a certificate
+/// authority says it in the command, where the person reads it.
+const A_GRANTED_RUN_LEAVES: &[&str] = &[
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "NODE_EXTRA_CA_CERTS",
+    "REQUESTS_CA_BUNDLE",
+    "CURL_CA_BUNDLE",
+    "AWS_CA_BUNDLE",
+    "PGHOST",
+    "PGHOSTADDR",
+    "PGPORT",
+    "PGSSLMODE",
+    "MYSQL_HOST",
+    "MYSQL_TCP_PORT",
+    "REDIS_HOST",
+    "REDIS_PORT",
+    "AWS_REGION",
+    "AWS_DEFAULT_REGION",
+];
+
+/// **Whether a run under a Run grant starts with the chat's `var`**: [`a_run_starts_from`], less
+/// [`A_GRANTED_RUN_LEAVES`].
+pub fn a_granted_run_starts_from(var: &str) -> bool {
+    a_run_starts_from(var) && !A_GRANTED_RUN_LEAVES.contains(&var)
 }
 
 /// **A brokered run's home** (#2047): `HOME` and the `XDG_*` folders, each in the run's own

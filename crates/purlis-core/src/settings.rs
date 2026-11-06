@@ -37,6 +37,7 @@ use std::path::{Path, PathBuf};
 
 use crate::profiles::{self, COMMITTED_FILE, LOCAL_FILE};
 
+pub mod always_allow;
 pub mod browser_sites;
 pub mod collection;
 pub mod dispatch;

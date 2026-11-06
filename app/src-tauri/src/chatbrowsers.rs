@@ -3446,6 +3446,10 @@ impl ChatBrowsers {
                 let Some(program) = chat.program(&name) else {
                     return (no(&no_such(&name)), false);
                 };
+                // The person drives it, so the page is theirs: they end it from the window.
+                if self.driver_of(&program) == Some(BrowserDriver::Person) {
+                    return (no(&not_closed_taken_over_said(&name)), false);
+                }
                 chat.drop_browser(&name);
                 self.relisted();
                 let closing = [ChatBrowser {
@@ -4035,6 +4039,14 @@ pub fn taken_over_said(browser: &str) -> String {
     )
 }
 
+/// **What a chat is told of closing a browser the person has taken over**: it stays open, and why.
+pub fn not_closed_taken_over_said(browser: &str) -> String {
+    format!(
+        "the person has taken {browser} over, so it stays open: do something else, and call \
+         browser_close again once they hand it back"
+    )
+}
+
 /// What the chat is told once purlis performed its browser login `name` (#2016): that its
 /// password field went, where, and what the browser reaches from now (`reaches`,
 /// [`reaches_said`]). Never that the person is signed in by what it typed, which only the page can show (it may
@@ -4576,6 +4588,7 @@ fn secret_missing<'a>(
         asks: held.secret_asks(),
         within: purlis_core::secrets::ask::holds_for(asker.harness),
         moved,
+        run_gate: None,
     }
 }
 

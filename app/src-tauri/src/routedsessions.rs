@@ -400,9 +400,7 @@ impl RoutedSessions {
         {
             return None;
         }
-        let (made, host) = made_for(&self.shared, &self.to_a_pool, runner, pool).ok()?;
-        lock(&self.shared.asked).insert(runner.to_owned(), (made, Arc::clone(&host)));
-        Some((made, host))
+        asked_through(&self.shared, &self.to_a_pool, pool, runner).ok()
     }
 
     /// Whether `pool`'s runner now, or one that drains, says it runs chat `number`, which is kept
@@ -607,6 +605,21 @@ fn made_for(
     Ok((number, Arc::from(made)))
 }
 
+/// The host that asks the draining runner `named`, `<pool>/<runner>`, made the first time (#4271).
+fn asked_through(
+    shared: &Arc<Shared>,
+    to_a_pool: &ToAPool,
+    pool: &str,
+    named: &str,
+) -> Result<NumberedHost, String> {
+    if let Some((made, host)) = lock(&shared.asked).get(named) {
+        return Ok((*made, Arc::clone(host)));
+    }
+    let (made, host) = made_for(shared, to_a_pool, named, pool)?;
+    lock(&shared.asked).insert(named.to_owned(), (made, Arc::clone(&host)));
+    Ok((made, host))
+}
+
 /// Every host of every pool, as its pool, its number and itself: each pool's now first, so what a
 /// draining runner has comes back beside what the pool's runner has ([`fetch_back_all`]).
 fn every_host(shared: &Shared) -> Vec<(String, u64, Arc<dyn SessionHost>)> {
@@ -677,6 +690,7 @@ fn to_fetch(fetch_from: &OnPools, chats_kept: &ChatsKept) -> BTreeMap<String, BT
 fn fetch_back_owed(
     shared: &Arc<Shared>,
     to_a_pool: &ToAPool,
+    draining_of: &DrainingOf,
     on_pools: &OnPools,
     chats_kept: &ChatsKept,
     pool: &str,
@@ -686,8 +700,11 @@ fn fetch_back_owed(
     let mut failed = Vec::new();
     for workspace in workspaces {
         let left = !routed.contains(workspace);
-        let why = fetch_back_pool(shared, to_a_pool, pool, workspace, left);
-        if why.is_empty() {
+        // A chat that leaves its record meanwhile owes what the fetch may have read too soon to
+        // bring, so this fetch settles nothing and the next one does (#5393).
+        let leaves = chats_kept.leaves();
+        let why = fetch_back_pool(shared, to_a_pool, draining_of, pool, workspace, left);
+        if why.is_empty() && chats_kept.leaves() == leaves {
             chats_kept.fetched(pool, workspace);
         }
         failed.extend(why);
@@ -700,6 +717,7 @@ fn fetch_back_all(
     on_pools: &OnPools,
     fetch_from: &OnPools,
     to_a_pool: &ToAPool,
+    draining_of: &DrainingOf,
     chats_kept: &ChatsKept,
 ) -> Vec<String> {
     let mut failed = Vec::new();
@@ -707,6 +725,7 @@ fn fetch_back_all(
         failed.extend(fetch_back_owed(
             shared,
             to_a_pool,
+            draining_of,
             on_pools,
             chats_kept,
             &pool,
@@ -717,10 +736,14 @@ fn fetch_back_all(
 }
 
 /// The branches of `workspace` back from each runner of `pool`, each draining one's beside its
-/// runner's now (#4248). `left` is a pool it no longer runs on (#4590).
+/// runner's now (#4248). `left` is a pool it no longer runs on (#4590). What comes to no failure
+/// has asked every runner of the pool that runs, since a draining runner goes on that (#5393). A
+/// runner's word that it holds no such repository is nothing to fetch, and no failure. A draining
+/// runner still running a program of the project may yet commit, so that is one (#5393).
 fn fetch_back_pool(
     shared: &Arc<Shared>,
     to_a_pool: &ToAPool,
+    draining_of: &DrainingOf,
     pool: &str,
     workspace: &str,
     left: bool,
@@ -745,18 +768,68 @@ fn fetch_back_pool(
         .collect();
     lock(&shared.left).retain(|left| !gone.contains(&left.made));
     lock(&shared.stayed).retain(|_, made| !gone.contains(made));
-    let draining: Vec<Arc<dyn SessionHost>> = lock(&shared.left)
+    let mut still_asked: Vec<Arc<dyn SessionHost>> = Vec::new();
+    let mut draining: Vec<Arc<dyn SessionHost>> = lock(&shared.left)
         .iter()
         .filter(|left| left.pool == pool)
         .map(|left| Arc::clone(&left.host))
         .collect();
+    // A restart keeps no host of a draining runner it found no chat on, and a chat may have ended
+    // there while no window was open to fetch.
+    for named in draining_of(pool) {
+        let named = match named {
+            Ok(named) => named,
+            Err(why) => {
+                failed.push(why);
+                continue;
+            }
+        };
+        let runner = named
+            .split_once('/')
+            .map_or(named.as_str(), |(_, runner)| runner);
+        let reached = draining
+            .iter()
+            .chain(host.iter())
+            .any(|host| host.reaches_runner(runner))
+            || lock(&shared.left)
+                .iter()
+                .any(|left| left.runner.as_deref() == Some(named.as_str()));
+        if reached {
+            // Its link is still on this runner: it is the pool's host only by name.
+            still_asked.extend(
+                host.iter()
+                    .filter(|host| host.reaches_runner(runner))
+                    .map(Arc::clone),
+            );
+            continue;
+        }
+        let asked = {
+            let _one_at_a_time = lock(&shared.replacing);
+            asked_through(shared, to_a_pool, pool, &named)
+        };
+        match asked {
+            Ok((_, asked)) => draining.push(asked),
+            Err(why) => failed.push(why),
+        }
+    }
+    // Before the fetch: what ended after this may have committed since.
+    failed.extend(
+        draining
+            .iter()
+            .chain(&still_asked)
+            .filter_map(|host| host.programs_have_ended().err()),
+    );
     // The pool's runner last: where both have a branch, its commit is the one kept.
     for host in draining.into_iter().chain(host) {
-        failed.extend(if left {
+        let said = if left {
             host.fetch_back_left(workspace, pool)
         } else {
             host.fetch_back(workspace, pool)
-        });
+        };
+        failed.extend(
+            said.into_iter()
+                .filter(|why| !why.contains(purlis_core::codelink::NO_REPOSITORY_THERE)),
+        );
     }
     failed
 }
@@ -950,6 +1023,7 @@ impl SessionHost for RoutedSessions {
             let root = self.root.clone();
             let on_pools = Arc::clone(&self.on_pools);
             let fetch_from = Arc::clone(&self.fetch_from);
+            let draining_of = Arc::clone(&self.draining_of);
             let chats_kept = self.chats_kept.clone();
             Arc::new(move |id, exit| {
                 // Its runner went after its program ended: there is nothing to fetch, and a
@@ -977,8 +1051,9 @@ impl SessionHost for RoutedSessions {
                 if !lock(&shared.ending).insert(pool.clone()) {
                     return;
                 }
-                let (to_a_pool, on_pools, fetch_from, root) = (
+                let (to_a_pool, draining_of, on_pools, fetch_from, root) = (
                     Arc::clone(&to_a_pool),
+                    Arc::clone(&draining_of),
                     Arc::clone(&on_pools),
                     Arc::clone(&fetch_from),
                     root.clone(),
@@ -1000,6 +1075,7 @@ impl SessionHost for RoutedSessions {
                             for why in fetch_back_owed(
                                 &shared,
                                 &to_a_pool,
+                                &draining_of,
                                 &on_pools,
                                 &chats_kept,
                                 &pool,
@@ -1131,6 +1207,7 @@ impl SessionHost for RoutedSessions {
             Arc::clone(&self.on_pools),
             Arc::clone(&self.fetch_from),
             Arc::clone(&self.to_a_pool),
+            Arc::clone(&self.draining_of),
             self.chats_kept.clone(),
         ))
     }
@@ -1196,8 +1273,8 @@ impl SessionHost for RoutedSessions {
     }
 
     /// One fetch at a time, as every fetch into a clone is, and off the thread that closes the
-    /// chat: a fetch crosses the link, and a cluster may be slow. A runner that went takes its host
-    /// with it.
+    /// chat: a fetch crosses the link, and a cluster may be slow. Its proof holds up no other
+    /// fetch. A runner that went takes its host with it.
     fn take_back_fresh(&self, runner: &str, workspace: Option<&str>, done: crate::host::FreshDone) {
         let (shared, to_a_pool) = (Arc::clone(&self.shared), Arc::clone(&self.to_a_pool));
         let (runner, workspace) = (runner.to_owned(), workspace.map(str::to_owned));
@@ -1205,11 +1282,20 @@ impl SessionHost for RoutedSessions {
             .name("purlis-fresh-runner-end".into())
             .spawn(move || {
                 let failed = workspace.map_or_else(Vec::new, |workspace| {
-                    let _one_at_a_time = lock(&shared.fetching);
-                    match pool_of(&shared, &to_a_pool, &runner) {
-                        Ok(host) => host.fetch_back_whole(&workspace, &runner),
-                        Err(why) => vec![why],
-                    }
+                    let host = {
+                        let _one_at_a_time = lock(&shared.fetching);
+                        let host = match pool_of(&shared, &to_a_pool, &runner) {
+                            Ok(host) => host,
+                            Err(why) => return vec![why],
+                        };
+                        let failed = host.fetch_back_whole(&workspace, &runner);
+                        if !failed.is_empty() {
+                            return failed;
+                        }
+                        host
+                    };
+                    // Outside the lock: it writes nothing here, and can take minutes (#5393).
+                    host.not_home_of_runner(&runner)
                 });
                 if done(failed) {
                     lock(&shared.current).remove(&runner);
@@ -1352,7 +1438,7 @@ impl SessionHost for RoutedSessions {
                 let unkept = lock(&self.shared.unkept).remove(number);
                 let pool = lock(&self.shared.chats).get(number).cloned();
                 if let (Some(workspace), Some(pool)) = (unkept, pool) {
-                    self.chats_kept.keep(*number, &pool, &workspace);
+                    self.chats_kept.keep_found(*number, &pool, &workspace);
                 }
             }),
             None => self
@@ -1455,6 +1541,7 @@ impl FetchingBack {
         on_pools: OnPools,
         fetch_from: OnPools,
         to_a_pool: ToAPool,
+        draining_of: DrainingOf,
         chats_kept: ChatsKept,
     ) -> FetchingBack {
         let (poke, poked) = std::sync::mpsc::channel::<crate::autosave::Poke>();
@@ -1479,9 +1566,14 @@ impl FetchingBack {
                         *fetched = Some(Instant::now());
                     }
                     let _one_at_a_time = lock(&shared.fetching);
-                    for why in
-                        fetch_back_all(&shared, &on_pools, &fetch_from, &to_a_pool, &chats_kept)
-                    {
+                    for why in fetch_back_all(
+                        &shared,
+                        &on_pools,
+                        &fetch_from,
+                        &to_a_pool,
+                        &draining_of,
+                        &chats_kept,
+                    ) {
                         tracing::warn!("purlis: {why}");
                     }
                 }

@@ -23,7 +23,7 @@ import { Archive, Brain, FileCode, KeyRound, Settings2, UserRound, X } from "luc
 import { PaneActions, PaneHead } from "../../LayoutPanes";
 import { HeadingOffer } from "../../PanelSection";
 import type { Offer } from "../../actions";
-import { ChatMark } from "../../NeedsYou";
+import { ChatMark } from "../chat-mark/ChatMark";
 import { SettingGroup, SettingsLayout } from "../../settings/components";
 import { useTabIds, StripTablist } from "../../StripTablist";
 import { Button } from "../button/Button";

@@ -682,7 +682,7 @@ pub fn wire(plane: &Path, dir: &Path) -> Vec<Row> {
     // The checkouts come AFTER the directory's own rows, which is charter's order too: its
     // `wire_harnesses` materialises the workspace directory, then extends with each guest
     // tree's rows.
-    let (trees, unlisted) = guest_trees(dir);
+    let (trees, unlisted) = guest_trees(plane, dir);
     for tree in trees {
         rows.extend(guest_rows(plane, dir, &tree));
     }
@@ -838,33 +838,55 @@ pub fn checkout_row(dir: &Path, rel: &str) -> Option<(PathBuf, String)> {
 ///
 /// A listing git cannot give is NAMED rather than passed over in silence (charter#1072): a
 /// worktree nobody can see is not a worktree that is fine.
-pub fn guest_trees(dir: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
-    let children = checkouts(dir);
+pub fn guest_trees(plane: &Path, dir: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    let Some(ws) = dir.file_name().and_then(|name| name.to_str()) else {
+        return (Vec::new(), Vec::new());
+    };
+    let children = checkouts(plane, ws);
     let (mut pieces, unlisted) = pieces(dir, &children);
     let mut all = children;
     all.append(&mut pieces);
     (all, unlisted)
 }
 
-/// Every checkout directly inside the workspace directory that charter is a GUEST in — a
-/// clone or a linked worktree, each a git root of its own.
+/// Every checkout workspace `ws` of `plane` holds that charter is a GUEST in — a clone or a
+/// linked worktree, each a git root of its own. **Its root is read as it always was**, every
+/// entry whatever its name (#353, #4830), and **`repos/` as [`crate::repofolder::holdings`]
+/// walks it** (#5371): its rows of any kind. A folder at the root beside a repo of its name in
+/// `repos/` is wired too, being a git root all the same.
 ///
 /// `.git` is a DIRECTORY in a clone and a FILE reading `gitdir: <path>` in a linked worktree,
 /// and both count: this asks "where would a chat's cwd be cut off from the plane's layer",
-/// and a worktree's root is a git boundary exactly as a clone's is.
+/// and a worktree's root is a git boundary exactly as a clone's is. **A `.git` that is a link
+/// is never one** in either place: the exclude block would be written to whatever it names,
+/// which may be outside the plane.
 ///
 /// **Asked through [`crate::guest::git_dir`], never as "is there a `.git` here".** A linked
 /// worktree's `.git` is a FILE naming its admin directory, and one charter cannot reach — an
 /// unreadable `worktrees/`, a `gitdir:` that points nowhere — is not a checkout charter can
 /// wire. Measured on the differential: with `worktrees/` at mode 000 the shallower test
 /// reported that worktree `blocked` where charter passes over it.
-pub fn checkouts(dir: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(dir) else {
+pub fn checkouts(plane: &Path, ws: &str) -> Vec<PathBuf> {
+    use crate::repofolder::{self, Git, Layout};
+
+    let dir = plane.join("workspaces").join(ws);
+    let Ok(entries) = std::fs::read_dir(&dir) else {
         return Vec::new();
     };
-    let mut out: Vec<PathBuf> = entries
-        .flatten()
-        .map(|e| e.path())
+    let at_root = entries.flatten().map(|e| e.path());
+    let in_repos = repofolder::holdings(plane, ws)
+        .map(|walked| {
+            [walked.repos, walked.others]
+                .into_iter()
+                .flatten()
+                .filter(|row| row.layout == Layout::Repos)
+                .map(|row| row.repo.path)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let mut out: Vec<PathBuf> = at_root
+        .chain(in_repos)
+        .filter(|p| !matches!(repofolder::git_of(p), Ok(Some(Git::Link))))
         .filter(|p| crate::guest::git_dir(p).is_some())
         .collect();
     out.sort();

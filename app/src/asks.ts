@@ -454,6 +454,14 @@ export async function answerTaken(
         if (option === "allow") return commands.answerPoolTool(plane, ask.session, path.run, true);
         if (option === "keep") return commands.answerPoolTool(plane, ask.session, path.run, false);
         break;
+      case "run-grant":
+        // A program a chat's brokered run names that its persona doesn't declare (ADR 0112): an
+        // Allow is a Run grant for that chat, and the command that waits goes on at once.
+        if (option === "allow-once") return commands.answerRunGrant(plane, path.id, "once");
+        if (option === "allow-chat") return commands.answerRunGrant(plane, path.id, "chat");
+        if (option === "allow-always") return commands.answerRunGrant(plane, path.id, "always");
+        if (option === "keep") return commands.answerRunGrant(plane, path.id, "refuse");
+        break;
       case "secret":
         // A key a chat's brokered run missed (#5068, ADR 0109): Fill stores the value typed in
         // the ask's masked box in the vault, and every command that waits on it runs; Not now

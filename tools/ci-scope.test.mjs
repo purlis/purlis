@@ -847,6 +847,7 @@ test("the search finds a Rust path named whole, in pieces, or from a URL", () =>
 const READERS_HELD_ELSEWHERE = {
   "app/.storybook/handed.plugin.ts": "the stories: READ_BY_WEB runs everything",
   "app/e2e/recordedForge.ts": "imported by recordedForge.test.ts, a reader, and a scenario spec",
+  "app/e2e/wdio.browser.conf.ts": "the browser scenario run's own config: it reads the pin's date",
   "app/src/ui/field/fieldCalls.testkit.ts":
     "imported by fieldHelp.guard.test.ts and refusingFields.guard.test.ts, readers",
 };

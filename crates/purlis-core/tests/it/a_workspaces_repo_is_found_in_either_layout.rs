@@ -569,7 +569,7 @@ fn a_repos_folder_that_cannot_be_read_is_said_and_the_root_still_answers() {
 // ---------------------------------------------------------------------------------------
 
 #[test]
-fn the_repo_list_reads_the_same_walk_and_still_answers_only_the_root_until_it_migrates() {
+fn the_repo_list_reads_the_same_walk_in_both_places_and_lists_a_shadowed_name_once() {
     purlis_core::unsteered!();
     let plane = Plane::new();
     let (_keep, outside) = elsewhere();
@@ -585,12 +585,14 @@ fn the_repo_list_reads_the_same_walk_and_still_answers_only_the_root_until_it_mi
 
     let clones = repos::clones(&plane.root, "alpha").expect("the workspace reads");
 
+    // #5371: `repos/` is read too, and `twice/` beside `repos/twice/` is not listed again.
     let found: Vec<_> = clones.repos.iter().map(|repo| repo.path.clone()).collect();
     assert_eq!(
         found,
         [
             plane.workspace().join("memory"),
-            plane.workspace().join("twice")
+            plane.workspace().join("repos/new"),
+            plane.workspace().join("repos/twice"),
         ]
     );
     let refused: Vec<_> = clones
@@ -598,12 +600,10 @@ fn the_repo_list_reads_the_same_walk_and_still_answers_only_the_root_until_it_mi
         .iter()
         .map(|(name, _)| name.as_str())
         .collect();
-    assert_eq!(refused, ["a b", "gitlink"]);
-    assert!(
-        clones.refused[1].1.contains("symlink"),
-        "{:?}",
-        clones.refused
-    );
+    assert_eq!(refused, ["a b", "c d", "gitlink", "gitlink"]);
+    for (_, why) in &clones.refused[2..] {
+        assert!(why.contains("symlink"), "{:?}", clones.refused);
+    }
 }
 
 // ---------------------------------------------------------------------------------------

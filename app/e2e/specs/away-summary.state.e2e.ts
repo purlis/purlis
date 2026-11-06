@@ -35,7 +35,7 @@ const NARROWEST = 1024;
 
 /** What a tab says its chat is doing, by the accessible name on its state mark. */
 async function doing(): Promise<string> {
-  const mark = await $('[data-strip="Tabs"] [role="tab"] .state');
+  const mark = await $('[data-strip="Tabs"] [role="tab"] .tab-said');
   return (await mark.isExisting()) ? ((await mark.getAttribute("aria-label")) ?? "") : "";
 }
 

@@ -375,6 +375,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     // A Secret ask (#5068, ADR 0109): only the person, in the window, fills a secret or
     // declines it. No chat, relayed link or other client answers one.
     "answer_secret_ask",
+    // A Run grant (ADR 0112): only the person, in the window, lets a program receive a value.
+    "answer_run_grant",
     // And with an entry the person keeps (#5073): the asked key becomes a link to it. Which
     // entries the person keeps, vault by vault, is theirs to read in the window, never a
     // client's: a chat must not learn where a value lives.
@@ -711,6 +713,14 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_set_delete",
     "skill_set_restore",
     "skill_set_turn",
+    // The Library's Select mode's (#5332): several skills pinned, archived or moved as one
+    // commit, an export of them, and deleted skills taken off Deleted now, which has no undo.
+    "skill_set_pin",
+    "skill_set_lifecycle",
+    "skill_set_move",
+    "skill_set_delete_now",
+    "skill_set_export_review",
+    "skill_set_export",
     "skill_grant",
     "skill_turn",
     // A skill pinned or unpinned for a workspace's or a persona's chats (SK-15d, #3232): one

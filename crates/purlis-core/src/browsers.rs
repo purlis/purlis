@@ -408,8 +408,21 @@ impl Browsers for EngineBrowsers {
             ..EngineSettings::default()
         };
         let engines = engines_here(&home, platform);
-        let ready = prepared(&engines, &settings, download)
-            .map_err(|refused| download_failed_said(&refused))?;
+        // Its first download is told as it goes, and stops where the person cancels it (#2207).
+        let https = archive_reads();
+        let archives = Progressing::new(&https, download, DOWNLOAD_TOLD_EVERY);
+        let ready = prepared(
+            &engines,
+            &settings,
+            &manifest_reads(),
+            &archives,
+            engines_clock(
+                cfg!(debug_assertions),
+                crate::envvar::var(ENGINES_CLOCK_VAR).as_deref(),
+                chrono::Utc::now(),
+            ),
+        )
+        .map_err(|refused| download_failed_said(&refused))?;
         // A chat's browser is judged (#2018); the person's own, given no reach, refuses every
         // site new to the project at its proxy.
         let sites = reach.map(judge::SiteJudge::of).transpose()?.map(Arc::new);
@@ -497,19 +510,18 @@ impl Browsers for EngineBrowsers {
     }
 }
 
-/// The engine a browser starts on: the trusted one, after reading the published manifest first
-/// when that engine is behind past its warning or refused for its age, so a machine whose
-/// background check has not run yet is not refused for an engine already superseded.
+/// The engine a browser starts on at `now`: the trusted one, after reading the published
+/// manifest through `manifests` first when that engine is behind past its warning or refused
+/// for its age, so a machine whose background check has not run yet is not refused for an engine
+/// already superseded. Where that read fails, the first answer stands, the refusal included.
 fn prepared(
     engines: &Engines,
     settings: &EngineSettings,
-    download: &Download,
+    manifests: &dyn Fetch,
+    archives: &dyn Fetch,
+    now: chrono::DateTime<chrono::Utc>,
 ) -> Result<Ready, Refused> {
-    let https = archive_reads();
-    // Its first download is told as it goes, and stops where the person cancels it (#2207).
-    let archives = Progressing::new(&https, download, DOWNLOAD_TOLD_EVERY);
-    let now = chrono::Utc::now();
-    let first = engines.prepare(settings, &archives, now);
+    let first = engines.prepare(settings, archives, now);
     let behind = match &first {
         Ok(ready) => matches!(ready.age(), Age::Behind { .. }),
         Err(refused) => matches!(refused, Refused::Outdated { .. }),
@@ -517,9 +529,35 @@ fn prepared(
     if !behind {
         return first;
     }
-    let checked = update(engines, settings, &manifest_reads(), &archives, now);
+    let checked = update(engines, settings, manifests, archives, now);
     report(&checked);
     checked.or(first)
+}
+
+/// In a debug build, the time a browser's start judges its engine's age by, as RFC 3339 (#5413):
+/// a test's host names the moment its pin was issued, so what it runs does not turn on today's
+/// date or on reading the published manifest. A release build reads the real time whatever this
+/// says, so it changes nothing a real install refuses.
+pub const ENGINES_CLOCK_VAR: &str = "PURLIS_TEST_ENGINE_NOW";
+
+/// When the manifest this build ships was issued: the time a test's host names in
+/// [`ENGINES_CLOCK_VAR`], so a refreshed pin needs no test changed.
+pub fn when_the_pin_was_issued() -> chrono::DateTime<chrono::Utc> {
+    Manifest::shipped().issued
+}
+
+/// The time an engine's age is judged by: `real`, unless this is a debug build and `asked` is a
+/// time. Handed its facts rather than reading `cfg!` itself, so the rule is testable in both
+/// directions from one build.
+fn engines_clock(
+    debug_build: bool,
+    asked: Option<&str>,
+    real: chrono::DateTime<chrono::Utc>,
+) -> chrono::DateTime<chrono::Utc> {
+    asked
+        .filter(|_| debug_build)
+        .and_then(|asked| chrono::DateTime::parse_from_rfc3339(asked).ok())
+        .map_or(real, |asked| asked.to_utc())
 }
 
 /// A fresh id for a browser a window starts (#2207): the window names it, so it knows which
@@ -1750,16 +1788,6 @@ pub fn kept_off_said(site: &str, asks_to_sign_in: bool) -> String {
     )
 }
 
-/// What a chat is told where the page an act answered with is on `site`, the site its browser's
-/// login signs in on (#5152).
-fn on_kept_off_said(site: &str) -> String {
-    format!(
-        "this page is on {site}, the site this browser signs in on: you may not read or act on it \
-         outside a sign-in. Go back, or navigate to the login's own site; if it asks to sign in \
-         again, call browser_login"
-    )
-}
-
 /// A running browser and its reach proxy, which lives exactly as long as it.
 struct Held {
     browser: Arc<Browser>,
@@ -2025,39 +2053,12 @@ impl Screen for EngineScreen {
         // The call waits on the engine: it is made outside the lock, so frames and a stop are
         // never held up behind it.
         let browser = self.with(Arc::clone);
-        let mut answered = browser
+        browser
             .map_or(Err(drive::Refusal::Ended), |browser| {
                 browser.call_at(epoch, &id, call)
             })
             .map(|answer| browsed(answer, MOST_SCREENSHOT_BYTES))
-            .map_err(not_acted)?;
-        // A page it answers with on the site its login signs in on (#5152): the chat is told
-        // it may not act there, and what to do, and is given its origin alone, no title.
-        let kept_off = self.sites.as_ref().and_then(|sites| {
-            let page = answered.page.as_ref()?;
-            kept_off_at(sites.bound(), &page.address)
-        });
-        if let Some(sites) = &self.sites {
-            for page in answered
-                .page
-                .iter_mut()
-                .chain(answered.opened.iter_mut())
-                .chain(answered.pages.iter_mut())
-            {
-                if kept_off_at(sites.bound(), &page.address).is_some() {
-                    page.address = wire::origin_of(&page.address).unwrap_or_default();
-                    page.title.clear();
-                }
-            }
-        }
-        if let Some(site) = kept_off {
-            let said = on_kept_off_said(&site);
-            answered.note = Some(match answered.note.take() {
-                Some(note) => format!("{note}; {said}"),
-                None => said,
-            });
-        }
-        Ok(answered)
+            .map_err(not_acted)
     }
 
     fn log_in(&self, asked: &wire::LogIn) -> Result<LoginEnded, NotActed> {

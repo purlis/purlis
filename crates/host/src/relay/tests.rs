@@ -98,3 +98,37 @@ fn no_login_is_sent_on_to_a_runner_that_starts_none_clean() {
     assert_eq!(no_login_for(&login, session::KNOWS_CLEAN_LOGINS), None);
     assert_eq!(no_login_for(&Command::List, before), None);
 }
+
+#[test]
+fn neither_a_fill_nor_the_read_of_a_field_for_one_goes_to_a_runner_too_old_for_it() {
+    use purlis_session_protocol::browsing::{Act, FillSecret, Secret};
+    let read = Command::Browse {
+        program: "program-1".into(),
+        call_id: "c1".into(),
+        act: Act::DescribeField {
+            target: "e1".into(),
+        },
+        reach: None,
+    };
+    let fill = Command::FillSecret {
+        program: "program-1".into(),
+        fill: Box::new(FillSecret {
+            target: "e1".into(),
+            origin: "https://a.test".into(),
+            key: "key".into(),
+            value: Secret::new("fixture-word".to_owned()),
+            multi_line: false,
+            also: Vec::new(),
+        }),
+    };
+    let before = purlis_session_protocol::version::Version {
+        minor: session::KNOWS_FILLS_KEPT_OUT.minor - 1,
+        ..session::KNOWS_FILLS_KEPT_OUT
+    };
+    for command in [&read, &fill] {
+        let why = no_fill_for(command, before).expect("refused");
+        assert!(why.contains("nothing was filled"), "{why}");
+        assert_eq!(no_fill_for(command, session::KNOWS_FILLS_KEPT_OUT), None);
+    }
+    assert_eq!(no_fill_for(&Command::List, before), None);
+}

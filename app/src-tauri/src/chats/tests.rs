@@ -10206,6 +10206,39 @@ fn a_start_on_a_pool_that_is_gone_starts_nothing_and_one_that_chose_this_machine
     assert_eq!(host.running(), vec![session]);
 }
 
+/// **A runner whose check ran out of time isn't walked again every minute by the sweep** (#5393):
+/// 5 and a half minutes on one check leaves it just short of an hour, and a quick end changes
+/// nothing about how often the sweep runs.
+#[cfg(unix)]
+#[test]
+fn the_sweep_eases_off_a_runner_whose_check_took_long_and_only_the_sweep() {
+    use std::time::Duration;
+    assert_eq!(
+        super::fresh_asked_again_after(Duration::from_secs(330)),
+        Duration::from_secs(3300)
+    );
+    assert_eq!(
+        super::fresh_asked_again_after(Duration::from_secs(1)),
+        Duration::from_secs(60),
+        "a quick end leaves the sweep's own pace"
+    );
+    assert_eq!(
+        super::fresh_asked_again_after(Duration::from_secs(36_000)),
+        Duration::from_secs(3600),
+        "never left for longer than an hour"
+    );
+
+    let plane = a_sandboxed_plane();
+    let chats = restartable_chats_of(plane.path(), Pretend::default());
+    assert!(chats.sweep_may_ask("01J9ZQ3V7K8M2N4P6R8T0V2X4Z"));
+    lock(&chats.fresh_asked_again).insert(
+        "01J9ZQ3V7K8M2N4P6R8T0V2X4Z".to_owned(),
+        std::time::Instant::now() + Duration::from_secs(3300),
+    );
+    assert!(!chats.sweep_may_ask("01J9ZQ3V7K8M2N4P6R8T0V2X4Z"));
+    assert!(chats.sweep_may_ask("another chat's"));
+}
+
 /// **A move takes a chat's one-off choice of where it runs** (#4536): the record then follows its
 /// workspace, which the move just set, and the choice comes back where the move doesn't happen.
 #[test]

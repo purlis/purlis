@@ -170,7 +170,7 @@ describe("a chat's pane head", () => {
     // Led by the chat's persona and state icon, the one its row and tab wear (#4762).
     const line = head().querySelector(".pane-chips") as HTMLElement;
     expect(line.firstElementChild).toHaveClass("pane-persona");
-    expect(line.firstElementChild?.querySelector(".chat-persona")).not.toBeNull();
+    expect(line.firstElementChild?.querySelector('[data-scope="chat-mark"]')).not.toBeNull();
     expect(head().querySelector(".pane-where")).toBeNull();
     expect(within(head()).queryByText("alpha")).toBeNull();
     // The badge moved from the tab to the head (#4760) and on to the foot (#5204): named for a

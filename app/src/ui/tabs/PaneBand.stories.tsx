@@ -24,7 +24,7 @@ import { PaneActions, PaneBellAt, PaneBellOf, PaneHead } from "../../LayoutPanes
 import { HOLDS_NOTHING, type BandHolds, type PaneNoticesShown } from "../../paneNotices";
 import { PANE_NOTICES } from "../../paneNoticesPref";
 import type { Offer } from "../../actions";
-import { ChatMark } from "../../NeedsYou";
+import { ChatMark } from "../chat-mark/ChatMark";
 import { useTabIds, StripTablist } from "../../StripTablist";
 import { panelRoot } from "../panel/Panel";
 import { TabCell, tabPart, tabsPart } from "./Tabs";

@@ -420,6 +420,16 @@ fn a_login_fills_the_declared_origin_and_its_value_is_in_no_later_answer() {
 /// A chat chose this page and these keys (#4595): a key it named as the user name is typed into
 /// no field that's only text, where a page would show it, send it or keep it.
 #[test]
+fn what_a_login_goes_in_with_is_what_a_fields_origin_is_held_to() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, true);
+    let login = login_at("http://fixture.test");
+    let _ = browser.log_in(&login, holds());
+    let state = super::super::super::lock(&browser.inner.state);
+    assert!(crate::drive::scrub::Scrub::of(&state.filled).holds(login.password.as_str()));
+}
+
+#[test]
 fn a_login_a_chat_chose_fills_no_plain_field() {
     let (browser, engine) = browser_with(quick());
     as_a_login_form_that(&engine, true, Twist::PlainField);

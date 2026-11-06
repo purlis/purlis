@@ -621,6 +621,7 @@ jobs:
           cp "$RUNNER_TEMP/claude-code/node_modules/$package/claude" "$parity/claude-code"
           docker build --file tests/parity/runner.Dockerfile \
             --build-arg RUNNER=purlis-runner:parity --build-arg "AT=$PWD/target/debug" \
+            --build-arg "ENGINE_NOW=$(jq -r .issued crates/browser-engine/engine-pin.json)" \
             --tag localhost:5000/purlis-runner-parity:candidate "$parity"
           docker push localhost:5000/purlis-runner-parity:candidate
           image=$(docker image inspect --format '{{index .RepoDigests 0}}' localhost:5000/purlis-runner-parity:candidate)

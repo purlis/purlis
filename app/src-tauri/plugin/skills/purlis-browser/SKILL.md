@@ -16,7 +16,8 @@ script. The first browser tool asks the person what the browser may reach.
 Each browser has its own cookies, storage and pages, so workers that must be logged in as
 different users each use one of their own: `browser_new` opens another, and the tools use it
 from then on (pass `browser` to pick one by the name a tool answered with, `b1`, `b2`).
-`browser_close` ends one and everything it held.
+`browser_close` ends one and everything it held. While the person has taken a browser over it stays
+open: the answer says so, and you close it once they hand it back.
 
 ## Files: downloads and uploads
 

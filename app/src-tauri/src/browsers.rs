@@ -299,10 +299,10 @@ mod hosted {
     /// showing, and its password field going, each within its own limit.
     const A_LOGIN_TAKES_AT_MOST: Duration = Duration::from_secs(150);
 
-    /// **Whether a host of `version` fills secrets** (#5115): a host before 1.72 reads no field
-    /// for a fill and fills none, so neither is sent to it.
+    /// **Whether a fill goes to a host of `version`** ([`session::KNOWS_FILLS_KEPT_OUT`]): neither
+    /// a fill nor a read of a field for one is sent to a host before.
     fn fills_secrets(version: purlis_session_protocol::version::Version) -> Result<(), String> {
-        if version < session::KNOWS_SECRET_FILL {
+        if version < session::KNOWS_FILLS_KEPT_OUT {
             return Err(TOO_OLD_TO_FILL.to_owned());
         }
         Ok(())
@@ -367,7 +367,7 @@ mod hosted {
         ) -> Result<Browsed, crate::chatbrowsers::Refused> {
             use crate::chatbrowsers::Refused;
             let link = self.link_for(program).map_err(Refused::Said)?;
-            // A host before 1.72 reads no field for a secret fill (#5115).
+            // No field is read for a fill on a host too old to be sent one.
             if matches!(act, Act::DescribeField { .. }) {
                 fills_secrets(link.version()).map_err(Refused::Said)?;
             }

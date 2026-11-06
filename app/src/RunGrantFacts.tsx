@@ -1,0 +1,83 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+import type { RunShown } from "./bindings";
+
+/**
+ * **What a Run grant would let happen** (ADR 0112, #5239): the program's full path, the keys and
+ * the hosts, each from the app, then the chat's command, apart and said to be the chat's. The
+ * command is plain text, wrapped, already spelled by the core so that no character in it changes
+ * what it seems to say. Words to read, nothing to reach. A plain body for now: the ask's own part
+ * family replaces it (#5080).
+ */
+export function RunGrantFacts({ run }: { run: RunShown }) {
+  return (
+    <div data-testid="run-grant">
+      <p className="ui-text-meta">
+        Runs <code data-testid="run-grant-program">{run.program}</code>, in this chat's own sandbox,
+        with vault <code>{run.vault}</code>:
+      </p>
+      {run.not_its_vault && (
+        <p className="ui-text-meta" data-testid="run-grant-not-its-vault">
+          {run.persona} can't use this vault otherwise. Allow once and Allow for this chat open it
+          for that alone. Always allow also lets every chat as {run.persona} use it on this machine.
+        </p>
+      )}
+      <ul className="ui-text-meta">
+        {run.values.map((one) => (
+          <li key={one.var}>
+            <code>{one.key}</code> {one.in_a_file ? "in a private file, its path in" : "in"}{" "}
+            <code>{one.var}</code>
+          </li>
+        ))}
+      </ul>
+      <p className="ui-text-meta" data-testid="run-grant-hosts">
+        {run.every_host ? (
+          "It can reach every host: this chat's sandbox doesn't limit them."
+        ) : run.hosts.length === 0 ? (
+          "It can reach no host."
+        ) : (
+          <>
+            It can reach these hosts:{" "}
+            {run.hosts.map((host, at) => (
+              <span key={host}>
+                {at > 0 && ", "}
+                <code>{host}</code>
+              </span>
+            ))}
+          </>
+        )}
+      </p>
+      {run.caution != null && <p className="ui-text-meta">{run.caution}</p>}
+      <p className="ui-text-meta" data-testid="run-grant-reach">
+        A program can run others and read files this chat wrote, and can leave what it's handed
+        where this chat reads it. Allow it only if you trust this chat with these values.
+      </p>
+      <p className="ui-text-meta">
+        The chat's command, in its own words, started in <code>{run.cwd}</code>, with no input from
+        the chat:
+      </p>
+      <pre className="whitespace-pre-wrap break-all" data-testid="run-grant-command">
+        {run.command}
+      </pre>
+      {run.always != null && (
+        <>
+          <p className="ui-text-meta">
+            Always allow adds this line to {run.persona}'s tools in the project's committed file.
+            Every chat as {run.persona} on this machine can then run it with any arguments, once
+            nothing else of {run.persona}'s waits on you. Teammates each allow it for themselves:
+          </p>
+          <pre className="whitespace-pre-wrap break-all" data-testid="run-grant-always">
+            {run.always.line}
+          </pre>
+          {run.always.by_env && (
+            <p className="ui-text-meta" data-testid="run-grant-env-advice">
+              This hands the value itself to a variable, as the command asked. A file is safer:
+              another program of yours can read a variable while this one runs.
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
