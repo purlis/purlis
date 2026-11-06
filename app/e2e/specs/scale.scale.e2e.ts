@@ -183,9 +183,7 @@ describe("the app on a project at scale", () => {
   it("sits idle for a minute with its window shown", async () => {
     // Its first git standing and the rest of the launch's work done, so the minute is idle.
     await sleep(20_000);
-    const app = appProcesses(
-      built(process.platform === "win32" ? "purlis-app.exe" : "purlis-app"),
-    );
+    const app = appProcesses(built(process.platform === "win32" ? "purlis-app.exe" : "purlis-app"));
     if (app.windows.length !== 1)
       throw new Error(`expected one app window, found ${app.windows.length}`);
     const roots = [...app.windows, ...app.sessionHosts];
