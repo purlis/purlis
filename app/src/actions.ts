@@ -4682,7 +4682,12 @@ function footRows(now: Now, session: number, name: string): Offer[] {
   if (asker !== undefined) offers.push(asker);
   if (now.skillStudio)
     offers.push(
-      can(chatSkillsId(session), `Skills of ${name}`, { verb: "showChatSkills", session }, name),
+      can(
+        chatSkillsId(session),
+        `Show skills of ${name}`,
+        { verb: "showChatSkills", session },
+        name,
+      ),
     );
   if (now.studioOf?.(session) !== undefined)
     offers.push(

@@ -8855,18 +8855,20 @@ export const PlaneView = memo(function PlaneView({
     }
     return { frontCrumbs: crumbs, frontEndedPanes: ended, frontUnread: unread };
   }, [chatsByNumber, frontShown, liveCrumbs, recalled, sidebar, tabs.inFront]);
-  /** **The chat each ended task a pane of the tab in front shows was asked by** (#5366), by the
-   *  task: its path's last but one. */
-  const endedAskers = useMemo(
-    () =>
-      new Map(
-        Object.values(frontEndedPanes).flatMap((gone): [number, number][] => {
-          const [asker, task] = gone.path.slice(-2);
-          return task === undefined ? [] : [[task.session, asker.session]];
-        }),
-      ),
-    [frontEndedPanes],
-  );
+  /** **The chat each ended task a pane shows was asked by** (#5366), by the task: the last but
+   *  one of the path its pane last had. */
+  const endedAskers = useMemo(() => {
+    const askers = new Map<number, number>();
+    // **In every tab, not the front one's alone** (#5543): the palette lists a task a pane
+    // behind still shows, and the path each pane last had is remembered for every tab.
+    if (sidebar === undefined) return askers;
+    for (const said of recalled.values()) {
+      const [asker, task] = said.path.slice(-2);
+      if (task !== undefined && !chatsByNumber.has(task.session))
+        askers.set(task.session, asker.session);
+    }
+    return askers;
+  }, [chatsByNumber, recalled, sidebar]);
   /**
    * **The finished row of each task a pane was left on when it ended**, by pane (#1485 under
    * #1486's ended view): its report is drawn on the pane, and the pane says how it ended in
