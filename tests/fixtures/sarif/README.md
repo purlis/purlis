@@ -1,6 +1,6 @@
 # SARIF fixtures
 
-What `crates/purlis-core/tests/it/check_results_on_a_comparison.rs` reads (#5407, ADR 0115).
+What `crates/purlis-core/tests/it/check_results_on_a_comparison.rs` reads (#5407, ADR 0116).
 
 - **`codeql-2.27.4-actions.sarif`**: CodeQL 2.27.4's real output, this repository's own analysis
   2104455872 from `GET /repos/purlis/purlis/code-scanning/analyses/<id>` with

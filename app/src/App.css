@@ -5826,7 +5826,7 @@ nav.piece-files-head {
   color: var(--text-muted);
 }
 
-/* A branch's check results (ADR 0115): beside the comparison, and never taking all its room. */
+/* A branch's check results (ADR 0116): beside the comparison, and never taking all its room. */
 .check-results {
   flex: 0 1 auto;
   max-height: 40%;

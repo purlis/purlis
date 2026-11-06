@@ -272,7 +272,7 @@ pub struct WhatChanged {
     /// What this was drawn from, as a digest of the base and the file on disk: what a
     /// [`Discard`] is checked against. `None` for a file past [`super::LARGEST`] or unreadable.
     pub stamp: Option<String>,
-    /// The branch's check results as this file shows them (ADR 0115): placed on the same hunks.
+    /// The branch's check results as this file shows them (ADR 0116): placed on the same hunks.
     pub checks: Box<crate::checks::OnFile>,
     /// On a turn's diff, that the file changed since the turn ended, so it is drawn from the
     /// turn's start to the file as it is now (#5411). Always `false` against the base.

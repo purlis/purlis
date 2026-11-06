@@ -69,7 +69,7 @@ export const look = [
       background: "var(--state-success)",
     },
     ".cm-inlineChangedLineGutter": { background: "var(--accent-base)" },
-    // A check result on a changed line (ADR 0115, `checkGutter.ts`): its letter says its severity,
+    // A check result on a changed line (ADR 0116, `checkGutter.ts`): its letter says its severity,
     // and the colour only repeats it.
     ".cm-check-mark": { color: "var(--text-quiet)", fontWeight: "bold" },
     '.cm-check-mark[data-severity="error"]': { color: "var(--danger-base)" },

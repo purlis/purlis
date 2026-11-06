@@ -120,7 +120,7 @@ pub enum Write {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         force: bool,
     },
-    /// `purlis check report <branch> <file.sarif>` (#5407, ADR 0115): a branch's check results.
+    /// `purlis check report <branch> <file.sarif>` (#5407, ADR 0116): a branch's check results.
     /// **It names a folder only in the chat's own workspace, and a file only inside that folder**,
     /// confined there as any file command's path is: a SARIF file can be far longer than a line of
     /// the connection, so it is read by the app, and a chat cannot point the app at anything it

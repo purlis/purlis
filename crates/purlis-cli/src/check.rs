@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! `purlis check report <branch> <file.sarif>` (#5407, ADR 0115): how a branch's check results
+//! `purlis check report <branch> <file.sarif>` (#5407, ADR 0116): how a branch's check results
 //! arrive, from a script, an agent's hook or CI. purlis runs no check here and reads one format:
 //! the core (`purlis_core::checks`) reads the file, keeps it and places it on the diff.
 //!

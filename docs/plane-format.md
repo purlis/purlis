@@ -2681,7 +2681,7 @@ alike.
 
 - **Format:** one JSON object, **replaced whole** at each report.
 - **Status:** stable — written by `purlis check report` and read by the window, which are different
-  processes (ADR 0115, #5407).
+  processes (ADR 0116, #5407).
 - **Tier:** Clone state — never committed; what a tool last reported for a folder's branch. purlis
   cannot rebuild it, since it runs no check: deleting it loses the results until they are reported again.
 - **Written by:** `checks::report` (`crates/purlis-core/src/checks.rs`), from `purlis check report`,
