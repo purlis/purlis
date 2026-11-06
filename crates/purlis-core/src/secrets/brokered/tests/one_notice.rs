@@ -711,7 +711,7 @@ fn no_filled_answer_sends_the_chat_to_a_refusal() {
     let (line, code) = filled.line();
     assert_eq!(code, 0);
     assert!(
-        line.contains("asks the person to allow it"),
+        line.contains("the person is asked to allow it"),
         "it promises only what works: {line}"
     );
     let allowed = Said::FilledAndAllowed {
