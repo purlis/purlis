@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793963597219,
+  "lastUpdate": 1793966570605,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -40950,6 +40950,48 @@ window.BENCHMARK_DATA = {
             "value": 102.4720245,
             "unit": "ms",
             "extra": "median of 5 runs: 101.546, 101.593, 102.472, 102.578, 103.354 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "8e3f9368040d87a124b6f8e8755ebe3eb4ef75c6",
+          "message": "The pane's notices band as compact rows (#5215) (#5350)\n\n* The pane's notices band as compact rows, with checks of a short pane on every runner (#5215)\n\npane's height, so the macOS merge queue's short pane is measured on Linux too, and a story opens a\nlong row in a short pane. These are pushed before the fix so they are seen failing.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NK3KTMY02V95QE2Y3CA0EK\nPurlis-Persona: steward\n\n* An opened row has no cap, and the scenario makes the pane itself short (#5215)\n\nThe story shows an opened row's contents running past its capped box in both browsers. The cases\nasked the window for a pane's height, which Linux's would not give; they now set the pane's own.\nThe Notice's caps are not fixed yet, so these cases can be seen failing.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NK3KTMY02V95QE2Y3CA0EK\nPurlis-Persona: steward\n\n* A Notice's caps take off the band's own box, so it fits a short pane (#5215)\n\nThe band's head row put each Notice lower than its caps allowed for: a Notice at its cap ran 9px\npast a short pane (the macOS merge queue's failure), and one under another 22.75px. Both caps now\ntake off what the band's box holds, and the scenario's short-pane cases are seen red without this.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NK3KTMY02V95QE2Y3CA0EK\nPurlis-Persona: steward\n\n* The window test holds a Notice's caps as they now are (#5215)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NK3KTMY02V95QE2Y3CA0EK\nPurlis-Persona: steward\n\n* Baselines for the band's rows, from this pull request's stories run (#5215)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NK3KTMY02V95QE2Y3CA0EK\nPurlis-Persona: steward\n\n* Baselines for an opened row in a short pane, from this pull request's stories run (#5215)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NK3KTMY02V95QE2Y3CA0EK\nPurlis-Persona: steward\n\n* The foot's story has room for the terminal's three lines, and the band's baselines (#5215)\n\nThe three-line floor pushed the foot out of the story's 96px frame, and its keyboard walk still\npassed. Its pictures stay to be redrawn; this holds the foot in its pane. PaneBand's baselines are\nfrom this pull request's stories run.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6NK3KTMY02V95QE2Y3CA0EK\nPurlis-Persona: steward\n\n* Baselines for the band and the foot after the rebase onto the Notices centre, from this pull request's stories run (#5215)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DXRMV9Z66A6VB0924XV43K\nPurlis-Persona: steward\n\n* Baselines for the band after the rebase onto one mark everywhere, from this pull request's stories run (#5215)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DXRMV9Z66A6VB0924XV43K\nPurlis-Persona: steward\n\n* Baselines for the band and the foot after the rebase onto the head's always-drawn controls, from this pull request's stories run (#5215)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6DXRMV9Z66A6VB0924XV43K\nPurlis-Persona: steward\n\n* The short-pane check says what moved between its two heights, should it run past (#5215)\n\nOn the merge queue's macOS runner the long Notice ran 15px past a short pane\n(run 42156866622), where every constant box above it cancels out. The failure\nnow names the head, the row, the stack and its scroll, the first Notice, and\nthe long one's line, opened part and pinned ways at both heights.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6DXRMV9Z66A6VB0924XV43K\nPurlis-Persona: steward\n\n* Format the short-pane check's message (#5215)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6DXRMV9Z66A6VB0924XV43K\nPurlis-Persona: steward\n\n* The short-pane check holds the band inside its pane, and a Notice to its pane's height (#5215)\n\nThe merge queue's macOS run (42198113537) said what moved. On that runner the\n1024×768 window already leaves the pane 353px tall, so the 'tall' measurement\nthe check calibrates from is short, and the band's stack scrolls at both\nheights. The band's row and stack stayed inside the pane at both; only the\nlong Notice's own box ran on under the stack's edge, out of sight, as\nscrolled content does. That is the scroll, not an overflow.\n\nSo the check now holds what the band promises: its row and stack inside the\npane, and the Notice never taller than the pane, so scrolling shows it whole.\nWhile the stack doesn't scroll, the whole Notice is still held inside the pane,\nas before.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6DXRMV9Z66A6VB0924XV43K\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-06T11:11:31Z",
+          "tree_id": "99d0c5920b3abfc6973962555b0028d2b2e2e646",
+          "url": "https://github.com/purlis/purlis/commit/8e3f9368040d87a124b6f8e8755ebe3eb4ef75c6"
+        },
+        "date": 1793966566813,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5564564999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.543, 0.547, 0.556, 0.573, 0.579 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.176534999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.110, 16.122, 16.177, 16.197, 16.272 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.1587845,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.634, 102.157, 102.159, 102.969, 103.436 ms"
           }
         ]
       }
