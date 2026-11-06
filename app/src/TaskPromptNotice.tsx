@@ -6,6 +6,7 @@ import type { Shown } from "./bindings";
 import { movedAt, useChatsHere, useChatsSelect, waitsOnItsPrompt } from "./chatState";
 import { hideForNow, useHiddenForNow } from "./dismissals";
 import { Notice, NoticeOf } from "./Notice";
+import { clearedHere } from "./notesClearedEverywhere";
 
 /**
  * **A chat that is not on screen is stopped on a prompt** (reported 2026-10-09): its harness
@@ -94,6 +95,8 @@ export function TaskPromptNotice({
   const onDismiss = () => {
     hideForNow(plane, cause);
     hideForNow(plane, asked);
+    // In every window of the project (#5363): another may hold it for the chat coming back.
+    clearedHere(plane, session, { kind: "hidden", causes: [...new Set([cause, asked])] });
     if (first !== undefined) carried.current = moved;
   };
   // Which chat it is comes from the core's lineage (`NoticeOf.task`), never from its name.

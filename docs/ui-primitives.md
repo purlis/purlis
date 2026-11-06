@@ -803,7 +803,7 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
 | Family | Wrapper | Parts | Variants |
 | --- | --- | --- | --- |
 | Card | `Card` (as a `div`, `li`, `p`, `section` or `article`), `CardTitle` (`ui/card/Card.tsx`); `Facts`, `Fact` (`Facts.tsx`); `Totals`, `Tile` (`Totals.tsx`); `CardButton`, a card pressed whole (`CardButton.tsx`, #3655), its own family `card-button` (#3885) | `root`, `title`; `facts-label`, `facts-value`, `tile`, `tile-value`; a pressed card's `root`, `mark`, `press`, `title`, `more`, `line` | `raised`, `ask`; a pressed card's `door`, `pick` |
-| Notice | `Notice`, `NoticeList`, `NoticePaneRow` (`src/Notice.tsx`), drawn through `ui/notice/Notice.tsx` | `root`, `message`, `whose`, `title`, `mark`, `sub` (a card's state and age), `chat-words` (a chat's own words on one), `head`, `heading` and `end` (a card's head, layout only), and `under` (what a way out opened); `notice-card`'s `said` holds a card's live region | `news`, `trouble`, `attention` |
+| Notice | `Notice`, `NoticeList`, `NoticePaneRow` (`src/Notice.tsx`), drawn through `ui/notice/Notice.tsx` | `root`, `message`, `whose`, `title`, `mark`, `sub` (a card's state and age), `head`, `heading` and `end` (a card's head, layout only), and `under` (what a way out opened); `notice-card`'s `said` holds a card's live region | `news`, `trouble`, `attention` |
 | Badge | `Badge`, `HostStatus` (`ui/badge/Badge.tsx`) | `root` | `neutral`, `accent`, `waiting`, `ok` |
 | Count | `Count`, `CountGroup` (`ui/badge/Badge.tsx`) | `root`, `group` | `neutral`, `accent`, `waiting`, `hot` |
 | Separator | `Separator` (`ui/separator/Separator.tsx`, on React Aria's) | `root` | none |
@@ -841,8 +841,8 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
 - **A Notice in the Notices centre is a card in the Inbox card's style** (#5217). A one-line
   `head`: its mark, its `title` (what it names, whose it is, its label, or else its state), its
   state and age muted beneath (`sub`), Go to chat a quiet link and its ×. Under it, what it says at
-  the card's size; a chat's own words only through `ChatText` (`chatWords`), purlis's in plain
-  text; and its ways. One primary, where it has an answer, every other way a quiet link. **A
+  the card's size, in purlis's plain words (no Notice in the centre carries a chat's own prose;
+  `chatWords` went for want of a caller, #5363); and its ways. One primary, where it has an answer, every other way a quiet link. **A
   consent takes no primary** (ADR 0097 §6): Allow keeps `grants`, what stands beside it stays
   `secondary`, and its card keeps its full waiting edge (`data-consent`), where any other Notice's
   outline is softer, in its kind's colour. A sandbox block says it is one (`consent`), as an

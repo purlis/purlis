@@ -34,6 +34,7 @@ import { QuizPlaces } from "./QuizBand";
 import { standingOf, waitingOnYou, type QuestionsHeld } from "./taskQuestions";
 import { machineChanged } from "./settings/thisMachine";
 import { MAIN, thisWindow } from "./windows";
+import { clearedHere, keptOutside, letGoHere } from "./notesClearedEverywhere";
 import { frontTabIs } from "./slowLog";
 import { createPortal } from "react-dom";
 import {
@@ -1566,13 +1567,7 @@ export const PlaneView = memo(function PlaneView({
   /** **A note cleared here is cleared in every window of the project** (#5225): each hears what
    *  its chats say, so another may hold it for the chat coming back to it. */
   const noteCleared = useCallback(
-    (session: number, note: NoteCleared["note"]) =>
-      void emit(NOTE_CLEARED, {
-        plane,
-        session,
-        note,
-        from: thisWindow(),
-      } satisfies NoteCleared).catch(() => undefined),
+    (session: number, note: NoteCleared["note"]) => clearedHere(plane, session, note),
     [plane],
   );
   /** A block put away. */
@@ -7464,6 +7459,8 @@ export const PlaneView = memo(function PlaneView({
       // Every window hears it, this one too, which has cleared it already.
       if (cleared.plane !== plane || cleared.from === thisWindow()) return;
       const { session, note } = cleared;
+      // One a store of this window's own keeps (#5363).
+      if (keptOutside(note)) letGoHere(plane, session, note);
       if (note.kind === "start") dropStartNote(session);
       if (note.kind === "by-hand") dropByHand(session);
       if (note.kind === "block") letBlockGo(session, note.block);
@@ -7483,42 +7480,53 @@ export const PlaneView = memo(function PlaneView({
    */
   const notesHeldElsewhere = useRef(new Map<number, string>());
   const handNotes = useCallback(
-    (session: number, start: StartNotes | undefined, blocks: readonly HeldBlock[]) =>
+    (session: number, held: Omit<NotesHanded, "plane" | "session" | "from">) =>
       void emit(NOTES_HANDED, {
         plane,
         session,
-        start,
-        blocks,
+        ...held,
         from: thisWindow(),
       } satisfies NotesHanded).catch(() => undefined),
     [plane],
   );
   const handAgain = useRef<() => void>(() => undefined);
   useEffect(() => {
+    // Its start's notes, its blocks, and its by-hand banner and restart line (#5363). A restart
+    // not yet made is not handed: the window that owes it says why at the chat's next move.
+    const heldOf = (session: number) => ({
+      start: startNotes[session],
+      blocks: sandboxBlocks[session] ?? [],
+      byHand: byHand[session],
+      restart: restartTrouble[session],
+    });
     const holding = new Map<number, string>();
     for (const session of shownElsewhere) {
-      const start = startNotes[session];
-      const blocks = sandboxBlocks[session] ?? [];
-      if (start === undefined && blocks.length === 0) continue;
-      const said = JSON.stringify([start, blocks]);
+      const held = heldOf(session);
+      const { start, blocks, byHand: banner, restart } = held;
+      if (start === undefined && blocks.length === 0 && banner === undefined && !restart) continue;
+      const said = JSON.stringify(held);
       holding.set(session, said);
-      if (notesHeldElsewhere.current.get(session) !== said) handNotes(session, start, blocks);
+      if (notesHeldElsewhere.current.get(session) !== said) handNotes(session, held);
     }
     notesHeldElsewhere.current = holding;
     handAgain.current = () => {
-      for (const session of holding.keys())
-        handNotes(session, startNotes[session], sandboxBlocks[session] ?? []);
+      for (const session of holding.keys()) handNotes(session, heldOf(session));
     };
-  }, [handNotes, sandboxBlocks, shownElsewhere, startNotes]);
+  }, [byHand, handNotes, restartTrouble, sandboxBlocks, shownElsewhere, startNotes]);
   const askedForNotes = useRef(false);
   useEffect(() => {
     const listening = Promise.all([
       listen<NotesHanded>(NOTES_HANDED, ({ payload: handed }) => {
         if (handed.plane !== plane || handed.from === thisWindow()) return;
-        const { session, start, blocks } = handed;
+        const { session, start, blocks, byHand: banner, restart } = handed;
         if (start !== undefined)
           setStartNotes((was) => ({ ...was, [session]: withStartHanded(was[session], start) }));
         takeBlocks(session, blocks);
+        // What this window heard itself stands: it is the same chat's, and newer or the same.
+        if (banner !== undefined)
+          setByHand((was) => (session in was ? was : { ...was, [session]: banner }));
+        if (restart !== undefined)
+          setRestartTrouble((was) => (session in was ? was : { ...was, [session]: restart }));
       }),
       listen<NotesAsked>(NOTES_ASKED, ({ payload: asked }) => {
         if (asked.plane === plane && asked.from !== thisWindow()) handAgain.current();

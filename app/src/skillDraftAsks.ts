@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   commands,
   type Asking,
@@ -128,4 +128,35 @@ export function draftLevel(scope: StudioScope, levels: readonly StudioLevel[]): 
 export function draftReadySays(names: readonly string[], offScreen: boolean): string {
   const chat = offScreen ? "That chat" : "This chat";
   return `${chat} drafted ${counted(names.length, "skill", "skills")}: ${names.join(", ")}. Try, accept or discard each in the Skill studio.`;
+}
+
+/**
+ * **Which drafts each chat's "Draft ready" was put away for** (#5363), by project and chat: the
+ * names it said, one a line. Kept for the window, not the pane, so a Dismiss in another window
+ * of the project puts it away here too, and a chat that drafts again says so again.
+ */
+let draftsPutAway: Readonly<Record<string, string>> = {};
+const putAwayListeners = new Set<() => void>();
+const putAwayKey = (plane: string, session: number) => `${plane}\0${session}`;
+function onPutAway(listener: () => void) {
+  putAwayListeners.add(listener);
+  return () => void putAwayListeners.delete(listener);
+}
+
+/** Chat `session`'s "Draft ready", saying `drafts`, is put away. */
+export function putAwayDraftsReady(plane: string, session: number, drafts: string): void {
+  const at = putAwayKey(plane, session);
+  if (draftsPutAway[at] === drafts) return;
+  draftsPutAway = { ...draftsPutAway, [at]: drafts };
+  for (const one of putAwayListeners) one();
+}
+
+/** The drafts chat `session`'s "Draft ready" was last put away for, if it was. */
+export function useDraftsReadyPutAway(plane: string, session: number): string | undefined {
+  return useSyncExternalStore(onPutAway, () => draftsPutAway[putAwayKey(plane, session)]);
+}
+
+/** Forgets every put-away, as a new launch would. For tests. */
+export function forgetDraftsPutAway(): void {
+  draftsPutAway = {};
 }

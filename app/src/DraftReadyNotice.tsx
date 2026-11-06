@@ -1,10 +1,16 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useContext, useState } from "react";
+import { useContext } from "react";
 import type { PlaneId } from "./bindings";
 import { Notice, NoticeOf } from "./Notice";
-import { draftReadySays, useSkillDrafts } from "./skillDraftAsks";
+import { clearedHere } from "./notesClearedEverywhere";
+import {
+  draftReadySays,
+  putAwayDraftsReady,
+  useDraftsReadyPutAway,
+  useSkillDrafts,
+} from "./skillDraftAsks";
 import { AT_THE_ROOT, askSkillStudio, useSkillStudioOn } from "./skillStudio";
 
 /** What the notice's one action is called (S8, #3694): one draft is opened, several are listed. */
@@ -20,13 +26,14 @@ export function openDraftsSaid(drafts: number): string {
  *
  * - **Open the draft** (S8, #3694): the studio at Drafts › that draft, where it waits with its
  *   diff (#3690); **Open the drafts**, at Drafts, where the chat drafted several.
- * - **Dismiss**: puts it away until the chat drafts again.
+ * - **Dismiss**: puts it away until the chat drafts again, in every window of the project
+ *   (#5363): another may hold it for the chat coming back to it.
  */
 export function DraftReadyNotice({ plane, session }: { plane: PlaneId; session: number }) {
   const on = useSkillStudioOn();
   const drafts = useSkillDrafts(plane, 0, on);
   const offScreen = useContext(NoticeOf) !== null;
-  const [putAway, setPutAway] = useState<string>();
+  const putAway = useDraftsReadyPutAway(plane, session);
   const drafted = drafts.filter((draft) => draft.chat === session);
   const mine = drafted.map((draft) => draft.name);
   const key = mine.join("\n");
@@ -48,7 +55,10 @@ export function DraftReadyNotice({ plane, session }: { plane: PlaneId; session: 
             ),
         },
       ]}
-      onDismiss={() => setPutAway(key)}
+      onDismiss={() => {
+        putAwayDraftsReady(plane, session, key);
+        clearedHere(plane, session, { kind: "draft-ready", drafts: key });
+      }}
     >
       {draftReadySays(mine, offScreen)}
     </Notice>

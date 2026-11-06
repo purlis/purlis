@@ -516,6 +516,38 @@ describe("putting a waiting chat's Notice away (qw386)", () => {
     expect(promptNotice(5)).toBeNull();
   });
 
+  it("Dismiss tells every window of the project, which hides it too (#5363)", async () => {
+    const { said, asked } = await drawn(withTasks());
+    await waitFor(() => expect(onScreen()).toEqual([1]));
+    await asks(said, [prompt(5, "Run purlis persona where")]);
+    const notice = await waitFor(() => {
+      const found = promptNotice(5);
+      if (found === null) throw new Error("no Notice for sweep's prompt");
+      return found;
+    });
+    const cause = notice.getAttribute("data-cause");
+
+    fireEvent.click(within(notice).getByRole("button", { name: "Dismiss" }));
+
+    await waitFor(() =>
+      expect(
+        asked
+          .filter((one) => one.cmd === "plugin:event|emit" && one.args.event === "note-cleared")
+          .map((one) => one.args.payload),
+      ).toEqual([
+        {
+          plane: PLANE,
+          session: 5,
+          note: {
+            kind: "hidden",
+            causes: [cause, expect.stringMatching(/^task-permission:5:asked:/)],
+          },
+          from: "main",
+        },
+      ]),
+    );
+  });
+
   it("a new prompt of the same chat shows again", async () => {
     const { said } = await drawn(withTasks());
     await asks(said, [prompt(5, "Run purlis persona where", "ask-a")]);

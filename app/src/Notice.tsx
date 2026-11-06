@@ -15,7 +15,6 @@ import {
   type Ref,
 } from "react";
 import { createPortal } from "react-dom";
-import { ChatText } from "./ChatText";
 import { useNow } from "./InboxRow";
 import { agoSaid } from "./inboxRules";
 import { PersonaMark } from "./PersonaMark";
@@ -41,7 +40,6 @@ import { Twist } from "./ui/disclosure/Disclosure";
 import { Button, ButtonRow, IconButton } from "./ui/button/Button";
 import {
   NoticeBox,
-  NoticeChatWords,
   NoticeHead,
   NoticeListBox,
   NoticeMark,
@@ -175,9 +173,6 @@ type Said = {
   /** What a way out opened (a fix's form, #1250): drawn right after the line, outside its live
    *  region, and moved with it by the Inbox's list. */
   under?: ReactNode;
-  /** **A chat's own words, in a Notices centre card** (#5217): markdown under the safe subset,
-   *  folded past six lines (`ChatText`). `children` stays purlis's, in plain text. */
-  chatWords?: string;
   /** **A consent surface** (ADR 0097 §6), though no way out on it says `allows`: a sandbox block
    *  not yet answered. In the Notices centre it keeps its full waiting edge and takes no primary
    *  way, so its answers stand at equal weight. It says it waits only where it has an answer. */
@@ -292,7 +287,6 @@ export function Notice(props: NoticeProps) {
     under,
     title,
     quiet,
-    chatWords,
   } = props;
   // A pane's Notice of a chat in no pane is the Notices centre's line (#4759).
   const inCentre = centre !== null && askedAt === "pane";
@@ -361,7 +355,6 @@ export function Notice(props: NoticeProps) {
         onDismiss={onDismiss}
         dismissSays={dismissSays}
         mayAct={mayAct}
-        chatWords={chatWords}
         under={under}
       >
         {children}
@@ -558,8 +551,9 @@ function stateSaid({
 /**
  * **A Notice as a card of the Notices centre** (#5217, the Inbox card's style from #5214): a
  * one-line head (its mark; its title, with its state and age muted beneath; Go to chat as a quiet
- * link; its ×), what it says at the card's size, a chat's own words through `ChatText`, and its
- * ways under them.
+ * link; its ×), what it says at the card's size, and its ways under it. A chat's own prose has
+ * no part of its own here (#5363): no Notice in the centre carries any, and the Inbox, which
+ * does, draws it through `ChatText`.
  *
  * **One primary, where it has an answer**: the way its caller leads with, else its first. Every
  * other way is a quiet link. **A consent takes no primary** (ADR 0097 §6): Allow keeps the
@@ -586,7 +580,6 @@ function CentreCard({
   onDismiss,
   dismissSays,
   mayAct,
-  chatWords,
   under,
   children,
 }: Ways & {
@@ -600,7 +593,6 @@ function CentreCard({
   quiet?: boolean;
   consent: boolean;
   mayAct: (target: Element) => boolean;
-  chatWords?: string;
   under?: ReactNode;
   children: ReactNode;
 }) {
@@ -687,11 +679,6 @@ function CentreCard({
           }
         />
         {children !== undefined && <NoticeMessage>{children}</NoticeMessage>}
-        {chatWords !== undefined && (
-          <NoticeChatWords>
-            <ChatText text={chatWords} />
-          </NoticeChatWords>
-        )}
         {hasWays && (
           <ButtonRow size="sm">
             {others.map((fix) => (

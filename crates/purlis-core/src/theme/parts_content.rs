@@ -195,12 +195,6 @@ pub(super) const NOTICE: Family = Family {
             description: "A Notices centre card's state and age, under its title (#5217).",
             properties: &[Prop::Text, Prop::FontSize],
         },
-        Part {
-            name: "chat-words",
-            since: super::NEXT,
-            description: "A chat's own words on a Notices centre card (#5217).",
-            properties: &[Prop::Text, Prop::FontSize],
-        },
     ],
     variants: &[
         Variant {

@@ -250,17 +250,6 @@
   color: var(--text-secondary);
 }
 
-/* **A chat's own words** (#5217), as an Inbox card draws them (#5214). */
-[data-scope="notice"][data-part="chat-words"] {
-  padding-inline-start: var(--notice-indent);
-  color: var(--text-secondary);
-  font-size: var(--font-size-md);
-}
-
-[data-scope="notice"][data-part="chat-words"] strong {
-  color: var(--text-primary);
-}
-
 [data-placement="inbox"] [data-scope="notice-card"][data-part="said"] > [data-scope="button-row"] {
   margin: 0;
   padding-inline-start: var(--notice-indent);
