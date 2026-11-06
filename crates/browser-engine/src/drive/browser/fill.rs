@@ -3,7 +3,8 @@
 
 //! **A secret purlis fills** (#5115, spec #5100): one vault value into one field of a browser
 //! the agent is using, under the agent's own lease, so the person's take-over cuts it as it cuts
-//! any call of the agent's.
+//! any call of the agent's. A take-over that comes once the value is in its field answers that it
+//! went in, with nothing of the page the person now drives, so their view marks the field.
 //!
 //! **The engine is the one judge at the moment of filling** (SF-2, SF-13). The field is the one
 //! the agent's reference names now; the origin it is judged by is that of the document of the
@@ -187,6 +188,27 @@ struct Resolved {
     key: NodeKey,
 }
 
+/// **What a fill the person took the browser over from, once its value was in, answers**: that
+/// it went in and the browser changed hands, with nothing of the page they now drive.
+fn taken_over_once_filled(fill: &SecretFill) -> Answer {
+    Answer {
+        page: None,
+        settled: crate::drive::Settled::Yes,
+        opened: Vec::new(),
+        content: Content::Nothing,
+        note: Some(format!(
+            "purlis filled {} into {} on {}, and then the person took this browser over: the \
+             value is kept out of everything you read, and while the page holding it is open \
+             you press no key and type or choose nothing in it. Once they hand the browser \
+             back, take a new snapshot",
+            fill.key, fill.target, fill.origin
+        )),
+        repeated: false,
+        asked: Vec::new(),
+        downloads: Vec::new(),
+    }
+}
+
 impl Browser {
     /// **What the field `target` names is** (#5115): the origin of its frame's document as the
     /// engine records it, its label and its kind. Nothing is typed.
@@ -223,10 +245,12 @@ impl Browser {
             // to a site the agent is kept off (#5152).
             let _call = super::AgentCall::begins(&self.inner.agent_calls);
             let filled = self.filling(fill, hold);
-            if self.cut() {
-                Err(Refusal::Interrupted)
-            } else {
-                filled
+            match filled {
+                // Taken over once the value was in its field: it went in, so the person's view
+                // marks it, and nothing of the page they now drive is answered.
+                Ok(_) if self.cut() => Ok(taken_over_once_filled(fill)),
+                Err(_) if self.cut() => Err(Refusal::Interrupted),
+                filled => filled,
             }
         };
         self.kept_out(answer.map(|answer| self.with_asked(answer)))

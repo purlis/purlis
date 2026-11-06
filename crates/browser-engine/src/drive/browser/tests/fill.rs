@@ -395,6 +395,59 @@ fn a_fill_under_a_lease_the_agent_no_longer_holds_types_nothing() {
     assert_eq!(inserted(&engine), 0);
 }
 
+/// The person takes the browser over the moment the value is in its field, before the fill
+/// answers: the fill says it went in, so the person's view marks the field, and the answer
+/// reads nothing of the page the person now drives.
+#[test]
+fn a_fill_cut_by_a_take_over_after_its_write_says_the_value_went_in() {
+    let (browser, engine) = browser();
+    let browser = Arc::new(browser);
+    let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
+    let taker: Arc<Mutex<Option<Arc<crate::drive::Browser>>>> =
+        Arc::new(Mutex::new(Some(Arc::clone(&browser))));
+    let takes = Arc::clone(&taker);
+    let mut wrote = false;
+    engine.on(move |sent, _engine| {
+        let p = &sent.params;
+        match sent.method.as_str() {
+            "Runtime.callFunctionOn" if p["functionDeclaration"] == FIELD_KIND => Some(Ok(
+                json!({ "result": { "type": "object", "value": { "kind": "one_line", "label": "Secret word" } } }),
+            )),
+            "Runtime.callFunctionOn" if p["functionDeclaration"] == WRITE_FIELD => {
+                wrote = true;
+                let held = VALUE.encode_utf16().count();
+                Some(Ok(json!({ "result": { "type": "number", "value": held } })))
+            }
+            // The first thing sent once the value is in: the person takes over here.
+            "Runtime.releaseObject" if wrote => {
+                if let Some(browser) = super::super::super::lock(&takes).take() {
+                    browser.take_over();
+                }
+                None
+            }
+            _ => None,
+        }
+    });
+
+    let filled = browser.fill_secret(
+        browser.epoch(),
+        &fill_of(secret, "http://fixture.test"),
+        Arc::new(Holding::default()),
+    );
+
+    assert!(super::super::super::lock(&taker).is_none(), "taken over");
+    assert_eq!(written(&engine), [VALUE]);
+    let answer = filled.unwrap_or_else(|why| panic!("{why}"));
+    let note = answer.note.unwrap_or_default();
+    assert!(note.contains("dash-api-key"), "{note}");
+    assert!(note.contains("took this browser over"), "{note}");
+    assert_eq!(
+        answer.page, None,
+        "nothing of the person's page is answered"
+    );
+    assert_eq!(answer.content, Content::Nothing);
+}
+
 /// The value itself is kept out for the browser's life, not only what its field holds: a page
 /// that echoes it elsewhere, while its field reads otherwise, shows the agent nothing of it.
 #[test]
