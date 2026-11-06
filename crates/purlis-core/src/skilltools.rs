@@ -183,8 +183,11 @@ impl Asking<'_> {
         )
     }
 
-    /// `None` too for a plane skill its harness was not handed ([`Self::handed`]), whose own
-    /// skill tool would only answer that it knows no such skill (#4510).
+    /// **The words its harness's own skill tool starts `effective` by, applying what it
+    /// narrows** ([`crate::harness::HarnessAdapter::narrowed_start`]), where purlis armed the
+    /// harness with the skill. `None` for a chat that names no harness, and for a plane skill its
+    /// harness was not handed ([`Self::handed`]), whose own skill tool would only answer that it
+    /// knows no such skill (#4510).
     fn narrowed_start(&self, effective: &Effective) -> Option<String> {
         self.harness?;
         if effective.origin.of_the_plane()

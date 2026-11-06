@@ -259,22 +259,32 @@ fn a_narrowing_skill_the_router_hid_is_loaded_since_the_harness_was_never_handed
     );
     assert!(!loaded.contains("skills:audit"), "{loaded}");
     assert_eq!(*started.borrow(), ["audit"]);
+}
 
-    // Pinned, it is handed, and the harness's own start keeps its narrowing.
-    assert!(
-        pin(
-            root,
-            &PinnedBy::Workspace("smart-ide".to_owned()),
-            "audit",
-            true
-        )
-        .unwrap()
+#[test]
+fn a_narrowing_skill_the_router_keeps_for_its_pin_is_started_by_the_harness_s_own_tool() {
+    let (tmp, bundle) = a_plane_of(MOST + 5);
+    let root = tmp.path();
+    write(
+        &root.join("skills/audit"),
+        "---\nname: audit\ndescription: Looks, never touches.\ncontext: fork\n---\n\nbody\n",
     );
+    std::fs::write(root.join("skills/audit.toml"), "grant = \"all\"\n").unwrap();
+    let pinned = PinnedBy::Workspace("smart-ide".to_owned());
+    assert!(pin(root, &pinned, "audit", true).unwrap());
     let handed = the_folder(root, &bundle, None);
+    assert!(laid_out(root, &bundle, None).contains(&"audit".to_owned()));
     let asking = crate::skilltools::Asking {
+        plane: root,
+        workspace: Some("smart-ide"),
+        persona: None,
+        harness: Some("claude-code"),
+        route: Some(crate::skills::Route::Plugin),
+        built_in: Some(&bundle),
         handed: Some(&handed),
-        ..asking
     };
+    let mut args = serde_json::Map::new();
+    args.insert("name".to_owned(), serde_json::Value::from("audit"));
     let refused = crate::skilltools::call(&asking, "skill_load", &args, &|_| {
         panic!("the harness's own start opens the run")
     })
