@@ -228,6 +228,22 @@ fn a_closed_page_ends_the_hold() {
     told.comes_to(&["held", "released"]);
 }
 
+/// PROBE (#5454, temporary): the old shape, a click on a button that closes its own page.
+#[test]
+fn probe_old_a_closed_page_ends_the_hold() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    open(&browser, "hold-opener.html");
+    click(&browser, "link \"Open the dashboard\"");
+    let told = Arc::new(Told::default());
+    filled(&browser, &told);
+
+    click(&browser, "button \"Close this page\"");
+
+    told.comes_to(&["held", "released"]);
+}
+
 #[test]
 fn the_field_gives_nothing_to_a_copy_a_cut_or_a_drag_once_filled() {
     let Some((browser, _data, _site)) = started() else {

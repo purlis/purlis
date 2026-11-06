@@ -1,0 +1,124 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# PROBE (#5454, #5463), temporary: removed before the pull request is ready.
+name: probe
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # #5454: the old shape (a click that closes its own page) and the new one (the opener closes
+  # it), each many times, as they are and with the engine's answers to mouse events held back
+  # while later messages are read.
+  hold:
+    name: probe hold (${{ matrix.late }} ms late)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        late: ["0", "500"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust-toolchain
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: false
+      - run: mkdir -p app/dist
+      - name: Build
+        run: cargo test -p purlis-browser-engine --test it --no-run --locked
+      - name: Run each shape 40 times
+        env:
+          LATE: ${{ matrix.late }}
+        run: |
+          set +e
+          bin=$(ls -t target/debug/deps/it-* | grep -v '\.d$' | head -1)
+          for name in probe_old_a_closed_page_ends_the_hold a_closed_page_ends_the_hold; do
+            failed=0
+            for i in $(seq 1 40); do
+              if [ "$LATE" != "0" ]; then export PURLIS_PROBE_LATE_MOUSE_MS=$LATE; fi
+              out=$("$bin" --exact "a_filled_secret_holds_its_browser_while_its_page_lives::$name" --test-threads 1 2>&1)
+              if [ $? -ne 0 ]; then
+                failed=$((failed+1))
+                echo "$out" | grep -E "panicked|acted in part|detached" | head -3
+              fi
+            done
+            echo "::notice title=$name, $LATE ms late::$failed of 40 failed"
+          done
+
+  image:
+    runs-on: ubuntu-24.04
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: image
+        run: echo "image=$(node tools/story-image.mjs ref)" >> "$GITHUB_OUTPUT"
+
+  # #5463: WaitingStrip's stories in WebKit, alone many times, and in the shard that has failed.
+  strip:
+    name: probe strip (${{ matrix.how }} ${{ matrix.rep }})
+    needs: image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        how: [alone, shard]
+        rep: [1, 2, 3]
+    container:
+      image: ${{ needs.image.outputs.image }}
+      options: --init --ipc=host
+    env:
+      PURLIS_STORY_PICTURES: "1"
+      HOME: /root
+    defaults:
+      run:
+        working-directory: app
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - name: Run
+        env:
+          HOW: ${{ matrix.how }}
+        run: |
+          set +e
+          mkdir -p "$RUNNER_TEMP/probe"
+          if [ "$HOW" = alone ]; then
+            for i in $(seq 1 8); do
+              npx vitest run --project "stories * (webkit)" src/WaitingStrip.stories.tsx 2>&1 | tee -a "$RUNNER_TEMP/probe/log.txt" | grep -E "PROBE-5463|FAIL|dimensions"
+            done
+          else
+            shard=3
+            for k in $(seq 1 8); do
+              if npx vitest list --project "stories * (webkit)" --filesOnly --shard=$k/8 2>/dev/null | grep -q WaitingStrip; then shard=$k; fi
+            done
+            echo "::notice title=strip shard::WaitingStrip is in webkit shard $shard/8"
+            for i in 1 2; do
+              npx vitest run --project "stories * (webkit)" --shard=$shard/8 2>&1 | tee -a "$RUNNER_TEMP/probe/log.txt" | grep -E "PROBE-5463|FAIL|dimensions"
+            done
+          fi
+          echo "::notice title=strip $HOW::$(grep -c 'Expected image dimensions' "$RUNNER_TEMP/probe/log.txt") dimension misses, $(grep -c 'PROBE-5463 {\"when\":\"before\"' "$RUNNER_TEMP/probe/log.txt") pictures probed"
+          exit 0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: probe-strip-${{ matrix.how }}-${{ matrix.rep }}
+          path: ${{ runner.temp }}/probe/
+          retention-days: 7

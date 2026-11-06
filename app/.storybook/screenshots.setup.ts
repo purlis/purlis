@@ -97,7 +97,63 @@ async function picture(context: TestContext): Promise<void> {
   // In the theme's own fonts: every face it asked for made, then laid out.
   await facesLoaded();
   await document.fonts.ready;
-  await expect.element(page.elementLocator(frame)).toMatchScreenshot(pictureOf(story.id, cell));
+  const probing = story.id.includes("over-a-real-terminal");
+  if (probing) probe5463("before", story.id, cell, frame);
+  try {
+    await expect.element(page.elementLocator(frame)).toMatchScreenshot(pictureOf(story.id, cell));
+  } finally {
+    if (probing) probe5463("after", story.id, cell, frame);
+  }
+}
+
+/** PROBE (#5463, temporary): where the frame and what it holds stand, to the fraction. */
+function probe5463(when: string, id: string, cell: unknown, frame: Element): void {
+  const r = (e: Element | null | undefined) => {
+    if (!e) return null;
+    const b = e.getBoundingClientRect();
+    return { y: b.y, h: b.height, b: b.bottom, x: b.x, w: b.width };
+  };
+  const chain: unknown[] = [];
+  for (let at: Element | null = frame.parentElement; at; at = at.parentElement)
+    chain.push({ tag: at.tagName, id: at.id, cls: at.className, ...r(at) });
+  const mark = document.createElement("span");
+  mark.style.cssText = "display:inline-block;inline-size:0;block-size:0";
+  frame.after(mark);
+  const baseline = mark.getBoundingClientRect().y;
+  mark.remove();
+  const host = frame.querySelector('[data-testid="terminal"]');
+  const row = host?.querySelector(".xterm-rows > div");
+  const parent = frame.parentElement ? getComputedStyle(frame.parentElement) : null;
+  console.log(
+    "PROBE-5463 " +
+      JSON.stringify({
+        when,
+        id,
+        cell,
+        frames: document.querySelectorAll("[data-story-frame]").length,
+        frame: r(frame),
+        pane: r(frame.querySelector(".pane-frame")),
+        top: r(frame.querySelector(".pane-top")),
+        host: r(host),
+        screen: r(host?.querySelector(".xterm-screen")),
+        row: r(row),
+        rows: host?.querySelectorAll(".xterm-rows > div").length,
+        dataRows: (host as HTMLElement | null)?.dataset.rows,
+        baseline,
+        strut: parent && { font: parent.font, lineHeight: parent.lineHeight },
+        scroll: [window.scrollX, window.scrollY],
+        inner: [window.innerWidth, window.innerHeight],
+        dpr: window.devicePixelRatio,
+        vv: window.visualViewport && [
+          window.visualViewport.offsetTop,
+          window.visualViewport.pageTop,
+          window.visualViewport.scale,
+          window.visualViewport.height,
+        ],
+        iframe: r(window.frameElement),
+        chain,
+      }),
+  );
 }
 
 beforeEach(async (context) => {
