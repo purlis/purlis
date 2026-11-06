@@ -1,7 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import type { LaidNode, LaidOut } from "./bindings";
+import { emitTo } from "@tauri-apps/api/event";
+import { commands, type LaidNode, type LaidOut, type PlaneId } from "./bindings";
 import { chatsOf, type Reopening, tabsOf } from "./laidOut";
 import type { StartNotes } from "./ChatNotices";
 import type { HeldBlock } from "./sandboxBlocks";
@@ -79,6 +80,18 @@ export function withStartHanded(held: StartNotes | undefined, handed: StartNotes
  *  on it (`press_elsewhere`), on a chat it has in a pane, or on a chat in no pane where its
  *  pane was used last (#5108), which it shows in its focused pane. */
 export const PRESS_HERE = "press-here";
+
+/**
+ * **A press a tab window does not take goes to the project window** (#5330): the window holding
+ * `plane` comes forward and is sent {@link PRESS_HERE}, so it opens chat `chat` by the rule
+ * there (#5289). Answers whether any window holds the project.
+ */
+export async function pressInProjectWindow(plane: PlaneId, chat: number): Promise<boolean> {
+  const label = await commands.showWindowHolding(plane).catch(() => null);
+  if (label === null) return false;
+  await emitTo(label, PRESS_HERE, { plane, chat }).catch(() => undefined);
+  return true;
+}
 
 /** What {@link LAYOUT_MOVED} carries. */
 export type LayoutMoved = { plane: string; layout: LaidOut };

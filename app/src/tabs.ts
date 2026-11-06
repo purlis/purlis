@@ -1667,6 +1667,19 @@ function opened(tabs: Tabs, chat: PressedChat, pressing: Pressing, opens: Opens)
   return { tabs: used, workspace: stripInFront(used, pressing.filedIn) };
 }
 
+/**
+ * **Whether a press on chat `session` would move this window to another strip** (#5330): the
+ * chat is in no pane here, and it is filed on a strip other than the one in front. A tab window
+ * holds only the tabs torn off into it, so it takes no such press: the rule would give the chat
+ * a tab there and the window would show another strip. The project window, which holds every
+ * strip, takes it. A chat on screen here is gone to wherever it is, as anywhere.
+ */
+export function pressLeavesStrip(tabs: Tabs, session: number, filedIn: FiledIn): boolean {
+  if (whereShown(tabs, session) !== undefined) return false;
+  const shown = stripInFront(tabs, filedIn);
+  return shown !== undefined && filedIn(session) !== shown;
+}
+
 /** The strip of the tab in front, which the window draws, or none with nothing in front. */
 function stripInFront(tabs: Tabs, filedIn: FiledIn): string | undefined {
   return tabs.inFront === undefined ? undefined : workspaceOf(tabs, tabs.inFront, filedIn);

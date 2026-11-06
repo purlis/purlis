@@ -299,6 +299,7 @@ import {
   openEmptyTab,
   openNew,
   opensAt,
+  pressLeavesStrip,
   openView,
   offerView,
   harnessSetupTitle,
@@ -390,6 +391,7 @@ import {
   type NotesHanded,
   withStartHanded,
   PRESS_HERE,
+  pressInProjectWindow,
 } from "./tabWindows";
 import type { TabFacts } from "./ChatRows";
 import { rowFactsOf } from "./shownState";
@@ -4670,10 +4672,34 @@ export const PlaneView = memo(function PlaneView({
    * that moment. A chat listed because its Smart close stopped (SI-8f) has been looked at, so
    * it leaves the list.
    */
+  /**
+   * **A press lands in this window** (#4757, #5289), by the rule. **A tab window keeps the strip
+   * it shows** (#5330): a chat in no pane here, filed on another strip, is opened by the project
+   * window instead, which comes forward, since this window holds only the tabs torn off into it.
+   * Where no window holds the project, it lands here after all.
+   */
+  const pressHere = useCallback(
+    (session: number, into?: PaneAt) => {
+      const land = () => landOn((tabs) => pressChat(tabs, pressedOf(session), pressing, into));
+      const elsewhere =
+        tabWindow !== undefined &&
+        into === undefined &&
+        sidebar !== undefined &&
+        pressLeavesStrip(now.current, session, pressing.filedIn);
+      if (!elsewhere) {
+        land();
+        return;
+      }
+      void pressInProjectWindow(plane, session).then((held) => {
+        if (!held) land();
+      });
+    },
+    [landOn, plane, pressedOf, pressing, sidebar, tabWindow],
+  );
   const showChat = useCallback(
     (session: number, into?: PaneAt) => {
       stoppedFor(session, undefined);
-      const here = () => landOn((tabs) => pressChat(tabs, pressedOf(session), pressing, into));
+      const here = () => pressHere(session, into);
       // **A chat in a pane of another of the project's windows** (#4768), **or a chat in no
       // pane where another window's pane was used last** (#5108): that window comes forward
       // and shows it, and this window changes nothing. Asked only while the project has another
@@ -4689,7 +4715,7 @@ export const PlaneView = memo(function PlaneView({
         })
         .catch(here);
     },
-    [landOn, oneWindow, plane, pressedOf, pressing, stoppedFor],
+    [oneWindow, plane, pressHere, stoppedFor],
   );
   /** **A pane of this window was used** (#5108): pressed in, or typed in. Said to the core while
    *  the project has another window, so a press on a chat in no pane, in whichever window, goes
@@ -4714,9 +4740,8 @@ export const PlaneView = memo(function PlaneView({
     });
   }, [oneWindow, plane]);
   useEffect(() => {
-    showChatHere.current = (session) =>
-      landOn((tabs) => pressChat(tabs, pressedOf(session), pressing));
-  }, [landOn, pressedOf, pressing]);
+    showChatHere.current = (session) => pressHere(session);
+  }, [pressHere]);
   // **Go to it, on a chat's arrival card** (#4759): a press on a card said before it was drawn,
   // heard here, where the press as it stands now is. Every project this window holds hears it,
   // and a chat's number means something only in its own.

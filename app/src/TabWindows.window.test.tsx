@@ -71,9 +71,9 @@ function chat(session: number): OpenChat {
   };
 }
 
-function tab(window: number, front: boolean, session: number): LaidTab {
+function tab(window: number, front: boolean, session: number, workspace?: string): LaidTab {
   return {
-    workspace: null,
+    workspace: workspace ?? null,
     pinned: false,
     window,
     front,
@@ -381,7 +381,7 @@ describe("the most recently used pane across the project's windows (#5108)", () 
 describe("a press a tab window is handed for a chat in no pane (#5330)", () => {
   const handed = {
     tabWindow: 1,
-    layout: { strip: null, tabs: [tab(0, true, 1), tab(1, true, 2)] },
+    layout: { strip: "alpha", tabs: [tab(0, true, 1, "alpha"), tab(1, true, 2, "alpha")] },
     chats: [1, 2],
     inNoTab: [3, 4],
     filed: { alpha: [1, 2, 4], beta: [3] },
@@ -410,12 +410,14 @@ describe("a press a tab window is handed for a chat in no pane (#5330)", () => {
         .slice(saidBefore)
         .flatMap((one) => one.tabs.map((t) => chatsOf(t.tree))),
     ).not.toContainEqual([3]);
-    await waitFor(() =>
-      expect(toProjectWindow(asked)).toEqual([
-        [
-          { kind: "WebviewWindow", label: "main" },
+    // Sent once for each listener the mock heard, StrictMode's first among them.
+    await waitFor(() => expect(toProjectWindow(asked).length).toBeGreaterThan(0));
+    expect(new Set(toProjectWindow(asked).map((one) => JSON.stringify(one)))).toEqual(
+      new Set([
+        JSON.stringify([
+          { kind: "AnyLabel", label: "main" },
           { plane: ONE, chat: 3 },
-        ],
+        ]),
       ]),
     );
     expect(sent("show_window_holding").at(-1)?.args).toEqual({ plane: ONE });
