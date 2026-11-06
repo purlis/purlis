@@ -814,7 +814,7 @@ fn rebased(
     if !went.ok() {
         return Ok(Moved::Stopped(stopped_said(here, &went.err, say)));
     }
-    finish(here, &record)?;
+    finish(here, &record, Some(&onto_id), say)?;
     NewBase::recorded(here, &record.branch, say);
     Ok(if forward {
         Moved::Forward
@@ -955,6 +955,12 @@ fn go_on(here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, String> {
     if !files.is_empty() {
         stage_resolved(here, &files)?;
     }
+    // What the rebase replays onto, read before git finishes it and takes its notes away: the
+    // commits after it are the ones it made, and the ones the app signs (#5480).
+    let onto = state_text(&here.git_dir.join("rebase-merge"), "onto")
+        .ok()
+        .map(|onto| onto.trim().to_owned())
+        .filter(|onto| full_id(onto));
     let mut args: Vec<&str> = REBASE.to_vec();
     args.extend(["rebase", "--continue"]);
     let went = git::run_untimed(&here.folder, &args).map_err(|e| e.to_string())?;
@@ -966,7 +972,7 @@ fn go_on(here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, String> {
     if !went.ok() {
         return Ok(stopped_said(here, &went.err, say));
     }
-    finish(here, &record)?;
+    finish(here, &record, onto.as_deref(), say)?;
     // From the record: a rebase that stopped had the folder on no branch when `here` was read.
     NewBase::recorded(here, &record.branch, say);
     say(Say::Done(format!("{label} is rebased").into()));
@@ -1223,12 +1229,22 @@ fn full_id(id: &str) -> bool {
     matches!(id.len(), 40 | 64) && id.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
-/// The rebase is done, on a detached head: the branch is moved to it only from the commit it
-/// was judged at, the folder is put back on the branch, and the commit is noted as the one
-/// this update left it at.
-fn finish(here: &Here, record: &Record) -> Result<(), String> {
+/// The rebase is done, on a detached head: the commits it made after `onto` signed where the
+/// app holds a key for a chat ([`signed_since`]), the branch moved to them only from the commit
+/// it was judged at, the folder put back on the branch, and the commit noted as the one this
+/// update left it at.
+fn finish(
+    here: &Here,
+    record: &Record,
+    onto: Option<&str>,
+    say: &mut dyn FnMut(Say),
+) -> Result<(), String> {
     let _ = std::fs::remove_file(here.notes.join(UNDER_WAY));
     let new = commit_of(&here.folder, "HEAD").ok_or("git did not say where the rebase ended")?;
+    let new = match onto {
+        Some(onto) => signed_since(&here.folder, new, &[onto], say),
+        None => new,
+    };
     let local_ref = name::as_ref(&record.branch);
     let moved = git::run(
         &here.folder,
@@ -1269,6 +1285,54 @@ fn finish(here: &Here, record: &Record) -> Result<(), String> {
     )
     .map_err(|why| format!("purlis could not note the update it made: {why}"))
 }
+
+/// **The commits git made for a chat since `before`, signed** (#5480): where the app runs this
+/// update for a chat ([`git::isolation`]), each commit `head` reaches and `before` does not is
+/// written again with the app's signature ([`crate::commitsign::sign_made`]), and the id that
+/// stands for `head` then is answered, for the caller to move the branch to. With no key set up,
+/// or where signing fails, `head` as git made it, and said. From a terminal, `head` untouched:
+/// the person's own git is in charge there.
+pub(crate) fn signed_since(
+    folder: &Path,
+    head: String,
+    before: &[&str],
+    say: &mut dyn FnMut(Say),
+) -> String {
+    let Some(held) = git::isolation() else {
+        return head;
+    };
+    let Some(signer) = held.signer() else {
+        let mut args = vec!["rev-list", "--count", head.as_str(), "--not"];
+        args.extend(before.iter().copied());
+        let made = git::run(folder, &args, git::READ)
+            .ok()
+            .filter(git::Run::ok)
+            .is_some_and(|counted| counted.line().trim() != "0");
+        if made {
+            say(Say::Warn(UNSIGNED_UPDATE.into()));
+        }
+        return head;
+    };
+    match crate::commitsign::sign_made(folder, &head, before, signer) {
+        Ok(signed) => signed,
+        Err(why) => {
+            say(Say::Warn(
+                format!(
+                    "the commits this update made are not signed: {why}. A repository that \
+                     requires signed commits will refuse a pull request with them"
+                )
+                .into(),
+            ));
+            head
+        }
+    }
+}
+
+/// What an update that made commits says where no signing key is set up (#5480).
+const UNSIGNED_UPDATE: &str = "the commits this update made are not signed: the app has no \
+     signing key on this machine yet, so a repository that requires signed commits will refuse a \
+     pull request with them. Ask the person to run `purlis signing setup` once in their own \
+     terminal; it says each step in plain words, and later updates sign what they make";
 
 /// The files git named as conflicted, each as it is staged, or why they may not be staged for
 /// a chat: each a name inside the folder reached through no link, not another repository nor
@@ -1538,7 +1602,8 @@ fn settled_by_the_chat(
         ));
     }
     if going_on {
-        finish(here, &record)?;
+        // The chat's own git replayed these, in its sandbox: the app moves the branch only.
+        finish(here, &record, None, say)?;
         NewBase::recorded(here, &record.branch, say);
         say(Say::Done(format!("{label} is rebased").into()));
     } else {
