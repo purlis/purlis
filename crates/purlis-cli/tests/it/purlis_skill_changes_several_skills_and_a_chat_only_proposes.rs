@@ -367,3 +367,16 @@ fn a_chat_with_every_mark_stripped_is_known_by_where_it_runs_and_changes_nothing
     assert!(project.there("grilling") && project.there("tdd"));
     assert!(project.off_in_ops().is_empty());
 }
+
+/// **Where purlis can't tell, it is a chat's** (#5357, fail closed): a record of open chats it
+/// can't read makes the check unsure, and an unsure command changes nothing.
+#[test]
+fn where_purlis_cannot_tell_whether_it_is_a_chat_nothing_changes() {
+    let project = Project::new();
+    let record = purlis_core::reopen::path(&project.root());
+    std::fs::create_dir_all(record.parent().unwrap()).unwrap();
+    std::fs::write(&record, "not a record").unwrap();
+    let out = project.run(&["rm", "grilling", "tdd", "--yes"]);
+    assert!(!out.status.success(), "{}", said(&out));
+    assert!(project.there("grilling") && project.there("tdd"));
+}

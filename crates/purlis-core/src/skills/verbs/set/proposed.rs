@@ -19,7 +19,7 @@ use std::path::Path;
 use purlis_skills::Lifecycle;
 use serde::{Deserialize, Serialize};
 
-use super::{Act, Member, delete_set, lifecycle_set, pin_set, review_set, turn_set};
+use super::{Act, Member, delete_set, lifecycle_set, one_line, pin_set, review_set, turn_set};
 use crate::counts::counted;
 use crate::skills::routing::{self, PinnedBy};
 use crate::skills::verbs::{Ctx, Level, find};
@@ -78,14 +78,7 @@ impl SetChange {
     fn members(&self) -> Vec<Member> {
         match self {
             Self::Delete { members } | Self::Archive { members, .. } => members.clone(),
-            Self::Turn { names, .. } => names
-                .iter()
-                .map(|name| Member {
-                    level: Level::project(),
-                    name: name.clone(),
-                })
-                .collect(),
-            Self::Pin { names, .. } => names
+            Self::Turn { names, .. } | Self::Pin { names, .. } => names
                 .iter()
                 .map(|name| Member {
                     level: Level::project(),
@@ -250,7 +243,11 @@ impl SetChange {
             .map(|one| one.member)
             .collect();
         if kept.is_empty() {
-            return Err("none of these skills can be changed so, so nothing was changed".into());
+            return Err(
+                "None of these skills can take this change any more, so nothing was changed. \
+                 Dismiss it, and ask the chat to propose it again if it is still wanted."
+                    .into(),
+            );
         }
         let names: Vec<String> = kept.iter().map(|one| one.name.clone()).collect();
         match self {
@@ -288,19 +285,62 @@ fn lifecycle_said(lifecycle: &Lifecycle) -> &'static str {
     }
 }
 
-/// What a skill's copy holds, as a digest: its `SKILL.md` and what purlis keeps beside it.
+/// The most files of one skill's folder its digest reads: past it, the count stands for the rest.
+const MOST_FILES: usize = 4096;
+
+/// **What a skill's copy holds, as a digest**: every file of its folder by its path in it and its
+/// bytes (a link by where it points, never followed), and what purlis keeps beside it. A script
+/// or a reference changed between the hold and Apply makes the proposal stale, as its
+/// `SKILL.md` does.
 fn copy_digest(plane: &Path, member: &Member) -> String {
     let Ok(folder) = find(plane, &member.level, &member.name) else {
         return String::new();
     };
-    let mut bytes = std::fs::read(folder.join(purlis_skills::FILE)).unwrap_or_default();
+    let mut files = Vec::new();
+    every_file(&folder, Path::new(""), &mut files);
+    files.sort();
+    let mut bytes = Vec::new();
+    for (rel, held) in &files {
+        bytes.extend(rel.as_bytes());
+        bytes.push(0);
+        bytes.extend(crate::skills::source::review::sha256(held).as_bytes());
+        bytes.push(b'\n');
+    }
     bytes.extend(std::fs::read(super::beside(&folder)).unwrap_or_default());
     crate::skills::source::review::sha256(&bytes)
 }
 
-/// A name as a line can hold it: one line, every control character a space.
-fn one_line(text: &str) -> String {
-    super::one_line(text)
+/// Each file below `dir` (at `rel` in the skill's folder) with what it holds, into `out`, at most
+/// [`MOST_FILES`]: a link's target in place of its bytes, and what cannot be read as a mark.
+fn every_file(dir: &Path, rel: &Path, out: &mut Vec<(String, Vec<u8>)>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        out.push((rel.display().to_string(), b"unreadable folder".to_vec()));
+        return;
+    };
+    for entry in entries.flatten() {
+        if out.len() >= MOST_FILES {
+            out.push(("…".to_owned(), out.len().to_string().into_bytes()));
+            return;
+        }
+        let path = entry.path();
+        let at = rel.join(entry.file_name());
+        let Ok(kind) = entry.file_type() else {
+            out.push((at.display().to_string(), b"unreadable".to_vec()));
+            continue;
+        };
+        if kind.is_symlink() {
+            let target = std::fs::read_link(&path).unwrap_or_default();
+            out.push((
+                at.display().to_string(),
+                target.display().to_string().into_bytes(),
+            ));
+        } else if kind.is_dir() {
+            every_file(&path, &at, out);
+        } else {
+            let held = std::fs::read(&path).unwrap_or_else(|_| b"unreadable".to_vec());
+            out.push((at.display().to_string(), held));
+        }
+    }
 }
 
 #[cfg(test)]

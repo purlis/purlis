@@ -701,8 +701,8 @@ fn names_of(
     };
     let mut found: Vec<String> = Vec::new();
     for one in set::installed_from(root, &remote, None) {
-        let shared_project = one.member.level == Level::project();
-        if (!project || shared_project) && !found.contains(&one.member.name) {
+        let at_the_projects_level = one.member.level == Level::project();
+        if (!project || at_the_projects_level) && !found.contains(&one.member.name) {
             found.push(one.member.name);
         }
     }
@@ -719,6 +719,30 @@ fn nothing_from(remote: &Remote) -> String {
          where each came from.",
         remote.url
     )
+}
+
+/// `purlis skill off` or `on` with one name: as `grant -w <ws> --off` or `--on` turns it.
+fn switched(
+    cx: &mut verbs::Ctx<'_>,
+    workspace: &str,
+    name: &str,
+    on: bool,
+) -> Result<Code, String> {
+    match crate::brokered::manifest_refused("skill off/on")
+        .map_or_else(|| verbs::switch(cx, workspace, name, on), Err)
+    {
+        Ok(changed) => {
+            if !changed {
+                let state = if on { "on" } else { "off" };
+                voice::ok(already_switched(name, state, workspace));
+            }
+            Ok(0)
+        }
+        Err(why) => {
+            voice::err(why.to_string());
+            Ok(1)
+        }
+    }
 }
 
 /// The one name a verb's single path takes: clap asks for one at least.
@@ -860,11 +884,6 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             persona,
             &purlis_core::harness_plugin::Env::of(&[]),
         )
-    };
-    let command_on = match &command {
-        SkillCommand::On { .. } => Some(true),
-        SkillCommand::Off { .. } => Some(false),
-        _ => None,
     };
     match command {
         SkillCommand::List {
@@ -1511,28 +1530,10 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
         }
         SkillCommand::Off {
             names, workspace, ..
-        }
-        | SkillCommand::On {
+        } => switched(&mut cx, &workspace, &one_of(names)?, false),
+        SkillCommand::On {
             names, workspace, ..
-        } => {
-            let on = matches!(command_on, Some(true));
-            let name = one_of(names)?;
-            match crate::brokered::manifest_refused("skill off/on")
-                .map_or_else(|| verbs::switch(&mut cx, &workspace, &name, on), Err)
-            {
-                Ok(changed) => {
-                    if !changed {
-                        let state = if on { "on" } else { "off" };
-                        voice::ok(already_switched(&name, state, &workspace));
-                    }
-                    Ok(0)
-                }
-                Err(why) => {
-                    voice::err(why.to_string());
-                    Ok(1)
-                }
-            }
-        }
+        } => switched(&mut cx, &workspace, &one_of(names)?, true),
         SkillCommand::Archive {
             names, undo, at, ..
         } => {

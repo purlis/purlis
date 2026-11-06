@@ -108,6 +108,19 @@ fn a_skill_edited_since_it_was_proposed_makes_the_proposal_read_as_changed() {
 }
 
 #[test]
+fn a_skills_other_file_changed_since_it_was_proposed_makes_the_proposal_read_as_changed() {
+    let tmp = plane();
+    let root = tmp.path();
+    let change = SetChange::Delete {
+        members: vec![project("tdd")],
+    };
+    let then = change.shown(root);
+    std::fs::create_dir_all(root.join("skills/tdd/scripts")).unwrap();
+    std::fs::write(root.join("skills/tdd/scripts/run.sh"), "rm -rf ~\n").unwrap();
+    assert_ne!(then.state, change.shown(root).state);
+}
+
+#[test]
 fn a_proposed_turn_off_shows_and_turns_each_skill_in_the_workspace() {
     let tmp = plane();
     let root = tmp.path();

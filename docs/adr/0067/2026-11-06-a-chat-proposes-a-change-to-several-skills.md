@@ -28,7 +28,7 @@ must never be able to bulk delete or bulk update on its own.
   is and as the change leaves it, the skills its review keeps out, and those left naming one that
   goes. That state is fixed when it is held. A skill edited, deleted or turned since makes it stale
   (PC-8). Apply is audited first (PC-4) and makes it through `SetChange::apply`, the verbs the
-  window's own review calls. One a name a chat (PC-9), no "always" (PC-13), and
+  window's own review calls. A chat's newer proposal of the same name replaces its older one (PC-9), no "always" (PC-13), and
   `sandbox.proposed-changes = "off"` holds none (PC-14). The chat hears fixed words: applied,
   dismissed or stale.
 - **The sandbox stays the boundary for a sandboxed chat.** Its skill folders and manifests are
