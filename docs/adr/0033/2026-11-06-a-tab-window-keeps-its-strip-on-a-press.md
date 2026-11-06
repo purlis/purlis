@@ -9,7 +9,8 @@ as it is.
 
 **A press on a chat in no pane, filed on a strip the tab window isn't showing, opens in the project
 window.** The tab window that was used last changes nothing, and the project window comes forward
-and opens the chat by the opening rule on that chat's strip. A tab window holds only the tabs torn
+and opens the chat by the opening rule on that chat's strip, and its pane counts as the one used
+last. A tab window holds only the tabs torn
 off into it, so taking the chat would mean a new tab there and a switch to another strip. The
 project window holds every strip and already changes strip on a press. A chat on screen in a tab
 window is still gone to there, whatever its strip, because a chat never shows twice.
