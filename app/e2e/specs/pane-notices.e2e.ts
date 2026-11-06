@@ -1048,11 +1048,27 @@ describe("a Notice in a pane", () => {
       const [one, two] = at.notices;
       return `pane ${Math.round((at.frame as Box).height)}, head ${of(at.head)}, row ${of(at.row)}, stack ${of(at.stack)} scrolls ${at.stackScrolls} at ${Math.round(at.stackScrollTop)}, first ${of(one?.box ?? null)}, notice ${of(two.box)} whole ${two.whole}, line ${of(two.line)}, under ${of(two.under)}, ways ${of(two.ways)}`;
     };
-    inside(
-      notice,
-      frame,
-      `the long Notice ${notice.height}px tall, ${notice.top - frame.top}px down its ${frame.height}px pane (tall: ${parts(tall)}; short: ${parts(seen)}),`,
+    const said = `(tall: ${parts(tall)}; short: ${parts(seen)})`;
+    // The band stays inside its pane, whatever it holds: past its room its stack scrolls.
+    inside(seen.row, frame, `the band in its ${frame.height}px pane ${said}`);
+    inside(seen.stack, frame, `the band's stack in its ${frame.height}px pane ${said}`);
+    // A Notice is never taller than its pane, so scrolling the stack always shows it whole.
+    check(
+      `the long Notice in its ${frame.height}px pane ${said}`,
+      notice.height,
+      "atMost",
+      frame.height,
     );
+    // While the stack doesn't scroll, the whole Notice is drawn inside the pane. Once it does,
+    // the Notice's own box runs on under the stack's edge, out of sight, and that is the scroll,
+    // not an overflow: on the macOS runner the window's pane is already this short (run
+    // 42198113537), so both heights here scroll.
+    if (!seen.stackScrolls)
+      inside(
+        notice,
+        frame,
+        `the long Notice ${notice.height}px tall, ${notice.top - frame.top}px down its ${frame.height}px pane ${said},`,
+      );
   });
 
   it("keeps each Notice's drawn box inside a pane a standing result squeezes (#3344)", async () => {
