@@ -78,8 +78,12 @@ export function withStartHanded(held: StartNotes | undefined, handed: StartNotes
 
 /** The event a window is sent to show a chat: a press in another window of the project landed
  *  on it (`press_elsewhere`), on a chat it has in a pane, or on a chat in no pane where its
- *  pane was used last (#5108), which it shows in its focused pane. */
+ *  pane was used last (#5108), which it shows in its focused pane. A tab window sends it to the
+ *  project window for a chat of another strip ({@link pressInProjectWindow}, #5330). */
 export const PRESS_HERE = "press-here";
+
+/** What {@link PRESS_HERE} carries: the core's `tabwindows::PressHere`. */
+export type PressHere = { plane: string; chat: number };
 
 /**
  * **A press a tab window does not take goes to the project window** (#5330): the window holding
@@ -89,7 +93,7 @@ export const PRESS_HERE = "press-here";
 export async function pressInProjectWindow(plane: PlaneId, chat: number): Promise<boolean> {
   const label = await commands.showWindowHolding(plane).catch(() => null);
   if (label === null) return false;
-  await emitTo(label, PRESS_HERE, { plane, chat }).catch(() => undefined);
+  await emitTo(label, PRESS_HERE, { plane, chat } satisfies PressHere).catch(() => undefined);
   return true;
 }
 

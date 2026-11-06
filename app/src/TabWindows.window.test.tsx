@@ -423,6 +423,18 @@ describe("a press a tab window is handed for a chat in no pane (#5330)", () => {
     expect(sent("show_window_holding").at(-1)?.args).toEqual({ plane: ONE });
   });
 
+  it("handed on to the project window, opens there and counts its pane as used", async () => {
+    const { fire, said, sent } = core({ ...handed, tabWindow: undefined });
+    render(<App />);
+    await screen.findByText("session 1");
+
+    fire(PRESS_HERE, { plane: ONE, chat: 3 });
+
+    await screen.findByText("session 3");
+    await waitFor(() => expect(shape(said().at(-1))).toContainEqual([0, [3]]));
+    await waitFor(() => expect(sent("pane_used").at(-1)?.args).toEqual({ plane: ONE }));
+  });
+
   it("of the strip it shows, opens here by the rule", async () => {
     mockWindows("window-1");
     const { asked, fire, said } = core(handed);

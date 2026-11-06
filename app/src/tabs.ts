@@ -1674,7 +1674,7 @@ function opened(tabs: Tabs, chat: PressedChat, pressing: Pressing, opens: Opens)
  * a tab there and the window would show another strip. The project window, which holds every
  * strip, takes it. A chat on screen here is gone to wherever it is, as anywhere.
  */
-export function pressLeavesStrip(tabs: Tabs, session: number, filedIn: FiledIn): boolean {
+export function wouldLeaveStrip(tabs: Tabs, session: number, filedIn: FiledIn): boolean {
   if (whereShown(tabs, session) !== undefined) return false;
   const shown = stripInFront(tabs, filedIn);
   return shown !== undefined && filedIn(session) !== shown;
