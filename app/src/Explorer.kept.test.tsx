@@ -145,7 +145,7 @@ describe("Explorer, where a LIVE workspace's files are kept (#5377)", () => {
     core(true);
     const { onPress } = draw();
 
-    expect(await menuOf(/^notes/)).toContain("Save with the project");
+    expect((await menuOf(/^notes/)).at(-1)).toBe("Save with the project");
     expect(await menuOf(/^run\.sh/)).toContain("Save with the project");
     expect(await menuOf(/^memory/)).not.toContain("Save with the project");
     await userEvent.click(await row(/^notes/));
