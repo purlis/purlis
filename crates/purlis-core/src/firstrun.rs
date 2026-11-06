@@ -1014,7 +1014,7 @@ mod tests {
         let taken = take_in(&root, &repo).expect("a repo is taken in");
 
         assert_eq!(taken.workspace, "svc");
-        assert_eq!(taken.clone, root.join("workspaces/svc/svc"));
+        assert_eq!(taken.clone, root.join("workspaces/svc/repos/svc"));
         assert!(taken.clone.join(".git").exists(), "nothing was cloned");
         assert_eq!(
             std::fs::read_dir(&repo).expect("the repo").count(),
@@ -1066,7 +1066,7 @@ mod tests {
 
         assert_eq!(first.workspace, "svc");
         assert_eq!(second.workspace, "svc-2");
-        assert_eq!(second.clone, root.join("workspaces/svc-2/svc-2"));
+        assert_eq!(second.clone, root.join("workspaces/svc-2/repos/svc-2"));
         assert_eq!(
             again, second,
             "reopening the second svc is its own workspace again"

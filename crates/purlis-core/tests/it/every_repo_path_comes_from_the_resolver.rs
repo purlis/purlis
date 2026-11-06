@@ -47,18 +47,6 @@ const ALLOWED: &[(&str, usize, &str)] = &[
          under `repos/` both: the resolver's `locate` for a path as written, not a path to one",
     ),
     (
-        "crates/purlis-core/src/scaffold/mod.rs",
-        1,
-        "`init`'s offer says where `--clone-this-repo` clones today, the root; #5373 moves new \
-         clones to `repos/` and this line with them (a recorded answer)",
-    ),
-    (
-        "crates/purlis-core/src/repocmd/clone.rs",
-        1,
-        "the refusal names where a clone lands today, the root; #5373 moves new clones to \
-         `repos/` and this line with them",
-    ),
-    (
         "app/src-tauri/src/runnercode.rs",
         3,
         "`workspaces/<ws>/<repo>` is the name a transfer carries between machines, which each \

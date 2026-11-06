@@ -89,7 +89,9 @@ use crate::layer::{self, Record};
 /// v3: the managed `.gitignore` block shares `changes/` (not its log).
 /// v4: the workspace carries charter's harness layer (charter#850).
 /// v5: every workspace has a `workspace.json`, from birth (charter#884).
-pub const STRUCTURE_VERSION: u32 = 5;
+/// v6: a new clone goes to `repos/<repo>`, and `repos` is reserved (ADR 0114). It only adds:
+///     stamping it makes no `repos/` and moves no clone, so it is the stamp alone.
+pub const STRUCTURE_VERSION: u32 = 6;
 
 /// Where that version is stamped ([`crate::names::STRUCTURE_STAMP`]). Its older spellings —
 /// charter's `.charter-structure`, and `.edm-structure` before it — are migrated in place the

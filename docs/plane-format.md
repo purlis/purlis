@@ -1821,9 +1821,12 @@ Two rules hold for the whole area and are not repeated per file:
     (notes, scripts, artifacts). For the person's files purlis gives no name a meaning and creates
     no folder.
 - **Reserved names:** `workspace.md`, `workspace.json`, `memory`, `todos`, `sessions`, `pieces`,
-  `refs`, `skills`, `themes`, `changes`, `work` and, from structure version 6, `repos`. A clone may
-  still take most of them: `skills` and `skills.local` are refused as clone names as before, and
-  from version 6 only `repos` is newly refused. A clone in `repos/` can't collide with any of them.
+  `refs`, `skills`, `themes`, `changes`, `work` and, from structure version 6, `repos`. From
+  version 6 a new clone takes none of them, in any case: `skills` and `skills.local` were refused
+  as clone names before, `repos` is the folder new clones go in, and the core's resolver reads no
+  repo in `repos/` under a reserved name, so one cloned there would be no repo of the workspace's.
+  A clone at the root made before then under a reserved name (`work/`) keeps working, and cloning
+  it again answers that it is already cloned.
 - **Encoding details:** `scaffold` refuses the whole directory when it does not resolve
   inside `workspaces/` (`charter/workspace.py:1840`). Baseline creation order is
   memory → refs → workspace.md → workspace.json → harness layer → structure stamp
