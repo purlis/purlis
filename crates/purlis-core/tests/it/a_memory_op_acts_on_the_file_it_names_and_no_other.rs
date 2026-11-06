@@ -426,35 +426,19 @@ fn remembering_while_an_edit_retitles_loses_no_index_line() {
     purlis_core::unsteered!();
     // Before the fix this lost about three lines in ten: the append went to the index's old
     // inode, which the retitle then replaced with what it had read.
-    //
-    //
-    // Neither runs more than AHEAD ops ahead of the other (#5559). The store's lock is asked for
-    // every 20 ms, not queued for, so left to run free whichever let go took it straight back
-    // before the other looked again: with each op holding it about 10 ms, one op waited 954 ms
-    // over 37 looks, and where the disk held each op 70 ms one waited out the whole 5 s. Met
-    // every AHEAD ops, the two still overlap at every step of an op (without the lock, about
-    // half the lines are lost), and the longest wait is a few of the other's ops.
     const N: usize = 120;
-    const AHEAD: usize = 4;
     let (_tmp, root, dir) = store();
     mem(&root, &dir, "a", "A");
-    let round = std::sync::Arc::new(std::sync::Barrier::new(2));
     let editor = {
-        let (root, dir, round) = (root.clone(), dir.clone(), round.clone());
+        let (root, dir) = (root.clone(), dir.clone());
         std::thread::spawn(move || {
             for i in 0..N {
-                if i % AHEAD == 0 {
-                    round.wait();
-                }
                 memstore::edit(&root, &dir, "a", &format!("A{i}"), "body", Base::Overwrite)
                     .unwrap();
             }
         })
     };
     for i in 0..N {
-        if i % AHEAD == 0 {
-            round.wait();
-        }
         memstore::write(
             &root,
             &dir,

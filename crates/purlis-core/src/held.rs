@@ -394,26 +394,19 @@ impl Store {
     ///
     /// **Waited for a bounded time, never for ever.** The lock is an flock on the store's own
     /// directory, which a chat can take too, and keep: waited for without a bound, that wedged
-    /// the operator's command or the window on the chat's store. Asked again every few
-    /// milliseconds for [`LOCK_WAIT`], then refused in a sentence. A filesystem that cannot
-    /// lock at all is written without one, as `rewrite::Lock` writes.
+    /// the operator's command or the window on the chat's store. Waited for in turn behind
+    /// whoever waited first ([`crate::rewrite::in_turn`]) for [`LOCK_WAIT`], then refused in a
+    /// sentence. A filesystem that cannot lock at all is written without one, as
+    /// `rewrite::Lock` writes.
     pub(crate) fn lock(&self) -> Result<Locked<'_>, String> {
-        let gave_up = std::time::Instant::now() + LOCK_WAIT;
-        loop {
-            match rustix::fs::flock(&self.fd, FlockOperation::NonBlockingLockExclusive) {
-                Ok(()) => return Ok(Locked(self)),
-                Err(rustix::io::Errno::WOULDBLOCK | rustix::io::Errno::INTR) => {}
-                Err(_) => return Ok(Locked(self)),
-            }
-            if std::time::Instant::now() >= gave_up {
-                return Err(format!(
-                    "{} is busy: another process has held its lock for over {} seconds, so \
-                     nothing was done. Try again once it lets go",
-                    self.said,
-                    LOCK_WAIT.as_secs()
-                ));
-            }
-            std::thread::sleep(std::time::Duration::from_millis(20));
+        match crate::rewrite::in_turn(self.fd.as_fd(), LOCK_WAIT) {
+            crate::rewrite::Waited::Taken | crate::rewrite::Waited::Unlockable => Ok(Locked(self)),
+            crate::rewrite::Waited::Busy => Err(format!(
+                "{} is busy: another process has held its lock for over {} seconds, so nothing \
+                 was done. Try again once it lets go",
+                self.said,
+                LOCK_WAIT.as_secs()
+            )),
         }
     }
 
