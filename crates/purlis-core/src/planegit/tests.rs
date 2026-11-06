@@ -6042,6 +6042,44 @@ fn a_save_for_a_chat_leaves_a_remote_that_moved_on_the_remote() {
 }
 
 #[test]
+fn a_save_for_a_chat_pushes_unsigned_where_the_project_signs_every_push() {
+    let fixture = Fixture::plane();
+    let bare = fixture.with_a_remote();
+    // A remote that takes signed pushes, so git asks the signer whenever a push is signed.
+    run(&bare, &["config", "receive.certNonceSeed", "fixture"]);
+    let ran = fixture.root.parent().unwrap().join("push-signer-ran");
+    let signer = stand_in::program(
+        fixture.root.parent().unwrap(),
+        "gpg",
+        &format!("#!/bin/sh\ntouch '{}'\nexit 1\n", ran.display()),
+    );
+    run(&fixture.root, &["config", "push.gpgSign", "true"]);
+    run(
+        &fixture.root,
+        &["config", "gpg.program", &signer.display().to_string()],
+    );
+    std::fs::write(fixture.root.join("mine.md"), "mine").unwrap();
+
+    let (code, said) = fixture.save(Request {
+        root: &fixture.root,
+        message: Some("a chat's save"),
+        sign: false,
+        no_push: false,
+        cwd: &fixture.root,
+        provenance: None,
+        for_a_chat: true,
+    });
+
+    assert_eq!(code, 0, "{said}");
+    assert!(!ran.exists(), "the signer was run: {said}");
+    assert_eq!(
+        ask(&bare, &["log", "-1", "--format=%s", "main"]).trim(),
+        "a chat's save",
+        "{said}"
+    );
+}
+
+#[test]
 fn a_save_for_a_chat_in_a_project_that_saves_through_a_request_commits_and_pushes_nothing() {
     let fixture = Fixture::plane();
     let bare = fixture.with_a_remote_that_moved();
