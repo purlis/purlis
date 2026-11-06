@@ -27,7 +27,8 @@
     "e2e:browser": "wdio run e2e/wdio.browser.conf.ts",
     "e2e:upgrade": "wdio run e2e/wdio.upgrade.conf.ts",
     "e2e:outcome": "wdio run e2e/wdio.outcome.conf.ts",
-    "e2e:pool": "wdio run e2e/wdio.pool.conf.ts"
+    "e2e:pool": "wdio run e2e/wdio.pool.conf.ts",
+    "e2e:scale": "wdio run e2e/wdio.scale.conf.ts"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",

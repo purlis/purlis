@@ -5006,7 +5006,18 @@ impl Planes {
         // Never fatal, as the socket above is not: a plane that cannot be watched still opens,
         // and its panels read it when a workspace is focused.
         let watch = caught_up(&model, &root, || {
+            let setting_up = std::time::Instant::now();
             crate::planewatch::Watch::start(id.clone(), &root, changes)
+                // How long the watch took to set up, in the diagnostic log: on macOS it grows
+                // with the project's folders (#5486), and the nightly scale run reads it here
+                // (#5497, `app/e2e/specs/scale.scale.e2e.ts`).
+                .inspect(|_| {
+                    tracing::info!(
+                        "purlis: {} is watched, set up in {} ms",
+                        root.display(),
+                        setting_up.elapsed().as_millis()
+                    );
+                })
                 .map_err(|why| {
                     tracing::warn!(
                         "purlis: {} is not watched ({why}); its panels will not follow changes \
