@@ -174,7 +174,7 @@ describe("a chat whose program ended (#4756)", () => {
 
     await userEvent.click(within(await band()).getByRole("button", { name: "Clear pane" }));
 
-    expect(await screen.findByText("Nothing in this pane")).toBeInTheDocument();
+    expect(await screen.findByText("What goes here?")).toBeInTheDocument();
     expect(screen.queryByTestId("pane")).toBeNull();
     expect(asked("close_session")).toEqual([]);
   });
@@ -270,7 +270,7 @@ describe("a chat ended on purpose (#5019, spec #4750 story 62)", () => {
 
     await userEvent.click(within(await band()).getByRole("button", { name: "Clear pane" }));
 
-    expect(await screen.findByText("Nothing in this pane")).toBeInTheDocument();
+    expect(await screen.findByText("What goes here?")).toBeInTheDocument();
     expect(screen.queryByTestId("pane")).toBeNull();
     expect(asked("close_session")).toHaveLength(1);
   });
@@ -282,7 +282,7 @@ describe("a chat ended on purpose (#5019, spec #4750 story 62)", () => {
     await userEvent.click(within(await band()).getByRole("button", { name: "Clear pane" }));
 
     await waitFor(() => expect(tabNames()).toEqual(["claude claude 5"]));
-    expect(screen.queryByText("Nothing in this pane")).toBeNull();
+    expect(screen.queryByText("What goes here?")).toBeNull();
   });
 
   it("leaves its pane on the ended band once a Smart close's record is written, and Resume starts it from the record in that pane", async () => {

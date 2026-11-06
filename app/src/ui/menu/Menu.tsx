@@ -30,11 +30,15 @@
  *   hand-on of the keyboard comes after the press.
  * - **A menu a screen reader opened lands on its first row** (#3105), a submenu too, as the APG
  *   menu pattern asks: see {@link onToItsRow}.
+ * - **A long menu has a filter row** (`filter`, #5292; R165), the popover family's, which its
+ *   owner narrows the rows by: the arrows move from the field through the rows, as a long
+ *   select's do (React Aria's `Autocomplete`).
  */
 import {
   createContext,
   useContext,
   useMemo,
+  useRef,
   useState,
   type ComponentPropsWithRef,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -44,6 +48,7 @@ import {
   type RefObject,
 } from "react";
 import {
+  Autocomplete,
   Header as AriaHeader,
   MenuContext,
   MenuStateContext,
@@ -67,9 +72,12 @@ import {
 } from "react-aria-components";
 import { mergeRefs } from "react-aria";
 import { useMenuTriggerState } from "react-stately/useMenuTriggerState";
-import { Check, ChevronRight } from "lucide-react";
+import { Check, ChevronRight, Search } from "lucide-react";
+import { TextField } from "../field/Field";
 import {
+  HeldAim,
   InPopoverList,
+  PopoverFilter,
   OFFSET,
   Surface,
   SurfaceGone,
@@ -302,6 +310,17 @@ export type MenuProps<T extends object = object> = Omit<
     onPointerLeave?: () => void;
     /** What stands under the list and is no row: what binds, what was used. */
     footer?: ReactNode;
+    /**
+     * **A filter row at the top** (#5292; R165), for a menu of more than a few rows: what is
+     * typed, which its owner narrows the rows by, whether the field takes the keyboard as the
+     * menu opens, and what the menu says when nothing matches.
+     */
+    filter?: {
+      typed: string;
+      onTyped: (typed: string) => void;
+      takesKeyboard: boolean;
+      none: string;
+    };
     /** `data-*` attributes reach the surface as they are. */
     [data: `data-${string}`]: string | number | boolean | undefined;
   };
@@ -318,6 +337,7 @@ export function Menu<T extends object = object>({
   isNonModal,
   takesNoKeyboard = false,
   footer,
+  filter,
   listRef,
   onPointerEnter,
   onPointerLeave,
@@ -334,7 +354,9 @@ export function Menu<T extends object = object>({
     rest["aria-labelledby"] ?? (rest["aria-label"] === undefined ? undefined : null);
   const opener = (useSlottedContext(PopoverContext) as { triggerRef?: RefObject<Element | null> })
     ?.triggerRef;
-  const theList = useMemo(() => mergeRefs(handsOnToItsRow, listRef ?? null), [listRef]);
+  // The list's own element, for the filter's aim (`HeldAim`).
+  const ownList = useRef<HTMLDivElement>(null);
+  const theList = useMemo(() => mergeRefs(handsOnToItsRow, ownList, listRef ?? null), [listRef]);
   const data: Record<string, unknown> = {};
   const menu: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(rest))
@@ -372,17 +394,30 @@ export function Menu<T extends object = object>({
         <PlacedByItsOpener.Provider value={false}>
           <RootMenu.Provider value={null}>
             <TakesNoKeyboard.Provider value={takesNoKeyboard}>
-              <AriaMenu
-                {...STOPS_AT_THE_ENDS}
-                {...(menu as AriaMenuProps<T>)}
-                {...(takesNoKeyboard ? { autoFocus: false } : {})}
-                {...(labelledBy === null ? (NOT_BY_ITS_TRIGGER as object) : {})}
-                ref={theList}
-                data-scope="popover"
-                data-part="list"
-              >
-                {children}
-              </AriaMenu>
+              <Filtered filter={filter} list={ownList}>
+                <AriaMenu
+                  {...STOPS_AT_THE_ENDS}
+                  {...(menu as AriaMenuProps<T>)}
+                  {...(takesNoKeyboard || filter?.takesKeyboard === true
+                    ? { autoFocus: false }
+                    : {})}
+                  {...(labelledBy === null ? (NOT_BY_ITS_TRIGGER as object) : {})}
+                  {...(filter === undefined
+                    ? {}
+                    : {
+                        renderEmptyState: () => (
+                          <span data-scope="popover" data-part="header">
+                            {filter.none}
+                          </span>
+                        ),
+                      })}
+                  ref={theList}
+                  data-scope="popover"
+                  data-part="list"
+                >
+                  {children}
+                </AriaMenu>
+              </Filtered>
             </TakesNoKeyboard.Provider>
           </RootMenu.Provider>
         </PlacedByItsOpener.Provider>
@@ -393,6 +428,40 @@ export function Menu<T extends object = object>({
         )}
       </Surface>
     </>
+  );
+}
+
+/**
+ * **A menu's filter row** (#5292), around its list where it has one: React Aria's `Autocomplete`,
+ * which carries the arrows from the field to the rows, and the field the popover family's filter
+ * row holds. The owner narrows the rows by what is typed; nothing here filters.
+ */
+function Filtered({
+  filter,
+  list,
+  children,
+}: {
+  filter: MenuProps["filter"];
+  list: RefObject<HTMLDivElement | null>;
+  children: ReactElement;
+}) {
+  if (filter === undefined) return children;
+  return (
+    <Autocomplete inputValue={filter.typed} onInputChange={filter.onTyped}>
+      <PopoverFilter>
+        <TextField
+          size="sm"
+          aria-label="Filter"
+          placeholder="Filter"
+          icon={<Search />}
+          autoFocus={filter.takesKeyboard}
+          value={filter.typed}
+          onChange={filter.onTyped}
+        />
+      </PopoverFilter>
+      {children}
+      <HeldAim typed={filter.typed} list={list} />
+    </Autocomplete>
   );
 }
 

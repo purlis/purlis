@@ -38,20 +38,16 @@
  * - **Drawn only while its project is in front**: its list is the popover family's surface.
  */
 import {
-  useContext,
   useId,
-  useLayoutEffect,
   useRef,
   useState,
   type ComponentPropsWithRef,
   type KeyboardEvent,
   type ReactNode,
   type Ref,
-  type RefObject,
 } from "react";
 import {
   Autocomplete,
-  AutocompleteStateContext,
   Button as AriaButton,
   Header as AriaHeader,
   ListBox,
@@ -64,7 +60,7 @@ import {
 } from "react-aria-components";
 import { Check, ChevronDown, Search } from "lucide-react";
 import { ErrorLine, TextField, describedBy, useFormSummary, type FieldSize } from "../field/Field";
-import { PopoverFilter, Surface } from "../popover/Popover";
+import { HeldAim, PopoverFilter, Surface } from "../popover/Popover";
 import { Tooltip } from "../tooltip/Tooltip";
 
 /** The select's sizes: the text input's, 24, 28 and 32 px at the default text size and density. */
@@ -272,23 +268,6 @@ function FilteredList({ options }: { options: readonly SelectOption[] }) {
       <HeldAim typed={typed} list={list} />
     </Autocomplete>
   );
-}
-
-/**
- * **The filter never names an option that is not drawn** (D-2906-14). While a person types,
- * React Aria's Autocomplete holds back moving its `aria-activedescendant` for a moment, so the
- * letter typed is heard first; the option it still names may be one the typing has just filtered
- * out, which is an id nothing in the page has. Until the move lands, it names none.
- */
-function HeldAim({ typed, list }: { typed: string; list: RefObject<HTMLDivElement | null> }) {
-  const autocomplete = useContext(AutocompleteStateContext);
-  const aimed = autocomplete?.focusedNodeId ?? null;
-  useLayoutEffect(() => {
-    if (aimed === null) return;
-    const drawn = list.current?.querySelector(`[id="${CSS.escape(aimed)}"]`) ?? null;
-    if (drawn === null) autocomplete?.setFocusedNodeId(null);
-  }, [typed, aimed, list, autocomplete]);
-  return null;
 }
 
 /** **The options**: each one the menu family's row, its tick at its end while it is picked. */

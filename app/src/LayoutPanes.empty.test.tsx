@@ -24,6 +24,14 @@ const NEW_CHAT: Offer = {
   does: { verb: "chat.new" },
 };
 
+const NEW_SHELL: Offer = {
+  id: "shell.new",
+  title: "New shell",
+  available: true,
+  reason: "",
+  does: { verb: "newShell" },
+};
+
 const empty = (pane: number): Layout => ({
   kind: "pane",
   pane,
@@ -42,7 +50,8 @@ function propsOf(layout: Layout, tab: number, onPaneDoes: Props["onPaneDoes"] = 
     tab,
     focused: 1,
     onFocus: vi.fn(),
-    offerFor: (id: string) => (id === "chat.new" ? NEW_CHAT : undefined),
+    offerFor: (id: string) =>
+      id === "chat.new" ? NEW_CHAT : id === "shell.new" ? NEW_SHELL : undefined,
     closeOf: () => undefined,
     onPaneDoes,
     runningIn: (workspace: string) => (workspace === "ops" ? 3 : 0),
@@ -51,22 +60,33 @@ function propsOf(layout: Layout, tab: number, onPaneDoes: Props["onPaneDoes"] = 
   return read as unknown as Props;
 }
 
-describe("a pane that shows nothing (#4755)", () => {
-  it("says so, how many chats run in its workspace, and offers New chat on the pane", async () => {
+describe("a pane that shows nothing (#4755, #5292)", () => {
+  it("asks what goes here, says a chat can be dragged in and how many run here", () => {
+    render(<LayoutPanes {...propsOf(empty(1), 1)} />);
+
+    expect(screen.getByText("What goes here?")).toBeInTheDocument();
+    expect(
+      screen.getByText("Drag a chat here from the list. 3 chats are running here."),
+    ).toBeInTheDocument();
+  });
+
+  it("offers New chat and New shell on the pane", async () => {
     const onPaneDoes = vi.fn();
     render(<LayoutPanes {...propsOf(empty(1), 1, onPaneDoes)} />);
 
-    expect(screen.getByText("Nothing in this pane")).toBeInTheDocument();
-    expect(screen.getByText("3 chats are running here.")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "New chat" }));
+    await userEvent.click(screen.getByRole("button", { name: "New shell" }));
 
-    expect(onPaneDoes).toHaveBeenCalledWith(1, NEW_CHAT);
+    expect(onPaneDoes.mock.calls).toEqual([
+      [1, NEW_CHAT],
+      [1, NEW_SHELL],
+    ]);
   });
 
-  it("is named apart as one side of a split", () => {
+  it("asks the same of each side of a split", () => {
     render(<LayoutPanes {...propsOf(split, 1)} />);
 
-    expect(screen.getAllByText("An empty pane")).toHaveLength(2);
+    expect(screen.getAllByText("What goes here?")).toHaveLength(2);
   });
 });
 
