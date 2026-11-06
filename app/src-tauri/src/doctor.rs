@@ -580,9 +580,9 @@ fn file_events(missed: Option<crate::planewatch::Missed>, now: std::time::Instan
         fix: None,
     };
     let looks = format!(
-        "While a window is shown, purlis also looks at the project's folders every {} seconds \
-         and each time you come back to the window, and catches up on any change the events \
-         did not tell.",
+        "While a window is shown, purlis looks every {} seconds, and each time you come back to \
+         the window, at any project folder the system would not watch, and catches up on what \
+         changed there. On Linux, a higher fs.inotify.max_user_watches lets it watch them all.",
         crate::planewatch::SWEEP_EVERY.as_secs()
     );
     let lately = crate::planewatch::LATELY.as_secs() / 60;
@@ -611,13 +611,13 @@ fn file_events(missed: Option<crate::planewatch::Missed>, now: std::time::Instan
             row(
                 DoctorStatus::Warn,
                 format!(
-                    "file events are late or missing: purlis's own look found {changes} they \
-                     had not told since it opened this project, the last {when}"
+                    "some folders are not watched: purlis's own look found {changes} in them \
+                     since it opened this project, the last {when}"
                 ),
                 format!(
                     "The window caught up each time, so nothing is lost: changes made outside \
-                     it reach it a few seconds late. {looks} This clears {lately} minutes after \
-                     the last late change."
+                     it in those folders reach it a few seconds late. {looks} This clears \
+                     {lately} minutes after the last such change."
                 ),
             )
         }
@@ -626,8 +626,9 @@ fn file_events(missed: Option<crate::planewatch::Missed>, now: std::time::Instan
             match missed.count {
                 0 => "file events have told every change purlis's own look found".to_owned(),
                 n => format!(
-                    "file events are keeping up again; purlis's own look found {n} they had \
-                     not told since it opened this project, none in the last {lately} minutes"
+                    "file events are keeping up again; purlis's own look found {n} in folders \
+                     it could not watch since it opened this project, none in the last \
+                     {lately} minutes"
                 ),
             },
             looks,
