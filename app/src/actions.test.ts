@@ -2736,10 +2736,16 @@ describe("the palette at fifty chats", () => {
    * different is the shape: the scan's cost is the catalogue's length, and #174 is the change
    * that grew it — a third more comparisons for the same fifty menus, before anything is
    * added next. A millisecond assertion would be flaky on a shared runner, so what is pinned
-   * below is the work itself, which is the standard #133 set: 350 lookups (150 before a chat
+   * below is the work itself, which is the standard #133 set: 450 lookups (150 before a chat
    * could be renamed, charter-app#254; 200 before a wrapping-up tab could cancel its smart
    * close, ADR 0064; 250 before a tab could move to a window of its own, #4768; 300 before
-   * Place…, #4764), and the same 350 whichever catalogue it is.
+   * Place…, #4764; 350 before a lone view's two splits, #5318), and the same 450 whichever
+   * catalogue it is.
+   *
+   * **The 450 measured again** (#5444), on the same machine, min of ten batches of a hundred:
+   * a fifty-tab strip's `menuRows` and `menuIsEmpty` for every tab, against the 1,224-row
+   * catalogue of fifty chats, cost **0.050 ms** a render (median 0.054 ms). That is about 1/300
+   * of a 60 Hz frame, so the nine ids per tab stay as they are.
    */
   describe("what a menu on the chat strip costs (charter-app#174)", () => {
     /** A catalogue that counts what is asked of it. `Map` and not a stand-in, so what is

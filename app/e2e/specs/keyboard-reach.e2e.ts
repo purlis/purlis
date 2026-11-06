@@ -24,11 +24,14 @@ import { endEveryChat, pressAndStart } from "../opening.js";
  * below is a dispatched `KeyboardEvent`, as `workspace-lifecycle.e2e.ts` dispatches its
  * `contextmenu`, and that WebKit then walks the sequence it was handed is left to a person.
  *
- * **It asks by tag and by class, against AGENTS.md's "by role" rule, and on purpose.** The
- * rule protects a spec from how a control is drawn; this spec is ABOUT how it is drawn. WebKit's
- * gate is `HTMLFormControlElement` — the `<button>` tag, not the `button` role — and xterm's
- * `<textarea>` is the element the keyboard lands in. The regions are found by the classes their
- * own components give them because a region has no role that names it in every arrangement.
+ * **It reads controls by role, as every spec does, except where the tag is what it tests**
+ * (#5444). The head's controls are whatever has the `button` role, a `<button>` with no role of
+ * its own or an element given one, named by their label, so drawing one another way leaves this
+ * green. Three readings stay by tag or class, on purpose: the first test's `button, summary`,
+ * because WebKit's gate for a `tabindex` is `HTMLFormControlElement` (the `<button>` tag, not the
+ * `button` role); xterm's `<textarea>`, the element the keyboard lands in; and the regions, by
+ * the classes their own components give them, since a region has no role that names it in every
+ * arrangement.
  */
 describe("the window's keyboard reach", () => {
   before(async () => {
@@ -195,13 +198,18 @@ describe("the window's keyboard reach", () => {
       document.querySelector<HTMLElement>('[data-testid="pane"] textarea')?.focus();
       const before = getComputedStyle(doing);
       const away = `${before.visibility}/${before.opacity}`;
+      // What has the `button` role: a `<button>` with no role of its own, or an element given
+      // it. Written out twice, as the style is, for the same reason.
+      //
       // Tab from the chat strip, just above the panes, lands on the first control.
-      const first = doing.querySelector<HTMLElement>("button:not([disabled])");
+      const first = doing.querySelector<HTMLElement>(
+        'button:not([role]):not([disabled]), [role="button"]:not([aria-disabled="true"])',
+      );
       first?.focus();
       const after = getComputedStyle(doing);
       const on = `${after.visibility}/${after.opacity}`;
       // The tab's only pane: its two splits and no Close, the tab's own × doing the same.
-      const says = [...doing.querySelectorAll("button")].map((one) =>
+      const says = [...doing.querySelectorAll('button:not([role]), [role="button"]')].map((one) =>
         one.getAttribute("aria-label"),
       );
       return { away, on, focusable: document.activeElement === first, says };
