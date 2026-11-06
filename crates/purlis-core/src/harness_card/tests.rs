@@ -346,6 +346,30 @@ fn a_program_with_no_adapter_cannot_report_asks_whatever_its_declaration_says() 
 }
 
 #[test]
+fn only_a_built_in_or_this_machines_replacement_of_one_has_an_adapter() {
+    assert!(has_adapter(Some(Harness::Codex.declared())));
+    assert!(!has_adapter(None), "a chat on no harness has none");
+    let dir = project(&[("gemini.toml", GEMINI)]);
+    let declared = harness_declaration::read(dir.path());
+    assert!(
+        !has_adapter(declared.get("gemini")),
+        "a project's harness has none"
+    );
+    let local = |text: &str, name: &str| {
+        let dir = project(&[]);
+        has_adapter(harness_declaration::read_with(dir.path(), Ok(Some(text.to_owned()))).get(name))
+    };
+    assert!(local(
+        "[harnesses.claude]\nprogram = \"claude\"\n",
+        "claude"
+    ));
+    assert!(!local(
+        "[harnesses.shelly]\nprogram = \"shelly\"\n",
+        "shelly"
+    ));
+}
+
+#[test]
 fn a_local_replacement_of_a_built_in_reports_asks_by_its_own_lines() {
     let replacing = |name: &str, answer: &str| {
         let text = format!(

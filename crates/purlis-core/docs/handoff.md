@@ -373,7 +373,7 @@ BRIEF
   `--ask-for-approval never`); a wrapper script that adds one, or a harness setting kept in a
   file, is not seen.
 - **It starts with its own persona's hosts and vault**, from its first command, with nothing
-  to allow on its tab: the grant was your consent to the pair.
+  for you to allow: the grant was your consent to the pair.
 - **Its sandbox is the project's, for its own persona.** What you allowed the asking chat
   alone (a host or a folder from a block's Notice, a start without the sandbox) is not carried
   to it, and neither is the mode the asking chat's harness is in.
@@ -398,7 +398,7 @@ that says what to do:
 | on a profile whose own command carries one of the flags purlis knows for switching the harness's permission prompts off, whoever named it and whether or not anybody is at the asking chat | purlis starts no chat for another chat on such a profile; a setting kept in a file or a wrapper script is not seen |
 | across a pair, or at all, where an administrator's policy locks dispatch | no grant covers it; the refusal says who locked it |
 | where this machine's policy file is refused | dispatch is off until an administrator fixes the file |
-| from a chat that still holds another persona's grants | it has none of its own to dispatch with until you allow them on its tab |
+| from a chat that still holds another persona's grants | it has none of its own to dispatch with until you allow them, on its pane or, when it is in none, in the Notices centre |
 | a task name holding `⟨`, `⟩`, `·` or a backtick | purlis writes its own lines with them, and a name is drawn on those lines |
 | a persona this project does not define, or one that does not load | there is nothing to run as |
 | a persona whose definition says `draft: true` | a draft runs no chat |
