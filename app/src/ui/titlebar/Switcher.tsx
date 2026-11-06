@@ -14,6 +14,8 @@
  * - **A row is an option of a listbox**, named by its words, with what waits in it as its
  *   description (WCAG 2.5.3: the name begins with what is drawn). The pin toggle beside it (R107)
  *   stands in a column of its own beside the list, row for row, since an option holds no control.
+ * - **A list of thousands draws only the rows in sight** (#5501), its pins with them, the row the
+ *   filter aims at always among them (`ui/list/virtualRows.tsx`).
  */
 import {
   useLayoutEffect,
@@ -26,6 +28,7 @@ import {
 import { Pin } from "lucide-react";
 import { mergeProps, useFocusRing, useHover, useId } from "react-aria";
 import { TextField } from "../field/Field";
+import { RowPlaced, useDrawnRows, useRowPlace } from "../list/virtualRows";
 import { PopoverFilter, PopoverList } from "../popover/Popover";
 import { Tooltip } from "../tooltip/Tooltip";
 
@@ -90,18 +93,21 @@ export function SwitcherFilter({
 }
 
 /**
- * **A list of rows to go to** (R96, R107): a listbox named `label`, in the popover family's
- * scrolling list, under a header that says it when `header` is given, with the pin toggles in a
- * column beside it where `pins` is given.
+ * **A list of rows to go to** (R96, R107): a listbox named `label` of `count` rows, each drawn by
+ * `row`, in the popover family's scrolling list, under a header that says it when `header` is
+ * given, with the pin toggles in a column beside it where `pin` is given. Past a few hundred rows
+ * it draws only those in sight and `aimed`, the row the filter would go to (#5501).
  */
 export function SwitcherList({
   id,
   label,
   header,
   empty,
-  pins,
+  count,
+  row,
+  pin,
+  aimed,
   nothing,
-  children,
 }: {
   id: string;
   label: string;
@@ -109,27 +115,55 @@ export function SwitcherList({
   header?: string;
   /** What it says when nothing matches (R99): `No project matches.` */
   empty?: string;
-  /** The pin toggles, one per row, in the rows' order. */
-  pins?: ReactNode;
+  /** How many rows it holds. */
+  count: number;
+  /** The row at a place: a `SwitcherRow`. */
+  row: (index: number) => ReactNode;
+  /** The pin toggle beside the row at a place: a `PinToggle`, or a `PinSpace` where it has none. */
+  pin?: (index: number) => ReactNode;
+  /** The place of the row the filter would go to, kept drawn and in sight. */
+  aimed?: number;
   /** Nothing matched, though the list still holds a row that is no match (New workspace…). */
   nothing?: boolean;
-  children: ReactNode;
 }) {
-  const none = nothing ?? (Array.isArray(children) ? children.length === 0 : children === null);
+  const scroller = useRef<HTMLDivElement>(null);
+  const listbox = useRef<HTMLDivElement>(null);
+  const drawn = useDrawnRows({ count, list: listbox, scroller, aimed });
+  const none = nothing ?? count === 0;
+  const each = (draw: (index: number) => ReactNode) =>
+    drawn.rows.map(({ index, place }) => (
+      <RowPlaced key={index} value={place}>
+        {draw(index)}
+      </RowPlaced>
+    ));
   return (
-    <PopoverList>
+    <PopoverList ref={scroller}>
       {header !== undefined && (
         <div data-scope="titlebar" data-part="header" aria-hidden="true">
           {header}
         </div>
       )}
       <div data-scope="titlebar" data-part="rows">
-        <div id={id} role="listbox" aria-label={label} data-scope="titlebar" data-part="listbox">
-          {children}
+        <div
+          {...drawn.list}
+          ref={listbox}
+          id={id}
+          role="listbox"
+          aria-label={label}
+          data-scope="titlebar"
+          data-part="listbox"
+        >
+          {each(row)}
         </div>
-        {pins !== undefined && (
-          <div role="group" aria-label={`Pins of ${label}`} data-scope="titlebar" data-part="pins">
-            {pins}
+        {pin !== undefined && (
+          <div
+            {...drawn.list}
+            role="group"
+            aria-label={`Pins of ${label}`}
+            data-scope="titlebar"
+            data-part="pins"
+          >
+            {each(pin)}
           </div>
         )}
       </div>
@@ -140,6 +174,13 @@ export function SwitcherList({
       )}
     </PopoverList>
   );
+}
+
+/** **The room of a pin a row has none of** (the plane root, New workspace…), so the pins stay
+ *  row for row with the list. */
+export function PinSpace() {
+  const { at } = useRowPlace();
+  return <span {...at} aria-hidden="true" />;
 }
 
 /**
@@ -178,8 +219,11 @@ export function SwitcherRow({
   const description = [waiting > 0 ? `${waiting} waiting` : undefined, unavailable].filter(
     (one) => one !== undefined,
   );
+  const { aria, at } = useRowPlace();
   return (
     <div
+      {...aria}
+      {...at}
       {...mergeProps(hoverProps, {
         onClick: unavailable === undefined ? onPress : undefined,
         // A press keeps the keyboard in the filter, where it was.
@@ -234,9 +278,11 @@ export function PinToggle({
 }) {
   const { hoverProps, isHovered } = useHover({});
   const { focusProps, isFocusVisible } = useFocusRing();
+  const { at } = useRowPlace();
   return (
     <Tooltip tip={pinned ? "Unpin" : "Pin to the title bar"}>
       <button
+        {...at}
         type="button"
         {...mergeProps(hoverProps, focusProps, {
           onClick: () => onChange(!pinned),

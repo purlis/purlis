@@ -517,9 +517,15 @@ export const Empty: Story = {
   },
 };
 
+/** A row for each of the scale spec's 1,000 workspaces (#5501), as the palette offers them. */
+const THOUSAND = Array.from(
+  { length: 1_000 },
+  (_, at) => `Pin workspace ws-${String(at).padStart(4, "0")}`,
+);
+
 /** The palette's rows: a field that keeps the keyboard and aims at a row of its list. */
-function Aimed() {
-  const actions = ["Open a chat", "Start a task", "End this chat"];
+function Aimed({ many = false }: { many?: boolean }) {
+  const actions = many ? THOUSAND : ["Open a chat", "Start a task", "End this chat"];
   const [at, setAt] = useState(0);
   const [said, setSaid] = useState("Nothing run");
   return (
@@ -540,20 +546,25 @@ function Aimed() {
           e.preventDefault();
         }}
       />
-      <AimedList id="story-actions" aria-label="Actions">
-        {actions.map((one, index) => (
+      <AimedList
+        id="story-actions"
+        aria-label="Actions"
+        // The palette's own place for its rows: 55vh, scrolling.
+        className={many ? "palette-rows" : undefined}
+        count={actions.length}
+        aimed={at}
+        option={(index) => (
           <AimedOption
-            key={one}
             id={`story-action-${index}`}
             aimed={index === at}
             unavailable={index === 2}
-            onPress={() => setSaid(`Ran ${one}`)}
+            onPress={() => setSaid(`Ran ${actions[index]}`)}
           >
-            <RowLabel>{one}</RowLabel>
+            <RowLabel>{actions[index]}</RowLabel>
             {index === 2 && <RowTrail>No chat is in front.</RowTrail>}
           </AimedOption>
-        ))}
-      </AimedList>
+        )}
+      />
       <p role="status" style={{ margin: 0 }}>
         {said}
       </p>
@@ -581,6 +592,32 @@ export const AimedByAField: Story = {
     await expect(box).toHaveFocus();
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Ran Start a task"));
+    expectFocusInSight();
+  },
+};
+
+/**
+ * **A list a field aims at, of 1,000 rows** (#5501): only the rows in sight are drawn, each saying
+ * its place in the whole; ↑ and ↓ walk past the first screenful and the aimed row stays drawn and
+ * in sight. The picture is the aim forty rows down.
+ */
+export const AimedThousand: Story = {
+  render: () => <Aimed many />,
+  play: async ({ canvas, userEvent }) => {
+    const box = canvas.getByRole("combobox", { name: "Run an action" });
+    await userEvent.tab();
+    await untilFocused(() => box, "Aimed thousand: Tab lands on the field");
+    const list = canvas.getByRole("listbox", { name: "Actions" });
+    await expect(within(list).getAllByRole("option").length).toBeLessThan(80);
+    for (let step = 0; step < 40; step++) await userEvent.keyboard("{ArrowDown}");
+    const aimed = canvas.getByRole("option", { name: "Pin workspace ws-0040" });
+    await expect(aimed).toHaveAttribute("aria-selected", "true");
+    await expect(aimed).toHaveAttribute("aria-posinset", "41");
+    await expect(aimed).toHaveAttribute("aria-setsize", "1000");
+    const seen = list.getBoundingClientRect();
+    const row = aimed.getBoundingClientRect();
+    await expect(row.top >= seen.top && row.bottom <= seen.bottom).toBe(true);
+    await expect(box).toHaveFocus();
     expectFocusInSight();
   },
 };

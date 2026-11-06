@@ -9,19 +9,29 @@
  * a row. Drawn as every list's row is (`list.css`): the aimed row carries the keyboard's ring
  * inside it and the aim's own fill (`control.aimed`, quieter than a chosen row), so nothing moves
  * as the aim does.
+ *
+ * A list of thousands (a row for each of 1,000 workspaces) draws only the rows in sight and the
+ * one aimed at, each saying its place in the whole (#5501, `virtualRows.tsx`). The list is its
+ * own scroller: its owner's `className` gives it its height and its scroll.
  */
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useContext, useRef, type ReactNode } from "react";
 import { RowScope, type RowSize } from "./Row";
+import { RowPlaced, useDrawnRows, useRowPlace } from "./virtualRows";
 
 const AimedSize = createContext<RowSize>("md");
 
-/** **The list**: one `listbox`, named, that its field controls by its `id`. */
+/**
+ * **The list**: one `listbox`, named, that its field controls by its `id`, of `count` options,
+ * each drawn by `option`. `aimed` is the place of the one aimed at.
+ */
 export function AimedList({
   id,
   "aria-label": label,
   size = "md",
   className,
-  children,
+  count,
+  aimed,
+  option,
 }: {
   /** What the field's `aria-controls` names. */
   id: string;
@@ -29,12 +39,21 @@ export function AimedList({
   size?: RowSize;
   /** A place for it in its view: its height, its scroll. Never a look. */
   className?: string;
-  children: ReactNode;
+  /** How many options it holds. */
+  count: number;
+  /** The place of the option aimed at, kept drawn and in sight, or none. */
+  aimed?: number;
+  /** The option at a place: an `AimedOption`. */
+  option: (index: number) => ReactNode;
 }) {
+  const list = useRef<HTMLUListElement>(null);
+  const drawn = useDrawnRows({ count, list, scroller: list, aimed });
   return (
     <RowScope.Provider value="list">
       <AimedSize.Provider value={size}>
         <ul
+          {...drawn.list}
+          ref={list}
           id={id}
           role="listbox"
           aria-label={label}
@@ -44,7 +63,11 @@ export function AimedList({
           data-size={size}
           data-aimed-by="field"
         >
-          {children}
+          {drawn.rows.map(({ index, place }) => (
+            <RowPlaced key={index} value={place}>
+              {option(index)}
+            </RowPlaced>
+          ))}
         </ul>
       </AimedSize.Provider>
     </RowScope.Provider>
@@ -76,9 +99,12 @@ export function AimedOption({
   children: ReactNode;
 }) {
   const size = useContext(AimedSize);
+  const { aria, at } = useRowPlace();
   return (
     // The pointer presses it; the keyboard is the field's, so it takes none.
     <li
+      {...aria}
+      {...at}
       id={id}
       role="option"
       aria-selected={aimed}

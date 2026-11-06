@@ -667,8 +667,10 @@ export function Palette({
           id="palette-rows"
           className="palette-rows"
           aria-label={switcher ? "Projects" : "Actions"}
-        >
-          {rows.map((row, index) => {
+          count={rows.length}
+          aimed={aimed < rows.length ? aimed : undefined}
+          option={(index) => {
+            const row = rows[index];
             // The row's key, from the key registry (#2921, N25), drawn at its end; its note no
             // longer says it in words.
             // Only a key that works from anywhere: a tab's own ⌫ and F2 do nothing here.
@@ -701,8 +703,8 @@ export function Palette({
                 {key !== undefined && <RowShortcut keys={key} />}
               </AimedOption>
             );
-          })}
-        </AimedList>
+          }}
+        />
       )}
 
       {/* ⌘P's files (FM-7): a group of their own after the projects, never ranked into
@@ -741,8 +743,14 @@ export function Palette({
             </p>
           )}
           {fileRows.length > 0 && (
-            <AimedList id="palette-files" className="palette-rows" aria-label="Files">
-              {fileRows.map((file, at) => {
+            <AimedList
+              id="palette-files"
+              className="palette-rows"
+              aria-label="Files"
+              count={fileRows.length}
+              aimed={aimed >= rows.length ? aimed - rows.length : undefined}
+              option={(at) => {
+                const file = fileRows[at];
                 const index = rows.length + at;
                 const { marks } = hitSaid(file, files.nameOf);
                 return (
@@ -764,8 +772,8 @@ export function Palette({
                     </RowTrail>
                   </AimedOption>
                 );
-              })}
-            </AimedList>
+              }}
+            />
           )}
           {/* The aimed file's two keys, said while there is a file to act on (#1143). */}
           {aimedFile && (

@@ -988,15 +988,18 @@ fn with_task_standing(
     drawn
 }
 
-/// One workspace as the sidebar draws it: what it is for, what it still means to do, and the
-/// chats working in it.
+/// One workspace as the sidebar draws it: what it is for, how many todos it still means to do,
+/// and the chats working in it.
 #[derive(serde::Serialize, specta::Type)]
 struct SidebarWorkspace {
     name: String,
     /// Where the workspace is, so a chat can be started in it.
     path: String,
     vision: String,
-    todos: Vec<String>,
+    /// How many open todos it has. A count, never their titles: the sidebar is every
+    /// workspace's summary, and its answer must not grow with every workspace's todos (#5501).
+    /// The titles are the workspace's panels' (`workspace_panels`), read for the one in front.
+    open_todos: u32,
     chats: Vec<OpenChat>,
     /// Its colour as its `workspace.json` holds it — a palette name or `#rrggbb` — or `null`
     /// (charter-app#281). Here because every workspace tab draws its own, whether or not it is
@@ -1118,7 +1121,7 @@ fn sidebar_of(held: &planes::Held) -> Result<Sidebar, String> {
         .map(|row| SidebarWorkspace {
             path: row.path.display().to_string(),
             vision: row.vision.clone(),
-            todos: row.todos.clone(),
+            open_todos: u32::try_from(row.todos.len()).unwrap_or(u32::MAX),
             chats: filed.remove(&row.name).unwrap_or_default(),
             colour: row.colour.clone(),
             live: model.is_live(&row.name),
