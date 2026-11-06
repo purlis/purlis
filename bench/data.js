@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793975988221,
+  "lastUpdate": 1793978911561,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -41118,6 +41118,48 @@ window.BENCHMARK_DATA = {
             "value": 101.286284,
             "unit": "ms",
             "extra": "median of 5 runs: 100.006, 100.946, 101.286, 101.318, 102.486 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "9618ccbe28844e9acbda4c421d8be7d8d94840f2",
+          "message": "Resting on a tab and placement mode draw the drag's preview, told to nobody until the drop (#5294, #5293) (#5496)\n\n* Resting on a tab and placement mode draw the drag's preview, told to nobody until the drop (#5294, #5293)\n\nResting on another tab for 650 ms draws it in front as a preview: the window\nholds back window_layout, its view tabs and the strip's front tab until the drag\nis over, and a cancel tells nothing. The tab wears the pane preview's new\nopening mark while it is about to come forward.\n\nPlacement mode drives the drag's own store and layer: the target the keyboard is\non is the place the preview draws, and Esc restores the panes, the front tab,\nits focused pane and the keyboard. The box over a pane and the dashed held pane\ngo, with paneDrop.previewOf.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6R2ANE943J6WYTF53KKT00H\nPurlis-Persona: steward\n\n* Moving panes: the review's fixes: a hold notes no pane as used, a window going mid-drag puts it back, and placement's Esc shares the pointer's put-back (#5293, #5294)\n\nPlacement's targets fall back to where a pane is drawn when the drag measured it\nat no size.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6R2ANE943J6WYTF53KKT00H\nPurlis-Persona: steward\n\n* Moving panes: the resting-on-a-tab story draws its mark under a real tab of a strip (#5294)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6R2ANE943J6WYTF53KKT00H\nPurlis-Persona: steward\n\n* Moving panes: the resting-on-a-tab story's baselines, drawn by #5496's stories run and reviewed (#5294)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6R2ANE943J6WYTF53KKT00H\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-06T14:16:22Z",
+          "tree_id": "13a0e3000e8bbb384190511d853532d4e786951f",
+          "url": "https://github.com/purlis/purlis/commit/9618ccbe28844e9acbda4c421d8be7d8d94840f2"
+        },
+        "date": 1793978904658,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6683865,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.661, 0.668, 0.668, 0.675, 0.679 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6115915,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.510, 16.538, 16.612, 16.629, 16.666 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.2440115,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.794, 101.838, 102.244, 102.581, 103.172 ms"
           }
         ]
       }
