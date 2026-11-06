@@ -6,7 +6,7 @@ That amendment said Codex says nothing off yet, so every plugin Codex's `config.
 
 ## What a Codex chat has
 
-Measured on **codex-cli 0.163.0** (ADR 0050 as amended 2026-10-21, runs 4 and 5): a plugin whose `[plugins."<id>"]` table says `enabled = false` reaches no model, and a session's `-c 'plugins."<id>".enabled=true'` does not bring it back. A table that does not say `enabled` is on, as `Codex::installed` already read it.
+Measured on **codex-cli 0.163.0** (ADR 0050 as amended 2026-10-21, runs 4 and 5): a plugin whose `[plugins."<id>"]` table says `enabled = false` reaches no model, and a session's `-c 'plugins."<id>".enabled=true'` does not bring it back. A table that does not say `enabled` is read as on. That was not measured: it is how `Codex::installed` has always read it, from Codex's plugin docs and the operator's 0.147.0 install. No Codex was at hand for this change, so nothing here was measured again.
 
 So `harness_plugin::on_here::codex` reads `$CODEX_HOME/config.toml` (else `~/.codex/config.toml`) at the chat's start, parses no harness output, and the chat holds the answer as a Claude Code chat does. An off plugin folds to one line under Left out, "Off in Codex", and its run closes on the file and the key to change, then "restart this chat" (or "start a new chat" with no chat in front). No command is offered: no Codex command that turns one plugin back on was measured.
 

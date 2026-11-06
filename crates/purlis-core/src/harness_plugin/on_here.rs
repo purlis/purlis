@@ -20,7 +20,8 @@
 //!
 //! Codex, measured on codex-cli 0.163.0 (ADR 0050 as amended 2026-10-21): a plugin whose table in
 //! `config.toml` says `enabled = false` reaches no model, and a session's `-c` cannot turn it back
-//! on (#4616). A table that does not say is on, as [`super::Adapter::installed`] reads it.
+//! on (#4616). A table that does not say is on: that was not measured, and is how
+//! `Codex::plugins_in_config` has always read it.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -54,7 +55,7 @@ pub enum OffWhy {
     AfterStart,
     /// purlis's own `--settings` keep it off: a plugin purlis replaced.
     PurlisOff,
-    /// Codex's `config.toml`, at this path, says `enabled = false` in its table.
+    /// Codex only: its `config.toml`, at this path, says `enabled = false` in the plugin's table.
     OffInConfig(PathBuf),
 }
 
@@ -110,7 +111,7 @@ impl PluginOff {
             }
             OffWhy::OffInConfig(file) => format!(
                 "{title} has the {name} plugin turned off: its table in {} says enabled = false. \
-                 Set it to true, {then}.",
+                 Set enabled to true there, {then}.",
                 file.display()
             ),
         }
@@ -161,6 +162,12 @@ impl Plugins {
     /// Whether the skills named under plugin `name` are not the chat's.
     pub fn is_off(&self, name: &str) -> bool {
         self.off.iter().any(|one| one.name == name)
+    }
+
+    /// Leaves out of [`Self::off`] each name a copy that is on gives the chat.
+    fn drop_off_that_are_on(&mut self) {
+        let on = &self.on;
+        self.off.retain(|one| !on.contains(&one.name));
     }
 }
 
@@ -299,49 +306,34 @@ pub(super) fn claude(adapter: &ClaudeCode, env: &Env<'_>, at: &ChatFolder) -> Op
             }),
         }
     }
-    let on = out.on.clone();
-    out.off.retain(|one| !on.contains(&one.name));
+    out.drop_off_that_are_on();
     Some(out)
 }
 
 /// **What a Codex chat has of the plugins `env`'s `config.toml` holds** (#4616), or `None` where
-/// it cannot tell: no home to look in, or a file that is not TOML. A file that is not there is an
-/// answer: nothing is installed. Its folder is not read: what a project's own config says of a
-/// plugin was never measured.
-pub(super) fn codex(adapter: &Codex, env: &Env<'_>, _at: &ChatFolder) -> Option<Plugins> {
+/// it cannot tell: a file it cannot read, or one that is not TOML. A file that is not there is an
+/// answer: nothing is installed. The chat's folder is not read: what a project's own
+/// `.codex/config.toml` does to a plugin was never measured.
+pub(super) fn codex(adapter: &Codex, env: &Env<'_>) -> Option<Plugins> {
     use super::Adapter as _;
     let record = adapter.record(env)?;
-    let Some(text) = super::read(&record).ok()? else {
-        return Some(Plugins::default());
-    };
-    let doc: toml::Table = text.parse().ok()?;
     let mut out = Plugins::default();
-    for (id, table) in doc
-        .get("plugins")
-        .and_then(toml::Value::as_table)
-        .into_iter()
-        .flatten()
-    {
-        if !super::id_ok(id) || super::purlis_s_own(adapter, id) {
+    for (id, on) in adapter.plugins_in_config(env).ok()? {
+        if super::purlis_s_own(adapter, &id) {
             continue;
         }
-        let (name, _) = split(id);
-        let on = table
-            .get("enabled")
-            .and_then(toml::Value::as_bool)
-            .unwrap_or(true);
+        let name = split(&id).0.to_owned();
         if on {
-            out.on.push(name.to_owned());
+            out.on.push(name);
         } else {
             out.off.push(PluginOff {
-                id: id.clone(),
-                name: name.to_owned(),
+                id,
+                name,
                 why: OffWhy::OffInConfig(record.clone()),
             });
         }
     }
-    let on = out.on.clone();
-    out.off.retain(|one| !on.contains(&one.name));
+    out.drop_off_that_are_on();
     Some(out)
 }
 
