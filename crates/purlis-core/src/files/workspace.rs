@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **The workspace files** (CONTEXT.md; ADR 0038 and ADR 0081, both amended 2026-11-05): a
-//! workspace's own folder as Explorer draws it with the workspace picked, read here and written
-//! nowhere (#5375).
+//! workspace's own folder as Explorer draws it with the workspace picked, read here (#5375), and
+//! written where the files are the person's own ([`write`], #5376).
 //!
 //! **What they are.** Everything in `workspaces/<ws>/` but its repos and their branches' folders:
 //! `repos/`, `.worktrees/`, and each folder at the top that [`crate::repofolder::holdings`] names
@@ -114,6 +114,46 @@ pub enum NotHere {
          in the workspace's files. Open the file the link points to from where it is kept."
     )]
     ThroughALink(String),
+}
+
+/// Why a write to the workspace files was not made, as the sentence the window shows.
+#[derive(Debug, thiserror::Error)]
+pub enum NotWritten {
+    #[error(transparent)]
+    Here(#[from] NotHere),
+    #[error(
+        "purlis does not change '{0}': purlis keeps it in the workspace. Change it from its own \
+         view, or leave it as it is."
+    )]
+    Managed(String),
+    #[error(
+        "purlis does not change '{0}': it is a link, and purlis writes through no link in the \
+         workspace's files. Change it in your file manager or a terminal."
+    )]
+    ALink(String),
+    #[error("purlis does not change the workspace's folder itself. Choose a file or folder in it.")]
+    TheFolderItself,
+    #[error("'{0}' is not a name a file can have here: {1}. Choose another name.")]
+    BadName(String, &'static str),
+    #[error("purlis keeps the name '{0}' for itself in the workspace. Choose another name.")]
+    Reserved(String),
+    #[error("'{0}' is already taken in this folder. Choose another name.")]
+    Taken(String),
+    #[error(
+        "purlis did not delete '{path}': the system would not put it in the Trash ({why}). \
+         purlis never deletes a file for good, so it is still there. Delete it in Finder or a \
+         terminal if you mean to."
+    )]
+    NoTrash { path: String, why: String },
+    #[error(
+        "purlis imports files, and '{0}' is not one. Pick the files themselves, or copy a folder \
+         in your file manager or a terminal."
+    )]
+    NotAFileToImport(String),
+    #[error(
+        "purlis could not {what}: {why}. Try again, or do it in your file manager or a terminal."
+    )]
+    Failed { what: String, why: String },
 }
 
 /// Whether `path`, a path of the workspace files, is one purlis keeps: a reserved workspace name
@@ -472,6 +512,10 @@ impl Files {
         (found, more)
     }
 }
+
+#[path = "workspace/write.rs"]
+mod write;
+pub use write::{SystemTrash, Trash};
 
 #[cfg(test)]
 #[path = "workspace/tests.rs"]

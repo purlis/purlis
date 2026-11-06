@@ -303,6 +303,10 @@ signal-hook = "0.4"
 # `resource` is for `setrlimit`: a brokered run writes no core file, which would hold its values
 # (#2047).
 nix = { version = "0.31", default-features = false, features = ["signal", "net", "resource"] }
+# Delete on a workspace's own files (#5376) sends to the system's Trash, and never deletes for
+# good: the freedesktop.org trash on Linux, `NSFileManager`'s on macOS. The standard crate for it;
+# without its default `chrono` feature, which only dates a Linux trash entry in local time.
+trash = { version = "5", default-features = false }
 
 [target."cfg(target_os = \"macos\")".dependencies]
 # Keyring items held to charter's app (ruling V90a): the helper that writes them turns the
