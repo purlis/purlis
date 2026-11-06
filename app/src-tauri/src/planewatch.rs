@@ -642,6 +642,8 @@ pub struct Watch<W: notify::Watcher = Platform> {
     /// What its looks follow ([`Windows`]), and the root it is counted under there.
     windows: Arc<Windows>,
     root: PathBuf,
+    /// Whether it covers the plane's git standing ([`covering`]).
+    covers: bool,
 }
 
 impl Watch {
@@ -724,7 +726,16 @@ impl<W: notify::Watcher + Send + 'static> Watch<W> {
         let (sent, events) = mpsc::channel();
         let mut send = crate::watchset::sender(sent);
         let keep = listened.clone();
+        let tree = GitTree {
+            root: root.to_path_buf(),
+            spelled: listened.spelled.clone(),
+        };
         let heard = move |event: notify::Result<notify::Event>| {
+            // One stream hears the whole tree (#5505): a move git may show makes the plane's
+            // standing read again, before the event is kept to what the panels read.
+            if mode == Mode::OneStream && tree.may_show(&event) {
+                purlis_core::planegit::tree_moved(&tree.root);
+            }
             let event = match event {
                 Ok(event) if mode == Mode::OneStream => match keep.kept(event) {
                     Some(event) => Ok(event),
@@ -813,6 +824,9 @@ impl<W: notify::Watcher + Send + 'static> Watch<W> {
                 })
                 .map_err(notify::Error::io)?;
         }
+        if mode == Mode::OneStream {
+            covering(root, true);
+        }
         windows.watching(root);
         // The focus count the first look stands at, read here and not on the look's thread: a
         // focus between this start and that thread's first read would otherwise be counted as
@@ -836,6 +850,7 @@ impl<W: notify::Watcher + Send + 'static> Watch<W> {
             inner,
             windows,
             root: root.to_path_buf(),
+            covers: mode == Mode::OneStream,
         })
     }
 }
@@ -935,6 +950,9 @@ impl<W: notify::Watcher> Drop for Watch<W> {
             .watcher
             .take();
         drop(watcher);
+        if self.covers {
+            covering(&self.root, false);
+        }
         self.windows.not_watching(&self.root);
         // And its looks stop, whether a window is shown or not.
         self.windows.wake_all();
@@ -978,6 +996,81 @@ impl<W: notify::Watcher> Inner<W> {
             if let Some(watcher) = self.watcher.as_mut() {
                 let _ = watcher.unwatch(&path);
             }
+        }
+    }
+}
+
+/// How many watches on [`Mode::OneStream`] cover each plane's git standing: counted, so a
+/// project's watch started again before the old one is dropped keeps it covered.
+static COVERING: LazyLock<Mutex<HashMap<PathBuf, usize>>> = LazyLock::new(Mutex::default);
+
+/// One more (`true`) or one fewer watch on one stream hears all of `root`'s tree. While any
+/// does, the plane's shared git standing is read again on what moved, not on a clock (#5505,
+/// `purlis_core::planegit::cover`). A watch on [`Mode::PerFolder`] never covers: it hears only
+/// the folders the panels read, and an edit deeper down only the clock finds (D-FD11h).
+fn covering(root: &Path, more: bool) {
+    let mut counts = COVERING.lock().unwrap_or_else(PoisonError::into_inner);
+    let count = counts.entry(root.to_path_buf()).or_default();
+    let was = *count;
+    *count = if more { was + 1 } else { was.saturating_sub(1) };
+    let now = *count;
+    if now == 0 {
+        counts.remove(root);
+    }
+    drop(counts);
+    if (was == 0) != (now == 0) {
+        purlis_core::planegit::cover(root, now > 0);
+    }
+}
+
+/// The plane's working tree as one stream hears it, for its git standing (#5505).
+struct GitTree {
+    root: PathBuf,
+    spelled: Option<PathBuf>,
+}
+
+impl GitTree {
+    /// Whether `event` may move what `git status` says of the plane: anything but a move only
+    /// in git's own folder (the standing's stamp holds those), in the state purlis keeps in
+    /// the plane (`names::STATE_DIR`, ignored by every plane), or inside a clone (a
+    /// repository of its own, which the project's status never looks into). A loss, an
+    /// error or an event naming no path may be anything.
+    fn may_show(&self, event: &notify::Result<notify::Event>) -> bool {
+        let Ok(event) = event else {
+            return true;
+        };
+        if event.need_rescan() || event.paths.is_empty() {
+            return true;
+        }
+        event.paths.iter().any(|path| self.shows(path))
+    }
+
+    fn shows(&self, path: &Path) -> bool {
+        let below = path.strip_prefix(&self.root).ok().or_else(|| {
+            self.spelled
+                .as_deref()
+                .and_then(|spelled| path.strip_prefix(spelled).ok())
+        });
+        let Some(below) = below else {
+            return false;
+        };
+        let parts: Vec<&std::ffi::OsStr> = below.iter().collect();
+        match parts.as_slice() {
+            [first, ..]
+                if first.to_str().is_some_and(|first| {
+                    first == ".git" || purlis_core::names::STATE_DIR.recognises(first)
+                }) =>
+            {
+                false
+            }
+            [workspaces, workspace, folder, _, ..] if *workspaces == "workspaces" => !self
+                .root
+                .join(workspaces)
+                .join(workspace)
+                .join(folder)
+                .join(".git")
+                .exists(),
+            _ => true,
         }
     }
 }
@@ -1787,6 +1880,75 @@ mod tests {
         }
         paths.sort();
         Some(paths)
+    }
+
+    /// A plane that is a repository with one commit, at its real path.
+    fn plane_in_git() -> (tempfile::TempDir, PathBuf) {
+        let plane = plane_with_todos(&[]);
+        let root = plane.path().canonicalize().expect("canonical");
+        git(&root, &["init", "-q", "-b", "main", "."]);
+        git(&root, &["config", "user.email", "t@example.invalid"]);
+        git(&root, &["config", "user.name", "t"]);
+        git(&root, &["commit", "-q", "--allow-empty", "-m", "one"]);
+        (plane, root)
+    }
+
+    #[test]
+    fn on_one_stream_an_edit_anywhere_in_the_tree_is_in_the_next_shared_standing() {
+        // #5505: one stream hears the whole project, so a move deep in a folder no panel reads
+        // still makes the shared git standing read again, and nothing waits on a clock.
+        use crate::watchset::raw::{Raw, raw};
+        use notify::event::{CreateKind, EventKind};
+        let (_plane, root) = plane_in_git();
+        let (watch, _told) = looking_in::<Raw>(&root, &Windows::new(), NEVER, Mode::OneStream);
+        assert!(purlis_core::planegit::covered(&root));
+        assert!(
+            purlis_core::planegit::shared_standing(&root)
+                .changed
+                .is_empty()
+        );
+
+        let deep = root.join("docs/guides/deep.md");
+        std::fs::create_dir_all(deep.parent().unwrap()).expect("a folder");
+        std::fs::write(&deep, "deep").expect("a file");
+        raw(EventKind::Create(CreateKind::File), &deep);
+
+        assert_eq!(
+            purlis_core::planegit::shared_standing(&root).changed,
+            vec!["docs/guides/deep.md".to_owned()]
+        );
+        drop(watch);
+        assert!(!purlis_core::planegit::covered(&root));
+    }
+
+    #[test]
+    fn on_one_stream_a_move_in_gits_own_folder_or_a_clone_does_not_make_the_standing_read_again() {
+        // The standing's own stamp holds git's files, and a clone's moves are never in the
+        // project's status: a build in a clone costs the project no `status`.
+        use crate::watchset::raw::{Raw, raw};
+        use notify::event::{CreateKind, EventKind};
+        let (_plane, root) = plane_in_git();
+        let clone = root.join("workspaces/alpha/thing");
+        std::fs::create_dir_all(clone.join(".git")).expect("a clone");
+        let (_watch, _told) = looking_in::<Raw>(&root, &Windows::new(), NEVER, Mode::OneStream);
+        purlis_core::planegit::shared_standing(&root);
+
+        for moved in [
+            clone.join("target/debug/out.o"),
+            root.join(".git/fsmonitor--daemon/cookies/1"),
+            root.join(".purlis/app/spool/1"),
+        ] {
+            raw(EventKind::Create(CreateKind::File), &moved);
+        }
+
+        // Still the answer read before: written into the tree behind the watch's back, a new
+        // file is not seen while nothing it hears says the tree moved.
+        std::fs::write(root.join("unheard.md"), "x").expect("a file");
+        assert!(
+            purlis_core::planegit::shared_standing(&root)
+                .changed
+                .is_empty()
+        );
     }
 
     #[test]
