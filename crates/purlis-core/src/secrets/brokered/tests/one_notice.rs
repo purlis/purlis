@@ -532,3 +532,202 @@ fn a_program_allow_is_not_an_answer_on_a_notice_with_none() {
     }
     assert!(asks.given_runs().is_empty());
 }
+
+// ----------------------------------------------------------------------------------------
+// An ask ahead of a run that names its program (#5244; ADR 0112, amended 2026-11-06)
+
+/// `asker`'s `secret_ask` for `key`, naming `program`, holding nobody.
+fn asked_ahead(asker: &Asker, asks: &Asks, key: &str, program: &str) -> crate::secrets::ask::Said {
+    crate::sandbox::tools::SEARCH_HERE
+        .with(|dirs| *dirs.borrow_mut() = Some(vec!["/usr/bin".into(), "/bin".into()]));
+    crate::secrets::ask::raised_within(
+        &Ctx::new(&asker.root, Env::of(&[])),
+        asks,
+        crate::secrets::ask::Chat {
+            chat: asker.chat,
+            persona: asker.persona.as_deref(),
+            harness: asker.harness,
+            asker: Some(asker),
+        },
+        &crate::secrets::ask::SecretAsk {
+            chat: asker.chat,
+            key: key.to_owned(),
+            purpose: "calling the shop's API".to_owned(),
+            vault: None,
+            replace: None,
+            program: Some(program.to_owned()),
+        },
+        Duration::ZERO,
+        &|| {},
+    )
+    .expect("asked")
+}
+
+#[test]
+fn an_ask_ahead_naming_curl_is_one_notice_with_its_field_and_allow_for_this_chat_alone() {
+    use crate::secrets::ask::run::{Offer, RunAnswer};
+    let project = project();
+    let root = project.path();
+    let asks = Asks::new(root);
+    let chat = asker(root, Some("devops"));
+    let said = asked_ahead(&chat, &asks, "NOT_A", "curl");
+    assert!(
+        matches!(said, crate::secrets::ask::Said::Pending { .. }),
+        "{said:?}"
+    );
+    assert!(asks.open().is_empty(), "no Fill beside it");
+    let open = asks.open_runs().remove(0);
+    assert!(open.ahead, "{open:?}");
+    assert_eq!(open.offer, Offer::Program);
+    assert_eq!(open.fills[0].key, "NOT_A");
+    asks.fill_run(
+        &Ctx::new(root, Env::of(&[])),
+        open.id,
+        vec![("NOT_A".into(), Zeroizing::new("v4lue".into()))],
+        window(),
+    )
+    .unwrap();
+    for narrower_or_wider in [RunAnswer::Once, RunAnswer::Always] {
+        assert!(
+            asks.answer_run(open.id, narrower_or_wider, window())
+                .is_err(),
+            "{narrower_or_wider:?} is not offered ahead: there is no command to bind"
+        );
+    }
+    asks.answer_run(open.id, RunAnswer::ForChat, window())
+        .unwrap();
+    assert_eq!(stored(root, "team.json")["NOT_A"], "v4lue");
+}
+
+#[test]
+fn the_grant_ahead_covers_the_first_run_with_those_keys_and_from_then_on_only_its_variables() {
+    use crate::secrets::ask::run::RunAnswer;
+    let project = project();
+    let root = project.path();
+    let asks = Asks::new(root);
+    let chat = asker(root, Some("devops"));
+    asked_ahead(&chat, &asks, "NOT_A", "curl");
+    let open = asks.open_runs().remove(0);
+    asks.fill_run(
+        &Ctx::new(root, Env::of(&[])),
+        open.id,
+        vec![("NOT_A".into(), Zeroizing::new("v4lue".into()))],
+        window(),
+    )
+    .unwrap();
+    asks.answer_run(open.id, RunAnswer::ForChat, window())
+        .unwrap();
+    let run = |var: &str, key: &str, args: &[&str]| {
+        let mut bound = open.bound.clone();
+        bound.env = vec![format!("{var}={key}")];
+        bound.args = args.iter().map(|arg| (*arg).to_owned()).collect();
+        bound.cwd = root.join("work");
+        bound
+    };
+    assert!(!asks.covers(&run("X", "OTHER", &[])), "exactly its keys");
+    assert!(asks.covers(&run("X", "NOT_A", &["https://a.example"])));
+    assert!(
+        asks.granted(&run("X", "NOT_A", &["https://a.example"])),
+        "the first run"
+    );
+    assert!(
+        asks.covers(&run("X", "NOT_A", &["https://b.example"])),
+        "any arguments"
+    );
+    assert!(
+        !asks.covers(&run("Y", "NOT_A", &[])),
+        "the first run fixed how the value is handed"
+    );
+}
+
+#[test]
+fn an_ask_ahead_naming_a_program_not_reviewed_is_fill_only_and_its_run_asks() {
+    let project = project();
+    let root = project.path();
+    let asks = Asks::new(root);
+    let said = asked_ahead(&asker(root, Some("devops")), &asks, "NOT_A", "printenv");
+    assert!(
+        matches!(said, crate::secrets::ask::Said::Pending { .. }),
+        "{said:?}"
+    );
+    assert!(asks.open_runs().is_empty(), "no Allow ahead");
+    let open = asks.open();
+    assert_eq!(open.len(), 1);
+    assert!(
+        open[0]
+            .no_allow
+            .as_deref()
+            .is_some_and(|why| why.contains("exact command")),
+        "{open:?}"
+    );
+}
+
+#[test]
+fn an_interpreter_named_ahead_is_fill_only_saying_why() {
+    let project = project();
+    let root = project.path();
+    let asks = Asks::new(root);
+    asked_ahead(&asker(root, Some("devops")), &asks, "NOT_A", "python3");
+    assert!(asks.open_runs().is_empty());
+    let open = asks.open();
+    assert_eq!(open.len(), 1);
+    assert!(open[0].no_allow.is_some(), "says why no Allow: {open:?}");
+}
+
+#[test]
+fn a_program_refused_in_this_chat_named_ahead_is_refused_at_once() {
+    use crate::secrets::ask::run::RunAnswer;
+    let project = project();
+    let root = project.path();
+    let asks = Asks::new(root);
+    let chat = asker(root, Some("devops"));
+    asked_ahead(&chat, &asks, "NOT_A", "curl");
+    let open = asks.open_runs().remove(0);
+    asks.answer_run(open.id, RunAnswer::Refuse, window())
+        .unwrap();
+    let said = asked_ahead(&chat, &asks, "NOT_B", "curl");
+    assert!(
+        matches!(said, crate::secrets::ask::Said::NotAllowed { .. }),
+        "{said:?}"
+    );
+    assert_eq!(notices(&asks), 0, "nothing asked");
+    let (line, code) = said.line();
+    assert_eq!(code, 1);
+    assert!(line.contains("did not allow curl"), "{line}");
+}
+
+#[test]
+fn no_filled_answer_sends_the_chat_to_a_refusal() {
+    use crate::secrets::ask::Said;
+    let filled = Said::Filled {
+        vault: "team".into(),
+        key: "TOKEN".into(),
+    };
+    let (line, code) = filled.line();
+    assert_eq!(code, 0);
+    assert!(
+        line.contains("asks the person to allow it"),
+        "it promises only what works: {line}"
+    );
+    let allowed = Said::FilledAndAllowed {
+        vault: "team".into(),
+        key: "TOKEN".into(),
+        program: "curl".into(),
+    };
+    assert!(
+        allowed.line().0.contains("allowed curl"),
+        "{:?}",
+        allowed.line()
+    );
+    let not = Said::FilledNotAllowed {
+        vault: "team".into(),
+        key: "TOKEN".into(),
+        program: "curl".into(),
+    };
+    let (line, code) = not.line();
+    assert_eq!(code, 1);
+    assert!(
+        line.contains("did not allow curl") && line.contains("filled"),
+        "{line}"
+    );
+}

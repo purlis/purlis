@@ -179,6 +179,14 @@ pub fn run_grant_filled(
             return Err(why);
         }
     }
+    // Ahead of its run there is no command to bind (#5244): before anything is audited or written.
+    if open.ahead && !matches!(answer, RunAnswer::ForChat | RunAnswer::Refuse) {
+        return Err(
+            "Ahead of its run, a program is allowed for this chat or not at all: there is no \
+             command yet to allow once."
+                .to_owned(),
+        );
+    }
     // Policy holds here as it holds at the run: it may have come to lock this since it was shown.
     if matches!(
         answer,
@@ -542,10 +550,22 @@ pub fn asked(
         };
     };
     let ctx = Ctx::new(held.root(), Env::from_process());
+    // The chat as its brokered runs are served, so a program its ask names is judged as its run
+    // would be (#5244).
+    let asker = purlis_core::secrets::brokered::Asker {
+        root: held.root().to_path_buf(),
+        env: Env::from_process(),
+        chat: asked.chat,
+        persona: open.persona.clone(),
+        folder: open.cwd.clone(),
+        confines: held.chats().confines_now(asked.chat),
+        harness: open.harness,
+    };
     let chat = purlis_core::secrets::ask::Chat {
         chat: asked.chat,
         persona: open.persona.as_deref(),
         harness: open.harness,
+        asker: Some(&asker),
     };
     match purlis_core::secrets::ask::raised(&ctx, held.secret_asks(), chat, asked, &|| {
         held.chats().asks_may_have_moved();

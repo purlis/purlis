@@ -24,18 +24,30 @@ purlis secret list <vault>        # the KEYS in one vault. No values.
                                   # this chat's persona may use.
 ```
 
-## A credential you lack: raise a Secret ask
+## A credential you lack: run the command, or raise a Secret ask
 
 Never ask the person for a password, token or key in this conversation, and never have them
-paste one: raise a Secret ask for any credential you lack, declared or not, with the
-`secret_ask` tool or `purlis secret ask <KEY> --purpose "<what for>"`, and the person fills it
-in purlis's window. You hear only filled, with the vault and key to use, or declined.
+paste one. Prefer simply running the command that needs it with `purlis secret exec`: purlis
+asks the person in its window for whatever the run lacks, a key or an Allow for its program, in
+one notice, and the command goes on once they answer. To ask ahead, raise a Secret ask for any
+credential you lack, declared or not, with the `secret_ask` tool or
+`purlis secret ask <KEY> --purpose "<what for>"`, naming the program you will run with
+`--program` where you know it.
+You hear only filled, with the vault and key to use and whether the program was allowed, or
+declined.
+
+Naming a program purlis has reviewed (curl) lets the person allow it for this chat on the same
+notice. Any other program, or none named, is asked about as it runs, on the exact command.
 
 ```bash
 purlis secret ask STRIPE_KEY --purpose "charge test cards in the e2e suite"
 # filled team/STRIPE_KEY: ...     exit 0: use that vault and key with `purlis secret exec`
 # declined team/STRIPE_KEY ...    exit 1: go on without it; don't ask again in this chat
 # waiting on you for team/...     exit 75: not answered yet; you are told when it is
+
+purlis secret ask SHOP_TOKEN --purpose "read the shop's orders" --program curl
+# filled team/SHOP_TOKEN, and the person allowed curl with it for this chat ...   exit 0
+# filled team/SHOP_TOKEN, but the person did not allow curl ...                   exit 1
 ```
 
 The vault is your persona's unless you add `--vault <name>`. A key the vault holds already

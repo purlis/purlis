@@ -18,6 +18,7 @@ const run: RunShown = {
   cwd: "/Users/you/work/shop",
   fills: [],
   offer: "program",
+  ahead: false,
 };
 
 const meta = {
@@ -83,5 +84,13 @@ export const AnotherVaultAlwaysByVariable: Story = {
   play: async ({ canvas }) => {
     await expect(canvas.getByTestId("run-grant-not-its-vault")).toBeVisible();
     await expect(canvas.getByTestId("run-grant-env-advice")).toBeVisible();
+  },
+};
+
+/** #5244: asked ahead of its run, with no command yet. */
+export const AskedAhead: Story = {
+  args: { run: { ...run, ahead: true, command: "curl" } },
+  play: async ({ canvas }) => {
+    await expect(canvas.getByTestId("run-grant-ahead")).toBeVisible();
   },
 };

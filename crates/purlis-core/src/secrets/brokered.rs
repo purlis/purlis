@@ -797,6 +797,117 @@ fn fills_refused(asker: &Asker, vault: &str, fills: &[super::ask::run::Fill]) ->
     })
 }
 
+/// **What a `secret_ask` naming a program may offer, ahead of its run** (#5244; ADR 0112, amended
+/// 2026-11-06 by the person's ruling).
+#[derive(Debug)]
+pub enum Ahead {
+    /// A tool the persona declares, or a chat purlis holds to no sandbox: its run needs no Allow,
+    /// so the ask is a Fill, as before.
+    Declared,
+    /// Fill only, saying why no Allow is offered ahead: the program isn't reviewed for any
+    /// arguments (its run asks on the exact command), runs what it is told, is locked by policy,
+    /// or is no program a Run grant may be.
+    FillOnly(String),
+    /// The person did not allow it with that vault in this chat: refused at once, nothing asked.
+    Refused { program: String },
+    /// One notice: the key's field, and Allow for this chat bound to the chat, the program, the
+    /// vault and exactly that key.
+    Offer(Box<super::ask::run::RunNeed>),
+}
+
+/// **What `asker`'s `secret_ask` for `key` of `vault`, naming `program`, may offer** (#5244). The
+/// program is resolved and judged as a run's is ([`run_granted`]): where no chat writes, never
+/// one that runs what it is told, under policy, with no key a browser or a minter holds. Only a
+/// program reviewed for any arguments gets an Allow ahead, and only Allow for this chat, since
+/// there is no command yet to allow once. Every check a run makes is made again as it runs.
+pub fn asked_ahead(
+    asker: &Asker,
+    asks: &super::ask::Asks,
+    vault: &str,
+    key: &str,
+    program: &str,
+    declared: Option<String>,
+) -> Ahead {
+    use crate::sandbox::tools;
+    let Some(confines) = &asker.confines else {
+        return Ahead::Declared;
+    };
+    let persona = asker.persona.as_deref().unwrap_or_default();
+    let named = command_name(program);
+    // Judged as a run handing that key by a variable named for it would be.
+    let wanted = Wanted {
+        vault: vault.to_owned(),
+        env: vec![format!("{key}={key}")],
+        command: vec![program.to_owned()],
+        ..Wanted::default()
+    };
+    let (written_lines, _) = tools::declared_and_allowed_here(&asker.root, persona);
+    if tools::is_declared(&confines.tools, &written_lines, program) {
+        return Ahead::Declared;
+    }
+    let plane = crate::sandbox::Plane::read(&asker.root);
+    if plane.unreadable() {
+        return Ahead::FillOnly(format!(
+            "purlis couldn't read the project's settings, so {named} gets no Allow ahead of its run"
+        ));
+    }
+    let locks = crate::sandbox::policy::Locks::of(&asker.root);
+    if let Some(locked) = run_grant_locked(asker, &wanted, &wanted.command, &locks) {
+        return Ahead::FillOnly(locked);
+    }
+    let asked = tools::Asked {
+        vault,
+        env: &wanted.env,
+        file: &wanted.file,
+        dotenv: &wanted.dotenv,
+        program,
+    };
+    let writes = chat_writes(asker, confines);
+    let ready = match grantable(asker, persona, &asked, &written_lines, &locks, &writes) {
+        Ok(ready) => ready,
+        Err(why) => {
+            return Ahead::FillOnly(format!("{named} gets no Allow: {why}"));
+        }
+    };
+    let mut bound = bound_of(asker, &wanted, &wanted.command, &ready);
+    bound.env = Vec::new();
+    bound.cwd = PathBuf::new();
+    if asks.refused_run(&bound) {
+        return Ahead::Refused { program: named };
+    }
+    use crate::sandbox::grant::Level;
+    if !bound.reviewed_for_any_arguments() || !locks.keeps_scope(Level::Chat) {
+        return Ahead::FillOnly(format!(
+            "purlis allows {named} one exact command at a time, so no Allow is offered ahead: \
+             its run asks for the Allow on the command it runs"
+        ));
+    }
+    // Not into a vault the persona may not use: that is asked about as the run asks.
+    if authorise(&reading_for(asker), asker.persona.as_deref(), vault).is_err() {
+        return Ahead::FillOnly(format!(
+            "vault {vault} isn't one {persona} may use, so no Allow is offered ahead: its run asks"
+        ));
+    }
+    let need = need_of(
+        asker,
+        confines,
+        &wanted.command,
+        &ready,
+        bound,
+        vec![super::ask::run::Fill {
+            key: key.to_owned(),
+            declared,
+            reason: None,
+        }],
+        super::ask::run::Offer::Program,
+        false,
+    );
+    Ahead::Offer(Box::new(super::ask::run::RunNeed {
+        ahead: true,
+        ..need
+    }))
+}
+
 /// **What a run's one notice binds and shows** (#5242): `ready`'s program, as the app resolved it,
 /// with `wanted`'s vault and hand-over and `command`'s arguments, where it starts.
 fn bound_of(
@@ -841,6 +952,7 @@ fn need_of(
 ) -> super::ask::run::RunNeed {
     use super::ask::run::{Hosts, RunNeed};
     RunNeed {
+        ahead: false,
         fills,
         offer,
         bound,

@@ -35,12 +35,17 @@ export function RunFills({ run, boxes }: { run: RunShown; boxes: RunBoxes }) {
         <div key={fill.key}>
           <p className="ui-text-meta">
             <code>{fill.key}</code>
-            {fill.declared != null && <> · {run.persona} declares it for: {fill.declared}</>}
+            {fill.declared != null && (
+              <>
+                {" "}
+                · {run.persona} declares it for: {fill.declared}
+              </>
+            )}
             {fill.gone != null && (
               <>
                 {" "}
-                · was linked to <code>{fill.gone.key}</code> in vault{" "}
-                <code>{fill.gone.vault}</code>, which is gone
+                · was linked to <code>{fill.gone.key}</code> in vault <code>{fill.gone.vault}</code>
+                , which is gone
               </>
             )}
           </p>

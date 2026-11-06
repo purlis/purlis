@@ -53,13 +53,24 @@ export function RunGrantFacts({ run }: { run: RunShown }) {
         A program can run others and read files this chat wrote, and can leave what it's handed
         where this chat reads it. Allow it only if you trust this chat with these values.
       </p>
-      <p className="ui-text-meta">
-        The chat's command, in its own words, started in <code>{run.cwd}</code>, with no input from
-        the chat:
-      </p>
-      <pre className="whitespace-pre-wrap break-all" data-testid="run-grant-command">
-        {run.command}
-      </pre>
+      {run.ahead ? (
+        // Asked ahead of its run (#5244): there is no command yet to read.
+        <p className="ui-text-meta" data-testid="run-grant-ahead">
+          The chat asks ahead, so there's no command yet. Allow for this chat lets it run{" "}
+          <code>{run.program}</code> with these keys and any arguments for the rest of this chat;
+          its first run fixes how they're handed, and later runs must hand them the same way.
+        </p>
+      ) : (
+        <>
+          <p className="ui-text-meta">
+            The chat's command, in its own words, started in <code>{run.cwd}</code>, with no input
+            from the chat:
+          </p>
+          <pre className="whitespace-pre-wrap break-all" data-testid="run-grant-command">
+            {run.command}
+          </pre>
+        </>
+      )}
       {run.always != null && (
         <>
           <p className="ui-text-meta">

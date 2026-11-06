@@ -25,6 +25,7 @@ fn bound(chat: u32, args: &[&str]) -> Bound {
 
 fn need(bound: Bound) -> RunNeed {
     RunNeed {
+        ahead: false,
         fills: Vec::new(),
         offer: Offer::Program,
         command: format!("curl {}", bound.args.join(" ")),

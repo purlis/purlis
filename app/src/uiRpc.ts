@@ -10996,6 +10996,11 @@ export type RunShown = {
 	offer: string,
 	/**  Why it offers no Allow for the program, where policy is why: the app's own words. */
 	no_allow?: string | null,
+	/**
+	 *  **Asked ahead of its run** (#5244): no command yet; only Allow for this chat is offered,
+	 *  and the first run fixes how the values are handed.
+	 */
+	ahead: boolean,
 };
 
 /**  What started a skill run, as the Runs panel draws it. */

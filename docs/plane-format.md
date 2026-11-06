@@ -6342,14 +6342,16 @@ down rather than read off the code.
   "program", "vault", "env"?, "file"?, "args"?}, "hosts": {"reach": "listed", "hosts": [...]} |
   {"reach": "every"}, "caution"?, "command", "fills"?: [{"key", "declared"?, "reason"?}],
   "offer"?: {"kind": "program"} | {"kind": "vault", "no_allow"?} | {"kind": "fill", "no_allow"?},
-  "since"}]}`: `runs` each run's one open notice (ADR 0112, #5242), absent for none: `bound` is
+  "ahead"?, "since"}]}`: `runs` each run's one open notice (ADR 0112, #5242), absent for none: `bound` is
   what the grant would bind, and `command` the chat's words as they were shown, mask-clean or
   never raised; `fills` the keys the run lacks, one value field each, with what the persona
   declares each for and, for a link whose entry is gone, `reason` as above, absent for none;
   `offer` what the notice offers: `program`, an Allow for a program a persona does not declare
   (absent means this, as an earlier purlis wrote it); `vault`, no program Allow and the vault's
   own Allow, for a run on a vault its persona may not use; `fill`, its value fields alone; with
-  `no_allow` policy's words on why no program Allow is offered, absent for none. A Run grant
+  `no_allow` policy's words on why no program Allow is offered, absent for none; `ahead` true
+  for a Secret ask that named a reviewed program and has no command yet (#5244), whose notice
+  offers Allow for this chat alone, absent for false. A Run grant
   itself, and any value, is never written. `asked` is the last number an ask was given, so one
   is never given twice; `since` is seconds since 1970; `chats` the chats that wait on it, by
   the app's number, which a restart keeps (`app/reopen.json`'s `chats[].number`), the first to

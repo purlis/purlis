@@ -1436,6 +1436,10 @@ pub struct SecretAsk {
     /// person is asked to replace it even though the vault holds it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replace: Option<String>,
+    /// **The program the chat will run with it** (#5244), where it says: a reviewed one is offered
+    /// Allow for this chat on the same notice; any other gets Fill only, and its run asks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub program: Option<String>,
 }
 
 /// **What a chat hears of its Secret ask** (#5072): never a value, and never where it lives
@@ -1454,6 +1458,21 @@ pub enum Said {
     /// Nobody answered before the chat's harness would end the wait: the ask stays open, and
     /// the chat is nudged when it is answered.
     Pending { vault: String, key: String },
+    /// Filled, and the program the ask named allowed with it for this chat (#5244).
+    FilledAndAllowed {
+        vault: String,
+        key: String,
+        program: String,
+    },
+    /// Filled, and the program the ask named not allowed (#5244).
+    FilledNotAllowed {
+        vault: String,
+        key: String,
+        program: String,
+    },
+    /// The person did not allow the program the ask named with that vault in this chat, earlier
+    /// or now, and nothing was filled (#5244).
+    NotAllowed { vault: String, program: String },
 }
 
 /// Why a decline the person made is said to be one.
@@ -1464,12 +1483,47 @@ impl Said {
     /// [`super::brokered::WAITING_ON_THE_PERSON`] still open.
     pub fn line(&self) -> (String, i32) {
         match self {
+            // It promises only what works (#5244): a program no tool of the persona's is asked
+            // about as it runs.
             Self::Filled { vault, key } => (
                 format!(
-                    "filled {}: run your command with `purlis secret exec {vault}` handing {key}",
+                    "filled {}: run your command with `purlis secret exec --vault {vault}` handing \
+                     {key}; if its program is no tool of your persona's, purlis asks the person to \
+                     allow it as it runs",
                     vault_and_key(vault, key)
                 ),
                 0,
+            ),
+            Self::FilledAndAllowed {
+                vault,
+                key,
+                program,
+            } => (
+                format!(
+                    "filled {}, and the person allowed {program} with it for this chat: run your \
+                     command with `purlis secret exec --vault {vault}` handing {key}",
+                    vault_and_key(vault, key)
+                ),
+                0,
+            ),
+            Self::FilledNotAllowed {
+                vault,
+                key,
+                program,
+            } => (
+                format!(
+                    "filled {}, but the person did not allow {program} with it in this chat: don't \
+                     run {program} with it or work around that",
+                    vault_and_key(vault, key)
+                ),
+                1,
+            ),
+            Self::NotAllowed { vault, program } => (
+                format!(
+                    "the person did not allow {program} with vault {vault} in this chat, so \
+                     nothing was asked: don't ask again or work around it; go on without it"
+                ),
+                1,
             ),
             Self::Declined { vault, key, reason } => (
                 format!(
@@ -1494,6 +1548,10 @@ pub struct Chat<'a> {
     /// The persona the app started it as.
     pub persona: Option<&'a str>,
     pub harness: Option<Harness>,
+    /// **The chat as its brokered runs are served** (#5244): what a program its ask names is
+    /// resolved and judged by, as a run's is. None where the app has no sandbox record of it, and
+    /// a program named is then asked about as it runs.
+    pub asker: Option<&'a super::brokered::Asker>,
 }
 
 /// **The app's answer to a chat's `secret_ask` line** (#5072): the persona's vault unless the
@@ -1568,6 +1626,47 @@ pub fn raised_within(
             key: line.key.clone(),
         });
     }
+    // A program named ahead of its run (#5244): one notice with its Allow, where it may have one.
+    let mut no_allow = None;
+    if let (Some(program), Some(asker), None) = (
+        line.program
+            .as_deref()
+            .filter(|program| !program.is_empty()),
+        chat.asker,
+        reason.as_ref(),
+    ) {
+        use super::brokered::Ahead;
+        let declared = super::needs::declared(&ctx.root, persona, &line.key).map(|n| n.purpose);
+        match super::brokered::asked_ahead(asker, asks, &vault, &line.key, program, declared) {
+            Ahead::Declared => {}
+            Ahead::FillOnly(why) => no_allow = Some(why),
+            Ahead::Refused { program } => return Ok(Said::NotAllowed { vault, program }),
+            Ahead::Offer(need) => {
+                let program = need.bound.program_name();
+                let key = line.key.clone();
+                return Ok(
+                    match asks.allowed_or_held(*need, within, &mut |_: &str| moved()) {
+                        run::RunHeld::Allowed | run::RunHeld::Filled => Said::FilledAndAllowed {
+                            vault,
+                            key,
+                            program,
+                        },
+                        run::RunHeld::Refused { .. }
+                            if holds_already(ctx, persona, &vault, &key) =>
+                        {
+                            Said::FilledNotAllowed {
+                                vault,
+                                key,
+                                program,
+                            }
+                        }
+                        run::RunHeld::Refused { .. } => Said::NotAllowed { vault, program },
+                        run::RunHeld::StillOpen { .. } => Said::Pending { vault, key },
+                    },
+                );
+            }
+        }
+    }
     let need = Need {
         chat: Some(chat.chat),
         persona: persona.to_owned(),
@@ -1578,7 +1677,7 @@ pub fn raised_within(
         declared: super::needs::declared(&ctx.root, persona, &line.key).map(|need| need.purpose),
         names_no_vault,
         reason,
-        no_allow: None,
+        no_allow,
     };
     Ok(match asks.hold(need, within, &mut |_: &str| moved()) {
         Held::Filled { vault, key } => Said::Filled { vault, key },
@@ -1726,6 +1825,7 @@ pub fn ask_the_window(
     purpose: &str,
     vault: Option<&str>,
     replace: Option<&str>,
+    program: Option<&str>,
 ) -> Result<Said, String> {
     use crate::hookwire::{Answer, Ask, Asking, ChatToken, NOTHING_ANSWERS, UNKNOWN_LINE};
     let env = |name: &str| ctx.env.get(name);
@@ -1750,6 +1850,7 @@ pub fn ask_the_window(
         purpose: purpose.to_owned(),
         vault: vault.map(str::to_owned),
         replace: replace.map(str::to_owned),
+        program: program.map(str::to_owned),
     }));
     match asking.ask(&line, asker_waits(&env)) {
         Ok(Answer::Secret(said)) => Ok(said),
@@ -1775,6 +1876,7 @@ pub fn ask_the_window(
     _purpose: &str,
     _vault: Option<&str>,
     _replace: Option<&str>,
+    _program: Option<&str>,
 ) -> Result<Said, String> {
     Err(
         "a secret ask is answered in purlis's window, which a chat on this system has no \

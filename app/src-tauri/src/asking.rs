@@ -189,6 +189,9 @@ pub struct RunShown {
     /// Why it offers no Allow for the program, where policy is why: the app's own words.
     #[specta(optional)]
     pub no_allow: Option<String>,
+    /// **Asked ahead of its run** (#5244): no command yet; only Allow for this chat is offered,
+    /// and the first run fixes how the values are handed.
+    pub ahead: bool,
 }
 
 /// **A key a run lacks, as its notice's value field** (#5242). Names only.
@@ -2255,6 +2258,13 @@ pub fn run_grant(
         .collect::<Vec<_>>()
         .join(", ");
     let says = match &open.offer {
+        Offer::Program if open.ahead => format!(
+            "{} asks for {lacks} from vault {} to run {} with, in this chat's own sandbox. What \
+             you fill is stored there whatever you allow",
+            open.persona,
+            bound.vault,
+            bound.program.display(),
+        ),
         Offer::Program if lacks.is_empty() => format!(
             "{} wants to run {} with {} from vault {}, in this chat's own sandbox",
             open.persona,
@@ -2289,6 +2299,11 @@ pub fn run_grant(
         ),
     };
     let options: Vec<Offered> = match &open.offer {
+        // Ahead of its run (#5244): Allow for this chat alone, with no command to allow once.
+        Offer::Program if open.ahead => program_options(locks, reviewed, false, locked)
+            .into_iter()
+            .filter(|one| one.id != RUN_ALLOW_ONCE)
+            .collect(),
         Offer::Program => program_options(locks, reviewed, always.is_some(), locked),
         Offer::Vault { .. } => (!locks.forbids_vault_grants())
             .then(|| Offered {
@@ -2358,7 +2373,7 @@ pub fn run_grant(
             not_its_vault: open.not_its_vault,
             command: open.command.clone(),
             cwd: purlis_core::shown::ascii_word(&bound.cwd.to_string_lossy()),
-            always: always.filter(|_| open.offer == Offer::Program),
+            always: always.filter(|_| open.offer == Offer::Program && !open.ahead),
             fills,
             offer: match &open.offer {
                 Offer::Program => "program",
@@ -2367,6 +2382,7 @@ pub fn run_grant(
             }
             .to_owned(),
             no_allow: open.offer.no_allow().map(str::to_owned),
+            ahead: open.ahead,
         }),
     }
 }

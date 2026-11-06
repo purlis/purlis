@@ -3246,6 +3246,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             purpose: "stop this chat".to_owned(),
             vault: None,
             replace: None,
+            program: None,
         })),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
@@ -12825,6 +12826,16 @@ fn a_run_lacking_a_key_on_a_refused_vault_is_one_notice_and_allow_once_stores_it
     let planes = planes_on(&host);
     let id = planes.open(&plane.root);
     let held = planes.held(&id).expect("held");
+    // Every run grant is audited before it is given.
+    let logs = tempfile::tempdir().expect("a folder for the log");
+    {
+        use purlis_core::eventlog::{ArgsKey, Log, Recorder};
+        held.hooks()
+            .record_into(crate::hooks::Events::here(Recorder::new(
+                Log::open(logs.path(), "DEVICE").expect("a log"),
+                ArgsKey::open(logs.path()).expect("a key"),
+            )));
+    }
     let chat = a_chat_refused_vault_team(&plane, &held);
 
     std::thread::scope(|scope| {

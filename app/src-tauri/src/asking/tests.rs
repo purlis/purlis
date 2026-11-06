@@ -267,6 +267,7 @@ fn a_runs_notice(
 ) -> purlis_core::secrets::ask::run::OpenRun {
     use purlis_core::secrets::ask::run::{Bound, Fill, Hosts, OpenRun};
     OpenRun {
+        ahead: false,
         fills: vec![Fill {
             key: "OTHER".to_owned(),
             declared: Some("the API it calls".to_owned()),
@@ -335,6 +336,27 @@ fn a_notice_with_no_program_allow_gives_the_vaults_line_its_own_allow_as_a_refus
 }
 
 #[test]
+fn an_ask_ahead_of_its_run_offers_allow_for_this_chat_alone_and_says_no_command_yet() {
+    use purlis_core::secrets::ask::run::Offer;
+    let none = purlis_core::sandbox::policy::Locks::none();
+    let mut open = a_runs_notice(Offer::Program);
+    open.ahead = true;
+    open.bound.env = Vec::new();
+    open.bound.args = Vec::new();
+    open.command = "curl".to_owned();
+    let shown = run_grant(&open, &none);
+    assert_eq!(
+        ids(&shown),
+        ["allow-chat", "keep"],
+        "no command to allow once, nothing written"
+    );
+    let run = shown.run.as_ref().expect("the facts");
+    assert!(run.ahead);
+    assert!(run.always.is_none());
+    assert!(shown.says.contains("asks for OTHER"), "{}", shown.says);
+}
+
+#[test]
 fn a_notice_of_fields_alone_offers_fill_and_not_now_saying_why_no_allow() {
     use purlis_core::secrets::ask::run::Offer;
     let none = purlis_core::sandbox::policy::Locks::none();
@@ -358,6 +380,7 @@ fn a_run_grant_shows_the_apps_facts_apart_from_the_chats_inert_command() {
     use purlis_core::secrets::ask::run::{Bound, Hosts, OpenRun};
     let none = purlis_core::sandbox::policy::Locks::none();
     let open = OpenRun {
+        ahead: false,
         fills: Vec::new(),
         offer: purlis_core::secrets::ask::run::Offer::Program,
         id: 7,
@@ -2774,6 +2797,7 @@ fn a_refused_vault_policy_locks_offers_keep_blocked_alone_and_says_why() {
 fn a_run_grants_folder_is_spelled_so_it_cant_read_as_another() {
     use purlis_core::secrets::ask::run::{Bound, Hosts, OpenRun};
     let open = OpenRun {
+        ahead: false,
         fills: Vec::new(),
         offer: purlis_core::secrets::ask::run::Offer::Program,
         id: 7,

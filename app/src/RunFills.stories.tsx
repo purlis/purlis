@@ -21,6 +21,7 @@ const run: RunShown = {
   cwd: "/Users/you/work/shop",
   fills: [{ key: "TOKEN" }, { key: "CLIENT_SECRET", declared: "signing in to the shop's API" }],
   offer: "program",
+  ahead: false,
 };
 
 const meta = {

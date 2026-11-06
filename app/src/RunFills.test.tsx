@@ -23,6 +23,7 @@ function run(over: Partial<RunShown> = {}): RunShown {
     cwd: "/work",
     fills: [{ key: "TOKEN" }, { key: "OTHER", declared: "the API it calls" }],
     offer: "program",
+    ahead: false,
     ...over,
   };
 }
@@ -31,7 +32,9 @@ afterEach(cleanup);
 
 describe("RunFills", () => {
   it("draws one masked value box for each key the run lacks, in one notice", () => {
-    const boxes = createRef<Map<string, HTMLInputElement>>() as { current: Map<string, HTMLInputElement> };
+    const boxes = createRef<Map<string, HTMLInputElement>>() as {
+      current: Map<string, HTMLInputElement>;
+    };
     boxes.current = new Map();
     render(<RunFills run={run()} boxes={boxes} />);
     const token = screen.getByLabelText("Value of TOKEN");
@@ -55,9 +58,7 @@ describe("RunFills", () => {
   });
 
   it("says a vault the persona can't use is filled only on an Allow", () => {
-    render(
-      <RunFills run={run({ not_its_vault: true })} boxes={{ current: new Map() }} />,
-    );
+    render(<RunFills run={run({ not_its_vault: true })} boxes={{ current: new Map() }} />);
     expect(screen.getByTestId("run-fills").textContent).toContain("only if you allow");
   });
 

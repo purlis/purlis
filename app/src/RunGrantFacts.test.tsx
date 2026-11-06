@@ -19,6 +19,7 @@ function run(over: Partial<RunShown> = {}): RunShown {
     cwd: "/work",
     fills: [],
     offer: "program",
+    ahead: false,
     ...over,
   };
 }
@@ -85,5 +86,11 @@ describe("RunGrantFacts", () => {
     const caution = "curl can show the values it is handed in the chat's output.";
     render(<RunGrantFacts run={run({ caution })} />);
     expect(screen.getByTestId("run-grant").textContent).toContain(caution);
+  });
+
+  it("ahead of its run, says there is no command yet and the first run fixes how values are handed", () => {
+    render(<RunGrantFacts run={run({ ahead: true, command: "curl" })} />);
+    expect(screen.queryByTestId("run-grant-command")).toBeNull();
+    expect(screen.getByTestId("run-grant-ahead").textContent).toContain("first run");
   });
 });
