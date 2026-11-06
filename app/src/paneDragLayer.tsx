@@ -339,7 +339,7 @@ export function PaneDragLayer({
 
 /** What the words say over a side folded to a rail (spec #5288, story 58): why letting go there
  *  cancels. Its panes are a line of buttons too narrow to show a drop's place in. */
-const ON_A_RAIL = "A folded pane takes no drop. Let go here to cancel.";
+const ON_A_RAIL = "A folded pane takes no drop. Let go here to cancel. Esc also cancels.";
 
 /** How thick the mark under a tab about to come forward is, in CSS pixels. */
 const MARK = 2;

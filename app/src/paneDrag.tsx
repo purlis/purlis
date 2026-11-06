@@ -384,10 +384,7 @@ export function usePaneDrag({
         }
         store.moveTo(at.clientX, at.clientY);
         const over = hit(at.clientX, at.clientY);
-        store.overRail(
-          over === undefined &&
-            document.elementFromPoint(at.clientX, at.clientY)?.closest(`[${RAIL}]`) != null,
-        );
+        store.overRail(over === undefined && railUnder(at.clientX, at.clientY));
         // Resting on another tab brings it forward (#5294); the one in front is where it is.
         const under = tabUnder(at.clientX, at.clientY);
         const tab = under === now.current.tabs.inFront ? undefined : under;
@@ -1155,6 +1152,11 @@ function stripPlace(strip: Element, x: number, tabs: Tabs): { at: number; line: 
 function tabUnder(x: number, y: number): number | undefined {
   const tab = document.elementFromPoint(x, y)?.closest(`[${TAB}]`);
   return tab?.closest(`[${STRIP}]`) == null ? undefined : Number(tab.getAttribute(TAB));
+}
+
+/** Whether the point is over a side folded to a rail (#5415), which takes no drop. */
+function railUnder(x: number, y: number): boolean {
+  return document.elementFromPoint(x, y)?.closest(`[${RAIL}]`) != null;
 }
 
 /** Ends an event where it is heard, so nothing further up hears it. */

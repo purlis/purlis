@@ -414,7 +414,9 @@ describe("the panes move to where a drop would leave them (#5291)", () => {
     fireEvent.pointerDown(head(3), at(900, 50));
     fireEvent.pointerMove(document, at(20, 1000));
     settle();
-    expect(part("words")?.textContent).toBe("A folded pane takes no drop. Let go here to cancel.");
+    expect(part("words")?.textContent).toBe(
+      "A folded pane takes no drop. Let go here to cancel. Esc also cancels.",
+    );
     expect(root().hasAttribute("data-pane-refused")).toBe(true);
     fireEvent.pointerUp(document, at(20, 1000));
     expect(window.tells()).toBe(0);
