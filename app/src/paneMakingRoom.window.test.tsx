@@ -208,7 +208,7 @@ function shown(props: { room?: typeof ROOM; active?: boolean } = {}) {
   let last = start();
   let tells = 0;
   let change: (how: (tabs: Tabs) => Tabs) => Tabs = () => last;
-  render(
+  const { unmount } = render(
     <Window
       first={last}
       heard={(tabs) => {
@@ -225,6 +225,7 @@ function shown(props: { room?: typeof ROOM; active?: boolean } = {}) {
     /** How many times the window has told its tabs. */
     tells: () => tells,
     change: (how: (tabs: Tabs) => Tabs) => change(how),
+    unmount,
   };
 }
 
@@ -758,6 +759,14 @@ describe("resting on a tab during a drag brings it forward, as a preview (#5294)
     expect(frame(3).style.transform).toBe("");
   });
 
+  it("puts the tab back and tells nothing when the window goes mid-drag", () => {
+    const { window, first } = restedOn();
+    window.unmount();
+    expect(window.tells()).toBe(0);
+    expect(window.tabs().inFront).toBe(first);
+    expect(root().hasAttribute("data-pane-dragging")).toBe(false);
+  });
+
   it("closes the tab whose last pane leaves for the tab rested on", () => {
     const window = shown();
     const [first, second] = window.tabs().order;
@@ -817,6 +826,15 @@ describe("placement mode draws the same preview as a drag (#5293)", () => {
     expect(frame(3).style.transform).toBe("");
     expect(part("words")).toBeNull();
     expect(root().hasAttribute("data-pane-dragging")).toBe(false);
+  });
+
+  it("brings back the tab in front on Esc, whatever brought another forward", () => {
+    const { window } = picked();
+    const [first, second] = window.tabs().order;
+    act(() => void window.change((t) => selectTab(t, second)));
+    key("Escape");
+    expect(drawnFront()).toBe(first);
+    expect(window.tabs().inFront).toBe(first);
   });
 
   it("restores sizes, the front tab and the keyboard on Esc, having told nothing", () => {

@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **What a drag draws over the panes** (#5291, spec #5288): a pane about to be, the size a
-//! terminal will take, the mark on a refused place and on a tab about to come forward (#5294), and what is held and what letting go would do
-//! by the pointer. Declared once here and once in its wrapper,
-//! `app/src/ui/pane-preview/PanePreview.tsx`, whose stylesheet (`pane-preview.css`) draws the
-//! defaults [`super::Look`] holds a copy of.
+//! terminal will take, the mark on a refused place and on a tab about to come forward (#5294),
+//! and what is held and what letting go would do by the pointer. Declared once here and once in
+//! its wrapper, `app/src/ui/pane-preview/PanePreview.tsx`, whose stylesheet
+//! (`pane-preview.css`) draws the defaults [`super::Look`] holds a copy of.
 //!
 //! **None of it is read by a reader, or takes the pointer.** A reader hears the drag from the
 //! window's status line. Its words are held at 4.5:1 on the ground each is drawn on, and the mark on

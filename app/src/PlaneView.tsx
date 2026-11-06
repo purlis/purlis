@@ -1807,8 +1807,9 @@ export const PlaneView = memo(function PlaneView({
   /**
    * **Whether a drag holds a tab forward** (#5294): resting on a tab, or pressing one in placement
    * mode, draws it in front as a preview. Until the drag is over the core is told nothing of it:
-   * not the layout, not the view tabs, and no strip remembers it as its front tab. Its state, so
-   * what was held back is told as it ends.
+   * not the layout, not the view tabs, and no strip remembers it as its front tab. The ref is what
+   * `change` reads in the same call; the state reruns the effects that tell, so what they held
+   * back is told as it ends.
    */
   const heldForward = useRef(false);
   const [holdingForward, setHoldingForward] = useState(false);
@@ -5458,15 +5459,17 @@ export const PlaneView = memo(function PlaneView({
     }),
     [filedIn, isPinned, nameOf, pressedOf, tabs],
   );
-  /** A tab a drag brings forward, drawn and not told (#5294), until {@link holdOver}. */
-  const holdTab = useCallback(
-    (id: number) => {
-      heldForward.current = true;
-      setHoldingForward(true);
-      change((tabs) => selectTab(tabs, id));
-    },
-    [change],
-  );
+  /**
+   * A tab a drag brings forward, drawn and not told (#5294), until {@link holdOver}; and the one
+   * that was in front, drawn again as it is put back. Not a `change`: no pane is noted as used
+   * (`noteUsed`), so a cancel leaves the tabs exactly as they were.
+   */
+  const holdTab = useCallback((id: number) => {
+    heldForward.current = true;
+    setHoldingForward(true);
+    now.current = selectTab(now.current, id);
+    setTabs(now.current);
+  }, []);
   /** The drag is over: what the window draws now is told, if it differs from what was. */
   const holdOver = useCallback(() => {
     heldForward.current = false;

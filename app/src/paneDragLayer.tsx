@@ -2,16 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useLayoutEffect, useMemo, useSyncExternalStore } from "react";
-import {
-  boxOfRect,
-  cellsIn,
-  HeldPanes,
-  PANE,
-  type PaneBase,
-  PANES_ROOM,
-  STRIP,
-  TAB,
-} from "./paneHeld";
+import { boxOfRect, cellsIn, HeldPanes, type PaneBase, PANES_ROOM, stripTab } from "./paneHeld";
 import {
   type Box,
   type DropContext,
@@ -332,7 +323,7 @@ const MARK = 2;
 
 /** The mark along the bottom of tab `id` on the strip, where it is drawn. */
 function markUnder(id: number): Box | undefined {
-  const tab = document.querySelector(`[${STRIP}] [${TAB}="${id}"]:not([${PANE}])`);
+  const tab = document.querySelector(stripTab(id));
   if (tab === null) return undefined;
   const box = boxOfRect(tab.getBoundingClientRect());
   return { left: box.left, top: box.top + box.height - MARK, width: box.width, height: MARK };

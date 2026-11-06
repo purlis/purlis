@@ -34,6 +34,8 @@ export const PANE = "data-drop-pane";
 export const TAB = "data-drop-tab";
 /** The strip: a drop on it makes a tab. Its tabs carry {@link TAB}. */
 export const STRIP = "data-drop-strip";
+/** A tab on the strip, by its id: one that is not a pane, which carries its tab's id too. */
+export const stripTab = (id: number) => `[${STRIP}] [${TAB}="${id}"]:not([${PANE}])`;
 
 /** What a terminal says of its own grid, to reckon what would fit in a box. */
 export type OwnCells = {
