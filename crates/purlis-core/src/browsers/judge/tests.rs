@@ -489,6 +489,47 @@ fn a_filled_page_leaves_for_a_site_it_was_on_and_asks_once_about_any_other() {
     ));
 }
 
+/// The person's ruling of 2026-11-06: only an answer to the ask about a filled page leaving
+/// counts. An Allow of the site from before (an ordinary ask) is no answer to it, until the
+/// window has seen the ask and the person allows the site again.
+#[test]
+fn a_filled_page_leaves_for_a_site_allowed_before_only_once_the_person_answers_its_ask() {
+    let address = "https://app.example.com/?code=1";
+    let site = "app.example.com:443";
+    let mut allowed = reach(&["app.example.com"], false);
+    allowed.answered = vec![site.to_owned()];
+    let judge = Arc::new(
+        SiteJudge::of(&allowed)
+            .unwrap()
+            .knowing_this_machine(own()),
+    );
+
+    assert_eq!(
+        judge.may_leave_for(address, false),
+        Leaving::Ask {
+            site: site.to_owned()
+        },
+        "allowed for an ordinary ask, it is asked about to leave"
+    );
+    // The next act's reach, from before the window saw the ask, holds the old Allow.
+    judge.reach_now(&allowed).unwrap();
+    assert!(matches!(
+        judge.may_leave_for(address, false),
+        Leaving::No { .. }
+    ));
+    // The window saw the ask, and the person has not answered it yet.
+    judge
+        .reach_now(&reach(&["app.example.com"], false))
+        .unwrap();
+    assert!(matches!(
+        judge.may_leave_for(address, false),
+        Leaving::No { .. }
+    ));
+    // They allow it now.
+    judge.reach_now(&allowed).unwrap();
+    assert_eq!(judge.may_leave_for(address, false), Leaving::Go);
+}
+
 /// #5230: a login's hold outlasts a fill's: a filled page leaves for no site it keeps off.
 #[test]
 fn a_filled_page_leaves_for_no_site_a_login_keeps_the_browser_off() {

@@ -289,8 +289,9 @@ struct Chat {
     /// The sites its browser asked about that wait on the person, oldest first, with when the
     /// first began to wait (#2018).
     sites_asked: Vec<Site>,
-    /// The sites the person allowed when this chat's browser asked (#5230): a filled page may
-    /// leave for one by its server's redirect, as for the site its sign-in began from.
+    /// The sites the person allowed when this chat's browser asked (#5230), each since it was
+    /// last asked about: a filled page may leave for one by its server's redirect, as for the
+    /// site its sign-in began from, where its browser asked about that very leaving.
     sites_answered: Vec<Site>,
     /// **What a read before a login said, where the login goes on past it** (#5302): for the
     /// answer that login comes to.
@@ -2632,13 +2633,16 @@ impl ChatBrowsers {
         }
     }
 
-    /// Keeps `sites` waiting on the person for chat `session`'s browser (#2018), each once.
+    /// Keeps `sites` waiting on the person for chat `session`'s browser (#2018), each once. A
+    /// site asked about again was not answered by an Allow from before: only one after this ask
+    /// lets a filled page leave for it (the person's ruling of 2026-11-06).
     fn asked_about(&self, session: u32, sites: &[Site], now: u64) {
         let mut chats = self.lock();
         let chat = chats.entry(session).or_default();
         if chat.sites_asked.is_empty() {
             chat.sites_since = now;
         }
+        chat.sites_answered.retain(|one| !sites.contains(one));
         for site in sites {
             if !chat.sites_asked.contains(site) && chat.sites_asked.len() < MOST_SITES_ASKED {
                 chat.sites_asked.push(site.clone());
