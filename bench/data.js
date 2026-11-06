@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793989127432,
+  "lastUpdate": 1793990863801,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -41244,6 +41244,48 @@ window.BENCHMARK_DATA = {
             "value": 102.26887550000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.395, 101.885, 102.269, 102.582, 103.581 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "9b1ee04b08c0aeb828e84904d95f140798654eb7",
+          "message": "Browser engine tests: a dropped stand-in browser closes its engine's pipe, so its threads end (#5540) (#5541)\n\nThe stand-in engine held the sender its browser's events thread reads, and that\nthread held the browser, so neither ended: each stand-in browser kept 4 or 5\nthreads until the test process ended. A stand-in browser now closes the\nstand-in's pipe once it is dropped and stopped, as a real engine's pipe closes\nwhen it is stopped. A test opens and drops 100 in one process and checks every\none is freed and the thread count comes back down (num_threads, a dev-dependency).\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6RY2NZYFDWGNWVQSC0DHS81\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-06T17:58:01Z",
+          "tree_id": "6d467d8412de0b120499584b4c5aa75d34978970",
+          "url": "https://github.com/purlis/purlis/commit/9b1ee04b08c0aeb828e84904d95f140798654eb7"
+        },
+        "date": 1793990858514,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.46370350000000005,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.461, 0.462, 0.464, 0.470, 0.481 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.550003500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.153, 16.345, 16.550, 16.600, 16.752 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.49692999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.245, 101.508, 102.497, 102.544, 103.488 ms"
           }
         ]
       }
