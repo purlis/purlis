@@ -395,9 +395,38 @@ fn a_memory_title_in_recall_is_shown_escaped_and_cannot_hide_the_hits_after_it()
 fn recall_answers_from_the_project_index_and_says_when_it_may_be_behind() {
     // ADR 0079 §3, #5498: with the index there and no host keeping it, the CLI reads it, never
     // writes it, finds what the scan found, and says the answer may be behind the files.
-    let tmp = daily();
-    let root = root(&tmp);
-    let args = ["recall", "--persona", "devops", "--limit", "0"];
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plane");
+    for (at, text) in [
+        ("charter.toml", "schema = 1\n"),
+        ("personas/devops/persona.md", "---\nrole: ops\n---\n"),
+        (
+            "workspaces/alpha/memory/20260302-091400-deploy.md",
+            "# Deploy pipeline\n\n_2026-03-02 09:14 · persistent_\n\nruns on mondays\n",
+        ),
+        (
+            "personas/devops/memory/20260303-091400-oncall.md",
+            "# On-call\n\n_2026-03-03 09:14 · persistent_\n\nthe deploy pager\n",
+        ),
+        (
+            "personas/_shared/memory/20260304-091400-kiwi.md",
+            "# Shared kiwi\n\n_2026-03-04 09:14 · persistent_\n\ndeploy words\n",
+        ),
+    ] {
+        let path = root.join(at);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+    let args = [
+        "recall",
+        "deploy",
+        "-w",
+        "alpha",
+        "--persona",
+        "devops",
+        "--limit",
+        "0",
+    ];
     let scanned = charter(&root, &args);
     let paths = |out: &Output| -> std::collections::BTreeSet<String> {
         stdout(out)
@@ -414,7 +443,7 @@ fn recall_answers_from_the_project_index_and_says_when_it_may_be_behind() {
 
     assert_eq!(scanned.status.code(), Some(0), "{}", stderr(&scanned));
     assert_eq!(indexed.status.code(), Some(0), "{}", stderr(&indexed));
-    assert!(!paths(&scanned).is_empty(), "{}", stdout(&scanned));
+    assert_eq!(paths(&scanned).len(), 3, "{}", stdout(&scanned));
     assert_eq!(paths(&scanned), paths(&indexed));
     assert!(
         !stderr(&scanned).contains("refreshing"),
