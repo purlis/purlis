@@ -1217,9 +1217,27 @@ key refuses.
   workspaces/*/work/*.jsonl merge=union
   personas/*/memory/MEMORY.md merge=union
   workspaces/*/memory/MEMORY.md merge=union
+  workspaces/*/todos/MEMORY.md merge=union
+  workspaces/*/sessions/index.md merge=union
+  sessions/index.md merge=union
   ```
 
-  Any other conflict leaves the plane **blocked** (ADR 0051).
+  **An existing plane takes a new rule with its next whole save** (#5338): a save rewrites a
+  block already there as this build writes it, keeping any rule in it this build does not
+  write (a newer build's), and commits the file with the rest of the save, so the plane's other
+  machines take it from the target. A plane with no block gets one from `reinit`, which, like
+  `init`, writes exactly this build's rules. A chat's sandbox may hold the file, and the window's next save then takes it.
+
+  In a request mode (`pr`, `pr-merge`), a target that moved under an open request is brought
+  in by one merge commit, by a save and by the app's look, where the request needs it: git's
+  merge stops or comes out wrong in a file purlis generates, or the forge says the request
+  cannot merge. Once a request has merged, saves made since that will not replay go onto the
+  target as one commit with the target as its only parent. `sessions/index.md`, a
+  workspace's `todos/MEMORY.md` and the `## Sessions` line of `workspace.md` are not merged but
+  rebuilt from the merged tree's records and todos, so a union here only serves a plain rebase
+  or a merge made by hand. Any other conflict stops the save with the file named, leaves
+  everything as it was, and leaves the plane **blocked** until the window's Resolve settles it
+  (ADR 0051).
 
 ---
 

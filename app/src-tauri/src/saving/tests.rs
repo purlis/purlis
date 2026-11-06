@@ -349,7 +349,7 @@ fn a_conflicts_step_is_one_of_three_and_none_runs_where_no_rebase_is_stopped() {
         let got = settle(dir.path(), step, &[]).expect("answered");
         assert_eq!(got.outcome, "refused", "{step}");
         assert!(
-            got.said.contains("No rebase is stopped"),
+            got.said.contains("No rebase or merge is stopped"),
             "{step}: {}",
             got.said
         );

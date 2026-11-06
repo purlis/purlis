@@ -847,9 +847,17 @@ impl Requests for GitHub {
                 )),
             });
         }
+        // GitHub's REBASE refuses a request it cannot replay, as one holding a merge commit it
+        // took a conflict's settling in can be (measured on purlis-plane#2280, 2026-11-05:
+        // mergeable, and `canBeRebased: false`), so that request takes the next method allowed.
+        // Only a clear false counts. A repo that allows nothing else is asked anyway, and its
+        // refusal is what the request is told.
+        let rebases = found["canBeRebased"] != Value::Bool(false);
+        let allowed = |setting: &str| repo[setting] == Value::Bool(true);
         let Some(&(_, method)) = GITHUB_METHODS
             .iter()
-            .find(|(setting, _)| repo[*setting] == Value::Bool(true))
+            .find(|(setting, method)| allowed(setting) && (rebases || *method != "REBASE"))
+            .or_else(|| GITHUB_METHODS.iter().find(|(setting, _)| allowed(setting)))
         else {
             return Err(ForgeError::new(format!("{path} allows no merge method")));
         };
