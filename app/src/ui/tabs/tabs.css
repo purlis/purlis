@@ -264,9 +264,9 @@
   white-space: nowrap;
 }
 
-/* **The `×`**: 16px, in the faint tier (a mark), taking the hover fill under the pointer. One
-   that ends a chat takes the danger surface instead, since the look may not say less than the
-   act does (charter-app#130). Reached by a 24px target around it, inside the cell.
+/* **The `×`**: a 12px mark in a 24px box, its target, in the faint tier (a mark), taking the
+   hover fill under the pointer. One that ends a chat takes the danger surface instead, since the
+   look may not say less than the act does (charter-app#130).
 
    **It takes no room** (#5341, ADR 0039 as amended 2026-11-06): it stands over the end of the
    name, out of the tab's flow, so the name has its room at rest and never shifts when the `×`
@@ -321,7 +321,7 @@
 [data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"]::before {
   content: "";
   position: absolute;
-  inset-block: calc(var(--space-2) * -1);
+  inset-block: 0;
   inset-inline-end: 100%;
   inline-size: var(--space-6);
   background:

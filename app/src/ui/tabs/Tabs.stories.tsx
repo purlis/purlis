@@ -457,9 +457,11 @@ export const CloseWithTheKeyboard: Story = {
     await untilFocused(() => closerOf(canvas, /talk/), "Tab on to the front tab's ×");
     await userEvent.tab({ shift: true });
     await untilFocused(() => front, "Back onto the front tab");
-    await userEvent.keyboard("{ArrowRight}");
-    const next = /review the tab strip/;
-    await untilFocused(() => canvas.getByRole("tab", { name: next }), "Right to the next tab");
+    // Left to a short name: a cut name's tooltip comes up after a rest, which no picture waits
+    // on by timing.
+    await userEvent.keyboard("{ArrowLeft}");
+    const next = /steward 1/;
+    await untilFocused(() => canvas.getByRole("tab", { name: next }), "Left to the tab before");
     await waitFor(() => expect(seen(closerOf(canvas, next))).toBe("1"));
   },
 };
