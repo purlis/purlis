@@ -890,7 +890,10 @@ pub(super) use dialog::DIALOG_TIERS;
 /// while a set of states holds: a resize separator's line and grip. What such a family draws in
 /// a state is held at 3:1 on its grounds, as a non-text mark (WCAG 1.4.11), and it has no words
 /// to hold; at rest its line is the window's hairline, which the token floors hold.
-const MARKED: &[(&str, MarkFills)] = &[("panel-separator", separator::separator_fill)];
+const MARKED: &[(&str, MarkFills)] = &[
+    ("panel-separator", separator::separator_fill),
+    ("grip", grip::grip_fill),
+];
 
 /// A family's parts' fills by default, by part and the states that hold.
 type MarkFills = fn(usize, &[State]) -> &'static str;
@@ -922,7 +925,10 @@ fn tracked(family: &Family) -> Option<Tracked> {
 
 /// **The attributes a family's root is keyed on in a state, where they are not React Aria's**
 /// (#3143): the panel library marks its handles itself.
-const OWN_STATES: &[(&str, &[(State, &str)])] = &[("panel-separator", separator::OWN_STATES)];
+const OWN_STATES: &[(&str, &[(State, &str)])] = &[
+    ("panel-separator", separator::OWN_STATES),
+    ("grip", grip::OWN_STATES),
+];
 
 /// The default fills of `family`'s parts by state, when it is drawn in marks.
 fn marked(family: &Family) -> Option<MarkFills> {
@@ -1377,6 +1383,13 @@ pub(super) fn activity_selected_json() -> Value {
 #[cfg(test)]
 pub(super) fn separator_fill_of(part: usize, states: &[State]) -> &'static str {
     separator::separator_fill(part, states)
+}
+
+/// The grip's default fill of `part` while `states` hold, for the test that holds it to
+/// `grip.css` (#5290).
+#[cfg(test)]
+pub(super) fn grip_fill_of(part: usize, states: &[State]) -> &'static str {
+    grip::grip_fill(part, states)
 }
 
 /// The family `name` names.

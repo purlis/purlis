@@ -952,7 +952,17 @@ Only the wrapper writes `data-scope="pane-preview"`: `purlis/pane-preview-family
 - **Props:** `state` (`needs`, `failed`, `working`, `waiting`, `idle`, `ended`, or nothing where none is known), `who`, `word`, `changed`.
 - **Parts:** `root` carries the state as its `data-variant`; `who`, `badge` and `word`. A glyph tells each state as well as its colour.
 - **The place sets** `--chat-mark-size` and `--chat-mark-ground`, nothing else.
-- **`who` is its own part** so a later control can stand in it (the grip, #5290), with the badge left beside it.
+- **`who` is its own part** so a control can stand in it (the grip, #5290), with the badge left beside it. `ChatPersonaState`'s `grip` puts one there.
+
+## The grip family
+
+`Grip` (`app/src/ui/grip`, ADR 0104 amended 2026-11-06, #5290, spec #5288) is what a pane or a chat is picked up by: the persona's mark in a chat's row and its pane's head, and a view's mark at the head of a view in a split. At rest it is the mark; under the pointer, or with the keyboard on it or on the row it stands in, six dots in three rows of two take the mark's place in the same box. Only the grip under the pointer changes, so a list keeps its marks.
+
+- **Props:** `children` (the mark), `onPress`, and `label` ("Move" and what it moves), which makes it a control of its own, a React Aria `Button`: Tab reaches it, and a press, Enter or Space picks up (WCAG 2.5.7). With no `label` it stands inside a control that is pressable itself (a chat's row): it is no control and not heard, and its press picks up without the row's press. A drag from it is its row's or its head's drag either way.
+- **Parts:** `root`, `mark`, `dots` and each `dot`. Only `dot` has a property (`fill`), in the states `hover` and `focused`, which are keyed on `:hover` and on the keyboard on it or what holds it.
+- **No button ground**, in any state, in any stylesheet: `controls.guard.test.ts` holds it, and the root has no property a theme could set. The cursor is an open hand, closed while pressed and while a drag holds it.
+- **The place sets** `--grip-mark` and `--grip-reach` (a pane's head: the mark's size and the 24px target, which reaches past the mark and moves nothing), or neither.
+- **Where none is drawn:** a one-job program, an empty pane and a view alone in its tab, which moves by its tab. The row's menu, the tab's menu and the palette keep **Move…**, and ⌘⇧M picks up what has the keyboard.
 
 ## The pane foot family
 

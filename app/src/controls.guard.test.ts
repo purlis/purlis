@@ -1426,3 +1426,94 @@ describe("a chat's tab (#5341)", () => {
     ).toContain("opacity: 1;");
   });
 });
+
+/**
+ * **What the grip's root is drawn with, in every stylesheet of the window** (#5290): each
+ * declaration whose rule's subject is the grip's root (`[data-scope="grip"][data-part="root"]`
+ * last in a selector, with a state or none after it), as `file | selector | property: value`.
+ */
+function gripRootDeclarations(sheets: Readonly<Record<string, string>>): string[] {
+  const ROOT = '[data-scope="grip"][data-part="root"]';
+  const subject = (selector: string) => {
+    const at = selector.lastIndexOf(ROOT);
+    if (at < 0) return false;
+    // Only a state may follow the root (`:hover`, `:is(:focus-visible, …)`), never a part in it.
+    const after = selector.slice(at + ROOT.length).replace(/:is\([^)]*\)/g, "");
+    return !/[\s>+~]/.test(after.trim()) && !after.includes("[");
+  };
+  return Object.entries(sheets).flatMap(([file, css]) =>
+    declarations(css)
+      .filter(({ context }) => context.some((one) => topLevel(one).some(subject)))
+      .map(
+        ({ context, property, value }) => `${file} | ${context.join(" ")} | ${property}: ${value}`,
+      ),
+  );
+}
+
+/** A selector list's selectors, split at its own commas and not at those inside `:is()`. */
+function topLevel(list: string): string[] {
+  const out = [""];
+  let depth = 0;
+  for (const char of list) {
+    if (char === "(") depth++;
+    if (char === ")") depth--;
+    if (char === "," && depth === 0) out.push("");
+    else out[out.length - 1] += char;
+  }
+  return out.map((one) => one.trim());
+}
+
+/** Every stylesheet the window draws with, by its path from `src`. */
+function windowSheets(): Record<string, string> {
+  return Object.fromEntries(
+    sourceFiles((name) => name.endsWith(".css")).map((file) => [
+      file,
+      readFileSync(join(SRC, file), "utf8"),
+    ]),
+  );
+}
+
+/** A grip's ground or edge: what would make it read as a button (#5290). */
+const GROUND = /^(background|border|box-shadow|outline-color$)/;
+
+describe("the grip (#5290)", () => {
+  it("has no button ground, edge or shadow anywhere in the window", () => {
+    const drawn = gripRootDeclarations(windowSheets());
+    // A reader that found nothing would pass anything.
+    expect(drawn.some((one) => one.startsWith("ui/grip/grip.css |"))).toBe(true);
+    expect(drawn.filter((one) => GROUND.test(one.split(" | ")[2]))).toEqual([]);
+  });
+
+  it("is as big as its mark or the 24px reach its place gives it, and nothing else", () => {
+    const sheets = windowSheets();
+    const sizes = gripRootDeclarations(sheets).filter((one) =>
+      /\| (inline-size|block-size|width|height|min-|max-)/.test(one),
+    );
+    expect(sizes).toEqual([
+      'ui/grip/grip.css | [data-scope="grip"][data-part="root"] | inline-size: var(--grip-reach, auto)',
+      'ui/grip/grip.css | [data-scope="grip"][data-part="root"] | block-size: var(--grip-reach, auto)',
+    ]);
+    // Every place that gives it a reach gives it the one target size (WCAG 2.5.8).
+    const reaches = Object.values(sheets).flatMap((css) =>
+      declarations(css)
+        .filter(({ property }) => property === "--grip-reach")
+        .map(({ value }) => value),
+    );
+    expect(reaches.length).toBeGreaterThan(0);
+    expect(new Set(reaches)).toEqual(new Set(["var(--space-7)"]));
+  });
+
+  it("fails a ground planted on it, under a state too", () => {
+    const planted = {
+      "A.css": `[data-scope="grip"][data-part="root"]:hover { background-color: var(--surface-hover); }
+        .pane-head [data-scope="grip"][data-part="root"] { border: 1px solid; }
+        [data-scope="grip"][data-part="root"] [data-part="dot"] { background-color: var(--text-muted); }`,
+    };
+    expect(gripRootDeclarations(planted).filter((one) => GROUND.test(one.split(" | ")[2]))).toEqual(
+      [
+        'A.css | [data-scope="grip"][data-part="root"]:hover | background-color: var(--surface-hover)',
+        'A.css | .pane-head [data-scope="grip"][data-part="root"] | border: 1px solid',
+      ],
+    );
+  });
+});
