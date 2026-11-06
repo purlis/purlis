@@ -1,14 +1,34 @@
 # Copyright 2026 Purlis
 # SPDX-License-Identifier: Apache-2.0
 
-# A measurement, never merged: where the `dev-release` build's ~26 GB peak goes (#5277).
-# Two builds of `purlis-app` side by side on `ubuntu-24.04`, each `rustc` run under GNU time so
-# its peak RSS is recorded:
-#   - `baseline`: the build as release.yml makes it.
-#   - `boxed`: the same, with `debug-assertions` on for the `tauri` crate alone, which switches
-#     Tauri's async command replies to the boxed, dynamically dispatched path it uses in debug
-#     (tauri 2.12.5 `src/ipc/mod.rs`, "for a faster compile time"). For measuring only: that build
-#     also turns on Tauri's devtools API and must never ship.
+# A measurement, never merged: which opt-level / codegen-units for `purlis-app` alone brings the
+# `dev-release` build's peak under 10 GB on Linux, and what it costs at run time (#5277).
+#
+# Measured so far, `cargo build --profile dev-release -p purlis-app` on `ubuntu-24.04`:
+#   - as shipped (opt 3, 16 units, thin LTO): purlis_app_lib 14.5 GB, 553 s; whole build 15.2 GB,
+#     22 min (run 42220570914)
+#   - Tauri's boxed async path: 14.6 GB (run 42225597973), so not the cause
+#   - purlis-app at opt 1: 6.5 GB, 217 s; whole build 6.8 GB, 17.6 min (run 42232897035)
+#
+# The A/B (the operator's plan of 2026-11-06). Each candidate changes `purlis-app` only, through
+# `--config profile.dev-release.package.purlis-app.<key>=<value>`:
+#   base-a, base-b  opt 3, 16 units: today's build, twice, for the noise
+#   opt2            opt 2, 16 units
+#   opt1            opt 1, 16 units
+#   cu4             opt 3, 4 units
+#
+# `build` makes each candidate on each OS. On Linux it makes the plain app first, under GNU time
+# with each rustc's peak RSS recorded (the memory threshold, and the cold start's binary), then the
+# scenario build the outcome bars run (`--features e2e`). On macOS it makes the scenario build only.
+# The run-time numbers are taken on one runner per OS, every candidate in turn on the same machine
+# (the operator's ruling of 2026-11-06): runners differ more than the thresholds do.
+#   - `runtime-linux`: the cold start against base-a, through the interleaved gate CI uses
+#     (`tools/coldstart-linux.sh` with `BASELINE_APP`), then the outcome bars, alternated
+#   - `runtime-macos`: the outcome bars, alternated
+# The session layer's latency bench builds only `purlis-session-protocol`, which this change does
+# not reach, so it is not run here (the operator's ruling of 2026-11-06).
+#
+# Every number goes on the run as a notice, readable through the checks API.
 # Runs on a push to this branch only; holds no secret and publishes nothing.
 name: measure build memory
 
@@ -20,42 +40,40 @@ permissions:
   contents: read
 
 jobs:
-  measure:
-    name: measure (${{ matrix.variant }})
-    runs-on: ubuntu-24.04
-    timeout-minutes: 120
+  build:
+    name: build (${{ matrix.candidate }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-24.04, macos-latest]
+        candidate: [base-a, base-b, opt2, opt1, cu4]
         include:
-          # Measured so far (#5277): `baseline`, the build as release.yml makes it (run
-          # 42220570914): purlis_app_lib 14.5 GB, 553 s. `boxed`, Tauri's debug-only boxing of async
-          # commands switched on (run 42225597973): 14.6 GB, 743 s, so not the peak.
-          #
-          # `opt1`: purlis-app's own code at opt-level 1, everything else as shipped. A large drop
-          # means LLVM's optimisation is the peak.
-          - variant: opt1
-            toolchain: ""
-            cmd: build
+          - candidate: base-a
+            extra: ""
+          - candidate: base-b
+            extra: ""
+          - candidate: opt2
+            extra: --config profile.dev-release.package.purlis-app.opt-level=2
+          - candidate: opt1
             extra: --config profile.dev-release.package.purlis-app.opt-level=1
-          # `passes`: nightly's -Z time-passes on purlis_app_lib alone, which prints RSS before and
-          # after each compiler pass, naming the phase that holds the memory. Measurement only.
-          - variant: passes
-            toolchain: +nightly
-            cmd: rustc
-            extra: --lib -- -Z time-passes
+          - candidate: cu4
+            extra: --config profile.dev-release.package.purlis-app.codegen-units=4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Tauri's Linux build dependencies, and GNU time
+        if: runner.os == 'Linux'
         timeout-minutes: 9
         run: |
           tools/linux-packages.sh install --tauri
           sudo apt-get install -y time
 
       - name: More swap for the build
+        if: runner.os == 'Linux'
         timeout-minutes: 2
         run: |
           sudo fallocate -l 32G /swapfile-build
@@ -63,24 +81,24 @@ jobs:
           sudo mkswap /swapfile-build
           sudo swapon /swapfile-build
 
-      - uses: ./.github/actions/rust-toolchain
+      - name: Spotlight off
+        if: runner.os == 'macOS'
+        continue-on-error: true
+        timeout-minutes: 2
+        run: sudo mdutil -a -i off
 
-      - name: The nightly toolchain, for -Z time-passes
-        if: matrix.toolchain == '+nightly'
-        run: rustup toolchain install nightly --profile minimal
+      - uses: ./.github/actions/rust-toolchain
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
 
-      - name: The frontend the app embeds
+      - run: npm ci
         working-directory: app
-        run: |
-          npm ci
-          npm run build
 
       - name: A rustc wrapper that records each crate's peak RSS
+        if: runner.os == 'Linux'
         run: |
           cat > "$RUNNER_TEMP/rss-rustc" <<'EOF'
           #!/bin/sh
@@ -94,50 +112,202 @@ jobs:
           EOF
           chmod +x "$RUNNER_TEMP/rss-rustc"
 
-      - name: Build purlis-app (dev-release, ${{ matrix.variant }})
+      # The app as release.yml makes it (`tauri build` turns on `custom-protocol`, so the binary
+      # carries the frontend): the memory threshold's build, and the cold start's binary.
+      - name: The app, dev-release (${{ matrix.candidate }})
+        if: runner.os == 'Linux'
+        working-directory: app
         env:
           RUSTC_WRAPPER: ${{ runner.temp }}/rss-rustc
           RSS_LOG: ${{ runner.temp }}/rss.log
         run: |
           free -g
-          /usr/bin/time -v cargo ${{ matrix.toolchain }} ${{ matrix.cmd }} --profile dev-release -p purlis-app --timings ${{ matrix.extra }} 2> "$RUNNER_TEMP/whole.txt"
+          start=$(date +%s)
+          /usr/bin/time -v npx tauri build --no-bundle -- -p purlis-app --profile dev-release --timings ${{ matrix.extra }} 2> "$RUNNER_TEMP/whole.txt"
+          end=$(date +%s)
           tail -25 "$RUNNER_TEMP/whole.txt"
-
-      - name: The passes that took the most memory
-        if: always() && matrix.variant == 'passes'
-        run: |
-          {
-            echo "## passes: purlis_app_lib's 25 compiler passes with the highest RSS after them"
-            echo
-            echo '```'
-            grep -E '^time: .*rss:' "$RUNNER_TEMP/whole.txt" |
-              awk '{for (i=1;i<=NF;i++) if ($i=="->") { v=$(i+1); u=v; gsub(/[0-9.]/,"",u); n=v+0; if (u ~ /^GB/) n*=1024; print n, $0 } }' |
-              sort -rn | head -25 | cut -d' ' -f2-
-            echo '```'
-          } | tee -a "$GITHUB_STEP_SUMMARY"
+          peak=$(awk '/Maximum resident/ {print $NF}' "$RUNNER_TEMP/whole.txt")
+          lib=$(awk '$5 == "purlis_app_lib" {print $1, $3}' "$RUNNER_TEMP/rss.log" | sort -n | tail -1)
+          # The whole build's peak is its heaviest single rustc: cargo runs them in parallel,
+          # but GNU time on cargo reports only its largest child.
+          heaviest=$(sort -n "$RUNNER_TEMP/rss.log" | tail -1)
+          msg="whole build $(( (end - start) / 60 )) min $(( (end - start) % 60 )) s; GNU time max RSS $(awk "BEGIN {printf \"%.2f\", $peak/1048576}") GB; heaviest rustc $(echo "$heaviest" | awk '{printf "%.2f GB, %s s, %s", $1/1048576, $3, $5}'); purlis_app_lib $(echo "$lib" | awk '{printf "%.2f GB, %s s", $1/1048576, $2}')"
+          echo "::notice title=memory (${{ matrix.candidate }}, linux)::$msg"
+          echo "## memory (${{ matrix.candidate }}): $msg" >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p "$RUNNER_TEMP/plain"
+          cp target/dev-release/charter-app "$RUNNER_TEMP/plain/"
+          tar -C "$RUNNER_TEMP/plain" -cf "$RUNNER_TEMP/plain.tar" .
 
       - name: The heaviest crates
-        if: always()
+        if: always() && runner.os == 'Linux'
         run: |
           {
-            echo "## ${{ matrix.variant }}: the 15 crates with the largest peak RSS"
+            echo "## ${{ matrix.candidate }}: the 15 crates with the largest peak RSS"
             echo
             echo '| peak RSS | wall | crate |'
             echo '|---|---|---|'
             sort -n "$RUNNER_TEMP/rss.log" | tail -15 | sort -rn |
               awk '{printf "| %.1f GB | %s s | %s |\n", $1/1048576, $3, $5}'
-            echo
-            grep -E 'Elapsed|Maximum resident' "$RUNNER_TEMP/whole.txt" | sed 's/^\s*/- /'
           } | tee -a "$GITHUB_STEP_SUMMARY"
-          ls -la target/dev-release/charter-app target/dev-release/purlis-app 2>/dev/null || ls -la target/dev-release | head
+
+      # The build the outcome bars run, as ci.yml's outcome leg makes it, with the candidate's
+      # override. GNU time / BSD time around it on each OS, for the record.
+      - name: The scenario build, dev-release (${{ matrix.candidate }})
+        working-directory: app
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then timer="/usr/bin/time -l"; else timer="/usr/bin/time -v"; fi
+          start=$(date +%s)
+          $timer npx tauri build --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json -- \
+            -p purlis-app -p fake-harness -p purlis-cli --profile dev-release ${{ matrix.extra }} 2> "$RUNNER_TEMP/e2e-build.txt"
+          end=$(date +%s)
+          tail -25 "$RUNNER_TEMP/e2e-build.txt"
+          if [ "$RUNNER_OS" = macOS ]; then
+            peak=$(awk '/maximum resident set size/ {printf "%.2f GB", $1/1073741824}' "$RUNNER_TEMP/e2e-build.txt")
+          else
+            peak=$(awk '/Maximum resident/ {printf "%.2f GB", $NF/1048576}' "$RUNNER_TEMP/e2e-build.txt")
+          fi
+          echo "::notice title=scenario build (${{ matrix.candidate }}, $RUNNER_OS)::$(( (end - start) / 60 )) min $(( (end - start) % 60 )) s; max RSS of cargo's largest child $peak"
+          mkdir -p "$RUNNER_TEMP/e2e"
+          find target/dev-release -maxdepth 1 -type f -perm -u+x -exec cp {} "$RUNNER_TEMP/e2e/" \;
+          ls -la "$RUNNER_TEMP/e2e"
+          tar -C "$RUNNER_TEMP/e2e" -cf "$RUNNER_TEMP/e2e.tar" .
+
+      - name: Keep the plain app
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: plain-${{ matrix.candidate }}-${{ runner.os }}
+          path: ${{ runner.temp }}/plain.tar
+          retention-days: 7
+
+      - name: Keep the scenario build
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-${{ matrix.candidate }}-${{ runner.os }}
+          path: ${{ runner.temp }}/e2e.tar
+          retention-days: 7
 
       - name: Keep the logs and cargo's timings
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: measure-${{ matrix.variant }}
+          name: logs-${{ matrix.candidate }}-${{ runner.os }}
           path: |
             ${{ runner.temp }}/rss.log
             ${{ runner.temp }}/whole.txt
+            ${{ runner.temp }}/e2e-build.txt
             target/cargo-timings/
+          retention-days: 14
+
+  runtime:
+    name: runtime (${{ matrix.os }})
+    needs: build
+    if: ${{ !cancelled() }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Tauri's Linux runtime, an X server and i3, and the sandbox's programs
+        if: runner.os == 'Linux'
+        timeout-minutes: 11
+        uses: ./.github/actions/linux-packages
+        with:
+          tauri: true
+          packages: xvfb xauth dbus-x11 i3 bubblewrap socat
+
+      - name: Spotlight off
+        if: runner.os == 'macOS'
+        continue-on-error: true
+        timeout-minutes: 2
+        run: sudo mdutil -a -i off
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - run: npm ci
+        working-directory: app
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: "*-${{ runner.os }}"
+          path: ${{ runner.temp }}/got
+
+      # Into the checkout, which no sandboxed chat of the bars may write (`built`, e2e/harness.ts).
+      - name: Each candidate's builds, unpacked
+        run: |
+          for c in base-a base-b opt2 opt1 cu4; do
+            for kind in plain e2e; do
+              t="$RUNNER_TEMP/got/$kind-$c-$RUNNER_OS/$kind.tar"
+              [ -f "$t" ] || { echo "::warning::no $kind build of $c"; continue; }
+              mkdir -p "target/ab/$kind/$c"
+              tar -C "target/ab/$kind/$c" -xf "$t"
+            done
+          done
+          ls -laR target/ab
+
+      # Each candidate against base-a, the way CI's gate holds a change to main: launched in turn
+      # on this runner, seven rounds, a ratio of medians. base-b is the same code as base-a: its
+      # ratio is the noise. The gate's 1.15 line fails a step; this run reads the ratio against
+      # the A/B's 1.05, so a step's failure is noted, never fatal.
+      - name: Cold start, each candidate against base-a
+        if: runner.os == 'Linux'
+        env:
+          BASELINE_APP: ${{ github.workspace }}/target/ab/plain/base-a/charter-app
+        run: |
+          for c in base-b opt2 opt1 cu4; do
+            app="$GITHUB_WORKSPACE/target/ab/plain/$c/charter-app"
+            [ -x "$app" ] && [ -x "$BASELINE_APP" ] || { echo "::warning::cold start of $c: a build is missing"; continue; }
+            for case in bare i3 i3-nobus; do
+              out="$RUNNER_TEMP/coldstart-$c-$case.txt"
+              status=0
+              APP="$app" tools/coldstart-linux.sh "$case" 2>&1 | tee "$out" || status=$?
+              said=$(grep -o 'against main: ratio [^ ]*' "$out" | tr '\n' ' ')
+              echo "::notice title=cold start ($c vs base-a, $case)::${said:-no ratio printed} (script exit $status)"
+            done
+          done
+
+      # The outcome bars on each candidate, in two rounds of opposite order, so a runner that
+      # drifts through the job does not favour one. Each run's median goes on the run as a notice.
+      - name: Outcome bars, each candidate in turn
+        working-directory: app
+        run: |
+          order="base-a opt2 opt1 cu4 base-b"
+          reverse="base-b cu4 opt1 opt2 base-a"
+          round=0
+          for list in "$order" "$reverse"; do
+            round=$((round + 1))
+            for c in $list; do
+              dir="$GITHUB_WORKSPACE/target/ab/e2e/$c"
+              [ -x "$dir/charter-app" ] || { echo "::warning::bars of $c: no build"; continue; }
+              for h in claude codex opencode; do
+                out="$RUNNER_TEMP/bars-$c-$h-$round.txt"
+                status=0
+                if [ "$RUNNER_OS" = Linux ]; then
+                  CHARTER_TARGET_DIR="$dir" PURLIS_OUTCOME_HARNESS="$h" xvfb-run -a npm run e2e:outcome 2>&1 | tee "$out" || status=$?
+                else
+                  CHARTER_TARGET_DIR="$dir" PURLIS_OUTCOME_HARNESS="$h" npm run e2e:outcome 2>&1 | tee "$out" || status=$?
+                fi
+                said=$(grep -o 'median [0-9.]* ms' "$out" | head -1)
+                echo "::notice title=bars ($c, $h, round $round, $RUNNER_OS)::${said:-no median printed} (exit $status)"
+              done
+            done
+          done
+
+      - name: Keep the runtime logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: runtime-logs-${{ runner.os }}
+          path: |
+            ${{ runner.temp }}/coldstart-*.txt
+            ${{ runner.temp }}/bars-*.txt
           retention-days: 14
