@@ -44,16 +44,17 @@ fn verified(at: &Path, id: &str, signer: &Signer) -> std::process::Output {
         ),
     )
     .unwrap();
-    std::process::Command::new("git")
-        .arg("-C")
-        .arg(at)
-        .args(["-c", "gpg.format=ssh", "-c"])
-        .arg(format!("gpg.ssh.allowedSignersFile={}", allowed.display()))
-        .args(["verify-commit", id])
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .expect("git runs")
+    crate::forklock::output(
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(at)
+            .args(["-c", "gpg.format=ssh", "-c"])
+            .arg(format!("gpg.ssh.allowedSignersFile={}", allowed.display()))
+            .args(["verify-commit", id])
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1"),
+    )
+    .expect("git runs")
 }
 
 fn raw(at: &Path, id: &str) -> Vec<u8> {
@@ -255,11 +256,12 @@ fn the_persons_own_key_is_taken_with_its_passphrase_and_kept_without_one() {
     let store = a_keyring(keys.path());
     // A key as the person has one: made by `ssh-keygen`, with a passphrase.
     let file = keys.path().join("id_ed25519");
-    let made = std::process::Command::new("ssh-keygen")
-        .args(["-q", "-t", "ed25519", "-N", "open sesame", "-C", "me", "-f"])
-        .arg(&file)
-        .output()
-        .expect("ssh-keygen runs");
+    let made = crate::forklock::output(
+        std::process::Command::new("ssh-keygen")
+            .args(["-q", "-t", "ed25519", "-N", "open sesame", "-C", "me", "-f"])
+            .arg(&file),
+    )
+    .expect("ssh-keygen runs");
     assert!(made.status.success(), "{made:?}");
     let locked = std::fs::read_to_string(&file).unwrap();
     let public = std::fs::read_to_string(file.with_extension("pub")).unwrap();

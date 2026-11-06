@@ -29,21 +29,22 @@ fn verified(dir: &Path, id: &str, signer: &Signer) -> bool {
         format!("t@e.invalid namespaces=\"git\" {}\n", signer.public_line()),
     )
     .unwrap();
-    std::process::Command::new("git")
-        .arg("-C")
-        .arg(dir)
-        .args(["-c", "gpg.format=ssh", "-c"])
-        .arg(format!(
-            "gpg.ssh.allowedSignersFile={}",
-            allowed.path().display()
-        ))
-        .args(["verify-commit", id])
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .expect("git runs")
-        .status
-        .success()
+    purlis_core::forklock::output(
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(["-c", "gpg.format=ssh", "-c"])
+            .arg(format!(
+                "gpg.ssh.allowedSignersFile={}",
+                allowed.path().display()
+            ))
+            .args(["verify-commit", id])
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1"),
+    )
+    .expect("git runs")
+    .status
+    .success()
 }
 
 #[test]
