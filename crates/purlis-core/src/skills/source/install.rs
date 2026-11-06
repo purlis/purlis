@@ -46,8 +46,8 @@ pub(super) fn paths_fit(
 }
 
 /// What one install or update wrote so far, to take back where a later step fails.
-pub(super) struct Written<'a> {
-    pub(super) plane: &'a std::path::Path,
+pub(super) struct Written {
+    pub(super) plane: PathBuf,
     pub(super) level: Vec<String>,
     pub(super) skills: Vec<(String, write::Made)>,
     /// Each skill this change granted, by name: its `<name>.toml` is new.
@@ -56,11 +56,11 @@ pub(super) struct Written<'a> {
     pub(super) widened: Vec<(PathBuf, Grant)>,
 }
 
-impl<'a> Written<'a> {
+impl Written {
     /// Nothing written yet into the level folder `level` of `plane`.
-    pub(super) fn none(plane: &'a std::path::Path, level: Vec<String>) -> Self {
+    pub(super) fn none(plane: &std::path::Path, level: Vec<String>) -> Self {
         Written {
-            plane,
+            plane: plane.to_path_buf(),
             level,
             skills: Vec::new(),
             grants: Vec::new(),
@@ -89,7 +89,7 @@ impl<'a> Written<'a> {
                 )
             })?;
             self.widened.push((one.folder.clone(), one.granted.clone()));
-            paths.push(verbs::rel(self.plane, &crate::skills::beside(&one.folder)));
+            paths.push(verbs::rel(&self.plane, &crate::skills::beside(&one.folder)));
         }
         Ok(())
     }
@@ -100,10 +100,10 @@ impl<'a> Written<'a> {
             let _ = crate::skills::set_grant(folder, had);
         }
         for name in &self.grants {
-            write::take_back_file(self.plane, &self.level, &format!("{name}.toml"));
+            write::take_back_file(&self.plane, &self.level, &format!("{name}.toml"));
         }
         for (name, made) in self.skills.iter().rev() {
-            write::take_back(self.plane, &self.level, name, made);
+            write::take_back(&self.plane, &self.level, name, made);
         }
     }
 }

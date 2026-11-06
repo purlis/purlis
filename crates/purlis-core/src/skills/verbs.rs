@@ -1443,7 +1443,7 @@ fn tracked(plane: &Path, rel_path: &str) -> bool {
 }
 
 /// The commit the plane's `HEAD` names, or empty.
-fn head(plane: &Path) -> String {
+pub(in crate::skills) fn head(plane: &Path) -> String {
     git(plane, &["rev-parse", "HEAD"])
         .map(|out| out.trim().to_owned())
         .unwrap_or_default()
