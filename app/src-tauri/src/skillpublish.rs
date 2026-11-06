@@ -383,14 +383,7 @@ pub(crate) async fn skill_set_export(
 ) -> Result<Option<String>, String> {
     let held = planes.held(&plane)?;
     flag_on()?;
-    let to = if zip {
-        save_to(&app, "skills.zip".to_owned()).await?
-    } else {
-        crate::opener::pick_folder(&app)
-            .await?
-            .map(|folder| PathBuf::from(folder).join("skills"))
-    };
-    let Some(to) = to else {
+    let Some(to) = export_place(&app, zip).await? else {
         return Ok(None);
     };
     crate::off_the_window("exporting the skills", move || {
@@ -403,6 +396,22 @@ pub(crate) async fn skill_set_export(
         Ok(Some(to.display().to_string()))
     })
     .await
+}
+
+/// **Where the person picks to write an export of several skills**: a zip in the save dialog, or
+/// a `skills` folder in the folder they pick, as Select's Export asks (#5332). `None` where they
+/// picked none.
+pub(crate) async fn export_place(
+    app: &tauri::AppHandle,
+    zip: bool,
+) -> Result<Option<PathBuf>, String> {
+    if zip {
+        save_to(app, "skills.zip".to_owned()).await
+    } else {
+        Ok(crate::opener::pick_folder(app)
+            .await?
+            .map(|folder| PathBuf::from(folder).join("skills")))
+    }
 }
 
 /// Where to write a zip, as the person picks in the system's save dialog: `None` where they did not.
