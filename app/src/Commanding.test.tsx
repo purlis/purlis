@@ -567,6 +567,9 @@ describe("one list, two surfaces", () => {
     expect(askedByButton.map(({ cmd }) => cmd)).toContain("start_chat");
 
     cleanup();
+    // The first window's last watch (none, as its trees go) is sent as its effects end
+    // (`branchFolders.ts`, #5375): to its own core, not the second window's.
+    await Promise.resolve();
     clearMocks();
     // A second window, as the first was: what the first learned about its project's extensions
     // and themes is module state (`extensionsOn.ts`, `Extensions.tsx`, `projectTheme.ts`) that a

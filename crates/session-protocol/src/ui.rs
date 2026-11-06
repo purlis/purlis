@@ -198,6 +198,8 @@ pub struct Server {
 /// project's own files, of no workspace's repo, which the person browses in their window. A
 /// link is served a branch's files and never these, so no chat gains a second way to read the
 /// project through one.
+///
+/// `workspace_tree` and `workspace_file` do the same for a workspace's own files (#5375).
 pub const WINDOW_ONLY: &[&str] = &[
     "answer_ask",
     // The person's word that a key's value is no 2FA seed (#5237): theirs alone, so no chat lets
@@ -652,6 +654,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // person's window alone.
     "plane_tree",
     "plane_file",
+    // A workspace's own files (#5375), as the plane root's are: the person's notes and what
+    // purlis keeps there, listed and opened in the person's window alone.
+    "workspace_tree",
+    "workspace_file",
     // A skill's folder, for its page's Files tab (#5183): listed, a file of it opened, and the
     // folder opened in the file manager. A built-in or third-party skill's folder is outside
     // the project, so only the person's own window reads it.
@@ -1119,6 +1125,34 @@ pub fn names_the_plane_root(method: &str, args: &Value) -> bool {
 pub const THE_PLANE_ROOT_IS_THE_WINDOWS: &str =
     "The project's own files are listed and watched in purlis's window only.";
 
+/// **Whether a call names a workspace's own files** (#5375): a branch's path, find or watch
+/// with a workspace and no repo, which is how the window names the files in the workspace's
+/// folder that are no repo's. They are the person's window's alone, as `workspace_tree` and
+/// `workspace_file` are ([`WINDOW_ONLY`]), so such a call is refused to a link before its
+/// handler is asked ([`A_WORKSPACES_OWN_FILES_ARE_THE_WINDOWS`]). A call that leaves the repo
+/// out is counted as naming them.
+pub fn names_a_workspaces_own_files(method: &str, args: &Value) -> bool {
+    let no_repo = |of: &Value| !of["repo"].as_str().is_some_and(|repo| !repo.is_empty());
+    match method {
+        "copy_branch_path" | "reveal_branch_path" => no_repo(args),
+        "find_files" => match args["scope"]["kind"].as_str() {
+            Some("workspace-folder") => true,
+            Some("branch") => no_repo(&args["scope"]),
+            _ => false,
+        },
+        "files_watch" => args["folders"].as_array().is_some_and(|folders| {
+            folders.iter().any(|one| {
+                one["workspace"].as_str().is_some_and(|ws| !ws.is_empty()) && no_repo(one)
+            })
+        }),
+        _ => false,
+    }
+}
+
+/// What a link is told when its call names a workspace's own files.
+pub const A_WORKSPACES_OWN_FILES_ARE_THE_WINDOWS: &str = "A workspace's own files are listed, \
+    found and watched in purlis's window only. Open them there, or name one of its repos.";
+
 /// What a link is served for an edit's change: not shown, and why.
 pub fn an_edit_drawn_in_the_window_only() -> Value {
     serde_json::json!({
@@ -1551,6 +1585,14 @@ impl Serving {
                     {
                         Answered::Now(Some(reply(Outcome::Err(Value::String(
                             THE_PLANE_ROOT_IS_THE_WINDOWS.into(),
+                        )))))
+                    }
+                    (Some(server), true)
+                        if server.methods.contains(&method)
+                            && names_a_workspaces_own_files(&method, &args) =>
+                    {
+                        Answered::Now(Some(reply(Outcome::Err(Value::String(
+                            A_WORKSPACES_OWN_FILES_ARE_THE_WINDOWS.into(),
                         )))))
                     }
                     (Some(server), true) if server.methods.contains(&method) => {

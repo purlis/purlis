@@ -523,6 +523,8 @@ macro_rules! app_commands {
                 piecefiles::branch_tree,
                 piecefiles::plane_tree,
                 piecefiles::plane_file,
+                piecefiles::workspace_tree,
+                piecefiles::workspace_file,
                 piecefiles::branch_status,
                 piecefiles::branch_ahead_behind,
                 piecefiles::what_changed,

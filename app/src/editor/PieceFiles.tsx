@@ -39,16 +39,24 @@ import { Separator } from "../ui/panel/Separator";
 import { FileText, LoaderCircle, Pause, Play } from "lucide-react";
 import { EmptyState } from "../ui/empty-state/EmptyState";
 import { ExternalLink } from "../ReleaseNotes";
-import { commands, type ChangeMark, type PieceFile, type PlaneId } from "../bindings";
+import {
+  commands,
+  type ChangeMark,
+  type OwnFileView,
+  type PieceFile,
+  type PlaneId,
+} from "../bindings";
 import {
   pieceDiffTitle,
   pieceDiffView,
   isPlaneRoot,
+  isWorkspaceFiles,
   pieceFileTitle,
   pieceFileView,
   type Place,
 } from "../pieceViews";
-import { REVEAL_SAID, type Offer } from "../actions";
+import { REVEAL_SAID, type Does, type Offer } from "../actions";
+import { Badge } from "../ui/badge/Badge";
 import type { ViewRef } from "../tabs";
 import { BranchTree } from "./BranchTree";
 import { LightEditor } from "./LightEditor";
@@ -126,16 +134,83 @@ export function useFileRead(
   return read?.path === path ? read.read : READING;
 }
 
-/** One file of the branch: {@link useFileRead} on the branch's folder, or the plane root's. */
-function useFile(plane: PlaneId, cut: Place, path: string | undefined): FileRead | undefined {
+/** What a workspace's own file says of itself beside its bytes (#5375): whether purlis keeps
+ *  it, and the view of its own a kept one has. */
+export type Kept = { path: string; managed: boolean; view: OwnFileView | null };
+
+/** One file of the branch: {@link useFileRead} on the branch's folder, the plane root's, or a
+ *  workspace's own (#5375), which says to `onKept` whether purlis keeps it. */
+function useFile(
+  plane: PlaneId,
+  cut: Place,
+  path: string | undefined,
+  onKept?: (kept: Kept) => void,
+): FileRead | undefined {
   return useFileRead(
     path,
     (path) =>
       // The plane root's file is the window's own read (issue 1916), which names no branch.
       isPlaneRoot({ workspace: cut.workspace, repo: cut.repo, piece: cut.piece })
         ? commands.planeFile(plane, path)
-        : commands.pieceFile(plane, cut.workspace, cut.repo, cut.piece, path),
+        : isWorkspaceFiles(cut)
+          ? commands.workspaceFile(plane, cut.workspace, path).then((said) => {
+              if (said.status === "error") return said;
+              onKept?.({ path, managed: said.data.managed, view: said.data.view });
+              return { status: "ok" as const, data: said.data.file };
+            })
+          : commands.pieceFile(plane, cut.workspace, cut.repo, cut.piece, path),
     [plane, cut.workspace, cut.repo, cut.piece],
+  );
+}
+
+/** What each own view of a kept file is called, and what opens it (#5375). */
+const OWN_VIEWS: Record<OwnFileView, { said: string; does: (workspace: string) => Does }> = {
+  memory: { said: "Open Memory", does: () => ({ verb: "showSideView", view: "memory" }) },
+  todos: { said: "Open Todos", does: () => ({ verb: "showSideView", view: "todos" }) },
+  sessions: { said: "Open Sessions", does: () => ({ verb: "showSideView", view: "sessions" }) },
+  vision: { said: "Edit the vision", does: (workspace) => ({ verb: "editVision", workspace }) },
+};
+
+/**
+ * **A file purlis keeps in a workspace** (#5375): the *managed* mark, said in words too, and
+ * the way to its own view where it has one. It opens read-only, as every file here does; the
+ * mark says that it is purlis's to change.
+ */
+export function KeptBy({
+  workspace,
+  kept,
+  onPress,
+}: {
+  workspace: string;
+  kept: Kept;
+  onPress?: (offer: Offer) => void;
+}) {
+  if (!kept.managed) return null;
+  const own = kept.view === null ? undefined : OWN_VIEWS[kept.view];
+  return (
+    <span className="kept-by ui-text-meta">
+      <Badge>managed</Badge> Kept by purlis, so it opens read-only.
+      {own !== undefined && onPress !== undefined && (
+        <>
+          {" "}
+          <Button
+            variant="link"
+            size="sm"
+            onPress={() =>
+              onPress({
+                id: `workspace-file.own-view:${workspace}`,
+                title: own.said,
+                available: true,
+                reason: "",
+                does: own.does(workspace),
+              })
+            }
+          >
+            {own.said}
+          </Button>
+        </>
+      )}
+    </span>
   );
 }
 
@@ -176,8 +251,9 @@ function useChanged(plane: PlaneId, cut: Place, path: string | undefined): Chang
         .catch(() => told(new Map()));
     };
   });
-  // Nothing of the plane root is compared (issue 1916): it has no base, so it is never asked.
-  const compared = !isPlaneRoot(cut);
+  // Nothing of the plane root is compared (issue 1916): it has no base, so it is never asked;
+  // nor a workspace's own files (#5375), which are no branch.
+  const compared = !isPlaneRoot(cut) && !isWorkspaceFiles(cut);
   useEffect(() => {
     if (path !== undefined && compared) read.current();
   }, [plane, cut.workspace, cut.repo, cut.piece, path, compared]);
@@ -544,6 +620,7 @@ export function PieceFileTab({
   path,
   line,
   onOpenView,
+  onPress,
 }: {
   plane: PlaneId;
   cut: Place;
@@ -551,8 +628,11 @@ export function PieceFileTab({
   line?: number;
   /** Opens a view tab: the file's comparison. No *Show what changed* without it. */
   onOpenView?: (view: ViewRef, title: string) => void;
+  /** Carries out an offer: a kept file's way to its own view (#5375). No link without it. */
+  onPress?: (offer: Offer) => void;
 }) {
-  const read = useFile(plane, cut, path) ?? READING;
+  const [kept, setKept] = useState<Kept>();
+  const read = useFile(plane, cut, path, setKept) ?? READING;
   const changed = useChanged(plane, cut, path);
   const at = useCursorLine(plane, cut, path, line);
   const selection = useSelectedLines(path);
@@ -576,6 +656,9 @@ export function PieceFileTab({
           )}
           {ofABranch && <ToAChat plane={plane} cut={cut} path={path} lines={selection.lines} />}
         </span>
+        {kept !== undefined && kept.path === path && (
+          <KeptBy workspace={cut.workspace} kept={kept} onPress={onPress} />
+        )}
       </header>
       <Shown
         path={path}

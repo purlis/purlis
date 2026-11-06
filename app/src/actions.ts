@@ -619,6 +619,9 @@ export type Does =
   | { verb: "toggleFocusMode" }
   /** Shows a view of a side and gives it the keyboard (#1673): what its key does. */
   | { verb: "showSideView"; view: ViewId }
+  /** Opens the editor of a workspace's vision (#3344): what `workspace.md` opened from the
+   *  workspace's own files links to (#5375). */
+  | { verb: "editVision"; workspace: string }
   /** Puts a region away or brings it back, as its status-line toggle and ⌘B do. */
   | { verb: "toggleRegion"; region: Toggled }
   /** Moves the keyboard to the next region drawn, or with `back` the one before, as F6 and
@@ -1251,6 +1254,8 @@ export type Doing = {
   /** Focus mode on or off (#2921). Absent where nothing can hide. */
   toggleFocusMode?: () => void;
   showSideView: (view: ViewId) => void;
+  /** The vision editor of `workspace` (#3344). Absent where no project is open. */
+  editVision?: (workspace: string) => void;
   toggleRegion: (region: Toggled) => void;
   /** `SAID.toPanel` or `SAID.toSidebar` (#1740). Absent where no project is open, and so no
    *  side has views to move: its row is never offered there. */
@@ -3751,6 +3756,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return DID;
     case "showSideView":
       doing.showSideView(does.view);
+      return DID;
+    case "editVision":
+      doing.editVision?.(does.workspace);
       return DID;
     case "toggleRegion":
       doing.toggleRegion(does.region);

@@ -8453,6 +8453,7 @@ export const PlaneView = memo(function PlaneView({
       toggleFocusMode: windowDoes.toggleFocusMode,
       // A region's row in focus mode leaves it first (D-2921-19).
       showSideView: showSideViewSeen,
+      editVision: (workspace: string) => setAddingVision({ workspace, busy: false }),
       toggleRegion: toggleRegionSeen,
       moveView: moveSideView,
       // F6 and Shift+F6 from the palette (#1751): once the palette has closed and given the
