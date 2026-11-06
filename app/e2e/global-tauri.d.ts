@@ -12,7 +12,11 @@ declare global {
     __TAURI__: {
       core: { invoke: (command: string, args?: unknown) => Promise<unknown> };
       /** What the app menu says as an event, sent the way the core sends it (SE-23). */
-      event: { emit: (event: string, payload?: unknown) => Promise<void> };
+      event: {
+        emit: (event: string, payload?: unknown) => Promise<void>;
+        /** Hears `event` as the window does, until the returned stop is called. */
+        listen: <T>(event: string, heard: (event: { payload: T }) => void) => Promise<() => void>;
+      };
       window: { getCurrentWindow: () => { close: () => Promise<void>; show: () => Promise<void> } };
     };
   }
