@@ -1476,12 +1476,28 @@ function windowSheets(): Record<string, string> {
 /** A grip's ground or edge: what would make it read as a button (#5290). */
 const GROUND = /^(background|border|box-shadow|outline-color$)/;
 
+/** A ground or an edge taken away, as the grip takes a browser's from its button: no ground. */
+const NO_GROUND = /^(none|transparent|0|0px)$/;
+
+/** Whether a `file | selector | property: value` gives the grip a ground or an edge. */
+const groundOf = (one: string) => {
+  const [property, ...value] = one.split(" | ")[2].split(": ");
+  return GROUND.test(property) && !NO_GROUND.test(value.join(": ").trim());
+};
+
 describe("the grip (#5290)", () => {
   it("has no button ground, edge or shadow anywhere in the window", () => {
     const drawn = gripRootDeclarations(windowSheets());
     // A reader that found nothing would pass anything.
     expect(drawn.some((one) => one.startsWith("ui/grip/grip.css |"))).toBe(true);
-    expect(drawn.filter((one) => GROUND.test(one.split(" | ")[2]))).toEqual([]);
+    expect(drawn.filter(groundOf)).toEqual([]);
+    // And it takes away the ground and the edge a browser gives a button.
+    expect(drawn).toEqual(
+      expect.arrayContaining([
+        'ui/grip/grip.css | [data-scope="grip"][data-part="root"] | border: 0',
+        'ui/grip/grip.css | [data-scope="grip"][data-part="root"] | background: none',
+      ]),
+    );
   });
 
   it("is as big as its mark or the 24px reach its place gives it, and nothing else", () => {
@@ -1509,13 +1525,12 @@ describe("the grip (#5290)", () => {
     const planted = {
       "A.css": `[data-scope="grip"][data-part="root"]:hover { background-color: var(--surface-hover); }
         .pane-head [data-scope="grip"][data-part="root"] { border: 1px solid; }
+        [data-scope="grip"][data-part="root"] { background: none; border: 0; }
         [data-scope="grip"][data-part="root"] [data-part="dot"] { background-color: var(--text-muted); }`,
     };
-    expect(gripRootDeclarations(planted).filter((one) => GROUND.test(one.split(" | ")[2]))).toEqual(
-      [
-        'A.css | [data-scope="grip"][data-part="root"]:hover | background-color: var(--surface-hover)',
-        'A.css | .pane-head [data-scope="grip"][data-part="root"] | border: 1px solid',
-      ],
-    );
+    expect(gripRootDeclarations(planted).filter(groundOf)).toEqual([
+      'A.css | [data-scope="grip"][data-part="root"]:hover | background-color: var(--surface-hover)',
+      'A.css | .pane-head [data-scope="grip"][data-part="root"] | border: 1px solid',
+    ]);
   });
 });

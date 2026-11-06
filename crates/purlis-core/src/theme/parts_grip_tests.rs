@@ -115,8 +115,21 @@ fn the_dots_defaults_are_what_grip_css_draws() {
         .filter(|line| line.starts_with(ROOT) && line.ends_with(" {") && !line.contains(DOT))
     {
         let body = rule(line.trim_end_matches(" {"));
-        for property in ["background", "border", "box-shadow"] {
-            assert!(!body.contains(property), "{line}: {body}");
+        // A ground or an edge taken away (the one a browser gives a button) is none.
+        for declaration in body.lines().map(str::trim) {
+            let Some((property, value)) = declaration.split_once(": ") else {
+                continue;
+            };
+            let value = value.trim_end_matches(';');
+            if ["background", "border", "box-shadow"]
+                .iter()
+                .any(|one| property.starts_with(one))
+            {
+                assert!(
+                    ["none", "transparent", "0"].contains(&value),
+                    "{line}: {declaration}"
+                );
+            }
         }
     }
 }

@@ -20,6 +20,11 @@
   inline-size: max(24px, var(--grip-reach));
   block-size: max(24px, var(--grip-reach));
   margin: calc((var(--grip-mark) - var(--grip-reach)) / 2);
+  /* A browser draws a button its own ground and edge: the grip takes them away, so a head's
+     grip, which is a button, is drawn as the row's, which is not. */
+  appearance: none;
+  border: 0;
+  background: none;
   padding: 0;
   color: inherit;
   cursor: grab;
