@@ -2485,6 +2485,19 @@ impl Browser {
         kept_off(&origin?)
     }
 
+    /// **Whether download `id` began on the page the last login was performed on, or a window
+    /// related to it** (the person's ruling of 2026-11-06): what, during a sign-in, a download
+    /// from no origin is judged by. Not where either page is not known.
+    pub fn download_began_on_the_sign_ins_page(&self, id: &str) -> bool {
+        let state = lock(&self.inner.state);
+        let Some((_, Some(page))) = state.downloads.whence(id) else {
+            return false;
+        };
+        lock(&self.inner.sign_in_page)
+            .as_deref()
+            .is_some_and(|sign_in| state.family_of(sign_in).contains(&page))
+    }
+
     /// **Holds every download of the browser's in `folder`** (#2020), each under the engine's
     /// own name for it, and has the engine tell of each as it goes. Browser-wide: every page's,
     /// one opened later included. Refused where the engine will not, so a browser never runs
@@ -5811,11 +5824,8 @@ impl Inner {
                     // it that has an origin (the steward's decision on the person's rulings of
                     // 2026-11-06). A sandboxed one, or one not known yet, is from nowhere known.
                     // It is judged by the page it began on (a sign-in's own page, say).
-                    let began_on = state
-                        .pages
-                        .iter()
-                        .find(|page| page.frames.contains_key(&frame));
-                    let page = began_on.map(|page| page.target.clone());
+                    let page = state.page_holding(&frame);
+                    let began_on = page.as_deref().and_then(|page| state.page(page));
                     let page_address = began_on.and_then(|page| {
                         let url = &page.frames.get(&frame)?.url;
                         if at_web_address(url) {

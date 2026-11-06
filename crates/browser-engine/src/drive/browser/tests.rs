@@ -2385,6 +2385,8 @@ fn during_a_sign_in_a_download_of_its_site_is_kept_off_unless_its_own_page_began
         Some("other.test:80"),
         "no page known began it"
     );
+    assert!(browser.download_began_on_the_sign_ins_page("d1"));
+    assert!(!browser.download_began_on_the_sign_ins_page("d2"));
 
     *super::lock(&browser.inner.sign_in_page) = Some("PAGE-6".to_owned());
     assert_eq!(
@@ -2392,6 +2394,7 @@ fn during_a_sign_in_a_download_of_its_site_is_kept_off_unless_its_own_page_began
         Some("other.test:80"),
         "another tab began it"
     );
+    assert!(!browser.download_began_on_the_sign_ins_page("d1"));
 }
 
 /// A frame of a site the agent is kept off, inside a frame of another site that runs in a process
