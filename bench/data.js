@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794004567872,
+  "lastUpdate": 1794007284311,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -41496,6 +41496,48 @@ window.BENCHMARK_DATA = {
             "value": 101.71955599999998,
             "unit": "ms",
             "extra": "median of 5 runs: 100.402, 101.687, 101.720, 102.703, 102.795 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "edba240d76b6ab1e9b836059ae99b138e3ab4aa7",
+          "message": "Split tabs: a layout picture, the most urgent mark, and a name that stays the first chat's (#5342) (#5475)\n\n* A split tab keeps its first chat's name and wears its most urgent pane's mark (#5342)\n\nThe pure rules first, with their table tests: a tab's name (tabNameOf, namedForFirstPanes)\nand a split tab's mark (urgentOf), the face reading them, and the window applying the name\nrule after every change. A task shown in a pane's place reaches the tab's mark.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6QDRK92033HWBRYQ1CMR3C6\nPurlis-Persona: steward\n\n* Table tests of a tab's name and a split tab's mark (#5342)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6QDRK92033HWBRYQ1CMR3C6\nPurlis-Persona: steward\n\n* Window tests of a split tab's name and mark, the ADR amendment and the changelog (#5342)\n\nA split tab keeps its first chat's name while another pane has the keyboard and as the\nkeyboard moves; it takes the next chat's name when its first pane closes (#5308); it wears the\nmark of a pane that needs the person while another is focused, in a tab window too. Tests that\npinned the old rule (#4762: the focused pane's name) now say the new one. ADR 0036 is amended.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6QDRK92033HWBRYQ1CMR3C6\nPurlis-Persona: steward\n\n* Tests that pinned a split tab's focused-pane name say the first pane's (#5342)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6QDRK92033HWBRYQ1CMR3C6\nPurlis-Persona: steward\n\n* A split tab's picture of its layout, drawn from its tree (#5342)\n\nThe lines between its panes, each split at its share; past four panes a 3x3 grid, which no\nlayout of four or fewer draws. Not yet on the tab: that waits for #5465's tab parts.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6QDRK92033HWBRYQ1CMR3C6\nPurlis-Persona: steward\n\n* A change that names a tab itself keeps the name it gave (#5342)\n\nUndo of a closed last tab puts its first chat's name back; the window's first-pane rule no\nlonger renames it after. Formatting.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6QDRK92033HWBRYQ1CMR3C6\nPurlis-Persona: steward\n\n* Review fixes: one reader of a tab's name, no stub namer, the first pane's face (#5342)\n\n- Every row that names a tab (Switch to, Pin, Tile all, Move, Place, Keep, Close) and the\n  stall log read tabNameOf, so a tab's own name will say the same everywhere.\n- namedForFirstPanes takes { inPlace } in place of a bare flag.\n- The window renames nothing until its drop context is made, instead of a weaker stub.\n- A tab's face is its first pane's throughout: its italic preview look too.\n- A table row pins what a view left first by its chat's close is called.\n- The changelog says only what ships so far.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6QDRK92033HWBRYQ1CMR3C6\nPurlis-Persona: steward\n\n* A split tab pictures its layout in place of +1, and its hover says how many panes (#5342)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6QDRK92033HWBRYQ1CMR3C6\nPurlis-Persona: steward\n\n* Review: past four panes the prototype's quad, the words in the family, a tab window's picture (#5342)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6QDRK92033HWBRYQ1CMR3C6\nPurlis-Persona: steward\n\n* SplitPictures finds each tab by its name after its mark's state word (#5342)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6QDRK92033HWBRYQ1CMR3C6\nPurlis-Persona: steward\n\n* Story baselines of a split tab's picture, from this head's stories run; the picture's svg named in the stray icon guard (#5342)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6QDRK92033HWBRYQ1CMR3C6\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-06T22:26:34Z",
+          "tree_id": "14acb49f269e3939fbc1d4f215b5ab9f03838698",
+          "url": "https://github.com/purlis/purlis/commit/edba240d76b6ab1e9b836059ae99b138e3ab4aa7"
+        },
+        "date": 1794007279476,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.689396,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.672, 0.687, 0.689, 0.695, 0.704 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5677435,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.279, 16.555, 16.568, 16.574, 16.691 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.7931255,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.221, 102.126, 102.793, 102.969, 103.659 ms"
           }
         ]
       }
