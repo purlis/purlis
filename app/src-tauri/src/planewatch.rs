@@ -1805,7 +1805,11 @@ mod tests {
         told_about(&told, "workspaces/beta");
 
         assert_eq!(raw::watched_recursively(&root), 1);
-        assert_eq!(raw::watched(&root), 1, "the root was watched more than once");
+        assert_eq!(
+            raw::watched(&root),
+            1,
+            "the root was watched more than once"
+        );
         for folder in [
             "workspaces",
             "workspaces/alpha",
