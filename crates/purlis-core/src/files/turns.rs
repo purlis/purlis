@@ -307,7 +307,7 @@ fn staged_tree(folder: &Path) -> Result<String, Refused> {
         folder,
         &["rev-parse", "--path-format=absolute", "--git-path", "index"],
     )?;
-    let copied = own.ok() && std::fs::copy(own.line(), &index).is_ok();
+    let copied = own.ok() && copy_keeping_its_time(Path::new(own.line()), &index).is_ok();
     if !copied {
         let read = with_index(folder, &index, &["read-tree", "HEAD"])?;
         if !read.ok() {
@@ -337,6 +337,20 @@ fn staged_tree(folder: &Path) -> Result<String, Refused> {
         return Err(failed("write the folder's work", &written));
     }
     Ok(written.line().to_owned())
+}
+
+/// **A copy of the index at `from`, written when it was.** git trusts an entry's stat only where
+/// the file is older than the index that holds it, and reads again a file written in the index's
+/// own tick ("racy git"). A plain copy on Linux is newer than every file, so a file the operator
+/// wrote in that tick at the same size was taken as unchanged and left out of the turn's start
+/// (macOS's `std::fs::copy` clones the file, time and all, which is why only CI met it).
+fn copy_keeping_its_time(from: &Path, to: &Path) -> std::io::Result<()> {
+    std::fs::copy(from, to)?;
+    let written = std::fs::metadata(from)?.modified()?;
+    std::fs::File::options()
+        .write(true)
+        .open(to)?
+        .set_modified(written)
 }
 
 /// `-c` arguments that turn off each filter `listed` names (`git config --name-only`, one key a

@@ -173,9 +173,14 @@ fn prompts_of(logs: &Path, chat: &str) -> usize {
 }
 
 fn until(what: &str, done: impl Fn() -> bool) {
+    until_or_say(what, done, String::new);
+}
+
+/// [`until`], whose failure says what `seen` read at the deadline.
+fn until_or_say(what: &str, done: impl Fn() -> bool, seen: impl Fn() -> String) {
     let deadline = Instant::now() + Duration::from_secs(60);
     while !done() {
-        assert!(Instant::now() < deadline, "{what} never happened");
+        assert!(Instant::now() < deadline, "{what} never happened{}", seen());
         std::thread::sleep(Duration::from_millis(20));
     }
 }
@@ -354,13 +359,16 @@ fn a_whole_chat_has_its_turns_hunk_discarded_and_its_next_turn_undone_and_is_tol
     let before = std::fs::read_to_string(folder.join(FILE)).expect("the file");
     let scratch = tempfile::tempdir().expect("a folder for what the harness is told");
     let told = scratch.path().join("told");
+    // What the hooks printed to their stderr, for a failure to show.
+    let said = scratch.path().join("said");
     let purlis = crate::behaviour::built_beside("purlis", "purlis-cli");
     let harness = crate::behaviour::built_beside("fake-harness", "fake-harness");
     let hook = format!(
         "printf '%s' '{{\"session_id\":\"s-1\",\"prompt\":\"carry on\"}}' \
-         | '{}' hook userpromptsubmit >> '{}'",
+         | '{}' hook userpromptsubmit >> '{}' 2>> '{said}'",
         purlis.display(),
-        told.display()
+        told.display(),
+        said = said.display()
     );
     // Each turn's edit waits for its start to be recorded, as a harness's waits for its model,
     // and adds the turn's own line.
@@ -370,7 +378,14 @@ fn a_whole_chat_has_its_turns_hunk_discarded_and_its_next_turn_undone_and_is_tol
          echo \"turn $(git for-each-ref refs/purlis/turns/ | grep -c /start)\" >> '{FILE}'",
         dir = folder.display()
     );
-    let stop = format!("'{}' hook stop </dev/null", purlis.display());
+    // Its `Stop` names the conversation its prompt did: the board adopted `s-1` from the first
+    // report, and refuses a later one that names none as another harness's (ADR 0024), which
+    // left the chat running for ever.
+    let stop = format!(
+        "printf '%s' '{{\"session_id\":\"s-1\"}}' | '{}' hook stop 2>> '{said}'",
+        purlis.display(),
+        said = said.display()
+    );
     let chat = Chat {
         program: harness.display().to_string(),
         args: [
@@ -395,7 +410,7 @@ fn a_whole_chat_has_its_turns_hunk_discarded_and_its_next_turn_undone_and_is_tol
         .start(&chat, STARTING)
         .expect("the chat starts");
     let chat_id = held.chats().id_of(session).expect("the chat's id");
-    let ended = |number: u32| {
+    let refs = || {
         let refs = purlis_core::forklock::output(
             std::process::Command::new("git")
                 .arg("-C")
@@ -403,8 +418,41 @@ fn a_whole_chat_has_its_turns_hunk_discarded_and_its_next_turn_undone_and_is_tol
                 .args(["for-each-ref", "--format=%(refname)", "refs/purlis/turns/"]),
         )
         .expect("git runs");
-        String::from_utf8_lossy(&refs.stdout).contains(&format!("{chat_id}/{number}/end"))
+        String::from_utf8_lossy(&refs.stdout).into_owned()
+    };
+    // Its end is written, the board has it idle, and the recorder has let go of the chat, which
+    // an undo is refused until it does (#5411).
+    let ended = |number: u32| {
+        refs().contains(&format!("{chat_id}/{number}/end"))
             && !crate::staleclones::mid_turn(&held.board().glance(session))
+            && !held.turns().recording(&chat_id)
+    };
+    // What a wait that ran out saw: the hooks heard, where the chat's turns are recorded, the
+    // refs, the board, and what the hooks said.
+    let seen = || {
+        let heard: Vec<String> = eventlog::read(&logs)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|event| event.chat.as_deref() == Some(chat_id.as_str()))
+            .map(|event| event.kind)
+            .collect();
+        let at = held.chats().chat_at_or_starting(session);
+        let place = at
+            .as_ref()
+            .and_then(|at| at.cwd.as_deref())
+            .and_then(|cwd| files::turns::place_of(held.root(), cwd));
+        format!(
+            "\n  events of the chat: {heard:?}\n  where its turns go: {at:?} -> {place:?}\n  \
+             recording now: {}\n  refs in the clone: {:?}\n  board: {:?}\n  program pid: \
+             {:?}\n  the file: {:?}\n  told: {:?}\n  the hooks said: {:?}",
+            held.turns().recording(&chat_id),
+            refs(),
+            held.board().glance(session),
+            held.chats().sessions().process_id(session),
+            std::fs::read_to_string(folder.join(FILE)).unwrap_or_default(),
+            std::fs::read_to_string(&told).unwrap_or_default(),
+            std::fs::read_to_string(&said).unwrap_or_default(),
+        )
     };
     let next_turn = || {
         held.chats()
@@ -417,7 +465,7 @@ fn a_whole_chat_has_its_turns_hunk_discarded_and_its_next_turn_undone_and_is_tol
         number,
     };
 
-    until("the first turn's end", || ended(1));
+    until_or_say("the first turn's end", || ended(1), seen);
     let files::TurnChanged::Of {
         file: files::InTurn::Changed(shown),
         ..
@@ -442,7 +490,7 @@ fn a_whole_chat_has_its_turns_hunk_discarded_and_its_next_turn_undone_and_is_tol
     );
 
     next_turn();
-    until("the second turn's end", || ended(2));
+    until_or_say("the second turn's end", || ended(2), seen);
     let second = std::fs::read_to_string(folder.join(FILE)).expect("the file");
     assert_eq!(second, format!("{before}turn 2\n"));
     let answer = undo_in(&held, at, &turn(2)).expect("the undo");
@@ -459,11 +507,15 @@ fn a_whole_chat_has_its_turns_hunk_discarded_and_its_next_turn_undone_and_is_tol
     );
 
     next_turn();
-    until("the third turn's briefing", || {
-        std::fs::read_to_string(&told)
-            .unwrap_or_default()
-            .contains("The operator undid a turn since your last turn")
-    });
+    until_or_say(
+        "the third turn's briefing",
+        || {
+            std::fs::read_to_string(&told)
+                .unwrap_or_default()
+                .contains("The operator undid a turn since your last turn")
+        },
+        seen,
+    );
     let briefed = std::fs::read_to_string(&told).unwrap_or_default();
     assert!(briefed.contains("`src/lib.rs` in `svc`"), "{briefed}");
     assert!(!briefed.contains("turn 2"), "{briefed}");
