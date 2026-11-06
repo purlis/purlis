@@ -1984,6 +1984,20 @@ pub enum GitWork {
     /// window's own Update run for the chat, only on a clean tree, and refused where it would
     /// write a file the chat's sandbox denies. The ask's workspace is empty and unread.
     RootUpdate {},
+    /// `purlis save [-m <message>] [--sign] [--no-push] [--pull]`, standing anywhere in the
+    /// project: the project saved by the app, as the terminal's `purlis save` saves it, with the
+    /// chat's provenance from the app's own record of it. The ask's workspace is empty and
+    /// unread. A kind of its own, so an app that does not know it answers nothing.
+    RootSave {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        sign: bool,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        no_push: bool,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        pull: bool,
+    },
     /// `purlis worktree push [--force-with-lease]` (qw387): the branch of folder
     /// `<repo>/<piece>` pushed to its remote, under its own name and nothing else.
     WorktreePush {

@@ -1714,6 +1714,71 @@ pub fn is_own_git_dir(dot_git: &Path) -> bool {
     std::fs::symlink_metadata(dot_git).is_ok_and(|meta| meta.file_type().is_dir())
 }
 
+/// **The first link among the files git writes as it records a ref's move** in the repository
+/// whose git directory is `git_dir`: `packed-refs` and everything under `logs/`, there and in
+/// the common directory it shares. git follows a link to those as it writes them: a fetch
+/// appends to the file a reflog links to, or makes it, and `--prune` rewrites the file
+/// `packed-refs` links to (git 2.50, measured). A link there, or a file with a second name,
+/// is a file elsewhere written by the app's git. `None` where there is none.
+pub fn ref_records_linked(git_dir: &Path) -> Option<PathBuf> {
+    let common = std::fs::read_to_string(git_dir.join("commondir"))
+        .ok()
+        .map(|said| git_dir.join(said.trim_end_matches(['\n', '\r'])));
+    std::iter::once(git_dir.to_path_buf())
+        .chain(common)
+        .find_map(|dir| {
+            let packed = dir.join("packed-refs");
+            if linked(&packed) {
+                return Some(packed);
+            }
+            linked_below(&dir.join("logs"))
+        })
+}
+
+/// Whether `path` is a link, or a file with a second name.
+fn linked(path: &Path) -> bool {
+    let Ok(meta) = std::fs::symlink_metadata(path) else {
+        return false;
+    };
+    #[cfg(unix)]
+    let second_name = {
+        use std::os::unix::fs::MetadataExt as _;
+        meta.is_file() && meta.nlink() > 1
+    };
+    #[cfg(not(unix))]
+    let second_name = false;
+    meta.file_type().is_symlink() || second_name
+}
+
+/// The first link at or below `dir` ([`linked`]), never through one.
+fn linked_below(dir: &Path) -> Option<PathBuf> {
+    if linked(dir) {
+        return Some(dir.to_path_buf());
+    }
+    let entries = std::fs::read_dir(dir).ok()?;
+    entries.flatten().find_map(|entry| {
+        let path = entry.path();
+        match entry.file_type() {
+            Ok(kind) if kind.is_dir() => linked_below(&path),
+            _ => linked(&path).then_some(path),
+        }
+    })
+}
+
+/// Why the app's git does not record a ref's move in the repository whose git directory is
+/// `git_dir` ([`ref_records_linked`]), or nothing where it may.
+pub fn ref_records_refused(git_dir: &Path) -> Result<(), String> {
+    match ref_records_linked(git_dir) {
+        None => Ok(()),
+        Some(link) => Err(format!(
+            "{} is a link, or a file with a second name, and git would write through it to \
+             another file, so purlis does not move a ref there. Remove it, then run the command \
+             again",
+            link.display()
+        )),
+    }
+}
+
 /// Which workspace's clone a path stands in, as `(workspace, repo)`, or `None` for a path in no
 /// clone (#3831): a repo's folder in either layout ([`crate::repofolder::locate`]) or below it,
 /// where that folder holds a `.git` folder of its own, and never a branch folder. Nor an old
@@ -1739,6 +1804,9 @@ pub struct Located {
     pub repo: String,
     pub piece: String,
 }
+
+#[cfg(all(test, unix))]
+mod ref_records_tests;
 
 #[cfg(test)]
 mod locate_tests {

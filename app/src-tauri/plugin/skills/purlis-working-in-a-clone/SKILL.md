@@ -46,7 +46,8 @@ branch folder are refused: its git record lives in the clone's `.git`, which no 
 Use `purlis worktree commit` and `purlis worktree push` there (§5).
 
 The plane's own tracked files are a separate concern — `purlis save` commits and pushes
-those. A chat the app did not start, such as a terminal `claude`, gets no auto-save: there
+those. In a sandboxed chat the project root's `.git` is the app's too, so `purlis save` is run
+by the app, and plain `git commit` at the root is refused. A chat the app did not start, such as a terminal `claude`, gets no auto-save: there
 the plane is saved only when `purlis save` runs, and `purlis save --pull` first brings in
 what the remote has.
 

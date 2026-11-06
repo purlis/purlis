@@ -577,6 +577,18 @@ fn a_git_ask_is_read_back_whole_and_names_the_chat_its_token_must_be() {
             step: UpdateStep::Abort,
         },
         GitWork::RootUpdate {},
+        GitWork::RootSave {
+            message: Some("one\n\ntwo".to_owned()),
+            sign: true,
+            no_push: true,
+            pull: true,
+        },
+        GitWork::RootSave {
+            message: None,
+            sign: false,
+            no_push: false,
+            pull: false,
+        },
         GitWork::WorktreeRemove {
             repo: "widget".to_owned(),
             piece: "p1".to_owned(),
