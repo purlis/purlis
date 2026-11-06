@@ -4353,6 +4353,13 @@ impl Applied {
                 .map(|denial| denial.path)
                 .into_iter()
                 .collect(),
+            // What isn't there now gets a placeholder while each command runs.
+            placeholders: self
+                .later_code_by_path(cwd)
+                .into_iter()
+                .map(|denial| denial.path)
+                .filter(|path| std::fs::symlink_metadata(path).is_err())
+                .collect(),
         }
     }
 
