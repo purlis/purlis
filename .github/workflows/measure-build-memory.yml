@@ -48,18 +48,17 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-latest]
-        candidate: [base-a, base-b, opt2, opt1, cu4]
+        # Round 2 (run 42279014678 was round 1): opt2 (14.50 GB) and cu4 (14.51 GB) failed the
+        # memory threshold there, so only the baselines and opt1 are measured again, on main as it
+        # is now, for the claude and opencode bars the older base could not run.
+        candidate: [base-a, base-b, opt1]
         include:
           - candidate: base-a
             extra: ""
           - candidate: base-b
             extra: ""
-          - candidate: opt2
-            extra: --config profile.dev-release.package.purlis-app.opt-level=2
           - candidate: opt1
             extra: --config profile.dev-release.package.purlis-app.opt-level=1
-          - candidate: cu4
-            extra: --config profile.dev-release.package.purlis-app.codegen-units=4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -172,6 +171,35 @@ jobs:
           ls -la "$RUNNER_TEMP/e2e"
           tar -C "$RUNNER_TEMP/e2e" -cf "$RUNNER_TEMP/e2e.tar" .
 
+      # The operator's real-Mac check of opt1 (the 300 ms bar): a whole app bundle, made the way
+      # release.yml makes a dev channel one (sidecars, extensions, the release config), signed
+      # ad hoc, with no updater artifacts and published nowhere.
+      - name: An opt1 app bundle for the operator's real-Mac check
+        if: runner.os == 'macOS' && matrix.candidate == 'opt1'
+        run: |
+          set -euo pipefail
+          triple=$(rustc -vV | sed -n 's/^host: //p')
+          cargo build --profile dev-release --locked -p purlis-cli -p persona-statistics
+          mkdir -p app/src-tauri/binaries
+          for name in purlis charter; do
+            cp "target/dev-release/$name" "app/src-tauri/binaries/$name-$triple"
+          done
+          rm -rf app/src-tauri/extensions
+          target/dev-release/persona-statistics assemble app/src-tauri/extensions/persona-statistics
+          jq '.bundle.createUpdaterArtifacts = false' app/src-tauri/tauri.release.conf.json > app/src-tauri/tauri.build.conf.json
+          (cd app && APPLE_SIGNING_IDENTITY=- npx tauri build --config src-tauri/tauri.build.conf.json --bundles app -- \
+            --profile dev-release ${{ matrix.extra }})
+          ls -la target/dev-release/bundle/macos
+          tar -C target/dev-release/bundle/macos -czf "$RUNNER_TEMP/purlis-opt1-macos.tar.gz" .
+
+      - name: Keep the opt1 app bundle
+        if: runner.os == 'macOS' && matrix.candidate == 'opt1'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: app-bundle-opt1-macOS
+          path: ${{ runner.temp }}/purlis-opt1-macos.tar.gz
+          retention-days: 14
+
       - name: Keep the plain app
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -244,7 +272,7 @@ jobs:
       # Into the checkout, which no sandboxed chat of the bars may write (`built`, e2e/harness.ts).
       - name: Each candidate's builds, unpacked
         run: |
-          for c in base-a base-b opt2 opt1 cu4; do
+          for c in base-a base-b opt1; do
             for kind in plain e2e; do
               t="$RUNNER_TEMP/got/$kind-$c-$RUNNER_OS/$kind.tar"
               [ -f "$t" ] || { echo "::warning::no $kind build of $c"; continue; }
@@ -263,13 +291,14 @@ jobs:
         env:
           BASELINE_APP: ${{ github.workspace }}/target/ab/plain/base-a/charter-app
         run: |
-          for c in base-b opt2 opt1 cu4; do
+          for c in base-b opt1; do
             app="$GITHUB_WORKSPACE/target/ab/plain/$c/charter-app"
             [ -x "$app" ] && [ -x "$BASELINE_APP" ] || { echo "::warning::cold start of $c: a build is missing"; continue; }
             for case in bare i3 i3-nobus; do
               out="$RUNNER_TEMP/coldstart-$c-$case.txt"
               status=0
-              APP="$app" tools/coldstart-linux.sh "$case" 2>&1 | tee "$out" || status=$?
+              APP="$app" tools/coldstart-linux.sh "$case" > "$out" 2>&1 || status=$?
+              cat "$out"
               said=$(grep -o 'against main: ratio [^ ]*' "$out" | tr '\n' ' ')
               echo "::notice title=cold start $c vs base-a $case::${said:-no ratio printed} (script exit $status)"
             done
@@ -280,25 +309,30 @@ jobs:
       - name: Outcome bars, each candidate in turn
         working-directory: app
         run: |
-          order="base-a opt2 opt1 cu4 base-b"
-          reverse="base-b cu4 opt1 opt2 base-a"
+          # One notice per candidate and round (GitHub keeps 10 notices a step), naming each
+          # harness's median and exit status: a run that failed is said, never hidden.
+          order="base-a opt1 base-b"
+          reverse="base-b opt1 base-a"
           round=0
           for list in "$order" "$reverse"; do
             round=$((round + 1))
             for c in $list; do
               dir="$GITHUB_WORKSPACE/target/ab/e2e/$c"
               [ -x "$dir/charter-app" ] || { echo "::warning::bars of $c: no build"; continue; }
+              line=""
               for h in claude codex opencode; do
                 out="$RUNNER_TEMP/bars-$c-$h-$round.txt"
                 status=0
                 if [ "$RUNNER_OS" = Linux ]; then
-                  CHARTER_TARGET_DIR="$dir" PURLIS_OUTCOME_HARNESS="$h" xvfb-run -a npm run e2e:outcome 2>&1 | tee "$out" || status=$?
+                  CHARTER_TARGET_DIR="$dir" PURLIS_OUTCOME_HARNESS="$h" xvfb-run -a npm run e2e:outcome > "$out" 2>&1 || status=$?
                 else
-                  CHARTER_TARGET_DIR="$dir" PURLIS_OUTCOME_HARNESS="$h" npm run e2e:outcome 2>&1 | tee "$out" || status=$?
+                  CHARTER_TARGET_DIR="$dir" PURLIS_OUTCOME_HARNESS="$h" npm run e2e:outcome > "$out" 2>&1 || status=$?
                 fi
-                said=$(grep -o 'median [0-9.]* ms' "$out" | head -1)
-                echo "::notice title=bars $c $h round $round $RUNNER_OS::${said:-no median printed} (exit $status)"
+                cat "$out"
+                m=$(grep -o 'median [0-9.]* ms' "$out" | head -1)
+                line="$line $h ${m:-no median} (exit $status);"
               done
+              echo "::notice title=bars $c round $round $RUNNER_OS::$line"
             done
           done
 
