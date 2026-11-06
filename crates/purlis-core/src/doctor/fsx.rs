@@ -319,8 +319,55 @@ fn is_clone(p: &Path) -> bool {
 
 /// `workspace.read_clones`: the clones in one workspace, and each entry whose `.git` charter
 /// cannot `stat`. A workspace that cannot be listed is `Err`.
+///
+/// **Its root is read as it always was**, every name included: doctor names a clone whatever it
+/// is called, safely (#353, #4830), where the repo list refuses the name. **`repos/` is read by
+/// [`crate::repofolder::holdings`]** (#5371), the one walk that knows it: its repos, and what
+/// the walk could not read there ([`crate::repofolder::Holdings::unreadable`]). A folder at the
+/// root beside the repo of its name in `repos/` is not that repo, so it is not counted as one.
 pub(super) fn read_clones(root: &Path, ws: &str) -> io::Result<(Vec<PathBuf>, Vec<Unread>)> {
-    read_directory(&root.join("workspaces").join(ws), |d| {
-        directory(&d.join(".git"))
-    })
+    use crate::repofolder::{self, Layout};
+
+    let dir = root.join("workspaces").join(ws);
+    let (mut clones, mut unread) = read_directory(&dir, |d| directory(&d.join(".git")))?;
+    // A workspace the walk will not take (a name purlis refuses, a link) has no `repos/` to it.
+    let Ok(walked) = repofolder::holdings(root, ws) else {
+        return Ok((clones, unread));
+    };
+    let shadowed: Vec<&str> = walked
+        .shadowed
+        .iter()
+        .map(|row| row.repo.name.as_str())
+        .collect();
+    clones.retain(|clone| {
+        !clone
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| shadowed.contains(&name))
+    });
+    clones.extend(
+        walked
+            .repos
+            .into_iter()
+            .filter(|row| row.layout == Layout::Repos)
+            .map(|row| row.repo.path),
+    );
+    clones.sort();
+    // `repos/` itself, where it cannot be listed, is the root's entry, already said above.
+    let repos = dir.join(repofolder::REPOS);
+    unread.extend(
+        walked
+            .unreadable
+            .iter()
+            .filter(|said| said.layout == Layout::Repos)
+            .map(|said| {
+                let at = repos.join(&said.name);
+                // The errno, asked of the same `.git` again, so the remedy fits it.
+                let code = std::fs::symlink_metadata(at.join(".git"))
+                    .err()
+                    .and_then(|e| e.raw_os_error());
+                (at, code)
+            }),
+    );
+    Ok((clones, unread))
 }

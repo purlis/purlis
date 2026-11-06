@@ -40,19 +40,29 @@ export function SkillsChangedNotice({
   const changes = usePlaneChanged([plane], INSTRUCTIONS);
   // While the flag is off no chat gets the project's skills, so none is asked about.
   const on = useSkillStudioOn();
-  const [changed, setChanged] = useState(false);
-  const [putAway, setPutAway] = useState<number>();
+  /** What changed in this chat's skills, as a key, or none: one bulk change is many events on
+   *  disk and one key, so its offer is shown once however many arrive (#5331). */
+  const [changed, setChanged] = useState<string>();
+  const [putAway, setPutAway] = useState<string>();
   useEffect(() => {
     if (!on) return;
     let gone = false;
     void planeUpdatedAt(plane, changes).then((all) => {
-      if (!gone) setChanged(all.some((one) => one.session === session && one.skills));
+      if (gone) return;
+      const mine = all.find((one) => one.session === session && one.skills);
+      // Back as it started (an Undo): the same change made again is news again.
+      if (mine === undefined) setPutAway(undefined);
+      setChanged(
+        mine === undefined
+          ? undefined
+          : JSON.stringify([mine.skills_added, mine.skills_gone, mine.skills_edited]),
+      );
     });
     return () => {
       gone = true;
     };
   }, [plane, session, changes, on]);
-  if (!on || !changed || putAway === changes) return null;
+  if (!on || changed === undefined || putAway === changed) return null;
   return (
     <Notice
       cause={`skills-changed:${session}`}
@@ -62,7 +72,7 @@ export function SkillsChangedNotice({
         { label: "Restart", onPress: onRestart },
         { label: WHAT_CHANGED, onPress: () => askChatSkills(plane, session) },
       ]}
-      onDismiss={() => setPutAway(changes)}
+      onDismiss={() => setPutAway(changed)}
     >
       {SKILLS_CHANGED}
     </Notice>

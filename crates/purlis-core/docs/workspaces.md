@@ -305,7 +305,7 @@ From a terminal or a chat, `purlis worktree` (alias `wt`):
 
     charter wt add <repo> <piece> [--base <branch>|HEAD] [-w <ws>]   # cut it; exit 2 if taken
     purlis worktree commit -m "<message>" [--all | <path>…]   # from a sandboxed chat inside the piece
-    purlis worktree update [--base <branch>] [--merge [--take-base-baselines]] [--continue | --abort]   # from inside the piece
+    purlis worktree update [--base <branch>] [--merge [--take-base-baselines]] [--continue | --abort | --fetch-only]   # from inside the piece
     purlis worktree push [--force-with-lease]   # from inside the piece
     charter wt done                          # from inside the piece: it is finished
     charter wt abandon "<why you stopped>"   # from inside the piece: it is given up
@@ -391,6 +391,10 @@ piece, these run in the app for a chat (and here from a terminal):
   marker, a submodule and a file marked for a content filter are refused there; finish those
   from your own terminal. For a sandboxed chat, an update that would write a file the chat's
   sandbox denies (an editor's tasks, a hook, an agent's settings) does not start, and names it.
+  `--fetch-only` fetches and moves nothing else, also with uncommitted changes, so a chat can read
+  what the remote has with `git diff origin/main`. Standing at or above a clone, a sandboxed chat
+  resumes a stopped rebase with its own git, as the refusal names, and `--continue` or `--abort`
+  then puts the branch where it belongs.
 - `purlis worktree update --merge` brings the same base in as a merge instead (#5253). No commit
   is rewritten, so where the branch is already pushed, a plain `purlis worktree push` follows.
   It is refused, stops, goes on and goes back as the rebase does, and `--continue` and `--abort`

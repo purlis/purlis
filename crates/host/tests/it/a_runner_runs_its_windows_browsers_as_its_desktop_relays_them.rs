@@ -353,6 +353,7 @@ async fn a_login_that_would_keep_its_login_is_not_sent_to_the_runner() {
         .log_in(
             &program,
             a_login(Some(KeptLogin {
+                form: None,
                 profile: "claude".into(),
                 persona: "steward".into(),
                 login: "shop-login".into(),

@@ -236,7 +236,7 @@ impl Browser {
         // What it fills is kept out before anything else, for the browser's life.
         let mut held = Kept::default();
         held.run(&[fill.value.as_str()]);
-        lock(&self.inner.state).keep_out_everywhere(&held);
+        lock(&self.inner.state).keep_filled_out(&held, &fill.origin);
         let target = &fill.target;
         let origin = fill.origin.as_str();
         let at = self.resolved(target)?;

@@ -2022,3 +2022,36 @@ fn a_reader_that_dies_without_answering_is_said_and_never_an_empty_listing() {
         .expect("no cap was crossed");
     assert_unread(&run, "was not read to its end");
 }
+
+#[test]
+fn a_commit_is_read_as_itself_whatever_refs_replace_says() {
+    let dir = repo();
+    let at = dir.path();
+    let commit = |subject: &str| {
+        let made = crate::testgit::run(
+            at,
+            &[
+                "-c",
+                "user.name=A",
+                "-c",
+                "user.email=a@example.invalid",
+                "-c",
+                "commit.gpgSign=false",
+                "commit",
+                "-q",
+                "--allow-empty",
+                "-m",
+                subject,
+            ],
+        );
+        assert!(made.ok(), "{subject}");
+        crate::testgit::run(at, &["rev-parse", "HEAD"])
+            .out
+            .trim()
+            .to_owned()
+    };
+    let (first, second) = (commit("first"), commit("second"));
+    assert!(crate::testgit::run(at, &["replace", &first, &second]).ok());
+    let read = run(at, &["log", "-1", "--format=%s", &first], READ).expect("git runs");
+    assert_eq!(read.out.trim(), "first");
+}

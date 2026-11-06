@@ -567,8 +567,10 @@ describe("the pane Notice's rules", () => {
   it("leaves the window's lines and the Inbox's rows as they were", () => {
     const message = '> [data-scope="button-row"] > [data-scope="notice"][data-part="message"]';
     expect(of(`[data-placement="alone"] ${message}`)).toMatch(/display:\s*inline/);
-    // The Inbox's row puts its ways out under the words, in the shared row that wraps.
-    expect(of(`[data-placement="inbox"] ${message}`)).toMatch(/flex:\s*1 1 100%/);
+    // A Notices centre card sets its words past its mark, its ways on their own line (#5217).
+    expect(of('[data-placement="inbox"] [data-scope="notice"][data-part="message"]')).toMatch(
+      /padding-inline-start:\s*var\(--notice-indent\)/,
+    );
     // No rule of the pane's reaches a Notice that is not in one.
     const reach = [...family.matchAll(/([^{}]+)\{[^{}]*\}/g)]
       .map((hit) => hit[1].trim())

@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { type PlaneSaving } from "./bindings";
+import { type PlaneSaving, type ProjectRetried } from "./bindings";
 import { type Offer, type Ran, type Said } from "./actions";
 import { type Place } from "./pieceViews";
 import { type Asking } from "./NeedsYou";
@@ -69,6 +69,8 @@ export type PlaneReport = {
   sandbox?: SandboxSaid | null;
   /** Where this project's unsaved work sits (charter-app#302), once read. */
   saving?: PlaneSaving;
+  /** Whether a read of {@link saving} has answered, however it answered (#5325). */
+  savingRead: boolean;
   /** Why this purlis opens it read-only, or undefined (#826): the title bar's save is off with
    *  it while the project is in front. */
   readOnly?: string;
@@ -104,6 +106,9 @@ export type ReportedWorkspaces = {
 /** What a project asks the WINDOW to do, because the window is what holds projects. */
 export type WindowDoing = {
   openProject: () => void;
+  /** Retry on a project (#5324): the window's, whose row says how its load is going, and the one
+   *  action behind that row and a waiting task's row in the project's sidebar. */
+  retryProject: (plane: string) => Promise<ProjectRetried | undefined>;
   /** Shows the dialog that makes a new project. The window's, like the opener: what it ends in
    *  is another project tab, and the open it ends in is the gated one (ADR 0035). */
   createProject: () => void;

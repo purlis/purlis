@@ -1109,6 +1109,7 @@ describe("the chat in front's set as a whole (S8, #3694)", () => {
     manual: 1,
     most_skills: 30,
     most_chars: 6000,
+    workspace: null,
     hidden: 0,
     still_over: null,
     pinned_by: [],
@@ -1140,6 +1141,20 @@ describe("the chat in front's set as a whole (S8, #3694)", () => {
     expect(screen.getByTestId("skills-view-said")).toHaveTextContent("Routed by acme in 120 ms.");
     // Nothing needs the person: no Needs you group.
     expect(screen.queryByRole("row", { name: /^Needs you/ })).toBeNull();
+  });
+
+  it("links the chat's budget to where it is changed, its workspace's Routing (#5353)", async () => {
+    core(() => studio([skill("deploy")]), {
+      chat: [given("deploy")],
+      budget: { ...BUDGET, workspace: "ops" },
+    });
+    const hands = view({ chat: STEWARD });
+    await list();
+    fireEvent.click(await screen.findByTestId("skills-view-budget"));
+    expect(hands.onOpenView).toHaveBeenCalledWith(
+      skillStudioAt(inWorkspace("ops"), "routing"),
+      SKILL_STUDIO_TITLE,
+    );
   });
 
   it("says its program's own catalogue beside the budget, never in it (#3324)", async () => {

@@ -13,7 +13,7 @@ import {
   type ReactNode,
 } from "react";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
-import { Send, X } from "lucide-react";
+import { LoaderCircle, Send, X } from "lucide-react";
 import { useTabStop } from "./roving";
 import { RestartEndsLine } from "./RestartEnds";
 import {
@@ -76,6 +76,7 @@ import { capMarks } from "./combiningMarks";
 import { blankOf, marksIn, markOf } from "./invisible";
 import { AskWrites } from "./AskWrites";
 import { LoginSite, useTypedSite } from "./LoginSite";
+import { RunGrantFacts } from "./RunGrantFacts";
 import { SecretFill, type FillWith } from "./SecretFill";
 import { SecretFillSite } from "./SecretFillNotice";
 import type { VaultEntry } from "./VaultEntryPicker";
@@ -180,6 +181,7 @@ export function Inbox({
   personaOf,
   updates,
   notices,
+  reading,
   windowLines,
   onNotices,
   onNoticeAnswer,
@@ -222,6 +224,8 @@ export function Inbox({
   updates?: Updates;
   /** The project's Notices (#1695): every `Notice` drawn in it is listed here, in its order. */
   notices?: ReactNode;
+  /** What is still being read that may list a Notice here, in words, one line each (#5325). */
+  reading?: readonly string[];
   /** How many Notices the list holds that the status line counts (`countsInStatusBar`). */
   onNotices?: (count: number) => void;
   /** A Notice answering the person's own press arrived (`ANSWERS`, D-1695-3). */
@@ -496,13 +500,26 @@ export function Inbox({
             <section
               className="inbox-notices"
               aria-label={NOTICES}
-              hidden={noticed === 0 && windowLinesCount === 0 && resultsCount === 0}
+              hidden={
+                noticed === 0 &&
+                windowLinesCount === 0 &&
+                resultsCount === 0 &&
+                (reading === undefined || reading.length === 0)
+              }
               ref={noticesAt}
             >
               <PanelSectionTitle level={3} className="inbox-chain">
                 {NOTICES}
               </PanelSectionTitle>
               <NothingDone said={noticesSaid} />
+              {/* What may yet list a Notice here, each with its own mark (#5325): not read yet
+                  is not nothing to say. */}
+              {reading?.map((said) => (
+                <p key={said} className="pending" aria-busy="true">
+                  <LoaderCircle className="node-icon spinning" aria-hidden="true" />
+                  {said}
+                </p>
+              ))}
               {/* The window's own lines, listed first: the window draws its one list here. */}
               {placeWindowLines !== undefined && (
                 <div className="inbox-window-lines" ref={placeWindowLines} />
@@ -562,6 +579,7 @@ export const ALLOW_OR_KEEP: ReadonlySet<Shown["source"]> = new Set<Shown["source
   "pool-login",
   "pool-tool",
   "browser-login",
+  "run-grant",
   "secret-fill",
   "vault",
 ]);
@@ -818,6 +836,7 @@ const SOURCE_SAID: Record<Shown["source"], string> = {
   vault: "Refused a vault its persona isn't tagged for",
   "browser-login": "Asks to log its browser in to a site with vault credentials",
   "secret-fill": "Asks to put a vault secret into a field of its browser",
+  "run-grant": "Asks you to allow a program to use a vault secret",
   terminal: "In its terminal",
   question: "Waiting on your reply",
   "task-question": "Asks you, through its asking chat",
@@ -1005,6 +1024,8 @@ function Ask({
             />
           </Stop>
         )}
+        {/* What a program would receive, and from whom each word comes (ADR 0112). */}
+        {ask.run != null && <RunGrantFacts run={ask.run} />}
         {/* What a secret fill puts where (#5115): words to read, nothing to reach. */}
         {ask.fill != null && <SecretFillSite fill={ask.fill} />}
         {shape.reason && (

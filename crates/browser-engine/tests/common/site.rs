@@ -14,7 +14,10 @@
 //! size stated up front and not. `/verify-code` is a site's 2FA verifier (#5118): it holds
 //! [`TWO_FACTOR_SEED`] on its server, as a site does, and accepts the code it makes now, a step
 //! either side. `/stays-open`, with anything after it, answers only after [`STAYS_OPEN`]: a
-//! request still open when the call that set it off answers (#5310).
+//! request still open when the call that set it off answers (#5310). `/cached-once` is a page a
+//! session earlier in the browser left in its HTTP cache (#5272): the first answer is its settings
+//! page, cached for long, and any later one the site's form, which is what a load that passes the
+//! cache gets.
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -155,6 +158,19 @@ impl Site {
     pub fn was_sent(&self, request: &str) -> bool {
         self.sent.lock().unwrap().iter().any(|one| one == request)
     }
+
+    /// Every request it was sent for `host`, as `METHOD host/path`, in order: what a failed
+    /// test says reached a site.
+    pub fn sent_to(&self, host: &str) -> Vec<String> {
+        let prefix = format!(" {host}/");
+        self.sent
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|one| one.contains(&prefix))
+            .cloned()
+            .collect()
+    }
 }
 
 /// Serves the fixture site on a loopback port of its own.
@@ -260,6 +276,34 @@ fn answer(
         return;
     }
     match path {
+        "cached-once" => {
+            let first = !sent
+                .lock()
+                .unwrap()
+                .iter()
+                .rev()
+                .skip(1)
+                .any(|one| one.ends_with("/cached-once"));
+            let _ = if first {
+                let body = b"<!doctype html><title>Settings</title><h1>Settings</h1>\
+                    <form onsubmit=\"event.preventDefault();this.remove();\
+                    document.querySelector('h1').textContent='Kept for the earlier session'\">\
+                    <label>Token <input type=password id=password></label></form>";
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\
+                     Cache-Control: private, max-age=600\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                out.write_all(head.as_bytes())
+                    .and_then(|()| out.write_all(body))
+                    .and_then(|()| out.flush())
+            } else {
+                let body = b"<!doctype html><title>A site</title><h1>Sign in</h1>\
+                    <form action=account.html method=get>\
+                    <label>Password <input type=password name=password></label></form>";
+                respond(&mut out, "200 OK", "text/html", &[], body)
+            };
+        }
         // A site's 2FA verifier (#5118): the code the seed makes now, a step either side.
         "verify-code" => {
             let code = query

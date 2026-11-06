@@ -18,7 +18,21 @@ import {
   type StudioScope,
 } from "./skillStudio";
 import { openViewAt } from "./ui/panel/viewHistory";
-import type { Studio, StudioHarness, StudioRouter } from "./bindings";
+import type { Studio, StudioBudget, StudioHarness, StudioRouter } from "./bindings";
+
+/** A program's budget where nothing is written, as the core says it. */
+function budgetOf(program: string, key: string, skills: number, chars: number): StudioBudget {
+  return {
+    program,
+    key,
+    skills,
+    chars,
+    skills_said: `${skills}, ${program}'s default`,
+    chars_said: `${chars.toLocaleString("en-US")}, ${program}'s default`,
+    skills_here: null,
+    chars_here: null,
+  };
+}
 
 /**
  * **The Harness skills and Routing pages** (#3692, spec #3679's S9, variant A of
@@ -99,9 +113,9 @@ const BUILT_IN: StudioRouter = {
   graded: null,
   written: null,
   budget: [
-    { program: "Claude Code", skills: 60, chars: 15000 },
-    { program: "Codex", skills: 30, chars: 6000 },
-    { program: "opencode", skills: 30, chars: 6000 },
+    budgetOf("Claude Code", "claude", 60, 15000),
+    budgetOf("Codex", "codex", 30, 6000),
+    budgetOf("opencode", "opencode", 30, 6000),
   ],
   past_limits: [],
   preview:
@@ -302,9 +316,9 @@ const RELEVANCE: StudioRouter = {
   extension: "relevance",
   written: "relevance",
   budget: [
-    { program: "Claude Code", skills: 60, chars: 15000 },
-    { program: "Codex", skills: 30, chars: 6000 },
-    { program: "opencode", skills: 30, chars: 6000 },
+    budgetOf("Claude Code", "claude", 60, 15000),
+    budgetOf("Codex", "codex", 30, 6000),
+    budgetOf("opencode", "opencode", 30, 6000),
   ],
   past_limits: [],
   preview:
@@ -342,8 +356,11 @@ describe("the Routing page (#3692)", () => {
 
     const facts = await screen.findByTestId("skill-routing-facts");
     expect(within(facts).getByTestId("skill-routing-router")).toHaveTextContent("Built-in");
-    expect(facts).toHaveTextContent(
-      "Claude Code: 60 skills, 15,000 characters. Codex: 30 skills, 6,000 characters.",
+    expect(screen.getByTestId("skill-budget-skills-claude")).toHaveTextContent(
+      "60, Claude Code's default",
+    );
+    expect(screen.getByTestId("skill-budget-chars-codex")).toHaveTextContent(
+      "6,000, Codex's default",
     );
     // What it counts, and that a program's own catalogue is not counted (#3324).
     expect(within(facts).getByTestId("skill-routing-budget-counts")).toHaveTextContent(
@@ -507,6 +524,48 @@ describe("the Routing page (#3692)", () => {
     const router = await screen.findByTestId("skill-routing-router");
     expect(router).toHaveTextContent("Not a router");
     expect(router).toHaveTextContent(/so its chats are routed by the built-in router/);
+  });
+
+  it.each([
+    ["a workspace's", inWorkspace("ops"), "ops"],
+    ["the project's, at the root", AT_THE_ROOT, null],
+    ["the project's, for a persona, which has no level", asPersona("reviewer"), null],
+  ])("changes %s skill budget from its row and says so", async (_whose, scope, workspace) => {
+    const asked = core(() => studio([], { router: BUILT_IN }), {
+      skill_budget_preview: () => ({
+        listed: 3,
+        hidden: 0,
+        now_listed: [],
+        now_hidden: [],
+        more_tokens: 0,
+        past_limit: null,
+        over: null,
+      }),
+      skill_budget_set: () => true,
+    });
+    const user = userEvent.setup();
+    renderStudio(scope, "routing");
+
+    await user.click(await screen.findByRole("button", { name: "Change Codex's skill budget" }));
+    const dialog = await screen.findByRole("dialog", { name: "Change Codex's skill budget" });
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Most skills in a chat's list" }),
+      "12",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Change budget" }));
+
+    await waitFor(() =>
+      expect(asked.find((one) => one.cmd === "skill_budget_set")?.args).toMatchObject({
+        workspace,
+        program: "codex",
+        skills: 12,
+        chars: null,
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Change Codex's skill budget" })).toBeNull(),
+    );
+    expect(await screen.findByText(/New chats get this\. Open chats keep theirs/)).toBeVisible();
   });
 
   it("changes a workspace's router through Change…, saying what changes before it does", async () => {

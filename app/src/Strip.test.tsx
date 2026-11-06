@@ -531,8 +531,8 @@ describe("the strip's tabs (#4762)", () => {
     await waitFor(() => expect(tabNames()).toEqual(["ide.1", "ide.4"]));
   });
 
-  it("says its state on its first `.state` mark, the corner dot being only seen", async () => {
-    // The scenario specs read `tab.$(".state")` for the state's word (`chat.state.e2e.ts`). It
+  it("says its state in one word after its name, the mark on its icon being only seen", async () => {
+    // The scenario specs read `tab.$(".tab-said")` for the state's word (`chat.state.e2e.ts`). It
     // is the row's word (#4935): a turn ended with nothing asked of the person is idle.
     const { move } = core([chat(1)]);
     render(<App />);
@@ -542,9 +542,9 @@ describe("the strip's tabs (#4762)", () => {
 
     const tab = within(strip()).getAllByRole("tab")[0];
     await waitFor(() =>
-      expect(tab.querySelector(".state")?.getAttribute("aria-label")).toBe("idle"),
+      expect(tab.querySelector(".tab-said")?.getAttribute("aria-label")).toBe("idle"),
     );
-    expect(tab.querySelectorAll(".state")).toHaveLength(1);
+    expect(tab.querySelectorAll(".tab-said")).toHaveLength(1);
   });
 
   it("draws its pin before its icon", async () => {
@@ -552,8 +552,12 @@ describe("the strip's tabs (#4762)", () => {
     render(<App />);
 
     await waitFor(() => expect(tabNames()).toHaveLength(2));
-    const marks = [...(tabNamed("ide.2")?.querySelectorAll(".pinned, .chat-persona") ?? [])];
-    expect(marks.map((one) => one.classList[0])).toEqual(["pinned", "chat-persona"]);
+    const marks = [
+      ...(tabNamed("ide.2")?.querySelectorAll(
+        '.pinned, [data-scope="chat-mark"][data-part="root"]',
+      ) ?? []),
+    ];
+    expect(marks.map((one) => one.classList[0])).toEqual(["pinned", "ds-chat-mark"]);
   });
 
   it("keeps a pinned tab out of the collapse, with the front tab beside it", async () => {

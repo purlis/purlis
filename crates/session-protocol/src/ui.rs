@@ -104,7 +104,8 @@ pub struct Server {
 /// - **it starts a chat or a shell as the person**: `ask_persona_chat`, `start_chat`,
 ///   `cancel_chat_start`,
 ///   `start_chat_here`, `open_session`, `open_shell_in_branch`, `first_task_run`,
-///   `resume_session`, `retry_chat_that_did_not_start`, `reopen_finished_task`, `curate` (a
+///   `resume_session`, `retry_chat_that_did_not_start`, `retry_project`, `reopen_finished_task`,
+///   `curate` (a
 ///   chat with a curation's prompt typed), and `relaunch` (the launch's answer, which starts
 ///   every chat the project held);
 /// - **it starts a chat again**: `restart_chat_without_sandbox`, `restart_chat`,
@@ -315,6 +316,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "first_task_run",
     "resume_session",
     "retry_chat_that_did_not_start",
+    "retry_project",
     "reopen_finished_task",
     "curate",
     "relaunch",
@@ -377,6 +379,8 @@ pub const WINDOW_ONLY: &[&str] = &[
     // A Secret ask (#5068, ADR 0109): only the person, in the window, fills a secret or
     // declines it. No chat, relayed link or other client answers one.
     "answer_secret_ask",
+    // A Run grant (ADR 0112): only the person, in the window, lets a program receive a value.
+    "answer_run_grant",
     // And with an entry the person keeps (#5073): the asked key becomes a link to it. Which
     // entries the person keeps, vault by vault, is theirs to read in the window, never a
     // client's: a chat must not learn where a value lives.
@@ -706,6 +710,21 @@ pub const WINDOW_ONLY: &[&str] = &[
     // studio opens (SK-35, #3013): the person's window alone, as Delete is.
     "skill_deletes_cut_short",
     "skill_restore",
+    // Several skills as one commit (#5331), and what is read to review them: the person's own
+    // press in their window, as Delete and a turn-off are. A chat may only propose one.
+    "skill_source_installed",
+    "skill_set_review",
+    "skill_set_delete",
+    "skill_set_restore",
+    "skill_set_turn",
+    // The Library's Select mode's (#5332): several skills pinned, archived or moved as one
+    // commit, an export of them, and deleted skills taken off Deleted now, which has no undo.
+    "skill_set_pin",
+    "skill_set_lifecycle",
+    "skill_set_move",
+    "skill_set_delete_now",
+    "skill_set_export_review",
+    "skill_set_export",
     "skill_grant",
     "skill_turn",
     // A skill pinned or unpinned for a workspace's or a persona's chats (SK-15d, #3232): one
@@ -717,6 +736,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // A router's reading of prompts turned on or off (ADR 0102 as amended 2026-10-31): only the
     // person's own press in their window, never a chat or another link.
     "skill_router_reads_prompts",
+    // A program's skill budget changed (#5353): the person's own press in their window, as a
+    // Settings save is.
+    "skill_budget_set",
     // A skill's tab (#2782): reverting it to a version, deprecating, archiving or restoring it,
     // and naming its owners. Each is one commit to the project, the person's own press in their
     // window.
@@ -1339,6 +1361,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "skill_persona_skills",
     "skill_revert_widens",
     // The router extensions Change… offers (#3692): read only.
+    // What a typed skill budget would do to new chats (#5353): read only.
+    "skill_budget_preview",
     "skill_routers",
     "skill_runs",
     "skill_stats",

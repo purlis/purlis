@@ -792,7 +792,7 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
 | Family | Wrapper | Parts | Variants |
 | --- | --- | --- | --- |
 | Card | `Card` (as a `div`, `li`, `p`, `section` or `article`), `CardTitle` (`ui/card/Card.tsx`); `Facts`, `Fact` (`Facts.tsx`); `Totals`, `Tile` (`Totals.tsx`); `CardButton`, a card pressed whole (`CardButton.tsx`, #3655), its own family `card-button` (#3885) | `root`, `title`; `facts-label`, `facts-value`, `tile`, `tile-value`; a pressed card's `root`, `mark`, `press`, `title`, `more`, `line` | `raised`, `ask`; a pressed card's `door`, `pick` |
-| Notice | `Notice`, `NoticeList`, `NoticePaneRow` (`src/Notice.tsx`), drawn through `ui/notice/Notice.tsx` | `root`, `message`, `whose`, and `under` (what a way out opened) | `news`, `trouble`, `attention` |
+| Notice | `Notice`, `NoticeList`, `NoticePaneRow` (`src/Notice.tsx`), drawn through `ui/notice/Notice.tsx` | `root`, `message`, `whose`, `title`, `mark`, `sub` (a card's state and age), `chat-words` (a chat's own words on one), `head`, `heading` and `end` (a card's head, layout only), and `under` (what a way out opened); `notice-card`'s `said` holds a card's live region | `news`, `trouble`, `attention` |
 | Badge | `Badge`, `HostStatus` (`ui/badge/Badge.tsx`) | `root` | `neutral`, `accent`, `waiting`, `ok` |
 | Count | `Count`, `CountGroup` (`ui/badge/Badge.tsx`) | `root`, `group` | `neutral`, `accent`, `waiting`, `hot` |
 | Separator | `Separator` (`ui/separator/Separator.tsx`, on React Aria's) | `root` | none |
@@ -819,13 +819,24 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
 - **A Notice is drawn by the notice family and is a Notice by `Notice.tsx`.** Its box is the
   family's `root`, its tone the variant and where it stands its `data-placement`: `pane` (its
   pane's row; in a chat's pane the band draws it as a washed card with its mark and no edge,
-  `paneFrame.css`, #3142), `inbox` (a row of the Inbox's list, no box of its
-  own, the danger ground across a trouble row) or `alone` (on a page, edged in the hairline, which takes the card's edge width: none in Purlis).
+  `paneFrame.css`, #3142), `inbox` (in a list: in the Notices centre and the window's own lines there, a card of its own,
+  below; in the same layout, a row of the list's box under the title bar and on the page a window
+  with no project shows) or `alone` (on a page, edged in the hairline, which takes the card's edge width: none in Purlis).
   Each way out is a button of the button family that says which it is (`data-way`: `go`, `fix`,
   `link`, `copy`, `dismiss`, and the row's `more`). **A Notice holds Allow, so it is a consent
   surface**: its fill is one of the grounds an answer that grants is measured on, and its edge's
   width is no theme's. The Inbox's list (`data-scope="notice-list"`) and a pane's row
   (`data-scope="notice-row"`) are the family's layout.
+- **A Notice in the Notices centre is a card in the Inbox card's style** (#5217). A one-line
+  `head`: its mark, its `title` (what it names, whose it is, its label, or else its state), its
+  state and age muted beneath (`sub`), Go to chat a quiet link and its ×. Under it, what it says at
+  the card's size; a chat's own words only through `ChatText` (`chatWords`), purlis's in plain
+  text; and its ways. One primary, where it has an answer, every other way a quiet link. **A
+  consent takes no primary** (ADR 0097 §6): Allow keeps `grants`, what stands beside it stays
+  `secondary`, and its card keeps its full waiting edge (`data-consent`), where any other Notice's
+  outline is softer, in its kind's colour. A sandbox block says it is one (`consent`), as an
+  answer that `allows` says it of itself, and says "Waiting on you" only where it has something
+  to answer. A pane's band and a Notice alone on a page do not take this layout.
 - **Three tones** (#3678): `news` (nothing is wrong, the person is being told), `attention`
   (nothing is wrong, but the person must decide: a change a chat made to review, a grade plan
   that changed under them, a draft out of date) and `trouble` (something failed, and only then).
@@ -903,6 +914,32 @@ error (Get project's clone progress is still off, until it moves).
   release's manifest version).
 - **Stories hold it** (`Meter.stories.tsx`): the latest grade's three bars, a running grade's
   progress that moves, and one going with no end known.
+
+## The pane preview family
+
+**What a drag draws over the panes is the pane preview family** (`app/src/ui/pane-preview/`, #5291,
+spec #5288, ADR 0113): `PanePreviewArriving`, a pane the drop would make or a side that would fold;
+`PanePreviewLine`, on the strip, where a tab would go; `PanePreviewSize`, the columns and rows a
+terminal will take; `PanePreviewRefused`, the mark on the pane a refused place means; and
+`PanePreviewHeld` and `PanePreviewWords`, what is held and what letting go would do, by the pointer.
+Only the wrapper writes `data-scope="pane-preview"`: `purlis/pane-preview-family` is an error.
+
+- **It draws, and decides nothing.** What a drop would do is the drop model's (`paneDrop.ts`), and
+  where each part goes is the drag's (`paneDragLayer.tsx`).
+- **None is read by a reader or takes the pointer.** A reader hears the drag from the window's status
+  line, and the pointer has to reach what is under them.
+- **Its parts** are `arriving`, `name`, `line`, `size`, `refused`, `held` and `words`, in
+  `pane-preview.css`; a theme's parts reach the same attributes (`pane-preview.*`, the next release's
+  manifest version).
+
+## The chat mark family
+
+`ChatMark` (`app/src/ui/chat-mark`, ADR 0104 amended 2026-11-05, #5340) is a chat's mark on its tab, its row in the list, its pane's head and a folded pane's rail. A screen draws it through `ChatPersonaState`, which reads the chat's one state from `shownState`; `QuitWarning`'s list hands it a state directly.
+
+- **Props:** `state` (`needs`, `failed`, `working`, `waiting`, `idle`, `ended`, or nothing where none is known), `who`, `word`, `changed`.
+- **Parts:** `root` carries the state as its `data-variant`; `who`, `badge` and `word`. A glyph tells each state as well as its colour.
+- **The place sets** `--chat-mark-size` and `--chat-mark-ground`, nothing else.
+- **`who` is its own part** so a later control can stand in it (the grip, #5290), with the badge left beside it.
 
 ## The pane foot family
 
@@ -1130,6 +1167,12 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
   list's edges** (`space.2`), so a pill never touches the panel the list is joined to.
 - **The keyboard is React Aria's**: one Tab stop, the row last focused; ↑ and ↓ move and stop at
   the ends; Home and End; typing finds a row by its `textValue`; Enter and Space choose or run.
+  **A list that chooses several** (`selectionMode="multiple"`, a `Checkbox` in the row's lead with
+  `slot="selection"`) takes a click or Space to tick a row, Shift-click and Shift+↑ ↓ for a range,
+  and ⌘A (Ctrl+A off macOS) for every row, which a list that draws its rows a screen at a time
+  answers with every item of its data, not only the rows drawn (`"all"`, the Library's Select
+  mode, #5332). Esc clears what is chosen, or does what `onEscape` says: a list in a mode of its
+  own leaves it.
 - **A row's menu and its tooltip are the row's own** (`menu` and `tip` on a row): a collection
   draws its rows itself, so no `ContextMenu` or `Tooltip` can be put around one. The menu opens
   on a right-click, or by Shift+F10 or the menu key while the row has the keyboard, on its first
@@ -2295,12 +2338,9 @@ and `FourRegions.test.tsx` found it by holding a `nav` that had been replaced.
 **A terminal keeps Tab.** xterm prevents Tab and Shift+Tab and sends them to the shell —
 completion, and Claude Code's mode cycling — and nothing in the window takes either. So a
 terminal is a stop you can reach and cannot Tab out of, which is why the pane's own controls are
-written _before_ it in the document (they are absolutely positioned, so the look is unchanged).
-**They are shown on hover and while the keyboard is on them, and at no other time** — not
-because their pane is focused, which is the pane the operator is typing in and a corner he
-asked to keep clear. A `visibility: hidden` control is out of the sequence, so the focused
-pane's are hidden by `opacity` with `pointer-events: none` instead: Tab still lands on them, and
-`.pane-doing:focus-within` draws the group the moment it does.
+written _before_ it in the document, in the pane's head above it.
+**They are always drawn** (#5318, ADR 0111), so every pane's are in the sequence, in the order
+they are drawn. A tab's only pane has no Close, so no stop is left for it.
 
 **The way out is Ctrl+Tab, and Ctrl+Shift+Tab backwards** (`SessionPane.leavesTheChat`). It is
 the platforms' own key for leaving a control that keeps Tab — GTK's text view, Windows'

@@ -17,6 +17,8 @@ use std::sync::Mutex;
 const TOKEN: &str = "s3cret-value";
 const KUBECONFIG: &str = "apiVersion: v1\nclusters: [k8s-s3cret]\n";
 
+mod run_grants;
+
 /// A project whose vault `team` is a plain file tagged for persona `devops`, beside a vault
 /// `other` tagged for nobody, and a folder `work` for the chat.
 fn project() -> tempfile::TempDir {
@@ -4023,6 +4025,37 @@ fn a_private_key_is_filled_as_no_login() {
     assert!(!why.contains("BEGIN"), "{why}");
 }
 
+/// A login's values follow a fill's rules (#5272), its password's and its user name's alike.
+#[test]
+fn a_login_follows_the_same_value_rules_as_a_fill() {
+    let seeds = [
+        "JBSWY3DPEHPK3PXP".to_owned(),
+        "JBSW Y3DP EHPK 3PXP".to_owned(),
+        format!("{}://totp/shop?secret=JBSWY3DPEHPK3PXP", "otpauth"),
+        format!("{}://offline?data=abc", "otpauth-migration"),
+    ];
+    for seed in &seeds {
+        for (token, name) in [(seed.as_str(), "qa-person"), (TOKEN, seed.as_str())] {
+            let project = project();
+            std::fs::write(
+                project.path().join("team.json"),
+                serde_json::json!({"TOKEN": token, "NAME": name}).to_string(),
+            )
+            .unwrap();
+            let mut asker = asker(project.path(), Some("devops"));
+            asker.confines.as_mut().unwrap().tools =
+                vec![shop_login_armed("team", "TOKEN", Some("NAME"))];
+            let why = login_for(&asker, "shop-login", false).unwrap_err();
+            assert!(why.contains("2FA seed"), "{why}");
+            assert!(!why.contains(seed.as_str()), "{why}");
+            // And what the person allowed from a notice reads under the same rules.
+            let tool = shop_login_armed("team", "TOKEN", Some("NAME")).tool;
+            let why = granted_login(&asker, &tool, None).unwrap_err();
+            assert!(why.contains("2FA seed"), "{why}");
+        }
+    }
+}
+
 /// What no sandboxed chat is handed a login for (#2016): a login its start did not arm, a tool
 /// that is no login, and a vault its persona may not use. Each refusal names no value.
 #[test]
@@ -5278,6 +5311,7 @@ fn served_asking(
             asks,
             within,
             moved: &|| {},
+            run_gate: None,
         },
     );
     let bytes = wire.0.lock().unwrap().clone();
@@ -5537,6 +5571,7 @@ fn login_asking(
         asks,
         within,
         moved: &|| {},
+        run_gate: None,
     };
     login_and_identity_for(asker, "shop-login", false, Some(&missing)).map(|(login, _)| login)
 }

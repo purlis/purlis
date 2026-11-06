@@ -164,9 +164,6 @@ describe("dragging a pane in the window (#4763)", () => {
     fireEvent.pointerDown(head(three), at(900, 50));
     fireEvent.pointerMove(document, at(60, 300));
     expect(await screen.findByText("chat 3 left of chat 1.")).toBeTruthy();
-    expect(document.querySelector(".pane-drop-preview")?.getAttribute("style")).toContain(
-      "width: 400px",
-    );
     fireEvent.pointerUp(document, at(60, 300));
     expect(shape(window.tabs().byId[front].layout)).toBe("row(3 1)");
     await waitFor(() => expect(heard()).toBe("Put chat 3 left of chat 1."));
@@ -326,50 +323,23 @@ describe("dragging a pane in the window (#4763)", () => {
   });
 });
 
-describe("where a drag's preview is drawn (#5284)", () => {
+// Where the panes are drawn while a drag holds them is `paneMakingRoom.window.test.tsx`'s.
+describe("what is dragged over its own place (#5284, #5291)", () => {
   const preview = () => document.querySelector<HTMLElement>(".pane-drop-preview");
-  const boxDrawn = () => {
-    const { left, top, width, height } = preview()?.style ?? {};
-    return { left, top, width, height };
-  };
-
-  it.each([
-    ["left", 810, 340, { left: "800px", top: "40px", width: "400px", height: "600px" }],
-    ["right", 1590, 340, { left: "1200px", top: "40px", width: "400px", height: "600px" }],
-    ["top", 1200, 50, { left: "800px", top: "40px", width: "800px", height: "300px" }],
-    ["bottom", 1200, 630, { left: "800px", top: "340px", width: "800px", height: "300px" }],
-    ["middle", 1200, 340, { left: "800px", top: "40px", width: "800px", height: "600px" }],
-  ])("draws a drop on a pane's %s over that part of the pane", (_, x, y, box) => {
-    const window = shown();
-    const front = window.tabs().order[0];
-    fireEvent.pointerDown(head(contentsOf(window.tabs(), front)[0].pane), at(100, 50));
-    fireEvent.pointerMove(document, at(x, y));
-    expect(preview()?.hasAttribute("data-refused")).toBe(false);
-    expect(boxDrawn()).toEqual(box);
-  });
-
-  it("draws a refused place dashed over the pane it refers to, never across the window's top", () => {
-    const window = shown(400);
-    const front = window.tabs().order[0];
-    fireEvent.pointerDown(head(contentsOf(window.tabs(), front)[0].pane), at(100, 50));
-    fireEvent.pointerMove(document, at(410, 340));
-    expect(preview()?.hasAttribute("data-refused")).toBe(true);
-    expect(boxDrawn()).toEqual({ left: "400px", top: "40px", width: "200px", height: "600px" });
-  });
 
   it.each([
     ["its edge", 10, 340],
     ["its middle", 400, 340],
   ])(
     "draws no danger over the pane being moved, at %s, and letting go moves nothing",
-    (_, x, y) => {
+    async (_, x, y) => {
       const window = shown();
       const before = window.tabs();
       const front = before.order[0];
       fireEvent.pointerDown(head(contentsOf(before, front)[0].pane), at(100, 50));
       fireEvent.pointerMove(document, at(x, y));
+      const tip = await screen.findByText("Let go to leave it where it is.");
       expect(preview()).toBeNull();
-      const tip = screen.getByText("That's the pane being moved. Drop it on another pane.");
       expect(tip.hasAttribute("data-refused")).toBe(false);
       fireEvent.pointerUp(document, at(x, y));
       expect(window.tabs()).toBe(before);
@@ -386,13 +356,13 @@ describe("where a drag's preview is drawn (#5284)", () => {
     await waitFor(() => expect(heard()).toBe("Put back. Nothing moved."));
   });
 
-  it("draws no danger over a pane of the tab being moved", () => {
+  it("draws no danger over a pane of the tab being moved", async () => {
     const window = shown();
     const [first] = window.tabs().order;
     fireEvent.pointerDown(screen.getByText(`tab ${first}`), at(10, 10));
     fireEvent.pointerMove(document, at(400, 340));
+    const tip = await screen.findByText("Let go to leave it where it is.");
     expect(preview()).toBeNull();
-    const tip = screen.getByText("That's the tab being moved. Drop it on a pane in another tab.");
     expect(tip.hasAttribute("data-refused")).toBe(false);
   });
 });

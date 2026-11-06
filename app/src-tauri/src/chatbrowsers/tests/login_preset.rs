@@ -348,6 +348,162 @@ fn a_kept_login_opens_a_browser_only_to_keep_it_says_why_and_offers_to_close_the
     assert!(browsers.left_behind_moment(3, 1001).is_none(), "once");
 }
 
+/// #5272: a form that doesn't appear on the clean load leads to a browser that has held nothing,
+/// with the reason and the offer to close the old one, in the answer and in the person's view.
+#[test]
+fn a_form_not_on_the_clean_load_opens_a_clean_browser_says_why_and_offers_to_close_the_old_one() {
+    let (browsers, hosted) = with_a_used_browser();
+    *hosted.no_form_on_clean_load.lock().unwrap() = 1;
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    let (browser, note) = browser_and_note(&answer);
+    assert_eq!(browser, "b2");
+    assert!(note.contains("no login form appeared"), "{note}");
+    assert!(note.contains("once its site was cleared"), "{note}");
+    assert!(
+        note.contains("Browser b1 is still open") && note.contains("close it with browser_close"),
+        "{note}"
+    );
+    assert_eq!(
+        *hosted.tried_on_clean_load.lock().unwrap(),
+        ["program-1"],
+        "tried where the chat was first"
+    );
+    assert_eq!(logged_into(&hosted), ["program-2"]);
+    assert_eq!(
+        hosted.kept.lock().unwrap().last().unwrap(),
+        &None,
+        "it opens from nothing kept"
+    );
+    let moment = browsers.left_behind_moment(3, 1000).expect("said");
+    assert_eq!(moment.moment.browser, "b2");
+    assert!(moment.moment.did.contains("No login form"), "{moment:?}");
+    assert!(moment.moment.did.contains("b1 is still open"), "{moment:?}");
+    assert!(browsers.left_behind_moment(3, 1001).is_none(), "once");
+}
+
+/// #5272: "and to nothing else": a second failure there is the answer, with no third browser.
+#[test]
+fn a_form_not_on_the_clean_load_opens_one_browser_and_no_more() {
+    let (browsers, hosted) = with_a_used_browser();
+    *hosted.no_form_on_clean_load.lock().unwrap() = 5;
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    let Answer::No { why } = answer else {
+        panic!("{answer:?}");
+    };
+    assert!(why.contains("purlis opened browser b2"), "{why}");
+    assert_eq!(started_browsers(&hosted), 2);
+    assert_eq!(hosted.tried_on_clean_load.lock().unwrap().len(), 2);
+    assert!(logged_into(&hosted).is_empty());
+}
+
+/// #5272: nor does a later call, whatever the browser opened for it says then.
+#[test]
+fn a_browser_opened_as_a_clean_load_failed_opens_no_other_on_a_later_call() {
+    let (browsers, hosted) = with_a_used_browser();
+    *hosted.no_form_on_clean_load.lock().unwrap() = 5;
+    called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    assert!(matches!(answer, Answer::No { .. }), "{answer:?}");
+    assert_eq!(started_browsers(&hosted), 2);
+}
+
+/// #5272: nor does the browser left behind, named again.
+#[test]
+fn a_browser_left_as_a_clean_load_failed_opens_no_other_when_named_again() {
+    let (browsers, hosted) = with_a_used_browser();
+    *hosted.no_form_on_clean_load.lock().unwrap() = 5;
+    called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    let again = BrowseAsk {
+        browser: Some("b1".to_owned()),
+        ..ask(3, log_in("shop-login"))
+    };
+    let answer = called(&browsers, &hosted, &again);
+
+    assert!(matches!(answer, Answer::No { .. }), "{answer:?}");
+    assert_eq!(started_browsers(&hosted), 2);
+}
+
+/// #5272: each browser left behind keeps its offer, in the answer and in the person's view.
+#[test]
+fn a_kept_login_with_no_form_on_its_clean_load_offers_to_close_both_browsers() {
+    let (browsers, hosted) = with_a_used_browser();
+    *hosted.no_form_on_clean_load.lock().unwrap() = 1;
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("kept-login")));
+
+    let (browser, note) = browser_and_note(&answer);
+    assert_eq!(browser, "b3");
+    assert!(note.contains("Browser b1 is still open"), "{note}");
+    assert!(note.contains("Browser b2 is still open"), "{note}");
+    let first = browsers.left_behind_moment(3, 1000).expect("said");
+    assert!(first.moment.did.contains("b1 is still open"), "{first:?}");
+    let second = browsers.left_behind_moment(3, 1000).expect("said");
+    assert!(second.moment.did.contains("b2 is still open"), "{second:?}");
+    assert!(browsers.left_behind_moment(3, 1000).is_none());
+}
+
+/// #5272: the first try may have taken a while: what policy says now holds the second.
+#[test]
+fn a_form_not_on_the_clean_load_opens_no_browser_where_policy_now_forbids_the_login() {
+    use purlis_core::sandbox::policy::{Locks, set_for_this_test};
+    let (browsers, hosted) = with_a_used_browser();
+    *hosted.no_form_on_clean_load.lock().unwrap() = 1;
+    set_for_this_test(Locks::parse(
+        r#"{"sandbox": {"persona-tools": false}}"#,
+        Path::new("/etc/purlis/policy.json"),
+    ));
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    let Answer::No { why } = answer else {
+        panic!("{answer:?}");
+    };
+    assert!(why.contains("policy forbids"), "{why}");
+    assert_eq!(started_browsers(&hosted), 1);
+    assert!(logged_into(&hosted).is_empty());
+}
+
+/// #5272: no room for one says so, and leaves the chat where it is, with nothing filled.
+#[test]
+fn a_form_not_on_the_clean_load_with_no_room_for_a_browser_says_both() {
+    let (browsers, hosted) = with_a_used_browser();
+    *hosted.no_form_on_clean_load.lock().unwrap() = 1;
+    *hosted.refuses.lock().unwrap() = Some(NotStarted::Failed("no room".into()));
+
+    let answer = called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    let Answer::No { why } = answer else {
+        panic!("{answer:?}");
+    };
+    assert!(why.contains("no login form appeared"), "{why}");
+    assert!(why.contains("no room"), "{why}");
+    assert!(logged_into(&hosted).is_empty());
+    assert!(browsers.left_behind_moment(3, 1000).is_none());
+}
+
+/// #5272: a session counts where the login went through, never where it only tried.
+#[test]
+fn a_login_moved_by_its_clean_load_holds_its_session_in_the_new_browser() {
+    let (browsers, hosted) = with_a_used_browser();
+    *hosted.no_form_on_clean_load.lock().unwrap() = 1;
+    called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+    *hosted.asks_to_sign_in.lock().unwrap() = Some(false);
+
+    let again = called(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    let (browser, note) = browser_and_note(&again);
+    assert_eq!(browser, "b2");
+    assert!(note.contains("already logged in"), "{note}");
+    assert_eq!(logged_into(&hosted), ["program-2"], "filled once");
+}
+
 #[test]
 fn a_kept_login_with_no_browser_open_leaves_nothing_behind_to_offer() {
     let browsers = ChatBrowsers::default();

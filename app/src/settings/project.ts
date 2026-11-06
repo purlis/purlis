@@ -58,7 +58,7 @@ import { EXTENSIONS_LINK, linkToGroup, settingsPlace } from "./links";
 import { profilePage } from "./profileAddress";
 import { askIconThemes, iconsControl, iconsHeld, iconsNotes } from "./iconsPick";
 import { discoverRow } from "./discover";
-import { budgetControls, projectSkillsGroup } from "./skillsSummary";
+import { projectSkillsGroup } from "./skillsSummary";
 import { harnessDeclarationRows } from "./harnessDeclarations";
 import { settled } from "../PlaneEdits";
 import { NETWORK, networkGroup } from "./GrantedList";
@@ -615,9 +615,7 @@ function declaredGroups(
         : {}),
     },
     // Its chats' skill budget (#4610), behind the Skill studio's flag.
-    ...(skillStudio && read.plane !== undefined
-      ? [projectSkillsGroup(read.plane, fromShared("project.skills", budgetControls()))]
-      : []),
+    ...(skillStudio && read.plane !== undefined ? [projectSkillsGroup(read.plane)] : []),
     ...profilePages(read),
     {
       id: "project.sandbox",
@@ -725,18 +723,33 @@ function declaredGroups(
       : []),
     // A chat's ask for a secret its persona does not declare (#5078, ADR 0109): said, with who
     // set it, where policy turns such asks off. Nothing to change here.
-    ...(read.sandbox?.policy?.undeclared_secret_asks === true
+    ...(read.sandbox?.policy?.undeclared_secret_asks === true ||
+    read.sandbox?.policy?.run_grants === true
       ? [
           {
             id: SECRET_ASKS,
             label: "Secret asks",
             help: "A chat asks you in the window for a credential it lacks, and a persona declares the ones its work needs.",
             settings: [
-              lockedRow(
-                `${SECRET_ASKS}.locked`,
-                "Secret asks",
-                `Policy turns off asks for a secret a persona doesn't declare: a chat that asks for one is told it was declined by policy, and you aren't asked. ${read.sandbox.policy.locked_by}`,
-              ),
+              ...(read.sandbox.policy.undeclared_secret_asks
+                ? [
+                    lockedRow(
+                      `${SECRET_ASKS}.locked`,
+                      "Secret asks",
+                      `Policy turns off asks for a secret a persona doesn't declare: a chat that asks for one is told it was declined by policy, and you aren't asked. ${read.sandbox.policy.locked_by}`,
+                    ),
+                  ]
+                : []),
+              // Run grants (ADR 0112, #5243).
+              ...(read.sandbox.policy.run_grants
+                ? [
+                    lockedRow(
+                      `${SECRET_ASKS}.run-grants-locked`,
+                      "Run grants",
+                      `Policy turns off allowing a program with a vault's keys: a chat has to run a tool its persona declares, and you can still fill a key. ${read.sandbox.policy.locked_by}`,
+                    ),
+                  ]
+                : []),
             ],
             sub: true,
           },

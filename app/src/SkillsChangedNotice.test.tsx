@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
+import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { PlaneUpdated } from "./bindings";
 import { CHAT_SKILLS_ASKED, type ChatSkillsAsk } from "./chatSkillsAsk";
@@ -23,11 +24,27 @@ const UPDATED: PlaneUpdated = {
   skills_edited: [],
 };
 
-function core(updated: PlaneUpdated[]) {
-  mockIPC((cmd) => {
-    if (cmd === "skill_studio_on") return true;
-    if (cmd === "chats_plane_updated") return updated;
-    throw new Error(`unexpected ${cmd}`);
+function core(updated: PlaneUpdated[] | (() => PlaneUpdated[])) {
+  let asked = 0;
+  mockIPC(
+    (cmd) => {
+      if (cmd === "skill_studio_on") return true;
+      if (cmd === "chats_plane_updated") {
+        asked += 1;
+        return typeof updated === "function" ? updated() : updated;
+      }
+      throw new Error(`unexpected ${cmd}`);
+    },
+    { shouldMockEvents: true },
+  );
+  return () => asked;
+}
+
+/** The plane changed on disk, in a way that concerns what chats started with. */
+async function planeChanged() {
+  await act(async () => {
+    await emit("plane-changed", { plane: "p" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 }
 
@@ -56,6 +73,42 @@ describe("a chat whose skills changed since it started", () => {
     } finally {
       window.removeEventListener(CHAT_SKILLS_ASKED, hear);
     }
+  });
+
+  it("shows its offer once for a bulk change, however many changes on disk it was (#5331)", async () => {
+    const one = { ...UPDATED, skills: true, skills_gone: ["grilling", "tdd"] };
+    let now: PlaneUpdated[] = [one];
+    const asked = core(() => now);
+    render(<SkillsChangedNotice plane="p" session={7} onRestart={() => undefined} />);
+    const notice = await screen.findByRole("status", { name: /Skills changed/ });
+    await userEvent.setup().click(within(notice).getByRole("button", { name: /Dismiss/ }));
+    expect(screen.queryByRole("status", { name: /Skills changed/ })).toBeNull();
+
+    // More events from the same change: the same skills gone, and it stays away.
+    const before = asked();
+    await planeChanged();
+    await waitFor(() => expect(asked()).toBeGreaterThan(before));
+    await planeChanged();
+    expect(screen.queryByRole("status", { name: /Skills changed/ })).toBeNull();
+
+    // Another change: it is offered again.
+    now = [{ ...one, skills_gone: ["grilling", "tdd", "review"] }];
+    await planeChanged();
+    expect(await screen.findByRole("status", { name: /Skills changed/ })).toBeInTheDocument();
+  });
+
+  it("offers again when a change is undone and then made again (#5331)", async () => {
+    const one = { ...UPDATED, skills: true, skills_gone: ["grilling"] };
+    let now: PlaneUpdated[] = [one];
+    core(() => now);
+    render(<SkillsChangedNotice plane="p" session={7} onRestart={() => undefined} />);
+    const notice = await screen.findByRole("status", { name: /Skills changed/ });
+    await userEvent.setup().click(within(notice).getByRole("button", { name: /Dismiss/ }));
+    now = [];
+    await planeChanged();
+    now = [one];
+    await planeChanged();
+    expect(await screen.findByRole("status", { name: /Skills changed/ })).toBeInTheDocument();
   });
 
   it("says nothing to a chat whose instructions alone changed", async () => {

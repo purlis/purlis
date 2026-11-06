@@ -61,6 +61,7 @@ fn the_view_frame_comes_in_the_next_release_s_manifest() {
             "list",
             "item",
             "head",
+            "heading",
             "header",
             "name",
             "lead",

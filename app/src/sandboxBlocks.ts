@@ -289,6 +289,10 @@ export function useSandboxBlocks(plane: PlaneId | undefined): {
   dismiss: (session: number, block: HeldBlock) => void;
   /** Puts `block` away only while it is still the chat's block, naming the same target. */
   answered: (session: number, block: HeldBlock) => void;
+  /** **Another window put it away** (#5225), which told the core: this one only lets it go. */
+  letGo: (session: number, block: HeldBlock) => void;
+  /** **Another window handed these over** (#5225): held here too, each once. */
+  take: (session: number, handed: readonly HeldBlock[]) => void;
 } {
   // Held with the project it is about, so a window moved to another project shows none of the
   // last one's in the very render it moves.
@@ -343,7 +347,26 @@ export function useSandboxBlocks(plane: PlaneId | undefined): {
     },
     [plane],
   );
-  return { blocks, dismiss, answered };
+  const letGo = useCallback((session: number, block: HeldBlock) => {
+    setHeld((was) => ({ ...was, blocks: putAway(was.blocks, session, block) }));
+  }, []);
+  const take = useCallback(
+    (session: number, handed: readonly HeldBlock[]) => {
+      setHeld((was) => ({
+        ...was,
+        plane,
+        blocks: handed.reduce(
+          (now, one) =>
+            (now[session] ?? []).some((held) => noticeKey(held) === noticeKey(one))
+              ? now
+              : blocked(now, one),
+          was.plane === plane ? was.blocks : NONE,
+        ),
+      }));
+    },
+    [plane],
+  );
+  return { blocks, dismiss, answered, letGo, take };
 }
 
 /** No blocks. */

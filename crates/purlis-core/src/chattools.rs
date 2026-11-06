@@ -188,11 +188,12 @@ pub fn worktree_update_args(
             base,
             take_base_baselines,
         }),
-        ("continue" | "abort", Some(_)) => {
+        ("continue" | "abort" | "fetch_only", Some(_)) => {
             Err("base is taken only when an update starts".to_owned())
         }
         ("continue", None) => Ok(UpdateStep::Continue),
         ("abort", None) => Ok(UpdateStep::Abort),
+        ("fetch_only", None) => Ok(UpdateStep::FetchOnly),
         _ => Err("step is start, merge, continue or abort".to_owned()),
     }
 }
@@ -766,10 +767,11 @@ pub static TOOLS: [Tool; 29] = [
                 "properties": {
                     "step": {
                         "type": "string",
-                        "enum": ["start", "merge", "continue", "abort"],
+                        "enum": ["start", "merge", "continue", "abort", "fetch_only"],
                         "description": "start (the default) rebases; merge merges the base in \
                                         (a branch folder only); continue or abort a rebase or \
-                                        merge it stopped.",
+                                        merge it stopped; fetch_only fetches the remote and \
+                                        moves nothing else.",
                     },
                     "base": {
                         "type": "string",

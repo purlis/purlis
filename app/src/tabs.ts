@@ -814,6 +814,12 @@ export function contentsOf(tabs: Tabs, id: number): { pane: number; content: Con
   return tab ? contents(tab.layout) : [];
 }
 
+/** **Whether tab `id` has one pane**, so that its own close does what the pane's would (#5318). A
+ *  pane zoomed to fill its tab is not its only one: `layout` keeps the whole tree (#4765). */
+export function hasOnePane(tabs: Tabs, id: number): boolean {
+  return contentsOf(tabs, id).length === 1;
+}
+
 /** What the focused pane of the tab in front shows, when anything is in front. */
 export function focusedContent(tabs: Tabs): Content | undefined {
   const tab = frontTab(tabs);

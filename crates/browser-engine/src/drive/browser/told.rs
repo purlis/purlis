@@ -9,7 +9,14 @@
 //! A text kept out of a page (what the person typed into it) is taken out of what is said about
 //! that page, and, since a string about no page may hold it too, of what a call says beside the
 //! page. What a page's own text and lines say is scrubbed by that page's alone: what the person
-//! typed on one page takes no ordinary words out of another.
+//! typed on one page takes no ordinary words out of another. A window takes on what the page that
+//! opened it keeps, and what a page kept outlives it, in what is said beside the pages.
+//!
+//! **A site asked about is said only where its name holds nothing the browser keeps**, or only what
+//! was filled on that very site, or one it is under: such a name says nothing of the text that the
+//! site's own name did not. **A field's origin**, which the window alone reads and compares, is held
+//! to what purlis filled, by the same exception: what the person typed takes no origin from a fill.
+//! What they typed on one page alone hides no site.
 //!
 //! **What the chat wrote itself is said back as it wrote it** (a reference, a page's name, a key,
 //! an option). It holds nothing the chat did not have, and an echo with a guess blanked would tell
@@ -19,34 +26,120 @@
 use super::super::kept::Kept;
 use super::super::scrub::Scrub;
 use super::super::{
-    Answer, Content, DownloadInfo, FieldInfo, MOST_FILE_NAME_CHARS, PageId, PageInfo, Refusal,
-    Settled, lock, plain_file_name,
+    Answer, Content, DownloadInfo, FieldInfo, KeptOff, MOST_FILE_NAME_CHARS, PageId, PageInfo,
+    Refusal, Settled, lock, plain_file_name,
 };
-use super::Browser;
+use super::{Browser, State, login};
 
 /// What a call says of a site it held back whose address holds a text kept out: that site is not
 /// said, and so nobody is asked about it.
 const A_SITE_NOT_SAID: &str = "a request went nowhere because its address holds a value purlis \
                                keeps out of what you read, so nobody is asked about it";
 
+/// What a chat is told where the page an act answered with is on `site`, the site its browser's
+/// login signs in on (#5152).
+fn on_kept_off_said(site: &str) -> String {
+    format!(
+        "this page is on {site}, the site this browser signs in on: you may not read or act on it \
+         outside a sign-in. Go back, or navigate to the login's own site; if it asks to sign in \
+         again, call browser_login"
+    )
+}
+
+/// **`answer`, with each page on the site the agent is kept off said by its origin alone, and no
+/// title** (#5152), and the chat told where the page it acted on is one. Judged by each address as
+/// it is: taken out of first, an address may no longer be on the site it is on.
+fn kept_off_told(mut answer: Answer, kept_off: &KeptOff) -> Answer {
+    let on = answer
+        .page
+        .as_ref()
+        .and_then(|page| kept_off(&page.address));
+    let listed = match &mut answer.content {
+        Content::Pages(pages) => pages.as_mut_slice(),
+        _ => &mut [],
+    };
+    for page in answer
+        .page
+        .iter_mut()
+        .chain(answer.opened.iter_mut())
+        .chain(listed)
+    {
+        if kept_off(&page.address).is_some() {
+            page.address = login::origin_of(&page.address).unwrap_or_default();
+            page.title.clear();
+        }
+    }
+    if let Some(site) = on {
+        let said = on_kept_off_said(&site);
+        answer.note = Some(match answer.note.take() {
+            Some(note) => format!("{note}; {said}"),
+            None => said,
+        });
+    }
+    answer
+}
+
 /// What is kept out, as a call is answered: of the whole browser, and of each page.
 struct Keeping {
     every: Scrub,
-    /// What purlis filled and what the browser keeps of every page, apart from what the person
-    /// typed on one: what a site's name is held to, since what the person typed is often part of
-    /// a site's name and says nothing of it.
-    filled: Scrub,
+    /// What purlis filled: what a field's origin is held to (module docs).
+    filled: Kept,
+    /// Each text of `filled` that the name of the site it went to holds, with that site's host.
+    named_by_their_sites: Vec<(zeroize::Zeroizing<String>, String)>,
     browser: Kept,
     pages: Vec<(PageId, Kept)>,
 }
 
+/// The host of `site`, a site asked about (`host:port`) or an origin (`https://host[:port]`), in
+/// lower case.
+fn host_of(site: &str) -> String {
+    let rest = site.split_once("://").map_or(site, |(_, rest)| rest);
+    rest.rsplit_once(':')
+        .map_or(rest, |(host, _)| host)
+        .to_ascii_lowercase()
+}
+
+impl State {
+    /// **What purlis fills on `origin` is kept out from now** ([`State::keep_out_everywhere`]), and
+    /// is what a site's name is held to (module docs).
+    pub(super) fn keep_filled_out(&mut self, held: &Kept, origin: &str) {
+        self.keep_out_everywhere(held);
+        self.filled.take_in(held);
+        let host = host_of(origin);
+        for text in held.texts() {
+            let text = zeroize::Zeroizing::new(text.to_lowercase());
+            if host.contains(text.as_str())
+                && !self
+                    .named_by_their_sites
+                    .iter()
+                    .any(|(one, on)| *one == text && *on == host)
+            {
+                self.named_by_their_sites.push((text, host.clone()));
+            }
+        }
+    }
+}
+
 impl Keeping {
-    /// What is said of `page`: its own texts, or where it has gone, the browser's.
+    /// Whether `site`'s name holds something of `kept` that its own name doesn't account for
+    /// (module docs).
+    fn holds_back(&self, kept: &Kept, site: &str) -> bool {
+        let host = host_of(site);
+        let own: Vec<&str> = self
+            .named_by_their_sites
+            .iter()
+            .filter(|(_, on)| host == *on || host.ends_with(&format!(".{on}")))
+            .map(|(text, _)| text.as_str())
+            .collect();
+        Scrub::of(&kept.without(&own)).holds(site)
+    }
+
+    /// What is said of `page`: its own texts, or where it has gone, everything kept.
     fn of_page(&self, page: &PageId) -> Scrub {
         self.pages
             .iter()
             .find(|(id, _)| id == page)
-            .map_or_else(|| Scrub::of(&self.browser), |(_, kept)| Scrub::of(kept))
+            .map_or_else(|| self.every.clone(), |(_, kept)| Scrub::of(kept))
     }
 
     fn page(&self, page: PageInfo) -> PageInfo {
@@ -77,6 +170,17 @@ impl Keeping {
             downloads,
         } = answer;
         let every = &self.every;
+        let field_origin = match &content {
+            Content::Field(field) => field
+                .origin
+                .clone()
+                .filter(|one| !self.holds_back(&self.filled, one)),
+            _ => None,
+        };
+        // Read by the window alone, which compares the page's origin with the field's.
+        let on_field_origin = page.as_ref().is_some_and(|page| {
+            field_origin.is_some() && login::origin_of(&page.address) == field_origin
+        });
         let own = page
             .as_ref()
             .map_or_else(|| Scrub::of(&self.browser), |page| self.of_page(&page.id));
@@ -90,9 +194,10 @@ impl Keeping {
                 label,
                 kind,
             }) => Content::Field(FieldInfo {
-                // An origin is compared and approved exactly, so one that holds a text kept out
-                // is one the engine can't name, and nothing is filled on it.
-                origin: origin.filter(|origin| !self.filled.holds(origin)),
+                // An origin is compared and approved exactly, so one that holds what purlis
+                // filled, past what its own name accounts for, is one the engine can't name, and
+                // nothing is filled on it (module docs).
+                origin: origin.filter(|_| field_origin.is_some()),
                 label: every.text(&label),
                 kind,
             }),
@@ -105,7 +210,7 @@ impl Keeping {
         let told = asked.len();
         let asked: Vec<String> = asked
             .into_iter()
-            .filter(|site| !self.filled.holds(site))
+            .filter(|site| !self.holds_back(&self.browser, site))
             .collect();
         note = note.map(|note| every.text(&note));
         if asked.len() < told {
@@ -115,7 +220,13 @@ impl Keeping {
             });
         }
         Answer {
-            page: page.map(|page| self.page(page)),
+            page: page.map(|page| {
+                let mut said = self.page(page);
+                if on_field_origin && let Some(origin) = &field_origin {
+                    said.address.clone_from(origin);
+                }
+                said
+            }),
             settled: match settled {
                 Settled::Yes => Settled::Yes,
                 Settled::No(waiting) => {
@@ -191,6 +302,7 @@ fn refusal_kept_out(refusal: Refusal, scrub: &Scrub) -> Refusal {
         Refusal::Engine(why) => Refusal::Engine(text(why)),
         Refusal::Withheld(why) => Refusal::Withheld(text(why)),
         Refusal::NotLoggedIn(why) => Refusal::NotLoggedIn(text(why)),
+        Refusal::NoFormOnCleanLoad(why) => Refusal::NoFormOnCleanLoad(text(why)),
         Refusal::NotFilled(why) => Refusal::NotFilled(text(why)),
         said_back @ (Refusal::NoSuchPage(_)
         | Refusal::NoSuchRef(_)
@@ -235,19 +347,34 @@ fn refusal_kept_out(refusal: Refusal, scrub: &Scrub) -> Refusal {
 }
 
 impl Browser {
+    /// [`kept_off_told`], where this browser keeps the agent off a site.
+    pub(super) fn with_kept_off_told(&self, answer: Answer) -> Answer {
+        match lock(&self.inner.kept_off).clone() {
+            Some(kept_off) => kept_off_told(answer, &kept_off),
+            None => answer,
+        }
+    }
+
     /// What is kept out now, or `None` where nothing is.
     fn keeping(&self) -> Option<Keeping> {
-        let (browser, pages): (Kept, Vec<(PageId, Kept)>) = {
+        let (browser, pages, filled, named_by_their_sites, closed) = {
             let state = lock(&self.inner.state);
-            let pages = state
+            let pages: Vec<(PageId, Kept)> = state
                 .pages
                 .iter()
                 .map(|page| (page.id.clone(), page.scrubbed.clone()))
                 .collect();
-            (state.kept.clone(), pages)
+            (
+                state.kept.clone(),
+                pages,
+                state.filled.clone(),
+                state.named_by_their_sites.clone(),
+                state.closed_kept.clone(),
+            )
         };
         // Worked out with no lock held: the engine's events wait on that one.
         let mut every = browser.clone();
+        every.take_in(&closed);
         for (_, kept) in &pages {
             every.take_in(kept);
         }
@@ -256,7 +383,8 @@ impl Browser {
         }
         Some(Keeping {
             every: Scrub::of(&every),
-            filled: Scrub::of(&browser),
+            filled,
+            named_by_their_sites,
             browser,
             pages,
         })

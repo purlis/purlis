@@ -169,6 +169,35 @@ async function splitDrawn(sessions: number[]) {
   );
 }
 
+describe("a drag is a preview until the drop (#5291)", () => {
+  it("tells the core nothing while it drags, and the layout once on the drop", async () => {
+    const told = await theWindow();
+    await waitFor(() => expect(told.asked).toContain("window_layout"));
+    const from = document.querySelector('[data-drag-chat="1"]');
+    if (from === null) throw new Error("no row for chat 1");
+    fireEvent.pointerDown(from, at(10, 1035));
+    fireEvent.pointerMove(document, at(790, 340));
+    fireEvent.pointerMove(document, at(791, 340));
+    await screen.findByText("codeql-issues right of copy-past-crash.");
+    const before = told.asked.filter((cmd) => cmd === "window_layout").length;
+    // The tabs are as they were: the head, and nothing to send anyone.
+    expect(heads()).toEqual(["copy-past-crash"]);
+    expect(told.asked.filter((cmd) => cmd === "resize_session")).toEqual([]);
+    await act(async () => {
+      await new Promise((done) => setTimeout(done, 100));
+    });
+    expect(told.asked.filter((cmd) => cmd === "window_layout")).toHaveLength(before);
+    act(() => {
+      fireEvent.pointerUp(document, at(790, 340));
+    });
+    await splitDrawn([3, 1]);
+    await waitFor(() =>
+      expect(told.asked.filter((cmd) => cmd === "window_layout").length).toBeGreaterThan(before),
+    );
+    await waitFor(() => expect(heads()).toEqual(["copy-past-crash", "codeql-issues"]));
+  });
+});
+
 describe("a pane moved names what it shows (#5283)", () => {
   it("names each pane and each row its own chat after a sidebar chat splits a pane on its right", async () => {
     await theWindow();

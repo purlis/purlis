@@ -43,7 +43,7 @@ pub use fetch::{Fetched, Found, MOST_SKILL_BYTES, NotASkill, SourceFile, fetch, 
 pub use install::{Renames, install, install_named};
 pub use listed::{Listed, TABLE, add, confirm, remove, sources};
 pub use lock::{Kept, Locked, Lockfile};
-pub use outgoing::{Outgoing, Purpose, Stop, export_folder, export_zip, gather};
+pub use outgoing::{Outgoing, Purpose, Stop, export_folder, export_zip, gather, gather_set};
 pub use review::{
     Accepted, AcceptedSkill, Browse, Clash, Offered, Review, ReviewFile, SetReview, SkillReview,
     TooMuch, browse, review, review_all, review_set,

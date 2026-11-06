@@ -262,6 +262,9 @@ pub type Recorder = Box<dyn Fn(&Record) + Send + Sync>;
 /// report about it.
 pub type Starting = Box<dyn Fn(u32, Option<Harness>, Option<String>, bool) + Send + Sync>;
 
+/// [`Chats::named_while_starting`]: each chat starting, and what its harness has named so far.
+type NamedWhileStarting = HashMap<u32, Option<(SessionId, Option<String>)>>;
+
 /// Told as each chat starts, BEFORE its program does, of the run the start begins: the chat's
 /// number, its id, the run's id, why it began and what it is (ADR 0066, #868), and whether its
 /// `run.started` is held until the start goes on. What the event log is told.
@@ -966,6 +969,13 @@ pub struct Chats {
     /// come before the chat is listed as open. Forgotten as each start is announced and as the
     /// chat closes, so a model never outlives the program it was reported for.
     models: Mutex<HashMap<u32, String>>,
+    /// **What a chat's harness named while its start was under way** (#5170), by the chat's
+    /// number, with the run a `/clear` began: an entry from the moment the start is announced, so
+    /// before its program runs, until the chat is listed as open and takes what it holds. The
+    /// board tells a conversation once, as it adopts it, so what is heard here is heard only here.
+    /// Taken under the lock of [`Self::open`], so a report lands in one or the other.
+    /// **In memory only.**
+    named_while_starting: Mutex<NamedWhileStarting>,
     /// The folders a discard is taking away now, and the folders chats are starting in
     /// (#1472): no chat starts in a folder that is going, and none goes while one starts there.
     /// **In memory only.**
@@ -973,7 +983,14 @@ pub struct Chats {
     /// The chats a start is giving a runner of their own to now, by id (#4569).
     fresh_starting: Arc<Mutex<std::collections::HashSet<String>>>,
     /// The chats whose fresh runner's work is on its way back now, by id (#4569).
-    fresh_ending: Arc<Mutex<std::collections::HashSet<String>>>,
+    ///
+    /// Each holds whether the person discarded the runner meanwhile (#5312): that end lets it go,
+    /// whatever its check found. It is held with the end, so it can't outlive it and let go of a
+    /// runner whose chat was opened again since.
+    fresh_ending: Arc<Mutex<std::collections::HashMap<String, bool>>>,
+    /// When the sweep may next ask each kept fresh runner, by its chat's id (#5393): a check that
+    /// took minutes is not run again a minute later. Nothing but the sweep waits for it.
+    fresh_asked_again: Arc<Mutex<std::collections::HashMap<String, std::time::Instant>>>,
     /// When the fresh runners were last swept ([`Self::sweeps_fresh_runners`]).
     fresh_swept: Mutex<Option<std::time::Instant>>,
     /// **The fresh runners kept since their work is not all here**, by their chat's id (#4569):
@@ -1327,9 +1344,32 @@ fn tell_fresh_kept(
     }
 }
 
+/// **What a fresh runner's end comes to** (#4569, #5312): what is missing, and whether it is proved
+/// home. A runner the person discarded goes with what it holds, whatever a check under way found.
+#[cfg(unix)]
+fn ends_as(discarded: bool, missing: Vec<String>, going: Going) -> (Vec<String>, bool) {
+    if discarded {
+        (Vec::new(), false)
+    } else {
+        (missing, going == Going::OnProof)
+    }
+}
+
 /// The least time between two sweeps of a project's fresh runners (#4569).
 #[cfg(unix)]
 const FRESH_SWEPT_AT_MOST_EVERY: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// The longest the sweep leaves a kept fresh runner unasked (#5393).
+#[cfg(unix)]
+const FRESH_ASKED_AGAIN_AT_LEAST_EVERY: std::time::Duration = std::time::Duration::from_secs(3600);
+
+/// How long the sweep leaves a kept fresh runner whose end took `took` (#5393): ten times that, so
+/// a runner whose check always runs out spends a tenth of its time on checks at most, however
+/// large its image is.
+#[cfg(unix)]
+fn fresh_asked_again_after(took: std::time::Duration) -> std::time::Duration {
+    (took * 10).clamp(FRESH_SWEPT_AT_MOST_EVERY, FRESH_ASKED_AGAIN_AT_LEAST_EVERY)
+}
 
 /// The runner of its own a chat starts on, and whether this start made it (#4569).
 struct OwnRunner {
@@ -1348,8 +1388,16 @@ struct OwnRunnerOrNot {
 /// Lets go of a fresh runner's end however it finishes, a panic and a thread never started among
 /// them, or that runner could never be tried again (#4569).
 struct FreshEnding {
-    ending: Arc<Mutex<std::collections::HashSet<String>>>,
+    ending: Arc<Mutex<std::collections::HashMap<String, bool>>>,
     id: String,
+}
+
+#[cfg(unix)]
+impl FreshEnding {
+    /// Whether the person discarded the runner during this end (#5312).
+    fn discarded(&self) -> bool {
+        lock(&self.ending).get(&self.id).copied().unwrap_or(false)
+    }
 }
 
 impl Drop for FreshEnding {
@@ -1496,6 +1544,7 @@ impl Chats {
             dispatching: Mutex::new(()),
             reserved: Mutex::new(HashMap::new()),
             starting_as: Mutex::new(HashMap::new()),
+            named_while_starting: Mutex::new(HashMap::new()),
             stops_below: Mutex::new(std::collections::HashSet::new()),
             owed: Mutex::new(HashMap::new()),
             restarting: Mutex::new(std::collections::HashSet::new()),
@@ -1504,6 +1553,7 @@ impl Chats {
             going: crate::goingaway::Going::default(),
             fresh_starting: Arc::default(),
             fresh_ending: Arc::default(),
+            fresh_asked_again: Arc::default(),
             fresh_swept: Mutex::new(None),
             fresh_kept: Arc::default(),
             fresh_told: Arc::default(),
@@ -1748,8 +1798,15 @@ impl Chats {
         else {
             return;
         };
-        if !lock(&self.fresh_ending).insert(id.to_owned()) {
-            return;
+        {
+            let mut ending = lock(&self.fresh_ending);
+            if let Some(discarded) = ending.get_mut(id) {
+                // A check under way can take minutes, and a sweep starts one about once a minute,
+                // so a press is kept for when that ends, never dropped (#5312).
+                *discarded |= going == Going::Discarded;
+                return;
+            }
+            ending.insert(id.to_owned(), false);
         }
         let ending = FreshEnding {
             ending: Arc::clone(&self.fresh_ending),
@@ -1761,17 +1818,30 @@ impl Chats {
         let config = config.clone();
         let (kept, told) = (Arc::clone(&self.fresh_kept), Arc::clone(&self.fresh_told));
         let (runner_named, workspace_named) = (runner.clone(), workspace.clone());
+        let asked_again = Arc::clone(&self.fresh_asked_again);
+        let began = std::time::Instant::now();
         self.sessions.take_back_fresh(
             &runner,
             (going == Going::OnProof).then_some(workspace.as_str()),
             Box::new(move |missing| {
-                let end = crate::clusterpools::fresh_runner_ended(
-                    &config,
-                    &ending.id,
-                    &missing,
-                    going == Going::OnProof,
-                );
+                let was_discarded = ending.discarded();
+                let (missing, proved) = ends_as(was_discarded, missing, going);
+                let mut end =
+                    crate::clusterpools::fresh_runner_ended(&config, &ending.id, &missing, proved);
+                // Asking its cluster takes time, and a press meanwhile still counts.
+                if !was_discarded
+                    && ending.discarded()
+                    && matches!(end, crate::clusterpools::FreshEnd::Kept { .. })
+                {
+                    end = crate::clusterpools::fresh_runner_ended(&config, &ending.id, &[], false);
+                }
                 let went = matches!(end, crate::clusterpools::FreshEnd::Went);
+                if went {
+                    lock(&asked_again).remove(&ending.id);
+                } else {
+                    let next = std::time::Instant::now() + fresh_asked_again_after(began.elapsed());
+                    lock(&asked_again).insert(ending.id.clone(), next);
+                }
                 {
                     let mut kept = lock(&kept);
                     match end {
@@ -1880,10 +1950,20 @@ impl Chats {
                 .is_some_and(|of| of.is_of(&plane, &self.project));
             if let (true, Some(id)) = (ours, &kept.chat)
                 && !self.holds_a_chat(id)
+                && self.sweep_may_ask(id)
             {
                 self.fresh_runner_ends(id, true);
             }
         }
+    }
+
+    /// Whether the sweep may ask chat `id`'s kept runner again by now (#5393). Fetch again and a
+    /// chat's end go by no such wait: they don't ask this.
+    #[cfg(unix)]
+    fn sweep_may_ask(&self, id: &str) -> bool {
+        !lock(&self.fresh_asked_again)
+            .get(id)
+            .is_some_and(|next| std::time::Instant::now() < *next)
     }
 
     /// [`Self::sweeps_fresh_runners`]: pools run on Unix alone.
@@ -1906,7 +1986,7 @@ impl Chats {
         use purlis_core::clusterpool::{ChatOnARunner, Keeping, kept_for};
         use purlis_core::harness_declaration::SignInKind;
         // Its runner is on its way out: what started there now would go with it.
-        if lock(&self.fresh_ending).contains(id) {
+        if lock(&self.fresh_ending).contains_key(id) {
             return Err(
                 "This task's runner is closing, so nothing was started. Start it again \
                         in a moment."
@@ -3985,6 +4065,25 @@ impl Chats {
         changed
     }
 
+    /// **How many open chats started with one of the copies at `files`** and keep it until they
+    /// restart (#5331), by what each started with, in `workspace` alone where one is named: a
+    /// turn changes no chat elsewhere. A chat whose harness takes in a change by itself holds no
+    /// stamp and is not counted: nothing waits for its restart.
+    pub fn open_using(&self, files: &[std::path::PathBuf], workspace: Option<&str>) -> u32 {
+        let open = lock(&self.open);
+        let using = open
+            .values()
+            .filter(|running| workspace.is_none() || running.workspace.as_deref() == workspace)
+            .filter(|running| {
+                running
+                    .skills
+                    .as_ref()
+                    .is_some_and(|stamp| files.iter().any(|file| stamp.holds(file)))
+            })
+            .count();
+        u32::try_from(using).unwrap_or(u32::MAX)
+    }
+
     /// The chats owed a restart (#1342, #1428): what the window drives once each one's turn
     /// has ended, read again whenever the window is drawn anew.
     pub fn owed_restarts(&self) -> Vec<u32> {
@@ -4564,6 +4663,7 @@ impl Chats {
                 asks,
                 within: std::time::Duration::ZERO,
                 moved: &moved,
+                run_gate: None,
             });
         let handed =
             match sign_in.filter(|s| !reattaching && !on_the_runner && !s.credentials.is_empty()) {
@@ -5114,6 +5214,7 @@ impl Chats {
             announced.store(session, std::sync::atomic::Ordering::SeqCst);
             whose.store(session, std::sync::atomic::Ordering::SeqCst);
             lock(&self.starting_as).insert(session, chat.persona.clone());
+            lock(&self.named_while_starting).insert(session, None);
             untold.tell_untold();
             // A chat reattached is where it was: its state, its model and its run are as the
             // host kept them (#2006).
@@ -5289,6 +5390,7 @@ impl Chats {
             let announced = announced.load(std::sync::atomic::Ordering::SeqCst);
             if announced > 0 {
                 lock(&self.starting_as).remove(&announced);
+                lock(&self.named_while_starting).remove(&announced);
             }
             if announced > 0
                 && let Some(gone) = lock(&self.never_started).as_ref()
@@ -5375,7 +5477,21 @@ impl Chats {
         if let Some(start) = &mut own_start {
             start.made = false;
         }
-        lock(&self.open).insert(
+        let mut open = lock(&self.open);
+        // What its harness named since its program began, which is newer than what it started
+        // under. A shell tab keeps none, as `follow_conversation` keeps none for one that is open.
+        let mut under = under;
+        if let Some((id, run)) = lock(&self.named_while_starting)
+            .remove(&session)
+            .flatten()
+            .filter(|_| harness.is_some())
+        {
+            under.resume = Some(id);
+            if run.is_some() {
+                under.identity.run = run;
+            }
+        }
+        open.insert(
             session,
             Running {
                 chat: under,
@@ -5401,6 +5517,7 @@ impl Chats {
                 runs_as: runs_as.clone(),
             },
         );
+        drop(open);
         // Its routing record, after its run began (SK-15b), where its router was asked now. A chat
         // reattached began no run here: one that kept its start's routing is in its run's record
         // already (#3578), and one whose record kept none had its router asked again, an answer
@@ -5469,6 +5586,7 @@ impl Chats {
     /// Ends a chat. It is no longer one a quit would record.
     pub fn close(&self, session: u32) -> Result<(), String> {
         lock(&self.starting_as).remove(&session);
+        lock(&self.named_while_starting).remove(&session);
         lock(&self.untaken).remove(&session);
         lock(&self.ended).remove(&session);
         let gone = lock(&self.open).remove(&session);
@@ -6340,10 +6458,9 @@ impl Chats {
     /// Written down only when the record would change, for [`Self::lay_out`]'s reason. Nothing for
     /// a chat that runs no harness: a shell tab is resumed by nothing, whatever ran in it.
     ///
-    /// **A report that arrives before the chat is remembered here is not kept**, which no
-    /// harness charter starts can produce: Claude Code's first report names the id charter
-    /// chose, which moves nothing, and Codex and opencode name theirs inside the first turn,
-    /// long after the start returned.
+    /// **A report heard before the chat is listed as open is kept for it**
+    /// ([`Self::named_while_starting`], #5170): a harness reports at its own exec, which can come
+    /// while the start is still reading the plane's skills, and the board never tells it again.
     ///
     /// `run` is the run the host began when the move was a `/clear` (ADR 0066's `clear`): the
     /// chat's current run from now on, and so the one the record names.
@@ -6351,6 +6468,9 @@ impl Chats {
         let Ok(id) = SessionId::new(id) else { return };
         let mut open = lock(&self.open);
         let Some(one) = open.get_mut(&session) else {
+            if let Some(named) = lock(&self.named_while_starting).get_mut(&session) {
+                *named = Some((id, run.map(str::to_owned)));
+            }
             return;
         };
         if one.harness.is_none() {

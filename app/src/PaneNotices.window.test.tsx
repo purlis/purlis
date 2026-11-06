@@ -204,8 +204,7 @@ describe("a pane's notices, minimised (the default)", () => {
       ["pane-head", "notice-row"],
     );
     // A fixed slot, before the chat's ⋯ and the splits and the close (#5203), and outside the
-    // cluster of them that is drawn only under the pointer or the keyboard (`.pane-doing`,
-    // `App.css`): the bell and its count are always on screen.
+    // cluster of them (`.pane-doing`).
     // (Its polite announcement is an unseen line beside it, `.sr-only`.)
     const actions = [...(frame().querySelector(".pane-actions")?.children ?? [])].filter(
       (one) => !one.classList.contains("sr-only"),

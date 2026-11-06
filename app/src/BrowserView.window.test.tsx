@@ -57,6 +57,26 @@ afterEach(() => {
 
 const PLANE = "/home/dev/plane";
 
+/** What the picker offers, for a split from a view's tab. */
+const START_OPTIONS = {
+  profiles: [
+    {
+      name: "claude",
+      kind: "claude",
+      shown: "claude",
+      source: "built-in",
+      is_default: true,
+      approval: null,
+    },
+  ],
+  refused: [],
+  personas: ["steward"],
+  persona: "steward",
+  persona_profiles: {},
+  ignore_fix: null,
+  declares_none: true,
+};
+
 function core(
   open: () => unknown = () => "B1",
   personDrives = false,
@@ -69,6 +89,8 @@ function core(
       asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
       if (cmd === "opened_chats") return [];
+      if (cmd === "start_details") return [];
+      if (cmd === "start_options" || cmd === "start_options_first") return START_OPTIONS;
       if (cmd === "chats_that_would_not_start") return [];
       if (cmd === "running_sessions") return [];
       if (cmd === "chat_states") return [];
@@ -171,10 +193,29 @@ describe("a browser's view tab", () => {
     await waitFor(() => expect(tabNames()).toEqual(["New chat", "Browser"]));
     await waitFor(() => expect(host.asked("watch_browser").length).toBeGreaterThan(0));
 
-    await fromThePalette("Close this view");
+    // Its tab's close: a view alone in its tab has no close of its own (#5318).
+    await fromThePalette("Close Browser");
 
     await waitFor(() => expect(host.asked("close_browser")).toEqual([{ program: "B1" }]));
     expect(host.asked("unwatch_browser")).toContainEqual({ program: "B1", view: 4 });
+  });
+});
+
+describe("a view alone in its tab (#5318)", () => {
+  it("draws no splits on its content, and its tab's menu splits it", async () => {
+    core();
+    render(<App />);
+    await screen.findByTestId("title-about");
+    await fromThePalette("New browser");
+    await waitFor(() => expect(tabNames()).toEqual(["New chat", "Browser"]));
+    const frame = document.querySelector(".pane-frame.pane-viewed") as HTMLElement;
+    expect(within(frame).queryByRole("button", { name: /^Split |^Close this view$/ })).toBeNull();
+
+    const strip = stripNamed("Tabs");
+    fireEvent.contextMenu(within(strip).getByRole("tab", { name: /Browser/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Split right" }));
+
+    expect(await screen.findByRole("button", { name: "Start chat" })).toBeInTheDocument();
   });
 });
 

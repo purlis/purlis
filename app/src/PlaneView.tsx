@@ -16,6 +16,7 @@ import {
   type ReactNode,
 } from "react";
 import { dequal } from "dequal/lite";
+import { emit } from "@tauri-apps/api/event";
 import { listen } from "./here";
 import {
   CHAT_RESTORED,
@@ -44,6 +45,7 @@ import {
 } from "./projectShown";
 import {
   commands,
+  PROJECT_READY,
   type AtRisk,
   type AwayRefusal,
   type ByHand,
@@ -218,7 +220,7 @@ import { useScreenReaderMode } from "./screenReader";
 import { PersonaMarks, ReloadPersonaMarks } from "./PersonaMark";
 import { usePersonaMarks } from "./usePersonaMarks";
 import { taskChangesTitle, taskChangesView } from "./taskChanges";
-import { heldFor as blockHeldFor, useSandboxBlocks } from "./sandboxBlocks";
+import { heldFor as blockHeldFor, type HeldBlock, useSandboxBlocks } from "./sandboxBlocks";
 import { taskBlockGroups, whoseOf, withoutGrouped, type TaskBlockGroup } from "./taskAsks";
 import { TaskBlocksAnswered, TaskBlocksNotice } from "./TaskBlocksNotice";
 import {
@@ -289,6 +291,7 @@ import {
   chatInFrontOf,
   chatOf,
   contentsOf,
+  hasOnePane,
   findView,
   openViewBesidePane,
   openChatsKey,
@@ -372,7 +375,21 @@ import { OfferNotices, type OfferOpening, OfferOpeningContext } from "./ViewOpen
 import { paneSize } from "./paneSize";
 import { besideOf as viewBesideOf, besideRefusedSaid } from "./viewBeside";
 import { layoutOf, pathTo, type Reopening, tabsOf, withShare } from "./laidOut";
-import { LAYOUT_MOVED, type LayoutMoved, movedBetweenWindows, PRESS_HERE } from "./tabWindows";
+import {
+  chatsElsewhere,
+  LAYOUT_MOVED,
+  LAYOUT_REPORTED,
+  type LayoutMoved,
+  movedBetweenWindows,
+  NOTE_CLEARED,
+  type NoteCleared,
+  NOTES_ASKED,
+  NOTES_HANDED,
+  type NotesAsked,
+  type NotesHanded,
+  withStartHanded,
+  PRESS_HERE,
+} from "./tabWindows";
 import type { TabFacts } from "./ChatRows";
 import { rowFactsOf } from "./shownState";
 import {
@@ -460,6 +477,7 @@ import { OpenVault, useVaults } from "./Vaults";
 import { usePlaneEdits } from "./PlaneEdits";
 import { MemoryStores, useMemoryEdits, useMemoryStores } from "./MemoryEdits";
 import { PlacingHere, usePaneDrag } from "./paneDrag";
+import { PANES_ROOM } from "./paneHeld";
 import type { DropContext } from "./paneDrop";
 import type { MemoryTargets } from "./memoryMoves";
 import { AddToAChat } from "./AddToAChat";
@@ -496,6 +514,7 @@ import type {
   PanelView,
   BrowsersEnded,
   AskEnded,
+  ProjectReady,
   Rescreened,
   RowAction,
   SavedRecord,
@@ -538,6 +557,7 @@ import { handedFromNote } from "./handedFrom";
 import { ChatsSection } from "./ChatsSection";
 import { chatsListDrawn, type Reveal } from "./revealTask";
 import { owedAfterEnded, restartsDue, withRestartOwed } from "./restartAtPause";
+import { useFailuresSeen } from "./failuresSeen";
 import { tasksBelowOf, type TasksBelow } from "./sessionTasks";
 import { TasksBelowLent } from "./TasksBelow";
 import { finishedOf, qualifierOf, shownOf, useFinishedTasks, useRowsUntilRead } from "./finished";
@@ -1098,7 +1118,7 @@ export const PlaneView = memo(function PlaneView({
   const [stopsEnded, setStopsEnded] = useState(0);
   /** This project's save standing (charter-app#302): every project reads its own, so the project
    *  strip can mark the ones with unsaved work and the title bar can show the one in front. */
-  const { saving } = usePlaneSaving(plane);
+  const { saving, read: savingRead } = usePlaneSaving(plane);
   /** The workspace whose LIVE/LOCAL confirmation is open (charter-app#301). */
   const [liveAsk, setLiveAsk] = useState<string>();
   /** The repo the "Remove from workspace" question is about, while it is open (#1228). */
@@ -1540,9 +1560,31 @@ export const PlaneView = memo(function PlaneView({
   /** What each chat's sandbox blocked, by session, for the Notice on its tab (#1338). */
   const {
     blocks: sandboxBlocks,
-    dismiss: dismissBlock,
+    dismiss: dropBlock,
     answered: blockAnswered,
+    letGo: letBlockGo,
+    take: takeBlocks,
   } = useSandboxBlocks(plane);
+  /** **A note cleared here is cleared in every window of the project** (#5225): each hears what
+   *  its chats say, so another may hold it for the chat coming back to it. */
+  const noteCleared = useCallback(
+    (session: number, note: NoteCleared["note"]) =>
+      void emit(NOTE_CLEARED, {
+        plane,
+        session,
+        note,
+        from: thisWindow(),
+      } satisfies NoteCleared).catch(() => undefined),
+    [plane],
+  );
+  /** A block put away. */
+  const dismissBlock = useCallback(
+    (session: number, block: HeldBlock) => {
+      dropBlock(session, block);
+      noteCleared(session, { kind: "block", block });
+    },
+    [dropBlock, noteCleared],
+  );
   /** What one answer to several tasks' same block allowed, by the session they are tasks of,
    *  until it is put away (#1508). */
   const [taskBlocksAnswered, setTaskBlocksAnswered] = useState<
@@ -1777,17 +1819,29 @@ export const PlaneView = memo(function PlaneView({
   /** **Every window of the project** (#4768): its project window (`0`) and each tab window, as
    *  the record and the core's last move said. What Move to window ▸ lists, less this one. */
   const [windowsHere, setWindowsHere] = useState<readonly number[]>([0]);
+  /** **The chats another window of the project shows** (#5225), as the record, the core's last
+   *  move and a tab window's last report said: what they have to say is theirs to say. */
+  const [shownElsewhere, setShownElsewhere] = useState<ReadonlySet<number>>(() => new Set());
   /** **Whether the project has this one window** (#4768, #5108): neither a tab window nor a
    *  project window with tab windows. Its press goes to its focused pane, asking nothing. */
   const oneWindow = useCallback(
     () => tabWindow === undefined && !otherWindows.current,
     [tabWindow],
   );
-  const windowsOf = useCallback((laid: LaidOut) => {
-    const each = [...new Set([0, ...laid.tabs.map((one) => one.window)])].sort((a, b) => a - b);
-    otherWindows.current = each.length > 1;
-    setWindowsHere((was) => (was.join() === each.join() ? was : each));
-  }, []);
+  const windowsOf = useCallback(
+    (laid: LaidOut) => {
+      const each = [...new Set([0, ...laid.tabs.map((one) => one.window)])].sort((a, b) => a - b);
+      otherWindows.current = each.length > 1;
+      setWindowsHere((was) => (was.join() === each.join() ? was : each));
+      const elsewhere = chatsElsewhere(laid, tabWindow ?? 0);
+      setShownElsewhere((was) =>
+        was.size === elsewhere.size && [...was].every((one) => elsewhere.has(one))
+          ? was
+          : elsewhere,
+      );
+    },
+    [tabWindow],
+  );
   const change = useCallback(
     (how: (tabs: Tabs) => Tabs): Tabs => {
       const done = how(now.current);
@@ -3595,6 +3649,13 @@ export const PlaneView = memo(function PlaneView({
         .catch(() => undefined);
     };
   }, [change, filedIn, plane, reopeningOf, tabWindow, windowsOf]);
+  // **What a tab window's own report changed** (#5225): nothing moved, so only what each shows.
+  useEffect(() => {
+    const listening = listen<LayoutMoved>(LAYOUT_REPORTED, (event) => {
+      if (event.payload.plane === plane) windowsOf(event.payload.layout);
+    }).catch(() => undefined);
+    return () => void listening.then((stop) => stop?.()).catch(() => undefined);
+  }, [plane, windowsOf]);
   useEffect(() => {
     const listening = listen<LayoutMoved>(LAYOUT_MOVED, (event) => {
       if (event.payload.plane === plane) layoutMovedHere.current(event.payload);
@@ -4113,25 +4174,32 @@ export const PlaneView = memo(function PlaneView({
     };
   }, [plane]);
 
-  /** A start notice put away: it is said once, and the operator has read it. */
-  const dismissStartNote = useCallback((session: number) => {
-    setStartNotes((was) =>
-      Object.fromEntries(Object.entries(was).filter(([held]) => Number(held) !== session)),
-    );
+  const dropStartNote = useCallback((session: number) => {
+    setStartNotes((was) => withoutKey(was, session));
   }, []);
+  /** A start notice put away: it is said once, and the operator has read it. */
+  const dismissStartNote = useCallback(
+    (session: number) => {
+      dropStartNote(session);
+      noteCleared(session, { kind: "start" });
+    },
+    [dropStartNote, noteCleared],
+  );
 
+  const dropByHand = useCallback((session: number) => {
+    setByHand((was) => withoutKey(was, session));
+  }, []);
   /** The banner's two answers: open that harness as a chat where the shell was standing — the
    *  picker, started on that harness — or put the banner away. Either way it is answered. */
   const answerByHand = useCallback(
     (session: number, open: boolean) => {
       const note = byHand[session];
-      setByHand((was) =>
-        Object.fromEntries(Object.entries(was).filter(([held]) => Number(held) !== session)),
-      );
+      dropByHand(session);
+      noteCleared(session, { kind: "by-hand" });
       if (!open || note === undefined) return;
       void ask({ tab: true, in: note.cwd ?? startIn ?? undefined, prefer: note.harness });
     },
-    [ask, byHand, startIn],
+    [ask, byHand, dropByHand, noteCleared, startIn],
   );
 
   /**
@@ -4450,6 +4518,21 @@ export const PlaneView = memo(function PlaneView({
   );
 
   /**
+   * **The tab's own close, as a person presses it** (#5318): closing the tab in front puts the
+   * keyboard in what is now in front, as Close pane does, since a tab's only pane has no Close. A
+   * tab that has the keyboard itself (Delete on it) keeps the strip's, which stays where it is.
+   */
+  const closeFromItsControl = useCallback(
+    (id: number) => {
+      const wasInFront = now.current.inFront === id;
+      const onItsTab = document.activeElement?.matches('[role="tab"]') === true;
+      close(id);
+      if (wasInFront && !onItsTab) keyboardInto(now.current);
+    },
+    [close, keyboardInto],
+  );
+
+  /**
    * Brings a tab to the front — **and the workspace it is on with it**.
    *
    * The strip shows one workspace's chats, so bringing a chat forward from somewhere else
@@ -4469,6 +4552,16 @@ export const PlaneView = memo(function PlaneView({
       if (workspace !== undefined) setPicked(workspace);
     },
     [change, filedIn, sidebar],
+  );
+
+  /** A view alone in its tab, split from the tab's menu (#5318): what its splits ask of the pane
+   *  in front, once that tab is. `change` has moved the front by the next line. */
+  const splitTab = useCallback(
+    (id: number, direction: Direction) => {
+      bringToFront(id);
+      split(direction);
+    },
+    [bringToFront, split],
   );
 
   /**
@@ -4753,6 +4846,17 @@ export const PlaneView = memo(function PlaneView({
         void commands.taskFailureSeen(plane, asked.asker, id).catch(() => undefined);
     },
     [failedTasks, plane, showChat],
+  );
+  /** **The chat on screen and focused has been seen** (#5340): what failed of it leaves its mark. */
+  useFailuresSeen(
+    plane,
+    tabs.inFront === undefined
+      ? undefined
+      : shownIn(tabs, tabs.inFront).find(
+          (one) => one.pane === tabs.byId[tabs.inFront ?? -1]?.focused,
+        )?.session,
+    failedTasks,
+    inFront,
   );
   /** A finished row was opened to be read: where it is a failure its session is flagged for,
    *  it has been looked at (#1491). */
@@ -7311,10 +7415,93 @@ export const PlaneView = memo(function PlaneView({
     },
     [chats, oweRestart, plane, restartOwed],
   );
+  /** **A note another window of the project cleared** (#5225): it is not said here again. */
+  useEffect(() => {
+    const listening = listen<NoteCleared>(NOTE_CLEARED, ({ payload: cleared }) => {
+      // Every window hears it, this one too, which has cleared it already.
+      if (cleared.plane !== plane || cleared.from === thisWindow()) return;
+      const { session, note } = cleared;
+      if (note.kind === "start") dropStartNote(session);
+      if (note.kind === "by-hand") dropByHand(session);
+      if (note.kind === "block") letBlockGo(session, note.block);
+      if (note.kind === "restart") {
+        setRestartTrouble((was) => withoutKey(was, session));
+        setRestartNotYet((was) => withoutKey(was, session));
+      }
+    }).catch(() => undefined);
+    return () => void listening.then((stop) => stop?.()).catch(() => undefined);
+  }, [dropByHand, dropStartNote, letBlockGo, plane]);
+
+  /**
+   * **What this window holds of a chat another window shows, handed to it** (#5225): each window
+   * hears what a chat says from when it is listening, so a note held from before a tab was torn
+   * off is in no other. Said as it comes to be held, and again when a tab window first draws. It
+   * is kept here too, for the chat coming back; clearing it clears both (`note-cleared`).
+   */
+  const notesHeldElsewhere = useRef(new Map<number, string>());
+  const handNotes = useCallback(
+    (session: number, start: StartNotes | undefined, blocks: readonly HeldBlock[]) =>
+      void emit(NOTES_HANDED, {
+        plane,
+        session,
+        start,
+        blocks,
+        from: thisWindow(),
+      } satisfies NotesHanded).catch(() => undefined),
+    [plane],
+  );
+  const handAgain = useRef<() => void>(() => undefined);
+  useEffect(() => {
+    const holding = new Map<number, string>();
+    for (const session of shownElsewhere) {
+      const start = startNotes[session];
+      const blocks = sandboxBlocks[session] ?? [];
+      if (start === undefined && blocks.length === 0) continue;
+      const said = JSON.stringify([start, blocks]);
+      holding.set(session, said);
+      if (notesHeldElsewhere.current.get(session) !== said) handNotes(session, start, blocks);
+    }
+    notesHeldElsewhere.current = holding;
+    handAgain.current = () => {
+      for (const session of holding.keys())
+        handNotes(session, startNotes[session], sandboxBlocks[session] ?? []);
+    };
+  }, [handNotes, sandboxBlocks, shownElsewhere, startNotes]);
+  const askedForNotes = useRef(false);
+  useEffect(() => {
+    const listening = Promise.all([
+      listen<NotesHanded>(NOTES_HANDED, ({ payload: handed }) => {
+        if (handed.plane !== plane || handed.from === thisWindow()) return;
+        const { session, start, blocks } = handed;
+        if (start !== undefined)
+          setStartNotes((was) => ({ ...was, [session]: withStartHanded(was[session], start) }));
+        takeBlocks(session, blocks);
+      }),
+      listen<NotesAsked>(NOTES_ASKED, ({ payload: asked }) => {
+        if (asked.plane === plane && asked.from !== thisWindow()) handAgain.current();
+      }),
+    ])
+      .then((stops) => {
+        if (tabWindow !== undefined && !askedForNotes.current) {
+          askedForNotes.current = true;
+          void emit(NOTES_ASKED, { plane, from: thisWindow() } satisfies NotesAsked).catch(
+            () => undefined,
+          );
+        }
+        return stops;
+      })
+      .catch(() => [] as (() => void)[]);
+    return () =>
+      void listening
+        .then((stops) => Promise.all(stops.map((stop) => stop())))
+        .catch(() => undefined);
+  }, [plane, tabWindow, takeBlocks]);
+
   const answerRestart = useCallback(
     (session: number, act: RestartAct) => {
       setRestartTrouble((was) => withoutKey(was, session));
       setRestartNotYet((was) => withoutKey(was, session));
+      noteCleared(session, { kind: "restart" });
       // Asked again, so a restart the core no longer owes is owed once more.
       if (act === "now") void askRestart(session);
       // Owed already, and the person will not wait for the turn to end: the driver's step, now,
@@ -7325,7 +7512,7 @@ export const PlaneView = memo(function PlaneView({
         if (due.restart.includes(session)) restartOwed(session);
       }
     },
-    [askRestart, chats, restartOwed],
+    [askRestart, chats, noteCleared, restartOwed],
   );
   /** Restart chat, from a tab's menu or the palette. */
   useEffect(() => {
@@ -7527,6 +7714,23 @@ export const PlaneView = memo(function PlaneView({
     [askRestart],
   );
 
+  /** A chat that started again on a press: listed, and its tab in front. */
+  const showBack = useCallback(
+    (chat: OpenChat) => {
+      noteStarted(chat);
+      showStarted(
+        {
+          session: chat.session,
+          chat: chat.name,
+          who: whoOf(chat.persona, chat.harness),
+          label: chat.label,
+        },
+        filedFor(chat.cwd, focused),
+      );
+    },
+    [focused, noteStarted, showStarted],
+  );
+
   /** The waiting chats a Retry now is under way for, by id, so a second press starts nothing. */
   const retrying = useRef(new Set<string>());
   /**
@@ -7560,18 +7764,9 @@ export const PlaneView = memo(function PlaneView({
       }
       const chat = said.data;
       setWouldNotStart((was) => was.filter((one) => one.id !== id));
-      noteStarted(chat);
-      showStarted(
-        {
-          session: chat.session,
-          chat: chat.name,
-          who: whoOf(chat.persona, chat.harness),
-          label: chat.label,
-        },
-        filedFor(chat.cwd, focused),
-      );
+      showBack(chat);
     },
-    [focused, noteStarted, plane, showStarted],
+    [plane, showBack],
   );
 
   /**
@@ -7644,6 +7839,21 @@ export const PlaneView = memo(function PlaneView({
   useEffect(() => {
     readRestoredNow.current = readRestored;
   }, [readRestored]);
+  // A project's Retry has come out (#5324): which chats still wait, and its rows, read again. Each
+  // chat that came back is told on `chat-restored`.
+  useEffect(() => {
+    const listening = listen<ProjectReady>(PROJECT_READY, (event) => {
+      if (event.payload.plane !== plane) return;
+      void commands
+        .chatsThatWouldNotStart(plane)
+        .then((trouble) => {
+          if (trouble.status === "ok") setWouldNotStart(trouble.data ?? []);
+        })
+        .catch(() => undefined);
+    }).catch(() => undefined);
+    return () => void listening.then((stop) => stop?.()).catch(() => undefined);
+  }, [plane]);
+
   // Each chat of the launch as it starts, or is found not to. Read once more as the listener
   // is heard, for a chat that started before it was.
   useEffect(() => {
@@ -7776,9 +7986,19 @@ export const PlaneView = memo(function PlaneView({
    */
   const waitingTaskWays = useMemo<WaitingTaskWays>(
     () => ({
+      // **The one Retry** (#5324): the action the project's row on the rail runs. It brings
+      // back every chat this project is short of, this one among them, whose tab then opens.
       retry: async (task) => {
-        await retryChat(task.id);
+        const retried = await windowDoes.retryProject(plane);
         rereadFinished();
+        const session = retried?.started.find((one) => one.id === task.id)?.session;
+        if (session === undefined) return;
+        const open = await commands.openedChats(plane).catch(() => undefined);
+        const chat =
+          open?.status === "ok"
+            ? (open.data ?? []).find((one) => one.session === session)
+            : undefined;
+        if (chat !== undefined) showBack(chat);
       },
       approve: (task, approval) => askApprove(task.id, task.name, approval),
       end: async (task) => {
@@ -7789,7 +8009,7 @@ export const PlaneView = memo(function PlaneView({
         return said.status === "error" ? said.error : undefined;
       },
     }),
-    [askApprove, plane, rereadFinished, retryChat],
+    [askApprove, plane, rereadFinished, showBack, windowDoes],
   );
 
   const askStartFresh = useCallback(
@@ -8122,13 +8342,14 @@ export const PlaneView = memo(function PlaneView({
       newBrowser,
       runAction,
       split,
+      splitTab,
       closePane,
       tileAll: tileAllIn,
       moveToWindow,
       place: placeFrom,
       zoomPane,
       undoLayout: undoLayoutIn,
-      closeTab: close,
+      closeTab: closeFromItsControl,
       // Each as its own close (#4762): the chats asked about once, by the row, before this.
       closeOtherTabs: (closing) => {
         for (const tab of closing) close(tab);
@@ -8287,6 +8508,8 @@ export const PlaneView = memo(function PlaneView({
       bringToFront,
       cancelSmartClose,
       close,
+      closeFromItsControl,
+      splitTab,
       closePane,
       tileAllIn,
       moveToWindow,
@@ -10119,6 +10342,7 @@ export const PlaneView = memo(function PlaneView({
       workspace: ofWorkspace,
       colour: colourWithHue(sidebar?.workspaces.find((ws) => ws.name === ofWorkspace)?.colour),
       saving,
+      savingRead,
       readOnly: readOnlySaid,
       // The level of the chat in front, for the title bar (#2071).
       sandbox: tabs.inFront === undefined ? null : sandboxOf(chatOf(tabs, tabs.inFront)),
@@ -10156,6 +10380,7 @@ export const PlaneView = memo(function PlaneView({
       run,
       sandboxOf,
       saving,
+      savingRead,
       settled,
       sidebar,
       tabs,
@@ -10347,13 +10572,22 @@ export const PlaneView = memo(function PlaneView({
   const { updates: keptUpdates, settle: settleUpdates } = useInboxUpdates(plane, derivedUpdates);
 
   /**
-   * **The chats in no pane** (#4759, spec #4750): listed, and in no tab of this window. What
-   * each has to say is said in the Notices centre (`NoticeInCentre`), and its row is marked
-   * while it has something there.
+   * **The chats in no pane** (#4759, spec #4750): listed, and in no tab of any window of the
+   * project. What each has to say is said in the Notices centre (`NoticeInCentre`), and its row
+   * is marked while it has something there.
+   *
+   * **The window showing a chat owns its notes** (#5225): a chat shown only in a tab window says
+   * them on its pane's band there, where the person is reading it, and never here too. A tab
+   * window has no Notices centre, so it lists none: the project window's is the one.
    */
   const paneless = useMemo(
-    () => [...chatNames.keys()].filter((session) => tabHolding(tabs, session) === undefined),
-    [chatNames, tabs],
+    () =>
+      tabWindow !== undefined
+        ? []
+        : [...chatNames.keys()].filter(
+            (session) => tabHolding(tabs, session) === undefined && !shownElsewhere.has(session),
+          ),
+    [chatNames, shownElsewhere, tabWindow, tabs],
   );
   /** The causes of the Notices each chat in no pane has standing in the Notices centre. */
   const [centred, setCentred] = useState<ReadonlyMap<number, ReadonlySet<string>>>(() => new Map());
@@ -10586,6 +10820,11 @@ export const PlaneView = memo(function PlaneView({
    * other way. A refused action's line has Dismiss, and goes by itself when that action next
    * succeeds (NO-4).
    */
+  /** What may yet list a Notice in the Inbox, each with its own mark there (#5325). */
+  const inboxReading = [
+    ...(staleClones.reading ? ["Checking repos for a stale branch or address…"] : []),
+    ...(alerts?.reading.at === "reading" ? ["Reading the alerts…"] : []),
+  ];
   const standing = (
     <>
       {trouble && (
@@ -11131,6 +11370,7 @@ export const PlaneView = memo(function PlaneView({
                       }}
                       updates={inboxUpdates}
                       notices={standing}
+                      reading={inboxReading}
                       onNotices={setNoticesListed}
                       onNoticeAnswer={inboxOnScreen}
                       elsewhere={elsewhere}
@@ -11365,6 +11605,7 @@ export const PlaneView = memo(function PlaneView({
                       <div
                         ref={panesAt}
                         className="panes"
+                        {...{ [PANES_ROOM]: "" }}
                         {...panelRoot("content")}
                         {...tabPanelOf(panelNamedBy)}
                         onPointerDownCapture={paneUsed}
@@ -11401,6 +11642,7 @@ export const PlaneView = memo(function PlaneView({
                                   onShowInbox={showInbox}
                                   onAnswer={answeredOnPane}
                                   closeOf={closeOfPane}
+                                  alone={hasOnePane(tabs, frontTab.id)}
                                   onShowChat={showChatFromPane}
                                   focused={frontTab.focused}
                                   onFocus={(pane) => change((tabs) => focusPane(tabs, pane))}

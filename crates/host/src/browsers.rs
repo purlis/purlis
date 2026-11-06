@@ -312,6 +312,12 @@ pub enum NotActed {
     Ended,
     /// The driver refused it, or could not tell whether it acted, in words that say what to do.
     Refused(String),
+    /// A login's site was cleared, and its form didn't appear on the load after (#5272). Refused
+    /// `no_login_form_on_clean_load`, in words that say so. Nothing was filled.
+    NoFormOnCleanLoad(String),
+    /// A login was refused before it ran (#5251): nothing was opened, cleared or filled. Refused
+    /// `login_not_run`, in words that say why and what to do.
+    LoginNotRun(String),
 }
 
 /// What an act on a browser that has ended is refused with (#2013).
@@ -861,7 +867,7 @@ impl Running for Browser {
     fn log_in(&self, login: LogIn) -> Result<Browsed, NotActed> {
         let epoch = match *self.lease() {
             (Driver::Person, _) => {
-                return Err(NotActed::Refused(A_BROWSER_THE_PERSON_DRIVES.into()));
+                return Err(NotActed::LoginNotRun(A_BROWSER_THE_PERSON_DRIVES.into()));
             }
             (Driver::Agent, epoch) => epoch,
         };

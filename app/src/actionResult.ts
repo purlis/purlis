@@ -110,7 +110,7 @@ export function chatArrived(
     refused: false,
     title: arrivedTitle(chat, from),
     words: cantReport ? CANT_REPORT_WORDS : "",
-    ways: [{ label: "Go to it", onPress: onGo, primary: true }],
+    ways: [{ label: "Go to it", onPress: onGo, primary: true, go: true }],
     workspace,
     arrived: session,
   };

@@ -324,8 +324,8 @@ const stateOnTab = (name: string) =>
   within(stripNamed("Tabs"))
     .getAllByRole("tab")
     .find((tab) => tab.querySelector(".tab-name")?.textContent === name)
-    ?.querySelector("[data-state]")
-    ?.getAttribute("data-state");
+    ?.querySelector(".tab-said")
+    ?.getAttribute("aria-label");
 
 /** Opens a project by typing its path into the opener. */
 async function openByPath(path: string) {
@@ -422,11 +422,12 @@ describe("a window holding more than one project", () => {
     await waitFor(() => expect(count()).toBe("1"));
 
     // A report the board took before the ignore, landing after it, does not bring it back.
-    // The one after it is older than the ignore too, but it is the newest word about chat 2 —
-    // so chat 2's tab changing is proof that both had been taken in when the count is read.
+    // The one after it is older than the ignore too, but it is the newest word about chat 2. The
+    // queue is the newer one's, so chat 2 still needs you on its tab whatever its own board says.
     move({ ...asking, session: 1, needs_you: true, queue: [1, 2], sequence: 3 });
     move({ ...asking, session: 2, state: "running", needs_you: false, queue: [1], sequence: 4 });
-    await waitFor(() => expect(stateOnTab("one.2")).toBe("running"));
+    for (let turn = 0; turn < 5; turn += 1) await act(async () => {});
+    expect(stateOnTab("one.2")).toBe("needs you");
     expect(count()).toBe("1");
     expect(screen.getByRole("button", { name: "1 chat needs you" })).toBeInTheDocument();
   });
@@ -1030,10 +1031,10 @@ describe("the cold launch putting the last quit's projects back", () => {
     await waitFor(() => expect(projectTabs()).toEqual(["one", "two*"]));
     // Through `open_plane`, which is the trust gate — never a path of its own. A restore that
     // opened these itself would be ADR 0035 turned off for every project the operator had
-    // ever had open at once.
+    // ever had open at once. The one that was in front is asked first (#5323).
     expect(asked.filter((one) => one.cmd === "open_plane").map((one) => one.args.path)).toEqual([
-      ONE,
       TWO,
+      ONE,
     ]);
   });
 

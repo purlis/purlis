@@ -10,6 +10,8 @@ import {
   type SkillLevel,
   type SkillPinner,
   type SkillPinsRefused,
+  type SkillSetAct,
+  type SkillSetMember,
 } from "./bindings";
 import { contentsOf, type Tabs, type ViewRef } from "./tabs";
 
@@ -200,7 +202,27 @@ export type SourcesAt =
   | { at: "install"; source: string; label: string; skill: string }
   | { at: "update"; source: string; label: string; skill: string }
   | { at: "choose"; source: string; label: string; ticked?: readonly string[] }
-  | { at: "install-all"; source: string; label: string; skills: readonly string[] };
+  | { at: "install-all"; source: string; label: string; skills: readonly string[] }
+  // Delete all… and Turn all off… or on… (#5331): the tick list, then the one review.
+  | {
+      at: "set-choose";
+      act: SkillSetAct;
+      source: string;
+      label: string;
+      ticked?: readonly string[];
+    }
+  | {
+      at: "set-review";
+      act: SkillSetAct;
+      source: string;
+      label: string;
+      /** Every skill the review may hold. */
+      members: readonly SkillSetMember[];
+      /** Those ticked. */
+      ticked: readonly string[];
+      /** Remove source… asked for it: the same commit takes the source out. */
+      removesSource?: boolean;
+    };
 
 /** **A source's key**: its repository and the branch read from it, which no other source shares. */
 export function sourceKey(remote: { url: string; branch: string | null }): string {
@@ -266,12 +288,16 @@ export function backIsTo(behind: StudioPlace | undefined, to: StudioPlace): bool
 /** Two pages inside Sources are one: the same page, of the same source and skill, or skills. */
 function sameSourcesAt(one: SourcesAt | undefined, other: SourcesAt | undefined): boolean {
   if (one === undefined || other === undefined) return one === other;
-  const skills = (at: SourcesAt) =>
+  const skills = (at: SourcesAt): readonly string[] =>
     at.at === "install" || at.at === "update"
       ? [at.skill]
       : at.at === "install-all"
         ? at.skills
-        : [];
+        : at.at === "set-review"
+          ? [at.act, ...at.ticked]
+          : at.at === "set-choose"
+            ? [at.act]
+            : [];
   const these = skills(one);
   const those = skills(other);
   return (

@@ -83,6 +83,12 @@ impl Stamp {
         Stamp(rows)
     }
 
+    /// Whether the skill whose `SKILL.md` is at `path` is among those stamped: that copy, since
+    /// two levels can hold one name.
+    pub fn holds(&self, path: &std::path::Path) -> bool {
+        self.0.iter().any(|row| row.path == path)
+    }
+
     /// **What changed from this stamp to `now`, by skill name** (#3694, S8): the skills a chat
     /// started at this one lacks, the ones it has that are gone, and the ones in both that
     /// changed (moved, described anew, or edited where its harness would not read the edit). Each

@@ -110,21 +110,31 @@ function core(
   retried: "starts" | string = "starts",
 ) {
   let listed = [...rows];
+  let back: OpenChat[] = [];
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
   mockIPC(
     (cmd, args) => {
       const a = (args ?? {}) as Record<string, unknown>;
       asked.push({ cmd, args: a });
-      if (cmd === "retry_chat_that_did_not_start") {
+      // The project's Retry (#5324): every waiting chat is tried, and the rows say how it went.
+      if (cmd === "retry_project") {
         if (retried !== "starts") {
           listed = listed.map((row) =>
-            row.id === a.id ? { ...row, report: `it did not start: ${retried}` } : row,
+            row.waits !== null ? { ...row, report: `it did not start: ${retried}` } : row,
           );
-          throw new Error(retried);
+          return { ask: null, started: [] };
         }
-        // Started: a chat again, and so no longer a row.
-        listed = listed.filter((row) => row.id !== a.id);
-        return { ...STEWARD, session: 9, name: "9", in_front: false, label: "check staging" };
+        // Started: chats again, and so no longer rows.
+        const started = listed.filter((row) => row.waits !== null);
+        listed = listed.filter((row) => row.waits === null);
+        back = started.map((row, at) => ({
+          ...STEWARD,
+          session: 9 + at,
+          name: String(9 + at),
+          in_front: false,
+          label: row.name,
+        }));
+        return { ask: null, started: started.map((row, at) => ({ id: row.id, session: 9 + at })) };
       }
       if (cmd === "end_task_that_did_not_start") {
         // Ended on the person's word: a finished row now, under its record's id.
@@ -136,7 +146,7 @@ function core(
         return null;
       }
       if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
-      if (cmd === "opened_chats") return [STEWARD];
+      if (cmd === "opened_chats") return [STEWARD, ...back];
       if (cmd === "plane_sidebar")
         return {
           root: PLANE,
@@ -277,9 +287,12 @@ describe("a task a launch could not start again", () => {
     await waitFor(() =>
       expect(screen.queryByRole("group", { name: "Finished tasks of steward 4" })).toBeNull(),
     );
-    expect(world.asked("retry_chat_that_did_not_start")).toHaveLength(1);
-    expect(world.asked("retry_chat_that_did_not_start")[0].id).toBe("01K6WAITINGCHAT");
+    // The one Retry (#5324): the action the project's row on the rail runs, and not a second.
+    expect(world.asked("retry_project")).toEqual([{ plane: PLANE }]);
+    expect(world.asked("retry_chat_that_did_not_start")).toEqual([]);
     expect(world.asked("end_task_that_did_not_start")).toEqual([]);
+    // And the chat it started is shown, as a press on that row always showed it.
+    await waitFor(() => expect(document.querySelector('[data-testid="pane"]')).toBeInTheDocument());
   });
 
   it("says the new reason on its row when the try is refused again", async () => {

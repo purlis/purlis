@@ -299,10 +299,10 @@ mod hosted {
     /// showing, and its password field going, each within its own limit.
     const A_LOGIN_TAKES_AT_MOST: Duration = Duration::from_secs(150);
 
-    /// **Whether a host of `version` fills secrets** (#5115): a host before 1.72 reads no field
-    /// for a fill and fills none, so neither is sent to it.
+    /// **Whether a fill goes to a host of `version`** ([`session::KNOWS_FILLS_KEPT_OUT`]): neither
+    /// a fill nor a read of a field for one is sent to a host before.
     fn fills_secrets(version: purlis_session_protocol::version::Version) -> Result<(), String> {
-        if version < session::KNOWS_SECRET_FILL {
+        if version < session::KNOWS_FILLS_KEPT_OUT {
             return Err(TOO_OLD_TO_FILL.to_owned());
         }
         Ok(())
@@ -311,6 +311,11 @@ mod hosted {
     /// **Whether a host of `version` says whether a page asks to sign in** (#5121).
     fn says_asks_to_sign_in(version: purlis_session_protocol::version::Version) -> bool {
         version >= session::KNOWS_ASKS_TO_SIGN_IN
+    }
+
+    /// **Whether a host of `version` starts every login clean on its own site** (#5272).
+    fn starts_logins_clean(version: purlis_session_protocol::version::Version) -> bool {
+        version >= session::KNOWS_CLEAN_LOGINS
     }
 
     /// Why a host before 1.73 isn't asked (#5121): never told to a chat, whose login goes on.
@@ -362,7 +367,7 @@ mod hosted {
         ) -> Result<Browsed, crate::chatbrowsers::Refused> {
             use crate::chatbrowsers::Refused;
             let link = self.link_for(program).map_err(Refused::Said)?;
-            // A host before 1.72 reads no field for a secret fill (#5115).
+            // No field is read for a fill on a host too old to be sent one.
             if matches!(act, Act::DescribeField { .. }) {
                 fills_secrets(link.version()).map_err(Refused::Said)?;
             }
@@ -413,8 +418,8 @@ mod hosted {
             if let Some(why) = self.pool_of(program).and_then(|pool| self.untrusted(&pool)) {
                 return Err(Refused::Said(why));
             }
-            // A host before 1.73 doesn't start a chat's chosen login clean (#5121).
-            if login.suggested && !says_asks_to_sign_in(link.version()) {
+            // A host before 1.75 doesn't start every login clean, and clears less (#5272).
+            if !starts_logins_clean(link.version()) {
                 return Err(Refused::Said(
                     "the purlis that runs this browser is too old to start this login clean on \
                      its site, so nothing was filled. Update purlis where the browser runs, then \
@@ -455,6 +460,13 @@ mod hosted {
                         || refusal.code == session::BROWSER_ENDED =>
                 {
                     Err(Refused::Gone)
+                }
+                Err(refusal) if refusal.code == session::NO_LOGIN_FORM_ON_CLEAN_LOAD => {
+                    Err(Refused::NoFormOnCleanLoad(refusal.why))
+                }
+                // Refused before it began (#5251): nothing in the browser moved.
+                Err(refusal) if refusal.code == session::LOGIN_NOT_RUN => {
+                    Err(Refused::LoginNotRun(refusal.why))
                 }
                 Err(refusal) => Err(Refused::Said(refusal.why)),
             };

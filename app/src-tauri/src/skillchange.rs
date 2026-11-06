@@ -196,6 +196,18 @@ pub struct DeletedSkill {
     /// Whether its name belongs to purlis now (it starts with `purlis-`),
     /// so it comes back only under a new name (#3729).
     pub reserved: bool,
+    /// The set it was deleted with (#5331): what the Deleted page groups it by.
+    pub set: Option<DeletedSet>,
+}
+
+/// A set of skills deleted as one change, as the Deleted page groups them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct DeletedSet {
+    pub id: String,
+    /// What it was deleted from, in words.
+    pub from: Option<String>,
+    /// When it was deleted, in seconds since the epoch.
+    pub at: u32,
 }
 
 /// A level a skill can be moved to or made at, and its words.
@@ -639,6 +651,11 @@ pub(crate) async fn skills_deleted(
                         .map_err(|_| format!("{} could not be listed to restore", one.name))?,
                     label: one.level.to_string(),
                     level: (&one.level).into(),
+                    set: one.set.map(|set| DeletedSet {
+                        id: set.id,
+                        from: set.from,
+                        at: u32::try_from(one.at).unwrap_or(u32::MAX),
+                    }),
                     name: one.name,
                 })
             })
@@ -959,6 +976,84 @@ pub(crate) async fn skill_router_choose(
         route(held.root(), &by, router.as_deref(), || {
             routers_in(&executor, held.root())
         })
+    })
+    .await
+}
+
+/// The harness a change names by `program`, its word in the file.
+fn program_named(program: &str) -> Result<purlis_core::harness::Harness, String> {
+    purlis_core::harness::Harness::of_kind(program).ok_or_else(|| {
+        format!(
+            "purlis has no program called {}, so nothing was changed.",
+            purlis_core::shown::readable(program, 64)
+        )
+    })
+}
+
+/// **Writes one program's skill budget** at the level of `workspace`, or the project's where it
+/// is none, from Change… or Reset to default (#5353; ADR 0102 as amended 2026-11-05). Each number
+/// is a number, or none for the one below it. New chats get it; an open chat keeps what it was
+/// handed, and its skills' stamp moves, so its restart offer comes as for any change of skills.
+/// `true` where it changed anything.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_budget_set(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    workspace: Option<String>,
+    program: String,
+    skills: Option<u32>,
+    chars: Option<u32>,
+) -> Result<bool, String> {
+    use purlis_core::skills::budget_setting::{Level, write};
+    let held = planes.held(&plane)?;
+    crate::off_the_window("changing the skill budget", move || {
+        flag_on()?;
+        write(
+            held.root(),
+            Level::of(workspace.as_deref()),
+            program_named(&program)?,
+            budget_set_of(skills, chars),
+        )
+    })
+    .await
+}
+
+/// The numbers a window sent, as the core reads them.
+fn budget_set_of(skills: Option<u32>, chars: Option<u32>) -> purlis_core::skills::BudgetSet {
+    let wide = |number: u32| usize::try_from(number).unwrap_or(usize::MAX);
+    purlis_core::skills::BudgetSet {
+        skills: skills.map(wide),
+        chars: chars.map(wide),
+    }
+}
+
+/// **What the numbers typed in Change… would do to new chats** (#5353): nothing is written.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_budget_preview(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    workspace: Option<String>,
+    persona: Option<String>,
+    program: String,
+    skills: Option<u32>,
+    chars: Option<u32>,
+) -> Result<crate::skillstudio::SkillBudgetPreview, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("working out a skill budget", move || {
+        flag_on()?;
+        let built_in =
+            crate::bundled_plugin_here().and_then(|one| purlis_core::skills::in_bundle(&one));
+        Ok(purlis_core::skills::budget_setting::preview(
+            built_in.as_deref(),
+            held.root(),
+            workspace.as_deref(),
+            persona.as_deref(),
+            program_named(&program)?,
+            budget_set_of(skills, chars),
+        )
+        .into())
     })
     .await
 }

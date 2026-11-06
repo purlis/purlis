@@ -7,16 +7,99 @@ import { commands, type DeletedSkill } from "./bindings";
 import { counted } from "./dispatches";
 import { Field, SettingRow } from "./settings/components";
 import { NAME_RESERVED, copyNameOf, isReservedName } from "./SkillCopy";
+import { BUSY } from "./SkillRead";
 import { Badge } from "./ui/badge/Badge";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Disclosure } from "./ui/disclosure/Disclosure";
-import { List, ListRow, type Selection } from "./ui/list/List";
-import { RowBelow, RowLabel, RowTrail } from "./ui/list/Row";
+import { List, ListRow, ListRowSection, type Selection } from "./ui/list/List";
+import { RowBelow, RowLabel, RowLead, RowTrail } from "./ui/list/Row";
+import { Checkbox } from "./ui/choice/Checkbox";
 import { ViewPageHeader } from "./ui/panel/ViewFrame";
 
 /** How many days are left to bring it back, in words. */
 export function daysLeft(one: DeletedSkill): string {
   return `${counted(one.days_left, "day", "days")} left to bring it back`;
+}
+
+/** **Skills deleted as one change** (#5331), as the list groups them. Any set of skills: it says
+ *  where they came from only where the change named it. */
+export type DeletedGroup = {
+  id: string;
+  from: string | null;
+  /** When they were deleted, in seconds since the epoch. */
+  at: number;
+  skills: readonly DeletedSkill[];
+};
+
+/** What the Deleted list draws: each group where the first of it falls, and each skill on its own.
+ *  A set one skill is left of is a skill on its own: there is nothing to bring back together. */
+export function groupedDeleted(
+  deleted: readonly DeletedSkill[],
+): readonly (DeletedSkill | DeletedGroup)[] {
+  const bySet = new Map<string, DeletedSkill[]>();
+  for (const one of deleted) {
+    if (one.set === null) continue;
+    bySet.set(one.set.id, [...(bySet.get(one.set.id) ?? []), one]);
+  }
+  const drawn = new Set<string>();
+  const out: (DeletedSkill | DeletedGroup)[] = [];
+  for (const one of deleted) {
+    const skills = one.set === null ? undefined : bySet.get(one.set.id);
+    if (one.set === null || skills === undefined || skills.length < 2) out.push(one);
+    else if (!drawn.has(one.set.id)) {
+      drawn.add(one.set.id);
+      out.push({ id: one.set.id, from: one.set.from, at: one.set.at, skills });
+    }
+  }
+  return out;
+}
+
+/** What a group's row says of where and when, under its count: "from mattpocock-skills, 5 Nov". */
+function groupFrom(group: DeletedGroup): string {
+  const day = new Date(group.at * 1000).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+  });
+  return group.from === null ? day : `from ${group.from}, ${day}`;
+}
+
+/** A group's name: "14 skills from mattpocock-skills, 5 Nov". */
+export function groupSaid(group: DeletedGroup): string {
+  const count = counted(group.skills.length, "skill", "skills");
+  return group.from === null ? `${count}, ${groupFrom(group)}` : `${count} ${groupFrom(group)}`;
+}
+
+/** What a group's Bring all back says of a skill that does not come with it (#3729). */
+export const NAME_TAKEN_STAYS =
+  "stayed in Deleted: its name belongs to purlis now, so bring it back on its own, under a new name.";
+
+/** A group's own row in the list: never chosen, as it holds only Bring all back. While Select is
+ *  on (#5332) it is ticked with every skill of it. */
+const GROUP_ROW = "group:";
+
+/** The keys Select draws ticked: the skills ticked, and each group all of whose skills are. */
+function withGroups(keys: ReadonlySet<string>, groups: readonly DeletedGroup[]): Set<string> {
+  const drawn = new Set(keys);
+  for (const group of groups)
+    if (group.skills.every((skill) => keys.has(skill.id))) drawn.add(`${GROUP_ROW}${group.id}`);
+  return drawn;
+}
+
+/** The skills ticked once the list says `next`, from `was`: a group's row ticked or unticked
+ *  ticks or unticks every skill of it. */
+function skillsOf(
+  was: ReadonlySet<string>,
+  next: ReadonlySet<string>,
+  groups: readonly DeletedGroup[],
+): Set<string> {
+  const before = withGroups(was, groups);
+  const out = new Set([...next].filter((key) => !key.startsWith(GROUP_ROW)));
+  for (const group of groups) {
+    const key = `${GROUP_ROW}${group.id}`;
+    if (next.has(key) && !before.has(key)) for (const skill of group.skills) out.add(skill.id);
+    if (!next.has(key) && before.has(key)) for (const skill of group.skills) out.delete(skill.id);
+  }
+  return out;
 }
 
 /**
@@ -27,40 +110,120 @@ export function daysLeft(one: DeletedSkill): string {
 export function DeletedList({
   deleted,
   chosen,
+  busy = false,
+  selecting,
   onChoose,
+  onBringAllBack,
 }: {
   deleted: readonly DeletedSkill[];
   /** The deleted skill chosen, by its id. */
   chosen: string | undefined;
+  busy?: boolean;
+  /** **Select** (#5332), while it is on: the skills ticked, by their ids. A group's row ticks
+   *  every skill of it, and is ticked while they all are. */
+  selecting?: {
+    keys: ReadonlySet<string>;
+    onChange: (keys: ReadonlySet<string>) => void;
+    onEscape: () => void;
+  };
   onChoose: (id: string) => void;
+  /** **Bring all back** a group (#5331). */
+  onBringAllBack?: (group: DeletedGroup) => void;
 }) {
+  const row = (one: DeletedSkill, inGroup = false) => (
+    <ListRow
+      key={one.id}
+      id={one.id}
+      className={inGroup ? "skill-deleted-member" : undefined}
+      textValue={one.name}
+      data-testid={`deleted-${one.name}`}
+      data-row={one.id}
+    >
+      {selecting !== undefined && (
+        <RowLead>
+          <Checkbox slot="selection" aria-label={`Select ${one.name}, ${one.label}`} />
+        </RowLead>
+      )}
+      <RowLabel>{one.name}</RowLabel>
+      <RowTrail>
+        <Badge>{one.label}</Badge>
+      </RowTrail>
+      <RowBelow clamp={1}>{daysLeft(one)}</RowBelow>
+    </ListRow>
+  );
+  const drawn = groupedDeleted(deleted);
+  const groups = drawn.filter((one): one is DeletedGroup => "skills" in one);
   return (
     <List
       aria-label="Deleted skills"
       className="skill-library"
-      selectionMode="single"
-      disallowEmptySelection
-      selectedKeys={chosen === undefined ? new Set() : new Set([chosen])}
-      onSelectionChange={(keys: Selection) => {
-        const [first] = keys === "all" ? [] : [...keys];
-        if (first !== undefined) onChoose(String(first));
-      }}
+      {...(selecting === undefined
+        ? {
+            selectionMode: "single" as const,
+            disallowEmptySelection: true,
+            selectedKeys: chosen === undefined ? new Set() : new Set([chosen]),
+            // A group's own row is never chosen: its button is what it holds.
+            disabledKeys: groups.map((one) => `${GROUP_ROW}${one.id}`),
+            disabledBehavior: "selection" as const,
+            onSelectionChange: (keys: Selection) => {
+              const [first] = keys === "all" ? [] : [...keys];
+              if (first !== undefined) onChoose(String(first));
+            },
+          }
+        : {
+            selectionMode: "multiple" as const,
+            selectedKeys: withGroups(selecting.keys, groups),
+            onSelectionChange: (keys: Selection) =>
+              selecting.onChange(
+                keys === "all"
+                  ? new Set(deleted.map((one) => one.id))
+                  : skillsOf(selecting.keys, new Set([...keys].map(String)), groups),
+              ),
+            onEscape: selecting.onEscape,
+          })}
     >
-      {deleted.map((one) => (
-        <ListRow
-          key={one.id}
-          id={one.id}
-          textValue={one.name}
-          data-testid={`deleted-${one.name}`}
-          data-row={one.id}
-        >
-          <RowLabel>{one.name}</RowLabel>
-          <RowTrail>
-            <Badge>{one.label}</Badge>
-          </RowTrail>
-          <RowBelow clamp={1}>{daysLeft(one)}</RowBelow>
-        </ListRow>
-      ))}
+      {drawn.map((one) => {
+        if (!("skills" in one)) return row(one);
+        const said = groupSaid(one);
+        const none = one.skills.every((skill) => skill.reserved);
+        return (
+          <ListRowSection key={one.id} id={one.id} aria-label={said} className="skill-deleted-set">
+            <ListRow
+              id={`${GROUP_ROW}${one.id}`}
+              textValue={said}
+              data-testid={`deleted-group-${one.id}`}
+            >
+              {selecting !== undefined && (
+                <RowLead>
+                  <Checkbox slot="selection" aria-label={`Select ${said}`} />
+                </RowLead>
+              )}
+              <RowLabel>{counted(one.skills.length, "skill", "skills")}</RowLabel>
+              <RowTrail>
+                <Button
+                  size="sm"
+                  aria-label={`Bring all back: ${said}`}
+                  isDisabled={busy || none}
+                  tooltip={
+                    none
+                      ? "Their names belong to purlis now: bring each back on its own."
+                      : busy
+                        ? BUSY
+                        : undefined
+                  }
+                  onPress={() => onBringAllBack?.(one)}
+                >
+                  Bring all back
+                </Button>
+              </RowTrail>
+              <RowBelow clamp={1} tipWhenCut>
+                {groupFrom(one)}
+              </RowBelow>
+            </ListRow>
+            {one.skills.map((skill) => row(skill, true))}
+          </ListRowSection>
+        );
+      })}
     </List>
   );
 }

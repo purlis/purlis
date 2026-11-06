@@ -15,9 +15,12 @@ import { mockIPC } from "@tauri-apps/api/mocks";
 import type { ChatUsage, HarnessGlance } from "./bindings";
 import { ChatFoot, PaneActions, PaneActionsOf, PaneBellOf, PaneHead } from "./LayoutPanes";
 import { catalogued, type Offer } from "./actions";
+import { Bot, GripVertical, Square } from "lucide-react";
+import { Button, IconButton } from "./ui/button/Button";
 import type { ChatHead } from "./paneHead";
 import {
   FOOT_ROWS,
+  HEAD_DROPS,
   paneLinesOf,
   type FootPart,
   type FootPress,
@@ -118,8 +121,36 @@ const LIST = catalogued([
 ]);
 
 /** The head the pane's model answers at its width: the chat's name and mark, then its actions. */
-function Head({ kind, width }: { kind: PaneKind; width: number }) {
-  const lines = paneLinesOf(kind, width, {});
+function Head({
+  kind,
+  width,
+  longest = false,
+  alone = false,
+}: {
+  kind: PaneKind;
+  width: number;
+  /** The most a chat's head holds: its grip, persona and the longest state button. */
+  longest?: boolean;
+  alone?: boolean;
+}) {
+  const lines = paneLinesOf(kind, width, { alone });
+  const worded = lines.actions.includes("stateWord");
+  const state = !longest ? (
+    worded ? (
+      <span>Stop</span>
+    ) : undefined
+  ) : worded ? (
+    <Button variant="quiet" size="sm" icon={<Square aria-hidden="true" />}>
+      Cancel smart close
+    </Button>
+  ) : (
+    <IconButton
+      variant="quiet"
+      size="sm"
+      icon={<Square aria-hidden="true" />}
+      aria-label="Cancel smart close"
+    />
+  );
   return (
     <PaneActionsOf.Provider value={lines.actions}>
       <PaneHead
@@ -128,7 +159,7 @@ function Head({ kind, width }: { kind: PaneKind; width: number }) {
           <PaneBellOf.Provider value={{ notes: 2, trouble: 0, asks: 0 }}>
             <PaneActions
               pane={1}
-              state={lines.actions.includes("stateWord") ? <span>Stop</span> : undefined}
+              state={state}
               chat={{ session: SESSION, offers: LIST }}
               offerFor={(id) => SPLITS.find((offer) => offer.id === id)}
               closeOf={() => CLOSE}
@@ -137,7 +168,20 @@ function Head({ kind, width }: { kind: PaneKind; width: number }) {
           </PaneBellOf.Provider>
         }
       >
+        {longest && (
+          <IconButton
+            variant="ghost"
+            size="sm"
+            icon={<GripVertical aria-hidden="true" />}
+            aria-label="Move this pane"
+          />
+        )}
         <div className="pane-chips">
+          {longest && (
+            <span className="pane-persona">
+              <Bot aria-hidden="true" />
+            </span>
+          )}
           <span className="pane-name">M69 chats, tabs and panes: build</span>
           {lines.head.includes("mark") && (
             <span className="pane-state-mark">{lines.head.includes("markWord") && "working"}</span>
@@ -303,6 +347,58 @@ export const AnEndedChat: Story = {
     kind: "ended",
     facts: { sandbox: true },
     usage: { ...USAGE, context: { value: 87, tone: "warn" }, cache: { value: 40, tone: "warn" } },
+  },
+};
+
+/** **The widths in the head's drop rule, each at its edge**, and just under the last (#5318). */
+const HEAD_WIDTHS = [...HEAD_DROPS.map((drop) => drop.below), 299];
+
+/**
+ * **The head at rest fits at every width in its drop rule** (#5318), with its longest state button:
+ * nothing is cut sideways, the name keeps its least room, the actions stay inside the head, and no
+ * pointer or keyboard is what draws the pane's controls. The band below each is the same head alone
+ * in its tab, which holds one control less.
+ */
+export const HeadAtEveryWidth: Story = {
+  args: { width: 900 },
+  render: () => (
+    <Lent>
+      <div style={{ display: "grid", gap: "var(--space-2)" }}>
+        {HEAD_WIDTHS.flatMap((width) =>
+          [false, true].map((alone) => (
+            <div
+              key={`${width}-${alone}`}
+              className="pane-frame pane-headed"
+              data-testid="measured-head"
+              style={{ inlineSize: width, blockSize: 48 }}
+            >
+              <Head kind="chat" width={width} longest alone={alone} />
+            </div>
+          )),
+        )}
+      </div>
+    </Lent>
+  ),
+  play: async ({ canvas }) => {
+    for (const frame of canvas.getAllByTestId("measured-head")) {
+      const says = `the head ${frame.getBoundingClientRect().width}px wide`;
+      const head = frame.querySelector<HTMLElement>(".pane-head") as HTMLElement;
+      const chips = frame.querySelector<HTMLElement>(".pane-chips") as HTMLElement;
+      const name = frame.querySelector<HTMLElement>(".pane-name") as HTMLElement;
+      const actions = frame.querySelector<HTMLElement>(".pane-actions") as HTMLElement;
+      const doing = frame.querySelector<HTMLElement>(".pane-doing") as HTMLElement;
+      await expect(head.scrollWidth, says).toBeLessThanOrEqual(head.clientWidth);
+      await expect(chips.scrollWidth, says).toBeLessThanOrEqual(chips.clientWidth);
+      await expect(name.getBoundingClientRect().width, says).toBeGreaterThanOrEqual(16);
+      await expect(actions.getBoundingClientRect().right, says).toBeLessThanOrEqual(
+        head.getBoundingClientRect().right,
+      );
+      await expect(chips.getBoundingClientRect().right, says).toBeLessThanOrEqual(
+        actions.getBoundingClientRect().left,
+      );
+      const { visibility, opacity } = getComputedStyle(doing);
+      await expect(`${visibility}/${opacity}`, says).toBe("visible/1");
+    }
   },
 };
 

@@ -287,6 +287,19 @@ describe("SignInsStep", () => {
     expect(asked?.args).toMatchObject({ takingOff: ["work"] });
   });
 
+  it("shows no commands where the core spells none, only why (#5349)", async () => {
+    core({
+      pool_setup_sign_ins_by_hand: () => ({
+        note: "Only the button takes this one off.",
+        text: "",
+      }),
+    });
+    draw();
+    await userEvent.click(await screen.findByRole("button", { name: "See what this does" }));
+    expect(await screen.findByText("Only the button takes this one off.")).toBeTruthy();
+    expect(screen.queryByText("Commands")).toBeNull();
+  });
+
   it("offers a new runner where only the runner's older purlis holds a profile (#5175)", async () => {
     let sizes: PoolSetupSizes = {
       ...SIZES,

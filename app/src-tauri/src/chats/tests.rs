@@ -6974,6 +6974,102 @@ fn a_conversation_for_a_chat_that_is_not_open_invents_nothing() {
     assert_eq!(chats.record(), Record::default());
 }
 
+/// Chats of a plane that start with no sandbox: what is said of them is their conversations.
+fn unsandboxed_chats_of(plane: &std::path::Path) -> Chats {
+    let mut chats = Chats::on_host(
+        Box::new(|_| {}),
+        Box::new(Pretend::default()),
+        plane.to_path_buf(),
+    )
+    .deciding_by(Box::new(|_, _, _| Ok((None, None, None))));
+    chats.arming_with(crate::Shipped {
+        binary: crate::Shipped::default().binary,
+        plugin: crate::Shipped::default().plugin,
+        shims: None,
+        git_hooks: None,
+    });
+    chats
+}
+
+/// A chat on Codex in `plane`, whose harness chooses its own conversation and names it by a hook.
+fn a_codex_chat_in(plane: &std::path::Path) -> Chat {
+    Chat {
+        cwd: Some(plane.to_path_buf()),
+        ..chat(&standing("codex"), "restarted", None)
+    }
+}
+
+/// Each chat of `chats` names conversation `ID` as it starts, before it is listed as open.
+fn each_names_its_conversation_as_it_starts(chats: &std::sync::Arc<Chats>) {
+    let hears = std::sync::Arc::downgrade(chats);
+    chats.when_one_starts(Box::new(move |session, _, _, _| {
+        hears
+            .upgrade()
+            .expect("the chats")
+            .follow_conversation(session, ID, Some(OLD_RUN));
+    }));
+}
+
+/// **A harness can name its conversation before its start has returned** (#5170): its report is
+/// heard while the start still reads the plane's skills, before the chat is listed as open. The
+/// board adopts it and never tells it again, so a report dropped here left the chat with nothing
+/// to resume for good, and "send it a message and restart it again" was not true of it.
+#[test]
+fn a_conversation_named_while_the_chat_is_starting_is_the_one_a_restart_resumes() {
+    let plane = tempfile::tempdir().expect("a plane");
+    let chats = std::sync::Arc::new(unsandboxed_chats_of(plane.path()));
+    each_names_its_conversation_as_it_starts(&chats);
+
+    let session = chats
+        .start(&a_codex_chat_in(plane.path()), SIZE)
+        .expect("starts");
+
+    let record = chats.record();
+    assert_eq!(record.chats[0].resume, Some(SessionId::new(ID).unwrap()));
+    assert_eq!(record.chats[0].identity.run.as_deref(), Some(OLD_RUN));
+    chats.ask_restart(session).expect("asked");
+    let started = chats.restart(session, SIZE).expect("it has a conversation");
+    let _ = chats.close(started);
+    let _ = chats.close(session);
+}
+
+#[test]
+fn a_conversation_named_while_a_shell_tab_is_starting_resumes_nothing() {
+    let plane = tempfile::tempdir().expect("a plane");
+    let chats = std::sync::Arc::new(unsandboxed_chats_of(plane.path()));
+    each_names_its_conversation_as_it_starts(&chats);
+    let shell = Chat {
+        cwd: Some(plane.path().to_path_buf()),
+        ..chat("/bin/sh", "shell", None)
+    };
+
+    let session = chats.start(&shell, SIZE).expect("starts");
+
+    assert_eq!(chats.record().chats[0].resume, None);
+    let _ = chats.close(session);
+}
+
+/// A closed chat's last report comes late, and its number may be the next chat's.
+#[test]
+fn a_conversation_named_for_a_chat_that_has_closed_is_not_kept_for_a_later_start() {
+    let plane = tempfile::tempdir().expect("a plane");
+    let chats = unsandboxed_chats_of(plane.path());
+    let first = chats
+        .start(&a_codex_chat_in(plane.path()), SIZE)
+        .expect("starts");
+    chats.close(first).unwrap();
+
+    chats.follow_conversation(first, ID, None);
+
+    let next = Chat {
+        number: Some(first),
+        ..a_codex_chat_in(plane.path())
+    };
+    let again = chats.start(&next, SIZE).expect("starts");
+    assert_eq!(chats.record().chats[0].resume, None);
+    let _ = chats.close(again);
+}
+
 // ----- the model a chat's harness reported (#1021) -----
 
 fn session_start(chat: u32, conversation: &str, model: &str) -> purlis_core::hookwire::Report {
@@ -10110,6 +10206,39 @@ fn a_start_on_a_pool_that_is_gone_starts_nothing_and_one_that_chose_this_machine
     assert_eq!(host.running(), vec![session]);
 }
 
+/// **A runner whose check ran out of time isn't walked again every minute by the sweep** (#5393):
+/// 5 and a half minutes on one check leaves it just short of an hour, and a quick end changes
+/// nothing about how often the sweep runs.
+#[cfg(unix)]
+#[test]
+fn the_sweep_eases_off_a_runner_whose_check_took_long_and_only_the_sweep() {
+    use std::time::Duration;
+    assert_eq!(
+        super::fresh_asked_again_after(Duration::from_secs(330)),
+        Duration::from_secs(3300)
+    );
+    assert_eq!(
+        super::fresh_asked_again_after(Duration::from_secs(1)),
+        Duration::from_secs(60),
+        "a quick end leaves the sweep's own pace"
+    );
+    assert_eq!(
+        super::fresh_asked_again_after(Duration::from_secs(36_000)),
+        Duration::from_secs(3600),
+        "never left for longer than an hour"
+    );
+
+    let plane = a_sandboxed_plane();
+    let chats = restartable_chats_of(plane.path(), Pretend::default());
+    assert!(chats.sweep_may_ask("01J9ZQ3V7K8M2N4P6R8T0V2X4Z"));
+    lock(&chats.fresh_asked_again).insert(
+        "01J9ZQ3V7K8M2N4P6R8T0V2X4Z".to_owned(),
+        std::time::Instant::now() + Duration::from_secs(3300),
+    );
+    assert!(!chats.sweep_may_ask("01J9ZQ3V7K8M2N4P6R8T0V2X4Z"));
+    assert!(chats.sweep_may_ask("another chat's"));
+}
+
 /// **A move takes a chat's one-off choice of where it runs** (#4536): the record then follows its
 /// workspace, which the move just set, and the choice comes back where the move doesn't happen.
 #[test]
@@ -10379,4 +10508,23 @@ fn why_a_chat_runs_at_its_level_says_a_restart_applies_a_level_changed_since_it_
         ..a_machine()
     };
     assert_eq!(chats.level_whys_on(&windows), Vec::new());
+}
+
+/// **A Discard pressed while a check runs wins when it ends** (#5312): that press isn't dropped,
+/// and whatever the check found, the runner goes with what it holds. Unpressed, what it found
+/// stands.
+#[cfg(unix)]
+#[test]
+fn a_discard_during_a_check_lets_the_runner_go_whatever_the_check_found() {
+    let found = vec!["the runner ran out of time".to_owned()];
+
+    assert_eq!(
+        ends_as(true, found.clone(), Going::OnProof),
+        (Vec::new(), false)
+    );
+    assert_eq!(ends_as(false, found.clone(), Going::OnProof), (found, true));
+    assert_eq!(
+        ends_as(false, Vec::new(), Going::Discarded),
+        (Vec::new(), false)
+    );
 }

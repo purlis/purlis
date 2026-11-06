@@ -76,11 +76,7 @@ pub(crate) fn send(
     rel: &str,
     sent: &Sent,
 ) -> Result<(), String> {
-    let repo = if rel.is_empty() {
-        root.to_path_buf()
-    } else {
-        root.join(rel)
-    };
+    let repo = folder_of(root, rel)?;
     let leave_out = leave_out_of(root, rel)?;
     let have = lock(sent).get(rel).cloned().unwrap_or_default();
     let once = |have: &[String]| -> Result<(Vec<Ref>, Vec<String>), String> {
@@ -173,7 +169,7 @@ pub(crate) fn send_ahead(
     sent: &Sent,
 ) -> Result<(), String> {
     for rel in clones_of(root, workspace) {
-        let repo = root.join(&rel);
+        let repo = folder_of(root, &rel)?;
         let Some(branch) = codelink::current_branch(&repo) else {
             continue;
         };
@@ -215,7 +211,7 @@ pub(crate) fn move_workspace_to(
     sent: &Sent,
 ) -> Result<(), String> {
     for rel in clones_of(root, workspace) {
-        let repo = root.join(&rel);
+        let repo = folder_of(root, &rel)?;
         let leave_out = leave_out_of(root, &rel)?;
         let have = lock(sent).get(&rel).cloned().unwrap_or_default();
         let scratch = scratch()?;
@@ -274,7 +270,7 @@ pub(crate) fn move_workspace_back(
     }
     let mut came_back = crate::host::CameBack::default();
     for rel in here {
-        let repo = root.join(&rel);
+        let repo = folder_of(root, &rel)?;
         let leave_out = leave_out_of(root, &rel)?;
         let scratch = scratch()?;
         let into = scratch.path().join("work.bundle");
@@ -416,24 +412,47 @@ fn made_there(
     Ok(only_there)
 }
 
-/// The repositories of `workspace` in the project at `root`, by their folders in it.
+/// The repositories of `workspace` in the project at `root`, in `repos/` or at its root
+/// ([`purlis_core::repofolder::holdings`], #5371), each as `workspaces/<workspace>/<repo>`: the
+/// name a transfer carries ([`codelink::repo_in`]), which each end finds on its own disk
+/// ([`folder_of`]). Every repo, and at the root, as before, a linked worktree or a repository in
+/// a name the workspace keeps.
 fn clones_of(root: &Path, workspace: &str) -> Vec<String> {
     if !purlis_core::contain::workspace_name_ok(workspace) {
         return Vec::new();
     }
-    let Ok(entries) = std::fs::read_dir(root.join("workspaces").join(workspace)) else {
+    let Ok(walked) = purlis_core::repofolder::holdings(root, workspace) else {
         return Vec::new();
     };
-    let mut clones: Vec<String> = entries
-        .filter_map(Result::ok)
-        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
-        .filter_map(|entry| entry.file_name().into_string().ok())
-        .filter(|name| purlis_core::contain::repo_name_ok(name))
-        .filter(|name| codelink::a_repository(&root.join("workspaces").join(workspace).join(name)))
-        .map(|name| format!("workspaces/{workspace}/{name}"))
+    let at_the_root = walked.others.iter().filter(|row| {
+        row.layout == purlis_core::repofolder::Layout::Root
+            && row.git != purlis_core::repofolder::Git::Link
+    });
+    let mut clones: Vec<String> = walked
+        .repos
+        .iter()
+        .chain(at_the_root)
+        .map(|row| format!("workspaces/{workspace}/{}", row.repo.name))
         .collect();
     clones.sort();
     clones
+}
+
+/// **The folder of the repository at `rel`** in the project at `root`: the project's own for an
+/// empty `rel`, else, for `workspaces/<workspace>/<repo>`, where that repo is in either layout
+/// ([`purlis_core::repofolder::folder`]), refused where that is refused (a workspace reached
+/// through a link, a name no repo has) rather than joined by hand around it. Anything else is
+/// joined as it stands, as before.
+fn folder_of(root: &Path, rel: &str) -> Result<std::path::PathBuf, String> {
+    if rel.is_empty() {
+        return Ok(root.to_path_buf());
+    }
+    match rel.split('/').collect::<Vec<_>>().as_slice() {
+        ["workspaces", workspace, repo] => {
+            purlis_core::repofolder::folder(root, workspace, repo).map_err(|why| why.to_string())
+        }
+        _ => Ok(root.join(rel)),
+    }
 }
 
 /// **Send every clone of `workspace`** to the runner, before a chat starts there.
@@ -490,7 +509,7 @@ fn fetch_clones(
                 link.fetch_code(project, rel, have, into)
                     .map(|(heads, wrote)| (core_refs(heads), wrote))
             };
-            let repo = root.join(rel);
+            let repo = folder_of(root, rel)?;
             if left {
                 codelink::fetch_back_left(&repo, pool, beside, scratch.path(), through)
             } else if beside {
@@ -581,27 +600,66 @@ fn fetch_whole_said(
     );
     if failed.is_empty() {
         for rel in &here {
-            if let Err(why) = codelink::keep_only_whats_new(&root.join(rel), runner) {
+            if let Err(why) = folder_of(root, rel).and_then(|repo| {
+                codelink::keep_only_whats_new(&repo, runner).map_err(|why| why.to_string())
+            }) {
                 // Only tidiness: every branch is here.
                 tracing::warn!("purlis: in {}: {why}", shown(rel));
             }
         }
     }
-    // **Only proof lets the runner go** (#4569): what it holds, listed by the runner itself and
-    // not the clones this machine expected, each commit reached from a ref here.
-    let missing = not_home(link, project, root, runner);
-    if missing.is_empty() {
-        return Vec::new();
-    }
-    failed.extend(missing);
     failed
+}
+
+/// **Only proof lets a fresh runner go** (#4569): what it holds, listed by the runner itself and
+/// not the clones this machine expected, each commit reached from a ref here. Answers what is
+/// missing, in sentences. Runs after [`fetch_whole`], outside the lock on fetches (#5393).
+///
+/// **A look that took long is taken again** (#5393): where the first took longer than the wait for
+/// any answer, the runner goes only on a second that passes within that wait, so a proof is as
+/// recent as when a look had only that wait. A look warms the runner's file system and what its
+/// first look found of the image is kept, so a second is far quicker.
+pub(crate) fn proof_of(link: &HostLink, project: &str, root: &Path, runner: &str) -> Vec<String> {
+    let again_within = link.answer_within();
+    codelink::held::marked(proved_recently(
+        again_within,
+        || not_home(link, project, root, runner),
+        || not_home_within(link, project, root, runner, again_within),
+    ))
+}
+
+/// [`proof_of`]'s rule: what `look` finds, and where it passed but took longer than `long`, what
+/// `again` finds.
+fn proved_recently(
+    long: std::time::Duration,
+    look: impl FnOnce() -> Vec<String>,
+    again: impl FnOnce() -> Vec<String>,
+) -> Vec<String> {
+    let began = std::time::Instant::now();
+    let missing = look();
+    if missing.is_empty() && began.elapsed() > long {
+        again()
+    } else {
+        missing
+    }
 }
 
 /// **What runner `runner` holds that the project at `root` does not** (#4569), in sentences:
 /// none only where the runner listed every repository it holds and this project has each one's
 /// every commit ([`codelink::held::not_home`]). A runner that cannot list them proves nothing.
 pub(crate) fn not_home(link: &HostLink, project: &str, root: &Path, runner: &str) -> Vec<String> {
-    let (repos, unread) = match link.repos_held() {
+    not_home_within(link, project, root, runner, link.proof_within())
+}
+
+/// [`not_home`], waiting at most `within` for the runner's list.
+pub(crate) fn not_home_within(
+    link: &HostLink,
+    project: &str,
+    root: &Path,
+    runner: &str,
+    within: std::time::Duration,
+) -> Vec<String> {
+    let (repos, unread) = match link.repos_held_within(within) {
         Ok(Some(held)) => held,
         Ok(None) => {
             return vec![format!(

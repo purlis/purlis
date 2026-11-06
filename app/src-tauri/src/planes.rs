@@ -244,6 +244,8 @@ type Read = Result<reopen::Record, std::io::Error>;
 pub struct Held {
     id: PlaneId,
     root: PathBuf,
+    /// How putting its record back stands: what a Retry does next ([`Planes::retry_project`]).
+    put_back: Mutex<PutBack>,
     hooks: Hooks,
     /// The window, for a move no hook reports: a chat closed, or a request ignored.
     tell: Teller,
@@ -442,6 +444,11 @@ pub struct PlaneUpdated {
 /// only where its brief cannot be handed to it again (#1609, [`Held::start_chat_fresh`]).
 pub const A_TASK_IS_NOT_STARTED_FRESH: &str = "This chat is a task, and a fresh start would drop the brief it was given. Restart chat keeps its conversation. To change what it was asked, stop it and ask again.";
 
+/// How `held`'s put back stands, as [`Held::put_back`] holds it.
+fn lock_put_back(held: &Held) -> MutexGuard<'_, PutBack> {
+    held.put_back.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
 /// A project's reopen between its two halves ([`Held::begin_reopen`], [`Held::finish_reopen`]).
 pub(crate) struct Reopening {
     begun: crate::restored::Begun,
@@ -454,6 +461,31 @@ pub(crate) struct Reopening {
     read: bool,
     /// Why the record was refused, where it was: the project then says it failed (#5322).
     refused: Option<String>,
+}
+
+/// **How putting a project's record back stands** (#5324): what [`Planes::retry_project`] does
+/// next, and what it must not do twice.
+enum PutBack {
+    /// Nothing has been asked to put it back: a plane the launch has yet to.
+    NotAsked,
+    /// Its chats are being started: it says how it came out when that is over.
+    Going,
+    /// The launch's gate refused (#2004): its chats are registered, and these start them.
+    Refused(Box<Reopening>),
+    /// Its record could not be read, so nothing was registered: it is read again.
+    Unread,
+    /// Every chat was tried, of this many its record held.
+    Done { wanted: u32 },
+}
+
+/// What a Retry of a project came to ([`Planes::retry_project`]).
+pub struct RetriedProject {
+    /// What to ask the person before its record runs: the record read again asks more than
+    /// this machine has approved.
+    pub ask: Option<Asking>,
+    /// The chats that started on this press, by id and session. Empty where the chats start
+    /// behind the window: each is told to it as it does.
+    pub started: Vec<(String, u32)>,
 }
 
 impl Held {
@@ -3881,16 +3913,34 @@ impl Planes {
         //
         // **And the window is told how it came out, once** (#5322): ready, with how many of its
         // chats came back, or failed, with why none was put back.
+        *lock_put_back(&held) = PutBack::Going;
+        let begun = held.begin_reopen(record, choice);
+        self.put_back(&held, begun);
+    }
+
+    /// Starts the chats `begun` registered once the gate lets it, behind the window where the
+    /// registry says so, and tells the window how that came out.
+    fn put_back(&self, held: &Arc<Held>, begun: Reopening) {
         let gate = self.gate.clone();
         let ready = Arc::clone(&self.ready);
         let put_back = move |held: &Held, begun: Reopening| {
             let outcome = match gate.as_ref().map_or(Ok(()), |gate| gate()) {
-                Ok(()) => held.finish_reopen(begun, STARTING),
+                Ok(()) => {
+                    let outcome = held.finish_reopen(begun, STARTING);
+                    *lock_put_back(held) = match &outcome {
+                        crate::projectready::ProjectOutcome::Ready { wanted, .. } => {
+                            PutBack::Done { wanted: *wanted }
+                        }
+                        crate::projectready::ProjectOutcome::Failed { .. } => PutBack::Unread,
+                    };
+                    outcome
+                }
                 Err(why) => {
                     tracing::warn!(
                         "purlis: plane {}: its chats are not put back: {why}",
                         held.root().display()
                     );
+                    *lock_put_back(held) = PutBack::Refused(Box::new(begun));
                     crate::projectready::ProjectOutcome::Failed { error: why }
                 }
             };
@@ -3900,12 +3950,10 @@ impl Planes {
             });
         };
         if !self.restores_behind {
-            let begun = held.begin_reopen(record, choice);
-            put_back(&held, begun);
+            put_back(held, begun);
             return;
         }
-        let begun = held.begin_reopen(record, choice);
-        let behind = Arc::clone(&held);
+        let behind = Arc::clone(held);
         let begun = Mutex::new(Some(begun));
         let begun = Arc::new(begun);
         let taken = Arc::clone(&begun);
@@ -3921,9 +3969,108 @@ impl Planes {
         if spawned.is_err() {
             let begun = begun.lock().unwrap_or_else(PoisonError::into_inner).take();
             if let Some(begun) = begun {
-                put_back(&held, begun);
+                put_back(held, begun);
             }
         }
+    }
+
+    /// **Retry on a project** (#5324, the rulings of 2026-11-05 on #5319): reopens that one
+    /// project, its chats with it, whichever way it fell short. It is the one action behind the
+    /// project's row and a waiting task's row in the sidebar.
+    ///
+    /// - **Its chats are still starting**: nothing more. That put back says how it came out, and
+    ///   no chat starts twice.
+    /// - **The gate refused**: the chats it registered start, if it lets them now.
+    /// - **Its record could not be read**: it is read again, through the trust gate an open goes
+    ///   through: what it now says to run is asked about before it runs, and Retry after the
+    ///   yes puts it back. The chats opened since stay, so no task is ended for not being in it.
+    /// - **Its chats were all tried**: each one waiting to start is started again, the way Retry
+    ///   now starts one.
+    ///
+    /// Told on `project-ready` once it is over, as an opening is. **Call it off the window's
+    /// thread**: it starts programs.
+    pub fn retry_project(&self, plane: &PlaneId) -> Result<RetriedProject, String> {
+        let held = self.held(plane)?;
+        let nothing = || RetriedProject {
+            ask: None,
+            started: Vec::new(),
+        };
+        let was = std::mem::replace(&mut *lock_put_back(&held), PutBack::Going);
+        match was {
+            PutBack::Going => Ok(nothing()),
+            PutBack::Refused(begun) => {
+                self.put_back(&held, *begun);
+                Ok(nothing())
+            }
+            PutBack::Unread => {
+                let reading = machine::Contribution::read(held.root());
+                if let Some(asking) = self.asking(held.root(), reading.contributes) {
+                    *lock_put_back(&held) = PutBack::Unread;
+                    return Ok(RetriedProject {
+                        ask: Some(asking),
+                        started: Vec::new(),
+                    });
+                }
+                let mut begun = held.begin_reopen(reading.record, Choice::ReopenAll);
+                // It held chats of its own before this: none of those is gone for not being in
+                // the record, so a task among them is not ended (#1513).
+                begun.read = false;
+                self.put_back(&held, begun);
+                Ok(nothing())
+            }
+            PutBack::NotAsked => Ok(self.retry_waiting(&held, 0)),
+            PutBack::Done { wanted } => Ok(self.retry_waiting(&held, wanted)),
+        }
+    }
+
+    /// Starts again each chat of `held` waiting to start, of the `wanted` its record held, tells
+    /// the window each that did, and says how many are back now.
+    fn retry_waiting(&self, held: &Held, wanted: u32) -> RetriedProject {
+        let mut started = Vec::new();
+        for waiting in held.chats().would_not_start() {
+            let id = waiting.id;
+            // Refused, it stays among the ones waiting, with the new reason (`Chats::retry`).
+            if let Ok(session) =
+                crate::restored::retrying(held, &id, || held.chats().retry(&id, STARTING))
+            {
+                crate::restoring::tell(crate::restoring::Moved {
+                    root: held.root().to_path_buf(),
+                    number: session,
+                    session: Some(session),
+                    left: 0,
+                });
+                started.push((id, session));
+            }
+        }
+        // A task drawn under the chat that asked reads from the same list (#1497).
+        held.rows_changed();
+        *lock_put_back(held) = PutBack::Done { wanted };
+        self.tell_back(held, wanted);
+        RetriedProject { ask: None, started }
+    }
+
+    /// **The count a project said has moved** (#5324): a chat that did not start was retried or
+    /// forgotten on its own. Nothing is said of a project whose put back is not over.
+    pub fn tell_chats_back(&self, plane: &PlaneId) {
+        let Ok(held) = self.held(plane) else { return };
+        let wanted = match *lock_put_back(&held) {
+            PutBack::Done { wanted } => wanted,
+            _ => return,
+        };
+        self.tell_back(&held, wanted);
+    }
+
+    /// Says `held` is ready, short of the chats still waiting to start, of `wanted`.
+    fn tell_back(&self, held: &Held, wanted: u32) {
+        let short = u32::try_from(held.chats().would_not_start().len()).unwrap_or(u32::MAX);
+        let wanted = wanted.max(short);
+        (self.ready)(crate::projectready::ProjectReady {
+            plane: held.id.clone(),
+            outcome: crate::projectready::ProjectOutcome::Ready {
+                back: wanted - short,
+                wanted,
+            },
+        });
     }
 
     /// What this launch would put back, or nothing when there is nothing to ask about — no
@@ -4954,6 +5101,7 @@ impl Planes {
         Held {
             id,
             root,
+            put_back: Mutex::new(PutBack::NotAsked),
             hooks,
             tell: Arc::clone(&self.tell),
             chats,

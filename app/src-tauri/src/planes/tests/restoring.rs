@@ -451,3 +451,196 @@ fn a_project_whose_record_is_refused_says_it_failed_with_the_refusal() {
     );
     planes.let_go_of_all();
 }
+
+/// **Retry brings back the chats a project is short of** (#5324): they start, and the project
+/// says it is ready with all of them, on the same event its opening said it on.
+#[cfg(unix)]
+#[test]
+fn retrying_a_project_short_of_a_chat_brings_that_chat_back() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane_with_chats(&dir.path().join("plane"), 3);
+    let host = Pretend::default();
+    host.refuses_number(2, "its program went");
+    let (planes, told) = telling_ready(planes_on(&[&host], &dir.path().join("config")));
+    let plane = approve_and_open(&planes, &root);
+    until("the project to say it is ready", || {
+        !told.lock().unwrap().is_empty()
+    });
+    let held = planes.held(&plane).expect("it is held");
+    assert_eq!(held.chats().open_now().len(), 2);
+
+    host.stops_refusing(2);
+    let retried = planes.retry_project(&plane).expect("it is held");
+
+    assert!(retried.ask.is_none());
+    assert_eq!(retried.started.len(), 1);
+    assert_eq!(held.chats().open_now().len(), 3);
+    assert!(held.chats().would_not_start().is_empty());
+    assert_eq!(
+        told.lock().unwrap().last().map(|one| one.outcome.clone()),
+        Some(ProjectOutcome::Ready { back: 3, wanted: 3 })
+    );
+    planes.let_go_of_all();
+}
+
+/// A chat that still will not start keeps its reason, and the project is still short of it.
+#[cfg(unix)]
+#[test]
+fn retrying_a_project_whose_chat_still_will_not_start_says_it_is_still_short() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane_with_chats(&dir.path().join("plane"), 3);
+    let host = Pretend::default();
+    host.refuses_number(2, "its program went");
+    let (planes, told) = telling_ready(planes_on(&[&host], &dir.path().join("config")));
+    let plane = approve_and_open(&planes, &root);
+    until("the project to say it is ready", || {
+        !told.lock().unwrap().is_empty()
+    });
+
+    let retried = planes.retry_project(&plane).expect("it is held");
+
+    assert!(retried.started.is_empty());
+    let told = told.lock().unwrap().clone();
+    assert_eq!(told.len(), 2, "told again: {told:?}");
+    assert_eq!(
+        told[1].outcome,
+        ProjectOutcome::Ready { back: 2, wanted: 3 }
+    );
+    planes.let_go_of_all();
+}
+
+/// **A project whose gate refused comes back when it lets** (#5324): the chats it registered
+/// and did not start are the ones that start, once each.
+#[cfg(unix)]
+#[test]
+fn retrying_a_project_the_gate_refused_puts_its_chats_back() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane_with_chats(&dir.path().join("plane"), 2);
+    let refusing = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let gate = {
+        let refusing = Arc::clone(&refusing);
+        Arc::new(move || {
+            if refusing.load(std::sync::atomic::Ordering::SeqCst) {
+                Err("a host still runs them".to_owned())
+            } else {
+                Ok(())
+            }
+        })
+    };
+    let (planes, told) = telling_ready(
+        planes_on(&[&Pretend::default()], &dir.path().join("config"))
+            .putting_back_chats_after(gate),
+    );
+    let plane = approve_and_open(&planes, &root);
+    until("the project to say it failed", || {
+        !told.lock().unwrap().is_empty()
+    });
+
+    refusing.store(false, std::sync::atomic::Ordering::SeqCst);
+    planes.retry_project(&plane).expect("it is held");
+
+    until("the project to say it is ready", || {
+        told.lock().unwrap().len() == 2
+    });
+    assert_eq!(
+        told.lock().unwrap()[1].outcome,
+        ProjectOutcome::Ready { back: 2, wanted: 2 }
+    );
+    let held = planes.held(&plane).expect("it is held");
+    assert_eq!(held.chats().open_now().len(), 2);
+    planes.let_go_of_all();
+}
+
+/// **A record repaired is read again** (#5324), through the same trust gate an open goes
+/// through: what it now says to run is asked about first, and put back on the yes.
+#[cfg(unix)]
+#[test]
+fn retrying_a_project_whose_record_was_refused_asks_about_the_repaired_record_then_puts_it_back() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane_with_chats(&dir.path().join("plane"), 2);
+    let record = reopen::path(&root);
+    let bytes = std::fs::read(&record).expect("the record");
+    std::fs::remove_file(&record).expect("the record is taken away");
+    std::fs::create_dir(&record).expect("a folder stands in its place");
+    let (planes, told) = telling_ready(planes_on(
+        &[&Pretend::default()],
+        &dir.path().join("config"),
+    ));
+    let plane = approve_and_open(&planes, &root);
+    until("the project to say it failed", || {
+        !told.lock().unwrap().is_empty()
+    });
+
+    std::fs::remove_dir(&record).expect("the folder goes");
+    std::fs::write(&record, bytes).expect("the record is repaired");
+    let held = planes.held(&plane).expect("it is held");
+    let asked = planes.retry_project(&plane).expect("it is held");
+
+    let ask = asked.ask.expect("what it would run is asked about first");
+    assert!(held.chats().open_now().is_empty(), "nothing ran on no yes");
+    planes
+        .approve_and_open(&root, &ask.contributes)
+        .expect("yes");
+    planes.retry_project(&plane).expect("it is held");
+
+    until("the project to say it is ready", || {
+        told.lock().unwrap().len() == 2
+    });
+    assert_eq!(
+        told.lock().unwrap()[1].outcome,
+        ProjectOutcome::Ready { back: 2, wanted: 2 }
+    );
+    assert_eq!(held.chats().open_now().len(), 2);
+    planes.let_go_of_all();
+}
+
+/// **Retry while its chats are still starting starts nothing twice** (#5324): the put back
+/// under way is the one that says how it came out.
+#[cfg(unix)]
+#[test]
+fn retrying_a_project_still_putting_its_chats_back_starts_nothing_twice() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane_with_chats(&dir.path().join("plane"), 1);
+    let host = Pretend::default();
+    host.hangs_number(1);
+    let (planes, told) = telling_ready(planes_on(&[&host], &dir.path().join("config")));
+    let plane = approve_and_open(&planes, &root);
+
+    let retried = planes.retry_project(&plane).expect("it is held");
+
+    assert!(retried.started.is_empty());
+    assert!(told.lock().unwrap().is_empty(), "it has not come back yet");
+    host.lets_go(1);
+    until("the project to say it is ready", || {
+        !told.lock().unwrap().is_empty()
+    });
+    assert_eq!(told.lock().unwrap().len(), 1, "told once");
+    planes.let_go_of_all();
+}
+
+/// **A chat brought back one at a time moves the project's count too** (#5324): Retry now on
+/// its Notice, or a Forget, must not leave the row saying "2 of 3 chats back".
+#[cfg(unix)]
+#[test]
+fn a_chat_retried_on_its_own_moves_the_count_the_project_said() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane_with_chats(&dir.path().join("plane"), 2);
+    let host = Pretend::default();
+    host.refuses_number(2, "its program went");
+    let (planes, told) = telling_ready(planes_on(&[&host], &dir.path().join("config")));
+    let plane = approve_and_open(&planes, &root);
+    until("the project to say it is ready", || {
+        !told.lock().unwrap().is_empty()
+    });
+    let held = planes.held(&plane).expect("it is held");
+    let id = held.chats().would_not_start()[0].id.clone();
+
+    held.chats().forget(&id).expect("it is waiting");
+    planes.tell_chats_back(&plane);
+
+    assert_eq!(
+        told.lock().unwrap().last().map(|one| one.outcome.clone()),
+        Some(ProjectOutcome::Ready { back: 2, wanted: 2 })
+    );
+    planes.let_go_of_all();
+}

@@ -8,12 +8,20 @@
  * compared with its baseline (`docs/component-stories.md`).
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { expect, waitFor } from "storybook/test";
 import { TOOLTIP_CLOSE_DELAY, TOOLTIP_DELAY } from "../tooltip/Tooltip";
 import { Plus } from "lucide-react";
 import { expectFocusInSight } from "../../stories.testkit";
-import { Rail, RailAction, RailList, RailProject, RailSpacer, SidebarIcon } from "./Rail";
+import {
+  Rail,
+  RailAction,
+  RailList,
+  RailProject,
+  RailProjectWay,
+  RailSpacer,
+  SidebarIcon,
+} from "./Rail";
 import { useProjectTints } from "./projectColour";
 
 /** The prototype's projects; one has work not saved, and one a save that is blocked (S8). */
@@ -30,7 +38,34 @@ const PROJECTS: {
   { name: "notes", waiting: 0 },
 ];
 
-function TheRail({ peek = false }: { peek?: boolean }) {
+/** How each project's load is going at a launch (#5323): two still coming, one of them for a
+ *  while, and one back with only some of its chats. */
+const LOADS: Record<string, { loading: boolean; says?: string }> = {
+  volaticloud: { loading: true, says: "Loading…" },
+  "easydmarc-umbrella": { loading: true, says: "Still loading…" },
+  "elastic-press": { loading: false, says: "2 of 3 chats back" },
+};
+
+/** The rows that fell short (#5324): what each says, and the ways it offers. */
+const SHORT: Record<string, { says: string; failed?: boolean; dismisses?: boolean }> = {
+  volaticloud: { says: "The folder is not readable.", failed: true, dismisses: true },
+  "easydmarc-umbrella": { says: "Still loading…" },
+  "elastic-press": { says: "2 of 3 chats back" },
+  dotfiles: {
+    says: "The record of what was open could not be read, so no chat was put back.",
+    failed: true,
+  },
+};
+
+function TheRail({
+  peek = false,
+  loading = false,
+  short = false,
+}: {
+  peek?: boolean;
+  loading?: boolean;
+  short?: boolean;
+}) {
   const [current, setCurrent] = useState("charter");
   const [said, setSaid] = useState("Nothing pressed");
   const tintOf = useProjectTints();
@@ -47,18 +82,40 @@ function TheRail({ peek = false }: { peek?: boolean }) {
         <Rail name="Projects" tabs={PROJECTS.map((one) => `rail-${one.name}`)} peek={peek}>
           <RailList>
             {PROJECTS.map((one) => (
-              <RailProject
-                key={one.name}
-                id={`rail-${one.name}`}
-                role="tab"
-                aria-selected={one.name === current}
-                name={one.name}
-                current={one.name === current}
-                waiting={one.waiting}
-                unsaved={one.unsaved}
-                colour={tintOf(one.name)}
-                onClick={() => setCurrent(one.name)}
-              />
+              <Fragment key={one.name}>
+                <RailProject
+                  id={`rail-${one.name}`}
+                  role="tab"
+                  aria-selected={one.name === current}
+                  name={one.name}
+                  current={one.name === current}
+                  waiting={one.waiting}
+                  unsaved={one.unsaved}
+                  colour={tintOf(one.name)}
+                  load={
+                    short && SHORT[one.name] !== undefined
+                      ? { loading: false, ...SHORT[one.name] }
+                      : loading
+                        ? LOADS[one.name]
+                        : undefined
+                  }
+                  onClick={() => setCurrent(one.name)}
+                />
+                {short && SHORT[one.name] !== undefined && (
+                  <RailProjectWay
+                    doing="retry"
+                    name={one.name}
+                    onPress={() => setSaid(`Retry ${one.name}`)}
+                  />
+                )}
+                {short && SHORT[one.name]?.dismisses && (
+                  <RailProjectWay
+                    doing="dismiss"
+                    name={one.name}
+                    onPress={() => setSaid(`Dismiss ${one.name}`)}
+                  />
+                )}
+              </Fragment>
             ))}
             <RailAction
               aria-label="Open a project…"
@@ -196,6 +253,75 @@ export const FocusedCurrent: Story = {
     const after = current.getBoundingClientRect();
     await expect([after.width, after.height]).toEqual([before.width, before.height]);
     // Its tooltip, which the keyboard opened, taken down by Esc: the picture is of the rings.
+    await userEvent.keyboard("{Escape}");
+    await untilNoTooltip();
+    await atRest();
+  },
+};
+
+/**
+ * **A project whose load fell short** (#5324): one that failed has a "!" out of its corner and says
+ * its error as its description, and it, one still loading after 15 s and one short of chats each
+ * have a Retry under the button; one whose open failed has a Dismiss too. Nothing changes size.
+ */
+export const FellShort: Story = {
+  args: { short: true },
+  play: async ({ canvas, userEvent }) => {
+    const failed = canvas.getByRole("tab", { name: "volaticloud" });
+    await expect(failed).not.toHaveAttribute("aria-busy");
+    await expect(failed).toHaveAccessibleDescription("The folder is not readable., 2 waiting");
+    await expect(canvas.getByRole("tab", { name: "elastic-press" })).toHaveAccessibleDescription(
+      "2 of 3 chats back, saving is blocked",
+    );
+    for (const one of canvas.getAllByRole("tab")) {
+      const box = one.getBoundingClientRect();
+      await expect([Math.round(box.width), Math.round(box.height)]).toEqual([36, 36]);
+    }
+    // The way off a row is the next Tab stop, and Enter presses it.
+    const retry = canvas.getByRole("button", { name: "Retry volaticloud" });
+    retry.focus();
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Retry volaticloud"));
+    await userEvent.tab();
+    await expect(canvas.getByRole("button", { name: "Dismiss volaticloud" })).toHaveFocus();
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(canvas.getByRole("status")).toHaveTextContent("Dismiss volaticloud"),
+    );
+    await userEvent.keyboard("{Escape}");
+    await atRest();
+  },
+};
+
+/**
+ * **Projects coming back at a launch** (#5323): a loading project has a dashed ring inside its
+ * button, which a shape tells from the current one's solid ring, is busy, and says how its load is
+ * going as its description; one back with only some of its chats says how many. The keyboard
+ * reaches a loading project as any other, and nothing changes size.
+ */
+export const Loading: Story = {
+  args: { loading: true },
+  play: async ({ canvas, userEvent }) => {
+    const loading = canvas.getByRole("tab", { name: "volaticloud" });
+    await expect(loading).toHaveAttribute("aria-busy", "true");
+    await expect(loading).toHaveAccessibleDescription("Loading…, 2 waiting");
+    await expect(
+      canvas.getByRole("tab", { name: "easydmarc-umbrella" }),
+    ).toHaveAccessibleDescription("Still loading…, 3 waiting");
+    const partly = canvas.getByRole("tab", { name: "elastic-press" });
+    await expect(partly).not.toHaveAttribute("aria-busy");
+    await expect(partly).toHaveAccessibleDescription("2 of 3 chats back, saving is blocked");
+    for (const one of canvas.getAllByRole("tab")) {
+      const box = one.getBoundingClientRect();
+      await expect([Math.round(box.width), Math.round(box.height)]).toEqual([36, 36]);
+    }
+    loading.focus();
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(loading).toHaveAttribute("data-selected"));
+    // Its tooltip, which the keyboard opened, taken down by Esc: the picture is of the marks.
     await userEvent.keyboard("{Escape}");
     await untilNoTooltip();
     await atRest();

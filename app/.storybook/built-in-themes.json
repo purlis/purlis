@@ -786,8 +786,8 @@
       },
       "parts": [
         "@layer parts {",
-        "  :where([data-scope=\"notice-list\"][data-part=\"root\"]:is([data-at=\"inbox\"], [data-at=\"page\"])) { background-color: var(--surface-base); }",
-        "  :where([data-scope=\"notice-list\"][data-part=\"root\"]:is([data-at=\"inbox\"], [data-at=\"page\"]), [data-scope=\"notice\"][data-part=\"root\"][data-placement=\"alone\"]) { border-width: 0px; border-style: solid; }",
+        "  :where([data-scope=\"notice-list\"][data-part=\"root\"][data-at=\"page\"], [data-scope=\"notice-list\"]:is([data-at=\"inbox\"], [data-at=\"lines\"]) > * > [data-scope=\"notice\"][data-part=\"root\"][data-variant=\"news\"]) { background-color: var(--surface-base); }",
+        "  :where([data-scope=\"notice-list\"][data-part=\"root\"][data-at=\"page\"], [data-scope=\"notice\"][data-part=\"root\"][data-placement=\"alone\"]) { border-width: 0px; border-style: solid; }",
         "  :where([data-scope=\"card\"][data-part=\"root\"]) { background-color: var(--surface-base); }",
         "  :where([data-scope=\"card\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }",
         "  :where([data-scope=\"dialog\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }",
@@ -1589,8 +1589,8 @@
       },
       "parts": [
         "@layer parts {",
-        "  :where([data-scope=\"notice-list\"][data-part=\"root\"]:is([data-at=\"inbox\"], [data-at=\"page\"])) { background-color: var(--surface-base); }",
-        "  :where([data-scope=\"notice-list\"][data-part=\"root\"]:is([data-at=\"inbox\"], [data-at=\"page\"]), [data-scope=\"notice\"][data-part=\"root\"][data-placement=\"alone\"]) { border-width: 0px; border-style: solid; }",
+        "  :where([data-scope=\"notice-list\"][data-part=\"root\"][data-at=\"page\"], [data-scope=\"notice-list\"]:is([data-at=\"inbox\"], [data-at=\"lines\"]) > * > [data-scope=\"notice\"][data-part=\"root\"][data-variant=\"news\"]) { background-color: var(--surface-base); }",
+        "  :where([data-scope=\"notice-list\"][data-part=\"root\"][data-at=\"page\"], [data-scope=\"notice\"][data-part=\"root\"][data-placement=\"alone\"]) { border-width: 0px; border-style: solid; }",
         "  :where([data-scope=\"card\"][data-part=\"root\"]) { background-color: var(--surface-base); }",
         "  :where([data-scope=\"card\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }",
         "  :where([data-scope=\"dialog\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }",
@@ -2392,8 +2392,8 @@
       },
       "parts": [
         "@layer parts {",
-        "  :where([data-scope=\"notice-list\"][data-part=\"root\"]:is([data-at=\"inbox\"], [data-at=\"page\"])) { background-color: var(--surface-base); }",
-        "  :where([data-scope=\"notice-list\"][data-part=\"root\"]:is([data-at=\"inbox\"], [data-at=\"page\"]), [data-scope=\"notice\"][data-part=\"root\"][data-placement=\"alone\"]) { border-width: 0px; border-style: solid; }",
+        "  :where([data-scope=\"notice-list\"][data-part=\"root\"][data-at=\"page\"], [data-scope=\"notice-list\"]:is([data-at=\"inbox\"], [data-at=\"lines\"]) > * > [data-scope=\"notice\"][data-part=\"root\"][data-variant=\"news\"]) { background-color: var(--surface-base); }",
+        "  :where([data-scope=\"notice-list\"][data-part=\"root\"][data-at=\"page\"], [data-scope=\"notice\"][data-part=\"root\"][data-placement=\"alone\"]) { border-width: 0px; border-style: solid; }",
         "  :where([data-scope=\"card\"][data-part=\"root\"]) { background-color: var(--surface-base); }",
         "  :where([data-scope=\"card\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }",
         "  :where([data-scope=\"dialog\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }",
@@ -3195,8 +3195,8 @@
       },
       "parts": [
         "@layer parts {",
-        "  :where([data-scope=\"notice-list\"][data-part=\"root\"]:is([data-at=\"inbox\"], [data-at=\"page\"])) { background-color: var(--surface-base); }",
-        "  :where([data-scope=\"notice-list\"][data-part=\"root\"]:is([data-at=\"inbox\"], [data-at=\"page\"]), [data-scope=\"notice\"][data-part=\"root\"][data-placement=\"alone\"]) { border-width: 0px; border-style: solid; }",
+        "  :where([data-scope=\"notice-list\"][data-part=\"root\"][data-at=\"page\"], [data-scope=\"notice-list\"]:is([data-at=\"inbox\"], [data-at=\"lines\"]) > * > [data-scope=\"notice\"][data-part=\"root\"][data-variant=\"news\"]) { background-color: var(--surface-base); }",
+        "  :where([data-scope=\"notice-list\"][data-part=\"root\"][data-at=\"page\"], [data-scope=\"notice\"][data-part=\"root\"][data-placement=\"alone\"]) { border-width: 0px; border-style: solid; }",
         "  :where([data-scope=\"card\"][data-part=\"root\"]) { background-color: var(--surface-base); }",
         "  :where([data-scope=\"card\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }",
         "  :where([data-scope=\"dialog\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }",

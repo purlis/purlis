@@ -126,6 +126,13 @@ A clone of a code repository that a workspace holds. It has its own remote and i
 and it is never part of the plane's commits.
 _Avoid_: clone (as a noun in UI text), guest checkout, project
 
+**Workspace files**:
+A part of **Workspace**: everything in a workspace's folder except its repos and their
+branches' folders — the files purlis keeps there (its charter, memory, todos, sessions) and
+whatever the person or a chat put there (notes, scripts, artifacts). The person may add,
+rename and delete their own; the ones purlis keeps are shown but never changed by hand.
+_Avoid_: artifacts, workspace docs, workspace repo
+
 **Piece**:
 A git worktree of a workspace's repo, at `workspaces/<ws>/.worktrees/<repo>/<piece>`, where
 one chat works on its own branch. Git says which pieces exist. The piece log says what git
@@ -1099,6 +1106,12 @@ pane on the strip that it could take, or a new tab; with a program alone there, 
 and its chat keeps running in the sidebar.
 _Avoid_: tile, frame, terminal (a pane may hold a view), split (that is two panes and the line
 between them)
+
+**Pane preview**:
+What a drag draws before the drop: the panes where the drop would leave them, and what is moved in
+its place (ADR 0113). It is the drop model's answer drawn, never a change: the tabs stay as they were
+until the drop, and a cancel puts everything back.
+_Avoid_: ghost, drop box (the box it replaced)
 
 **Pane head**:
 The line above a pane's terminal that says which chat it shows, what the chat is doing and what

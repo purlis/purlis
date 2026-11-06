@@ -239,6 +239,42 @@ fn a_field_in_a_frame_whose_document_is_not_known_yet_is_refused_in_words_that_s
 }
 
 #[test]
+fn a_field_in_a_frame_the_agent_is_kept_off_is_neither_read_nor_filled() {
+    let (browser, engine) = browser();
+    as_fields(&engine, "one_line", Twist::None);
+    let pay = ref_of(&snapshot(&browser, 1), "- button \"Pay now\"");
+    browser.keep_off(Arc::new(|address: &str| {
+        address
+            .starts_with("http://other.test")
+            .then(|| "other.test:80".to_owned())
+    }));
+    let reads = engine.sent("Runtime.callFunctionOn").len();
+
+    let read = browser.call(
+        &id(2),
+        Call::DescribeField {
+            target: pay.clone(),
+        },
+    );
+    assert!(
+        matches!(&read, Err(Refusal::KeptOff { site, .. }) if site == "other.test:80"),
+        "{read:?}"
+    );
+    assert_eq!(
+        engine.sent("Runtime.callFunctionOn").len(),
+        reads,
+        "its field was not read"
+    );
+
+    let filled = filling(&browser, &fill_of(pay, "http://other.test"));
+    assert!(
+        matches!(&filled, Err(Refusal::KeptOff { site, .. }) if site == "other.test:80"),
+        "{filled:?}"
+    );
+    assert_eq!(inserted(&engine), 0);
+}
+
+#[test]
 fn a_field_that_is_not_one_line_is_refused_before_anything_is_typed_where_nobody_was_asked() {
     for kind in ["multi_line", "editable", "other"] {
         let (browser, engine) = browser();
@@ -988,4 +1024,71 @@ fn once_the_filled_page_loads_another_document_its_keys_go_again() {
         },
     );
     assert!(pressed.is_ok(), "{}", ended_as(&pressed));
+}
+
+#[test]
+fn what_a_fill_goes_in_with_is_what_a_fields_origin_is_held_to() {
+    let holding = Arc::new(Holding::default());
+    let (browser, _engine) = filled_under(&holding);
+    let state = super::super::super::lock(&browser.inner.state);
+    assert!(crate::drive::scrub::Scrub::of(&state.filled).holds(VALUE));
+}
+
+#[test]
+fn a_window_takes_on_what_its_opener_keeps_and_what_a_page_kept_outlives_it() {
+    let (browser, engine) = browser();
+    let _ = snapshot(&browser, 1);
+    super::super::super::lock(&browser.inner.state)
+        .page_mut("PAGE-1")
+        .expect("the page")
+        .scrubbed
+        .run(&["token-5310"]);
+
+    a_window_opens(&browser, &engine, "W-1", "about:blank", "PAGE-1", true);
+    let holds = {
+        let state = super::super::super::lock(&browser.inner.state);
+        let window = state.page("W-1").expect("the window");
+        crate::drive::scrub::Scrub::of(&window.scrubbed).holds("token-5310")
+    };
+    assert!(holds, "it may carry what opened it wrote");
+
+    a_window_ends(&engine, "W-1");
+    a_window_ends(&engine, "PAGE-1");
+    wait_for("the page is gone", || {
+        super::super::super::lock(&browser.inner.state)
+            .page("PAGE-1")
+            .is_none()
+    });
+    let named = browser.names_kept_out(vec![crate::drive::DownloadInfo {
+        id: "d1".to_owned(),
+        name: "token-5310.txt".to_owned(),
+        origin: None,
+        received: 0,
+        total: None,
+        state: crate::drive::DownloadState::Done,
+        file: "guid".to_owned(),
+    }]);
+    assert_eq!(named[0].name, "(blanked).txt");
+}
+
+#[test]
+fn a_page_kept_off_is_said_by_its_origin_alone_though_its_address_holds_a_value_kept_out() {
+    let (browser, _engine) = browser();
+    let _ = snapshot(&browser, 1);
+    let mut held = crate::drive::kept::Kept::default();
+    held.run(&["fixture"]);
+    super::super::super::lock(&browser.inner.state).keep_out_everywhere(&held);
+    browser.keep_off(Arc::new(|address: &str| {
+        address
+            .starts_with("http://fixture.test")
+            .then(|| "fixture.test:80".to_owned())
+    }));
+
+    let answer = browser.call(&id(2), Call::Pages).expect("listed");
+
+    let Content::Pages(pages) = answer.content else {
+        panic!("pages");
+    };
+    assert_eq!(pages[0].address, "http://(blanked).test");
+    assert!(pages[0].title.is_empty());
 }

@@ -16,7 +16,7 @@ import { STORY_HISTORY as HISTORY, StudioInPanel } from "./skillStudioStory.test
 import { AT_THE_ROOT } from "./skillStudio";
 import { studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
-import { expectFocusInSight, untilFocusWithin } from "./stories.testkit";
+import { expectFocusInSight, tabInto, untilFocusWithin, untilFocused } from "./stories.testkit";
 
 /** The prototype's three deleted skills. */
 const DELETED: DeletedSkill[] = [
@@ -28,6 +28,7 @@ const DELETED: DeletedSkill[] = [
     days_left: 27,
     in_history: true,
     reserved: false,
+    set: null,
   },
   {
     id: "g2",
@@ -37,6 +38,7 @@ const DELETED: DeletedSkill[] = [
     days_left: 12,
     in_history: true,
     reserved: false,
+    set: null,
   },
   {
     id: "g3",
@@ -46,6 +48,7 @@ const DELETED: DeletedSkill[] = [
     days_left: 3,
     in_history: false,
     reserved: false,
+    set: null,
   },
 ];
 
@@ -93,16 +96,6 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** Tab, until the keyboard is inside `target`, at most `steps` times. */
-async function tabInto(target: () => Element | null, steps = 30): Promise<void> {
-  for (let step = 0; step < steps; step++) {
-    const into = target();
-    if (into !== null && into.contains(document.activeElement)) return;
-    await userEvent.tab();
-  }
-  await untilFocusWithin(target, "the keyboard reaches it by Tab");
-}
-
 /** **Wide: the list, and the one chosen beside it**, its last text opened. */
 export const Wide: Story = {
   play: async ({ canvas }) => {
@@ -128,6 +121,41 @@ export const Narrow: Story = {
     await tabInto(() => canvas.getByRole("grid", { name: "Deleted skills" }));
     await userEvent.keyboard("{Enter}");
     await waitFor(() => canvas.getByRole("button", { name: "Back to Deleted" }));
+    expectFocusInSight();
+  },
+};
+
+/** The fourteen a bulk delete took, as one group (#5331). */
+const SET = { id: "1762300800000", from: "mattpocock-skills", at: 1762300800 };
+const GROUPED: DeletedSkill[] = [
+  ...["grilling", "tdd", "to-spec"].map((name) => ({
+    id: name,
+    name,
+    level: { at: "project", local: false } as const,
+    label: "project",
+    days_left: 30,
+    in_history: true,
+    reserved: false,
+    set: SET,
+  })),
+  ...DELETED,
+];
+
+/** **A set deleted together** (#5331): one group with Bring all back, reached by the keyboard, and
+ *  each skill of it still chosen on its own. */
+export const Group: Story = {
+  args: { deleted: GROUPED, item: "grilling" },
+  play: async ({ canvas }) => {
+    const group = await canvas.findByTestId(`deleted-group-${SET.id}`);
+    await expect(group).toHaveTextContent("from mattpocock-skills, 5 Nov");
+    const all = within(group).getByRole("button", { name: /Bring all back/ });
+    await canvas.findByRole("button", { name: "Bring back grilling" });
+    // Into the list, up to the group's own row, and across to what it holds.
+    await tabInto(() => canvas.getByRole("grid", { name: "Deleted skills" }));
+    await userEvent.keyboard("{ArrowUp}");
+    await untilFocusWithin(() => group, "the group's own row");
+    await userEvent.keyboard("{ArrowRight}");
+    await untilFocused(() => all, "Bring all back");
     expectFocusInSight();
   },
 };

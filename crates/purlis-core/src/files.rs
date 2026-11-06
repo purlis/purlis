@@ -1869,7 +1869,7 @@ impl Root {
         let named = match piece {
             _ if branch.is_plane_root() => self.plane().to_path_buf(),
             Some(piece) => worktree::path_for(self.plane(), ws, repo, piece)?,
-            None => self.plane().join("workspaces").join(ws).join(repo),
+            None => worktree::clone_folder(self.plane(), ws, repo)?,
         };
         let placed = place_named_folder(&named, branch)?;
         if placed.absolute != self.base()? {

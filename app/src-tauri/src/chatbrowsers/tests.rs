@@ -44,6 +44,11 @@ struct Hosted {
     /// How many reads of a browser's pages, and how many logins, fail from now (#2022).
     pages_fail: Mutex<u32>,
     login_fails: Mutex<u32>,
+    /// How many logins, from now, the host refuses before they run (#5251).
+    login_not_run: Mutex<u32>,
+    /// How many logins, from now, find no form on their clean load (#5272), and where they did.
+    no_form_on_clean_load: Mutex<u32>,
+    tried_on_clean_load: Mutex<Vec<String>>,
     /// Where the page each act answers is, if anywhere (#2022).
     at: Mutex<Option<String>>,
     /// The device's budget, where the host says it is reached.
@@ -186,6 +191,25 @@ impl Driver for Hosted {
     }
 
     fn log_in(&self, program: &str, login: LogIn) -> Result<Browsed, Refused> {
+        if fails(&self.no_form_on_clean_load) {
+            self.tried_on_clean_load
+                .lock()
+                .unwrap()
+                .push(program.to_owned());
+            return Err(Refused::NoFormOnCleanLoad(
+                "no login form appeared on https://shop.example.test within 30 seconds of \
+                 clearing it, so nothing was filled"
+                    .into(),
+            ));
+        }
+        if fails(&self.login_not_run) {
+            return Err(Refused::LoginNotRun(
+                "this browser holds a login at https://app.example.test, and reaches nothing \
+                 else: open a new browser with browser_new and log in to \
+                 https://shop.example.test there"
+                    .into(),
+            ));
+        }
         if fails(&self.login_fails) {
             return Err(Refused::Said(
                 "the password field did not go within the time allowed".into(),
@@ -375,6 +399,7 @@ const IDENTITY: &str = "0123456789abcdef0123456789abcdef";
 
 fn kept_as(name: &str) -> purlis_session_protocol::browsing::KeptLogin {
     purlis_session_protocol::browsing::KeptLogin {
+        form: None,
         profile: "claude".into(),
         persona: "steward".into(),
         login: name.into(),
@@ -561,6 +586,26 @@ fn a_browser_of_another_chat_is_never_reached_by_its_name() {
 
     assert!(why.contains("no browser b1"), "{why}");
     assert!(hosted.closed.lock().unwrap().is_empty());
+}
+
+#[test]
+fn a_chat_closes_no_browser_the_person_has_taken_over_and_is_told_why() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    allowed_and_acting(&browsers, &hosted, 3);
+    browsers.driven("program-1", true, 1000);
+
+    let why = refusal(answered(&browsers, &hosted, &ask(3, Browsing::Close)).0);
+
+    assert!(why.contains("taken b1 over"), "{why}");
+    assert!(why.contains("stays open"), "{why}");
+    assert!(hosted.closed.lock().unwrap().is_empty());
+    assert!(browsers.holds(3, "program-1"), "the chat still has it");
+
+    // Handed back, the chat's close ends it as ever.
+    browsers.driven("program-1", false, 1001);
+    answered(&browsers, &hosted, &ask(3, Browsing::Close));
+    assert_eq!(*hosted.closed.lock().unwrap(), ["program-1"]);
 }
 
 #[test]
@@ -3491,6 +3536,7 @@ fn an_open_ask(chat: u32, vault: &str, key: &str) -> purlis_core::secrets::ask::
         declared: Some(String::new()),
         names_no_vault: false,
         reason: None,
+        no_allow: None,
         chats: vec![chat],
         starts: 0,
         cannot_receive: Vec::new(),
@@ -3555,4 +3601,45 @@ fn a_login_says_the_sites_its_browser_reaches_and_what_the_chat_may_do_on_each()
         alone.contains("This browser now reaches shop.example.com:443 alone; open another"),
         "{alone}"
     );
+}
+
+/// #5251: a login the host refused before it ran leaves the browser's record as it was: the
+/// session of the login that went before stands, the browser still holds it, and the chat's Allow
+/// once is said to be its again, once.
+#[test]
+fn a_login_refused_before_it_ran_keeps_the_browsers_session_and_its_allow_once() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let qa = as_persona("qa", None, None);
+    answered_as(&browsers, &hosted, &ask(3, click()), &qa);
+    browsers.allow(3, false);
+    let went = answered_as(&browsers, &hosted, &ask(3, log_in("shop-login")), &qa);
+    assert!(matches!(went.0, Answer::Browsed { .. }), "{went:?}");
+    assert!(!browsers.login_never_ran(3, "shop-login"), "it ran");
+    let sessions_before = browsers.logged_in.lock().unwrap().clone();
+    *hosted.login_not_run.lock().unwrap() = 1;
+
+    let refused = answered_as(&browsers, &hosted, &ask(3, log_in("other-login")), &qa);
+
+    let why = refusal(refused.0);
+    assert!(why.contains("holds a login at"), "{why}");
+    assert_eq!(*browsers.logged_in.lock().unwrap(), sessions_before);
+    assert!(browsers.holds_a_login("program-1"));
+    assert!(browsers.login_never_ran(3, "other-login"));
+    assert!(!browsers.login_never_ran(3, "other-login"), "said once");
+}
+
+/// #5251: a login whose browser had ended by the time it would go in never ran.
+#[test]
+fn a_login_whose_browser_ended_before_it_went_in_never_ran() {
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    allowed_and_acting(&browsers, &hosted, 3);
+    browsers.engine_ended("program-1");
+
+    let refused = answered(&browsers, &hosted, &ask(3, log_in("shop-login")));
+
+    assert!(matches!(refused.0, Answer::No { .. }), "{refused:?}");
+    assert!(hosted.logins.lock().unwrap().is_empty(), "nothing was sent");
+    assert!(browsers.login_never_ran(3, "shop-login"));
 }

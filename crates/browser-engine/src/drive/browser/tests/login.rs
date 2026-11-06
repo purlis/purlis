@@ -53,6 +53,7 @@ fn login_at(origin: &str) -> Login {
         password: FILLED.to_owned().into(),
         only_if_asked: false,
         suggested: false,
+        clean_already: true,
         back_to: None,
     }
 }
@@ -100,6 +101,17 @@ enum Twist {
     CookiesStay,
     /// Its service workers can't be cleared (#5121).
     WorkersStay,
+    /// Another page shows the login's site once it's cleared (#5272).
+    PageComesBack,
+    /// A page won't hold still (#5272).
+    WontHoldStill,
+    /// A page opens as the clean load begins (#5272).
+    PopupOnCleanLoad,
+    /// The login's page opens a window it can reach, on the login's site, as it loads.
+    OpensOnItsSite,
+    /// The login's page opens a window it can reach, on another site, as it loads, and loads
+    /// another document once its form is sent.
+    OpensElsewhere,
 }
 
 /// [`as_a_login_form`], with `twist`.
@@ -115,7 +127,9 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<A
             }
         }
         let login = model.ax["PAGE-1"].clone();
-        model.ax.insert("PAGE-2".into(), login);
+        model.ax.insert("PAGE-2".into(), login.clone());
+        // The tab a clean load opens.
+        model.ax.insert("PAGE-3".into(), login);
     }
     let submitted = Arc::new(AtomicBool::new(false));
     let seen = Arc::clone(&submitted);
@@ -143,6 +157,21 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<A
                     );
                     std::thread::sleep(Duration::from_millis(100));
                 }
+                let opens = match twist {
+                    Twist::OpensOnItsSite => Some("http://fixture.test/more.html"),
+                    Twist::OpensElsewhere => Some("http://other.test/more.html"),
+                    _ => None,
+                };
+                if let Some(url) = opens
+                    && on == "S-PAGE-2"
+                {
+                    engine.emit(
+                        "Target.targetCreated",
+                        json!({"targetInfo":{"targetId":"PAGE-8","type":"page","title":"A window","url":url,"attached":false,"openerId":"PAGE-2","canAccessOpener":true}}),
+                        None,
+                    );
+                    std::thread::sleep(Duration::from_millis(100));
+                }
                 let lands = if twist == Twist::LandsElsewhere {
                     "http://elsewhere.test/"
                 } else {
@@ -151,6 +180,30 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<A
                 let loader = format!("LOADER-LOGIN-{}", loads.fetch_add(1, Ordering::SeqCst));
                 navigated(engine, on, &loader, lands);
                 Some(Ok(json!({ "frameId": on.trim_start_matches("S-"), "loaderId": loader })))
+            }
+            "Network.setCacheDisabled"
+                if twist == Twist::PageComesBack && p["cacheDisabled"] == true =>
+            {
+                navigated(engine, "S-PAGE-1", "LOADER-COMES-BACK", ADDRESS);
+                std::thread::sleep(Duration::from_millis(50));
+                Some(Ok(json!({})))
+            }
+            "Network.setCacheDisabled"
+                if twist == Twist::PopupOnCleanLoad && p["cacheDisabled"] == true =>
+            {
+                engine.emit(
+                    "Target.targetCreated",
+                    json!({"targetInfo":{"targetId":"PAGE-7","type":"page","title":"A popup","url":"http://elsewhere.test/","attached":false,"openerId":"PAGE-1"}}),
+                    None,
+                );
+                std::thread::sleep(Duration::from_millis(100));
+                Some(Ok(json!({})))
+            }
+            "Page.setWebLifecycleState" if twist == Twist::WontHoldStill => {
+                Some(Err(crate::cdp::CallError::Engine {
+                    code: -32000,
+                    message: "not now".into(),
+                }))
             }
             "Storage.getCookies" if matches!(twist, Twist::HoldsCookies | Twist::CookiesStay) => {
                 let deleted = engine.sent("Network.deleteCookies").len();
@@ -265,6 +318,9 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<A
                 if twist == Twist::GoesBack {
                     navigated(engine, on, "LOADER-BACK", BACK);
                 }
+                if twist == Twist::OpensElsewhere {
+                    navigated(engine, on, "LOADER-SENT", "http://fixture.test/account.html");
+                }
                 Some(Ok(json!({})))
             }
             _ => None,
@@ -279,6 +335,7 @@ fn ended_as<T>(outcome: &Result<T, Refusal>) -> &'static str {
     match outcome {
         Ok(_) => "it answered",
         Err(Refusal::NotLoggedIn(_)) => "not logged in",
+        Err(Refusal::NoFormOnCleanLoad(_)) => "no form on the clean load",
         Err(Refusal::Interrupted) => "cut",
         Err(Refusal::PersonDriving) => "the person drives",
         Err(Refusal::PurlisDriving) => "another login runs",
@@ -362,6 +419,16 @@ fn a_login_fills_the_declared_origin_and_its_value_is_in_no_later_answer() {
 
 /// A chat chose this page and these keys (#4595): a key it named as the user name is typed into
 /// no field that's only text, where a page would show it, send it or keep it.
+#[test]
+fn what_a_login_goes_in_with_is_what_a_fields_origin_is_held_to() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, true);
+    let login = login_at("http://fixture.test");
+    let _ = browser.log_in(&login, holds());
+    let state = super::super::super::lock(&browser.inner.state);
+    assert!(crate::drive::scrub::Scrub::of(&state.filled).holds(login.password.as_str()));
+}
+
 #[test]
 fn a_login_a_chat_chose_fills_no_plain_field() {
     let (browser, engine) = browser_with(quick());
@@ -621,6 +688,7 @@ fn a_page_that_asks_for_nothing_is_signed_in_from_kept_logins_and_nothing_is_fil
     as_a_login_form_that(&engine, true, Twist::AsksNothing);
     let login = Login {
         only_if_asked: true,
+        clean_already: false,
         suggested: false,
         ..login_at(ORIGIN)
     };
@@ -647,6 +715,7 @@ fn a_page_that_asks_is_filled_though_the_browser_opened_from_kept_logins() {
     as_a_login_form(&engine, true);
     let login = Login {
         only_if_asked: true,
+        clean_already: false,
         suggested: false,
         ..login_at(ORIGIN)
     };
@@ -1041,6 +1110,7 @@ fn a_kept_login_whose_page_sends_it_to_its_form_late_is_filled_there() {
     let login = Login {
         address: WebAddress::parse(BACK).unwrap(),
         only_if_asked: true,
+        clean_already: false,
         back_to: Some("http://app.fixture.test".to_owned()),
         ..login_at(ORIGIN)
     };
@@ -1049,6 +1119,12 @@ fn a_kept_login_whose_page_sends_it_to_its_form_late_is_filled_there() {
         std::thread::spawn(move || {
             std::thread::sleep(Duration::from_millis(500));
             page_moves(&engine, "S-PAGE-2", ADDRESS);
+            // And so does the page of the clean load, as it's filled only on its form's origin.
+            while went_on(&engine, "S-PAGE-3").is_empty() {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            std::thread::sleep(Duration::from_millis(500));
+            page_moves(&engine, "S-PAGE-3", ADDRESS);
         })
     };
     let ended = browser
@@ -1118,6 +1194,7 @@ fn a_login_of_a_page_that_asks_nothing_withholds_no_copy() {
     as_a_login_form_that(&engine, true, Twist::AsksNothing);
     let login = Login {
         only_if_asked: true,
+        clean_already: false,
         ..login_at(ORIGIN)
     };
     let ended = browser.log_in(&login, holds()).unwrap();
@@ -1160,6 +1237,7 @@ fn a_login_page_that_went_elsewhere_is_not_taken_for_one_signed_in() {
     as_a_login_form_that(&engine, true, Twist::LandsElsewhere);
     let login = Login {
         only_if_asked: true,
+        clean_already: false,
         ..login_at(ORIGIN)
     };
     let ended = browser.log_in(&login, holds()).unwrap();
@@ -1171,51 +1249,93 @@ fn a_login_page_that_went_elsewhere_is_not_taken_for_one_signed_in() {
     assert!(inserted(&engine).is_empty(), "nothing filled");
 }
 
-/// A login a chat chose, on `fixture.test`.
-fn chosen() -> Login {
+/// A login on `fixture.test`, in a browser that has held something.
+fn in_a_used_browser() -> Login {
     Login {
-        suggested: true,
+        clean_already: false,
         ..login_at(ORIGIN)
     }
 }
 
-/// #5121, the person's ruling: a login a chat chose starts clean on its own site, with what its
-/// sites hold gone before anything is filled, and what other sites hold left alone.
-#[test]
-fn a_login_a_chat_chose_clears_its_own_site_before_anything_is_filled() {
-    let (browser, engine) = browser_with(quick());
-    as_a_login_form_that(&engine, true, Twist::HoldsCookies);
-    let ended = browser.log_in(&chosen(), holds()).unwrap();
-    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
-    let deleted: Vec<_> = engine
-        .sent("Network.deleteCookies")
-        .iter()
-        .map(|sent| sent.params["name"].as_str().unwrap_or_default().to_owned())
-        .collect();
-    assert_eq!(deleted, ["own", "parent"], "others' are left alone");
-    let workers = engine.sent("Storage.clearDataForOrigin");
-    assert_eq!(workers.len(), 1);
-    assert_eq!(workers[0].params["storageTypes"], "service_workers");
-    assert_eq!(workers[0].params["origin"], ORIGIN);
-    let went: Vec<_> = engine
+/// What was sent to the page on `session`, of the addresses it was sent to.
+fn went_on(engine: &Engine, session: &str) -> Vec<String> {
+    engine
         .sent("Page.navigate")
         .iter()
-        .filter(|sent| sent.session.as_deref() == Some("S-PAGE-2"))
+        .filter(|sent| sent.session.as_deref() == Some(session))
         .map(|sent| sent.params["url"].as_str().unwrap_or_default().to_owned())
+        .collect()
+}
+
+/// #5272, the person's ruling: every login that fills starts clean on its own site, whoever chose
+/// it, with all its sites store gone before anything is filled, and what others store left alone.
+#[test]
+fn a_login_in_a_used_browser_clears_all_its_site_stores_before_anything_is_filled() {
+    for suggested in [false, true] {
+        let (browser, engine) = browser_with(quick());
+        as_a_login_form_that(&engine, true, Twist::HoldsCookies);
+        let login = Login {
+            suggested,
+            ..in_a_used_browser()
+        };
+        let ended = browser.log_in(&login, holds()).unwrap();
+        assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+        let deleted: Vec<_> = engine
+            .sent("Network.deleteCookies")
+            .iter()
+            .map(|sent| sent.params["name"].as_str().unwrap_or_default().to_owned())
+            .collect();
+        assert_eq!(deleted, ["own", "parent"], "others' are left alone");
+        let stores = engine.sent("Storage.clearDataForOrigin");
+        assert_eq!(stores.len(), 1);
+        assert_eq!(stores[0].params["storageTypes"], "all");
+        assert_eq!(stores[0].params["origin"], ORIGIN);
+        assert_eq!(inserted(&engine).len(), 1, "and only then filled");
+    }
+}
+
+/// #5272: what a tab holds for its own life goes with the tab, so the form shows in a new one,
+/// past the HTTP cache, and what the used browser would have shown isn't even loaded.
+#[test]
+fn a_used_browsers_login_loads_its_page_in_a_new_tab_past_the_cache() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::None);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    assert_eq!(went_on(&engine, "S-PAGE-2"), ["about:blank"]);
+    assert_eq!(went_on(&engine, "S-PAGE-3"), [ADDRESS]);
+    let closed = engine.sent("Target.closeTarget");
+    assert_eq!(closed[0].params["targetId"], "PAGE-2", "{closed:?}");
+    let cache: Vec<_> = engine
+        .sent("Network.setCacheDisabled")
+        .iter()
+        .map(|sent| (sent.session.clone(), sent.params["cacheDisabled"].clone()))
         .collect();
     assert_eq!(
-        went,
-        [ADDRESS, "about:blank", ADDRESS],
-        "its page goes blank, then loads again with nothing of before"
+        cache,
+        [
+            (Some("S-PAGE-3".to_owned()), json!(true)),
+            (Some("S-PAGE-3".to_owned()), json!(false)),
+        ],
+        "past the cache for the login alone"
     );
-    assert_eq!(inserted(&engine).len(), 1, "and only then filled");
+    let all = super::super::lock(&engine.sent).clone();
+    let at = |method: &str, session: &str| {
+        all.iter()
+            .position(|sent| sent.method == method && sent.session.as_deref() == Some(session))
+            .unwrap_or_else(|| panic!("{method}"))
+    };
+    assert!(
+        at("Network.setCacheDisabled", "S-PAGE-3") < at("Page.navigate", "S-PAGE-3"),
+        "before it loads"
+    );
 }
 
 #[test]
 fn a_cookie_that_will_not_go_fills_nothing() {
     let (browser, engine) = browser_with(quick());
     as_a_login_form_that(&engine, true, Twist::CookiesStay);
-    let ended = browser.log_in(&chosen(), holds()).unwrap();
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
     assert!(
         matches!(ended.outcome, Err(Refusal::NotLoggedIn(_))),
         "{}",
@@ -1225,10 +1345,10 @@ fn a_cookie_that_will_not_go_fills_nothing() {
 }
 
 #[test]
-fn a_service_worker_that_will_not_go_fills_nothing() {
+fn a_store_that_will_not_go_fills_nothing() {
     let (browser, engine) = browser_with(quick());
     as_a_login_form_that(&engine, true, Twist::WorkersStay);
-    let ended = browser.log_in(&chosen(), holds()).unwrap();
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
     assert!(
         matches!(ended.outcome, Err(Refusal::NotLoggedIn(_))),
         "{}",
@@ -1237,14 +1357,252 @@ fn a_service_worker_that_will_not_go_fills_nothing() {
     assert!(inserted(&engine).is_empty(), "nothing filled");
 }
 
+/// #5272: no other page runs from before the site is cleared until the login has answered.
 #[test]
-fn a_declared_login_clears_nothing() {
+fn every_other_page_is_held_still_while_a_login_clears_and_fills() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::None);
+    // Its pages are told of as the agent's calls find them.
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let all = super::super::lock(&engine.sent).clone();
+    let at = |method: &str, state: Option<&str>| {
+        all.iter()
+            .position(|sent| {
+                sent.method == method
+                    && state.is_none_or(|state| sent.params["state"] == state)
+                    && (state.is_none() || sent.session.as_deref() == Some("S-PAGE-1"))
+            })
+            .unwrap_or_else(|| panic!("{method} {state:?}"))
+    };
+    let frozen = at("Page.setWebLifecycleState", Some("frozen"));
+    let active = at("Page.setWebLifecycleState", Some("active"));
+    assert!(frozen < at("Storage.clearDataForOrigin", None));
+    assert!(at("Input.insertText", None) < active, "until it answered");
+    assert!(
+        !all.iter()
+            .any(|sent| sent.method == "Page.setWebLifecycleState"
+                && sent.session.as_deref() == Some("S-PAGE-3")),
+        "never the login's own"
+    );
+}
+
+/// #5272: a load in flight would run on, whatever the page's scripts do.
+#[test]
+fn a_page_held_still_has_its_loads_stopped_first() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::None);
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let all = super::super::lock(&engine.sent).clone();
+    let on_the_page = |method: &str| {
+        all.iter()
+            .position(|sent| sent.method == method && sent.session.as_deref() == Some("S-PAGE-1"))
+            .unwrap_or_else(|| panic!("{method}"))
+    };
+    assert!(on_the_page("Page.stopLoading") < on_the_page("Page.setWebLifecycleState"));
+}
+
+/// #5272: the person taking the browser over doesn't leave its pages held still.
+#[test]
+fn a_login_the_person_cut_lets_every_other_page_go() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, false);
+    let _ = snapshot(&browser, 1);
+    let browser = Arc::new(browser);
+    let running = {
+        let browser = Arc::clone(&browser);
+        std::thread::spawn(move || browser.log_in(&in_a_used_browser(), holds()).unwrap())
+    };
+    let start = std::time::Instant::now();
+    while inserted(&engine).is_empty() {
+        assert!(start.elapsed() < Duration::from_secs(5), "never filled");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    browser.take_over();
+    let ended = running.join().unwrap();
+    assert!(matches!(ended.outcome, Err(Refusal::Interrupted)));
+    let states: Vec<_> = engine
+        .sent("Page.setWebLifecycleState")
+        .iter()
+        .filter(|sent| sent.session.as_deref() == Some("S-PAGE-1"))
+        .map(|sent| sent.params["state"].as_str().unwrap_or_default().to_owned())
+        .collect();
+    assert_eq!(states, ["frozen", "active"]);
+    let cache = engine.sent("Network.setCacheDisabled");
+    assert_eq!(cache.last().unwrap().params["cacheDisabled"], false);
+}
+
+/// #5272: a page that opens while the site is cleared is held still before anything is filled.
+#[test]
+fn a_page_opened_on_the_clean_load_is_held_still_before_the_fill() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::PopupOnCleanLoad);
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let all = super::super::lock(&engine.sent).clone();
+    let frozen = all
+        .iter()
+        .position(|sent| {
+            sent.method == "Page.setWebLifecycleState"
+                && sent.session.as_deref() == Some("S-PAGE-7")
+                && sent.params["state"] == "frozen"
+        })
+        .expect("held still");
+    let typed = all
+        .iter()
+        .position(|sent| sent.method == "Input.insertText")
+        .expect("filled");
+    assert!(frozen < typed);
+}
+
+#[test]
+fn a_page_that_will_not_hold_still_fills_nothing() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::WontHoldStill);
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(
+        matches!(ended.outcome, Err(Refusal::NotLoggedIn(_))),
+        "{}",
+        ended_as(&ended.outcome)
+    );
+    assert!(engine.sent("Storage.clearDataForOrigin").is_empty());
+    assert!(inserted(&engine).is_empty(), "nothing filled");
+}
+
+#[test]
+fn a_page_of_its_site_that_comes_back_after_the_clearing_fills_nothing() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::PageComesBack);
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(
+        matches!(ended.outcome, Err(Refusal::NotLoggedIn(_))),
+        "{}",
+        ended_as(&ended.outcome)
+    );
+    assert!(inserted(&engine).is_empty(), "nothing filled");
+}
+
+/// #5272: a held login clears only for a form it sees: a page that went elsewhere says nothing of
+/// its session, and it's kept.
+#[test]
+fn a_held_login_whose_page_went_elsewhere_clears_nothing() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::LandsElsewhere);
+    let login = Login {
+        only_if_asked: true,
+        clean_already: false,
+        ..login_at(ORIGIN)
+    };
+    let ended = browser.log_in(&login, holds()).unwrap();
+    assert!(
+        matches!(ended.outcome, Err(Refusal::NotLoggedIn(_))),
+        "{}",
+        ended_as(&ended.outcome)
+    );
+    assert!(engine.sent("Storage.clearDataForOrigin").is_empty());
+    assert!(engine.sent("Network.deleteCookies").is_empty());
+}
+
+/// #4995: a form on another origin tells its holder from the page the clean load opened.
+#[test]
+fn a_used_browsers_login_whose_page_comes_back_tells_its_holder_from_the_new_tab() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::GoesBack);
+    let holder = Arc::new(Counted::default());
+    let login = Login {
+        back_to: Some("http://app.fixture.test".to_owned()),
+        ..in_a_used_browser()
+    };
+    let ended = browser
+        .log_in(&login, Arc::clone(&holder) as Arc<dyn Hold>)
+        .unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    assert!(comes_to(&holder.back, 1), "told once it's back");
+}
+
+/// #5272: its page's first load is as clean as a load can be, and is the one a login page that
+/// needs another site can load on.
+#[test]
+fn a_browser_that_has_held_nothing_clears_nothing() {
     let (browser, engine) = browser_with(quick());
     as_a_login_form_that(&engine, true, Twist::HoldsCookies);
     let ended = browser.log_in(&login_at(ORIGIN), holds()).unwrap();
     assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
     assert!(engine.sent("Network.deleteCookies").is_empty());
     assert!(engine.sent("Storage.clearDataForOrigin").is_empty());
+    assert_eq!(went_on(&engine, "S-PAGE-2"), [ADDRESS]);
+    assert!(engine.sent("Target.closeTarget").is_empty());
+}
+
+/// #5272: a login the browser holds answers "already logged in", and clears nothing.
+#[test]
+fn a_held_login_whose_page_asks_for_nothing_clears_nothing() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::AsksNothing);
+    let login = Login {
+        only_if_asked: true,
+        clean_already: false,
+        ..in_a_used_browser()
+    };
+    let ended = browser.log_in(&login, holds()).unwrap();
+    let answer = ended.outcome.unwrap();
+    assert!(answer.note.unwrap().contains("already logged in"));
+    assert!(engine.sent("Network.deleteCookies").is_empty());
+    assert!(engine.sent("Storage.clearDataForOrigin").is_empty());
+    assert!(inserted(&engine).is_empty());
+}
+
+/// #5272: a held login whose page asks fills, so it starts clean too.
+#[test]
+fn a_held_login_whose_page_asks_starts_clean() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::None);
+    let login = Login {
+        only_if_asked: true,
+        clean_already: false,
+        ..in_a_used_browser()
+    };
+    let ended = browser.log_in(&login, holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    assert_eq!(engine.sent("Storage.clearDataForOrigin").len(), 1);
+    assert_eq!(went_on(&engine, "S-PAGE-2"), [ADDRESS, "about:blank"]);
+    assert_eq!(went_on(&engine, "S-PAGE-3"), [ADDRESS]);
+}
+
+/// #5272: a form that doesn't appear on the clean load is said by its own kind, for the caller to
+/// open a new browser on, and nothing else happens.
+#[test]
+fn a_form_that_does_not_appear_on_the_clean_load_is_said_by_its_own_kind() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::AsksNothing);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(
+        matches!(ended.outcome, Err(Refusal::NoFormOnCleanLoad(_))),
+        "{}",
+        ended_as(&ended.outcome)
+    );
+    assert!(inserted(&engine).is_empty(), "nothing filled");
+    let cache = engine.sent("Network.setCacheDisabled");
+    assert_eq!(cache.last().unwrap().params["cacheDisabled"], false);
+}
+
+/// #5272: one that has held nothing has nowhere cleaner to go, so it's said as any other.
+#[test]
+fn a_form_that_does_not_appear_in_a_browser_that_has_held_nothing_is_a_plain_failure() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::AsksNothing);
+    let ended = browser.log_in(&login_at(ORIGIN), holds()).unwrap();
+    assert!(
+        matches!(ended.outcome, Err(Refusal::NotLoggedIn(_))),
+        "{}",
+        ended_as(&ended.outcome)
+    );
 }
 
 #[test]
@@ -1269,12 +1627,12 @@ fn a_cookie_reaches_its_host_and_every_host_under_a_parent_domain_alone() {
 
 /// #5121: a form on another host counts: its page's site is cleared with it.
 #[test]
-fn a_login_a_chat_chose_with_its_form_elsewhere_clears_both_sites() {
+fn a_login_with_its_form_elsewhere_clears_both_sites() {
     let (browser, engine) = browser_with(quick());
     as_a_login_form_that(&engine, true, Twist::None);
     let login = Login {
         back_to: Some("https://app.example.test".to_owned()),
-        ..chosen()
+        ..in_a_used_browser()
     };
     let ended = browser.log_in(&login, holds()).unwrap();
     assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
@@ -1301,4 +1659,51 @@ fn a_host_is_read_from_an_origin_as_a_cookie_spells_it() {
     assert_eq!(host_of("http://localhost:8080"), Some("localhost"));
     assert_eq!(host_of("no-scheme"), None);
     assert_eq!(host_of("https://"), None);
+}
+
+/// The person's ruling of 2026-11-05: a login's page is held as a fill's is. A window related to it
+/// on its site could read the field, so nothing goes in beside one.
+#[test]
+fn a_login_fills_nothing_beside_a_window_its_page_opened_on_its_site() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::OpensOnItsSite);
+    let ended = browser.log_in(&login_at(ORIGIN), holds()).unwrap();
+    match &ended.outcome {
+        Err(Refusal::NotLoggedIn(why)) => {
+            assert!(why.contains("related to the login's page"), "{why}");
+            assert!(why.contains("nothing was filled"), "{why}");
+        }
+        other => panic!("refused otherwise: {}", ended_as(other)),
+    }
+    assert!(inserted(&engine).is_empty(), "nothing filled");
+}
+
+/// The person's ruling of 2026-11-05: a window related to a login's page on another site stays while
+/// the page holds what was filled, and closes once the page loads another document, the chat told.
+#[test]
+fn a_window_a_logins_page_opened_elsewhere_closes_once_the_page_is_done() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::OpensElsewhere);
+    let ended = browser.log_in(&login_at(ORIGIN), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    assert_eq!(inserted(&engine), [FILLED]);
+    let closed = || {
+        engine
+            .sent("Target.closeTarget")
+            .iter()
+            .any(|sent| sent.params["targetId"] == "PAGE-8")
+    };
+    let start = std::time::Instant::now();
+    while !closed() {
+        assert!(start.elapsed() < Duration::from_secs(5), "the window stays");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(
+        crate::drive::lock(&browser.inner.state)
+            .leaving_said
+            .iter()
+            .any(|said| said
+                .contains("purlis closed 1 other window related to the page purlis logged in on")),
+        "the chat is told"
+    );
 }

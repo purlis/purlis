@@ -188,6 +188,35 @@ export const Filtered: Story = {
   },
 };
 
+/** **The Source filter** (#5331): a tag on an installed skill's row, reached by the keyboard, narrows
+ *  the list to its source, and the Source select says which. */
+export const SourceFilter: Story = {
+  args: {
+    answer: studio(
+      [
+        skill("grilling", { source_label: "mattpocock-skills" }),
+        skill("tdd", { source_label: "mattpocock-skills" }),
+        skill("deploy", { source_label: "platform" }),
+        skill("lint-rs"),
+      ],
+      { workspace: "smart-ide", workspaces: ["smart-ide", "git-ci-cd"] },
+    ),
+  },
+  play: async ({ canvas }) => {
+    const grid = await canvas.findByRole("grid", { name: "Skills" });
+    const row = await canvas.findByTestId("skill-deploy");
+    const tag = within(row).getByRole("button", { name: "platform" });
+    await untilFocused(() => {
+      tag.focus();
+      return tag;
+    }, "the tag");
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(within(grid).getAllByRole("row")).toHaveLength(1));
+    await expect(canvas.getByRole("button", { name: /\bSource$/ })).toHaveTextContent("platform");
+  },
+};
+
 /** **Narrow: page-and-back.** The navigation is a picker; a skill opened from the list is drawn
  *  alone with a way back, and back lands on the list. */
 export const Narrow: Story = {

@@ -160,13 +160,30 @@ pub fn gather(
     name: &str,
     purpose: Purpose,
 ) -> Result<Outgoing, String> {
+    gather_set(
+        plane,
+        built_in,
+        &[(level.clone(), name.to_owned())],
+        purpose,
+    )
+}
+
+/// **Every skill of `skills` (a level and a name each), and the project's skills they refer to,
+/// as they would go** (#5332): each once, as [`gather`] gathers one.
+pub fn gather_set(
+    plane: &Path,
+    built_in: Option<&Path>,
+    skills: &[(Level, String)],
+    purpose: Purpose,
+) -> Result<Outgoing, String> {
     let mut out = Outgoing {
         skills: Vec::new(),
         stops: Vec::new(),
         broken: Vec::new(),
     };
-    let mut seen = BTreeSet::from([name.to_owned()]);
-    let mut waiting = vec![(level.clone(), name.to_owned())];
+    let mut seen: BTreeSet<String> = skills.iter().map(|(_, name)| name.clone()).collect();
+    let mut waiting: Vec<(Level, String)> = skills.to_vec();
+    waiting.sort_by(|a, b| b.1.cmp(&a.1));
     while let Some((level, name)) = waiting.pop() {
         if crate::skills::name_reserved(&name) {
             return Err(format!(

@@ -74,7 +74,7 @@ pub enum WorktreeCommand {
         /// The branch to bring in, or a remote-tracking branch (`origin/main`); a rebase carries
         /// only the piece's own commits (default: the one the piece was cut from). A branch
         /// folder's only.
-        #[arg(long, value_name = "BRANCH", conflicts_with_all = ["go_on", "abort"])]
+        #[arg(long, value_name = "BRANCH", conflicts_with_all = ["go_on", "abort", "fetch_only"])]
         base: Option<String>,
         /// Merge the base into the branch instead of rebasing onto it: no commit is rewritten,
         /// so a plain push follows. A branch folder's only.
@@ -90,6 +90,10 @@ pub enum WorktreeCommand {
         /// Put the branch back where it was before the rebase or merge.
         #[arg(long)]
         abort: bool,
+        /// Fetch the remote and move nothing else, so `origin/<branch>` says what it has now,
+        /// with or without uncommitted changes.
+        #[arg(long, conflicts_with_all = ["go_on", "abort", "merge"])]
+        fetch_only: bool,
     },
     /// Push the branch of the folder you stand in to its remote, under its own name, after
     /// purlis's scan of what it would publish. Where purlis's own `update` rewrote the branch,
@@ -247,8 +251,10 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
             take_base_baselines,
             go_on,
             abort,
+            fetch_only,
         } => {
             let step = match (go_on, abort, merge) {
+                _ if fetch_only => purlis_core::hookwire::UpdateStep::FetchOnly,
                 (true, _, _) => purlis_core::hookwire::UpdateStep::Continue,
                 (_, true, _) => purlis_core::hookwire::UpdateStep::Abort,
                 (_, _, true) => purlis_core::hookwire::UpdateStep::Merge {
@@ -397,18 +403,35 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
             let ws = here.active_workspace(workspace.as_deref())?;
             // In a chat the app started, the app prunes, by the route its removal takes (ADR
             // 0110): never forced, each folder held to its claim against the chats it has.
-            let asked = crate::gitask::told(
-                crate::gitask::forwarded(
-                    &ws,
-                    GitWork::WorktreePrune {
-                        repo: repo.clone(),
-                        dry_run,
-                        keep_branches,
-                    },
-                    crate::gitask::A_WORKTREE_TAKES_AT_MOST,
-                ),
-                &mut say,
-            );
+            // Its wait is on a silence: the app says it is alive as it reads each folder.
+            let since = chrono::Utc::now();
+            let forwarded = match crate::gitask::forwarded(
+                &ws,
+                GitWork::WorktreePrune {
+                    repo: repo.clone(),
+                    dry_run,
+                    keep_branches,
+                },
+                crate::gitask::A_FOLDER_IS_JUDGED_WITHIN,
+            ) {
+                // Given up on: what was removed, said plainly, from the workspace's record of its
+                // folders (#5439), with how the wait ended.
+                crate::gitask::Forwarded::Unsure { cause, .. } => {
+                    crate::gitask::Forwarded::Unsure {
+                        said: crate::gitask::unsure_prune(
+                            dry_run,
+                            &cause,
+                            &purlis_core::pieces::removed_since(&root, &ws, repo.as_deref(), since)
+                                .into_iter()
+                                .map(|(repo, piece)| format!("{repo} · {piece}"))
+                                .collect::<Vec<_>>(),
+                        ),
+                        cause,
+                    }
+                }
+                other => other,
+            };
+            let asked = crate::gitask::told(forwarded, &mut say);
             if let Some(code) = asked {
                 return Ok(code);
             }
@@ -626,7 +649,7 @@ fn answered_by_the_app(
     use purlis_core::repocmd::Say;
     let (lines, code) = match forwarded {
         Forwarded::Said { lines, code } => (lines, code),
-        Forwarded::Refused(why) | Forwarded::Unsure(why) => return Err(why),
+        Forwarded::Refused(why) | Forwarded::Unsure { said: why, .. } => return Err(why),
         Forwarded::NotTaken => return Err(not_taken.to_owned()),
     };
     let text = lines

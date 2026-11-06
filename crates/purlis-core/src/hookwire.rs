@@ -2088,6 +2088,8 @@ pub enum UpdateStep {
     Continue,
     /// Put the branch back where it was before the rebase or merge began.
     Abort,
+    /// Fetch the remote, and move nothing else.
+    FetchOnly,
 }
 
 /// A session record a chat asks the app to write for it, as `purlis session record` and the

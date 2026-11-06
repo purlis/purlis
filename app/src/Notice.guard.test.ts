@@ -104,10 +104,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "its key are the way on",
   },
   "ui/notice/Notice.tsx": {
-    count: 1,
+    count: 4,
     why:
-      "the notice family's message part, the live region of a card Notice (#3344): drawn live " +
-      "only by `Notice.tsx`, which this guard holds as the one way to draw a standing line",
+      "the notice family's message part, the live region of a card Notice (#3344), its said " +
+      "part, the live region of a Notices centre card, and its sub and chat-words parts, the " +
+      "two places in that region it is switched off, for an age's and a fold's own words " +
+      "(#5217): drawn live only by " +
+      "`Notice.tsx`, which this guard holds as the one way to draw a standing line",
   },
   "AddVision.tsx": {
     count: 1,
@@ -296,6 +299,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "that cannot be one; the owners the forge could not list, with Retry; the folder dialog " +
       "Choose a folder… could not open; the owners being asked for; and the creation's stages " +
       "while it runs, with Cancel, said as they change",
+  },
+  "ProjectRail.tsx": {
+    count: 1,
+    why:
+      "how many projects a launch is still loading, said as it changes (#5323): each row's " +
+      "loading mark is its description, which a screen reader hears only on reaching it, and " +
+      "there is nothing to fix or dismiss while a project loads",
   },
   "PublishProject.tsx": {
     count: 3,
@@ -509,6 +519,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "what a picked entry does to the asked key, a live value under the picker in the ask's own row (#5073)",
   },
   "UnsavedWorkQuestion.tsx": { count: 1, why: ACTION },
+  "SkillBudget.tsx": {
+    count: 3,
+    why: "A reset's refusal under the table, Change…'s own refusal, and what a typed number would cost, said as it moves: each about the act in hand, gone when that is done, so not a standing line",
+  },
   "SkillChangeDialogs.tsx": {
     count: 2,
     why:

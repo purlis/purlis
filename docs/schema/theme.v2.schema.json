@@ -3326,6 +3326,27 @@
         "card-button.line.pick.disabled.text": {
           "$ref": "#/$defs/part-text"
         },
+        "chat-mark.badge.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "chat-mark.badge.needs.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "chat-mark.badge.failed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "chat-mark.badge.working.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "chat-mark.badge.waiting.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "chat-mark.badge.idle.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "chat-mark.badge.ended.text": {
+          "$ref": "#/$defs/part-text"
+        },
         "checkbox.root.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -6359,6 +6380,54 @@
         "notice.title.attention.font-weight": {
           "$ref": "#/$defs/part-font-weight"
         },
+        "notice.sub.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.sub.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "notice.sub.news.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.sub.news.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "notice.sub.trouble.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.sub.trouble.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "notice.sub.attention.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.sub.attention.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "notice.chat-words.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.chat-words.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "notice.chat-words.news.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.chat-words.news.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "notice.chat-words.trouble.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.chat-words.trouble.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "notice.chat-words.attention.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.chat-words.attention.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
         "option-card.root.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -6904,6 +6973,99 @@
         },
         "pane-foot.fill.fill": {
           "$ref": "#/$defs/part-fill"
+        },
+        "pane-preview.arriving.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "pane-preview.arriving.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "pane-preview.arriving.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "pane-preview.arriving.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "pane-preview.arriving.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "pane-preview.name.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "pane-preview.name.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "pane-preview.name.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "pane-preview.line.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "pane-preview.size.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "pane-preview.size.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "pane-preview.size.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "pane-preview.size.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "pane-preview.size.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "pane-preview.refused.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "pane-preview.refused.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "pane-preview.refused.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "pane-preview.held.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "pane-preview.held.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "pane-preview.held.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "pane-preview.held.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "pane-preview.held.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "pane-preview.held.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "pane-preview.held.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "pane-preview.words.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "pane-preview.words.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "pane-preview.words.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "pane-preview.words.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "pane-preview.words.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "pane-preview.words.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "pane-preview.words.font-size": {
+          "$ref": "#/$defs/part-font-size"
         },
         "panel.root.fill": {
           "$ref": "#/$defs/part-fill"
@@ -10806,6 +10968,9 @@
           "$ref": "#/$defs/part-padding"
         },
         "view-frame.head.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "view-frame.heading.gap": {
           "$ref": "#/$defs/part-gap"
         },
         "view-frame.header.fill": {

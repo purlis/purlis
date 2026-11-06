@@ -38,6 +38,7 @@ import {
   RailBelow,
   RailList,
   RailProject,
+  RailProjectWay,
   RailSlot,
   RailSpacer,
   SidebarIcon,
@@ -92,8 +93,14 @@ export function ProjectRail({
   onMode,
   edge,
   nameOf,
+  coming = [],
+  loadOf = () => undefined,
+  onChoose = () => undefined,
+  onRetry = () => undefined,
+  onDismiss = () => undefined,
 }: {
-  /** The window's projects in the rail's order: pinned first, then the rest. */
+  /** The window's projects in the rail's order: pinned first, then the rest. While a launch
+   *  puts projects back, the ones still waiting for their open are among them (#5323). */
   projects: readonly Project[];
   inFront: string | undefined;
   /** The rows the rail runs (`actions.projectRows`). */
@@ -115,8 +122,21 @@ export function ProjectRail({
   edge: RefObject<HTMLElement | null>;
   /** What a screen reader calls a project being dragged. */
   nameOf: (plane: string) => string;
+  /** The projects of `projects` a launch is still opening (#5323): drawn, loading, with no
+   *  menu and no drag, since nothing of theirs is open to act on yet. */
+  coming?: readonly string[];
+  /** How a project's load is going, for its row (#5323). */
+  loadOf?: (project: Project) => RowLoad | undefined;
+  /** A project still waiting its turn to open, chosen: it goes next, and in front (#5323). */
+  onChoose?: (plane: string) => void;
+  /** Retry on a project's row (#5324). */
+  onRetry?: (plane: string) => void;
+  /** A project whose open failed, put away (#5324). */
+  onDismiss?: (plane: string) => void;
 }) {
   const hidden = mode === "auto";
+  const loadingNow = projects.filter((project) => loadOf(project)?.loading).length;
+  const failedNow = projects.filter((project) => loadOf(project)?.failed).length;
   const peek = useEdgePeek(hidden, edge);
   /** The slide, told to what fits itself to the work (`railSlide.ts`) so it fits once (R84). */
   const [settledAs, setSettledAs] = useState(hidden);
@@ -199,6 +219,11 @@ export function ProjectRail({
       onDrop={onDrop}
       lettingGo={lettingGo}
       nameOf={nameOf}
+      coming={coming}
+      loadOf={loadOf}
+      onChoose={onChoose}
+      onRetry={onRetry}
+      onDismiss={onDismiss}
       last={
         peeking ? (
           <RailAction
@@ -226,6 +251,50 @@ export function ProjectRail({
         {drawn(false)}
       </RailSlot>
       {hidden && peek.state !== "closed" && drawn(true)}
+      {/* How many projects are still loading, said as it changes (#5323): each row's mark is
+          its description too, which a screen reader hears only on reaching it. */}
+      <span className="sr-only" role="status">
+        {loadingNow === 0
+          ? ""
+          : `Loading ${loadingNow} ${loadingNow === 1 ? "project" : "projects"}…`}
+        {failedNow === 0
+          ? ""
+          : ` ${failedNow} ${failedNow === 1 ? "project" : "projects"} could not open.`}
+      </span>
+    </>
+  );
+}
+
+/** How a project's load is going, as its row draws it (`App.tsx`, `projectLoads.ts`). */
+export type RowLoad = { loading: boolean; failed: boolean; says?: string; retry: boolean };
+
+/** What a row offers while its load fell short (#5324): Retry, and Dismiss if it asks for it. */
+function RowWays({
+  project,
+  load,
+  onRetry,
+  onDismiss,
+  dismisses = false,
+}: {
+  project: Project;
+  load: RowLoad | undefined;
+  onRetry: (plane: string) => void;
+  onDismiss: (plane: string) => void;
+  /** Its open failed, so no menu can close it. */
+  dismisses?: boolean;
+}) {
+  return (
+    <>
+      {load?.retry && (
+        <RailProjectWay doing="retry" name={project.name} onPress={() => onRetry(project.plane)} />
+      )}
+      {dismisses && load?.failed && (
+        <RailProjectWay
+          doing="dismiss"
+          name={project.name}
+          onPress={() => onDismiss(project.plane)}
+        />
+      )}
     </>
   );
 }
@@ -245,6 +314,11 @@ function ProjectColumn({
   onDrop,
   lettingGo,
   nameOf,
+  coming,
+  loadOf,
+  onChoose,
+  onRetry,
+  onDismiss,
   last,
 }: {
   peeking: boolean;
@@ -260,8 +334,21 @@ function ProjectColumn({
   onDrop: (moved: string, onto: string) => void;
   lettingGo: number;
   nameOf: (plane: string) => string;
+  coming: readonly string[];
+  loadOf: (project: Project) => RowLoad | undefined;
+  onRetry: (plane: string) => void;
+  onDismiss: (plane: string) => void;
+  onChoose: (plane: string) => void;
   last: ReactNode;
 }) {
+  // A project's rows (`rows`) are the open projects' alone, in their order: a project still
+  // coming has none, and is skipped in counting the place of each that has (#5323).
+  const rowAt = useMemo(() => {
+    const at = new Map<string, number>();
+    for (const project of projects)
+      if (!coming.includes(project.plane)) at.set(project.plane, at.size);
+    return at;
+  }, [coming, projects]);
   const tabId = useTabIds();
   const tintOf = useProjectTints();
   const sensors = useStripSensors();
@@ -299,54 +386,99 @@ function ProjectColumn({
             }}
           >
             <RailList ref={belowList}>
-              {projects.map((project, place) => (
-                <SortableTab key={project.plane} id={project.plane}>
-                  {({ sortable, style }) => (
-                    // Right-click is the catalogue's third reader (`Menus.tsx`), on the button,
-                    // which takes the keyboard's context-menu key too.
-                    <Menued
-                      on={{ on: "project", plane: project.plane }}
-                      offers={offers}
-                      onPress={onPress}
-                    >
-                      <RovingFocusGroup.Item
-                        asChild
-                        tabStopId={project.plane}
-                        active={project.plane === inFront}
-                      >
-                        <RailProject
-                          ref={sortable.setNodeRef}
-                          style={style as CSSProperties}
-                          role="tab"
-                          id={tabId(place)}
-                          name={project.name}
-                          current={project.plane === inFront}
-                          waiting={waitingIn(project)}
-                          unsaved={unsavedIn(project)}
-                          colour={tintOf(project.name)}
-                          // Its directory: how a scenario learns which project a button is.
-                          data-directory={project.plane}
-                          data-dragging={sortable.isDragging || undefined}
-                          aria-selected={project.plane === inFront}
-                          aria-describedby={sortable.attributes["aria-describedby"]}
-                          {...sortable.listeners}
-                          onKeyDown={(event) => {
-                            // A button that is up is being carried: its keys are the drag's.
-                            keepsTheFocus(event, sortable.isDragging);
-                            sortable.listeners?.onKeyDown?.(event);
-                            if (!sortable.isDragging)
-                              closeOnDelete(event, rows.close[place], onPress);
-                          }}
-                          onClick={() => {
-                            const offer = rows.switchTo[place];
-                            if (offer.available) onPress(offer);
-                          }}
+              {projects.map((project, place) =>
+                coming.includes(project.plane) ? (
+                  <SortableTab key={project.plane} id={project.plane} fixed>
+                    {({ sortable, style }) => (
+                      <>
+                        <RovingFocusGroup.Item asChild tabStopId={project.plane} active={false}>
+                          <RailProject
+                            ref={sortable.setNodeRef}
+                            style={style as CSSProperties}
+                            role="tab"
+                            id={tabId(place)}
+                            name={project.name}
+                            current={false}
+                            colour={tintOf(project.name)}
+                            load={loadOf(project)}
+                            data-directory={project.plane}
+                            data-coming=""
+                            aria-selected={false}
+                            onClick={() => onChoose(project.plane)}
+                          />
+                        </RovingFocusGroup.Item>
+                        <RowWays
+                          project={project}
+                          load={loadOf(project)}
+                          onRetry={onRetry}
+                          onDismiss={onDismiss}
+                          dismisses
                         />
-                      </RovingFocusGroup.Item>
-                    </Menued>
-                  )}
-                </SortableTab>
-              ))}
+                      </>
+                    )}
+                  </SortableTab>
+                ) : (
+                  <SortableTab key={project.plane} id={project.plane}>
+                    {({ sortable, style }) => (
+                      // Right-click is the catalogue's third reader (`Menus.tsx`), on the button,
+                      // which takes the keyboard's context-menu key too.
+                      <>
+                        <Menued
+                          on={{ on: "project", plane: project.plane }}
+                          offers={offers}
+                          onPress={onPress}
+                        >
+                          <RovingFocusGroup.Item
+                            asChild
+                            tabStopId={project.plane}
+                            active={project.plane === inFront}
+                          >
+                            <RailProject
+                              ref={sortable.setNodeRef}
+                              style={style as CSSProperties}
+                              role="tab"
+                              id={tabId(place)}
+                              name={project.name}
+                              current={project.plane === inFront}
+                              waiting={waitingIn(project)}
+                              unsaved={unsavedIn(project)}
+                              colour={tintOf(project.name)}
+                              load={loadOf(project)}
+                              // Its directory: how a scenario learns which project a button is.
+                              data-directory={project.plane}
+                              data-dragging={sortable.isDragging || undefined}
+                              aria-selected={project.plane === inFront}
+                              aria-describedby={sortable.attributes["aria-describedby"]}
+                              {...sortable.listeners}
+                              onKeyDown={(event) => {
+                                // A button that is up is being carried: its keys are the drag's.
+                                keepsTheFocus(event, sortable.isDragging);
+                                sortable.listeners?.onKeyDown?.(event);
+                                if (!sortable.isDragging)
+                                  closeOnDelete(
+                                    event,
+                                    rows.close[rowAt.get(project.plane) ?? place],
+                                    onPress,
+                                  );
+                              }}
+                              onClick={() => {
+                                const offer = rows.switchTo[rowAt.get(project.plane) ?? place];
+                                if (offer.available) onPress(offer);
+                              }}
+                            />
+                          </RovingFocusGroup.Item>
+                        </Menued>
+                        <RowWays
+                          project={project}
+                          load={loadOf(project)}
+                          onRetry={onRetry}
+                          onDismiss={onDismiss}
+                        />
+                      </>
+                    )}
+                  </SortableTab>
+                ),
+              )}
               <span data-strip-doing="">
                 <RailAction
                   aria-label={rows.open.title}

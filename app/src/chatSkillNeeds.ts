@@ -13,6 +13,7 @@ import { missingSays } from "./SkillsMissingNotice";
 import {
   AT_THE_ROOT,
   asPersona,
+  inWorkspace,
   pinnerSaid,
   scopeOfPinner,
   SKILL_STUDIO_TITLE,
@@ -175,14 +176,27 @@ function budgetFix(budget: SkillBudget, routing: ChatNeedFix): ChatNeedFix {
  *  own catalogue beside it (#3324), and how its router did at its start and on its last prompt
  *  (#4297), each where it did not fall back (that is a need). */
 export function chatSetSaid(said: ChatSkillsSaid): string[] {
+  return [...(said.budget === null ? [] : [budgetSaid(said.budget)]), ...chatSetBeside(said)];
+}
+
+/** [`chatSetSaid`] but for the budget, which the view draws as its link to the budget (#5353). */
+export function chatSetBeside(said: ChatSkillsSaid): string[] {
   return [
-    ...(said.budget === null ? [] : [budgetSaid(said.budget)]),
     ...(said.budget === null || !said.own ? [] : [said.own]),
     ...(said.routing === null || said.routing.fell_back ? [] : [said.routing.said]),
     ...(said.routing?.last_prompt && !said.routing.last_prompt.fell_back
       ? [said.routing.last_prompt.said]
       : []),
   ];
+}
+
+/** What a link to where a chat's budget is changed does (#5353). */
+export const CHANGE_THE_SKILL_BUDGET = "Change the skill budget";
+
+/** **Where a chat's budget is changed** (#5353): its workspace's Routing, or the project's. There
+ *  is no persona's level, so a chat as a persona still goes to its workspace's. */
+export function budgetScope(budget: SkillBudget): StudioScope {
+  return budget.workspace === null ? AT_THE_ROOT : inWorkspace(budget.workspace);
 }
 
 /** The budget in a line: `12 skills of 30 · 3,400 of 6,000 characters`, and the manual-only

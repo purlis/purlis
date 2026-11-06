@@ -1046,8 +1046,15 @@ struct State {
     /// The size the person set its pages to, in CSS pixels (#2014): every page is given it.
     size: Option<(u16, u16)>,
     /// What the person typed while driving (#2014): kept out of every answer about every page
-    /// of the browser, a page opened later included.
+    /// of the browser, a page opened later included; and what purlis filled ([`Self::filled`]).
     kept: Kept,
+    /// What purlis filled or logged in with: what a site's name is held to ([`told`]).
+    filled: Kept,
+    /// Each text of [`Self::filled`] that the name of the site it went to holds, with that site's
+    /// host, in lower case ([`told`]).
+    named_by_their_sites: Vec<(zeroize::Zeroizing<String>, String)>,
+    /// What each page that has closed kept: what is said beside the pages may still hold it.
+    closed_kept: Kept,
     /// The page an act of the agent's is sending somewhere, while that act lasts, and what its
     /// documents are (#2018): the agent's address, or a read for going back.
     addressing: Option<(String, Why)>,
@@ -1417,6 +1424,15 @@ impl State {
         every
     }
 
+    /// Page `target` goes from the list: what it kept stays kept from what is said beside the pages.
+    fn page_closes(&mut self, target: &str) {
+        if let Some(page) = self.page(target) {
+            let kept = page.scrubbed.clone();
+            self.closed_kept.take_in(&kept);
+        }
+        self.pages.retain(|p| p.target != target);
+    }
+
     /// Keeps `held` out of every later answer about every page, and every page opened later.
     fn keep_out_everywhere(&mut self, held: &Kept) {
         self.kept.take_in(held);
@@ -1493,7 +1509,8 @@ impl State {
     fn info(&self, target: &str) -> Option<PageInfo> {
         self.page(target).map(|p| PageInfo {
             id: p.id.clone(),
-            address: p.shown(&p.url),
+            // Whole, as answers are judged by it: taken out of on the way out ([`told`]).
+            address: p.url.clone(),
             title: p.shown_title(),
             current: self.current.as_deref() == Some(target),
         })
@@ -1841,7 +1858,7 @@ impl State {
         }
         self.document_origins.gone(target);
         self.document_origins.page_gone(target);
-        self.pages.retain(|p| p.target != target);
+        self.page_closes(target);
     }
 }
 
@@ -1936,6 +1953,9 @@ pub(crate) struct Inner {
     /// **The pages holding a secret purlis filled** (#5117), each with what holds the browser to
     /// its site while it lives.
     fill_holds: Mutex<Vec<PageHeld>>,
+    /// **The pages a login filled, each with the windows related to it** (the person's ruling of
+    /// 2026-11-05): those close once the page is done with what was filled, as a fill's do.
+    login_families: Mutex<Vec<leaving::LoginFamily>>,
     /// Who is told once a page leaving for another site holds nothing any more (#5230), by page.
     departing: Mutex<HashMap<String, std::sync::mpsc::Sender<()>>>,
     /// The address each page holding a secret waits to leave for, on the person (#5230), by page.
@@ -2116,6 +2136,7 @@ impl Browser {
             held_in: Mutex::new(None),
             back: Mutex::new(None),
             fill_holds: Mutex::new(Vec::new()),
+            login_families: Mutex::new(Vec::new()),
             departing: Mutex::new(HashMap::new()),
             leaving_asked: Mutex::new(HashMap::new()),
             own_page: Mutex::new(None),
@@ -2286,7 +2307,7 @@ impl Browser {
     /// the browser over before it answers.
     pub fn call_at(&self, epoch: u64, id: &CallId, call: Call) -> Result<Answer, Refusal> {
         let outcome = self.answering(epoch, id, call);
-        self.kept_out(outcome)
+        self.kept_out(outcome.map(|answer| self.with_kept_off_told(answer)))
     }
 
     fn answering(&self, epoch: u64, id: &CallId, call: Call) -> Result<Answer, Refusal> {
@@ -3254,6 +3275,16 @@ impl Browser {
     fn open_own(&self, address: &WebAddress) -> Result<(String, Answer), Refusal> {
         // The page starts empty and is sent to `address` once it is set up, so every event of
         // its load is seen.
+        let target = self.own_blank_page()?;
+        let session = self.page_session(&target)?;
+        lock(&self.inner.state).current = Some(target.clone());
+        let _addressing = self.addressing(&target, Why::Addressed);
+        let answer = self.acting_on(&target, || self.navigate(&session, address))?;
+        Ok((target, answer))
+    }
+
+    /// A new empty page, which no other page opened, once the engine has told of it.
+    pub(super) fn own_blank_page(&self) -> Result<String, Refusal> {
         let created = self
             .gated(|| {
                 self.devtools()
@@ -3285,11 +3316,7 @@ impl Browser {
             return Err(Refusal::PageUntold);
         }
         drop(state);
-        let session = self.page_session(&target)?;
-        lock(&self.inner.state).current = Some(target.clone());
-        let _addressing = self.addressing(&target, Why::Addressed);
-        let answer = self.acting_on(&target, || self.navigate(&session, address))?;
-        Ok((target, answer))
+        Ok(target)
     }
 
     /// Sends the page on `session` to `address`; a load that failed is said in the note.
@@ -5679,7 +5706,11 @@ impl Inner {
                                 .and_then(|by| state.page(by))
                                 .and_then(|by| by.chain_began.clone());
                             let id = PageId(format!("p{}", state.pages_listed));
-                            let kept = state.kept.clone();
+                            // What opened it can write what it keeps into this one's address.
+                            let mut kept = state.kept.clone();
+                            if let Some(by) = by.as_deref().and_then(|by| state.page(by)) {
+                                kept.take_in(&by.scrubbed);
+                            }
                             state.pages.push(Page {
                                 id,
                                 target: target.clone(),
@@ -5703,7 +5734,7 @@ impl Inner {
                             page.title = text("/targetInfo/title").unwrap_or_default();
                         }
                         if !may_stay_open(&url) {
-                            state.pages.retain(|p| p.target != target);
+                            state.page_closes(&target);
                             if state.current.as_deref() == Some(target.as_str()) {
                                 state.current = state.pages.last().map(|p| p.target.clone());
                             }

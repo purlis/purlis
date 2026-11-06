@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>A stored session</title></head>
+<body>
+  <h1 id="said">Storing</h1>
+  <script>
+    // A session an earlier visit leaves in each thing a site stores, cookies aside.
+    (async () => {
+      localStorage.setItem('session', 'earlier');
+      sessionStorage.setItem('session', 'earlier');
+      await new Promise((done, failed) => {
+        const open = indexedDB.open('sessions', 1);
+        open.onupgradeneeded = () => open.result.createObjectStore('sessions');
+        open.onerror = failed;
+        open.onsuccess = () => {
+          const put = open.result.transaction('sessions', 'readwrite').objectStore('sessions')
+            .put('earlier', 'session');
+          put.onsuccess = () => { open.result.close(); done(); };
+          put.onerror = failed;
+        };
+      });
+      // The Cache API is for an https page alone: this is plain http.
+      if (self.caches) {
+        const cache = await caches.open('sessions');
+        await cache.put('/session', new Response('earlier'));
+      }
+      document.getElementById('said').textContent = 'Stored';
+    })();
+  </script>
+</body></html>

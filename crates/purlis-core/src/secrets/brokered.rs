@@ -53,7 +53,8 @@
 //! authorisation and the run, the command must be a tool the chat's persona declares
 //! (`[sandbox.personas.<p>] tools`), armed as the chat started (allowed on this machine with the
 //! persona's hosts, D-PE-ruling-1, its program found where no chat writes), asked for with
-//! exactly that tool's vault and hand-over ([`crate::sandbox::tools::declared`]). Anything else
+//! exactly that tool's vault and hand-over ([`crate::sandbox::tools::declared`]), or a program the
+//! person allowed under a Run grant ([`run_granted`], ADR 0112). Anything else
 //! is refused with a sentence naming the tool to declare. The run is of the tool's program by
 //! its absolute path, from a `PATH` without the folders the chat may write, and without the
 //! chat's variables that make a program load code ([`crate::sandbox::tools::loads_code`]): it
@@ -689,6 +690,377 @@ pub fn forwarded(_ctx: &Ctx, _req: &Request, _command: &[String], _io: &mut dyn 
 // ----------------------------------------------------------------------------------------
 // the app: authorise, resolve, run
 
+/// **The longest command a person is asked to allow**, as it is shown ([`command_shown`]): what
+/// runs past this is not offered, so no host is pushed out of what they read.
+pub const MOST_COMMAND_SHOWN: usize = 2000;
+
+/// **A chat's command as the person reads it** (ADR 0112): each word a shell word, every byte
+/// outside printable ASCII spelled out ([`crate::shown::ascii_word`]), so no control character,
+/// direction override or lookalike letter changes what it seems to say. Inert, and told apart
+/// from the app's facts wherever it is drawn.
+pub fn command_shown(words: &[String]) -> String {
+    words
+        .iter()
+        .map(|word| crate::shown::ascii_word(word))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// The plain name of the program `word` names.
+fn command_name(word: &str) -> String {
+    Path::new(word).file_name().map_or_else(
+        || word.to_owned(),
+        |name| name.to_string_lossy().into_owned(),
+    )
+}
+
+/// **Why policy allows no Run grant for `wanted`'s command**, where it does not (#5243): its lock
+/// on them, or on a persona's tools, or, strictest wins, its lock on asks for undeclared keys
+/// where the command names a key the persona does not declare.
+fn run_grant_locked(
+    asker: &Asker,
+    wanted: &Wanted,
+    command: &[String],
+    locks: &crate::sandbox::policy::Locks,
+) -> Option<String> {
+    let persona = asker.persona.as_deref().unwrap_or_default();
+    let named = command_name(&command[0]);
+    locks.refuses_run_grant(persona, &named).or_else(|| {
+        // Policy's `allow-scopes` may leave no scope a Run grant can be given at.
+        use crate::sandbox::grant::Level;
+        let reviewed = crate::sandbox::tools::reviewed_for_any_arguments(&named);
+        if !locks.keeps_scope(Level::Once)
+            && !(reviewed && (locks.keeps_scope(Level::Chat) || locks.keeps_scope(Level::Project)))
+        {
+            return Some(format!(
+                "Policy removes every scope a program could be allowed at with a vault's keys, so \
+                 {named} needs to be declared as a tool of {persona}'s. {}",
+                locks.locked_by()
+            ));
+        }
+        let undeclared = locks.forbids_undeclared_secret_asks()
+            && keys_named(wanted)
+                .any(|key| super::needs::declared(&asker.root, persona, key).is_none());
+        undeclared.then(|| {
+            format!(
+                "Policy turns off asks for a secret {persona} does not declare, so {named} needs \
+                 to be declared as a tool of {persona}'s. {}",
+                locks.locked_by()
+            )
+        })
+    })
+}
+
+/// Each key `wanted` hands over by `--env` or `--file`, as `VAR=key` spells it.
+fn keys_named(wanted: &Wanted) -> impl Iterator<Item = &str> {
+    wanted
+        .env
+        .iter()
+        .chain(&wanted.file)
+        .filter_map(|spec| spec.split_once('=').map(|(_, key)| key))
+}
+
+/// **Asks the person for each key a run under policy's lock misses** (#5243): Fill alone, saying
+/// why no Allow is offered (`locked`). The run does not go on either way: storing a value still
+/// works, and a chat waiting on it hears so, as a run missing a key does.
+fn fill_what_it_misses(
+    asker: &Asker,
+    confines: &Confines,
+    wanted: &Wanted,
+    missing: &Missing<'_>,
+    locked: &str,
+    say: &mut dyn FnMut(&str),
+) -> Result<(), (i32, String)> {
+    use super::ask::{Held, Need, Reason};
+    let persona = asker.persona.as_deref().unwrap_or_default();
+    let ctx = Ctx::new(&asker.root, asker.env.clone()).chat(confines, asker.folder.as_deref());
+    let v = cmd::provider(&ctx, &wanted.vault).map_err(|e| (1, e.message.to_string()))?;
+    for key in keys_named(wanted) {
+        let lacks = cmd::get_value(&ctx, &v, key).map(zeroize::Zeroizing::new);
+        if !lacks
+            .as_ref()
+            .is_err_and(|e| matches!(e.kind, super::Kind::NotFound | super::Kind::BrokenLink))
+        {
+            continue;
+        }
+        let need = Need {
+            chat: Some(asker.chat),
+            persona: persona.to_owned(),
+            vault: wanted.vault.clone(),
+            key: key.to_owned(),
+            tool: None,
+            purpose: None,
+            declared: super::needs::declared(&ctx.root, persona, key).map(|need| need.purpose),
+            names_no_vault: false,
+            reason: Reason::broken(&ctx, &wanted.vault, key),
+            no_allow: Some(locked.to_owned()),
+        };
+        match missing.asks.hold(need, missing.within, &mut |line: &str| {
+            (missing.moved)();
+            say(line);
+        }) {
+            Held::Filled { .. } => {}
+            Held::Declined { line } | Held::Refused { line } => return Err((1, line)),
+            Held::StillOpen { line } => return Err((WAITING_ON_THE_PERSON, line)),
+        }
+    }
+    Ok(())
+}
+
+/// **[`crate::sandbox::tools::for_run_grant`], and no key a browser is handed** (#5265): a key any
+/// persona's browser login or secret-fill line holds, or a `mint` line marks, is offered to no
+/// program, through a link the person made either way and in any case, since a provider may read
+/// a key in any case ([`crate::secretfill::a_browsers`]). A settings file that can't be read
+/// offers nothing.
+fn grantable(
+    asker: &Asker,
+    persona: &str,
+    asked: &crate::sandbox::tools::Asked<'_>,
+    listed: &[crate::sandbox::tools::Tool],
+    locks: &crate::sandbox::policy::Locks,
+    writes: &[PathBuf],
+) -> Result<crate::sandbox::tools::Ready, String> {
+    use crate::sandbox::tools;
+    let ready = tools::for_run_grant(&asker.root, persona, asked, listed, locks, writes)?;
+    let keys: Vec<&str> = ready
+        .tool
+        .values
+        .iter()
+        .map(|value| value.key.as_str())
+        .collect();
+    match no_program_is_handed(&reading_for(asker), asked.vault, &keys) {
+        Some(why) => Err(why),
+        None => Ok(ready),
+    }
+}
+
+/// **Why no program may be handed one of `keys` of `vault`** (#5265), if one is a key that a
+/// browser login or secret-fill line of any persona holds, or a `mint` line marks, through a
+/// link the person made either way and in any case ([`crate::secretfill::a_browsers`]); or the
+/// project's settings file can't be read to tell. Judged before a person is asked, again as they
+/// answer and once they have, since a line may come in with a pull while they read, and after a
+/// Fill, which may link the key to an entry the person keeps.
+pub fn no_program_is_handed(ctx: &Ctx, vault: &str, keys: &[&str]) -> Option<String> {
+    use crate::sandbox::tools::mint;
+    if mint::marked(&ctx.root).is_none() {
+        return Some(mint::unreadable_said());
+    }
+    for &key in keys {
+        if crate::secretfill::a_mints(ctx, vault, key) {
+            return Some(mint::refused_said(vault, key));
+        }
+        if crate::secretfill::a_browsers(ctx, vault, key) {
+            return Some(format!(
+                "{key} in vault {vault} is one purlis fills in a browser itself, on the one site a \
+                 persona declares, so no program is handed it"
+            ));
+        }
+    }
+    None
+}
+
+/// **Whether `wanted`'s command runs under a Run grant** (ADR 0112, #5239): the program its words
+/// name, as the app resolves it where no chat writes, once the person allowed it. Asked only for
+/// a program that is no declared tool, and refused with no notice for one no tool may be
+/// ([`crate::sandbox::tools::for_run_grant`]), and for any `why`, which is what the chat was to
+/// hear without this. `say` tells the command, as it starts to wait, what it waits on.
+#[allow(clippy::too_many_arguments)]
+fn run_granted(
+    asker: &Asker,
+    confines: &Confines,
+    wanted: &Wanted,
+    command: &[String],
+    missing: &Missing<'_>,
+    not_its_vault: bool,
+    why: String,
+    say: &mut dyn FnMut(&str),
+) -> Result<crate::sandbox::tools::Ready, (i32, String)> {
+    use super::ask::run::{Bound, Hosts, RunHeld, RunNeed};
+    use crate::sandbox::tools;
+    // The person kept this vault blocked for this chat: nothing here is to open it, whatever was
+    // given before, and they are not asked again.
+    if not_its_vault && missing.run_gate.is_some_and(|gate| gate.kept_blocked) {
+        return Err((1, why));
+    }
+    let persona = asker.persona.as_deref().unwrap_or_default();
+    // A server's start is its harness's, and nobody is there to retry it.
+    if wanted.mcp.is_some() {
+        return Err((1, why));
+    }
+    let plane = crate::sandbox::Plane::read(&asker.root);
+    // A manifest nobody can read may declare this program, so nobody is asked about it.
+    if plane.unreadable() {
+        return Err((1, why));
+    }
+    let locks = crate::sandbox::policy::Locks::of(&asker.root);
+    // Every tool line written for this persona, in force or not: a teammate's is no ask.
+    let (written_lines, _) = tools::declared_and_allowed_here(&asker.root, persona);
+    let listed = written_lines.as_slice();
+    let asked = tools::Asked {
+        vault: &wanted.vault,
+        env: &wanted.env,
+        file: &wanted.file,
+        dotenv: &wanted.dotenv,
+        program: &command[0],
+    };
+    let writes = chat_writes(asker, confines);
+    // A tool's own program, or one a teammate declared, is held as it always was: refused in the
+    // words it always was, with nothing asked. Only a grant the person gave is another matter,
+    // since Always allow declares a program as it grants it.
+    let is_a_tool = tools::is_declared(&confines.tools, listed, &command[0]);
+    let locked = run_grant_locked(asker, wanted, command, &locks);
+    if is_a_tool && (locked.is_some() || tools::limits_its_arguments(listed, &command[0])) {
+        return Err((1, why));
+    }
+    // Policy first (#5243): whatever was given before, nothing runs under a Run grant while it
+    // locks them, and nobody is offered an Allow. A key the command misses can still be stored,
+    // whichever lock holds, for any program that could have been allowed without it.
+    if let Some(locked) = locked {
+        missing
+            .asks
+            .refused_run_by_policy(asker.chat, &command_name(&command[0]), &wanted.vault);
+        let unlocked = crate::sandbox::policy::Locks::none();
+        let may_fill = grantable(asker, persona, &asked, listed, &unlocked, &writes).is_ok();
+        if may_fill && !not_its_vault {
+            fill_what_it_misses(asker, confines, wanted, missing, &locked, say)?;
+        }
+        return Err((1, locked));
+    }
+    let refused = |said: String| {
+        if is_a_tool {
+            (1, why.clone())
+        } else {
+            (1, said)
+        }
+    };
+    let ready = grantable(asker, persona, &asked, listed, &locks, &writes)
+        .map_err(|refused_as| refused(format!("{why} ({refused_as})")))?;
+    // A command its run would refuse is not offered.
+    tools::allows(&ready, &command[1..]).map_err(refused)?;
+    let folder = asker.folder.as_deref().filter(|folder| folder.is_dir());
+    let start_in = wanted
+        .cwd
+        .as_deref()
+        .filter(|cwd| cwd.is_absolute() && cwd.is_dir())
+        .or(folder);
+    if let Some(start_in) = start_in {
+        tools::reads_held_repository(&ready, &command[1..], start_in, &asker.root, &writes)
+            .map_err(refused)?;
+    }
+    let mut env = wanted.env.clone();
+    let mut file = wanted.file.clone();
+    env.sort();
+    file.sort();
+    let bound = Bound {
+        chat: asker.chat,
+        name: command_name(&command[0]),
+        program: ready.program.clone(),
+        vault: wanted.vault.clone(),
+        env,
+        file,
+        cwd: start_in.map(Path::to_path_buf).unwrap_or_default(),
+        args: command[1..].to_vec(),
+    };
+    // A grant for the chat lasts as long as policy leaves a scope it can stand at.
+    use crate::sandbox::grant::Level;
+    if !locks.keeps_scope(Level::Chat)
+        && !locks.keeps_scope(Level::Project)
+        && missing.asks.covers_for_the_chat(&bound)
+    {
+        return Err((
+            1,
+            format!(
+                "Policy removes every scope a program could be allowed at for a chat, so {} needs \
+                 to be declared as a tool of {persona}'s. {}",
+                bound.name,
+                locks.locked_by()
+            ),
+        ));
+    }
+    let took_the_run = || {
+        if let Some(gate) = missing.run_gate {
+            gate.took_it
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+    };
+    if is_a_tool {
+        return if missing.asks.granted(&bound) {
+            took_the_run();
+            Ok(ready)
+        } else {
+            Err((1, why))
+        };
+    }
+    let shown = command_shown(command);
+    // What the person reads must be what runs, so these go unshown. A grant for any arguments was
+    // given without them, and shows nothing.
+    if !missing.asks.covers(&bound) {
+        if shown.chars().count() > MOST_COMMAND_SHOWN {
+            return Err((
+                1,
+                format!(
+                    "{why} (this command is too long to show the person whole, so purlis did not \
+                     ask: shorten it)"
+                ),
+            ));
+        }
+        // A stretch the mask would hide could hide a host.
+        if crate::dispatchrecord::masked(&shown) != shown {
+            return Err((
+                1,
+                "this command holds what reads as a credential, so purlis did not show it to the \
+                 person or run it: hand a credential by --file or --env"
+                    .to_owned(),
+            ));
+        }
+    }
+    let need = RunNeed {
+        bound,
+        not_its_vault,
+        persona: persona.to_owned(),
+        hosts: if confines.level == crate::sandbox::Level::Floor {
+            Hosts::Every
+        } else {
+            Hosts::Listed(confines.decides().hosts())
+        },
+        caution: tools::caution_here(&ready.tool),
+        command: shown,
+    };
+    took_the_run();
+    let held = missing
+        .asks
+        .allowed_or_held(need, missing.within, &mut |line: &str| {
+            (missing.moved)();
+            say(line);
+        });
+    match held {
+        // Policy may have come to lock them while it waited, and a line may have come to make
+        // a key a browser's.
+        RunHeld::Allowed => {
+            if let Some(locked) = run_grant_locked(
+                asker,
+                wanted,
+                command,
+                &crate::sandbox::policy::Locks::of(&asker.root),
+            ) {
+                return Err((1, locked));
+            }
+            let keys: Vec<&str> = ready
+                .tool
+                .values
+                .iter()
+                .map(|value| value.key.as_str())
+                .collect();
+            match no_program_is_handed(&reading_for(asker), &wanted.vault, &keys) {
+                Some(why) => Err((1, why)),
+                None => Ok(ready),
+            }
+        }
+        RunHeld::Refused { line } => Err((1, line)),
+        RunHeld::StillOpen { line } => Err((WAITING_ON_THE_PERSON, line)),
+    }
+}
+
 /// How long the app waits for a chat that is still starting to be recorded as open, before a
 /// brokered run it asked for is refused (qw381).
 ///
@@ -1242,6 +1614,21 @@ pub struct Missing<'a> {
     pub within: Duration,
     /// Told once an ask is raised or joined, so the window lists it.
     pub moved: &'a (dyn Fn() + Sync),
+    /// What the app and the Run grant gate tell each other about this run, where the app raises
+    /// a vault's own ask ([`RunGate`]).
+    pub run_gate: Option<&'a RunGate>,
+}
+
+/// **The Run grant gate and the vault's own ask, for one run** (ADR 0112): one run raises one ask.
+#[derive(Debug, Default)]
+pub struct RunGate {
+    /// Set when the gate takes the run: a grant covers it, the person's Don't allow stands, or it
+    /// goes to be asked about, which a chat with too many asks open tries again. Whichever, the
+    /// app raises no vault ask beside it.
+    pub took_it: std::sync::atomic::AtomicBool,
+    /// Whether the person kept this vault blocked for this chat: the gate offers nothing that
+    /// would open it, so a later command can't bring the question back.
+    pub kept_blocked: bool,
 }
 
 impl Missing<'_> {
@@ -1469,6 +1856,20 @@ pub fn fill_value(
     let Some(value) = read_for_fill(asker, vault, key)? else {
         return Ok(None);
     };
+    goes_into_a_page(asker, &value, vault, key)?;
+    Ok(Some(value))
+}
+
+/// **The rules for a value that goes into a page**, a fill's and a login's alike (#5272): no private
+/// key, no authenticator's address whatever the person's mark says, and nothing taken as a 2FA seed
+/// by its look unless the person marked this value as no seed. Why not, in words that hold none of
+/// it.
+fn goes_into_a_page(
+    asker: &Asker,
+    value: &purlis_session_protocol::browsing::Secret,
+    vault: &str,
+    key: &str,
+) -> Result<(), String> {
     if crate::sandbox::tools::mint::a_private_key(value.expose()) {
         return Err(format!(
             "{key} in vault '{vault}' is a private key, so purlis filled nothing"
@@ -1476,7 +1877,7 @@ pub fn fill_value(
     }
     // The next step, said only where it would work.
     let code = if super::totp::Seed::parse(value.expose()).is_ok() {
-        "Call browser_fill_secret again with `code` to fill the code it makes"
+        "Call browser_fill_secret with `code` to fill the code it makes"
     } else {
         "purlis can't make a code from this value either"
     };
@@ -1492,7 +1893,7 @@ pub fn fill_value(
         let place = "in the window, open the vault's tab and open the menu on this key's row, or \
                      on the row of the entry it reads if it is linked, and choose";
         let then = match super::no_seed::of(&reading_for(asker), vault, key, value.expose()) {
-            super::no_seed::Mark::Holds => return Ok(Some(value)),
+            super::no_seed::Mark::Holds => return Ok(()),
             super::no_seed::Mark::None => format!(
                 "If its value is no seed, ask the person to mark it: {place} {}",
                 super::no_seed::MARK_WORDS
@@ -1509,7 +1910,7 @@ pub fn fill_value(
              never goes into a page. {code}. A chat can't make this mark. {then}"
         ));
     }
-    Ok(Some(value))
+    Ok(())
 }
 
 /// **The 2FA code the seed under `key` in `vault` makes now, for a fill the person allowed**
@@ -1607,6 +2008,7 @@ fn read_login(
             .map(|need| need.purpose),
             names_no_vault: false,
             reason: super::ask::Reason::broken(ctx, vault, key),
+            no_allow: None,
         };
         missing
             .read_asking(need, &mut once)
@@ -1619,13 +2021,11 @@ fn read_login(
     let identity = identity_of_ready(asker, name, ready)?;
     let user = user_key.map(read).transpose()?;
     let password = read(pass_key)?;
-    // The `mint` mark is by a name in a vault, and one item may have two: no private key is filled
-    // on a page, whoever declared it, and Always may have saved the line that names it.
-    if std::iter::once(&password)
-        .chain(user.as_ref())
-        .any(|value| crate::sandbox::tools::mint::a_private_key(value.expose()))
-    {
-        return Err(format!("{name} is a private key, so purlis filled nothing"));
+    // A login's values follow a fill's rules (#5272), whoever declared it: the `mint` mark is by a
+    // name in a vault, and one item may have two, and Always may have saved the line that names it.
+    goes_into_a_page(asker, &password, vault, pass_key)?;
+    if let (Some(user), Some(user_key)) = (&user, user_key) {
+        goes_into_a_page(asker, user, vault, user_key)?;
     }
     Ok((
         LogIn {
@@ -2372,12 +2772,13 @@ pub(crate) fn serve_recorded(
     // from there (#1516).
     let ctx = ctx.chat(confines, asker.folder.as_deref());
     // Values its desktop sent were authorised there, where the vault is (#2047): a runner holds
-    // no vault to authorise against.
-    if handed.is_none()
-        && let Err(why) = authorise(&ctx, asker.persona.as_deref(), &wanted.vault)
-    {
-        return refuse(&mut *writer, 1, why);
-    }
+    // no vault to authorise against. A vault the persona may not use may yet be opened by a Run
+    // grant, for that grant's scope alone: judged once the command is, below.
+    let vault_refused = if handed.is_none() {
+        authorise(&ctx, asker.persona.as_deref(), &wanted.vault).err()
+    } else {
+        None
+    };
     // A sandboxed chat runs only its persona's declared tools with a vault (D-PE-ruling-2, the
     // operator's ruling of 2026-10-12): exactly a tool its start armed, allowed on this machine,
     // with that tool's vault and hand-over. The run is of the tool's own program, by the
@@ -2395,7 +2796,7 @@ pub(crate) fn serve_recorded(
     // [`crate::sandbox::tools::a_run_starts_from`]'s: those its approved entry sets, with the
     // values the person approved (#3441).
     let mut its_entry_sets: Vec<(String, String)> = Vec::new();
-    match crate::sandbox::tools::declared(
+    let declared = crate::sandbox::tools::declared(
         &confines.tools,
         &listed,
         persona,
@@ -2406,14 +2807,64 @@ pub(crate) fn serve_recorded(
             dotenv: &wanted.dotenv,
             program: &command[0],
         },
-    ) {
+    );
+    // Only a run a person can allow gets past a vault its persona may not use: never a declared
+    // tool's or a server's, and never where policy locks a vault to its persona (ADR 0112).
+    if let Some(why) = &vault_refused
+        && (declared.is_ok()
+            || missing.is_none()
+            || wanted.mcp.is_some()
+            || not_tagged(&ctx, asker.persona.as_deref(), &wanted.vault).is_none()
+            || crate::sandbox::policy::Locks::of(&asker.root).forbids_vault_grants()
+            || an_approved_server(&asker.root, persona, &wanted, &command).is_some())
+    {
+        return refuse(&mut *writer, 1, why.clone());
+    }
+    let armed_as_a_tool = declared.is_ok();
+    let its_tool = match declared {
         // A browser login is purlis's to perform in the chat's own browser (#2016): run as a
         // command, it runs nothing.
         Ok(ready) if ready.tool.login.is_some() => {
             return refuse(&mut *writer, 2, login_by_the_browser_tool(&ready.tool.name));
         }
         // Any other tool, its own program.
-        Ok(ready) => match crate::sandbox::tools::run_words(ready, &command[1..]) {
+        Ok(ready) => Some(ready.clone()),
+        // A persona's credentialed MCP server this machine approved, started by the chat's
+        // harness, asks for its line as approved: the person's consent, as an Allow is.
+        Err(why) => match an_approved_server(&asker.root, persona, &wanted, &command) {
+            Some(sets) => {
+                its_entry_sets = sets;
+                None
+            }
+            // No tool: the person may allow this program, here and now (ADR 0112, #5239), where
+            // somebody is there to be asked. A runner's values were sent for a tool it declared.
+            None => match missing.filter(|_| handed.is_none()) {
+                None => return refuse(&mut *writer, 1, why),
+                Some(missing) => {
+                    let mut say = |line: &str| {
+                        let _ = send(&mut *writer, &Frame::Note(line.to_owned()));
+                    };
+                    let not_its_vault = vault_refused.is_some();
+                    let why = vault_refused.clone().unwrap_or(why);
+                    match run_granted(
+                        asker,
+                        confines,
+                        &wanted,
+                        &command,
+                        missing,
+                        not_its_vault,
+                        why,
+                        &mut say,
+                    ) {
+                        Ok(ready) => Some(ready),
+                        Err((code, why)) => return refuse(&mut *writer, code, why),
+                    }
+                }
+            },
+        },
+    };
+    if let Some(ready) = &its_tool {
+        match crate::sandbox::tools::run_words(ready, &command[1..]) {
             Ok(words) => {
                 declared_as = ready.argv0().map(str::to_owned);
                 minting = ready.tool.mint.is_some().then(|| ready.tool.clone());
@@ -2422,14 +2873,19 @@ pub(crate) fn serve_recorded(
                 forge_env = crate::sandbox::tools::forge_env(ready);
             }
             Err(why) => return refuse(&mut *writer, 1, why),
-        },
-        // A persona's credentialed MCP server this machine approved, started by the chat's
-        // harness, asks for its line as approved: the person's consent, as an Allow is.
-        Err(why) => match an_approved_server(&asker.root, persona, &wanted, &command) {
-            Some(sets) => its_entry_sets = sets,
-            None => return refuse(&mut *writer, 1, why),
-        },
+        }
     }
+    // A person allowed what they read, and a chat's stdin is not in that: a run under a grant has
+    // none. A program told to read its settings from there reads nothing.
+    let under_a_grant = its_tool.is_some() && !armed_as_a_tool;
+    // What policy is asked about again, should the run wait on a key: only its keys are read.
+    let locked_since = under_a_grant.then(|| Wanted {
+        env: wanted.env.clone(),
+        file: wanted.file.clone(),
+        ..Wanted::default()
+    });
+    // A vault opened by a Run grant is read, never filled: storing in it is its persona's.
+    let missing = missing.filter(|_| vault_refused.is_none());
     // At most a few at once per chat: each holds a proxy, a temp directory and a process group.
     let Some(_slot) = Slot::take(&asker.root, asker.chat) else {
         return refuse(
@@ -2541,12 +2997,19 @@ pub(crate) fn serve_recorded(
     // A name is judged as it reads, with any byte that is not UTF-8 replaced, so one is never
     // let through for not spelling the name it is judged by.
     // An approved value is held to the same names a chat's is ([`may_hand_on`]).
+    // Under a grant, where it connects and whom it trusts is what the command says, which the
+    // person read ([`crate::sandbox::tools::a_granted_run_starts_from`]).
+    let starts_from = if under_a_grant {
+        crate::sandbox::tools::a_granted_run_starts_from
+    } else {
+        crate::sandbox::tools::a_run_starts_from
+    };
     let mut base: Vec<(OsString, OsString)> = wanted
         .environment
         .into_iter()
         .filter(|(k, _)| {
             let k = k.to_string_lossy();
-            may_hand_on(&k) && crate::sandbox::tools::a_run_starts_from(&k)
+            may_hand_on(&k) && starts_from(&k)
         })
         .collect();
     for (k, v) in its_entry_sets.into_iter().filter(|(k, _)| may_hand_on(k)) {
@@ -2706,6 +3169,7 @@ pub(crate) fn serve_recorded(
                         .map(|need| need.purpose),
                     names_no_vault: false,
                     reason: super::ask::Reason::broken(&ctx, &wanted.vault, &key),
+                    no_allow: None,
                 };
                 let held = missing.asks.hold(need, missing.within, &mut |line: &str| {
                     (missing.moved)();
@@ -2715,6 +3179,25 @@ pub(crate) fn serve_recorded(
                     super::ask::Held::Filled { vault, key: stored }
                         if vault == wanted.vault && stored == key =>
                     {
+                        // Policy may have come to lock them while it waited, and the value that
+                        // was stored stays stored.
+                        if let Some(locked) = locked_since.as_ref().and_then(|keys| {
+                            run_grant_locked(
+                                asker,
+                                keys,
+                                &command,
+                                &crate::sandbox::policy::Locks::of(&asker.root),
+                            )
+                        }) {
+                            return refuse(&mut *writer, 1, locked);
+                        }
+                        // The person may have filled it with an entry they keep, as a link: one
+                        // a browser login fills is no granted program's either.
+                        if under_a_grant
+                            && let Some(why) = no_program_is_handed(&ctx, &wanted.vault, &[&key])
+                        {
+                            return refuse(&mut *writer, 1, why);
+                        }
                         filled.push(key);
                     }
                     // Stored where this run does not read it: said, so the chat runs it again
@@ -2887,7 +3370,7 @@ pub(crate) fn serve_recorded(
         .current_dir(start_in)
         .env_clear()
         .envs(start_with.0.iter().map(|(k, v)| (k, v)))
-        .stdin(if wanted.stdin {
+        .stdin(if wanted.stdin && !under_a_grant {
             std::process::Stdio::piped()
         } else {
             std::process::Stdio::null()

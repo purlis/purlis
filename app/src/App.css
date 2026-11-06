@@ -810,9 +810,9 @@ body {
 
 /* **The find bar** (SI-4, `app/src/FindBar.tsx`): what `⌘F` opens over the focused pane. A
    sibling of the terminal like the corners, positioned against the same frame — and under the
-   end corner rather than in it, so the pane's own controls, which appear there on hover, never
-   land on top of the field being typed into. It is drawn only while open, and it is where the
-   keyboard is while it is, so it is always visible and never takes the corners' hover rule. */
+   end corner rather than in it, so the pane's own controls, which are there, never land on top
+   of the field being typed into. It is drawn only while open, and it is where the keyboard is
+   while it is. */
 .pane-find {
   position: absolute;
   top: var(--space-8);
@@ -1720,21 +1720,12 @@ body {
   height: 0.75rem;
 }
 
-/* **A tab wears its focused pane's chat's combined icon** (#4762, `chatPersona.css`): the tab's
-   own marks, its persona's or its shell's at the strip's mark size, with its state's mark on the
-   lower end corner, as the sidebar wears it. A chat with no persona wears the state mark alone,
-   where it stands. */
+/* **A tab wears its focused pane's chat's mark** (#4762, #5340, `ui/chat-mark`): the one its row
+   wears, at the strip's mark size. */
 .tabs .tab {
   /* Equal shares of the row up to 230px each (ADR 0039, amended 2026-11-02). */
   --most: calc(230rem / 14);
-  --chat-persona-size: var(--space-6);
-}
-
-.tabs .tab-persona > .state-dot:not(:only-child) {
-  position: absolute;
-  inset-block-end: calc(-1 * var(--space-1));
-  inset-inline-end: calc(-1 * var(--space-1));
-  margin: 0;
+  --chat-mark-size: var(--space-6);
 }
 
 /* **`⊟+N`, a split's other panes** (#4762): after the name, and never cut. The name gives way
@@ -2108,32 +2099,14 @@ body {
 }
 
 /* **A pane's own controls, in its top right corner** — the operator: *"harnesses panes should
-   each have close button and spliting buttons in pane right top corner — and its visible when
-   hovering harness only … buttons should not have texts — only tooltips on hovering"*. They
-   replace `Split right`, `Split down` and `End this pane's chat` on the bar, which all acted
-   on the focused pane and gave no sign of which that was.
+   each have close button and spliting buttons in pane right top corner … buttons should not have
+   texts — only tooltips on hovering"*. They replace `Split right`, `Split down` and `End this
+   pane's chat` on the bar, which all acted on the focused pane and gave no sign of which that was.
 
-   **`visibility` and not `opacity`, which is the whole of the accessibility of this.** An
-   `opacity: 0` button is still under the pointer and still in the tab order: a stray press on
-   an invisible `End this pane's chat` is the defect charter-app#130 was about, made invisible.
-   `visibility: hidden` takes it out of hit-testing, out of the tab order and out of the
-   accessibility tree — so a hidden control cannot be pressed by accident or found by a reader
-   that cannot see it either.
-
-   **Drawn on hover, and while the keyboard is ON them — not while it is merely in the pane**
-   (charter-app#189). The operator asked for them *"visible when hovering harness only"* and
-   objected to that corner being cluttered; the focused pane is the one he is typing in, so a
-   rule that drew them for the focused pane, or whenever the terminal had the keyboard
-   (`.pane-frame:focus-within`, which is what was here before), drew them all day.
-
-   **But a keyboard has to be able to reach them**, and `visibility: hidden` is out of the tab
-   sequence. So the FOCUSED pane's controls are hidden by `opacity` instead: still in the
-   sequence — they are written before the terminal, so Tab from the strip arrives at them — but
-   not seen and not clickable (`pointer-events: none`, so a stray press cannot end a chat it
-   cannot see). The moment one has the keyboard, `.pane-doing:focus-within` draws the group;
-   leave it and it goes again. Every other pane's controls stay `visibility: hidden`: the
-   palette and the buttons act on the focused pane, so those are the only ones a keyboard
-   needs. */
+   **Always drawn** (#5318, the person's ask of 2026-11-05, ADR 0111): nothing appears or moves as
+   the pointer comes or the keyboard goes by, and every pane's are in the tab sequence, written
+   before its terminal so Tab from the strip arrives at them. They were once drawn only under the
+   pointer or the keyboard (charter-app#189). */
 .pane-doing {
   display: flex;
   gap: var(--space-1);
@@ -2141,18 +2114,6 @@ body {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   background: var(--surface-raised);
-  visibility: hidden;
-}
-
-.pane-frame:hover .pane-doing,
-.pane-doing:focus-within {
-  visibility: visible;
-}
-
-.pane-frame:has(.pane.focused):not(:hover) .pane-doing:not(:focus-within) {
-  visibility: visible;
-  opacity: 0;
-  pointer-events: none;
 }
 
 /* The handle between two panes: thin, and easier to hit than it looks. Its box, which straddles
@@ -3303,6 +3264,13 @@ body {
   padding-inline-start: var(--space-4);
 }
 
+/* What the Inbox is still reading (#5325): its mark beside its words. */
+.inbox-notices .pending {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
 /* **A section's title, on either side of the window** — the side panels' sections and the
    Explorer's own: the panel family's (`ui/panel/panel.css`) draws it. It sits with no margin of
    its own, and a view that places one gives it its own (`.explorer h2`, `.inbox-chain`). */
@@ -3519,19 +3487,19 @@ body {
    cross, the triangle. A chat at rest (done, idle, reported, stopped or closed) wears none, so no
    grey mark stands for seven states; its state is still the row's word to a screen reader and
    its tooltip's. */
-.chats-section .chat-persona {
+.chats-section [data-scope="chat-mark"][data-part="root"] {
   /* The ground the badge is ringed in: the row's, at rest, under the pointer, chosen. */
-  --chat-badge-ground: var(--panel-fill);
+  --chat-mark-ground: var(--panel-fill);
 }
 
-.chats-section .chat:hover .chat-persona {
-  --chat-badge-ground: var(--surface-hover);
+.chats-section .chat:hover [data-scope="chat-mark"][data-part="root"] {
+  --chat-mark-ground: var(--surface-hover);
 }
 
 .chats-section
   .chat:is([aria-selected="true"], [aria-current]:not([aria-current="false"]))
-  .chat-persona {
-  --chat-badge-ground: var(--list-selected);
+  [data-scope="chat-mark"][data-part="root"] {
+  --chat-mark-ground: var(--list-selected);
 }
 
 /* **A chat on screen in another pane of this tab** (#4757; the faint on-screen bar accepted on
@@ -3545,9 +3513,9 @@ body {
   box-shadow: inset -1px 0 0 var(--list-selected-edge);
 }
 
-/* The icon's look is `chatPersona.css`'s (#4762): the row sets only its size and its grounds. */
+/* The mark's look is its family's (`ui/chat-mark`): the row sets only its size and its grounds. */
 .chats-section {
-  --chat-persona-size: var(--chats-mark);
+  --chat-mark-size: var(--chats-mark);
 }
 
 /* **A finished row says how it ended by its mark** (#1687, as a chat's row does, #1675): the
@@ -4225,58 +4193,6 @@ body {
   margin: 0 0 var(--space-5);
   font-size: var(--font-size-sm);
   opacity: 0.8;
-}
-
-/* What a chat is doing. A mark, plus a shape per state: colour alone is no state at all to
-   anyone who cannot see it, and the accessible name carries the word either way. */
-.state {
-  display: inline-block;
-  width: 0.6rem;
-  height: 0.6rem;
-  margin-inline-start: var(--space-3);
-  border-radius: 50%;
-  vertical-align: middle;
-  flex: none;
-}
-/* **The state's dot on a tab's icon** (#4762): the mark's shape, seen and not heard. */
-.state-dot {
-  display: inline-block;
-  width: 0.6rem;
-  height: 0.6rem;
-  margin-inline-start: var(--space-3);
-  border-radius: 50%;
-  vertical-align: middle;
-  flex: none;
-}
-/* **Dimmed in the colour, and a ring drawn solid** (#891). A mark is drawn once per chat, on its
-   tab and on its explorer row, and a project can hold fifty. An `opacity` below 1 gives each its
-   own transparency layer and a dashed round border is stroked dash by dash; on a software-rendered
-   WebView fifty of them were most of what the first switch into such a project cost. Unknown is
-   a ring broken into two arcs, so it is still told from done's whole ring by its shape. The plain
-   colour first, for a WebView without `color-mix`. */
-.state-unknown {
-  border: 1px solid;
-  border-color: currentcolor transparent;
-  border-color: color-mix(in srgb, currentcolor 50%, transparent) transparent;
-  background: none;
-}
-.state-running {
-  background: var(--state-running);
-}
-.state-waiting {
-  background: var(--state-waiting);
-  /* A ring, so waiting is told from running without colour. */
-  box-shadow: 0 0 0 2px var(--state-waiting-glow);
-}
-.state-done {
-  background: none;
-  border: 1px solid;
-  border-color: currentcolor;
-  border-color: color-mix(in srgb, currentcolor 45%, transparent);
-}
-.state-failed {
-  background: var(--state-failed);
-  border-radius: var(--radius-sm);
 }
 
 /* **A chat's state on a row: its mark, then its word** (#1484). Each state has a shape of its
@@ -6921,35 +6837,6 @@ nav.piece-files-head {
   --arrive-from: -0.25rem 0;
 }
 
-/* **A chat's state mark changing.** Its colour, its shape and its ring morph into the new state
-   over `settle` rather than cutting — a transition, so it only ever runs on a change and never
-   on a tab being drawn. */
-.state {
-  transition-property: background-color, border-color, border-radius, box-shadow, opacity;
-  transition-duration: var(--motion-duration-settle);
-  transition-timing-function: var(--motion-easing-standard);
-}
-.state-dot {
-  transition-property: background-color, border-color, border-radius, box-shadow, opacity;
-  transition-duration: var(--motion-duration-settle);
-  transition-timing-function: var(--motion-easing-standard);
-}
-
-/* **And a chat that has just started waiting on you knocks twice.** The ring swells and settles
-   back: the one signal this app exists for, arriving, is the one mark allowed to ask for the
-   eye. Only on the change (`ChatState`'s `arrived`) — a strip of chats that were already
-   waiting when it was drawn does not pulse, and a waiting chat never pulses again until it has
-   run and stopped. */
-@keyframes charter-call {
-  50% {
-    box-shadow: 0 0 0 5px var(--state-waiting-glow);
-  }
-}
-
-.state-waiting.arrived {
-  animation: charter-call var(--motion-duration-settle) var(--motion-easing-standard) 2;
-}
-
 /* The same knock on a row of a list (#1484), where the mark is the hand and has no ring to
    swell: the hand itself does, twice, and only on the change (`StateShown`'s `arrived`). */
 @keyframes charter-knock {
@@ -8310,6 +8197,15 @@ nav.piece-files-head {
 }
 
 /* The Library's search box and chips, under its lead line, wrapping where the list is narrow. */
+/* Skills deleted together (#5331): set in under their group's row, and apart from what follows. */
+.skill-deleted-set {
+  margin-block-end: var(--space-3);
+}
+
+.skill-deleted-member {
+  margin-inline-start: var(--space-4);
+}
+
 .skill-library-tools {
   display: flex;
   flex-wrap: wrap;
@@ -8326,6 +8222,14 @@ nav.piece-files-head {
   flex-direction: column;
   gap: var(--space-4);
   padding: var(--space-4) var(--space-6);
+}
+
+/* **The Library's Select mode's page** (#5332, `prototype/library-select` variant B): each list
+   of names chosen under its heading, the names wrapping as they need. */
+.skill-select-names {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }
 
 /* **A skill's page** (#3682): each tab's panel under the page tabs, and its Text as it is now,
@@ -8625,10 +8529,50 @@ nav.piece-files-head {
   white-space: nowrap;
 }
 
+/* **A program's skill budget** (#5353): its table's number over its reset, and what a typed one
+   would cost. Places them; the table, the buttons and the words draw themselves. */
+.skill-budget {
+  margin-block-start: var(--space-3);
+}
+
+.skill-budget-number {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  white-space: normal;
+}
+
+/* Each button as wide as its words, under its number, stacked or not. */
+.skill-budget-press {
+  align-self: flex-start;
+  inline-size: fit-content;
+}
+
+/* The grid's arrows land on Change…'s cell too, so that is a target as well: this keeps 24 CSS px of
+   it clear above the button where the table stacks, the family's own query (WCAG 2.5.8). */
+@container table-frame (max-width: 32rem) {
+  .skill-budget-change-press {
+    margin-block-start: var(--space-7);
+  }
+}
+
+.skill-budget-cost {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-block-size: 8lh;
+}
+
+.skill-budget-cost > p {
+  margin: 0;
+}
+
 /* The chat's budget and how its router did at its start, under whose skills (S8, #3694): what
    Use skill… used to say above its list, said once, here. */
 .skills-view-said {
-  margin: 0;
+  /* Room under the budget's link: it is the line's height, so its target is its clear space. */
+  margin: 0 0 var(--space-2);
   font-size: var(--font-size-xs);
   color: var(--text-secondary);
 }

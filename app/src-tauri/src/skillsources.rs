@@ -75,7 +75,7 @@ impl From<&Remote> for SourceRemote {
 }
 
 impl SourceRemote {
-    fn core(&self) -> Remote {
+    pub(crate) fn core(&self) -> Remote {
         Remote {
             url: self.url.trim().to_owned(),
             branch: self.branch.clone().filter(|b| !b.trim().is_empty()),

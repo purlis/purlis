@@ -64,6 +64,8 @@ function core({ alsoHolds }: { alsoHolds?: string } = {}) {
   const kept: { key: string; kind: string; read: boolean }[] = [];
   /** What the asks registry lists. */
   const asks: unknown[] = [];
+  /** The MCP servers each chat could not start, as the core keeps them. */
+  const failed: Record<number, unknown[]> = {};
   mockIPC((cmd, args) => {
     const given = (args ?? {}) as Record<string, unknown>;
     if (cmd === "plugin:event|listen") {
@@ -114,6 +116,7 @@ function core({ alsoHolds }: { alsoHolds?: string } = {}) {
     }
     if (cmd === "inbox_updates") return kept;
     if (cmd === "asks_waiting") return { plane: PLANE, asks, with_asking_chat: [] };
+    if (cmd === "mcp_failures") return failed[given.session as number] ?? [];
     if (cmd === "chat_states") return [];
     if (cmd === "chats_that_would_not_start") return [];
     if (cmd === "running_sessions") return [];
@@ -250,7 +253,39 @@ function core({ alsoHolds }: { alsoHolds?: string } = {}) {
         ).__TAURI_INTERNALS__.runCallback(handler, { event, id: 1, payload });
     });
   };
-  return { arrive, kept, laidOut, waitsInItsTerminal };
+  /** The core says what chat `session`'s sandbox blocked, which nothing here can allow. */
+  const blocked = (session: number) => {
+    act(() => {
+      for (const handler of listeners.get("chat-sandbox-blocked") ?? [])
+        (
+          window as unknown as {
+            __TAURI_INTERNALS__: { runCallback: (id: number, payload: unknown) => void };
+          }
+        ).__TAURI_INTERNALS__.runCallback(handler, {
+          event: "chat-sandbox-blocked",
+          id: 1,
+          payload: {
+            plane: PLANE,
+            session,
+            operation: "write",
+            kind: "path",
+            ours: false,
+            harness: "claude",
+            said: "a write to a path outside its folders",
+            offer: "none",
+            target: null,
+            levels: [],
+            route: "",
+            choose: null,
+          },
+        });
+    });
+  };
+  /** The core holds that chat `session`'s MCP server `server` could not start. */
+  const mcpFails = (session: number, server: string) => {
+    failed[session] = [{ plane: PLANE, session, server, persona: null, error: "exit 1" }];
+  };
+  return { arrive, blocked, kept, laidOut, mcpFails, waitsInItsTerminal };
 }
 
 const opened = () =>
@@ -436,9 +471,75 @@ describe("an ask from a chat in no pane (#4759)", () => {
     const hand = await screen.findByTestId("needs-you-button", undefined, { timeout: 5000 });
     expect(screen.getByTestId("pane")).toHaveTextContent("session 1");
     await userEvent.click(hand);
-    const go = await screen.findByRole("button", { name: /^Go to chat/ });
+    const go = await screen.findByRole("button", { name: "Go to chat 2" });
     await userEvent.click(go);
 
+    await waitFor(() => expect(screen.getByTestId("pane")).toHaveTextContent("session 2"));
+  });
+});
+
+describe("what the Notices centre says of a chat in no pane (#5217)", () => {
+  it("is a card: whose it is, its state, Go to chat, a ×, and Retry its one primary", async () => {
+    const { arrive, mcpFails } = core();
+    mcpFails(2, "github");
+    opened();
+    await ready();
+    arrive({ session: 2, label: "fix the login" });
+
+    const said = await screen.findByText(/could not start, twice/, undefined, { timeout: 5000 });
+    const card = said.closest('[data-scope="notice"][data-part="root"]') as HTMLElement;
+    const head = card.querySelector('[data-part="head"]') as HTMLElement;
+    expect(head).toHaveTextContent("Problem");
+    expect(head).not.toHaveTextContent("could not start");
+    expect(within(head).getByRole("button", { name: /^Go to chat/ })).toHaveAttribute(
+      "data-variant",
+      "quiet-link",
+    );
+    within(head).getByRole("button", { name: "Dismiss" });
+    expect(within(card).getByRole("button", { name: "Retry" })).toHaveAttribute(
+      "data-variant",
+      "primary",
+    );
+    expect(card.querySelectorAll('[data-variant="primary"]')).toHaveLength(1);
+
+    // Go to chat shows it, and what it had to say goes to its band.
+    await userEvent.click(within(head).getByRole("button", { name: /^Go to chat/ }));
+    await waitFor(() => expect(screen.getByTestId("pane")).toHaveTextContent("session 2"));
+  });
+
+  it("keeps a sandbox block's full waiting edge, and says it waits only if it can be answered", async () => {
+    const { arrive, blocked } = core();
+    opened();
+    await ready();
+    arrive({ session: 2, label: "fix the login" });
+
+    blocked(2);
+
+    const said = await screen.findByText(/The sandbox blocked a write/, undefined, {
+      timeout: 5000,
+    });
+    const card = said.closest('[data-scope="notice"][data-part="root"]') as HTMLElement;
+    expect(card).toHaveAttribute("data-consent");
+    expect(card.querySelector('[data-part="sub"]')).toHaveTextContent(/^Problem/);
+    expect(card.querySelector('[data-variant="primary"]')).toBeNull();
+    within(card.querySelector('[data-part="head"]') as HTMLElement).getByRole("button", {
+      name: /^Go to chat/,
+    });
+  });
+
+  it("keeps an arrival among its Results, with Go to chat a quiet link in its head", async () => {
+    const { arrive } = core();
+    opened();
+    await ready();
+    arrive({ session: 2, label: "fix the login" });
+
+    const results = await screen.findByRole("region", { name: "Results" }, { timeout: 5000 });
+    const go = within(results).getByRole("button", { name: "Go to chat" });
+    expect(go).toHaveAttribute("data-variant", "quiet-link");
+    expect(go.closest('[data-part="head"]')).not.toBeNull();
+    expect(results.querySelector('[data-variant="primary"]')).toBeNull();
+
+    await userEvent.click(go);
     await waitFor(() => expect(screen.getByTestId("pane")).toHaveTextContent("session 2"));
   });
 });

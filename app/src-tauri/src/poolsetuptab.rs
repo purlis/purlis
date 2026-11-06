@@ -412,13 +412,16 @@ pub async fn pool_setup_sign_ins_by_hand(
     taking_off: Vec<String>,
     signing_in: Vec<String>,
 ) -> Result<Option<PoolSetupSee>, String> {
+    use purlis_core::poolsetup::signins;
+    let names_none = purlis_core::machine::config_root()
+        .is_some_and(|config| signins::names_none(&config, &pool));
     Ok(
-        purlis_core::poolsetup::signins::by_hand(&pool, &adding, &taking_off, &signing_in).map(
-            |see| PoolSetupSee {
+        signins::by_hand(&pool, &adding, &taking_off, &signing_in, names_none).map(|see| {
+            PoolSetupSee {
                 note: see.note,
                 text: see.text,
-            },
-        ),
+            }
+        }),
     )
 }
 

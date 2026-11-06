@@ -65,7 +65,7 @@ fn a_plane_not_yet_migrated_keeps_charters_merge_rules_block_byte_for_byte() {
 
     assert!(ensure_gitattributes(&path).unwrap(), "the stale rules");
     let now = std::fs::read_to_string(&path).unwrap();
-    let block = merge_rules_block(dir.path());
+    let block = merge_rules_block(dir.path(), &[]);
     assert!(block.starts_with(MERGE_RULES_BEGIN), "{block}");
     assert_eq!(now, format!("*.png binary\n{block}\n*.pdf binary\n"));
     assert!(!now.contains("purlis"), "{now}");
@@ -98,7 +98,7 @@ fn a_migrated_plane_rewrites_charters_merge_rules_block_in_place_under_the_purli
         now,
         format!(
             "*.png binary\n{}\n*.pdf binary\n",
-            merge_rules_block(dir.path())
+            merge_rules_block(dir.path(), &[])
         ),
         "rewritten where it stood"
     );
@@ -134,4 +134,34 @@ fn a_half_block_somebody_edited_is_left_as_it_is_and_the_rules_are_written_once(
         );
         assert_eq!(std::fs::read_to_string(&path).unwrap(), once);
     }
+}
+
+/// **A save never takes back a newer build's rule** (#5338 review): a save rewrites the block to
+/// this build's rules and keeps one it does not write, so machines on two builds do not write the
+/// file back and forth. `init` and `reinit` still drop a rule no build writes.
+#[test]
+fn a_saves_refresh_keeps_a_rule_a_newer_build_added_and_init_drops_it() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("charter.toml"), "").unwrap();
+    let path = dir.path().join(".gitattributes");
+    std::fs::write(&path, CHARTERS_ATTRIBUTES).unwrap();
+
+    assert!(
+        refresh_gitattributes(&path).unwrap(),
+        "this build's rules added"
+    );
+    let now = std::fs::read_to_string(&path).unwrap();
+    assert!(now.contains("old.jsonl merge=union\n"), "{now}");
+    assert!(
+        now.contains("workspaces/*/sessions/index.md merge=union\n"),
+        "{now}"
+    );
+    assert!(
+        !refresh_gitattributes(&path).unwrap(),
+        "a second save writes nothing"
+    );
+
+    assert!(ensure_gitattributes(&path).unwrap());
+    let init = std::fs::read_to_string(&path).unwrap();
+    assert!(!init.contains("old.jsonl"), "{init}");
 }

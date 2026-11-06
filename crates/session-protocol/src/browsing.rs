@@ -487,8 +487,8 @@ pub struct LogIn {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity: Option<String>,
     /// **A chat chose this page and these keys** (#4595): a user name goes only into a field
-    /// that says it's one, or beside a password field, and from 1.73 (#5121) the login starts
-    /// clean on its own site. It isn't sent to a host before 1.73.
+    /// that says it's one, or beside a password field. Every login starts clean on its own site
+    /// from 1.75 (#5272), whoever chose it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub suggested: bool,
     /// **The origin of the login's form, where it isn't the page's own** (1.70, #4995): the one
@@ -510,6 +510,12 @@ pub struct KeptLogin {
     pub login: String,
     pub identity: String,
     pub address: String,
+    /// **The origin its form is on, where that's another site than its page's** (1.76, #5167): a
+    /// browser opened from it reaches that site from its start, as one logged in afresh does, its
+    /// pages kept from the agent outside a sign-in. A host before 1.76 holds such a browser to its
+    /// page's site alone until a login signs in there again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub form: Option<String>,
 }
 
 /// **The origin of `address`** (1.35, #2300): `scheme://host[:port]`, lower-cased, for an http

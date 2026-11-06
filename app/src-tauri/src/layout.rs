@@ -195,8 +195,10 @@ pub(crate) fn window_layout(
     };
     held.chats().lay_out_window(number, layout.into())?;
     seen_on_screen(&held);
-    // A tab window whose last tab the person closed goes with it.
+    // A tab window whose last tab the person closed goes with it. What it shows now is the other
+    // windows' to know, for a chat's notes (#5225).
     if number != 0 {
+        crate::tabwindows::tell_reported(&app, &plane, &held);
         crate::tabwindows::close_unnamed(&app, &plane, &held);
     }
     // A reported task that was held because the person was reading it is looked at again, as

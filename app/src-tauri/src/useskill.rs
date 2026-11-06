@@ -127,6 +127,9 @@ pub struct SkillBudget {
     /// Manual-only skills in the set, which cost nothing: every harness keeps them out of its
     /// listing (SK-8).
     pub manual: u32,
+    /// The workspace the chat works in, `None` at the project's root: whose numbers a link from
+    /// here changes (#5353).
+    pub workspace: Option<String>,
     /// The most skills the budget lists.
     pub most_skills: u32,
     /// The most characters it holds.
@@ -373,6 +376,7 @@ pub(crate) fn shown(skills: Option<&purlis_core::skills::ChatSkills>) -> ChatSki
             manual: small(spent.manual),
             most_skills: small(spent.budget.skills),
             most_chars: small(spent.budget.chars),
+            workspace: skills.workspace.clone(),
             warns: spent.warns().map(BudgetWarns::from),
             hidden: small(
                 skills

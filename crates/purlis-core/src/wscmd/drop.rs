@@ -39,9 +39,9 @@ pub fn drop_repo(root: &Path, ws: &str, repo: &str, say: Sink) -> Removal {
             refused_over: Vec::new(),
         }
     };
-    let Some(dir) = wscmd::workspace_dir(root, ws) else {
+    if wscmd::workspace_dir(root, ws).is_none() {
         return fail(say, format!("invalid workspace name '{ws}'"));
-    };
+    }
     if !wscmd::workspace_dir_exists(root, ws) {
         return fail(say, format!("no workspace '{ws}'"));
     }
@@ -51,7 +51,12 @@ pub fn drop_repo(root: &Path, ws: &str, repo: &str, say: Sink) -> Removal {
             format!("'{}' is not a repo's name", crate::shown::escaped(repo)),
         );
     }
-    let clone = dir.join(repo);
+    // The repo's folder in either layout: never the old place's folder of that name while
+    // `repos/<repo>` is the clone, which this would delete instead.
+    let clone = match crate::repofolder::folder(root, ws, repo) {
+        Ok(clone) => clone,
+        Err(refused) => return fail(say, format!("nothing was removed: {refused}")),
+    };
     // Before anything is read in it: a link here is a directory somewhere else entirely.
     if let Err(why) = crate::contain::no_link_on_the_way(root, &clone) {
         return fail(
@@ -190,7 +195,8 @@ pub fn drop_membership(root: &Path, ws: &str, repo: &str, say: Sink) -> u8 {
     }
     // Not a clone is not nothing there (#1249 U1): a folder whose `.git` is a link, or a plain
     // folder, is not a clone either, and dropping the row would leave it behind unnamed.
-    if let Some(what) = something_at(&dir.join(repo)) {
+    let at = crate::repofolder::folder(root, ws, repo).unwrap_or_else(|_| dir.join(repo));
+    if let Some(what) = something_at(&at) {
         return fail(format!(
             "workspaces/{ws}/{repo} is {what}, not a clone, so '{repo}' was left in workspace \
              '{ws}'. Move or remove it first."

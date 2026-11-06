@@ -99,6 +99,7 @@ mod skillgrade;
 mod skillhistory;
 mod skillpublish;
 mod skillrun;
+mod skillset;
 mod skillsources;
 mod skillstudio;
 mod slowlog;
@@ -2381,7 +2382,7 @@ async fn retry_chat_that_did_not_start(
     rows: u16,
 ) -> Result<OpenChat, String> {
     let held = planes.held(&plane)?;
-    tauri::async_runtime::spawn_blocking(move || {
+    let chat = tauri::async_runtime::spawn_blocking(move || {
         // Reports kept for it while it was not open are handed to it once it starts, and a
         // task is told to carry on (#1513).
         let session = restored::retrying(&held, &id, || {
@@ -2393,7 +2394,10 @@ async fn retry_chat_that_did_not_start(
         drawn(&held, session?)
     })
     .await
-    .map_err(|err| format!("purlis could not start the chat: {err}"))?
+    .map_err(|err| format!("purlis could not start the chat: {err}"))??;
+    // Its project is short of one fewer: the row's "2 of 3 chats back" moves (#5324).
+    planes.tell_chats_back(&plane);
+    Ok(chat)
 }
 
 /// Forget this chat (NO-3): drops the chat with id `id` that this launch could not start from
@@ -2408,7 +2412,10 @@ fn forget_chat_that_did_not_start(
     let held = planes.held(&plane)?;
     // A task still owing its report has ended by itself once it is let go, and the chat that
     // asked is told (#1513).
-    restored::forgetting(&held, &id, || held.chats().forget(&id))
+    restored::forgetting(&held, &id, || held.chats().forget(&id))?;
+    // Its project is short of one fewer: the row's "2 of 3 chats back" moves (#5324).
+    planes.tell_chats_back(&plane);
+    Ok(())
 }
 
 /// Start fresh (NO-3): chat `session` started again on the plane's instructions as they are

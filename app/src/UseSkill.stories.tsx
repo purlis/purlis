@@ -61,6 +61,7 @@ const SKILLS: ChatSkills = {
     manual: 1,
     most_skills: 30,
     most_chars: 6000,
+    workspace: null,
     hidden: 0,
     still_over: null,
     pinned_by: [],

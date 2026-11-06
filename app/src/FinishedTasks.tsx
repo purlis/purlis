@@ -274,7 +274,7 @@ function FinishedRow({
               size="sm"
               isDisabled={busy}
               aria-label={`Try to start ${task.name} again`}
-              tooltip="Starts it again as the launch tried to. It stays a task of the chat that asked."
+              tooltip="Starts every chat of this project that did not come back, this one among them. It stays a task of the chat that asked."
               onPress={() => doing(ways.retry(task).then(() => undefined))}
               className="finished-reopen"
             >

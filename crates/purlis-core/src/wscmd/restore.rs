@@ -215,7 +215,7 @@ pub fn restore(request: &Request, say: Sink) -> u8 {
         return 0;
     }
 
-    let Some(ws_dir) = workspace.as_ref().map(|w| w.dir().to_path_buf()) else {
+    let Some(_) = workspace.as_ref() else {
         // Unreachable in practice — a workspace whose name cannot be joined has no manifest
         // and returned above — and a refusal rather than a panic if it ever stops being.
         say(Say::Fail(
@@ -228,7 +228,7 @@ pub fn restore(request: &Request, say: Sink) -> u8 {
     let mut refused: Vec<Value> = Vec::new();
     for record in &repos {
         let name = name_of(record);
-        match child(root, ws, &ws_dir, &name) {
+        match child(root, ws, &name) {
             Some(dir) => rows.push(Row {
                 record: record.clone(),
                 dir,
@@ -354,7 +354,7 @@ pub fn restore(request: &Request, say: Sink) -> u8 {
     0
 }
 
-/// `ws_dir / name` when that is a direct child charter may write, else `None` — Python's
+/// The workspace's `name` when that is a direct child charter may write, else `None` — Python's
 /// `contain.child`, with this port's own containment gate behind it.
 ///
 /// The gate is on the directory charter is about to run git **in**, which is the path it
@@ -362,11 +362,16 @@ pub fn restore(request: &Request, say: Sink) -> u8 {
 /// that is a symlink out of the plane is a checkout this command may not touch. Never the
 /// parent — `workspaces/<ws>` being fine says nothing about the child a committed manifest
 /// names.
-fn child(root: &Path, ws: &str, ws_dir: &Path, name: &str) -> Option<PathBuf> {
+///
+/// The repo's folder in either layout ([`crate::repofolder::folder`]), so a clone in `repos/` is
+/// one already there. A name only one entry and no repo's name purlis takes is at the root, where
+/// it always was.
+fn child(root: &Path, ws: &str, name: &str) -> Option<PathBuf> {
     if !crate::contain::segment_ok(name) {
         return None;
     }
-    let dir = crate::worktree::confine::within_workspace(root, ws, &ws_dir.join(name)).ok()?;
+    let named = crate::repofolder::entry(root, ws, name)?;
+    let dir = crate::worktree::confine::within_workspace(root, ws, &named).ok()?;
     crate::contain::readable(root, &dir).ok()?;
     Some(dir)
 }

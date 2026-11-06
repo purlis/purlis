@@ -29,7 +29,7 @@ use std::time::Duration;
 
 use super::{
     Brought, Here, MOVED, NewBase, Piece, Reach, brought_up, commit_of, first_line, is_ancestor,
-    rerecord, stage_resolved, stopped_in, unstopped_and_clean, untracked_kept,
+    note, rerecord, stage_resolved, stopped_in, unstopped_and_clean, untracked_kept,
 };
 use crate::gitstate::{self, Operation};
 use crate::repocmd::Say;
@@ -78,7 +78,8 @@ const BASELINES: &str = "__screenshots__";
 /// so a hung git does not hold the folder's lock for ever.
 const TAKING: Duration = Duration::from_secs(600);
 
-/// The file [`Note`] is kept in while a merge is stopped, in the folder's own git directory.
+/// The file [`Note`] is kept in while a merge is stopped, with the update's others
+/// ([`Here::notes`]).
 const NOTE: &str = "purlis-update-merge";
 
 /// What a merge purlis started notes: the branch, the commit it was at, what it merged and the
@@ -91,17 +92,17 @@ struct Note {
 }
 
 impl Note {
-    fn write(&self, git_dir: &Path) -> Result<(), String> {
+    fn write(&self, here: &Here) -> Result<(), String> {
         let text = format!(
             "{}\n{}\n{}\n{}\n",
             self.branch, self.head, self.onto, self.base
         );
-        std::fs::write(git_dir.join(NOTE), text)
+        note(&here.root, &here.notes, NOTE, &text)
             .map_err(|why| format!("purlis could not note the merge it starts: {why}"))
     }
 
-    fn read(git_dir: &Path) -> Option<Self> {
-        let text = std::fs::read_to_string(git_dir.join(NOTE)).ok()?;
+    fn read(notes: &Path) -> Option<Self> {
+        let text = std::fs::read_to_string(notes.join(NOTE)).ok()?;
         let mut lines = text.lines().map(str::to_owned);
         Some(Self {
             branch: lines.next()?,
@@ -111,15 +112,24 @@ impl Note {
         })
     }
 
-    fn remove(git_dir: &Path) {
-        let _ = std::fs::remove_file(git_dir.join(NOTE));
+    fn remove(notes: &Path) {
+        let _ = std::fs::remove_file(notes.join(NOTE));
     }
 
     /// The note of the merge stopped in the folder now, only where that merge is the one purlis
     /// started: on the same branch at the same commit, merging the same commit. A note left from
     /// an earlier merge never vouches for one the person started since.
     fn of_the_stopped_merge(here: &Here) -> Option<Self> {
-        let note = Self::read(&here.git_dir)?;
+        let note = Self::read(&here.notes)?;
+        // This merge is run with `--no-autostash`, so it has nothing to restore.
+        if here
+            .git_dir
+            .join("MERGE_AUTOSTASH")
+            .symlink_metadata()
+            .is_ok()
+        {
+            return None;
+        }
         let merging = std::fs::read_to_string(here.git_dir.join("MERGE_HEAD")).ok()?;
         let at = commit_of(&here.folder, "HEAD")?;
         (merging.trim() == note.onto && at == note.head && here.branch == note.branch)
@@ -205,8 +215,8 @@ pub(super) fn start(
         onto: onto_id,
         base: brought.base.clone(),
     };
-    note.write(&here.git_dir)?;
-    NewBase::write(&here.git_dir, brought.new_base.as_deref())?;
+    note.write(here)?;
+    NewBase::write(here, brought.new_base.as_deref())?;
     let message = note.message();
     let mut args: Vec<&str> = MERGE.to_vec();
     args.extend(MERGE_OPTIONS);
@@ -217,8 +227,8 @@ pub(super) fn start(
         return Ok(finished(here, &note, &brought, say));
     }
     if !is_stopped(here) {
-        Note::remove(&here.git_dir);
-        let _ = NewBase::write(&here.git_dir, None);
+        Note::remove(&here.notes);
+        let _ = NewBase::write(here, None);
         let said = if went.err.trim().is_empty() {
             &went.out
         } else {
@@ -369,7 +379,7 @@ fn committed(here: &Here, note: &Note) -> Result<(), String> {
 
 /// The merge is done: its notes spent, a new base recorded, and said what follows.
 fn finished(here: &Here, note: &Note, brought: &Brought, say: &mut dyn FnMut(Say)) -> u8 {
-    Note::remove(&here.git_dir);
+    Note::remove(&here.notes);
     NewBase::recorded(here, &note.branch, say);
     say(Say::Done(
         format!(
@@ -397,7 +407,7 @@ pub(super) fn go_on(here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, String>
         stage_resolved(here, &files)?;
     }
     committed(here, &note)?;
-    Note::remove(&here.git_dir);
+    Note::remove(&here.notes);
     NewBase::recorded(here, &note.branch, say);
     say(Say::Done(
         format!(
@@ -446,8 +456,8 @@ pub(super) fn abort(
             first_line(&back.err)
         ));
     }
-    Note::remove(&here.git_dir);
-    let _ = NewBase::write(&here.git_dir, None);
+    Note::remove(&here.notes);
+    let _ = NewBase::write(here, None);
     say(Say::Done(
         format!("{label} is back where it was before the merge").into(),
     ));

@@ -293,33 +293,40 @@ export function SavingView({
                (qw382): Resolve, Continue and Abort are the window's, and a chat only edits. */
             <SaveConflict plane={plane} saving={saving} onSaved={onSaved} />
           )}
-          {saving.stage === "blocked" && saving.byHand == null && saving.stoppedBy !== "rebase" && (
-            <div className="saving-question" role="group" aria-label="Ways out">
-              {saving.conflicts.length > 0 && (
-                <ul className="saving-files" aria-label="Where it conflicts">
-                  {saving.conflicts.map((path) => (
-                    <li key={path}>{path}</li>
-                  ))}
-                </ul>
-              )}
-              <SettingActions>
-                {/* A rebase, `git am`, cherry-pick, revert or bisect git stopped part-way is
-                    finished with git, which a chat may not run in the project's root (qw382). */}
-                {chatMaySettle(saving) && (
-                  <Button size="sm" onPress={() => askWayOut(plane, "chat")} className="panel-view">
-                    Resolve in a chat
-                  </Button>
+          {saving.stage === "blocked" &&
+            saving.byHand == null &&
+            saving.stoppedBy !== "rebase" &&
+            saving.stoppedBy !== "merge" && (
+              <div className="saving-question" role="group" aria-label="Ways out">
+                {saving.conflicts.length > 0 && (
+                  <ul className="saving-files" aria-label="Where it conflicts">
+                    {saving.conflicts.map((path) => (
+                      <li key={path}>{path}</li>
+                    ))}
+                  </ul>
                 )}
-                <Button
-                  size="sm"
-                  onPress={() => askWayOut(plane, "terminal")}
-                  className="panel-view"
-                >
-                  Open terminal here
-                </Button>
-              </SettingActions>
-            </div>
-          )}
+                <SettingActions>
+                  {/* A rebase, `git am`, cherry-pick, revert or bisect git stopped part-way is
+                    finished with git, which a chat may not run in the project's root (qw382). */}
+                  {chatMaySettle(saving) && (
+                    <Button
+                      size="sm"
+                      onPress={() => askWayOut(plane, "chat")}
+                      className="panel-view"
+                    >
+                      Resolve in a chat
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    onPress={() => askWayOut(plane, "terminal")}
+                    className="panel-view"
+                  >
+                    Open terminal here
+                  </Button>
+                </SettingActions>
+              </div>
+            )}
           {saving.notice !== null && (
             /* A request mode on an origin no forge charter knows (NO-7, #1232): the mode it
                complains about is changed in Settings › Saving, so that is where it links. */
@@ -722,21 +729,16 @@ function ModeQuestion({ plane, branch }: { plane: PlaneId; branch: string }) {
   );
 }
 
-/**
- * **The title bar's save indicator** (charter-app#294): the stage of the project in front, as
- * a button that opens its Saving tab, and — while there is anything to take — a save button
- * beside it. Both are `<button tabIndex={0}>`: the tag is what the drag handler stops at, and
- * the tab index is what WebKit's sequence needs (`TitleBar.tsx`).
- */
-export function SaveIndicator({
-  saving,
-  repos,
-  busy,
-  onOpen,
-  onSave,
-  onUpdate,
-  off,
-}: {
+/** **The title bar's save indicator while the project's standing is still coming** (#5325). */
+export function SaveReading({ onOpen }: { onOpen: () => void }) {
+  return <SaveIndicator reading onOpen={onOpen} />;
+}
+
+/** What the indicator draws before the standing is read: a way to the Saving tab alone. */
+export type SaveStillReading = { reading: true; onOpen: () => void };
+
+/** The indicator once the standing is read. */
+export type SaveShown = {
   saving: PlaneSaving;
   /** The active workspace's repos (charter-app#299): the indicator shows the furthest-back
    *  stage across them and the plane. Its save is the project's only — a repo is saved from
@@ -751,7 +753,34 @@ export function SaveIndicator({
   /** Why the save is off, when it is: a read-only project's sentence (#826), since a commit
    *  changes the committed tree and the core refuses it. Said as the button's tooltip. */
   off?: string;
-}) {
+};
+
+/**
+ * **The title bar's save indicator** (charter-app#294): the stage of the project in front, as
+ * a button that opens its Saving tab, and — while there is anything to take — a save button
+ * beside it. Both are `<button tabIndex={0}>`: the tag is what the drag handler stops at, and
+ * the tab index is what WebKit's sequence needs (`TitleBar.tsx`).
+ */
+export function SaveIndicator(props: SaveShown | SaveStillReading) {
+  // **One button from reading to read** (#5325): the stage's button is the same element while
+  // the standing is still coming, as its own mark, so the keyboard on it stays on it as it lands.
+  if ("reading" in props)
+    return (
+      <span className="save-indicator" data-stage="reading">
+        <StatusItem
+          variant="pill"
+          aria-label="Saving: reading the project"
+          tooltip="Reading the project"
+          onPress={props.onOpen}
+          data-testid="save-indicator-where"
+          icon={<LoaderCircle aria-hidden="true" className="spinning" />}
+        >
+          <span className="save-indicator-words">Reading…</span>
+        </StatusItem>
+      </span>
+    );
+  const { saving, repos, busy, onOpen, onSave, onUpdate, off } = props;
+
   const { stage, said, words, incoming, red } = furthestBack(saving, repos ?? []);
   // A red request is not a block, and it is still something wrong the bar must not draw as
   // "waiting": the mark is the alert, in the failed colour (ADR 0051, amended 2026-10-13).
@@ -862,9 +891,10 @@ export function furthestBack(
 }
 
 /** What git stopped part-way that a chat may not finish in the project's root: continuing
- *  any of these rewrites the tree, which its guard refuses there (A3c). A merge's
- *  `--continue`, and unmerged files with no operation, are a chat's to finish. */
-const ONLY_GIT_FINISHES = new Set(["rebase", "am", "cherry-pick", "revert", "bisect"]);
+ *  any of these rewrites the tree, which its guard refuses there (A3c). A merge is the
+ *  window's Continue, as a replay is (#5338), and unmerged files with no operation are a chat's
+ *  to finish. */
+const ONLY_GIT_FINISHES = new Set(["rebase", "merge", "am", "cherry-pick", "revert", "bisect"]);
 
 /** Whether a blocked save offers *Resolve in a chat*: never for a save's own replay that
  *  conflicted, nor for a stop only git in a terminal can finish (qw382). */

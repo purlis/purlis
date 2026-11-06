@@ -168,7 +168,8 @@ pub fn may_take_off(config: &Path, pool: &str, name: &str) -> Result<(), String>
     let Some(named) = runners::profiles_of(config, pool).map_err(|why| why.to_string())? else {
         return Err(format!(
             "pool {pool} names none of its profiles yet: it keeps the profile a new chat in your \
-             project gets, so take this one off in Pool setup's Sign-ins step in the window"
+             project gets. Take this one off in the window: tick another profile in Pool setup's \
+             Sign-ins step and untick this one, or use Remove on the pool in Settings"
         ));
     };
     if named.iter().any(|one| one == name) {
@@ -189,16 +190,46 @@ pub fn default_of(config: &Path, project: Option<&Path>) -> Result<Option<String
         .filter(|default| records.iter().any(|r| &r.name == default)))
 }
 
+/// **Whether pool `pool` names none of its profiles yet** (#5349), so [`may_take_off`] refuses
+/// every one. Not of a pool that can't be read: what is wrong with it is its own line's to say.
+#[must_use]
+pub fn names_none(config: &Path, pool: &str) -> bool {
+    matches!(runners::profiles_of(config, pool), Ok(None))
+}
+
 /// **What Sign-ins' button runs, by hand** (#4718, #5174, Q30): `adding` recorded on pool `pool`,
 /// each of `taking_off` taken off it, then each of `signing_in` signed in there, in the order the
 /// button does them. None where it would run nothing.
+///
+/// On a pool that `names_none`, no command takes a profile off ([`may_take_off`]), so the note
+/// says so and there is no line for it (#5349). Unless something is added first: recording a
+/// profile makes the pool name its default beside it, and then the line works.
 #[must_use]
 pub fn by_hand(
     pool: &str,
     adding: &[String],
     taking_off: &[String],
     signing_in: &[String],
+    names_none: bool,
 ) -> Option<super::See> {
+    let only_the_button = (names_none && adding.is_empty() && !taking_off.is_empty()).then(|| {
+        let names: Vec<String> = taking_off
+            .iter()
+            .map(|name| crate::shown::short(name))
+            .collect();
+        format!(
+            "No command takes {} off yet. Pool {} names none of its profiles, so it keeps the \
+             profile a new chat in your project gets. Tick another profile and this shows a \
+             command for it, or use Remove on the pool in Settings › You › This machine › Pools.",
+            names.join(", "),
+            crate::shown::short(pool)
+        )
+    });
+    let taking_off = if only_the_button.is_some() {
+        &[]
+    } else {
+        taking_off
+    };
     let pool = if runners::usable_pool_name(pool).is_ok() {
         crate::shellseg::shell_quote(pool)
     } else {
@@ -230,7 +261,12 @@ pub fn by_hand(
             .map(|name| format!("purlis profile sign-in {} --pool {pool}", profile(name))),
     );
     let note = match (adding.is_empty(), taking_off.is_empty(), lines.len()) {
-        (_, _, 0) => return None,
+        (_, _, 0) => {
+            return only_the_button.map(|note| super::See {
+                note,
+                text: String::new(),
+            });
+        }
         (true, true, 1) => "This is the sign-in the button runs.",
         (true, true, _) => "These are the sign-ins the button runs.",
         (false, true, 1) => "This records the ticked profiles on the pool, as the button does.",
@@ -250,8 +286,10 @@ pub fn by_hand(
     };
     Some(super::See {
         note: format!(
-            "{note} Run {} yourself in your project's folder if you prefer, and purlis picks it up.",
-            if lines.len() == 1 { "it" } else { "them" }
+            "{note} Run {} yourself in your project's folder if you prefer, and purlis picks it \
+             up.{}",
+            if lines.len() == 1 { "it" } else { "them" },
+            only_the_button.map_or(String::new(), |said| format!(" {said}"))
         ),
         text: lines.join("\n"),
     })

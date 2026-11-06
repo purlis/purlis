@@ -344,6 +344,21 @@ describe("the save indicator (charter-app#294)", () => {
     };
   }
 
+  it("keeps one button, and the keyboard on it, as the standing it was reading lands (#5325)", async () => {
+    const open = { onOpen: () => {} };
+    const { rerender } = render(<TitleBar saveReading={open} />);
+    const reading = screen.getByRole("button", { name: "Saving: reading the project" });
+    reading.focus();
+
+    rerender(
+      <TitleBar save={{ saving: saving(), busy: false, onOpen: () => {}, onSave: () => {} }} />,
+    );
+
+    const read = screen.getByRole("button", { name: "Saving: 3 changed" });
+    expect(read).toBe(reading);
+    expect(read).toHaveFocus();
+  });
+
   it("says where the project's unsaved work sits, and opens the Saving tab when pressed", async () => {
     const opened: string[] = [];
     render(

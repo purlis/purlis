@@ -425,12 +425,33 @@ pub trait SessionHost: Send + Sync {
     /// **Everything a chat's fresh runner `runner` (`<pool>/fresh-…`) has of `workspace` comes
     /// back to stay** (#4569): each clone it holds, one made there among them, each clone's
     /// branches kept under `refs/remotes/<runner>/`, as the runner is about to go. Answers what
-    /// did not come, in sentences. A runner goes only on none, so a host that reaches no runner
-    /// says so.
+    /// did not come, in sentences. A host that reaches no runner says so.
     fn fetch_back_whole(&self, workspace: &str, runner: &str) -> Vec<String> {
         vec![format!(
             "this host does not reach runner {runner}, so nothing of {workspace} came back"
         )]
+    }
+
+    /// **What fresh runner `runner` holds that this project does not** (#4569), in sentences. A
+    /// runner goes only on none, so a host that reaches no runner says so. It writes nothing here
+    /// and can take minutes, so it never runs under the one-at-a-time lock on fetches (#5393).
+    fn not_home_of_runner(&self, runner: &str) -> Vec<String> {
+        vec![format!(
+            "this host does not reach runner {runner}, so purlis can't tell its work is here"
+        )]
+    }
+
+    /// **Whether every program of this project on this host's runner has ended** (#5393), or why
+    /// that can't be said: a close is answered before its program ends, and what still runs may
+    /// yet commit after a fetch. Yes for a host that runs nothing of it on a runner.
+    fn programs_have_ended(&self) -> Result<(), String> {
+        Ok(())
+    }
+
+    /// Whether this host's link reaches the runner named `runner` now (#5393). No, for a host with
+    /// no link open.
+    fn reaches_runner(&self, _runner: &str) -> bool {
+        false
     }
 
     /// **A chat's fresh runner `runner` is finished with** (#4569): what it has of `workspace`
@@ -439,7 +460,12 @@ pub trait SessionHost: Send + Sync {
     /// once, and nothing is sent or asked of it.
     fn take_back_fresh(&self, runner: &str, workspace: Option<&str>, done: FreshDone) {
         done(workspace.map_or_else(Vec::new, |workspace| {
-            self.fetch_back_whole(workspace, runner)
+            let failed = self.fetch_back_whole(workspace, runner);
+            if failed.is_empty() {
+                self.not_home_of_runner(runner)
+            } else {
+                failed
+            }
         }));
     }
 
@@ -972,6 +998,16 @@ pub(crate) mod pretend {
         fetched: Mutex<Vec<(String, String)>>,
         /// Why a fetch back fails, while a test says one does: a fresh runner's whole fetch too.
         fetch_fails: Mutex<Option<String>>,
+        /// What it says is not home, while a test says so ([`Pretend::not_home_says`]).
+        not_home: Mutex<Vec<String>>,
+        /// The way to hold its proof until a test lets it go ([`Pretend::holds_its_proof`]).
+        proof_held: Mutex<Option<Arc<std::sync::Barrier>>>,
+        /// How many proofs it was asked for.
+        proofs: AtomicU32,
+        /// Why its programs have not ended, while a test says so ([`Pretend::program_still_runs`]).
+        still_runs: Mutex<Option<String>>,
+        /// The draining runner its link reaches, where a test said ([`Pretend::reaches`]).
+        reaches: Mutex<Option<String>>,
         /// Whether it can't say what it has left ([`Pretend::cannot_say_what_it_left`]).
         says_nothing_left: std::sync::atomic::AtomicBool,
         /// How many times the way to this runner was let go of.
@@ -1034,6 +1070,31 @@ pub(crate) mod pretend {
         /// A fetch of a fresh runner's work fails with `why`.
         pub fn fetch_fails(&self, why: &str) {
             *lock(&self.seen.fetch_fails) = Some(why.to_owned());
+        }
+
+        /// Its proof says `missing` from now on.
+        pub fn not_home_says(&self, missing: &[&str]) {
+            *lock(&self.seen.not_home) = missing.iter().map(|one| (*one).to_owned()).collect();
+        }
+
+        /// Its next proofs each wait at `barrier`, twice: as it begins, and before it answers.
+        pub fn holds_its_proof(&self, barrier: Arc<std::sync::Barrier>) {
+            *lock(&self.seen.proof_held) = Some(barrier);
+        }
+
+        /// How many proofs it was asked for.
+        pub fn proofs(&self) -> u32 {
+            self.seen.proofs.load(Ordering::SeqCst)
+        }
+
+        /// A program of the project still runs on its runner from now on, or none.
+        pub fn program_still_runs(&self, why: Option<&str>) {
+            *lock(&self.seen.still_runs) = why.map(str::to_owned);
+        }
+
+        /// Its link reaches the runner `runner` from now on.
+        pub fn reaches(&self, runner: &str) {
+            *lock(&self.seen.reaches) = Some(runner.to_owned());
         }
 
         /// How many times the way to this runner was let go of.
@@ -1143,6 +1204,11 @@ pub(crate) mod pretend {
         /// a launch meets when one chat's program will not start and the rest do.
         pub fn refuses_number(&self, number: u32, why: &str) {
             lock(&self.seen.refusing_numbers).push((number, why.to_owned()));
+        }
+
+        /// What [`Self::refuses_number`] refused starts from now: its program is back.
+        pub fn stops_refusing(&self, number: u32) {
+            lock(&self.seen.refusing_numbers).retain(|(one, _)| *one != number);
         }
 
         /// Every start from now takes `long`, as a harness and its sandbox coming up do.
@@ -1356,6 +1422,21 @@ pub(crate) mod pretend {
             }
             lock(&self.seen.fetched).push((workspace.to_owned(), runner.to_owned()));
             Vec::new()
+        }
+        fn not_home_of_runner(&self, _runner: &str) -> Vec<String> {
+            self.seen.proofs.fetch_add(1, Ordering::SeqCst);
+            let held = lock(&self.seen.proof_held).clone();
+            if let Some(held) = held {
+                held.wait();
+                held.wait();
+            }
+            lock(&self.seen.not_home).clone()
+        }
+        fn programs_have_ended(&self) -> Result<(), String> {
+            lock(&self.seen.still_runs).clone().map_or(Ok(()), Err)
+        }
+        fn reaches_runner(&self, runner: &str) -> bool {
+            lock(&self.seen.reaches).as_deref() == Some(runner)
         }
         fn let_go_of_runner(&self) {
             *lock(&self.seen.let_go) += 1;

@@ -16,7 +16,8 @@
  * **Pictures are taken only where `PURLIS_STORY_PICTURES=1`**, which only the pinned Playwright
  * image of `.github/workflows/stories.yml` sets, and only in the cells `pictured.json` names: a
  * picture drawn on any other machine differs by its fonts and its rasteriser, so it is neither
- * compared nor kept anywhere else.
+ * compared nor kept anywhere else. There, Chromium's `monospace` is pinned to the one the
+ * image's fontconfig names (`monospace.ts`), and the run stops when fontconfig names none.
  */
 /// <reference types="node" />
 import { readFileSync } from "node:fs";
@@ -26,6 +27,7 @@ import { storybookTest } from "@storybook/addon-vitest/vitest-plugin";
 import { playwright } from "@vitest/browser-playwright";
 import type { TestProjectInlineConfiguration } from "vitest/config";
 import { cellsOf, type BuiltInThemes, type Cell } from "./matrix.ts";
+import { imageMonospace } from "./monospace.ts";
 
 /** Chromium's flag for greyscale text, which draws the same whatever ran before it. */
 const LCD_OFF = ["--disable-lcd-text"];
@@ -45,12 +47,19 @@ export function cells(): Cell[] {
 
 export function stories(): TestProjectInlineConfiguration[] {
   const pictures = process.env[PICTURES] === "1";
+  // Where pictures are taken, Chromium's `monospace` is pinned to the image's own (`monospace.ts`).
+  let monospace: string | undefined;
+  if (pictures) {
+    monospace = imageMonospace();
+    if (monospace === undefined)
+      throw new Error(`${PICTURES}=1, but fc-match names no monospace to pin Chromium's to`);
+  }
   return cells().map((cell) => ({
     extends: true,
     plugins: [storybookTest({ configDir: here(".") })],
     test: {
       name: `stories ${cell.name}`,
-      provide: { storyCell: cell },
+      provide: { storyCell: cell, storyMonospace: monospace },
       setupFiles: [
         here("cell.setup.ts"),
         here("at-rest.setup.ts"),
