@@ -1,6 +1,6 @@
 # Amended 2026-11-06: a Check reporter is handed a check's output, and runs as the operator (#5410)
 
-The **Check reporter** capability (ADR 0114, ADR 0053 as amended 2026-11-06) is an extension's
+The **Check reporter** capability (ADR 0115, ADR 0053 as amended 2026-11-06) is an extension's
 program that purlis hands one check's output and exit status, and whose stdout it reads as SARIF.
 What that changes in this record's threat model:
 

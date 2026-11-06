@@ -1,10 +1,10 @@
-# Amended 2026-11-06: the Check reporter, and protocol 5 (ADR 0114, #5410)
+# Amended 2026-11-06: the Check reporter, and protocol 5 (ADR 0115, #5410)
 
 The vocabulary gains one word:
 
 | Word | What purlis does | Its shape, under `contributes` | Change |
 |---|---|---|---|
-| `check-reporter` | hands its program a check's output and exit status, and records the SARIF 2.1.0 it answers on stdout as the branch's check results (ADR 0114) | none | #5410 |
+| `check-reporter` | hands its program a check's output and exit status, and records the SARIF 2.1.0 it answers on stdout as the branch's check results (ADR 0115) | none | #5410 |
 
 **It has no shape.** Which tool it converts is the extension's own business: the operator approves
 that it is asked, and a report names the reporter by the extension's id. A manifest that asks for it

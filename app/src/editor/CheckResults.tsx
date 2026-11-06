@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **A branch's check results, listed with the file they are read for** (ADR 0114, #5407). Each set
+ * **A branch's check results, listed with the file they are read for** (ADR 0115, #5407). Each set
  * says its tool, how many results it has and the commit it was reported for, and that it is out of
  * date once the branch's head has moved. Each result says its severity, tool, rule, line and
  * message, under one of three headings: on the changed lines (marked in the gutter too), outside

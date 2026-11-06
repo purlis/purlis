@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **A branch's check results** (ADR 0114, #5407): as reported, and out of date. The results are
+ * **A branch's check results** (ADR 0115, #5407): as reported, and out of date. The results are
  * shaped on CodeQL's and Scorecard's real output (`tests/fixtures/sarif`).
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";

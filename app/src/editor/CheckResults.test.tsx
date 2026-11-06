@@ -8,7 +8,7 @@ import type { CheckResults, PlaneId } from "../bindings";
 import { CheckResultsList } from "./CheckResults";
 
 /**
- * **A Check reporter whose answer could not be recorded is a Notice naming it** (ADR 0114, #5410),
+ * **A Check reporter whose answer could not be recorded is a Notice naming it** (ADR 0115, #5410),
  * and the review goes on: the results recorded before it are listed beside it.
  */
 

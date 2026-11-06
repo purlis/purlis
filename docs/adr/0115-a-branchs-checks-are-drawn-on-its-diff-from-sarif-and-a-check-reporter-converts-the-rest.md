@@ -19,7 +19,7 @@ capability, it is declared in the manifest and approved (ADR 0053), and it runs 
 extension's own program (ADR 0041), never inside the window.
 
 Results arrive by `purlis check report`: see
-[its amendments](0114/), of 2026-11-05.
+[its amendments](0115/), of 2026-11-05.
 
 ## Considered options
 

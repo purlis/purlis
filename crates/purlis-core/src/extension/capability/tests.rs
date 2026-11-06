@@ -55,8 +55,8 @@ fn a_release_build_knows_the_check_reporter_and_it_needs_protocol_5() {
 fn the_prompt_says_the_check_reporter_is_handed_a_check_s_output_and_answers_sarif() {
     assert_eq!(
         Capability::CheckReporter.asks(),
-        "the capability “check-reporter” — turns a check's output into SARIF: purlis hands \
-         its program what a check printed and its exit status, and draws the results it \
+        "the capability “check-reporter” — turns a check's output into SARIF. Its program is \
+         handed what a check printed and its exit status, and purlis draws the results it \
          answers on the branch's diff"
     );
 }

@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **The Check reporter, end to end** (ADR 0114, #5410): the probe assembled as an operator would
+//! **The Check reporter, end to end** (ADR 0115, #5410): the probe assembled as an operator would
 //! install it, approved with the dialog's two clicks, handed a check's output and exit status
 //! through purlis's real executor, and its SARIF recorded through the same path as `purlis check
 //! report` — and refused when it was never approved, and kept as a fault naming it when what it

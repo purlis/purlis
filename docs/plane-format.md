@@ -228,7 +228,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`workspaces/<ws>/changes/log/pending/<device>.jsonl` — pending landings](#workspaceswschangeslogpendingdevicejsonl--pending-landings)
   - [`workspaces/<ws>/pieces/<device>.jsonl` — the piece claim log](#workspaceswspiecesdevicejsonl--the-piece-claim-log)
   - [`workspaces/<ws>/pieces/seen/<repo>.json` and `pieces/seen/<repo>/<piece>.json`](#workspaceswspiecesseenrepojson-and-piecesseenrepopiecejson)
-  - [`workspaces/<ws>/pieces/checks/<repo>.json` and `pieces/checks/<repo>/<piece>.json` — a branch's check results](#workspaceswspieceschecksrepojson-and-piecescheckrepopiecejson--a-branchs-check-results)
+  - [`workspaces/<ws>/pieces/checks/<repo>.json` and `pieces/checks/<repo>/<piece>.json` — a branch's check results](#workspaceswspieceschecksrepojson-and-pieceschecksrepopiecejson--a-branchs-check-results)
   - [`workspaces/<ws>/.charter-structure` — the layout stamp](#workspaceswscharter-structure--the-layout-stamp)
   - [`workspaces/<ws>/.charter-generated` — the harness-layer ownership marker](#workspaceswscharter-generated--the-harness-layer-ownership-marker)
   - [`workspaces/<ws>/.claude/settings.json` — the generated harness layer](#workspaceswsclaudesettingsjson--the-generated-harness-layer)
@@ -2677,7 +2677,7 @@ alike.
 
 - **Format:** one JSON object, **replaced whole** at each report.
 - **Status:** stable — written by `purlis check report` and read by the window, which are different
-  processes (ADR 0114, #5407).
+  processes (ADR 0115, #5407).
 - **Tier:** Clone state — never committed; what a tool last reported for a folder's branch. purlis
   cannot rebuild it, since it runs no check: deleting it loses the results until they are reported again.
 - **Written by:** `checks::report` (`crates/purlis-core/src/checks.rs`), from `purlis check report`,
