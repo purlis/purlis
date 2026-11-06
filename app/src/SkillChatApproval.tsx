@@ -18,19 +18,19 @@ import { askAChat, chatPlace } from "./skillChanges";
 export function studioStartNamed(wanted: SkillChatAsk): string {
   switch (wanted.kind) {
     case "draft":
-      return askAChat(wanted.level, "draft a skill");
+      return askAChat(wanted.level, "draft a skill", wanted.plane);
     case "try":
       return "Try it";
     case "redo":
-      return askAChat(wanted.level, `redo ${wanted.name}`);
+      return askAChat(wanted.level, `redo ${wanted.name}`, wanted.plane);
     case "triggers":
-      return askAChat(wanted.level, `write the trigger tests of ${wanted.name}`);
+      return askAChat(wanted.level, `write the trigger tests of ${wanted.name}`, wanted.plane);
     case "checks":
-      return askAChat(wanted.level, `write the checks of ${wanted.name}`);
+      return askAChat(wanted.level, `write the checks of ${wanted.name}`, wanted.plane);
     case "evals":
-      return askAChat(wanted.level, `write the outcome evals of ${wanted.name}`);
+      return askAChat(wanted.level, `write the outcome evals of ${wanted.name}`, wanted.plane);
     case "improve":
-      return `Improve ${wanted.name} from runs, with a chat ${chatPlace(wanted.level)}`;
+      return `Improve ${wanted.name} from runs, with a chat ${chatPlace(wanted.level, wanted.plane)}`;
   }
 }
 

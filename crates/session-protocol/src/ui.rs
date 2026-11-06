@@ -759,6 +759,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // "Ask the chat to redo it" on an out-of-date draft (S9, #3690): the redo typed into the
     // chat that drafted it as the person, or a chat started with it typed, as a draft chat is.
     "skill_draft_redo",
+    // The chats the studio started that have closed here (#5248): the person's own chats, read
+    // in their window for a skill's Runs, as its drafts are.
+    "studio_chats_closed",
     "skill_draft_redo_in",
     // A skill's trigger tests started from a template, or a chat opened to write them (#3925):
     // the start is one commit to the project, and the chat starts a program as the person, as

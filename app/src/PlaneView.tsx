@@ -274,7 +274,8 @@ import { DoctorNotices, useDoctor } from "./Doctor";
 import { StaleCloneNotices, useStaleClones } from "./StaleCloneNotices";
 import { BrowsersAtQuitNotice } from "./BrowsersAtQuitNotice";
 import { usePin } from "./Updates";
-import { StatusLine, projectName, runningIn, todoCount, type Alerts } from "./StatusLine";
+import { projectName } from "./projectName";
+import { StatusLine, runningIn, todoCount, type Alerts } from "./StatusLine";
 import {
   closeChat,
   closeFocusedPane,
@@ -5382,7 +5383,8 @@ export const PlaneView = memo(function PlaneView({
   );
   /**
    * **The studio's chats still open** (#5185), lent to the studio and the chats' panes: each with
-   * its name here, Open chat, and the way to its skill's page.
+   * its name here, Open chat, the way to its skill's page and to its draft, and its Stop, which
+   * asks first as the chat's own does (#5248).
    */
   const studioChats = useMemo<StudioChatsLent>(
     () => ({
@@ -5406,8 +5408,14 @@ export const PlaneView = memo(function PlaneView({
           SKILL_STUDIO_TITLE,
         );
       },
+      openDraft: (link, id) =>
+        showView(
+          skillStudioAt(scopeOfLevel(link.level), "drafts", { item: id }),
+          SKILL_STUDIO_TITLE,
+        ),
+      stop: (session) => askToStop(session, false),
     }),
-    [chatNames, showChat, showView, studioLinks, tabs],
+    [askToStop, chatNames, showChat, showView, studioLinks, tabs],
   );
   /** {@link nameOf} as it stands, for what is decided in a handler and not while drawing. */
   const nameOfNow = useRef<(session: number) => string>((session) => String(session));

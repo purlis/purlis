@@ -11,7 +11,7 @@ import type { NeedsApproval } from "./bindings";
 import type { SkillChatAsk } from "./skillDraftAsks";
 import { skillChatRefused, startedAgain, studioStartNamed } from "./SkillChatApproval";
 
-const PLANE = "/home/dev/plane";
+const PLANE = "/home/dev/purlis-demo";
 const REFUSED =
   "profile 'work' is new, and nobody has approved it — nothing was started. Approve it once so purlis can run it.";
 
@@ -66,7 +66,7 @@ describe("a studio start refused for its profile's approval", () => {
 
 describe("what it names and starts again", () => {
   it("names each studio start, and starts Try it again on the approved profile", () => {
-    expect(studioStartNamed(DRAFT)).toBe("Ask a chat at the project's root to draft a skill");
+    expect(studioStartNamed(DRAFT)).toBe("Ask a chat at purlis-demo to draft a skill");
     expect(studioStartNamed(TRY)).toBe("Try it");
     expect(
       studioStartNamed({
@@ -77,7 +77,7 @@ describe("what it names and starts again", () => {
         level: { at: "project", local: false },
         chat: null,
       }),
-    ).toBe("Ask a chat at the project's root to redo deploy");
+    ).toBe("Ask a chat at purlis-demo to redo deploy");
     expect(
       studioStartNamed({
         plane: PLANE,
@@ -85,7 +85,7 @@ describe("what it names and starts again", () => {
         level: { at: "project", local: false },
         name: "deploy",
       }),
-    ).toBe("Ask a chat at the project's root to write the trigger tests of deploy");
+    ).toBe("Ask a chat at purlis-demo to write the trigger tests of deploy");
     expect(startedAgain(TRY, "work")).toEqual({ ...TRY, profile: "work" });
     expect(startedAgain(DRAFT, "work")).toBe(DRAFT);
   });

@@ -11,14 +11,26 @@
  * - **the chat's pane foot** names the skill and the job, and opens the skill's page
  *   ({@link StudioChatChip});
  * - **the skill's page** says the chat while it runs, above its tabs, with Open chat
- *   ({@link StudioChatLines}), and lists it on Runs afterwards ({@link StudioChatsStarted});
- * - **the Grades card** shows the running job in place of its button;
+ *   ({@link StudioChatLines}), and lists it on Runs afterwards ({@link StudioChatsStarted}),
+ *   with when it finished, and Review draft while its draft waits (#5248);
+ * - **the Grades card** shows the running job in place of its button, with how long it has run
+ *   and Stop it (#5248);
  * - **the draft** it wrote offers Open chat where it waits for review.
  *
- * Only chats still open are lent: a closed chat has no tab to open.
+ * The chats still open are lent by the window; one closed since is read from this machine's
+ * record of them (`studio_chats_closed`, #5248), and listed on Runs with no Open chat, since it
+ * has no tab to open.
  */
-import { createContext, useContext, useId, useMemo } from "react";
-import type { SkillDraft, SkillLevel, StudioJobKind, StudioLink } from "./bindings";
+import { createContext, useContext, useEffect, useId, useMemo, useState } from "react";
+import { OPEN_CHAT, REVIEW_DRAFT, STOP_IT } from "./actions";
+import {
+  commands,
+  type ClosedStudioChat,
+  type SkillDraft,
+  type SkillLevel,
+  type StudioJobKind,
+  type StudioLink,
+} from "./bindings";
 import { stateOf, useChatsHere, useChatsSelect } from "./chatState";
 import { endedBy } from "./EndedBand";
 import { Notice } from "./Notice";
@@ -33,7 +45,8 @@ import {
   type StudioScope,
 } from "./skillStudio";
 import { Badge } from "./ui/badge/Badge";
-import { Button } from "./ui/button/Button";
+import { useNow } from "./stateClock";
+import { Button, ButtonRow } from "./ui/button/Button";
 import { List, ListRow } from "./ui/list/List";
 import { RowBelow, RowLabel, RowTrail } from "./ui/list/Row";
 import { PanelSectionTitle } from "./ui/panel/Panel";
@@ -54,9 +67,19 @@ export type StudioChatsLent = {
   show: (session: number) => void;
   /** Opens the studio at the place `link` names: its skill's page, or Drafts for a new one. */
   openSkill: (link: StudioLink) => void;
+  /** Opens the draft `id` its chat wrote, on Drafts of the scope `link`'s skill is seen on. */
+  openDraft: (link: StudioLink, id: string) => void;
+  /** Asks to stop chat `session`, as its own Stop does. */
+  stop: (session: number) => void;
 };
 
-const NONE: StudioChatsLent = { chats: [], show: () => undefined, openSkill: () => undefined };
+const NONE: StudioChatsLent = {
+  chats: [],
+  show: () => undefined,
+  openSkill: () => undefined,
+  openDraft: () => undefined,
+  stop: () => undefined,
+};
 
 /** **The studio's chats, lent by the project's window**: none outside one. */
 export const StudioChatsHere = createContext<StudioChatsLent>(NONE);
@@ -92,11 +115,11 @@ export function chipSaid(link: StudioLink, done: boolean): string {
 }
 
 /** The chats started for the skill `name` at `level`, and no other's. */
-export function chatsOfSkill(
-  chats: readonly StudioChat[],
+export function chatsOfSkill<Chat extends { link: StudioLink }>(
+  chats: readonly Chat[],
   name: string,
   level: SkillLevel,
-): StudioChat[] {
+): Chat[] {
   return chats.filter((one) => one.link.skill === name && sameLevel(one.link.level, level));
 }
 
@@ -107,10 +130,12 @@ export function isDone(chat: StudioChat, drafts: readonly SkillDraft[], ended: b
 }
 
 /** **The links a read of the drafts makes done** (#5185): each chat's whose draft came, as the
- *  core marks its record. `links` itself where none changes, so nothing is drawn anew. */
+ *  core marks its record, finished `now` where it was not already (#5248). `links` itself where
+ *  none changes, so nothing is drawn anew. */
 export function doneByDrafts(
   links: Readonly<Record<number, StudioLink>>,
   drafts: readonly SkillDraft[],
+  now = new Date(),
 ): Readonly<Record<number, StudioLink>> {
   const wrote = drafts.flatMap((one) =>
     one.chat !== null && links[one.chat]?.done === false ? [one.chat] : [],
@@ -118,7 +143,12 @@ export function doneByDrafts(
   if (wrote.length === 0) return links;
   return {
     ...links,
-    ...Object.fromEntries(wrote.map((session) => [session, { ...links[session], done: true }])),
+    ...Object.fromEntries(
+      wrote.map((session) => [
+        session,
+        { ...links[session], done: true, finished: links[session].finished ?? timeKept(now) },
+      ]),
+    ),
   };
 }
 
@@ -148,7 +178,18 @@ export function studioPlaceOf(
 
 /** **The link a studio start leaves on the chat it opens**, as the core records it: none for Try
  *  it, which is a scratch chat with no job of the studio's. */
-export function linkOfAsk(ask: SkillChatAsk): StudioLink | undefined {
+export function linkOfAsk(ask: SkillChatAsk, now = new Date()): StudioLink | undefined {
+  const job = linkOfAskAlone(ask);
+  return job === undefined ? undefined : { ...job, started: timeKept(now), finished: null };
+}
+
+/** `now` as the core keeps a time: RFC 3339, in UTC, to the second. */
+export function timeKept(now: Date): string {
+  return now.toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+/** {@link linkOfAsk}'s link, before it has a time. */
+function linkOfAskAlone(ask: SkillChatAsk): Omit<StudioLink, "started" | "finished"> | undefined {
   switch (ask.kind) {
     case "draft":
       return { skill: null, level: ask.level, job: "draft", done: false };
@@ -165,6 +206,59 @@ export function linkOfAsk(ask: SkillChatAsk): StudioLink | undefined {
     case "try":
       return undefined;
   }
+}
+
+/**
+ * **When a studio chat finished, as its row says it** (#5248; the prototype's `finished 17:42`):
+ * its clock time where that was today, and its day before it, `11-04 17:42`. Nothing for a time
+ * that does not read.
+ */
+export function finishedSaid(at: string | null, now: Date): string | undefined {
+  const when = at === null ? Number.NaN : Date.parse(at);
+  if (Number.isNaN(when)) return undefined;
+  const then = new Date(when);
+  const two = (n: number) => String(n).padStart(2, "0");
+  const clock = `${two(then.getHours())}:${two(then.getMinutes())}`;
+  return then.toDateString() === now.toDateString()
+    ? `finished ${clock}`
+    : `finished ${two(then.getMonth() + 1)}-${two(then.getDate())} ${clock}`;
+}
+
+/**
+ * **How long a studio chat's job has run, as the Grades card says it** (#5248; the prototype's
+ * `running 2 min`): `running under a minute`, `running 2 min`, `running 1 h 5 min`, and
+ * `running` alone where its start is not known.
+ */
+export function runningSaid(started: string | null, now: number): string {
+  const since = started === null ? Number.NaN : Date.parse(started);
+  if (Number.isNaN(since)) return "running";
+  const minutes = Math.max(0, Math.floor((now - since) / 60_000));
+  if (minutes < 1) return "running under a minute";
+  if (minutes < 60) return `running ${minutes} min`;
+  return `running ${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+}
+
+/**
+ * **The chats the studio started that have closed here** (#5248), newest first, read again each
+ * time `open` (the open studio chats' sessions) changes, since a chat that closes is kept as it
+ * goes. None until read, and none where it cannot be.
+ */
+export function useClosedStudioChats(plane: string, open: string): readonly ClosedStudioChat[] {
+  const [closed, setClosed] = useState<readonly ClosedStudioChat[]>([]);
+  useEffect(() => {
+    let live = true;
+    void commands
+      .studioChatsClosed(plane)
+      .then((answer) => {
+        // Only a list is drawn: an answer that is not one (an older core's) is none.
+        if (live && answer.status === "ok" && Array.isArray(answer.data)) setClosed(answer.data);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [plane, open]);
+  return closed;
 }
 
 /** Whether chat `session`'s program has ended, read off the chats' store. */
@@ -220,17 +314,25 @@ function ChipOf({ plane, chat, onOpen }: { plane: string; chat: StudioChat; onOp
 }
 
 /** One running studio chat's line above a skill's tabs. */
-function StudioChatLine({ chat, onShow }: { chat: StudioChat; onShow: () => void }) {
+function StudioChatLine({
+  plane,
+  chat,
+  onShow,
+}: {
+  plane: string;
+  chat: StudioChat;
+  onShow: () => void;
+}) {
   const doing = jobSaid(chat.link.job, false);
   return (
     <Notice
       cause={`studio-chat:${chat.session}`}
       tone="news"
       label={`A chat is ${doing}`}
-      fixes={[{ label: "Open chat", onPress: onShow }]}
+      fixes={[{ label: OPEN_CHAT, onPress: onShow }]}
     >
       <span data-testid={`studio-chat-running-${chat.session}`}>
-        {`A chat ${chatPlace(chat.link.level)} is ${doing} · running`}
+        {`A chat ${chatPlace(chat.link.level, plane)} is ${doing} · running`}
       </span>
     </Notice>
   );
@@ -238,16 +340,20 @@ function StudioChatLine({ chat, onShow }: { chat: StudioChat; onShow: () => void
 
 /** A running chat's line, drawn only while its program runs and no draft of it waits. */
 function RunningLine({
+  plane,
   chat,
   drafts,
   onShow,
 }: {
+  plane: string;
   chat: StudioChat;
   drafts: readonly SkillDraft[];
   onShow: () => void;
 }) {
   const ended = useEnded(chat.session);
-  return isDone(chat, drafts, ended) ? null : <StudioChatLine chat={chat} onShow={onShow} />;
+  return isDone(chat, drafts, ended) ? null : (
+    <StudioChatLine plane={plane} chat={chat} onShow={onShow} />
+  );
 }
 
 /**
@@ -256,10 +362,12 @@ function RunningLine({
  * Runs tab keeps the chat.
  */
 export function StudioChatLines({
+  plane,
   name,
   level,
   drafts,
 }: {
+  plane: string;
   name: string;
   level: SkillLevel;
   drafts: readonly SkillDraft[];
@@ -272,6 +380,7 @@ export function StudioChatLines({
       {mine.map((chat) => (
         <RunningLine
           key={chat.session}
+          plane={plane}
           chat={chat}
           drafts={drafts}
           onShow={() => show(chat.session)}
@@ -281,53 +390,121 @@ export function StudioChatLines({
   );
 }
 
-/** One row of the chats the studio started, with whether it is still running. */
+/** One row of the chats the studio started: running or finished, and what it offers. */
 function StartedRow({
-  chat,
-  drafts,
+  plane,
+  session,
+  name,
+  link,
+  done,
+  draft,
   onShow,
+  onReview,
 }: {
-  chat: StudioChat;
-  drafts: readonly SkillDraft[];
-  onShow: () => void;
+  plane: string;
+  session: number;
+  name: string;
+  link: StudioLink;
+  done: boolean;
+  /** The draft it wrote, while that waits on Drafts. */
+  draft: SkillDraft | undefined;
+  /** Shows the chat: absent for one that has closed, which has no tab. */
+  onShow?: () => void;
+  onReview: (draft: SkillDraft) => void;
 }) {
-  const ended = useEnded(chat.session);
-  const drafted = drafts.some((one) => one.chat === chat.session);
-  const done = isDone(chat, drafts, ended);
-  const said = jobLine(chat.link.job, done);
+  const said = jobLine(link.job, done);
+  const finished = done ? finishedSaid(link.finished, new Date()) : undefined;
+  const below = [
+    `${name}, ${chatPlace(link.level, plane)}`,
+    ...(finished === undefined ? [] : [finished]),
+    ...(draft === undefined ? [] : ["its draft waits in Drafts"]),
+  ].join(" · ");
   return (
-    <ListRow id={String(chat.session)} textValue={said} data-testid={`studio-chat-${chat.session}`}>
+    <ListRow id={String(session)} textValue={said} data-testid={`studio-chat-${session}`}>
       <RowLabel>{said}</RowLabel>
       <RowTrail>
         <Badge variant={done ? "ok" : "accent"}>{done ? "Finished" : "Running"}</Badge>
-        <Button size="sm" tooltip={`Shows ${chat.name}`} onPress={onShow}>
-          Open chat
-        </Button>
+        {draft !== undefined && (
+          <Button
+            size="sm"
+            tooltip={`Opens the draft of ${draft.name}`}
+            onPress={() => onReview(draft)}
+          >
+            {REVIEW_DRAFT}
+          </Button>
+        )}
+        {onShow !== undefined && (
+          <Button size="sm" tooltip={`Shows ${name}`} onPress={onShow}>
+            {OPEN_CHAT}
+          </Button>
+        )}
       </RowTrail>
-      <RowBelow clamp={1}>
-        {`${chat.name}, ${chatPlace(chat.link.level)}${drafted ? " · its draft waits in Drafts" : ""}`}
-      </RowBelow>
+      <RowBelow clamp={1}>{below}</RowBelow>
     </ListRow>
   );
 }
 
+/** An open chat's row, done once its draft waits or its program ended. */
+function OpenRow({
+  plane,
+  chat,
+  drafts,
+  onShow,
+  onReview,
+}: {
+  plane: string;
+  chat: StudioChat;
+  drafts: readonly SkillDraft[];
+  onShow: () => void;
+  onReview: (draft: SkillDraft) => void;
+}) {
+  const ended = useEnded(chat.session);
+  return (
+    <StartedRow
+      plane={plane}
+      session={chat.session}
+      name={chat.name}
+      link={chat.link}
+      done={isDone(chat, drafts, ended)}
+      draft={drafts.find((one) => one.chat === chat.session)}
+      onShow={onShow}
+      onReview={onReview}
+    />
+  );
+}
+
 /**
- * **"Chats the studio started"** on a skill's Runs (#5185, variant A): each open chat the studio
- * started for this skill, running or finished, with Open chat. Nothing where there is none.
+ * **"Chats the studio started"** on a skill's Runs (#5185, variant A; #5248): each chat the
+ * studio started for this skill, the open ones first, running or finished, with Open chat, then
+ * those closed here, newest first, each with when it finished. Review draft where its draft
+ * waits. Nothing where there is none.
  */
 export function StudioChatsStarted({
+  plane,
   name,
   level,
   drafts,
 }: {
+  plane: string;
   name: string;
   level: SkillLevel;
   drafts: readonly SkillDraft[];
 }) {
-  const { chats, show } = useStudioChats();
+  const { chats, show, openDraft } = useStudioChats();
   const titleId = useId();
   const mine = useMemo(() => chatsOfSkill(chats, name, level), [chats, name, level]);
-  if (mine.length === 0) return null;
+  const openNow = chats.map((one) => one.session).join(" ");
+  const everClosed = useClosedStudioChats(plane, openNow);
+  const closed = useMemo(
+    () =>
+      chatsOfSkill(everClosed, name, level).filter(
+        (one) => !chats.some((open) => open.session === one.session),
+      ),
+    [everClosed, chats, name, level],
+  );
+  if (mine.length === 0 && closed.length === 0) return null;
+  const draftOf = (session: number) => drafts.find((one) => one.chat === session);
+  const review = (link: StudioLink) => (draft: SkillDraft) => openDraft(link, draft.id);
   return (
     <section
       className="skill-page-studio-started"
@@ -335,13 +512,37 @@ export function StudioChatsStarted({
       data-testid="skill-studio-started"
     >
       <PanelSectionTitle id={titleId}>Chats the studio started</PanelSectionTitle>
-      <List aria-labelledby={titleId} size="sm" onAction={(key) => show(Number(key))}>
+      <List
+        aria-labelledby={titleId}
+        size="sm"
+        onAction={(key) => {
+          const session = Number(key);
+          if (mine.some((one) => one.session === session)) return show(session);
+          const gone = closed.find((one) => one.session === session);
+          const draft = draftOf(session);
+          if (gone !== undefined && draft !== undefined) openDraft(gone.link, draft.id);
+        }}
+      >
         {mine.map((chat) => (
-          <StartedRow
+          <OpenRow
             key={chat.session}
+            plane={plane}
             chat={chat}
             drafts={drafts}
             onShow={() => show(chat.session)}
+            onReview={review(chat.link)}
+          />
+        ))}
+        {closed.map((chat) => (
+          <StartedRow
+            key={chat.session}
+            plane={plane}
+            session={chat.session}
+            name={chat.name}
+            link={chat.link}
+            done
+            draft={draftOf(chat.session)}
+            onReview={review(chat.link)}
           />
         ))}
       </List>
@@ -369,18 +570,26 @@ export function useRunningJob(
   return ofKinds.find((one) => one.session === running);
 }
 
-/** **The Grades card's running job** (#5185): what the chat does and where, with Open chat. */
-export function RunningJob({ chat }: { chat: StudioChat }) {
-  const { show } = useStudioChats();
+/** **The Grades card's running job** (#5185; #5248, B's Grades card): what the chat does, where
+ *  and for how long, with Open chat and Stop it. */
+export function RunningJob({ plane, chat }: { plane: string; chat: StudioChat }) {
+  const { show, stop } = useStudioChats();
+  const now = useNow();
+  const doing = jobSaid(chat.link.job, false);
   return (
     <div className="skill-checks-running" data-testid={`skill-checks-running-${chat.session}`}>
       <p className="honest">
         <Badge variant="accent">Running</Badge>{" "}
-        {`A chat ${chatPlace(chat.link.level)} is ${jobSaid(chat.link.job, false)}.`}
+        {`A chat ${chatPlace(chat.link.level, plane)} is ${doing} · ${runningSaid(chat.link.started, now)}`}
       </p>
-      <Button size="sm" onPress={() => show(chat.session)}>
-        Open chat
-      </Button>
+      <ButtonRow size="sm">
+        <Button size="sm" tooltip={`Shows ${chat.name}`} onPress={() => show(chat.session)}>
+          {OPEN_CHAT}
+        </Button>
+        <Button size="sm" tooltip={`Asks to stop ${chat.name}`} onPress={() => stop(chat.session)}>
+          {STOP_IT}
+        </Button>
+      </ButtonRow>
     </div>
   );
 }

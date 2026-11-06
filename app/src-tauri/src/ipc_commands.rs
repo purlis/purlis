@@ -387,6 +387,7 @@ macro_rules! app_commands {
                 skillhistory::skill_lifecycle,
                 skillhistory::skill_owners,
                 skilldrafts::skill_drafts,
+                skilldrafts::studio_chats_closed,
                 skilldrafts::skill_draft_accept,
                 skilldrafts::skill_draft_reject,
                 skilldrafts::skill_draft_chat,
