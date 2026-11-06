@@ -261,17 +261,26 @@ async function raise(
 }
 
 /**
- * **Pane `pane` exactly `height` tall**, whatever the runner's window will do. A pane's height is
- * the frame's own (`container-type: size`), so what it holds is capped by this. `lower` undoes it.
+ * **Pane `pane` `height` tall, or as tall as the window leaves it where that is less**, whatever
+ * the runner's window will do. A pane's height is the frame's own (`container-type: size`), so
+ * what it holds is capped by this. `lower` undoes it. Answers the height the pane was given.
+ *
+ * **Never taller than its room** (#5495): a frame set taller than the panel that holds it runs
+ * past it, the panel's box (`overflow: auto`) scrolls, and where its scrollbar takes room (the
+ * macOS runner's) the pane is narrower, so its Notices wrap as in a narrower pane.
  */
-async function paneIs(pane: number, height: number): Promise<void> {
-  await browser.execute(
+async function paneIs(pane: number, height: number): Promise<number> {
+  return browser.execute(
     (at: number, tall: number) => {
       const frames = [...document.querySelectorAll<HTMLElement>(".pane-frame")].filter((frame) =>
         frame.querySelector('[data-testid="pane"]'),
       );
-      frames[at].style.blockSize = `${tall}px`;
-      frames[at].dataset.madeShort = "pane-notices.e2e";
+      const frame = frames[at];
+      frame.style.removeProperty("block-size");
+      const made = Math.min(tall, frame.getBoundingClientRect().height);
+      frame.style.blockSize = `${made}px`;
+      frame.dataset.madeShort = "pane-notices.e2e";
+      return made;
     },
     pane,
     height,
@@ -378,6 +387,11 @@ async function measured(pane: number) {
       stackInside: stack ? stack.clientWidth : 0,
       stackScrolls: stack ? stack.scrollHeight > stack.clientHeight + 1 : false,
       stackScrollTop: stack ? stack.scrollTop : 0,
+      // Whether the box the window's panel holds the pane in scrolls (react-resizable-panels'
+      // inner box, `overflow: auto`): only a pane taller than its room makes it (#5495).
+      panelScrolls: [frame?.closest("[data-panel]")?.firstElementChild].some(
+        (inner) => inner instanceof HTMLElement && inner.scrollHeight > inner.clientHeight + 1,
+      ),
       notices,
     };
   }, pane);
@@ -1037,6 +1051,8 @@ describe("a Notice in a pane", () => {
     const tall = await measured(0);
     const [box, under] = [tall.notices[1].box as Box, tall.notices[1].under as Box];
     const above = box.top - (tall.frame as Box).top + box.height - under.height;
+    // Never past the room the window gives it (#5495): on the macOS runner that room is already
+    // this short, and the pane stays the window's.
     await paneIs(0, (above - 22.75) / 0.67);
     const seen = await measured(0);
     const [notice, frame] = [seen.notices[1].box as Box, seen.frame as Box];
@@ -1069,6 +1085,63 @@ describe("a Notice in a pane", () => {
         frame,
         `the long Notice ${notice.height}px tall, ${notice.top - frame.top}px down its ${frame.height}px pane ${said},`,
       );
+  });
+
+  // **A pane made short is never made taller** (#5495): on the macOS queue's runner the window's
+  // pane was 353px, and the case above asked for 379px of it. The frame ran past the panel that
+  // holds it, the panel's box scrolled, and its scrollbar took 15px of the pane's width: the
+  // Notice's ways wrapped onto one more row, so its line was 30px taller at the "same" width.
+  it("never makes a pane taller than the room its panel gives it (#5495)", async () => {
+    await windowIs(1024, 768);
+    expect(await raise(0, { sentence: SENTENCE, ways: WAYS })).toBe(true);
+    const room = (await measured(0)).frame as Box;
+    await paneIs(0, room.height + 26);
+    const seen = await measured(0);
+    const frame = seen.frame as Box;
+    check(`the ${room.height}px pane was made taller`, frame.height, "atMost", room.height + 1);
+    check("the pane's panel scrolls", seen.panelScrolls, "is", false);
+    check("the pane lost width to its panel", frame.width, "atLeast", room.width - 1);
+  });
+
+  it("keeps a Notice's line as tall in a 350px pane as in a 400px one of the same width (#5495)", async () => {
+    // Tall enough for 400px of pane on every runner that will give it; where one gives less, the
+    // two heights are its room and 50px under it.
+    await windowIs(1600, 1000);
+    expect(await raise(0, { sentence: SENTENCE, ways: WAYS, opened: BRIEF })).toBe(true);
+    const at = async (height: number) => {
+      const made = await paneIs(0, height);
+      const seen = await measured(0);
+      const line = seen.notices[0].line as Box;
+      return { made, pane: seen.frame as Box, line, panelScrolls: seen.panelScrolls };
+    };
+    const tall = await at(400);
+    const short = await at(Math.min(350, tall.made - 50));
+    const said = `(${Math.round(tall.pane.height)}px pane: line ${Math.round(tall.line.width)}×${Math.round(tall.line.height)}; ${Math.round(short.pane.height)}px pane: line ${Math.round(short.line.width)}×${Math.round(short.line.height)})`;
+    check(
+      `the two panes are not 50px apart ${said}`,
+      tall.pane.height - short.pane.height,
+      "atLeast",
+      49,
+    );
+    check(
+      `the panes are not the same width ${said}`,
+      Math.abs(tall.pane.width - short.pane.width),
+      "atMost",
+      1,
+    );
+    check(`a panel scrolls ${said}`, tall.panelScrolls || short.panelScrolls, "is", false);
+    check(
+      `the line's width moved with the pane's height ${said}`,
+      Math.abs(tall.line.width - short.line.width),
+      "atMost",
+      1,
+    );
+    check(
+      `the line's height moved with the pane's height ${said}`,
+      Math.abs(tall.line.height - short.line.height),
+      "atMost",
+      1,
+    );
   });
 
   it("keeps each Notice's drawn box inside a pane a standing result squeezes (#3344)", async () => {
