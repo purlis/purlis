@@ -636,7 +636,7 @@ pub async fn workspace_file(
 }
 
 /// The folders the extensions this machine approved keep in a workspace: managed there.
-fn extension_folders() -> Vec<String> {
+pub(crate) fn extension_folders() -> Vec<String> {
     purlis_core::machine::config_root()
         .map(|config| {
             purlis_core::extension::events::carried(&config, &crate::extensions::built_in())

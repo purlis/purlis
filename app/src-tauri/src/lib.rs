@@ -217,6 +217,7 @@ mod windowprefs;
 mod windows;
 mod worklinks;
 mod workspaces;
+mod workspacewrites;
 mod worktrees;
 mod yoursandbox;
 

@@ -1688,6 +1688,11 @@ export const commands = {
 	planeFile: __WINDOW_ONLY_RESULT,
 	workspaceTree: __WINDOW_ONLY_RESULT,
 	workspaceFile: __WINDOW_ONLY_RESULT,
+	workspaceFilesNewFile: __WINDOW_ONLY_RESULT,
+	workspaceFilesNewFolder: __WINDOW_ONLY_RESULT,
+	workspaceFilesRename: __WINDOW_ONLY_RESULT,
+	workspaceFilesTrash: __WINDOW_ONLY_RESULT,
+	workspaceFilesImport: __WINDOW_ONLY_RESULT,
 	/**
 	 *  What a branch changed against the branch it was cut from, committed or not, file by file and
 	 *  rolled up onto its folders: the explorer's markers and its "Changed only" (FM-4).
