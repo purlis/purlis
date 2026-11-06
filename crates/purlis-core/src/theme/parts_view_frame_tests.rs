@@ -72,8 +72,10 @@ fn the_view_frame_comes_in_the_next_release_s_manifest() {
             "crumb-separator"
         ]
     );
+    // `heading` came after 0.5.0 (#5332), so it ships in the next release; the rest shipped in 13.
     for part in frame["parts"].as_array().unwrap() {
-        assert_eq!(part["since"], 13, "{part}");
+        let since = if part["name"] == "heading" { parts::NEXT } else { 13 };
+        assert_eq!(part["since"], since, "{part}");
     }
     assert_eq!(frame["variants"], json!([]));
     assert_eq!(frame["states"], json!([]));
