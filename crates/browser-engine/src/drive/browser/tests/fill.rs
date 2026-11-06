@@ -395,6 +395,36 @@ fn a_fill_under_a_lease_the_agent_no_longer_holds_types_nothing() {
     assert_eq!(inserted(&engine), 0);
 }
 
+/// A download is brought into a chat's folder only where its file holds no value purlis filled
+/// into the browser, in any of the forms a read has it taken out in.
+#[test]
+fn a_file_is_said_to_hold_a_filled_value_once_that_value_is_filled() {
+    let (browser, engine) = browser();
+    as_fields(&engine, "one_line", Twist::None);
+    let secret = ref_of(&snapshot(&browser, 1), "- textbox \"Secret word\"");
+    let held = tempfile::tempdir().unwrap();
+    let folder = held.path();
+    let holding = folder.join("export.txt");
+    std::fs::write(&holding, format!("key = {}\n", VALUE.to_uppercase())).unwrap();
+    let other = folder.join("other.txt");
+    std::fs::write(&other, "open and sesame, apart").unwrap();
+    assert!(
+        !browser.holds_a_filled_value(&holding).unwrap(),
+        "nothing filled yet"
+    );
+
+    filling(&browser, &fill_of(secret, "http://fixture.test"))
+        .unwrap_or_else(|why| panic!("{}", ended_as(&Err::<(), _>(why))));
+
+    assert!(browser.holds_a_filled_value(&holding).unwrap());
+    assert!(!browser.holds_a_filled_value(&other).unwrap());
+    assert!(
+        browser
+            .holds_a_filled_value(&folder.join("gone.txt"))
+            .is_err()
+    );
+}
+
 /// The person takes the browser over the moment the value is in its field, before the fill
 /// answers: the fill says it went in, so the person's view marks the field, and the answer
 /// reads nothing of the page the person now drives.
