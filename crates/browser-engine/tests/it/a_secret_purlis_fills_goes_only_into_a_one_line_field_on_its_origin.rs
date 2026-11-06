@@ -76,6 +76,26 @@ fn described(browser: &Browser, target: Ref) -> FieldInfo {
     }
 }
 
+/// The reference of the element named `label` that is no plain text, whatever its role, waiting
+/// for it to show.
+fn field_named(browser: &Browser, label: &str) -> Ref {
+    let named = format!("\"{label}\"");
+    let start = Instant::now();
+    loop {
+        let found = find(browser, label);
+        if let Some(line) = found.lines().find(|line| {
+            line.contains(&named) && line.contains('[') && !line.contains(&format!("text {named}"))
+        }) {
+            return ref_on(line, &named);
+        }
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "{label} never showed: {found}"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
 /// The reference of the element labelled `label`, waiting for it to show.
 fn ref_of(browser: &Browser, line: &str) -> Ref {
     let label = line.split('"').nth(1).unwrap_or(line);
@@ -335,7 +355,9 @@ fn under_a_grant_a_field_sent_by_get_or_marked_for_payment_takes_nothing() {
         return;
     };
     open(&browser, "fill-forms.html");
-    let field = |label: &str| ref_of(&browser, &format!("textbox \"{label}\""));
+    // By its name, whatever role the engine gives it: Chrome may say a card's field as other than
+    // a text box, for its autofill.
+    let field = |label: &str| field_named(&browser, label);
     for (label, by_get, payment) in [
         ("Search", true, false),
         ("Secret word", false, false),
