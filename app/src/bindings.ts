@@ -2903,7 +2903,7 @@ export const commands = {
 	skillDrafts: (plane: PlaneId) => typedError<SkillDraft[], string>(__TAURI_INVOKE("skill_drafts", { plane })),
 	/**
 	 *  **The chats the studio started that have closed here** (#5248), newest first: what a skill's
-	 *  Runs keeps after a chat ends. None while the studio is off.
+	 *  Runs keeps after a chat ends.
 	 */
 	studioChatsClosed: (plane: PlaneId) => typedError<ClosedStudioChat[], string>(__TAURI_INVOKE("studio_chats_closed", { plane })),
 	/**  **Accepts a draft**: one commit of exactly its files. */
