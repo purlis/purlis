@@ -457,15 +457,22 @@ impl Frame {
     }
 
     /// **The origin this frame's document has**, by the web's rules for its address. A web
-    /// address is its own; the engine's own page for a load that failed has none of its own.
-    /// `about:blank` and `about:srcdoc` (or no address yet) take the origin of the document
-    /// around them, unless the document is sandboxed: `document`, the origin the engine gave
-    /// the document's own context where it gave one, says which, and short of it the frame is
-    /// [`Origin::Inherited`]. Otherwise the engine's word of the address's origin, where it
-    /// gave one. Short of that, a `blob:` address carries the origin of the document that made
-    /// it. Any other address (`data:` among them) has no web origin: it is opaque.
+    /// address is its own, unless the document is sandboxed: where its own context says it has
+    /// no web origin, or its frame element's `sandbox` leaves it none ([`Frame::sandboxed`]), it
+    /// is opaque, whatever its address says. The engine's own page for a load that failed has
+    /// none of its own. `about:blank` and `about:srcdoc` (or no address yet) take the origin of
+    /// the document around them, unless the document is sandboxed: `document`, the origin the
+    /// engine gave the document's own context where it gave one, says which, and short of it
+    /// the frame is [`Origin::Inherited`]. Otherwise the engine's word of the address's origin,
+    /// where it gave one. Short of that, a `blob:` address carries the origin of the document
+    /// that made it. Any other address (`data:` among them) has no web origin: it is opaque.
     fn origin(&self, document: Option<&str>) -> Origin {
         if at_web_address(&self.url) {
+            // Chrome's `securityOrigin` is read off the address alone, so only the document's
+            // own context, or its element's sandbox, says it has none.
+            if self.sandboxed == Some(true) || document.is_some_and(|own| !at_web_address(own)) {
+                return Origin::Opaque;
+            }
             return Origin::Web(self.url.clone());
         }
         if scheme_rest(&self.url, "chrome-error").is_some() {
@@ -2612,18 +2619,30 @@ impl Browser {
         self.read_sandboxes_of(target, |_| true);
     }
 
-    /// **Reads the `sandbox` of the frame element of each blank or srcdoc frame of `target`'s
-    /// page that `wanted` names, with no word of its own context** ([`Frame::sandboxed`]),
-    /// where a judge is to say where what is in it goes: such a frame is judged by it. At most
-    /// [`FRAME_READS_PER_ACT`] frames are read. A read that fails leaves the frame not known.
+    /// **Reads the `sandbox` of the frame element of each blank, srcdoc or web frame of
+    /// `target`'s page that `wanted` names, with no word of its own context**
+    /// ([`Frame::sandboxed`]), where a judge is to say where what is in it goes: such a frame is
+    /// judged by it. The element is read in the document around the frame, whose session holds
+    /// it. At most [`FRAME_READS_PER_ACT`] frames are read. A read that fails leaves the frame
+    /// not known.
     fn read_sandboxes_of(&self, target: &str, wanted: impl Fn(&str) -> bool) {
         if self.inner.judge.is_none() {
             return;
         }
-        let wanted: Vec<(String, String, String, u64)> = {
+        let wanted: Vec<(String, String, String, String, u64)> = {
             let state = lock(&self.inner.state);
             let Some(page) = state.page(target) else {
                 return;
+            };
+            let around = |frame: &Frame| {
+                frame
+                    .parent
+                    .as_deref()
+                    .and_then(|parent| match page.frames.get(parent) {
+                        Some(up) => Some(up.session.clone()),
+                        None => page.session.clone().filter(|_| parent == page.target),
+                    })
+                    .unwrap_or_else(|| frame.session.clone())
             };
             let mut unread: Vec<_> = page
                 .frames
@@ -2632,13 +2651,14 @@ impl Browser {
                     **id != page.target
                         && wanted(id)
                         && frame.sandboxed.is_none()
-                        && takes_the_origin_around(&frame.url)
+                        && (takes_the_origin_around(&frame.url) || at_web_address(&frame.url))
                         && state.document_origins.origin(&frame.session, id).is_none()
                 })
                 .map(|(id, frame)| {
                     (
                         id.clone(),
                         frame.session.clone(),
+                        around(frame),
                         frame.url.clone(),
                         frame.told,
                     )
@@ -2648,8 +2668,8 @@ impl Browser {
             unread.truncate(FRAME_READS_PER_ACT);
             unread
         };
-        for (id, session, url, told) in wanted {
-            let on = Some(session.as_str());
+        for (id, session, around, url, told) in wanted {
+            let on = Some(around.as_str());
             let Some(owner) = self
                 .devtools()
                 .call("DOM.getFrameOwner", json!({ "frameId": id }), on)

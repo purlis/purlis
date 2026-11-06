@@ -3,7 +3,8 @@
 
 //! A secret purlis fills (#5115, spec #5100), through a real engine on the fixture site: one
 //! vault value goes into a one-line field of a browser the agent is already using, only where
-//! the field's own frame is on the origin the person approved at the moment of filling, and
+//! the field's own frame is on the origin the person approved at the moment of filling (by its
+//! document's origin, not its address alone: a sandboxed frame is on none), and
 //! nothing the agent reads after shows it: not a snapshot, a find, a wait or a screenshot, not
 //! even where the page echoes it.
 //!
@@ -157,6 +158,26 @@ fn a_field_whose_frame_is_on_another_origin_is_refused_and_says_why() {
         }
         other => panic!("refused otherwise: {}", ended_as(&other)),
     }
+}
+
+#[test]
+fn a_field_in_a_sandboxed_frame_at_the_approved_address_is_refused() {
+    let Some((browser, _data, _site)) = started() else {
+        return;
+    };
+    open(&browser, "fill-sandboxed-frame.html");
+    let card = ref_of(&browser, "textbox \"Card number\"");
+    assert_eq!(
+        described(&browser, card.clone()).origin,
+        None,
+        "a sandboxed document has no origin, whatever its address says"
+    );
+    // The frame's address is on the approved origin; its document is on none.
+    match filled(&browser, card, "http://other.test") {
+        Err(Refusal::NotFilled(why)) => assert!(why.contains("nothing was filled"), "{why}"),
+        other => panic!("refused otherwise: {}", ended_as(&other)),
+    }
+    assert!(!holds_the_value(&snapshot(&browser)));
 }
 
 #[test]
