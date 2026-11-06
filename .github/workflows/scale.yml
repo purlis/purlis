@@ -25,10 +25,6 @@ name: scale
 # the repository's caches are already at the 10 GB they may hold (`stress.yml`): each night builds
 # from scratch, about twenty minutes an OS, and writing the project takes about as long again.
 on:
-  # TEMPORARY, for the run before merge that a workflow_dispatch cannot give (GitHub dispatches
-  # only a workflow on the default branch). Removed before the pull request is reviewed.
-  push:
-    branches: [scale-5497-fake-project-nightly-scale-ru-net5kbwx]
   schedule:
     # 03:23 UTC, after `stress`'s nightly (02:41) has had its runners.
     - cron: "23 3 * * *"
