@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793961894924,
+  "lastUpdate": 1793963597219,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -40908,6 +40908,48 @@ window.BENCHMARK_DATA = {
             "value": 101.753025,
             "unit": "ms",
             "extra": "median of 5 runs: 101.258, 101.711, 101.753, 101.926, 102.182 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e1157a645297a842369c5c13ce5cff817bb5912c",
+          "message": "Bulk skill actions in the CLI; a chat can only propose them (#5357) (#5472)\n\n* Bulk skill actions in the CLI; a chat can only propose them (#5357)\n\npurlis skill rm, off, on, pin and archive take several names or --source,\nand make the change as one commit after its review at the person's\nterminal. In a chat (any environment mark, the sandbox holding the\nmanifests, or ancestry by the open-chats records; a doubt is a chat's)\nthey write nothing and hand the app Ask::ProposeSkillSet, held with the\nproposed changes and made only on the person's Apply.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6QA7GVR339NV25AWN6S89MZ\nPurlis-Persona: steward\n\n* Add the files the bulk skill change brings (#5357)\n\nThe proposal type and its tests, the CLI's test, the ADR 0067 amendment\nand the changelog fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6QA7GVR339NV25AWN6S89MZ\nPurlis-Persona: steward\n\n* Review fixes for the bulk skill change (#5357)\n\nA proposal goes stale when any file of a skill changes, not only its\nSKILL.md; a check that can't tell whether it runs in a chat changes\nnothing, with a test; a clearer refusal; off and on share one helper.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6QA7GVR339NV25AWN6S89MZ\nPurlis-Persona: steward\n\n* A bulk skill change runs only at an interactive terminal (#5357)\n\nThe person's answer of 2026-11-06 to how a chat that detaches is told\napart: a change to several skills is made directly only where standard\ninput and standard error are a terminal and every other check says the\nperson; --yes is gone for it, and any other caller proposes. Tests: the\nperson's verbs on a real terminal, a no, no flag to skip the question, a\ncaller with no terminal and a detached one only propose. The ADR\namendment and fragment say plainly that an unsandboxed chat can still\nchange the files itself.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6QA7GVR339NV25AWN6S89MZ\nPurlis-Persona: steward\n\n* A sandboxed chat's skill grant --off is told the manifest's sentence (#5357)\n\nThe stricter chat check refused it first with the general one; the\nsentence that names why (a sandboxed chat does not write a workspace's\nmanifest) is the one that holds there, as before.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6QA7GVR339NV25AWN6S89MZ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-06T10:15:58Z",
+          "tree_id": "b4af6517df1dc689694dd5de1edd6e2df4bd091e",
+          "url": "https://github.com/purlis/purlis/commit/e1157a645297a842369c5c13ce5cff817bb5912c"
+        },
+        "date": 1793963591627,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6541335,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.627, 0.646, 0.654, 0.655, 0.678 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6973615,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.372, 16.442, 16.697, 16.747, 16.793 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.4720245,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.546, 101.593, 102.472, 102.578, 103.354 ms"
           }
         ]
       }
