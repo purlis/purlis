@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793957870345,
+  "lastUpdate": 1793961894924,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -40866,6 +40866,48 @@ window.BENCHMARK_DATA = {
             "value": 102.151697,
             "unit": "ms",
             "extra": "median of 5 runs: 101.974, 102.078, 102.152, 102.462, 102.825 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "8134825364b8668fb4f579de2d1d9138cee9df0f",
+          "message": "Hold the later-code names by path on Linux and weigh what they hold (#5455)\n\n* Hold the later-code names by path on Linux and weigh what they hold\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6KF18A31C2YQSGX9QH0RX0A\nPurlis-Persona: steward\n\n* A test host keeps a chat's long settings in a folder, as every real host does\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6KF18A31C2YQSGX9QH0RX0A\nPurlis-Persona: steward\n\n* Say what a chat on Linux costs where it was measured\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6KF18A31C2YQSGX9QH0RX0A\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-06T09:40:45Z",
+          "tree_id": "2b03c285b9b9948da3f935c35d88c3865cb3363a",
+          "url": "https://github.com/purlis/purlis/commit/8134825364b8668fb4f579de2d1d9138cee9df0f"
+        },
+        "date": 1793961890851,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.699683,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.659, 0.684, 0.700, 0.713, 0.728 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5871275,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.473, 16.514, 16.587, 16.643, 16.754 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.753025,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.258, 101.711, 101.753, 101.926, 102.182 ms"
           }
         ]
       }
