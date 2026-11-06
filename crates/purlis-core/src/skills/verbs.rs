@@ -276,6 +276,7 @@ impl Ctx<'_> {
                 no_push: false,
                 cwd: self.plane,
                 provenance: None,
+                for_a_chat: false,
             },
             crate::planegit::Trigger::Skill(self.by),
             &unique,

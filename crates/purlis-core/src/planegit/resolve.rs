@@ -105,6 +105,9 @@ pub fn start(root: &Path, say: Sink) -> Settled {
     let Some(_claim) = Claim::of(root) else {
         return Settled::Refused(BUSY.into());
     };
+    if let Err(why) = super::git_files_refused(root) {
+        return Settled::Refused(format!("Nothing was started: {why}."));
+    }
     let plane = crate::planesave::Settings::read(root).plane;
     if let Some(stopped) = gitstate::stopped(root) {
         return Settled::Refused(format!(
@@ -308,6 +311,9 @@ pub fn carry_on(root: &Path, shown: &[String], say: Sink) -> Settled {
     let Some(_claim) = Claim::of(root) else {
         return Settled::Refused(BUSY.into());
     };
+    if let Err(why) = super::git_files_refused(root) {
+        return Settled::Refused(format!("Nothing was started: {why}."));
+    }
     let stop = match held_stop(root) {
         Ok(stop) => stop,
         Err(refused) => return refused,
@@ -458,6 +464,9 @@ pub fn skip(root: &Path) -> Settled {
     let Some(_claim) = Claim::of(root) else {
         return Settled::Refused(BUSY.into());
     };
+    if let Err(why) = super::git_files_refused(root) {
+        return Settled::Refused(format!("Nothing was started: {why}."));
+    }
     if let Err(refused) = held_stop(root) {
         return refused;
     }
@@ -492,6 +501,9 @@ pub fn abort(root: &Path) -> Settled {
     let Some(_claim) = Claim::of(root) else {
         return Settled::Refused(BUSY.into());
     };
+    if let Err(why) = super::git_files_refused(root) {
+        return Settled::Refused(format!("Nothing was started: {why}."));
+    }
     if !stopped_here(root) {
         return Settled::Refused(
             "No rebase or merge is stopped in this project, so there is nothing to abort.".into(),

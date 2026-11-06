@@ -1096,6 +1096,7 @@ fn an_operators_untracked_cache_setting_is_never_overridden_by_any_read_or_save(
             no_push: true,
             cwd: &fx.plane,
             provenance: None,
+            for_a_chat: false,
         },
         &mut |line: Say| said.push_str(&format!("{line}\n")),
     );

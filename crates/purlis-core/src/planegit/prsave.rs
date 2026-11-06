@@ -424,6 +424,9 @@ fn push_unsaid(root: &Path, plane: &Plane, sign: bool, caller: &Caller, say: Sin
             ..PushResult::of(Outcome::Blocked, "")
         }
     };
+    if let Err(why) = super::git_files_refused(root) {
+        return refused(why, say);
+    }
     let Some(https) = origin_https(root) else {
         // Not a block (charter-app#295): a request mode on a remote no forge adapter serves commits
         // and goes no further, and `standing` says so as a notice.
