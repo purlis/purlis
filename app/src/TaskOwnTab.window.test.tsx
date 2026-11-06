@@ -551,15 +551,15 @@ describe("moving a task to a tab of its own", () => {
     press(places[1]);
     await waitFor(() => expect(onScreen()).toEqual([1, 4]));
     expect(screen.queryByRole("menu")).toBeNull();
-    // The tab wears its focused pane's name (#4762): the task, opened beside its session.
-    expect(tabNames()).toEqual(["talk", "steward 2", "sweep"]);
+    // The tab keeps its first chat's name (#5342): the session's, with talk beside it.
+    expect(tabNames()).toEqual(["steward 1", "steward 2", "sweep"]);
 
     // Alt+Enter is beside its session.
     menu = await open();
     lineOf(menu, "sweep").focus();
     await userEvent.keyboard("{Alt>}{Enter}{/Alt}");
-    // Beside its session, in its focused pane, so the session's tab wears it (#4762).
-    await waitFor(() => expect(tabNames()).toEqual(["sweep", "steward 2"]));
+    // Beside its session, in its focused pane, and the session's tab keeps its name (#5342).
+    await waitFor(() => expect(tabNames()).toEqual(["steward 1", "steward 2"]));
     expect(onScreen()).toContain(5);
     expect(ended(asked)).toEqual([]);
   });
@@ -639,11 +639,11 @@ describe("opening a task beside its session", () => {
     await userEvent.keyboard(" ");
 
     await waitFor(() => expect(onScreen()).toEqual([1, 4]));
-    // No tab was added, and the tab is the session's: it wears its focused pane, the task
-    // opened beside it (#4762), and `⊟+1` for the session's pane.
-    expect(tabNames()).toEqual(["talk", "steward 2"]);
-    expect(tab("talk").getAttribute("aria-selected")).toBe("true");
-    expect(tab("talk").querySelector(".tab-split-more")).not.toBeNull();
+    // No tab was added, and the tab is the session's: a split doesn't rename it, though the
+    // task opened beside it is focused (#5342), and `⊟+1` says the task's pane.
+    expect(tabNames()).toEqual(["steward 1", "steward 2"]);
+    expect(tab("steward 1").getAttribute("aria-selected")).toBe("true");
+    expect(tab("steward 1").querySelector(".tab-split-more")).not.toBeNull();
     // Each pane says which chat it is.
     expect(crumbsSaid()).toEqual([
       expect.stringMatching(/^steward 1 ·/),
@@ -736,7 +736,7 @@ describe("opening a task beside its session", () => {
     await userEvent.keyboard(" ");
     await waitFor(() => expect(onScreen()).toEqual([1, 4]));
 
-    await userEvent.click(ender("talk") as HTMLElement);
+    await userEvent.click(ender("steward 1") as HTMLElement);
 
     // A close ends nothing (#4756): nothing is asked, and both chats go on in the sidebar.
     await waitFor(() => expect(tabNames()).toEqual(["steward 2"]));

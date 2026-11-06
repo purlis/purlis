@@ -458,7 +458,7 @@ describe("the strip's tabs (#4762)", () => {
     expect(within(strip()).getByRole("button", { name: "New tab" })).toBeInTheDocument();
   });
 
-  it("wears a split's focused pane, ⊟+N, and lists every pane on hover", async () => {
+  it("wears a split's first pane's name whatever is focused, ⊟+N, and lists every pane on hover (#5342)", async () => {
     // One tab, two panes side by side, the second focused, as the record put it back.
     core([chat(1), chat(2)], {
       strip: null,
@@ -481,8 +481,8 @@ describe("the strip's tabs (#4762)", () => {
     });
     render(<App />);
 
-    await waitFor(() => expect(tabNames()).toEqual(["ide.2"]));
-    const tab = tabNamed("ide.2");
+    await waitFor(() => expect(tabNames()).toEqual(["ide.1"]));
+    const tab = tabNamed("ide.1");
     expect(tab?.querySelector(".tab-split-more")?.textContent).toBe("+1, split, 2 panes");
     expect(await hoverTipOf(tab)).toBe("ide.1 · ide.2");
   });
