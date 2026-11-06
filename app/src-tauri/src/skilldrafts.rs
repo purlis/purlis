@@ -135,7 +135,7 @@ impl From<&purlis_core::reopen::studio_chats::ClosedStudioChat> for ClosedStudio
 }
 
 /// **The chats the studio started that have closed here** (#5248), newest first: what a skill's
-/// Runs keeps after a chat ends. None while the studio is off.
+/// Runs keeps after a chat ends.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn studio_chats_closed(
@@ -144,9 +144,6 @@ pub(crate) async fn studio_chats_closed(
 ) -> Result<Vec<ClosedStudioChat>, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading the studio's chats", move || {
-        if !purlis_core::skills::studio_on_here() {
-            return Ok(Vec::new());
-        }
         Ok(purlis_core::reopen::studio_chats::closed(held.root())
             .iter()
             .map(ClosedStudioChat::from)
