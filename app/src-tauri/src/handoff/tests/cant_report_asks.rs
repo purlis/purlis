@@ -3,19 +3,14 @@
 
 //! **A task that can't report asks** (#4759, ADR 0090 as amended 2026-11-02):
 //! it starts in no pane like every dispatch, and it can't say when it needs the person, so the
-//! asking chat is told, beside the start, that the person must look at it, and why: its
-//! harness's own reason, or that purlis has no adapter for its program (#5271).
+//! asking chat is told, beside the start, that the person must look at it. A program purlis has
+//! no adapter for is never started as a task at all (#5271).
 
 use super::*;
 
 /// What the window is told of chat 7, started from chat 1, as a task or a handoff, on a
 /// harness that says when it waits or one that can't.
 fn arrived(task: bool, cant_report_asks: bool) -> Arrived {
-    on(task, cant_report_asks, true)
-}
-
-/// [`arrived`], on a harness purlis has an adapter for, or not.
-fn on(task: bool, cant_report_asks: bool, adapter: bool) -> Arrived {
     Arrived {
         plane: PlaneId::for_tests(Path::new("/home/dev/plane")),
         session: 7,
@@ -37,7 +32,6 @@ fn on(task: bool, cant_report_asks: bool, adapter: bool) -> Arrived {
         persona: None,
         harness: Some("codex".to_owned()),
         cant_report_asks,
-        no_adapter: !adapter,
         announced: !task || cant_report_asks,
     }
 }
@@ -62,33 +56,19 @@ fn a_handoff_is_told_nothing_more_whatever_its_harness_its_asking_chat_hears_not
     assert_eq!(cant_report_note(&arrived(false, true)), None);
 }
 
-#[test]
-fn a_task_on_a_program_purlis_has_no_adapter_for_is_told_so_rather_than_blaming_a_harness() {
-    let note = cant_report_note(&on(true, true, false));
-    assert_eq!(note.as_deref(), Some(NO_ADAPTER_CANT_REPORT_ASKS));
-    assert_eq!(
-        NO_ADAPTER_CANT_REPORT_ASKS,
-        "purlis has no adapter for its program, so it can't report asks: tell the person they \
-         must look at it themselves"
-    );
-}
-
-/// **A task started on a program purlis has no adapter for** (#5271), the whole start: a chat
-/// on `work` dispatches a task on `sh`, a profile of `shelly`, a harness this machine declares
-/// on its own. The asking chat is told why the person must look at it, the window announces
-/// it, and its row keeps the faint hand and the "new" mark.
+/// **A task on a program purlis has no adapter for is refused before it starts** (#5271): a
+/// chat on `work` dispatches a task on `sh`, a profile of `shelly`, a harness this machine
+/// declares on its own. Nothing knows how to hand that program the brief, so the asking chat is
+/// told so and nothing starts: no chat is announced, none is listed, and no asking chat is ever
+/// told that such a task's harness can't report asks.
 #[cfg(unix)]
 #[test]
-fn a_task_started_on_a_program_with_no_adapter_tells_why_is_announced_and_keeps_the_faint_hand() {
+fn a_task_on_a_program_with_no_adapter_is_refused_before_it_starts_and_nothing_is_announced() {
     let plane = Plane::new();
-    let runs = plane.root.join("runs");
     let program = stand_in::program(
         plane._dir.path(),
         "shelly-stand-in",
-        &format!(
-            "#!/bin/sh\nat=$(mktemp {runs:?}/.writing.XXXXXX) || exit 1\n\
-             mv \"$at\" {runs:?}/run.shelly.$$\nsleep 10\n"
-        ),
+        "#!/bin/sh\nsleep 10\n",
     );
     let local = plane.root.join(purlis_core::profiles::LOCAL_FILE);
     let mut text = std::fs::read_to_string(&local).expect("the local file");
@@ -114,6 +94,7 @@ fn a_task_started_on_a_program_with_no_adapter_tells_why_is_announced_and_keeps_
     let asking = a_chat_on_work(&held, &plane.root);
     let tickets = Tickets::default();
     let ticket = ticket(&held, &id, &tickets, asking);
+    let before = held.chats().open_now().len();
     let told = Mutex::new(None);
     let Ask::Dispatch(mut ask) = a_task_into_alpha(asking, &ticket, Some("check the queue")) else {
         unreachable!("a dispatch")
@@ -124,33 +105,14 @@ fn a_task_started_on_a_program_with_no_adapter_tells_why_is_announced_and_keeps_
         *told.lock().unwrap() = Some(arrived)
     });
 
-    let Answer::Dispatched { chat, note, .. } = said else {
-        panic!("dispatched, not {said:?}")
+    let Answer::No { why } = said else {
+        panic!("refused, not {said:?}")
     };
-    assert!(
-        note.as_deref()
-            .is_some_and(|note| note.contains(NO_ADAPTER_CANT_REPORT_ASKS)),
-        "the asking chat is told why: {note:?}"
+    assert_eq!(
+        why,
+        "profile 'sh' runs a harness purlis has not measured the first message of, so it cannot \
+         be started on the brief."
     );
-    assert!(
-        !note
-            .as_deref()
-            .unwrap_or_default()
-            .contains(CANT_REPORT_ASKS),
-        "and not that a harness is to blame: {note:?}"
-    );
-    let told = told.into_inner().unwrap().expect("the window is told");
-    assert!(
-        told.cant_report_asks && told.no_adapter && told.announced,
-        "{told:?}"
-    );
-    let open = held
-        .chats()
-        .open_now()
-        .into_iter()
-        .find(|open| open.session == chat)
-        .expect("it runs");
-    let row = crate::OpenChat::from(open);
-    assert_eq!(row.cant_report_asks, Some(true), "the faint hand");
-    assert_eq!(row.unseen, Some(true), "the \"new\" mark");
+    assert!(told.into_inner().unwrap().is_none(), "nothing is announced");
+    assert_eq!(held.chats().open_now().len(), before, "nothing is listed");
 }

@@ -121,15 +121,11 @@ pub struct Arrived {
     /// before the number when it adopted no persona (charter-app#254).
     pub harness: Option<String>,
     /// **Whether it can't tell the person it needs them** (#4759): its harness's card says no
-    /// to hooks or to reporting a wait, or it has no adapter at all
-    /// ([`purlis_core::harness_card::reports_asks`]). A task on one is announced as a handoff
+    /// to hooks or to reporting a wait ([`purlis_core::harness_card::reports_asks`]). A program
+    /// purlis has no adapter for never arrives: [`told_first`] refuses it before it starts.
+    /// A task on one is announced as a handoff
     /// is, and the asking chat is told the person must look at it.
     pub cant_report_asks: bool,
-    /// **Whether purlis has no adapter for its program** (#5271,
-    /// [`purlis_core::harness_card::has_adapter`]): then it can't report asks because of purlis,
-    /// not its harness, and the asking chat is told that instead. The window draws both alike.
-    #[serde(skip)]
-    pub no_adapter: bool,
     /// **Whether the window announces it** (#4759, [`Chat::announced`]): a handoff, or a task
     /// that can't report asks, that the person did not start themselves. The same answer its
     /// record's `unseen` starts from, so the chip card, the Inbox Update and the row's "new" mark
@@ -141,28 +137,22 @@ pub struct Arrived {
 /// 0090 as amended 2026-11-02): one of the notes beside its start, which the CLI says as
 /// `Note: …`. The task starts in no pane, and nothing it asks reaches the person, so the person
 /// must look at it, and only the asking chat can tell them.
+///
+/// **Only a harness is ever to blame** (#5271): a program purlis has no adapter for is never
+/// started as a task, since nothing knows how to hand it the brief ([`told_first`]), so no
+/// asking chat is told this of one.
 pub const CANT_REPORT_ASKS: &str =
     "its harness can't report asks, so tell the person they must look at it themselves";
 
-/// What is said instead of [`CANT_REPORT_ASKS`] for a task on a program purlis has no adapter
-/// for (#5271): no harness is to blame, since purlis has no hooks into it at all.
-pub const NO_ADAPTER_CANT_REPORT_ASKS: &str = "purlis has no adapter for its program, so it \
-can't report asks: tell the person they must look at it themselves";
-
-/// [`CANT_REPORT_ASKS`], or [`NO_ADAPTER_CANT_REPORT_ASKS`], for a task that `arrived` and
-/// can't report its asks, and nothing for a handoff, whose asking chat hears nothing back, or
-/// a task whose harness reports its asks.
+/// [`CANT_REPORT_ASKS`] for a task that `arrived` and can't report its asks, and
+/// nothing for a handoff, whose asking chat hears nothing back, or a task whose harness reports
+/// its asks.
 fn cant_report_note(arrived: &Arrived) -> Option<String> {
     arrived
         .from
         .as_ref()
         .is_some_and(|from| from.task && arrived.cant_report_asks)
-        .then_some(if arrived.no_adapter {
-            NO_ADAPTER_CANT_REPORT_ASKS
-        } else {
-            CANT_REPORT_ASKS
-        })
-        .map(str::to_owned)
+        .then(|| CANT_REPORT_ASKS.to_owned())
 }
 
 /// Told when a handoff has opened a chat. The event carries its plane.
@@ -1918,7 +1908,6 @@ fn start_on(
         })?;
     // Whether it can say when it needs the person, and so whether it is announced (#4759).
     let cant_report_asks = !purlis_core::harness_card::reports_asks(ready.declaration());
-    let no_adapter = !purlis_core::harness_card::has_adapter(ready.declaration());
     let announced = Chat::announced(&opening.from, opening.by_person, cant_report_asks);
     let chat = Chat {
         program: ready.program.clone(),
@@ -1981,7 +1970,6 @@ fn start_on(
         persona: start.persona,
         harness: ready.harness.map(|harness| harness.name().to_owned()),
         cant_report_asks,
-        no_adapter,
         announced,
     })
 }

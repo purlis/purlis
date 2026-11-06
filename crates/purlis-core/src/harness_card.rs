@@ -493,15 +493,6 @@ pub fn reports_asks(declaration: Option<&Declaration>) -> bool {
     declaration.is_some_and(|declaration| of(declaration).reports_asks())
 }
 
-/// **Whether purlis has an adapter for the harness a chat started on** (#5271): a built-in, or
-/// this machine's replacement of one's facts. A harness a project or this machine declares on
-/// its own has none, and neither has a chat on no harness. A chat that can't report asks
-/// ([`reports_asks`]) can't because of its harness where this holds, and because of purlis
-/// where it doesn't.
-pub fn has_adapter(declaration: Option<&Declaration>) -> bool {
-    declaration.and_then(built_in).is_some()
-}
-
 /// The card of a built-in harness, which needs no project to read: charter ships a declaration
 /// for each one ([`harness_declaration::builtins`]), and a test holds them together.
 pub fn built_in_card(harness: Harness) -> Card {
