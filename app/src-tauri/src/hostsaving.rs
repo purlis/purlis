@@ -75,6 +75,9 @@ impl Save for InTheHost {
                 if looked.moved_tree {
                     pulled.pulled();
                 }
+                // What a save committed is no longer unshared: the briefing reads the
+                // standing the index records (#5503).
+                pulled.git_moved();
                 told(Looked {
                     saved: looked.saved,
                     moved_tree: looked.moved_tree,

@@ -149,6 +149,27 @@ impl Writer {
         Ok(())
     }
 
+    /// Records what of the project's memory its git standing has not committed, for the
+    /// briefing's unshared-memory line (#5503): the hook reads it here, and runs no `git status`
+    /// of its own. Each changed file under `personas/` or `workspaces/` with a `memory/` or
+    /// `refs/` folder in its path counts, as a persona's or a workspace's.
+    pub fn record_standing(&self, standing: &crate::planegit::Standing) -> Result<()> {
+        let memory = |path: &&String| path.contains("/memory/") || path.contains("/refs/");
+        let personas = standing
+            .changed
+            .iter()
+            .filter(|p| p.starts_with("personas/"))
+            .filter(memory)
+            .count();
+        let workspaces = standing
+            .changed
+            .iter()
+            .filter(|p| p.starts_with("workspaces/"))
+            .filter(memory)
+            .count();
+        set(&self.conn, "unshared", &format!("{personas} {workspaces}"))
+    }
+
     /// The project root this writer indexes.
     pub fn root(&self) -> &Path {
         &self.root

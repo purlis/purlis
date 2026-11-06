@@ -102,6 +102,15 @@ impl Reader {
         }
     }
 
+    /// What of the project's memory the host's last look at its git standing found
+    /// uncommitted ([`super::Writer::record_standing`]): persona files, then workspace files.
+    /// `None` when no look has been recorded.
+    pub fn unshared(&self) -> Option<(usize, usize)> {
+        let said = super::writer::get(&self.conn, "unshared")?;
+        let (personas, workspaces) = said.split_once(' ')?;
+        Some((personas.parse().ok()?, workspaces.parse().ok()?))
+    }
+
     /// The rows in `reach` whose title or text holds a word starting with any of `terms`, best
     /// first by BM25 with the title weighing three times the body, ties by path. At most `limit`
     /// rows; `limit < 0` is no cap.
@@ -334,7 +343,7 @@ fn uri_path(path: &Path) -> Option<String> {
 }
 
 /// Whether a writer holds `writer.lock` now: a shared lock this process cannot take.
-fn writer_holds(home: &Path) -> bool {
+pub(super) fn writer_holds(home: &Path) -> bool {
     let Ok(file) = std::fs::File::open(home.join(LOCK)) else {
         return false;
     };
