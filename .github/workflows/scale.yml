@@ -1,0 +1,169 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+name: scale
+
+# **The nightly scale run** (#5497, spec #5486): purlis on a project at the target size, 1,000
+# workspaces, 100 personas, 100,000 memories across the workspaces and 100,000 across the
+# personas, written by `scale-project generate` from its seed. On macOS and Linux it measures each
+# budget of #5486's targets table at the highest seam there is: the real `purlis` binary's
+# SessionStart hook and `recall` (`tools/scale-run.mjs`), and the real app's sidebar answer,
+# watcher setup and a minute of idle CPU with its window shown (`app/e2e/wdio.scale.conf.ts`). One
+# git standing look is timed as the app takes it (`scale-project look`).
+#
+# **Evidence only (V70), never on a pull request**, in the style of `stress.yml`: there is no
+# `pull_request` trigger, so a pull request pays nothing for it and no branch protection can name
+# it. A budget missed fails nothing. It opens or updates the one issue labelled
+# `scale-regression`, with the timings and the commits since the last pass, and the next run that
+# meets every budget closes it (`tools/scale-report.mjs`, the way `ci-health.yml` keeps its one
+# issue). A run that breaks (a command that fails, an answer that is wrong) is red, and touches no
+# issue.
+#
+# **Release builds, and no Rust cache.** A debug build's timings say nothing about the budgets, and
+# the repository's caches are already at the 10 GB they may hold (`stress.yml`): each night builds
+# from scratch, about twenty minutes an OS.
+on:
+  schedule:
+    # 03:23 UTC, after `stress`'s nightly (02:41) has had its runners.
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: "Open, update or close the scale-regression issue with this run's numbers (main only)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: scale-${{ github.ref }}
+  cancel-in-progress: false
+
+# Nothing by default: each job names what it needs.
+permissions: {}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  measure:
+    name: scale (${{ matrix.os }}, evidence only)
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    env:
+      # The scenario harness's run tree (`app/e2e/harness.ts`): the project is made inside it, so
+      # the app's fence holds it as it holds every other run's plane.
+      CHARTER_SCENARIO_RUN: ${{ runner.temp }}/scale-run
+      PURLIS_SCALE_PLANE: ${{ runner.temp }}/scale-run/project
+      # Every binary the run starts, the app's own among them, from the release build.
+      CHARTER_TARGET_DIR: ${{ github.workspace }}/target/release
+      OS_WORD: ${{ runner.os == 'macOS' && 'macos' || 'linux' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Tauri's Linux build dependencies and a display to run in
+        if: runner.os == 'Linux'
+        timeout-minutes: 11
+        uses: ./.github/actions/linux-packages
+        with:
+          tauri: true
+          packages: xvfb dbus-x11
+      - uses: ./.github/actions/rust-toolchain
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+        working-directory: app
+      - name: The generator, purlis, and the harness the app's panes run, in release
+        run: cargo build --release --locked -p scale-project -p purlis-cli -p fake-harness
+      # The `e2e` feature puts WebdriverIO's embedded WebDriver server inside the app; it is in no
+      # build anyone is given. Release, with no bundle, as the timings need.
+      - name: The app, in release, for the window's measurements
+        run: npx tauri build --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json
+        working-directory: app
+      - name: The project at the target size, from seed 5497, committed
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$CHARTER_SCENARIO_RUN"
+          target/release/scale-project generate --out "$PURLIS_SCALE_PLANE" --seed 5497 \
+            --at "$(date -u +%Y-%m-%dT%H:%M:%S)" | tee generated.json
+          git -C "$PURLIS_SCALE_PLANE" init -q -b main
+          git -C "$PURLIS_SCALE_PLANE" add -A
+          git -C "$PURLIS_SCALE_PLANE" -c user.name="scale run" -c user.email=scale@purlis.invalid \
+            commit -q -m "The generated project"
+          echo "PURLIS_SCALE_WORKSPACES=$(node -p 'require("./generated.json").workspaces')" >> "$GITHUB_ENV"
+      - name: The hook, recall and one git standing look
+        run: node tools/scale-run.mjs --project "$PURLIS_SCALE_PLANE" --os "$OS_WORD" --out scale-rows.jsonl
+      - name: The window's sidebar answer, watcher setup and idle CPU
+        if: runner.os == 'macOS'
+        working-directory: app
+        env:
+          PURLIS_SCALE_OUT: ${{ github.workspace }}/scale-rows.jsonl
+        run: npm run e2e:scale
+      - name: The window's sidebar answer, watcher setup and idle CPU
+        if: runner.os == 'Linux'
+        working-directory: app
+        env:
+          PURLIS_SCALE_OUT: ${{ github.workspace }}/scale-rows.jsonl
+        run: xvfb-run -a npm run e2e:scale
+      - name: This system's numbers, in the job summary
+        if: always()
+        run: |
+          touch scale-rows.jsonl
+          node tools/scale-report.mjs --only "$OS_WORD" scale-rows.jsonl
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: scale-rows-${{ matrix.os }}
+          path: |
+            scale-rows.jsonl
+            generated.json
+            app/logs
+          if-no-files-found: warn
+
+  report:
+    # Both systems' rows against #5486's budgets, in one summary, and the one issue kept. Only a
+    # run on `main` writes the issue: a nightly always, a run by hand when asked.
+    name: scale report (evidence only)
+    needs: measure
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            /tools/
+            /.nvmrc
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: scale-rows-*
+          path: rows
+      - name: Every budget against both systems, and the scale-regression issue
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || inputs.issue) }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(rows/*/scale-rows.jsonl)
+          args=()
+          if [ "$ISSUE" = "true" ]; then args+=(--issue); fi
+          node tools/scale-report.mjs "${args[@]}" "${files[@]}"

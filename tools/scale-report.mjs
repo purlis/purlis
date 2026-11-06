@@ -12,6 +12,7 @@
 //
 //   node tools/scale-report.mjs <rows.jsonl>…                 # the summary, to $GITHUB_STEP_SUMMARY or stdout
 //   GITHUB_TOKEN=… node tools/scale-report.mjs --issue <rows.jsonl>…   # and the one issue
+//   node tools/scale-report.mjs --only linux <rows.jsonl>     # one system's, for its own job
 //
 // A row is one JSON object a line: `{"budget": "hook", "os": "linux", "samples": [ms, …]}`, or
 // `{"budget": "idle-cpu", "os": "macos", "value": 1.5}` where the measurement is one number.
@@ -64,11 +65,12 @@ function statOf(row, stat) {
  * One verdict for each budget on each system: `met`, `missed`, `reported` (no budget there),
  * `pending` (its subject is not built yet) or `not measured` (it should have been and was not).
  * `rows` are what the run measured; a reported-only measurement nobody took is left out.
+ * `only` names the one system a report is of, as a measuring job's own summary is.
  */
-export function verdicts(rows) {
+export function verdicts(rows, { only } = {}) {
   const found = [];
   for (const spec of BUDGETS) {
-    for (const os of Object.keys(SYSTEMS)) {
+    for (const os of Object.keys(SYSTEMS).filter((os) => only === undefined || os === only)) {
       const base = { budget: spec.budget, os, spec };
       if (spec.pending) {
         found.push({ ...base, status: "pending" });
@@ -114,7 +116,7 @@ function shown(v) {
 function budgetOf(v) {
   const { limit, strict, unit, only } = v.spec;
   if (limit === undefined || (only !== undefined && only !== v.os)) return "none";
-  const value = unit === "ms" && limit >= 10_000 ? `${limit / 1000} s` : `${limit} ${unit}`;
+  const value = unit === "ms" && limit >= 1000 ? `${limit / 1000} s` : `${limit} ${unit}`;
   return `${strict ? "<" : "≤"} ${value}`;
 }
 
@@ -167,6 +169,21 @@ export function bodyFor({ report, head, lastPass, commits }) {
     "",
     lastPass ? `<!-- scale-last-pass: ${lastPass} -->` : "",
   ].join("\n");
+}
+
+/** `<rows.jsonl>… [--issue] [--only macos|linux]`, in any order. */
+export function parseArgv(argv) {
+  const files = [];
+  let issue = false;
+  let only;
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--issue") issue = true;
+    else if (argv[i] === "--only") {
+      only = argv[++i];
+      if (!(only in SYSTEMS)) throw new Error(`--only takes ${Object.keys(SYSTEMS).join(" or ")}, not "${only}"`);
+    } else files.push(argv[i]);
+  }
+  return { files, issue, only };
 }
 
 /** Every row of a file `tools/scale-run.mjs` wrote. */
@@ -252,9 +269,9 @@ async function keepIssue(found, report, { repo, head, token }) {
 }
 
 async function main(argv) {
-  const files = argv.filter((a) => !a.startsWith("--"));
+  const { files, issue, only } = parseArgv(argv);
   const rows = files.flatMap((file) => parseRows(readFileSync(file, "utf8")));
-  const found = verdicts(rows);
+  const found = verdicts(rows, { only });
   const head = process.env.GITHUB_SHA ?? "";
   const run = process.env.GITHUB_RUN_ID
     ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
@@ -265,7 +282,7 @@ async function main(argv) {
   for (const v of found.filter((v) => v.status === "missed")) {
     console.log(`::warning title=Scale budget missed (${SYSTEMS[v.os]})::${v.spec.what}: ${shown(v)} against ${budgetOf(v)}`);
   }
-  if (argv.includes("--issue")) {
+  if (issue) {
     const token = process.env.GITHUB_TOKEN;
     if (!token) throw new Error("--issue needs GITHUB_TOKEN");
     const kept = await keepIssue(found, report, { repo: process.env.GITHUB_REPOSITORY, head, token });

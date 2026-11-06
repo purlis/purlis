@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { bodyFor, decide, lastPassIn, parseRows, summary, verdicts } from "./scale-report.mjs";
+import { bodyFor, decide, lastPassIn, parseArgv, parseRows, summary, verdicts } from "./scale-report.mjs";
 
 const ms = (budget, os, samples) => ({ budget, os, samples });
 
@@ -123,4 +123,20 @@ test("the summary names every budget, its value against its budget and its statu
 
 test("rows are read one JSON object a line, blank lines skipped", () => {
   assert.deepEqual(parseRows('{"budget":"hook","os":"linux","samples":[1]}\n\n'), [ms("hook", "linux", [1])]);
+});
+
+test("the report's arguments are its row files, with --issue and --only <system> anywhere among them", () => {
+  assert.deepEqual(parseArgv(["--only", "linux", "a.jsonl", "--issue", "b.jsonl"]), {
+    files: ["a.jsonl", "b.jsonl"],
+    issue: true,
+    only: "linux",
+  });
+  assert.deepEqual(parseArgv(["a.jsonl"]), { files: ["a.jsonl"], issue: false, only: undefined });
+  assert.throws(() => parseArgv(["--only", "windows"]), /--only takes macos or linux/);
+});
+
+test("a report of one system holds that system's verdicts alone", () => {
+  const found = verdicts(everyBudget(20), { only: "linux" });
+  assert.ok(found.length > 0);
+  assert.ok(found.every((v) => v.os === "linux"));
 });
