@@ -28,6 +28,7 @@ const DELETED: DeletedSkill[] = [
     days_left: 27,
     in_history: true,
     reserved: false,
+    clash: null,
     set: null,
   },
   {
@@ -38,6 +39,7 @@ const DELETED: DeletedSkill[] = [
     days_left: 12,
     in_history: true,
     reserved: false,
+    clash: null,
     set: null,
   },
   {
@@ -48,6 +50,7 @@ const DELETED: DeletedSkill[] = [
     days_left: 3,
     in_history: false,
     reserved: false,
+    clash: null,
     set: null,
   },
 ];
@@ -136,6 +139,7 @@ const GROUPED: DeletedSkill[] = [
     days_left: 30,
     in_history: true,
     reserved: false,
+    clash: null,
     set: SET,
   })),
   ...DELETED,
@@ -168,6 +172,72 @@ export const Empty: Story = {
     await expect(none).toHaveTextContent("Nothing deleted in the last 30 days.");
     const go = within(none).getByRole("button", { name: "Go to Library" });
     await tabInto(() => go);
+    expectFocusInSight();
+  },
+};
+
+/** A skill of the group whose name belongs to purlis now (#5457), and the name the core offers. */
+const HELD: DeletedSkill = {
+  id: "purlis-review",
+  name: "purlis-review",
+  level: { at: "project", local: false },
+  label: "project",
+  days_left: 30,
+  in_history: true,
+  reserved: true,
+  clash: {
+    held_by: "purlis-review belongs to purlis",
+    offered: "mattpocock-skills-purlis-review",
+    taken: ["grilling", "tdd", "to-spec"],
+  },
+  set: SET,
+};
+
+/** **One whose name belongs to purlis now** (#3729, #5457): its page asks for the new name it
+ *  comes back under, filled in as an install fills a taken one, and refuses one it cannot take
+ *  as it is typed. */
+export const NameTaken: Story = {
+  args: { deleted: [HELD, ...DELETED], item: "purlis-review" },
+  play: async ({ canvas }) => {
+    const page = await canvas.findByTestId("skill-studio-deleted");
+    const box = within(page).getByRole("textbox", { name: "New name for purlis-review" });
+    await expect(box).toHaveValue("mattpocock-skills-purlis-review");
+    await tabInto(() => box);
+    await userEvent.clear(box);
+    await userEvent.type(box, "tdd");
+    await within(page).findByText("There is already a skill named tdd here.");
+    expectFocusInSight();
+    await userEvent.clear(box);
+    await userEvent.type(box, "review-mine");
+    const back = within(page).getByRole("button", {
+      name: "Bring back purlis-review as review-mine",
+    });
+    await tabInto(() => back);
+    expectFocusInSight();
+  },
+};
+
+/** **Bring all back with a name purlis holds now** (#5457): the group's one review, where that
+ *  skill gets its own new name and the rest come back as named. */
+export const GroupNameTaken: Story = {
+  args: { deleted: [...GROUPED.slice(0, 3), HELD, ...DELETED], item: undefined },
+  play: async ({ canvas }) => {
+    const group = await canvas.findByTestId(`deleted-group-${SET.id}`);
+    const all = within(group).getByRole("button", { name: /Bring all back/ });
+    await tabInto(() => canvas.getByRole("grid", { name: "Deleted skills" }));
+    await untilFocusWithin(() => group, "the group's own row");
+    await userEvent.keyboard("{ArrowRight}");
+    await untilFocused(() => all, "Bring all back");
+    await userEvent.keyboard("{Enter}");
+    const review = await canvas.findByTestId("set-review");
+    const rename = within(review).getByRole("radio", { name: "Bring it back under a new name" });
+    await tabInto(() => rename);
+    await userEvent.keyboard(" ");
+    const box = await within(review).findByRole("textbox", { name: "New name for purlis-review" });
+    await expect(box).toHaveValue("mattpocock-skills-purlis-review");
+    await tabInto(() => box);
+    expectFocusInSight();
+    await tabInto(() => within(review).getByRole("button", { name: "Bring back 4 skills" }));
     expectFocusInSight();
   },
 };

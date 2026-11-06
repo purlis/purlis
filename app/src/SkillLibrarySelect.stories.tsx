@@ -71,6 +71,7 @@ const gone = (name: string, over: Record<string, unknown> = {}) => ({
   days_left: 27,
   in_history: true,
   reserved: false,
+  clash: null,
   set: null,
   ...over,
 });
