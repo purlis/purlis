@@ -653,13 +653,26 @@ impl Bound {
     /// The web's two default ports of the form's host are one site here: an `http://` address
     /// the browser upgrades reaches the `https://` one.
     pub fn kept_off(&self, host: &str, port: u16) -> Option<Site> {
+        self.form_at(host, port, false)
+    }
+
+    /// **The site a sign-in is open on, at `host` on `port`** (the person's ruling of
+    /// 2026-11-06): as [`Self::kept_off`] says it outside a sign-in. The browser's driver keeps
+    /// the agent off it on every page but the sign-in's own and the windows related to it.
+    pub fn signing_in_at(&self, host: &str, port: u16) -> Option<Site> {
+        self.form_at(host, port, true)
+    }
+
+    /// The site its login signs in on, where that is `host` on `port`, while a sign-in is open
+    /// (`open`) or while none is.
+    fn form_at(&self, host: &str, port: u16, open: bool) -> Option<Site> {
         let site = Site::of(host, port);
         let bound = self.lock();
         let holding = bound.login.as_ref()?;
         let form = holding.form.as_ref()?;
         let web = |port: u16| matches!(port, 80 | 443);
         let same = *form == site || (form.host == site.host && web(form.port) && web(site.port));
-        (same && holding.sign_in.is_none()).then(|| form.clone())
+        (same && holding.sign_in.is_some() == open).then(|| form.clone())
     }
 }
 

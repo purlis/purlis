@@ -919,3 +919,29 @@ fn a_browser_keeps_the_agent_off_its_form_site_outside_a_sign_in_alone() {
         "a login whose form is on its page"
     );
 }
+
+/// The person's ruling of 2026-11-06: the site a sign-in is open on is said while it is open
+/// alone, so the browser's driver keeps every page but the sign-in's own off it then.
+#[test]
+fn the_site_a_sign_in_is_open_on_is_said_while_it_is_open_alone() {
+    let bound = Bound::default();
+    let number = bound
+        .to(&LoginSites {
+            page: Site::of("app.example.test", 443),
+            form: Some(Site::of("auth.example.test", 443)),
+        })
+        .unwrap()
+        .expect("a sign-in");
+    let auth = Some(Site::of("auth.example.test", 443));
+    assert_eq!(bound.signing_in_at("auth.example.test", 443), auth);
+    assert_eq!(
+        bound.signing_in_at("auth.example.test", 80),
+        auth,
+        "its web ports are one"
+    );
+    assert_eq!(bound.kept_off("auth.example.test", 443), None);
+    assert_eq!(bound.signing_in_at("app.example.test", 443), None);
+    bound.sign_in_over(number).expect("it was open");
+    assert_eq!(bound.signing_in_at("auth.example.test", 443), None);
+    assert_eq!(bound.kept_off("auth.example.test", 443), auth);
+}

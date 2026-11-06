@@ -18,3 +18,16 @@ and [A filled page holds its browser to its site](2026-11-04-a-filled-page-holds
   that still can't be placed, as a sandboxed frame's can't, isn't brought into the chat's folder
   while the browser keeps the chat off a site: the refusal says it can be brought in while
   `browser_login` signs in.
+- **A sign-in is held to its own page** (ruled by the person). While a sign-in is open, the chat
+  reads and acts on the form's site only on the page `browser_login` ran on and the windows
+  related to it (each that opened another, or was opened by one, where a script in one can reach
+  the other). Every other tab stays kept off that site as it is outside a sign-in, and so does an
+  address the chat opens a new page at.
+
+*Decided in implementation (in the pull request):*
+
+- The browser's driver keeps the page the last login ran on, and asks the browser's binding which
+  site a sign-in is open on now; it judges each page by both. Until a login has run in the
+  browser, no page is a sign-in's own.
+- A download from the form's site is brought into the chat's folder during a sign-in, as before,
+  whichever page began it: a download says the site it came from, not the page.

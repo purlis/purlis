@@ -480,6 +480,15 @@ impl Browsers for EngineBrowsers {
         if let Some(sites) = &sites {
             let bound = sites.bound().clone();
             browser.keep_off(Arc::new(move |address: &str| kept_off_at(&bound, address)));
+            // During a sign-in, on every page but its own and the windows related to it (the
+            // person's ruling of 2026-11-06).
+            let bound = sites.bound().clone();
+            browser.keep_sign_in_to_its_page(Arc::new(move |address: &str| {
+                let (host, port) = judge::site_of(address)?;
+                bound
+                    .signing_in_at(&host, port)
+                    .map(|site| site.to_string())
+            }));
         }
         // A click or Back the proxy refused under a fill's hold answers why (#5150).
         let bound = proxy.bound().clone();
@@ -1790,7 +1799,8 @@ pub fn kept_off_said(site: &str, asks_to_sign_in: bool) -> String {
     };
     format!(
         "nothing was read or sent: this is a page of {site}, the site this browser signs in on, \
-         and you may read or act on its pages only while browser_login signs in. {then}"
+         and you may read or act on its pages only while browser_login signs in, on the page it \
+         signs in on and the windows that page opened. {then}"
     )
 }
 

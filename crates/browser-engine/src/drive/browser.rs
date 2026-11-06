@@ -2010,6 +2010,12 @@ pub(crate) struct Inner {
     leaves: Mutex<Option<std::sync::mpsc::Sender<leaving::Leave>>>,
     /// What says which site's documents the agent is kept off (#5152), once it was told.
     kept_off: Mutex<Option<KeptOff>>,
+    /// What says the site a sign-in is open on now, once it was told
+    /// ([`Browser::keep_sign_in_to_its_page`]).
+    signing: Mutex<Option<KeptOff>>,
+    /// The page the last login was performed on: it and the windows related to it alone act on the
+    /// site a sign-in is open on.
+    sign_in_page: Mutex<Option<String>>,
     /// Why the caller refused a load, where it says ([`Browser::say_why_refused`], #5150).
     refused_load: Mutex<Option<RefusedLoad>>,
     /// How many of the agent's calls are being carried out now (#5152).
@@ -2185,6 +2191,8 @@ impl Browser {
             ending: Arc::new(Mutex::new(Vec::new())),
             leaves: Mutex::new(None),
             kept_off: Mutex::new(None),
+            signing: Mutex::new(None),
+            sign_in_page: Mutex::new(None),
             refused_load: Mutex::new(None),
             agent_calls: AtomicUsize::new(0),
         });
@@ -2481,6 +2489,15 @@ impl Browser {
         *lock(&self.inner.kept_off) = Some(kept_off);
     }
 
+    /// **Keeps a sign-in to its own page** (the person's ruling of 2026-11-06): `during` says the
+    /// site a sign-in is open on now, as [`KeptOff`] says a site the agent is kept off. While one
+    /// is, the agent acts on that site's documents only on the page the last login was performed
+    /// on and the windows related to it; on every other page it is kept off them, as
+    /// [`Self::keep_off`] keeps it. In place of anything told before.
+    pub fn keep_sign_in_to_its_page(&self, during: KeptOff) {
+        *lock(&self.inner.signing) = Some(during);
+    }
+
     /// **Has each of the agent's calls say why a load was refused** (#5150): an answer whose page
     /// shows the engine's own page for a load that failed says what `why` makes of its address,
     /// and it is `why`'s to say nothing of a load the caller did not refuse. In place of anything
@@ -2511,15 +2528,23 @@ impl Browser {
 
     /// The frames of `target`'s page the agent is kept off now, with their site (#5152).
     fn kept_off_frames(&self, target: &str) -> HashMap<String, String> {
-        let Some(kept_off) = lock(&self.inner.kept_off).clone() else {
+        let state = lock(&self.inner.state);
+        let Some(kept_off) = self.inner.kept_off_on(&state, Some(target)) else {
             return HashMap::new();
         };
-        lock(&self.inner.state).kept_off_frames(target, &kept_off)
+        state.kept_off_frames(target, &kept_off)
     }
 
-    /// **Refuses the agent's address on a site it is kept off** (#5152): nothing is opened.
-    fn not_kept_off_address(&self, address: &WebAddress) -> Result<(), Refusal> {
-        let kept_off = lock(&self.inner.kept_off).clone();
+    /// What the agent is kept off on `on`'s page now ([`Inner::kept_off_on`]).
+    fn kept_off_for(&self, on: Option<&str>) -> Option<KeptOff> {
+        let state = lock(&self.inner.state);
+        self.inner.kept_off_on(&state, on)
+    }
+
+    /// **Refuses the agent's address on a site it is kept off** (#5152) on `on`'s page, or on a
+    /// new one where it names none: nothing is opened.
+    fn not_kept_off_address(&self, address: &WebAddress, on: Option<&str>) -> Result<(), Refusal> {
+        let kept_off = self.kept_off_for(on);
         match kept_off.and_then(|kept_off| kept_off(address.as_str())) {
             Some(site) => Err(Refusal::KeptOff {
                 site,
@@ -3001,18 +3026,18 @@ impl Browser {
     fn run(&self, call: Call) -> Result<Answer, Refusal> {
         match call {
             Call::Open { address } => {
-                self.not_kept_off_address(&address)?;
+                self.not_kept_off_address(&address, None)?;
                 self.open(&address)
             }
             Call::FindLoginForm { address } => {
-                self.not_kept_off_address(&address)?;
+                self.not_kept_off_address(&address, None)?;
                 self.find_login_form(&address)
             }
             Call::DescribeField { target } => self.describe_field(&target),
             Call::AsksToSignIn => self.asks_to_sign_in(),
             Call::Navigate { page, address } => {
-                self.not_kept_off_address(&address)?;
                 let target = self.target(page.as_ref())?;
+                self.not_kept_off_address(&address, Some(&target))?;
                 let session = self.page_session(&target)?;
                 let _addressing = self.addressing(&target, Why::Addressed);
                 self.acting_on(&target, || self.navigate(&session, &address))
@@ -3669,7 +3694,7 @@ impl Browser {
         // one that was as it was read, is left out, and a page whose own document is on one is
         // refused (#5152).
         let kept = self.kept_off_frames(target);
-        let kept_off = lock(&self.inner.kept_off).clone();
+        let kept_off = self.kept_off_for(Some(target));
         let was_kept_off =
             |tree: &FrameAx| kept_off.as_ref().and_then(|kept_off| kept_off(&tree.url));
         if let Some(site) = kept.get(target).cloned().or_else(|| {
@@ -3901,12 +3926,12 @@ impl Browser {
 
     /// Where `target` is, for acting on it.
     fn locate(&self, target: &Ref) -> Result<Located, Refusal> {
-        let kept_off = lock(&self.inner.kept_off).clone();
         let state = lock(&self.inner.state);
         if state.ended {
             return Err(Refusal::Ended);
         }
         let (page_target, key) = live_ref(&state, target)?;
+        let kept_off = self.inner.kept_off_on(&state, Some(&page_target));
         // An element in a frame of a site the agent is kept off, or inside one (#5152).
         if let Some(kept_off) = &kept_off
             && let Some(site) = state
@@ -4850,7 +4875,7 @@ impl Browser {
         let url = earlier.get("url").and_then(Value::as_str).unwrap_or("");
         let earlier_address = WebAddress::parse(url).map_err(|_| Refusal::EarlierNotWeb)?;
         // An earlier page of a site the agent is kept off is not gone back to (#5152).
-        self.not_kept_off_address(&earlier_address)?;
+        self.not_kept_off_address(&earlier_address, Some(&target))?;
         // An address that carries a value kept out, as a form sent from a filled page may have
         // left it (#5117), is never sent again.
         if lock(&self.inner.state).address_holds_kept(url) {
@@ -5504,6 +5529,30 @@ impl Inner {
     }
 
     /// Holds `engine` as the browser's.
+    /// **What the agent is kept off on `target`'s page now** (#5152), or on a page not opened yet
+    /// where it names none: what [`Browser::keep_off`] names, and, unless it is the page the last
+    /// login was performed on or a window related to it, the site a sign-in is open on (the
+    /// person's ruling of 2026-11-06, [`Browser::keep_sign_in_to_its_page`]). `None` where
+    /// nothing is.
+    fn kept_off_on(&self, state: &State, target: Option<&str>) -> Option<KeptOff> {
+        let base = lock(&self.kept_off).clone();
+        let Some(signing) = lock(&self.signing).clone() else {
+            return base;
+        };
+        let page = lock(&self.sign_in_page).clone();
+        if let (Some(target), Some(page)) = (target, page.as_deref())
+            && state.family_of(page).contains(target)
+        {
+            return base;
+        }
+        let scoped: KeptOff = Arc::new(move |address: &str| {
+            base.as_ref()
+                .and_then(|base| base(address))
+                .or_else(|| signing(address))
+        });
+        Some(scoped)
+    }
+
     fn hold(&self, engine: Box<dyn EngineHold>) {
         *lock(&self.engine) = Some(engine);
         self.held_one.store(true, Ordering::SeqCst);
@@ -6115,7 +6164,8 @@ impl Inner {
                         // site it is kept off by an address it wrote, however written, nor by
                         // a document of that site (#5152): a key or a click that reached such a
                         // page as it came submits nothing there.
-                        let kept_off = lock(&self.kept_off).clone();
+                        let on = frame.as_deref().and_then(|frame| state.page_holding(frame));
+                        let kept_off = self.kept_off_on(&state, on.as_deref());
                         let agent_calls =
                             by == Driver::Agent && self.agent_calls.load(Ordering::SeqCst) > 0;
                         let addressed_to_kept_off = agent_calls

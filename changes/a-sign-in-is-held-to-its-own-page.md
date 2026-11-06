@@ -1,5 +1,8 @@
 ### Changed
 
+- **A sign-in lets the chat act on its provider's site only in the sign-in's own window.** While
+  `browser_login` signs in on another site, the chat reads and acts there on the page the login
+  ran on and the windows it opens; another tab stays kept off that site.
 - **A browser holding a login takes a secret only for the login's own sites.** A chat's fill on
   any other site is refused before anything is filled, and the chat is told to use a browser of
   its own, where it once left the browser reaching nothing.
