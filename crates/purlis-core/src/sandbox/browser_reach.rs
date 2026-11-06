@@ -459,6 +459,9 @@ impl Bound {
     /// (#5230, SF-15).
     pub fn hold_for_fill_also(&self, site: &Site, also: &[Site]) -> Result<u64, String> {
         let mut bound = self.lock();
+        if let Some(why) = login_takes_no_fill_for(&bound, site) {
+            return Err(why);
+        }
         if let Some(other) = bound.fills.iter().find(|held| held.site != *site) {
             return Err(format!(
                 "this browser is held to {} while a page holding a secret purlis filled there \
@@ -474,6 +477,14 @@ impl Bound {
             number,
         });
         Ok(number)
+    }
+
+    /// **Why this browser takes no secret for `site`, where it takes none** (the steward's
+    /// decision on the person's rulings of 2026-11-06): a browser bound to a login signs in to
+    /// its page's site and its form's alone, so a fill on any other site would leave it reaching
+    /// nothing. Asked before anything is filled.
+    pub fn takes_no_fill_for(&self, site: &Site) -> Option<String> {
+        login_takes_no_fill_for(&self.lock(), site)
     }
 
     /// **Fill hold `number` is over** (#5117): its page loaded another document in its main frame,
@@ -576,6 +587,20 @@ impl Bound {
         (open.number == number).then(|| open.form.clone())
     }
 
+    /// **Whether a page held to `from` may follow its server's redirect to `to` as a sign-in's
+    /// way back** (the person's ruling of 2026-11-06): only while a sign-in is open, from the
+    /// site its form is on to its login's page's site.
+    pub fn signs_in_back(&self, from: &Site, to: &Site) -> bool {
+        let bound = self.lock();
+        bound.login.as_ref().is_some_and(|holding| {
+            holding.page == *to
+                && holding
+                    .sign_in
+                    .as_ref()
+                    .is_some_and(|open| open.form == *from)
+        })
+    }
+
     /// The site of the login's page it is bound to, where it is.
     pub fn page(&self) -> Option<Site> {
         self.lock()
@@ -608,6 +633,18 @@ impl Bound {
         self.refuses(host, port).is_none()
     }
 
+    /// **The site the agent is kept off now, wherever it is** (#5152): the site its login signs
+    /// in on, while no sign-in is open. What can't be placed on a site may be of that one.
+    pub fn keeps_off(&self) -> Option<Site> {
+        let bound = self.lock();
+        let holding = bound.login.as_ref()?;
+        holding
+            .sign_in
+            .is_none()
+            .then(|| holding.form.clone())
+            .flatten()
+    }
+
     /// **The site the agent is kept off at `host` on `port`, now** (#5152, the person's ruling
     /// of 2026-11-04): the site its login signs in on, where that is `host` on `port`, while no
     /// sign-in is open. The browser loads that site's documents (the page's own redirects,
@@ -616,13 +653,26 @@ impl Bound {
     /// The web's two default ports of the form's host are one site here: an `http://` address
     /// the browser upgrades reaches the `https://` one.
     pub fn kept_off(&self, host: &str, port: u16) -> Option<Site> {
+        self.form_at(host, port, false)
+    }
+
+    /// **The site a sign-in is open on, at `host` on `port`** (the person's ruling of
+    /// 2026-11-06): as [`Self::kept_off`] says it outside a sign-in. The browser's driver keeps
+    /// the agent off it on every page but the sign-in's own and the windows related to it.
+    pub fn signing_in_at(&self, host: &str, port: u16) -> Option<Site> {
+        self.form_at(host, port, true)
+    }
+
+    /// The site its login signs in on, where that is `host` on `port`, while a sign-in is open
+    /// (`open`) or while none is.
+    fn form_at(&self, host: &str, port: u16, open: bool) -> Option<Site> {
         let site = Site::of(host, port);
         let bound = self.lock();
         let holding = bound.login.as_ref()?;
         let form = holding.form.as_ref()?;
         let web = |port: u16| matches!(port, 80 | 443);
         let same = *form == site || (form.host == site.host && web(form.port) && web(site.port));
-        (same && holding.sign_in.is_none()).then(|| form.clone())
+        (same && holding.sign_in.is_some() == open).then(|| form.clone())
     }
 }
 
@@ -1133,6 +1183,23 @@ fn login_refuses(bound: &Binding, host: &str, port: u16) -> Option<String> {
         .as_ref()
         .is_none_or(|holding| holding.page == site || holding.form.as_ref() == Some(&site));
     (!login_lets).then(|| bound_said(host, port))
+}
+
+/// Why the login `bound` holds keeps a fill on `site` out, if it does: one that is neither its
+/// page's site nor its form's.
+fn login_takes_no_fill_for(bound: &Binding, site: &Site) -> Option<String> {
+    let holding = bound.login.as_ref()?;
+    if holding.page == *site || holding.form.as_ref() == Some(site) {
+        return None;
+    }
+    let signs_in_to = match &holding.form {
+        Some(form) => format!("{} and {form}", holding.page),
+        None => holding.page.to_string(),
+    };
+    Some(format!(
+        "this browser holds a login and signs in to {signs_in_to} only, so it takes no secret \
+         for {site}, and nothing was filled: fill it in a browser of its own (browser_new)"
+    ))
 }
 
 /// Why a site was refused to a browser held while a page holding a secret purlis filled lives

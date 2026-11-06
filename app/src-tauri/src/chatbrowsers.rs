@@ -4135,7 +4135,8 @@ fn reaches_said(address: &str, form: Option<&str>) -> String {
         Some(form) => format!(
             "This browser now reaches {page}, where you may read and act, and {form}, the site it \
              signs in on: the pages of {form} load (the site's own redirects, frames and token \
-             refreshes), but you may read or act on them only while browser_login signs in, and \
+             refreshes), but you may read or act on them only while browser_login signs in, on the \
+             page it signs in on and the windows that page opens, and \
              where one asks to sign in again, call browser_login again"
         ),
         None => format!("This browser now reaches {page} alone"),

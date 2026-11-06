@@ -259,7 +259,7 @@ fn a_page_kept_off_is_judged_by_its_address_before_a_text_is_taken_out_of_it() {
             content: Content::Pages(vec![on_it, page("https://a.test/x", "Another")]),
             ..answer()
         },
-        &kept_off_acme(),
+        &|page: &crate::drive::PageInfo| kept_off_acme()(&page.address),
     ));
 
     let shown = told.page.expect("a page");
