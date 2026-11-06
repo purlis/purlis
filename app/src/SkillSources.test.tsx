@@ -1470,3 +1470,98 @@ describe("the states of each page", () => {
     );
   });
 });
+
+describe("Install all… past the budget (#5355)", () => {
+  /** The studio at the root, its chats routed with a budget of 3 on Claude Code. */
+  const withBudget = (studio: Record<string, unknown>) => ({
+    ...studio,
+    router: {
+      said: "Chats here are routed by the built-in router.",
+      problem: false,
+      extension: null,
+      chats: [],
+      grade: null,
+      graded: null,
+      written: null,
+      budget: [
+        {
+          program: "Claude Code",
+          key: "claude",
+          skills: 3,
+          chars: 15000,
+          skills_said: "3, this project",
+          chars_said: "15,000, Claude Code's default",
+          skills_here: 3,
+          chars_here: null,
+        },
+      ],
+      past_limits: [],
+      preview: "",
+    },
+  });
+  /** A core whose studio has a budget of 3 and whose chats count `listed` skills now. */
+  function overCore(listed: number) {
+    return core({
+      answers: {
+        skill_studio: () =>
+          withBudget({
+            on: true,
+            workspace: null,
+            persona: null,
+            workspaces: [],
+            levels: [{ level: PROJECT, label: "project" }],
+            harnesses: [],
+            clashes: [],
+            skills: [],
+            first: { starts: false, unmoved: null },
+          }),
+        skill_install_set_review: (args) => setReview(args.names as string[]),
+        skill_budget_preview: () => ({
+          listed,
+          hidden: 0,
+          now_listed: [],
+          now_hidden: [],
+          more_tokens: 0,
+          past_limit: null,
+          over: null,
+        }),
+        skill_uses: () => [],
+      },
+    });
+  }
+
+  async function review(user: ReturnType<typeof userEvent.setup>) {
+    const choose = await openInstallAll(user);
+    await user.click(within(within(choose).getByTestId("choose-huge")).getByRole("checkbox"));
+    await user.click(within(choose).getByRole("button", { name: "Review 1 skill" }));
+    const page = await screen.findByTestId("install-all-review");
+    await within(page).findByTestId("install-commit");
+    return page;
+  }
+
+  it("says which program it takes past its budget, and offers Make room…, which opens the Library's Select", async () => {
+    overCore(2);
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const page = await review(user);
+
+    const over = await within(page).findByTestId("install-all-over");
+    expect(over).toHaveTextContent(
+      "Installing these puts 4 skills in a chat's list on Claude Code, past its budget of 3.",
+    );
+    await user.click(within(over).getByRole("button", { name: "Make room…" }));
+
+    expect(await screen.findByTestId("select-none")).toHaveTextContent(
+      "The skills least used in the last 30 days are listed first.",
+    );
+  });
+
+  it("says nothing of the budget where the install fits in it", async () => {
+    const asked = overCore(1);
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const page = await review(user);
+    await waitFor(() => expect(did(asked, "skill_budget_preview")).toBe(true));
+    expect(within(page).queryByTestId("install-all-over")).toBeNull();
+  });
+});

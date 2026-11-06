@@ -188,7 +188,10 @@ const secondsAgo = (ago: number) => Math.floor(Date.now() / 1000) - ago;
 
 /** The faked core: two sources, one update waiting, one source not confirmed here; the one
  *  review of Install all… is more than one read where `tooMuch` says so (#4024). */
-function core({ tooMuch = false }: { tooMuch?: boolean } = {}) {
+function core({
+  tooMuch = false,
+  overBudget = false,
+}: { tooMuch?: boolean; overBudget?: boolean } = {}) {
   mockIPC((cmd, args) => {
     switch (cmd) {
       case "skill_sources_checked":
@@ -197,7 +200,46 @@ function core({ tooMuch = false }: { tooMuch?: boolean } = {}) {
           { remote: PLATFORM.remote, at: null, skills: null, installed: 1 },
         ];
       case "skill_studio":
-        return studio([], {});
+        return studio(
+          [],
+          overBudget
+            ? {
+                router: {
+                  said: "Chats here are routed by the built-in router.",
+                  problem: false,
+                  extension: null,
+                  chats: [],
+                  grade: null,
+                  graded: null,
+                  written: null,
+                  budget: [
+                    {
+                      program: "Claude Code",
+                      key: "claude",
+                      skills: 60,
+                      chars: 15000,
+                      skills_said: "60, Claude Code's default",
+                      chars_said: "15,000, Claude Code's default",
+                      skills_here: null,
+                      chars_here: null,
+                    },
+                  ],
+                  past_limits: [],
+                  preview: "",
+                },
+              }
+            : {},
+        );
+      case "skill_budget_preview":
+        return {
+          listed: 59,
+          hidden: 0,
+          now_listed: [],
+          now_hidden: [],
+          more_tokens: 0,
+          past_limit: null,
+          over: null,
+        };
       case "skill_sources":
         return [SUPERPOWERS, PLATFORM];
       case "skill_sources_offered":
@@ -706,5 +748,23 @@ export const InstallAllTooMuch: Story = {
     await expect(
       within(said).getByRole("button", { name: "Review the first skill" }),
     ).toBeVisible();
+  },
+};
+
+/** **Install all…, past the skill budget** (#5355): the program it takes past the most skills a
+ *  chat lists, and Make room…, reached by the keyboard. */
+export const InstallAllOverBudget: Story = {
+  args: InstallAllReview.args,
+  beforeEach: () => {
+    core({ overBudget: true });
+  },
+  play: async ({ canvas }) => {
+    const review = await canvas.findByTestId("install-all-review");
+    const over = await within(review).findByTestId("install-all-over");
+    await expect(over).toHaveTextContent(
+      "Installing these puts 61 skills in a chat's list on Claude Code, past its budget of 60.",
+    );
+    await tabInto(() => within(over).getByRole("button", { name: "Make room…" }));
+    expectFocusInSight();
   },
 };

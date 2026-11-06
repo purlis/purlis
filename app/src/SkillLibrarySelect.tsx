@@ -48,8 +48,9 @@ import { ViewPageHeader } from "./ui/panel/ViewFrame";
  * - **Off, it costs nothing**: the Library draws exactly what it drew before, and nothing here
  *   is read until Select is pressed.
  *
- * {@link SELECT_ACTS} is the one list of what can be done, in its order: Bulk Grade (#5356),
- * Review updates (#5354) and Make room (#5355) join it as rows of their own.
+ * {@link SELECT_ACTS} is the one list of what can be done, in its order: Bulk Grade (#5356) and
+ * Review updates (#5354) join it as rows of their own. **Make room** (#5355) is this mode opened
+ * least used first, offering only `MAKE_ROOM_ACTS` of it (`makeRoom.ts`).
  */
 
 /** **What Select can do to the skills chosen**, in the page's order, each with the line under

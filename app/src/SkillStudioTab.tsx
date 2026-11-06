@@ -1116,7 +1116,11 @@ export function SkillStudioTab({
       setDoing(undefined);
       setNeed(undefined);
       walked.go(library);
-      setSelected({ page: "library", scope: key, sel: { keys: new Set(), only: false, room: true } });
+      setSelected({
+        page: "library",
+        scope: key,
+        sel: { keys: new Set(), only: false, room: true },
+      });
     });
   };
   const selectFor: SelectFor = { scope, workspace, pinner: pinnerOf(scope) };
@@ -1905,6 +1909,11 @@ export function SkillStudioTab({
         change={change}
         changed={changed + done}
         workspace={workspace}
+        room={
+          studio?.router?.budget === undefined
+            ? undefined
+            : { workspace, persona, budget: studio.router.budget, onMakeRoom: makeRoom }
+        }
       />
     ));
   } else if (page === "deleted") {
