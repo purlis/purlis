@@ -401,6 +401,7 @@ import {
   type PressHere,
   pressInProjectWindow,
   type HandedChat,
+  type StartedAs,
 } from "./tabWindows";
 import type { TabFacts } from "./ChatRows";
 import { rowFactsOf } from "./shownState";
@@ -2622,18 +2623,34 @@ export const PlaneView = memo(function PlaneView({
     },
     [filedAs, plane, tabWindow],
   );
+  /** **What a chat is known by is kept where it lands** (#5573): here, or by the window it is
+   *  handed to, so a tab window keeps nothing of a chat the project window shows. */
+  const keepStartedAs = useCallback((session: number, known: StartedAs) => {
+    if (known.shell) setShells((was) => new Set(was).add(session));
+    const { studio } = known;
+    if (studio !== undefined) setStudioLinks((was) => ({ ...was, [session]: studio }));
+  }, []);
   const showStarted = useCallback(
-    (chat: PressedChat, workspace: string, named = false, asked?: PaneAt, ownTab = false) => {
+    (
+      chat: PressedChat,
+      workspace: string,
+      named = false,
+      asked?: PaneAt,
+      ownTab = false,
+      known: StartedAs = {},
+    ) => {
       // What it is called until its row arrives (#5308), drawn with its pane.
       setStartedAs((was) => new Map(was).set(chat.session, chat));
-      const land = () =>
+      const land = () => {
+        keepStartedAs(chat.session, known);
         landOn((tabs) =>
           openNew(tabs, chat, filedAs(chat.session, workspace), { named, asked, ownTab }),
         );
+      };
       if (asked !== undefined) land();
-      else landOrHandOn({ filed: workspace, started: true, as: chat }, land);
+      else landOrHandOn({ filed: workspace, started: true, as: chat, ...known }, land);
     },
-    [filedAs, landOn, landOrHandOn],
+    [filedAs, keepStartedAs, landOn, landOrHandOn],
   );
   /**
    * **A chat that came back is a press** (#5289; spec #4750): a resumed chat or a reopened task
@@ -2654,7 +2671,7 @@ export const PlaneView = memo(function PlaneView({
    * since the start named its place.
    */
   const showPlaced = useCallback(
-    (chat: Placed) => {
+    (chat: Placed, known?: StartedAs) => {
       const workspace = chat.workspace ?? OUTSIDE;
       setStartedIn((was) => ({ ...was, [chat.session]: workspace }));
       showStarted(
@@ -2666,6 +2683,9 @@ export const PlaneView = memo(function PlaneView({
         },
         workspace,
         true,
+        undefined,
+        false,
+        known,
       );
     },
     [showStarted],
@@ -3882,15 +3902,16 @@ export const PlaneView = memo(function PlaneView({
           }
           succeeded("shell");
           const session = opened.data;
-          setShells((was) => new Set(was).add(session));
           setStartedIn((was) => ({ ...was, [session]: filed }));
           if (oneJob) {
+            setShells((was) => new Set(was).add(session));
             setOneJobs((was) => new Set(was).add(session));
             change((tabs) => openOneJob(tabs, session, name));
             giveKeyboardTo(plane, session);
           }
           // A shell follows a chat's rules (#4758; spec story 63): it opens by the one rule.
-          else showStarted({ session, chat: name }, filed, named, undefined, ownTab);
+          else
+            showStarted({ session, chat: name }, filed, named, undefined, ownTab, { shell: true });
           // A command typed in for the operator, run as if they had typed it: the shell reads
           // it once it is up, and the tab is theirs to leave. A harness's installer is named,
           // never spelled: the core types its own compiled-in line (FR-29, V65).
@@ -4802,8 +4823,14 @@ export const PlaneView = memo(function PlaneView({
       if (handed === undefined) pressHere(session);
       else {
         setStartedIn((was) => ({ ...was, [session]: handed.filed }));
-        if (handed.started) showStarted(handed.as, handed.filed, true);
-        else showResumed(handed.as, handed.filed);
+        if (handed.started) {
+          const { shell, studio } = handed;
+          const known: StartedAs = {
+            ...(shell ? { shell } : {}),
+            ...(studio === undefined ? {} : { studio }),
+          };
+          showStarted(handed.as, handed.filed, true, undefined, false, known);
+        } else showResumed(handed.as, handed.filed);
       }
       if (tabWindow === undefined) paneUsed();
     };
@@ -6968,8 +6995,7 @@ export const PlaneView = memo(function PlaneView({
           const chat = started.data;
           // What the core recorded on the chat, so its chip and the skill's page say it at once.
           const link = linkOfAsk(wanted);
-          if (link !== undefined) setStudioLinks((was) => ({ ...was, [chat.session]: link }));
-          showPlaced(chat);
+          showPlaced(chat, link === undefined ? undefined : { studio: link });
         });
     };
     window.addEventListener(SKILL_CHAT, asked);
