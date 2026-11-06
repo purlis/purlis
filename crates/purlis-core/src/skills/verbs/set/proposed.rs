@@ -25,6 +25,7 @@ use super::{
 };
 use crate::counts::counted;
 use crate::skills::routing::{self, PinnedBy};
+use crate::skills::source;
 use crate::skills::verbs::{Ctx, Deleted, Level, deleted, find};
 
 /// The most skills one change names: a source's whole set fits, and an ask stays bounded.
@@ -63,6 +64,11 @@ pub enum SetChange {
         to: Level,
         grant: Vec<String>,
     },
+    /// Write each, and the project's skills it names, outside purlis: a zip, or a folder of skill
+    /// folders. **It names no place** (#5492, the person's choice of 2026-11-06): it is written
+    /// only where the person picks, at their terminal or at Apply in the window
+    /// ([`Self::exported`]), never where a chat says.
+    Export { members: Vec<Member>, zip: bool },
 }
 
 /// **A change as the person is shown it**: each skill as it is and as the change leaves it, one
@@ -83,6 +89,7 @@ impl SetChange {
             Self::Restore { .. } | Self::DeleteNow { .. } => return None,
             Self::Delete { .. } => Act::Delete,
             Self::Move { .. } => Act::Move,
+            Self::Export { .. } => Act::Export,
             Self::Turn { on: false, .. } => Act::TurnOff,
             Self::Turn { on: true, .. } => Act::TurnOn,
             Self::Pin { on: true, .. } => Act::Pin,
@@ -100,7 +107,8 @@ impl SetChange {
             | Self::Archive { members, .. }
             | Self::Restore { members }
             | Self::DeleteNow { members }
-            | Self::Move { members, .. } => members.clone(),
+            | Self::Move { members, .. }
+            | Self::Export { members, .. } => members.clone(),
             Self::Turn { names, .. } | Self::Pin { names, .. } => names
                 .iter()
                 .map(|name| Member {
@@ -124,7 +132,8 @@ impl SetChange {
             | Self::Archive { members, .. }
             | Self::Restore { members }
             | Self::DeleteNow { members }
-            | Self::Move { members, .. } => members.len(),
+            | Self::Move { members, .. }
+            | Self::Export { members, .. } => members.len(),
             Self::Turn { names, .. } | Self::Pin { names, .. } => names.len(),
         }
     }
@@ -152,6 +161,12 @@ impl SetChange {
             Self::Restore { .. } => format!("Bring back {skills}"),
             Self::DeleteNow { .. } => format!("Delete {skills} now, with no undo"),
             Self::Move { to, .. } => format!("Move {skills} to the {to} skills"),
+            Self::Export { zip, .. } => {
+                format!(
+                    "Export {skills} to a {}",
+                    if *zip { "zip" } else { "folder" }
+                )
+            }
             Self::Turn { workspace, on, .. } => {
                 let state = if *on { "on" } else { "off" };
                 format!("Turn {skills} {state} in {workspace}")
@@ -270,7 +285,7 @@ impl SetChange {
     fn state_of(&self, plane: &Path, member: &Member) -> String {
         let found = find(plane, &member.level, &member.name).ok();
         match self {
-            Self::Delete { .. } | Self::Move { .. } => if found.is_some() {
+            Self::Delete { .. } | Self::Move { .. } | Self::Export { .. } => if found.is_some() {
                 "there"
             } else {
                 "not there"
@@ -317,6 +332,7 @@ impl SetChange {
             Self::Restore { .. } => "back".to_owned(),
             Self::DeleteNow { .. } => "gone for good".to_owned(),
             Self::Move { to, .. } => format!("moved to the {to} skills"),
+            Self::Export { .. } => "exported".to_owned(),
         }
     }
 
@@ -370,6 +386,7 @@ impl SetChange {
                     .collect();
                 move_set(cx, &moves).map(drop)
             }
+            Self::Export { .. } => Err(NO_PLACE.to_owned()),
             Self::DeleteNow { .. } => {
                 let set = in_deleted(cx.plane, &kept)?;
                 let gone = delete_now(cx.plane, &set)?;
@@ -383,6 +400,37 @@ impl SetChange {
                 ));
                 Ok(())
             }
+        }
+    }
+}
+
+/// Why an export is not written by [`SetChange::apply`].
+const NO_PLACE: &str = "An export is written only where the person picks, so nothing was written: \
+                        pick where in the window, or give --to at your terminal";
+
+impl SetChange {
+    /// **Writes an export to `to`**, a place the person picked that is not there yet: every skill
+    /// its review keeps, and the project's skills they name. Refused for any other change.
+    pub fn exported(&self, plane: &Path, built_in: Option<&Path>, to: &Path) -> Result<(), String> {
+        let Self::Export { zip, .. } = self else {
+            return Err("only an export is written to a place".to_owned());
+        };
+        self.checked()?;
+        let skills: Vec<(Level, String)> = self
+            .reviewed(plane)
+            .skills
+            .into_iter()
+            .filter(|one| one.cannot.is_none())
+            .map(|one| (one.member.level, one.member.name))
+            .collect();
+        if skills.is_empty() {
+            return Err("None of these skills can be exported, so nothing was written.".to_owned());
+        }
+        let out = source::gather_set(plane, built_in, &skills, source::Purpose::Export)?;
+        if *zip {
+            source::export_zip(&out, to)
+        } else {
+            source::export_folder(&out, to)
         }
     }
 }

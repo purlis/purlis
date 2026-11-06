@@ -377,3 +377,34 @@ fn a_proposed_move_into_the_projects_skills_with_no_grant_moves_nothing() {
     did(root, |cx| granted.apply(cx)).unwrap();
     assert!(there(root, "skills", "lint"));
 }
+
+/// **A proposed export carries no place** (#5492, the person's choice of 2026-11-06): it names the
+/// skills and folder or zip, and is written only where the person picks at Apply.
+#[test]
+fn a_proposed_export_names_no_place_and_writes_only_where_it_is_given_one() {
+    let tmp = plane();
+    let root = tmp.path();
+    let change = SetChange::Export {
+        members: vec![project("tdd"), project("review")],
+        zip: false,
+    };
+    assert_eq!(change.title(), "Export 2 skills to a folder");
+    let travels = serde_json::to_value(&change).unwrap();
+    let mut keys: Vec<&String> = travels.as_object().unwrap().keys().collect();
+    keys.sort();
+    assert_eq!(keys, ["act", "members", "zip"], "no place travels");
+    assert!(
+        change.shown(root).after.contains("tdd · project: exported"),
+        "{}",
+        change.shown(root).after
+    );
+    assert!(
+        did(root, |cx| change.apply(cx)).is_err(),
+        "nothing is written with no place picked"
+    );
+    let out = tempfile::tempdir().unwrap();
+    let to = out.path().join("skills");
+    change.exported(root, None, &to).unwrap();
+    assert!(to.join("tdd/SKILL.md").exists() && to.join("review/SKILL.md").exists());
+    assert!(!to.join("grilling").exists(), "only what was named");
+}
