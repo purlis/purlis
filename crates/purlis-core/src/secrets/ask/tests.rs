@@ -654,6 +654,100 @@ fn a_starts_ask_is_recorded_under_no_chat() {
     });
 }
 
+/// What chat `chat`'s trace says of the ask for `key`, in the order it was written.
+fn traced_of(root: &Path, chat: u32, key: &str) -> Vec<String> {
+    let file = crate::trace::file(root, &chat.to_string());
+    std::fs::read_to_string(&file)
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|line| line["event"] == TRACED_AS && line["key"] == key)
+        .map(|line| line["what"].as_str().unwrap_or_default().to_owned())
+        .collect()
+}
+
+/// #5220, ADR 0109: an ask is told raised (or joined) before any answer to it, in the event log
+/// and in each chat's trace alike, however soon the person answers. One thread raises and
+/// another joins while a third answers the moment the ask is listed, many times over.
+#[test]
+fn an_answer_the_moment_an_ask_is_listed_is_never_recorded_before_its_raise_or_join() {
+    use crate::eventlog::secretasks::Step;
+    let project = project();
+    let root = project.path();
+    let asks = Asks::new(root);
+    let told = steps_told(&asks);
+    for round in 0..200 {
+        let key = format!("MISSING_{round}");
+        told.lock().unwrap().clear();
+        std::thread::scope(|scope| {
+            let chats = [7, 8].map(|chat| {
+                let (asks, key) = (&asks, &key);
+                scope
+                    .spawn(move || asks.hold(need(chat, key), Duration::from_secs(60), &mut |_| {}))
+            });
+            // Whichever chat comes first raises and the other joins, unless it comes once the
+            // ask is answered and raises one of its own: each is answered the moment it is
+            // listed, until both chats have heard.
+            while !chats.iter().all(std::thread::ScopedJoinHandle::is_finished) {
+                if let Some(open) = asks.open().into_iter().find(|open| open.key == key) {
+                    // Refused only where it was answered already.
+                    let _ = asks.answer(&ctx(root), open.id, Answer::Decline, window());
+                }
+                std::thread::yield_now();
+            }
+        });
+        // Each ask's first step is its raise, and nothing joins it once it is answered.
+        let steps = told.lock().unwrap().clone();
+        let ask_of = |step: &Step| match *step {
+            Step::Raised { ask, .. }
+            | Step::Joined { ask, .. }
+            | Step::Filled { ask, .. }
+            | Step::Declined { ask, .. } => Some(ask),
+            Step::Refused { .. } => None,
+        };
+        let mut asked = std::collections::BTreeMap::<u32, Vec<Step>>::new();
+        for (_, step) in &steps {
+            if let Some(ask) = ask_of(step) {
+                asked.entry(ask).or_default().push(*step);
+            }
+        }
+        assert!(
+            asked
+                .values()
+                .flatten()
+                .any(|step| matches!(step, Step::Declined { .. })),
+            "round {round}: the decline is told: {steps:?}"
+        );
+        for (ask, its) in &asked {
+            assert!(
+                matches!(its.first(), Some(Step::Raised { .. })),
+                "round {round}: ask {ask} is told before its raise: {steps:?}"
+            );
+            if let Some(answered) = its
+                .iter()
+                .position(|step| matches!(step, Step::Declined { .. }))
+            {
+                assert_eq!(
+                    answered,
+                    its.len() - 1,
+                    "round {round}: ask {ask} is told after its answer: {steps:?}"
+                );
+            }
+        }
+        for chat in [7, 8] {
+            let trace = traced_of(root, chat, &key);
+            if let Some(declined) = trace.iter().position(|what| what == "declined") {
+                assert!(
+                    trace[..declined]
+                        .iter()
+                        .any(|what| what == "raised" || what == "joined"),
+                    "round {round}: chat {chat}'s trace has the answer first: {trace:?}"
+                );
+            }
+        }
+    }
+}
+
 // ----------------------------------------------------------------------------------------
 // A chat asks: the `secret_ask` line (#5072)
 

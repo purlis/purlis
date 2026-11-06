@@ -882,11 +882,13 @@ impl Asks {
                     },
                 },
             );
-            drop(inner);
+            // Traced before the lock goes too, for the same reason (#5220): an answer's trace
+            // is written only once the ask is taken, under the lock.
             match joined {
                 Some((_, waiting)) => self.trace(chat, "joined", &vault, &key, waiting),
                 None => self.trace(chat, "raised", &vault, &key, 1),
             }
+            drop(inner);
             (answered, n)
         };
         say(&asked_said(&vault, &key, said_why.as_ref(), within));
@@ -1052,7 +1054,7 @@ impl Asks {
                 },
             },
         );
-        drop(inner);
+        // And traced before it goes, as [`Asks::hold`]'s are (#5220).
         let said = match how {
             Unheld::Waits => "runner unconfirmed",
             Unheld::CannotReceive => "cannot receive",
@@ -1063,6 +1065,7 @@ impl Asks {
             }
             Err(_) => self.trace(chat, &format!("raised, {said}"), &vault, &key, 1),
         }
+        drop(inner);
         Ok(())
     }
 
