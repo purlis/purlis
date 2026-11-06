@@ -76,21 +76,21 @@ fn described(browser: &Browser, target: Ref) -> FieldInfo {
     }
 }
 
-/// The reference of the element named `label` that is no plain text, whatever its role, waiting
-/// for it to show.
+/// The reference of the element named `label` that is no plain text, whatever its role, read
+/// from the page's whole snapshot, waiting for it to show: a failure says the snapshot.
 fn field_named(browser: &Browser, label: &str) -> Ref {
     let named = format!("\"{label}\"");
     let start = Instant::now();
     loop {
-        let found = find(browser, label);
-        if let Some(line) = found.lines().find(|line| {
-            line.contains(&named) && line.contains('[') && !line.contains(&format!("text {named}"))
+        let seen = snapshot(browser);
+        if let Some(line) = seen.lines().find(|line| {
+            line.contains(&named) && line.contains("[e") && !line.contains(&format!("text {named}"))
         }) {
             return ref_on(line, &named);
         }
         assert!(
             start.elapsed() < Duration::from_secs(10),
-            "{label} never showed: {found}"
+            "{label} never showed: {seen}"
         );
         std::thread::sleep(Duration::from_millis(100));
     }
