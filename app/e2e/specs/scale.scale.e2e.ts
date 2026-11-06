@@ -170,8 +170,10 @@ describe("the app on a project at scale", () => {
 
   it("set up its watch of the project", async () => {
     let setup: number | undefined;
+    // On macOS the setup has taken 285 to 377 s at this size (#5486's O(F²)), so the wait is
+    // most of the test's 900 s, not a guess at what it should take.
     await browser.waitUntil(async () => (setup = watcherSetupMs()) !== undefined, {
-      timeout: 300_000,
+      timeout: 840_000,
       interval: 1000,
       timeoutMsg: `the app's log in ${LOGS} never said the project is watched`,
     });
