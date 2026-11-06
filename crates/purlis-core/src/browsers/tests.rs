@@ -2009,3 +2009,61 @@ fn a_browser_opened_from_a_kept_login_reaches_its_form_s_site_from_its_start() {
     );
     assert_eq!(proxy.bound().kept_off("127.0.0.1", page_port), None);
 }
+
+/// A done download whose site the browser signs in on, as the host judges bringing it in.
+fn download_from(kept_off: Option<&str>, from_no_origin: bool) -> super::DownloadsSite {
+    super::DownloadsSite {
+        kept_off: kept_off.map(str::to_owned),
+        from_no_origin,
+        began_on_the_sign_ins_page: false,
+        keeps_off: None,
+        signing_on: None,
+    }
+}
+
+#[test]
+fn a_download_of_the_site_a_browser_signs_in_on_is_not_brought_in_by_the_chat() {
+    let of_it = download_from(Some("auth.test:443"), false);
+    let why = of_it.refused("d1").expect("refused");
+    assert!(why.contains("came from auth.test:443"), "{why}");
+
+    assert_eq!(
+        download_from(None, false).refused("d1"),
+        None,
+        "one of another site is the chat's"
+    );
+}
+
+#[test]
+fn a_download_from_no_site_is_refused_while_the_browser_signs_in_on_one() {
+    let outside = super::DownloadsSite {
+        keeps_off: Some("auth.test:443".to_owned()),
+        ..download_from(None, true)
+    };
+    let why = outside.refused("d1").expect("refused outside a sign-in");
+    assert!(why.contains("only while browser_login signs in"), "{why}");
+
+    let elsewhere = super::DownloadsSite {
+        signing_on: Some("auth.test:443".to_owned()),
+        ..download_from(None, true)
+    };
+    let why = elsewhere
+        .refused("d1")
+        .expect("refused during a sign-in, begun on another page");
+    assert!(why.contains("signs in on auth.test:443 now"), "{why}");
+
+    let on_its_page = super::DownloadsSite {
+        began_on_the_sign_ins_page: true,
+        ..elsewhere
+    };
+    assert_eq!(
+        on_its_page.refused("d1"),
+        None,
+        "begun on the sign-in's own page"
+    );
+    assert_eq!(
+        download_from(None, true).refused("d1"),
+        None,
+        "a browser that signs in nowhere"
+    );
+}

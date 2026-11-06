@@ -1902,44 +1902,16 @@ impl EngineScreen {
                 state_said(one.state)
             )));
         }
-        // One from the site the browser signs in on is that site's to read (#5152), and during
-        // a sign-in, only the sign-in's own page's (the person's ruling of 2026-11-06): it is
-        // judged on the page it began on.
-        if let Some(site) = browser.download_kept_off(download) {
-            return Err(NotActed::Refused(format!(
-                "download {download} came from {site}, the site this browser signs in on, so it \
-                 is brought in only while browser_login signs in, and only where the page it signs \
-                 in on, or a window related to it, began it"
-            )));
-        }
-        // One from no site purlis can tell (a sandboxed frame's, say) may be that site's too
-        // (the steward's decision on the person's rulings of 2026-11-06).
-        if one.origin.is_none()
-            && let Some(site) = self
-                .sites
-                .as_ref()
-                .and_then(|sites| sites.bound().keeps_off())
-        {
-            return Err(NotActed::Refused(format!(
-                "download {download} came from no site purlis can tell, and this browser signs in \
-                 on {site}, so it may be that site's: it is brought in only while browser_login \
-                 signs in"
-            )));
-        }
-        // And during a sign-in, one begun anywhere but the sign-in's own page may be its site's,
-        // which only that page reads (the person's ruling of 2026-11-06).
-        if one.origin.is_none()
-            && !browser.download_began_on_the_sign_ins_page(download)
-            && let Some(site) = self
-                .sites
-                .as_ref()
-                .and_then(|sites| sites.bound().signing_on())
-        {
-            return Err(NotActed::Refused(format!(
-                "download {download} came from no site purlis can tell, and browser_login signs in \
-                 on {site} now, so it may be that site's: it is brought in only where the page it \
-                 signs in on, or a window related to it, began it"
-            )));
+        let bound = self.sites.as_ref().map(|sites| sites.bound());
+        let whose = DownloadsSite {
+            kept_off: browser.download_kept_off(download),
+            from_no_origin: one.origin.is_none(),
+            began_on_the_sign_ins_page: browser.download_began_on_the_sign_ins_page(download),
+            keeps_off: bound.and_then(|bound| bound.keeps_off().map(|site| site.to_string())),
+            signing_on: bound.and_then(|bound| bound.signing_on().map(|site| site.to_string())),
+        };
+        if let Some(why) = whose.refused(download) {
+            return Err(NotActed::Refused(why));
         }
         let from = self.data.join(DOWNLOADS).join(&one.file);
         // What purlis filled into the browser is kept out of what the chat reads, a file it
@@ -1981,6 +1953,60 @@ impl EngineScreen {
             crate::browserfiles::bytes_said(bytes)
         ));
         Ok(out)
+    }
+}
+
+/// What decides whether a done download is the chat's to bring in, by the site it may be of.
+struct DownloadsSite {
+    /// The site the agent is kept off it is of, judged on the page it began on.
+    kept_off: Option<String>,
+    /// It came from no site purlis can tell (a sandboxed frame's, say).
+    from_no_origin: bool,
+    /// It began on the page the last login was performed on, or a window related to it.
+    began_on_the_sign_ins_page: bool,
+    /// The site the browser signs in on, which the agent is kept off outside a sign-in.
+    keeps_off: Option<String>,
+    /// The site a sign-in signs in on now.
+    signing_on: Option<String>,
+}
+
+impl DownloadsSite {
+    /// **Why download `download` is not brought in**, or `None` where its site does not keep it.
+    fn refused(&self, download: &str) -> Option<String> {
+        // One from the site the browser signs in on is that site's to read (#5152), and during
+        // a sign-in, only the sign-in's own page's (the person's ruling of 2026-11-06): it is
+        // judged on the page it began on.
+        if let Some(site) = &self.kept_off {
+            return Some(format!(
+                "download {download} came from {site}, the site this browser signs in on, so it \
+                 is brought in only while browser_login signs in, and only where the page it signs \
+                 in on, or a window related to it, began it"
+            ));
+        }
+        if !self.from_no_origin {
+            return None;
+        }
+        // One from no site purlis can tell may be that site's too (the steward's decision on
+        // the person's rulings of 2026-11-06).
+        if let Some(site) = &self.keeps_off {
+            return Some(format!(
+                "download {download} came from no site purlis can tell, and this browser signs in \
+                 on {site}, so it may be that site's: it is brought in only while browser_login \
+                 signs in"
+            ));
+        }
+        // And during a sign-in, one begun anywhere but the sign-in's own page may be its site's,
+        // which only that page reads (the person's ruling of 2026-11-06).
+        if let Some(site) = &self.signing_on
+            && !self.began_on_the_sign_ins_page
+        {
+            return Some(format!(
+                "download {download} came from no site purlis can tell, and browser_login signs in \
+                 on {site} now, so it may be that site's: it is brought in only where the page it \
+                 signs in on, or a window related to it, began it"
+            ));
+        }
+        None
     }
 }
 
