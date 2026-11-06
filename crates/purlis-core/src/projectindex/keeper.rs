@@ -14,6 +14,10 @@
 //!   source when the old commit is no longer an ancestor;
 //! - **the stat sweep at start**, which the writer runs as it opens.
 //!
+//! After each of them, and when a save has moved the project's git standing
+//! ([`Keeper::git_moved`]), it records what of the project's memory git has not committed, which
+//! the briefing reads in place of a `git status` of its own (#5503).
+//!
 //! While work is queued, readers are told the index is refreshing, and are answered anyway.
 
 use std::path::{Path, PathBuf};
@@ -32,6 +36,8 @@ const IDLE: Duration = Duration::from_secs(600);
 enum Message {
     Touched(Option<Vec<PathBuf>>),
     Pulled,
+    /// The project's git standing may have moved: a save committed or pushed.
+    GitMoved,
     /// Answered once every message sent before it has been handled.
     Settled(Sender<()>),
 }
@@ -66,6 +72,12 @@ impl Keeper {
     /// The checked-out commit may have moved: a pull, a save's rebase, a branch change.
     pub fn pulled(&self) {
         self.send(Message::Pulled);
+    }
+
+    /// The project's git standing may have moved without a file the index reads changing: a
+    /// save committed what was there. The keeper records the standing again for the briefing.
+    pub fn git_moved(&self) {
+        self.send(Message::GitMoved);
     }
 
     /// Waits until every change told before this call is in the index, or `within` has passed.
@@ -115,6 +127,7 @@ fn run(root: &Path, heard: &Receiver<Message>, say: &(dyn Fn(&str) + Send + Sync
         let _ = writer.reconciled(&head);
     }
     let _ = writer.compact();
+    record_standing(root, &writer);
     let mut idle_since_delete = false;
     loop {
         let first = match heard.recv_timeout(IDLE) {
@@ -144,6 +157,7 @@ fn run(root: &Path, heard: &Receiver<Message>, say: &(dyn Fn(&str) + Send + Sync
                     Some(more) => paths.extend(more),
                     None => every = true,
                 },
+                Message::GitMoved => {}
                 Message::Settled(tell) => waiting.push(tell),
             }
         }
@@ -164,11 +178,18 @@ fn run(root: &Path, heard: &Receiver<Message>, say: &(dyn Fn(&str) + Send + Sync
         if let Some(head) = head(root) {
             let _ = writer.reconciled(&head);
         }
+        record_standing(root, &writer);
         let _ = writer.refreshing(false);
         for tell in waiting {
             let _ = tell.send(());
         }
     }
+}
+
+/// Records the project's git standing for the briefing's unshared-memory line (#5503): this
+/// process's shared standing, which auto-save's looks read too, so git runs no more often for it.
+fn record_standing(root: &Path, writer: &Writer) {
+    let _ = writer.record_standing(&crate::planegit::shared_standing(root));
 }
 
 /// The commit checked out at `root`, if git can say.

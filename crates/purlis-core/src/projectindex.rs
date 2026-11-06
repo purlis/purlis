@@ -70,6 +70,13 @@ pub fn home(root: &Path) -> PathBuf {
         .join(crate::plane::CloneKey::of(root).as_str())
 }
 
+/// Whether the host is building the project's first index: a writer holds `writer.lock`, and
+/// there is no generation a reader can open yet. The briefing then says so, and walks nothing
+/// in its place (#5503).
+pub fn being_built(root: &Path) -> bool {
+    reader::writer_holds(&home(root)) && Reader::open(root).is_none()
+}
+
 /// The version of what an index is built with besides its schema: the shape scanner's rules and
 /// the word split. An index built with other rules is rebuilt, so a rule added to the scanner
 /// reaches every span it now flags (ADR 0079 §6).

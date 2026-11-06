@@ -8156,8 +8156,10 @@ semantics below.
   - `workspace`: each workspace's summary for the briefing (the first line of its vision, after
     the shape scanner, and its own files' newest modification time);
   - `meta`: schema version, rules version (the shape scanner's rules and the word split), the
-    commit last reconciled, when it was built, whether work is queued (`pending`) and when the
-    writer last finished (`as_of`).
+    commit last reconciled, when it was built, whether work is queued (`pending`), when the
+    writer last finished (`as_of`), and `unshared`: how many persona and workspace memory or ref
+    files the project's git standing last had uncommitted, as two numbers, for the briefing's
+    unshared-memory line (#5503).
 
   A span the shape scanner flags is indexed as its kind. A deleted item's rows stop answering at
   once, and its terms leave the file at the next FTS5 `optimize` plus `wal_checkpoint(TRUNCATE)`
@@ -8169,8 +8171,8 @@ semantics below.
 - **Tier:** Clone state, rebuildable
 - **Written by:** `purlisd`, its only writer (`purlis_core::projectindex::Keeper`, #5498), for each
   project it saves. A full rebuild writes a new generation and swaps `current` in one rename
-- **Read by:** `recall` in the CLI, read-only (`SQLITE_OPEN_READ_ONLY`, `query_only`); the
-  briefing, the panels and the palette next (#5503)
+- **Read by:** `recall` in the CLI and the SessionStart briefing (#5503), read-only
+  (`SQLITE_OPEN_READ_ONLY`, `query_only`); the panels and the palette next
 - **Git:** gitignored, with the rest of `.charter/`
 
 ### `index/<clone-key>/writer.lock`
