@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { memo, startTransition, useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, startTransition, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { afterPaint } from "./projectShown";
 import { MessageSquarePlus, Plus, Search, Sparkle, Sparkles } from "lucide-react";
 import {
@@ -105,6 +105,8 @@ import type { ViewRef } from "./tabs";
 import type { Offer } from "./actions";
 import { PersonaSkillAdd, changePersonaSkill } from "./personaSkills";
 import { usePromptRoutingMoved } from "./promptRouting";
+import { useRead } from "./SkillRead";
+import { MAKE_ROOM_LEAD, hiddenCount, leastUsedFirst, usesSaid } from "./makeRoom";
 import {
   DeletedSelectionPage,
   DeletedSetReview,
@@ -550,6 +552,18 @@ export function SkillStudioTab({
       live = false;
     };
   }, [plane, opened, changed, done]);
+  // **Make room** (#5355): each skill's runs of the last 30 days, read only while it is on.
+  const { read: usesRead } = useRead(
+    selected?.sel.room === true && selected.scope === key ? key : undefined,
+    () => commands.skillUses(plane),
+  );
+  const uses = useMemo(
+    () =>
+      usesRead?.data === undefined
+        ? undefined
+        : new Map(usesRead.data.map((one) => [one.skill, one.runs])),
+    [usesRead],
+  );
 
   // **The copy a scorecard or a grade's chat says it graded** (#3978), by the grade open: the
   // studio goes to the scope that lists that copy (a retired tab comes back at the project's
@@ -1112,6 +1126,20 @@ export function SkillStudioTab({
     setSelected((was) => (was === undefined ? was : { ...was, sel: next(was.sel) }));
   const selectOn = (on: "library" | "deleted") =>
     setSelected({ page: on, scope: key, sel: { keys: new Set(), only: false } });
+  /** **Make room** (#5355): the Library's Select, least used first, nothing ticked. */
+  const makeRoom = () => {
+    const library: StudioPlace = { page: "library", scope };
+    edits.leaveFor(library, () => {
+      setDoing(undefined);
+      setNeed(undefined);
+      walked.go(library);
+      setSelected({
+        page: "library",
+        scope: key,
+        sel: { keys: new Set(), only: false, room: true },
+      });
+    });
+  };
   const selectFor: SelectFor = { scope, workspace, pinner: pinnerOf(scope) };
   /** A change Select asked for: once it is made, Select ends, and its Undo is offered (#5332). */
   const changeThenEnd: Change = (label, run, then, refusedIn) =>
@@ -1374,7 +1402,11 @@ export function SkillStudioTab({
     // **Built-in skills fold into one quiet line at the end** (S12), unless the Built-in chip
     // asks for them alone; a built-in that needs the person, clashes or is searched for stands
     // out of the fold.
-    const own = shown.filter((skill) => skill.level !== "built-in");
+    // Make room (#5355): the least used in the last 30 days first, once their runs are read.
+    const roomUses = sel?.room === true ? uses : undefined;
+    const ordered = (rows: readonly StudioSkill[]) =>
+      roomUses === undefined ? rows : leastUsedFirst(rows, (skill) => skill.name, roomUses);
+    const own = ordered(shown.filter((skill) => skill.level !== "built-in"));
     const builtIns = shown.filter((skill) => skill.level === "built-in");
     const foldsBuiltIns = !chips.has("built-in");
     const row = (skill: StudioSkill) => {
@@ -1399,6 +1431,9 @@ export function SkillStudioTab({
             )}
             <Badge>{skill.label}</Badge>
             {mark !== undefined && <Badge variant={mark.variant}>{mark.said}</Badge>}
+            {roomUses !== undefined && skill.level !== "built-in" && (
+              <Badge data-testid="skill-uses">{usesSaid(roomUses.get(skill.name))}</Badge>
+            )}
           </RowTrail>
           {/* A reason cut short reads whole in the row's tooltip (#4711). */}
           <RowBelow clamp={1} tipWhenCut={skill.left_out !== null}>
@@ -1430,7 +1465,8 @@ export function SkillStudioTab({
     const chosenRows =
       sel === undefined
         ? []
-        : skills
+        : // In the list's order: Make room's, least used first (#5355).
+          ordered(skills)
             .filter((skill) => sel.keys.has(skillRowId(skill)))
             .map((skill) => ({ key: skillRowId(skill), skill }));
     list = (
@@ -1453,7 +1489,11 @@ export function SkillStudioTab({
               {sel === undefined ? "Select" : "Done"}
             </Button>
           }
-          lead={`Every skill ${lowerFirst(scopeChat(scope))} can get, and why any other is left out.${persona === null ? "" : " A persona brings its skills into every workspace."}`}
+          lead={
+            sel?.room === true
+              ? MAKE_ROOM_LEAD
+              : `Every skill ${lowerFirst(scopeChat(scope))} can get, and why any other is left out.${persona === null ? "" : " A persona brings its skills into every workspace."}`
+          }
         >
           <div className="skill-library-tools">
             <TextField
@@ -1724,6 +1764,7 @@ export function SkillStudioTab({
         />
       ) : sel !== undefined ? (
         <SelectionPage
+          room={sel.room === true}
           chosen={chosenRows}
           notShown={new Set(chosenRows.map((one) => one.key).filter((one) => !inTheList.has(one)))}
           only={sel.only}
@@ -1948,6 +1989,11 @@ export function SkillStudioTab({
         change={change}
         changed={changed + done}
         workspace={workspace}
+        room={
+          studio?.router?.budget === undefined
+            ? undefined
+            : { workspace, persona, budget: studio.router.budget, onMakeRoom: makeRoom }
+        }
       />
     ));
   } else if (page === "deleted") {
@@ -2126,6 +2172,8 @@ export function SkillStudioTab({
               onScorecard={(grade) =>
                 go({ page: "routing", scope, item: routerGradeItem({ grade }) })
               }
+              hidden={hiddenCount(skills)}
+              onMakeRoom={makeRoom}
             />
             <ViewListHead title="How it did at each chat's start" />
             <RoutedChats

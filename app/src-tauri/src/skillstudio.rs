@@ -1437,6 +1437,47 @@ pub(crate) async fn skill_runs(
     .await
 }
 
+/// How far back Make room counts a skill's runs (#5355): the last 30 days.
+pub(crate) const USES_DAYS: u64 = 30;
+
+/// **One skill's runs in the last [`USES_DAYS`] days**, by its own name (#5355).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillRunsLately {
+    pub skill: String,
+    pub runs: u32,
+}
+
+/// The runs of every skill the project at `root` recorded from [`USES_DAYS`] days before `now`
+/// (seconds since 1970) on, by name: a skill with none is not listed.
+pub(crate) fn uses(root: &std::path::Path, now: u64) -> Vec<SkillRunsLately> {
+    purlis_core::skilluse::runs_since(root, now.saturating_sub(USES_DAYS * 24 * 60 * 60))
+        .into_iter()
+        .map(|(skill, runs)| SkillRunsLately { skill, runs })
+        .collect()
+}
+
+/// **How much each skill was used lately** (#5355): its runs in the last 30 days, which Make room
+/// sorts the Library by, least used first. None while the flag is off. On a blocking thread, as
+/// it reads the project's skill log.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_uses(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+) -> Result<Vec<SkillRunsLately>, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading how much each skill was used", move || {
+        if !purlis_core::skills::studio_on_here() {
+            return Ok(Vec::new());
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_secs());
+        Ok(uses(held.root(), now))
+    })
+    .await
+}
+
 /// **Which panel on a skill's tab**, as the window holds it: purlis's Runs panel, or one an
 /// extension adds, by its id and the panel's.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]

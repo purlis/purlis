@@ -334,6 +334,7 @@ macro_rules! app_commands {
                 skillstudio::skill_persona_skills,
                 skillstudio::skill_runs,
                 skillstudio::skill_stats,
+                skillstudio::skill_uses,
                 skillstudio::skill_panels,
                 skillstudio::skill_studio_on,
                 skillstudio::set_skill_studio_on,
