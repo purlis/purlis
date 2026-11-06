@@ -514,22 +514,22 @@ pub(crate) mod raw {
             .push(path.to_path_buf());
     }
 
-    /// How many times a [`Raw`] has been asked to watch `path` on its own.
+    /// How many times a [`Raw`] has been asked to watch `path`, either way.
     pub(crate) fn watched(path: &Path) -> usize {
-        asked(path, false)
+        asked(path, |_| true)
     }
 
     /// How many times a [`Raw`] has been asked to watch `path` and everything under it.
     pub(crate) fn watched_recursively(path: &Path) -> usize {
-        asked(path, true)
+        asked(path, |recursive| recursive)
     }
 
-    fn asked(path: &Path, recursively: bool) -> usize {
+    fn asked(path: &Path, counted: impl Fn(bool) -> bool) -> usize {
         WATCHES
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .iter()
-            .filter(|(watched, recursive)| watched == path && *recursive == recursively)
+            .filter(|(watched, recursive)| watched == path && counted(*recursive))
             .count()
     }
 

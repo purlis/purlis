@@ -1805,7 +1805,7 @@ mod tests {
         told_about(&told, "workspaces/beta");
 
         assert_eq!(raw::watched_recursively(&root), 1);
-        assert_eq!(raw::watched(&root), 0);
+        assert_eq!(raw::watched(&root), 1, "the root was watched more than once");
         for folder in [
             "workspaces",
             "workspaces/alpha",
@@ -1816,7 +1816,7 @@ mod tests {
         ] {
             let folder = root.join(folder);
             assert_eq!(
-                raw::watched(&folder) + raw::watched_recursively(&folder),
+                raw::watched(&folder),
                 0,
                 "{} was watched on its own",
                 folder.display()
