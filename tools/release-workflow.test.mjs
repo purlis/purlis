@@ -363,7 +363,9 @@ test("every job has a deadline, so a hung one cannot hold the dev builds' group 
       continue;
     }
     const minutes = Number(value(body, 4, "timeout-minutes"));
-    assert.ok(Number.isInteger(minutes) && minutes >= 10 && minutes <= 90, `${name}: ${minutes}`);
+    // The build is the one long job: a cold macOS build takes 65 to 68 minutes (ADR 0092).
+    const most = name === "build" ? 120 : 90;
+    assert.ok(Number.isInteger(minutes) && minutes >= 10 && minutes <= most, `${name}: ${minutes}`);
     minutesOf.set(name, minutes);
   }
   // The longest a run can hold the group: the slowest chain of jobs, each waiting on those it
