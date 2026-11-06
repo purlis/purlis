@@ -1805,6 +1805,15 @@ export const PlaneView = memo(function PlaneView({
   /** Tells the core the window's tabs as they are in `tabs` (`window_layout`, #4751), when
    *  they differ from what was last said. Set below, once what it reads is known. */
   const sayLayout = useRef<(tabs: Tabs) => void>(() => undefined);
+  /**
+   * **Whether a drag holds a tab forward** (#5294): resting on a tab, or pressing one in placement
+   * mode, draws it in front as a preview. Until the drag is over the core is told nothing of it:
+   * not the layout, not the view tabs, and no strip remembers it as its front tab. The ref is what
+   * `change` reads in the same call; the state reruns the effects that tell, so what they held
+   * back is told as it ends.
+   */
+  const heldForward = useRef(false);
+  const [holdingForward, setHoldingForward] = useState(false);
   /** What was last said of the tabs, as JSON: a change to a terminal or a notice is not one. */
   const layoutSaid = useRef<string | undefined>(undefined);
   /** The layout the core last refused, as JSON: never said again until it has taken another.
@@ -2134,13 +2143,13 @@ export const PlaneView = memo(function PlaneView({
    */
   const lastViewsSaid = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (!viewsHeard) return;
+    if (!viewsHeard || holdingForward) return;
     const said = viewTabsOf(tabs);
     const text = JSON.stringify(said);
     if (text === lastViewsSaid.current) return;
     lastViewsSaid.current = text;
     void commands.windowViews(plane, said).catch(() => undefined);
-  }, [plane, tabs, viewsHeard]);
+  }, [holdingForward, plane, tabs, viewsHeard]);
 
   /** The branch the explorer is focused on (FM-5), told to the core when it changes, after the
    *  record is heard for the views' reason: a focus said first would write over the record's. */
@@ -3571,10 +3580,10 @@ export const PlaneView = memo(function PlaneView({
   // comes back to the chat that was on screen there.
   useEffect(() => {
     const front = tabs.inFront;
-    if (front === undefined || sidebar === undefined) return;
+    if (front === undefined || sidebar === undefined || holdingForward) return;
     const workspace = workspaceOf(tabs, front, filedIn);
     if (workspace !== undefined) lastFront.current[workspace] = front;
-  }, [filedIn, sidebar, tabs]);
+  }, [filedIn, holdingForward, sidebar, tabs]);
 
   /**
    * **Every tab, told to the core whenever it changes** (#4751): the record keeps it, so a
@@ -3590,7 +3599,7 @@ export const PlaneView = memo(function PlaneView({
    */
   useEffect(() => {
     sayLayout.current = (next: Tabs) => {
-      if (!layoutHeard.current) return;
+      if (!layoutHeard.current || heldForward.current) return;
       const laid = layoutOf(
         next,
         {
@@ -3622,7 +3631,7 @@ export const PlaneView = memo(function PlaneView({
         .catch(unsaid);
     };
     sayLayout.current(tabs);
-  }, [filedIn, plane, tabs, tabWindow, viewsHeard]);
+  }, [filedIn, holdingForward, plane, tabs, tabWindow, viewsHeard]);
 
   /**
    * **Tabs moved between the project's windows** (#4768): Move to new window, Move to window ▸,
@@ -5458,7 +5467,23 @@ export const PlaneView = memo(function PlaneView({
     }),
     [filedIn, isPinned, nameOf, pressedOf, tabs],
   );
-  const holdTab = useCallback((id: number) => change((tabs) => selectTab(tabs, id)), [change]);
+  /**
+   * A tab a drag brings forward, drawn and not told (#5294), until {@link holdOver}; and the one
+   * that was in front, drawn again as it is put back. Not a `change`: no pane is noted as used
+   * (`noteUsed`), so a cancel leaves the tabs exactly as they were.
+   */
+  const holdTab = useCallback((id: number) => {
+    heldForward.current = true;
+    setHoldingForward(true);
+    now.current = selectTab(now.current, id);
+    setTabs(now.current);
+  }, []);
+  /** The drag is over: what the window draws now is told, if it differs from what was. */
+  const holdOver = useCallback(() => {
+    heldForward.current = false;
+    setHoldingForward(false);
+    sayLayout.current(now.current);
+  }, []);
   const ownNameOf = useCallback(
     (session: number) =>
       [...(sidebar?.workspaces.flatMap((ws) => ws.chats) ?? []), ...(sidebar?.unfiled ?? [])].find(
@@ -5472,6 +5497,7 @@ export const PlaneView = memo(function PlaneView({
     change,
     ctx: dropContext,
     onHoldTab: holdTab,
+    onHoldOver: holdOver,
     chatNameOf: ownNameOf,
     active: inFront,
   });

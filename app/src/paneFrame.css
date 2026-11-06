@@ -846,8 +846,9 @@
   cursor: grab;
 }
 
-:root[data-pane-dragging],
-:root[data-pane-dragging] * {
+/* A pointer holding something; placement mode's keys and presses hold no cursor (#5293). */
+:root[data-pane-dragging="pointer"],
+:root[data-pane-dragging="pointer"] * {
   cursor: grabbing;
 }
 
@@ -902,27 +903,9 @@
   visibility: hidden;
 }
 
-:root[data-pane-refused],
-:root[data-pane-refused] * {
+:root[data-pane-dragging="pointer"][data-pane-refused],
+:root[data-pane-dragging="pointer"][data-pane-refused] * {
   cursor: no-drop;
-}
-
-/* **In placement mode, what the place the keyboard is on would take** (#4583), until it draws what
-   a drag draws (#5293): the half of the pane the source would take, or the whole pane for a swap,
-   over the terminal. A refused place is dashed, in the danger colour. */
-.pane-drop-preview {
-  position: fixed;
-  z-index: 4;
-  pointer-events: none;
-  border: var(--focus-ring-width) solid var(--accent-base);
-  border-radius: var(--radius-sm);
-  background-color: var(--accent-wash);
-}
-
-.pane-drop-preview[data-refused] {
-  border-style: dashed;
-  border-color: var(--danger-base);
-  background-color: var(--danger-wash);
 }
 
 /* ---------------------------------------------------------------------------------------------
@@ -1197,8 +1180,9 @@
 }
 
 /* **Placement mode** (#4764): every other pane shows its five targets in a cross in its middle,
-   as real buttons over the terminal, and the strip a New tab at its end. Over the drop's preview,
-   which draws the result of the target the keyboard is on. Only the buttons take the pointer: a
+   as real buttons over the terminal, and the strip a New tab at its end. Over the drag's preview
+   (#5293), which draws the result of the target the keyboard is on, and on the zones the drag
+   measured, so the cross stays put as the panes make room. Only the buttons take the pointer: a
    press anywhere else puts what is held back. */
 .pane-placing {
   position: fixed;
@@ -1246,13 +1230,4 @@
   align-items: center;
   padding-inline: var(--space-1);
   transform: translateX(-100%);
-}
-
-/* What is held, where it is: dashed, as a place it leaves. */
-.pane-placing-held {
-  position: fixed;
-  z-index: 4;
-  pointer-events: none;
-  border: var(--focus-ring-width) dashed var(--border-strong);
-  border-radius: var(--radius-sm);
 }
