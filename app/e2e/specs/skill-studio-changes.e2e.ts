@@ -5,13 +5,7 @@ import { existsSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { press, projectRoot, stateOf } from "../acting.js";
-import {
-  closeTheViewTabsOpenedSince,
-  focusWorkspace,
-  runFromThePalette,
-  shownButton,
-  tabNames,
-} from "../reach.js";
+import { closesTheTabsItOpens, focusWorkspace, runFromThePalette, shownButton } from "../reach.js";
 import { studioPage, studioMore, studioSkill, studioTab } from "../studio.js";
 
 /**
@@ -44,7 +38,6 @@ describe("making and changing a skill in the Skill studio", function () {
 
   let root = "";
   let keptBefore: string[] = [];
-  let wereOpen: string[] = [];
   const kept = () => {
     const dir = join(stateOf(root), "skills-deleted");
     return existsSync(dir) ? readdirSync(dir) : [];
@@ -54,11 +47,13 @@ describe("making and changing a skill in the Skill studio", function () {
     root = await projectRoot();
     keptBefore = kept();
     await focusWorkspace("alpha");
-    wereOpen = await tabNames();
   });
 
-  after(async () => {
-    await closeTheViewTabsOpenedSince(wereOpen);
+  // Between the two: the strip is read once alpha is focused, and its view tabs are closed
+  // before the files are tidied.
+  closesTheTabsItOpens();
+
+  after(() => {
     for (const name of [MADE, RENAMED])
       rmSync(join(root, "skills", name), { recursive: true, force: true });
     for (const one of kept())

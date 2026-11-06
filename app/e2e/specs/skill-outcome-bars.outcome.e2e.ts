@@ -20,6 +20,7 @@ import {
 } from "../outcomeBars.js";
 import {
   closeTheViewTabsOpenedSince,
+  closesTheTabsItOpens,
   focusWorkspace,
   runFromThePalette,
   tabNames,
@@ -191,13 +192,9 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
 
   let root = "";
   let wereRunning: Running = {};
-  /** The tabs on alpha's strip before this spec, so its `after` closes only what it opened. */
-  let wereOpen: string[] | null = null;
 
   after(async () => {
     await endTheChatsStartedSince(wereRunning);
-    // The studio's last opening, and any tab a failed step left, by its own × (#5111).
-    if (wereOpen !== null) await closeTheViewTabsOpenedSince(wereOpen);
   });
 
   before(async () => {
@@ -206,8 +203,12 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
     await browser.setWindowSize(1440, 900);
     await focusWorkspace("alpha");
     wereRunning = await chatsRunning();
-    wereOpen = await tabNames();
   });
+
+  // Hooks of a kind run in the order they are registered: alpha's strip is read once it is
+  // focused, and the studio's last opening, and any tab a failed step left, are closed by their
+  // own × once the chats are ended (#5111).
+  closesTheTabsItOpens();
 
   it("goes from wanting a skill to using it in a running chat in under 2 minutes", async () => {
     const chat = await startAChat();
