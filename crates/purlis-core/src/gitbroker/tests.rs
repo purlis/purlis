@@ -806,3 +806,65 @@ fn a_removal_for_a_chat_in_another_workspace_or_in_the_folder_is_answered_no() {
     }
     assert!(root.join("workspaces/alpha/.worktrees/widget/p1").is_dir());
 }
+
+#[test]
+fn the_project_is_saved_for_a_chat_anywhere_in_it_and_for_no_other() {
+    let (_dir, root) = tree();
+    for here in [
+        root.clone(),
+        root.join("docs"),
+        root.join("workspaces/alpha/widget"),
+    ] {
+        assert_eq!(saved_from(&root, Some(&here)), Ok(()), "{}", here.display());
+    }
+    let outside = tempfile::tempdir().unwrap();
+    let refused = saved_from(&root, Some(outside.path())).unwrap_err();
+    assert!(refused.contains("outside the project"), "{refused}");
+    assert!(saved_from(&root, None).is_err());
+}
+
+#[test]
+fn a_chats_save_of_the_project_is_committed_by_the_app() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap().join("plane");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("charter.toml"), "[plane]\nmode = \"commit\"\n").unwrap();
+    std::fs::write(root.join(".gitignore"), ".charter/\n.purlis/\n").unwrap();
+    for args in [
+        &["init", "-q", "-b", "main", "."][..],
+        &["config", "user.name", "Fixture"],
+        &["config", "user.email", "fixture@example.invalid"],
+        &["add", "-A"],
+        &["commit", "-q", "-m", "one"],
+    ] {
+        crate::testgit::run(&root, args);
+    }
+    std::fs::write(root.join("notes.md"), "a chat's work\n").unwrap();
+
+    let answered = answer(
+        &root,
+        &asker(Some(&root)),
+        &GitAsk {
+            chat: 4,
+            workspace: String::new(),
+            alive: false,
+            work: GitWork::RootSave {
+                message: Some("from a chat".to_owned()),
+                sign: false,
+                no_push: true,
+                pull: false,
+            },
+        },
+        &git::Isolated::default(),
+        chrono::Utc::now(),
+    );
+
+    let Answer::Said { code, lines } = answered else {
+        panic!("not run: {answered:?}");
+    };
+    assert_eq!(code, 0, "{lines:?}");
+    let subject = crate::testgit::run(&root, &["log", "-1", "--format=%s"]);
+    assert_eq!(subject.out.trim(), "from a chat");
+    let tracked = crate::testgit::run(&root, &["ls-files", "notes.md"]);
+    assert_eq!(tracked.out.trim(), "notes.md");
+}

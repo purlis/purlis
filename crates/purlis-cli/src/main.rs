@@ -2900,8 +2900,22 @@ fn plane_command(command: &Command) -> Option<ExitCode> {
             no_push,
             pull,
         } => {
+            // In a chat the app started, the app saves the project for it: the project's git
+            // folder is the app's to write. Elsewhere, or where no app takes it, it runs here.
+            let work = purlis_core::hookwire::GitWork::RootSave {
+                message: message.clone(),
+                sign: *sign,
+                no_push: *no_push,
+                pull: *pull,
+            };
+            let asked = gitask::told(
+                gitask::forwarded("", work, gitask::A_SAVE_TAKES_AT_MOST),
+                &mut say,
+            );
+            if let Some(code) = asked {
+                code
             // A pull that failed, or met conflicts, stops the save: it would stage the markers.
-            if *pull && purlis_core::planegit::pull(&root, &mut say) != 0 {
+            } else if *pull && purlis_core::planegit::pull(&root, &mut say) != 0 {
                 1
             } else {
                 // A chat's `charter save` is an agent run's, and carries its trailers (GL-8).

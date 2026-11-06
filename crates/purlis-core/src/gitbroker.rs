@@ -147,6 +147,8 @@ fn isolated_answer(
         GitWork::WorktreePrune { .. } => bound(root, asker.cwd.as_deref(), &ask.workspace),
         // The project root: only for the chat whose place it is.
         GitWork::RootUpdate {} => at_the_root(root, asker.cwd.as_deref()),
+        // The project itself: any chat that stands in it.
+        GitWork::RootSave { .. } => saved_from(root, asker.cwd.as_deref()),
         // A clone's own checkout: the chat stands in it, or above it in its workspace.
         GitWork::CloneUpdate { repo, .. } => bound(root, asker.cwd.as_deref(), &ask.workspace)
             .and_then(|()| at_or_above_clone(root, asker.cwd.as_deref(), &ask.workspace, repo)),
@@ -364,6 +366,33 @@ fn isolated_answer(
             } else {
                 say(Say::Done(said.into()));
                 0
+            }
+        }
+        GitWork::RootSave {
+            message,
+            sign,
+            no_push,
+            pull,
+        } => {
+            // A pull that failed, or met conflicts, stops the save: it would stage the markers.
+            if *pull && crate::planegit::pull(root, &mut say) != 0 {
+                1
+            } else {
+                // The chat's own trailers, from the app's record of the chat that asked.
+                let provenance = crate::provenance::Provenance::of_the_chat_the_app_commits_for(
+                    root, asker.chat,
+                );
+                crate::planegit::save(
+                    &crate::planegit::Request {
+                        root,
+                        message: message.as_deref(),
+                        sign: *sign,
+                        no_push: *no_push,
+                        cwd: asker.cwd.as_deref().unwrap_or(root),
+                        provenance: provenance.as_ref(),
+                    },
+                    &mut say,
+                )
             }
         }
         GitWork::CloneUpdate { repo, step } => {
@@ -643,6 +672,28 @@ pub fn at_the_root(root: &Path, cwd: Option<&Path>) -> Result<(), String> {
     }
 }
 
+/// Whether a chat standing at `cwd` may have the app save the project at `root` for it: it
+/// stands at the root or anywhere below it.
+pub fn saved_from(root: &Path, cwd: Option<&Path>) -> Result<(), String> {
+    let Some(cwd) = cwd else {
+        return Err(
+            "the app has no record of where this chat stands, so it will not save the project \
+             for it"
+                .to_owned(),
+        );
+    };
+    let real = |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    if real(cwd).starts_with(real(root)) {
+        Ok(())
+    } else {
+        Err(
+            "this chat stands outside the project, so the app will not save it for it: run \
+             `purlis save` from a chat in the project"
+                .to_owned(),
+        )
+    }
+}
+
 /// Whether a chat standing at `cwd` stands in clone `repo` of workspace `ws`, or above it: at
 /// the project root or the workspace's own folder (#3831). A chat in a branch folder, or in
 /// another folder of the workspace, is refused: the app updates the clone a chat works in.
@@ -854,7 +905,7 @@ fn touched(root: &Path, ws: &str, work: &GitWork) -> Vec<PathBuf> {
             .unwrap_or_default(),
         // A workspace that is not there yet holds no clone; one that is there is refused.
         // The root is the window's own Update's to check, as it checks it for the person.
-        GitWork::Create { .. } | GitWork::RootUpdate {} => Vec::new(),
+        GitWork::Create { .. } | GitWork::RootUpdate {} | GitWork::RootSave { .. } => Vec::new(),
         // Runs no git.
         GitWork::WorktreeClaim { .. } => Vec::new(),
     }

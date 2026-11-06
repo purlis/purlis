@@ -1426,6 +1426,23 @@ fn clones_git_held(root: &Path, cwd: Option<&Path>) -> Option<Denial> {
     })
 }
 
+/// The project root's git folder, for a chat wherever it stands: written by the app alone, which
+/// saves the project for a chat (`purlis save`) and updates it (`purlis worktree update` at the
+/// root), as the window's Save and Update do. Read-only git works. A project root whose `.git` is
+/// a file (a worktree of another repository) keeps it as it was: that git is not the app's.
+fn roots_git_held(root: &Path) -> Option<Denial> {
+    let dot_git = root.join(".git");
+    crate::worktree::is_own_git_dir(&dot_git).then_some(())?;
+    Some(Denial {
+        class: Class::LaterCode,
+        path: dot_git,
+        access: Access::Write,
+        named: None,
+        reach: Reach::AndBelow,
+        any_case: false,
+    })
+}
+
 /// The folders searched for repositories as a chat of the plane at `root` starts: the plane, and
 /// each folder you listed as one chats may be granted.
 pub fn git_folders_searched(root: &Path) -> Vec<PathBuf> {
@@ -4479,12 +4496,13 @@ impl Applied {
 
     /// The manifests a chat in `cwd` is denied that the compiled form does not already deny.
     fn chain(&self, cwd: Option<&Path>) -> Vec<Denial> {
-        let clones_git = matches!(*self.form, Form::ClaudeCode(_))
-            .then(|| clones_git_held(&self.root, cwd))
-            .flatten();
+        let claude = matches!(*self.form, Form::ClaudeCode(_));
+        let clones_git = claude.then(|| clones_git_held(&self.root, cwd)).flatten();
+        let roots_git = claude.then(|| roots_git_held(&self.root)).flatten();
         manifests_held(&self.root, cwd)
             .into_iter()
             .chain(clones_git)
+            .chain(roots_git)
             .chain(self.later_code_by_path(cwd))
             .filter(|denial| !self.denied.contains(denial))
             .collect()
