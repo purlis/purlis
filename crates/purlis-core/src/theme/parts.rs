@@ -5302,8 +5302,10 @@ fn selector(rule: &Rule, sized: bool) -> String {
 }
 
 /// The parts whose tone (`data-tone`) is drawn by the family alone: a theme's colours reach them
-/// only where no tone is set (the activity item's count, whose needs-you tone is hot, R120).
-const TONED: &[(&str, &str)] = &[("activity", "count")];
+/// only where no tone is set (the activity item's count, whose needs-you tone is hot, R120; the
+/// pane foot's number, whose warning is the waiting or the failed colour the check holds on the
+/// terminal's fill, #5262).
+const TONED: &[(&str, &str)] = &[("activity", "count"), ("pane-foot", "value")];
 
 /// Whether a property changes a control's size: what the roots at another of the family's sizes
 /// and in a wrapping row keep as their own.

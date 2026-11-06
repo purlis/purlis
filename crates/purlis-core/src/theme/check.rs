@@ -443,6 +443,11 @@ pub const PAIRS: &[Pair] = &[
     // - The warning-soft button: amber words on the control, and under the pointer.
     p("state.waiting", "control.base", TEXT),
     p("state.waiting", "control.hover", TEXT),
+    // - The pane foot's warning number (#5262): a low cache's figures in the waiting or the failed
+    //   colour, on the terminal's own fill, which the foot has no ground over
+    //   (`parts_pane_foot_tests.rs` reads which from `pane-foot.css`).
+    p("state.waiting", "terminal.background", TEXT),
+    p("state.failed", "terminal.background", TEXT),
     // - A chosen activity button: its icon in the accent's words on the accent's wash, laid on
     //   the window and the frame (#3177), held as words are, the icon being all it says.
     p("accent.text", "accent.wash", TEXT).over("surface.base"),

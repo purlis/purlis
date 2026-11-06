@@ -8,7 +8,6 @@ import { emit } from "@tauri-apps/api/event";
 import { renderHook, waitFor } from "@testing-library/react";
 import {
   ChatSkillSetsHere,
-  SHOW_THIS_CHATS_SKILLS,
   SkillsChip,
   UseSkill,
   UseSkillOpener,
@@ -441,7 +440,12 @@ describe("the Skills chip on a chat's pane", () => {
     const warned = { ...BUDGET, warns: "skills" as const };
     render(
       <ChatSkillSetsHere.Provider value={{ 4: held({ budget: warned }), 5: held() }}>
-        <SkillsChip plane="p" session={4} markOnly onOpen={() => undefined} />
+        <SkillsChip
+          plane="p"
+          session={4}
+          markOnly
+          row={{ title: "Skills of chat 4", press: () => undefined }}
+        />
         <SkillsChip plane="p" session={5} />
       </ChatSkillSetsHere.Provider>,
     );
@@ -484,7 +488,7 @@ describe("the Skills chip on a chat's pane", () => {
     render(
       <UseSkillOpener value={opener}>
         <ChatSkillSetsHere.Provider value={{ 4: warned, 6: held() }}>
-          <SkillsChip session={4} onOpen={pressed} />
+          <SkillsChip session={4} row={{ title: "Skills of chat 4", press: pressed }} />
           <SkillsChip session={5} />
           <SkillsChip session={6} />
         </ChatSkillSetsHere.Provider>
@@ -501,9 +505,27 @@ describe("the Skills chip on a chat's pane", () => {
     const chip = await chipOf(held({ budget: { ...BUDGET, warns: "chars" } }));
     // A manual-only skill is in the set's count, free in the listing's.
     expect(chip.textContent).toContain("4 skills");
-    expect(chip.getAttribute("aria-label")).toBe(
-      `4 skills. Near the skill budget. ${SHOW_THIS_CHATS_SKILLS}.`,
+    expect(chip.getAttribute("aria-label")).toBe(`4 skills. Near the skill budget.`);
+  });
+
+  it("says its row's title where it presses one, and promises no press where it has none (#5366)", async () => {
+    studioOn();
+    const row = { title: "Skills of chat 4", press: vi.fn() };
+    render(
+      <ChatSkillSetsHere.Provider value={{ 4: held({ budget: { ...BUDGET, warns: "chars" } }) }}>
+        <SkillsChip session={4} row={row} />
+      </ChatSkillSetsHere.Provider>,
     );
+    const chip = await screen.findByTestId("pane-skills");
+    expect(chip.getAttribute("aria-label")).toBe(
+      "4 skills. Near the skill budget. Skills of chat 4.",
+    );
+    fireEvent.click(chip);
+    expect(row.press).toHaveBeenCalled();
+    cleanup();
+    // Its words alone: the warning, and no way to press it said.
+    const words = await chipOf(held({ budget: { ...BUDGET, warns: "chars" } }));
+    expect(words.getAttribute("aria-label")).toBe("4 skills. Near the skill budget.");
   });
 
   it("is in the warning look for pins past 64 together, under the budget or not (#3391)", async () => {
@@ -535,9 +557,7 @@ describe("the Skills chip on a chat's pane", () => {
       [held({ changed }), "Changed since it started"],
     ] as const) {
       const chip = await chipOf(set);
-      expect(chip.getAttribute("aria-label")).toBe(
-        `4 skills. ${title}. ${SHOW_THIS_CHATS_SKILLS}.`,
-      );
+      expect(chip.getAttribute("aria-label")).toBe(`4 skills. ${title}.`);
       cleanup();
     }
     // A router that did not fall back needs nothing: the view's header says it.
@@ -562,16 +582,14 @@ describe("the Skills chip on a chat's pane", () => {
         },
       }),
     );
-    expect(prompted.getAttribute("aria-label")).toBe(
-      `4 skills. Its router fell back on a prompt. ${SHOW_THIS_CHATS_SKILLS}.`,
-    );
+    expect(prompted.getAttribute("aria-label")).toBe(`4 skills. Its router fell back on a prompt.`);
     cleanup();
     // Several, each named, in the view's order.
     const many = await chipOf(
       held({ budget: { ...BUDGET, warns: "both" }, routing: fellBack, changed }),
     );
     expect(many.getAttribute("aria-label")).toBe(
-      `4 skills. Near the skill budget · Its router fell back · Changed since it started. ${SHOW_THIS_CHATS_SKILLS}.`,
+      `4 skills. Near the skill budget · Its router fell back · Changed since it started.`,
     );
   });
 

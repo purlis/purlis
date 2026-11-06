@@ -633,7 +633,7 @@ export function ChatFoot({
             <SkillsChip
               plane={plane}
               session={session}
-              onOpen={rowOf("skills")?.press}
+              row={rowOf("skills")}
               markOnly={foot.has("skillsMark")}
             />
           </PaneFootJoined>
