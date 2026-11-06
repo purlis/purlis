@@ -13,12 +13,25 @@ fn a_clone() -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf) {
     for folder in [&root, &upstream] {
         std::fs::create_dir_all(folder).unwrap();
     }
-    crate::testgit::run(&upstream, &["init", "-q", "-b", "main", "."]);
-    crate::testgit::run(&upstream, &["commit", "-q", "--allow-empty", "-m", "one"]);
+    // In the repository's own config: CI runners have no git identity.
+    for args in [
+        &["init", "-q", "-b", "main", "."][..],
+        &["config", "user.name", "Fixture"],
+        &["config", "user.email", "fixture@example.invalid"],
+        &["commit", "-q", "--allow-empty", "-m", "one"],
+    ] {
+        let ran = crate::testgit::run(&upstream, args);
+        assert!(ran.ok(), "{args:?}: {}", ran.err);
+    }
     let from = upstream.display().to_string();
     let to = clone.display().to_string();
-    crate::testgit::run(&base, &["clone", "-q", &from, &to]);
-    crate::testgit::run(&upstream, &["commit", "-q", "--allow-empty", "-m", "two"]);
+    for (dir, args) in [
+        (&base, &["clone", "-q", from.as_str(), to.as_str()][..]),
+        (&upstream, &["commit", "-q", "--allow-empty", "-m", "two"]),
+    ] {
+        let ran = crate::testgit::run(dir, args);
+        assert!(ran.ok(), "{args:?}: {}", ran.err);
+    }
     (dir, root, upstream, clone)
 }
 
@@ -43,7 +56,16 @@ fn a_fetch_never_writes_through_a_reflog_that_links_elsewhere() {
 fn a_fetch_with_plain_reflogs_moves_the_remote_tracking_branch() {
     let (_dir, root, upstream, clone) = a_clone();
     fetch_remote(&root, &clone, "origin", None).expect("fetched");
-    let theirs = crate::testgit::run(&upstream, &["rev-parse", "HEAD"]);
-    let tracking = crate::testgit::run(&clone, &["rev-parse", "refs/remotes/origin/main"]);
+    let theirs = crate::testgit::run(&upstream, &["rev-parse", "--verify", "HEAD"]);
+    let tracking = crate::testgit::run(
+        &clone,
+        &["rev-parse", "--verify", "refs/remotes/origin/main"],
+    );
+    assert!(
+        theirs.ok() && tracking.ok(),
+        "{} {}",
+        theirs.err,
+        tracking.err
+    );
     assert_eq!(tracking.out.trim(), theirs.out.trim());
 }
