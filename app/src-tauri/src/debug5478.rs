@@ -11,13 +11,18 @@
 /// not a place for whatever else a window might send.
 const LONGEST: usize = 4_096;
 
-/// [DEBUG-5478] Writes the watchdog's line to the diagnostic log, prefixed `[DEBUG-5478]`.
+/// [DEBUG-5478] Writes the watchdog's line to the diagnostic log, prefixed `[DEBUG-5478]`, on a
+/// blocking thread: a file is not the window's to wait for, least of all while a pane is stuck.
 #[tauri::command]
 #[specta::specta]
-pub fn debug_5478_log(line: String) {
-    let mut end = line.len().min(LONGEST);
-    while !line.is_char_boundary(end) {
-        end -= 1;
-    }
-    tracing::warn!("[DEBUG-5478] {}", &line[..end]);
+pub async fn debug_5478_log(line: String) -> Result<(), String> {
+    crate::off_the_window("writing the #5478 freeze line", move || {
+        let mut end = line.len().min(LONGEST);
+        while !line.is_char_boundary(end) {
+            end -= 1;
+        }
+        tracing::warn!("[DEBUG-5478] {}", &line[..end]);
+        Ok(())
+    })
+    .await
 }
