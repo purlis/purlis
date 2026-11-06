@@ -132,10 +132,10 @@ jobs:
           # but GNU time on cargo reports only its largest child.
           heaviest=$(sort -n "$RUNNER_TEMP/rss.log" | tail -1)
           msg="whole build $(( (end - start) / 60 )) min $(( (end - start) % 60 )) s; GNU time max RSS $(awk "BEGIN {printf \"%.2f\", $peak/1048576}") GB; heaviest rustc $(echo "$heaviest" | awk '{printf "%.2f GB, %s s, %s", $1/1048576, $3, $5}'); purlis_app_lib $(echo "$lib" | awk '{printf "%.2f GB, %s s", $1/1048576, $2}')"
-          echo "::notice title=memory (${{ matrix.candidate }}, linux)::$msg"
+          echo "::notice title=memory ${{ matrix.candidate }} linux::$msg"
           echo "## memory (${{ matrix.candidate }}): $msg" >> "$GITHUB_STEP_SUMMARY"
           mkdir -p "$RUNNER_TEMP/plain"
-          cp target/dev-release/charter-app "$RUNNER_TEMP/plain/"
+          cp ../target/dev-release/charter-app "$RUNNER_TEMP/plain/"
           tar -C "$RUNNER_TEMP/plain" -cf "$RUNNER_TEMP/plain.tar" .
 
       - name: The heaviest crates
@@ -166,9 +166,9 @@ jobs:
           else
             peak=$(awk '/Maximum resident/ {printf "%.2f GB", $NF/1048576}' "$RUNNER_TEMP/e2e-build.txt")
           fi
-          echo "::notice title=scenario build (${{ matrix.candidate }}, $RUNNER_OS)::$(( (end - start) / 60 )) min $(( (end - start) % 60 )) s; max RSS of cargo's largest child $peak"
+          echo "::notice title=scenario build ${{ matrix.candidate }} $RUNNER_OS::$(( (end - start) / 60 )) min $(( (end - start) % 60 )) s; max RSS of cargo's largest child $peak"
           mkdir -p "$RUNNER_TEMP/e2e"
-          find target/dev-release -maxdepth 1 -type f -perm -u+x -exec cp {} "$RUNNER_TEMP/e2e/" \;
+          find ../target/dev-release -maxdepth 1 -type f -perm -u+x -exec cp {} "$RUNNER_TEMP/e2e/" \;
           ls -la "$RUNNER_TEMP/e2e"
           tar -C "$RUNNER_TEMP/e2e" -cf "$RUNNER_TEMP/e2e.tar" .
 
@@ -271,7 +271,7 @@ jobs:
               status=0
               APP="$app" tools/coldstart-linux.sh "$case" 2>&1 | tee "$out" || status=$?
               said=$(grep -o 'against main: ratio [^ ]*' "$out" | tr '\n' ' ')
-              echo "::notice title=cold start ($c vs base-a, $case)::${said:-no ratio printed} (script exit $status)"
+              echo "::notice title=cold start $c vs base-a $case::${said:-no ratio printed} (script exit $status)"
             done
           done
 
@@ -297,7 +297,7 @@ jobs:
                   CHARTER_TARGET_DIR="$dir" PURLIS_OUTCOME_HARNESS="$h" npm run e2e:outcome 2>&1 | tee "$out" || status=$?
                 fi
                 said=$(grep -o 'median [0-9.]* ms' "$out" | head -1)
-                echo "::notice title=bars ($c, $h, round $round, $RUNNER_OS)::${said:-no median printed} (exit $status)"
+                echo "::notice title=bars $c $h round $round $RUNNER_OS::${said:-no median printed} (exit $status)"
               done
             done
           done
