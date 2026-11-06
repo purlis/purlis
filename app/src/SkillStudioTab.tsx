@@ -748,7 +748,7 @@ export function SkillStudioTab({
         : [`${stay.map((skill) => skill.name).join(", ")} ${NAME_TAKEN_STAYS}`];
     asked(
       "The skills were not brought back",
-      () => commands.skillSetRestore(plane, ids, null),
+      () => commands.skillSetRestore(plane, ids, null, []),
       async (notes) => ({
         ...resultOf(
           "Skills brought back",

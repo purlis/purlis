@@ -7715,6 +7715,7 @@ rewritten.
   plane (`skills.local`, `workspaces/ops/skills`, `personas/reviewer/skills.local`), and, for a skill deleted as one of a set (#5331), a second line: the set's id, a tab, and what it was deleted from in words, which may be empty. `<stamp>` is when it was deleted, in
   milliseconds since the epoch, a skill of a set taking the set's stamp plus its place in the set, so two copies of one folder name are kept apart. Folders are `0700` and `from` is `0600`.
 - **A set's commit** (#5331): a set deleted with `verbs::set::delete_set` is one commit whose message ends with the trailers `Purlis-Skill-Set: <id>` and, where it has one, `Purlis-Skill-Set-From: <words>`. `verbs::deleted` reads them, so a set is listed as one group in every clone, and the id joins the skills of it kept here. A commit with neither is a delete on its own.
+- **A restore under a new name** (#3729, #5457): a skill whose name belongs to purlis now comes back, from the commit that deleted it, under another name and folder, so nothing at its old folder or name says it is back. Its restore's commit (`verbs::restore`, or `verbs::set::restore_set_as` for a set) ends with one trailer per such skill, `Purlis-Skill-Restored: <sha of the deleting commit> <folder relative to the plane>`, and `verbs::deleted` lists that delete no more in any clone.
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag (#2770).
 - **Tier:** Clone state — this machine's, as the skill was.
 - **Written by:** `purlis_core::skills::verbs::delete`, which moves the folder in with

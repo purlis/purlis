@@ -574,6 +574,27 @@ fn held_by(
     })
 }
 
+/// **The name a deleted skill's Bring back waits for** (#5457): where its name belongs to purlis
+/// now, what holds it, the new name offered as an install offers one (`<source>-<name>`, the
+/// source being what its group was deleted from, spelled as a name; `my-<name>` where nothing is
+/// said of it), and the names at its level a new name cannot take. `None` where its name is free.
+pub fn deleted_clash(plane: &Path, deleted: &crate::skills::verbs::Deleted) -> Option<Clash> {
+    let name = &deleted.name;
+    if !name_reserved(name) {
+        return None;
+    }
+    let from = deleted.set.as_ref().and_then(|set| set.from.as_deref());
+    let offered = match from {
+        Some(from) => format!("{}-{name}", super::spelled(from)),
+        None => format!("my-{}", name.strip_prefix("purlis-").unwrap_or(name)),
+    };
+    Some(Clash {
+        held_by: format!("{name} belongs to purlis"),
+        offered,
+        taken: names_at(plane, &deleted.level),
+    })
+}
+
 /// The names of the folders at `level`: what a new name there cannot be.
 fn names_at(plane: &Path, level: &Level) -> Vec<String> {
     let mut names: Vec<String> = level
