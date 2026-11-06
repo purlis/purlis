@@ -1230,6 +1230,8 @@ fn finish(here: &Here, record: &Record) -> Result<(), String> {
     let _ = std::fs::remove_file(here.notes.join(UNDER_WAY));
     let new = commit_of(&here.folder, "HEAD").ok_or("git did not say where the rebase ended")?;
     let local_ref = name::as_ref(&record.branch);
+    // The branch's reflog and HEAD's are written by name: never through a link left there.
+    crate::worktree::ref_records_refused(&here.git_dir)?;
     let moved = git::run(
         &here.folder,
         &[
