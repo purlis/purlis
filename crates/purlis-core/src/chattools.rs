@@ -137,10 +137,13 @@ pub const SECRET_ASK: &str = "secret_ask";
 /// session-start line ([`crate::briefing`]), the `secret_ask` tool's description and the
 /// purlis-secrets skill, word for word.
 pub const SECRET_ASK_SAID: &str = "Never ask the person for a password, token or key in this \
-     conversation, and never have them paste one: raise a Secret ask for any credential you \
-     lack, declared or not, with the `secret_ask` tool or `purlis secret ask <KEY> --purpose \
-     \"<what for>\"`, and the person fills it in purlis's window. You hear only filled, with \
-     the vault and key to use, or declined.";
+     conversation, and never have them paste one. Prefer simply running the command that needs \
+     it with `purlis secret exec`: the person is asked in purlis's window for whatever the run \
+     lacks, a key or an Allow for its program, in one notice, and the command goes on once they \
+     answer. To ask ahead, raise a Secret ask for any credential you lack, declared or not, with \
+     the `secret_ask` tool or `purlis secret ask <KEY> --purpose \"<what for>\"`, naming the \
+     program you will run with `--program` where you know it. You hear only filled, with the \
+     vault and key to use and whether the program was allowed, or declined.";
 
 /// What [`WORKTREE_REMOVE`] is asked to remove: the `repo` and `piece` of a branch folder of
 /// the chat's own workspace, and whether to delete its branch too, as `git branch -d` does.
@@ -1151,11 +1154,18 @@ pub static TOOLS: [Tool; 29] = [
         name: SECRET_ASK,
         description: "Ask the person, in purlis's window, for a credential this chat lacks: \
                       an API key, a token, a password. Never ask the person for a password, \
-                      token or key in this conversation, and never have them paste one: raise \
-                      a Secret ask for any credential you lack, declared or not, with the \
-                      `secret_ask` tool or `purlis secret ask <KEY> --purpose \"<what for>\"`, \
-                      and the person fills it in purlis's window. You hear only filled, with \
-                      the vault and key to use, or declined. The vault is your persona's unless \
+                      token or key in this conversation, and never have them paste one. Prefer \
+                      simply running the command that needs it with `purlis secret exec`: \
+                      the person is asked in purlis's window for whatever the run lacks, a key \
+                      or an Allow for its program, in one notice, and the command goes on \
+                      once they answer. To ask ahead, raise a Secret ask for any credential \
+                      you lack, declared or not, with the `secret_ask` tool or `purlis secret ask \
+                      <KEY> --purpose \"<what for>\"`, naming the program you will run with \
+                      `--program` where you know it. You hear only filled, with the vault and \
+                      key to use and whether the program was allowed, or declined. Naming a \
+                      program purlis has reviewed (curl) lets the person allow it for this chat \
+                      on the same notice; any other is asked about as it runs. The vault is your \
+                      persona's unless \
                       you name one. A key the vault holds already answers filled at once. \
                       Pending means the person has not answered yet: you are told when they \
                       do. A value that doesn't work: ask again with `replace` saying why, and \
@@ -1183,6 +1193,12 @@ pub static TOOLS: [Tool; 29] = [
                         "description": "Why the value you have doesn't work (a 401, say), \
                                         in one line: the person is asked to replace it even \
                                         though the vault holds it.",
+                    },
+                    "program": {
+                        "type": "string",
+                        "description": "The program you will run with it, as you will name \
+                                        it to `purlis secret exec` (curl, say): the person may \
+                                        allow it on the same notice.",
                     },
                 },
                 "required": ["key", "purpose"],

@@ -181,6 +181,29 @@ pub struct RunShown {
     /// What Always allow would write, where it is offered (#5245).
     #[specta(optional)]
     pub always: Option<AlwaysShown>,
+    /// **The keys the run lacks**, one value field each (#5242).
+    pub fills: Vec<RunFillShown>,
+    /// **What the notice asks of the program** (#5242): `program` for an Allow; `vault` where it
+    /// has none and the vault's line has its own Allow; `fill` for its value fields alone.
+    pub offer: String,
+    /// Why it offers no Allow for the program, where policy is why: the app's own words.
+    #[specta(optional)]
+    pub no_allow: Option<String>,
+    /// **Asked ahead of its run** (#5244): no command yet; only Allow for this chat is offered,
+    /// and the first run fixes how the values are handed.
+    pub ahead: bool,
+}
+
+/// **A key a run lacks, as its notice's value field** (#5242). Names only.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct RunFillShown {
+    pub key: String,
+    /// What the persona's definition says it is for, where it declares it.
+    #[specta(optional)]
+    pub declared: Option<String>,
+    /// The entry a link read, which is gone, where the key is such a link.
+    #[specta(optional)]
+    pub gone: Option<SecretEntryShown>,
 }
 
 /// **What Always allow writes** ([`RunShown`], #5245): the exact line, and whether it hands a value
@@ -2182,6 +2205,10 @@ pub const RUN_ALLOW_ONCE: &str = "allow-once";
 pub const RUN_ALLOW_CHAT: &str = "allow-chat";
 /// The Allow of an ask to allow a program that declares it as the persona's tool (#5245).
 pub const RUN_ALLOW_ALWAYS: &str = "allow-always";
+/// The vault's own Allow on a run's notice with no program Allow (#5242).
+pub const RUN_ALLOW_VAULT: &str = "allow-vault";
+/// Fill on a run's notice of value fields alone (#5242).
+pub const RUN_FILL: &str = "fill";
 
 /// **The Run grant adapter** (ADR 0112, #5239): a chat's brokered run names a program its persona
 /// does not declare. Every word of the line is purlis's, and every name the app's; the chat's
@@ -2224,39 +2251,103 @@ pub fn run_grant(
         .refuses_run_grant(&open.persona, &bound.program_name())
         .is_some()
         || (open.not_its_vault && locks.forbids_vault_grants());
-    let says = format!(
-        "{} wants to run {} with {} from vault {}, in this chat's own sandbox",
-        open.persona,
-        bound.program.display(),
-        open.keys().join(", "),
-        bound.vault,
-    );
+    use purlis_core::secrets::ask::run::Offer;
+    let lacks = open
+        .fills
+        .iter()
+        .map(|fill| fill.key.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let says = match &open.offer {
+        Offer::Program if open.ahead => format!(
+            "{} asks for {lacks} from vault {} to run {} with, in this chat's own sandbox. What \
+             you fill is stored there whatever you allow",
+            open.persona,
+            bound.vault,
+            bound.program.display(),
+        ),
+        Offer::Program if lacks.is_empty() => format!(
+            "{} wants to run {} with {} from vault {}, in this chat's own sandbox",
+            open.persona,
+            bound.program.display(),
+            open.keys().join(", "),
+            bound.vault,
+        ),
+        Offer::Program => format!(
+            "{} wants to run {} with {} from vault {}, in this chat's own sandbox. The vault lacks \
+             {lacks}: what you fill is stored there whatever you allow",
+            open.persona,
+            bound.program.display(),
+            open.keys().join(", "),
+            bound.vault,
+        ),
+        Offer::Vault { .. } => format!(
+            "{} runs {} with {} from vault {}, which it may not use, and the vault lacks {lacks}. \
+             Allow lets every chat opened as {} use it in this project on this machine",
+            open.persona,
+            bound.program.display(),
+            open.keys().join(", "),
+            bound.vault,
+            open.persona,
+        ),
+        Offer::Fill { .. } => format!(
+            "{} runs {} with {} from vault {}, which lacks {lacks}. Fill stores it in that vault on \
+             this machine; the chat never sees it",
+            open.persona,
+            bound.program.display(),
+            open.keys().join(", "),
+            bound.vault,
+        ),
+    };
+    let options: Vec<Offered> = match &open.offer {
+        // Ahead of its run (#5244): Allow for this chat alone, with no command to allow once.
+        Offer::Program if open.ahead => program_options(locks, reviewed, false, locked)
+            .into_iter()
+            .filter(|one| one.id != RUN_ALLOW_ONCE)
+            .collect(),
+        Offer::Program => program_options(locks, reviewed, always.is_some(), locked),
+        Offer::Vault { .. } => (!locks.forbids_vault_grants())
+            .then(|| Offered {
+                id: RUN_ALLOW_VAULT.to_owned(),
+                label: format!("Allow {} to use this vault", said_inertly(&open.persona)),
+                allows: true,
+                preselected: None,
+            })
+            .into_iter()
+            .chain([refuses(KEEP, KEEP_SAID)])
+            .collect(),
+        Offer::Fill { .. } => vec![
+            Offered {
+                id: RUN_FILL.to_owned(),
+                label: "Fill".to_owned(),
+                allows: true,
+                preselected: None,
+            },
+            refuses(KEEP, "Not now"),
+        ],
+    };
+    let fills = open
+        .fills
+        .iter()
+        .map(|fill| RunFillShown {
+            key: fill.key.clone(),
+            declared: fill.declared.clone().filter(|purpose| !purpose.is_empty()),
+            gone: match &fill.reason {
+                Some(purlis_core::secrets::ask::Reason::BrokenLink { was }) => {
+                    Some(SecretEntryShown {
+                        vault: was.vault.clone(),
+                        key: was.key.clone(),
+                    })
+                }
+                _ => None,
+            },
+        })
+        .collect();
     Shown {
         session: bound.chat,
         ask: run_grant_key(open.id),
         says: said_inertly(&says),
-        options: [
-            (RUN_ALLOW_ONCE, "Allow once", Level::Once, true),
-            (RUN_ALLOW_CHAT, "Allow for this chat", Level::Chat, reviewed),
-            (
-                RUN_ALLOW_ALWAYS,
-                "Always allow",
-                Level::Project,
-                always.is_some(),
-            ),
-        ]
-        .into_iter()
-        // Policy's `allow-scopes` (#1666) holds for these as for every Allow.
-        // And a lock that came since it was raised leaves only Don't allow.
-        .filter(|(_, _, level, offered)| *offered && locks.keeps_scope(*level) && !locked)
-        .map(|(id, label, _, _)| Offered {
-            id: id.to_owned(),
-            label: label.to_owned(),
-            allows: true,
-            preselected: None,
-        })
-        .chain(std::iter::once(refuses(KEEP, "Don't allow")))
-        .collect(),
+        options,
         source: AskSource::RunGrant,
         chain: Vec::new(),
         answer: AnswerPath::RunGrant { id: open.id },
@@ -2283,9 +2374,46 @@ pub fn run_grant(
             not_its_vault: open.not_its_vault,
             command: open.command.clone(),
             cwd: purlis_core::shown::ascii_word(&bound.cwd.to_string_lossy()),
-            always,
+            always: always.filter(|_| open.offer == Offer::Program && !open.ahead),
+            fills,
+            offer: match &open.offer {
+                Offer::Program => "program",
+                Offer::Vault { .. } => "vault",
+                Offer::Fill { .. } => "fill",
+            }
+            .to_owned(),
+            no_allow: open.offer.no_allow().map(str::to_owned),
+            ahead: open.ahead,
         }),
     }
+}
+
+/// **A run's notice's program Allows** (ADR 0112): Allow once first, the narrowest and the one a
+/// keyboard reaches first; wider only for a reviewed program; and Don't allow.
+fn program_options(
+    locks: &purlis_core::sandbox::policy::Locks,
+    reviewed: bool,
+    always: bool,
+    locked: bool,
+) -> Vec<Offered> {
+    use purlis_core::sandbox::grant::Level;
+    [
+        (RUN_ALLOW_ONCE, "Allow once", Level::Once, true),
+        (RUN_ALLOW_CHAT, "Allow for this chat", Level::Chat, reviewed),
+        (RUN_ALLOW_ALWAYS, "Always allow", Level::Project, always),
+    ]
+    .into_iter()
+    // Policy's `allow-scopes` (#1666) holds for these as for every Allow.
+    // And a lock that came since it was raised leaves only Don't allow.
+    .filter(|(_, _, level, offered)| *offered && locks.keeps_scope(*level) && !locked)
+    .map(|(id, label, _, _)| Offered {
+        id: id.to_owned(),
+        label: label.to_owned(),
+        allows: true,
+        preselected: None,
+    })
+    .chain(std::iter::once(refuses(KEEP, "Don't allow")))
+    .collect()
 }
 
 /// The key of chat `session`'s browser sites Ask (#2018): one per chat, every site it waits on.

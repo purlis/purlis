@@ -785,7 +785,7 @@ export const commands = {
 	 *  **The person answers the ask to allow a program `id`** (ADR 0112, #5239): the run that waits
 	 *  on it goes on, or hears it was not allowed, and a chat whose command stopped waiting is nudged.
 	 */
-	answerRunGrant: (plane: PlaneId, id: number, press: RunGrantPress) => typedError<null, string>(__TAURI_INVOKE("answer_run_grant", { plane, id, press })),
+	answerRunGrant: (plane: PlaneId, id: number, press: RunGrantPress, values: RunValue[]) => typedError<null, string>(__TAURI_INVOKE("answer_run_grant", { plane, id, press, values })),
 	/**
 	 *  **The person fills Secret ask `id` with an entry they keep** (#5073): the asked key becomes a
 	 *  Linked entry reading `key` in `vault`, never a copy, and every command that waits on it runs
@@ -13719,6 +13719,15 @@ export type RunEndedOnARunner = {
 	device: string,
 };
 
+/**  **A key a run lacks, as its notice's value field** (#5242). Names only. */
+export type RunFillShown = {
+	key: string,
+	/**  What the persona's definition says it is for, where it declares it. */
+	declared?: string | null,
+	/**  The entry a link read, which is gone, where the key is such a link. */
+	gone?: SecretEntryShown | null,
+};
+
 /**  **What the person pressed on an ask to allow a program** (ADR 0112). */
 export type RunGrantPress = 
 /**  One run of exactly this command. */
@@ -13727,8 +13736,15 @@ export type RunGrantPress =
 "chat" | 
 /**  As [`Self::Chat`], and write its line to the persona's tools (#5245). */
 "always" | 
-/**  Don't allow. */
-"refuse";
+/**  Don't allow; on a notice with no program Allow, Keep blocked or Not now. */
+"refuse" | 
+/**
+ *  The vault's own Allow, on a notice with no program Allow (#5242): the persona is given the
+ *  vault, as a refused vault's Allow gives it (#5160).
+ */
+"allow-vault" | 
+/**  Fill, on a notice of value fields alone (#5242). */
+"fill";
 
 /**
  *  **An ask to allow a program, as its row draws it** (ADR 0112, #5239). Every field is the app's
@@ -13757,6 +13773,20 @@ export type RunShown = {
 	cwd: string,
 	/**  What Always allow would write, where it is offered (#5245). */
 	always?: AlwaysShown | null,
+	/**  **The keys the run lacks**, one value field each (#5242). */
+	fills: RunFillShown[],
+	/**
+	 *  **What the notice asks of the program** (#5242): `program` for an Allow; `vault` where it
+	 *  has none and the vault's line has its own Allow; `fill` for its value fields alone.
+	 */
+	offer: string,
+	/**  Why it offers no Allow for the program, where policy is why: the app's own words. */
+	no_allow?: string | null,
+	/**
+	 *  **Asked ahead of its run** (#5244): no command yet; only Allow for this chat is offered,
+	 *  and the first run fixes how the values are handed.
+	 */
+	ahead: boolean,
 };
 
 /**  What started a skill run, as the Runs panel draws it. */
@@ -13777,6 +13807,15 @@ export type RunStart =
 "grade" | 
 /**  A start a newer purlis wrote. */
 "unknown";
+
+/**
+ *  **A value the person typed in a run's notice** (#5242): for one of its fields, by key. Never
+ *  printed, and wiped as it is dropped.
+ */
+export type RunValue = {
+	key: string,
+	value: SecretValue,
+};
 
 /**  One value a run asks to hand its program ([`RunShown`]). */
 export type RunValueShown = {
