@@ -139,3 +139,21 @@ export const LeastUsedFirst: Story = {
     expectFocusInSight();
   },
 };
+
+/** **Nothing ticked yet**: how to choose, in the selection page's place. Esc on the list leaves
+ *  Make room, and the Library is as it was. */
+export const NothingTickedYet: Story = {
+  play: async ({ canvas }) => {
+    const over = await canvas.findByTestId("skill-routing-over");
+    await tabInto(() => within(over).getByRole("button", { name: "Make room…" }));
+    await userEvent.keyboard("{Enter}");
+    await expect(await canvas.findByTestId("select-none")).toHaveTextContent(
+      "The skills least used in the last 30 days are listed first.",
+    );
+    await tabInto(() => canvas.getByRole("grid", { name: "Skills" }));
+    expectFocusInSight();
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(canvas.queryByTestId("select-none")).toBeNull());
+    await expect(canvas.queryByTestId("skill-uses")).toBeNull();
+  },
+};

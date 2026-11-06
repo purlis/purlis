@@ -346,7 +346,7 @@ export function SelectionPage({
         headline="Nothing selected"
         body={
           room
-            ? "The skills least used in the last 30 days are listed first. Tick the ones to turn off or archive, or the ones to keep, to pin them. Esc leaves Make room."
+            ? "The skills least used in the last 30 days are listed first. Tick what goes, to turn it off or archive it, or what stays, to pin it. Esc leaves Make room."
             : "Click a row, or press Space on it; Shift-click takes a range. ⌘A takes everything the search and filters match, and Esc leaves Select."
         }
         testid="select-none"

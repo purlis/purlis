@@ -16,7 +16,7 @@ import type { SkillHiddenOn, StudioBudget, StudioRouter, StudioSkill } from "./b
 import { forgetStudio, renderStudio } from "./SkillStudioTab.testkit";
 import { inWorkspace } from "./skillStudio";
 import { skill, studio } from "./skillsListing.testkit";
-import { installGoesOver, leastUsedFirst, usesSaid } from "./makeRoom";
+import { hiddenCount, installGoesOver, leastUsedFirst, usesSaid } from "./makeRoom";
 
 afterEach(() => {
   cleanup();
@@ -190,6 +190,23 @@ describe("what Make room says and how it orders", () => {
     expect(usesSaid(5)).toBe("5 runs in the last 30 days");
   });
 
+  it("counts only the skills hidden over the budget, never one an extension's router hid for its own reason", () => {
+    const byRouter: SkillHiddenOn[] = [
+      {
+        harness: "claude",
+        title: "Claude Code",
+        hidden: {
+          router: { extension: "relevance" },
+          why: { "by-router": "off topic" },
+          said: "Hidden.",
+        },
+      },
+    ];
+    expect(
+      hiddenCount([skill("a", { hidden: HIDDEN }), skill("b", { hidden: byRouter }), skill("c")]),
+    ).toBe(1);
+  });
+
   it("puts the least used first and keeps the list's order between equals", () => {
     const uses = new Map([
       ["b", 3],
@@ -206,6 +223,14 @@ describe("what Make room says and how it orders", () => {
   it("says which programs an install would take past their budget, and none within it", () => {
     const counted = { listed: 2, hidden: 0 };
     expect(installGoesOver([{ program: CLAUDE, counted }], 1)).toEqual([]);
+    expect(
+      installGoesOver(
+        [{ program: { ...CLAUDE, skills: 0 }, counted: { listed: 0, hidden: 0 } }],
+        1,
+      ),
+    ).toEqual([
+      "Installing these puts 1 skill in a chat's list on Claude Code, past its budget of 0.",
+    ]);
     expect(installGoesOver([{ program: CLAUDE, counted }], 2)).toEqual([
       "Installing these puts 4 skills in a chat's list on Claude Code, past its budget of 3.",
     ]);

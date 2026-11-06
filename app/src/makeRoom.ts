@@ -16,7 +16,7 @@ export const MAKE_ROOM_ACTS: readonly SkillSetAct[] = ["turn-off", "archive", "p
 
 /** What the Library's head says while Make room is on. */
 export const MAKE_ROOM_LEAD =
-  "Least used in the last 30 days first, from the chats' run records. Nothing is ticked: tick the skills to turn off or archive, or the ones to keep, to pin them.";
+  "Least used in the last 30 days first, from the chats' run records. Nothing is ticked until you tick it. Turn off or archive what goes, or pin what stays.";
 
 /** "No runs in the last 30 days", "1 run in the last 30 days". */
 export function usesSaid(runs: number | undefined): string {
@@ -40,7 +40,9 @@ export function leastUsedFirst<T>(
 /** **How many skills the router hides from these chats' lists**, their list being over the
  *  budget: what Routing's Make room is offered on. */
 export function hiddenCount(skills: readonly StudioSkill[]): number {
-  return skills.filter((skill) => skill.hidden.length > 0).length;
+  // An extension's router hides for reasons of its own: only a hide over the budget counts.
+  return skills.filter((skill) => skill.hidden.some((on) => on.hidden.why === "over-budget"))
+    .length;
 }
 
 /** What Routing says while these chats are over their budget. */
@@ -48,8 +50,8 @@ export function overSaid(hidden: number): string {
   return `The router hides ${counted(hidden, "skill", "skills")} from these chats' lists: they are over the budget.`;
 }
 
-/** What a program's chats count now, as the core works it out (`skill_budget_preview`). */
-export type Counted = { listed: number; hidden: number };
+/** What a program's chats' list counts now, as the core works it out (`skill_budget_preview`). */
+export type ListCount = { listed: number; hidden: number };
 
 /**
  * **Which programs an install of `adding` skills would take past their budget**, a sentence each:
@@ -57,14 +59,14 @@ export type Counted = { listed: number; hidden: number };
  * skills it lists. A program already past it is past it still.
  */
 export function installGoesOver(
-  programs: readonly { program: StudioBudget; counted: Counted }[],
+  programs: readonly { program: StudioBudget; counted: ListCount }[],
   adding: number,
 ): string[] {
   return programs.flatMap(({ program, counted: now }) => {
     const then = now.listed + now.hidden + adding;
     return then > program.skills
       ? [
-          `Installing these puts ${then} skills in a chat's list on ${program.program}, past its budget of ${program.skills}.`,
+          `Installing these puts ${counted(then, "skill", "skills")} in a chat's list on ${program.program}, past its budget of ${program.skills}.`,
         ]
       : [];
   });

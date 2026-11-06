@@ -1948,9 +1948,10 @@ function InstallOver({
   adding: number;
 }) {
   const { read } = useRead(
-    `${room.workspace ?? ""}\u0000${room.persona ?? ""}\u0000${room.budget.map((one) => one.key).join(",")}`,
-    async () => {
-      const counted = await Promise.all(
+    JSON.stringify([room.workspace, room.persona, room.budget.map((one) => one.key)]),
+    async () => ({
+      status: "ok" as const,
+      data: await Promise.all(
         room.budget.map(async (program) => {
           const answer = await commands.skillBudgetPreview(
             plane,
@@ -1960,17 +1961,29 @@ function InstallOver({
             program.skills_here,
             program.chars_here,
           );
-          return answer.status === "ok" ? { program, counted: answer.data } : undefined;
+          return answer.status === "ok"
+            ? { program, counted: answer.data }
+            : { program, refused: answer.error };
         }),
-      );
-      return {
-        status: "ok" as const,
-        data: counted.filter((one) => one !== undefined),
-      };
-    },
+      ),
+    }),
   );
-  const lines = read?.data === undefined ? [] : installGoesOver(read.data, adding);
-  if (lines.length === 0) return null;
+  const programs = read?.data ?? [];
+  const over = installGoesOver(
+    programs.flatMap((one) =>
+      one.counted === undefined ? [] : [{ program: one.program, counted: one.counted }],
+    ),
+    adding,
+  );
+  // What could not be worked out is said, so it never reads as fitting.
+  const unknown = programs.flatMap((one) =>
+    one.refused !== undefined
+      ? [
+          `purlis could not work out whether this goes past ${one.program.program}'s skill budget: ${one.refused}`,
+        ]
+      : [],
+  );
+  if (over.length + unknown.length === 0) return null;
   return (
     <section
       aria-labelledby="install-all-over-head"
@@ -1980,18 +1993,22 @@ function InstallOver({
       <h3 id="install-all-over-head" className="ui-text-small ui-text-strong">
         Past the skill budget
       </h3>
-      {lines.map((line) => (
+      {[...over, ...unknown].map((line) => (
         <p key={line} className="honest">
           {line}
         </p>
       ))}
-      <p className="honest">
-        Past it, the router moves what it can into an index skill. Make room first, or install them
-        and choose after.
-      </p>
-      <Button size="sm" onPress={room.onMakeRoom}>
-        Make room…
-      </Button>
+      {over.length > 0 && (
+        <p className="honest">
+          Past it, the router moves what it can into an index skill. Make room first, or install
+          them and choose after.
+        </p>
+      )}
+      {over.length > 0 && (
+        <Button size="sm" onPress={room.onMakeRoom}>
+          Make room…
+        </Button>
+      )}
     </section>
   );
 }

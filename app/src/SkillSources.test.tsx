@@ -1500,7 +1500,7 @@ describe("Install all… past the budget (#5355)", () => {
     },
   });
   /** A core whose studio has a budget of 3 and whose chats count `listed` skills now. */
-  function overCore(listed: number) {
+  function overCore(listed: number, refused?: string) {
     return core({
       answers: {
         skill_studio: () =>
@@ -1516,15 +1516,18 @@ describe("Install all… past the budget (#5355)", () => {
             first: { starts: false, unmoved: null },
           }),
         skill_install_set_review: (args) => setReview(args.names as string[]),
-        skill_budget_preview: () => ({
-          listed,
-          hidden: 0,
-          now_listed: [],
-          now_hidden: [],
-          more_tokens: 0,
-          past_limit: null,
-          over: null,
-        }),
+        skill_budget_preview: () => {
+          if (refused !== undefined) return Promise.reject(refused);
+          return {
+            listed,
+            hidden: 0,
+            now_listed: [],
+            now_hidden: [],
+            more_tokens: 0,
+            past_limit: null,
+            over: null,
+          };
+        },
         skill_uses: () => [],
       },
     });
@@ -1563,5 +1566,17 @@ describe("Install all… past the budget (#5355)", () => {
     const page = await review(user);
     await waitFor(() => expect(did(asked, "skill_budget_preview")).toBe(true));
     expect(within(page).queryByTestId("install-all-over")).toBeNull();
+  });
+
+  it("says it could not work out the budget, rather than saying nothing as if the install fits", async () => {
+    overCore(1, "the project's settings could not be read");
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "sources");
+    const page = await review(user);
+    const over = await within(page).findByTestId("install-all-over");
+    expect(over).toHaveTextContent(
+      "purlis could not work out whether this goes past Claude Code's skill budget",
+    );
+    expect(within(over).queryByRole("button", { name: "Make room…" })).toBeNull();
   });
 });

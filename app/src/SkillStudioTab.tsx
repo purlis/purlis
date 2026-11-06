@@ -1385,12 +1385,11 @@ export function SkillStudioTab({
     // **Built-in skills fold into one quiet line at the end** (S12), unless the Built-in chip
     // asks for them alone; a built-in that needs the person, clashes or is searched for stands
     // out of the fold.
-    const others = shown.filter((skill) => skill.level !== "built-in");
     // Make room (#5355): the least used in the last 30 days first, once their runs are read.
-    const own =
-      sel?.room === true && uses !== undefined
-        ? leastUsedFirst(others, (skill) => skill.name, uses)
-        : others;
+    const roomUses = sel?.room === true ? uses : undefined;
+    const ordered = (rows: readonly StudioSkill[]) =>
+      roomUses === undefined ? rows : leastUsedFirst(rows, (skill) => skill.name, roomUses);
+    const own = ordered(shown.filter((skill) => skill.level !== "built-in"));
     const builtIns = shown.filter((skill) => skill.level === "built-in");
     const foldsBuiltIns = !chips.has("built-in");
     const row = (skill: StudioSkill) => {
@@ -1415,8 +1414,8 @@ export function SkillStudioTab({
             )}
             <Badge>{skill.label}</Badge>
             {mark !== undefined && <Badge variant={mark.variant}>{mark.said}</Badge>}
-            {sel?.room === true && uses !== undefined && skill.level !== "built-in" && (
-              <Badge data-testid="skill-uses">{usesSaid(uses.get(skill.name))}</Badge>
+            {roomUses !== undefined && skill.level !== "built-in" && (
+              <Badge data-testid="skill-uses">{usesSaid(roomUses.get(skill.name))}</Badge>
             )}
           </RowTrail>
           {/* A reason cut short reads whole in the row's tooltip (#4711). */}
@@ -1446,15 +1445,11 @@ export function SkillStudioTab({
           );
     selectAll = () =>
       setSel((was) => ({ ...was, keys: new Set([...was.keys, ...shown.map(skillRowId)]) }));
-    // In the list's order: Make room's, least used first (#5355).
-    const inOrder =
-      sel?.room === true && uses !== undefined
-        ? leastUsedFirst(skills, (skill) => skill.name, uses)
-        : skills;
     const chosenRows =
       sel === undefined
         ? []
-        : inOrder
+        : // In the list's order: Make room's, least used first (#5355).
+          ordered(skills)
             .filter((skill) => sel.keys.has(skillRowId(skill)))
             .map((skill) => ({ key: skillRowId(skill), skill }));
     list = (
