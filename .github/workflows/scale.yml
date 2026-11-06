@@ -77,6 +77,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # Two release builds of the workspace (the app's `e2e` features build the core again) and a
+      # project of 220,000 files: more than an Ubuntu runner has free. Its first run lost the
+      # runner in the app's link (2026-11-06). What the runner carries that this never uses goes.
+      - name: Room on the disk for two release builds and the project
+        if: runner.os == 'Linux'
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
       - name: Tauri's Linux build dependencies and a display to run in
         if: runner.os == 'Linux'
         timeout-minutes: 11
@@ -100,6 +109,9 @@ jobs:
         id: built
         run: npx tauri build --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json
         working-directory: app
+      - name: What the builds left on the disk
+        if: always()
+        run: df -h / "$RUNNER_TEMP"
       - name: The project at the target size, from seed 5497, committed
         shell: bash
         run: |
