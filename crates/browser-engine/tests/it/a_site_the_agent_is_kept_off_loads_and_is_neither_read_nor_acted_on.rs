@@ -74,6 +74,31 @@ fn click(browser: &Browser, words: &str) {
     call(browser, Call::Click { target: link });
 }
 
+/// What is drawn where input lands is found where the page is scrolled to: a frame of the site
+/// drawn over the app's own button, on a page scrolled down, takes the click and refuses it.
+#[test]
+fn a_click_on_a_scrolled_page_where_a_frame_of_the_site_is_drawn_is_refused() {
+    let Some((browser, _folder, site)) = started_judged(going()) else {
+        return;
+    };
+    let signing_in = Arc::new(AtomicBool::new(false));
+    browser.keep_off(kept_off(&signing_in));
+
+    open(&browser, "kept-frame-over-scrolled.html");
+    let start = Instant::now();
+    while !site.was_sent("GET auth.fixture.test/frame.html") {
+        assert!(start.elapsed() < Duration::from_secs(10), "the frame loads");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    std::thread::sleep(Duration::from_millis(500));
+    let button = ref_on(&find(&browser, "Press under the frame"), "Press under the frame");
+
+    assert_eq!(
+        refused(&browser, Call::Click { target: button }),
+        kept_off_refusal(false)
+    );
+}
+
 #[test]
 fn a_site_the_agent_is_kept_off_loads_and_is_neither_read_nor_acted_on() {
     let Some((browser, folder, site)) = started_judged(going()) else {

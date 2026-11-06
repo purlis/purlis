@@ -2487,6 +2487,54 @@ fn input_on_a_kept_off_frame_inside_another_sites_own_process_frame_is_refused()
     );
 }
 
+/// The engine finds what is drawn at a point of the document, and input is dispatched at a point
+/// of the viewport: on a scrolled page, the frame drawn under the input is the one found where
+/// the document is scrolled to.
+#[test]
+fn input_on_a_kept_off_frame_of_a_scrolled_page_is_refused_where_it_is_drawn() {
+    let (browser, engine) = browser();
+    browser.keep_off(Arc::new(|address: &str| {
+        address
+            .starts_with("http://other.test")
+            .then(|| "other.test:80".to_owned())
+    }));
+    // Scrolled 500 down: the payment frame's element, laid out at 700 to 760 down the
+    // document, is drawn at 200 to 260 down the viewport.
+    engine.on(|sent, _| {
+        (sent.method == "Page.getLayoutMetrics" && sent.session.as_deref() == Some("S-PAGE-1"))
+            .then(|| {
+                Ok(json!({
+                    "cssLayoutViewport":{"pageX":0,"pageY":500,"clientWidth":800,"clientHeight":600},
+                    "cssVisualViewport":{"offsetX":0,"offsetY":0,"pageX":0,"pageY":500,"clientWidth":800,"clientHeight":600,"scale":1,"zoom":1}
+                }))
+            })
+    });
+    engine.on(|sent, _| {
+        (sent.method == "DOM.getNodeForLocation" && sent.session.as_deref() == Some("S-PAGE-1"))
+            .then(|| {
+                let y = sent.params["y"].as_f64().unwrap_or(0.0);
+                Ok(if (700.0..760.0).contains(&y) {
+                    json!({"backendNodeId": 50, "frameId": "PAGE-1"})
+                } else {
+                    json!({"backendNodeId": 3, "frameId": "PAGE-1"})
+                })
+            })
+    });
+    assert_eq!(
+        browser.not_kept_off_at("PAGE-1", "S-PAGE-1", (150.0, 230.0)),
+        Err(Refusal::KeptOff {
+            site: "other.test:80".to_owned(),
+            asks_to_sign_in: false,
+        }),
+        "drawn on the payment frame"
+    );
+    assert_eq!(
+        browser.not_kept_off_at("PAGE-1", "S-PAGE-1", (150.0, 400.0)),
+        Ok(()),
+        "drawn on the page's own document"
+    );
+}
+
 #[test]
 fn a_reference_from_before_its_frame_loaded_another_document_is_refused_as_stale() {
     let (browser, engine) = browser();
@@ -3600,6 +3648,41 @@ fn each_frame_names_the_document_its_page_has_loaded_as_the_engine_records_it() 
             "http://fixture.test/frames.html",
             "http://fixture.test/more.html?q=1"
         ]
+    );
+}
+
+#[test]
+fn a_frame_whose_pages_address_holds_a_text_kept_out_names_no_address() {
+    // The person's ruling of 2026-11-06: the origin a view is told is written where a chat can
+    // read it, so a page whose address holds what purlis filled is named by none.
+    let (browser, engine) = browser();
+    let addresses: Arc<Mutex<Vec<String>>> = Arc::default();
+    let seen = Arc::clone(&addresses);
+    browser.show(Arc::new(move |painted: crate::drive::Painted| {
+        super::lock(&seen).push(painted.address);
+    }));
+    wait_for("started", || {
+        !engine.sent("Page.startScreencast").is_empty()
+    });
+    let mut held = crate::drive::kept::Kept::default();
+    held.run(&["hunter2secret"]);
+    super::lock(&browser.inner.state).keep_out_everywhere(&held);
+    a_frame(&engine, b"\xff\xd8 one", 1);
+    wait_for("the first frame", || super::lock(&addresses).len() == 1);
+
+    engine.emit(
+        "Page.frameNavigated",
+        json!({"frame":{"id":"PAGE-1","loaderId":"LOADER-5","url":"http://hunter2secret.evil.test/","name":"","securityOrigin":"http://hunter2secret.evil.test","mimeType":"text/html"},"type":"Navigation"}),
+        Some("S-PAGE-1"),
+    );
+    std::thread::sleep(Duration::from_millis(50));
+    a_frame(&engine, b"\xff\xd8 two", 2);
+    wait_for("the second frame", || super::lock(&addresses).len() == 2);
+
+    assert_eq!(
+        *super::lock(&addresses),
+        ["http://fixture.test/frames.html", ""],
+        "only a page whose address holds none of it is named"
     );
 }
 
