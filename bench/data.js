@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794007284311,
+  "lastUpdate": 1794009196572,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -41538,6 +41538,48 @@ window.BENCHMARK_DATA = {
             "value": 102.7931255,
             "unit": "ms",
             "extra": "median of 5 runs: 101.221, 102.126, 102.793, 102.969, 103.659 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "6f612c0f7d3d0a854700a276f700695caf088e45",
+          "message": "Long lists draw only the rows in sight; the sidebar answer counts todos (#5501) (#5553)\n\n* Long lists draw only the rows in sight; the sidebar answer counts todos (#5501)\n\nThe title bar's workspace popover, the two-column switcher and the command\npalette draw, past 250 rows, only the rows in sight and the aimed one, through\none list-family wrapper of @tanstack/react-virtual (ui/list/virtualRows.tsx).\nEach drawn row says its place in the whole (aria-posinset of aria-setsize),\nand the field's aria-activedescendant always names a drawn row.\n\nThe sidebar answer carries each workspace's count of open todos, never their\ntitles, which stay in the per-workspace panel load.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6RWHHE13CCBVAPQ796WY77X\nPurlis-Persona: steward\n\n* Add the list family's virtualizer, its 1,000-workspace window test and the changelog fragment (#5501)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6RWHHE13CCBVAPQ796WY77X\nPurlis-Persona: steward\n\n* A pin of a list drawn in part stands in its row-high slot; the window's list height is a known property (#5501)\n\nThe 2px offset that centred a placed pin was a literal the geometry guard\nrefuses: each drawn pin now stands in a 32px slot that centres it as the\ngrid does, and a pin says no place, being no option. --list-rows-size joins\nthe custom properties the window sets.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6RWHHE13CCBVAPQ796WY77X\nPurlis-Persona: steward\n\n* A list drawn in part keeps its row gap; its stories hold a row in sight within a pixel (#5501)\n\nThe switcher's listbox stayed a grid only while drawn whole, so drawn in part\nits row gap read as nothing and its rows touched: it stays a grid now, with\none track of the whole height. The virtualizer rounds its scroller's height,\nso a row it brings in may stand a fraction of a pixel past the edge; the\nstories allow a pixel. The pin is found by its row's name, not its words.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6RWHHE13CCBVAPQ796WY77X\nPurlis-Persona: steward\n\n* The 1,000-row stories' baselines, drawn by this pull request's stories run (#5501)\n\nTaken with tools/story-baselines-pull.mjs from run 42290829968: the 24 cells\nof TitleBar's ThousandWorkspaces and List's AimedThousand. The run also redrew\npictures of stories this change does not touch (SkillLibrarySelect,\nSkillSources, PanePreview, ViewTabs, grip), left out here.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6RWHHE13CCBVAPQ796WY77X\nPurlis-Persona: steward\n\n* The fifty-tabs spec counts the tabs' closes in a palette narrowed to them (#5501)\n\ntabsOpen() counted every tab.close row of the whole palette in the document.\nWith fifty chats open the palette holds more than it draws whole and draws\nonly the rows in sight, so it counted none: panes.e2e.ts asked for more than\n40 and got 0, and a closed tab never read as closed. It types the verb first,\nas the other palette specs do, and counts what is left.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6RWHHE13CCBVAPQ796WY77X\nPurlis-Persona: steward\n\n* The fifty-tabs spec waits for the narrowed palette to be drawn whole (#5501)\n\nClose others rows (tab.closeOthers) match tab.close too, so waiting for only\ntab.close rows never ended. What the count needs is the list drawn whole:\nthe query in, and no data-partly on it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6RWHHE13CCBVAPQ796WY77X\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-06T23:02:12Z",
+          "tree_id": "425b21ef321ea1fe123921bdc4104e7dd9bc71f7",
+          "url": "https://github.com/purlis/purlis/commit/6f612c0f7d3d0a854700a276f700695caf088e45"
+        },
+        "date": 1794009192560,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.689195,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.685, 0.689, 0.689, 0.700, 0.710 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7186435,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.448, 16.572, 16.719, 16.757, 16.827 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.7597705,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.363, 102.753, 102.760, 102.894, 102.935 ms"
           }
         ]
       }
