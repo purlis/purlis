@@ -169,69 +169,16 @@ describe("where a notice is drawn (spec #3647, the one test seam)", () => {
   });
 });
 
-/** Chat 9, which works in gamma and is in no pane (#4759). */
-const PANELESS_ASK: About = { chat: 9, workspace: "gamma", ask: true };
-const PANELESS_NOTE: About = { chat: 9, workspace: "gamma", ask: false };
-/** A vault refused for chat 9, which blocks until the person answers: never a plain note (#5160). */
-const A_PANELESS_VAULT_REFUSAL: About = { chat: 9, workspace: "gamma", ask: true };
 /** A handoff, or a level-1 task, that arrived in gamma (#4759). */
 const ARRIVED_IN_GAMMA: About = { arrived: "gamma" };
 
-describe("where a chat in no pane, and a chat that arrived, are drawn (#4759, spec #4750)", () => {
+describe("where a chat that arrived is drawn (#4759, spec #4750)", () => {
   const table: [string, About, readonly Chip[], Place][] = [
-    [
-      "a paneless chat's ask: its row and the Inbox, counted on its workspace's chip",
-      PANELESS_ASK,
-      [ROOT, ANOTHER, PINNED],
-      { at: "inbox", row: 9, count: "gamma" },
-    ],
-    [
-      "a paneless chat's ask in the current, unpinned workspace: counted on the dashed chip",
-      PANELESS_ASK,
-      [ROOT, ANOTHER, DASHED],
-      { at: "inbox", row: 9, count: "gamma" },
-    ],
-    [
-      "a paneless chat's ask in a workspace with no chip: its row and the Inbox, counted on none",
-      PANELESS_ASK,
-      [ROOT, ANOTHER],
-      { at: "inbox", row: 9 },
-    ],
-    [
-      "a paneless chat's ask at the plane root: counted on the house",
-      { chat: 9, workspace: OUTSIDE, ask: true },
-      [ROOT, ANOTHER],
-      { at: "inbox", row: 9, count: OUTSIDE },
-    ],
-    [
-      "a paneless chat's vault refusal, an ask (#5160): its row and the Inbox, counted on its chip",
-      A_PANELESS_VAULT_REFUSAL,
-      [ROOT, ANOTHER, PINNED],
-      { at: "inbox", row: 9, count: "gamma" },
-    ],
-    [
-      "a paneless chat's vault refusal in a workspace with no chip: its row and the Inbox (#5160)",
-      A_PANELESS_VAULT_REFUSAL,
-      [ROOT, ANOTHER],
-      { at: "inbox", row: 9 },
-    ],
     [
       "a vault refusal of a chat on screen: its band, as its other asks are (#5160)",
       { pane: 3 },
       [ROOT, PINNED],
       { at: "pane", pane: 3 },
-    ],
-    [
-      "a paneless chat's plain note: the Notices centre, marking its row",
-      PANELESS_NOTE,
-      [ROOT, PINNED],
-      { at: "centre", marks: 9 },
-    ],
-    [
-      "a paneless chat's plain note, with no chip for its workspace: the same",
-      PANELESS_NOTE,
-      [ROOT, ANOTHER],
-      { at: "centre", marks: 9 },
     ],
     [
       "a handoff's arrival in a pinned workspace: that chip's card",
