@@ -669,8 +669,10 @@
 
 /* **The harness's name keeps the foot's tier** (#2914, the operator's ruling of 2026-10-22;
    on the foot since #5202): muted, primary on the pane of a split that has the keyboard, and
-   under the pointer or the keyboard. **Interim, until the quiet ghost variant (#3214)**: the
-   family's ghost draws primary words, so these rules out-rank its variant (0,3,0) by
+   under the pointer or the keyboard. **So do the foot's other presses** (#5204): the workspace,
+   `↳ from`, the studio chip and `ctx` (`HarnessCard.tier.test.ts`). The family's ghost draws
+   primary words and its quiet variant (#3214) the quiet tier, a step under the foot's muted words
+   in Purlis, so neither is the foot's (#5366): these rules out-rank the ghost (0,3,0) by
    specificity, naming the button's own attributes, never by where they are written. */
 :is(.pane-foot, .pane-head) .pane-harness[data-scope="button"][data-variant="ghost"],
 .pane-foot .pane-foot-press[data-scope="button"][data-variant="ghost"] {

@@ -3,6 +3,7 @@
 
 import { Hand } from "lucide-react";
 import type { ReactNode } from "react";
+import { paneLinesOf } from "./paneHead";
 import type { BandHolds } from "./paneNotices";
 import { Button } from "./ui/button/Button";
 
@@ -14,6 +15,11 @@ import { Button } from "./ui/button/Button";
  * short for its panes scrolls. A press opens that pane: it takes the focus, and the side that
  * held it folds instead (`paneFold.ts`). A bar has room for each pane's name; a rail says it in
  * its tooltip.
+ *
+ * **Drawn from the pane's model** (#5366, `paneHead.paneLinesOf`): a folded pane's head is who it
+ * runs as and its name, and its one action its bell, so the rail's button wears the mark and says
+ * the name, and the bell's count stands beside it, each where the model keeps it. Its ✋ is no
+ * part of a line: an ask never hides.
  */
 
 /** One folded pane, as its rail draws it. */
@@ -49,10 +55,14 @@ export function PaneRail({
   panes: readonly RailPane[];
   onOpen: (pane: number) => void;
 }) {
+  const lines = paneLinesOf("folded", undefined, {});
+  const named = lines.head.includes("name");
+  const marked = lines.head.includes("persona");
+  const belled = lines.actions.includes("bell");
   return (
     <div className="pane-rail" data-fold={as} role="group" aria-label="Folded panes">
       {panes.map((one) => {
-        const notes = one.holds.notes;
+        const notes = belled ? one.holds.notes : 0;
         return (
           <div key={one.pane} className="pane-rail-item" data-pane={one.pane}>
             <Button
@@ -60,14 +70,18 @@ export function PaneRail({
               size="sm"
               className="pane-rail-pane"
               tooltip={`Open ${one.name}`}
-              icon={one.mark}
+              icon={marked ? one.mark : undefined}
               onPress={() => onOpen(one.pane)}
             >
               <span className="pane-rail-words">
-                <span className={as === "bar" ? "pane-rail-name" : "hidden-words"}>
-                  {one.name}
-                  <span className="pane-rail-pause">,</span>
-                </span>{" "}
+                {named && (
+                  <>
+                    <span className={as === "bar" ? "pane-rail-name" : "hidden-words"}>
+                      {one.name}
+                      <span className="pane-rail-pause">,</span>
+                    </span>{" "}
+                  </>
+                )}
                 {notes > 0 && (
                   <>
                     <span className="hidden-words">
