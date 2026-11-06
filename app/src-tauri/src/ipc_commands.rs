@@ -738,6 +738,8 @@ macro_rules! app_commands {
                 usage::chat_usage,
                 slowlog::record_slow,
                 slowlog::slow_log_recent,
+                // [DEBUG-5478] temporary diagnostics.
+                debug5478::debug_5478_log,
                 tasksused::tasks_used,
                 pin::plane_pin,
                 about::about_charter,
