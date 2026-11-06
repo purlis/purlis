@@ -1905,7 +1905,8 @@ fn a_new_document_of_the_same_origin_told_before_its_address_is_judged_by_that_o
 }
 
 #[test]
-fn a_frame_at_a_web_address_whose_context_follows_with_no_web_origin_is_judged_by_its_address() {
+fn a_frame_at_a_web_address_whose_context_follows_with_no_web_origin_has_none() {
+    // A document sandboxed without its origin allowed: its address says a site it is not on.
     let (browser, engine) = a_web_frame_that_starts_another_document();
     the_page_shows_a_frame(
         &engine,
@@ -1915,10 +1916,7 @@ fn a_frame_at_a_web_address_whose_context_follows_with_no_web_origin_is_judged_b
         "http://third.test/add.html",
     );
     the_pages_frame_has(&engine, &browser, "WEB", 96, "://");
-    assert_eq!(
-        documents_of(&browser, "WEB").unwrap(),
-        ["http://third.test/add.html"]
-    );
+    assert_eq!(documents_of(&browser, "WEB"), Err(Unjudged::Opaque));
 }
 
 #[test]
