@@ -19,6 +19,7 @@ import type { LaidOut, LaidTab, OpenChat } from "./bindings";
 import { forgetInputRefused, heardInputRefused } from "./inputRefused";
 import { chatsOf } from "./laidOut";
 import { LAYOUT_MOVED, PRESS_HERE } from "./tabWindows";
+import { stripNamed } from "./test-strips";
 
 /**
  * **Tab windows, as the window draws them** (#4768): a tab torn off into a bare window of its
@@ -93,6 +94,8 @@ function core(over: {
   pressed?: string;
   /** Chats filed under a workspace, by its name; every other chat is in none. */
   filed?: Record<string, number[]>;
+  /** What the board says of the chats, as `chat_states` answers it. */
+  states?: unknown[];
 }) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
   const listeners = new Map<string, number[]>();
@@ -134,7 +137,7 @@ function core(over: {
     if (cmd === "show_window_holding") return "main";
     if (cmd === "opened_chats") return over.chats.map(chat);
     if (cmd === "reopened_layout") return over.layout;
-    if (cmd === "chat_states") return [];
+    if (cmd === "chat_states") return over.states ?? [];
     if (cmd === "chats_that_would_not_start") return [];
     if (cmd === "recent_planes") return { planes: [], dropped: [], forgetful: null };
     if (cmd === "extensions_on") return [];
@@ -158,6 +161,56 @@ function core(over: {
 /** Every chat each tab a layout names, with its window. */
 const shape = (laid: LaidOut | undefined) =>
   laid?.tabs.map((one) => [one.window, chatsOf(one.tree)]) ?? [];
+
+describe("a split tab in a tab window (#5342)", () => {
+  it("draws the same face: its first chat's name, the mark of the pane that needs you, its picture", async () => {
+    mockWindows("window-1");
+    const split: LaidTab = {
+      ...tab(1, true, 2),
+      focused: "a",
+      tree: {
+        kind: "split",
+        direction: "row",
+        share: 500,
+        a: { kind: "chat", chat: 2 },
+        b: { kind: "chat", chat: 3 },
+      },
+    };
+    const moved = (session: number, needsYou: boolean) => ({
+      plane: ONE,
+      session,
+      state: "waiting",
+      needs_you: needsYou,
+      queue: needsYou ? [session] : [],
+      sequence: 1,
+      moved_at: 1,
+      reports: [],
+      refusals: [],
+      children: [],
+    });
+    core({
+      tabWindow: 1,
+      layout: { strip: null, tabs: [tab(0, true, 1), split] },
+      chats: [1, 2, 3],
+      states: [moved(2, false), moved(3, true)],
+    });
+    render(<App />);
+
+    await screen.findByText("session 3");
+    const only = within(stripNamed("Tabs")).getByRole("tab");
+    expect(only.querySelector(".tab-name")?.textContent).toBe("2");
+    await waitFor(() =>
+      expect(
+        only
+          .querySelector('[data-scope="chat-mark"][data-part="root"]')
+          ?.getAttribute("data-variant"),
+      ).toBe("needs"),
+    );
+    // And its picture of the layout in place of `+1`: two side by side.
+    expect(only.querySelectorAll('[data-scope="tabs"][data-part="picture"] line')).toHaveLength(1);
+    expect(only).toHaveTextContent("2, split, 2 panes");
+  });
+});
 
 describe("a tab window (#4768)", () => {
   it("draws only its own tabs, with no sidebar and no project strip, and says only those", async () => {

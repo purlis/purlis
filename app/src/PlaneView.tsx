@@ -370,8 +370,11 @@ import {
   type AskedBy,
   type Pinned,
   type Tabs,
+  type TabName,
   type ViewRef,
   sessionOf,
+  namedForFirstPanes,
+  tabNameOf,
 } from "./tabs";
 import { tileAll, zoomedLayout, zoomFocusedPane } from "./tiling";
 import { recorded } from "./layoutUndo";
@@ -486,7 +489,7 @@ import { usePlaneEdits } from "./PlaneEdits";
 import { MemoryStores, useMemoryEdits, useMemoryStores } from "./MemoryEdits";
 import { PlacingHere, usePaneDrag } from "./paneDrag";
 import { PANES_ROOM } from "./paneHeld";
-import type { DropContext } from "./paneDrop";
+import { firstPaneNameOf, type DropContext } from "./paneDrop";
 import type { MemoryTargets } from "./memoryMoves";
 import { AddToAChat } from "./AddToAChat";
 import { handReferences } from "./referencesMany";
@@ -1024,7 +1027,8 @@ export const PlaneView = memo(function PlaneView({
 }) {
   const [tabs, setTabs] = useState<Tabs>(noTabs);
   // The tab in front of the project in front, for what the stall log writes (`slowLog.ts`).
-  const frontTabName = tabs.inFront === undefined ? undefined : tabs.byId[tabs.inFront]?.name;
+  const inFrontTab = tabs.inFront === undefined ? undefined : tabs.byId[tabs.inFront];
+  const frontTabName = inFrontTab === undefined ? undefined : tabNameOf(inFrontTab);
   useEffect(() => (inFront ? frontTabIs(frontTabName) : undefined), [inFront, frontTabName]);
   const signingOutIn = useSignOutTerminals(tabs, plane);
   // **A pane closed for good lets its band's memory go** (#3167): a pane's number is never
@@ -1836,9 +1840,17 @@ export const PlaneView = memo(function PlaneView({
     },
     [tabWindow],
   );
+  /** What a tab is called when a content is its first pane (`paneDrop.firstPaneNameOf`), as the
+   *  drop context below names it, once it is made: nothing renames a tab before then. */
+  const firstPaneNameNow = useRef<(content: Content, before: Tabs) => TabName>(undefined);
   const change = useCallback(
     (how: (tabs: Tabs) => Tabs): Tabs => {
-      const done = how(now.current);
+      // **A tab whose first pane is another is named for it** (#5342, #5308): its first chat
+      // closed or moved out, so it takes the next one's name. One rule, for every change.
+      const changed = how(now.current);
+      const nameOf = firstPaneNameNow.current;
+      const done =
+        nameOf === undefined ? changed : namedForFirstPanes(now.current, changed, nameOf);
       // **The pane in front was used** (#4757): what a press with a view focused goes by.
       const next = done === now.current ? done : noteUsed(done);
       // **A chat given a new pane keeps what its band remembered** (#3271): its Notices were
@@ -5476,6 +5488,9 @@ export const PlaneView = memo(function PlaneView({
     }),
     [filedIn, isPinned, nameOf, pressedOf, tabs],
   );
+  useEffect(() => {
+    firstPaneNameNow.current = (content, before) => firstPaneNameOf(content, before, dropContext);
+  }, [dropContext]);
   /**
    * A tab a drag brings forward, drawn and not told (#5294), until {@link holdOver}; and the one
    * that was in front, drawn again as it is put back. Not a `change`: no pane is noted as used

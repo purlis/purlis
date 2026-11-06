@@ -22,14 +22,25 @@ import { ChatMark } from "../chat-mark/ChatMark";
 import type { MarkState } from "../../shownState";
 import { Button, IconButton } from "../button/Button";
 import { TIPS_BELOW } from "../tooltip/Tooltip";
-import { editorToolbar, TabCell, tabPart, tabsPart, ToolbarFile, type TabVariant } from "./Tabs";
+import { pictureOf } from "../../layoutPicture";
+import type { Layout } from "../../tabs";
+import {
+  editorToolbar,
+  TabCell,
+  TabPicture,
+  tabPart,
+  tabsPart,
+  ToolbarFile,
+  type TabVariant,
+} from "./Tabs";
 import { Group, Panel } from "react-resizable-panels";
 import { panelRoot } from "../panel/Panel";
 import { Separator } from "../panel/Separator";
 import { StripTab, TabStripRow, useTabStrip } from "./TabStrip";
 
-/** One tab as a story draws it: its name, what it holds, and its chat's state, if any. */
-type Shown = { name: string; variant?: TabVariant; state?: MarkState };
+/** One tab as a story draws it: its name, what it holds, its chat's state, if any, and its
+ *  layout where it is split. */
+type Shown = { name: string; variant?: TabVariant; state?: MarkState; layout?: Layout };
 
 const CHATS: Shown[] = [
   { name: "steward 1", state: "working" },
@@ -112,6 +123,7 @@ function DockedStrip({
                 <span className="tab-name" {...tabPart("label")}>
                   {one.name}
                 </span>
+                <SplitPicture layout={one.layout} />
               </StripTab>
               <button
                 type="button"
@@ -199,6 +211,34 @@ function DockedStrip({
     </div>
   );
 }
+
+/** A split tab's picture after its name, as the chat strip draws it (`ChatRows.tsx`). */
+function SplitPicture({ layout }: { layout?: Layout }) {
+  const picture = layout === undefined ? undefined : pictureOf(layout);
+  if (picture === undefined) return null;
+  return (
+    <span className="tab-split-more" data-mark="split">
+      <TabPicture picture={picture} />
+    </span>
+  );
+}
+
+/** A chat's pane: the id tells it from the others in one tab. */
+const leaf = (pane: number): Layout => ({
+  kind: "pane",
+  pane,
+  content: { kind: "session", session: pane, chat: String(pane) },
+});
+const row = (...children: [Layout, Layout]): Layout => ({
+  kind: "split",
+  direction: "row",
+  children,
+});
+const column = (...children: [Layout, Layout]): Layout => ({
+  kind: "split",
+  direction: "column",
+  children,
+});
 
 const meta = {
   component: DockedStrip,
@@ -549,5 +589,58 @@ export const MarksOnTheTabsLine: Story = {
       measured.push(what);
     }
     await expect(measured).toEqual(["the skill run chip", "the +", "N more"]);
+  },
+};
+
+/**
+ * **A split tab's small picture of its layout** (#5342, spec #5339), after its name in place of
+ * `+1`: two side by side, three with the right half split again, four in a quad, and past four
+ * the quad. Each picture is the tab's own shape, in the quiet tier, and never cut: a name gives way
+ * first. A screen reader hears how many panes in words.
+ */
+export const SplitPictures: Story = {
+  args: {
+    width: 900,
+    chosen: 0,
+    tabs: [
+      { name: "steward 1", state: "working", layout: row(leaf(1), leaf(2)) },
+      { name: "talk", state: "needs", layout: row(leaf(1), column(leaf(2), leaf(3))) },
+      {
+        name: "review",
+        state: "idle",
+        layout: row(column(leaf(1), leaf(2)), column(leaf(3), leaf(4))),
+      },
+      {
+        name: "devops 2",
+        state: "waiting",
+        layout: row(leaf(1), row(leaf(2), row(leaf(3), row(leaf(4), row(leaf(5), leaf(6)))))),
+      },
+      { name: "purlis.toml", variant: "file" },
+    ],
+  },
+  play: async ({ canvas, canvasElement }) => {
+    const pictures = [
+      ...canvasElement.querySelectorAll<SVGElement>('[data-scope="tabs"][data-part="picture"]'),
+    ];
+    // One per split tab, none on the tab of one pane, each its own shape.
+    await expect(pictures.map((one) => one.querySelectorAll("line").length)).toEqual([1, 2, 3, 2]);
+    for (const [name, panes] of [
+      ["steward 1", 2],
+      ["talk", 3],
+      ["review", 4],
+      ["devops 2", 6],
+    ] as const) {
+      // Its name says its mark's state first, then its own name and how many panes.
+      const tab = canvas.getByRole("tab", {
+        name: new RegExp(`${name}.*split, ${panes} panes`),
+      });
+      // After the name, on its line, and drawn whole.
+      const label = tab.querySelector('[data-part="label"]') as HTMLElement;
+      const picture = tab.querySelector('[data-part="picture"]') as SVGElement;
+      const drawn = picture.getBoundingClientRect();
+      await expect(drawn.left).toBeGreaterThanOrEqual(label.getBoundingClientRect().right);
+      await expect(drawn.width).toBeGreaterThan(0);
+      await expect(Math.abs(middleOf(picture) - middleOf(label))).toBeLessThanOrEqual(1);
+    }
   },
 };

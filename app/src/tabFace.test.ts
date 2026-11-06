@@ -7,8 +7,9 @@ import { focusPane, noTabs, openTab, openView, splitFocusedPane, type Tabs } fro
 import { zoomFocusedPane } from "./tiling";
 
 /**
- * **What a tab wears on the strip** (#4762, `prototype/one-tab-strip` variant A): its focused
- * pane's combined icon and name, `⊟+N` for the panes beside it, and every pane's name on hover.
+ * **What a tab wears on the strip** (#4762, `prototype/one-tab-strip` variant A, as #5342
+ * amends it): its first pane's name, every pane's chat for its mark to choose the most urgent
+ * of, `⊟+N` for the panes beside it, and every pane's name on hover.
  */
 
 /** Chats by number, as the sidebar names them. */
@@ -29,21 +30,55 @@ describe("a tab's face", () => {
     expect(faceOf(tabs, front(tabs), naming)).toEqual({
       lead: { kind: "chat", session: 1 },
       name: "steward 1",
-      more: 0,
+      chats: [1],
       panes: ["steward 1"],
     });
   });
 
-  it("is the focused pane's in a split, with how many panes are beside it", () => {
+  it("is its first pane's in a split, whichever pane is focused, with how many are beside it", () => {
+    // Splitting doesn't rename the tab (#5342, amending #4762): the focus is on talk.
     const tabs = splitFocusedPane(
       splitFocusedPane(openTab(noTabs(), 1, "steward 1"), "row", 2),
       "column",
       3,
     );
     const face = faceOf(tabs, front(tabs), naming);
-    expect(face.lead).toEqual({ kind: "chat", session: 3 });
-    expect(face.name).toBe("talk");
-    expect(face.more).toBe(2);
+    expect(face.lead).toEqual({ kind: "chat", session: 1 });
+    expect(face.name).toBe("steward 1");
+    expect(face.picture?.panes).toBe(3);
+  });
+
+  it("offers every pane's chat to its mark, in reading order (#5342)", () => {
+    const tabs = splitFocusedPane(
+      splitFocusedPane(openTab(noTabs(), 1, "steward 1"), "row", 2),
+      "column",
+      3,
+    );
+    expect(faceOf(tabs, front(tabs), naming).chats).toEqual([1, 2, 3]);
+  });
+
+  it("offers a task shown in a pane's place to its mark, after the pane's own chat (#5342)", () => {
+    const split = splitFocusedPane(openTab(noTabs(), 1, "steward 1"), "row", 2);
+    const id = front(split);
+    const second = split.byId[id].focused;
+    const tabs: Tabs = {
+      ...split,
+      byId: { ...split.byId, [id]: { ...split.byId[id], shows: { [second]: 7 } } },
+    };
+    expect(faceOf(tabs, id, naming).chats).toEqual([1, 2, 7]);
+  });
+
+  it("is named by the tab's own name, and its first pane's chat stays its own (#5342)", () => {
+    const split = splitFocusedPane(openTab(noTabs(), 1, "steward 1"), "row", 2);
+    const id = front(split);
+    const tabs: Tabs = {
+      ...split,
+      byId: { ...split.byId, [id]: { ...split.byId[id], own: "the build" } },
+    };
+    expect(faceOf(tabs, id, naming)).toMatchObject({
+      name: "the build",
+      panes: ["steward 1", "devops 2"],
+    });
   });
 
   it("wears the zoom mark while a pane is zoomed, and not once the split is back (#4765)", () => {
@@ -51,17 +86,24 @@ describe("a tab's face", () => {
     const zoomed = zoomFocusedPane(split);
 
     expect(faceOf(split, front(split), naming).zoomed).toBeUndefined();
-    expect(faceOf(zoomed, front(zoomed), naming)).toMatchObject({ zoomed: true, more: 1 });
+    expect(faceOf(zoomed, front(zoomed), naming)).toMatchObject({
+      zoomed: true,
+      picture: { panes: 2 },
+    });
     expect(faceOf(zoomFocusedPane(zoomed), front(zoomed), naming).zoomed).toBeUndefined();
   });
 
-  it("follows the focus to another pane", () => {
+  it("stays its first pane's as the focus moves between panes (#5342)", () => {
     const split = splitFocusedPane(openTab(noTabs(), 1, "steward 1"), "row", 2);
     const id = front(split);
     const first = split.byId[id].layout;
     if (first.kind !== "split" || first.children[0].kind !== "pane") throw new Error("a split");
-    const tabs = focusPane(split, first.children[0].pane);
-    expect(faceOf(tabs, id, naming).name).toBe("steward 1");
+    for (const pane of [first.children[0].pane, split.byId[id].focused]) {
+      expect(faceOf(focusPane(split, pane), id, naming)).toMatchObject({
+        lead: { kind: "chat", session: 1 },
+        name: "steward 1",
+      });
+    }
   });
 
   it("lists every pane, in reading order, for the tooltip", () => {
@@ -83,7 +125,6 @@ describe("a tab's face", () => {
     expect(faceOf(tabs, front(tabs), naming)).toMatchObject({
       lead: { kind: "view", view: { view: "settings" } },
       name: "Settings",
-      more: 0,
     });
   });
 
@@ -135,7 +176,7 @@ describe("a tab's face", () => {
       },
     };
     expect(faceOf(beside, id, unnamed).name).toBe("Browser");
-    expect(faceOf(tabs, front(tabs), unnamed).name).toBe("devops 2");
+    expect(faceOf(tabs, front(tabs), unnamed).name).toBe("steward 1");
   });
 
   it("says New chat for a tab that is not there to read", () => {
@@ -143,7 +184,7 @@ describe("a tab's face", () => {
     expect(faceOf(noTabs(), 9, naming)).toEqual({
       lead: { kind: "empty" },
       name: "New chat",
-      more: 0,
+      chats: [],
       panes: ["New chat"],
     });
   });

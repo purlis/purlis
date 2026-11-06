@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { memo, useMemo, type ReactNode } from "react";
-import { Columns2, Hand, ListTodo, Maximize2, Plus } from "lucide-react";
+import { Hand, ListTodo, Maximize2, Plus } from "lucide-react";
 import { StoppingMark, WrappingUp } from "./NeedsYou";
 import {
   asksThePerson,
@@ -16,13 +16,19 @@ import {
 import { PlaneUpdatedMark, type PlaneUpdates } from "./PlaneUpdated";
 import { contentsOf, panesOf, shownIn, type Tabs } from "./tabs";
 import type { TabFace } from "./tabFace";
-import { ChatPersonaState, sameShown, useShownState, type ShownOf } from "./ChatPersonaState";
+import {
+  ChatPersonaState,
+  sameShown,
+  useShownState,
+  useUrgentChat,
+  type ShownOf,
+} from "./ChatPersonaState";
 import { ViewMark } from "./Views";
 import { MARK_SAID, shownState, type RowFacts, type Shown } from "./shownState";
 import { StateShown } from "./StateShown";
 import { needsSaid } from "./tabTasks";
 import { Tooltip } from "./ui/tooltip/Tooltip";
-import { tabPart } from "./ui/tabs/Tabs";
+import { TabPicture, tabPart } from "./ui/tabs/Tabs";
 
 /*
  * **The rows that draw a chat** (SC-3): split out of `PlaneView`, whose rendering they no longer
@@ -133,7 +139,8 @@ export function TabMarks({
    *  room for. **Left out on the strip** (#1487): there the hand is on the tab's chip, beside
    *  the tab, and is pressed (`TabChip.tsx`). */
   needs?: readonly string[];
-  /** What the tab wears (`tabFace.ts`): its focused pane's icon and name, and `⊟+N`. */
+  /** What the tab wears (`tabFace.ts`): its first pane's name, its panes' chats for its mark,
+   *  and its picture of its layout. */
   face: TabFace;
   /** The persona a chat runs as, when it runs as one: its mark is the combined icon's. */
   personaOf: (session: number) => string | null | undefined;
@@ -153,9 +160,22 @@ export function TabMarks({
   pin?: ReactNode;
 }) {
   const lead = face.lead;
-  if (lead.kind !== "chat") {
-    const focused = contentsOf(tabs, id).find((one) => one.pane === tabs.byId[id]?.focused);
-    const preview = focused?.content.kind === "view" && focused.content.preview === true;
+  // **Its mark is its most urgent pane's** (#5342): of every chat its panes hold, a task shown in
+  // a pane's place too, the one whose state comes first in the one order, so a pane that needs
+  // the person can't hide behind the focused one. Its first pane's where none has a state.
+  const urgent = useUrgentChat(
+    face.chats.map((session) => ({
+      session,
+      shell: shells.has(session),
+      ...(factsOf?.(session) ?? NO_FACTS),
+    })),
+  );
+  const first = lead.kind === "chat" ? lead.session : undefined;
+  const marked = urgent ?? first;
+  if (marked === undefined) {
+    // In italics while its first pane is the preview tab's view: the face is the first pane's.
+    const shown = contentsOf(tabs, id)[0]?.content;
+    const preview = shown?.kind === "view" && shown.preview === true;
     return (
       <>
         {pin}
@@ -169,11 +189,11 @@ export function TabMarks({
         <span className={preview ? "tab-name is-preview" : "tab-name"} {...tabPart("label")}>
           {face.name}
         </span>
-        <SplitMore more={face.more} zoomed={face.zoomed} />
+        <SplitMore face={face} />
       </>
     );
   }
-  const chat = lead.session;
+  const chat = marked;
   const shell = shells.has(chat);
   const persona = personaOf(chat);
   // What its row reads its state from beside the board (#4935), so the two say one word.
@@ -182,7 +202,7 @@ export function TabMarks({
     <>
       {/* **A pinned tab shows its pin before its icon** (#4762), and the pin is the tab's. */}
       {pin}
-      {/* **The focused pane's chat's mark** (#4762, #5340): the one its row wears, by the one
+      {/* **The most urgent pane's chat's mark** (#5342, #5340): the one its row wears, by the one
           component, so the two cannot disagree. A task's own tab wears the task mark in the who's
           place (#1489), with the same state on it. The tab says its state after its name, below. */}
       <ChatPersonaState
@@ -192,7 +212,7 @@ export function TabMarks({
         {...facts}
         heard={false}
         who={
-          taskOf !== undefined ? (
+          taskOf !== undefined && chat === first ? (
             <ListTodo className="tab-mark" data-mark="task" aria-hidden="true" />
           ) : undefined
         }
@@ -200,7 +220,7 @@ export function TabMarks({
       <span className="tab-name" {...tabPart("label")}>
         {face.name}
       </span>
-      <SplitMore more={face.more} zoomed={face.zoomed} />
+      <SplitMore face={face} />
       {/* No sandbox badge: it moved to the chat's pane head and its row (#4760). */}
       <PlaneUpdatedMark files={updates?.[chat]} />
       {/* **What the tab is doing, said after what it is**: its own element, so a tab whose text
@@ -258,17 +278,17 @@ export function TabMarks({
 }
 
 /**
- * **`⊟+N`: how many other panes share a split tab** (#4762), after its name and never giving way
- * to it: the name is cut first. A screen reader hears it as words.
+ * **A split tab's small picture of its layout** (#5342, spec #5339), after its name and never
+ * giving way to it: the name is cut first. It took the place of `⊟+N` (#4762): it tells the
+ * shape as well as that the tab is split. A screen reader hears how many panes in words.
  */
-function SplitMore({ more, zoomed }: { more: number; zoomed?: true }) {
-  if (more <= 0) return null;
+function SplitMore({ face }: { face: TabFace }) {
+  const { picture, zoomed } = face;
+  if (picture === undefined) return null;
   return (
     <>
       <span className="tab-split-more" data-mark="split">
-        <Columns2 aria-hidden="true" />
-        <span aria-hidden="true">+{more}</span>
-        <span className="hidden-words">, split, {more + 1} panes</span>
+        <TabPicture picture={picture} />
       </span>
       {/* **A zoomed pane's mark** (#4765): one pane fills the tab for now, and Focus this pane
           brings the others back. */}

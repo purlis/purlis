@@ -356,6 +356,13 @@ export type Tab = {
   name: string;
   /** What {@link name} goes back to when a given name is taken off: the default above. */
   defaultName: string;
+  /**
+   * **A name the person gave the tab itself** (#5342, spec #5339), never a chat's: what the tab
+   * is called whatever its panes hold ({@link tabNameOf}), which no split, close or drop
+   * replaces. Window state, as a tab's name always was: the record keeps none. Absent on a tab
+   * named for its first pane, which is every tab until Rename sets one (#5343).
+   */
+  own?: string;
   layout: Layout;
   /** The pane a split or a close acts on. */
   focused: number;
@@ -1769,6 +1776,60 @@ function showChatAt(tabs: Tabs, at: PaneAt, chat: PressedChat, filedIn: FiledIn)
     },
     inFront: at.tab,
   };
+}
+
+/** What a tab is called when a content is its first pane: the name it says, and what that goes
+ *  back to when a given name is taken off ({@link Tab.defaultName}). */
+export type TabName = { name: string; defaultName: string };
+
+/**
+ * **A tab's name** (#5342, spec #5339, amending #4762): its own name if the person gave it one,
+ * otherwise its first pane's, the layout's first leaf at top left. Which pane has the keyboard
+ * plays no part, so splitting and moving between panes never rename a tab.
+ * {@link namedForFirstPanes} keeps the first pane's name current as the layout changes.
+ */
+export function tabNameOf(tab: Tab): string {
+  return tab.own ?? tab.name;
+}
+
+/** Which tabs {@link namedForFirstPanes} renames beyond those whose first pane is another
+ *  pane: `inPlace` also renames one whose first pane shows something else, as a drop's swap
+ *  does. Every other change that puts something in a first pane in place names the tab itself. */
+export type Renaming = { inPlace?: boolean };
+
+/**
+ * **`after`, a change made to `before`, with each tab whose first pane is another pane named
+ * for what that pane shows** (#5342, #5308), by `nameOf`, read against `before`. The first chat
+ * closed or moved out, so the tab takes the next one's name; or a chat was put left of it, and
+ * is first now.
+ *
+ * A change that named the tab itself, as Undo does, keeps the name it gave. A tab's own name
+ * ({@link Tab.own}) is kept: only the name under it moves. Answers `after` itself where no tab
+ * is renamed.
+ */
+export function namedForFirstPanes(
+  before: Tabs,
+  after: Tabs,
+  nameOf: (content: Content, before: Tabs) => TabName,
+  { inPlace = false }: Renaming = {},
+): Tabs {
+  let byId: Record<number, Tab> | undefined;
+  for (const id of after.order) {
+    const was = before.byId[id] && panes(before.byId[id].layout)[0];
+    const is = after.byId[id] && panes(after.byId[id].layout)[0];
+    if (was === undefined || is === undefined) continue;
+    const other = was.pane !== is.pane || (inPlace && !sameContent(was.content, is.content));
+    if (!other) continue;
+    const tab = after.byId[id];
+    // A change that named the tab itself, as Undo does, knew what to call it.
+    const kept = before.byId[id];
+    if (tab.name !== kept.name || tab.defaultName !== kept.defaultName) continue;
+    const { name, defaultName } = nameOf(is.content, before);
+    if (tab.name === name && tab.defaultName === defaultName) continue;
+    byId ??= { ...after.byId };
+    byId[id] = { ...tab, name, defaultName };
+  }
+  return byId === undefined ? after : { ...after, byId };
 }
 
 /** Whether two contents show the same thing. */
