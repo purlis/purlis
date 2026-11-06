@@ -326,7 +326,9 @@ fn a_cards_number_behind_a_name_is_no_seed() {
 
 #[test]
 fn a_very_long_value_of_short_words_is_read_in_one_pass() {
-    let long = "Gh ".repeat(1_000_000);
+    // Words of three letters never add up to a length a bare secret has, so the walk goes all
+    // the way back.
+    let long = "Ghi ".repeat(1_000_000);
     let started = std::time::Instant::now();
     assert!(!looks_like_a_seed(&long));
     assert!(started.elapsed() < std::time::Duration::from_secs(30));
