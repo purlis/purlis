@@ -3,6 +3,7 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useId,
@@ -18,15 +19,24 @@ import { ChatText } from "./ChatText";
 import { useNow } from "./InboxRow";
 import { agoSaid } from "./inboxRules";
 import { PersonaMark } from "./PersonaMark";
-import { NoticeWayGuard, useNoticeSettle } from "./noticeSettle";
+import {
+  closedIn,
+  closeIn,
+  grants,
+  reopenIn,
+  NoticeWayGuard,
+  useNoticeSettle,
+} from "./noticeSettle";
 import {
   bandHeadSays,
+  bandRegionSays,
   dismissAllSays,
+  foldedSays,
   HOLDS_NOTHING,
   sameHolds,
   type BandHolds,
 } from "./paneNotices";
-import { X } from "lucide-react";
+import { ChevronUp, X } from "lucide-react";
 import { Twist } from "./ui/disclosure/Disclosure";
 import { Button, ButtonRow, IconButton } from "./ui/button/Button";
 import {
@@ -37,12 +47,18 @@ import {
   NoticeMark,
   NoticeMessage,
   NoticeRow,
+  NoticeRowFolded,
   NoticeRowHead,
   NoticeSaid,
   NoticeStack,
+  NoticeSub,
   NoticeTitle,
   NoticeUnder,
+  NoticeWays,
+  NoticeWaySlot,
   NoticeWhose,
+  NoticeWords,
+  usePinnedRoom,
   type NoticeListAt,
   type NoticeTone,
 } from "./ui/notice/Notice";
@@ -182,6 +198,14 @@ type LineProps = WayOut &
      *  no Dismiss beside its answers, so Dismiss all and Esc leave it standing. A consent (a
      *  way out that `allows`) is one whether or not it says so. */
     waits?: boolean;
+    /** **A row's sub-line in a chat pane's band** (#5215): who asks or what it is, and its age.
+     *  Without, its `label`. */
+    sub?: ReactNode;
+    /** **When it began to wait, in seconds**, where it is known: said as its age (#5215). */
+    since?: number | null;
+    /** **A row's icon, where its tone does not say what it is** (#5215): a prompt in the
+     *  terminal. */
+    mark?: "prompt";
     title?: never;
     quiet?: never;
   };
@@ -210,6 +234,9 @@ type CardProps = CardWayOut &
     quiet?: boolean;
     label?: never;
     persona?: never;
+    sub?: never;
+    since?: never;
+    mark?: never;
   };
 
 export type NoticeProps = LineProps | CardProps;
@@ -240,6 +267,11 @@ export const NoticeOf = createContext<{
  * when one comes and goes, so the chat's row can say it has something to read.
  */
 export const NoticeInCentre = createContext<((cause: string, held: boolean) => void) | null>(null);
+
+/** The open band's fold (#5215). */
+export const FOLD_BAND = "Fold the band";
+/** The folded band's line's last word (#5215). */
+const SHOW_BAND = "Show";
 
 /** What an attention Notice says first to a reader, as its mark says it to the eye (#3678). */
 const NEEDS_A_DECISION = "Needs a decision: ";
@@ -279,6 +311,13 @@ export function Notice(props: NoticeProps) {
   // Only on a pane, or a pane's said in the centre: a Notice a pane's chat sends to the Inbox
   // is the project's.
   const of = askedAt === "pane" ? provided : null;
+  // **In a chat pane's band, a compact row** (#5215): the band says so, with how to close it here.
+  const band = useContext(BandRows);
+  const stands = band?.stands;
+  useEffect(
+    () => (at === "pane" && title === undefined ? stands?.(cause) : undefined),
+    [at, title, stands, cause],
+  );
   const stacked = list !== null && at === "inbox";
   const id = useId();
   // Where this Notice is drawn when the Inbox lists it: an element of its own, which the list
@@ -329,6 +368,19 @@ export function Notice(props: NoticeProps) {
       </CentreCard>,
       host,
     );
+  if (at === "pane" && band !== null && title === undefined) {
+    if (band.closed.has(cause)) return null;
+    return (
+      <BandRow
+        {...props}
+        whose={of}
+        waitsHere={waits}
+        onDismiss={onDismiss}
+        mayAct={mayAct}
+        onClose={() => band.close(cause)}
+      />
+    );
+  }
   if (title !== undefined) {
     const card = (
       <NoticeBox
@@ -431,27 +483,7 @@ export function Notice(props: NoticeProps) {
         </Button>
       )}
       {fixes?.map((fix) => (
-        <Button
-          key={fix.label}
-          ref={fix.button}
-          size="sm"
-          variant={fix.allows === true ? "grants" : "secondary"}
-          data-way="fix"
-          aria-expanded={fix.opens?.open}
-          aria-controls={fix.opens?.open ? fix.opens.id : undefined}
-          aria-disabled={fix.busy || fix.off !== undefined || undefined}
-          aria-busy={fix.busy || undefined}
-          tooltip={fix.off}
-          onPress={
-            fix.busy || fix.off !== undefined
-              ? undefined
-              : (press) => {
-                  if (mayAct(press.target)) fix.onPress();
-                }
-          }
-        >
-          {fix.label}
-        </Button>
+        <FixWay key={fix.label} fix={fix} mayAct={mayAct} />
       ))}
       {link && (
         <Button size="sm" onPress={link.onPress} data-way="link">
@@ -712,6 +744,237 @@ function CentreCard({
   );
 }
 
+/** **A way out that fixes**, on a pane's line or row: Allow in its own look, and every press asks
+ *  the place it stands in first (`mayAct`, #1695). */
+function FixWay({
+  fix: { button, label, allows, opens, busy, off, onPress },
+  mayAct,
+}: {
+  fix: NoticeAction;
+  mayAct: (way: Element) => boolean;
+}) {
+  return (
+    <Button
+      ref={button}
+      size="sm"
+      variant={allows === true ? "grants" : "secondary"}
+      data-way="fix"
+      aria-expanded={opens?.open}
+      aria-controls={opens?.open ? opens.id : undefined}
+      aria-disabled={busy || off !== undefined || undefined}
+      aria-busy={busy || undefined}
+      tooltip={off}
+      onPress={
+        busy || off !== undefined
+          ? undefined
+          : (press) => {
+              if (mayAct(press.target)) onPress();
+            }
+      }
+    >
+      {label}
+    </Button>
+  );
+}
+
+/** What a toggle says, by whether the row's message is opened (#5215). */
+export const SHOW_WHOLE = "Show the whole message";
+export const SHOW_LESS = "Show less";
+/** What a row's × says (#5215): it hides it from this pane and answers nothing. */
+export const CLOSE_ROW = "Close";
+export const CLOSE_ASK_SAYS = "Close here. It stays in the Inbox until you answer it.";
+export const CLOSE_NOTE_SAYS = "Close here.";
+
+/**
+ * **The band's rows** (#5215), given by a chat pane's band to the Notices it holds: which it was
+ * told to close here, and how to close one. None in any other place a Notice stands, each of
+ * which draws its line as it did.
+ */
+const BandRows = createContext<{
+  closed: ReadonlySet<string>;
+  close: (cause: string) => void;
+  /** Says a Notice of this cause stands, and returns how to say it has gone: once none does, its
+   *  cause is no longer closed, so the same ask asked again is seen. */
+  stands: (cause: string) => () => void;
+} | null>(null);
+
+/** **What this band has closed, and how to close**, for what draws a part of it itself (a task's
+ *  question, `QuizBand`); none outside a chat's band. */
+export const useBandRows = () => useContext(BandRows);
+
+/** **Whether its one line cuts what it says**, measured as it is laid out and as its width changes:
+ *  what a row's toggle is offered on. */
+function useCut(whole: boolean) {
+  const at = useRef<HTMLDivElement>(null);
+  const [cut, setCut] = useState(false);
+  useLayoutEffect(() => {
+    const words = at.current;
+    if (words === null || whole) return;
+    const measure = () => setCut(words.scrollHeight > words.clientHeight);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const watch = new ResizeObserver(measure);
+    watch.observe(words);
+    return () => watch.disconnect();
+  }, [whole]);
+  return { at, cut };
+}
+
+/**
+ * **A Notice as one compact row of a chat pane's band** (#5215, the person's approved prototype):
+ * its icon, what it says on one line with its sub-line muted beneath, its own ways out, a toggle
+ * where the line cuts it, and a × last.
+ *
+ * - **× never answers.** A note's is its Dismiss. Where it has none, or asks and may not be put
+ *   away (`waits`), it is closed from this pane alone, so an ask stays in the Inbox and on the ✋.
+ * - **Opened, its message shows whole**, and its ways out are pinned at its foot (`data-whole`,
+ *   `paneFrame.css`). Esc folds it again, from the band (`NoticePaneRow`).
+ * - **A consent's edge and mark hold**, and Allow keeps its look and its settle guard
+ *   (ADR 0097 §6): the row draws them with the same `Button` and the same `mayAct`.
+ */
+function BandRow({
+  cause,
+  tone = "news",
+  running = false,
+  label,
+  persona,
+  children,
+  under,
+  sub,
+  since,
+  mark,
+  fixes,
+  link,
+  copy,
+  dismissSays,
+  whose,
+  waitsHere,
+  onDismiss,
+  mayAct,
+  onClose,
+}: Said &
+  Omit<Ways, "onDismiss"> &
+  Pick<LineProps, "label" | "persona" | "sub" | "since" | "mark"> & {
+    whose: { whose: string; onGo: () => void } | null;
+    waitsHere: boolean;
+    onDismiss?: () => void;
+    mayAct: (way: Element) => boolean;
+    onClose: () => void;
+  }) {
+  const [whole, setWhole] = useState(false);
+  const { at, cut } = useCut(whole);
+  // Pinned at its foot, opened, its ways keep the keyboard clear of them (WCAG 2.4.11).
+  const waysAt = useRef<HTMLDivElement>(null);
+  usePinnedRoom(waysAt, whole);
+  const asksConsent = fixes?.some((fix) => fix.allows) === true;
+  const holdsStill = asksConsent || grants(cause);
+  const kind = mark ?? (asksConsent ? "consent" : tone === "news" && !running ? "note" : undefined);
+  const now = useNow();
+  const age = since == null ? undefined : agoSaid(since * 1000, now);
+  const what = sub ?? label;
+  const says =
+    what == null || age === undefined ? (
+      (what ?? age)
+    ) : (
+      <>
+        {what} · {age}
+      </>
+    );
+  return (
+    <NoticeBox
+      tone={tone}
+      placement="pane"
+      layout="row"
+      opened={under !== undefined}
+      asks={fixes !== undefined || link !== undefined || under !== undefined}
+      waits={waitsHere}
+      whole={whole}
+      what={label}
+      consent={holdsStill}
+    >
+      <ButtonRow
+        size="sm"
+        role="status"
+        aria-label={whose === null || label === undefined ? label : `${whose.whose}: ${label}`}
+        data-cause={cause}
+      >
+        <NoticeMark tone={tone} running={running} kind={kind} />
+        <NoticeWords>
+          <NoticeMessage ref={at}>
+            {tone === "attention" && <span className="sr-only">{NEEDS_A_DECISION}</span>}
+            {persona != null && <PersonaMark persona={persona} />}
+            {whose !== null && <NoticeWhose>{whose.whose}: </NoticeWhose>}
+            {children}
+          </NoticeMessage>
+          {says != null && <NoticeSub>{says}</NoticeSub>}
+        </NoticeWords>
+        <NoticeWays ref={waysAt}>
+          {whose !== null && (
+            <Button size="sm" onPress={whose.onGo} data-way="go">
+              Go to it
+            </Button>
+          )}
+          {fixes?.map((fix) => (
+            <FixWay key={fix.label} fix={fix} mayAct={mayAct} />
+          ))}
+          {link && (
+            <Button size="sm" variant="link" onPress={link.onPress} data-way="link">
+              {link.label}
+            </Button>
+          )}
+          {copy !== undefined && (
+            <Button
+              size="sm"
+              tooltip={copy}
+              onPress={() => void navigator.clipboard?.writeText(copy).catch(() => undefined)}
+              data-way="copy"
+            >
+              Copy command
+            </Button>
+          )}
+          {cut || whole ? (
+            <IconButton
+              size="sm"
+              variant="ghost"
+              aria-label={whole ? SHOW_LESS : SHOW_WHOLE}
+              aria-expanded={whole}
+              onPress={() => setWhole((was) => !was)}
+              data-way="whole"
+              icon={<Twist open={whole} />}
+            />
+          ) : (
+            // **A way out the settle guard holds never moves for the toggle** (#1695): the line is
+            // measured only once it is drawn, so its room is kept from the first drawing.
+            holdsStill && <NoticeWaySlot />
+          )}
+          {onDismiss ? (
+            <IconButton
+              size="sm"
+              variant="ghost"
+              aria-label="Dismiss"
+              tooltip={dismissSays}
+              onPress={onDismiss}
+              data-way="dismiss"
+              icon={<X aria-hidden="true" />}
+            />
+          ) : (
+            <IconButton
+              size="sm"
+              variant="ghost"
+              aria-label={CLOSE_ROW}
+              tooltip={waitsHere ? CLOSE_ASK_SAYS : CLOSE_NOTE_SAYS}
+              onPress={onClose}
+              data-way="close"
+              icon={<X aria-hidden="true" />}
+            />
+          )}
+        </NoticeWays>
+      </ButtonRow>
+      {under !== undefined && <NoticeUnder>{under}</NoticeUnder>}
+    </NoticeBox>
+  );
+}
+
 /**
  * **How important a Notice is, by the family of its cause** (V91i): trouble, then attention, then
  * news ({@link TONE_ORDER}), then
@@ -749,7 +1012,7 @@ export const IMPORTANCE: readonly string[] = [
 
 /** A pane Notice's own Dismiss, on its line (not one inside what a way out opened): by its
  *  class here, or by the way out it is once the notice family draws it (#2912). */
-const DISMISS = ':scope > [role="status"] > :is(.notice-dismiss, [data-way="dismiss"])';
+const DISMISS = ':scope > [role="status"] :is(.notice-dismiss, [data-way="dismiss"])';
 
 /** A cause's family: what it is up to the first `:` (`pin-dormant:ide` is a `pin-dormant`). */
 export const familyOf = (cause: string): string => cause.split(":", 1)[0];
@@ -912,16 +1175,20 @@ const boxesOf = (stack: HTMLElement) => [...stack.children] as HTMLElement[];
 const waitsOn = (box: Element) => box.hasAttribute("data-waits");
 
 /** **What a band read off its stack**: what it holds, as its bell says it, how many notes
- *  Dismiss all clears, and how many Notices it shows. */
-type BandRead = BandHolds & { clears: number; drawn: number };
+ *  Dismiss all clears, how many Notices it shows, and what its asks are about (#5215). */
+type BandRead = BandHolds & { clears: number; drawn: number; waitsOn: readonly string[] };
 
 const sameRead = (one: BandRead, other: BandRead): boolean =>
-  sameHolds(one, other) && one.clears === other.clears && one.drawn === other.drawn;
+  sameHolds(one, other) &&
+  one.clears === other.clears &&
+  one.drawn === other.drawn &&
+  one.waitsOn.join("\u0000") === other.waitsOn.join("\u0000");
 
 /** What a pane's stack holds, as its bell says it, and how many notes Dismiss all clears. */
 function heldIn(boxes: readonly HTMLElement[]): Omit<BandRead, "drawn"> {
   const notes = boxes.filter((box) => !waitsOn(box));
   return {
+    waitsOn: boxes.filter(waitsOn).flatMap((box) => box.getAttribute("data-what") ?? []),
     notes: notes.length,
     trouble: notes.filter((box) => box.getAttribute("data-variant") === "trouble").length,
     asks: boxes.length - notes.length,
@@ -933,8 +1200,10 @@ function heldIn(boxes: readonly HTMLElement[]): Omit<BandRead, "drawn"> {
 export type PaneBandBell = {
   /** Whether every pane's notices are minimised now. */
   minimised: boolean;
-  /** Minimises every pane's notices: the head row's Minimise. */
+  /** Minimises every pane's notices: the head's fold. */
   minimise: () => void;
+  /** Expands every pane's notices: the folded band's line. */
+  expand: () => void;
   /** Told what the band holds whenever that changes. */
   onHolds: (holds: BandHolds) => void;
   /** Hands the keyboard to the bell: where Dismiss all leaves it once the band is empty. */
@@ -985,12 +1254,58 @@ export function NoticePaneRow({
 }) {
   const stackAt = useRef<HTMLDivElement>(null);
   const minimiseAt = useRef<HTMLButtonElement>(null);
+  const showAt = useRef<HTMLButtonElement>(null);
+  /** The band's own fold or line was pressed: the keyboard goes on to what takes its place. */
+  const goesOn = useRef(false);
+  // **What this pane's band was told to close** (#5215), kept with the pane's band as it is drawn
+  // anew. A chat's band alone: only there is a Notice a row.
+  const [closed, setClosed] = useState<ReadonlySet<string>>(() => closedIn(band));
+  const hasBell = bell !== undefined;
+  // How many Notices of each cause stand. Read a moment after one goes: a band drawn anew takes
+  // every Notice down and up again, and only one that stays down has gone.
+  const standing = useRef(new Map<string, number>());
+  const drawnNow = useRef(false);
+  useLayoutEffect(() => {
+    drawnNow.current = true;
+    return () => {
+      drawnNow.current = false;
+    };
+  }, []);
+  const stands = useCallback(
+    (cause: string) => {
+      const count = standing.current;
+      count.set(cause, (count.get(cause) ?? 0) + 1);
+      return () => {
+        count.set(cause, (count.get(cause) ?? 1) - 1);
+        queueMicrotask(() => {
+          if (drawnNow.current && count.get(cause) === 0) setClosed(reopenIn(band, cause));
+        });
+      };
+    },
+    [band],
+  );
+  const rows = useMemo(
+    () =>
+      !hasBell
+        ? null
+        : {
+            closed,
+            close: (cause: string) => setClosed(closeIn(band, cause)),
+            stands,
+          },
+    [hasBell, closed, band, stands],
+  );
   // **A granting Notice's ways out wait for it to settle once it moved** (#1695, train 54's
   // review): a Notice above it answered or gone can move another's way out under the pointer.
   const { at: rowAt, allows, said } = useNoticeSettle<HTMLDivElement>("stands", band, rowDrawn);
   const onHolds = bell?.onHolds;
   const folds = bell?.minimised === true;
-  const [held, setHeld] = useState<BandRead>({ ...HOLDS_NOTHING, clears: 0, drawn: 0 });
+  const [held, setHeld] = useState<BandRead>({
+    ...HOLDS_NOTHING,
+    clears: 0,
+    drawn: 0,
+    waitsOn: [],
+  });
 
   // Read off the stack: what it holds, and which notes the band folds.
   useLayoutEffect(() => {
@@ -1001,7 +1316,7 @@ export function NoticePaneRow({
       const on = document.activeElement;
       let drawn = 0;
       for (const box of boxes) {
-        const hide = folds && !waitsOn(box) && !(on !== null && box.contains(on));
+        const hide = folds && !(on !== null && box.contains(on));
         if (box.hidden !== hide) box.hidden = hide;
         if (!hide) drawn += 1;
       }
@@ -1084,6 +1399,15 @@ export function NoticePaneRow({
       const box = boxOf(event.target);
       const line = event.target instanceof Element ? event.target.closest('[role="status"]') : null;
       if (box === undefined || line?.parentElement !== box) return;
+      // **A message opened folds first** (#5215), and the keyboard stays on its toggle.
+      const opened = box.querySelector<HTMLElement>('[data-way="whole"][aria-expanded="true"]');
+      if (opened !== null) {
+        event.preventDefault();
+        event.stopPropagation();
+        opened.click();
+        opened.focus();
+        return;
+      }
       const dismiss = box.querySelector<HTMLElement>(DISMISS);
       if (!dismiss) return;
       event.preventDefault();
@@ -1115,15 +1439,42 @@ export function NoticePaneRow({
   };
 
   const headed = bell !== undefined && !folds && notes + asks > 0;
-  const empty = held.drawn === 0;
+  /** **Folded, one line** (#5215): how many wait and on what. Notes alone fold into the bell. */
+  const foldedLine = bell !== undefined && folds && asks > 0;
+  // Unfolding, the read of what it shows comes after: the head is what is drawn meanwhile, and the
+  // fold can only take the keyboard if the band is drawn by then.
+  const empty = held.drawn === 0 && !foldedLine && !headed;
+  // The keyboard goes from the fold to the line that took its place, and back (WCAG 2.4.3).
+  useLayoutEffect(() => {
+    if (!goesOn.current) return;
+    goesOn.current = false;
+    (folds ? showAt : minimiseAt).current?.focus();
+  }, [folds]);
   return (
     <NoticeRow
       empty={empty}
-      // The pane's notices, named as one place (#3142), while it shows any.
+      // The pane's notices, named as one place with its count (#3142, #5215), while it shows any.
       role={empty ? undefined : "region"}
-      aria-label={empty ? undefined : "Pane notices"}
+      aria-label={
+        empty
+          ? undefined
+          : bell === undefined
+            ? "Pane notices"
+            : bandRegionSays({ notes, trouble, asks })
+      }
       ref={rowAt}
     >
+      {foldedLine && (
+        <NoticeRowFolded
+          ref={showAt}
+          says={foldedSays(asks, held.waitsOn)}
+          show={SHOW_BAND}
+          onPress={() => {
+            goesOn.current = true;
+            bell?.expand();
+          }}
+        />
+      )}
       {headed && (
         <NoticeRowHead says={bandHeadSays({ notes, trouble, asks })}>
           {held.clears > 0 && (
@@ -1131,19 +1482,24 @@ export function NoticePaneRow({
               {dismissAllSays(held.clears)}
             </Button>
           )}
-          <Button
+          <IconButton
             size="sm"
             variant="ghost"
             ref={minimiseAt}
-            onPress={() => bell?.minimise()}
+            aria-label={FOLD_BAND}
+            onPress={() => {
+              goesOn.current = true;
+              bell?.minimise();
+            }}
             data-way="minimise"
-          >
-            Minimise
-          </Button>
+            icon={<ChevronUp aria-hidden="true" />}
+          />
         </NoticeRowHead>
       )}
       <NoticeStack ref={stackAt}>
-        <NoticeWayGuard value={allows}>{children}</NoticeWayGuard>
+        <BandRows.Provider value={rows}>
+          <NoticeWayGuard value={allows}>{children}</NoticeWayGuard>
+        </BandRows.Provider>
       </NoticeStack>
       {said !== undefined && (
         <p className="inbox-refused" role="status">

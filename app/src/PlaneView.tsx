@@ -5200,8 +5200,13 @@ export const PlaneView = memo(function PlaneView({
       topOf: (task: number) => sessionOf(tabs, task, askedBy)?.own,
       openTask: (task: number) => showChat(task),
       openSettings: () => openSettingsAt({ group: "you.chats", setting: "you.chats.answer" }),
+      // A question's row's Answer (#5215): the Inbox, at the task's question.
+      answerInInbox: (task: number) => {
+        showSideView("inbox");
+        requestAnimationFrame(() => landOnGroupIn(plane, task, "task-question"));
+      },
     }),
-    [tabs, askedBy, showChat, openSettingsAt],
+    [tabs, askedBy, showChat, openSettingsAt, showSideView, plane],
   );
 
   /**

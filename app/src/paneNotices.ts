@@ -8,10 +8,10 @@
  * - **One choice for every pane**, minimised by default, kept across restarts in the layout file
  *   under `notices` (`layout.json`, `regions.ts`), beside the window's other choices on this
  *   machine. Only `expanded` is written: minimised is what the file leaves out.
- * - **Minimised, a pane's notes fold into its bell's count**, and its asks (a consent, a blocking
- *   question) stay as full cards in the band, since an ask must keep its words.
- * - **Expanded, the band shows every notice**, with Dismiss all on its head row, which skips the
- *   asks and counts what it clears.
+ * - **Minimised, a pane's notes fold into its bell's count**, and its asks fold to the band's one
+ *   line, which says how many wait and on what (#5215, the person's approved prototype).
+ * - **Expanded, the band shows every notice as a compact row**, under a head that says how many
+ *   wait and folds it, with Dismiss all where it clears any, which skips the asks.
  * - **The bell's count is the pane's notes**, never its asks, the same number in both states.
  *
  * What is said, here, with no import: the notice family's band (`Notice.tsx`) draws it, and the
@@ -48,11 +48,22 @@ export function bellSays(holds: BandHolds): string {
   return `${notes}${trouble}${asks}`;
 }
 
-/** **What the band's head row says, expanded**: how many it holds, and how many wait on you. */
+/** **What the band's head says, open** (#5215): how many wait on you, and the notes beside them;
+ *  a band of notes alone counts them. */
 export function bandHeadSays(holds: BandHolds): string {
-  const all = holds.notes + holds.asks;
-  const waiting = holds.asks > 0 ? `, ${holds.asks} waiting on you` : "";
-  return `${all} ${plural(all, "notice", "notices")}${waiting}`;
+  const notes = `${holds.notes} ${plural(holds.notes, "notice", "notices")}`;
+  if (holds.asks === 0) return notes;
+  const waiting = `${holds.asks} waiting on you`;
+  return holds.notes === 0 ? waiting : `${waiting} · ${notes}`;
+}
+
+/** **The band's name, with its count** (#5215): one labelled region a reader hears the count of. */
+export const bandRegionSays = (holds: BandHolds): string => `Pane notices: ${bandHeadSays(holds)}`;
+
+/** **What the folded band's line says** (#5215): how many wait, and on what, each once. */
+export function foldedSays(asks: number, what: readonly string[]): string {
+  const named = [...new Set(what)].join(", ");
+  return named === "" ? `${asks} waiting` : `${asks} waiting · ${named}`;
 }
 
 /** **Dismiss all's words**: it counts what it clears, the notes with a Dismiss of their own. */

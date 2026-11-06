@@ -52,6 +52,7 @@ function OneLogin({
       at="pane"
       tone={refused === undefined ? "news" : "trouble"}
       label="Browser login"
+      since={ask.since}
       fixes={[first, ...rest]}
     >
       {offScreen ? "It asks" : "This chat asks"} to log its browser in here, and waits for your

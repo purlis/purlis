@@ -75,6 +75,7 @@ function StewardsPane({ asks, minimised }: { asks: Shown[]; minimised?: boolean 
         topOf: (task) => (task > 4 ? 4 : undefined),
         openTask: () => {},
         openSettings: () => {},
+        answerInInbox: () => undefined,
       }}
     >
       <QuestionsHere.Provider value={{ asks, with_asking_chat: [] }}>
@@ -87,11 +88,13 @@ function StewardsPane({ asks, minimised }: { asks: Shown[]; minimised?: boolean 
               <span className="ui-text-meta">Claude Code · smart-ide</span>
             </div>
             <NoticePaneRow
-              bell={
-                minimised === undefined
-                  ? undefined
-                  : { minimised, minimise: () => {}, onHolds: () => {}, focus: () => {} }
-              }
+              bell={{
+                minimised: minimised === true,
+                minimise: () => {},
+                expand: () => {},
+                onHolds: () => {},
+                focus: () => {},
+              }}
             >
               <QuizBand plane="/plane" session={4} />
             </NoticePaneRow>
@@ -135,6 +138,14 @@ function apart(one: Element, other: Element): boolean {
 const terminal = (canvas: HTMLElement) => within(canvas).getByLabelText("Terminal of steward 4");
 const box = (canvas: HTMLElement) => within(canvas).getByRole("textbox", { name: "Your answer" });
 
+/** Opens the question on screen, a row until then (#5215), and waits for its box to take words. */
+const opened = async (canvas: HTMLElement) => {
+  const toggle = await within(canvas).findByRole("button", { name: "Show the whole question" });
+  toggle.click();
+  await waitFor(() => expect(box(canvas)).toBeEnabled());
+  toggle.blur();
+};
+
 /**
  * **The first question, with the note above it said once** (#5213): a quiet note, never a dialog,
  * saying questions now come here, with Change and its ×. The quiz says who asks, why it reached
@@ -152,16 +163,16 @@ export const FirstQuestionOffersTheChoice: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.getByText(FIRST_LINE)).toBeVisible();
     const quiz = canvas.getByRole("group", { name: "developer 7 asks" });
-    const title = within(quiz).getByText("developer 7 asks");
+    const title = within(quiz).getByText(/^developer 7 asks/);
     const close = within(quiz).getByRole("button", { name: CLOSE_QUIZ });
     const change = canvas.getByRole("button", { name: "Change" });
     const dismiss = canvas.getByRole("button", { name: "Dismiss" });
     for (const way of [change, dismiss, close]) await expect(apart(way, title)).toBe(true);
     await expect(apart(change, quiz)).toBe(true);
     await expect(apart(dismiss, quiz)).toBe(true);
+    await opened(canvasElement);
     await expect(quiz).toHaveTextContent("steward 4 passed this on.");
     await expect(quiz).toHaveTextContent("steward 4's note");
-    await waitFor(() => expect(box(canvasElement)).toBeEnabled());
     // It never took the keyboard: whatever had it still has it.
     await expect(box(canvasElement)).not.toHaveFocus();
     change.focus();
@@ -188,7 +199,7 @@ export const OneAtATimeWithACount: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.getByText("2 more")).toBeVisible();
     await expect(canvas.queryByText(FIRST_LINE)).toBeNull();
-    await waitFor(() => expect(box(canvasElement)).toBeEnabled());
+    await opened(canvasElement);
     terminal(canvasElement).focus();
     await userEvent.keyboard("pnpm te");
     await expect(terminal(canvasElement)).toHaveFocus();
@@ -201,7 +212,17 @@ export const OneAtATimeWithACount: Story = {
     await userEvent.tab();
     await untilFocused(() => canvas.getByRole("button", { name: "Open task" }), "on Open task");
     expectFocusInSight();
-    canvas.getByRole("button", { name: "Open task" }).blur();
+    // Esc folds it from the box, what was typed kept, and lands on its toggle (#5215).
+    box(canvasElement).focus();
+    await untilFocused(() => box(canvasElement), "back in the answer box");
+    await userEvent.keyboard("{Escape}");
+    const toggle = canvas.getByRole("button", { name: "Show the whole question" });
+    await untilFocused(() => toggle, "on the question's toggle");
+    expectFocusInSight();
+    // Opened again for the picture, the keyboard put down.
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(box(canvasElement)).toBeVisible());
+    toggle.blur();
     await userEvent.clear(terminal(canvasElement));
     terminal(canvasElement).blur();
   },
@@ -223,6 +244,7 @@ export const AQuestionOverSeveralLines: Story = {
   },
   play: async ({ canvasElement }) => {
     const quiz = within(canvasElement).getByRole("group", { name: "developer 7 asks" });
+    await opened(canvasElement);
     await expect(quiz).not.toHaveTextContent(/⟦U\+|\*\*/);
     // Drawn over its lines: the question's line above its list, each of the list's on its own.
     const line = within(quiz).getByText("Which branch should the fix land on?");
@@ -234,7 +256,6 @@ export const AQuestionOverSeveralLines: Story = {
     await expect(second.getBoundingClientRect().top).toBeGreaterThanOrEqual(
       first.getBoundingClientRect().bottom,
     );
-    await waitFor(() => expect(box(canvasElement)).toBeEnabled());
   },
 };
 
@@ -262,14 +283,14 @@ export const ClosingOneShowsTheNext: Story = {
       () => expect(canvas.getByRole("group", { name: "designer 3 asks" })).toBeVisible(),
       { timeout: 5000 },
     );
-    await waitFor(() => expect(box(canvasElement)).toBeEnabled());
+    await opened(canvasElement);
   },
 };
 
 /**
  * **Folded with the pane's notices** (#5213): minimised, which every pane's notices are by
- * default, the note folds into the pane's bell and the quiz stands, as every ask does, with its
- * Close in reach. The picture is the band minimised.
+ * default, the note folds into the pane's bell and the band is one line that names the question.
+ * The picture is the band minimised.
  */
 export const FoldedWithThePanesNotices: Story = {
   args: { asks: [FIRST], minimised: true },
@@ -279,15 +300,18 @@ export const FoldedWithThePanesNotices: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const quiz = canvas.getByRole("group", { name: "developer 7 asks" });
-    await expect(quiz).toBeVisible();
+    // Folded, the band is one line, and the note and the question are in it, unseen (#5215).
+    const line = await canvas.findByRole("button", {
+      name: /^1 waiting · A task's question\s*·\s*Show$/,
+    });
     await waitFor(() => expect(canvas.getByText(FIRST_LINE)).not.toBeVisible());
-    await waitFor(() => expect(box(canvasElement)).toBeEnabled());
-    const close = within(quiz).getByRole("button", { name: CLOSE_QUIZ });
-    close.focus();
-    await untilFocused(() => close, "on the quiz's Close");
+    await waitFor(() =>
+      expect(canvas.queryByRole("group", { name: "developer 7 asks" })).toBeNull(),
+    );
+    line.focus();
+    await untilFocused(() => line, "on the band's line");
     expectFocusInSight();
-    close.blur();
+    line.blur();
   },
 };
 
@@ -303,8 +327,8 @@ export const NoReplyInTime: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    await opened(canvasElement);
     await expect(canvas.getByText("steward 4 did not reply in 100 seconds.")).toBeVisible();
     await expect(canvas.queryByText(/'s note/)).toBeNull();
-    await waitFor(() => expect(box(canvasElement)).toBeEnabled());
   },
 };

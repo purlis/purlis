@@ -496,13 +496,18 @@ describe("a refused vault, on a pane whose chat has already asked that persona",
     await aStewardChat({ refusals: [REFUSED], dispatches: [HELD] });
 
     const request = await screen.findByRole("status", { name: "Dispatch to devops" });
-    expect([...request.children].map((one) => one.textContent)).toEqual([
-      expect.stringMatching(/^This chat runs as steward and wants to dispatch to devops\./),
+    expect(within(request).getByText(/wants to dispatch to devops\./)).toBeTruthy();
+    expect(
+      within(request)
+        .getAllByRole("button")
+        .map((one) => one.getAttribute("aria-label") ?? one.textContent),
+    ).toEqual([
       "Allow for this chat",
       "Allow for me on this machine, in any workspace",
       "Allow for everyone in this project, in any workspace",
       "Keep blocked",
       "Never for this pair",
+      "Close",
     ]);
     // The brief is under the answers, in the same box, in a box of its own that scrolls.
     const brief = screen.getByRole("region", { name: "Brief from the chat" });
@@ -516,8 +521,8 @@ describe("a refused vault, on a pane whose chat has already asked that persona",
     await aStewardChat({ dispatches: [{ ...HELD, mode: "handoff" }] });
 
     const request = await screen.findByRole("status", { name: "Hand off to devops" });
-    expect(request.firstElementChild?.textContent).toMatch(
-      /^This chat runs as steward and wants to hand off to devops\./,
+    expect(request.querySelector('[data-part="message"]')?.textContent).toMatch(
+      /This chat runs as steward and wants to hand off to devops\./,
     );
     expect(screen.queryByRole("status", { name: "Dispatch to devops" })).toBeNull();
   });
