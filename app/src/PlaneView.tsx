@@ -299,6 +299,7 @@ import {
   openEmptyTab,
   openNew,
   opensAt,
+  wouldLeaveStrip,
   openView,
   offerView,
   harnessSetupTitle,
@@ -390,6 +391,8 @@ import {
   type NotesHanded,
   withStartHanded,
   PRESS_HERE,
+  type PressHere,
+  pressInProjectWindow,
 } from "./tabWindows";
 import type { TabFacts } from "./ChatRows";
 import { rowFactsOf } from "./shownState";
@@ -3677,7 +3680,7 @@ export const PlaneView = memo(function PlaneView({
    *  (#4768): it is shown here, in its pane, and this window has come forward. */
   const showChatHere = useRef<(session: number) => void>(() => undefined);
   useEffect(() => {
-    const listening = listen<{ plane: string; chat: number }>(PRESS_HERE, (event) => {
+    const listening = listen<PressHere>(PRESS_HERE, (event) => {
       if (event.payload.plane === plane) showChatHere.current(event.payload.chat);
     }).catch(() => undefined);
     return () => void listening.then((stop) => stop?.()).catch(() => undefined);
@@ -4656,6 +4659,31 @@ export const PlaneView = memo(function PlaneView({
   const besides = useMemo(() => new Set(shownBeside(tabs)), [tabs]);
 
   /**
+   * **A press lands in this window** (#4757, #5289), by the rule. **A tab window keeps the strip
+   * it shows** (#5330): a chat in no pane here, filed on another strip, is opened by the project
+   * window instead, which comes forward, since this window holds only the tabs torn off into it.
+   * Where no window holds the project, it lands here after all.
+   */
+  const pressHere = useCallback(
+    (session: number, into?: PaneAt) => {
+      const land = () => landOn((tabs) => pressChat(tabs, pressedOf(session), pressing, into));
+      // Until the list of chats is read, nothing says which strip a chat is on.
+      const elsewhere =
+        tabWindow !== undefined &&
+        into === undefined &&
+        sidebar !== undefined &&
+        wouldLeaveStrip(now.current, session, pressing.filedIn);
+      if (!elsewhere) {
+        land();
+        return;
+      }
+      void pressInProjectWindow(plane, session).then((held) => {
+        if (!held) land();
+      });
+    },
+    [landOn, plane, pressedOf, pressing, sidebar, tabWindow],
+  );
+  /**
    * **Goes to a chat: the one way** (#1486, #4757). Every surface that shows a chat comes
    * through here: a row of the Chats list and of the explorer, the hand on a row above it, the
    * title bar's list, the palette, a needs-you Go, a name in a pane's breadcrumb.
@@ -4673,7 +4701,7 @@ export const PlaneView = memo(function PlaneView({
   const showChat = useCallback(
     (session: number, into?: PaneAt) => {
       stoppedFor(session, undefined);
-      const here = () => landOn((tabs) => pressChat(tabs, pressedOf(session), pressing, into));
+      const here = () => pressHere(session, into);
       // **A chat in a pane of another of the project's windows** (#4768), **or a chat in no
       // pane where another window's pane was used last** (#5108): that window comes forward
       // and shows it, and this window changes nothing. Asked only while the project has another
@@ -4689,7 +4717,7 @@ export const PlaneView = memo(function PlaneView({
         })
         .catch(here);
     },
-    [landOn, oneWindow, plane, pressedOf, pressing, stoppedFor],
+    [oneWindow, plane, pressHere, stoppedFor],
   );
   /** **A pane of this window was used** (#5108): pressed in, or typed in. Said to the core while
    *  the project has another window, so a press on a chat in no pane, in whichever window, goes
@@ -4713,10 +4741,14 @@ export const PlaneView = memo(function PlaneView({
       paneSaidUsed.current = false;
     });
   }, [oneWindow, plane]);
+  // **The pane it lands in counts as used** (#5330): a press a tab window handed over says so
+  // to the core, which counted the tab window's pane, so the next press comes straight here.
   useEffect(() => {
-    showChatHere.current = (session) =>
-      landOn((tabs) => pressChat(tabs, pressedOf(session), pressing));
-  }, [landOn, pressedOf, pressing]);
+    showChatHere.current = (session) => {
+      pressHere(session);
+      if (tabWindow === undefined) paneUsed();
+    };
+  }, [paneUsed, pressHere, tabWindow]);
   // **Go to it, on a chat's arrival card** (#4759): a press on a card said before it was drawn,
   // heard here, where the press as it stands now is. Every project this window holds hears it,
   // and a chat's number means something only in its own.
