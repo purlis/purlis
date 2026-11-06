@@ -28,10 +28,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - variant: baseline
-            extra: ""
+          # `baseline` (the build as release.yml makes it) ran in 42220570914: purlis_app_lib
+          # peaked at 14.5 GB in 553 s, and the whole build took 22 min.
           - variant: boxed
-            extra: --config profile.dev-release.package.tauri.debug-assertions=true
+            # `tauri` alone does not compile: it reads debug-only fields and methods of its
+            # sibling crates, so they take the same switch.
+            extra: >-
+              --config profile.dev-release.package.tauri.debug-assertions=true
+              --config profile.dev-release.package.tauri-utils.debug-assertions=true
+              --config profile.dev-release.package.tauri-runtime.debug-assertions=true
+              --config profile.dev-release.package.tauri-runtime-wry.debug-assertions=true
+              --config profile.dev-release.package.wry.debug-assertions=true
+              --config profile.dev-release.build-override.debug-assertions=true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
