@@ -454,6 +454,9 @@ describe("the stylesheet and the vocabulary agree", () => {
    *   dialog.
    * - `--tree-depth`: how deep a tree's row is, its level less one (`ui/tree/Tree.tsx`, #2911),
    *   which React Aria knows once it has built the collection. It differs from row to row.
+   * - `--list-rows-size`: how tall the whole of a list drawn in part is (`ui/list/virtualRows.tsx`,
+   *   #5501), its rows' count times their pitch as the virtualizer sums them. It differs from
+   *   list to list and with every row that comes or goes.
    *
    * Each is here rather than in `TOKENS` because neither is a colour and a theme has no
    * business with either, and neither is in `App.css` because the Rust that decides the number
@@ -467,6 +470,8 @@ describe("the stylesheet and the vocabulary agree", () => {
     "--window-controls",
     "--dialog-height",
     "--tree-depth",
+    // How tall the whole of a list drawn in part is (#5501).
+    "--list-rows-size",
     // How tall a terminal's line is, as `SessionPane` measures it, for the pane's three-line floor.
     "--terminal-row",
   ];
