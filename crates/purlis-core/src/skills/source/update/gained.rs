@@ -54,7 +54,7 @@ impl Gained {
             Self::WritesOutside => "a write outside the workspace",
             Self::Hidden => "characters no reader sees",
             Self::NotShown => "a file the review can't show",
-            Self::Unread => "a frontmatter purlis can't read",
+            Self::Unread => "a frontmatter that can't be read",
         }
     }
 }

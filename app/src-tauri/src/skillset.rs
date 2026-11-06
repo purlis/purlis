@@ -599,8 +599,8 @@ pub(crate) async fn skill_set_update_undo(
     let held = planes.held(&plane)?;
     let gone = || {
         format!(
-            "This update can't be undone now: purlis keeps the Undo of its last {UNDOS_HELD} \
-             updates until it quits. Update the skills back one at a time."
+            "This update can't be undone now: only the last {UNDOS_HELD} updates can be \
+             undone, and only until the app quits. Update the skills back one at a time."
         )
     };
     let taken = {

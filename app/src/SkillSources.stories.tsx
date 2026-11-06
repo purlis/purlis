@@ -189,7 +189,14 @@ const secondsAgo = (ago: number) => Math.floor(Date.now() / 1000) - ago;
 
 /** The faked core: two sources, one update waiting, one source not confirmed here; the one
  *  review of Install all… is more than one read where `tooMuch` says so (#4024). */
-function core({ tooMuch = false }: { tooMuch?: boolean } = {}) {
+function core({
+  tooMuch = false,
+  twoUpdates = false,
+}: {
+  tooMuch?: boolean;
+  /** A second update waiting from Superpowers, for Review updates… (#5354). */
+  twoUpdates?: boolean;
+} = {}) {
   mockIPC((cmd, args) => {
     switch (cmd) {
       case "skill_sources_checked":
@@ -224,7 +231,7 @@ function core({ tooMuch = false }: { tooMuch?: boolean } = {}) {
         ];
       case "skill_updates":
         return {
-          offers: [OFFER, updateOffer("writing-plans", SUPERPOWERS.remote)],
+          offers: twoUpdates ? [OFFER, updateOffer("writing-plans", SUPERPOWERS.remote)] : [OFFER],
           unasked: [],
           unconfirmed: [{ remote: PLATFORM.remote, skills: ["deploy-checks"] }],
         };
@@ -371,7 +378,7 @@ const meta = {
   component: Tab,
   args: { width: 1000 },
   beforeEach: ({ args }) => {
-    core();
+    core({ twoUpdates: args.at?.at === "set-update" });
     openViewAt(HISTORY, {
       page: "sources",
       scope: AT_THE_ROOT,

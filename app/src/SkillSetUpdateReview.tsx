@@ -45,7 +45,7 @@ const GAINED_SAID: Record<SkillGained, string> = {
   "writes-outside": "a write outside the workspace",
   hidden: "characters no reader sees",
   "not-shown": "a file the review can't show",
-  unread: "a frontmatter purlis can't read",
+  unread: "a frontmatter that can't be read",
 };
 
 /** "Adds a hook and network access." */
