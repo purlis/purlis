@@ -66,7 +66,9 @@ describe("a pane that shows nothing (#4755, #5292)", () => {
 
     expect(screen.getByText("Nothing in this pane yet")).toBeInTheDocument();
     expect(
-      screen.getByText("Drag a chat here from the sidebar, or start one. 3 chats are running here."),
+      screen.getByText(
+        "Drag a chat here from the sidebar, or start one. 3 chats are running here.",
+      ),
     ).toBeInTheDocument();
   });
 

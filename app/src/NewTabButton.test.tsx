@@ -275,7 +275,10 @@ describe("a long list's filter (#5292; story 80)", () => {
     await userEvent.keyboard("{ArrowDown}");
     await waitFor(() => expect(document.activeElement).toBe(filterField()));
 
-    await userEvent.keyboard("dispatch{ArrowDown}{Enter}");
+    await userEvent.keyboard("dispatch{ArrowDown}");
+    const aimed = within(list() as HTMLElement).getByRole("menuitem", { name: /Dispatches/ });
+    await waitFor(() => expect(filterField()).toHaveAttribute("aria-activedescendant", aimed.id));
+    await userEvent.keyboard("{Enter}");
 
     await waitFor(() => expect(list()).toBeNull());
     expect(pressed.map((offer) => offer.id)).toEqual(["dispatches.show"]);

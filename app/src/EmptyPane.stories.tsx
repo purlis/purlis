@@ -58,7 +58,9 @@ export const Alone: Story = {
   play: async ({ canvas, args, userEvent }) => {
     await expect(canvas.getByText("Nothing in this pane yet")).toBeVisible();
     await expect(
-      canvas.getByText("Drag a chat here from the sidebar, or start one. 3 chats are running here."),
+      canvas.getByText(
+        "Drag a chat here from the sidebar, or start one. 3 chats are running here.",
+      ),
     ).toBeVisible();
     await userEvent.tab();
     await untilFocused(() => canvas.getByRole("button", { name: "New chat" }), "Tab to New chat");

@@ -553,11 +553,9 @@ export const AFilter: Story = {
       ).toEqual(["design", "devops"]),
     );
     await userEvent.keyboard("{ArrowDown}");
-    await waitFor(() =>
-      expect(within(openMenu()).getByRole("menuitem", { name: "design" })).toHaveAttribute(
-        "data-focused",
-      ),
-    );
+    // The arrows aim from the field, which names the row it aims at.
+    const design = within(openMenu()).getByRole("menuitem", { name: "design" });
+    await waitFor(() => expect(filter).toHaveAttribute("aria-activedescendant", design.id));
     expectFocusInSight();
   },
 };
