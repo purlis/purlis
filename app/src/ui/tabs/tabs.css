@@ -312,13 +312,16 @@
 }
 
 /* **Room for the ×, given up first** (#5341): a tab with room to spare keeps the end of its
-   name clear of its × and its fade, where a tab is as wide as its words (Purlis's sizing). The
-   room is a spacer after the name that gives way a thousand times sooner than the name, so a tab
-   at its floor gives it all up and the × takes none of the name's room there. The same at rest
+   name clear of its ×, where a tab is as wide as its words (Purlis's sizing), and only the fade
+   runs over its last letters. The room is a spacer after the name that gives way a thousand
+   times sooner than the name, so a tab at its floor gives it all up and the × takes none of the
+   name's room there. The same at rest
    and in every state, so nothing moves when the × comes. */
 [data-scope="tabs"][data-part="tab"] > [role="tab"]::after {
   content: "";
-  flex: 0 1000 calc(24rem / 14 + var(--space-3) + var(--space-6) - var(--space-4) - var(--space-1));
+  /* What of the tab the × covers past its padding, less the gap before this: the room the ×
+     took when it was laid out, so a tab is no wider than it was. */
+  flex: 0 1000 calc(24rem / 14 + var(--space-3) - var(--space-4) - var(--space-1) - var(--space-2));
   min-inline-size: 0;
 }
 
