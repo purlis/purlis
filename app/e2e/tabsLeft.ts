@@ -86,12 +86,17 @@ export function stripsToJudge(began: Strip, ended: Strip, visited: readonly Stri
   if (samePlace(began, ended)) judged.push(began);
   else
     judged.push(
-      visited.find((one) => samePlace(one, ended) && !samePlace(one, began)) ?? {
+      visited.find((one) => samePlace(one, ended)) ?? {
         ...ended,
         tabs: [],
       },
     );
-  for (const one of visited) if (!samePlace(one, began) && !has(one)) judged.push(one);
+  // Each visited strip once, matched exactly: `samePlace` lets a project of `""` stand for any,
+  // which would drop another project's strip seen behind a hidden rail.
+  const exact = (one: Strip, other: Strip) =>
+    one.project === other.project && one.workspace === other.workspace;
+  for (const one of visited)
+    if (!samePlace(one, began) && !judged.some((seen) => exact(seen, one))) judged.push(one);
   if (!has(began)) judged.push(began);
   return judged;
 }
@@ -130,7 +135,8 @@ export async function stripInFront(): Promise<Strip> {
 }
 
 /**
- * Brings strip `to`'s project and workspace to the front, as a person does. A project no longer
+ * Brings strip `to`'s project and workspace to the front, by the rail's tab and the title bar's
+ * ⌄. A project no longer
  * on the rail, or a workspace no longer listed, fails at once: a file that closed a project or
  * removed a workspace took its strip with it, and there is nothing there to judge.
  */
@@ -150,15 +156,14 @@ async function goTo(to: Strip): Promise<void> {
     });
   }
   const name = to.workspace === "" ? "Plane root" : to.workspace;
-  const listed = await browser
-    .waitUntil(async () => (await workspacesListed()).some((one) => one.name === name), {
-      timeout: 3_000,
-      interval: 500,
-    })
-    .then(
-      () => true,
-      () => false,
-    );
+  // Read twice, a second apart, for a list still drawing its rows; each read is awaited whole,
+  // so no read of the ⌄ is left running behind the next step.
+  const isListed = async () => (await workspacesListed()).some((one) => one.name === name);
+  let listed = await isListed();
+  if (!listed) {
+    await browser.pause(1_000);
+    listed = await isListed();
+  }
   if (!listed) throw new Error(`${name} is no longer listed`);
   await goToWorkspace(name);
 }
@@ -196,19 +201,21 @@ const WATCHED = "__purlisStripsVisited";
 /**
  * **Writes down, in the page, every strip that comes to the front from now on** (#5269), with
  * the tabs it holds as it comes, by {@link arrivedAt}'s rule, from a fresh list. A strip is
- * written down once two readings 150 ms apart agree on its place and its tabs: a switch draws the
+ * written down once its place and its tabs have read the same for 500 ms: a switch draws the
  * title bar's chip and the strip in turn, and a reading between them would pair one strip's
- * place with another's tabs. Read again after any change to the page, at most once in 150 ms, so
- * a terminal that writes all the time never starves it. A page loaded again loses it, and the
+ * place with another's tabs. The cost: a tab opened within that moment of arriving counts as the
+ * strip's own. Read again after any change to the page, at most once in 150 ms, so a terminal
+ * that writes all the time never starves it. A page loaded again loses it, and the
  * guard then reads only the strips it began and ended on.
  */
 async function watchTheStrips(): Promise<void> {
   await browser.execute(
     (chip: string, tabs: string, key: string) => {
-      type Seen = { project: string; workspace: string; tabs: string[] };
-      const page = window as unknown as Record<string, { seen: Seen[]; stop: () => void }>;
+      const page = window as unknown as Record<string, { settled: Strip[]; stop: () => void }>;
       page[key]?.stop();
-      const read = (): Seen => ({
+      // The same reading as `stripInFront` and `reach.ts`'s `tabNames`, here because a function
+      // the page runs takes nothing from this module: keep the three in step.
+      const read = (): Strip => ({
         project:
           document
             .querySelector('[data-strip="Projects"] [role="tab"][aria-selected="true"]')
@@ -218,24 +225,27 @@ async function watchTheStrips(): Promise<void> {
           (tab) => tab.querySelector(".tab-name")?.textContent ?? "",
         ),
       });
-      const same = (one: Seen, other: Seen) =>
+      const same = (one: Strip, other: Strip) =>
         one.project === other.project &&
         one.workspace === other.workspace &&
         one.tabs.join("\u0000") === other.tabs.join("\u0000");
-      const seen: Seen[] = [read()];
-      let last = seen[0];
+      // Each reading that held still, once each time it changed; `arrivedAt` keeps the first of
+      // each place.
+      const settled: Strip[] = [read()];
+      let last = settled[0];
+      let since = performance.now();
       let timer: ReturnType<typeof setTimeout> | undefined;
       const settle = () => {
         timer = undefined;
         const now = read();
-        if (same(now, last)) {
-          const known = seen.some(
-            (one) => one.project === now.project && one.workspace === now.workspace,
-          );
-          if (!known) seen.push(now);
+        if (!same(now, last)) {
+          last = now;
+          since = performance.now();
+        }
+        if (performance.now() - since >= 500) {
+          if (!same(now, settled[settled.length - 1])) settled.push(now);
           return;
         }
-        last = now;
         timer = setTimeout(settle, 150);
       };
       const changed = () => {
@@ -249,7 +259,7 @@ async function watchTheStrips(): Promise<void> {
         characterData: true,
       });
       page[key] = {
-        seen,
+        settled,
         stop: () => {
           watching.disconnect();
           if (timer !== undefined) clearTimeout(timer);
@@ -264,18 +274,18 @@ async function watchTheStrips(): Promise<void> {
 
 /** The strips the page's watch saw, and stops it; none when the page lost it. */
 async function theStripsWatched(): Promise<Strip[]> {
-  return browser.execute((key: string) => {
-    type Seen = { project: string; workspace: string; tabs: string[] };
+  const settled = await browser.execute((key: string) => {
     const page = window as unknown as Record<
       string,
-      { seen: Seen[]; stop: () => void } | undefined
+      { settled: Strip[]; stop: () => void } | undefined
     >;
     const watched = page[key];
     if (watched === undefined) return [];
     watched.stop();
     page[key] = undefined;
-    return watched.seen;
+    return watched.settled;
   }, WATCHED);
+  return settled.reduce<Strip[]>(arrivedAt, []);
 }
 
 let before: Strip | null = null;
@@ -304,6 +314,8 @@ export const tabHooks = {
   async afterAll(this: Mocha.Context): Promise<void> {
     if (before === null) return;
     const had = before;
+    // Read once: a later file whose `beforeAll` fails before reading is judged against nothing.
+    before = null;
     const spec = specOf(this.test?.parent);
     const faults: string[] = [];
 

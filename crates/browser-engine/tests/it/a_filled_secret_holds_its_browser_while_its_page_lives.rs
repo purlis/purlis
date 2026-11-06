@@ -222,6 +222,7 @@ fn a_closed_page_ends_the_hold() {
     let told = Arc::new(Told::default());
     filled(&browser, &told);
     call(&browser, Call::SwitchPage { page: opener });
+    assert_eq!(told.said(), ["held"], "going to the opener keeps the hold");
 
     click(&browser, "button \"Close the dashboard\"");
 
