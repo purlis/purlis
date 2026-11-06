@@ -198,8 +198,9 @@ pub fn drop_membership(root: &Path, ws: &str, repo: &str, say: Sink) -> u8 {
     let at = crate::repofolder::folder(root, ws, repo).unwrap_or_else(|_| dir.join(repo));
     if let Some(what) = something_at(&at) {
         return fail(format!(
-            "workspaces/{ws}/{repo} is {what}, not a clone, so '{repo}' was left in workspace \
-             '{ws}'. Move or remove it first."
+            "{} is {what}, not a clone, so '{repo}' was left in workspace '{ws}'. Move or \
+             remove it first.",
+            at.strip_prefix(root).unwrap_or(&at).display()
         ));
     }
     let workspace = match crate::workspaces::Plane::open(root).workspace(ws) {

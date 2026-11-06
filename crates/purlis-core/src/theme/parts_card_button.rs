@@ -22,11 +22,11 @@ const WORDS: &[Prop] = &[Prop::Text, Prop::FontSize, Prop::FontWeight];
 pub(super) const CARD_BUTTON: Family = Family {
     name: "card-button",
     description: "A card pressed whole: a door on the welcome, a repo to get from a list.",
-    since: super::NEXT,
+    since: 13,
     parts: &[
         Part {
             name: "root",
-            since: super::NEXT,
+            since: 13,
             description: "The card's box, the size of the button in it: its fill, words, edge, \
                           corners and the room inside it.",
             properties: &[
@@ -40,20 +40,20 @@ pub(super) const CARD_BUTTON: Family = Family {
         },
         Part {
             name: "mark",
-            since: super::NEXT,
+            since: 13,
             description: "A door's mark before its title, in the accent: the only colour on a \
                           page of doors.",
             properties: &[Prop::Text],
         },
         Part {
             name: "title",
-            since: super::NEXT,
+            since: 13,
             description: "Its name, the first thing on it and the button's own words.",
             properties: WORDS,
         },
         Part {
             name: "line",
-            since: super::NEXT,
+            since: 13,
             description: "What it does, under its title or after it: its description.",
             properties: &[Prop::Text, Prop::FontSize],
         },
@@ -61,13 +61,13 @@ pub(super) const CARD_BUTTON: Family = Family {
     variants: &[
         Variant {
             name: "door",
-            since: super::NEXT,
+            since: 13,
             description: "A door: its mark, title and line in a column, on the control's ground.",
             consent: None,
         },
         Variant {
             name: "pick",
-            since: super::NEXT,
+            since: 13,
             description: "A pick from a list: one line on the surface under it, its words in the \
                           accent.",
             consent: None,

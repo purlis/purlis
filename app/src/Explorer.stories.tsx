@@ -7,10 +7,15 @@
  * view's one title, the workspace, and the view is one scroll whose top (the filter, the scope,
  * the Search link) is held at the top. One repo is its tree, open at once, its branch beside the
  * title; several are a closed row each, with how many files it changed and its branch.
+ *
+ * **Since #5375 the tree is the workspace's own folder**: its own files, what purlis keeps marked
+ * *managed*, dotfiles only with Show hidden, and each repo's row where the repo stands on disk:
+ * in `repos/`, or at the top for a clone made before structure version 6.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, waitFor } from "storybook/test";
+import { expectFocusInSight, untilFocused } from "./stories.testkit";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { Explorer, type ExplorerPart } from "./Explorer";
 import { cloneMissingId, forgetFailedCloneId, type Offer } from "./actions";
@@ -44,11 +49,42 @@ const UNDER: Record<string, FolderEntry[]> = {
   "app/src": [entry("ui", true), entry("App.tsx"), entry("App.css"), entry("main.tsx")],
 };
 
+/** The workspace's own folder (#5375): what purlis keeps, a dotfile and the person's notes.
+ *  `theme-lab` is a clone made before structure version 6, at the top; the rest are in
+ *  `repos/`. */
+const OWN: Record<string, FolderEntry[]> = {
+  "": [
+    { ...entry(".claude", true), managed: true, hidden: true },
+    { ...entry("memory", true), managed: true },
+    entry("notes", true),
+    { ...entry("sessions", true), managed: true },
+    { ...entry(".purlis-structure"), managed: true, hidden: true },
+    entry("deploy.sh"),
+    { ...entry("workspace.md"), managed: true },
+  ],
+  notes: [entry("plan.md"), entry("research.md")],
+};
+const AT_THE_TOP = new Set(["theme-lab"]);
+
 /** The core, as the view asks it: folders, what `purlis` changed, and files found by name. */
 function core() {
   mockIPC(
     (cmd, args) => {
       const a = (args ?? {}) as Record<string, unknown>;
+      if (cmd === "workspace_tree") {
+        const folder = String(a.folder ?? "");
+        return {
+          entries: OWN[folder] ?? [],
+          more: 0,
+          repos:
+            folder === ""
+              ? ["k8s-operator", "purlis", "theme-lab"].map((name) => ({
+                  name,
+                  inside_repos: !AT_THE_TOP.has(name),
+                }))
+              : [],
+        };
+      }
       if (cmd === "branch_tree") {
         const folder = String(a.folder ?? "");
         return { entries: folder === "" ? TOP : (UNDER[folder] ?? []), more: 0 };
@@ -220,7 +256,9 @@ export const OneRepo: Story = {
     await canvas.findByRole("row", { name: /^README\.md/ });
     await expect(canvasElement.querySelector(".side-head")).toHaveTextContent("purlis · main");
     await expect(canvas.queryByRole("button", { name: /^Files/ })).toBeNull();
-    await expect(canvas.getByText(/One repo, so the filter covers all of it/)).toBeVisible();
+    await expect(
+      canvas.getByText(/One repo, so the filter covers it and the workspace's files/),
+    ).toBeVisible();
     await settled();
   },
 };
@@ -229,11 +267,54 @@ export const OneRepo: Story = {
 export const SeveralRepos: Story = {
   args: { repos: ["purlis", "theme-lab", "k8s-operator"] },
   play: async ({ canvas, userEvent }) => {
+    // `purlis` is in `repos/`, closed with several repos (#5375); `theme-lab` an old clone at
+    // the top.
+    await canvas.findByRole("row", { name: /^theme-lab/ });
+    await userEvent.click(canvas.getByRole("row", { name: /^repos/ }));
     const purlis = await canvas.findByRole("row", { name: /^purlis/ });
     await waitFor(() => expect(purlis).toHaveAccessibleName(/3 changes/));
-    await expect(canvas.getByRole("radio", { name: "Selected: purlis" })).toBeChecked();
+    // *Selected* is the workspace's own files (#5375), and opening a repo's row leaves it so
+    // (ADR 0038, amended 2026-11-05).
+    await expect(canvas.getByRole("radio", { name: "Selected: smart-ide" })).toBeChecked();
     await userEvent.click(purlis);
+    await expect(canvas.getByRole("radio", { name: "Selected: smart-ide" })).toBeChecked();
     await canvas.findByRole("row", { name: /^Cargo\.toml/ });
+    (document.activeElement as HTMLElement | null)?.blur();
+    await settled();
+  },
+};
+
+/**
+ * **The workspace's own folder** (#5375): its files, what purlis keeps marked *managed*, its
+ * dotfiles with Show hidden on, `repos/` opened on the repos in it and an old clone at the top.
+ * Walked with the keyboard: into the tree, down its rows, and `repos/` opened by →.
+ */
+export const WorkspaceFolder: Story = {
+  args: { repos: ["purlis", "theme-lab", "k8s-operator"] },
+  play: async ({ canvas, userEvent }) => {
+    const tree = await canvas.findByRole("treegrid", { name: "Files of smart-ide" });
+    await canvas.findByRole("row", { name: /^memory managed/ });
+    await userEvent.click(canvas.getByRole("button", { name: "Show hidden" }));
+    await canvas.findByRole("row", { name: /^\.claude managed/ });
+    // Into the tree, onto its first row, and down.
+    const first = () => tree.querySelector<HTMLElement>('[role="row"]');
+    first()?.focus();
+    await untilFocused(first, "the tree's first row");
+    expectFocusInSight();
+    await userEvent.keyboard("{ArrowDown}");
+    expectFocusInSight();
+    // `repos/` opened from the keyboard, on the repos in it.
+    const repos = await canvas.findByRole("row", { name: /^repos/ });
+    repos.focus();
+    await untilFocused(() => repos, "repos/");
+    await userEvent.keyboard("{ArrowRight}");
+    await canvas.findByRole("row", { name: /^purlis/ });
+    await userEvent.keyboard("{ArrowDown}");
+    expectFocusInSight();
+    await expect(canvas.getByRole("row", { name: /^theme-lab/ })).toHaveAttribute(
+      "aria-level",
+      "1",
+    );
     (document.activeElement as HTMLElement | null)?.blur();
     await settled();
   },
@@ -243,7 +324,7 @@ export const SeveralRepos: Story = {
 export const FilterAllRepos: Story = {
   args: { repos: ["purlis", "theme-lab", "k8s-operator"] },
   play: async ({ canvas, userEvent }) => {
-    await canvas.findByRole("row", { name: /^purlis/ });
+    await canvas.findByRole("row", { name: /^theme-lab/ });
     await userEvent.click(canvas.getByRole("radio", { name: "All repos" }));
     await userEvent.type(canvas.getByRole("searchbox", { name: "Filter files" }), "tit");
     const found = await canvas.findByRole("grid", { name: "Files found" });

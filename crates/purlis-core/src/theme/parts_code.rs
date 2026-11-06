@@ -11,23 +11,23 @@ use super::{Family, Look, Part, Prop, State};
 pub(super) const CODE: Family = Family {
     name: "code",
     description: "Text to read and copy: a command or YAML.",
-    since: super::NEXT,
+    since: 13,
     parts: &[
         Part {
             name: "root",
-            since: super::NEXT,
+            since: 13,
             description: "The box: its ground, its edge and its corners.",
             properties: &[Prop::Fill, Prop::BorderColour, Prop::CornerRadius],
         },
         Part {
             name: "label",
-            since: super::NEXT,
+            since: 13,
             description: "What the text is.",
             properties: &[Prop::Text, Prop::FontSize, Prop::FontWeight],
         },
         Part {
             name: "body",
-            since: super::NEXT,
+            since: 13,
             description: "The text.",
             properties: &[Prop::Text, Prop::FontSize, Prop::Padding],
         },

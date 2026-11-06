@@ -126,6 +126,7 @@ function StewardsPane({
         topOf: (task) => (task > 4 ? 4 : undefined),
         openTask: () => {},
         openSettings: () => {},
+        answerInInbox: () => undefined,
       }}
     >
       <QuestionsHere.Provider value={{ asks: now, with_asking_chat: [] }}>
@@ -190,6 +191,14 @@ type Story = StoryObj<typeof meta>;
 
 const box = (canvas: HTMLElement) => within(canvas).getByRole("textbox", { name: "Your answer" });
 
+/** Opens the question on screen, a row until then (#5215), and waits for its box to take words. */
+const opened = async (canvas: HTMLElement) => {
+  const toggle = await within(canvas).findByRole("button", { name: "Show the whole question" });
+  toggle.click();
+  await waitFor(() => expect(box(canvas)).toBeEnabled());
+  toggle.blur();
+};
+
 /**
  * **The pause before the next quiz** (story 33): the person answers, and for about a second the
  * quiz's place says where the answer went, at the quiz's height, so a second click lands on
@@ -200,7 +209,7 @@ export const PausesBeforeTheNext: Story = {
   args: { asks: [FIRST, SECOND, THIRD], after: [SECOND, THIRD], pauseMs: 600_000 },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await waitFor(() => expect(box(canvasElement)).toBeEnabled());
+    await opened(canvasElement);
     box(canvasElement).focus();
     await untilFocused(() => box(canvasElement), "in the answer box");
     await userEvent.keyboard("Per project{Enter}");
@@ -223,7 +232,7 @@ export const AnAgentAnsweredFirst: Story = {
   args: { asks: [FIRST], after: [] },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await waitFor(() => expect(box(canvasElement)).toBeEnabled());
+    await opened(canvasElement);
     theAgentAnswers();
     const line = await canvas.findByText(
       'steward 4 told developer 7: "Per project. The code is what customers are billed by."',
@@ -253,7 +262,7 @@ export const SayOtherwise: Story = {
   args: { asks: [FIRST], after: [] },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await waitFor(() => expect(box(canvasElement)).toBeEnabled());
+    await opened(canvasElement);
     theAgentAnswers();
     const say = await canvas.findByRole("button", { name: "Say otherwise…" });
     say.focus();
@@ -278,7 +287,7 @@ export const WhatYouTypedIsKept: Story = {
   args: { asks: [FIRST], after: [] },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await waitFor(() => expect(box(canvasElement)).toBeEnabled());
+    await opened(canvasElement);
     box(canvasElement).focus();
     await untilFocused(() => box(canvasElement), "in the answer box");
     await userEvent.keyboard("Say when it closed, and keep it to one line");
@@ -307,7 +316,7 @@ export const YourWordReplacesTheChats: Story = {
   args: { asks: [FIRST], after: [] },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await waitFor(() => expect(box(canvasElement)).toBeEnabled());
+    await opened(canvasElement);
     theAgentAnswers();
     await userEvent.click(await canvas.findByRole("button", { name: "Say otherwise…" }));
     await userEvent.type(
@@ -381,7 +390,7 @@ export const StripAndQuizStacked: Story = {
     await expect(head.height).toBeGreaterThan(0);
     await expect(head.bottom).toBeLessThanOrEqual(band.top + 0.5);
     await expect(band.bottom).toBeLessThanOrEqual(top.bottom + 0.5);
-    await waitFor(() => expect(box(canvasElement)).toBeEnabled());
+    await opened(canvasElement);
     const send = canvas.getByRole("button", { name: "Send" });
     send.focus();
     await untilFocused(() => send, "on Send");

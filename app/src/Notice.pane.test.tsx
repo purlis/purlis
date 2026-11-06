@@ -229,6 +229,7 @@ describe("a pane's row of Notices", () => {
             bell={{
               minimised,
               minimise: () => PANE_NOTICES.set("minimised"),
+              expand: () => PANE_NOTICES.set("expanded"),
               onHolds: setHolds,
               focus: () => undefined,
             }}
@@ -240,7 +241,7 @@ describe("a pane's row of Notices", () => {
     }
     const holds = () => JSON.parse(screen.getByTestId("holds").textContent || "null") as BandHolds;
 
-    it("folds the notes and stands the asks as full cards, minimised by default", async () => {
+    it("folds to one line that says how many wait and on what, minimised by default (#5215)", async () => {
       render(
         <Band>
           {ask("dispatch-grant:1", "dispatch")}
@@ -249,11 +250,37 @@ describe("a pane's row of Notices", () => {
           {ask("proposed-change:1", "change")}
         </Band>,
       );
-      await waitFor(() => expect(seen()).toEqual(["dispatch", "change"]));
+      await waitFor(() => expect(holds()).toEqual({ notes: 2, trouble: 1, asks: 2 }));
+      expect(seen()).toEqual([]);
+      expect(
+        screen.getByRole("button", { name: /^2 waiting · dispatch, change\s*·\s*Show$/ }),
+      ).toBeTruthy();
       // Folded, not gone: every note is still in the band, with its ways out.
       expect(document.querySelector('[data-cause="a:1"]')).not.toBeNull();
       expect(holds()).toEqual({ notes: 2, trouble: 1, asks: 2 });
       expect(screen.queryByRole("button", { name: /Dismiss all/ })).toBeNull();
+    });
+
+    it("shows a closed ask again only once it has gone and been asked again (#5215)", async () => {
+      PANE_NOTICES.keep("expanded");
+      let setAsked: (asked: boolean) => void = () => undefined;
+      function Asked() {
+        const [asked, set] = useState(true);
+        setAsked = set;
+        return <Band>{asked && ask("dispatch-grant:1", "dispatch")}</Band>;
+      }
+      render(<Asked />);
+      await waitFor(() => expect(seen()).toEqual(["dispatch"]));
+
+      await userEvent.click(screen.getByRole("button", { name: "Close" }));
+      await waitFor(() => expect(seen()).toEqual([]));
+
+      act(() => setAsked(false));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      act(() => setAsked(true));
+      await waitFor(() => expect(seen()).toEqual(["dispatch"]));
     });
 
     it("draws no band while minimised it holds only notes", async () => {
@@ -263,7 +290,7 @@ describe("a pane's row of Notices", () => {
       expect(screen.queryByRole("region")).toBeNull();
     });
 
-    it("shows every one expanded, under a head row that says them and Minimise", async () => {
+    it("shows every one expanded, under a head that says them and folds them", async () => {
       PANE_NOTICES.keep("expanded");
       render(
         <Band>
@@ -273,14 +300,16 @@ describe("a pane's row of Notices", () => {
         </Band>,
       );
       await waitFor(() => expect(seen()).toEqual(["dispatch", "first", "second"]));
-      const band = screen.getByRole("region", { name: "Pane notices" });
-      expect(within(band).getByText("3 notices, 1 waiting on you")).toBeTruthy();
+      const band = screen.getByRole("region", {
+        name: "Pane notices: 1 waiting on you · 2 notices",
+      });
+      expect(within(band).getByText("1 waiting on you · 2 notices")).toBeTruthy();
       // The same count minimised and expanded.
       expect(holds()).toEqual({ notes: 2, trouble: 1, asks: 1 });
 
-      await userEvent.click(within(band).getByRole("button", { name: "Minimise" }));
+      await userEvent.click(within(band).getByRole("button", { name: "Fold the band" }));
       expect(PANE_NOTICES.value()).toBe("minimised");
-      await waitFor(() => expect(seen()).toEqual(["dispatch"]));
+      await waitFor(() => expect(seen()).toEqual([]));
     });
 
     it("dismisses every note with Dismiss all, counting what it clears, and leaves the asks", async () => {
@@ -334,12 +363,12 @@ describe("a pane's row of Notices", () => {
         );
       }
       render(<Arriving />);
-      const answer = await screen.findByRole("button", { name: "Answer dispatch" });
-      answer.focus();
+      const line = await screen.findByRole("button", { name: /·\s*Show$/ });
+      line.focus();
       act(() => raise());
       await waitFor(() => expect(holds()).toEqual({ notes: 1, trouble: 0, asks: 1 }));
-      expect(seen()).toEqual(["dispatch"]);
-      expect(answer).toHaveFocus();
+      expect(seen()).toEqual([]);
+      expect(line).toHaveFocus();
     });
 
     it("folds a note the keyboard is on only once the keyboard leaves it", async () => {
@@ -353,10 +382,12 @@ describe("a pane's row of Notices", () => {
       const answer = await screen.findByRole("button", { name: "Answer first" });
       answer.focus();
       act(() => PANE_NOTICES.set("minimised"));
-      await waitFor(() => expect(screen.queryByRole("button", { name: "Minimise" })).toBeNull());
-      expect(seen()).toEqual(["dispatch", "first"]);
-      screen.getByRole("button", { name: "Answer dispatch" }).focus();
-      await waitFor(() => expect(seen()).toEqual(["dispatch"]));
+      await waitFor(() =>
+        expect(screen.queryByRole("button", { name: "Fold the band" })).toBeNull(),
+      );
+      expect(seen()).toEqual(["first"]);
+      screen.getByRole("button", { name: /·\s*Show$/ }).focus();
+      await waitFor(() => expect(seen()).toEqual([]));
     });
   });
 });

@@ -419,7 +419,15 @@ function startTerminal(plane: PlaneId, session: number, where: HTMLElement): Liv
    * (the pane's observer hears that).
    */
   const fit = () => {
-    if (pane.element?.isConnected) fitting.fit();
+    if (!pane.element?.isConnected) return;
+    fitting.fit();
+    // **How tall its line is, for the pane's three-line floor** (#5215): the band over it gives
+    // way before the terminal goes under three of them (`paneFrame.css`).
+    const lines = pane.element.querySelector(".xterm-screen")?.clientHeight ?? 0;
+    if (lines > 0 && pane.rows > 0)
+      pane.element
+        .closest<HTMLElement>(".pane-body")
+        ?.style.setProperty("--terminal-row", `${lines / pane.rows}px`);
   };
   const search = new SearchAddon();
   pane.loadAddon(search);

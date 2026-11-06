@@ -112,6 +112,46 @@ fn a_planes_names_are_read_from_its_directories_and_default_is_not_one() {
     );
 }
 
+/// ADR 0114: a clone in a workspace's `repos/` is the reporter's as one at its root is, so its
+/// name is masked too, and `repos` itself is no repo's name.
+#[test]
+fn a_clone_in_repos_is_named_as_a_repo_and_repos_is_not() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let plane = dir.path();
+    std::fs::write(plane.join("charter.toml"), "schema = 1\n").expect("manifest");
+    for d in [
+        "workspaces/acme/repos/billing-api/.git",
+        "workspaces/acme/ledger/.git",
+    ] {
+        std::fs::create_dir_all(plane.join(d)).expect("mkdir");
+    }
+    let mut names = names_in(plane);
+    names.sort();
+    assert_eq!(
+        names,
+        vec![
+            ("acme".to_string(), "[workspace]"),
+            ("billing-api".to_string(), "[repo]"),
+            ("ledger".to_string(), "[repo]"),
+        ]
+    );
+}
+
+/// A clone whose folder name purlis takes for no repo's is still the reporter's: a name too
+/// many is masked, a name too few is told.
+#[test]
+fn a_clone_whose_name_is_no_repos_is_still_masked() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let plane = dir.path();
+    std::fs::write(plane.join("charter.toml"), "schema = 1\n").expect("manifest");
+    std::fs::create_dir_all(plane.join("workspaces/acme/Billing Api/.git")).expect("mkdir");
+    let names = names_in(plane);
+    assert!(
+        names.contains(&("Billing Api".to_string(), "[repo]")),
+        "{names:?}"
+    );
+}
+
 #[test]
 fn a_described_report_is_titled_by_its_first_line_without_a_heading_marker() {
     let d = Draft::described(

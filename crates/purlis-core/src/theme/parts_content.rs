@@ -35,11 +35,11 @@ pub(super) const CARD: Family = Family {
     name: "card",
     description: "A box one step off the surface it stands on: an ask, a question, a group of \
                   rows.",
-    since: super::NEXT,
+    since: 13,
     parts: &[
         Part {
             name: "root",
-            since: super::NEXT,
+            since: 13,
             description: "The card: its fill, words, edge, corners, lift and the room inside it.",
             properties: &[
                 Prop::Fill,
@@ -54,25 +54,25 @@ pub(super) const CARD: Family = Family {
         },
         Part {
             name: "title",
-            since: super::NEXT,
+            since: 13,
             description: "Its first line, where it has one: whose it is, what it asks.",
             properties: WORDS,
         },
         Part {
             name: "facts-label",
-            since: super::NEXT,
+            since: 13,
             description: "A fact's label, in the column at the start of a list of facts (#3673).",
             properties: WORDS,
         },
         Part {
             name: "facts-value",
-            since: super::NEXT,
+            since: 13,
             description: "A fact's value, beside its label: words, a badge, a link or a fix.",
             properties: WORDS,
         },
         Part {
             name: "tile",
-            since: super::NEXT,
+            since: 13,
             description: "A totals tile, in a row of them: its edge, corners and the room inside \
                           it. It has no ground of its own: its words stand on the surface under it.",
             properties: &[
@@ -85,7 +85,7 @@ pub(super) const CARD: Family = Family {
         },
         Part {
             name: "tile-value",
-            since: super::NEXT,
+            since: 13,
             description: "A tile's value, a size larger than its label, in figures of one width.",
             properties: WORDS,
         },
@@ -93,13 +93,13 @@ pub(super) const CARD: Family = Family {
     variants: &[
         Variant {
             name: "raised",
-            since: super::NEXT,
+            since: 13,
             description: "A card: a question, a report, a group of rows.",
             consent: None,
         },
         Variant {
             name: "ask",
-            since: super::NEXT,
+            since: 13,
             description: "A card that asks the person something, edged in the waiting colour \
                           in every theme.",
             consent: Some(Consent::Asks),
@@ -148,11 +148,11 @@ pub(super) const NOTICE: Family = Family {
     name: "notice",
     description: "A standing line about something true now, with its ways out: in a pane's row, \
                   in the Inbox's list, on a page.",
-    since: super::NEXT,
+    since: 13,
     parts: &[
         Part {
             name: "root",
-            since: super::NEXT,
+            since: 13,
             description: "The Notice's box: its fill, words, edge colour, corners and the room \
                           inside it. Its edge's width is the window's: no theme takes it away.",
             properties: &[
@@ -166,26 +166,26 @@ pub(super) const NOTICE: Family = Family {
         },
         Part {
             name: "message",
-            since: super::NEXT,
+            since: 13,
             description: "What it says.",
             properties: &[Prop::Text, Prop::FontSize],
         },
         Part {
             name: "whose",
-            since: super::NEXT,
+            since: 13,
             description: "Whose it is, before what it says, for a chat that is not on screen.",
             properties: &[Prop::Text, Prop::FontWeight],
         },
         Part {
             name: "mark",
-            since: super::NEXT,
+            since: 13,
             description: "A card's mark before its title (#3478): the shape that says what kind of \
                           notice it is, in its colour.",
             properties: &[Prop::Text],
         },
         Part {
             name: "title",
-            since: super::NEXT,
+            since: 13,
             description: "A card's title (#3478), over what it says: its colour, size and weight.",
             properties: &[Prop::Text, Prop::FontSize, Prop::FontWeight],
         },
@@ -205,19 +205,19 @@ pub(super) const NOTICE: Family = Family {
     variants: &[
         Variant {
             name: "news",
-            since: super::NEXT,
+            since: 13,
             description: "Nothing is wrong: the person is being told. Its waiting edge stays.",
             consent: Some(Consent::Asks),
         },
         Variant {
             name: "trouble",
-            since: super::NEXT,
+            since: 13,
             description: "Something went wrong. Its waiting edge stays.",
             consent: Some(Consent::Asks),
         },
         Variant {
             name: "attention",
-            since: super::NEXT,
+            since: 13,
             description: "Nothing went wrong, but the person must decide: a change to review, a \
                           draft out of date (#3678). Its waiting edge stays.",
             consent: Some(Consent::Asks),
@@ -310,35 +310,35 @@ const MARK: &[Prop] = &[
 pub(super) const BADGE: Family = Family {
     name: "badge",
     description: "A word or two beside what it is about: where a value comes from, a state.",
-    since: super::NEXT,
+    since: 13,
     parts: &[Part {
         name: "root",
-        since: super::NEXT,
+        since: 13,
         description: "The badge: its fill, words, edge, corners and size.",
         properties: MARK,
     }],
     variants: &[
         Variant {
             name: "neutral",
-            since: super::NEXT,
+            since: 13,
             description: "A word that says what something is.",
             consent: None,
         },
         Variant {
             name: "accent",
-            since: super::NEXT,
+            since: 13,
             description: "Where a value comes from: the level it is set at.",
             consent: None,
         },
         Variant {
             name: "waiting",
-            since: super::NEXT,
+            since: 13,
             description: "What waits on the person: \"Waiting for you\", \"deprecated\".",
             consent: None,
         },
         Variant {
             name: "ok",
-            since: super::NEXT,
+            since: 13,
             description: "What is settled: \"Confirmed\".",
             consent: None,
         },
@@ -380,17 +380,17 @@ pub(super) fn badge_look(variant: &str, _states: &[State]) -> Look {
 pub(super) const COUNT: Family = Family {
     name: "count",
     description: "A number on a pill beside what it counts: a view's items, what waits.",
-    since: super::NEXT,
+    since: 13,
     parts: &[
         Part {
             name: "root",
-            since: super::NEXT,
+            since: 13,
             description: "The count: its fill, number, edge, corners and size.",
             properties: MARK,
         },
         Part {
             name: "group",
-            since: super::NEXT,
+            since: 13,
             description: "Counts drawn as one pill: its corners.",
             properties: &[Prop::CornerRadius],
         },
@@ -398,25 +398,25 @@ pub(super) const COUNT: Family = Family {
     variants: &[
         Variant {
             name: "neutral",
-            since: super::NEXT,
+            since: 13,
             description: "How many there are.",
             consent: None,
         },
         Variant {
             name: "accent",
-            since: super::NEXT,
+            since: 13,
             description: "How many are new.",
             consent: None,
         },
         Variant {
             name: "waiting",
-            since: super::NEXT,
+            since: 13,
             description: "How many wait on the person, in the waiting colour.",
             consent: None,
         },
         Variant {
             name: "hot",
-            since: super::NEXT,
+            since: 13,
             description: "How many need the person now, in the needs-you colours.",
             consent: None,
         },
@@ -465,10 +465,10 @@ pub(super) const SEPARATOR: Family = Family {
     name: "separator",
     description: "The line between two groups inside a surface. Its width is the theme's \
                   separator.width, 0 for none.",
-    since: super::NEXT,
+    since: 13,
     parts: &[Part {
         name: "root",
-        since: super::NEXT,
+        since: 13,
         description: "The line: its colour.",
         properties: &[Prop::Fill],
     }],

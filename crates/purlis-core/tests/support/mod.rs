@@ -13,6 +13,7 @@
 
 pub mod folders;
 pub mod forge_cli;
+pub mod shipped;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

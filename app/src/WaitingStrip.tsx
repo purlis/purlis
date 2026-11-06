@@ -36,7 +36,8 @@ export function WaitingStrip({
   waiting: readonly Shown[] | undefined;
 }) {
   const wait = waitOf(waiting, session);
-  if (wait === undefined) return null;
+  // A permission or a prompt in its terminal is a row of the band (`TerminalPromptNotice`, #5215).
+  if (wait === undefined || wait.kind !== "prose") return null;
   // A new wait, or a new last message, starts from the last message, folded.
   return <Strip key={`${wait.ask}\u0000${wait.says}`} wait={wait} />;
 }
@@ -62,13 +63,7 @@ function Strip({ wait }: { wait: Wait }) {
     setAt(to);
   };
   const label =
-    wait.kind !== "prose"
-      ? wait.kind === "ask" || wait.kind === "prompt"
-        ? `${STRIP.waitingOn} · ${STRIP.answerBelow}`
-        : STRIP.waitingOn
-      : at === null
-        ? STRIP.lastMessage
-        : STRIP.earlierAt(earlier.length - at, earlier.length);
+    at === null ? STRIP.lastMessage : STRIP.earlierAt(earlier.length - at, earlier.length);
   const long = cutOnOneLine(says);
   return (
     <div

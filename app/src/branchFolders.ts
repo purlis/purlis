@@ -9,9 +9,10 @@ import {
   type FilesUnwatched,
   type FolderEntry,
   type PlaneId,
+  type WorkspaceRepo,
 } from "./bindings";
 import { listen } from "./here";
-import { isPlaneRoot } from "./pieceViews";
+import { isPlaneRoot, isWorkspaceFiles } from "./pieceViews";
 import { useProjectShown } from "./projectShown";
 
 /**
@@ -61,6 +62,8 @@ export type BranchFolderRef = {
 export type FolderRead = {
   entries?: FolderEntry[];
   more?: number;
+  /** At the top of a workspace's own files (#5375), its repos, each where it is on disk. */
+  repos?: WorkspaceRepo[];
   trouble?: string;
   unwatched?: boolean;
   refused?: boolean;
@@ -110,15 +113,22 @@ export function useBranchFolders(
           return { workspace, reads };
         });
       };
-      const asked = isPlaneRoot({ workspace, repo: ref.repo, piece: ref.piece })
+      const place = { workspace, repo: ref.repo, piece: ref.piece };
+      // A workspace's own folder (#5375) is read by its own command, which says its repos too.
+      const asked: Promise<
+        | { status: "ok"; data: { entries: FolderEntry[]; more: number; repos?: WorkspaceRepo[] } }
+        | { status: "error"; error: string }
+      > = isPlaneRoot(place)
         ? commands.planeTree(plane, ref.folder)
-        : commands.branchTree(plane, workspace, ref.repo, ref.piece, ref.folder);
+        : isWorkspaceFiles(place)
+          ? commands.workspaceTree(plane, workspace, ref.folder)
+          : commands.branchTree(plane, workspace, ref.repo, ref.piece, ref.folder);
       void asked
         .then((said) =>
           told(
             said.status === "error"
               ? { trouble: said.error }
-              : { entries: said.data.entries, more: said.data.more },
+              : { entries: said.data.entries, more: said.data.more, repos: said.data.repos },
           ),
         )
         .catch((err: unknown) => told({ trouble: String(err) }));
@@ -264,6 +274,10 @@ let watchingAny = false;
 /** The newest `files_watch` this window has sent, answered or not. */
 let newestWatch: Promise<unknown> = Promise.resolve();
 
+/** The `files_watch` to be sent once the trees changing now have each told their share, or
+ *  `undefined` when none waits. */
+let toSend: Promise<unknown> | undefined;
+
 /**
  * Tells the core what this window watches now that `owner`'s open folders are `folders`, and
  * settles `true` once that is watched, or `false` when {@link WATCH_WAIT_MS} passed first.
@@ -279,14 +293,23 @@ let newestWatch: Promise<unknown> = Promise.resolve();
 function watchFor(owner: symbol, folders: BranchFolder[]): Promise<boolean> {
   if (folders.length === 0) watchedBy.delete(owner);
   else watchedBy.set(owner, folders);
-  const union = new Map<string, BranchFolder>();
-  for (const one of [...watchedBy.values()].flat()) {
-    union.set(`${one.plane}\0${one.workspace}\0${folderKey(one)}`, one);
+  // **Sent once for every tree that changed together** (#5375): a project switch hides one
+  // project's trees and shows another's in one commit, and the core keeps one set a window, so
+  // their union goes once, as the commit's effects end, rather than once a tree.
+  if (toSend === undefined) {
+    toSend = Promise.resolve().then(() => {
+      toSend = undefined;
+      const union = new Map<string, BranchFolder>();
+      for (const one of [...watchedBy.values()].flat()) {
+        union.set(`${one.plane}\0${one.workspace}\0${folderKey(one)}`, one);
+      }
+      const all = [...union.values()].slice(0, WATCHED);
+      if (all.length === 0 && !watchingAny) return undefined;
+      watchingAny = all.length > 0;
+      return commands.filesWatch(all).catch(() => undefined);
+    });
+    newestWatch = toSend;
   }
-  const all = [...union.values()].slice(0, WATCHED);
-  if (all.length === 0 && !watchingAny) return newest();
-  watchingAny = all.length > 0;
-  newestWatch = commands.filesWatch(all).catch(() => undefined);
   return newest();
 }
 

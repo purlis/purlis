@@ -3390,6 +3390,9 @@ fn commands() -> Builder<tauri::Wry> {
         // What `skill-grade` carries, and the event's name (SK-16, #2779).
         .typ::<skillgrade::SkillGradeStep>()
         .constant("SKILL_GRADE", skillgrade::EVENT)
+        // What `skill-grades` carries, and its name: Select's Grade of several skills (#5356).
+        .typ::<skillgrade::batch::SkillGradesStep>()
+        .constant("SKILL_GRADES", skillgrade::batch::EVENT)
         // What `router-grade` carries, and the event's name (SK-15e, #3233).
         .typ::<routergrade::RouterGradeStep>()
         .constant("ROUTER_GRADE", routergrade::EVENT)

@@ -9,7 +9,7 @@ members = ["crates/purlis-core", "crates/purlis-cli", "crates/fake-harness", "cr
 default-members = ["crates/purlis-core", "crates/purlis-cli", "crates/fake-harness", "crates/persona-statistics", "crates/extension-probe", "crates/studio-probe", "crates/check-probe", "crates/release-manifest", "crates/changelog", "crates/stand-in", "crates/session-protocol", "crates/same-user", "crates/terminal", "crates/browser-engine", "crates/host", "crates/linux-sandbox", "crates/skills", "crates/unicode"]
 
 [workspace.package]
-version = "0.5.0"
+version = "0.5.1"
 edition = "2024"
 rust-version = "1.98"
 license = "Apache-2.0"
@@ -100,17 +100,23 @@ debug = "none"
 # (a paste's `sendEvent:`) unwinds to NSApplication, which reports it and goes on; under
 # `abort` it took the app down (tao#1354, ADR 0092 amended 2026-11-03). A Rust panic still ends
 # the process: each shipped binary calls `purlis_core::panicend::fatal` first in its `main`.
+#
+# Thin LTO across sixteen codegen units, the link every dev channel build already ships with:
+# one fat pass over one unit no longer fit the hosted runners (the macOS job past its 90 minutes,
+# the Linux runner shut down mid-link), every night from 2026-11-02 (#4833, ADR 0092 amended
+# 2026-11-06).
 [profile.release]
-codegen-units = 1
-lto = true
+codegen-units = 16
+lto = "thin"
 opt-level = 3
 panic = "unwind"
 strip = true
 
-# What a dev channel build is compiled with (ADR 0092, #1429). `release` with a lighter link:
-# thin LTO across sixteen codegen units instead of one fat pass over one unit. `opt-level`,
-# `panic` and `strip` are `release`'s, by inheritance, and nothing else may be set here. A stable
-# build, a build started by hand and the nightly profile guard all use `release` itself.
+# What a dev channel build is compiled with (ADR 0092, #1429). It inherits `release`, whose link
+# is now the same thin LTO across sixteen codegen units (ADR 0092 amended 2026-11-06), so the two
+# differ only in the name a build reports. `opt-level`, `panic` and `strip` are `release`'s, by
+# inheritance, and nothing else may be set here. A stable build, a build started by hand and the
+# nightly profile guard all use `release` itself.
 [profile.dev-release]
 inherits = "release"
 lto = "thin"

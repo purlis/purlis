@@ -42,7 +42,7 @@ fn a_pressed_card_comes_in_the_next_release_s_manifest() {
         .find(|one| one["name"] == "card-button")
         .expect("a pressed card is in the manifest")
         .clone();
-    assert_eq!(family["since"], parts::NEXT);
+    assert_eq!(family["since"], 13);
     let names = |list: &str| -> Vec<String> {
         family[list]
             .as_array()
@@ -54,7 +54,7 @@ fn a_pressed_card_comes_in_the_next_release_s_manifest() {
     assert_eq!(names("parts"), ["root", "mark", "title", "line"]);
     assert_eq!(names("variants"), ["door", "pick"]);
     for part in family["parts"].as_array().unwrap() {
-        assert_eq!(part["since"], parts::NEXT, "{part}");
+        assert_eq!(part["since"], 13, "{part}");
     }
     // At rest, under the pointer, pressed, with the keyboard's focus and unavailable; never
     // chosen.
