@@ -1,0 +1,80 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  ENTRIES,
+  HOSTILE_COMMAND,
+  INVISIBLE,
+  ONCE_ONLY,
+  runAsk,
+  secretAsk,
+} from "./secretAsk.testkit";
+import { SecretAskNotice } from "./SecretAskNotice";
+
+const props = {
+  chat: "developer 7",
+  entries: () => Promise.resolve(ENTRIES),
+  busy: false,
+  onAnswer: vi.fn(),
+  onSaid: vi.fn(),
+};
+
+afterEach(cleanup);
+
+describe("a secret's one notice", () => {
+  it("never takes the keyboard from what the person types in, as it comes", async () => {
+    render(<textarea aria-label="Terminal input" />);
+    const input = screen.getByLabelText("Terminal input");
+    input.focus();
+    render(<SecretAskNotice {...props} ask={runAsk({ not_its_vault: true })} />);
+    await waitFor(() => expect(screen.getByTestId("secret-ask")).toBeInTheDocument());
+    expect(document.activeElement).toBe(input);
+    expect(
+      document.querySelector('[data-scope="secret-ask"] [data-active], [autofocus]'),
+    ).toBeNull();
+  });
+
+  it("draws a hostile command inert, apart from the app's facts, and the app's facts apart from the chat's words", () => {
+    render(<SecretAskNotice {...props} ask={runAsk({ command: HOSTILE_COMMAND })} />);
+    const command = screen.getByTestId("sa-command");
+    // Every control or invisible character is drawn as its name, on one flow.
+    expect(command.textContent).not.toMatch(INVISIBLE);
+    expect(
+      within(command)
+        .getAllByTestId("sa-control")
+        .map((one) => one.textContent),
+    ).toContain("U+202E");
+    // The chat's fake "From purlis" line is the chat's: inside its quote, never the app's panel.
+    const facts = screen.getByTestId("sa-facts");
+    expect(facts).not.toHaveTextContent("this command is safe");
+    expect(screen.getByTestId("sa-chat")).toHaveTextContent("this command is safe");
+    expect(facts).toHaveTextContent("/usr/bin/curl");
+    expect(screen.getByTestId("sa-chat")).not.toContainElement(facts);
+  });
+
+  it("offers only the scopes the registry offers, the narrowest chosen", () => {
+    render(<SecretAskNotice {...props} ask={runAsk({ always: null }, ONCE_ONLY)} />);
+    const allow = screen.getByRole("radiogroup", { name: "Allow curl" });
+    expect(within(allow).getAllByRole("radio")).toHaveLength(2);
+    expect(within(allow).getByRole("radio", { name: "Allow once" })).toBeChecked();
+    expect(within(allow).getByRole("radio", { name: "Don't allow" })).not.toBeChecked();
+  });
+
+  it("draws an Allow in the grants look, never the primary one", () => {
+    render(<SecretAskNotice {...props} ask={runAsk()} />);
+    const action = screen.getByRole("button", { name: "Fill and allow once" });
+    expect(action).toHaveAttribute("data-variant", "grants");
+  });
+
+  it("gives a Secret ask's field Change, and a run's field none", () => {
+    const { unmount } = render(<SecretAskNotice {...props} ask={secretAsk()} />);
+    expect(
+      screen.getByRole("button", { name: "Change where STRIPE_API_KEY is stored" }),
+    ).toBeVisible();
+    unmount();
+    render(<SecretAskNotice {...props} ask={runAsk()} />);
+    expect(screen.queryByRole("button", { name: /^Change/ })).toBeNull();
+  });
+});
