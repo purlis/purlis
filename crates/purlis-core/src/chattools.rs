@@ -138,7 +138,7 @@ pub const SECRET_ASK: &str = "secret_ask";
 /// purlis-secrets skill, word for word.
 pub const SECRET_ASK_SAID: &str = "Never ask the person for a password, token or key in this \
      conversation, and never have them paste one. Prefer simply running the command that needs \
-     it with `purlis secret exec`: purlis asks the person in its window for whatever the run \
+     it with `purlis secret exec`: the person is asked in purlis's window for whatever the run \
      lacks, a key or an Allow for its program, in one notice, and the command goes on once they \
      answer. To ask ahead, raise a Secret ask for any credential you lack, declared or not, with \
      the `secret_ask` tool or `purlis secret ask <KEY> --purpose \"<what for>\"`, naming the \
@@ -1149,15 +1149,16 @@ pub static TOOLS: [Tool; 29] = [
                       an API key, a token, a password. Never ask the person for a password, \
                       token or key in this conversation, and never have them paste one. Prefer \
                       simply running the command that needs it with `purlis secret exec`: \
-                      purlis asks the person in its window for whatever the run lacks, a key or \
-                      an Allow for its program, in one notice, and the command goes on once \
-                      they answer. To ask ahead, raise a Secret ask for any credential you \
-                      lack, declared or not, with the `secret_ask` tool or `purlis secret ask \
+                      the person is asked in purlis's window for whatever the run lacks, a key \
+                      or an Allow for its program, in one notice, and the command goes on \
+                      once they answer. To ask ahead, raise a Secret ask for any credential \
+                      you lack, declared or not, with the `secret_ask` tool or `purlis secret ask \
                       <KEY> --purpose \"<what for>\"`, naming the program you will run with \
                       `--program` where you know it. You hear only filled, with the vault and \
                       key to use and whether the program was allowed, or declined. Naming a \
                       program purlis has reviewed (curl) lets the person allow it for this chat \
-                      on the same notice; any other is asked about as it runs. The vault is your persona's unless \
+                      on the same notice; any other is asked about as it runs. The vault is your \
+                      persona's unless \
                       you name one. A key the vault holds already answers filled at once. \
                       Pending means the person has not answered yet: you are told when they \
                       do. A value that doesn't work: ask again with `replace` saying why, and \

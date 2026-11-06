@@ -27,8 +27,8 @@ purlis secret list <vault>        # the KEYS in one vault. No values.
 ## A credential you lack: run the command, or raise a Secret ask
 
 Never ask the person for a password, token or key in this conversation, and never have them
-paste one. Prefer simply running the command that needs it with `purlis secret exec`: purlis
-asks the person in its window for whatever the run lacks, a key or an Allow for its program, in
+paste one. Prefer simply running the command that needs it with `purlis secret exec`: the
+person is asked in purlis's window for whatever the run lacks, a key or an Allow for its program, in
 one notice, and the command goes on once they answer. To ask ahead, raise a Secret ask for any
 credential you lack, declared or not, with the `secret_ask` tool or
 `purlis secret ask <KEY> --purpose "<what for>"`, naming the program you will run with

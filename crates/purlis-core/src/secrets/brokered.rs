@@ -3511,6 +3511,10 @@ pub(crate) fn serve_recorded(
                                 &crate::sandbox::policy::Locks::of(&asker.root),
                             )
                         }) {
+                            // Refused after its Allow, its Allow once goes unused (#5242).
+                            if let Some(bound) = &grant_bound {
+                                missing.asks.drop_once(bound);
+                            }
                             return refuse(&mut *writer, 1, locked);
                         }
                         // The person may have filled it with an entry they keep, as a link: one
@@ -3518,6 +3522,9 @@ pub(crate) fn serve_recorded(
                         if under_a_grant
                             && let Some(why) = no_program_is_handed(&ctx, &wanted.vault, &[&key])
                         {
+                            if let Some(bound) = &grant_bound {
+                                missing.asks.drop_once(bound);
+                            }
                             return refuse(&mut *writer, 1, why);
                         }
                         filled.push(key);

@@ -1488,7 +1488,7 @@ impl Said {
             Self::Filled { vault, key } => (
                 format!(
                     "filled {}: run your command with `purlis secret exec --vault {vault}` handing \
-                     {key}; if its program is no tool of your persona's, purlis asks the person to \
+                     {key}; if its program is no tool of your persona's, the person is asked to \
                      allow it as it runs",
                     vault_and_key(vault, key)
                 ),
