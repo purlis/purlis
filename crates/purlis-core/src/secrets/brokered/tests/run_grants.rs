@@ -1686,3 +1686,92 @@ fn a_key_a_vault_its_persona_may_not_use_lacks_under_a_grant_is_asked_with_the_v
         "the chat is not told which keys it lacks: {frames:?}"
     );
 }
+
+#[test]
+fn an_allow_once_a_lock_refuses_after_its_retrys_fill_is_dropped() {
+    let project = project();
+    let root = project.path();
+    let asks = Asks::new(root);
+    let want = || {
+        let mut want = printenv(root, &["X"]);
+        want.env = vec!["X=NOT_A".into()];
+        want
+    };
+    // Allow once given after its run stopped waiting: kept for the retry.
+    run_with(&the_chat(root), want(), &asks, Duration::ZERO);
+    let open = asks.open_runs().remove(0);
+    asks.fill_run(
+        &Ctx::new(root, Env::of(&[])),
+        open.id,
+        vec![("NOT_A".into(), "first".to_owned().into())],
+        window(),
+    )
+    .unwrap();
+    asks.answer_run(open.id, RunAnswer::Once, window()).unwrap();
+    assert_eq!(asks.given_runs().len(), 1);
+    // The key goes again, so the retry asks for it alone; policy locks while it is filled.
+    std::fs::write(
+        root.join("team.json"),
+        serde_json::json!({"TOKEN": TOKEN}).to_string(),
+    )
+    .unwrap();
+    let frames = std::thread::scope(|scope| {
+        let run = scope.spawn(|| {
+            crate::sandbox::tools::SEARCH_HERE
+                .with(|dirs| *dirs.borrow_mut() = Some(vec!["/usr/bin".into(), "/bin".into()]));
+            let wire = Wire::default();
+            let (reader, _keep) = held_open();
+            serve_asking(
+                &the_chat(root),
+                want(),
+                reader,
+                Box::new(wire.clone()),
+                Wrap::Unwrapped,
+                Missing {
+                    asks: &asks,
+                    within: Duration::from_secs(60),
+                    moved: &|| {
+                        if !asks.open().is_empty() {
+                            crate::sandbox::policy::set_for_this_test(
+                                crate::sandbox::policy::Locks::parse(
+                                    r#"{"sandbox": {"run-grants": false}}"#,
+                                    Path::new("/etc/purlis/policy.json"),
+                                ),
+                            );
+                        }
+                    },
+                    run_gate: None,
+                },
+            );
+            let bytes = wire.0.lock().unwrap().clone();
+            String::from_utf8(bytes)
+                .unwrap()
+                .lines()
+                .map(|line| serde_json::from_str(line).expect("every line is a frame"))
+                .collect::<Vec<Frame>>()
+        });
+        let id = loop {
+            if let Some(one) = asks.open().first() {
+                break one.id;
+            }
+            if run.is_finished() {
+                panic!(
+                    "the run ended without asking for its key: {:?}",
+                    run.join().unwrap()
+                );
+            }
+            std::thread::yield_now();
+        };
+        asks.answer(
+            &Ctx::new(root, Env::of(&[])),
+            id,
+            crate::secrets::ask::Answer::Fill("second".to_owned().into()),
+            window(),
+        )
+        .unwrap();
+        run.join().unwrap()
+    });
+    assert!(refusal(&frames).0.contains("olicy"), "{frames:?}");
+    // The person's ruling (#5242): refused after its Allow, the Allow once goes unused.
+    assert!(asks.given_runs().is_empty(), "{:?}", asks.given_runs());
+}
