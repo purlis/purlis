@@ -27,8 +27,8 @@ const drawn = new Map<string, () => void>();
 /** The chat whose terminal takes the keyboard when it is drawn. */
 let owed: string | undefined;
 
-/** How many drags hold the keyboard where it is: one at a time, but each lets go of its own. */
-let holds = 0;
+/** Whether a drag holds the keyboard where it is. There is one drag at a time, and a debt from before it is dropped as it ends: picking something up is the person moving on. */
+let held = false;
 
 /** A session number names a chat only inside its project. */
 const chatKey = (plane: string, session: number) => `${plane}\n${session}`;
@@ -64,7 +64,7 @@ export { inADialog } from "./keys/contexts";
 export function paneDrawn(plane: string, session: number, take: () => void): () => void {
   const key = chatKey(plane, session);
   drawn.set(key, take);
-  if (owed === key && holds === 0) {
+  if (owed === key && !held) {
     // The terminal's own focus is a focus like any other: it must not read as the person
     // having moved on, in the turn a pane is drawn twice.
     document.removeEventListener("focusin", movedOn);
@@ -86,7 +86,7 @@ export function paneDrawn(plane: string, session: number, take: () => void): () 
 export function giveKeyboardTo(plane: string, session: number): void {
   const key = chatKey(plane, session);
   const take = drawn.get(key);
-  if (take === undefined || holds > 0) {
+  if (take === undefined || held) {
     owe(key);
     return;
   }
@@ -99,19 +99,16 @@ export function giveKeyboardTo(plane: string, session: number): void {
  * being drawn or by being asked for. What was asked for meanwhile is owed nothing after.
  */
 export function holdKeyboard(): () => void {
-  holds += 1;
-  let held = true;
+  held = true;
   return () => {
-    if (!held) return;
     held = false;
-    holds -= 1;
-    if (holds === 0) forgive();
+    forgive();
   };
 }
 
 /** Nothing is owed, nothing is drawn and nothing holds the keyboard: what a test starts from. */
 export function forgetKeyboard(): void {
   drawn.clear();
-  holds = 0;
+  held = false;
   forgive();
 }

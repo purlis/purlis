@@ -5,8 +5,6 @@ import { useCallback, useRef, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { FitAddon } from "@xterm/addon-fit";
-import type { Terminal } from "@xterm/xterm";
 import { SessionPane } from "./SessionPane";
 import { letGoOfKeptTerminals } from "./keptTerminals";
 import { forgetKeyboard, giveKeyboardTo } from "./paneKeyboard";
@@ -14,14 +12,14 @@ import { dropPane, GRIP, HOLD_MS, STRIP, TAB, usePaneDrag } from "./paneDrag";
 import { PANES_ROOM } from "./paneHeld";
 import type { DropContext } from "./paneDrop";
 import { boxesOf } from "./panePreview";
+import { at, boxOf, layOut, layOutAsABrowserDoes } from "./paneTerminals.testkit";
 import { contentsOf, insertPane, noTabs, openTab, selectTab, type Tabs } from "./tabs";
 
 /**
  * **Resting on a tab during a drag** (#5523), with the real pane and the real xterm: a tab brought
  * forward mounts its panes and their terminals before the drop. The window here holds a tab
  * forward as `PlaneView` does (#5294): drawn in front, told to nobody until the drag is over.
- * jsdom lays nothing out, so each box is what the layout gives it or the pixels a drag writes on
- * it, and a resize observer hears only an element whose box changed ({@link layOut}).
+ * jsdom lays nothing out: `paneTerminals.testkit.ts` lays the window out as a browser would.
  */
 
 vi.mock("./renderer", async (real) => ({
@@ -124,49 +122,6 @@ function Window({ first, room }: { first: Tabs; room: () => typeof ROOM }) {
   );
 }
 
-const CELL = 10;
-
-type Box = { left: number; top: number; width: number; height: number };
-
-/** The box an element is drawn at: the pixels written on it, else its frame's, else its own. */
-function boxOf(el: Element): Box {
-  const own = el.getAttribute("data-box");
-  const written = el as HTMLElement;
-  const pixels = (value: string) => (value === "" ? undefined : parseFloat(value));
-  const from =
-    own !== null
-      ? (() => {
-          const [left, top, width, height] = own.split(",").map(Number);
-          return { left, top, width, height };
-        })()
-      : el.parentElement !== null
-        ? boxOf(el.parentElement)
-        : { left: 0, top: 0, width: 0, height: 0 };
-  return {
-    ...from,
-    width: pixels(written.style?.width ?? "") ?? from.width,
-    height: pixels(written.style?.height ?? "") ?? from.height,
-  };
-}
-
-/** Every observer the panes made, and what each heard last. */
-const watched: { owner: object; heard: () => void; on: Element; size: string }[] = [];
-const sizeOf = (el: Element) => {
-  const { width, height } = boxOf(el);
-  return `${width}×${height}`;
-};
-
-/** What a browser does after a frame: an observer hears an element whose box changed. */
-function layOut() {
-  act(() => {
-    for (const one of watched) {
-      if (!one.on.isConnected || sizeOf(one.on) === one.size) continue;
-      one.size = sizeOf(one.on);
-      one.heard();
-    }
-  });
-}
-
 /** What the core was asked, in order, from when the window was drawn and fitted. */
 const asked: { cmd: string; args: Record<string, unknown> }[] = [];
 const resized = () =>
@@ -178,28 +133,9 @@ const aboutTheKeyboard = () =>
   asked.filter(({ cmd }) => ["send_input", "send_input_bytes", "pane_used"].includes(cmd));
 
 beforeEach(() => {
-  watched.length = 0;
   asked.length = 0;
   vi.useFakeTimers();
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      constructor(private readonly heard: () => void) {}
-      observe(on: Element) {
-        // As a browser does, it is heard once when it starts being watched.
-        watched.push({ owner: this, heard: () => this.heard(), on, size: "" });
-      }
-      unobserve() {}
-      disconnect() {
-        for (let at = watched.length - 1; at >= 0; at--)
-          if (watched[at].owner === this) watched.splice(at, 1);
-      }
-    },
-  );
-  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
-    const { left: x, top: y, width, height } = boxOf(this);
-    return DOMRect.fromRect({ x, y, width, height });
-  });
+  layOutAsABrowserDoes();
   // The strip is found by the point; the panes never are: their zones stay put.
   document.elementFromPoint = (x: number, y: number) => {
     const holding = [
@@ -210,17 +146,6 @@ beforeEach(() => {
     });
     return holding[holding.length - 1] ?? null;
   };
-  // As the addon reads its parent: whole cells of what the holder has.
-  vi.spyOn(FitAddon.prototype, "fit").mockImplementation(function (this: FitAddon) {
-    const terminal = (this as unknown as { _terminal: Terminal })._terminal;
-    const holder = terminal.element?.parentElement;
-    if (!holder) return;
-    const { width, height } = boxOf(holder);
-    const columns = Math.floor(width / CELL);
-    const rows = Math.floor(height / CELL);
-    if (columns > 0 && rows > 0 && (terminal.cols !== columns || terminal.rows !== rows))
-      terminal.resize(columns, rows);
-  });
   mockIPC((cmd, args) => {
     asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
     if (cmd === "resize_session") return null;
@@ -237,7 +162,6 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-const at = (x: number, y: number) => ({ clientX: x, clientY: y, button: 0, isPrimary: true });
 const head = (session: number) => screen.getByText(`head ${session}`);
 /** The chat whose terminal has the keyboard, if any does. */
 const typingInto = () => {
