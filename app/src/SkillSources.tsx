@@ -2005,9 +2005,9 @@ function InstallOver({
         </p>
       )}
       {over.length > 0 && (
-        <Button size="sm" onPress={room.onMakeRoom}>
-          Make room…
-        </Button>
+        <ButtonRow size="sm">
+          <Button onPress={room.onMakeRoom}>Make room…</Button>
+        </ButtonRow>
       )}
     </section>
   );
