@@ -8,6 +8,7 @@ import { join } from "node:path";
 import {
   PanePreviewArriving,
   PanePreviewHeld,
+  PanePreviewOpening,
   PanePreviewRefused,
   PanePreviewSize,
   PanePreviewWords,
@@ -23,7 +24,7 @@ const partOf = (container: HTMLElement, part: string) =>
 describe("the pane preview", () => {
   // jsdom draws no stylesheet. A part left out of this rule sits in the flow at the layer's root,
   // and moves what is under it: the strip's line did, until a picture showed it wasn't drawn.
-  it.each(["arriving", "line", "size", "refused", "held", "words"])(
+  it.each(["arriving", "line", "opening", "size", "refused", "held", "words"])(
     "keeps its %s out of the flow and out of the pointer's way",
     (part) => {
       const css = readFileSync(join(__dirname, "pane-preview.css"), "utf8");
@@ -47,6 +48,17 @@ describe("the pane preview", () => {
     expect(size).toHaveTextContent("80 × 24");
     expect(size.style.left).toBe("310px");
     expect(size.style.top).toBe("20px");
+  });
+
+  it("marks a tab about to come forward along the box it is given, read by nobody", () => {
+    const { container } = render(<PanePreviewOpening box={{ ...BOX, height: 2 }} />);
+    const opening = partOf(container, "opening");
+    expect([opening.style.left, opening.style.width, opening.style.height]).toEqual([
+      "10px",
+      "300px",
+      "2px",
+    ]);
+    expect(opening).toHaveAttribute("aria-hidden", "true");
   });
 
   it("marks a refused place's pane at its box", () => {

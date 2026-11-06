@@ -467,7 +467,10 @@ jobs:
             extra_bundles: appimage
             extra_required: true
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    # The cold macOS build takes 65 to 68 minutes with the thin-LTO profile (ADR 0092), and the
+    # first attempt of 0.5.0's ran past 90 and was cancelled (run 42122707604). 120 leaves room
+    # and keeps the slowest chain of this run's jobs under the 240 its test holds.
+    timeout-minutes: 120
     env:
       VERSION: ${{ needs.plan.outputs.version }}
       PUBLISH: ${{ needs.plan.outputs.publish }}
@@ -492,6 +495,21 @@ jobs:
         if: runner.os == 'Linux'
         timeout-minutes: 9
         run: tools/linux-packages.sh install --tauri
+
+      # The `dev-release` build, and `release` since it links the same way (ADR 0092), needs about
+      # 26 GB at its peak, and an `ubuntu-24.04` runner has 16 of memory and 3 of swap. Out of
+      # both, the runner itself goes: "The runner has received a shutdown signal", in every dev
+      # build on main from 2026-11-05T21:36Z, while it compiled `purlis-app`. `ci.yml` measured
+      # it and gives its outcome bars' build the same swap file (#5277, #5379). The file is gone
+      # with the runner.
+      - name: More swap for the build
+        if: runner.os == 'Linux'
+        timeout-minutes: 2
+        run: |
+          sudo fallocate -l 32G /swapfile-build
+          sudo chmod 600 /swapfile-build
+          sudo mkswap /swapfile-build
+          sudo swapon /swapfile-build
 
       - uses: ./.github/actions/rust-toolchain
       # **No cache, restored or saved.** This job holds the signing keys, so it builds from its

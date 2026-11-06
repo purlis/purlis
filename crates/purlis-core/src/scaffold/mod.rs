@@ -1042,7 +1042,7 @@ fn merge_rules(run: &mut Run, root: &Path) {
 
 /// The files a plane only ever grows by whole lines, merged by git's `union` driver so two
 /// machines appending to them never conflict (`docs/plane-format.md`, `.gitattributes`).
-const MERGE_RULES: [&str; 7] = [
+const MERGE_RULES: [&str; 10] = [
     "personas/_dispatch/*.jsonl merge=union",
     "personas/_skills/*.jsonl merge=union",
     "workspaces/*/pieces/*.jsonl merge=union",
@@ -1050,15 +1050,65 @@ const MERGE_RULES: [&str; 7] = [
     "workspaces/*/work/*.jsonl merge=union",
     "personas/*/memory/MEMORY.md merge=union",
     "workspaces/*/memory/MEMORY.md merge=union",
+    "workspaces/*/todos/MEMORY.md merge=union",
+    "workspaces/*/sessions/index.md merge=union",
+    "sessions/index.md merge=union",
 ];
 
 /// The managed block, exactly as the plane format records it, under the markers the plane at
 /// `plane` writes ([`names::Name::writes_for`]): charter's until it is migrated (ADR 0051).
-fn merge_rules_block(plane: &Path) -> String {
-    let mut out = vec![names::MERGE_RULES_BEGIN.writes_for(plane)];
-    out.extend(MERGE_RULES);
-    out.push(names::MERGE_RULES_END.writes_for(plane));
+/// `kept` are rules a block already held that this build does not write, as a newer build's
+/// are: they stay, below this build's, so a machine on an older build never takes back a rule
+/// a newer one added (#5338).
+fn merge_rules_block(plane: &Path, kept: &[String]) -> String {
+    let mut out: Vec<String> = vec![names::MERGE_RULES_BEGIN.writes_for(plane).to_owned()];
+    out.extend(MERGE_RULES.iter().map(|rule| (*rule).to_owned()));
+    out.extend(
+        kept.iter()
+            .filter(|rule| !rule.trim().is_empty() && !MERGE_RULES.contains(&rule.as_str()))
+            .cloned(),
+    );
+    out.push(names::MERGE_RULES_END.writes_for(plane).to_owned());
     out.join("\n")
+}
+
+/// The rules inside `text`'s managed block, if it has one, each without its line end.
+pub(crate) fn rules_in(text: &str) -> Vec<String> {
+    let lines: Vec<&str> = text.split_inclusive('\n').collect();
+    managed_block(&lines).map_or_else(Vec::new, |(start, end)| {
+        lines[start + 1..end]
+            .iter()
+            .map(|line| line.trim_end_matches(['\n', '\r']).to_owned())
+            .collect()
+    })
+}
+
+/// `.gitattributes`'s text with its managed block, where it has one, as the one line
+/// `stand_in`: what a merge of a person's lines sees, so the block keeps its place.
+pub(crate) fn rules_set_aside(text: &str, stand_in: &str) -> String {
+    let lines: Vec<&str> = text.split_inclusive('\n').collect();
+    match managed_block(&lines) {
+        Some((start, end)) => format!(
+            "{}{stand_in}\n{}",
+            lines[..start].concat(),
+            lines[end + 1..].concat()
+        ),
+        None => text.to_owned(),
+    }
+}
+
+/// [`rules_set_aside`] undone: the `stand_in` line as this build's block, keeping `kept`.
+pub(crate) fn rules_put_back(text: &str, stand_in: &str, plane: &Path, kept: &[String]) -> String {
+    let block = merge_rules_block(plane, kept);
+    text.split_inclusive('\n')
+        .map(|line| {
+            if line.trim_end_matches(['\n', '\r']) == stand_in {
+                format!("{block}\n")
+            } else {
+                line.to_owned()
+            }
+        })
+        .collect()
 }
 
 /// Write the managed block into the plane's `.gitattributes`: replace the one there, or add it
@@ -1071,6 +1121,16 @@ fn merge_rules_block(plane: &Path) -> String {
 /// left beside a second one — under the purlis markers once the plane is migrated, and under
 /// charter's until then, so a teammate on an older build still finds its block (V93g).
 pub fn ensure_gitattributes(path: &Path) -> Result<bool, String> {
+    write_gitattributes(path, with_merge_rules)
+}
+
+/// [`ensure_gitattributes`] for a save: a rule a newer build added stays
+/// ([`with_merge_rules_kept`]).
+pub fn refresh_gitattributes(path: &Path) -> Result<bool, String> {
+    write_gitattributes(path, with_merge_rules_kept)
+}
+
+fn write_gitattributes(path: &Path, with: fn(&str, &Path) -> String) -> Result<bool, String> {
     // A file that is not there is empty; one that cannot be read is said, in the OS's words,
     // rather than written over as if it were empty.
     let text = match std::fs::read_to_string(path) {
@@ -1078,14 +1138,22 @@ pub fn ensure_gitattributes(path: &Path) -> Result<bool, String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(e) => return Err(strerror(&e)),
     };
-    let block = merge_rules_block(path.parent().unwrap_or(Path::new("")));
-    // Whole lines only, and only a COMPLETE block: the last BEGIN line with an END line after
-    // it. A BEGIN or an END on its own is something somebody edited, and is left exactly as
-    // it is — the rules are added below it, and the next run finds that complete block.
-    let lines: Vec<&str> = text.split_inclusive('\n').collect();
+    let next = with(&text, path.parent().unwrap_or(Path::new("")));
+    if next == text {
+        return Ok(false);
+    }
+    replace_text(path, &next)?;
+    Ok(true)
+}
+
+/// Where the complete managed block is in `lines`, as the lines of its BEGIN and END.
+///
+/// Whole lines only, and only a COMPLETE block: the last BEGIN line with an END line after it.
+/// A BEGIN or an END on its own is something somebody edited, and is left exactly as it is.
+fn managed_block(lines: &[&str]) -> Option<(usize, usize)> {
     let is =
         |line: &str, marker: &names::Name| marker.recognises(line.trim_end_matches(['\n', '\r']));
-    let complete = lines
+    lines
         .iter()
         .enumerate()
         .filter(|(_, line)| is(line, &names::MERGE_RULES_BEGIN))
@@ -1095,8 +1163,26 @@ pub fn ensure_gitattributes(path: &Path) -> Result<bool, String> {
                 .position(|line| is(line, &names::MERGE_RULES_END))
                 .map(|offset| (start, start + 1 + offset))
         })
-        .next_back();
-    let next = match complete {
+        .next_back()
+}
+
+/// `.gitattributes`'s text with the block as the plane at `plane` writes it: the one there
+/// replaced where it stands, or added at the end, every other line kept.
+pub(crate) fn with_merge_rules(text: &str, plane: &Path) -> String {
+    with_block(text, &merge_rules_block(plane, &[]))
+}
+
+/// [`with_merge_rules`] for a save, not `init`: a rule the block there holds that this build does
+/// not write stays, as a newer build's would. A save on an older build then never takes back a
+/// rule a newer one added, and machines on two builds do not write the file back and forth.
+/// Only `init` and `reinit` drop a rule no build writes any more.
+pub(crate) fn with_merge_rules_kept(text: &str, plane: &Path) -> String {
+    with_block(text, &merge_rules_block(plane, &rules_in(text)))
+}
+
+fn with_block(text: &str, block: &str) -> String {
+    let lines: Vec<&str> = text.split_inclusive('\n').collect();
+    match managed_block(&lines) {
         Some((start, end)) => {
             let before: String = lines[..start].concat();
             let after: String = lines[end + 1..].concat();
@@ -1104,12 +1190,16 @@ pub fn ensure_gitattributes(path: &Path) -> Result<bool, String> {
         }
         None if text.is_empty() => format!("{block}\n"),
         None => format!("{}\n{block}\n", text.trim_end_matches('\n')),
-    };
-    if next == text {
-        return Ok(false);
     }
-    replace_text(path, &next)?;
-    Ok(true)
+}
+
+/// `.gitattributes`'s text with the managed block taken out: what a person wrote in it.
+pub(crate) fn without_merge_rules(text: &str) -> String {
+    let lines: Vec<&str> = text.split_inclusive('\n').collect();
+    match managed_block(&lines) {
+        Some((start, end)) => format!("{}{}", lines[..start].concat(), lines[end + 1..].concat()),
+        None => text.to_owned(),
+    }
 }
 
 fn ensure_gitignore(path: &Path) -> Result<bool, String> {
@@ -1816,7 +1906,9 @@ fn first_clone_step(run: &mut Run, root: &Path, args: &InitArgs) -> u8 {
                 planefile::Read::Config(cfg) => planefile::default_workspace(&cfg),
                 _ => "default".to_owned(),
             };
-            if !root.join("workspaces").join(&ws).join(&name).exists() {
+            let cloned =
+                crate::repofolder::folder(root, &ws, &name).is_ok_and(|clone| clone.exists());
+            if !cloned {
                 run.info(Markup::lines([
                     format!(
                         "You are standing in the git repo '{name}'. Work happens in a \
@@ -1988,19 +2080,23 @@ pub fn adopt_as_workspace(
         ));
     };
     let from = firstclone::upstream_of(&source);
-    let name = (1..)
-        .map(|n| {
-            if n == 1 {
-                base.clone()
-            } else {
-                format!("{base}-{n}")
-            }
-        })
-        .find(|name| {
-            let clone = root.join("workspaces").join(name).join(name);
-            !clone.exists() || firstclone::origin_of(&clone).as_deref() == Some(from.as_str())
-        })
-        .expect("an unbounded range always has a free name");
+    // The first name whose clone is free or already this source's. A refusal (the workspaces
+    // folder is a link, unreadable, …) would refuse every name alike, so it ends the search.
+    let mut name = None;
+    for n in 1.. {
+        let candidate = if n == 1 {
+            base.clone()
+        } else {
+            format!("{base}-{n}")
+        };
+        let clone = crate::repofolder::folder(&root, &candidate, &candidate)
+            .map_err(|refused| format!("charter cannot adopt {}: {refused}", source.display()))?;
+        if !clone.exists() || firstclone::origin_of(&clone).as_deref() == Some(from.as_str()) {
+            name = Some(candidate);
+            break;
+        }
+    }
+    let name = name.expect("an unbounded range always has a free name");
     let mut run = Run::default();
     firstclone::into_workspace(&mut run, &root, &source, &name, &name, now)
         .map(|clone| (name, clone))

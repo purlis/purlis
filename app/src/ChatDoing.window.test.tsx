@@ -243,7 +243,8 @@ const opened = async (name: string) => {
 /** What the card that is up says the chat is doing, and the card's line itself. */
 const line = () => card()?.querySelector(".chat-doing") ?? null;
 const said = () => line()?.textContent;
-const word = (name: string) => row(name).querySelector(".shown-state .word")?.textContent;
+const word = (name: string) =>
+  row(name).querySelector('[data-scope="chat-mark"][data-part="word"]')?.textContent;
 
 /** A session, a task of it where it works, one in another workspace, and a second session. */
 const four = () => [

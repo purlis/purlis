@@ -43,6 +43,7 @@ const DEPLOY: StudioSkill = {
   lint: [],
   hidden: [],
   pinned: false,
+  archived: false,
   pinned_by: [],
 };
 

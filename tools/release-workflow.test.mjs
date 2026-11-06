@@ -363,7 +363,9 @@ test("every job has a deadline, so a hung one cannot hold the dev builds' group 
       continue;
     }
     const minutes = Number(value(body, 4, "timeout-minutes"));
-    assert.ok(Number.isInteger(minutes) && minutes >= 10 && minutes <= 90, `${name}: ${minutes}`);
+    // The build is the one long job: a cold macOS build takes 65 to 68 minutes (ADR 0092).
+    const most = name === "build" ? 120 : 90;
+    assert.ok(Number.isInteger(minutes) && minutes >= 10 && minutes <= most, `${name}: ${minutes}`);
     minutesOf.set(name, minutes);
   }
   // The longest a run can hold the group: the slowest chain of jobs, each waiting on those it
@@ -444,4 +446,17 @@ test("the runs list names the commit a run builds, not main's head when ci ended
     evaluate(name[1], { event_name: "workflow_dispatch", ref_name: "try", event: {} }),
     "on demand, try",
   );
+});
+
+// Every dev build on main from 2026-11-05T21:36Z lost its Linux runner while compiling
+// `purlis-app`: the build needs about 26 GB and the runner has 16 of memory and 3 of swap (#5277).
+test("the Linux build turns on more swap before anything compiles", () => {
+  const steps = job("build").join("\n");
+  const swap = steps.indexOf("swapon /swapfile-build");
+  assert.notEqual(swap, -1, "the build job turns on no swap file");
+  const head = steps.slice(0, swap);
+  const name = head.lastIndexOf("- name:");
+  assert.match(head.slice(name), /if: runner\.os == 'Linux'/);
+  assert.ok(swap < steps.indexOf("rust-toolchain"), "the swap is turned on before the toolchain is installed");
+  assert.ok(swap < steps.indexOf("Build the app"), "the swap is turned on before the app is built");
 });

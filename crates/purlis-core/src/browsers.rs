@@ -390,6 +390,13 @@ impl Browsers for EngineBrowsers {
                 site_of_login(&kept.address)
             })
             .transpose()?;
+        // And its form's, where that is another (#5167): reached from its start, as a browser
+        // logged in afresh does.
+        let kept_form = kept
+            .and_then(|kept| kept.form.as_deref())
+            .map(site_of_login)
+            .transpose()?
+            .filter(|form| Some(form) != kept_site.as_ref());
         let platform = Platform::current()
             .ok_or_else(|| "no browser engine is made for this platform".to_owned())?;
         // Which engine (#2835): this machine's own Chrome where the person chose it, else the
@@ -401,8 +408,21 @@ impl Browsers for EngineBrowsers {
             ..EngineSettings::default()
         };
         let engines = engines_here(&home, platform);
-        let ready = prepared(&engines, &settings, download)
-            .map_err(|refused| download_failed_said(&refused))?;
+        // Its first download is told as it goes, and stops where the person cancels it (#2207).
+        let https = archive_reads();
+        let archives = Progressing::new(&https, download, DOWNLOAD_TOLD_EVERY);
+        let ready = prepared(
+            &engines,
+            &settings,
+            &manifest_reads(),
+            &archives,
+            engines_clock(
+                cfg!(debug_assertions),
+                crate::envvar::var(ENGINES_CLOCK_VAR).as_deref(),
+                chrono::Utc::now(),
+            ),
+        )
+        .map_err(|refused| download_failed_said(&refused))?;
         // A chat's browser is judged (#2018); the person's own, given no reach, refuses every
         // site new to the project at its proxy.
         let sites = reach.map(judge::SiteJudge::of).transpose()?.map(Arc::new);
@@ -418,10 +438,14 @@ impl Browsers for EngineBrowsers {
             .map_err(|why| format!("the browser's reach proxy did not start: {why}"))?;
         let mut keeping = Keeping::new(&home, data);
         if let (Some(kept), Some(site), Some(sites)) = (kept, &kept_site, &sites) {
-            // Its page's site alone: its form's site, where that is another, is reached once a
-            // login performed in it signs in there (#4995, #5152).
-            proxy.bind(&LoginSites::page(site.clone()))?;
-            sites.bound_to(site);
+            // Its page's site, and its form's where that is another (#5167), with no sign-in open:
+            // the agent is kept off the form's pages until a login performed in it signs in there
+            // (#4995, #5152).
+            let at = LoginSites {
+                page: site.clone(),
+                form: kept_form.clone(),
+            };
+            opened_from_kept(&proxy, sites, &at)?;
             keeping.open(kept)?;
         }
         // Its engine's log beside its folder, kept past its end (#2745).
@@ -456,6 +480,15 @@ impl Browsers for EngineBrowsers {
         if let Some(sites) = &sites {
             let bound = sites.bound().clone();
             browser.keep_off(Arc::new(move |address: &str| kept_off_at(&bound, address)));
+            // During a sign-in, on every page but its own and the windows related to it (the
+            // person's ruling of 2026-11-06).
+            let bound = sites.bound().clone();
+            browser.keep_sign_in_to_its_page(Arc::new(move |address: &str| {
+                let (host, port) = judge::site_of(address)?;
+                bound
+                    .signing_in_at(&host, port)
+                    .map(|site| site.to_string())
+            }));
         }
         // A click or Back the proxy refused under a fill's hold answers why (#5150).
         let bound = proxy.bound().clone();
@@ -486,19 +519,18 @@ impl Browsers for EngineBrowsers {
     }
 }
 
-/// The engine a browser starts on: the trusted one, after reading the published manifest first
-/// when that engine is behind past its warning or refused for its age, so a machine whose
-/// background check has not run yet is not refused for an engine already superseded.
+/// The engine a browser starts on at `now`: the trusted one, after reading the published
+/// manifest through `manifests` first when that engine is behind past its warning or refused
+/// for its age, so a machine whose background check has not run yet is not refused for an engine
+/// already superseded. Where that read fails, the first answer stands, the refusal included.
 fn prepared(
     engines: &Engines,
     settings: &EngineSettings,
-    download: &Download,
+    manifests: &dyn Fetch,
+    archives: &dyn Fetch,
+    now: chrono::DateTime<chrono::Utc>,
 ) -> Result<Ready, Refused> {
-    let https = archive_reads();
-    // Its first download is told as it goes, and stops where the person cancels it (#2207).
-    let archives = Progressing::new(&https, download, DOWNLOAD_TOLD_EVERY);
-    let now = chrono::Utc::now();
-    let first = engines.prepare(settings, &archives, now);
+    let first = engines.prepare(settings, archives, now);
     let behind = match &first {
         Ok(ready) => matches!(ready.age(), Age::Behind { .. }),
         Err(refused) => matches!(refused, Refused::Outdated { .. }),
@@ -506,9 +538,35 @@ fn prepared(
     if !behind {
         return first;
     }
-    let checked = update(engines, settings, &manifest_reads(), &archives, now);
+    let checked = update(engines, settings, manifests, archives, now);
     report(&checked);
     checked.or(first)
+}
+
+/// In a debug build, the time a browser's start judges its engine's age by, as RFC 3339 (#5413):
+/// a test's host names the moment its pin was issued, so what it runs does not turn on today's
+/// date or on reading the published manifest. A release build reads the real time whatever this
+/// says, so it changes nothing a real install refuses.
+pub const ENGINES_CLOCK_VAR: &str = "PURLIS_TEST_ENGINE_NOW";
+
+/// When the manifest this build ships was issued: the time a test's host names in
+/// [`ENGINES_CLOCK_VAR`], so a refreshed pin needs no test changed.
+pub fn when_the_pin_was_issued() -> chrono::DateTime<chrono::Utc> {
+    Manifest::shipped().issued
+}
+
+/// The time an engine's age is judged by: `real`, unless this is a debug build and `asked` is a
+/// time. Handed its facts rather than reading `cfg!` itself, so the rule is testable in both
+/// directions from one build.
+fn engines_clock(
+    debug_build: bool,
+    asked: Option<&str>,
+    real: chrono::DateTime<chrono::Utc>,
+) -> chrono::DateTime<chrono::Utc> {
+    asked
+        .filter(|_| debug_build)
+        .and_then(|asked| chrono::DateTime::parse_from_rfc3339(asked).ok())
+        .map_or(real, |asked| asked.to_utc())
 }
 
 /// A fresh id for a browser a window starts (#2207): the window names it, so it knows which
@@ -1270,9 +1328,15 @@ impl FillHolder {
     pub fn of(proxy: &Arc<ReachProxy>, origin: &str) -> Result<Self, String> {
         let (host, port) = judge::site_of(origin)
             .ok_or_else(|| format!("{origin} is not a site purlis can hold a browser to"))?;
+        let site = Site::of(&host, port);
+        // A browser bound to a login takes no secret for another site: refused before anything
+        // is looked for or filled.
+        if let Some(why) = proxy.bound().takes_no_fill_for(&site) {
+            return Err(why);
+        }
         Ok(Self {
             proxy: Arc::downgrade(proxy),
-            site: Site::of(&host, port),
+            site,
             also: Vec::new(),
             sites: None,
             number: Mutex::new(None),
@@ -1335,7 +1399,7 @@ impl drive::FillHold for FillHolder {
 
     fn may_leave_for(&self, address: &str, chain_began: bool) -> drive::Leaving {
         match self.sites.as_ref().and_then(std::sync::Weak::upgrade) {
-            Some(sites) => sites.may_leave_for(address, chain_began),
+            Some(sites) => sites.may_leave_from(&self.site, address, chain_began),
             None => drive::Leaving::No {
                 why: format!(
                     "purlis stopped this page leaving {}: this browser was started with no \
@@ -1410,6 +1474,23 @@ fn made_private_and_unbacked(folders: &Path) -> Result<(), String> {
 }
 
 /// The site a kept login's page is on, as a login's is ([`login_of`]).
+/// **A browser opened from a kept login is held to `at`, its sites, from its start** (#2021,
+/// #5167): its page's, and its form's where that is another, as a browser logged in afresh is
+/// once its sign-in is over, so no sign-in is open and the agent is kept off the form's pages.
+fn opened_from_kept(
+    proxy: &ReachProxy,
+    sites: &judge::SiteJudge,
+    at: &LoginSites,
+) -> Result<(), String> {
+    if let Some(sign_in) = proxy.bind(at)? {
+        proxy.sign_in_over(sign_in);
+    }
+    for one in at.all() {
+        sites.bound_to(&one);
+    }
+    Ok(())
+}
+
 fn site_of_login(address: &str) -> Result<Site, String> {
     let origin = crate::sandbox::tools::login::origin_of(address)?;
     let (host, port) = judge::site_of(&origin)
@@ -1718,7 +1799,8 @@ pub fn kept_off_said(site: &str, asks_to_sign_in: bool) -> String {
     };
     format!(
         "nothing was read or sent: this is a page of {site}, the site this browser signs in on, \
-         and you may read or act on its pages only while browser_login signs in. {then}"
+         and you may read or act on its pages only while browser_login signs in, on the page it \
+         signs in on and the windows that page opened. {then}"
     )
 }
 
@@ -1829,7 +1911,39 @@ impl EngineScreen {
                  is brought in only while browser_login signs in"
             )));
         }
+        // One from no site purlis can tell (a sandboxed frame's, say) may be that site's too
+        // (the steward's decision on the person's rulings of 2026-11-06).
+        if one.origin.is_none()
+            && let Some(site) = self
+                .sites
+                .as_ref()
+                .and_then(|sites| sites.bound().keeps_off())
+        {
+            return Err(NotActed::Refused(format!(
+                "download {download} came from no site purlis can tell, and this browser signs in \
+                 on {site}, so it may be that site's: it is brought in only while browser_login \
+                 signs in"
+            )));
+        }
         let from = self.data.join(DOWNLOADS).join(&one.file);
+        // What purlis filled into the browser is kept out of what the chat reads, a file it
+        // brings in among it (#5115).
+        match browser.holds_a_filled_value(&from) {
+            Ok(false) => {}
+            Ok(true) => {
+                return Err(NotActed::Refused(format!(
+                    "download {download} holds a secret purlis filled into this browser, which is \
+                     kept out of what you read, so it is not brought in: ask the person to save \
+                     it if it is needed"
+                )));
+            }
+            Err(why) => {
+                return Err(NotActed::Refused(format!(
+                    "purlis could not read download {download} to check it holds no secret it \
+                     filled ({why}), so it is not brought in"
+                )));
+            }
+        }
         let bytes = saved_file(project, &from, Path::new(into), to).map_err(NotActed::Refused)?;
         let id = CallId::new(format!("kept:{download}"))
             .map_err(|why| NotActed::Refused(why.to_string()))?;
@@ -2033,7 +2147,9 @@ impl Screen for EngineScreen {
                 holder.answered(&ended);
                 (ended, holder.signing_in())
             })
-            .map_err(NotActed::Refused)?;
+            .map_err(NotActed::LoginNotRun)?;
+        // A refusal by its lease is not one before it ran: what the browser keeps was told of
+        // this login already.
         let ended = ended.map_err(not_acted)?;
         if matches!(ended.outcome, Err(drive::Refusal::NoFormOnCleanLoad(_))) {
             self.keeping

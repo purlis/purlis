@@ -3131,6 +3131,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             Ask::ThemeDraft(_) => 17,
             Ask::Prompt(_) => 18,
             Ask::Secret(_) => 19,
+            Ask::ProposeSkillSet(_) => 20,
         }
     }
     let asks = vec![
@@ -3248,10 +3249,21 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             replace: None,
             program: None,
         })),
+        // A proposed change to several skills (#5357): it names skills and an act, and writes
+        // nothing.
+        Ask::ProposeSkillSet(Box::new(purlis_core::hookwire::ProposeSkillSetAsk {
+            chat,
+            change: purlis_core::skills::verbs::set::SetChange::Delete {
+                members: vec![purlis_core::skills::verbs::set::Member {
+                    level: purlis_core::skills::verbs::Level::project(),
+                    name: "grilling".to_owned(),
+                }],
+            },
+        })),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
     kinds.dedup();
-    assert_eq!(kinds, (0..=19).collect::<Vec<_>>(), "one of every kind");
+    assert_eq!(kinds, (0..=20).collect::<Vec<_>>(), "one of every kind");
     asks
 }
 

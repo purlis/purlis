@@ -36,7 +36,7 @@ fn the_review_page_comes_in_the_next_release_s_manifest() {
         .find(|one| one["name"] == "review-page")
         .expect("the review page is in the manifest")
         .clone();
-    assert_eq!(family["since"], parts::NEXT);
+    assert_eq!(family["since"], 13);
     let parts: Vec<&str> = family["parts"]
         .as_array()
         .unwrap()
@@ -45,7 +45,7 @@ fn the_review_page_comes_in_the_next_release_s_manifest() {
         .collect();
     assert_eq!(parts, ["root", "body", "bar", "summary", "answers"]);
     for part in family["parts"].as_array().unwrap() {
-        assert_eq!(part["since"], parts::NEXT, "{part}");
+        assert_eq!(part["since"], 13, "{part}");
     }
     assert_eq!(family["states"], json!([]));
 }

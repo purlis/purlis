@@ -416,7 +416,10 @@ pub fn remove(
 ) -> u8 {
     say(Say::Info(format!("workspace: {ws}").into()));
     let no_discard_there = || {
-        let clone = plane.join("workspaces").join(ws).join(repo);
+        // A clone purlis cannot find is one the brokered route runs no git in either.
+        let Ok(clone) = crate::repofolder::folder(plane, ws, repo) else {
+            return true;
+        };
         worktree::git::isolated(&worktree::git::Isolated::operators(), || {
             crate::gitbroker::runs_a_program(&clone).is_err()
         })

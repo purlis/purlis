@@ -20,6 +20,7 @@ use purlis_core::executor::Executor;
 use purlis_core::harness::Harness;
 use purlis_core::skills::review::escaped as esc;
 use purlis_core::skills::source::{self, Remote, Source, VaultEntry};
+use purlis_core::skills::verbs::set::{self, SetChange};
 use purlis_core::skills::verbs::{self, By, Level};
 use purlis_core::skills::{
     Clash, Deprecated, Grant, HarnessInTheStudio, Lifecycle, Outcome, StudioList, StudioRow,
@@ -94,11 +95,15 @@ pub enum SkillCommand {
     },
     /// Pin a skill for a workspace's chats (`-w`) or for chats as a persona (`-p`): they always
     /// list it, and the router never hides it behind the index skill when their skills outgrow
-    /// the budget. `--off` unpins it.
+    /// the budget. `--off` unpins it. Several names, or `--source`, pin them all as one change,
+    /// after its review; in a chat, the change is proposed to the person instead.
     #[command(group(clap::ArgGroup::new("by").required(true).args(["workspace", "persona"])))]
     Pin {
-        /// The skill's name, as `purlis skill list` prints it.
-        name: String,
+        /// The skills' names, as `purlis skill list` prints them.
+        #[arg(required_unless_present = "source", conflicts_with = "source")]
+        names: Vec<String>,
+        #[command(flatten)]
+        set: SetArgs,
         /// The workspace whose chats pin it.
         #[arg(short = 'w', long = "workspace")]
         workspace: Option<String>,
@@ -147,10 +152,15 @@ pub enum SkillCommand {
     /// Rename a skill (`--name`), or move it to another level (`--to`, or `--to-persona`), or
     /// both. A rename changes every persona and skill that names it; a move into the project's
     /// skills says where it reaches with `--grant`. A persona's own skill moved into the
-    /// project's is added to the persona's skills, so its chats keep it.
+    /// project's is added to the persona's skills, so its chats keep it. Several names, or
+    /// `--source`, move them all to one level as one change, after its review, asked at your
+    /// terminal; anywhere else the move is proposed to the person, in the window.
     Mv {
-        /// The skill's name, as `purlis skill list` prints it.
-        name: String,
+        /// The skills' names, as `purlis skill list` prints them.
+        #[arg(required_unless_present = "source", conflicts_with = "source")]
+        names: Vec<String>,
+        #[command(flatten)]
+        set: SetArgs,
         /// Its new name.
         #[arg(long = "name", value_name = "NEW")]
         new: Option<String>,
@@ -169,22 +179,70 @@ pub enum SkillCommand {
         #[command(flatten)]
         at: LevelArgs,
     },
-    /// Delete a skill, after saying who uses it. `purlis skill restore` brings it back.
+    /// Delete a skill, after saying who uses it. `purlis skill restore` brings it back. Several
+    /// names, or `--source` (every copy installed from it, at the level named or at every
+    /// level), delete them all as one change, after its review, asked at your terminal. Anywhere
+    /// else (a chat, a script, no terminal) the delete is proposed to the person, who alone makes
+    /// it, in the window.
     Rm {
-        /// The skill's name, as `purlis skill list` prints it.
-        name: String,
+        /// The skills' names, as `purlis skill list` prints them.
+        #[arg(required_unless_present = "source", conflicts_with = "source")]
+        names: Vec<String>,
+        #[command(flatten)]
+        set: SetArgs,
         #[command(flatten)]
         at: LevelArgs,
     },
+    /// Turn project skills off in a workspace, as one change, after its review: those its chats
+    /// get no more. Named, or every one installed from `--source`. In a chat, the change is
+    /// proposed to the person instead.
+    Off {
+        /// The skills' names, as `purlis skill list` prints them.
+        #[arg(required_unless_present = "source", conflicts_with = "source")]
+        names: Vec<String>,
+        /// The workspace that turns them off.
+        #[arg(short = 'w', long = "workspace", required = true)]
+        workspace: String,
+        #[command(flatten)]
+        set: SetArgs,
+    },
+    /// Turn project skills back on in a workspace, as one change, where the project granted them
+    /// there. Named, or every one installed from `--source`. In a chat, the change is proposed
+    /// to the person instead.
+    On {
+        /// The skills' names, as `purlis skill list` prints them.
+        #[arg(required_unless_present = "source", conflicts_with = "source")]
+        names: Vec<String>,
+        /// The workspace that turns them on.
+        #[arg(short = 'w', long = "workspace", required = true)]
+        workspace: String,
+        #[command(flatten)]
+        set: SetArgs,
+    },
     /// Restore a deleted skill to the level it was deleted from; with no name, list the deleted
-    /// skills that can be restored.
+    /// skills that can be restored. Several names bring them all back as one change, after its
+    /// review, asked at your terminal; anywhere else it is proposed to the person, in the window.
     Restore {
-        /// The deleted skill's name.
-        name: Option<String>,
+        /// The deleted skills' names.
+        names: Vec<String>,
         /// Restore it under this new name instead: its `SKILL.md`'s `name:` and its folder are
         /// renamed to match. A skill whose name belongs to purlis now comes back only so.
-        #[arg(long = "as", value_name = "NEW_NAME", requires = "name")]
+        #[arg(long = "as", value_name = "NEW_NAME", requires = "names")]
         under: Option<String>,
+        /// The level it was deleted from, where a name was deleted at more than one.
+        #[command(flatten)]
+        at: LevelArgs,
+    },
+    /// Take deleted skills off the list `purlis skill restore` prints, now, before their time is
+    /// up: the one change to skills with no undo. Asked first at your terminal, even of one
+    /// skill; anywhere else it is proposed to the person, in the window.
+    DeleteNow {
+        /// The deleted skills' names, as `purlis skill restore` lists them.
+        #[arg(required = true)]
+        names: Vec<String>,
+        /// The level each was deleted from, where a name was deleted at more than one.
+        #[command(flatten)]
+        at: LevelArgs,
     },
     /// Share a local skill: move it from `skills.local/` into `skills/` at its level, so the
     /// next save commits it and the team gets it. With `-w`, that workspace's local skill; with
@@ -244,13 +302,19 @@ pub enum SkillCommand {
     },
     /// Write a skill, and the project's skills it refers to, to a new folder or zip that works
     /// outside purlis, each in a folder of its own. Links, credential files and what git ignores
-    /// stay behind and are said; anything credential-shaped writes nothing.
+    /// stay behind and are said; anything credential-shaped writes nothing. Several names, or
+    /// `--source`, export them all, after its review, asked at your terminal; anywhere else the
+    /// export is proposed to the person, who picks where it goes, in the window.
     Export {
-        /// The skill's name, as `purlis skill list` prints it.
-        name: String,
-        /// Where: a path that is not there yet.
+        /// The skills' names, as `purlis skill list` prints them.
+        #[arg(required_unless_present = "source", conflicts_with = "source")]
+        names: Vec<String>,
+        #[command(flatten)]
+        set: SetArgs,
+        /// Where: a path that is not there yet. A chat's export of several skills takes none:
+        /// the person picks where.
         #[arg(long)]
-        to: std::path::PathBuf,
+        to: Option<std::path::PathBuf>,
         /// Write a zip there instead of a folder.
         #[arg(long)]
         zip: bool,
@@ -349,10 +413,14 @@ pub enum SkillCommand {
         at: LevelArgs,
     },
     /// Archive a skill: it never loads, and stays in the project to be restored. With `--undo`,
-    /// it is restored and in use again.
+    /// it is restored and in use again. Several names, or `--source`, as one change, after its
+    /// review; in a chat, the change is proposed to the person instead.
     Archive {
-        /// The skill's name, as `purlis skill list` prints it.
-        name: String,
+        /// The skills' names, as `purlis skill list` prints them.
+        #[arg(required_unless_present = "source", conflicts_with = "source")]
+        names: Vec<String>,
+        #[command(flatten)]
+        set: SetArgs,
         /// Restore it.
         #[arg(long)]
         undo: bool,
@@ -445,7 +513,33 @@ pub struct LevelArgs {
     local: bool,
 }
 
+/// What a change to several skills at once takes (#5357), beside the names.
+#[derive(Args)]
+pub struct SetArgs {
+    /// Every copy installed from this skill source, by its URL, in place of names.
+    #[arg(long, value_name = "URL")]
+    source: Option<String>,
+    /// The source's branch, where it was installed from one.
+    #[arg(long, requires = "source")]
+    branch: Option<String>,
+}
+
+impl SetArgs {
+    /// The source named, as its copies are kept by.
+    fn remote(&self) -> Option<Remote> {
+        self.source.as_ref().map(|url| Remote {
+            url: url.clone(),
+            branch: self.branch.clone(),
+        })
+    }
+}
+
 impl LevelArgs {
+    /// Whether a level was named at all.
+    fn named(&self) -> bool {
+        self.workspace.is_some() || self.persona.is_some() || self.local
+    }
+
     fn level(&self) -> Level {
         match (&self.workspace, &self.persona) {
             (Some(ws), _) => Level::workspace(ws),
@@ -494,6 +588,359 @@ const FROM_A_CHAT: &str = "A chat does not change skills itself: its change beco
                            person accepts in the Skill studio. Nothing was written. Run it from \
                            a terminal, or ask the person to.";
 
+/// **Whether this command runs at the person's own terminal** (#5357), and not in a chat, read
+/// the ways purlis already tells them apart, any one of which is a chat:
+///
+/// - what the app sets in the environment of everything it starts: the chat's number, its hook
+///   socket, its session, the mark of its sandbox ([`gradelink::in_a_chat`]);
+/// - the sandbox itself: this process may not write the project's manifest, which every
+///   sandboxed chat is denied ([`purlis_core::sandbox::held::in_a_sandbox`]), whatever its
+///   environment says;
+/// - where it runs: below a chat's program, in its session, or below the app that started one,
+///   by the records of open chats ([`purlis_core::secrets::setup::in_a_chat`]). A doubt there is
+///   a chat's.
+///
+/// None of them is a flag: nothing a chat passes makes it the person.
+fn at_the_persons_terminal(root: &Path) -> bool {
+    use purlis_core::secrets::{Ctx, Env, setup};
+    if gradelink::in_a_chat(&purlis_core::envvar::var)
+        || purlis_core::sandbox::held::in_a_sandbox(root)
+    {
+        return false;
+    }
+    matches!(
+        setup::in_a_chat(&Ctx::new(root, Env::from_process())),
+        setup::Where::Outside
+    )
+}
+
+/// Whether `command` is a verb a set has, asked of several skills or of a source's.
+fn set_is_bulk(command: &SkillCommand) -> bool {
+    match command {
+        SkillCommand::Rm { names, set, .. }
+        | SkillCommand::Off { names, set, .. }
+        | SkillCommand::On { names, set, .. }
+        | SkillCommand::Pin { names, set, .. }
+        | SkillCommand::Archive { names, set, .. }
+        | SkillCommand::Mv { names, set, .. }
+        | SkillCommand::Export { names, set, .. } => names.len() > 1 || set.source.is_some(),
+        SkillCommand::Restore { names, .. } => names.len() > 1,
+        // There is no undo, so it is asked of the person even of one skill (#5492).
+        SkillCommand::DeleteNow { .. } => true,
+        _ => false,
+    }
+}
+
+/// **Whether a person can answer here**: standard input and standard error are both a terminal.
+/// A process detached from its chat has none, and cannot get one without making a terminal of its
+/// own; with the other checks ([`at_the_persons_terminal`]) it is what a change to several skills
+/// takes (#5357).
+fn interactive() -> bool {
+    use std::io::IsTerminal as _;
+    std::io::stdin().is_terminal() && std::io::stderr().is_terminal()
+}
+
+/// **The change to several skills `command` asks for** (#5357), as its review and its proposal
+/// name it: `None` for a command that is no verb a set has, and why where its skills can't be
+/// named.
+fn set_change(root: &Path, command: &SkillCommand) -> Option<Result<SetChange, String>> {
+    Some(match command {
+        SkillCommand::Rm { names, set, at } => {
+            members_of(root, names, set, at).map(|members| SetChange::Delete { members })
+        }
+        SkillCommand::Archive {
+            names,
+            set,
+            undo,
+            at,
+        } => members_of(root, names, set, at).map(|members| SetChange::Archive {
+            members,
+            archive: !undo,
+        }),
+        SkillCommand::Off {
+            names,
+            workspace,
+            set,
+        }
+        | SkillCommand::On {
+            names,
+            workspace,
+            set,
+        } => names_of(root, names, set, true).map(|names| SetChange::Turn {
+            workspace: workspace.clone(),
+            names,
+            on: matches!(command, SkillCommand::On { .. }),
+        }),
+        SkillCommand::Pin {
+            names,
+            set,
+            workspace,
+            persona,
+            off,
+        } => {
+            let by = match (workspace, persona) {
+                (Some(ws), _) => purlis_core::skills::PinnedBy::Workspace(ws.clone()),
+                (None, Some(persona)) => purlis_core::skills::PinnedBy::Persona(persona.clone()),
+                (None, None) => return None,
+            };
+            names_of(root, names, set, false).map(|names| SetChange::Pin {
+                by,
+                names,
+                on: !off,
+            })
+        }
+        SkillCommand::Mv {
+            names,
+            set,
+            new: None,
+            to,
+            to_persona,
+            to_local,
+            grant,
+            at,
+        } => {
+            let dest = match (to, to_persona) {
+                (_, Some(persona)) => Level::persona(persona).local(*to_local),
+                (Some(to), None) => level_to(to, *to_local),
+                (None, None) => return None,
+            };
+            members_of(root, names, set, at).map(|members| SetChange::Move {
+                members,
+                to: dest,
+                grant: grant.clone(),
+            })
+        }
+        SkillCommand::Restore {
+            names,
+            under: None,
+            at,
+        } if !names.is_empty() => {
+            deleted_members(root, names, at).map(|members| SetChange::Restore { members })
+        }
+        SkillCommand::Export {
+            names,
+            set,
+            zip,
+            at,
+            ..
+        } => {
+            members_of(root, names, set, at).map(|members| SetChange::Export { members, zip: *zip })
+        }
+        SkillCommand::DeleteNow { names, at } => {
+            deleted_members(root, names, at).map(|members| SetChange::DeleteNow { members })
+        }
+        _ => return None,
+    })
+}
+
+/// The skills named, at the level `at` names; or every copy installed from `--source`, at that
+/// level where one is named, and at every level where none is.
+fn members_of(
+    root: &Path,
+    names: &[String],
+    set: &SetArgs,
+    at: &LevelArgs,
+) -> Result<Vec<set::Member>, String> {
+    let Some(remote) = set.remote() else {
+        return Ok(names
+            .iter()
+            .map(|name| set::Member {
+                level: at.level(),
+                name: name.clone(),
+            })
+            .collect());
+    };
+    let members: Vec<set::Member> = set::installed_from(root, &remote, None)
+        .into_iter()
+        .map(|one| one.member)
+        .filter(|member| !at.named() || member.level == at.level())
+        .collect();
+    if members.is_empty() {
+        return Err(nothing_from(&remote));
+    }
+    Ok(members)
+}
+
+/// The names given; or those of every copy installed from `--source`, the project's alone where
+/// `project` (a turn: only a project skill turns in a workspace).
+fn names_of(
+    root: &Path,
+    names: &[String],
+    set: &SetArgs,
+    project: bool,
+) -> Result<Vec<String>, String> {
+    let Some(remote) = set.remote() else {
+        return Ok(names.to_vec());
+    };
+    let mut found: Vec<String> = Vec::new();
+    for one in set::installed_from(root, &remote, None) {
+        let at_the_projects_level = one.member.level == Level::project();
+        if (!project || at_the_projects_level) && !found.contains(&one.member.name) {
+            found.push(one.member.name);
+        }
+    }
+    if found.is_empty() {
+        return Err(nothing_from(&remote));
+    }
+    Ok(found)
+}
+
+/// **The deleted skills `names` names**, each at the level it was deleted from: the one the
+/// plane lists it at, or `at` where it lists none (the review then says it is not in Deleted),
+/// and refused where it lists more than one and `at` names none of them.
+fn deleted_members(
+    root: &Path,
+    names: &[String],
+    at: &LevelArgs,
+) -> Result<Vec<set::Member>, String> {
+    let listed = verbs::deleted(root);
+    names
+        .iter()
+        .map(|name| {
+            let mut levels: Vec<Level> = Vec::new();
+            for one in &listed {
+                if one.name == *name
+                    && (!at.named() || one.level == at.level())
+                    && !levels.contains(&one.level)
+                {
+                    levels.push(one.level.clone());
+                }
+            }
+            let level = match levels.len() {
+                0 => at.level(),
+                1 => levels.remove(0),
+                _ => {
+                    return Err(format!(
+                        "{name} was deleted at more than one level, so nothing was changed: name \
+                         the one with -w, -p or --local"
+                    ));
+                }
+            };
+            Ok(set::Member {
+                level,
+                name: name.clone(),
+            })
+        })
+        .collect()
+}
+
+/// **Why a change to several skills can't take what else was asked**: a rename, or a restore
+/// under a new name, is of one skill.
+fn bulk_conflict(command: &SkillCommand) -> Option<&'static str> {
+    match command {
+        SkillCommand::Mv { new: Some(_), .. } => Some(
+            "--name renames one skill, so nothing was changed: rename each on its own, or move \
+             them without --name",
+        ),
+        SkillCommand::Restore { under: Some(_), .. } => Some(
+            "--as brings back one skill under a new name, so nothing was changed: bring that one \
+             back on its own",
+        ),
+        _ => None,
+    }
+}
+
+/// Why `--source` named no skill.
+fn nothing_from(remote: &Remote) -> String {
+    format!(
+        "No skill installed from {} is here, so nothing was changed. `purlis skill list` shows \
+         where each came from.",
+        remote.url
+    )
+}
+
+/// `purlis skill off` or `on` with one name: as `grant -w <ws> --off` or `--on` turns it.
+fn switched(
+    cx: &mut verbs::Ctx<'_>,
+    workspace: &str,
+    name: &str,
+    on: bool,
+) -> Result<Code, String> {
+    match crate::brokered::manifest_refused("skill off/on")
+        .map_or_else(|| verbs::switch(cx, workspace, name, on), Err)
+    {
+        Ok(changed) => {
+            if !changed {
+                let state = if on { "on" } else { "off" };
+                voice::ok(already_switched(name, state, workspace));
+            }
+            Ok(0)
+        }
+        Err(why) => {
+            voice::err(why.to_string());
+            Ok(1)
+        }
+    }
+}
+
+/// The one name a verb's single path takes: clap asks for one at least.
+fn one_of(names: Vec<String>) -> Result<String, String> {
+    names
+        .into_iter()
+        .next()
+        .ok_or_else(|| "no skill was named".to_owned())
+}
+
+/// **A chat's change to skills, proposed to the person** (#5357): nothing is written here. The app
+/// holds it with the other proposed changes, and only the person's Apply in the window makes it.
+fn proposed_from_a_chat(change: SetChange) -> Result<Code, String> {
+    if let Err(why) = change.checked() {
+        voice::err(why);
+        return Ok(1);
+    }
+    crate::brokered::propose_skill_set(change)
+}
+
+/// **The person's change to several skills**: its review printed, asked once at their terminal,
+/// then made as one commit. No flag skips the question (#5357).
+fn made_here(
+    cx: &mut verbs::Ctx<'_>,
+    change: &SetChange,
+    to: Option<&Path>,
+) -> Result<Code, String> {
+    if let Err(why) = change.checked() {
+        voice::err(why);
+        return Ok(1);
+    }
+    if matches!(change, SetChange::Export { .. }) && to.is_none() {
+        voice::err(SAY_WHERE);
+        return Ok(2);
+    }
+    let shown = change.shown(cx.plane);
+    println!("{}:", change.title());
+    for line in shown.after.lines() {
+        println!("  {}", esc(line));
+    }
+    if !asked("Make this change?") {
+        voice::info("Nothing was changed.");
+        return Ok(1);
+    }
+    match to {
+        Some(to) => match change.export_to(cx.plane, cx.built_in, to) {
+            Ok(()) => {
+                voice::info(esc(&format!("Exported to {}.", to.display())).to_string());
+                Ok(0)
+            }
+            Err(why) => {
+                voice::err(esc(&why).to_string());
+                Ok(1)
+            }
+        },
+        None => done(change.apply(cx)),
+    }
+}
+
+/// What an export with no place is told.
+const SAY_WHERE: &str = "Say where with --to <a path that is not there yet>.";
+
+/// **What an export of several skills with `--to` is told anywhere but the person's interactive
+/// terminal** (#5492): the person picks where it goes, never a chat or a script.
+const NO_PLACE_BUT_AT_THE_TERMINAL: &str = "An export of several skills goes only where the person \
+                                    picks: --to is taken only at your own terminal, after its \
+                                    question, so nothing was written. Run it there, or without \
+                                    --to to propose it to the person, who picks where in the \
+                                    window.";
+
 /// What a person is told when the flag is off.
 const NOT_ON: &str = "The Skill studio is not turned on on this machine yet. Turn it on in \
                       Settings › You › Previews, or set PURLIS_SKILL_STUDIO=1 to try it here.";
@@ -506,12 +953,13 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
     let built_in = purlis_core::skills::built_in_here();
     let reads_owners =
         matches!(&command, SkillCommand::Owners { owners, none: false, .. } if owners.is_empty());
+    let lists_deleted = matches!(&command, SkillCommand::Restore { names, .. } if names.is_empty());
     let writes = !reads_owners
+        && !lists_deleted
         && !matches!(
             command,
             SkillCommand::List { .. }
                 | SkillCommand::Show { .. }
-                | SkillCommand::Restore { name: None, .. }
                 | SkillCommand::Update {
                     name: None,
                     confirm: None,
@@ -523,12 +971,83 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 | SkillCommand::Uses { .. }
                 | SkillCommand::Export { .. }
         );
-    if writes
-        && purlis_core::envvar::var(purlis_core::active::SESSION_ID_ENV)
-            .is_some_and(|id| !id.is_empty())
+    // A chat never changes a skill itself (#5357): a change to several skills, or to one, by the
+    // verbs a set has, is proposed to the person; any other change is refused. A change to several
+    // is made here only at the person's interactive terminal (the operator's ruling of
+    // 2026-11-06): a caller with no terminal, a detached one included, proposes too.
+    let bulk = set_is_bulk(&command);
+    if bulk && let Some(why) = bulk_conflict(&command) {
+        voice::err(why);
+        return Ok(2);
+    }
+    // An export of one skill writes only where its caller can (it changes no skill); one of
+    // several is the person's alone, as a change is (#5492).
+    let exports_several = bulk && matches!(command, SkillCommand::Export { .. });
+    let gated = writes || exports_several;
+    if gated && !(at_the_persons_terminal(root) && (!bulk || interactive())) {
+        if exports_several && matches!(command, SkillCommand::Export { to: Some(_), .. }) {
+            voice::err(NO_PLACE_BUT_AT_THE_TERMINAL);
+            return Ok(1);
+        }
+        return match set_change(root, &command) {
+            Some(Ok(change)) => proposed_from_a_chat(change),
+            Some(Err(why)) => {
+                voice::err(esc(&why).to_string());
+                Ok(1)
+            }
+            None => {
+                // A turn in a workspace rewrites its manifest, which a sandboxed chat is told it
+                // does not write (#2046): that sentence, where it is the one that holds.
+                let manifest = matches!(
+                    &command,
+                    SkillCommand::Grant {
+                        workspace: Some(_),
+                        ..
+                    }
+                )
+                .then(|| crate::brokered::manifest_refused("skill grant --on/--off"))
+                .flatten();
+                voice::err(manifest.unwrap_or_else(|| FROM_A_CHAT.to_owned()));
+                Ok(1)
+            }
+        };
+    }
+    // The person's terminal: several skills, or a source's, are one change after its review.
+    if gated
+        && bulk
+        && let Some(change) = set_change(root, &command)
     {
-        voice::err(FROM_A_CHAT);
-        return Ok(1);
+        let mut said = |line: purlis_core::repocmd::Say| crate::speak(line);
+        let mut cx = verbs::Ctx {
+            plane: root,
+            built_in: built_in.as_deref(),
+            by: By::Command,
+            say: &mut said,
+        };
+        // An export changes no skill, so it finishes and expires nothing either.
+        if writes {
+            verbs::interrupted(&mut cx);
+            // Not before a change to skills in Deleted, which the list showed as it was.
+            if !matches!(
+                command,
+                SkillCommand::Restore { .. } | SkillCommand::DeleteNow { .. }
+            ) {
+                verbs::expire_now(root);
+            }
+        }
+        return match change {
+            Ok(change) => {
+                let to = match &command {
+                    SkillCommand::Export { to, .. } => to.as_deref(),
+                    _ => None,
+                };
+                made_here(&mut cx, &change, to)
+            }
+            Err(why) => {
+                voice::err(esc(&why).to_string());
+                Ok(1)
+            }
+        };
     }
     let mut said = |line: purlis_core::repocmd::Say| crate::speak(line);
     let mut cx = verbs::Ctx {
@@ -542,7 +1061,10 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
     // restore, which `purlis skill restore`'s list offered the person as they saw it.
     if writes {
         verbs::interrupted(&mut cx);
-        if !matches!(command, SkillCommand::Restore { .. }) {
+        if !matches!(
+            command,
+            SkillCommand::Restore { .. } | SkillCommand::DeleteNow { .. }
+        ) {
             verbs::expire_now(root);
         }
     }
@@ -735,13 +1257,14 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             done(verbs::edit(&mut cx, &level, &name, &was, &now))
         }
         SkillCommand::Mv {
-            name,
+            names,
             new,
             to,
             to_persona,
             to_local,
             grant,
             at,
+            ..
         } => {
             if new.is_none() && to.is_none() && to_persona.is_none() {
                 voice::err(
@@ -751,7 +1274,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 return Ok(2);
             }
             let level = at.level();
-            let mut name = name;
+            let mut name = one_of(names)?;
             if let Some(new) = new {
                 if let Err(why) = verbs::rename(&mut cx, &level, &name, &new) {
                     voice::err(why.to_string());
@@ -792,7 +1315,8 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 grant.as_ref(),
             ))
         }
-        SkillCommand::Rm { name, at } => {
+        SkillCommand::Rm { names, at, .. } => {
+            let name = one_of(names)?;
             let level = at.level();
             match verbs::users(root, &level, &name) {
                 Ok(users) => say_users(&users),
@@ -803,7 +1327,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             }
             done(verbs::delete(&mut cx, &level, &name))
         }
-        SkillCommand::Restore { name: None, .. } => {
+        SkillCommand::Restore { names, .. } if names.is_empty() => {
             let deleted = verbs::deleted(root);
             if deleted.is_empty() {
                 println!("No deleted skill can be restored here.");
@@ -821,13 +1345,11 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             }
             Ok(0)
         }
-        SkillCommand::Restore {
-            name: Some(name),
-            under,
-        } => {
+        SkillCommand::Restore { names, under, at } => {
+            let name = one_of(names)?;
             let Some(one) = verbs::deleted(root)
                 .into_iter()
-                .find(|one| one.name == name)
+                .find(|one| one.name == name && (!at.named() || one.level == at.level()))
             else {
                 voice::err(format!(
                     "No deleted skill named {name:?} can be restored: `purlis skill restore` lists those that can."
@@ -836,6 +1358,13 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             };
             done(verbs::restore(&mut cx, &one, under.as_deref()))
         }
+        // Made above, after its question at the person's terminal, or proposed: never here. Were
+        // it reached, it would delete nothing.
+        SkillCommand::DeleteNow { .. } => Err(
+            "purlis did not ask you first, so nothing was deleted. Run `purlis skill delete-now` \
+             again at your terminal."
+                .to_owned(),
+        ),
         SkillCommand::Grant {
             name,
             workspace: Some(workspace),
@@ -882,11 +1411,13 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             }
         }
         SkillCommand::Pin {
-            name,
+            names,
             workspace,
             persona,
             off,
+            ..
         } => {
+            let name = one_of(names)?;
             let by = match (workspace, persona) {
                 (Some(ws), _) => purlis_core::skills::PinnedBy::Workspace(ws),
                 (None, Some(persona)) => purlis_core::skills::PinnedBy::Persona(persona),
@@ -999,8 +1530,21 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             }
             Ok(0)
         }
-        SkillCommand::Export { name, to, zip, at } => {
-            export(root, built_in.as_deref(), &name, &to, zip, &at.level())
+        SkillCommand::Export {
+            names, to, zip, at, ..
+        } => {
+            let Some(to) = to else {
+                voice::err(SAY_WHERE);
+                return Ok(2);
+            };
+            export(
+                root,
+                built_in.as_deref(),
+                &one_of(names)?,
+                &to,
+                zip,
+                &at.level(),
+            )
         }
         SkillCommand::Publish {
             name,
@@ -1197,7 +1741,16 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             };
             lifecycle_set(&mut cx, &at.level(), &name, &lifecycle)
         }
-        SkillCommand::Archive { name, undo, at } => {
+        SkillCommand::Off {
+            names, workspace, ..
+        } => switched(&mut cx, &workspace, &one_of(names)?, false),
+        SkillCommand::On {
+            names, workspace, ..
+        } => switched(&mut cx, &workspace, &one_of(names)?, true),
+        SkillCommand::Archive {
+            names, undo, at, ..
+        } => {
+            let name = one_of(names)?;
             let lifecycle = if undo {
                 Lifecycle::Active
             } else {

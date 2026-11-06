@@ -119,6 +119,53 @@ pub fn git_folder_pins(folders: &[PathBuf]) -> Vec<PathBuf> {
         .collect()
 }
 
+/// The folders a home keeps later-code names in, which a project may well use for its own files.
+const HOME_FOLDERS: [&str; 5] = [".config/", ".local/", ".ssh/", ".kube/", "Library/"];
+
+/// **The later-code names [`super::PLANTED`] holds, as plain paths in `folder`**, for a sandbox
+/// that keeps a plain path and not a rule for any depth (Claude Code's on Linux). What it holds
+/// there is pinned, so neither the name nor a folder above it is moved, removed or swapped.
+///
+/// A denied path that isn't there gets a placeholder, on its first missing part. So two kinds are
+/// named only where that costs nothing:
+///
+/// - inside `.git`, only what is there: git stops on a `commondir` it can't read, and a
+///   `worktrees` it can't make. [`super::arrived`] looks at the rest;
+/// - in a home's folders ([`HOME_FOLDERS`]), only where the folder that holds the name is there,
+///   so a project can still make its own `.config`. These run only for a folder used as a home.
+///
+/// A name with a `**`, one that holds only itself and one in `lifted` are left out. Nothing below
+/// `folder` is followed, and each path is as `folder` spells it.
+pub fn held_by_path_in(folder: &Path, lifted: &[PathBuf]) -> Vec<PathBuf> {
+    if !folder.is_dir() {
+        return Vec::new();
+    }
+    super::PLANTED
+        .iter()
+        .filter(|planted| {
+            planted.reach == super::Reach::AndBelow
+                && !planted.path.contains("**")
+                && !lifted.iter().any(|name| name.ends_with(planted.path))
+        })
+        .filter_map(|planted| {
+            let at = folder.join(planted.path);
+            let wanted = if planted.path.starts_with(".git/") {
+                std::fs::symlink_metadata(&at).is_ok()
+            } else if HOME_FOLDERS
+                .iter()
+                .any(|home| planted.path.starts_with(home))
+            {
+                at.parent()
+                    .and_then(|parent| std::fs::symlink_metadata(parent).ok())
+                    .is_some_and(|kind| kind.is_dir())
+            } else {
+                true
+            };
+            wanted.then_some(at)
+        })
+        .collect()
+}
+
 /// The folders below `folder` that purlis itself runs git in, read without a bound: `folder`
 /// itself, each folder with a `.git` at the root of each workspace (`workspaces/<ws>/<clone>`,
 /// whatever its name), each one in its `repos/`, as [`crate::repofolder::holdings`] walks it

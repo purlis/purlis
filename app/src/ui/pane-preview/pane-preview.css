@@ -12,6 +12,7 @@
 [data-scope="pane-preview"]:is(
   [data-part="arriving"],
   [data-part="line"],
+  [data-part="opening"],
   [data-part="size"],
   [data-part="refused"],
   [data-part="held"],
@@ -60,6 +61,11 @@
 
 [data-scope="pane-preview"][data-part="line"][data-refused] {
   background-color: var(--danger-base);
+}
+
+/* **A tab about to come forward**: a mark along its bottom, in the accent, as the line is. */
+[data-scope="pane-preview"][data-part="opening"] {
+  background-color: var(--accent-base);
 }
 
 /* **The size a terminal will take**: in the pane's top corner, under its head. */

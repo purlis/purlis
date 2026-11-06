@@ -56,6 +56,7 @@ mod scan;
 mod secret;
 mod session;
 mod shellguard;
+mod signing;
 mod skill;
 mod statusline;
 mod theme;
@@ -442,6 +443,11 @@ enum Command {
     /// A pool's limits: list them, set one, or return one to the default.
     #[command(subcommand)]
     Pool(pool::PoolCommand),
+
+    /// The key the app signs your chats' commits with: set it up, see it, check a commit on
+    /// GitHub, or remove it.
+    #[command(subcommand)]
+    Signing(signing::SigningCommand),
 
     /// Claude Code's footer, from the per-turn JSON on stdin.
     ///
@@ -1323,6 +1329,8 @@ fn read_only_standing(command: &Command) -> ReadOnly {
         | Command::News(_)
         // This machine's pools, in its config home: nothing of a project's.
         | Command::Pool(_)
+        // This machine's signing key, in its keychain: nothing of a project's.
+        | Command::Signing(_)
         // This machine's themes and the theme folders of the plane and its workspaces: read
         // through the theme engine, and nothing is written.
         | Command::Theme(_)
@@ -1339,8 +1347,7 @@ fn read_only_standing(command: &Command) -> ReadOnly {
         | Command::Persona(memory::PersonaCommand::List)
         | Command::Skill(
             skill::SkillCommand::List { .. }
-            | skill::SkillCommand::Show { .. }
-            | skill::SkillCommand::Restore { name: None, .. },
+            | skill::SkillCommand::Show { .. },
         )
         | Command::Change(change::ChangeCommand::List { .. })
         | Command::Session(session::SessionCommand::List { .. })
@@ -1351,6 +1358,10 @@ fn read_only_standing(command: &Command) -> ReadOnly {
         // Its read tools answer and every tool that writes is refused at the call (#1051):
         // `tests/it/the_mcp_server_on_a_read_only_project_changes_nothing.rs` calls every tool.
         | Command::Mcp { .. } => ReadOnly::RunsAndSays,
+        // With no name it lists what can be restored.
+        Command::Skill(skill::SkillCommand::Restore { names, .. }) if names.is_empty() => {
+            ReadOnly::RunsAndSays
+        }
         _ => ReadOnly::Refused,
     }
 }
@@ -3607,6 +3618,7 @@ fn run(command: Command) -> Result<u8, String> {
             | ProfileCommand::SignOut { .. },
         )
         | Command::Pool(_)
+        | Command::Signing(_)
         | Command::Vault(_) => {
             unreachable!("answered before run")
         }
@@ -5468,6 +5480,8 @@ fn main() -> ExitCode {
         Command::Stop { .. } => return stop_every_agent(),
         // A pool is this machine's, kept in its config home: no project is looked for.
         Command::Pool(command) => return pool::run(command),
+        // The signing key is this machine's, kept in its keychain: no project is looked for.
+        Command::Signing(command) => return signing::run(command),
         // `theme` reads this machine's themes, and the plane's when it runs in one, and needs
         // none; it chooses its own exit, a linter's (`theme.rs`).
         Command::Theme(command) => return theme::run(command),

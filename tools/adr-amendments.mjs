@@ -6,11 +6,13 @@
 // ADR then add two files and never touch the same lines, where a dated section appended to the
 // end of the ADR made every such pair conflict.
 //
-// This holds the rule: no ADR carries a dated amendment section (an `## ` or `### ` heading that
-// starts with one of the words below and carries a date), and the refusal names the file to write
-// instead; an amendments folder belongs to an ADR of its
-// number, which links to it; and every file in it is named by its date and a slug and starts
-// with its `# ` heading. CI runs it through `tools/adr-amendments.test.mjs`, which checks the
+// This holds the rules: no two ADRs share a number (#5329), and no ADR carries a dated amendment
+// section (an `## ` or `### ` heading that starts with one of the words below and carries a date),
+// and the refusal names the file to write instead; an amendments folder belongs to an ADR of its
+// number, which links to it; and every file in it is named by its date and a slug and starts with
+// its `# ` heading. Each pull request takes the next free number without seeing the others, so two
+// can pass apart and clash on main: the merge queue's run of a group holds this too, and the second
+// of them to land fails. CI runs it through `tools/adr-amendments.test.mjs`, which checks the
 // repository's own `docs/adr/`. `node tools/adr-amendments.mjs` runs it by hand.
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -77,9 +79,26 @@ export function problems(dir) {
   const entries = readdirSync(dir, { withFileTypes: true });
   const adrs = new Map();
   const out = [];
+  const held = new Map();
   for (const e of entries) {
     const m = e.isFile() && ADR.exec(e.name);
-    if (m) adrs.set(m[1], e.name);
+    if (m) held.set(m[1], [...(held.get(m[1]) ?? []), e.name].sort());
+  }
+  // Each record to move gets a number of its own, so two that move never meet again.
+  let next = Math.max(0, ...[...held.keys()].map(Number)) + 1;
+  for (const [number, names] of [...held].sort()) {
+    adrs.set(number, names[0]);
+    if (names.length > 1) {
+      const free = names.slice(1).map(() => String(next++).padStart(4, "0"));
+      const to =
+        free.length === 1
+          ? `the next free number, ${free[0]}`
+          : `the next free numbers, ${free.slice(0, -1).join(", ")} and ${free.at(-1)}`;
+      out.push(
+        `ADR ${number} is held by ${names.length} records: ${names.join(", ")}; keep the one ` +
+          `that landed first and move the others to ${to}; correct what cites them`,
+      );
+    }
   }
   for (const [number, name] of [...adrs].sort()) {
     const text = readFileSync(join(dir, name), "utf8");
@@ -116,5 +135,5 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const found = problems(fileURLToPath(new URL("../docs/adr", import.meta.url)));
   for (const line of found) console.error(line);
   if (found.length) process.exit(1);
-  console.log("every ADR amendment is a file of its own");
+  console.log("every ADR has a number of its own, and every amendment is a file of its own");
 }

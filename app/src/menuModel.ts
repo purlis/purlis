@@ -252,6 +252,9 @@ const DRESS: Readonly<Record<string, Dress>> = {
   // A tab's own rows (#4753): what a tab is, and never a chat's. Close other tabs (#4762) is
   // drawn among what closes (#4760), and, as Close, ends nothing (#4756): never coloured.
   "tab.closeOthers": { said: SAID.closeOtherTabs, slot: "end" },
+  // A lone view's splits (#5318), with the rows that rearrange a tab's panes.
+  "tab.split.right": { said: (offer) => offer.title, slot: "first" },
+  "tab.split.down": { said: (offer) => offer.title, slot: "first" },
   "tab.select": { said: SAID.switchTo, slot: "first", quiet: true },
   "tab.pin": pin,
   // Tile all (#4765): among a tab's own rows on its right-click, and with the splits on a pane's,

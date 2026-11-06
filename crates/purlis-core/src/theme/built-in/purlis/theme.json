@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/purlis/purlis/v0.5.0/docs/schema/theme.v2.schema.json",
+  "$schema": "https://raw.githubusercontent.com/purlis/purlis/v0.5.1/docs/schema/theme.v2.schema.json",
   "name": "Purlis",
   "palette": {
     "behind": "#121215",

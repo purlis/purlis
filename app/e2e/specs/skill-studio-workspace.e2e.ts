@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { projectRoot } from "../acting.js";
 import {
-  closeTheViewTabsOpenedSince,
+  closesTheTabsItOpens,
   focusWorkspace,
   runFromThePalette,
   shownButton,
@@ -45,7 +45,6 @@ describe("a workspace's skills in the Skill studio", function () {
   this.timeout(120_000);
 
   const written: string[] = [];
-  let wereOpen: string[] = [];
 
   before(async () => {
     const root = await projectRoot();
@@ -56,11 +55,13 @@ describe("a workspace's skills in the Skill studio", function () {
     written.push(grant);
     written.push(writeSkill(join(root, "workspaces", "alpha", "skills"), OWN));
     await focusWorkspace("alpha");
-    wereOpen = await tabNames();
   });
 
-  after(async () => {
-    await closeTheViewTabsOpenedSince(wereOpen);
+  // Between the two: the strip is read once alpha is focused, and its view tabs are closed
+  // before the files are tidied.
+  closesTheTabsItOpens();
+
+  after(() => {
     for (const path of written) rmSync(path, { recursive: true, force: true });
   });
 

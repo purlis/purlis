@@ -2584,11 +2584,12 @@ pub fn proposed_change(
             let writes = crate::askwrites::proposed(path, before, after);
             let whole = matches!(writes, crate::askwrites::WritesShown::Whole { .. });
             opens = crate::askwrites::proposed_too_long(before, after);
-            (
-                format!("Proposes a change to {path}, which only you apply"),
-                Some(writes),
-                whole,
-            )
+            let says = if one.skills.is_some() {
+                format!("Proposes a change to skills, which only you apply: {path}")
+            } else {
+                format!("Proposes a change to {path}, which only you apply")
+            };
+            (says, Some(writes), whole)
         }
         Now::Stale => (
             format!(

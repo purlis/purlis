@@ -266,6 +266,82 @@ fn a_chat_is_kept_only_on_a_pool_this_machine_keeps_and_goes_with_its_end() {
     assert!(branches_to_fetch(config.path(), plane).is_empty());
 }
 
+/// **A draining runner's work is owed while a project may still have some of it to fetch**
+/// (#5393), and a chat kept on the pool's next runner holds nothing back.
+#[test]
+fn work_is_owed_from_a_draining_runner_until_its_fetch_and_a_chat_on_the_next_runner_owes_none() {
+    let config = tempfile::tempdir().unwrap();
+    let plane = std::path::Path::new("/planes/a");
+    let chat = |runner: Option<&str>| crate::machine::ChatOnPool {
+        pool: "first".to_owned(),
+        workspace: "ide".to_owned(),
+        runner: runner.map(str::to_owned),
+    };
+    let owed = || -> Vec<std::path::PathBuf> {
+        work_owed_from(config.path(), "first", "first-old")
+            .unwrap()
+            .into_iter()
+            .map(|owing| owing.plane)
+            .collect()
+    };
+    crate::machine::update(config.path(), |store| store.remember(plane, 1)).unwrap();
+    assert!(owed().is_empty(), "nothing ran there");
+
+    crate::machine::update(config.path(), |store| {
+        store.keep_chat_on_pool(plane, 1, chat(Some("first-new")));
+    })
+    .unwrap();
+    assert!(owed().is_empty(), "that chat is on the pool's next runner");
+
+    crate::machine::update(config.path(), |store| {
+        store.keep_chat_on_pool(plane, 2, chat(Some("first-old")));
+    })
+    .unwrap();
+    assert_eq!(owed(), [plane], "a chat that ran there may have left work");
+    assert_eq!(
+        work_owed_from(config.path(), "first", "first-old").unwrap()[0].opened,
+        1,
+        "it says when the project was last opened (#5461)"
+    );
+
+    crate::machine::update(config.path(), |store| store.forget_chat_on_pool(plane, 2)).unwrap();
+    crate::machine::update(config.path(), |store| {
+        store.keep_chat_on_pool(plane, 3, chat(None));
+    })
+    .unwrap();
+    assert_eq!(owed(), [plane], "a record that can't say counts for each");
+
+    crate::machine::update(config.path(), |store| store.leave_chat_on_pool(plane, 3)).unwrap();
+    assert_eq!(owed(), [plane], "its chat ended, and its fetch has not run");
+
+    crate::machine::update(config.path(), |store| {
+        store.branches_fetched(plane, "first", "ide");
+    })
+    .unwrap();
+    assert!(owed().is_empty(), "its fetch ran");
+}
+
+/// A chat started again on another of its pool's runners has left work on the one it was on.
+#[test]
+fn a_chat_kept_again_on_another_runner_of_its_pool_owes_what_it_left_on_the_first() {
+    let mut store = crate::machine::Store::default();
+    let plane = std::path::Path::new("/planes/a");
+    store.remember(plane, 1);
+    let chat = |runner: Option<&str>| crate::machine::ChatOnPool {
+        pool: "first".to_owned(),
+        workspace: "ide".to_owned(),
+        runner: runner.map(str::to_owned),
+    };
+    store.keep_chat_on_pool(plane, 1, chat(Some("first-old")));
+    assert!(store.recent(plane).unwrap().branches_to_fetch.is_empty());
+
+    store.keep_chat_on_pool(plane, 1, chat(Some("first-new")));
+
+    let recent = store.recent(plane).unwrap();
+    assert_eq!(recent.chats_on_pools[&1], chat(Some("first-new")));
+    assert!(recent.branches_to_fetch["first"].contains("ide"));
+}
+
 #[test]
 fn a_workspace_set_to_run_on_a_pool_runs_there_once_the_pool_is_kept_and_nowhere_before() {
     let config = tempfile::tempdir().unwrap();
@@ -4379,6 +4455,7 @@ fn fetch_back_asks_a_workspace_following_the_projects_pool_only_once_it_ran_ther
     let on = |workspace: &str| crate::machine::ChatOnPool {
         pool: "first".to_owned(),
         workspace: workspace.to_owned(),
+        runner: None,
     };
     crate::machine::update(config.path(), |store| {
         store.remember(plane, 1);
@@ -4453,6 +4530,7 @@ fn a_first_chat_on_a_pool_is_one_nothing_of_the_workspace_has_run_or_come_back_f
             crate::machine::ChatOnPool {
                 pool: "first".to_owned(),
                 workspace: "ide".to_owned(),
+                runner: None,
             },
         );
     })

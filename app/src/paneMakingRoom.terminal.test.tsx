@@ -64,8 +64,17 @@ function Window({ first }: { first: Tabs }) {
     return next;
   }, []);
   const hold = useCallback(() => {}, []);
+  // What a hold brought forward was told as it came: there is nothing more to tell.
+  const told = useCallback(() => undefined, []);
   const own = useCallback((session: number) => String(session), []);
-  const drag = usePaneDrag({ tabs, change, ctx, onHoldTab: hold, chatNameOf: own });
+  const drag = usePaneDrag({
+    tabs,
+    change,
+    ctx,
+    onHoldTab: hold,
+    onHoldOver: told,
+    chatNameOf: own,
+  });
   const front = tabs.inFront ?? tabs.order[0];
   const boxes = boxesOf(tabs.byId[front].layout, tabs.byId[front].focused, ROOM, {
     separator: 0,

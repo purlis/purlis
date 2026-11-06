@@ -516,6 +516,8 @@ describe("deleting a workspace", () => {
       // folder, and the watch that says when it moves.
       "plane_tree",
       "files_watch",
+      // And the workspace landed on draws its own folder there (#5375): a read of one folder.
+      "workspace_tree",
       // The workspace in front changed, so the theme it draws is asked of the core's theme
       // engine again (#2320): a read, from the survey the core keeps.
       "theme_in_force",

@@ -893,11 +893,13 @@ impl Asks {
                     },
                 },
             );
-            drop(inner);
+            // Traced before the lock goes too, for the same reason (#5220): an answer's trace
+            // is written only once the ask is taken, under the lock.
             match joined {
                 Some((_, waiting)) => self.trace(chat, "joined", &vault, &key, waiting),
                 None => self.trace(chat, "raised", &vault, &key, 1),
             }
+            drop(inner);
             (answered, n)
         };
         say(&asked_said(&vault, &key, said_why.as_ref(), within));
@@ -1063,7 +1065,7 @@ impl Asks {
                 },
             },
         );
-        drop(inner);
+        // And traced before it goes, as [`Asks::hold`]'s are (#5220).
         let said = match how {
             Unheld::Waits => "runner unconfirmed",
             Unheld::CannotReceive => "cannot receive",
@@ -1074,6 +1076,7 @@ impl Asks {
             }
             Err(_) => self.trace(chat, &format!("raised, {said}"), &vault, &key, 1),
         }
+        drop(inner);
         Ok(())
     }
 
@@ -1299,8 +1302,10 @@ impl Asks {
             }
         }
         self.save(&inner);
-        drop(inner);
-        // A link is traced as one, by the asked names alone: never the entry it reads.
+        // Traced and told before the lock goes (#5220): a chat that asks again the moment the
+        // ask is taken raises another, and a trace names no ask, so its answer is written
+        // before anything else can be. A link is traced as one, by the asked names alone:
+        // never the entry it reads.
         let what = match (filled, linked) {
             (true, true) => "linked",
             (true, false) => "filled",
@@ -1335,6 +1340,7 @@ impl Asks {
                 },
             );
         }
+        drop(inner);
         let told = crate::askoutcome::Outcome {
             about: crate::askoutcome::About::Secret {
                 vault: vault.clone(),

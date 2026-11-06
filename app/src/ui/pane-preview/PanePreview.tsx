@@ -8,6 +8,7 @@
  * - **`PanePreviewArriving`**: a pane the drop would make, or one with no frame on screen: a chat
  *   from the list, or a side that would fold, with no name.
  * - **`PanePreviewLine`**: on the strip, the line where a tab would go.
+ * - **`PanePreviewOpening`**: the mark on a tab a drag rests on, until it comes forward (#5294).
  * - **`PanePreviewSize`**: the columns and rows a terminal will take, on the pane that will change.
  * - **`PanePreviewRefused`**: the mark on the pane a refused place means.
  * - **`PanePreviewHeld`**: what is held, following the pointer.
@@ -55,6 +56,13 @@ export function PanePreviewLine({ box, refused = false }: { box: PreviewBox; ref
       aria-hidden="true"
       style={placed(box)}
     />
+  );
+}
+
+/** **A tab about to come forward**: the mark along its bottom, at `box`, while a drag rests on it. */
+export function PanePreviewOpening({ box }: { box: PreviewBox }) {
+  return (
+    <div data-scope="pane-preview" data-part="opening" aria-hidden="true" style={placed(box)} />
   );
 }
 

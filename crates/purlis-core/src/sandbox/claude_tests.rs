@@ -727,6 +727,162 @@ fn on_macos_a_claude_code_chats_commands_keep_to_its_own_terminal() {
     assert_eq!(held(Level::Floor, Os::Linux), (false, false, false, false));
 }
 
+/// A Claude Code chat's settings on `os`, for a project at `root` opening in `root`.
+fn write_denied_on(os: Os, root: &std::path::Path, grants: &Grants) -> Vec<String> {
+    super::grant::TEST_HARNESS_TEMP.with(|roots| roots.set(&[]));
+    let plane = Plane::of(Some(PROJECT));
+    let policy = plane.said().policy.expect("on");
+    super::persona::allow_every_as_listed(root, &policy);
+    let on = Machine { os, ..machine() };
+    let compiled = Compiled::granted(&policy, &plane, root, &on, None, grants);
+    let applied = applied_of(
+        Harness::ClaudeCode,
+        compiler(Harness::ClaudeCode).expect("a compiler"),
+        &compiled,
+        root,
+        &on,
+    )
+    .expect("compiles");
+    let super::Form::ClaudeCode(settings) = applied.form_in(Some(root)) else {
+        panic!("compiled for Claude Code");
+    };
+    settings.sandbox["filesystem"]["denyWrite"]
+        .as_array()
+        .expect("a list")
+        .iter()
+        .filter_map(|rule| rule.as_str().map(str::to_owned))
+        .collect()
+}
+
+/// Claude Code's sandbox on Linux keeps a plain path and not a rule for any depth, so a Claude Code
+/// chat there has the later-code names in its folder by path. Absent names inside `.git` and home
+/// folders that aren't there are left out, as a placeholder there would stop git or a project's
+/// own folder. macOS has its rules, and no placeholders.
+#[test]
+fn on_linux_a_claude_code_chat_has_the_later_code_names_in_its_folder_by_path() {
+    let dir = tempfile::tempdir().expect("a project");
+    let root = dir.path().canonicalize().expect("real");
+    std::fs::create_dir_all(root.join(".git/hooks")).expect("a repository");
+    std::fs::create_dir_all(root.join(".kube")).expect("a home's folder");
+    let at = |name: &str| root.join(name).display().to_string();
+
+    let linux = write_denied_on(Os::Linux, &root, &Grants::default());
+    for name in [
+        ".envrc",
+        ".mcp.json",
+        ".husky",
+        ".githooks",
+        ".vscode",
+        ".cursor",
+        ".claude/settings.json",
+        ".git/hooks",
+        ".kube/kuberc",
+    ] {
+        assert!(linux.contains(&at(name)), "{name} is held by path");
+    }
+    for name in [
+        ".git/commondir",
+        ".git/config.worktree",
+        ".git/info/attributes",
+        ".git/objects/info/alternates",
+        ".git/worktrees",
+        ".config/git",
+        ".ssh/config",
+        ".local/share/gh",
+        "Library/LaunchAgents",
+    ] {
+        assert!(
+            !linux.contains(&at(name)),
+            "{name} would leave a placeholder"
+        );
+    }
+
+    let macos = write_denied_on(Os::MacOs, &root, &Grants::default());
+    assert!(
+        !macos.contains(&at(".envrc")),
+        "a rule holds it at any depth"
+    );
+}
+
+/// A folder a chat opens in is never named out from under it: not at the floor, where the project's
+/// names are held too and the chat is inside one, and not through a link at a name that leads to
+/// a folder above it, which would stop the chat starting.
+#[cfg(unix)]
+#[test]
+fn on_linux_a_chats_own_folder_is_never_held_as_one_of_these_names() {
+    let dir = tempfile::tempdir().expect("a project");
+    let root = dir.path().canonicalize().expect("real");
+    let inside = root.join(".agents/work");
+    std::fs::create_dir_all(&inside).expect("a folder");
+    std::os::unix::fs::symlink("..", inside.join(".envrc")).expect("a link");
+    let on = Machine {
+        os: Os::Linux,
+        ..machine()
+    };
+    let compiled = Compiled {
+        level: Level::Floor,
+        ..compiled_at(&root, None, &Grants::default())
+    };
+    let applied = applied_of(
+        Harness::ClaudeCode,
+        compiler(Harness::ClaudeCode).expect("a compiler"),
+        &compiled,
+        &root,
+        &on,
+    )
+    .expect("compiles");
+    let super::Form::ClaudeCode(settings) = applied.form_in(Some(&inside)) else {
+        panic!("compiled for Claude Code");
+    };
+    let denied = settings.sandbox["filesystem"]["denyWrite"]
+        .as_array()
+        .expect("a list")
+        .clone();
+    let holds = |path: std::path::PathBuf| denied.contains(&json!(path.display().to_string()));
+    assert!(!holds(root.join(".agents")), "the chat works inside it");
+    assert!(!holds(inside.join(".envrc")), "it leads above the chat");
+    assert!(holds(inside.join(".husky")));
+    assert!(
+        holds(root.join(".husky")),
+        "and the project's, at the floor"
+    );
+}
+
+/// A Claude Code chat in a branch folder has its clone's `.git` held whole, so the look takes
+/// that one as what vouches for a file; a chat elsewhere has none held, and no repository in its
+/// folders vouches.
+#[test]
+fn a_branch_folder_chats_look_takes_its_clones_git_as_held_and_no_other() {
+    let dir = tempfile::tempdir().expect("a project");
+    let root = dir.path().canonicalize().expect("real");
+    let clone = root.join("workspaces/w/repo");
+    std::fs::create_dir_all(clone.join(".git")).expect("a clone");
+    let piece = root.join("workspaces/w/.worktrees/repo/piece");
+    std::fs::create_dir_all(&piece).expect("a branch folder");
+    let compiled = Compiled {
+        level: Level::Floor,
+        ..compiled_at(&root, None, &Grants::default())
+    };
+    let applied = applied_of(
+        Harness::ClaudeCode,
+        compiler(Harness::ClaudeCode).expect("a compiler"),
+        &compiled,
+        &root,
+        &machine(),
+    )
+    .expect("compiles");
+    assert_eq!(
+        applied.arrived_watch(Some(&piece), &machine()).held_git,
+        [clone.join(".git")]
+    );
+    assert!(
+        applied
+            .arrived_watch(Some(&root), &machine())
+            .held_git
+            .is_empty()
+    );
+}
+
 /// #3316: a Claude Code chat allowed to listen on a port compiles the very settings it would
 /// without the grant, `allowLocalBinding` off among them: its server dials in to its door
 /// through the hook socket it already reaches, and nothing of Claude Code's own sandbox changes.

@@ -2221,6 +2221,138 @@ fn a_page_the_engine_opens_at_a_file_or_app_address_is_closed_and_never_listed()
     );
 }
 
+/// The engine opens page `PAGE-9` blank from the frames page, and the driver sees it: its own
+/// document has said no origin yet.
+fn a_blank_page_opens(browser: &Browser, engine: &Engine) {
+    super::lock(&engine.model)
+        .opened_at
+        .insert("PAGE-9".into(), "about:blank".into());
+    engine.emit(
+        "Target.targetCreated",
+        json!({"targetInfo":{"targetId":"PAGE-9","type":"page","title":"","url":"about:blank","openerId":"PAGE-1","attached":false}}),
+        None,
+    );
+    wait_for("the blank page is seen", || {
+        super::lock(&browser.inner.state).page("PAGE-9").is_some()
+    });
+}
+
+/// The sites the agent is kept off on page `target`'s frames, by frame.
+fn kept_off_on(browser: &Browser, target: &str, site: &'static str) -> HashMap<String, String> {
+    let kept: crate::drive::KeptOff = Arc::new(move |address: &str| {
+        address
+            .starts_with(&format!("http://{site}"))
+            .then(|| format!("{site}:80"))
+    });
+    super::lock(&browser.inner.state).kept_off_frames(target, &kept)
+}
+
+#[test]
+fn a_blank_page_a_kept_off_page_opened_is_kept_off_while_its_own_origin_is_not_known() {
+    let (browser, engine) = browser();
+    a_blank_page_opens(&browser, &engine);
+    assert_eq!(
+        kept_off_on(&browser, "PAGE-9", "fixture.test")
+            .get("PAGE-9")
+            .map(String::as_str),
+        Some("fixture.test:80"),
+        "what the opener wrote into it is the opener's"
+    );
+}
+
+#[test]
+fn a_blank_page_is_not_kept_off_for_a_frame_of_the_page_that_opened_it() {
+    let (browser, engine) = browser();
+    snapshot(&browser, 1);
+    a_blank_page_opens(&browser, &engine);
+    // The frames page holds a frame of other.test; the page itself is not on it.
+    assert!(kept_off_on(&browser, "PAGE-1", "other.test").contains_key("PAYMENT-FRAME"));
+    assert_eq!(
+        kept_off_on(&browser, "PAGE-9", "other.test").get("PAGE-9"),
+        None
+    );
+}
+
+/// The engine opens page `target` blank from the frames page, able to reach its opener by script
+/// where `linked`.
+fn a_window_opens_from_the_frames_page(
+    browser: &Browser,
+    engine: &Engine,
+    target: &str,
+    linked: bool,
+) {
+    super::lock(&engine.model)
+        .opened_at
+        .insert(target.into(), "about:blank".into());
+    engine.emit(
+        "Target.targetCreated",
+        json!({"targetInfo":{"targetId":target,"type":"page","title":"","url":"about:blank","openerId":"PAGE-1","canAccessOpener":linked,"attached":false}}),
+        None,
+    );
+    wait_for("the window is seen", || {
+        super::lock(&browser.inner.state).page(target).is_some()
+    });
+}
+
+/// The person's ruling of 2026-11-06: during a sign-in, only the page the login was performed on
+/// and the windows related to it act on the site it is open on; every other page is kept off it,
+/// and so is an address the agent opens a page at.
+#[test]
+fn during_a_sign_in_only_its_own_page_and_its_related_windows_act_on_its_site() {
+    let (browser, engine) = browser();
+    snapshot(&browser, 1);
+    a_window_opens_from_the_frames_page(&browser, &engine, "PAGE-7", true);
+    a_window_opens_from_the_frames_page(&browser, &engine, "PAGE-6", false);
+    browser.keep_sign_in_to_its_page(Arc::new(|address: &str| {
+        address
+            .starts_with("http://other.test")
+            .then(|| "other.test:80".to_owned())
+    }));
+    // No login has run here: no page is the sign-in's.
+    assert!(
+        browser
+            .kept_off_frames("PAGE-1")
+            .contains_key("PAYMENT-FRAME"),
+        "kept off before a login"
+    );
+
+    *super::lock(&browser.inner.sign_in_page) = Some("PAGE-1".to_owned());
+    assert!(browser.kept_off_frames("PAGE-1").is_empty(), "its own page");
+
+    // The window related to it is the sign-in's too: the page around it then acts as well.
+    *super::lock(&browser.inner.sign_in_page) = Some("PAGE-7".to_owned());
+    assert!(
+        browser.kept_off_frames("PAGE-1").is_empty(),
+        "related to it"
+    );
+
+    // A page with no such link to it is another tab: kept off the sign-in's site.
+    *super::lock(&browser.inner.sign_in_page) = Some("PAGE-6".to_owned());
+    assert_eq!(
+        browser
+            .kept_off_frames("PAGE-1")
+            .get("PAYMENT-FRAME")
+            .map(String::as_str),
+        Some("other.test:80"),
+        "another tab"
+    );
+
+    // A page the agent opens at the sign-in's site is no page of the sign-in's.
+    *super::lock(&browser.inner.sign_in_page) = Some("PAGE-1".to_owned());
+    assert_eq!(
+        browser.call(
+            &id(2),
+            Call::Open {
+                address: crate::WebAddress::parse("http://other.test/account").unwrap()
+            }
+        ),
+        Err(Refusal::KeptOff {
+            site: "other.test:80".to_owned(),
+            asks_to_sign_in: false,
+        })
+    );
+}
+
 #[test]
 fn a_reference_from_before_its_frame_loaded_another_document_is_refused_as_stale() {
     let (browser, engine) = browser();

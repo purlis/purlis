@@ -24,7 +24,7 @@ import { CARD_DELAY_MS, CARD_LEAVE_MS, CARD_SKIP_MS } from "./ChatsSection";
 import { forgetThisLaunch } from "./regions";
 import { aTabForEachChat } from "./laidOut.testkit";
 import { GLOBAL } from "./windowprefs";
-import type { Shown } from "./shownState";
+import type { ChatMarkProps } from "./ui/chat-mark/ChatMark";
 import { goToWorkspace, rowSays, stripNamed } from "./test-strips";
 import { findByTip, getByTip, tipOf } from "./ui/tooltip/tooltip.testkit";
 import { heard } from "./frame.testkit";
@@ -46,13 +46,13 @@ import { CLOSE_QUIZ } from "./TaskQuiz";
 
 const drawn = vi.hoisted(() => ({ marks: [] as (string | undefined)[] }));
 
-vi.mock("./StateShown", async (original) => {
-  const real = await original<typeof import("./StateShown")>();
+vi.mock("./ui/chat-mark/ChatMark", async (original) => {
+  const real = await original<typeof import("./ui/chat-mark/ChatMark")>();
   return {
     ...real,
-    StateShown: (props: { shown: Shown }) => {
-      drawn.marks.push(props.shown.word);
-      return <real.StateShown {...props} />;
+    ChatMark: (props: ChatMarkProps) => {
+      if (props.word !== undefined) drawn.marks.push(props.word);
+      return <real.ChatMark {...props} />;
     },
   };
 });
@@ -423,10 +423,25 @@ const row = (tree: HTMLElement, name: string) => {
 };
 
 /** What a row says its chat is doing: the word a person reads on it, and its mark's shape. */
-const says = (on: HTMLElement) => ({
-  word: on.querySelector(".shown-state .word")?.textContent,
-  shape: on.querySelector(".shown-state .shape")?.getAttribute("data-shape"),
-});
+const GLYPH: Readonly<Record<string, string>> = {
+  needs: "hand",
+  failed: "cross",
+  working: "ring",
+  waiting: "hourglass",
+  idle: "pause",
+  ended: "dash",
+};
+const says = (on: HTMLElement) => {
+  const mark = on.querySelector('[data-scope="chat-mark"][data-part="root"]');
+  const word = on.querySelector('[data-scope="chat-mark"][data-part="word"]');
+  return {
+    word: (word ?? on.querySelector(".shown-state .word"))?.textContent,
+    shape:
+      mark === null
+        ? on.querySelector(".shown-state .shape")?.getAttribute("data-shape")
+        : GLYPH[mark.getAttribute("data-variant") ?? ""],
+  };
+};
 
 /** What a task's row says its question waits on, and for how long (#4564), or nothing. */
 const waitsOn = (on: HTMLElement) => on.querySelector(".question-waits")?.textContent ?? null;
@@ -1498,11 +1513,11 @@ describe("a chat's state, as a word and a shape (#1484)", () => {
 
     const expected = [
       ["steward 1", { word: "needs you", shape: "hand" }],
-      ["talk", { word: "done", shape: "tick" }],
+      ["talk", { word: "done", shape: "dash" }],
       ["sweep", { word: "cancelled", shape: "dash" }],
-      ["probe", { word: "failed", shape: "cross" }],
-      ["lost", { word: "ended without a report", shape: "triangle" }],
-      ["halt", { word: "closed by you", shape: "octagon" }],
+      ["probe", { word: "failed", shape: "dash" }],
+      ["lost", { word: "ended without a report", shape: "dash" }],
+      ["halt", { word: "closed by you", shape: "dash" }],
     ] as const;
     for (const [name, state] of expected) {
       expect(says(row(tree, name)), `${name} in the Chats list`).toEqual(state);
@@ -1570,7 +1585,7 @@ describe("a chat's state, as a word and a shape (#1484)", () => {
     // the registry's word that its asks changed has the window read them again.
     await question(2, "with");
 
-    const asking = { word: "asking steward 1", shape: "question" };
+    const asking = { word: "asking steward 1", shape: "hourglass" };
     await waitFor(() => expect(says(row(tree, "talk"))).toEqual(asking));
 
     // Answered, and it goes on inside the same turn.
@@ -1630,8 +1645,13 @@ describe("a chat's state, as a word and a shape (#1484)", () => {
     const quiz = await screen.findByTestId("task-quiz");
     expect(quiz.getAttribute("data-task")).toBe("2");
     expect(quiz.closest(".pane-top")).not.toBeNull();
-    expect(within(quiz).getByText("steward 1 passed this on.")).toBeTruthy();
+    // Whole once it is opened (#5215), and the band is folded until asked.
+    expect(screen.getByRole("button", { name: /·\s*Show$/ })).toBeTruthy();
     expect(document.activeElement).toBe(typing);
+    fireEvent.click(screen.getByRole("button", { name: /·\s*Show$/ }));
+    await waitFor(() => expect(quiz).toBeVisible());
+    fireEvent.click(within(quiz).getByRole("button", { name: "Show the whole question" }));
+    expect(within(quiz).getByText("steward 1 passed this on.")).toBeTruthy();
     // Still in its count and the Inbox's.
     expect(await screen.findByRole("button", { name: "1 thing waits on you" })).toBeTruthy();
 
@@ -1683,6 +1703,8 @@ describe("a chat's state, as a word and a shape (#1484)", () => {
 
   it("closes a question from this pane only: it still waits in the count and the Inbox's (#5213)", async () => {
     const quiz = await aQuizAtTheTop();
+    fireEvent.click(screen.getByRole("button", { name: /·\s*Show$/ }));
+    await waitFor(() => expect(quiz).toBeVisible());
 
     fireEvent.click(within(quiz).getByRole("button", { name: CLOSE_QUIZ }));
 
@@ -1723,7 +1745,7 @@ describe("a chat's state, as a word and a shape (#1484)", () => {
     // Its one task is over, so the session folded by itself (#1499): opened by hand.
     fireEvent.click(getByTip("Show the chats under steward 1", tree));
 
-    const done = { word: "done", shape: "tick" };
+    const done = { word: "done", shape: "dash" };
     expect(says(row(tree, "talk"))).toEqual(done);
   });
 
@@ -1743,7 +1765,7 @@ describe("a chat's state, as a word and a shape (#1484)", () => {
 
     // Its turn ended with the report: at rest, out of the queue.
     move(2, "waiting", 10, []);
-    await both({ word: "done", shape: "tick" });
+    await both({ word: "done", shape: "dash" });
     expect(screen.queryByRole("button", { name: /^1 (chat needs|thing waits)/ })).toBeNull();
 
     // The person types in it: a new turn.
@@ -1774,7 +1796,8 @@ describe("a chat's state, as a word and a shape (#1484)", () => {
     const tree = await section();
     await waitFor(() => expect(shape(tree)).toHaveLength(1));
 
-    const unheard = { word: "running (no detail from opencode)", shape: "dots" };
+    // Nothing known is no state claimed: the word says so, and its mark wears no badge (#5340).
+    const unheard = { word: "running (no detail from opencode)", shape: undefined };
     expect(says(row(tree, "steward 1"))).toEqual(unheard);
   });
 
@@ -2125,24 +2148,24 @@ describe("a tidy Chats list (DS-11, #1843)", () => {
       const lead = one.querySelector(".ui-row-lead") as HTMLElement;
       // The lead holds the persona's mark with the state on it, in a column as wide on every row.
       expect(
-        [...lead.children].map((part) => part.className),
+        [...lead.children].map((part) => part.getAttribute("data-scope")),
         name,
-      ).toEqual(["chat-persona"]);
+      ).toEqual(["chat-mark"]);
       expect(drawnAs(lead, "inline-size"), name).toBe("var(--chats-mark)");
       const persona = lead.firstElementChild as Element;
-      const mark = persona.firstElementChild as Element;
-      // The one icon's size (#4762, `chatPersona.css`), which the Chats list sets to its mark's.
-      const sized = "var(--chat-persona-size, calc(var(--space-6) + var(--space-2)))";
+      const mark = persona.querySelector('[data-part="who"]')?.firstElementChild as Element;
+      // The one icon's size (#4762, `chat-mark.css`), which the Chats list sets to its mark's.
+      const sized = "var(--chat-mark-size, calc(var(--space-6) + var(--space-2)))";
       expect(drawnWith(mark, "inline-size"), name).toBe(sized);
       expect(drawnWith(mark, "block-size"), name).toBe(sized);
       const holder = tree.closest(".chats-section") as Element;
-      expect(drawnWith(holder, "--chat-persona-size"), name).toBe("var(--chats-mark)");
+      expect(drawnWith(holder, "--chat-mark-size"), name).toBe("var(--chats-mark)");
       expect(mark.getAttribute("aria-hidden"), name).toBe("true");
-      expect(persona.querySelector(".shown-state"), name).not.toBeNull();
+      expect(persona.querySelector('[data-part="word"]'), name).not.toBeNull();
     }
     // One wears a persona's mark, the other, with no persona, a shell's.
     expect(
-      rows.map((one) => one.querySelector(".chat-persona")?.firstElementChild?.tagName),
+      rows.map((one) => one.querySelector('[data-part="who"]')?.firstElementChild?.tagName),
     ).toEqual(["SPAN", "svg"]);
   });
 
@@ -2157,47 +2180,36 @@ describe("a tidy Chats list (DS-11, #1843)", () => {
     move(1, "running", 10);
     move(2, "running", 11);
 
-    const steward = row(tree, "steward 1").querySelector(".chat-persona > .persona-mark");
+    const steward = row(tree, "steward 1").querySelector('[data-part="who"] > .persona-mark');
     await waitFor(() => expect(tipOf(steward)).toBe("steward, working"));
     const terminal = within(tree)
       .getAllByRole("treeitem")
-      .map((one) => one.querySelector(".chat-persona > svg"))
+      .map((one) => one.querySelector('[data-part="who"] > svg'))
       .find((one) => one !== null);
     expect(tipOf(terminal)).toBe("terminal, working");
   });
 
-  it("draws the state's mark on the persona only for a chat that asks or is at work (#3342)", async () => {
-    core([chat(1, "alpha")]);
+  it("draws a state's mark on the persona in every state, and none where nothing is known (#5340)", async () => {
+    const { move } = core([chat(1, "alpha"), chat(2, "alpha")]);
     render(<App />);
-    await section();
+    const tree = await section();
+    await waitFor(() => expect(shape(tree)).toHaveLength(2));
+    const badge = () => row(tree, "steward 1").querySelector('[data-part="badge"]');
+    const mark = () => row(tree, "steward 1").querySelector('[data-part="root"]');
 
-    // At rest no badge, whatever the state: a grey mark would stand for seven (WCAG 1.4.1).
-    // The whole cascade: the icon's rules are the components layer's (`chatPersona.css`, #4762).
-    const sheet = drawnWith;
-    const at = (kind: string) => {
-      const persona = document.createElement("span");
-      persona.className = "chat-persona";
-      persona.dataset.state = kind;
-      const shown = document.createElement("span");
-      shown.className = "shown-state";
-      persona.append(shown);
-      const holder = screen.getByTestId("chats-section");
-      holder.append(persona);
-      const display = sheet(shown, "display");
-      persona.remove();
-      return display;
-    };
-    for (const kind of ["done", "idle", "reported", "stopped-by-you", "closed-by-you", "unheard"])
-      expect(at(kind), kind).toBe("none");
-    for (const kind of [
-      "needs-you",
-      "working",
-      "asking",
-      "waiting-on-tasks",
-      "failed",
-      "unreported",
-    ])
-      expect(at(kind), kind).toBe("block");
+    // Nothing heard: the persona alone, and no state claimed.
+    expect(badge()).toBeNull();
+
+    for (const [state, queue, drawn] of [
+      ["running", 0, "working"],
+      ["waiting", 0, "idle"],
+      ["done", 0, "ended"],
+    ] as const) {
+      move(1, state, 10);
+      await waitFor(() => expect(mark()).toHaveAttribute("data-variant", drawn));
+      expect(badge()).not.toBeNull();
+      void queue;
+    }
   });
 
   it("draws a twist only on a row with chats under it, and its press folds without opening", async () => {
@@ -2414,12 +2426,12 @@ describe("a chat's row is one line, with a hover card (#1675)", () => {
       expect(one.querySelector(".chat-row-place")).toHaveAttribute("aria-hidden", "true");
       expect(drawnAs(parts[1], "order")).toBe("-1");
       // The persona's mark leads, with the state on it, and both are said (#3342).
-      expect(parts[1].children[0]).toHaveClass("chat-persona");
-      expect(parts[1].querySelector(".chat-persona > .persona-mark")).not.toBeNull();
+      expect(parts[1].children[0]).toHaveAttribute("data-scope", "chat-mark");
+      expect(parts[1].querySelector('[data-part="who"] > .persona-mark')).not.toBeNull();
       const persona = name.split(" ")[0];
       expect(one).toHaveAccessibleName(`${name} ${persona}, working`);
       // The state is its mark on the row; its word is out of sight.
-      const word = one.querySelector(".shown-state .word") as HTMLElement;
+      const word = one.querySelector('[data-part="word"]') as HTMLElement;
       expect(word.textContent).toBe("working");
       expect(drawnWith(word, "clip-path")).toBe("inset(50%)");
     }

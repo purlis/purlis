@@ -2017,6 +2017,7 @@ function App() {
       newShell: () => undefined,
       newBrowser: () => undefined,
       split: () => undefined,
+      splitTab: () => undefined,
       closePane: () => undefined,
       closeTab: () => undefined,
       closeOtherTabs: () => undefined,

@@ -81,7 +81,7 @@ fn not_kept(name: &str, why: &str) -> String {
 
 /// The nearest wider level than `level` that holds a skill named `name` in use: the copy that
 /// loads in its place once it is archived (ADR 0099 §3, narrowest first).
-fn wider_copy(plane: &Path, level: &Level, name: &str) -> Option<Level> {
+pub(in crate::skills) fn wider_copy(plane: &Path, level: &Level, name: &str) -> Option<Level> {
     let mut wider: Vec<Level> = Vec::new();
     // A workspace's or a persona's level is narrower than the project's (ADR 0099 §3).
     let narrower = level.at != super::verbs::Whose::Project;

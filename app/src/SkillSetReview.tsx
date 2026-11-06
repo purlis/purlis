@@ -1,14 +1,18 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   commands,
   type InstalledCopy,
+  type SkillGrant,
   type SkillLevel,
+  type SkillPinner,
   type SkillSource,
   type SkillSetAct,
+  type SkillSetLifecycle,
   type SkillSetMember,
+  type SkillSetMove,
   type SkillSetReview as Review,
 } from "./bindings";
 import { counted } from "./dispatches";
@@ -45,6 +49,8 @@ const WORDS: Record<
   {
     /** On its main action and each skill's box: "Delete". */
     verb: string;
+    /** After "will be", in a review's first line: "deleted". */
+    done: string;
     /** In the page's title: "Delete all from". */
     title: string;
     /** After a name: "which you're deleting". */
@@ -56,6 +62,7 @@ const WORDS: Record<
   }
 > = {
   delete: {
+    done: "deleted",
     verb: "Delete",
     title: "Delete all from",
     doing: "which you're deleting",
@@ -64,6 +71,7 @@ const WORDS: Record<
       "Each stays in Deleted for 30 days. It is one change, and Undo is offered right after.",
   },
   "turn-off": {
+    done: "turned off",
     verb: "Turn off",
     title: "Turn all off from",
     doing: "which you're turning off",
@@ -72,6 +80,7 @@ const WORDS: Record<
       `It turns off in ${workspace ?? "this workspace"} as one change, and Undo is offered right after.`,
   },
   "turn-on": {
+    done: "turned on",
     verb: "Turn on",
     title: "Turn all on from",
     doing: "which stays off",
@@ -79,7 +88,65 @@ const WORDS: Record<
     does: (workspace) =>
       `It turns on in ${workspace ?? "this workspace"} as one change, and Undo is offered right after.`,
   },
+  pin: {
+    done: "pinned",
+    verb: "Pin",
+    title: "Pin all from",
+    doing: "which you're pinning",
+    summary: "Nothing is pinned until you press Pin.",
+    does: () =>
+      "A pinned skill stays in a chat's list, whatever the budget. It is one change, and Undo is offered right after.",
+  },
+  unpin: {
+    done: "unpinned",
+    verb: "Unpin",
+    title: "Unpin all from",
+    doing: "which you're unpinning",
+    summary: "Nothing is unpinned until you press Unpin.",
+    does: () =>
+      "The router decides about them again. It is one change, and Undo is offered right after.",
+  },
+  archive: {
+    done: "archived",
+    verb: "Archive",
+    title: "Archive all from",
+    doing: "which you're archiving",
+    summary: "Nothing is archived until you press Archive.",
+    does: () =>
+      "They never load until they are restored. It is one change, and Undo is offered right after.",
+  },
+  unarchive: {
+    done: "unarchived",
+    verb: "Unarchive",
+    title: "Unarchive all from",
+    doing: "which you're unarchiving",
+    summary: "Nothing is unarchived until you press Unarchive.",
+    does: () => "They load again. It is one change, and Undo is offered right after.",
+  },
+  move: {
+    done: "moved",
+    verb: "Move",
+    title: "Move all from",
+    doing: "which you're moving",
+    summary: "Nothing is moved until you press Move.",
+    does: () =>
+      "They keep their history and grades. It is one change, and Undo is offered right after.",
+  },
+  export: {
+    done: "exported",
+    verb: "Export",
+    title: "Export all from",
+    doing: "which you're exporting",
+    summary: "Nothing is written until you choose where to save it.",
+    does: () =>
+      "Export writes copies. Nothing in the project changes, so there is nothing to undo.",
+  },
 };
+
+/** What `act`'s main action says: "Delete", "Turn off". */
+export function setVerb(act: SkillSetAct): string {
+  return WORDS[act].verb;
+}
 
 /** What a page of `act` on what came from `from` is named. */
 export function setTitle(act: SkillSetAct, from: string): string {
@@ -99,6 +166,8 @@ function saidOf(label: string, text: string, notes: readonly string[], undo?: ()
 /**
  * **The change a review asks** (#5331): one commit, and one Undo right after. `change` makes it,
  * and goes on from the page it was made on; `undo` makes its Undo, from wherever the person is.
+ * The Library's Select mode (#5332) asks the rest of its changes the same way: a pin by `by`, a
+ * move `to` a level with `grant`, an archive, and an export, which commits nothing and has no Undo.
  */
 export function applySet({
   plane,
@@ -107,6 +176,10 @@ export function applySet({
   from,
   removes,
   workspace,
+  by = null,
+  to = null,
+  grant = null,
+  zip = true,
   change,
   undo,
 }: {
@@ -118,6 +191,13 @@ export function applySet({
   /** The source the same commit takes out, which its Undo puts back. */
   removes: SkillSource | null;
   workspace: string | null;
+  /** Whose pins a pin changes. */
+  by?: SkillPinner | null;
+  /** Where a move goes, and the grant it takes into the project's skills. */
+  to?: SkillLevel | null;
+  grant?: SkillGrant | null;
+  /** An export as one zip, or as a folder of skill folders. */
+  zip?: boolean;
   change: Change;
   undo: Change;
 }) {
@@ -141,6 +221,121 @@ export function applySet({
             async (undone) => saidOf("Delete undone", `${count} back.`, undone),
           ),
         ),
+    );
+    return;
+  }
+  if (act === "pin" || act === "unpin") {
+    if (by === null) return;
+    const on = act === "pin";
+    let pinned: string[] = [];
+    const saidPinned = (did: string) => `${counted(pinned.length, "skill", "skills")} ${did}.`;
+    change(
+      on ? "The skills were not pinned" : "The skills were not unpinned",
+      () =>
+        commands
+          .skillSetPin(
+            plane,
+            by,
+            members.map((one) => one.name),
+            on,
+          )
+          .then((answer) => {
+            if (answer.status === "ok") pinned = answer.data.changed;
+            return answer;
+          }),
+      async (notes) =>
+        saidOf(
+          on ? "Skills pinned" : "Skills unpinned",
+          saidPinned(on ? "pinned" : "unpinned"),
+          notes,
+          () =>
+            undo(
+              "The change was not undone",
+              () => commands.skillSetPin(plane, by, pinned, !on),
+              async (undone) =>
+                saidOf("Change undone", saidPinned(on ? "unpinned" : "pinned"), undone),
+            ),
+        ),
+    );
+    return;
+  }
+  if (act === "archive" || act === "unarchive") {
+    const archiving = act === "archive";
+    let was: SkillSetLifecycle[] = [];
+    const saidState = (did: string) => `${counted(was.length, "skill", "skills")} ${did}.`;
+    change(
+      archiving ? "The skills were not archived" : "The skills were not unarchived",
+      () =>
+        commands
+          .skillSetLifecycle(
+            plane,
+            members.map((member) => ({
+              member,
+              lifecycle: archiving ? { state: "archived" } : { state: "active" },
+            })),
+          )
+          .then((answer) => {
+            if (answer.status === "ok") was = answer.data.was;
+            return answer;
+          }),
+      async (notes) =>
+        saidOf(
+          archiving ? "Skills archived" : "Skills unarchived",
+          saidState(archiving ? "archived" : "unarchived"),
+          notes,
+          () =>
+            undo(
+              "The change was not undone",
+              () => commands.skillSetLifecycle(plane, was),
+              async (undone) =>
+                saidOf(
+                  "Change undone",
+                  saidState(archiving ? "unarchived" : "archived again"),
+                  undone,
+                ),
+            ),
+        ),
+    );
+    return;
+  }
+  if (act === "move") {
+    if (to === null) return;
+    let back: SkillSetMove[] = [];
+    change(
+      "The skills were not moved",
+      () =>
+        commands
+          .skillSetMove(
+            plane,
+            members.map((member) => ({ member, to, grant })),
+          )
+          .then((answer) => {
+            if (answer.status === "ok") back = answer.data.back;
+            return answer;
+          }),
+      async (notes) =>
+        saidOf("Skills moved", `${count} moved.`, notes, () =>
+          undo(
+            "The move was not undone",
+            () => commands.skillSetMove(plane, back),
+            async (undone) => saidOf("Move undone", `${count} back where they were.`, undone),
+          ),
+        ),
+    );
+    return;
+  }
+  if (act === "export") {
+    let to: string | null = null;
+    change(
+      "The skills were not exported",
+      () =>
+        commands.skillSetExport(plane, [...members], zip).then((answer) => {
+          if (answer.status !== "ok") return answer;
+          to = answer.data;
+          return { status: "ok" as const, data: { notes: [] } };
+        }),
+      async () =>
+        to === null ? undefined : saidOf("Skills exported", `${count} written to ${to}.`, []),
     );
     return;
   }
@@ -173,6 +368,25 @@ export function applySet({
         ),
       ),
   );
+}
+
+/** **One of those chosen that a change leaves as it is** (#5332), and why: "Built-in skills can't
+ *  be changed." */
+export type Stays = { name: string; label: string; why: string };
+
+/** **A review's first line where some stay** (#5332): "12 will be deleted, 2 are built-in and
+ *  stay". Those that stay for one reason are counted by it; the built-in ones by their kind. */
+function staysSaid(count: number, done: string, stays: readonly Stays[]): string {
+  const builtIn = stays.filter((one) => one.label === "built-in").length;
+  const rest = stays.length - builtIn;
+  return [
+    `${count} will be ${done}`,
+    builtIn > 0 && `${counted(builtIn, "is", "are")} built-in and stay${builtIn === 1 ? "s" : ""}`,
+    rest > 0 &&
+      `${counted(rest, "other stays", "others stay")} as ${rest === 1 ? "it is" : "they are"}`,
+  ]
+    .filter(Boolean)
+    .join(", ");
 }
 
 /** A skill of a set's own key among the set: no two share a level and a name. */
@@ -310,7 +524,12 @@ export function SetReviewPage({
   named,
   ticked,
   workspace,
+  to = null,
   alsoRemoves,
+  stays = [],
+  fields,
+  main,
+  unready,
   busy,
   onCancel,
   onApply,
@@ -324,18 +543,40 @@ export function SetReviewPage({
   ticked: readonly string[];
   /** The workspace a turn is in. */
   workspace: string | null;
+  /** The level a move goes to (#5332), once one is picked. */
+  to?: SkillLevel | null;
   /** The source the same commit takes out, as it is named. */
   alsoRemoves?: string;
+  /** Those chosen that this change leaves as they are, each with why (#5332): a built-in skill,
+   *  one off already. */
+  stays?: readonly Stays[];
+  /** What the change asks before it is made, under its title: where a move goes (#5332). */
+  fields?: ReactNode;
+  /** What the main action says, where it is not the verb: "Choose where to save…". */
+  main?: string;
+  /** Why the main action cannot be pressed yet, where {@link fields} still asks something. */
+  unready?: string;
   busy: boolean;
   onCancel: () => void;
   onApply: (members: SkillSetMember[]) => void;
 }) {
   const [all, setAll] = useState<readonly SkillSetMember[]>(named);
   const [keys, setKeys] = useState<ReadonlySet<string>>(new Set(ticked));
+  // What it is handed changes in place (a move's level picked, #5332): it starts again from
+  // that, adjusted as it is drawn, so nothing it holds is drawn anew and the keyboard stays put.
+  const handed = `${named.map(memberKey).join("\u0001")}\u0002${ticked.join("\u0001")}`;
+  const [was, setWas] = useState(handed);
+  if (was !== handed) {
+    setWas(handed);
+    setAll(named);
+    setKeys(new Set(ticked));
+  }
   const going = all.filter((one) => keys.has(memberKey(one)));
   const { read, again } = useRead<Review>(
-    going.length === 0 ? undefined : `${act}\u0000${[...keys].join("\u0001")}`,
-    () => commands.skillSetReview(plane, act, going, workspace),
+    going.length === 0 || (act === "move" && to === null)
+      ? undefined
+      : `${act}\u0000${to === null ? "" : JSON.stringify(to)}\u0000${[...keys].join("\u0001")}`,
+    () => commands.skillSetReview(plane, act, going, workspace, to),
   );
   const review = read?.data;
   const words = WORDS[act];
@@ -354,15 +595,17 @@ export function SetReviewPage({
   const why =
     going.length === 0
       ? TICK_ONE
-      : read === undefined
-        ? "The review is being read."
-        : review === undefined
-          ? "The review could not be read."
-          : can.length === 0
-            ? "None of these can change."
-            : busy
-              ? BUSY
-              : undefined;
+      : unready !== undefined
+        ? unready
+        : read === undefined
+          ? "The review is being read."
+          : review === undefined
+            ? "The review could not be read."
+            : can.length === 0
+              ? "None of these can change."
+              : busy
+                ? BUSY
+                : undefined;
   return (
     <ReviewPage
       label={title}
@@ -370,7 +613,7 @@ export function SetReviewPage({
       summary={words.summary}
       onCancel={onCancel}
       main={{
-        children: words.verb,
+        children: main ?? words.verb,
         ...(act === "delete" ? { variant: "danger" as const } : { byReturn: false }),
         isDisabled: why !== undefined,
         tooltip: why,
@@ -378,10 +621,13 @@ export function SetReviewPage({
       }}
     >
       <h2 className="ui-text-strong">{title}</h2>
+      {fields}
       <p className="honest" data-testid="set-review-lead">
         {can.length === 0
           ? "Nothing is left in this change."
-          : `${counted(can.length, "skill", "skills")} in this change. ${words.does(workspace)}`}
+          : stays.length > 0
+            ? `${staysSaid(can.length, words.done, stays)}. ${words.does(workspace)}`
+            : `${counted(can.length, "skill", "skills")} in this change. ${words.does(workspace)}`}
         {can.length > 0 &&
           alsoRemoves !== undefined &&
           ` ${alsoRemoves} stops being a source in the same change.`}
@@ -474,6 +720,22 @@ export function SetReviewPage({
             </>
           )}
         </Held>
+      )}
+      {stays.length > 0 && (
+        <section aria-labelledby="set-stays" className="skill-review" data-testid="set-stays">
+          <h3 id="set-stays" className="ui-text-small ui-text-strong">
+            Stay as they are
+          </h3>
+          {stays.map((one) => (
+            <p
+              key={`${one.name}\u0000${one.label}`}
+              className="honest"
+              data-testid={`set-stays-${one.name}`}
+            >
+              <code>{one.name}</code> ({one.label}): {one.why}
+            </p>
+          ))}
+        </section>
       )}
       {leftOut.length > 0 && (
         <section aria-labelledby="set-left-out" className="skill-review">

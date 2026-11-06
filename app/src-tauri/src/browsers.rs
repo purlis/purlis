@@ -464,6 +464,10 @@ mod hosted {
                 Err(refusal) if refusal.code == session::NO_LOGIN_FORM_ON_CLEAN_LOAD => {
                     Err(Refused::NoFormOnCleanLoad(refusal.why))
                 }
+                // Refused before it began (#5251): nothing in the browser moved.
+                Err(refusal) if refusal.code == session::LOGIN_NOT_RUN => {
+                    Err(Refused::LoginNotRun(refusal.why))
+                }
                 Err(refusal) => Err(Refused::Said(refusal.why)),
             };
             // Back with the agent once it answers, unless the person took it over meanwhile;

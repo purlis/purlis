@@ -207,16 +207,27 @@ function pickerLabel(one: ViewPage): string {
 export function ViewListHead({
   title,
   lead,
+  action,
   children,
 }: {
   title: ReactNode;
   lead?: ReactNode;
+  /** One small button at the end of the heading's line (#5332): the Library's Select. */
+  action?: ReactNode;
   /** The page's own controls under the lead line. */
   children?: ReactNode;
 }) {
+  const heading = <h2 className="ui-text-body ui-text-strong">{title}</h2>;
   return (
     <div data-scope="view-frame" data-part="head">
-      <h2 className="ui-text-body ui-text-strong">{title}</h2>
+      {action === undefined ? (
+        heading
+      ) : (
+        <div data-scope="view-frame" data-part="heading">
+          {heading}
+          {action}
+        </div>
+      )}
       {lead !== undefined && (
         <p data-scope="view-frame" data-part="lead">
           {lead}

@@ -349,6 +349,8 @@ fn a_folder_of_a_branch_crosses_one_level_deep_with_each_entrys_kind() {
                 ignored: false,
                 refused: None,
                 workspace: None,
+                managed: false,
+                hidden: false,
             },
             FolderEntry {
                 name: "README.md".to_string(),
@@ -356,6 +358,8 @@ fn a_folder_of_a_branch_crosses_one_level_deep_with_each_entrys_kind() {
                 ignored: false,
                 refused: None,
                 workspace: None,
+                managed: false,
+                hidden: false,
             },
         ]
     );
@@ -628,4 +632,106 @@ fn a_refusal_crosses_as_the_cores_sentence() {
         refused,
         "'../../README.md' is not a path inside the branch's folder"
     );
+}
+
+/// #5375: a workspace's own files are the window's alone, as the plane root's are, and a
+/// workspace with no repo and no piece names them, never a branch.
+#[test]
+fn a_workspaces_own_files_are_the_windows_alone_and_named_by_no_repo() {
+    for command in ["workspace_tree", "workspace_file"] {
+        assert!(
+            purlis_session_protocol::ui::WINDOW_ONLY.contains(&command),
+            "{command}"
+        );
+    }
+    assert!(branch("alpha", "", &None).is_workspace_files());
+    assert!(!branch("alpha", "thing", &None).is_workspace_files());
+    assert!(!branch("alpha", "", &Some("piece".into())).is_workspace_files());
+    assert!(!branch("", "", &None).is_workspace_files());
+}
+
+/// A workspace with a repo in `repos/`, an old clone at its top, a note and its own file.
+fn workspace() -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    let ws = root.join("workspaces/alpha");
+    for folder in ["repos/api/.git", "svc/.git", "memory", "notes"] {
+        std::fs::create_dir_all(ws.join(folder)).unwrap();
+    }
+    std::fs::write(ws.join("notes/plan.md"), "the plan\n").unwrap();
+    std::fs::write(ws.join("memory/one.md"), "a memory\n").unwrap();
+    std::fs::write(ws.join(".env"), "TOKEN=x\n").unwrap();
+    (dir, root)
+}
+
+#[test]
+fn a_workspaces_folder_is_listed_with_its_repos_apart_and_its_marks() {
+    let (_dir, root) = workspace();
+    let top = workspace_tree_of(&root, "alpha", "", &[]).unwrap();
+    let names: Vec<(&str, bool, bool)> = top
+        .entries
+        .iter()
+        .map(|one| (one.name.as_str(), one.managed, one.hidden))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            ("memory", true, false),
+            ("notes", false, false),
+            (".env", false, true)
+        ]
+    );
+    assert_eq!(
+        top.repos,
+        [
+            WorkspaceRepo {
+                name: "api".into(),
+                inside_repos: true
+            },
+            WorkspaceRepo {
+                name: "svc".into(),
+                inside_repos: false
+            },
+        ]
+    );
+}
+
+#[test]
+fn a_managed_workspace_file_says_so_and_names_its_own_view() {
+    let (_dir, root) = workspace();
+    let memory = workspace_file_of(&root, "alpha", "memory/one.md", &[]).unwrap();
+    assert!(memory.managed);
+    assert_eq!(memory.view, Some(OwnFileView::Memory));
+    let plan = workspace_file_of(&root, "alpha", "notes/plan.md", &[]).unwrap();
+    assert!(!plan.managed);
+    assert_eq!(plan.view, None);
+    assert_eq!(
+        plan.file,
+        PieceFile::Text {
+            text: "the plan\n".into()
+        }
+    );
+}
+
+#[test]
+fn copy_path_and_reveal_place_a_workspace_file_and_never_a_repos() {
+    let (_dir, root) = workspace();
+    let reader = crate::reader();
+    let files = branch("alpha", "", &None);
+    assert_eq!(
+        path_text(&reader, &root, files, "notes/plan.md", false).unwrap(),
+        "notes/plan.md"
+    );
+    assert_eq!(
+        placed_of(&reader, &root, files, "notes/plan.md")
+            .unwrap()
+            .absolute,
+        root.join("workspaces/alpha/notes/plan.md")
+    );
+    assert_eq!(
+        shell_folder(&root, files, "notes").unwrap(),
+        root.join("workspaces/alpha/notes")
+    );
+    assert!(placed_of(&reader, &root, files, "svc").is_err());
+    assert!(path_text(&reader, &root, files, "repos/api", true).is_err());
 }

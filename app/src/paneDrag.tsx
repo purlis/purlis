@@ -12,6 +12,7 @@ import {
   useReducer,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import {
   ArrowDown,
@@ -25,7 +26,7 @@ import {
 import { keySaid, pressed } from "./keys/registry";
 import { Notice } from "./Notice";
 import { type Over, PaneDragLayer, PaneDragStore } from "./paneDragLayer";
-import { boxOfRect, PANE, TAB } from "./paneHeld";
+import { boxOfRect, PANE, STRIP, stripTab, TAB } from "./paneHeld";
 import { REGION_CHROME } from "./RegionFrame";
 import {
   type Box,
@@ -34,7 +35,6 @@ import {
   judgeDrop,
   type Place,
   placeAt,
-  previewOf,
   type Source,
   sourceName,
   type Target,
@@ -79,24 +79,25 @@ import { onTooltipEscape } from "./ui/tooltip/Tooltip";
  * from the drag's start, a place holds a little past its line, and a target changes only once the
  * pointer has stayed {@link TARGET_WAIT_MS}. Esc, a release on no place, the pointer being taken
  * away and the window losing focus put everything back as it was, the front tab and the keyboard
- * too. Holding over a tab for {@link HOLD_MS} brings it forward, so a pane can land in another tab's
- * layout.
+ * too. Resting on another tab for {@link HOLD_MS} brings it forward, so a pane can land in another
+ * tab's layout (#5294). That is a preview too: the window draws the tab, and tells nobody until the
+ * drag is over (`onHoldTab`, `onHoldOver`), and a cancel draws the tab that was in front again.
  *
  * **Placement mode** (#4764, `panePlacement.ts`) is every drag's route by keys and single presses
  * (WCAG 2.5.7): a press of a pane's grip ({@link PaneGrip}), Enter or Space on it, or ⌘⇧M on what
- * has the keyboard picks it up, and its targets are real buttons judged by the same rules.
+ * has the keyboard picks it up, and its targets are real buttons judged by the same rules. It draws
+ * the same preview as a drag, from the same store and layer (#5293): the target the keyboard is on
+ * is the place the pointer would be over.
  *
  * **The window's one Undo** is drawn and heard here too (`layoutUndo.ts`): the line after a drop,
  * a split or Tile all, and ⌘Z, which put back the same last change as the palette's row.
  */
 
-export { PANE, TAB };
+export { PANE, STRIP, TAB };
 /** A pane's grip: its head, pressed outside its buttons. */
 export const GRIP = "data-pane-grip";
 /** A sidebar row a chat is dragged from, by its session. */
 export const CHAT_ROW = "data-drag-chat";
-/** The strip: a drop on it makes a tab. Its tabs carry {@link TAB}. */
-export const STRIP = "data-drop-strip";
 
 /** A pane's grip as a control (#4764): a press, Enter or Space picks the pane up for placement
  *  mode, and a drag from it moves the pane as a drag from the rest of its head does. */
@@ -139,8 +140,11 @@ export function dropPane(tab: number, pane: number): Record<string, string> {
 const DRAG_FROM = 5;
 /** How far below the strip a tab is pulled before it leaves it for a split. */
 const OFF_THE_STRIP = 24;
-/** How long a drag holds over a tab before the tab comes forward (#4583). */
-export const HOLD_MS = 500;
+/**
+ * How long a drag rests on another tab before the tab comes forward (#4583, #5294). A starting
+ * value, from the prototype: a measured one replaces it.
+ */
+export const HOLD_MS = 650;
 /**
  * How long the pointer stays on a place before the preview takes it, so one crossing a pane on its
  * way elsewhere shuffles nothing (#5291). A starting value: a measured one replaces it.
@@ -167,25 +171,34 @@ export type PaneDragging = {
  *  the keyboard before. */
 type Held = { source: Source; at: Target; from?: HTMLElement };
 
-/** Where the panes of the tab in front and the strip are on screen, while something is held. */
-type Boxes = { panes: Map<string, Box>; strip?: Box };
+/** Where the strip is on screen, while something is held. */
+type Boxes = { strip?: Box };
 
 /**
  * **Pane dragging for a project's window.** `change` is the window's one way to change its tabs;
- * `onHoldTab` brings a tab forward. `ctx` names what is dragged and where chats are filed.
+ * `onHoldTab` brings a tab forward as a preview, until `onHoldOver`. `ctx` names what is dragged
+ * and where chats are filed.
  */
 export function usePaneDrag({
   tabs,
   change,
   ctx,
   onHoldTab,
+  onHoldOver,
   chatNameOf,
   active = true,
 }: {
   tabs: Tabs;
   change: (how: (tabs: Tabs) => Tabs) => Tabs;
   ctx: DropContext;
+  /**
+   * **Draws tab `id` in front while a drag or placement mode holds something** (#5294): the
+   * window's tabs have it in front, and nothing is told to the core until {@link onHoldOver}.
+   * A cancel calls it again with the tab that was in front.
+   */
   onHoldTab: (id: number) => void;
+  /** What brought a tab forward is over, dropped or put back: the window tells what it draws. */
+  onHoldOver: () => void;
   /** A chat's own name, as the core was told it (`Content.chat`), for one dragged from a row. */
   chatNameOf: (session: number) => string;
   /** Whether this window is the one in front, whose ⌘⇧M picks up what has the keyboard. */
@@ -214,12 +227,48 @@ export function usePaneDrag({
     const timer = window.setTimeout(() => setLineGone(last), UNDO_MS);
     return () => window.clearTimeout(timer);
   }, [last]);
-  const now = useRef({ tabs, ctx, change, onHoldTab, chatNameOf, held, boxes, active });
+  const now = useRef({ tabs, ctx, change, onHoldTab, onHoldOver, chatNameOf, held, boxes, active });
   useEffect(() => {
-    now.current = { tabs, ctx, change, onHoldTab, chatNameOf, held, boxes, active };
-  }, [tabs, ctx, change, onHoldTab, chatNameOf, held, boxes, active]);
-  // A window that goes takes no drag with it.
-  useEffect(() => () => store.stop(), [store]);
+    now.current = { tabs, ctx, change, onHoldTab, onHoldOver, chatNameOf, held, boxes, active };
+  }, [tabs, ctx, change, onHoldTab, onHoldOver, chatNameOf, held, boxes, active]);
+  /** Whether a tab has been brought forward since something was picked up (#5294). */
+  const broughtForward = useRef(false);
+  /** Draws tab `id` in front, as a preview, until {@link holdOver}: resting on it, or drawing
+   *  the one that was in front again as it is put back. */
+  const bringForward = useCallback((id: number) => {
+    broughtForward.current = true;
+    now.current.onHoldTab(id);
+  }, []);
+  /** Whatever brought a tab forward is over: the window may tell what it draws. */
+  const holdOver = useCallback(() => {
+    if (!broughtForward.current) return;
+    broughtForward.current = false;
+    now.current.onHoldOver();
+  }, []);
+  /**
+   * **Puts the tab in front and its focused pane back as they were** (#5291, #5293, #5294), then
+   * lets the window tell what it draws. A tab the hold brought forward was never told, so drawing
+   * the one that was in front again is all there is to it; anything else that moved it was told,
+   * and is changed back.
+   */
+  const putBack = useCallback(
+    ({ front, focused }: InFront) => {
+      const { tabs, change } = now.current;
+      const tab = front === undefined ? undefined : tabs.byId[front];
+      if (front !== undefined && tab !== undefined) {
+        if (tabs.inFront !== front && broughtForward.current) bringForward(front);
+        else if (tabs.inFront !== front) change((current) => selectTab(current, front));
+        if (focused !== undefined && tab.focused !== focused)
+          change((current) => focusPane(current, focused));
+      }
+      holdOver();
+    },
+    [bringForward, holdOver],
+  );
+  /** Where placement mode picked something up, which Esc puts back. */
+  const placedFrom = useRef<InFront>(undefined);
+  /** Ends the pointer's drag in progress, if there is one, as a cancel: for a window that goes. */
+  const abandon = useRef<(() => void) | undefined>(undefined);
 
   // The Undo goes once the layout moves on without it: it is drawn and heard only while it can
   // still put the last change back.
@@ -270,14 +319,17 @@ export function usePaneDrag({
         keyboard: document.activeElement,
       }))(now.current);
       let live = false;
+      /** The tab the pointer rests on, until it comes forward. */
       let held: { tab: number; timer: number } | undefined;
       /** The place the pointer is on, while it waits to be the preview's. */
       let waiting: { over: Over | undefined; timer: number } | undefined;
       const stopHolding = () => {
         if (held !== undefined) window.clearTimeout(held.timer);
         held = undefined;
+        store.restOn(undefined);
       };
       const end = () => {
+        abandon.current = undefined;
         window.removeEventListener("pointermove", move, true);
         window.removeEventListener("pointerup", up, true);
         window.removeEventListener("pointercancel", taken, true);
@@ -286,24 +338,15 @@ export function usePaneDrag({
         stopHolding();
         if (waiting !== undefined) window.clearTimeout(waiting.timer);
         waiting = undefined;
-        store.stop();
+        // A press that never became a drag drew nothing, and placement mode may be drawing.
+        if (live) store.stop();
       };
       /** Ends it with nothing moved, and everything as it was before the press. */
       const cancel = (said: string) => {
         end();
         if (!live) return;
-        const { tabs, change } = now.current;
         const { front, focused } = was;
-        const tab = front === undefined ? undefined : tabs.byId[front];
-        if (
-          front !== undefined &&
-          tab !== undefined &&
-          (tabs.inFront !== front || tab.focused !== focused)
-        )
-          change((current) => {
-            const forward = selectTab(current, front);
-            return focused === undefined ? forward : focusPane(forward, focused);
-          });
+        putBack(was);
         // After a tab brought back has taken the keyboard, as it does when it is drawn.
         const { keyboard } = was;
         window.setTimeout(() => {
@@ -316,21 +359,6 @@ export function usePaneDrag({
           if (to?.isConnected === true && document.activeElement !== to) to.focus();
         }, 0);
         setSaid(said);
-      };
-      /** The click that ends a drag is the drag's, never a row's press. */
-      const swallowClick = () => {
-        window.addEventListener("click", swallow, { capture: true, once: true });
-        window.setTimeout(() => window.removeEventListener("click", swallow, true), 0);
-      };
-      /** A cancel before the pointer comes up: its click, when it does, is the drag's too. */
-      const swallowLaterClick = () => {
-        const cameUp = () => {
-          window.removeEventListener("pointerdown", pressedAgain, true);
-          swallowClick();
-        };
-        const pressedAgain = () => window.removeEventListener("pointerup", cameUp, true);
-        window.addEventListener("pointerup", cameUp, { capture: true, once: true });
-        window.addEventListener("pointerdown", pressedAgain, { capture: true, once: true });
       };
       const move = (at: PointerEvent) => {
         if (!live) {
@@ -356,11 +384,22 @@ export function usePaneDrag({
         }
         store.moveTo(at.clientX, at.clientY);
         const over = hit(at.clientX, at.clientY);
-        const tab = tabUnder(at.clientX, at.clientY);
+        // Resting on another tab brings it forward (#5294); the one in front is where it is.
+        const under = tabUnder(at.clientX, at.clientY);
+        const tab = under === now.current.tabs.inFront ? undefined : under;
         if (tab !== held?.tab) {
           stopHolding();
-          if (tab !== undefined)
-            held = { tab, timer: window.setTimeout(() => now.current.onHoldTab(tab), HOLD_MS) };
+          if (tab !== undefined) {
+            held = {
+              tab,
+              timer: window.setTimeout(() => {
+                held = undefined;
+                store.restOn(undefined);
+                bringForward(tab);
+              }, HOLD_MS),
+            };
+            store.restOn(tab);
+          }
         }
         const latest = waiting === undefined ? store.get()?.over : waiting.over;
         if (placeKey(over) === placeKey(latest)) return;
@@ -398,6 +437,7 @@ export function usePaneDrag({
         change((current) =>
           recorded(current, dropOn(current, source, over.target, ctx, over.size), did),
         );
+        holdOver();
         setSaid(did);
       };
       const esc = (key: KeyboardEvent) => {
@@ -413,6 +453,7 @@ export function usePaneDrag({
         if (live) swallowLaterClick();
         cancel(PUT_BACK);
       };
+      abandon.current = () => cancel(PUT_BACK);
       window.addEventListener("pointermove", move, true);
       window.addEventListener("pointerup", up, true);
       window.addEventListener("pointercancel", taken, true);
@@ -457,32 +498,55 @@ export function usePaneDrag({
 
     window.addEventListener("pointerdown", down, true);
     return () => window.removeEventListener("pointerdown", down, true);
-  }, [store]);
+  }, [bringForward, holdOver, putBack, store]);
 
   // --- Placement mode (#4764) ------------------------------------------------------------------
 
-  const pickUp = useCallback((picked: Source, from?: Element | null) => {
-    if (dragEnded.current) return;
-    const { tabs, ctx, chatNameOf } = now.current;
-    const source: Source =
-      picked.kind === "chat" && picked.chat === ""
-        ? { ...picked, chat: chatNameOf(picked.session) }
-        : picked;
-    if (
-      source.kind === "pane" &&
-      contentsOf(tabs, source.tab).find(({ pane }) => pane === source.pane)?.content.kind ===
-        "empty"
-    ) {
-      setSaid("Not picked up: an empty pane has nothing to move. Close it instead.");
-      return;
-    }
-    setHeld({
-      source,
-      at: firstTarget(groupsOf(tabs, source, paneShown)),
-      from: from instanceof HTMLElement ? from : undefined,
-    });
-    setSaid(pickedUpSaid(sourceName(tabs, source, ctx)));
-  }, []);
+  const pickUp = useCallback(
+    (picked: Source, from?: Element | null) => {
+      if (dragEnded.current) return;
+      const { tabs, ctx, chatNameOf } = now.current;
+      const source: Source =
+        picked.kind === "chat" && picked.chat === ""
+          ? { ...picked, chat: chatNameOf(picked.session) }
+          : picked;
+      if (
+        source.kind === "pane" &&
+        contentsOf(tabs, source.tab).find(({ pane }) => pane === source.pane)?.content.kind ===
+          "empty"
+      ) {
+        setSaid("Not picked up: an empty pane has nothing to move. Close it instead.");
+        return;
+      }
+      // Picked up again while something is held, Esc still puts back the tab that was in front.
+      if (now.current.held === undefined) {
+        const front = tabs.inFront;
+        placedFrom.current = {
+          front,
+          focused: front === undefined ? undefined : tabs.byId[front]?.focused,
+        };
+      }
+      // **The same preview as a drag** (#5293): the window is read as it is now, and the target the
+      // keyboard is on is drawn as the place a pointer would be over.
+      store.stop();
+      store.start(source, tabs, 0, 0, "keys");
+      setHeld({
+        source,
+        at: firstTarget(groupsOf(tabs, source, paneShown)),
+        from: from instanceof HTMLElement ? from : undefined,
+      });
+      setSaid(pickedUpSaid(sourceName(tabs, source, ctx)));
+    },
+    [store],
+  );
+
+  /** Placement mode is over: nothing held, nothing drawn for it. */
+  const endPlacing = useCallback(() => {
+    setHeld(undefined);
+    setBoxes(undefined);
+    store.stop();
+    placedFrom.current = undefined;
+  }, [store]);
 
   const gripName = useCallback(
     (tab: number, pane: number) => {
@@ -492,36 +556,66 @@ export function usePaneDrag({
     [tabs, ctx],
   );
 
-  /** Ends placement mode. `back` says it was put back, and gives the keyboard to where it was. */
-  const putDown = useCallback((back: "said" | "focused" | "none") => {
-    const was = now.current.held;
-    setHeld(undefined);
-    setBoxes(undefined);
-    if (was === undefined || back === "none") return;
-    setSaid(PUT_BACK);
-    if (back !== "focused") return;
-    // A pane's grip; a chat's or a tab's own control where it was picked up, or, picked up from a
-    // menu that has gone since, its row or its tab on the strip.
-    const from = was.from?.isConnected === true ? was.from : null;
-    const to =
-      was.source.kind === "pane" ? (homeOf(was.source) ?? from) : (from ?? homeOf(was.source));
-    to?.focus();
-  }, []);
+  /**
+   * Ends placement mode, with everything as it was: the panes, the tab in front and its focused
+   * pane. `back` says it was put back, and gives the keyboard to where it was.
+   */
+  const putDown = useCallback(
+    (back: "said" | "focused") => {
+      const was = now.current.held;
+      const from = placedFrom.current ?? {};
+      endPlacing();
+      if (was === undefined) return;
+      putBack(from);
+      setSaid(PUT_BACK);
+      if (back !== "focused") return;
+      // A pane's grip; a chat's or a tab's own control where it was picked up, or, picked up from
+      // a menu that has gone since, its row or its tab on the strip. After a tab brought back is
+      // drawn.
+      const own = was.from;
+      window.setTimeout(() => {
+        const ownNow = own?.isConnected === true ? own : null;
+        const to =
+          was.source.kind === "pane"
+            ? (homeOf(was.source) ?? ownNow)
+            : (ownNow ?? homeOf(was.source));
+        to?.focus();
+      }, 0);
+    },
+    [endPlacing, putBack],
+  );
 
   /** Drops what is held on `to`, by the pointer's own rules; a refused target says why, and what
    *  is held stays held. */
-  const dropOnTarget = useCallback((to: Target) => {
-    const { tabs, ctx, held, boxes } = now.current;
-    if (held === undefined) return;
-    const size = to.kind === "pane" ? boxes?.panes.get(paneKey(to.tab, to.pane)) : undefined;
-    const tried = placingDrop(tabs, held.source, to, ctx, size);
-    setSaid(tried.said);
-    if (!tried.dropped) return;
-    now.current.change((current) => placingDrop(current, held.source, to, ctx, size).tabs);
-    followTheDrop.current = true;
-    setHeld(undefined);
-    setBoxes(undefined);
-  }, []);
+  const dropOnTarget = useCallback(
+    (to: Target) => {
+      const { tabs, ctx, held } = now.current;
+      if (held === undefined) return;
+      const size =
+        to.kind === "pane" ? placeBox(store.get()?.base?.zones, to.tab, to.pane) : undefined;
+      const tried = placingDrop(tabs, held.source, to, ctx, size);
+      setSaid(tried.said);
+      if (!tried.dropped) return;
+      // The panes are let go of before the drop draws them where the preview had them.
+      endPlacing();
+      now.current.change((current) => placingDrop(current, held.source, to, ctx, size).tabs);
+      holdOver();
+      followTheDrop.current = true;
+    },
+    [endPlacing, holdOver, store],
+  );
+
+  // A window that goes takes no drag with it, and leaves nothing held forward: what is held is
+  // put back, so nothing that was only drawn is told.
+  useEffect(
+    () => () => {
+      abandon.current?.();
+      if (now.current.held !== undefined) putDown("said");
+      store.stop();
+      holdOver();
+    },
+    [holdOver, putDown, store],
+  );
 
   const placing = useMemo<Placing>(() => ({ pickUp, gripName }), [pickUp, gripName]);
 
@@ -578,11 +672,20 @@ export function usePaneDrag({
       }
     };
     // A press on a target drops; on a grip, it picks that pane up instead; on a tab on the strip,
-    // it brings that tab forward, as holding a drag over it does. Anywhere else it puts back.
+    // it brings that tab forward as a preview, as resting a drag on it does (#5294), and the
+    // strip never hears it. Anywhere else it puts back.
     const press = (event: PointerEvent) => {
       const on = event.target instanceof Element ? event.target : null;
       if (on?.closest(`[${PLACE_TARGET}], [${GRIP_HANDLE}]`) != null) return;
-      if (on?.closest(`[${TAB}]:not([${PANE}])`)?.closest(`[${STRIP}]`) != null) return;
+      const tab = on?.closest(`[${TAB}]:not([${PANE}])`);
+      if (tab != null && tab.closest(`[${STRIP}]`) != null) {
+        event.preventDefault();
+        event.stopPropagation();
+        swallowLaterClick();
+        const id = Number(tab.getAttribute(TAB));
+        if (id !== now.current.tabs.inFront) bringForward(id);
+        return;
+      }
       putDown("said");
     };
     // Esc puts it back. It is heard where the first Esc goes while a tooltip is up (the target
@@ -595,10 +698,11 @@ export function usePaneDrag({
       window.removeEventListener("keydown", key, true);
       window.removeEventListener("pointerdown", press, true);
     };
-  }, [holding, putDown, dropOnTarget]);
+  }, [bringForward, holding, putDown, dropOnTarget]);
 
-  // Where the targets are drawn: measured as something is picked up, as the tabs change under
-  // it (a tab brought forward), and as the window is resized.
+  // Where the strip's target is drawn: measured as something is picked up, as the tabs change
+  // under it (a tab brought forward), and as the window is resized. The panes' are the drag's
+  // zones, which the preview moving the panes does not move.
   useLayoutEffect(() => {
     if (!holding) return;
     const measure = () => setBoxes(measured());
@@ -607,6 +711,29 @@ export function usePaneDrag({
     return () => window.removeEventListener("resize", measure);
   }, [holding, tabs]);
 
+  // **The target the keyboard is on is the place the preview draws** (#5293), at once: a key is
+  // not a pointer crossing a pane. What follows the pointer sits by the target.
+  const heldAt = held?.at;
+  const heldSource = held?.source;
+  useLayoutEffect(() => {
+    if (heldAt === undefined || heldSource === undefined) return;
+    const zones = store.get()?.base?.zones;
+    if (heldAt.kind === "pane") {
+      const zone = placeBox(zones, heldAt.tab, heldAt.pane);
+      if (zone === undefined) return store.overPlace(undefined);
+      store.moveTo(zone.left + zone.width / 2, zone.top + KEYS_LABEL_IN);
+      store.overPlace({ target: heldAt, size: { width: zone.width, height: zone.height } });
+      return;
+    }
+    const strip = document.querySelector(`[${STRIP}]`);
+    const placed = strip === null ? undefined : stripLineAt(strip, heldAt.at, now.current.tabs);
+    if (strip !== null) {
+      const box = strip.getBoundingClientRect();
+      store.moveTo(box.right - KEYS_LABEL_IN, box.bottom);
+    }
+    store.overPlace({ target: heldAt, line: placed });
+  }, [heldAt, heldSource, store, tabs]);
+
   // As the tabs change under what is held: the keyboard stays on a target that is still offered,
   // and what has closed is put down.
   useEffect(() => {
@@ -614,8 +741,8 @@ export function usePaneDrag({
     if (held === undefined) return;
     const still = stillHeld(tabs, held.source, held.at, paneShown);
     if ("gone" in still) {
-      setHeld(undefined);
-      setBoxes(undefined);
+      endPlacing();
+      holdOver();
       setSaid(still.gone);
       // The keyboard was on a target, which has gone with it: the focused pane's grip has it.
       const focused = focusedPane(tabs);
@@ -623,7 +750,7 @@ export function usePaneDrag({
       return;
     }
     if (still.at !== held.at) setHeld({ ...held, at: still.at });
-  }, [tabs, setSaid]);
+  }, [endPlacing, holdOver, tabs, setSaid]);
 
   // The keyboard is on the target placement mode is on.
   const at = held?.at;
@@ -643,7 +770,14 @@ export function usePaneDrag({
 
   const targets =
     held === undefined || boxes === undefined ? null : (
-      <PlacementTargets tabs={tabs} ctx={ctx} held={held} boxes={boxes} onPlace={dropOnTarget} />
+      <PlacementTargets
+        store={store}
+        tabs={tabs}
+        ctx={ctx}
+        held={held}
+        boxes={boxes}
+        onPlace={dropOnTarget}
+      />
     );
 
   const layer = (
@@ -708,9 +842,7 @@ function homeOf(source: Source): HTMLElement | null {
   if (source.kind === "pane") return gripOf(source.tab, source.pane);
   if (source.kind === "chat")
     return document.querySelector<HTMLElement>(`[${CHAT_ROW}="${source.session}"]`);
-  const cell = document.querySelector<HTMLElement>(
-    `[${STRIP}] [${TAB}="${source.tab}"]:not([${PANE}])`,
-  );
+  const cell = document.querySelector<HTMLElement>(stripTab(source.tab));
   return cell?.matches('[role="tab"]') === true
     ? cell
     : (cell?.querySelector<HTMLElement>('[role="tab"]') ?? cell);
@@ -728,17 +860,29 @@ function targetKey(target: Target): string {
   return target.kind === "strip" ? "strip" : `${paneKey(target.tab, target.pane)}:${target.place}`;
 }
 
-/** Where every pane and the strip are on screen now. */
-function measured(): Boxes {
-  const panes = new Map<string, Box>();
-  for (const pane of document.querySelectorAll(`[${PANE}]`)) {
-    const r = pane.getBoundingClientRect();
-    const key = paneKey(Number(pane.getAttribute(TAB)), Number(pane.getAttribute(PANE)));
-    panes.set(key, boxOfRect(r));
-  }
-  const strip = document.querySelector(`[${STRIP}]`)?.getBoundingClientRect();
-  return { panes, strip: strip === undefined ? undefined : boxOfRect(strip) };
+/**
+ * **Where placement mode draws a pane's targets**: the zone the drag measured, which the preview
+ * moving the panes does not move; or, for a pane the drag measured nothing of (drawn at no size
+ * as it started), where it is drawn now.
+ */
+function placeBox(zones: ReadonlyMap<number, Box> | undefined, tab: number, pane: number) {
+  const zone = zones?.get(pane);
+  if (zone !== undefined) return zone;
+  const drawnNow = paneOf(tab, pane);
+  return drawnNow === null ? undefined : boxOfRect(drawnNow.getBoundingClientRect());
 }
+
+/** Where the strip is on screen now. */
+function measured(): Boxes {
+  const strip = document.querySelector(`[${STRIP}]`)?.getBoundingClientRect();
+  return { strip: strip === undefined ? undefined : boxOfRect(strip) };
+}
+
+/** How far in from a target's pane top, or from the strip's end, the keys' label and words sit. */
+const KEYS_LABEL_IN = 30;
+
+/** The tab in front and its focused pane, as they were when something was picked up. */
+type InFront = { front?: number; focused?: number };
 
 /**
  * **What placement mode picks up from what has the keyboard** (⌘⇧M): a sidebar row's chat, a
@@ -776,30 +920,31 @@ const PLACE_ICON: Record<Place, ReactNode> = {
  * in its middle, and a New tab at the strip's end, each a real button named by what dropping
  * there would do, or by its place with why it can't be dropped on. Only the one the keyboard is
  * on is in the tab sequence; Tab and the arrows move it (`stepFrom`). The result of the one it is
- * on is drawn before the drop, as a pointer's is.
+ * on is drawn before the drop by the drag's own layer (#5293), and each cross stays on the zone
+ * the drag measured, however the panes make room.
  */
 function PlacementTargets({
+  store,
   tabs,
   ctx,
   held,
   boxes,
   onPlace,
 }: {
+  store: PaneDragStore;
   tabs: Tabs;
   ctx: DropContext;
   held: Held;
   boxes: Boxes;
   onPlace: (to: Target) => void;
 }) {
+  // Read here and not in the window: the zones change only as another tab comes forward.
+  const zones = useSyncExternalStore(store.subscribe, store.get)?.base?.zones;
+  const zoneOf = (tab: number, pane: number) =>
+    tab === tabs.inFront ? placeBox(zones, tab, pane) : undefined;
   const { source, at } = held;
   const verdictOf = (to: Target): Verdict =>
-    judgeDrop(
-      tabs,
-      source,
-      to,
-      ctx,
-      to.kind === "pane" ? boxes.panes.get(paneKey(to.tab, to.pane)) : undefined,
-    );
+    judgeDrop(tabs, source, to, ctx, to.kind === "pane" ? zoneOf(to.tab, to.pane) : undefined);
   const button = (to: Target, there: string) => {
     const verdict = verdictOf(to);
     const current = sameTarget(to, at);
@@ -819,23 +964,8 @@ function PlacementTargets({
       <IconButton {...marks} size="sm" icon={PLACE_ICON[to.place]} />
     );
   };
-  const heldBox =
-    source.kind === "pane" ? boxes.panes.get(paneKey(source.tab, source.pane)) : undefined;
-  const atBox = at.kind === "pane" ? boxes.panes.get(paneKey(at.tab, at.pane)) : undefined;
-  const atVerdict = verdictOf(at);
   return (
     <>
-      {heldBox !== undefined && tabs.inFront === (source.kind === "pane" ? source.tab : -1) && (
-        <div className="pane-placing-held" aria-hidden="true" style={boxStyle(heldBox)} />
-      )}
-      {atBox !== undefined && at.kind === "pane" && (
-        <div
-          className="pane-drop-preview"
-          data-refused={!atVerdict.ok || undefined}
-          aria-hidden="true"
-          style={boxStyle(previewOf(atBox, at.place))}
-        />
-      )}
       {groupsOf(tabs, source, paneShown).map((group) => {
         if (group.kind === "strip") {
           if (boxes.strip === undefined) return null;
@@ -853,7 +983,7 @@ function PlacementTargets({
             </div>
           );
         }
-        const box = boxes.panes.get(paneKey(group.tab, group.pane));
+        const box = zoneOf(group.tab, group.pane);
         if (box === undefined) return null;
         const there =
           sourceName(tabs, { kind: "pane", tab: group.tab, pane: group.pane }, ctx) || "this pane";
@@ -968,6 +1098,22 @@ function pickedUp(target: Element): { source: Source; strip?: DOMRect } | undefi
 /** What a press is a control's press on, rather than a drag's start. */
 const CONTROLS = "button, a, input, textarea, select, [role='menuitem'], [role='button']";
 
+/** The line on the strip where a tab placed at `at` in its order would go (#5293). */
+function stripLineAt(strip: Element, at: number, tabs: Tabs): Box | undefined {
+  const box = strip.getBoundingClientRect();
+  const cellOf = (id: number | undefined) =>
+    id === undefined ? null : document.querySelector(stripTab(id));
+  const before = cellOf(tabs.order[at]);
+  const after = cellOf(tabs.order[at - 1]);
+  const x =
+    before !== null
+      ? before.getBoundingClientRect().left
+      : after !== null
+        ? after.getBoundingClientRect().right
+        : box.left;
+  return { left: x - 1, top: box.top, width: 2, height: box.height };
+}
+
 /** Where on the strip a drop at `x` goes: before the first tab whose middle is past it. */
 function stripPlace(strip: Element, x: number, tabs: Tabs): { at: number; line: Box } | undefined {
   const shown = [...strip.querySelectorAll(`[${TAB}]`)];
@@ -1005,4 +1151,21 @@ function stopHere(event: Event) {
 function swallow(event: MouseEvent) {
   event.stopPropagation();
   event.preventDefault();
+}
+
+/** The click that ends a drag is the drag's, never a row's press. */
+function swallowClick() {
+  window.addEventListener("click", swallow, { capture: true, once: true });
+  window.setTimeout(() => window.removeEventListener("click", swallow, true), 0);
+}
+
+/** A press taken before the pointer comes up: its click, when it does, is taken too. */
+function swallowLaterClick() {
+  const cameUp = () => {
+    window.removeEventListener("pointerdown", pressedAgain, true);
+    swallowClick();
+  };
+  const pressedAgain = () => window.removeEventListener("pointerup", cameUp, true);
+  window.addEventListener("pointerup", cameUp, { capture: true, once: true });
+  window.addEventListener("pointerdown", pressedAgain, { capture: true, once: true });
 }

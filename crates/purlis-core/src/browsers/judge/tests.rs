@@ -505,3 +505,66 @@ fn a_filled_page_leaves_for_no_site_a_login_keeps_the_browser_off() {
         Leaving::No { .. }
     ));
 }
+
+/// The person's ruling of 2026-11-06: during an open sign-in, a page held to the login's form's
+/// site follows its server's redirect back to the login's page's site by itself, though the chain
+/// began elsewhere; to any other site, from any other site, or once the sign-in is over, it asks
+/// as before.
+#[test]
+fn during_a_sign_in_a_page_held_to_its_form_follows_its_redirect_back_to_the_login_page() {
+    let app = "https://app.example.com/callback?code=1";
+    let auth = Site::of("auth.example.com", 443);
+    let judge = sites(&["app.example.com"], false);
+    judge
+        .bound()
+        .to(&LoginSites {
+            page: Site::of("app.example.com", 443),
+            form: Some(auth.clone()),
+        })
+        .unwrap()
+        .expect("a sign-in");
+    judge.bound_to(&Site::of("app.example.com", 443));
+
+    assert_eq!(judge.may_leave_from(&auth, app, false), Leaving::Go);
+    // Not from the form's site: asked about as before.
+    let other = Site::of("pay.example.com", 443);
+    assert!(matches!(
+        judge.may_leave_from(&other, app, false),
+        Leaving::Ask { .. }
+    ));
+
+    // Once the sign-in is over, the way back asks again (it was asked about once already).
+    let judge = sites(&["app.example.com", "auth.example.com"], false);
+    let number_now = judge
+        .bound()
+        .to(&LoginSites {
+            page: Site::of("app.example.com", 443),
+            form: Some(auth.clone()),
+        })
+        .unwrap()
+        .expect("a sign-in");
+    judge.bound().sign_in_over(number_now).expect("it was open");
+    assert!(matches!(
+        judge.may_leave_from(&auth, app, false),
+        Leaving::Ask { .. }
+    ));
+}
+
+/// The person's ruling of 2026-11-06: the way back goes to the login's page's site alone.
+#[test]
+fn during_a_sign_in_a_page_held_to_its_form_still_asks_before_any_site_but_the_login_page() {
+    let auth = Site::of("auth.example.com", 443);
+    let judge = sites(&["app.example.com", "elsewhere.example.com"], false);
+    judge
+        .bound()
+        .to(&LoginSites {
+            page: Site::of("app.example.com", 443),
+            form: Some(auth.clone()),
+        })
+        .unwrap()
+        .expect("a sign-in");
+    assert!(matches!(
+        judge.may_leave_from(&auth, "https://elsewhere.example.com/", false),
+        Leaving::No { .. }
+    ));
+}

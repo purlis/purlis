@@ -239,6 +239,7 @@ export const GATES = {
 export const WINDOW_SOURCE_GUARDS = [
   { crate: "purlis-core", test: "no_old_name_is_spelled_in_the_window_or_its_assets" },
   { crate: "purlis-core", test: "every_deferral_names_its_ticket" },
+  { crate: "purlis-core", test: "every_repo_path_comes_from_the_resolver" },
 ];
 
 // The Rust tests that read every file of the repository: `ci.yml`'s `recorded` job runs each one

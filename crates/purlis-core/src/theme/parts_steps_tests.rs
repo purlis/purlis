@@ -15,7 +15,7 @@ fn the_steps_are_in_the_manifest_since_next() {
         .iter()
         .find(|one| one["name"] == "steps")
         .expect("the steps family is in the manifest");
-    assert_eq!(steps["since"], parts::NEXT);
+    assert_eq!(steps["since"], 13);
     let names = |key: &str| -> Vec<String> {
         steps[key]
             .as_array()

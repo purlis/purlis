@@ -788,10 +788,41 @@ fn branch_found(root: &std::path::Path, of: &[BranchFolder]) -> Found {
     // A branch, or the plane root where the window named no workspace and no repo.
     let branch = crate::piecefiles::watched_place(&first.workspace, &first.repo, &first.piece);
     let named: Vec<&str> = of.iter().map(|folder| folder.folder.as_str()).collect();
+    // A workspace's own files (#5375) are found by no reader: no git is asked of them.
+    if branch.is_workspace_files() {
+        return Found::Dirs(workspace_folders(root, branch.ws, &named));
+    }
     folders_found(
         || purlis_core::files::root(&crate::reader(), root, branch),
         &named,
     )
+}
+
+/// Workspace `ws`'s own folders `named`, each resolved as its tree lists it, or refused.
+fn workspace_folders(
+    root: &std::path::Path,
+    ws: &str,
+    named: &[&str],
+) -> Vec<Result<PathBuf, purlis_core::files::Refused>> {
+    use purlis_core::files::{Refused, workspace};
+    let said = |why: workspace::NotHere| match why {
+        workspace::NotHere::Files(refused) => refused,
+        other => Refused::Read(other.to_string()),
+    };
+    match workspace::Files::of(root, ws) {
+        Ok(files) => files
+            .folders(named)
+            .into_iter()
+            .map(|one| one.map_err(said))
+            .collect(),
+        Err(why) => {
+            let why = why.to_string();
+            named
+                .iter()
+                .map(|_| Err(Refused::Read(why.clone())))
+                .collect()
+        }
+    }
 }
 
 /// Each of `of` with the directory it resolved to; one that did not resolve is left out.

@@ -304,7 +304,7 @@
       "by": ["answerBrowserLogin", "answerSecretFill"]
     },
     {
-      "at": "proposals.rs apply_in",
+      "at": "proposals.rs apply_in_to",
       "writes": "the project's manifest and its local settings",
       "by": ["applyProposedChange"]
     },

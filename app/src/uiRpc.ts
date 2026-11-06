@@ -1131,6 +1131,12 @@ export const commands = {
 	skillSetDelete: __WINDOW_ONLY_RESULT,
 	skillSetRestore: __WINDOW_ONLY_RESULT,
 	skillSetTurn: __WINDOW_ONLY_RESULT,
+	skillSetPin: __WINDOW_ONLY_RESULT,
+	skillSetLifecycle: __WINDOW_ONLY_RESULT,
+	skillSetMove: __WINDOW_ONLY_RESULT,
+	skillSetDeleteNow: __WINDOW_ONLY_RESULT,
+	skillSetExportReview: __WINDOW_ONLY_RESULT,
+	skillSetExport: __WINDOW_ONLY_RESULT,
 	skillGrant: __WINDOW_ONLY_RESULT,
 	skillTurn: __WINDOW_ONLY_RESULT,
 	skillPin: __WINDOW_ONLY_RESULT,
@@ -1162,6 +1168,7 @@ export const commands = {
 	skillLifecycle: __WINDOW_ONLY_RESULT,
 	skillOwners: __WINDOW_ONLY_RESULT,
 	skillDrafts: __WINDOW_ONLY_RESULT,
+	studioChatsClosed: __WINDOW_ONLY_RESULT,
 	skillDraftAccept: __WINDOW_ONLY_RESULT,
 	skillDraftReject: __WINDOW_ONLY_RESULT,
 	skillDraftChat: __WINDOW_ONLY_START_REFUSED,
@@ -1184,6 +1191,20 @@ export const commands = {
 	skillDraftGradeStart: __WINDOW_ONLY_RESULT,
 	skillDraftGradeSetCap: __WINDOW_ONLY_RESULT,
 	skillGradeStop: __WINDOW_ONLY_RESULT,
+	/**  **What grading the copies `skills` would run and spend**, before anything runs. */
+	skillGradesPlan: (plane: PlaneId, skills: ([SkillLevel, string])[]) => typedError<SkillGradesPlan, string>(__TAURI_INVOKE("skill_grades_plan", { plane, skills })),
+	skillGradesStart: __WINDOW_ONLY_RESULT,
+	skillGradesStop: __WINDOW_ONLY_RESULT,
+	/**  **The batch running in `plane`**, at its latest step, where one runs. */
+	skillGradesRunning: (plane: PlaneId) => typedError<{
+	plane: PlaneId,
+	batch: string,
+	limit_usd: number | null,
+	spent_usd: number | null,
+	skills: BatchSkillStep[],
+	/**  How it ended, once it has. */
+	ended: BatchEnded | null,
+} | null, string>(__TAURI_INVOKE("skill_grades_running", { plane })),
 	/**  **The scorecard of `skill`'s grade `grade`** (SK-59, #3239), as the eval record holds it. */
 	skillGradeScorecard: (plane: PlaneId, skill: string, grade: string) => typedError<GradeScorecard, string>(__TAURI_INVOKE("skill_grade_scorecard", { plane, skill, grade })),
 	/**
@@ -1665,6 +1686,8 @@ export const commands = {
 	branchTree: (plane: PlaneId, workspace: string, repo: string, piece: string | null, folder: string) => typedError<FolderListing_Serialize, string>(__TAURI_INVOKE("branch_tree", { plane, workspace, repo, piece, folder })),
 	planeTree: __WINDOW_ONLY_RESULT,
 	planeFile: __WINDOW_ONLY_RESULT,
+	workspaceTree: __WINDOW_ONLY_RESULT,
+	workspaceFile: __WINDOW_ONLY_RESULT,
 	/**
 	 *  What a branch changed against the branch it was cut from, committed or not, file by file and
 	 *  rolled up onto its folders: the explorer's markers and its "Changed only" (FM-4).
@@ -2445,6 +2468,8 @@ export const SESSION_BUS_ANSWERS = "session-bus://answers" as const;
 
 export const SKILL_GRADE = "skill-grade" as const;
 
+export const SKILL_GRADES = "skill-grades" as const;
+
 export const SKILL_GRADE_AFTER_EDIT = "skill-grade-after-edit" as const;
 
 export const SKILL_NEEDS_IN = "skills.needs:" as const;
@@ -3175,6 +3200,63 @@ export type AwayRefusal = {
 	 */
 	shown: string,
 };
+
+/**  **How a batch ended**, as the window is told it. */
+export type BatchEnded = "whole" | "limit" | "stopped" | "spend-not-reported";
+
+/**  **A skill a batch leaves out**, and why, in a sentence. */
+export type BatchLeftOut = {
+	level: SkillLevel,
+	name: string,
+	why: string,
+};
+
+/**  **A skill a batch is asked to grade**: its copy, and the consent its estimate showed. */
+export type BatchPick = {
+	level: SkillLevel,
+	name: string,
+	consent: string,
+};
+
+/**
+ *  **A skill a batch grades, as its estimate shows it**: its own plan's chats, limit and consent,
+ *  and what its last grade spent, worked out for this one, where there is one.
+ */
+export type BatchSkill = {
+	level: SkillLevel,
+	name: string,
+	chats: number,
+	/**  The most its own grade may spend, in dollars: its plan's limit. */
+	limit_usd: number | null,
+	estimate: GradeEstimate | null,
+	/**
+	 *  What pressing Start consents to for it: handed back, and a grade on another plan is
+	 *  refused.
+	 */
+	consent: string,
+};
+
+/**
+ *  **One skill of a batch, at a step**: where it is, its grade's id once it started, how many of
+ *  its chats ran of how many, what they spent, and how it ended.
+ */
+export type BatchSkillStep = {
+	level: SkillLevel,
+	name: string,
+	state: BatchState,
+	grade: string | null,
+	ran: number,
+	of: number,
+	cost_usd: number | null,
+	ended: GradeEnded | null,
+};
+
+/**  **Where a skill of a batch is**, as the window is told it. */
+export type BatchState = { state: "waiting" } | { state: "running" } | 
+/**  Its grade ended: its `ended` says how. */
+{ state: "ended" } | 
+/**  It was never graded, and why, in a sentence. */
+{ state: "not-run"; why: string };
 
 /**  One file that stays behind. */
 export type BehindFile = {
@@ -4197,6 +4279,19 @@ export type CloneRefused = {
 export type CloseHanded = {
 	plane: PlaneId,
 	sessions: number[],
+};
+
+/**
+ *  **A chat the studio started, closed here** (#5248), as a skill's Runs lists it: its number
+ *  (what a draft names its chat by), its name as it closed, when, and what it was started for.
+ */
+export type ClosedStudioChat = {
+	session: number,
+	name: string,
+	/**  When it closed (RFC 3339). */
+	closed: string,
+	/**  What it was started for, its `finished` always set. */
+	link: StudioLink,
 };
 
 /**
@@ -5493,6 +5588,12 @@ export type FileScope =
 /**  Every branch of one workspace of a project, `near` first (FM-8). */
 { kind: "workspace"; plane: PlaneId; workspace: string; near: NearBranch | null } | 
 /**
+ *  **A workspace's folder as Explorer shows it** (#5375): its own files, then each of its
+ *  repos' own folders, and no branch folder. The filter's one scope in a workspace of one
+ *  repo, which covers the workspace files and that repo.
+ */
+{ kind: "workspace-folder"; plane: PlaneId; workspace: string } | 
+/**
  *  Every branch of one project, `near` first: the branch the window's focus is on, so the
  *  nearest of equal hits leads.
  */
@@ -5795,6 +5896,16 @@ export type FolderEntry_Deserialize = {
 	 *  workspace's tab, and never a folder that opens here. Left out everywhere else.
 	 */
 	workspace: string | null,
+	/**
+	 *  In a workspace's own files (#5375), whether purlis keeps it: marked *managed*, and
+	 *  opened read-only. Left out where it is not.
+	 */
+	managed: boolean,
+	/**
+	 *  In a workspace's own files, whether it is a dotfile, drawn only with Show hidden. Left
+	 *  out where it is not.
+	 */
+	hidden: boolean,
 };
 
 /**  One entry of a branch's folder, as the explorer's tree draws it (FM-1). */
@@ -5811,6 +5922,16 @@ export type FolderEntry_Serialize = {
 	 *  workspace's tab, and never a folder that opens here. Left out everywhere else.
 	 */
 	workspace?: string | null,
+	/**
+	 *  In a workspace's own files (#5375), whether purlis keeps it: marked *managed*, and
+	 *  opened read-only. Left out where it is not.
+	 */
+	managed?: boolean,
+	/**
+	 *  In a workspace's own files, whether it is a dotfile, drawn only with Show hidden. Left
+	 *  out where it is not.
+	 */
+	hidden?: boolean,
 };
 
 /**  One folder of a branch, one level deep: its first entries, and how many more it holds. */
@@ -7472,6 +7593,12 @@ export type Moved = {
 	 */
 	background_turn?: boolean | null,
 	/**
+	 *  **It is in the queue only for tasks of its that came to nothing** (#5340,
+	 *  `Board::needs_you_for_itself`, #1693): nothing of its own asks the person, so its mark
+	 *  says a task failed and not that it needs them. Absent otherwise.
+	 */
+	only_failures?: boolean | null,
+	/**
 	 *  Which snapshot of the board this is — bigger was taken later (charter-app#248).
 	 * 
 	 *  **What lets the window put its events back in order.** Every `Moved` is built under the
@@ -8156,6 +8283,11 @@ export type OwnBranch = {
 	 */
 	left: LeftBranch | null,
 };
+
+/**  A managed workspace file's own view (#5375). */
+export type OwnFileView = "memory" | "todos" | "sessions" | 
+/**  `workspace.md`'s vision, which has an editor of its own. */
+"vision";
 
 /**
  *  **What a chat waits on of its own, as the window is sent it** (#3878,
@@ -9209,6 +9341,24 @@ export type PoolNamedBy = {
 	workspaces: string[],
 };
 
+/**
+ *  **A project an older runner of a pool waits on** (#5461): it still has to bring back what its
+ *  chats left there, and only an open project does.
+ */
+export type PoolOwed = {
+	/**  The path this machine keeps the project under. */
+	path: string,
+	/**  What to call it: the directory's own name. */
+	name: string,
+	/**
+	 *  When it was last opened on this machine, in seconds since the epoch: `u32`, so it is a
+	 *  `number` in TypeScript and not a `bigint`.
+	 */
+	opened: number,
+	/**  Whether it is open in a window now, so it brings the work back on its own. */
+	open_now: boolean,
+};
+
 /**  One of this machine's profiles, as a pool's runner stands with it. */
 export type PoolProfileRow = {
 	name: string,
@@ -9514,6 +9664,14 @@ export type PoolVersion = {
 	 *  could not be read.
 	 */
 	suspends?: PoolSuspends | null,
+	/**
+	 *  **The projects an older runner waits on to bring its work back** (#5461): a draining
+	 *  runner stays until each has fetched what its chats left there (#5393). Empty where none
+	 *  waits.
+	 */
+	owed: PoolOwed[],
+	/**  Why purlis could not read which projects those are, shown safely; none where it could. */
+	owed_why: string | null,
 };
 
 /**  What the Pools group draws: the pools, and the limits a new pool gets by default. */
@@ -12677,6 +12835,35 @@ export type SkillGrades = {
 	running: SkillGradeStep | null,
 };
 
+/**  **What grading several skills would run and spend**, before anything runs. */
+export type SkillGradesPlan = {
+	skills: BatchSkill[],
+	left_out: BatchLeftOut[],
+	/**  The estimates known, added, how many there are, and the names of those with none. */
+	known_usd: number | null,
+	known: number,
+	unknown: string[],
+	/**  Each grade's own limit, added: the most the batch could spend whatever limit is set. */
+	most_usd: number | null,
+	at_once: number,
+	/**  The profile the chats run on, and why no grade can run on it, where none can. */
+	profile: string | null,
+	refused: string | null,
+	/**  Several skills of this project being graded already, where they are. */
+	running: string | null,
+};
+
+/**  **One step of a batch**, as [`EVENT`] tells the window. */
+export type SkillGradesStep = {
+	plane: PlaneId,
+	batch: string,
+	limit_usd: number | null,
+	spent_usd: number | null,
+	skills: BatchSkillStep[],
+	/**  How it ended, once it has. */
+	ended: BatchEnded | null,
+};
+
 /**  Where a project skill reaches, as the studio sets it. */
 export type SkillGrant = 
 /**  Chats at the project's root alone. */
@@ -12859,7 +13046,7 @@ export type SkillRouting = {
 };
 
 /**  What is asked of a set. */
-export type SkillSetAct = "delete" | "turn-off" | "turn-on";
+export type SkillSetAct = "delete" | "turn-off" | "turn-on" | "pin" | "unpin" | "archive" | "unarchive" | "move" | "export";
 
 /**  What a set's delete did, and what an Undo hands back. */
 export type SkillSetDeleted = {
@@ -12868,11 +13055,47 @@ export type SkillSetDeleted = {
 	deleted: string[],
 };
 
+/**  What a Delete now did. */
+export type SkillSetGone = {
+	/**  Those whose delete was a commit, off the list: the project's history still holds them. */
+	off_the_list: number,
+	/**  Those this machine kept, removed from it for good. */
+	removed: number,
+	/**  Each that could not be taken off, with why. */
+	failed: string[],
+};
+
+/**  One skill's lifecycle state in a set's change: what it is set to, or what an Undo sets back. */
+export type SkillSetLifecycle = {
+	member: SkillSetMember,
+	lifecycle: SkillLifecycle,
+};
+
+/**  What a set's archive or unarchive did, and what an Undo sets back. */
+export type SkillSetLifecycled = {
+	notes: string[],
+	/**  Each it changed, with the state it had. */
+	was: SkillSetLifecycle[],
+};
+
 /**  One skill of a set: its level and name, and its level as a person reads it. */
 export type SkillSetMember = {
 	level: SkillLevel,
 	name: string,
 	label: string,
+};
+
+/**  One skill's move in a set's: where it goes, and the grant it takes into the project's skills. */
+export type SkillSetMove = {
+	member: SkillSetMember,
+	to: SkillLevel,
+	grant: SkillGrant | null,
+};
+
+/**  What a set's move did, and the moves its Undo makes. */
+export type SkillSetMoved = {
+	notes: string[],
+	back: SkillSetMove[],
 };
 
 /**  A skill that stays naming one that goes. */
@@ -13531,7 +13754,11 @@ export type StudioHarness = {
 	plugins_off: PluginOffShown[],
 };
 
-/**  The studio's jobs a chat is started for: [`StudioWork`], by the record's words. */
+/**
+ *  **The studio's jobs, as the window types them**: the core's [`StudioWork`], which writes
+ *  itself as its word, typed for the window here, since purlis-core keeps no UI typing crate.
+ *  Never made: a test holds its words to the core's.
+ */
 export type StudioJobKind = "draft" | "trigger-tests" | "outcome-evals" | "checks" | "improve" | "redo";
 
 /**  A level a skill can be moved to or made at, and its words. */
@@ -13561,6 +13788,13 @@ export type StudioLink = {
 	job: StudioJobKind,
 	/**  Whether the chat wrote its draft: once true, never running again. */
 	done: boolean,
+	/**
+	 *  When the studio started the chat (RFC 3339), where its record knows (#5248): what the
+	 *  Grades card's running job counts from.
+	 */
+	started: string | null,
+	/**  When its job stopped running (#5248): its draft came, its program ended, or it closed. */
+	finished: string | null,
 };
 
 /**
@@ -13756,6 +13990,11 @@ export type StudioSkill = {
 	source_label: string | null,
 	/**  Whether that chat's workspace or persona pins it, so no router hides it. */
 	pinned: boolean,
+	/**
+	 *  Whether it is archived, so it never loads until it is restored (SK-19): what the
+	 *  Library's Select mode counts its Archive and Unarchive by (#5332).
+	 */
+	archived: boolean,
 	/**
 	 *  Which of the studio's workspace and persona have it in their pins, as written (SK-15d):
 	 *  what the row's Pin switch shows. Empty for a skill from outside the plane.
@@ -14997,6 +15236,60 @@ export type WithAskingChat = {
 export type WithoutSandbox = {
 	/**  What the person typed as the reason, or null. */
 	reason: string | null,
+};
+
+/**  A file of a workspace's own files, as the light editor draws it, and whether purlis keeps it. */
+export type WorkspaceFile = {
+	file: PieceFile,
+	/**  Whether purlis keeps it: opened read-only. */
+	managed: boolean,
+	/**  The view of its own a managed file has, where the window has one. */
+	view: OwnFileView | null,
+};
+
+/**
+ *  One folder of a workspace's own files (#5375), one level deep, as [`branch_tree`] answers a
+ *  branch's: everything in the workspace's folder but its repos and their branches' folders, each
+ *  entry saying whether purlis keeps it and whether it is hidden. At the top, the workspace's
+ *  repos, each with where it is. `""` is the workspace's folder.
+ */
+export type WorkspaceListing = WorkspaceListing_Serialize | WorkspaceListing_Deserialize;
+
+/**
+ *  One folder of a workspace's own files (#5375), one level deep, as [`branch_tree`] answers a
+ *  branch's: everything in the workspace's folder but its repos and their branches' folders, each
+ *  entry saying whether purlis keeps it and whether it is hidden. At the top, the workspace's
+ *  repos, each with where it is. `""` is the workspace's folder.
+ */
+export type WorkspaceListing_Deserialize = {
+	/**  Folders first, then files, each in the order a person reads names; at most 5,000. */
+	entries: FolderEntry_Deserialize[],
+	/**  How many entries past those are not listed. */
+	more: number,
+	/**  At the top, the workspace's repos by name; none below it. */
+	repos: WorkspaceRepo[],
+};
+
+/**
+ *  One folder of a workspace's own files (#5375), one level deep, as [`branch_tree`] answers a
+ *  branch's: everything in the workspace's folder but its repos and their branches' folders, each
+ *  entry saying whether purlis keeps it and whether it is hidden. At the top, the workspace's
+ *  repos, each with where it is. `""` is the workspace's folder.
+ */
+export type WorkspaceListing_Serialize = {
+	/**  Folders first, then files, each in the order a person reads names; at most 5,000. */
+	entries: FolderEntry_Serialize[],
+	/**  How many entries past those are not listed. */
+	more: number,
+	/**  At the top, the workspace's repos by name; none below it. */
+	repos: WorkspaceRepo[],
+};
+
+/**  One repo of a workspace, where its folder's top holds it. */
+export type WorkspaceRepo = {
+	name: string,
+	/**  In `repos/`, or at the top as a clone made before structure version 6 (ADR 0114). */
+	inside_repos: boolean,
 };
 
 /**

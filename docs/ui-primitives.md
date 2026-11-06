@@ -300,31 +300,42 @@ own** (#3147, the operator's ruling of 2026-10-24): its tab is its name and the 
 that tab's panel, so the view starts on the fill its chosen tab joins, with no band; the same
 `PaneHead` and `PaneActions` sit at its top right, over its first row, which holds what can be
 done to what the view is about (or Settings' levels) and keeps the actions' room at its end. In
-the band each Notice is a washed card
-(`wash.warning`, `danger.wash` for trouble, no edge), its words above its ways out, a consent's
-Allow set apart from Keep blocked and the only answer with an edge. The band is a `region`, "Pane
-notices", as its bell is "Pane notices: …" (apart from the status line's Notices and a chip's
-"Notices for …"); a card never shrinks in it, so past its room the cards scroll inside it whole. Esc
-on a warning with a Dismiss puts it away, and the keyboard goes on to the next warning or to the
-terminal, never onto an Allow: a consent is landed on by its line. A consent has no Dismiss and
-Esc leaves it. The press-settle guard (#1695) reads where each line is drawn against the band
-itself, scrolling aside, never its `offsetTop`, which a card positioned for its mark would pin. In the row they are stacked (the notice family's `stack`), in the
-order the pane writes them: the shown chat's own, the one that waits for an answer before
-anything starts first, then each hidden chat's. **There is no cap** (#4754): the band is
-**minimised or expanded**, one choice for every pane, minimised by default and kept in the layout
-file (`paneNotices.ts`). Minimised, its notes fold into **the bell** (`PaneBell`), in the pane's
-header in a fixed slot before split and close, and only its asks stand, as full cards (`waits`:
-a consent, or a blocking question, which has no Dismiss beside its answers). Expanded, every
-Notice stands, under a head row that says how many and how many wait on you, with Dismiss all,
-which skips the asks and counts what it clears, and Minimise. The bell's count is the pane's
-notes, never its asks, the same number in both states, in the trouble colour while one note is
-trouble; a new Notice never opens the band or takes the focus, and the bell says its count
-politely. A folded note is `hidden` where it is drawn, never moved, so it keeps its state, and one the
-keyboard is on stays until the focus leaves it. The band and the header are never more than
-about half the pane, and inside it the stack is never wider or taller than the pane: the sentence has the row,
-the ways out go under it when they do not fit beside it, and the stack scrolls (#1481). Every
-change of the row's height refits the terminal, which resizes the chat's pty and redraws its
-harness; minimised, a note arriving changes only the bell's count. The
+the band each Notice is **one compact row** (#5215, the person's approved prototype,
+`Notice.tsx`'s `BandRow`): its icon on its first line, what it says on one line with its sub-line
+muted beneath (who asks or what it is, and its age where known), its own buttons, a toggle where
+the line cuts it, and a × last, with a separator to the next row. A consent keeps its full
+waiting-coloured edge (ADR 0097 §6), and its Allow stands apart from Keep blocked as the only
+answer with an edge. **× never answers.** A note's is its Dismiss; an ask's closes it from this
+pane alone, so it leaves the pane's bell and stays in the Inbox and on ✋ until it is answered.
+
+The band is a `region` named with its count, "Pane notices: 3 waiting on you", as its bell is
+"Pane notices: …" (apart from the status line's Notices and a chip's "Notices for …"). Esc on a row
+folds a message opened whole, then puts away a row with a Dismiss, and the keyboard goes on to the
+next row or to the terminal, never onto an Allow: a consent is landed on by its line. A consent has
+no Dismiss and Esc leaves it. The press-settle guard (#1695) reads where each line is drawn against
+the band itself, scrolling aside, never its `offsetTop`. In the row they are stacked (the notice
+family's `stack`), in the order the pane writes them: the shown chat's own, the one that waits for
+an answer before anything starts first, then each hidden chat's.
+
+**There is no cap** (#4754): the band is **minimised or expanded**, one choice for every pane,
+minimised by default and kept in the layout file (`paneNotices.ts`). Minimised, its notes fold into
+**the bell** (`PaneBell`), in the pane's header in a fixed slot, and the band is one line, a button
+that says how many wait and on what ("3 waiting · A task's question, Sandbox block · Show"); with
+only notes, there is no line at all. Expanded, every row stands under a head that says how many
+wait, with Dismiss all where it clears any, which skips the asks and counts what it clears, and the
+fold. The bell's count is the pane's notes, never its asks, the same number in both states, in the
+trouble colour while one note is trouble; a new Notice never opens the band or takes the focus, and
+the bell says its count politely. A folded row is `hidden` where it is drawn, never moved, so it
+keeps its state, and one the keyboard is on stays until the focus leaves it.
+
+**An opened message shows whole** (`data-whole`): the band grows, the terminal gives way down to
+three lines (`.pane-body`'s floor, with the foot in place), and only past that does the band scroll,
+as one, with the message's buttons pinned at its foot and no inner scroll box. At rest the rows take
+about seven controls' height. A task's question (`TaskQuiz`) is such a row, with Answer, which opens
+it in the Inbox, and its box to answer in pinned at its foot when opened; a prompt in the chat's
+own terminal (`TerminalPromptNotice`) is one with Go to prompt; the where-you-answer note is an
+information line with Change. Every change of the row's height refits the terminal, which resizes the
+chat's pty and redraws its harness; minimised, a note arriving changes only the bell's count. The
 chat at a glance (its name, its state, the breadcrumb) is the pane line, and harness · workspace and
 the gauge are the pane foot, neither over the terminal. `Notice.pane.test.tsx` and `PaneBand.test.tsx` hold the shape and the rules, and
 `pane-notices.e2e.ts` and `pane-warnings.e2e.ts` measure them, with no Notice over the terminal in a narrow pane and a
@@ -818,12 +829,12 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
   on a page as often as in a card, so a theme reaches them by their own attributes.
 - **A Notice is drawn by the notice family and is a Notice by `Notice.tsx`.** Its box is the
   family's `root`, its tone the variant and where it stands its `data-placement`: `pane` (its
-  pane's row; in a chat's pane the band draws it as a washed card with its mark and no edge,
-  `paneFrame.css`, #3142), `inbox` (in a list: in the Notices centre and the window's own lines there, a card of its own,
+  pane's row; in a chat's pane the band draws it as one compact row, `layout="row"`, `paneFrame.css`,
+  #5215), `inbox` (in a list: in the Notices centre and the window's own lines there, a card of its own,
   below; in the same layout, a row of the list's box under the title bar and on the page a window
   with no project shows) or `alone` (on a page, edged in the hairline, which takes the card's edge width: none in Purlis).
   Each way out is a button of the button family that says which it is (`data-way`: `go`, `fix`,
-  `link`, `copy`, `dismiss`, and the row's `more`). **A Notice holds Allow, so it is a consent
+  `link`, `copy`, `dismiss`, a band row's `whole` and `close`, and its folded line's `show`). **A Notice holds Allow, so it is a consent
   surface**: its fill is one of the grounds an answer that grants is measured on, and its edge's
   width is no theme's. The Inbox's list (`data-scope="notice-list"`) and a pane's row
   (`data-scope="notice-row"`) are the family's layout.
@@ -919,7 +930,8 @@ error (Get project's clone progress is still off, until it moves).
 
 **What a drag draws over the panes is the pane preview family** (`app/src/ui/pane-preview/`, #5291,
 spec #5288, ADR 0113): `PanePreviewArriving`, a pane the drop would make or a side that would fold;
-`PanePreviewLine`, on the strip, where a tab would go; `PanePreviewSize`, the columns and rows a
+`PanePreviewLine`, on the strip, where a tab would go; `PanePreviewOpening`, the mark along a tab a
+drag rests on until it comes forward (#5294); `PanePreviewSize`, the columns and rows a
 terminal will take; `PanePreviewRefused`, the mark on the pane a refused place means; and
 `PanePreviewHeld` and `PanePreviewWords`, what is held and what letting go would do, by the pointer.
 Only the wrapper writes `data-scope="pane-preview"`: `purlis/pane-preview-family` is an error.
@@ -928,9 +940,19 @@ Only the wrapper writes `data-scope="pane-preview"`: `purlis/pane-preview-family
   where each part goes is the drag's (`paneDragLayer.tsx`).
 - **None is read by a reader or takes the pointer.** A reader hears the drag from the window's status
   line, and the pointer has to reach what is under them.
-- **Its parts** are `arriving`, `name`, `line`, `size`, `refused`, `held` and `words`, in
+- **It is placement mode's preview too** (#5293): the keys' target is drawn as the pointer's place.
+- **Its parts** are `arriving`, `name`, `line`, `opening`, `size`, `refused`, `held` and `words`, in
   `pane-preview.css`; a theme's parts reach the same attributes (`pane-preview.*`, the next release's
   manifest version).
+
+## The chat mark family
+
+`ChatMark` (`app/src/ui/chat-mark`, ADR 0104 amended 2026-11-05, #5340) is a chat's mark on its tab, its row in the list, its pane's head and a folded pane's rail. A screen draws it through `ChatPersonaState`, which reads the chat's one state from `shownState`; `QuitWarning`'s list hands it a state directly.
+
+- **Props:** `state` (`needs`, `failed`, `working`, `waiting`, `idle`, `ended`, or nothing where none is known), `who`, `word`, `changed`.
+- **Parts:** `root` carries the state as its `data-variant`; `who`, `badge` and `word`. A glyph tells each state as well as its colour.
+- **The place sets** `--chat-mark-size` and `--chat-mark-ground`, nothing else.
+- **`who` is its own part** so a later control can stand in it (the grip, #5290), with the badge left beside it.
 
 ## The pane foot family
 
@@ -1158,6 +1180,12 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
   list's edges** (`space.2`), so a pill never touches the panel the list is joined to.
 - **The keyboard is React Aria's**: one Tab stop, the row last focused; ↑ and ↓ move and stop at
   the ends; Home and End; typing finds a row by its `textValue`; Enter and Space choose or run.
+  **A list that chooses several** (`selectionMode="multiple"`, a `Checkbox` in the row's lead with
+  `slot="selection"`) takes a click or Space to tick a row, Shift-click and Shift+↑ ↓ for a range,
+  and ⌘A (Ctrl+A off macOS) for every row, which a list that draws its rows a screen at a time
+  answers with every item of its data, not only the rows drawn (`"all"`, the Library's Select
+  mode, #5332). Esc clears what is chosen, or does what `onEscape` says: a list in a mode of its
+  own leaves it.
 - **A row's menu and its tooltip are the row's own** (`menu` and `tip` on a row): a collection
   draws its rows itself, so no `ContextMenu` or `Tooltip` can be put around one. The menu opens
   on a right-click, or by Shift+F10 or the menu key while the row has the keyboard, on its first
@@ -1624,7 +1652,7 @@ family's, each in the same `components` layer.
 - **A Notice is not an overlay.** It stands in its pane's row or in the Inbox, never over
   anything (#1647), so it has no lift and no overlay ground. It is [the notice
   family's](#the-card-notice-badge-and-count-and-separator-families) box instead, on the page's
-  raised ground (`surface.raised`) with no shadow: a washed card with its mark in a chat pane's band (#3142), the
+  raised ground (`surface.raised`) with no shadow: a compact row with its mark in a chat pane's band (#5215), the
   danger ground for trouble, and in the Inbox's list the list's row, not a box of its own. What a
   way out opened under a Notice (a block's report, a dispatch's brief) is a card.
 
@@ -2323,12 +2351,9 @@ and `FourRegions.test.tsx` found it by holding a `nav` that had been replaced.
 **A terminal keeps Tab.** xterm prevents Tab and Shift+Tab and sends them to the shell —
 completion, and Claude Code's mode cycling — and nothing in the window takes either. So a
 terminal is a stop you can reach and cannot Tab out of, which is why the pane's own controls are
-written _before_ it in the document (they are absolutely positioned, so the look is unchanged).
-**They are shown on hover and while the keyboard is on them, and at no other time** — not
-because their pane is focused, which is the pane the operator is typing in and a corner he
-asked to keep clear. A `visibility: hidden` control is out of the sequence, so the focused
-pane's are hidden by `opacity` with `pointer-events: none` instead: Tab still lands on them, and
-`.pane-doing:focus-within` draws the group the moment it does.
+written _before_ it in the document, in the pane's head above it.
+**They are always drawn** (#5318, ADR 0111), so every pane's are in the sequence, in the order
+they are drawn. A tab's only pane has no Close, so no stop is left for it.
 
 **The way out is Ctrl+Tab, and Ctrl+Shift+Tab backwards** (`SessionPane.leavesTheChat`). It is
 the platforms' own key for leaving a control that keeps Tab — GTK's text view, Windows'

@@ -49,11 +49,8 @@ fn on_kept_off_said(site: &str) -> String {
 /// **`answer`, with each page on the site the agent is kept off said by its origin alone, and no
 /// title** (#5152), and the chat told where the page it acted on is one. Judged by each address as
 /// it is: taken out of first, an address may no longer be on the site it is on.
-fn kept_off_told(mut answer: Answer, kept_off: &KeptOff) -> Answer {
-    let on = answer
-        .page
-        .as_ref()
-        .and_then(|page| kept_off(&page.address));
+fn kept_off_told(mut answer: Answer, kept_off: &dyn Fn(&PageInfo) -> Option<String>) -> Answer {
+    let on = answer.page.as_ref().and_then(kept_off);
     let listed = match &mut answer.content {
         Content::Pages(pages) => pages.as_mut_slice(),
         _ => &mut [],
@@ -64,7 +61,7 @@ fn kept_off_told(mut answer: Answer, kept_off: &KeptOff) -> Answer {
         .chain(answer.opened.iter_mut())
         .chain(listed)
     {
-        if kept_off(&page.address).is_some() {
+        if kept_off(page).is_some() {
             page.address = login::origin_of(&page.address).unwrap_or_default();
             page.title.clear();
         }
@@ -265,10 +262,18 @@ impl Keeping {
     }
 }
 
-/// A download's name as said once anything is kept out. A name as long as a name is cut to says
-/// `download`: what it cut may have left part of a text, which no scrub knows.
+/// The bytes from which a download's name may be one the engine cut: Chrome cuts a name the
+/// page suggests to what a file system takes, 255 bytes, and a name of letters of many bytes
+/// each reaches that well before [`MOST_FILE_NAME_CHARS`] characters. Below 255 by the most a
+/// cut at a letter's edge, and a mark or a space made plain since, could take off it.
+const ENGINE_MAY_HAVE_CUT_FROM_BYTES: usize = 255 - 32;
+
+/// A download's name as said once anything is kept out. A name as long as a name is cut to,
+/// by purlis or by the engine, says `download`: what it cut may have left part of a text, which
+/// no scrub knows.
 fn name_shown(name: &str, scrub: &Scrub) -> String {
-    if name.chars().count() >= MOST_FILE_NAME_CHARS {
+    if name.chars().count() >= MOST_FILE_NAME_CHARS || name.len() >= ENGINE_MAY_HAVE_CUT_FROM_BYTES
+    {
         return plain_file_name("");
     }
     plain_file_name(&scrub.text(name))
@@ -349,10 +354,31 @@ fn refusal_kept_out(refusal: Refusal, scrub: &Scrub) -> Refusal {
 impl Browser {
     /// [`kept_off_told`], where this browser keeps the agent off a site.
     pub(super) fn with_kept_off_told(&self, answer: Answer) -> Answer {
-        match lock(&self.inner.kept_off).clone() {
-            Some(kept_off) => kept_off_told(answer, &kept_off),
-            None => answer,
+        // Each page by what it is kept off: a sign-in's own page and its windows act on its site.
+        let (each, new): (Vec<(PageId, Option<KeptOff>)>, Option<KeptOff>) = {
+            let state = lock(&self.inner.state);
+            let each = state
+                .pages
+                .iter()
+                .map(|page| {
+                    (
+                        page.id.clone(),
+                        self.inner.kept_off_on(&state, Some(&page.target)),
+                    )
+                })
+                .collect();
+            (each, self.inner.kept_off_on(&state, None))
+        };
+        if new.is_none() && each.iter().all(|(_, kept_off)| kept_off.is_none()) {
+            return answer;
         }
+        kept_off_told(answer, &|page: &PageInfo| {
+            let kept_off = each
+                .iter()
+                .find(|(id, _)| *id == page.id)
+                .map_or_else(|| new.clone(), |(_, kept_off)| kept_off.clone());
+            kept_off.and_then(|kept_off| kept_off(&page.address))
+        })
     }
 
     /// What is kept out now, or `None` where nothing is.

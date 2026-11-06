@@ -838,3 +838,52 @@ fn the_persons_devtools_are_opened_watched_and_typed_into_from_the_window_alone(
         assert!(ui::WINDOW_ONLY.contains(&command), "{command}");
     }
 }
+
+/// #5375: a link is never served a workspace's own files: their paths, a find among them or
+/// their watch. Refused on the link with the protocol's own sentence, the command never asked.
+#[tokio::test]
+async fn a_call_that_names_a_workspaces_own_files_is_refused_before_the_command_is_asked() {
+    let commands = Commands::default();
+    let (a, b) = duplex(64 * 1024);
+    let (client, served) = tokio::join!(
+        link::connect(
+            a,
+            session::speaks(),
+            Scope::LocalUi,
+            HELD.of(Scope::LocalUi)
+        ),
+        link::serve_any(b, session::speaks(), &HELD)
+    );
+    let methods = [
+        "copy_branch_path",
+        "reveal_branch_path",
+        "find_files",
+        "files_watch",
+    ];
+    let ui = ui::Server::new(BUILD, methods, commands.clone());
+    tokio::spawn(session::serve(served.unwrap(), Sessions, Some(ui)));
+    let client = Client::new(client.unwrap()).0;
+    let ui = client.ui(BUILD).await.unwrap();
+    let path = json!({"plane": "/p", "workspace": "alpha", "repo": "", "piece": null, "path": "notes/a.md", "absolute": true});
+    let folder =
+        json!({"plane": "/p", "workspace": "alpha", "repo": "", "piece": null, "folder": "notes"});
+    let scope = json!({"kind": "workspace-folder", "plane": "/p", "workspace": "alpha"});
+
+    for (method, args) in [
+        ("copy_branch_path", path.clone()),
+        ("reveal_branch_path", path),
+        (
+            "find_files",
+            json!({"session": 1, "scope": scope, "query": "plan"}),
+        ),
+        ("files_watch", json!({"folders": [folder]})),
+    ] {
+        let refused = ui.call(method, args).await.unwrap();
+        assert_eq!(
+            refused,
+            Err(json!(ui::A_WORKSPACES_OWN_FILES_ARE_THE_WINDOWS)),
+            "{method}"
+        );
+    }
+    assert!(commands.asked.lock().unwrap().is_empty());
+}

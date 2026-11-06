@@ -412,7 +412,7 @@
       }
     },
     "parts": {
-      "description": "Component parts (manifest version 12, plus unreleased additions marked since 13): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set, and a tab's flare and hover inset: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds.",
+      "description": "Component parts (manifest version 13, plus unreleased additions marked since 14): keys <family>.<part>[.<variant>][.<state>].<property>, the state at rest implied. A property not named is the family default. Inside a state only fill, text, border-colour and shadow may be set, and a tab's flare and hover inset: a state never changes a part's size. `purlis theme parts` lists every family, part, state and property with its bounds.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -3324,6 +3324,27 @@
           "$ref": "#/$defs/part-text"
         },
         "card-button.line.pick.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "chat-mark.badge.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "chat-mark.badge.needs.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "chat-mark.badge.failed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "chat-mark.badge.working.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "chat-mark.badge.waiting.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "chat-mark.badge.idle.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "chat-mark.badge.ended.text": {
           "$ref": "#/$defs/part-text"
         },
         "checkbox.root.fill": {
@@ -6978,6 +6999,9 @@
           "$ref": "#/$defs/part-padding"
         },
         "pane-preview.line.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "pane-preview.opening.fill": {
           "$ref": "#/$defs/part-fill"
         },
         "pane-preview.size.fill": {
@@ -10947,6 +10971,9 @@
           "$ref": "#/$defs/part-padding"
         },
         "view-frame.head.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "view-frame.heading.gap": {
           "$ref": "#/$defs/part-gap"
         },
         "view-frame.header.fill": {

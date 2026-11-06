@@ -10,9 +10,16 @@
 //! **Where a download comes from** is the origin of the address the engine names it by, which
 //! is the last of its redirects (Chrome's `DownloadItem::GetURL`), never the first: a site's yes
 //! is never stretched by its open redirect to a file of another. Only a download at no web
-//! address (`blob:`, `data:`) is from the page that began it.
+//! address (`blob:`, `data:`) is from the document that began it: its frame's own web address,
+//! or, for a blank or srcdoc frame, the nearest document around it that has an origin. One begun
+//! in a sandboxed frame, or one whose document is not known yet, is from nowhere known.
 
-use crate::drive::{DownloadInfo, DownloadState, Limits, plain_file_name};
+use std::io::Read;
+
+use zeroize::Zeroizing;
+
+use crate::drive::scrub::every_form;
+use crate::drive::{DownloadInfo, DownloadState, Limits, lock, plain_file_name};
 
 use super::login::origin_of;
 
@@ -169,5 +176,100 @@ impl Downloads {
         if !self.untold.iter().any(|one| one == id) {
             self.untold.push(id.to_owned());
         }
+    }
+}
+
+/// How much of a download is read at a time, looking for a filled value in it.
+const READ_AT_A_TIME: usize = 1 << 20;
+
+impl super::Browser {
+    /// **Whether the file at `file` holds a value purlis filled into this browser** (#5115), in
+    /// any of the forms a string a chat reads has it taken out in ([`every_form`]), whatever its
+    /// case: a download is brought into a chat's folder only where it holds none. Read in pieces,
+    /// so a large download is never held whole.
+    ///
+    /// # Errors
+    ///
+    /// Where the file can't be read.
+    pub fn holds_a_filled_value(&self, file: &std::path::Path) -> std::io::Result<bool> {
+        let filled = lock(&self.inner.state).filled.clone();
+        let forms = every_form(&filled);
+        if forms.is_empty() {
+            return Ok(false);
+        }
+        holds_a_form(std::fs::File::open(file)?, &forms)
+    }
+}
+
+/// Whether what `from` reads holds any of `forms`, whatever its case: read
+/// [`READ_AT_A_TIME`] bytes at a time, each piece with the end of the one before, so a form
+/// across two pieces is found.
+fn holds_a_form(mut from: impl Read, forms: &[Zeroizing<String>]) -> std::io::Result<bool> {
+    let needles: Vec<Zeroizing<String>> = forms
+        .iter()
+        .map(|form| Zeroizing::new(form.to_lowercase()))
+        .collect();
+    // A form's bytes, and a character cut at the piece's start.
+    let carried = needles.iter().map(|one| one.len()).max().unwrap_or(0) + 4;
+    let mut piece: Zeroizing<Vec<u8>> = Zeroizing::new(Vec::with_capacity(READ_AT_A_TIME));
+    let mut read = Zeroizing::new(vec![0u8; READ_AT_A_TIME]);
+    loop {
+        let got = match from.read(&mut read) {
+            Ok(got) => got,
+            Err(why) if why.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(why) => return Err(why),
+        };
+        if got == 0 {
+            return Ok(false);
+        }
+        piece.extend_from_slice(&read[..got]);
+        let text = Zeroizing::new(String::from_utf8_lossy(&piece).to_lowercase());
+        if needles.iter().any(|needle| text.contains(needle.as_str())) {
+            return Ok(true);
+        }
+        let keep = piece.len().min(carried);
+        let from_here = piece.len() - keep;
+        piece.drain(..from_here);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn forms(of: &str) -> Vec<Zeroizing<String>> {
+        let mut kept = crate::drive::kept::Kept::default();
+        kept.run(&[of]);
+        every_form(&kept)
+    }
+
+    fn holds(bytes: &[u8], of: &str) -> bool {
+        holds_a_form(bytes, &forms(of)).unwrap()
+    }
+
+    #[test]
+    fn a_file_holding_a_filled_value_in_any_case_or_in_base64_or_hex_is_found() {
+        assert!(holds(b"API_KEY=Open-Sesame-42\n", "open-sesame-42"));
+        assert!(holds(b"token: b3Blbi1zZXNhbWUtNDI=", "open-sesame-42"));
+        assert!(holds(b"6f70656e2d736573616d652d3432", "open-sesame-42"));
+        assert!(holds(b"\x00\xff\xfeopen-sesame-42\x00", "open-sesame-42"));
+    }
+
+    #[test]
+    fn a_file_holding_only_a_part_of_a_filled_value_is_not() {
+        assert!(!holds(b"open-sesame-4 and sesame-42", "open-sesame-42"));
+        assert!(!holds(b"", "open-sesame-42"));
+    }
+
+    #[test]
+    fn a_value_across_two_pieces_of_the_file_is_found() {
+        let mut bytes = vec![b'x'; READ_AT_A_TIME - 5];
+        bytes.extend_from_slice(b"open-sesame-42");
+        bytes.extend(vec![b'y'; 100]);
+        assert!(holds(&bytes, "open-sesame-42"));
+        // And a marked letter cut at the edge of a piece.
+        let mut marked = vec![b'x'; READ_AT_A_TIME - 1];
+        marked.extend_from_slice("ÿes-sésame-42".as_bytes());
+        assert!(holds(&marked, "ÿes-sésame-42"));
     }
 }

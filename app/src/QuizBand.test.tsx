@@ -33,6 +33,7 @@ const QUESTION: Shown = {
 
 const openTask = vi.fn();
 const openSettings = vi.fn();
+const answerInInbox = vi.fn();
 
 /** Tasks 7 and 8 are at home in steward 4's tab (chat 4); task 21 in talk 2's (chat 20). */
 const topOf = (task: number) => (task === 7 || task === 8 ? 4 : task === 21 ? 20 : undefined);
@@ -50,9 +51,15 @@ function Pane({
   pauseMs?: number;
   minimised?: boolean;
 }) {
-  const bell = { minimised, minimise: () => {}, onHolds: () => {}, focus: () => {} };
+  const bell = {
+    minimised,
+    minimise: () => {},
+    expand: () => {},
+    onHolds: () => {},
+    focus: () => {},
+  };
   return (
-    <QuizPlaces.Provider value={{ topOf, openTask, openSettings }}>
+    <QuizPlaces.Provider value={{ topOf, openTask, openSettings, answerInInbox }}>
       <QuestionsHere.Provider value={{ asks, with_asking_chat: [] }}>
         {(Array.isArray(session) ? session : [session]).map((one) => (
           <div key={one} data-testid={`pane-${one}`}>
@@ -106,6 +113,12 @@ const LINE = "Questions from this chat's tasks now come here, so you answer them
 /** The Notice whose words are `words`: its box in the band. */
 const noticeOf = (words: string | RegExp) =>
   screen.getByText(words).closest('[data-scope="notice"][data-part="root"]') as HTMLElement;
+
+/** Opens the quiz of the row on screen: a question is one row until it is opened (#5215). */
+const opened = async () => {
+  const toggle = screen.queryByRole("button", { name: "Show the whole question" });
+  if (toggle !== null) await userEvent.click(toggle);
+};
 
 describe("where a task's question is drawn (#4565)", () => {
   it("draws it from the top by default, in the top's pane and the task's own", () => {
@@ -169,10 +182,13 @@ describe("where a task's question is drawn (#4565)", () => {
     expect(screen.queryByText(/told developer 7/)).not.toBeInTheDocument();
   });
 
-  it("folds with the pane's notices: minimised, the quiz stands and the note folds into the bell (#5213)", async () => {
+  it("folds with the pane's notices: minimised, the quiz folds to the band's line and the note into the bell (#5213, #5215)", async () => {
     render(<Pane session={4} asks={[QUESTION]} minimised />);
     await waitFor(() => expect(screen.getByText(LINE)).not.toBeVisible());
-    expect(quiz()).toBeVisible();
+    expect(quiz()).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /^1 waiting · A task's question\s*·\s*Show$/ }),
+    ).toBeTruthy();
     cleanup();
     render(<Pane session={4} asks={[QUESTION]} />);
     await waitFor(() => expect(screen.getByText(LINE)).toBeVisible());
@@ -194,6 +210,7 @@ describe("where a task's question is drawn (#4565)", () => {
     setWhereYouAnswer({ offered: true });
     const user = userEvent.setup();
     render(<Pane session={4} asks={[QUESTION]} />);
+    await user.click(screen.getByRole("button", { name: "Show the whole question" }));
     expect(openTask).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Open task" }));
     expect(openTask).toHaveBeenCalledWith(7);
@@ -223,6 +240,7 @@ describe("several questions at once (#4566)", () => {
   it("pauses before the next quiz, keeping its place, so a second click lands on nothing", async () => {
     const user = userEvent.setup();
     const { rerender } = render(<Pane session={4} asks={[QUESTION, SECOND]} />);
+    await opened();
     const box = screen.getByRole("textbox", { name: "Your answer" });
     await waitFor(() => expect(box).not.toBeDisabled());
     await user.type(box, "Per project{Enter}");
@@ -246,6 +264,7 @@ describe("several questions at once (#4566)", () => {
     const { rerender } = render(
       <Pane session={4} asks={[QUESTION, SECOND]} pauseMs={PAUSE_MS * 10} />,
     );
+    await opened();
     const box = screen.getByRole("textbox", { name: "Your answer" });
     await waitFor(() => expect(box).not.toBeDisabled());
     await user.type(box, "Per project{Enter}");
@@ -262,6 +281,7 @@ describe("several questions at once (#4566)", () => {
     let taken = () => {};
     holdAnswer = new Promise((done) => (taken = done));
     const { rerender } = render(<Pane session={4} asks={[QUESTION, SECOND]} />);
+    await opened();
     const box = screen.getByRole("textbox", { name: "Your answer" });
     await waitFor(() => expect(box).not.toBeDisabled());
     await user.type(box, "Per project{Enter}");
@@ -331,6 +351,7 @@ describe("several questions at once (#4566)", () => {
     const user = userEvent.setup();
     chatAnswered = AGENT_SAID;
     const { rerender } = render(<Pane session={4} asks={[QUESTION]} />);
+    await opened();
     const box = screen.getByRole("textbox", { name: "Your answer" });
     await waitFor(() => expect(box).not.toBeDisabled());
     await user.type(box, "Per runner");
@@ -355,6 +376,7 @@ describe("several questions at once (#4566)", () => {
     const user = userEvent.setup();
     chatAnswered = AGENT_SAID;
     const { rerender } = render(<Pane session={4} asks={[QUESTION]} />);
+    await opened();
     const box = screen.getByRole("textbox", { name: "Your answer" });
     await waitFor(() => expect(box).not.toBeDisabled());
     await user.type(box, "Per runner{Enter}");

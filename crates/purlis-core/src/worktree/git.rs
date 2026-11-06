@@ -1522,6 +1522,10 @@ pub struct Isolated {
     /// is given both, so git uses the repository that was checked and no other (D-1335-9). A
     /// clone, and beside it the folder of a branch cut from it (D-1453-27).
     pins: Vec<Pin>,
+    /// The key the app signs the commits it makes for a chat with (#5480), where the person set
+    /// one up. Never a `-c` key: git is told to sign nothing, and purlis signs what git made
+    /// ([`crate::commitsign`]).
+    signer: Option<crate::commitsign::Signer>,
 }
 
 /// One pinned work tree: its git directory, and **which directory that was** when it was
@@ -1568,6 +1572,7 @@ impl Isolated {
         Self {
             config,
             pins: Vec::new(),
+            signer: None,
         }
     }
 
@@ -1639,6 +1644,18 @@ impl Isolated {
             .iter()
             .filter(|pin| dir.starts_with(&pin.tree))
             .max_by_key(|pin| pin.tree.components().count())
+    }
+
+    /// The same, signing the commits the app makes for a chat with `signer` (#5480).
+    #[must_use]
+    pub fn signing(mut self, signer: Option<crate::commitsign::Signer>) -> Self {
+        self.signer = signer;
+        self
+    }
+
+    /// The key the commits made under this isolation are signed with, where there is one.
+    pub fn signer(&self) -> Option<&crate::commitsign::Signer> {
+        self.signer.as_ref()
     }
 
     /// One more key. **For a test's stand-in forge only** (a `url.<base>.insteadOf` that points

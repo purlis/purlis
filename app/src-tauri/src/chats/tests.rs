@@ -10206,6 +10206,39 @@ fn a_start_on_a_pool_that_is_gone_starts_nothing_and_one_that_chose_this_machine
     assert_eq!(host.running(), vec![session]);
 }
 
+/// **A runner whose check ran out of time isn't walked again every minute by the sweep** (#5393):
+/// 5 and a half minutes on one check leaves it just short of an hour, and a quick end changes
+/// nothing about how often the sweep runs.
+#[cfg(unix)]
+#[test]
+fn the_sweep_eases_off_a_runner_whose_check_took_long_and_only_the_sweep() {
+    use std::time::Duration;
+    assert_eq!(
+        super::fresh_asked_again_after(Duration::from_secs(330)),
+        Duration::from_secs(3300)
+    );
+    assert_eq!(
+        super::fresh_asked_again_after(Duration::from_secs(1)),
+        Duration::from_secs(60),
+        "a quick end leaves the sweep's own pace"
+    );
+    assert_eq!(
+        super::fresh_asked_again_after(Duration::from_secs(36_000)),
+        Duration::from_secs(3600),
+        "never left for longer than an hour"
+    );
+
+    let plane = a_sandboxed_plane();
+    let chats = restartable_chats_of(plane.path(), Pretend::default());
+    assert!(chats.sweep_may_ask("01J9ZQ3V7K8M2N4P6R8T0V2X4Z"));
+    lock(&chats.fresh_asked_again).insert(
+        "01J9ZQ3V7K8M2N4P6R8T0V2X4Z".to_owned(),
+        std::time::Instant::now() + Duration::from_secs(3300),
+    );
+    assert!(!chats.sweep_may_ask("01J9ZQ3V7K8M2N4P6R8T0V2X4Z"));
+    assert!(chats.sweep_may_ask("another chat's"));
+}
+
 /// **A move takes a chat's one-off choice of where it runs** (#4536): the record then follows its
 /// workspace, which the move just set, and the choice comes back where the move doesn't happen.
 #[test]
@@ -10374,12 +10407,12 @@ fn a_task_pressed_into_a_pane_is_held_from_that_layout_and_the_chat_it_replaced_
 fn a_studio_chats_job_is_done_once_its_draft_came_and_stays_done() {
     let dir = tempfile::tempdir().unwrap();
     let chats = Chats::new();
-    let studio = purlis_core::reopen::StudioJob {
-        skill: Some("deploy".to_owned()),
-        level: purlis_core::skills::verbs::Level::project(),
-        job: purlis_core::reopen::StudioWork::OutcomeEvals,
-        done: false,
-    };
+    let studio = purlis_core::reopen::StudioJob::new(
+        Some("deploy".to_owned()),
+        purlis_core::skills::verbs::Level::project(),
+        purlis_core::reopen::StudioWork::OutcomeEvals,
+        chrono::Utc::now(),
+    );
     let session = chats
         .start(
             &Chat {
@@ -10420,6 +10453,72 @@ fn a_chat_the_studio_did_not_start_has_no_job_to_be_done() {
 
     assert_eq!(chats.record().chats[0].studio, None);
     let _ = chats.close(session);
+}
+
+/// #5248: a studio chat's job stops as its program ends, runs again with a later start, and the
+/// chat is kept for its skill's Runs once it closes.
+#[test]
+fn a_studio_chat_finishes_as_its_program_ends_and_stays_on_runs_once_closed() {
+    // A project of its own that leaves the sandbox off, as `no_project` is: its app state
+    // holds this test's chats alone.
+    let plane = tempfile::tempdir().unwrap();
+    std::fs::write(plane.path().join(purlis_core::plane::MANIFEST), "").unwrap();
+    // The program lives outside the project, as a sandboxed project asks.
+    let programs = tempfile::tempdir().unwrap();
+    let chats = chats_of(plane.path());
+    let studio = purlis_core::reopen::StudioJob::new(
+        Some("deploy".to_owned()),
+        purlis_core::skills::verbs::Level::project(),
+        purlis_core::reopen::StudioWork::Checks,
+        chrono::Utc::now(),
+    );
+    let session = chats
+        .start(
+            &Chat {
+                studio: Some(studio),
+                ..chat(&a_claude(programs.path()), "3", None)
+            },
+            SIZE,
+        )
+        .unwrap();
+    let finished = |chats: &Chats| {
+        chats.record().chats[0]
+            .studio
+            .as_ref()
+            .and_then(|job| job.finished.clone())
+    };
+    assert_eq!(finished(&chats), None);
+
+    chats.its_program_ended(session);
+    let stopped = finished(&chats);
+    assert!(stopped.is_some());
+    chats.its_program_ended(session);
+    assert_eq!(finished(&chats), stopped, "the first stop's time stands");
+
+    chats.close(session).unwrap();
+    let kept = purlis_core::reopen::studio_chats::closed(plane.path());
+    assert_eq!(kept.len(), 1);
+    assert_eq!(kept[0].chat, session);
+    assert_eq!(kept[0].job.skill.as_deref(), Some("deploy"));
+    assert_eq!(kept[0].job.finished, stopped);
+}
+
+/// #5248: a chat the studio did not start is not kept for Runs.
+#[test]
+fn a_chat_the_studio_did_not_start_is_not_kept_for_runs() {
+    // A project of its own that leaves the sandbox off, as `no_project` is: its app state
+    // holds this test's chats alone.
+    let plane = tempfile::tempdir().unwrap();
+    std::fs::write(plane.path().join(purlis_core::plane::MANIFEST), "").unwrap();
+    let programs = tempfile::tempdir().unwrap();
+    let chats = chats_of(plane.path());
+    let session = chats
+        .start(&chat(&a_claude(programs.path()), "3", None), SIZE)
+        .unwrap();
+
+    chats.close(session).unwrap();
+
+    assert_eq!(purlis_core::reopen::studio_chats::closed(plane.path()), []);
 }
 
 /// #5207: a running chat keeps the level it started with, so its reason says a restart applies

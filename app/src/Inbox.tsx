@@ -1855,11 +1855,16 @@ function UpdateItem({ row, above }: { row: UpdateRow; above: string }) {
  * on as from any ask. Answers whether the chat has a group to land on: its asks may have been
  * answered elsewhere since.
  */
-export function landOnGroup(session: number): boolean {
+export function landOnGroup(session: number, source?: Shown["source"]): boolean {
   const group = document.querySelector<HTMLElement>(
     `section.inbox .inbox-chat[data-session="${session}"]`,
   );
-  const first = group?.querySelector<HTMLElement>("li");
+  // At the ask it came for, where it names one (#5215), else the group's first.
+  const first =
+    (source === undefined
+      ? null
+      : group?.querySelector<HTMLElement>(`li[data-source="${source}"]`)) ??
+    group?.querySelector<HTMLElement>("li");
   if (!group || !first) return false;
   group.scrollIntoView?.({ block: "nearest" });
   first.focus();
@@ -1872,8 +1877,8 @@ export function landOnGroup(session: number): boolean {
  * the scope is the workspace's, the scope widens to the project's, as revealing a row a filter
  * hides clears the filter, and the landing is tried again once that is drawn.
  */
-export function landOnGroupIn(plane: PlaneId, session: number): void {
-  if (landOnGroup(session) || keptInboxScope(plane) !== "workspace") return;
+export function landOnGroupIn(plane: PlaneId, session: number, source?: Shown["source"]): void {
+  if (landOnGroup(session, source) || keptInboxScope(plane) !== "workspace") return;
   keepInboxScope(plane, "project");
-  requestAnimationFrame(() => landOnGroup(session));
+  requestAnimationFrame(() => landOnGroup(session, source));
 }

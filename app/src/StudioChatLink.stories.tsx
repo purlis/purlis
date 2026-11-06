@@ -9,9 +9,9 @@
  * pictured theme cell. The core is faked at its command boundary.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, fn, userEvent, waitFor } from "storybook/test";
+import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import type { SkillDraft, StudioLink } from "./bindings";
+import type { ClosedStudioChat, SkillDraft, StudioLink } from "./bindings";
 import { STORY_HISTORY as HISTORY, StudioInPanel } from "./skillStudioStory.testkit";
 import { inWorkspace, skillRowId, type SkillPageTab, type StudioPage } from "./skillStudio";
 import { skill, studio } from "./skillsListing.testkit";
@@ -28,7 +28,29 @@ const SKILL = skill("test-design", {
   folder: `workspaces/${WHERE}/skills/test-design`,
   description: "Designs a test plan for a change: what to test, at which level, and the cases.",
 });
-const LINK: StudioLink = { skill: "test-design", level: LEVEL, job: "outcome-evals", done: false };
+/** Chat 7, writing test-design's outcome evals, started two minutes before the story draws. */
+const LINK: StudioLink = {
+  skill: "test-design",
+  level: LEVEL,
+  job: "outcome-evals",
+  done: false,
+  started: new Date(Date.now() - 2 * 60_000 - 5_000).toISOString(),
+  finished: null,
+};
+
+/** Chat 5, closed since: it wrote test-design's checks, finished on 4 November at 17:42. */
+const CLOSED: ClosedStudioChat = {
+  session: 5,
+  name: "Checks of test-design",
+  closed: new Date(2026, 10, 4, 18, 0).toISOString(),
+  link: {
+    ...LINK,
+    job: "checks",
+    done: true,
+    started: new Date(2026, 10, 4, 17, 31).toISOString(),
+    finished: new Date(2026, 10, 4, 17, 42).toISOString(),
+  },
+};
 
 /** The draft chat 7 wrote: test-design's outcome evals. */
 const DRAFT: SkillDraft = {
@@ -56,15 +78,20 @@ type Args = {
   page: StudioPage;
   tab?: SkillPageTab;
   drafts: SkillDraft[];
+  closed?: ClosedStudioChat[];
   show: (session: number) => void;
+  stop: (session: number) => void;
+  openDraft: (link: StudioLink, id: string) => void;
 };
 
 /** The studio's tab, with chat 7 lent as the one the studio started for test-design. */
-function Tab({ width, show }: Args) {
+function Tab({ width, show, stop, openDraft }: Args) {
   const lent: StudioChatsLent = {
     chats: [{ session: 7, name: "Outcome evals of test-design", link: LINK }],
     show,
     openSkill: () => undefined,
+    openDraft,
+    stop,
   };
   return (
     <StudioChatsHere.Provider value={lent}>
@@ -75,7 +102,15 @@ function Tab({ width, show }: Args) {
 
 const meta = {
   component: Tab,
-  args: { width: 1000, page: "library", tab: "grades", drafts: [], show: fn() },
+  args: {
+    width: 1000,
+    page: "library",
+    tab: "grades",
+    drafts: [],
+    show: fn(),
+    stop: fn(),
+    openDraft: fn(),
+  },
   beforeEach: ({ args }) => {
     mockIPC((cmd) => {
       switch (cmd) {
@@ -96,6 +131,8 @@ const meta = {
           return { grades: [], said: null, tests: 4, evals: 0, tests_refused: null, running: null };
         case "skill_drafts":
           return args.drafts;
+        case "studio_chats_closed":
+          return args.closed ?? [];
         case "skill_draft_grade":
           return {
             only_evals: false,
@@ -150,23 +187,32 @@ async function tabTo(target: () => HTMLElement) {
 
 /**
  * **While the chat runs** (moment 2): the line above the tabs, and the Grades card showing the
- * job in place of its button. Each Open chat shows the chat.
+ * job in place of its button, how long it has run, Open chat and Stop it (#5248). Each Open chat
+ * shows the chat; Stop it asks to stop it.
  */
 export const WhileItRuns: Story = {
   play: async ({ canvas, args }) => {
     const line = await canvas.findByTestId("studio-chat-running-7");
     await expect(line).toHaveTextContent(`A chat at ${WHERE} is writing outcome evals · running`);
     const card = await canvas.findByTestId("skill-checks-running-7");
-    await expect(card).toHaveTextContent(`A chat at ${WHERE} is writing outcome evals.`);
+    await expect(card).toHaveTextContent(
+      `A chat at ${WHERE} is writing outcome evals · running 2 min`,
+    );
     const [first] = canvas.getAllByRole("button", { name: "Open chat" });
     await tabTo(() => first);
     expectFocusInSight();
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(args.show).toHaveBeenCalledWith(7));
+    const stop = () => canvas.getByRole("button", { name: "Stop it" });
+    await tabTo(stop);
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(args.stop).toHaveBeenCalledWith(7));
   },
 };
 
-/** **Once it is done** (moment 3): its draft waits, and Runs keeps the chat. */
+/** **Once it is done** (moment 3): its draft waits, and Runs keeps the chat, with Review draft
+ *  (#5248) beside Open chat. */
 export const OnRunsOnceDone: Story = {
   args: { tab: "runs", drafts: [DRAFT] },
   play: async ({ canvas, args }) => {
@@ -174,11 +220,35 @@ export const OnRunsOnceDone: Story = {
     await expect(row).toHaveTextContent("Wrote outcome evals");
     await expect(row).toHaveTextContent("its draft waits in Drafts");
     await expect(canvas.queryByTestId("studio-chat-running-7")).toBeNull();
+    const review = () => within(row).getByRole("button", { name: "Review draft" });
+    await tabTo(review);
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(args.openDraft).toHaveBeenCalledWith(LINK, DRAFT.id));
     const open = () => canvas.getByRole("button", { name: "Open chat" });
     await tabTo(open);
     expectFocusInSight();
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(args.show).toHaveBeenCalledWith(7));
+  },
+};
+
+/** **Once its chat has closed** (#5248): Runs keeps it, after the open one, with when it
+ *  finished, and Review draft while its draft waits. It has no tab, so no Open chat. */
+export const OnRunsOnceClosed: Story = {
+  args: { tab: "runs", drafts: [{ ...DRAFT, chat: 5, chat_open: false }], closed: [CLOSED] },
+  play: async ({ canvas, args }) => {
+    const row = await canvas.findByTestId("studio-chat-5");
+    await expect(row).toHaveTextContent("Wrote checks");
+    await expect(row).toHaveTextContent(
+      "Checks of test-design, at purlis-demo · finished 11-04 17:42 · its draft waits in Drafts",
+    );
+    await expect(within(row).queryByRole("button", { name: "Open chat" })).toBeNull();
+    const review = () => within(row).getByRole("button", { name: "Review draft" });
+    await tabTo(review);
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(args.openDraft).toHaveBeenCalledWith(CLOSED.link, DRAFT.id));
   },
 };
 
@@ -204,7 +274,13 @@ export const TheChatsChip: StoryObj<{ done: boolean; openSkill: (link: StudioLin
   args: { done: false, openSkill: fn() },
   render: ({ openSkill }) => (
     <StudioChatsHere.Provider
-      value={{ chats: [{ session: 7, name: "7", link: LINK }], show: () => undefined, openSkill }}
+      value={{
+        chats: [{ session: 7, name: "7", link: LINK }],
+        show: () => undefined,
+        openSkill,
+        openDraft: () => undefined,
+        stop: () => undefined,
+      }}
     >
       <div className="pane-foot" style={{ display: "flex", inlineSize: 420 }}>
         <StudioChatChip plane="story" session={7} onOpen={() => openSkill(LINK)} />

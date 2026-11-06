@@ -12,7 +12,8 @@ import { Badge } from "./ui/badge/Badge";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Disclosure } from "./ui/disclosure/Disclosure";
 import { List, ListRow, ListRowSection, type Selection } from "./ui/list/List";
-import { RowBelow, RowLabel, RowTrail } from "./ui/list/Row";
+import { RowBelow, RowLabel, RowLead, RowTrail } from "./ui/list/Row";
+import { Checkbox } from "./ui/choice/Checkbox";
 import { ViewPageHeader } from "./ui/panel/ViewFrame";
 
 /** How many days are left to bring it back, in words. */
@@ -72,8 +73,34 @@ export function groupSaid(group: DeletedGroup): string {
 export const NAME_TAKEN_STAYS =
   "stayed in Deleted: its name belongs to purlis now, so bring it back on its own, under a new name.";
 
-/** A group's own row in the list: never chosen, as it holds only Bring all back. */
+/** A group's own row in the list: never chosen, as it holds only Bring all back. While Select is
+ *  on (#5332) it is ticked with every skill of it. */
 const GROUP_ROW = "group:";
+
+/** The keys Select draws ticked: the skills ticked, and each group all of whose skills are. */
+function withGroups(keys: ReadonlySet<string>, groups: readonly DeletedGroup[]): Set<string> {
+  const drawn = new Set(keys);
+  for (const group of groups)
+    if (group.skills.every((skill) => keys.has(skill.id))) drawn.add(`${GROUP_ROW}${group.id}`);
+  return drawn;
+}
+
+/** The skills ticked once the list says `next`, from `was`: a group's row ticked or unticked
+ *  ticks or unticks every skill of it. */
+function skillsOf(
+  was: ReadonlySet<string>,
+  next: ReadonlySet<string>,
+  groups: readonly DeletedGroup[],
+): Set<string> {
+  const before = withGroups(was, groups);
+  const out = new Set([...next].filter((key) => !key.startsWith(GROUP_ROW)));
+  for (const group of groups) {
+    const key = `${GROUP_ROW}${group.id}`;
+    if (next.has(key) && !before.has(key)) for (const skill of group.skills) out.add(skill.id);
+    if (!next.has(key) && before.has(key)) for (const skill of group.skills) out.delete(skill.id);
+  }
+  return out;
+}
 
 /**
  * **The Deleted page's list** (S9, #3691; `prototype/studio-secondary-pages`, variant A): a row
@@ -84,6 +111,7 @@ export function DeletedList({
   deleted,
   chosen,
   busy = false,
+  selecting,
   onChoose,
   onBringAllBack,
 }: {
@@ -91,6 +119,13 @@ export function DeletedList({
   /** The deleted skill chosen, by its id. */
   chosen: string | undefined;
   busy?: boolean;
+  /** **Select** (#5332), while it is on: the skills ticked, by their ids. A group's row ticks
+   *  every skill of it, and is ticked while they all are. */
+  selecting?: {
+    keys: ReadonlySet<string>;
+    onChange: (keys: ReadonlySet<string>) => void;
+    onEscape: () => void;
+  };
   onChoose: (id: string) => void;
   /** **Bring all back** a group (#5331). */
   onBringAllBack?: (group: DeletedGroup) => void;
@@ -104,6 +139,11 @@ export function DeletedList({
       data-testid={`deleted-${one.name}`}
       data-row={one.id}
     >
+      {selecting !== undefined && (
+        <RowLead>
+          <Checkbox slot="selection" aria-label={`Select ${one.name}, ${one.label}`} />
+        </RowLead>
+      )}
       <RowLabel>{one.name}</RowLabel>
       <RowTrail>
         <Badge>{one.label}</Badge>
@@ -112,20 +152,35 @@ export function DeletedList({
     </ListRow>
   );
   const drawn = groupedDeleted(deleted);
+  const groups = drawn.filter((one): one is DeletedGroup => "skills" in one);
   return (
     <List
       aria-label="Deleted skills"
       className="skill-library"
-      selectionMode="single"
-      disallowEmptySelection
-      selectedKeys={chosen === undefined ? new Set() : new Set([chosen])}
-      // A group's own row is never chosen: its button is what it holds.
-      disabledKeys={drawn.flatMap((one) => ("skills" in one ? [`${GROUP_ROW}${one.id}`] : []))}
-      disabledBehavior="selection"
-      onSelectionChange={(keys: Selection) => {
-        const [first] = keys === "all" ? [] : [...keys];
-        if (first !== undefined) onChoose(String(first));
-      }}
+      {...(selecting === undefined
+        ? {
+            selectionMode: "single" as const,
+            disallowEmptySelection: true,
+            selectedKeys: chosen === undefined ? new Set() : new Set([chosen]),
+            // A group's own row is never chosen: its button is what it holds.
+            disabledKeys: groups.map((one) => `${GROUP_ROW}${one.id}`),
+            disabledBehavior: "selection" as const,
+            onSelectionChange: (keys: Selection) => {
+              const [first] = keys === "all" ? [] : [...keys];
+              if (first !== undefined) onChoose(String(first));
+            },
+          }
+        : {
+            selectionMode: "multiple" as const,
+            selectedKeys: withGroups(selecting.keys, groups),
+            onSelectionChange: (keys: Selection) =>
+              selecting.onChange(
+                keys === "all"
+                  ? new Set(deleted.map((one) => one.id))
+                  : skillsOf(selecting.keys, new Set([...keys].map(String)), groups),
+              ),
+            onEscape: selecting.onEscape,
+          })}
     >
       {drawn.map((one) => {
         if (!("skills" in one)) return row(one);
@@ -138,6 +193,11 @@ export function DeletedList({
               textValue={said}
               data-testid={`deleted-group-${one.id}`}
             >
+              {selecting !== undefined && (
+                <RowLead>
+                  <Checkbox slot="selection" aria-label={`Select ${said}`} />
+                </RowLead>
+              )}
               <RowLabel>{counted(one.skills.length, "skill", "skills")}</RowLabel>
               <RowTrail>
                 <Button

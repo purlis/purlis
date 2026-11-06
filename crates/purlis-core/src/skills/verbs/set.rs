@@ -26,6 +26,14 @@ use crate::skills::LINKED_PLUGIN;
 use crate::skills::source::{self, Remote, lock};
 use purlis_skills::change;
 
+mod acts;
+pub mod gone;
+pub mod proposed;
+
+pub use acts::{Moving, lifecycle_set, move_set, pin_set};
+pub use gone::{Gone, delete_now};
+pub use proposed::{SetChange, Shown};
+
 /// The trailer that says which set a commit deleted.
 pub(super) const SET_TRAILER: &str = "Purlis-Skill-Set";
 /// The trailer that says what that set was deleted from, in words.
@@ -44,6 +52,14 @@ pub enum Act {
     Delete,
     TurnOff,
     TurnOn,
+    /// The Library's Select mode's (#5332), each with its own review.
+    Pin,
+    Unpin,
+    Archive,
+    Unarchive,
+    /// To the level the review is asked with.
+    Move,
+    Export,
 }
 
 /// One skill as its review shows it.
@@ -126,8 +142,14 @@ fn reaches(plane: &Path, member: &Member, workspace: &str) -> bool {
         })
 }
 
-/// Why `member` cannot be part of `act`, or `None`.
-fn cannot(plane: &Path, act: Act, member: &Member, workspace: Option<&str>) -> Option<String> {
+/// Why `member` cannot be part of `act`, or `None`. A move goes `to`.
+fn cannot(
+    plane: &Path,
+    act: Act,
+    member: &Member,
+    workspace: Option<&str>,
+    to: Option<&Level>,
+) -> Option<String> {
     let Ok(folder) = find(plane, &member.level, &member.name) else {
         return Some("It is not there any more.".to_owned());
     };
@@ -145,6 +167,26 @@ fn cannot(plane: &Path, act: Act, member: &Member, workspace: Option<&str>) -> O
             Some(ws) => Some(format!("It does not reach {ws}, so {ws} cannot turn it.")),
             None => Some("Only a workspace turns a skill off or on.".to_owned()),
         },
+        Act::Pin | Act::Unpin | Act::Archive | Act::Unarchive => None,
+        Act::Move => {
+            let Some(to) = to else {
+                return Some("No level was named to move it to.".to_owned());
+            };
+            if member.level == *to {
+                return Some(format!("It is a {to} skill already."));
+            }
+            if crate::skills::name_reserved(&member.name) {
+                return Some(crate::skills::NAME_RESERVED.to_owned());
+            }
+            super::free_at(plane, to, &member.name, &super::folder_name(&folder))
+                .err()
+                .map(|why| format!("{}.", crate::skills::router::capitalised(&why)))
+        }
+        Act::Export => crate::skills::name_reserved(&member.name).then(|| {
+            "A name starting with purlis- belongs to purlis, so it cannot be exported: rename it \
+             first."
+                .to_owned()
+        }),
     }
 }
 
@@ -155,6 +197,7 @@ pub fn review_set(
     act: Act,
     members: &[Member],
     workspace: Option<&str>,
+    to: Option<&Level>,
 ) -> SetReview {
     let (locked, _) = lock::every(plane);
     let skills: Vec<ReviewedMember> = members
@@ -165,7 +208,7 @@ pub fn review_set(
                 one.is(&member.level, &member.name)
                     && source::update::edited_since_install(plane, one)
             }),
-            cannot: cannot(plane, act, member, workspace),
+            cannot: cannot(plane, act, member, workspace, to),
         })
         .collect();
     let going: Vec<&Member> = skills
@@ -174,8 +217,9 @@ pub fn review_set(
         .map(|one| &one.member)
         .collect();
     let mut names = match act {
-        Act::Delete | Act::TurnOff => left_naming(plane, act, &going, workspace),
+        Act::Delete | Act::TurnOff | Act::Archive => left_naming(plane, act, &going, workspace),
         Act::TurnOn => naming_what_stays_off(plane, &going, workspace),
+        Act::Pin | Act::Unpin | Act::Unarchive | Act::Move | Act::Export => Vec::new(),
     };
     names.sort_by(|a, b| (&a.namer, &a.named).cmp(&(&b.namer, &b.named)));
     names.dedup_by(|a, b| a.namer == b.namer && a.named == b.named);
@@ -213,8 +257,9 @@ fn left_naming(plane: &Path, act: Act, going: &[&Member], workspace: Option<&str
                 level: level.clone(),
                 name: name.clone(),
             };
-            // Only what is on in the workspace is left naming it there.
-            let counts = act == Act::Delete
+            // Only what is on in the workspace is left naming it there; a delete or an archive
+            // leaves it naming nothing anywhere.
+            let counts = act != Act::TurnOff
                 || workspace
                     .zip(off.as_ref())
                     .is_some_and(|(ws, off)| reaches(plane, &namer, ws) && !off.contains(name));

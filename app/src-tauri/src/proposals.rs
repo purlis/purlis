@@ -34,9 +34,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
 use purlis_core::dispatchtalk::ProposalWord;
-use purlis_core::hookwire::{Answer, ProposeAsk, ProposeLimitAsk};
+use purlis_core::hookwire::{Answer, ProposeAsk, ProposeLimitAsk, ProposeSkillSetAsk};
 use purlis_core::poollimits::LimitId;
 use purlis_core::proposed::{self, Change, NotMade};
+use purlis_core::skills::verbs::set::SetChange;
 
 use crate::planes::{Held, PlaneId, Planes};
 
@@ -65,6 +66,9 @@ pub struct Proposal {
     /// **A value for a pool's limit, in place of a change to a file** (#4284): [`Self::path`] is
     /// then its name in words, and [`Self::change`] is not read.
     pub limit: Option<LimitChange>,
+    /// **A change to several skills, in place of a change to a file** (#5357): [`Self::path`] is
+    /// then its name in words, and [`Self::change`] is not read.
+    pub skills: Option<SkillsChange>,
     /// **What a change purlis holds came from** (#5240), where something did: what the window
     /// says of it, so it is never read as a chat's.
     pub behind: Option<Behind>,
@@ -97,10 +101,22 @@ pub struct LimitChange {
     pub file_refused: bool,
 }
 
+/// **A change to several skills a chat proposed** (#5357, the operator's ruling of 2026-11-05):
+/// the skills and the act, and the plane's state it was shown at. What is shown and what Apply
+/// makes are read from the plane, never from the ask ([`purlis_core::skills::verbs::set::proposed`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkillsChange {
+    pub change: SetChange,
+    /// [`purlis_core::skills::verbs::set::Shown::state`] when it was held: another at Apply
+    /// makes it stale.
+    pub state: String,
+}
+
 /// What one proposal holds beyond a change to a file.
 #[derive(Debug, Default)]
 struct Extra {
     limit: Option<LimitChange>,
+    skills: Option<SkillsChange>,
     behind: Option<Behind>,
 }
 
@@ -177,6 +193,30 @@ impl Proposals {
         )
     }
 
+    /// Holds chat `session`'s change to several skills, under the rules of [`Self::note`].
+    pub fn note_skills(
+        &self,
+        session: u32,
+        path: &str,
+        skills: SkillsChange,
+        now: u64,
+    ) -> Option<u32> {
+        let nothing = Change::Whole {
+            content: String::new(),
+        };
+        self.hold(
+            session,
+            path,
+            None,
+            nothing,
+            Extra {
+                skills: Some(skills),
+                ..Extra::default()
+            },
+            now,
+        )
+    }
+
     fn hold(
         &self,
         session: u32,
@@ -203,6 +243,7 @@ impl Proposals {
             since: now,
             stale: false,
             limit: extra.limit,
+            skills: extra.skills,
             behind: extra.behind,
         });
         Some(id)
@@ -444,6 +485,89 @@ pub fn limit_asked_in(
         })
 }
 
+/// **Chat `ask.chat` proposed a change to several skills** (#5357): held for the person, or why
+/// not. Held to what [`asked`] holds a chat to. **Nothing is written here, whatever is asked.**
+pub fn asked_skills(held: &Held, ask: &ProposeSkillSetAsk) -> Answer {
+    let no = |why: String| Answer::No { why };
+    if !held
+        .chats()
+        .open_now()
+        .iter()
+        .any(|open| open.session == ask.chat)
+    {
+        return no(format!("chat {} is not one this app has open", ask.chat));
+    }
+    if let Err(why) = held.brokered().allow(ask.chat, std::time::Instant::now()) {
+        return no(why);
+    }
+    if let Err(why) = crate::skillchange::flag_on() {
+        return no(why);
+    }
+    match skills_asked_in(
+        held.root(),
+        held.proposals(),
+        ask,
+        crate::sandboxing::now_secs(),
+    ) {
+        Ok(()) => {
+            held.chats().asks_may_have_moved();
+            Answer::Said {
+                lines: vec![purlis_core::repocmd::Say::Done(HELD_SAID.into())],
+                code: 0,
+            }
+        }
+        Err(why) => no(why),
+    }
+}
+
+/// [`asked_skills`]'s judgement of `ask` in the project at `root`, held in `proposals` at `now`:
+/// read from the plane as it is, so what the person is shown is the app's own.
+pub fn skills_asked_in(
+    root: &Path,
+    proposals: &Proposals,
+    ask: &ProposeSkillSetAsk,
+    now: u64,
+) -> Result<(), String> {
+    // PC-14: a project where proposals are off holds none of these either.
+    if let Some(why) = purlis_core::sandbox::policy::Locks::of(root).proposed_changes_refused() {
+        return Err(why);
+    }
+    if ask.chat == BY_PURLIS {
+        return Err(format!("chat {BY_PURLIS} is no chat that proposes"));
+    }
+    ask.change.checked()?;
+    let shown = ask.change.shown(root);
+    proposals
+        .note_skills(
+            ask.chat,
+            &ask.change.title(),
+            SkillsChange {
+                change: ask.change.clone(),
+                state: shown.state,
+            },
+            now,
+        )
+        .map(|_| ())
+        .ok_or_else(|| {
+            format!(
+                "this chat has {AT_MOST_PER_CHAT} proposed changes waiting already: wait for the \
+                 person's answers before proposing another"
+            )
+        })
+}
+
+/// [`Now`] of a change to several skills, as the plane holds them now: judged again.
+pub fn skills_now(root: &Path, skills: &SkillsChange) -> Now {
+    let shown = skills.change.shown(root);
+    if shown.state != skills.state {
+        return Now::Stale;
+    }
+    Now::Made {
+        before: shown.before,
+        after: shown.after,
+    }
+}
+
 /// A limit's value as its proposal shows it, in words: one line.
 fn limit_line(change: &LimitChange, value: Option<u64>) -> String {
     let default = change.default_was;
@@ -506,6 +630,9 @@ pub fn now_of(root: &Path, one: &Proposal) -> Now {
     if let Some(change) = &one.limit {
         return limit_now(change);
     }
+    if let Some(skills) = &one.skills {
+        return skills_now(root, skills);
+    }
     match proposed::prepare(
         root,
         Path::new(&one.path),
@@ -543,6 +670,8 @@ fn stale_word(one: &Proposal) -> ProposalWord {
     let path = one.path.clone();
     if one.limit.is_some() {
         ProposalWord::LimitStale { path }
+    } else if one.skills.is_some() {
+        ProposalWord::SkillsStale { path }
     } else {
         ProposalWord::Stale { path }
     }
@@ -652,17 +781,41 @@ const WAITS_NO_MORE: &str = "That proposed change waits no more: it was answered
 #[tauri::command]
 #[specta::specta]
 pub async fn apply_proposed_change(
+    app: tauri::AppHandle,
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     id: u32,
     from: From,
 ) -> Result<String, String> {
     let held = planes.held(&plane)?;
+    // An export of skills goes where the person picks now, never where the chat said (#5492):
+    // asked only of one that is not stale, which Apply then refuses without asking where.
+    let export = held.proposals().get(id).and_then(|one| {
+        let skills = one.skills.as_ref()?;
+        let SetChange::Export { zip, .. } = skills.change else {
+            return None;
+        };
+        let fresh = !one.stale && !matches!(skills_now(held.root(), skills), Now::Stale);
+        fresh.then_some(zip)
+    });
+    let to = match export {
+        // Not picked is not applied: the window keeps it, to apply or dismiss.
+        Some(zip) => Some(
+            crate::skillpublish::export_place(&app, zip)
+                .await?
+                .ok_or(NO_PLACE_PICKED)?,
+        ),
+        None => None,
+    };
     crate::off_the_window("applying a proposed change", move || {
-        applied(&held, id, from)
+        applied(&held, id, from, to.as_deref())
     })
     .await
 }
+
+/// What Apply on an export says when the person picked no place: it is still held.
+pub const NO_PLACE_PICKED: &str = "Nothing was exported: no place was picked. It is still here to \
+                                   apply or dismiss.";
 
 /// **Where Apply was pressed** (PC-7): a row (the Inbox's, a tab's Notice), which shows a change
 /// whole only up to its length, or the change's own tab, which shows it whole however long.
@@ -674,8 +827,9 @@ pub enum From {
     Tab,
 }
 
-/// [`apply_proposed_change`]'s work, for project `held`.
-pub fn applied(held: &Held, id: u32, from: From) -> Result<String, String> {
+/// [`apply_proposed_change`]'s work, for project `held`: `to` is the place the person picked for
+/// an export of skills.
+pub fn applied(held: &Held, id: u32, from: From, to: Option<&Path>) -> Result<String, String> {
     let one = held.proposals().get(id).ok_or(WAITS_NO_MORE)?;
     let root = held.root();
     let persona = held
@@ -686,25 +840,36 @@ pub fn applied(held: &Held, id: u32, from: From) -> Result<String, String> {
         |applied: &proposed::Applied<'_>| held.hooks().record_proposed(root, one.session, applied);
     let stale_said = if one.limit.is_some() {
         LIMIT_STALE_SAID
+    } else if one.skills.is_some() {
+        SKILLS_STALE_SAID
     } else {
         STALE_SAID
     };
-    match apply_in(
+    match apply_in_to(
         root,
         &one,
         persona.as_deref(),
         &audit,
         held.proposals().applying(),
         from,
+        to,
     ) {
         Ok(said) => {
             held.proposals().take(id);
             crate::oldplugins::purlis_change_applied(root, &one);
-            for session in held.proposals().others_stale(&one.path) {
-                tell(held, session, stale_word(&one));
+            // Another chat's change to skills is judged again by the plane's state, not by its
+            // name, which two different sets can share.
+            if one.skills.is_none() {
+                for session in held.proposals().others_stale(&one.path) {
+                    tell(held, session, stale_word(&one));
+                }
             }
             let word = if one.limit.is_some() {
                 ProposalWord::LimitApplied {
+                    path: one.path.clone(),
+                }
+            } else if one.skills.is_some() {
+                ProposalWord::SkillsApplied {
                     path: one.path.clone(),
                 }
             } else {
@@ -735,6 +900,11 @@ pub const STALE_SAID: &str = "The file changed since this change was proposed, s
 pub const LIMIT_STALE_SAID: &str = "This limit changed since the value was proposed, so nothing \
                                     was saved. Dismiss it; the chat is told it changed.";
 
+/// What Apply says of a change to skills whose skills changed since.
+pub const SKILLS_STALE_SAID: &str = "These skills changed since the change was proposed, so \
+                                     nothing was changed. Dismiss it; the chat is told they \
+                                     changed.";
+
 /// Why Apply did not write.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Refusal {
@@ -757,6 +927,20 @@ pub fn apply_in(
     lock: &Mutex<()>,
     from: From,
 ) -> Result<String, Refusal> {
+    apply_in_to(root, one, persona, audit, lock, from, None)
+}
+
+/// [`apply_in`], with `to`, the place the person picked for an export of skills: the only place
+/// one is written.
+pub fn apply_in_to(
+    root: &Path,
+    one: &Proposal,
+    persona: Option<&str>,
+    audit: &dyn Fn(&proposed::Applied<'_>) -> Result<(), String>,
+    lock: &Mutex<()>,
+    from: From,
+    to: Option<&Path>,
+) -> Result<String, Refusal> {
     if one.stale {
         return Err(Refusal::Stale);
     }
@@ -765,6 +949,9 @@ pub fn apply_in(
     }
     if let Some(change) = &one.limit {
         return apply_limit(one, change, persona, audit, lock);
+    }
+    if let Some(skills) = &one.skills {
+        return apply_skills(root, one, skills, persona, audit, lock, to);
     }
     let judged = if one.session == BY_PURLIS {
         proposed::proposable_by_purlis
@@ -893,6 +1080,56 @@ pub(crate) fn apply_limit(
         change.pool,
         change.id.limit().takes_effect.said()
     ))
+}
+
+/// **Makes a change to several skills a chat proposed** (#5357): judged again against the plane
+/// as it was shown, audited, then made as one commit through the verbs the window's own review
+/// calls ([`SetChange::apply`]), so nothing but what the person was shown can change.
+pub(crate) fn apply_skills(
+    root: &Path,
+    one: &Proposal,
+    skills: &SkillsChange,
+    persona: Option<&str>,
+    audit: &dyn Fn(&proposed::Applied<'_>) -> Result<(), String>,
+    lock: &Mutex<()>,
+    to: Option<&Path>,
+) -> Result<String, Refusal> {
+    let exports = matches!(skills.change, SetChange::Export { .. });
+    let _held = lock.lock().unwrap_or_else(PoisonError::into_inner);
+    let after = match skills_now(root, skills) {
+        Now::Made { after, .. } => after,
+        Now::Stale => return Err(Refusal::Stale),
+        Now::Unprepared => return Err(Refusal::Not(proposed::UNPREPARED.to_owned())),
+    };
+    if exports && to.is_none() {
+        return Err(Refusal::Not(NO_PLACE_PICKED.to_owned()));
+    }
+    let written = proposed::base_of(Some(after.as_bytes())).unwrap_or_default();
+    let record = |outcome, why: Option<&str>| {
+        audit(&proposed::Applied {
+            persona,
+            path: &one.path,
+            written: &written,
+            outcome,
+            why,
+        })
+    };
+    record(proposed::Outcome::Intent, None).map_err(Refusal::Not)?;
+    let made = match to.filter(|_| exports) {
+        Some(to) => skills
+            .change
+            .export_to(root, crate::skillchange::built_in().as_deref(), to),
+        None => crate::skillchange::heard(root, |cx| skills.change.apply(cx)).map(drop),
+    };
+    let (outcome, why) = match &made {
+        Ok(_) => (proposed::Outcome::Applied, None),
+        Err(why) => (proposed::Outcome::Failed, Some(why.as_str())),
+    };
+    if let Err(why) = record(outcome, why) {
+        tracing::warn!("purlis: a proposed change to skills was not recorded ({why})");
+    }
+    made.map_err(Refusal::Not)?;
+    Ok(format!("{}: done.", one.path))
 }
 
 /// **Dismiss** on a proposed change: nothing is written, and the chat is told on its next turn.
@@ -1082,6 +1319,7 @@ fn written_need(
         since: 0,
         stale: false,
         limit: None,
+        skills: None,
         behind: None,
     };
     // Shown whole by what asked for it: the person read the line, however long the file is.

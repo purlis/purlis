@@ -674,6 +674,7 @@ async fn host_a_sends_no_start_from_kept_logins_on_to_host_b() {
     let refused = client
         .start_program(StartProgram {
             kept: Some(purlis_session_protocol::browsing::KeptLogin {
+                form: None,
                 profile: "claude".into(),
                 persona: "steward".into(),
                 login: "shop-login".into(),

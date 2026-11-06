@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import { HOLD_MS } from "./paneDrag";
 import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
@@ -85,6 +86,21 @@ function core(stored?: unknown): { asked: string[]; laid: () => unknown } {
 
 /** Each pane side by side, 800 wide, at the top; each sidebar row its own line far below them. */
 function boxOf(el: Element) {
+  // A tab on the strip, 100 wide, along the top above the panes.
+  const tab = el.closest("[data-drop-strip] [data-drop-tab]:not([data-drop-pane])");
+  if (tab !== null) {
+    const left = [...document.querySelectorAll("[data-drop-strip] [data-drop-tab]")].indexOf(tab);
+    return {
+      left: left * 100,
+      top: 0,
+      width: 100,
+      height: 30,
+      right: left * 100 + 100,
+      bottom: 30,
+      x: left * 100,
+      y: 0,
+    };
+  }
   const pane = el.closest("[data-drop-pane]");
   const row = el.closest("[data-drag-chat]");
   const box =
@@ -118,7 +134,9 @@ beforeEach(() => {
     return DOMRect.fromRect({ x, y, width, height });
   });
   document.elementFromPoint = (x: number, y: number) => {
-    for (const el of document.querySelectorAll("[data-drop-pane], [data-drag-chat]")) {
+    for (const el of document.querySelectorAll(
+      "[data-drop-strip] [data-drop-tab]:not([data-drop-pane]), [data-drop-pane], [data-drag-chat]",
+    )) {
       const b = boxOf(el);
       if (x >= b.left && x < b.right && y >= b.top && y < b.bottom) return el;
     }
@@ -247,5 +265,37 @@ describe("a pane moved names what it shows (#5283)", () => {
     render(<App />);
     await splitDrawn([3, 1]);
     await waitFor(() => expect(heads()).toEqual(["copy-past-crash", "codeql-issues"]));
+  });
+});
+
+describe("resting on a tab during a drag is a preview too (#5294)", () => {
+  it("draws the tab rested on in front, and tells the core nothing of it, dropped or put back", async () => {
+    const told = core(aTabForEachChat([COPY, { ...PERFORMANCE, in_front: false }], () => "alpha"));
+    render(<App />);
+    await waitFor(() => expect(heads()).toEqual(["copy-past-crash"]));
+    await waitFor(() => expect(row(1)).toContain("codeql-issues"));
+    await act(async () => {
+      await new Promise((done) => setTimeout(done, 100));
+    });
+    const layouts = () => told.asked.filter((cmd) => cmd === "window_layout").length;
+    const before = layouts();
+    const from = document.querySelector('[data-drag-chat="1"]');
+    if (from === null) throw new Error("no row for chat 1");
+    fireEvent.pointerDown(from, at(10, 1035));
+    fireEvent.pointerMove(document, at(150, 10));
+    fireEvent.pointerMove(document, at(151, 10));
+    await act(async () => {
+      await new Promise((done) => setTimeout(done, HOLD_MS + 50));
+    });
+    await waitFor(() => expect(heads()).toEqual(["performance"]));
+    expect(layouts()).toBe(before);
+    act(() => {
+      fireEvent.keyDown(document, { key: "Escape" });
+    });
+    await waitFor(() => expect(heads()).toEqual(["copy-past-crash"]));
+    await act(async () => {
+      await new Promise((done) => setTimeout(done, 100));
+    });
+    expect(layouts()).toBe(before);
   });
 });

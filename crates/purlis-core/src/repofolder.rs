@@ -156,6 +156,18 @@ pub enum Refused {
     ReposNotAFolder { ws: String },
 }
 
+/// **Entry `name`'s folder in workspace `ws`**, for a name a record carries: [`folder`] for a
+/// repo's name, and the old place for a name only one entry and no repo's name purlis takes
+/// (`.github`), which is only ever at the root, where it always was. `None` where [`folder`]
+/// refuses for any other reason. A caller still confines and checks what is there.
+pub fn entry(plane: &Path, ws: &str, name: &str) -> Option<PathBuf> {
+    match folder(plane, ws, name) {
+        Ok(folder) => Some(folder),
+        Err(Refused::NotARepoName(_)) => Some(confine::workspace_dir(plane, ws).ok()?.join(name)),
+        Err(_) => None,
+    }
+}
+
 /// **Repo `repo`'s folder in workspace `ws`**: `repos/<repo>` when [`repos`] would list that, else
 /// `<repo>`, whether or not anything is there. A caller asks of it what it asked of the path it
 /// joined by hand before: whether it exists, whether it is a repo.

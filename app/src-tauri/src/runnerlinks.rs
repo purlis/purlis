@@ -338,6 +338,12 @@ pub fn cluster_reached(
 /// no chat. None whose drain began, which takes no link or has no chat left. Why, for one that
 /// can't be told, which says nothing of the chats it may run (#4590).
 pub fn draining_to_ask(config: &Path, pool: &str) -> Vec<Result<String, String>> {
+    // None of that pool drains: a machine with no Docker has nothing to say of it.
+    if purlis_core::runners::draining(config)
+        .is_ok_and(|draining| draining.iter().all(|kept| kept.pool() != pool))
+    {
+        return Vec::new();
+    }
     match docker() {
         Ok(docker) => draining_to_ask_on(&docker, config, pool),
         Err(why) => vec![Err(why)],

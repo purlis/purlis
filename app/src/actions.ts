@@ -118,6 +118,7 @@ import {
   changesView,
   chatOf,
   contentsOf,
+  hasOnePane,
   ONE_JOB_STAYS,
   focusedChat,
   focusedContent,
@@ -370,6 +371,8 @@ export type Does =
    *  nothing by itself; the picker is the only path ADR 0022 admits. */
   | { verb: "newChatIn"; path: string }
   | { verb: "split"; direction: Direction }
+  /** Brings tab `tab` forward and splits its pane (#5318), from the menu of a view's tab. */
+  | { verb: "splitTab"; tab: number; direction: Direction }
   /** Hands a key the palette claimed to the chat in front, rather than swallowing it. */
   | { verb: "sendKey"; key: string }
   /** **A close never ends a chat** (#4756): Close pane clears the focused pane, Close tab closes
@@ -616,6 +619,9 @@ export type Does =
   | { verb: "toggleFocusMode" }
   /** Shows a view of a side and gives it the keyboard (#1673): what its key does. */
   | { verb: "showSideView"; view: ViewId }
+  /** Opens the editor of a workspace's vision (#3344): what `workspace.md` opened from the
+   *  workspace's own files links to (#5375). */
+  | { verb: "editVision"; workspace: string }
   /** Puts a region away or brings it back, as its status-line toggle and ⌘B do. */
   | { verb: "toggleRegion"; region: Toggled }
   /** Moves the keyboard to the next region drawn, or with `back` the one before, as F6 and
@@ -1079,6 +1085,7 @@ export type Doing = {
   /** A browser, in a view tab of its own (#2012). */
   newBrowser: () => void;
   split: (direction: Direction) => void;
+  splitTab: (tab: number, direction: Direction) => void;
   closePane: () => void;
   closeTab: (tab: number) => void;
   /** Closes each of `tabs`, as its own close does (#4762). */
@@ -1247,6 +1254,8 @@ export type Doing = {
   /** Focus mode on or off (#2921). Absent where nothing can hide. */
   toggleFocusMode?: () => void;
   showSideView: (view: ViewId) => void;
+  /** The vision editor of `workspace` (#3344). Absent where no project is open. */
+  editVision?: (workspace: string) => void;
   toggleRegion: (region: Toggled) => void;
   /** `SAID.toPanel` or `SAID.toSidebar` (#1740). Absent where no project is open, and so no
    *  side has views to move: its row is never offered there. */
@@ -1509,6 +1518,17 @@ export function projectRows(
  * that ends a chat since a close ends nothing (#4756).
  */
 export const ENDS_IT = "Ends the program it runs. There is no undo.";
+
+/** **What shows a chat from wherever another place names it** (#5185, #5248): a studio chat's
+ *  line above its skill's tabs, its row on Runs, its job on the Grades card, and its draft. */
+export const OPEN_CHAT = "Open chat";
+
+/** **What opens a studio chat's draft where it waits for review**, on Drafts (#5248). */
+export const REVIEW_DRAFT = "Review draft";
+
+/** **What stops the chat at work on the Grades card's running job** (#5248; the prototype's
+ *  words): it asks first, as the chat's own Stop does. */
+export const STOP_IT = "Stop it";
 
 /** What a close says of the one chat it takes off the screen (#4756): it ends nothing. */
 export const ONE_CHAT_GOES_ON = "Its chat goes on in the sidebar.";
@@ -2152,9 +2172,9 @@ export function catalogue(now: Now): Offer[] {
     });
   }
 
-  for (const [id, title, direction] of [
-    ["pane.split.right", "Split right", "row"],
-    ["pane.split.down", "Split down", "column"],
+  for (const [id, onTab, title, direction] of [
+    ["pane.split.right", "tab.split.right", "Split right", "row"],
+    ["pane.split.down", "tab.split.down", "Split down", "column"],
   ] as const) {
     const refused = splitRefused(now.paneRoom, direction);
     offers.push(
@@ -2164,6 +2184,21 @@ export function catalogue(now: Now): Offer[] {
           ? cannot(id, title, refused)
           : can(id, title, { verb: "split", direction }),
     );
+    // **A view alone in its tab has no controls over its content** (#5318), so its splits are its
+    // tab's menu's too. The menu's alone: the palette has the rows above, for the pane in front.
+    for (const tab of now.tabs.order) {
+      if (!hasOnePane(now.tabs, tab) || contentsOf(now.tabs, tab)[0].content.kind !== "view")
+        continue;
+      const row = `${onTab}:${tab}`;
+      // The room is the focused pane's in front, which says nothing of a tab behind it.
+      const noRoom = tab === now.tabs.inFront ? refused : undefined;
+      offers.push({
+        ...(noRoom !== undefined
+          ? cannot(row, title, noRoom)
+          : can(row, title, { verb: "splitTab", tab, direction })),
+        menuOnly: true,
+      });
+    }
   }
 
   // The key the palette claimed, handed back. Not destructive and not below the line: it is
@@ -3162,9 +3197,12 @@ export function catalogue(now: Now): Offer[] {
 
   // ----- destructive, and therefore last -----
 
-  // A pane's close clears the pane and ends nothing, as a tab's does (#4756).
+  // A pane's close clears the pane and ends nothing, as a tab's does (#4756). On a tab's only
+  // pane the tab's own close does the same, so there is one row for it and not two, as its head
+  // has one × (#5318).
   const askedBy = now.askedBy ?? askedByOf(now.listed ?? []);
-  offers.push(paneCloseOf(now.tabs, front?.focused, now.nameOf, askedBy, now.restoring));
+  if (front === undefined || !hasOnePane(now.tabs, front.id))
+    offers.push(paneCloseOf(now.tabs, front?.focused, now.nameOf, askedBy, now.restoring));
 
   // **Close tab closes a layout and ends nothing** (#4756, spec #4750 story 18): its chats go
   // on in the sidebar, so nothing is asked and nothing is drawn in the danger colour. It used
@@ -3503,6 +3541,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
     case "split":
       doing.split(does.direction);
       return DID;
+    case "splitTab":
+      doing.splitTab(does.tab, does.direction);
+      return DID;
     case "closePane":
       doing.closePane();
       return DID;
@@ -3726,6 +3767,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return DID;
     case "showSideView":
       doing.showSideView(does.view);
+      return DID;
+    case "editVision":
+      doing.editVision?.(does.workspace);
       return DID;
     case "toggleRegion":
       doing.toggleRegion(does.region);
@@ -5649,6 +5693,9 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
       return {
         above: [
           `tab.pin:${what.tab}`,
+          // A lone view's splits (#5318): no other tab has these rows.
+          `tab.split.right:${what.tab}`,
+          `tab.split.down:${what.tab}`,
           tileAllId(what.tab),
           placeTabId(what.tab),
           `tab.keep:${what.tab}`,

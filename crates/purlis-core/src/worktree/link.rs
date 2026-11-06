@@ -332,13 +332,30 @@ fn names_back(git_dir: &Path, top: &Path) -> bool {
 }
 
 /// The clone purlis cut `top` from, where `top` is `<workspace>/.worktrees/<repo>/<piece>`.
+///
+/// In a plane's workspace (`<plane>/workspaces/<ws>`), the repo's folder in either layout
+/// ([`crate::repofolder::folder`]): branch folders stay where they are when the clone is in
+/// `repos/`. Anywhere else, the folder of that name beside `.worktrees`.
 pub fn cut_from(top: &Path) -> Option<PathBuf> {
     let of_repo = top.parent()?;
     let holder = of_repo.parent()?;
     if holder.file_name()? != super::DIR_NAME {
         return None;
     }
-    Some(holder.parent()?.join(of_repo.file_name()?))
+    let workspace = holder.parent()?;
+    let repo = of_repo.file_name()?;
+    if let Some(ws) = workspace.file_name().and_then(|name| name.to_str())
+        && let Some(workspaces) = workspace.parent()
+        && workspaces
+            .file_name()
+            .is_some_and(|name| name == "workspaces")
+        && let Some(plane) = workspaces.parent()
+        && let Some(name) = repo.to_str()
+        && let Ok(clone) = crate::repofolder::folder(plane, ws, name)
+    {
+        return Some(clone);
+    }
+    Some(workspace.join(repo))
 }
 
 /// Whether two paths name one place, links resolved. Two that cannot be resolved are not.

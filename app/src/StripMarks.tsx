@@ -345,8 +345,7 @@ export type Hidden = {
  *
  * It is inside the tab's own button, so it can never be a second thing to click by accident
  * and there is no interactive element inside an interactive element for a screen reader to
- * have to explain. The glyph is decorative; `aria-label` is what carries the meaning, the
- * same split `ChatState` makes.
+ * have to explain. The glyph is decorative; `aria-label` is what carries the meaning.
  */
 export function Pin({ held, what }: { held: boolean; what: string }) {
   if (!held) return null;
