@@ -160,6 +160,17 @@ impl SiteJudge {
     /// such a site, or one the person allowed when asked; any other asks once, and stays once
     /// asked. Never to what the browser's usual reach refuses, or a login in it keeps it off.
     pub fn may_leave_for(&self, address: &str, chain_began: bool) -> Leaving {
+        self.leaving(None, address, chain_began)
+    }
+
+    /// [`Self::may_leave_for`], for a page held to `from`: while a login's sign-in is open, its
+    /// form's site's server sends the page back to the login's page's site by itself, as the
+    /// sign-in's way back (the person's ruling of 2026-11-06, [`Bound::signs_in_back`]).
+    pub fn may_leave_from(&self, from: &Site, address: &str, chain_began: bool) -> Leaving {
+        self.leaving(Some(from), address, chain_began)
+    }
+
+    fn leaving(&self, from: Option<&Site>, address: &str, chain_began: bool) -> Leaving {
         let Some((host, port)) = site_of(address) else {
             return Leaving::No {
                 why: "purlis stopped this page leaving: the address its server named is no site \
@@ -171,6 +182,8 @@ impl SiteJudge {
         if let Some(why) = self.bound.login_refuses(&host, port) {
             return Leaving::No { why };
         }
+        let chain_began =
+            chain_began || from.is_some_and(|from| self.bound.signs_in_back(from, &site));
         let tunnel = address
             .get(..6)
             .is_some_and(|scheme| scheme.eq_ignore_ascii_case("https:"));

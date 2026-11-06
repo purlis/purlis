@@ -587,6 +587,20 @@ impl Bound {
         (open.number == number).then(|| open.form.clone())
     }
 
+    /// **Whether a page held to `from` may follow its server's redirect to `to` as a sign-in's
+    /// way back** (the person's ruling of 2026-11-06): only while a sign-in is open, from the
+    /// site its form is on to its login's page's site.
+    pub fn signs_in_back(&self, from: &Site, to: &Site) -> bool {
+        let bound = self.lock();
+        bound.login.as_ref().is_some_and(|holding| {
+            holding.page == *to
+                && holding
+                    .sign_in
+                    .as_ref()
+                    .is_some_and(|open| open.form == *from)
+        })
+    }
+
     /// The site of the login's page it is bound to, where it is.
     pub fn page(&self) -> Option<Site> {
         self.lock()

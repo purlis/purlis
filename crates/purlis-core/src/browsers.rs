@@ -1390,7 +1390,7 @@ impl drive::FillHold for FillHolder {
 
     fn may_leave_for(&self, address: &str, chain_began: bool) -> drive::Leaving {
         match self.sites.as_ref().and_then(std::sync::Weak::upgrade) {
-            Some(sites) => sites.may_leave_for(address, chain_began),
+            Some(sites) => sites.may_leave_from(&self.site, address, chain_began),
             None => drive::Leaving::No {
                 why: format!(
                     "purlis stopped this page leaving {}: this browser was started with no \
