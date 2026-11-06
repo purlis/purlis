@@ -12,6 +12,7 @@ import { heard } from "./frame.testkit";
 import { aBatchOf } from "./chatEvents.testkit";
 import { CHAT_EVENTS } from "./chatEvents";
 import { aTabForEachChat } from "./laidOut.testkit";
+import type { ChatMarkProps } from "./ui/chat-mark/ChatMark";
 
 /**
  * **A chat moving re-renders that chat's row and nothing else** (SC-3, research 02 §5.6).
@@ -29,12 +30,12 @@ import { aTabForEachChat } from "./laidOut.testkit";
 
 const drawn = vi.hoisted(() => ({ marks: [] as (string | undefined)[], panes: [] as number[] }));
 
-vi.mock("./NeedsYou", async (original) => {
-  const real = await original<typeof import("./NeedsYou")>();
+vi.mock("./ui/chat-mark/ChatMark", async (original) => {
+  const real = await original<typeof import("./ui/chat-mark/ChatMark")>();
   return {
     ...real,
-    ChatMark: (props: { state: State | undefined }) => {
-      drawn.marks.push(props.state);
+    ChatMark: (props: ChatMarkProps) => {
+      drawn.marks.push(props.state ?? undefined);
       return <real.ChatMark {...props} />;
     },
   };
@@ -173,7 +174,8 @@ describe("a chat moving", () => {
 
     move(moving(3, "running", 10));
 
-    expect(drawn.marks).toEqual(["running"]);
+    // That chat's mark, on its tab and on its pane's head.
+    expect(new Set(drawn.marks)).toEqual(new Set(["working"]));
     expect(drawn.panes).toEqual([]);
   });
 
@@ -187,7 +189,7 @@ describe("a chat moving", () => {
     // the title bar's ✋ redraw. The other chats' rows still do not.
     move(moving(3, "waiting", 11, [3]));
 
-    expect(drawn.marks).toEqual(["waiting"]);
+    expect(new Set(drawn.marks)).toEqual(new Set(["needs"]));
     // **And the project view is not redrawn for it** (#1034): the counts read the queue
     // themselves, so the pane in front is not drawn again.
     expect(drawn.panes).toEqual([]);

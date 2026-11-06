@@ -502,7 +502,7 @@ pub fn in_a_checked_clone<T>(
             crate::shown::short(repo)
         ));
     }
-    let clone = root.join("workspaces").join(ws).join(repo);
+    let clone = crate::repofolder::folder(root, ws, repo).map_err(|why| why.to_string())?;
     git::isolated(isolation, || {
         let found = checked_repo(&clone)?;
         Ok(git::isolated(
@@ -541,7 +541,8 @@ pub fn in_a_checked_folder<T>(
 ) -> Result<T, NotRun> {
     let folder = crate::worktree::path_for(root, ws, repo, piece)
         .map_err(|refusal| NotRun::Repo(refusal.to_string()))?;
-    let clone = root.join("workspaces").join(ws).join(repo);
+    let clone = crate::repofolder::folder(root, ws, repo)
+        .map_err(|refused| NotRun::Repo(refused.to_string()))?;
     git::isolated(isolation, || {
         let found = checked_repo(&clone).map_err(NotRun::Repo)?;
         let git_dir = found.git_dir;
@@ -828,10 +829,12 @@ fn touched(root: &Path, ws: &str, work: &GitWork) -> Vec<PathBuf> {
         | GitWork::WorktreePush { repo, .. }
         | GitWork::WorktreeRemove { repo, .. }
         | GitWork::CloneUpdate { repo, .. } => {
-            if crate::contain::repo_name_ok(repo) && crate::contain::workspace_name_ok(ws) {
-                vec![root.join("workspaces").join(ws).join(repo)]
+            if crate::contain::workspace_name_ok(ws) {
+                // `piececmd::add` refuses a name `folder` refuses before git runs.
+                crate::repofolder::folder(root, ws, repo)
+                    .map(|clone| vec![clone])
+                    .unwrap_or_default()
             } else {
-                // `piececmd::add` refuses the name before git runs.
                 Vec::new()
             }
         }

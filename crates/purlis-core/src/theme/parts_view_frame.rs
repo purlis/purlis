@@ -63,6 +63,13 @@ pub(super) const VIEW_FRAME: Family = Family {
             properties: ROOM,
         },
         Part {
+            name: "heading",
+            since: super::NEXT,
+            description: "The line of a page's heading and the one action beside it (#5332): \
+                          the Library's Select.",
+            properties: &[Prop::Gap],
+        },
+        Part {
             name: "header",
             since: super::NEXT,
             description: "The item's page header, held in view over its body: its name, tag, \

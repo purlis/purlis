@@ -932,6 +932,15 @@ Only the wrapper writes `data-scope="pane-preview"`: `purlis/pane-preview-family
   `pane-preview.css`; a theme's parts reach the same attributes (`pane-preview.*`, the next release's
   manifest version).
 
+## The chat mark family
+
+`ChatMark` (`app/src/ui/chat-mark`, ADR 0104 amended 2026-11-05, #5340) is a chat's mark on its tab, its row in the list, its pane's head and a folded pane's rail. A screen draws it through `ChatPersonaState`, which reads the chat's one state from `shownState`; `QuitWarning`'s list hands it a state directly.
+
+- **Props:** `state` (`needs`, `failed`, `working`, `waiting`, `idle`, `ended`, or nothing where none is known), `who`, `word`, `changed`.
+- **Parts:** `root` carries the state as its `data-variant`; `who`, `badge` and `word`. A glyph tells each state as well as its colour.
+- **The place sets** `--chat-mark-size` and `--chat-mark-ground`, nothing else.
+- **`who` is its own part** so a later control can stand in it (the grip, #5290), with the badge left beside it.
+
 ## The pane foot family
 
 **The line under a chat's terminal is the pane foot family** (`app/src/ui/pane-foot/`, #5202,
@@ -1158,6 +1167,12 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
   list's edges** (`space.2`), so a pill never touches the panel the list is joined to.
 - **The keyboard is React Aria's**: one Tab stop, the row last focused; ↑ and ↓ move and stop at
   the ends; Home and End; typing finds a row by its `textValue`; Enter and Space choose or run.
+  **A list that chooses several** (`selectionMode="multiple"`, a `Checkbox` in the row's lead with
+  `slot="selection"`) takes a click or Space to tick a row, Shift-click and Shift+↑ ↓ for a range,
+  and ⌘A (Ctrl+A off macOS) for every row, which a list that draws its rows a screen at a time
+  answers with every item of its data, not only the rows drawn (`"all"`, the Library's Select
+  mode, #5332). Esc clears what is chosen, or does what `onEscape` says: a list in a mode of its
+  own leaves it.
 - **A row's menu and its tooltip are the row's own** (`menu` and `tip` on a row): a collection
   draws its rows itself, so no `ContextMenu` or `Tooltip` can be put around one. The menu opens
   on a right-click, or by Shift+F10 or the menu key while the row has the keyboard, on its first
@@ -2323,12 +2338,9 @@ and `FourRegions.test.tsx` found it by holding a `nav` that had been replaced.
 **A terminal keeps Tab.** xterm prevents Tab and Shift+Tab and sends them to the shell —
 completion, and Claude Code's mode cycling — and nothing in the window takes either. So a
 terminal is a stop you can reach and cannot Tab out of, which is why the pane's own controls are
-written _before_ it in the document (they are absolutely positioned, so the look is unchanged).
-**They are shown on hover and while the keyboard is on them, and at no other time** — not
-because their pane is focused, which is the pane the operator is typing in and a corner he
-asked to keep clear. A `visibility: hidden` control is out of the sequence, so the focused
-pane's are hidden by `opacity` with `pointer-events: none` instead: Tab still lands on them, and
-`.pane-doing:focus-within` draws the group the moment it does.
+written _before_ it in the document, in the pane's head above it.
+**They are always drawn** (#5318, ADR 0111), so every pane's are in the sequence, in the order
+they are drawn. A tab's only pane has no Close, so no stop is left for it.
 
 **The way out is Ctrl+Tab, and Ctrl+Shift+Tab backwards** (`SessionPane.leavesTheChat`). It is
 the platforms' own key for leaving a control that keeps Tab — GTK's text view, Windows'

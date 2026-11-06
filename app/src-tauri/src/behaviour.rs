@@ -1282,6 +1282,14 @@ pub(crate) fn a_host_home(home: &Path) -> HostHome {
     .expect("a PATH");
     let ours = [
         ("PATH", path),
+        // Its engine is judged as of the day its pin was issued (#5413): what a test's host runs
+        // turns neither on today's date nor on reading the published manifest.
+        (
+            purlis_core::browsers::ENGINES_CLOCK_VAR,
+            purlis_core::browsers::when_the_pin_was_issued()
+                .to_rfc3339()
+                .into(),
+        ),
         ("XDG_RUNTIME_DIR", run.clone().into_os_string()),
         (
             purlis_core::machine::HOME_VAR,

@@ -153,6 +153,17 @@ impl Kept {
             .collect()
     }
 
+    /// This with `texts` gone, whatever their case.
+    pub(crate) fn without(&self, texts: &[&str]) -> Self {
+        let mut rest = self.clone();
+        rest.texts.retain(|kept| {
+            !texts
+                .iter()
+                .any(|text| text.to_lowercase() == kept.text.to_lowercase())
+        });
+        rest
+    }
+
     /// Whether nothing is kept.
     pub(crate) fn is_empty(&self) -> bool {
         self.texts.is_empty()
@@ -163,11 +174,11 @@ impl Kept {
             if text.is_empty() {
                 continue;
             }
-            let lower = text.to_lowercase();
+            // Kept in each case it came in: its base64 and hex differ by case.
             if !self
                 .texts
                 .iter()
-                .any(|kept| kept.from.as_ref() == from && kept.text.to_lowercase() == lower)
+                .any(|kept| kept.from.as_ref() == from && kept.text == text)
             {
                 self.texts.push(Text {
                     from: from.cloned(),

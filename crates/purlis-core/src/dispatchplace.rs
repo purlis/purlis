@@ -399,9 +399,9 @@ pub struct Repo {
 }
 
 /// The repo a chat standing at `cwd` works in: the clone it stands in or below, or the clone
-/// the worktree it stands in was cut from. Path arithmetic and one existence check, as
-/// [`chatpiece::clone_at`] is; a chat at the project's root or outside the project works in
-/// none.
+/// the worktree it stands in was cut from, in either layout ([`crate::repofolder`]), as
+/// [`chatpiece::clone_at`] finds one; a chat at the project's root or outside the project works
+/// in none.
 ///
 /// **A chat in its workspace's own folder** (or a folder of it that is not purlis's) works in
 /// the workspace's one clone, and `named` says which where it holds several (#3903). A chat in
@@ -433,15 +433,20 @@ fn stands_in(root: &Path, cwd: &Path) -> Result<Repo, Refused> {
             },
         );
     }
-    let (ws, rest) = under_workspaces(root, cwd).ok_or(Refused::NotInARepo)?;
-    let Some(repo) = rest.first() else {
+    // A clone in either layout, as `chatpiece::clone_at` finds one: an old `<repo>` that a
+    // `repos/<repo>` shadows is no clone, so a chat standing in it stands in its workspace.
+    let found = crate::repofolder::locate(root, cwd).ok_or(Refused::NotInARepo)?;
+    let the_repo = crate::repofolder::folder(root, &found.ws, &found.repo.name)
+        .ok()
+        .and_then(|folder| std::fs::canonicalize(folder).ok());
+    if the_repo.is_none() || the_repo != std::fs::canonicalize(&found.repo.path).ok() {
         return Err(Refused::NotInARepo);
-    };
+    }
     is_a_clone(
         root,
         Repo {
-            workspace: ws,
-            repo: repo.clone(),
+            workspace: found.ws,
+            repo: found.repo.name,
             piece: None,
             from_default: false,
         },
@@ -471,9 +476,9 @@ fn under_workspaces(root: &Path, cwd: &Path) -> Option<(String, Vec<String>)> {
 }
 
 /// The clone of workspace `ws` a worktree is cut from: the one `named`, or its only one
-/// (#3903). Its clones are the ones [`crate::repos::clones`] lists: the folders directly under
-/// the workspace that hold a `.git` of their own and are reached through no link, as `purlis
-/// worktree add` finds a clone.
+/// (#3903). Its clones are the ones [`crate::repos::clones`] lists: the folders under
+/// `repos/` or directly under the workspace that hold a `.git` of their own and are reached
+/// through no link, as `purlis worktree add` finds a clone.
 fn clone_of_workspace(root: &Path, ws: &str, named: Option<&str>) -> Result<Repo, Refused> {
     let repos: Vec<String> = crate::repos::clones(root, ws)
         .map_err(|_| Refused::NotInARepo)?
@@ -516,14 +521,10 @@ fn is_a_clone(root: &Path, repo: Repo) -> Result<Repo, Refused> {
     let named = crate::contain::workspace_name_ok(&repo.workspace)
         && crate::contain::repo_name_ok(&repo.repo)
         && repo.repo != worktree::DIR_NAME;
-    let there = root
-        .join("workspaces")
-        .join(&repo.workspace)
-        .join(&repo.repo)
-        .join(".git")
-        .symlink_metadata()
-        .is_ok();
-    if named && there {
+    let there = named
+        && crate::repofolder::folder(root, &repo.workspace, &repo.repo)
+            .is_ok_and(|clone| clone.join(".git").symlink_metadata().is_ok());
+    if there {
         Ok(repo)
     } else {
         Err(Refused::NotInARepo)
@@ -1899,10 +1900,8 @@ pub fn branch_left(
     if tree.there(root) || name::branch_name_ok(branch).is_err() {
         return Ok(None);
     }
-    let clone = root
-        .join("workspaces")
-        .join(&tree.workspace)
-        .join(&tree.repo);
+    let clone = crate::repofolder::folder(root, &tree.workspace, &tree.repo)
+        .map_err(|refused| NotDone::Repo(refused.to_string()))?;
     crate::gitbroker::in_a_checked_clone(root, &tree.workspace, &tree.repo, isolation, || {
         left_in(&clone, branch)
     })
@@ -1931,10 +1930,8 @@ pub fn delete_left_branch(
     if name::branch_name_ok(branch).is_err() {
         return Err(NotDeleted::Gone);
     }
-    let clone = root
-        .join("workspaces")
-        .join(&tree.workspace)
-        .join(&tree.repo);
+    let clone = crate::repofolder::folder(root, &tree.workspace, &tree.repo)
+        .map_err(|refused| NotDeleted::Route(NotDone::Repo(refused.to_string())))?;
     let (ws, repo, piece) = (&tree.workspace, &tree.repo, &tree.piece);
     crate::gitbroker::in_a_checked_clone(root, ws, repo, isolation, || {
         if tree.there(root) {

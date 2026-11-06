@@ -3414,3 +3414,33 @@ fn a_window_that_takes_the_hosts_board_is_handed_what_each_chat_last_said() {
         )]
     );
 }
+
+#[test]
+fn the_window_is_told_a_chat_is_queued_only_for_what_failed_until_it_asks_itself() {
+    // #5340: a chat's mark says a task failed unless the chat itself also asks for the person,
+    // and only the board knows which.
+    use purlis_core::state::{Event, FailedTask, HowFailed, Waits};
+    let hooks = claude_code_chat(7);
+    assert_eq!(
+        now(&hooks.board, hooks.plane.clone(), 7).only_failures,
+        None
+    );
+
+    held_board(&hooks.board).task_failed(
+        7,
+        FailedTask::new("r-build", "build", HowFailed::Failed, ""),
+    );
+    let failed = now(&hooks.board, hooks.plane.clone(), 7);
+    assert_eq!((failed.needs_you, failed.only_failures), (true, Some(true)));
+
+    // Its own turn ends on the person: it asks, whatever else it is queued for.
+    let ended = apply(
+        &hooks.board,
+        &hooks.plane,
+        &adopted(7, Event::Stop),
+        Waits::default(),
+    )
+    .moved
+    .expect("a turn's end is a move");
+    assert_eq!((ended.needs_you, ended.only_failures), (true, None));
+}

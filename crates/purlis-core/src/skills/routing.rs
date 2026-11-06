@@ -239,8 +239,20 @@ pub(crate) fn pinners_of_a_chat(
 /// keeps a skill of a chat's set listed, so a name no skill has is refused, as is a workspace or
 /// persona the project does not have, and a project purlis opens read-only.
 pub(crate) fn pin(plane: &Path, by: &PinnedBy, name: &str, on: bool) -> Result<bool, String> {
+    pin_many(plane, by, &[name.to_owned()], on).map(|changed| !changed.is_empty())
+}
+
+/// **Pins every one of `names` (`on`) or unpins them** for `by`'s chats in one write (#5332), as
+/// [`pin`] does one: refused whole where one is refused, and answers those it changed, so one
+/// already so is left as it was by an Undo.
+pub(crate) fn pin_many(
+    plane: &Path,
+    by: &PinnedBy,
+    names: &[String],
+    on: bool,
+) -> Result<Vec<String>, String> {
     crate::settings::writable(plane)?;
-    if on && !any_skill_named(plane, name) {
+    if on && let Some(name) = names.iter().find(|name| !any_skill_named(plane, name)) {
         return Err(format!(
             "no skill is named {name:?}, so nothing was pinned: `purlis skill list` lists them"
         ));
@@ -254,25 +266,43 @@ pub(crate) fn pin(plane: &Path, by: &PinnedBy, name: &str, on: bool) -> Result<b
         }
     }
     let mut pins = pins_written(plane, by);
-    if pins.iter().any(|one| one == name) == on {
-        return Ok(false);
+    let mut changed: Vec<String> = Vec::new();
+    for name in names {
+        if pins.iter().any(|one| one == name) != on && !changed.contains(name) {
+            changed.push(name.clone());
+        }
+    }
+    if changed.is_empty() {
+        return Ok(changed);
     }
     // A chat reads none of a list past the most it reads, so a pin that would take it there is
     // refused rather than written to no effect (SK-15d).
-    if on && pins.len() >= MOST_PINS {
+    if on && pins.len() + changed.len() > MOST_PINS {
         let whose = match by {
             PinnedBy::Workspace(ws) => ws,
             PinnedBy::Persona(persona) => persona,
         };
-        return Err(format!(
-            "{whose} already pins {MOST_PINS} skills, the most a chat reads, so {name} was not \
-             pinned: unpin one first"
-        ));
+        let what = match changed.as_slice() {
+            [one] => format!("{one} was not pinned"),
+            _ => "none of these was pinned".to_owned(),
+        };
+        return Err(if pins.len() >= MOST_PINS {
+            format!(
+                "{whose} already pins {MOST_PINS} skills, the most a chat reads, so {what}: \
+                 unpin one first"
+            )
+        } else {
+            format!(
+                "{whose} pins {} skills, and a chat reads at most {MOST_PINS}, so {what}: pin \
+                 fewer, or unpin some first",
+                pins.len()
+            )
+        });
     }
     if on {
-        pins.push(name.to_owned());
+        pins.extend(changed.iter().cloned());
     } else {
-        pins.retain(|one| one != name);
+        pins.retain(|one| !changed.contains(one));
     }
     match by {
         PinnedBy::Workspace(ws) => super::set_names_in_settings(
@@ -283,7 +313,7 @@ pub(crate) fn pin(plane: &Path, by: &PinnedBy, name: &str, on: bool) -> Result<b
         )?,
         PinnedBy::Persona(persona) => super::persona::write_pins(plane, persona, &pins)?,
     }
-    Ok(true)
+    Ok(changed)
 }
 
 /// Whether any skill a chat could get is named `name`: a built-in skill, or one at any level of

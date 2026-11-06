@@ -291,6 +291,7 @@ import {
   chatInFrontOf,
   chatOf,
   contentsOf,
+  hasOnePane,
   findView,
   openViewBesidePane,
   openChatsKey,
@@ -556,6 +557,7 @@ import { handedFromNote } from "./handedFrom";
 import { ChatsSection } from "./ChatsSection";
 import { chatsListDrawn, type Reveal } from "./revealTask";
 import { owedAfterEnded, restartsDue, withRestartOwed } from "./restartAtPause";
+import { useFailuresSeen } from "./failuresSeen";
 import { tasksBelowOf, type TasksBelow } from "./sessionTasks";
 import { TasksBelowLent } from "./TasksBelow";
 import { finishedOf, qualifierOf, shownOf, useFinishedTasks, useRowsUntilRead } from "./finished";
@@ -4516,6 +4518,21 @@ export const PlaneView = memo(function PlaneView({
   );
 
   /**
+   * **The tab's own close, as a person presses it** (#5318): closing the tab in front puts the
+   * keyboard in what is now in front, as Close pane does, since a tab's only pane has no Close. A
+   * tab that has the keyboard itself (Delete on it) keeps the strip's, which stays where it is.
+   */
+  const closeFromItsControl = useCallback(
+    (id: number) => {
+      const wasInFront = now.current.inFront === id;
+      const onItsTab = document.activeElement?.matches('[role="tab"]') === true;
+      close(id);
+      if (wasInFront && !onItsTab) keyboardInto(now.current);
+    },
+    [close, keyboardInto],
+  );
+
+  /**
    * Brings a tab to the front — **and the workspace it is on with it**.
    *
    * The strip shows one workspace's chats, so bringing a chat forward from somewhere else
@@ -4535,6 +4552,16 @@ export const PlaneView = memo(function PlaneView({
       if (workspace !== undefined) setPicked(workspace);
     },
     [change, filedIn, sidebar],
+  );
+
+  /** A view alone in its tab, split from the tab's menu (#5318): what its splits ask of the pane
+   *  in front, once that tab is. `change` has moved the front by the next line. */
+  const splitTab = useCallback(
+    (id: number, direction: Direction) => {
+      bringToFront(id);
+      split(direction);
+    },
+    [bringToFront, split],
   );
 
   /**
@@ -4819,6 +4846,17 @@ export const PlaneView = memo(function PlaneView({
         void commands.taskFailureSeen(plane, asked.asker, id).catch(() => undefined);
     },
     [failedTasks, plane, showChat],
+  );
+  /** **The chat on screen and focused has been seen** (#5340): what failed of it leaves its mark. */
+  useFailuresSeen(
+    plane,
+    tabs.inFront === undefined
+      ? undefined
+      : shownIn(tabs, tabs.inFront).find(
+          (one) => one.pane === tabs.byId[tabs.inFront ?? -1]?.focused,
+        )?.session,
+    failedTasks,
+    inFront,
   );
   /** A finished row was opened to be read: where it is a failure its session is flagged for,
    *  it has been looked at (#1491). */
@@ -8304,13 +8342,14 @@ export const PlaneView = memo(function PlaneView({
       newBrowser,
       runAction,
       split,
+      splitTab,
       closePane,
       tileAll: tileAllIn,
       moveToWindow,
       place: placeFrom,
       zoomPane,
       undoLayout: undoLayoutIn,
-      closeTab: close,
+      closeTab: closeFromItsControl,
       // Each as its own close (#4762): the chats asked about once, by the row, before this.
       closeOtherTabs: (closing) => {
         for (const tab of closing) close(tab);
@@ -8470,6 +8509,8 @@ export const PlaneView = memo(function PlaneView({
       bringToFront,
       cancelSmartClose,
       close,
+      closeFromItsControl,
+      splitTab,
       closePane,
       tileAllIn,
       moveToWindow,
@@ -11602,6 +11643,7 @@ export const PlaneView = memo(function PlaneView({
                                   onShowInbox={showInbox}
                                   onAnswer={answeredOnPane}
                                   closeOf={closeOfPane}
+                                  alone={hasOnePane(tabs, frontTab.id)}
                                   onShowChat={showChatFromPane}
                                   focused={frontTab.focused}
                                   onFocus={(pane) => change((tabs) => focusPane(tabs, pane))}

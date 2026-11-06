@@ -27,7 +27,8 @@ pub enum Forwarded {
     /// No app took it, so this process runs it.
     NotTaken,
     /// The app took it and did not answer in time: it may have run, so nothing runs here.
-    Unsure(String),
+    /// `cause` is how the wait ended, and `said` the sentence that tells it.
+    Unsure { cause: String, said: String },
 }
 
 /// The longest a clone the app runs for this chat may show no life before this command stops
@@ -46,20 +47,61 @@ pub const A_WORKTREE_TAKES_AT_MOST: Duration = Duration::from_secs(4 * git::READ
 /// [`Forwarded::NotTaken`] where there is none.
 pub fn forwarded(workspace: &str, work: GitWork, within: Duration) -> Forwarded {
     asked(
-        |chat| {
-            hookwire::Ask::Git(Box::new(GitAsk {
-                chat,
-                workspace: workspace.to_owned(),
-                // A clone's wait follows its liveness (#4080), and so does a push's: it may
-                // upload large files first (#4399).
-                alive: matches!(
-                    work,
-                    GitWork::Clone { .. } | GitWork::Create { .. } | GitWork::WorktreePush { .. }
-                ),
-                work,
-            }))
-        },
+        |chat| hookwire::Ask::Git(Box::new(git_ask(chat, workspace, work))),
         within,
+    )
+}
+
+/// The ask chat `chat` sends for `work` in `workspace`. A clone's wait follows its liveness
+/// (#4080), and so does a push's: it may upload large files first (#4399). So does a prune's,
+/// which reads every branch folder of the workspace, as many as there are (#5439).
+pub(crate) fn git_ask(chat: u32, workspace: &str, work: GitWork) -> GitAsk {
+    GitAsk {
+        chat,
+        workspace: workspace.to_owned(),
+        alive: matches!(
+            work,
+            GitWork::Clone { .. }
+                | GitWork::Create { .. }
+                | GitWork::WorktreePush { .. }
+                | GitWork::WorktreePrune { .. }
+        ),
+        work,
+    }
+}
+
+/// The longest a prune the app runs for this chat may show no life before this command stops
+/// waiting on it (#5439). Not a bound on the whole prune: the app says it is alive as it reads
+/// each folder and each removal ([`hookwire::Answer::Alive`], at most one line every
+/// [`hookwire::alive::EVERY`]), so this bounds one folder's reading: its git calls, each held to
+/// [`git::READ`], and the walk of its ignored folders, which stops at a fixed count of entries.
+pub const A_FOLDER_IS_JUDGED_WITHIN: Duration = Duration::from_secs(8 * git::READ.as_secs());
+
+/// What a chat's prune says where the app took it and this command stopped waiting (#5439),
+/// `cause` saying how the wait ended, plainly about what was removed: nothing, for a dry run;
+/// else the folders the workspace's record shows removed since it was asked, `removed`, each
+/// `<repo> · <piece>`, whoever removed them.
+pub fn unsure_prune(dry_run: bool, cause: &str, removed: &[String]) -> String {
+    let stopped = format!(
+        "The app took this prune and did not answer ({cause}), so this command stopped waiting."
+    );
+    if dry_run {
+        return format!("{stopped} Nothing was removed: a dry run removes nothing.");
+    }
+    let so_far = if removed.is_empty() {
+        "No folder of this workspace has been removed since this prune was asked".to_owned()
+    } else {
+        format!(
+            "{} of this workspace {} been removed since this prune was asked, by it or by \
+             another: {}",
+            purlis_core::counts::counted(removed.len(), "folder", "folders"),
+            purlis_core::counts::plural(removed.len(), "has", "have"),
+            removed.join(", ")
+        )
+    };
+    format!(
+        "{stopped} {so_far}. The app may still be removing folders: `purlis worktree prune \
+         --dry-run` shows what is left."
     )
 }
 
@@ -345,10 +387,13 @@ fn answered(answer: std::io::Result<hookwire::Answer>) -> Forwarded {
         {
             Forwarded::NotTaken
         }
-        Err(e) => Forwarded::Unsure(format!(
-            "the app took this and did not answer ({e}), so it may still be running it. Nothing \
-             was run again here: `purlis status` shows what is in the workspace now."
-        )),
+        Err(e) => Forwarded::Unsure {
+            cause: e.to_string(),
+            said: format!(
+                "the app took this and did not answer ({e}), so it may still be running it. \
+                 Nothing was run again here: `purlis status` shows what is in the workspace now."
+            ),
+        },
     }
 }
 
@@ -368,8 +413,8 @@ pub fn told(forwarded: Forwarded, say: &mut dyn FnMut(Say)) -> Option<u8> {
             ));
             Some(1)
         }
-        Forwarded::Unsure(why) => {
-            say(Say::Fail(why.into()));
+        Forwarded::Unsure { said, .. } => {
+            say(Say::Fail(said.into()));
             Some(1)
         }
         Forwarded::NotTaken => None,

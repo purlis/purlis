@@ -65,6 +65,11 @@
 //! the focus, with the checks above, since a login's page listens for typing: a page that changes
 //! as it goes in ends the browser, which is stricter than a fill's refusal, and a login's hold is
 //! stricter too: the browser stays held to its sites for its life, not while the page lives.
+//!
+//! **Its page's related windows are a fill's** (the person's ruling of 2026-11-05): a value doesn't
+//! go in while a window on the login's site, or on none yet, is related to its page, and every
+//! other related window, one opened since included, closes once the page shows another document or
+//! is closed ([`super::leaving`]).
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -298,7 +303,7 @@ impl Browser {
             .chain(std::iter::once(login.password.as_str()))
             .collect();
         held.run(&values);
-        lock(&self.inner.state).keep_out_everywhere(&held);
+        lock(&self.inner.state).keep_filled_out(&held, origin);
         hold.begins().map_err(|why| {
             not_logged_in(format!(
                 "purlis could not let this browser reach {origin} ({why}), so nothing was filled"
@@ -713,7 +718,7 @@ impl Browser {
                      nothing was filled"
                 )));
             }
-            self.fill(target, origin, &name, user)?;
+            self.fill(target, origin, &name, user, true)?;
             filled.push(name.key);
             if self.shows(target, PASSWORD_FIELD)? != Some(true) {
                 // The user name first, then the password on a step of its own.
@@ -738,7 +743,13 @@ impl Browser {
                 "{origin} shows no password field, so the password was not filled"
             )));
         };
-        self.fill(target, origin, &password, &login.password)?;
+        self.fill(
+            target,
+            origin,
+            &password,
+            &login.password,
+            filled.is_empty(),
+        )?;
         filled.push(password.key);
         self.press_enter(target)?;
         // Gone in two reads in a row: a page between documents is read as neither.
@@ -935,8 +946,17 @@ impl Browser {
     /// still show the document it showed when the fill began, with the field focused in it and
     /// the document focused, and after, the field must hold exactly as much as was typed:
     /// where it does not, the whole browser is ended
-    /// ([`Refusal::NotLoggedIn`] says so) before anything reaches the agent.
-    fn fill(&self, target: &str, origin: &str, field: &Found, value: &str) -> Result<(), Refusal> {
+    /// ([`Refusal::NotLoggedIn`] says so) before anything reaches the agent. Refused while a
+    /// window on its site, or on none yet, is related to the page (the person's ruling of
+    /// 2026-11-05), as a fill is: it could read the field. `first` says nothing went in before.
+    fn fill(
+        &self,
+        target: &str,
+        origin: &str,
+        field: &Found,
+        value: &str,
+        first: bool,
+    ) -> Result<(), Refusal> {
         if !self.on_origin(target, origin) {
             return Err(not_logged_in(format!(
                 "the page left {origin} before the login was filled, so nothing more was filled"
@@ -944,6 +964,22 @@ impl Browser {
         }
         let document = self.document_of(target);
         self.blank_node(target, field.key.clone())?;
+        // The windows related to this page close once it's done with what's filled (the person's
+        // ruling of 2026-11-05), as a fill's do: known from before each value goes in, as a step
+        // of its own may be a document of its own.
+        self.inner.login_fills(target);
+        if lock(&self.inner.state).related_on_site(target, origin) {
+            return Err(not_logged_in(format!(
+                "another window, on {origin} or on no site yet, is related to the login's page: \
+                 the page opened it, and it could read the field, so {}. Log in again once it's \
+                 closed",
+                if first {
+                    "nothing was filled"
+                } else {
+                    "nothing more was filled and what was is cleared"
+                }
+            )));
+        }
         let session = self.page_session(target)?;
         let on = Some(session.as_str());
         let could_not = || not_logged_in(format!("purlis could not fill the login on {origin}"));

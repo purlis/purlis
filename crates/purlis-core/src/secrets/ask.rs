@@ -66,6 +66,8 @@ use super::{Ctx, Zeroizing, cmd};
 use crate::harness::Harness;
 use crate::harness::asks::{Answerer, HumanScope};
 
+pub mod run;
+
 /// What the trace records an ask's life under.
 pub const TRACED_AS: &str = "secret.ask";
 
@@ -101,6 +103,9 @@ pub struct Need {
     /// Why the key is asked for though the vault has it (#5075): the chat says its value doesn't
     /// work, or it is a link whose entry is gone. None for a key the vault doesn't hold.
     pub reason: Option<Reason>,
+    /// **Why the run that missed it is offered no Allow** (ADR 0112, #5243): the app's own words
+    /// on what policy locks, said on the notice, where a Fill is still offered.
+    pub no_allow: Option<String>,
 }
 
 /// The longest purpose a Secret ask carries, in characters: about a line of the ask.
@@ -192,6 +197,8 @@ pub struct Open {
     pub names_no_vault: bool,
     /// Why it is asked for though the vault has it (#5075).
     pub reason: Option<Reason>,
+    /// Why the run that missed it is offered no Allow ([`Need::no_allow`]).
+    pub no_allow: Option<String>,
     /// Each chat that needs it, the first to ask first: those holding a command, and those
     /// whose command stopped waiting and will be nudged.
     pub chats: Vec<u32>,
@@ -345,6 +352,7 @@ struct Asked {
     declared: Option<String>,
     names_no_vault: bool,
     reason: Option<Reason>,
+    no_allow: Option<String>,
     since: u64,
     waiters: Vec<Waiter>,
     /// The runner chats that cannot receive the value ([`Open::cannot_receive`]).
@@ -369,6 +377,8 @@ struct Inner {
     open: HashMap<(String, String), Asked>,
     /// Each chat's declines, by vault and key, for the chat's life.
     declined: HashSet<(u32, String, String)>,
+    /// The asks to allow a program, and the Run grants given ([`run`], ADR 0112).
+    runs: run::Runs,
 }
 
 /// **The Secret asks one project holds open** (module docs).
@@ -397,6 +407,9 @@ struct Kept {
     /// The last number an ask was given, so a number is never given twice.
     asked: u32,
     asks: Vec<KeptAsk>,
+    /// The open asks to allow a program ([`run`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    runs: Vec<run::OpenRun>,
 }
 
 /// One open ask as it is kept: each name masked as an open question is.
@@ -430,6 +443,9 @@ struct KeptAsk {
     /// Why it is asked though the vault has the key: a replace or a broken link (#5075).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     reason: Option<Reason>,
+    /// Why the run that missed it is offered no Allow (#5243).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    no_allow: Option<String>,
 }
 
 fn is_zero(n: &usize) -> bool {
@@ -462,6 +478,7 @@ impl KeptAsk {
             cannot_receive: asked.cannot_receive.clone(),
             starts: starts_of(asked),
             reason: asked.reason.clone(),
+            no_allow: asked.no_allow.clone(),
         })
     }
 
@@ -613,6 +630,10 @@ impl Asks {
             Err(_) => Kept::default(),
         };
         inner.next = kept.asked;
+        for one in kept.runs {
+            inner.runs.keep(one);
+        }
+        inner.next = inner.next.max(inner.runs.highest());
         for one in kept.asks {
             let at = (one.vault.clone(), one.key.clone());
             if !one.reads() {
@@ -661,6 +682,7 @@ impl Asks {
                     declared: one.declared,
                     names_no_vault: one.names_no_vault,
                     reason: one.reason,
+                    no_allow: one.no_allow,
                     since: one.since,
                     waiters,
                     cannot_receive: one.cannot_receive,
@@ -695,6 +717,7 @@ impl Asks {
             v: KEPT_VERSION,
             asked: inner.next,
             asks,
+            runs: inner.runs.kept(),
         };
         let written = serde_json::to_vec_pretty(&kept)
             .map_err(std::io::Error::other)
@@ -724,6 +747,7 @@ impl Asks {
             asked.cannot_receive.retain(|chat| back.contains(chat));
             asked.needed()
         });
+        inner.runs.retain_chats(|chat| back.contains(&chat));
         self.save(&inner);
     }
 
@@ -765,6 +789,7 @@ impl Asks {
             declared,
             names_no_vault,
             reason,
+            no_allow,
         } = need;
         let said_why = reason.clone();
         let (answered, n) = {
@@ -831,6 +856,7 @@ impl Asks {
                         declared,
                         names_no_vault,
                         reason,
+                        no_allow,
                         since: now_secs(),
                         waiters: vec![waiter],
                         cannot_receive: Vec::new(),
@@ -937,6 +963,7 @@ impl Asks {
             declared,
             names_no_vault,
             reason,
+            no_allow,
         } = need;
         let mut inner = self.inner();
         if how == Unheld::Waits
@@ -1001,6 +1028,7 @@ impl Asks {
                     declared,
                     names_no_vault,
                     reason,
+                    no_allow,
                     since: now_secs(),
                     waiters: waiter.into_iter().collect(),
                     cannot_receive: cannot,
@@ -1080,6 +1108,7 @@ impl Asks {
                 declared: asked.declared.clone(),
                 names_no_vault: asked.names_no_vault,
                 reason: asked.reason.clone(),
+                no_allow: asked.no_allow.clone(),
                 chats: chats_of(asked),
                 cannot_receive: asked.cannot_receive.clone(),
                 starts: starts_of(asked),
@@ -1330,6 +1359,7 @@ impl Asks {
             asked.cannot_receive.retain(|one| *one != chat);
             asked.needed()
         });
+        Self::forget_runs(&mut inner, chat);
         self.save(&inner);
     }
 }
@@ -1509,6 +1539,7 @@ pub fn raised_within(
         declared: super::needs::declared(&ctx.root, persona, &line.key).map(|need| need.purpose),
         names_no_vault,
         reason,
+        no_allow: None,
     };
     Ok(match asks.hold(need, within, &mut |_: &str| moved()) {
         Held::Filled { vault, key } => Said::Filled { vault, key },

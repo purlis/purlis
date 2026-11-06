@@ -725,7 +725,7 @@ export const commands = {
 	/**
 	 *  **Keep blocked** on a refused vault's Notice: puts it away, and grants nothing. The chat's
 	 *  next turn is told in one line not to retry, with `reason`, what the person typed for it, if
-	 *  anything (#1987). Its next try at the vault raises the Notice again.
+	 *  anything (#1987). Its next try at the vault raises nothing, for as long as the chat is open.
 	 */
 	keepVaultBlocked: (plane: PlaneId, session: number, vault: string, reason: string | null) => typedError<null, string>(__TAURI_INVOKE("keep_vault_blocked", { plane, session, vault, reason })),
 	/**
@@ -781,6 +781,11 @@ export const commands = {
 	 *  name.
 	 */
 	answerSecretAsk: (plane: PlaneId, id: number, value: string | null, vault: string | null, key: string | null, remember: string | null) => typedError<null, string>(__TAURI_INVOKE("answer_secret_ask", { plane, id, value, vault, key, remember })),
+	/**
+	 *  **The person answers the ask to allow a program `id`** (ADR 0112, #5239): the run that waits
+	 *  on it goes on, or hears it was not allowed, and a chat whose command stopped waiting is nudged.
+	 */
+	answerRunGrant: (plane: PlaneId, id: number, press: RunGrantPress) => typedError<null, string>(__TAURI_INVOKE("answer_run_grant", { plane, id, press })),
 	/**
 	 *  **The person fills Secret ask `id` with an entry they keep** (#5073): the asked key becomes a
 	 *  Linked entry reading `key` in `vault`, never a copy, and every command that waits on it runs
@@ -2236,7 +2241,7 @@ export const commands = {
 	 *  **The one review of `act` on `members`**: what each is marked with, who is left naming one that
 	 *  goes, and how many open chats started with them. Reads only.
 	 */
-	skillSetReview: (plane: PlaneId, act: SkillSetAct, members: SkillSetMember[], workspace: string | null) => typedError<SkillSetReview, string>(__TAURI_INVOKE("skill_set_review", { plane, act, members, workspace })),
+	skillSetReview: (plane: PlaneId, act: SkillSetAct, members: SkillSetMember[], workspace: string | null, to: { at: "project"; local: boolean } | { at: "workspace"; name: string; local: boolean } | { at: "persona"; name: string; local: boolean } | null) => typedError<SkillSetReview, string>(__TAURI_INVOKE("skill_set_review", { plane, act, members, workspace, to })),
 	/**
 	 *  **Deletes `members` as one change**, the group said to be `from`, with `remove_source` taken out
 	 *  in the same commit. All or nothing.
@@ -2263,6 +2268,25 @@ export const commands = {
 } | null) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_set_restore", { plane, ids, source })),
 	/**  **Turns `names` off or on in `workspace` as one change.** All or nothing. */
 	skillSetTurn: (plane: PlaneId, workspace: string, names: string[], on: boolean) => typedError<SkillSetTurned, string>(__TAURI_INVOKE("skill_set_turn", { plane, workspace, names, on })),
+	/**  **Pins `names` for `by`'s chats, or unpins them, as one change** (#5332). All or nothing. */
+	skillSetPin: (plane: PlaneId, by: SkillPinner, names: string[], on: boolean) => typedError<SkillSetTurned, string>(__TAURI_INVOKE("skill_set_pin", { plane, by, names, on })),
+	/**  **Archives or unarchives the skills of `changes` as one change** (#5332). All or nothing. */
+	skillSetLifecycle: (plane: PlaneId, changes: SkillSetLifecycle[]) => typedError<SkillSetLifecycled, string>(__TAURI_INVOKE("skill_set_lifecycle", { plane, changes })),
+	/**  **Moves the skills of `moves` as one change** (#5332). All or nothing. */
+	skillSetMove: (plane: PlaneId, moves: SkillSetMove[]) => typedError<SkillSetMoved, string>(__TAURI_INVOKE("skill_set_move", { plane, moves })),
+	/**
+	 *  **Takes every deleted skill `ids` names off Deleted now** (#5332): the one change there with no
+	 *  undo. Refused whole where one is no longer listed.
+	 */
+	skillSetDeleteNow: (plane: PlaneId, ids: string[]) => typedError<SkillSetGone, string>(__TAURI_INVOKE("skill_set_delete_now", { plane, ids })),
+	/**  **What an export of the skills `members` would write** (#5332), each once with what they name. */
+	skillSetExportReview: (plane: PlaneId, members: SkillSetMember[]) => typedError<ExportReview, string>(__TAURI_INVOKE("skill_set_export_review", { plane, members })),
+	/**
+	 *  **Asks where, and writes an export of the skills `members`** (#5332): a zip, or a folder of
+	 *  skill folders. The place written, or `None` where the person chose none. Nothing is written
+	 *  over anything.
+	 */
+	skillSetExport: (plane: PlaneId, members: SkillSetMember[], zip: boolean) => typedError<string | null, string>(__TAURI_INVOKE("skill_set_export", { plane, members, zip })),
 	/**  **Sets where the project skill `name` reaches.** */
 	skillGrant: (plane: PlaneId, name: string, grant: SkillGrant) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_grant", { plane, name, grant })),
 	/**
@@ -5329,6 +5353,15 @@ export type Allowed = {
 };
 
 /**
+ *  **What Always allow writes** ([`RunShown`], #5245): the exact line, and whether it hands a value
+ *  by a variable as the command did, where a file is safer.
+ */
+export type AlwaysShown = {
+	line: string,
+	by_env: boolean,
+};
+
+/**
  *  **The existing, checked path an ask is answered by** (#1690): the command the window
  *  already answers that source with, and what that command is sent. The registry adds no route.
  */
@@ -5430,6 +5463,8 @@ export type AnswerPath =
  *  masked field, Not now with none.
  */
 { via: "secret"; id: number } | 
+/**  `answer_run_grant` on the ask `id`, at the press an option names (ADR 0112). */
+{ via: "run-grant"; id: number } | 
 /**
  *  `answer_secret_fill` at the press an option names, on held fill `id`, for the notice
  *  whose digest is `shown` (#5115).
@@ -5628,6 +5663,11 @@ export type AskSource =
  *  answered by a value typed in the window, or Not now.
  */
 "secret" | 
+/**
+ *  A brokered run of a program its persona does not declare (ADR 0112, #5239): an Allow is a
+ *  Run grant, and Don't allow is remembered for that chat, program and vault.
+ */
+"run-grant" | 
 /**
  *  A secret a chat asks purlis to fill into a field of its browser (#5115): an Allow lets
  *  purlis put that one key into that field, on that one origin, once.
@@ -8961,7 +9001,13 @@ export type GrantWhat =
  *  on, for the browser alone, never the chat's own commands. Allowed from the chat's browser
  *  sites Ask (`allow_browser_sites`), never from a block's Allow.
  */
-"browser-site";
+"browser-site" | 
+/**
+ *  A Run grant (ADR 0112, #5241): a program a chat may run with a vault's keys, for that
+ *  chat. Given from its own ask (`answer_run_grant`), never from a block's Allow, and kept in
+ *  memory only.
+ */
+"run-grant";
 
 /**  The folders chats may be granted, and those just dropped from the list. */
 export type GrantableFolders = {
@@ -10059,6 +10105,12 @@ export type Moved = {
 	 *  as it did, and the chat is at work, so a restart or a move owed it waits. Absent otherwise.
 	 */
 	background_turn?: boolean | null,
+	/**
+	 *  **It is in the queue only for tasks of its that came to nothing** (#5340,
+	 *  `Board::needs_you_for_itself`, #1693): nothing of its own asks the person, so its mark
+	 *  says a task failed and not that it needs them. Absent otherwise.
+	 */
+	only_failures?: boolean | null,
 	/**
 	 *  Which snapshot of the board this is — bigger was taken later (charter-app#248).
 	 * 
@@ -13526,6 +13578,46 @@ export type RunEndedOnARunner = {
 	device: string,
 };
 
+/**  **What the person pressed on an ask to allow a program** (ADR 0112). */
+export type RunGrantPress = 
+/**  One run of exactly this command. */
+"once" | 
+/**  This program with these variables and keys and any arguments, until the chat ends. */
+"chat" | 
+/**  As [`Self::Chat`], and write its line to the persona's tools (#5245). */
+"always" | 
+/**  Don't allow. */
+"refuse";
+
+/**
+ *  **An ask to allow a program, as its row draws it** (ADR 0112, #5239). Every field is the app's
+ *  own record of the run but [`Self::command`], which is the chat's words made inert: spelled so
+ *  no character in them changes what they seem to say, and drawn as the chat's. Names only: no
+ *  value is ever here.
+ */
+export type RunShown = {
+	persona: string,
+	vault: string,
+	/**  The program's full path, as the app resolved it where no chat writes. */
+	program: string,
+	/**  Each hand-over: the variable, the key, and whether it is a file or the value itself. */
+	values: RunValueShown[],
+	/**  The hosts this chat's sandbox lets the run reach. */
+	hosts: string[],
+	/**  The chat's sandbox holds the run to no host. */
+	every_host: boolean,
+	/**  T-4's sentence, where the program is a general-purpose one. */
+	caution?: string | null,
+	/**  The vault is not one the persona may use: an Allow opens it for that grant's scope alone. */
+	not_its_vault: boolean,
+	/**  The chat's command, its words made inert. */
+	command: string,
+	/**  The folder it starts in. */
+	cwd: string,
+	/**  What Always allow would write, where it is offered (#5245). */
+	always?: AlwaysShown | null,
+};
+
 /**  What started a skill run, as the Runs panel draws it. */
 export type RunStart = 
 /**  The chat's own Skill tool. */
@@ -13544,6 +13636,14 @@ export type RunStart =
 "grade" | 
 /**  A start a newer purlis wrote. */
 "unknown";
+
+/**  One value a run asks to hand its program ([`RunShown`]). */
+export type RunValueShown = {
+	var: string,
+	key: string,
+	/**  In a private file, whose path is in the variable; otherwise in the variable itself. */
+	in_a_file: boolean,
+};
 
 /**  **How one runner is**, as its row says it once asked (#2052). */
 export type RunnerAsked = {
@@ -13864,6 +13964,8 @@ export type SandboxPolicy = {
 	 *  chat hears `declined: policy` and the person is never asked.
 	 */
 	undeclared_secret_asks: boolean,
+	/**  Whether Run grants are turned off (ADR 0112, #5243). */
+	run_grants: boolean,
 };
 
 /**  One Internet access preset (`sandbox::Preset`), as Settings shows it. */
@@ -14309,6 +14411,8 @@ export type SecretShown = {
 	declared_purpose?: string | null,
 	/**  How many chats wait on it. */
 	waiting: number,
+	/**  **Why the run that missed it is offered no Allow** (ADR 0112, #5243): the app's own words. */
+	no_allow?: string | null,
 	/**
 	 *  **The chat says its value doesn't work** (#5075): the chat's own words, drawn as the
 	 *  chat's. Absent on an ask for a key the vault doesn't hold.
@@ -14703,6 +14807,11 @@ export type Shown = {
 	 *  is typed in. Absent for any other ask.
 	 */
 	secret?: SecretShown | null,
+	/**
+	 *  **The program a run asks the person to allow** (ADR 0112, #5239): the app's facts, kept
+	 *  apart from the chat's command. Absent for any other ask.
+	 */
+	run?: RunShown | null,
 	/**
 	 *  **The secret a fill would put into a page, and where** (#5115): drawn with its site
 	 *  large. Absent for any other ask.
@@ -15356,7 +15465,7 @@ export type SkillRouting = {
 };
 
 /**  What is asked of a set. */
-export type SkillSetAct = "delete" | "turn-off" | "turn-on";
+export type SkillSetAct = "delete" | "turn-off" | "turn-on" | "pin" | "unpin" | "archive" | "unarchive" | "move" | "export";
 
 /**  What a set's delete did, and what an Undo hands back. */
 export type SkillSetDeleted = {
@@ -15365,11 +15474,47 @@ export type SkillSetDeleted = {
 	deleted: string[],
 };
 
+/**  What a Delete now did. */
+export type SkillSetGone = {
+	/**  Those whose delete was a commit, off the list: the project's history still holds them. */
+	off_the_list: number,
+	/**  Those this machine kept, removed from it for good. */
+	removed: number,
+	/**  Each that could not be taken off, with why. */
+	failed: string[],
+};
+
+/**  One skill's lifecycle state in a set's change: what it is set to, or what an Undo sets back. */
+export type SkillSetLifecycle = {
+	member: SkillSetMember,
+	lifecycle: SkillLifecycle,
+};
+
+/**  What a set's archive or unarchive did, and what an Undo sets back. */
+export type SkillSetLifecycled = {
+	notes: string[],
+	/**  Each it changed, with the state it had. */
+	was: SkillSetLifecycle[],
+};
+
 /**  One skill of a set: its level and name, and its level as a person reads it. */
 export type SkillSetMember = {
 	level: SkillLevel,
 	name: string,
 	label: string,
+};
+
+/**  One skill's move in a set's: where it goes, and the grant it takes into the project's skills. */
+export type SkillSetMove = {
+	member: SkillSetMember,
+	to: SkillLevel,
+	grant: SkillGrant | null,
+};
+
+/**  What a set's move did, and the moves its Undo makes. */
+export type SkillSetMoved = {
+	notes: string[],
+	back: SkillSetMove[],
 };
 
 /**  A skill that stays naming one that goes. */
@@ -16253,6 +16398,11 @@ export type StudioSkill = {
 	source_label: string | null,
 	/**  Whether that chat's workspace or persona pins it, so no router hides it. */
 	pinned: boolean,
+	/**
+	 *  Whether it is archived, so it never loads until it is restored (SK-19): what the
+	 *  Library's Select mode counts its Archive and Unarchive by (#5332).
+	 */
+	archived: boolean,
 	/**
 	 *  Which of the studio's workspace and persona have it in their pins, as written (SK-15d):
 	 *  what the row's Pin switch shows. Empty for a skill from outside the plane.

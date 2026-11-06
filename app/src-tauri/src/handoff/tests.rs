@@ -12725,3 +12725,214 @@ fn a_chats_dispatch_naming_a_pool_on_a_machine_that_keeps_none_is_refused() {
     );
     assert!(held.runner_dispatches().every().is_empty());
 }
+
+/// A chat as `ops`, on a project with a vault no persona is tagged for.
+fn a_chat_refused_vault_team(plane: &Plane, held: &Held) -> u32 {
+    std::fs::write(
+        plane.root.join("vaults.json"),
+        r#"{"vaults": {"team": {"provider": "plain-file", "config": {"file": "t.json"}}}}"#,
+    )
+    .expect("a registry");
+    a_chat_as(held, &plane.root, Some("ops"), &plane.root)
+}
+
+/// `program` run through the app's own way in, with `TOKEN` from vault `team`.
+fn run_on_team(held: &Held, id: &PlaneId, chat: u32, program: &str) {
+    use purlis_core::secrets::brokered::{Ask, Wanted};
+    crate::vaults::run_brokered(
+        held,
+        id,
+        &|_| {},
+        &|_| {},
+        Ask {
+            chat,
+            secret_exec: Wanted {
+                vault: "team".to_owned(),
+                command: vec![program.to_owned(), "--version".to_owned()],
+                env: vec!["TOKEN=TOKEN".to_owned()],
+                ..Wanted::default()
+            },
+            ..Ask::default()
+        },
+        Box::new(std::io::Cursor::new(Vec::new())),
+        Box::new(std::io::sink()),
+        Arc::new(|_| {}),
+    );
+}
+
+/// The Inbox's asks about a Run grant or a refused vault, as the person reads them.
+fn inbox_of_a_run(held: &Held) -> Vec<crate::asking::AskSource> {
+    use crate::asking::AskSource;
+    crate::asking::every_ask(held)
+        .asks
+        .into_iter()
+        .map(|ask| ask.source)
+        .filter(|source| matches!(source, AskSource::RunGrant | AskSource::Vault))
+        .collect()
+}
+
+/// ADR 0112: one run, one ask. The persona-wide Allow is not offered beside a Run grant's, while
+/// the run waits or after the person's Don't allow, however often the chat tries again.
+#[cfg(unix)]
+#[test]
+fn a_run_the_gate_asks_about_is_one_ask_in_the_inbox_and_dont_allow_leaves_none() {
+    use crate::asking::AskSource;
+    use purlis_core::harness::asks::{Admitted, Answerer};
+    use purlis_core::secrets::ask::run::RunAnswer;
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let chat = a_chat_refused_vault_team(&plane, &held);
+
+    std::thread::scope(|scope| {
+        let run = scope.spawn(|| run_on_team(&held, &id, chat, "curl"));
+        let open = loop {
+            if let Some(open) = held.secret_asks().open_runs().into_iter().next() {
+                break open;
+            }
+            assert!(!run.is_finished(), "the run ended without asking");
+            std::thread::yield_now();
+        };
+        assert!(open.not_its_vault);
+        assert_eq!(inbox_of_a_run(&held), [AskSource::RunGrant]);
+        let window = Answerer::admitted(Admitted::LocalUi).expect("the window");
+        held.secret_asks()
+            .answer_run(open.id, RunAnswer::Refuse, window)
+            .expect("answered");
+        run.join().expect("it ends");
+    });
+    assert_eq!(
+        inbox_of_a_run(&held),
+        [],
+        "nothing stays up after Don't allow"
+    );
+
+    run_on_team(&held, &id, chat, "curl");
+    assert_eq!(inbox_of_a_run(&held), [], "and trying again raises nothing");
+}
+
+/// A program no Run grant may be keeps the vault's own ask, and Keep blocked ends it for that chat:
+/// its next try can't bring the persona-wide Allow back, and another chat's is its own.
+#[cfg(unix)]
+#[test]
+fn a_chat_refused_after_keep_blocked_cannot_bring_the_vaults_allow_back() {
+    use crate::asking::AskSource;
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let chat = a_chat_refused_vault_team(&plane, &held);
+
+    run_on_team(&held, &id, chat, "python3");
+    assert_eq!(inbox_of_a_run(&held), [AskSource::Vault]);
+
+    crate::vaultroute::vault_kept_blocked(&held, None, chat, "team");
+    assert_eq!(inbox_of_a_run(&held), []);
+    run_on_team(&held, &id, chat, "python3");
+    assert_eq!(inbox_of_a_run(&held), [], "its next try raises nothing");
+    run_on_team(&held, &id, chat, "curl");
+    assert_eq!(
+        inbox_of_a_run(&held),
+        [],
+        "and no Run grant's, whose Always allow would give the persona the vault"
+    );
+
+    let another = a_chat_as(&held, &plane.root, Some("ops"), &plane.root);
+    run_on_team(&held, &id, another, "python3");
+    assert_eq!(inbox_of_a_run(&held), [AskSource::Vault]);
+}
+
+/// A Run grant's ask already open on the vault goes too: its Always allow would give the persona
+/// the vault the person just kept blocked. Its command hears no, and goes on no further.
+#[cfg(unix)]
+#[test]
+fn keep_blocked_closes_a_run_grants_ask_already_open_on_that_vault() {
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let chat = a_chat_refused_vault_team(&plane, &held);
+
+    std::thread::scope(|scope| {
+        let run = scope.spawn(|| run_on_team(&held, &id, chat, "curl"));
+        while held.secret_asks().open_runs().is_empty() {
+            assert!(!run.is_finished(), "the run ended without asking");
+            std::thread::yield_now();
+        }
+        run_on_team(&held, &id, chat, "python3");
+        crate::vaultroute::vault_kept_blocked(&held, None, chat, "team");
+        assert_eq!(inbox_of_a_run(&held), []);
+        // Answered so the test ends either way; the assert above is what failed if it stayed.
+        for open in held.secret_asks().open_runs() {
+            held.secret_asks()
+                .answer_run(
+                    open.id,
+                    purlis_core::secrets::ask::run::RunAnswer::Refuse,
+                    purlis_core::harness::asks::Answerer::admitted(
+                        purlis_core::harness::asks::Admitted::LocalUi,
+                    )
+                    .expect("the window"),
+                )
+                .expect("answered");
+        }
+        run.join().expect("it ends");
+    });
+}
+
+/// A key that came to be a browser login's while its ask was up is no program's: Always allow
+/// would declare the program a tool for it, and a declared tool's run is never asked again.
+#[cfg(unix)]
+#[test]
+fn always_allow_is_refused_for_a_key_a_login_came_to_hold_while_its_ask_was_up() {
+    use purlis_core::harness::asks::{Admitted, Answerer};
+    use purlis_core::secrets::ask::run::RunAnswer;
+    let plane = Plane::new().a_persona("ops", "");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let chat = a_chat_refused_vault_team(&plane, &held);
+    let manifest = plane.root.join(purlis_core::plane::MANIFEST);
+
+    std::thread::scope(|scope| {
+        let run = scope.spawn(|| run_on_team(&held, &id, chat, "curl"));
+        let open = loop {
+            if let Some(open) = held.secret_asks().open_runs().into_iter().next() {
+                break open;
+            }
+            assert!(!run.is_finished(), "the run ended without asking");
+            std::thread::yield_now();
+        };
+        // A teammate's login line comes in with a pull while the person reads the notice.
+        let mut file = std::fs::read_to_string(&manifest).unwrap_or_default();
+        file.push_str(
+            "\n[sandbox.personas.qa.tools.shop]\nvault = \"team\"\nbrowser = \
+             \"https://shop.example.test/login\"\nkey = \"TOKEN\"\n",
+        );
+        std::fs::write(&manifest, &file).expect("the login line");
+        let pressed = crate::secretasks::run_grant_answered(
+            &held,
+            None,
+            open.id,
+            crate::secretasks::RunGrantPress::Always,
+        );
+        assert!(
+            pressed.as_ref().is_err_and(|why| why.contains("browser")),
+            "{pressed:?}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&manifest).expect("the file"),
+            file,
+            "no tool was declared"
+        );
+        let window = Answerer::admitted(Admitted::LocalUi).expect("the window");
+        held.secret_asks()
+            .answer_run(open.id, RunAnswer::Refuse, window)
+            .expect("answered");
+        run.join().expect("it ends");
+    });
+}

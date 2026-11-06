@@ -205,6 +205,17 @@ pub fn shell_word(text: &str) -> String {
     ansi_c_word(text.as_bytes())
 }
 
+/// `text` as one word, for a reader who must be able to tell what it says: [`shell_word`], with
+/// every byte outside printable ASCII spelled out, so a lookalike letter can't pass as the one it
+/// resembles.
+pub fn ascii_word(text: &str) -> String {
+    if text.is_ascii() {
+        shell_word(text)
+    } else {
+        ansi_c_word(text.as_bytes())
+    }
+}
+
 /// `bytes` in `$'…'`, every byte outside printable ASCII as `\xHH` — and `!` too, which bash's
 /// history expansion would otherwise reach inside the quotes of an interactive shell.
 fn ansi_c_word(bytes: &[u8]) -> String {

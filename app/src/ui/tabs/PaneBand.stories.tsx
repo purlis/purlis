@@ -24,7 +24,7 @@ import { PaneActions, PaneBellAt, PaneBellOf, PaneHead } from "../../LayoutPanes
 import { HOLDS_NOTHING, type BandHolds, type PaneNoticesShown } from "../../paneNotices";
 import { PANE_NOTICES } from "../../paneNoticesPref";
 import type { Offer } from "../../actions";
-import { ChatMark } from "../../NeedsYou";
+import { ChatMark } from "../chat-mark/ChatMark";
 import { useTabIds, StripTablist } from "../../StripTablist";
 import { panelRoot } from "../panel/Panel";
 import { TabCell, tabPart, tabsPart } from "./Tabs";
@@ -966,7 +966,7 @@ export const NarrowScrolled: Story = {
 /**
  * **The pane's actions** (`PaneActions`, shared with a view's pane, #3147): split side by side,
  * split stacked and close, after a divider from the chat's actions, at the pane's top right, drawn by the catalogue's own
- * rows. Hidden at rest in the pane with the keyboard, drawn once the keyboard is on them.
+ * rows, and always drawn (#5318).
  */
 export const Actions: Story = {
   args: { warnings: [] },
@@ -984,6 +984,10 @@ export const Actions: Story = {
     const actions = boxOf(head?.querySelector(".pane-actions"));
     expect(boxOf(frame).right - actions.right).toBeLessThanOrEqual(16);
     expect(actions.top - boxOf(frame).top).toBeLessThanOrEqual(16);
+    // Taken off them, so the picture is the head at rest: drawn with no keyboard and no tooltip.
+    (document.activeElement as HTMLElement | null)?.blur();
+    await waitFor(() => expect(document.querySelector('[role="tooltip"]')).toBeNull());
+    expect(canvas.getByRole("button", { name: "Split right" })).toBeVisible();
   },
 };
 

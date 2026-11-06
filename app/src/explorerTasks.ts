@@ -10,7 +10,7 @@
  * served only those rows went with them (#1686).
  */
 import { childrenOf, type ChatStates, type State } from "./chatState";
-import { shownState, type Shown } from "./shownState";
+import { shownState, type Said } from "./shownState";
 import { taskBucketOf } from "./taskBuckets";
 
 /** `3 helpers`, `1 helper`. */
@@ -66,7 +66,7 @@ const HELPER_STATES: readonly string[] = ["running", "waiting", "done", "failed"
  * failed, idle. A word this window does not know is said as it came, with the mark of what is
  * not known: nothing is guessed. A helper is never said to need you: its asks are its chat's.
  */
-function helperShown(state: string): Shown {
+function helperShown(state: string): Said {
   const known = HELPER_STATES.includes(state)
     ? shownState({ board: state as State, needsYou: false, task: null, harness: null })
     : undefined;

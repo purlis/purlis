@@ -388,6 +388,7 @@ fn every_command() -> Vec<Command> {
                 user: None,
                 password: purlis_session_protocol::browsing::Secret::new("not-a-real-one".into()),
                 keep: Some(purlis_session_protocol::browsing::KeptLogin {
+                    form: None,
                     profile: "claude".into(),
                     persona: "steward".into(),
                     login: "shop-login".into(),
@@ -402,6 +403,7 @@ fn every_command() -> Vec<Command> {
         // A browser opened from kept logins (1.27, #2021): the window's alone, as a login is.
         Command::StartProgram(Box::new(session::StartProgram {
             kept: Some(purlis_session_protocol::browsing::KeptLogin {
+                form: None,
                 profile: "claude".into(),
                 persona: "steward".into(),
                 login: "shop-login".into(),

@@ -44,7 +44,7 @@ async function theNewestTabSays(): Promise<string> {
   return browser.execute((within: string) => {
     const tabs = document.querySelectorAll(within);
     if (tabs.length === 0) return "(no tab)";
-    return tabs[tabs.length - 1].querySelector(".state")?.getAttribute("aria-label") ?? "";
+    return tabs[tabs.length - 1].querySelector(".tab-said")?.getAttribute("aria-label") ?? "";
   }, TABS);
 }
 

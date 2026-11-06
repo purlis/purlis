@@ -403,18 +403,35 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
             let ws = here.active_workspace(workspace.as_deref())?;
             // In a chat the app started, the app prunes, by the route its removal takes (ADR
             // 0110): never forced, each folder held to its claim against the chats it has.
-            let asked = crate::gitask::told(
-                crate::gitask::forwarded(
-                    &ws,
-                    GitWork::WorktreePrune {
-                        repo: repo.clone(),
-                        dry_run,
-                        keep_branches,
-                    },
-                    crate::gitask::A_WORKTREE_TAKES_AT_MOST,
-                ),
-                &mut say,
-            );
+            // Its wait is on a silence: the app says it is alive as it reads each folder.
+            let since = chrono::Utc::now();
+            let forwarded = match crate::gitask::forwarded(
+                &ws,
+                GitWork::WorktreePrune {
+                    repo: repo.clone(),
+                    dry_run,
+                    keep_branches,
+                },
+                crate::gitask::A_FOLDER_IS_JUDGED_WITHIN,
+            ) {
+                // Given up on: what was removed, said plainly, from the workspace's record of its
+                // folders (#5439), with how the wait ended.
+                crate::gitask::Forwarded::Unsure { cause, .. } => {
+                    crate::gitask::Forwarded::Unsure {
+                        said: crate::gitask::unsure_prune(
+                            dry_run,
+                            &cause,
+                            &purlis_core::pieces::removed_since(&root, &ws, repo.as_deref(), since)
+                                .into_iter()
+                                .map(|(repo, piece)| format!("{repo} · {piece}"))
+                                .collect::<Vec<_>>(),
+                        ),
+                        cause,
+                    }
+                }
+                other => other,
+            };
+            let asked = crate::gitask::told(forwarded, &mut say);
             if let Some(code) = asked {
                 return Ok(code);
             }
@@ -632,7 +649,7 @@ fn answered_by_the_app(
     use purlis_core::repocmd::Say;
     let (lines, code) = match forwarded {
         Forwarded::Said { lines, code } => (lines, code),
-        Forwarded::Refused(why) | Forwarded::Unsure(why) => return Err(why),
+        Forwarded::Refused(why) | Forwarded::Unsure { said: why, .. } => return Err(why),
         Forwarded::NotTaken => return Err(not_taken.to_owned()),
     };
     let text = lines

@@ -23,7 +23,7 @@ import { Archive, Brain, FileCode, KeyRound, Settings2, UserRound, X } from "luc
 import { PaneActions, PaneHead } from "../../LayoutPanes";
 import { HeadingOffer } from "../../PanelSection";
 import type { Offer } from "../../actions";
-import { ChatMark } from "../../NeedsYou";
+import { ChatMark } from "../chat-mark/ChatMark";
 import { SettingGroup, SettingsLayout } from "../../settings/components";
 import { useTabIds, StripTablist } from "../../StripTablist";
 import { Button } from "../button/Button";
@@ -303,7 +303,16 @@ function Body({ shown }: { shown: Shown }): ReactNode {
 
 /** **The strip, docked on the content panel, a chat's tab and the chosen view's tab, and the
  *  view's pane under it**, as `LayoutPanes` and `ViewPane` draw it. */
-function ViewTab({ shown, width = 760 }: { shown: Shown; width?: number }) {
+function ViewTab({
+  shown,
+  width = 760,
+  alone = false,
+}: {
+  shown: Shown;
+  width?: number;
+  /** Alone in its tab (#5318): no controls over it. Otherwise it is one side of a split. */
+  alone?: boolean;
+}) {
   const idOf = useTabIds();
   const { title, mark: Mark } = TABS[shown];
   const tabs = [
@@ -366,12 +375,14 @@ function ViewTab({ shown, width = 760 }: { shown: Shown; width?: number }) {
             <div className="pane-frame pane-viewed" data-focused="" data-testid="view frame">
               <PaneHead
                 doing={
-                  <PaneActions
-                    pane={0}
-                    offerFor={(id) => PANE_OFFERS[id]}
-                    closeOf={() => PANE_OFFERS["pane.close"]}
-                    onPaneDoes={() => undefined}
-                  />
+                  alone ? null : (
+                    <PaneActions
+                      pane={0}
+                      offerFor={(id) => PANE_OFFERS[id]}
+                      closeOf={() => PANE_OFFERS["pane.close"]}
+                      onPaneDoes={() => undefined}
+                    />
+                  )
                 }
               />
               <div className="pane view focused">
@@ -555,16 +566,29 @@ export const Settings: Story = {
 };
 
 /**
- * **Settings with the pane's actions drawn**, as the keyboard on them brings them: the
- * chat pane's cluster at the top right, at the end of the levels' row and over nothing.
+ * **A view alone in its tab** (#5318): no splits and no close over its content. Its splits are in
+ * the palette and on its tab's menu, and its tab's × closes it.
+ */
+export const AloneInItsTab: Story = {
+  args: { shown: "persona", alone: true },
+  play: async ({ canvas, canvasElement }) => {
+    await canvas.findByRole("tabpanel");
+    expect(canvasElement.querySelector(".pane-actions")).toBeNull();
+    expect(canvas.queryByRole("button", { name: /^Split |^Close this view$/ })).toBeNull();
+  },
+};
+
+/**
+ * **Settings with the pane's actions drawn**, the chat pane's cluster at the top right, at the end
+ * of the levels' row and over nothing.
  */
 export const SettingsActionsShown: Story = {
   args: { shown: "settings" },
   play: async ({ canvas, canvasElement, userEvent }) => {
     await oneWithItsTab(canvasElement, "Settings");
     expect(pressableUnderTheActions(canvasElement)).toEqual([]);
-    // The keyboard on the first of them draws the cluster; Esc puts its tooltip away, so the
-    // picture shows the actions in place and nothing over them.
+    // The keyboard on the first of them; Esc puts its tooltip away, so the picture shows the
+    // actions in place and nothing over them.
     const split = canvas.getByRole("button", { name: "Split right" });
     split.focus();
     await waitFor(() => expect(split).toBeVisible());

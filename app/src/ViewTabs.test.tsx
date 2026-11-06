@@ -300,7 +300,7 @@ describe("a persona's own tab", () => {
     const tab = within(strip()).getByRole("tab", { selected: true });
 
     expect(tab.querySelector(".tab-mark")).not.toBeNull();
-    expect(tab.querySelector(".state")).toBeNull();
+    expect(tab.querySelector('[data-scope="chat-mark"]')).toBeNull();
   });
 
   it("is brought forward, not opened twice, when the persona is opened again", async () => {

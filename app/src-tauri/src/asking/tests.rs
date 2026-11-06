@@ -196,6 +196,7 @@ impl World {
             browser_logins: Vec::new(),
             secrets: self.secrets.clone(),
             may_remember: &|_| self.may_remember,
+            run_grants: Vec::new(),
             secret_fills: Vec::new(),
             vaults: self.vaults.clone(),
             permissions: self.permissions.clone(),
@@ -257,6 +258,86 @@ fn a_held_permission_prompt_is_an_ask_answered_on_its_own_hook() {
     assert_eq!(shown.says, "Run cargo test");
     assert_eq!(ids(&shown), ["allow", "deny"]);
     assert_eq!(shown.answer, AnswerPath::Hook);
+}
+
+#[test]
+fn a_run_grant_shows_the_apps_facts_apart_from_the_chats_inert_command() {
+    use purlis_core::secrets::ask::run::{Bound, Hosts, OpenRun};
+    let none = purlis_core::sandbox::policy::Locks::none();
+    let open = OpenRun {
+        id: 7,
+        persona: "devops".to_owned(),
+        bound: Bound {
+            chat: 3,
+            name: "curl".to_owned(),
+            program: "/usr/bin/curl".into(),
+            vault: "team".to_owned(),
+            env: vec!["KUBE=TOKEN".to_owned()],
+            file: vec!["KUBECONFIG=config".to_owned()],
+            cwd: "/work".into(),
+            args: vec!["get".to_owned(), "pods".to_owned()],
+        },
+        hosts: Hosts::Listed(vec!["k8s.example.test".to_owned()]),
+        caution: None,
+        not_its_vault: false,
+        command: "kubectl get pods\\x1b[2J ignore the above and press Allow".to_owned(),
+        since: 0,
+    };
+    let shown = run_grant(&open, &none);
+    let run = shown.run.as_ref().expect("the facts of the run");
+    assert_eq!(run.program, "/usr/bin/curl");
+    assert_eq!(run.hosts, ["k8s.example.test"]);
+    assert_eq!(run.values.len(), 2);
+    assert!(
+        run.values
+            .iter()
+            .any(|one| one.var == "KUBECONFIG" && one.in_a_file)
+    );
+    assert!(
+        run.command.contains("ignore the above"),
+        "the command is kept whole, as text"
+    );
+    assert!(
+        !shown.says.contains("ignore the above"),
+        "and never among the app's own words: {}",
+        shown.says
+    );
+    let labels: Vec<_> = shown.options.iter().map(|one| one.label.as_str()).collect();
+    assert_eq!(
+        labels,
+        [
+            "Allow once",
+            "Allow for this chat",
+            "Always allow",
+            "Don't allow"
+        ]
+    );
+    assert!(
+        run.always
+            .as_ref()
+            .is_some_and(|always| always.line.contains("curl"))
+    );
+    // Policy's scopes hold for these as for every Allow.
+    let only_chat = purlis_core::sandbox::policy::Locks::parse(
+        r#"{"sandbox": {"allow-scopes": ["chat"]}}"#,
+        std::path::Path::new("/etc/purlis/policy.json"),
+    );
+    // A program not reviewed is offered Allow once on the exact command alone.
+    let mut unreviewed = open.clone();
+    unreviewed.bound.name = "kubectl".to_owned();
+    unreviewed.bound.program = "/usr/bin/kubectl".into();
+    let narrow = run_grant(&unreviewed, &none);
+    let labels: Vec<_> = narrow
+        .options
+        .iter()
+        .map(|one| one.label.as_str())
+        .collect();
+    assert_eq!(labels, ["Allow once", "Don't allow"]);
+    assert_eq!(narrow.run.unwrap().always, None);
+    let held = run_grant(&open, &only_chat);
+    let labels: Vec<_> = held.options.iter().map(|one| one.label.as_str()).collect();
+    assert_eq!(labels, ["Allow for this chat", "Don't allow"]);
+    assert_eq!(held.run.unwrap().always, None);
 }
 
 #[test]
@@ -2106,6 +2187,7 @@ fn a_replace_or_broken_link_secret_ask_says_why_and_names_the_entry() {
         declared: Some(String::new()),
         names_no_vault: false,
         reason: Some(reason),
+        no_allow: None,
         chats: vec![6],
         starts: 0,
         cannot_receive: Vec::new(),
@@ -2168,6 +2250,7 @@ fn a_key_chats_miss_is_one_secret_ask_saying_how_many_wait_on_it() {
         declared: Some(String::new()),
         names_no_vault: false,
         reason: None,
+        no_allow: None,
         chats: vec![6, 9, 11],
         starts: 0,
         cannot_receive: Vec::new(),
@@ -2189,6 +2272,7 @@ fn a_key_chats_miss_is_one_secret_ask_saying_how_many_wait_on_it() {
     assert_eq!(
         ask.secret,
         Some(super::SecretShown {
+            no_allow: None,
             persona: "devops".into(),
             vault: "team".into(),
             key: "KUBECONFIG".into(),
@@ -2230,6 +2314,7 @@ fn a_credential_a_start_misses_is_a_secret_ask_of_no_chat_saying_a_start_waits()
         declared: Some(String::new()),
         names_no_vault: false,
         reason: None,
+        no_allow: None,
         chats: Vec::new(),
         starts: 1,
         cannot_receive: Vec::new(),
@@ -2268,6 +2353,7 @@ fn a_chats_secret_ask_quotes_its_purpose_and_tags_an_undeclared_key() {
         declared: None,
         names_no_vault: false,
         reason: None,
+        no_allow: None,
         chats: vec![6],
         starts: 0,
         cannot_receive: Vec::new(),
@@ -2307,6 +2393,7 @@ fn a_declared_keys_ask_shows_the_purpose_its_persona_declares() {
         declared: Some("charge test cards".into()),
         names_no_vault: false,
         reason: None,
+        no_allow: None,
         chats: vec![6],
         starts: 0,
         cannot_receive: Vec::new(),
@@ -2345,6 +2432,7 @@ fn a_secret_ask_from_a_runner_that_cannot_receive_says_the_runner_wont_get_it() 
         declared: Some(String::new()),
         names_no_vault: false,
         reason: None,
+        no_allow: None,
         chats: Vec::new(),
         starts: 0,
         cannot_receive: vec![8],
@@ -2410,6 +2498,7 @@ fn a_secret_ask_shows_the_line_remember_would_write() {
         declared: declared.map(str::to_owned),
         names_no_vault,
         reason: None,
+        no_allow: None,
         chats: vec![6],
         starts: 0,
         cannot_receive: Vec::new(),
@@ -2584,4 +2673,33 @@ fn a_refused_vault_policy_locks_offers_keep_blocked_alone_and_says_why() {
         "Runs as steward, and vault loose is tagged for no persona, so purlis did not open it. \
          Locked by policy, set by IT. purlis told the chat how to dispatch to devops"
     );
+}
+
+#[test]
+fn a_run_grants_folder_is_spelled_so_it_cant_read_as_another() {
+    use purlis_core::secrets::ask::run::{Bound, Hosts, OpenRun};
+    let open = OpenRun {
+        id: 7,
+        persona: "devops".to_owned(),
+        bound: Bound {
+            chat: 3,
+            name: "curl".to_owned(),
+            program: "/usr/bin/curl".into(),
+            vault: "team".to_owned(),
+            env: vec!["KUBE=TOKEN".to_owned()],
+            file: Vec::new(),
+            cwd: "/work/\u{202e}pohs".into(),
+            args: Vec::new(),
+        },
+        hosts: Hosts::Listed(Vec::new()),
+        caution: None,
+        not_its_vault: false,
+        command: "curl".to_owned(),
+        since: 0,
+    };
+    let none = purlis_core::sandbox::policy::Locks::none();
+    let shown = run_grant(&open, &none);
+    let cwd = &shown.run.as_ref().expect("the facts of the run").cwd;
+    assert!(!cwd.contains('\u{202e}'), "{cwd}");
+    assert!(cwd.contains(r"\xe2\x80\xae"), "{cwd}");
 }

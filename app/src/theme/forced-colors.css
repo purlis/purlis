@@ -65,20 +65,10 @@
     color: GrayText;
   }
 
-  /* A chat's state mark keeps its shape: running a dot, waiting a dot with a ring, failed a
-     square, done and unknown a ring, which the border draws already. */
-  .state-running,
-  .state-waiting,
-  .state-failed,
+  /* A row's touch mark keeps its shape. A chat's own mark is its family's (`ui/chat-mark`). */
   .explorer .touch-mark {
     forced-color-adjust: none;
     background-color: CanvasText;
-  }
-
-  .state-waiting {
-    box-shadow:
-      0 0 0 1px Canvas,
-      0 0 0 2px CanvasText;
   }
 
   /* What needs you: the system's pair for what is marked. */

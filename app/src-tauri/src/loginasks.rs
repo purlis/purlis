@@ -81,6 +81,9 @@ struct Inner {
     next: u32,
     waits: Vec<(LoginWait, Option<mpsc::Sender<Heard>>)>,
     grants: Vec<Grant>,
+    /// **Each Allow once a read took, until its login answers** (#5251): spent then, or the chat's
+    /// again where the login was refused before it ran.
+    taken: Vec<Grant>,
     /// What the person kept blocked, by chat, login and origin: not asked of them again.
     kept: Vec<(u32, String, String)>,
     /// Every login allowed from a notice since purlis started, used up or closed too: where a key
@@ -268,9 +271,35 @@ impl Grants {
             one.session == session && persona == Some(one.persona.as_str()) && one.tool.name == name
         })?;
         if inner.grants[at].once {
-            Some(inner.grants.remove(at).tool)
+            let taken = inner.grants.remove(at);
+            let tool = taken.tool.clone();
+            inner.taken.retain(|one| {
+                !(one.session == session && one.persona == taken.persona && one.tool.name == name)
+            });
+            inner.taken.push(taken);
+            Some(tool)
         } else {
             Some(inner.grants[at].tool.clone())
+        }
+    }
+
+    /// **Chat `session`'s login `name` answered** (#5251): an Allow once [`Self::take`] took for it
+    /// is the chat's again where the login was refused before it ran (`ran` false), and is spent
+    /// otherwise. Given back only where nothing of that name was allowed since.
+    pub fn answered(&self, session: u32, persona: Option<&str>, name: &str, ran: bool) {
+        let mut inner = self.lock();
+        let at = inner.taken.iter().position(|one| {
+            one.session == session && persona == Some(one.persona.as_str()) && one.tool.name == name
+        });
+        let Some(at) = at else {
+            return;
+        };
+        let taken = inner.taken.remove(at);
+        let allowed_since = inner.grants.iter().any(|one| {
+            one.session == session && one.persona == taken.persona && one.tool.name == name
+        });
+        if !ran && !allowed_since {
+            inner.grants.push(taken);
         }
     }
 
@@ -297,6 +326,7 @@ impl Grants {
     pub fn forget(&self, session: u32) {
         let mut inner = self.lock();
         inner.grants.retain(|one| one.session != session);
+        inner.taken.retain(|one| one.session != session);
         inner.kept.retain(|(chat, _, _)| *chat != session);
         inner.waits.retain(|(one, tell)| {
             if one.session != session {
@@ -766,8 +796,14 @@ pub fn answer(
     };
     let judged = finish(root, &locks, fresh)?;
     let changed = judged.proposal.digest() != wait.proposal.digest();
-    // Always writes a line, and the line is shown before it's written.
-    if changed && (!spelled || !judged.proposal.warnings.is_empty() || press == Press::Always) {
+    // Always writes a line, and the line is shown before it's written. A warning the notice
+    // didn't show is shown before a press counts; one it showed was read.
+    let unseen = judged
+        .proposal
+        .warnings
+        .iter()
+        .any(|warning| !wait.proposal.warnings.contains(warning));
+    if changed && (!spelled || unseen || press == Press::Always) {
         let said = format!(
             "purlis would open {} and type the password on {}. Check it, then choose again.",
             judged.proposal.page, judged.proposal.form
