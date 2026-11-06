@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794002056252,
+  "lastUpdate": 1794004567872,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -41454,6 +41454,48 @@ window.BENCHMARK_DATA = {
             "value": 102.0953045,
             "unit": "ms",
             "extra": "median of 5 runs: 101.594, 101.918, 102.095, 102.549, 102.817 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "fec6313d995ef51c034f66cae738d48cf9486aaa",
+          "message": "Chat start reads the project index, never walks folders (#5503) (#5565)\n\n* Chat start reads the project index, never walks folders (#5503)\n\nThe SessionStart briefing reads the memory counts, the oldest todos and the\nother workspaces from the project index, read-only. The unshared-memory line\nreads what the host's keeper last recorded of the git standing, so the hook\nruns no git status. While the host builds the first index, the briefing says\nso and leaves out what only a walk could say. With no index and no host, it\nreads the files as before.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6S66669V7SFSA319B86TBGT\nPurlis-Persona: steward\n\n* The briefing's new test, amendment and changelog fragment (#5503)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6S66669V7SFSA319B86TBGT\nPurlis-Persona: steward\n\n* The keeper's standing test sheds the shell's steering (#5503)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6S66669V7SFSA319B86TBGT\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aharon@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-06T21:49:47Z",
+          "tree_id": "0007a0a195d9304d12e83f1b56e1a40badbda0d4",
+          "url": "https://github.com/purlis/purlis/commit/fec6313d995ef51c034f66cae738d48cf9486aaa"
+        },
+        "date": 1794004562591,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3344455,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.327, 0.329, 0.334, 0.344, 0.348 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6251035,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.614, 16.615, 16.625, 16.715, 16.780 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.71955599999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.402, 101.687, 101.720, 102.703, 102.795 ms"
           }
         ]
       }
