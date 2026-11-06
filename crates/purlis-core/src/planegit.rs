@@ -998,6 +998,27 @@ pub fn shared_standing(root: &Path) -> Standing {
     PLANES.get(root, || standing(root))
 }
 
+/// A watch now hears every move in the plane at `root`'s working tree (`true`) and says so
+/// through [`tree_moved`], or no longer does (`false`). While it does, the plane's shared
+/// standing is read again on what moved and its git files, not on [`SHARED_FOR`]'s clock
+/// (#5505): only on the long backstop a covered repo keeps for a watch that went quiet
+/// ([`crate::standings::WATCHED_FOR`]).
+pub fn cover(root: &Path, covered: bool) {
+    PLANES.cover(root, covered);
+}
+
+/// Whether a watch covers the plane at `root` now ([`cover`]).
+pub fn covered(root: &Path) -> bool {
+    PLANES.covered(root)
+}
+
+/// Something in the plane at `root`'s working tree moved that its git status may show: the
+/// plane's next shared standing reads git again. Its clones are not touched: a move in the
+/// plane is not one in them.
+pub fn tree_moved(root: &Path) {
+    PLANES.touch(root);
+}
+
 /// Something at or under `dir` changed — a plane its watcher saw move, a plane or a clone a save
 /// or a fetch let go of, a setting written: the next shared standing of every plane and every
 /// clone there ([`shared_standing`], [`crate::reposave::shared_standing`]) reads git again. The
@@ -1403,7 +1424,10 @@ pub(crate) fn changed_paths(root: &Path) -> Vec<String> {
 /// [`changed_paths`], and whether any of them is a file git tracks (any entry but `??`).
 fn status_of(root: &Path) -> (Vec<String>, bool) {
     // What a save stages ([`save_stages`]): never what is [`never_staged`].
-    let mut args = vec![
+    // git's own file system monitor, where the installed git has one (#5505): the index a
+    // save left says which files can have moved since, and only those are `lstat`ed.
+    let mut args = git::Tuning::here().for_a_read();
+    args.extend([
         "--no-optional-locks",
         "status",
         "--porcelain=v1",
@@ -1411,7 +1435,7 @@ fn status_of(root: &Path) -> (Vec<String>, bool) {
         "--untracked-files=all",
         "--",
         ".",
-    ];
+    ]);
     let excluded = never_staged();
     args.extend(excluded.iter().map(String::as_str));
     let Ok(run) = git::run(
@@ -1419,8 +1443,8 @@ fn status_of(root: &Path) -> (Vec<String>, bool) {
         // `--no-optional-locks`, as `profiles.rs` and `guest.rs` ask: a plain `status`
         // refreshes the index and takes `index.lock`, and the title bar asks this every ten
         // seconds — a save's `git add -A` landing inside that window failed on the lock.
-        // No `-c core.untrackedCache`: a read-only status uses a cache the index holds without
-        // it, and git never consults one under `--untracked-files=all` (FD-11, measured).
+        // No `-c core.untrackedCache`: a read-only status uses the cache the index holds, which
+        // a save writes for this mode (`git::run_status_writing_index`, #5505).
         &args,
         git::READ,
     ) else {
@@ -2985,14 +3009,18 @@ fn save_staging(
         attempt.outcome = "skipped";
         0
     } else {
-        commit_push(
+        let code = commit_push(
             request,
             &plane,
             staging,
             &trigger.caller(),
             &mut attempt,
             say,
-        )
+        );
+        // Under the claim, where the save's own `add` and `commit` just wrote the index: the
+        // one `status` that may write it too, so the reads after it are cheap (#5505).
+        let _ = git::run_status_writing_index(request.root, git::Tuning::here());
+        code
     };
     if attempt.detail.is_empty()
         && let Some(refused) = refused

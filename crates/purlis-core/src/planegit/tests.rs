@@ -4148,6 +4148,87 @@ fn a_save_leaves_the_index_carrying_gits_untracked_cache() {
     );
 }
 
+/// How many directories a read of every untracked file in `root` opened, read as the shared
+/// standing reads (with the monitor where git has one), as git's own trace
+/// says (`read_directory`'s `opendir`, which git reports only when it read through its
+/// untracked cache), or `None` when the read did not use the cache at all.
+fn directories_opened_by_a_read(root: &Path) -> Option<u64> {
+    let trace = tempfile::NamedTempFile::new().unwrap();
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(git::Tuning::here().for_a_read())
+        .args(["--no-optional-locks", "status", "--porcelain", "--untracked-files=all"])
+        .env("GIT_TRACE2_EVENT", trace.path())
+        // `read_directory`'s counts are nested deeper than the event target's default.
+        .env("GIT_TRACE2_EVENT_NESTING", "10")
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    std::fs::read_to_string(trace.path())
+        .unwrap()
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .find(|event| event["key"] == "opendir")
+        .and_then(|event| event["value"].as_str()?.parse().ok())
+}
+
+#[test]
+fn after_a_save_a_read_of_every_untracked_file_opens_none_of_the_folders_it_did_not_touch() {
+    // #5505: the shared standing reads with `--untracked-files=all`, which git serves from
+    // its untracked cache only when the cache was written for that mode. The save, which
+    // writes the index anyway, leaves one that is; a read then opens no folder it left alone.
+    let fixture = Fixture::plane();
+    fixture.with_settings("[plane]\nmode = \"commit\"\n");
+    for n in 0..20 {
+        let dir = fixture.root.join(format!("notes/{n}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("note.md"), "note").unwrap();
+    }
+    // Past git's racy window: a folder modified in the second the index is written is never
+    // trusted to the cache, and is opened again by every read.
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+
+    let (code, said) = fixture.just_save();
+
+    assert_eq!(code, 0, "{said}");
+    // A read without the cache opens every folder, more than twenty here. The root may be
+    // opened: the save's journal, written after the index, moves it the first time.
+    let opened = directories_opened_by_a_read(&fixture.root);
+    assert!(opened.is_some_and(|n| n <= 1), "{opened:?}");
+}
+
+#[test]
+fn after_a_save_the_standing_still_sees_every_file_added_edited_or_removed_since() {
+    // The caches a save leaves are an answer about the tree when it was written: a file new
+    // in a folder the cache remembers as clean, a deep new folder, an edit and a removal are
+    // each still in the standing.
+    let fixture = Fixture::plane();
+    fixture.with_settings("[plane]\nmode = \"commit\"\n");
+    std::fs::create_dir_all(fixture.root.join("notes/a")).unwrap();
+    std::fs::write(fixture.root.join("notes/a/kept.md"), "kept").unwrap();
+    std::fs::write(fixture.root.join("notes/gone.md"), "gone").unwrap();
+    let (code, said) = fixture.just_save();
+    assert_eq!(code, 0, "{said}");
+    assert!(standing(&fixture.root).changed.is_empty());
+
+    std::fs::write(fixture.root.join("notes/a/new.md"), "new").unwrap();
+    std::fs::create_dir_all(fixture.root.join("notes/b/c")).unwrap();
+    std::fs::write(fixture.root.join("notes/b/c/deep.md"), "deep").unwrap();
+    std::fs::write(fixture.root.join("README.md"), "edited\n").unwrap();
+    std::fs::remove_file(fixture.root.join("notes/gone.md")).unwrap();
+
+    assert_eq!(
+        standing(&fixture.root).changed,
+        [
+            "README.md",
+            "notes/a/new.md",
+            "notes/b/c/deep.md",
+            "notes/gone.md"
+        ]
+    );
+}
+
 #[test]
 fn the_untracked_cache_is_asked_for_only_where_the_operators_config_says_nothing() {
     // A `-c` on the command line beats every config file, so charter passes one only when no

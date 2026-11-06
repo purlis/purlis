@@ -2055,3 +2055,46 @@ fn a_commit_is_read_as_itself_whatever_refs_replace_says() {
     let read = run(at, &["log", "-1", "--format=%s", &first], READ).expect("git runs");
     assert_eq!(read.out.trim(), "first");
 }
+
+#[test]
+fn a_git_older_than_the_untracked_cache_and_the_monitor_gets_neither_and_reads_as_before() {
+    // #5505's fallback: what a read is given on a git that cannot use them is nothing.
+    let old = Tuning::for_git(Some((2, 34)), true);
+    assert_eq!(
+        old,
+        Tuning {
+            untracked_cache: false,
+            fsmonitor: false
+        }
+    );
+    assert!(old.for_a_read().is_empty());
+    assert!(Tuning::for_git(None, true).for_a_read().is_empty());
+}
+
+#[test]
+fn the_monitor_is_asked_for_only_where_git_ships_its_daemon() {
+    // git 2.37 brought the built-in daemon, for macOS and Windows; Linux has none.
+    assert!(!Tuning::for_git(Some((2, 36)), true).fsmonitor);
+    assert!(Tuning::for_git(Some((2, 39)), true).fsmonitor);
+    assert!(!Tuning::for_git(Some((2, 50)), false).fsmonitor);
+    assert!(Tuning::for_git(Some((2, 50)), false).untracked_cache);
+    assert_eq!(
+        Tuning::for_git(Some((2, 39)), true).for_a_read(),
+        ["-c", "core.fsmonitor=true"]
+    );
+}
+
+#[test]
+fn a_gits_version_is_read_from_what_it_says_as_apple_and_linux_spell_it() {
+    assert_eq!(version_of("git version 2.39.5 (Apple Git-154)\n"), Some((2, 39)));
+    assert_eq!(version_of("git version 2.43.0\n"), Some((2, 43)));
+    assert_eq!(version_of("git version 2.47.1.windows.2\n"), Some((2, 47)));
+    assert_eq!(version_of("not git\n"), None);
+}
+
+#[test]
+fn a_git_with_nothing_to_tune_writes_no_index() {
+    // The fallback's other half: no status that may write the index runs at all.
+    let dir = tempfile::tempdir().expect("a directory");
+    assert!(run_status_writing_index(dir.path(), Tuning::for_git(Some((2, 30)), false)).is_none());
+}
