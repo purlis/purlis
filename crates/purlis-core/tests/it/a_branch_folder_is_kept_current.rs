@@ -907,14 +907,8 @@ fn the_chat_runs_the_named_step(w: &World, said: &str) -> bool {
         .nth(1)
         .and_then(|rest| rest.split('`').next())
         .unwrap_or_else(|| panic!("no step named: {said}"));
-    purlis_core::forklock::output(
-        std::process::Command::new("git")
-            .args(named.split(' '))
-            .current_dir(&w.clone),
-    )
-    .unwrap()
-    .status
-    .success()
+    let args: Vec<&str> = named.split(' ').collect();
+    support::git_tried(&w.clone, &args).status.success()
 }
 
 fn sandboxed(chat: &Path) -> Reach<'_> {
