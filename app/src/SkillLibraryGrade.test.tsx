@@ -106,8 +106,6 @@ function core(
             clashes: [],
             skills,
           };
-        case "skill_studio_on":
-          return true;
         case "skills_deleted":
         case "skill_drafts":
           return [];

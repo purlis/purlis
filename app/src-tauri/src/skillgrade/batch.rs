@@ -35,7 +35,7 @@ use super::{
     grades, plan_by, plan_holds, running,
 };
 use crate::planes::{Held, PlaneId, Planes};
-use crate::skillchange::{SkillLevel, flag_on};
+use crate::skillchange::SkillLevel;
 use purlis_core::skills::verbs::Level;
 
 /// The event the window is told each step of a batch by.
@@ -430,7 +430,6 @@ pub(crate) async fn skill_grades_plan(
 ) -> Result<SkillGradesPlan, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading what grading several skills runs", move || {
-        flag_on()?;
         let root = held.root();
         let plans = skills
             .into_iter()
@@ -554,7 +553,6 @@ pub(crate) async fn skill_grades_start(
 ) -> Result<String, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("starting to grade several skills", move || {
-        flag_on()?;
         if !(limit_usd.is_finite() && limit_usd > 0.0) {
             return Err("Set a limit above $0.00: nothing was started.".to_owned());
         }
