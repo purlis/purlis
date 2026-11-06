@@ -2267,7 +2267,10 @@ fn a_blank_page_is_not_kept_off_for_a_frame_of_the_page_that_opened_it() {
     a_blank_page_opens(&browser, &engine);
     // The frames page holds a frame of other.test; the page itself is not on it.
     assert!(kept_off_on(&browser, "PAGE-1", "other.test").contains_key("PAYMENT-FRAME"));
-    assert_eq!(kept_off_on(&browser, "PAGE-9", "other.test").get("PAGE-9"), None);
+    assert_eq!(
+        kept_off_on(&browser, "PAGE-9", "other.test").get("PAGE-9"),
+        None
+    );
 }
 
 #[test]

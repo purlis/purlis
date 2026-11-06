@@ -1025,12 +1025,7 @@ fn a_frames_origin_follows_the_webs_rules_for_its_address() {
         ),
         // A document sandboxed without its origin allowed has none, whatever its address
         // says: its own context says so.
-        (
-            "https://shop.test/pay",
-            "null",
-            Some("://"),
-            Origin::Opaque,
-        ),
+        ("https://shop.test/pay", "null", Some("://"), Origin::Opaque),
         ("https://shop.test/pay", "", Some("null"), Origin::Opaque),
         (
             "https://shop.test/pay",
@@ -2277,7 +2272,10 @@ fn a_sandboxed_srcdoc_frame_with_no_word_of_its_own_context_is_opaque() {
 fn a_sandboxed_frame_at_a_web_address_with_no_word_of_its_own_context_is_opaque() {
     let (judge, _) = judge(&[]);
     let (browser, engine) = browser_judged(judge);
-    frame_elements_have(&engine, json!(["src", "https://shop.test/pay", "sandbox", ""]));
+    frame_elements_have(
+        &engine,
+        json!(["src", "https://shop.test/pay", "sandbox", ""]),
+    );
     the_page_shows_a_frame(&engine, &browser, "SHOP", "PAGE-1", "https://shop.test/pay");
     browser.read_sandboxes("PAGE-1");
     let state = super::super::lock(&browser.inner.state);
@@ -2301,8 +2299,10 @@ fn a_frames_element_is_read_in_the_session_of_the_document_around_it() {
     browser.read_sandboxes("PAGE-1");
     let owners = engine.sent("DOM.getFrameOwner");
     assert!(
-        owners.iter().any(|s| s.params["frameId"] == "PAYMENT-FRAME"
-            && s.session.as_deref() == Some("S-PAGE-1")),
+        owners
+            .iter()
+            .any(|s| s.params["frameId"] == "PAYMENT-FRAME"
+                && s.session.as_deref() == Some("S-PAGE-1")),
         "the frame's own session holds no element of it: {owners:?}"
     );
     assert_eq!(
