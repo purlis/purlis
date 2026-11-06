@@ -283,7 +283,73 @@ fn a_harness_that_does_not_read_this_says_nothing() {
         process: false,
     };
     assert_eq!(
-        crate::harness_plugin::CODEX.plugins_here(&env, &ChatFolder::default()),
+        crate::harness_plugin::OPENCODE.plugins_here(&env, &ChatFolder::default()),
         None
     );
 }
+
+// Codex, as measured on codex-cli 0.163.0 (ADR 0050 as amended 2026-10-21): a plugin whose
+// `config.toml` table says `enabled = false` does not reach the model.
+
+/// A Codex home whose `config.toml` is `text`, and what a chat there has of its plugins.
+fn codex_with(text: Option<&str>) -> (tempfile::TempDir, Option<Plugins>) {
+    let home = tempfile::tempdir().unwrap();
+    if let Some(text) = text {
+        std::fs::write(home.path().join("config.toml"), text).unwrap();
+    }
+    let chat = [("CODEX_HOME".to_owned(), home.path().display().to_string())];
+    let got = crate::harness_plugin::CODEX.plugins_here(
+        &Env {
+            chat: &chat,
+            home: None,
+            process: false,
+        },
+        &ChatFolder::default(),
+    );
+    (home, got)
+}
+
+#[test]
+fn a_codex_plugin_its_config_turns_off_is_not_the_chats_and_says_where() {
+    let (home, got) = codex_with(Some(
+        "[plugins.\"superpowers@market\"]\nenabled = false\n\n\
+         [plugins.\"deep-research@openai-curated\"]\nenabled = true\n",
+    ));
+    let plugins = got.expect("it reads");
+    assert_eq!(plugins.on, ["deep-research"]);
+    assert!(plugins.is_off("superpowers"));
+    assert_eq!(
+        why(&plugins),
+        Some(&OffWhy::OffInConfig(home.path().join("config.toml")))
+    );
+}
+
+#[test]
+fn a_codex_plugin_whose_table_does_not_say_enabled_is_on() {
+    let (_home, got) = codex_with(Some("[plugins.\"superpowers@market\"]\n"));
+    let plugins = got.expect("it reads");
+    assert_eq!(plugins.on, ["superpowers"]);
+    assert!(plugins.off.is_empty());
+}
+
+#[test]
+fn a_codex_plugin_off_in_config_names_the_file_and_offers_no_claude_command() {
+    let off = PluginOff {
+        id: "superpowers@market".to_owned(),
+        name: "superpowers".to_owned(),
+        why: OffWhy::OffInConfig(PathBuf::from("/h/.codex/config.toml")),
+    };
+    assert_eq!(off.command(), None);
+    assert_eq!(off.line("Codex"), "Off in Codex");
+    let said = off.said("Codex", true);
+    assert!(said.contains("/h/.codex/config.toml"), "{said}");
+    assert!(said.contains("enabled = false"), "{said}");
+    assert!(said.ends_with("then restart this chat."), "{said}");
+}
+
+#[test]
+fn a_codex_config_that_is_not_there_is_nothing_installed_and_one_unreadable_says_nothing() {
+    assert_eq!(codex_with(None).1, Some(Plugins::default()));
+    assert_eq!(codex_with(Some("not = [toml")).1, None);
+}
+

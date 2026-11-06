@@ -50,6 +50,8 @@ pub enum OffWhy {
     AfterStart,
     /// purlis's own `--settings` keep it off: a plugin purlis replaced.
     PurlisOff,
+    /// Codex's `config.toml`, at this path, says `enabled = false` in its table.
+    OffInConfig(PathBuf),
 }
 
 /// **One installed plugin a chat does not have.**
@@ -102,6 +104,11 @@ impl PluginOff {
             OffWhy::PurlisOff => {
                 format!("purlis keeps the {name} plugin off: it is one purlis replaced.")
             }
+            OffWhy::OffInConfig(file) => format!(
+                "{title} has the {name} plugin turned off: its table in {} says enabled = false. \
+                 Set it to true, {then}.",
+                file.display()
+            ),
         }
     }
 
@@ -115,6 +122,7 @@ impl PluginOff {
             OffWhy::ProjectUnread => "Project settings unread".to_owned(),
             OffWhy::AfterStart => "Installed after this chat started".to_owned(),
             OffWhy::PurlisOff => "Replaced by purlis".to_owned(),
+            OffWhy::OffInConfig(_) => format!("Off in {title}"),
         }
     }
 
@@ -129,7 +137,8 @@ impl PluginOff {
             | OffWhy::MarketplaceGone(_)
             | OffWhy::ProjectUnread
             | OffWhy::AfterStart
-            | OffWhy::PurlisOff => None,
+            | OffWhy::PurlisOff
+            | OffWhy::OffInConfig(_) => None,
         }
     }
 }
