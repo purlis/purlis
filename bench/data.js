@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793990863801,
+  "lastUpdate": 1793994179489,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -41286,6 +41286,48 @@ window.BENCHMARK_DATA = {
             "value": 102.49692999999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.245, 101.508, 102.497, 102.544, 103.488 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "5145cc736204fdf1d45b765bf9a0196067dc7eaa",
+          "message": "Secret ask: one notice for a run's gates, and what a chat is told (#5242, #5244) (#5506)\n\n* One notice for a run's gates (#5242)\n\nA run that lacks keys, a program's Allow or a vault's raises one notice with\nwhichever it hit: a masked field for each missing key, and the program's Allow,\nor, where it has none (a declared tool, or a lock), the vault's own Allow as a\nrefused vault's notice has it (#5160), or the fields alone. What the person\ntypes is stored even on Don't allow, and the chat hears \"filled, but the\nprogram was not allowed\"; on a vault its persona may not use, only an Allow\nstores. Allow once is used by the run it was for as it starts, so a run that\nstopped short of starting asks nothing on retry. A declared tool is never let\npast a vault its persona may not use. A declared tool missing one key, or a run\na grant covers, asks for it as before. The kept asks name their fields and\noffer (plane-format).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6Q2J4WFTWZMSDBCK5YJZBE0\nPurlis-Persona: steward\n\n* One notice for a run's gates: name its value boxes among the window's secrets (#5242)\n\nThe guard that lists every secret's box in the window names RunFills.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6Q2J4WFTWZMSDBCK5YJZBE0\nPurlis-Persona: steward\n\n* What a chat is told about Run grants (#5244)\n\nA Secret ask can name the program the chat will run (secret_ask's program,\npurlis secret ask --program). For a reviewed program (curl alone) its one\nnotice offers the key's field and Allow for this chat, bound to the chat,\nprogram, vault and exactly those keys; the first run it covers fixes the\nvariables they are handed by. No Allow once or Always allow ahead of a run.\nAny other program gets Fill only and its run asks on the exact command; an\ninterpreter gets Fill only, saying why; a program refused in this chat is\nrefused at once. Every check a run makes holds for these runs. A filled\nanswer says whether the program was allowed, and none sends the chat to a\nrefusal. The session-start line, the tool's description and the\npurlis-secrets skill tell a chat to prefer simply running the command. The\nperson's ruling of 2026-11-06, as an ADR 0112 amendment; plane-format names\na run's ahead.\n\nAlso #5242's CI: the lane-writes table names run_grant_filled, the one-notice\nhandoff test keeps an event log for the grant's audit, prettier.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6Q2J4WFTWZMSDBCK5YJZBE0\nPurlis-Persona: steward\n\n* Run grants: what the adversarial review found (#5242, #5244)\n\n- A press its run notice does not offer is refused in the app before anything\n  is stored, granted, declared or audited, not only as the core answers.\n- A grant made ahead of its run counts as one for the chat's life, so policy\n  removing the chat and project scopes holds to its first run too.\n- Ahead of its run, the after-Allow browser/mint check and the audit name the\n  fields' keys, as the bound has no variables yet.\n- A program named ahead that is no plain name or path is Fill only, and its\n  words are never shown as purlis's.\n- Two asks ahead for different keys of one program are two notices.\n- A run under a grant lacking a key of a vault its persona may not use is\n  asked with the vault's own Allow, so only an Allow stores there and the chat\n  is not told which keys it lacks.\n- A chat on a pool's runner naming a program ahead gets the plain Fill.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6Q2J4WFTWZMSDBCK5YJZBE0\nPurlis-Persona: steward\n\n* Run grants: an Allow once a check after it refused is dropped (#5242)\n\nThe person's ruling: when policy comes to lock a run, or a key comes to be a\nbrowser's, while its notice was up, the refused run's Allow once is dropped\nunused, so no retry may use it. A run that only waited keeps it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6Q2J4WFTWZMSDBCK5YJZBE0\nPurlis-Persona: steward\n\n* Run grants: a test that an Allow once refused after its retry's Fill is dropped (#5242)\n\nRed until its fix: the re-review found a plain Fill's own after-checks refuse\nwithout dropping the run's Allow once. CI only here: the run makes its\ncredential folder before it asks.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6Q2J4WFTWZMSDBCK5YJZBE0\nPurlis-Persona: steward\n\n* Run grants: an Allow once refused after its retry's Fill is dropped (#5242)\n\nA plain Fill's own after-checks (a policy lock, a browser's key) now drop the\nrun's unused Allow once too, as the person ruled; its test was red on CI.\n\nThe session-start line, the tool's description and the skill now say the\nperson is asked in purlis's window, which the CLI's check had read as a\ncommand named \"purlis asks\".\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6Q2J4WFTWZMSDBCK5YJZBE0\nPurlis-Persona: steward\n\n* One notice for a run's gates: the new stories' baselines, from the pull request's own stories run (#5242, #5244)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6Q2J4WFTWZMSDBCK5YJZBE0\nPurlis-Persona: steward\n\n* One notice for a run's gates: the filled line's test reads its new words (#5244)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6Q2J4WFTWZMSDBCK5YJZBE0\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-06T18:45:00Z",
+          "tree_id": "32f595a09e420bd79afd654ca23b4cc034d2c562",
+          "url": "https://github.com/purlis/purlis/commit/5145cc736204fdf1d45b765bf9a0196067dc7eaa"
+        },
+        "date": 1793994174610,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.681329,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.673, 0.681, 0.681, 0.693, 0.701 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7233405,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.681, 16.716, 16.723, 16.769, 16.814 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.4781885,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.348, 102.427, 102.478, 102.708, 102.862 ms"
           }
         ]
       }
