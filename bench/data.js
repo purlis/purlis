@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794044330700,
+  "lastUpdate": 1794046296773,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -42000,6 +42000,48 @@ window.BENCHMARK_DATA = {
             "value": 101.825265,
             "unit": "ms",
             "extra": "median of 5 runs: 100.625, 101.764, 101.825, 102.272, 102.474 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "8a6970e2a439fa4c760d118679f3ef1233ad5887",
+          "message": "What a tab shows: leftover marks, the rail, the narrow head and split tabs (#5445, #5446, #5447, #5448, #5524, #5577) (#5584)\n\n* A background tab's × leaves the keyboard where it was (#5445)\n\nPressed, the × of a tab behind the front one no longer takes the keyboard, so when that tab\ncloses the keyboard is still where it was in the front tab. The front tab's × keeps #5392's\nrule: its close puts the keyboard in what comes to the front.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6T3D8D1K4DNVPYC3QM9YNFE\nPurlis-Persona: steward\n\n* A narrow pane's head draws a chat's state glyph once (#5446)\n\nUnder 470px the head drops the state's word, and its line now draws no glyph of its own: the\nchat's mark at the head's start wears the state on its badge already. The word is still heard.\nA head with no word whose chat has tasks draws its tasks' button as the tasks' glyph (ListTree),\nnamed by the word, so no state glyph is repeated there either (#5524's second point).\n\nA window test at 400px and 360px reads the head's glyphs, and a story draws a narrow head in\neach state.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6T3D8D1K4DNVPYC3QM9YNFE\nPurlis-Persona: steward\n\n* A folded rail of a chat that needs you shows one ✋ (#5447)\n\nThe one-mark rule of #5340: a folded chat's rail button wears its chat's mark, whose badge is ✋\nwhile it needs the person, so the rail no longer draws its own ✋ beside it. A face that cannot\nwear a state (a pane the window gives no face, drawn by its kind) keeps the rail's ✋, so an ask\nnever hides. A window test counts the ✋ on the item, and a story draws a rail in each state.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6T3D8D1K4DNVPYC3QM9YNFE\nPurlis-Persona: steward\n\n* Tests for a pinned icon-only tab's mark and the seen hook in a tab window (#5448)\n\n- A pinned tab drawn as its icon alone (data-icon-only) wears its row's mark in each state;\n  seen red by drawing such a tab with no chat in its face.\n- In a tab window, what failed is seen of the chat focused in the front tab only, and only\n  while that window has the keyboard; seen red by dropping the focus check, and by telling every\n  chat's failures rather than the focused one's.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6T3D8D1K4DNVPYC3QM9YNFE\nPurlis-Persona: steward\n\n* A tab's leftover marks, a repeated glyph, the ×'s hover ground and tabs.count's words (#5524)\n\nBy #5339's rule, a tab says which chat this is and whether it needs you:\n\n- The skill run chip and the browsers' count and live thumbnails move from beside the tab to\n  the chat's pane head, after its state (usingOn, a listed chip of the head's line). Each\n  browser is still a row under its chat in the Chats list.\n- The fresh mark stays on the tab, with its reason recorded: the ruling on charter#369 put it\n  there. Moving it is a change to that ruling.\n- A head with no state word draws its tasks' button as the tasks' glyph (in the #5446 commit),\n  pinned by a story of the narrow head with tasks.\n- A theme's hover fill for a tab is said to its × as well (--tabs-closer-over), so in Classic\n  the × no longer stands on a white box inside the grey pill. built-in-themes.json written\n  again by the storythemes test.\n- tabs.count's description says what it draws now. A description is outside the manifest's\n  digest (ADR 0103, amended 2026-10-25), so it changes here, not in a release step.\n\nADR 0039 is amended. Window tests (the chip and the browsers on the head, not the tab), a\ncore test of the × ground, and the guards' lists move with them.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6T3D8D1K4DNVPYC3QM9YNFE\nPurlis-Persona: steward\n\n* Split tabs: a view's own title, a mark that redraws only its tab, three panes vs the quad (#5577)\n\n- A view keeps the title it was opened with on its pane (Content.title): a file's name, a\n  settings page's. A split tab's hover names it by that title and a tab takes it when the view\n  becomes its first pane; the stored layout writes it for a view beside another.\n- A tab's mark reads only its own chats' tasks (useTasksBelowOf, replacing useEveryTasksBelow),\n  so a change to one chat redraws only the tabs it is in. A render-count test, seen red with\n  the old redraw-on-any-change.\n- The picture draws a tile per pane, parted by a gap, in place of the lines between them, so\n  three panes never read as the quad at a tab's size; past four, a 3 x 3 grid no layout of four\n  or fewer draws.\n\nADR 0036 is amended.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6T3D8D1K4DNVPYC3QM9YNFE\nPurlis-Persona: steward\n\n* A view's own title follows it when it is shown anew or its workspace is renamed (#5577)\n\nFrom review: the title was fixed when the view opened, so a pane retitled in place (showInstead:\nthe Settings tab moving level, a Search asked again) or by a workspace rename kept its old one\nin the split tab's hover. Both now carry the new title; viewTitleOf gives the title-or-word rule\none home. Each case was seen red first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6T3D8D1K4DNVPYC3QM9YNFE\nPurlis-Persona: steward\n\n* The narrow head's tasks-button story finds its one button by role (#5524)\n\nIts chat shows idle in the story, which lends no tasks below it, so the button is named\n\"idle\", not \"waiting\": the story's only button is found by its role.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6T3D8D1K4DNVPYC3QM9YNFE\nPurlis-Persona: steward\n\n* Baselines of the stories this pull request changes, from its own stories run\n\nPaneHeadNarrow (each state once; the tasks button with no word), PaneRail's rail in each state,\nand the tabs family's split pictures (tiles) and marks on the tabs' line (no skill run chip).\nTaken with tools/story-baselines-pull.mjs from run 42348316810, a sample reviewed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6T3D8D1K4DNVPYC3QM9YNFE\nPurlis-Persona: steward\n\n* The narrow head's two stories in Purlis light, WebKit, from the pull request's own stories run\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6T3D8D1K4DNVPYC3QM9YNFE\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-07T09:11:38Z",
+          "tree_id": "1dc573d143c348f09efc9894f1191155e61919b0",
+          "url": "https://github.com/purlis/purlis/commit/8a6970e2a439fa4c760d118679f3ef1233ad5887"
+        },
+        "date": 1794046291739,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.49216699999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.482, 0.486, 0.492, 0.494, 0.524 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3781825,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.351, 16.367, 16.378, 16.384, 16.512 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.87037849999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.514, 101.780, 101.870, 101.966, 102.490 ms"
           }
         ]
       }
