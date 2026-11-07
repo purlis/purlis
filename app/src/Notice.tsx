@@ -344,6 +344,7 @@ export function Notice(props: NoticeProps) {
         persona={persona}
         whose={of ?? undefined}
         quiet={quiet}
+        since={(props as { since?: number | null }).since}
         consent={
           props.consent === true ||
           (props as { waits?: boolean }).waits === true ||
@@ -543,8 +544,9 @@ function stateSaid({
  * is quiet.
  *
  * **Its title is the one thing it may not lack**: what it names (a card's title, whose it is, its
- * label), or else its state, which then is not said again under it. Its age is how long it has
- * stood in this window: a Notice holds no time of its own, so a relaunch starts it again.
+ * label), or else its state, which then is not said again under it. Its age is from when what it
+ * says began where its caller knows that (`since`, #5702); else it is how long it has stood in this
+ * window, so a relaunch starts it again.
  */
 function CentreCard({
   cause,
@@ -555,6 +557,7 @@ function CentreCard({
   persona,
   whose,
   quiet,
+  since: given,
   consent,
   fixes,
   link,
@@ -573,12 +576,15 @@ function CentreCard({
   persona?: string | null;
   whose?: { whose: string; onGo: () => void };
   quiet?: boolean;
+  /** When what it says began, in seconds, where its caller knows (#5702). */
+  since?: number | null;
   consent: boolean;
   mayAct: (target: Element) => boolean;
   under?: ReactNode;
   children: ReactNode;
 }) {
-  const [since] = useState(() => Date.now());
+  const [drawn] = useState(() => Date.now());
+  const since = given == null ? drawn : given * 1000;
   const now = useNow();
   const toChat = fixes?.find((fix) => fix.go === true);
   const others = fixes?.filter((fix) => fix !== toChat) ?? [];

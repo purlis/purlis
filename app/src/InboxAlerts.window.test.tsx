@@ -216,6 +216,34 @@ const row = (open: HTMLElement, cause: string) => {
 const listed = (cause: string) =>
   document.querySelector(`[data-scope=notice-list] [data-cause="${cause}"]`) !== null;
 
+describe("a chat's arrived files in the Inbox (#5702)", () => {
+  it("are read again when the Inbox opens, and say when the look found them", async () => {
+    rows = [];
+    render(<App />);
+    await screen.findByRole("tab", { name: /plane/ });
+    await userEvent.click(await screen.findByRole("button", { name: "Close Inbox" }));
+    await waitFor(() => expect(calls("alerts_everywhere").length).toBeGreaterThan(0));
+    const before = calls("alerts_everywhere").length;
+    // A turn ends, and its look finds a file that can run later, two hours ago by its record.
+    rows = [
+      {
+        severity: "warn",
+        subject: "files that can run later",
+        detail: "Fix the build: these appeared in a folder it can write: work/moved/.envrc.",
+        workspaces: [],
+        since: Date.now() / 1000 - 2 * 60 * 60,
+        way: { kind: "arrived-files", chat: "01M6M3VNN8GNE85XEV3194WJE6" },
+      },
+    ];
+    // Opened from its own button on the activity bar, not the status line's Notices.
+    await userEvent.click(screen.getByRole("tab", { name: "Inbox" }));
+    await waitFor(() => expect(calls("alerts_everywhere").length).toBeGreaterThan(before));
+    const open = await screen.findByRole("tabpanel", { name: "Inbox" });
+    await waitFor(() => expect(listed("arrived-files:01M6M3VNN8GNE85XEV3194WJE6")).toBe(true));
+    expect(row(open, "arrived-files:01M6M3VNN8GNE85XEV3194WJE6")).toHaveTextContent("2h");
+  });
+});
+
 describe("each alert in the Inbox", () => {
   it("carries its way out, and no command to type", async () => {
     rows = [PIN, FRONT_DOOR, REINIT, NESTED, ROOT, SAVE];

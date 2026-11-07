@@ -1279,3 +1279,25 @@ fn a_placeholder_is_still_cleared_after_the_chat_starts_again() {
     );
     assert!(!left.exists());
 }
+
+#[test]
+fn a_notice_says_when_the_look_that_told_it_was_and_put_away_forgets_it() {
+    let fix = Fixture::new();
+    fix.begin();
+    let before = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("after the epoch")
+        .as_secs();
+    file(&fix.folder.join("moved/.envrc"), "export A=1\n");
+    assert_eq!(fix.look(), ["moved/.envrc"]);
+    let told = arrived::told(&fix.plane);
+    assert!(told[0].at.is_some_and(|at| at >= before), "{told:?}");
+    // A look that adds nothing keeps the time of the one that did.
+    let at = told[0].at;
+    assert_eq!(fix.look(), Vec::<String>::new());
+    assert_eq!(arrived::told(&fix.plane)[0].at, at);
+    arrived::put_away(&fix.plane, CHAT).expect("put away");
+    file(&fix.folder.join("other/.envrc"), "export B=1\n");
+    assert_eq!(fix.look(), ["other/.envrc"]);
+    assert!(arrived::told(&fix.plane)[0].at.is_some());
+}

@@ -334,6 +334,8 @@ function ArrivedFilesRow({
       // Its own family, which the Inbox lists ahead of every other Notice (#5702).
       cause={`${ARRIVED_FILES_CAUSE}:${chat}`}
       tone={toneOf(alert.severity)}
+      // Its age is from the look that found what it names, not from when the window drew it.
+      since={alert.since}
       fixes={[{ label: "Put away", onPress: putAway }]}
     >
       <Words severity={alert.severity} subject={alert.subject} detail={alert.detail} said={said} />

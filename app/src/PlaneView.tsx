@@ -5213,11 +5213,16 @@ export const PlaneView = memo(function PlaneView({
   }, [inboxAsked, inboxGroup, plane, showSideView]);
   /** Whether this project's Inbox is open on screen, told to the core: no notification is sent
    *  about what the person is reading (#1694, I-7). */
-  useInboxOpenTold(
-    plane,
+  const inboxOpen =
     inFront &&
-      arrangement.some((one) => !one.collapsed && viewOpenIn(one, presentViews) === "inbox"),
-  );
+    arrangement.some((one) => !one.collapsed && viewOpenIn(one, presentViews) === "inbox");
+  useInboxOpenTold(plane, inboxOpen);
+  /** **Opening the Inbox reads the alerts again** (#5702): what a chat's last turn found in its
+   *  folders is listed when the person comes to look, not at the next minute's read. */
+  const rereadAlerts = alerts?.does.reread;
+  useEffect(() => {
+    if (inboxOpen) rereadAlerts?.();
+  }, [inboxOpen, rereadAlerts]);
 
   /** A file ⌘P found here (FM-7), opened in its file tab the way the explorer opens one. */
   const fileHandled = useRef(fileAsked?.at);

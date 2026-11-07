@@ -427,6 +427,10 @@ struct Record {
     /// about what is new.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     whole_for: BTreeMap<String, usize>,
+    /// When a look last put something on the Notice, in seconds since the epoch (#5702): the
+    /// Notice's age, so a card read hours after it was first drawn says when it was found.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    told_at: Option<u64>,
 }
 
 /// What one look found, for the audit: paths and no contents.
@@ -471,6 +475,8 @@ pub struct Told {
     /// Each folder that could not be read.
     pub unread: Vec<String>,
     pub cut_short: bool,
+    /// When a look last put something on it, in seconds since the epoch, where one has (#5702).
+    pub at: Option<u64>,
 }
 
 impl Told {
@@ -933,6 +939,9 @@ pub fn look(plane: &Path, chat: &str, name: Option<&str>) -> io::Result<Option<L
         }
         record.name = name.map(str::to_owned).or(record.name);
         record.cut_short = walked.cut_short;
+        if !new.is_empty() || !unread.is_empty() {
+            record.told_at = Some(seconds_now());
+        }
         if record != was {
             write(plane, &path, &record)?;
         }
@@ -1030,6 +1039,7 @@ pub fn told(plane: &Path) -> Vec<Told> {
             paths: record.arrived.into_iter().collect(),
             unread: record.unread.into_iter().collect(),
             cut_short: record.cut_short,
+            at: record.told_at,
         })
         .collect()
 }
@@ -1052,8 +1062,16 @@ pub fn put_away(plane: &Path, chat: &str) -> io::Result<()> {
             record.put_away.insert(at, pin);
         }
         record.cut_short_told = record.cut_short_told || record.cut_short;
+        record.told_at = None;
         write(plane, &path, &record)
     })
+}
+
+/// Seconds since the epoch, as a record keeps a time.
+fn seconds_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs())
 }
 
 /// A path as a record keeps it.
