@@ -461,6 +461,21 @@ pub fn left_beyond_a_fetch(
     if let Some(why) = loaded.unreadable {
         return Err(why);
     }
+    let known: Vec<&Path> = loaded
+        .store
+        .recents
+        .iter()
+        .map(|recent| recent.plane.as_path())
+        .collect();
+    Ok(left_beyond_a_fetch_in(&known, held, unread))
+}
+
+/// [`left_beyond_a_fetch`], with each project found among the folders `known`.
+pub fn left_beyond_a_fetch_in(
+    known: &[&Path],
+    held: &[crate::codelink::held::Held],
+    unread: &[String],
+) -> Vec<String> {
     let mut left: Vec<String> = unread.to_vec();
     let mut projects: Vec<&str> = held.iter().map(|one| one.project.as_str()).collect();
     projects.sort_unstable();
@@ -481,12 +496,7 @@ pub fn left_beyond_a_fetch(
         // Two folders here may be one project: its work is home where either has all of it.
         let mut missing: Option<(String, Vec<String>)> = None;
         let mut home = false;
-        for root in loaded
-            .store
-            .recents
-            .iter()
-            .map(|recent| recent.plane.as_path())
-        {
+        for &root in known {
             if !crate::scaffold::planefile::id_to_hold_by(root).is_ok_and(|id| id == project) {
                 continue;
             }
@@ -525,7 +535,7 @@ pub fn left_beyond_a_fetch(
             )),
         }
     }
-    Ok(crate::codelink::held::marked(left))
+    crate::codelink::held::marked(left)
 }
 
 /// **Chat `number` no longer runs where it was kept** (#4590): no restart asks for it, and its

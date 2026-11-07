@@ -94,8 +94,8 @@ fn only_looked(config: &std::path::Path) -> bool {
 }
 
 /// A runner that holds nothing a fetch does not bring.
-fn nothing_held(_: &ToARunner) -> Result<Option<Held>, String> {
-    Ok(Some((Vec::new(), Vec::new())))
+fn nothing_held(_: &ToARunner) -> Result<Vec<String>, String> {
+    Ok(Vec::new())
 }
 
 fn names(machine: &Machine) -> Vec<String> {
@@ -160,19 +160,10 @@ fn a_draining_runner_holding_work_no_fetch_brings_stays_and_the_pools_group_says
     let machine = a_machine(config.path());
     a_pool_draining(&machine);
     let project = "01J9PRJCT00000000000000000";
-    let holds_work = |_: &ToARunner| -> Result<Option<Held>, String> {
-        Ok(Some((
-            vec![purlis_core::codelink::held::Held {
-                project: project.to_owned(),
-                path: String::new(),
-                refs: vec![purlis_core::codelink::Ref {
-                    name: "refs/stash".to_owned(),
-                    oid: "0123456789abcdef0123456789abcdef01234567".to_owned(),
-                }],
-                changed: Vec::new(),
-            }],
-            Vec::new(),
-        )))
+    let holds_work = |_: &ToARunner| -> Result<Vec<String>, String> {
+        Ok(vec![format!(
+            "work of a project no folder on this machine holds, which the runner keeps as {project}"
+        )])
     };
 
     let said = follow_and_drain(&machine, None, &|_| Ok(0), &holds_work);
@@ -195,17 +186,16 @@ fn a_draining_runner_holding_work_no_fetch_brings_stays_and_the_pools_group_says
     assert_eq!(left_on(&machine.config, "first"), Vec::<String>::new());
 }
 
-/// A runner too old to list what it holds goes as it did before purlis could ask, and one
-/// removed outside purlis since a look found work on it is said no more.
+/// What a look found on a runner that then holds nothing more is said no more.
 #[test]
-fn a_draining_runner_too_old_to_list_what_it_holds_goes_as_before() {
+fn a_draining_runner_that_lists_again_and_holds_nothing_goes_and_is_said_no_more() {
     let config = tempfile::tempdir().unwrap();
     let machine = a_machine(config.path());
     a_pool_draining(&machine);
     follow_and_drain(&machine, None, &|_| Ok(0), &|_| Err("down".into()));
     assert_eq!(left_on(&machine.config, "first").len(), 1);
 
-    let said = follow_and_drain(&machine, None, &|_| Ok(0), &|_| Ok(None));
+    let said = follow_and_drain(&machine, None, &|_| Ok(0), &nothing_held);
 
     assert_eq!(names(&machine), ["first-fedcba98"], "{said:?}");
     assert_eq!(left_on(&machine.config, "first"), Vec::<String>::new());

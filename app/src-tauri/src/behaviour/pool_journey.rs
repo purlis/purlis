@@ -639,8 +639,21 @@ fn in_the_journey(
     // Follow an update: new chats start on a runner of the new image, the old one keeps its
     // chat until it ends, and then it is removed and its sign-ins follow.
     let chats_on = |to: &ToARunner| crate::runnerlinks::chats_on(to);
-    let held_on = |to: &ToARunner| crate::runnerlinks::repos_held_on(to);
-    let said = crate::poolfollow::follow_and_drain(machine, Some(next), &chats_on, &held_on);
+    // What the runner holds is proved against this project's folder, as a window's own drain
+    // proves it against each project the machine knows.
+    let root = target.root.clone();
+    let left_on = |to: &ToARunner| {
+        crate::runnerlinks::repos_held_on(to).and_then(|listed| {
+            crate::runnerlinks::left_of(listed, |held, unread| {
+                Ok(purlis_core::pools::left_beyond_a_fetch_in(
+                    &[root.as_path()],
+                    held,
+                    unread,
+                ))
+            })
+        })
+    };
+    let said = crate::poolfollow::follow_and_drain(machine, Some(next), &chats_on, &left_on);
     assert!(
         said.iter()
             .any(|line| line.contains("starts its new chats on runner")),
@@ -705,7 +718,7 @@ fn in_the_journey(
     target.sessions.close(old_chat).expect("it closes");
     let deadline = Instant::now() + LONG;
     let said = loop {
-        let said = crate::poolfollow::follow_and_drain(machine, None, &chats_on, &held_on);
+        let said = crate::poolfollow::follow_and_drain(machine, None, &chats_on, &left_on);
         if said.iter().any(|line| line.contains("had no chat left")) {
             break said;
         }
@@ -762,7 +775,7 @@ fn in_the_journey(
     let deadline = Instant::now() + LONG;
     let mut image = Some(first);
     loop {
-        let said = crate::poolfollow::follow_and_drain(machine, image, &chats_on, &held_on);
+        let said = crate::poolfollow::follow_and_drain(machine, image, &chats_on, &left_on);
         if said.iter().any(|line| line.contains("had no chat left")) {
             break;
         }
@@ -793,7 +806,7 @@ fn in_the_journey(
     step("a runner with only its home left");
     // A drain began and took its container, and not its home volume (#4298). Nothing is left to
     // ask, so a look only removes what is left.
-    crate::poolfollow::follow_and_drain(machine, Some(next), &|_| Ok(1), &held_on);
+    crate::poolfollow::follow_and_drain(machine, Some(next), &|_| Ok(1), &left_on);
     let draining = purlis_core::runners::draining(&machine.config).expect("read");
     let old = draining.first().expect("the old runner drains");
     let locked = purlis_core::runners::lock(&machine.config);
@@ -908,8 +921,21 @@ mod a_window_started_again {
         step("a chat starts on the pool's runner");
         let on_the_old = a_chat_that_answers("on the old");
         let chats_on = |to: &ToARunner| crate::runnerlinks::chats_on(to);
-        let held_on = |to: &ToARunner| crate::runnerlinks::repos_held_on(to);
-        let said = crate::poolfollow::follow_and_drain(&machine, Some(&next), &chats_on, &held_on);
+        // What the runner holds is proved against this project's folder, as a window's own drain
+        // proves it against each project the machine knows.
+        let root = target.root.clone();
+        let left_on = |to: &ToARunner| {
+            crate::runnerlinks::repos_held_on(to).and_then(|listed| {
+                crate::runnerlinks::left_of(listed, |held, unread| {
+                    Ok(purlis_core::pools::left_beyond_a_fetch_in(
+                        &[root.as_path()],
+                        held,
+                        unread,
+                    ))
+                })
+            })
+        };
+        let said = crate::poolfollow::follow_and_drain(&machine, Some(&next), &chats_on, &left_on);
         assert_eq!(
             crate::poolfollow::waiting_on(&machine.config, &pool),
             1,
@@ -941,7 +967,7 @@ mod a_window_started_again {
         back.close(on_the_old).expect("it closes");
         let deadline = Instant::now() + LONG;
         while crate::poolfollow::waiting_on(&machine.config, &pool) > 0 {
-            let said = crate::poolfollow::follow_and_drain(&machine, None, &chats_on, &held_on);
+            let said = crate::poolfollow::follow_and_drain(&machine, None, &chats_on, &left_on);
             assert!(Instant::now() < deadline, "it never drained: {said:?}");
             std::thread::sleep(Duration::from_secs(1));
         }
@@ -950,7 +976,7 @@ mod a_window_started_again {
             .expect("read")
             .is_empty()
         {
-            let said = crate::poolfollow::follow_and_drain(&machine, None, &chats_on, &held_on);
+            let said = crate::poolfollow::follow_and_drain(&machine, None, &chats_on, &left_on);
             assert!(Instant::now() < deadline, "it was never removed: {said:?}");
             std::thread::sleep(Duration::from_secs(1));
         }

@@ -81,7 +81,7 @@ async fn drained<R: Runtime>(app: &tauri::AppHandle<R>, config: &std::path::Path
             &machine,
             None,
             &|to| crate::runnerlinks::chats_on(to),
-            &|to| crate::runnerlinks::repos_held_on(to),
+            &|to| crate::runnerlinks::left_on(to, &machine.config),
         ))
     })
     .await;
@@ -122,7 +122,7 @@ async fn look<R: Runtime>(app: &tauri::AppHandle<R>, config: &std::path::Path) {
             &machine,
             image.as_ref(),
             &|to| crate::runnerlinks::chats_on(to),
-            &|to| crate::runnerlinks::repos_held_on(to),
+            &|to| crate::runnerlinks::left_on(to, &machine.config),
         ))
     })
     .await;
@@ -340,9 +340,6 @@ pub fn left_on(config: &std::path::Path, pool: &str) -> Vec<String> {
 }
 
 #[cfg(unix)]
-pub use crate::runnerlinks::Held;
-
-#[cfg(unix)]
 fn lock_left() -> std::sync::MutexGuard<'static, std::collections::BTreeMap<Waiting, Vec<String>>> {
     static LEFT: std::sync::Mutex<std::collections::BTreeMap<Waiting, Vec<String>>> =
         std::sync::Mutex::new(std::collections::BTreeMap::new());
@@ -372,7 +369,7 @@ pub fn follow_and_drain(
     machine: &Machine,
     image: Option<&Image>,
     chats_on: &dyn Fn(&ToARunner) -> Result<u32, String>,
-    held_on: &dyn Fn(&ToARunner) -> Result<Option<Held>, String>,
+    left_on: &dyn Fn(&ToARunner) -> Result<Vec<String>, String>,
 ) -> Vec<String> {
     let mut said = Vec::new();
     if let Some(image) = image {
@@ -578,13 +575,7 @@ pub fn follow_and_drain(
         // home as a fresh runner's is. What is not stays on it, with the runner, and the Pools
         // group says so.
         if !kept.unpaired && runs {
-            // A runner too old to list what it holds goes as it did before it could.
-            let left = held_on(&to).and_then(|listed| {
-                listed.map_or(Ok(Vec::new()), |(held, unread)| {
-                    purlis_core::pools::left_beyond_a_fetch(&machine.config, &held, &unread)
-                })
-            });
-            let left = match left {
+            let left = match left_on(&to) {
                 Ok(left) => left,
                 Err(why) => vec![format!("it did not list what it holds: {why}")],
             };

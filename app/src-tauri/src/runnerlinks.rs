@@ -710,6 +710,24 @@ pub fn repos_held_on(to: &ToARunner) -> Result<Option<Held>, String> {
     .map_err(|why| crate::devices::shown_safely(&why))
 }
 
+/// **What the runner `to` holds that no fetch brings here** (ruled 2026-11-07), in sentences,
+/// each project found among those this machine knows in `config`
+/// ([`purlis_core::pools::left_beyond_a_fetch`]). Why, where it did not list.
+pub fn left_on(to: &ToARunner, config: &std::path::Path) -> Result<Vec<String>, String> {
+    left_of(repos_held_on(to)?, |held, unread| {
+        purlis_core::pools::left_beyond_a_fetch(config, held, unread)
+    })
+}
+
+/// What `prove` finds of what a runner `listed`: nothing from a runner too old to list what it
+/// holds, which goes as it did before it could.
+pub(crate) fn left_of(
+    listed: Option<Held>,
+    prove: impl FnOnce(&[purlis_core::codelink::held::Held], &[String]) -> Result<Vec<String>, String>,
+) -> Result<Vec<String>, String> {
+    listed.map_or(Ok(Vec::new()), |(held, unread)| prove(&held, &unread))
+}
+
 /// **A profile a runner kept**: whether it is signed in there.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProfileKept {
