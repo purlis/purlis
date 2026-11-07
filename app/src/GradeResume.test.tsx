@@ -81,10 +81,10 @@ describe("Resume, beside Grade again (#5718)", () => {
     const at = new Date("2026-11-08T14:00:00").toISOString();
     expect(resetSaid(at, now)).toBe("14:00");
     const waiting = { ...PLAN, waits_until: at };
-    expect(resumeLabel(waiting, now)).toBe("Resume after your limit resets at 14:00");
+    expect(resumeLabel(waiting, now)).toBe("Resume after your limit resets at 14:00…");
     const fix = resumeFix(waiting, () => {}, now);
     expect(fix?.off).toBe("Your usage limit resets at 14:00; Resume can run then.");
-    expect(resumeFix(PLAN, () => {}, now)).toMatchObject({ label: "Resume", off: undefined });
+    expect(resumeFix(PLAN, () => {}, now)).toMatchObject({ label: "Resume…", off: undefined });
   });
 
   it("is not offered where something that decides the result changed", () => {
@@ -114,7 +114,7 @@ describe("Resume, beside Grade again (#5718)", () => {
         onResumed={resumed}
       />,
     );
-    fireEvent.click(await screen.findByRole("button", { name: "Resume" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Resume…" }));
     const question = await screen.findByRole("alertdialog", {
       name: "Resume the grade of deploy?",
     });
@@ -151,7 +151,7 @@ describe("Resume, beside Grade again (#5718)", () => {
       "its tests changed since it stopped",
     );
     expect(screen.getByRole("button", { name: "Grade again" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Resume…" })).toBeNull();
   });
 
   it("asks nothing of a grade that finished", async () => {

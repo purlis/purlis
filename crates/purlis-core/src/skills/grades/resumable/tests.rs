@@ -257,3 +257,42 @@ fn the_plan_of_a_resume_is_the_chats_left_at_what_each_spent_so_far() {
     assert_eq!(plan.cap.tokens, 200_000);
     assert_eq!(plan.earlier.tokens, Some(2_500));
 }
+
+#[test]
+fn a_chat_that_never_started_is_no_share_of_what_a_resume_would_spend() {
+    let mut kept = stopped("01GRADE");
+    kept.kept.triggers[0][1].push(ChatRan {
+        tokens: None,
+        cost_usd: None,
+        end: ChatEnd::NotStarted {
+            why: "the profile is signed out".into(),
+        },
+        ..ran(ChatEnd::Turn, 0)
+    });
+    let plan = plan(
+        &kept,
+        cap::Cap {
+            tokens: 200_000,
+            from: cap::From::Default,
+        },
+    );
+    // The same 2,500 over the same three chats that started, for the four left.
+    assert_eq!(plan.left, 4);
+    assert_eq!(plan.tokens_left, Some(3_334));
+}
+
+#[test]
+fn a_drafts_stopped_grade_is_kept_with_the_draft_it_graded_and_read_back() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut of_draft = stopped("01DRAFTGRADE");
+    of_draft.draft = Some(draft::Mark {
+        id: "01MINT".into(),
+        digest: "d".repeat(64),
+        chats: 6,
+    });
+    of_draft.draft_of = Some("01DRAFT".into());
+    keep(tmp.path(), &of_draft).unwrap();
+    let read = of(tmp.path(), "01DRAFTGRADE").unwrap();
+    assert_eq!(read.draft_of.as_deref(), Some("01DRAFT"));
+    assert_eq!(read.draft.map(|mark| mark.id), Some("01MINT".to_owned()));
+}

@@ -236,7 +236,9 @@ export function bothRunsSaid(spent: GradeScorecard["spent"]): string | null {
     spent.cost_usd !== null && spent.earlier_usd !== null
       ? ` · this run ${dollarsSaid(Math.max(0, spent.cost_usd - spent.earlier_usd))}`
       : "";
-  return `both runs${now}`;
+  // Its limit held this run alone, so it is said of this run.
+  const limit = spent.limit_usd === null ? "" : ` of ${dollarsSaid(spent.limit_usd)}`;
+  return `both runs${now}${now === "" ? "" : limit}`;
 }
 
 /** Whether a grade that ended so may have a resume to offer (#5718): it stopped short. */
@@ -393,7 +395,9 @@ export function GradeScorecardPage({
             value={it.spent.cost_usd === null ? "Not said" : dollarsSaid(it.spent.cost_usd)}
             line={[
               bothRunsSaid(it.spent),
-              it.spent.limit_usd === null ? null : `of ${dollarsSaid(it.spent.limit_usd)}`,
+              it.spent.limit_usd === null || it.spent.resumed
+                ? null
+                : `of ${dollarsSaid(it.spent.limit_usd)}`,
               counted(it.spent.chats, "chat", "chats"),
             ]
               .filter((one) => one !== null)

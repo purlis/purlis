@@ -355,7 +355,7 @@ const ENDED_SAID: Record<GradeEnded, string> = {
   "over-limit": "Stopped at its own limit",
   "spend-not-reported": "Its chats did not say what they spent",
   failed: "A fault in purlis ended it",
-  "usage-limit": "Stopped at the program's usage limit",
+  "usage-limit": "Stopped: the program's usage limit was reached",
   unreachable: "Stopped: network unreachable",
 };
 

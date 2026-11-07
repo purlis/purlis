@@ -1353,14 +1353,16 @@ fn a_turn_an_error_ended_says_which_kind_by_the_harnesses_own_category() {
         failed(Event::StopFailure, Some("rate_limit")),
         Some(Failed::UsageLimit)
     );
-    for error in ["server_error", "overloaded"] {
-        assert_eq!(
-            failed(Event::StopFailure, Some(error)),
-            Some(Failed::Unreachable),
-            "{error}"
-        );
-    }
-    for error in [Some("authentication_failed"), Some("billing_error"), None] {
+    assert_eq!(
+        failed(Event::StopFailure, Some("server_error")),
+        Some(Failed::Unreachable)
+    );
+    for error in [
+        Some("overloaded"),
+        Some("authentication_failed"),
+        Some("billing_error"),
+        None,
+    ] {
         assert_eq!(failed(Event::StopFailure, error), Some(Failed::Other));
     }
     assert_eq!(

@@ -77,9 +77,22 @@ impl Stopped {
     }
 
     /// **The chats it ran, counted as an estimate shares what it spent over** (#5718): each
-    /// trigger test's chat it asked for, and each outcome eval's and its judge's.
+    /// trigger test's chat that started (one that never started spent nothing), and each outcome
+    /// eval's and its judge's.
     fn asked(&self) -> u64 {
-        let tests: usize = self.kept.triggers.iter().flatten().map(Vec::len).sum();
+        let tests = self
+            .kept
+            .triggers
+            .iter()
+            .flatten()
+            .flatten()
+            .filter(|one| {
+                !matches!(
+                    one.end,
+                    grade::ChatEnd::NotStarted { .. } | grade::ChatEnd::NotHeld { .. }
+                )
+            })
+            .count();
         let evals: u64 = self
             .kept
             .outcomes

@@ -29,8 +29,8 @@ that changed is refused (its consent, §4). The resumed report's spend is both r
 the earlier run's kept beside it (`report.earlier`), and the scorecard shows both.
 
 **A stop says why.** Two ends join §3's: `usage-limit` and `unreachable`, told by the harness's
-own hook (Claude Code's `StopFailure`, by its error's category: `rate_limit`, and `server_error` or
-`overloaded`), never read from what a chat printed (ADR 0076). The scorecard says "Stopped at the
+own hook (Claude Code's `StopFailure`, by its error's category: `rate_limit`, and `server_error`,
+which it names a lost connection by), never read from what a chat printed (ADR 0076). The scorecard says "Stopped at the
 token cap", "Stopped: Claude Code's usage limit was reached", "Stopped: network unreachable" or
 "Stopped by you". Where the program said when its limit resets (its status line's `rate_limits`,
 a window used up and its `resets_at`), the grade records it, and Resume says it and waits for it.

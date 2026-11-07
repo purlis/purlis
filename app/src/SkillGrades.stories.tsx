@@ -666,7 +666,7 @@ const STOPPED_CARD: GradeScorecard = {
 export const ScorecardOffersResume: Story = {
   args: { grading: { at: "scorecard", grade: "01B" }, card: STOPPED_CARD, resume: RESUME },
   play: async ({ canvas }) => {
-    const resume = await canvas.findByRole("button", { name: "Resume" });
+    const resume = await canvas.findByRole("button", { name: "Resume…" });
     await expect(canvas.getByRole("button", { name: "Grade again" })).toBeInTheDocument();
     await tabInto(() => resume);
     expectFocusInSight();
@@ -704,7 +704,7 @@ export const ScorecardResumeWaitsForTheLimit: Story = {
   },
   play: async ({ canvas }) => {
     const resume = await canvas.findByRole("button", {
-      name: /^Resume after your limit resets at /,
+      name: /^Resume after your limit resets at .*…$/,
     });
     await expect(resume).toHaveAttribute("aria-disabled", "true");
     await tabInto(() => resume);
@@ -729,7 +729,7 @@ export const ScorecardResumeNotOffered: Story = {
     await expect(await canvas.findByTestId("grade-scorecard-resume-refused")).toHaveTextContent(
       "the skill's text changed since it stopped",
     );
-    await expect(canvas.queryByRole("button", { name: "Resume" })).toBeNull();
+    await expect(canvas.queryByRole("button", { name: "Resume…" })).toBeNull();
     await tabInto(() => canvas.getByRole("button", { name: "Grade again" }));
     expectFocusInSight();
   },

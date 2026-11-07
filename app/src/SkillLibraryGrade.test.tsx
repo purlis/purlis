@@ -20,7 +20,7 @@ import type {
   SkillGradesStep,
   StudioSkill,
 } from "./bindings";
-import { estimateSaid } from "./SkillLibraryGrade";
+import { estimateSaid, stoppedShortOf } from "./SkillLibraryGrade";
 import { forgetStudio, PLANE, renderStudio } from "./SkillStudioTab.testkit";
 import { AT_THE_ROOT } from "./skillStudio";
 import { skill } from "./skillsListing.testkit";
@@ -275,5 +275,42 @@ describe("what the estimate says", () => {
     expect(estimateSaid({ ...PLAN, known: 0, known_usd: 0 })).toBe(
       "purlis has nothing to go on: none of these has a last grade that said what it spent.",
     );
+  });
+});
+
+describe("Resume in the Library's Select mode (#5718)", () => {
+  const one = (
+    name: string,
+    ended: SkillGradesStep["skills"][number]["ended"],
+    grade: string | null,
+    state: SkillGradesStep["skills"][number]["state"] = { state: "ended" },
+  ): SkillGradesStep["skills"][number] => ({
+    level: { at: "project", local: false },
+    name,
+    state,
+    grade,
+    ran: 3,
+    of: 12,
+    cost_usd: 0.2,
+    ended,
+  });
+
+  it("offers to resume each grade that stopped short, and none that finished or never ran", () => {
+    const step: SkillGradesStep = {
+      plane: PLANE,
+      batch: "b1",
+      limit_usd: 2,
+      spent_usd: 2.1,
+      skills: [
+        one("deploy", "whole", "g1"),
+        one("lint", "stopped", "g2"),
+        one("review", "usage-limit", "g3"),
+        one("tidy", null, null, { state: "not-run", why: "The limit was reached first." }),
+        one("crashed", "failed", "g5"),
+      ],
+      ended: "limit",
+    };
+    expect(stoppedShortOf(step)).toEqual(["g2", "g3"]);
+    expect(stoppedShortOf(undefined)).toEqual([]);
   });
 });

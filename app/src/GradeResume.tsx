@@ -36,14 +36,14 @@ export function resetSaid(at: string, now: Date = new Date()): string {
 /** **The Resume button's words**: when it can run, where the program said (ruling 4). */
 export function resumeLabel(plan: SkillGradeResumePlan, now: Date = new Date()): string {
   return plan.waits_until === null
-    ? "Resume"
-    : `Resume after your limit resets at ${resetSaid(plan.waits_until, now)}`;
+    ? "Resume…"
+    : `Resume after your limit resets at ${resetSaid(plan.waits_until, now)}…`;
 }
 
 /** **What resuming would run and spend**, in the operator's words (ruling 3): `About 40,000
  *  tokens left to run; cap 200,000.` */
 export function leftSaid(plan: SkillGradeResumePlan): string {
-  const cap = `cap ${number(plan.token_cap ?? 0)}`;
+  const cap = plan.token_cap === null ? "no cap known" : `cap ${number(plan.token_cap)}`;
   return plan.tokens_left === null
     ? `${counted(plan.left, "chat", "chats")} left to run; what they spend is not known yet; ${cap}.`
     : `About ${number(plan.tokens_left)} tokens left to run; ${cap}.`;
@@ -55,11 +55,11 @@ export function earlierSaid(plan: SkillGradeResumePlan): string {
     plan.earlier_tokens === null ? null : tokensSaid(plan.earlier_tokens),
     plan.earlier_usd === null ? null : dollarsSaid(plan.earlier_usd),
   ].filter((part) => part !== null);
-  const so_far =
+  const soFar =
     spent.length === 0
       ? "What it spent so far was not said"
       : `It spent ${spent.join(", ")} so far`;
-  return `${so_far}. The resumed grade's scorecard shows both runs, and what they spent together.`;
+  return `${soFar}. The resumed grade's scorecard shows both runs, and what they spent together.`;
 }
 
 /** **The way on Resume gives a stopped grade's end**, or none where it is not offered. */
@@ -112,7 +112,7 @@ export function ResumeQuestion({
       .catch((err: unknown) => setRefused(String(err)))
       .finally(() => setBusy(false));
   };
-  const on = plan.model === null ? plan.profile : `${plan.profile ?? ""}, ${plan.model}`;
+  const on = [plan.profile, plan.model].filter((one) => one !== null).join(", ");
   return (
     <AlertDialog
       onClose={onClose}
@@ -121,7 +121,7 @@ export function ResumeQuestion({
         <>
           <p data-testid="grade-resume-left">{leftSaid(plan)}</p>
           <p>
-            {`${plan.ended}. Resume runs only the cases it did not finish, on ${on ?? "the same profile"}, and keeps what ran. It stops at its cap or at ${dollarsSaid(plan.limit_usd ?? 0)}, whichever comes first.`}
+            {`${plan.ended}. Resume runs only the cases it did not finish, on ${on === "" ? "the same profile" : on}, and keeps what ran. ${plan.limit_usd === null ? "It stops at its cap." : `It stops at its cap or at ${dollarsSaid(plan.limit_usd)}, whichever comes first.`}`}
           </p>
           <p data-testid="grade-resume-earlier">{earlierSaid(plan)}</p>
           {refused !== null && (

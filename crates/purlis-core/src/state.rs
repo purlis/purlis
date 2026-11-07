@@ -197,10 +197,11 @@ pub struct Detail {
 pub enum Failed {
     /// Its usage limit was reached (`rate_limit`).
     UsageLimit,
-    /// It could not reach its service, or the service did not answer (`server_error`, which
-    /// Claude Code names a connection's failure too, and `overloaded`).
+    /// It could not reach its service (`server_error`, which Claude Code names a connection's
+    /// failure by).
     Unreachable,
-    /// Any other: a sign-in, a bill, a request it refused, or one purlis does not know.
+    /// Any other: a service at capacity, a sign-in, a bill, a request it refused, or one purlis
+    /// does not know.
     Other,
 }
 
@@ -209,7 +210,7 @@ impl Failed {
     pub fn of(error: Option<&str>) -> Self {
         match error {
             Some("rate_limit") => Self::UsageLimit,
-            Some("server_error" | "overloaded") => Self::Unreachable,
+            Some("server_error") => Self::Unreachable,
             _ => Self::Other,
         }
     }
