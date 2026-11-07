@@ -697,7 +697,7 @@ fn the_studio_says_which_router_its_chats_are_routed_by() {
          the chat starts is chosen beside Whose chats, at the top."
     );
     // #4227: that clone is a place to preview a chat in, with its own line.
-    let places = studio(root, None, true, Some("alpha"), None, &no_harness()).places;
+    let places = studio(root, None, Some("alpha"), None, &no_harness()).places;
     assert_eq!(
         places,
         [StudioClone {
@@ -709,7 +709,7 @@ fn the_studio_says_which_router_its_chats_are_routed_by() {
         }]
     );
     assert!(
-        studio(root, None, true, None, None, &no_harness())
+        studio(root, None, None, None, &no_harness())
             .places
             .is_empty(),
         "a chat at the project's root is in no workspace's clone"
