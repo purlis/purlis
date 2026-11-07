@@ -1040,8 +1040,8 @@ export function StartChat({
                   {sandbox.install !== null && (
                     <p className="honest">
                       Install it with <code>{sandbox.install}</code>. It needs sudo, so purlis types
-                      it in a shell tab and leaves running it to you.{" "}
-                      {onInstall && <Button onPress={onInstall}>Type it in a shell tab</Button>}
+                      it in a shell and leaves running it to you.{" "}
+                      {onInstall && <Button onPress={onInstall}>Type it in a shell</Button>}
                     </p>
                   )}
                 </>

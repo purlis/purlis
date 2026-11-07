@@ -1355,6 +1355,10 @@ export const commands = {
 	 * 
 	 *  The window's alone: what waits on the person, dispatches and refused hosts included, is
 	 *  never a link's to read, as `dispatch_grants_needed` is not.
+	 * 
+	 *  Read off the window's thread (#5582): it reads the project's files (its locks, sign-ins and
+	 *  removals, and each waiting persona's tools), and the window asks it on every burst of moves.
+	 *  Two reads may answer out of order, and the window draws only the newest (`asks.ts`).
 	 */
 	asksWaiting: (plane: PlaneId) => typedError<Asking, string>(__TAURI_INVOKE("asks_waiting", { plane })),
 	/**
@@ -3495,6 +3499,19 @@ export const commands = {
 	 *  sentence, for a path any file command would refuse and for a file the branch did not change.
 	 */
 	whatChanged: (plane: PlaneId, workspace: string, repo: string, piece: string | null, path: string) => typedError<WhatChanged, string>(__TAURI_INVOKE("what_changed", { plane, workspace, repo, piece, path })),
+	discardHunk: (plane: PlaneId, workspace: string, repo: string, piece: string | null, path: string, target: DiscardTarget, against: DiscardAgainst, busyToo: boolean, turn: {
+	chat: string,
+	number: number,
+} | null) => typedError<DiscardAnswer, string>(__TAURI_INVOKE("discard_hunk", { plane, workspace, repo, piece, path, target, against, busyToo, turn })),
+	undoTurn: (plane: PlaneId, workspace: string, repo: string, piece: string | null, turn: TurnPick) => typedError<UndoAnswer, string>(__TAURI_INVOKE("undo_turn", { plane, workspace, repo, piece, turn })),
+	/**
+	 *  One file of a branch across a turn that ended there, the latest when `turn` is null, or why
+	 *  there is none.
+	 */
+	turnChanged: (plane: PlaneId, workspace: string, repo: string, piece: string | null, path: string, turn: {
+	chat: string,
+	number: number,
+} | null) => typedError<TurnChanged, string>(__TAURI_INVOKE("turn_changed", { plane, workspace, repo, piece, path, turn })),
 	/**
 	 *  The folders of branches this window's explorer has expanded, watched until it names others
 	 *  (FM-1). A folder that does not resolve — gone, or refused as the tree refuses it — is not
@@ -6359,6 +6376,13 @@ export type BusNotice = {
 	can_restart: boolean,
 };
 
+/**  A chat working in the folder that is not idle. */
+export type BusyChat = {
+	name: string,
+	/**  Its state, as a sentence ends: "is running". */
+	state: string,
+};
+
 /**
  *  A harness the operator started by hand in a shell tab, as the window draws its banner.
  * 
@@ -6919,6 +6943,68 @@ export type ChatsRunOn = {
 	pools: string[],
 };
 
+/**
+ *  A Check reporter whose last answer could not be recorded: what the review says in a Notice
+ *  naming it (#5410). The results before it stay.
+ */
+export type CheckFault = {
+	/**  The extension, by its id. */
+	extension: string,
+	/**  What was wrong, in the core's sentence, naming it. */
+	said: string,
+};
+
+/**  One result of a check. */
+export type CheckResult = {
+	tool: string,
+	outOfDate: boolean,
+	severity: CheckSeverity,
+	/**
+	 *  The file as the tool named it, relative to the branch's folder where it could be placed
+	 *  there; `null` for a result on no file.
+	 */
+	path: string | null,
+	/**  Its first line, from 1; `null` for a result on the file as a whole. */
+	line: number | null,
+	/**  The first of its lines a hunk shows, where one does: where the gutter marks it. */
+	shownAt: number | null,
+	rule: string | null,
+	message: string,
+};
+
+/**
+ *  A branch's check results as one file of its comparison shows them. Every result is in a list or
+ *  counted past it.
+ */
+export type CheckResults = {
+	sets: CheckSet[],
+	/**  On a line a hunk shows. */
+	onLines: CheckResult[],
+	/**  In this file, on no line a hunk shows. */
+	outside: CheckResult[],
+	/**  In any other file, or in none. */
+	elsewhere: CheckResult[],
+	moreOnLines: number,
+	moreOutside: number,
+	moreElsewhere: number,
+	/**  Why they could not be read, where they could not. */
+	trouble: string | null,
+	/**  Each Check reporter whose last answer could not be recorded, for the whole branch (#5410). */
+	faults: CheckFault[],
+};
+
+/**  One tool's results for a branch, and whether the branch has moved since they were reported. */
+export type CheckSet = {
+	tool: string,
+	/**  The commit they were reported for; `null` for a branch with no commit then. */
+	head: string | null,
+	outOfDate: boolean,
+	results: number,
+};
+
+/**  How much a check result matters, in SARIF's words. */
+export type CheckSeverity = "error" | "warning" | "note" | "none";
+
 /**  One child agent of a chat, as the window draws it under the chat (ADR 0066, ADR 0076 §6). */
 export type ChildAgent = {
 	/**  The harness's id for it, unique within the chat. */
@@ -7238,6 +7324,32 @@ export type DiagnosticsHere = {
 	 */
 	hot: number,
 };
+
+/**  What a discard is checked against. */
+export type DiscardAgainst = 
+/**  The stamp the diff came with: the file must still be as it was drawn. */
+{ kind: "opened"; stamp: string } | 
+/**  The operator's Overwrite: the file is written as it was drawn, less the hunk. */
+{ kind: "overwrite"; head: string | null };
+
+/**  What a discard came to. */
+export type DiscardAnswer = 
+/**
+ *  It is written. `now` is the file's diff without the hunk, or `null` when nothing of its
+ *  change is left to draw; `unrecorded` says why the log did not take it, if it did not.
+ */
+{ kind: "discarded"; now: WhatChanged | null; unrecorded: string | null } | 
+/**  Nothing was written: these chats are not idle, and the choice is the operator's. */
+{ kind: "busy"; chats: BusyChat[] } | 
+/**  Nothing was written: the file changed on disk since the diff was drawn. */
+{ kind: "stale" };
+
+/**  What of the file's change a discard puts back. */
+export type DiscardTarget = 
+/**  One hunk of a text file, as the diff drew it. */
+{ kind: "hunk"; hunk: GitHunk } | 
+/**  A binary file's change, whole. */
+{ kind: "whole" };
 
 /**  **The disk each pool's runners hold**, as the use table says it (#3493). */
 export type DiskHeld = 
@@ -9530,6 +9642,15 @@ export type InForce = {
 	/**  `default`, `shared` or `local`. */
 	source: string,
 };
+
+/**  What one turn did to one file. */
+export type InTurn = 
+/**  The turn changed no file at all. */
+{ kind: "nothing" } | 
+/**  The turn changed other files and left this one as it found it. */
+{ kind: "not-this-file" } | 
+/**  The file, compared across the turn. */
+{ kind: "changed"; shown: WhatChanged };
 
 /**  One update, as the window draws it. */
 export type InboxUpdate = {
@@ -17360,6 +17481,37 @@ export type TodoView = {
 	body: string,
 };
 
+/**  One file across one turn on a branch: the file diff's turn picker (#5405, #5408). */
+export type TurnChanged = 
+/**  No turn to show, and why, in a sentence. */
+{ kind: "no-turn"; why: string } | 
+/**
+ *  The file across turn `number` of `chat`, and that chat's turns on the branch, newest
+ *  first: what the picker lists.
+ */
+{ kind: "of"; chat: string; number: number; turns: number[]; file: InTurn; 
+/**
+ *  Where this turn is the one Undo is offered on, the latest not yet undone: every path
+ *  the undo would write, which its confirmation lists (#5411). `null` on any other.
+ */
+undo: string[] | null };
+
+/**  A turn the picker names: a chat's id and the turn's number. */
+export type TurnPick = {
+	chat: string,
+	number: number,
+};
+
+/**  What an undo came to. */
+export type UndoAnswer = 
+/**
+ *  Every file is back. `unrecorded` says why the log did not take it, `unmarked` why the turn
+ *  is not marked undone, if either.
+ */
+{ kind: "undone"; unrecorded: string | null; unmarked: string | null } | 
+/**  Nothing was written: these chats are not idle, and an undo waits until they are. */
+{ kind: "busy"; chats: BusyChat[] };
+
 /**
  *  Why a vault read through an identity variable could not be read: the core's own sentence,
  *  which holds names and never a value, and what kind of failure it is.
@@ -17874,6 +18026,15 @@ export type WhatChanged = {
 	/**  The branch it is compared against; `null` when against the last commit. */
 	base: string | null,
 	diff: FileDiff,
+	/**  What a discard of a hunk here is checked against (`null` for a file past what is drawn). */
+	stamp: string | null,
+	/**  The branch's check results as this file shows them (ADR 0117). */
+	checks: CheckResults,
+	/**
+	 *  On a turn's diff, that the file changed since the turn ended: it is drawn from the turn's
+	 *  start to the file as it is now (#5411).
+	 */
+	sinceTurnEnded: boolean,
 };
 
 /**

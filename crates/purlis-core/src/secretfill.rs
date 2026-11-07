@@ -135,49 +135,127 @@ fn a_cards(ctx: &Ctx, vault: &str, key: &str) -> bool {
 /// secret-fill line, so no program is offered it. Read as [`a_cards`] reads, failing closed: as
 /// written, in any case, and through a linked entry either way.
 pub fn a_browsers(ctx: &Ctx, vault: &str, key: &str) -> bool {
-    held_by_lines(ctx, vault, key, |tool| {
-        if tool.contains_key(crate::sandbox::tools::login::KEY) {
-            vec!["key", crate::sandbox::tools::login::USER_KEY]
-        } else if tool.contains_key("fill") {
-            vec!["key"]
-        } else {
-            Vec::new()
-        }
-    })
+    held_by_lines(ctx, vault, key, browsers_names)
+}
+
+/// The keys of a tool line that a browser is handed: a login's password and user name, or a
+/// secret-fill line's key.
+fn browsers_names(tool: &toml::Table) -> Vec<&'static str> {
+    if tool.contains_key(crate::sandbox::tools::login::KEY) {
+        vec!["key", crate::sandbox::tools::login::USER_KEY]
+    } else if tool.contains_key("fill") {
+        vec!["key"]
+    } else {
+        Vec::new()
+    }
 }
 
 /// **Whether `key` of `vault` is one a `mint` line of any persona's marks** (#5265), read as
 /// [`a_cards`] reads: as written, in any case and through a linked entry either way, failing
 /// closed. A GitHub App's private key is handed to no program a person allows.
 pub fn a_mints(ctx: &Ctx, vault: &str, key: &str) -> bool {
-    held_by_lines(ctx, vault, key, |tool| {
-        if tool.contains_key(mint::KEY) {
-            vec!["key"]
-        } else {
-            Vec::new()
-        }
-    })
+    held_by_lines(ctx, vault, key, mints_names)
 }
 
-/// Whether `key` of `vault` is one that a tool line of any persona's names under one of the keys
-/// `names` picks for it, read from the project's file as written; true where the file or a link
-/// can't be read.
-fn held_by_lines(
-    ctx: &Ctx,
-    vault: &str,
-    key: &str,
+/// The key of a `mint` line: the App's private key.
+fn mints_names(tool: &toml::Table) -> Vec<&'static str> {
+    if tool.contains_key(mint::KEY) {
+        vec!["key"]
+    } else {
+        Vec::new()
+    }
+}
+
+/// **[`a_mints`] and [`a_browsers`] for many keys, the project's file and the links index read
+/// once** (#5582): each key is judged from what was read, as each of those judges one, failing
+/// closed the same way. A line that comes after the read is seen by the next read.
+pub struct HeldByLines {
+    /// `None` where the project's file can't be read or parsed: every key is held.
+    lines: Option<Marked>,
+}
+
+/// What [`HeldByLines`] read.
+struct Marked {
+    mints: Vec<(String, String)>,
+    browsers: Vec<(String, String)>,
+    /// `None` where the links index can't be read: every key a line marks anything for is held.
+    /// Read only where a line marks something, as a judge of one key reads it.
+    links: Option<crate::secrets::links::Index>,
+}
+
+impl HeldByLines {
+    /// Reads the project's file, and the links index where a line marks a key.
+    pub fn read(ctx: &Ctx) -> Self {
+        let lines = project_lines(ctx).ok().map(|top| {
+            let mints = top.as_ref().map(|top| marked_by(top, mints_names));
+            let browsers = top.as_ref().map(|top| marked_by(top, browsers_names));
+            let (mints, browsers) = (mints.unwrap_or_default(), browsers.unwrap_or_default());
+            let links = if mints.is_empty() && browsers.is_empty() {
+                Some(crate::secrets::links::Index::new())
+            } else {
+                crate::secrets::links::every(ctx).ok()
+            };
+            Marked {
+                mints,
+                browsers,
+                links,
+            }
+        });
+        HeldByLines { lines }
+    }
+
+    /// Whether the project's file could not be read or parsed, so nothing is known unmarked.
+    pub fn unreadable(&self) -> bool {
+        self.lines.is_none()
+    }
+
+    /// [`a_mints`], from what was read.
+    pub fn mints(&self, vault: &str, key: &str) -> bool {
+        self.lines
+            .as_ref()
+            .is_none_or(|lines| lines.held(&lines.mints, vault, key))
+    }
+
+    /// [`a_browsers`], from what was read.
+    pub fn browsers(&self, vault: &str, key: &str) -> bool {
+        self.lines
+            .as_ref()
+            .is_none_or(|lines| lines.held(&lines.browsers, vault, key))
+    }
+}
+
+impl Marked {
+    fn held(&self, marked: &[(String, String)], vault: &str, key: &str) -> bool {
+        held_among(
+            marked,
+            &|vault, key| {
+                self.links
+                    .as_ref()
+                    .map(|index| crate::secrets::links::target_in(index, vault, key))
+            },
+            vault,
+            key,
+        )
+    }
+}
+
+/// The project's file, parsed: `Ok(None)` where there is none, and `Err` where it can't be read
+/// or parsed, so nothing is known unmarked.
+fn project_lines(ctx: &Ctx) -> Result<Option<toml::Table>, ()> {
+    match std::fs::read_to_string(crate::names::manifest(&ctx.root)) {
+        Ok(file) => file.parse::<toml::Table>().map(Some).map_err(|_| ()),
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(_) => Err(()),
+    }
+}
+
+/// Every vault and key a tool line of any persona's names under one of the keys `names` picks
+/// for it, as written.
+fn marked_by(
+    top: &toml::Table,
     names: impl Fn(&toml::Table) -> Vec<&'static str>,
-) -> bool {
-    let file = match std::fs::read_to_string(crate::names::manifest(&ctx.root)) {
-        Ok(file) => file,
-        Err(why) if why.kind() == std::io::ErrorKind::NotFound => return false,
-        Err(_) => return true,
-    };
-    let Ok(top) = file.parse::<toml::Table>() else {
-        return true;
-    };
-    let marked: Vec<(String, String)> = top
-        .get("sandbox")
+) -> Vec<(String, String)> {
+    top.get("sandbox")
         .and_then(|it| it.get("personas"))
         .and_then(toml::Value::as_table)
         .into_iter()
@@ -194,14 +272,24 @@ fn held_by_lines(
                 ))
             })
         })
-        .collect();
+        .collect()
+}
+
+/// Whether `key` of `vault` is one of `marked`, in any case and through a link either way, one
+/// hop, as a read follows; true where a link can't be read (`link_of` answers `None`).
+fn held_among(
+    marked: &[(String, String)],
+    link_of: &dyn Fn(&str, &str) -> Option<Option<crate::secrets::links::Target>>,
+    vault: &str,
+    key: &str,
+) -> bool {
     if marked.is_empty() {
         return false;
     }
     // An entry, and the one it reads where it is a link: one hop, as a read follows.
     let entries = |vault: &str, key: &str| -> Option<Vec<(String, String)>> {
         let mut all = vec![(vault.to_owned(), key.to_owned())];
-        if let Some(to) = crate::secrets::links::of(ctx, vault, key).ok()? {
+        if let Some(to) = link_of(vault, key)? {
             all.push((to.vault, to.key));
         }
         Some(all)
@@ -218,6 +306,28 @@ fn held_by_lines(
             .any(|one| asked.iter().any(|two| same(one, two))),
         None => true,
     })
+}
+
+/// Whether `key` of `vault` is one that a tool line of any persona's names under one of the keys
+/// `names` picks for it, read from the project's file as written; true where the file or a link
+/// can't be read.
+fn held_by_lines(
+    ctx: &Ctx,
+    vault: &str,
+    key: &str,
+    names: impl Fn(&toml::Table) -> Vec<&'static str>,
+) -> bool {
+    let top = match project_lines(ctx) {
+        Ok(Some(top)) => top,
+        Ok(None) => return false,
+        Err(()) => return true,
+    };
+    held_among(
+        &marked_by(&top, names),
+        &|vault, key| crate::secrets::links::of(ctx, vault, key).ok(),
+        vault,
+        key,
+    )
 }
 
 /// **The line Always writes for `key` of `vault` on `origin`** in `persona`'s tools, as the

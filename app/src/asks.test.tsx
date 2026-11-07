@@ -634,6 +634,26 @@ describe("the list", () => {
     expect(reads).toBe(before + 1);
   });
 
+  it("keeps the newest read's list when an older read answers after it (#5582)", async () => {
+    // The core reads the list off the window's thread, so two reads may answer out of the
+    // order they were asked in: the older one, answering last, is not drawn over the newer.
+    const answers: ((asks: Shown[]) => void)[] = [];
+    mockIPC((cmd) => {
+      if (cmd !== "asks_waiting") return null;
+      return new Promise((answer) => answers.push((asks) => answer({ plane: PLANE, asks })));
+    });
+    const { result } = renderHook(() => useAsks([PLANE]));
+    await waitFor(() => expect(answers).toHaveLength(1));
+    act(() => result.current.reread(PLANE));
+    await waitFor(() => expect(answers).toHaveLength(2));
+
+    await act(async () => answers[1]([]));
+    await waitFor(() => expect(result.current.held[PLANE]).toEqual([]));
+    await act(async () => answers[0]([HOST]));
+    await new Promise((settle) => setTimeout(settle, 20));
+    expect(result.current.held[PLANE]).toEqual([]);
+  });
+
   it("reads its list under React's StrictMode, which runs its effects twice", async () => {
     mockIPC((cmd) => (cmd === "asks_waiting" ? { plane: PLANE, asks: [HOST] } : null));
     const { result } = renderHook(() => useAsks([PLANE]), { wrapper: StrictMode });

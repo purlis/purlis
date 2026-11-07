@@ -10,7 +10,8 @@
 //! committed; (b) any two refs, from where they meet or exactly; (c) what is not committed,
 //! untracked files included and the index untouched; (e) a cross-repo change, a comparison per
 //! member in `needs` order; (f) a request, its head fetched under `refs/purlis/review/` and
-//! compared from where it meets its target, the refs removed when nothing needs them.
+//! compared from where it meets its target, the refs removed when nothing needs them; (d) one
+//! turn, between the two refs its boundaries recorded (#5405).
 //!
 //! And ADR 0084 §2's fixture: **a repo whose config names a program for every place git runs
 //! one** — a diff driver, a text conversion, an external diff, a filter, a pager, the
@@ -1409,6 +1410,396 @@ fn a_cross_repo_change_is_one_comparison_per_member_in_needs_order_each_matching
 }
 
 // ---------------------------------------------------------------------------------------------
+// (d) one turn
+// ---------------------------------------------------------------------------------------------
+
+/// A chat's id, as the chats' record names it.
+const CHAT: &str = "01J9CHAT0000000000000000TN";
+
+fn one_turn(number: u32) -> Comparison {
+    Comparison::Turn {
+        chat: CHAT.into(),
+        number,
+    }
+}
+
+fn turn_ref(number: u32, side: &str) -> String {
+    format!("refs/purlis/turns/{CHAT}/{number}/{side}")
+}
+
+fn turn_refs(clone: &Path) -> Vec<String> {
+    refs_of(clone)
+        .into_iter()
+        .filter(|name| name.starts_with("refs/purlis/turns/"))
+        .collect()
+}
+
+#[test]
+fn one_turn_matches_git_diff_between_its_two_refs() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    let piece = branch_with_files(&f);
+    let at = piece_of(&f);
+    // Before the turn, and so not of it: a commit, and an edit left uncommitted.
+    write(&piece, "keep.txt", "kept\nedited before the turn\n");
+
+    assert_eq!(files::turns::began(&f.plane, at, CHAT).unwrap(), Some(1));
+    commit_on_the_branch(&piece);
+    leave_uncommitted(&piece);
+    assert_eq!(files::turns::ended(&f.plane, at, CHAT).unwrap(), Some(1));
+
+    let (start, end) = (turn_ref(1, "start"), turn_ref(1, "end"));
+    let range = [start.as_str(), end.as_str()];
+    let compared = files::compare(&reader(), &f.plane, at, &one_turn(1)).unwrap();
+    assert_eq!(listed(&compared), git_lists(&piece, &range, None));
+    every_files_hunks_match(&f, at, &piece, &compared, &range, None);
+
+    // Uncommitted work is on both sides: what the turn left, an untracked file too, is listed;
+    // what git ignores is not; and the edit made before the turn is not the turn's.
+    let names: Vec<&str> = compared.files.iter().map(|one| one.path.as_str()).collect();
+    assert!(names.contains(&"notes/untracked.md"), "{names:?}");
+    assert!(names.contains(&"src/lib.rs"), "{names:?}");
+    assert!(!names.contains(&"build.log"), "{names:?}");
+    let keep = oracle(&piece, &["show", &format!("{start}:keep.txt")], None);
+    assert_eq!(keep, "kept\nedited before the turn\n");
+}
+
+#[test]
+fn recording_a_turn_leaves_the_index_the_branch_and_the_folder_as_they_were() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    let piece = branch_with_files(&f);
+    let at = piece_of(&f);
+    commit_on_the_branch(&piece);
+    leave_uncommitted(&piece);
+    let was = (
+        rev(&piece, "HEAD"),
+        oracle(&piece, &["status", "--porcelain", "-z"], None),
+        oracle(&piece, &["diff", "--cached", "--name-status"], None),
+    );
+
+    files::turns::began(&f.plane, at, CHAT).unwrap();
+    files::turns::ended(&f.plane, at, CHAT).unwrap();
+
+    let now = (
+        rev(&piece, "HEAD"),
+        oracle(&piece, &["status", "--porcelain", "-z"], None),
+        oracle(&piece, &["diff", "--cached", "--name-status"], None),
+    );
+    assert_eq!(now, was);
+}
+
+#[test]
+fn a_turn_that_changed_nothing_compares_to_no_file() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    let piece = branch_with_files(&f);
+    let at = piece_of(&f);
+    commit_on_the_branch(&piece);
+    leave_uncommitted(&piece);
+
+    files::turns::began(&f.plane, at, CHAT).unwrap();
+    files::turns::ended(&f.plane, at, CHAT).unwrap();
+
+    let compared = files::compare(&reader(), &f.plane, at, &one_turn(1)).unwrap();
+    assert_eq!(compared.files, vec![]);
+}
+
+#[test]
+fn turns_count_up_and_a_prompt_or_an_end_with_no_boundary_to_mark_records_nothing() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    let piece = branch_with_files(&f);
+    let at = piece_of(&f);
+
+    // An end with no turn begun: a nudge, or a program that ended before its first prompt.
+    assert_eq!(files::turns::ended(&f.plane, at, CHAT).unwrap(), None);
+    assert_eq!(turn_refs(&piece), Vec::<String>::new());
+
+    assert_eq!(files::turns::began(&f.plane, at, CHAT).unwrap(), Some(1));
+    let start = rev(&piece, &turn_ref(1, "start"));
+    write(&piece, "keep.txt", "kept\nin the turn\n");
+    // A second prompt while the turn runs is the same turn: its start stays.
+    assert_eq!(files::turns::began(&f.plane, at, CHAT).unwrap(), None);
+    assert_eq!(rev(&piece, &turn_ref(1, "start")), start);
+    assert_eq!(files::turns::ended(&f.plane, at, CHAT).unwrap(), Some(1));
+    let end = rev(&piece, &turn_ref(1, "end"));
+    // The turn's end heard twice, a `Stop` and then the program's exit: the first stands.
+    write(&piece, "keep.txt", "kept\nafter the turn\n");
+    assert_eq!(files::turns::ended(&f.plane, at, CHAT).unwrap(), None);
+    assert_eq!(rev(&piece, &turn_ref(1, "end")), end);
+
+    assert_eq!(files::turns::began(&f.plane, at, CHAT).unwrap(), Some(2));
+    assert_eq!(files::turns::ended(&f.plane, at, CHAT).unwrap(), Some(2));
+    assert_eq!(turn_refs(&piece).len(), 4);
+}
+
+#[test]
+fn a_turn_not_ended_or_not_recorded_is_refused_saying_so() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    branch_with_files(&f);
+    let at = piece_of(&f);
+
+    let unknown = files::compare(&reader(), &f.plane, at, &one_turn(1)).unwrap_err();
+    assert!(unknown.to_string().contains("turn 1"), "{unknown}");
+
+    files::turns::began(&f.plane, at, CHAT).unwrap();
+    let open = files::compare(&reader(), &f.plane, at, &one_turn(1)).unwrap_err();
+    assert!(open.to_string().contains("turn 1"), "{open}");
+}
+
+#[test]
+fn a_chat_name_that_could_walk_out_of_its_refs_is_refused_and_writes_nothing() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    let piece = branch_with_files(&f);
+    let at = piece_of(&f);
+    for chat in ["", "..", "a/b", "../../heads/main", "a b", "-x", "a.lock"] {
+        assert!(files::turns::began(&f.plane, at, chat).is_err(), "{chat:?}");
+    }
+    assert_eq!(turn_refs(&piece), Vec::<String>::new());
+    assert_eq!(rev(&piece, "main"), rev(&f.clone, "main"));
+}
+
+#[test]
+fn a_chats_turn_refs_go_when_it_is_forgotten_and_another_chats_stay() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    branch_with_files(&f);
+    let at = piece_of(&f);
+    const OTHER: &str = "01J9CHAT0000000000000000OT";
+    for chat in [CHAT, OTHER] {
+        files::turns::began(&f.plane, at, chat).unwrap();
+        files::turns::ended(&f.plane, at, chat).unwrap();
+    }
+    assert_eq!(turn_refs(&f.clone).len(), 4);
+
+    files::turns::forget(&f.plane, &f.ws, &f.repo, CHAT).unwrap();
+
+    assert_eq!(
+        turn_refs(&f.clone),
+        vec![
+            format!("refs/purlis/turns/{OTHER}/1/end"),
+            format!("refs/purlis/turns/{OTHER}/1/start"),
+        ]
+    );
+    // Nothing recorded is no refusal: a chat with no turn closes as any other.
+    files::turns::forget(&f.plane, &f.ws, &f.repo, CHAT).unwrap();
+}
+
+#[test]
+fn the_latest_turn_on_the_branch_answers_one_files_diff() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    let piece = branch_with_files(&f);
+    let at = piece_of(&f);
+    use files::{InTurn, TurnChanged};
+    let latest = |path: &str| files::turn_changed(&reader(), &f.plane, at, path, None).unwrap();
+
+    assert_eq!(latest("keep.txt"), TurnChanged::NoTurn);
+
+    files::turns::began(&f.plane, at, CHAT).unwrap();
+    write(&piece, "keep.txt", "kept\nthe first turn\n");
+    files::turns::ended(&f.plane, at, CHAT).unwrap();
+    files::turns::began(&f.plane, at, CHAT).unwrap();
+    write(&piece, "src/lib.rs", code(&["one", "the second turn"]));
+    // Still running: the latest turn is the one that ended.
+    assert!(matches!(
+        latest("keep.txt"),
+        TurnChanged::Of {
+            number: 1,
+            file: InTurn::Changed(_),
+            ..
+        }
+    ));
+    files::turns::ended(&f.plane, at, CHAT).unwrap();
+
+    let TurnChanged::Of {
+        chat,
+        number,
+        file: InTurn::Changed(shown),
+        ..
+    } = latest("src/lib.rs")
+    else {
+        panic!("src/lib.rs is what the second turn changed");
+    };
+    assert_eq!((chat.as_str(), number), (CHAT, 2));
+    // A turn's hunk is discarded as the turn's start had it (#5411), so it is drawn with a stamp,
+    // and from the turn's refs while the file is as the turn ended it.
+    assert!(shown.stamp.is_some());
+    assert!(!shown.since_turn_ended);
+    let (start, end) = (turn_ref(2, "start"), turn_ref(2, "end"));
+    let FileDiff::Text { hunks, .. } = shown.diff else {
+        panic!("not text")
+    };
+    assert_eq!(
+        hunks,
+        git_hunks(&piece, &[&start, &end], &["src/lib.rs"], None)
+    );
+
+    // A file the first turn changed and the latest did not is said, not drawn empty.
+    assert!(matches!(
+        latest("keep.txt"),
+        TurnChanged::Of {
+            number: 2,
+            file: InTurn::NotThisFile,
+            ..
+        }
+    ));
+}
+
+/// Three turns of one chat: a rename with an edit, a turn that changed nothing, and an edit.
+fn three_turns(f: &support::Fixture, piece: &Path) {
+    let at = piece_of(f);
+    files::turns::began(&f.plane, at, CHAT).unwrap();
+    std::fs::remove_file(piece.join("src/old.rs")).unwrap();
+    let mut moved = long_text("moved");
+    moved.push_str("one more line\n");
+    write(piece, "lib/moved.rs", moved);
+    files::turns::ended(&f.plane, at, CHAT).unwrap();
+    files::turns::began(&f.plane, at, CHAT).unwrap();
+    files::turns::ended(&f.plane, at, CHAT).unwrap();
+    files::turns::began(&f.plane, at, CHAT).unwrap();
+    write(piece, "src/lib.rs", code(&["one", "the third turn"]));
+    files::turns::ended(&f.plane, at, CHAT).unwrap();
+}
+
+fn pick(number: u32) -> files::TurnKey {
+    files::TurnKey {
+        chat: CHAT.into(),
+        number,
+    }
+}
+
+#[test]
+fn a_chats_turns_are_listed_newest_first_and_the_diff_opens_on_the_latest() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    let piece = branch_with_files(&f);
+    let at = piece_of(&f);
+    three_turns(&f, &piece);
+
+    let files::TurnChanged::Of {
+        chat,
+        number,
+        turns,
+        file,
+        undo: _,
+    } = files::turn_changed(&reader(), &f.plane, at, "src/lib.rs", None).unwrap()
+    else {
+        panic!("three turns ended on the branch");
+    };
+    assert_eq!((chat.as_str(), number), (CHAT, 3));
+    assert_eq!(turns, vec![3, 2, 1]);
+    assert!(matches!(file, files::InTurn::Changed(_)), "{file:?}");
+}
+
+#[test]
+fn an_earlier_turn_answers_the_same_marks_renames_and_hunks_as_git_diff_between_its_refs() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    let piece = branch_with_files(&f);
+    let at = piece_of(&f);
+    three_turns(&f, &piece);
+    let (start, end) = (turn_ref(1, "start"), turn_ref(1, "end"));
+    let range = [start.as_str(), end.as_str()];
+
+    // The turn's file list is the one engine's, as the branch diff's is.
+    let compared = files::compare(&reader(), &f.plane, at, &one_turn(1)).unwrap();
+    assert_eq!(listed(&compared), git_lists(&piece, &range, None));
+
+    let files::TurnChanged::Of {
+        number,
+        turns,
+        file: files::InTurn::Changed(shown),
+        ..
+    } = files::turn_changed(&reader(), &f.plane, at, "lib/moved.rs", Some(&pick(1))).unwrap()
+    else {
+        panic!("the first turn moved src/old.rs to lib/moved.rs");
+    };
+    assert_eq!((number, turns), (1, vec![3, 2, 1]));
+    assert_eq!(shown.change.mark, Mark::Renamed);
+    assert_eq!(shown.change.from.as_deref(), Some("src/old.rs"));
+    let FileDiff::Text { hunks, .. } = shown.diff else {
+        panic!("not text")
+    };
+    assert_eq!(
+        hunks,
+        git_hunks(&piece, &range, &["src/old.rs", "lib/moved.rs"], None)
+    );
+}
+
+#[test]
+fn a_turn_that_changed_nothing_says_so_apart_from_one_that_left_this_file_alone() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    let piece = branch_with_files(&f);
+    let at = piece_of(&f);
+    three_turns(&f, &piece);
+    let file_of = |number: u32, path: &str| match files::turn_changed(
+        &reader(),
+        &f.plane,
+        at,
+        path,
+        Some(&pick(number)),
+    )
+    .unwrap()
+    {
+        files::TurnChanged::Of { file, .. } => file,
+        files::TurnChanged::NoTurn => panic!("turns ended on the branch"),
+    };
+
+    assert_eq!(file_of(2, "src/lib.rs"), files::InTurn::Nothing);
+    assert_eq!(file_of(3, "lib/moved.rs"), files::InTurn::NotThisFile);
+}
+
+#[test]
+fn only_the_chats_own_turns_are_listed_and_a_turn_it_has_not_is_refused() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    let piece = branch_with_files(&f);
+    let at = piece_of(&f);
+    const OTHER: &str = "01J9CHAT0000000000000000OT";
+    files::turns::began(&f.plane, at, OTHER).unwrap();
+    files::turns::ended(&f.plane, at, OTHER).unwrap();
+    three_turns(&f, &piece);
+
+    let files::TurnChanged::Of { turns, .. } =
+        files::turn_changed(&reader(), &f.plane, at, "src/lib.rs", Some(&pick(2))).unwrap()
+    else {
+        panic!("turns ended on the branch");
+    };
+    assert_eq!(turns, vec![3, 2, 1]);
+
+    let refused =
+        files::turn_changed(&reader(), &f.plane, at, "src/lib.rs", Some(&pick(9))).unwrap_err();
+    assert!(refused.to_string().contains("turn 9"), "{refused}");
+}
+
+#[test]
+fn a_turn_on_another_branch_of_the_clone_is_not_this_branchs_latest() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("thing");
+    let piece = branch_with_files(&f);
+    files::turns::began(&f.plane, piece_of(&f), CHAT).unwrap();
+    write(&piece, "keep.txt", "kept\nin the piece\n");
+    files::turns::ended(&f.plane, piece_of(&f), CHAT).unwrap();
+
+    assert_eq!(
+        files::turn_changed(
+            &reader(),
+            &f.plane,
+            Branch::repo(&f.ws, &f.repo),
+            "keep.txt",
+            None
+        )
+        .unwrap(),
+        files::TurnChanged::NoTurn
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
 // Nothing the repo's config names runs (ADR 0084 §2)
 // ---------------------------------------------------------------------------------------------
 
@@ -1485,6 +1876,38 @@ fn no_program_a_reviewed_repos_config_names_runs_for_any_comparison_or_file() {
         all.push(compared);
     }
     let _ = files::status(&reader(), &f.plane, at).unwrap();
+    // (d): a turn recorded in the hostile folder, both its boundaries, and compared there.
+    files::turns::began(&f.plane, at, CHAT).unwrap();
+    write(&piece, "keep.txt", "kept\nand a turn's edit\n");
+    write(&piece, "a-turn-added.txt", "added in a turn\n");
+    files::turns::ended(&f.plane, at, CHAT).unwrap();
+    let turn = files::compare(&reader(), &f.plane, at, &one_turn(1)).unwrap();
+    for one in &turn.files {
+        files::compare_file(
+            &reader(),
+            &f.plane,
+            at,
+            &turn.sides,
+            &one.path,
+            one.from.as_deref(),
+        )
+        .unwrap();
+    }
+    all.push(turn);
+    // And no filter stood between the file and its state: its own bytes are what was kept.
+    assert_eq!(
+        oracle(
+            &piece,
+            &[
+                "cat-file",
+                "-p",
+                "refs/purlis/turns/01J9CHAT0000000000000000TN/1/end:a-turn-added.txt"
+            ],
+            None
+        ),
+        "added in a turn\n"
+    );
+    files::turns::forget(&f.plane, &f.ws, &f.repo, CHAT).unwrap();
     // (f): a request's head fetched into the hostile clone, and compared there.
     let scratch = tempfile::tempdir().unwrap();
     let scratch = std::fs::canonicalize(scratch.path())

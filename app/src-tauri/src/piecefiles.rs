@@ -385,13 +385,24 @@ pub async fn branch_ahead_behind(
 
 /// One hunk, in `git diff -U0`'s numbers: lines counted from 1, and a side with no lines naming
 /// the line the hunk comes after (`0` for the top). The window's `GitHunk`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct GitHunk {
     pub old_start: u32,
     pub old_lines: u32,
     pub new_start: u32,
     pub new_lines: u32,
+}
+
+impl From<GitHunk> for files::Hunk {
+    fn from(one: GitHunk) -> Self {
+        Self {
+            old_start: one.old_start,
+            old_lines: one.old_lines,
+            new_start: one.new_start,
+            new_lines: one.new_lines,
+        }
+    }
 }
 
 impl From<files::Hunk> for GitHunk {
@@ -432,6 +443,138 @@ pub struct WhatChanged {
     /// The branch it is compared against; `null` when against the last commit.
     pub base: Option<String>,
     pub diff: FileDiff,
+    /// What a discard of a hunk here is checked against (`null` for a file past what is drawn).
+    pub stamp: Option<String>,
+    /// The branch's check results as this file shows them (ADR 0117).
+    pub checks: Box<CheckResults>,
+    /// On a turn's diff, that the file changed since the turn ended: it is drawn from the turn's
+    /// start to the file as it is now (#5411).
+    #[serde(rename = "sinceTurnEnded")]
+    pub since_turn_ended: bool,
+}
+
+/// How much a check result matters, in SARIF's words.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "lowercase")]
+pub enum CheckSeverity {
+    Error,
+    Warning,
+    Note,
+    None,
+}
+
+/// One tool's results for a branch, and whether the branch has moved since they were reported.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckSet {
+    pub tool: String,
+    /// The commit they were reported for; `null` for a branch with no commit then.
+    pub head: Option<String>,
+    pub out_of_date: bool,
+    pub results: u32,
+}
+
+/// One result of a check.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckResult {
+    pub tool: String,
+    pub out_of_date: bool,
+    pub severity: CheckSeverity,
+    /// The file as the tool named it, relative to the branch's folder where it could be placed
+    /// there; `null` for a result on no file.
+    pub path: Option<String>,
+    /// Its first line, from 1; `null` for a result on the file as a whole.
+    pub line: Option<u32>,
+    /// The first of its lines a hunk shows, where one does: where the gutter marks it.
+    pub shown_at: Option<u32>,
+    pub rule: Option<String>,
+    pub message: String,
+}
+
+/// A branch's check results as one file of its comparison shows them. Every result is in a list or
+/// counted past it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckResults {
+    pub sets: Vec<CheckSet>,
+    /// On a line a hunk shows.
+    pub on_lines: Vec<CheckResult>,
+    /// In this file, on no line a hunk shows.
+    pub outside: Vec<CheckResult>,
+    /// In any other file, or in none.
+    pub elsewhere: Vec<CheckResult>,
+    pub more_on_lines: u32,
+    pub more_outside: u32,
+    pub more_elsewhere: u32,
+    /// Why they could not be read, where they could not.
+    pub trouble: Option<String>,
+    /// Each Check reporter whose last answer could not be recorded, for the whole branch (#5410).
+    pub faults: Vec<CheckFault>,
+}
+
+/// A Check reporter whose last answer could not be recorded: what the review says in a Notice
+/// naming it (#5410). The results before it stay.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckFault {
+    /// The extension, by its id.
+    pub extension: String,
+    /// What was wrong, in the core's sentence, naming it.
+    pub said: String,
+}
+
+impl From<purlis_core::checks::OnFile> for CheckResults {
+    fn from(on: purlis_core::checks::OnFile) -> Self {
+        let count = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
+        let list = |placed: Vec<purlis_core::checks::Placed>| -> Vec<CheckResult> {
+            placed
+                .into_iter()
+                .map(|one| CheckResult {
+                    tool: one.tool,
+                    out_of_date: one.out_of_date,
+                    severity: match one.diagnostic.severity {
+                        purlis_core::checks::Severity::Error => CheckSeverity::Error,
+                        purlis_core::checks::Severity::Warning => CheckSeverity::Warning,
+                        purlis_core::checks::Severity::Note => CheckSeverity::Note,
+                        purlis_core::checks::Severity::None => CheckSeverity::None,
+                    },
+                    path: one.diagnostic.path,
+                    line: one.diagnostic.line,
+                    shown_at: one.shown_at,
+                    rule: one.diagnostic.rule,
+                    message: one.diagnostic.message,
+                })
+                .collect()
+        };
+        Self {
+            sets: on
+                .sets
+                .into_iter()
+                .map(|set| CheckSet {
+                    tool: set.tool,
+                    head: set.head,
+                    out_of_date: set.out_of_date,
+                    results: count(set.results),
+                })
+                .collect(),
+            on_lines: list(on.on_lines),
+            outside: list(on.outside),
+            elsewhere: list(on.elsewhere),
+            more_on_lines: count(on.more_on_lines),
+            more_outside: count(on.more_outside),
+            more_elsewhere: count(on.more_elsewhere),
+            trouble: on.trouble,
+            faults: on
+                .faults
+                .into_iter()
+                .map(|fault| CheckFault {
+                    extension: fault.extension,
+                    said: fault.said,
+                })
+                .collect(),
+        }
+    }
 }
 
 /// One file of a branch compared against the branch it was cut from, committed or not: its
@@ -459,9 +602,133 @@ pub async fn what_changed(
     .map_err(|err| format!("comparing the file did not finish: {err}"))?
 }
 
+/// One file across one turn on a branch: the file diff's turn picker (#5405, #5408).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum TurnChanged {
+    /// No turn to show, and why, in a sentence.
+    NoTurn { why: String },
+    /// The file across turn `number` of `chat`, and that chat's turns on the branch, newest
+    /// first: what the picker lists.
+    Of {
+        chat: String,
+        number: u32,
+        turns: Vec<u32>,
+        file: Box<InTurn>,
+        /// Where this turn is the one Undo is offered on, the latest not yet undone: every path
+        /// the undo would write, which its confirmation lists (#5411). `null` on any other.
+        undo: Option<Vec<String>>,
+    },
+}
+
+/// What one turn did to one file.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum InTurn {
+    /// The turn changed no file at all.
+    Nothing,
+    /// The turn changed other files and left this one as it found it.
+    NotThisFile,
+    /// The file, compared across the turn.
+    Changed { shown: WhatChanged },
+}
+
+/// A turn the picker names: a chat's id and the turn's number.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, specta::Type)]
+pub struct TurnPick {
+    pub chat: String,
+    pub number: u32,
+}
+
+/// One file of a branch across a turn that ended there, the latest when `turn` is null, or why
+/// there is none.
+// Read as `what_changed` reads. The sentence for no turn is the app's, since only the app knows
+// which chats work in the folder. Not a doc comment, because the generated bindings carry those.
+#[tauri::command]
+#[specta::specta]
+pub async fn turn_changed(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    workspace: String,
+    repo: String,
+    piece: Option<String>,
+    path: String,
+    turn: Option<TurnPick>,
+) -> Result<TurnChanged, String> {
+    let held = planes.held(&plane)?;
+    let root = held.root().to_path_buf();
+    let silent = held
+        .chats()
+        .silent_about_turns_in(&root, &workspace, &repo, piece.as_deref());
+    tauri::async_runtime::spawn_blocking(move || {
+        turn_changed_of(
+            &root,
+            branch(&workspace, &repo, &piece),
+            &path,
+            turn,
+            silent.as_deref(),
+        )
+    })
+    .await
+    .map_err(|err| format!("comparing the file did not finish: {err}"))?
+}
+
+fn turn_changed_of(
+    plane: &Path,
+    branch: Branch<'_>,
+    path: &str,
+    turn: Option<TurnPick>,
+    silent: Option<&str>,
+) -> Result<TurnChanged, String> {
+    let turn = turn.map(|TurnPick { chat, number }| files::TurnKey { chat, number });
+    let read = files::turn_changed(&crate::reader(), plane, branch, path, turn.as_ref())
+        .map_err(|e| e.to_string())?;
+    Ok(match read {
+        files::TurnChanged::NoTurn => TurnChanged::NoTurn {
+            why: no_turn_why(silent),
+        },
+        files::TurnChanged::Of {
+            chat,
+            number,
+            turns,
+            file,
+            undo,
+        } => TurnChanged::Of {
+            chat,
+            number,
+            turns,
+            undo,
+            file: Box::new(match file {
+                files::InTurn::Nothing => InTurn::Nothing,
+                files::InTurn::NotThisFile => InTurn::NotThisFile,
+                files::InTurn::Changed(shown) => InTurn::Changed {
+                    shown: what_changed_shown(*shown),
+                },
+            }),
+        },
+    })
+}
+
+/// Why a branch has no turn to show: a chat working there whose program reports none, by name,
+/// or no turn yet.
+fn no_turn_why(silent: Option<&str>) -> String {
+    match silent {
+        Some(chat) => format!(
+            "{chat} runs a program that does not report its turns to purlis, so it has no turn \
+             to show here. Against base still shows this file."
+        ),
+        None => "No chat has finished a turn on this branch yet.".to_owned(),
+    }
+}
+
 fn what_changed_of(plane: &Path, branch: Branch<'_>, path: &str) -> Result<WhatChanged, String> {
     let shown =
         files::what_changed(&crate::reader(), plane, branch, path).map_err(|e| e.to_string())?;
+    Ok(what_changed_shown(shown))
+}
+
+/// The core's answer, as the comparison tab draws it.
+pub(crate) fn what_changed_shown(shown: files::WhatChanged) -> WhatChanged {
     let diff = match shown.diff {
         files::FileDiff::Text { base, head, hunks } => FileDiff::Text {
             base,
@@ -473,13 +740,16 @@ fn what_changed_of(plane: &Path, branch: Branch<'_>, path: &str) -> Result<WhatC
             bytes: u32::try_from(bytes).unwrap_or(u32::MAX),
         },
     };
-    Ok(WhatChanged {
+    WhatChanged {
         mark: shown.change.mark.into(),
         from: shown.change.from,
         uncommitted: shown.change.uncommitted,
         base: shown.base,
         diff,
-    })
+        stamp: shown.stamp,
+        checks: Box::new((*shown.checks).into()),
+        since_turn_ended: shown.since_turn_ended,
+    }
 }
 
 pub(crate) fn ahead_behind_of(plane: &Path, branch: Branch<'_>) -> Result<AheadBehind, String> {
@@ -1039,7 +1309,7 @@ pub async fn reveal_branch_path(
 /// The file or folder `path` names, or with `""` the branch's own folder (#1143), placed by the
 /// core: the branch's row and its *Files* row copy and reveal the folder itself. The branch's
 /// folder is found by `reader`'s child (#1189).
-fn placed_of(
+pub(crate) fn placed_of(
     reader: &Reader,
     plane: &Path,
     branch: Branch<'_>,

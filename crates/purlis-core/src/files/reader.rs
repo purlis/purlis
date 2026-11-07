@@ -349,6 +349,18 @@ pub enum Ask {
     /// One file, by its path relative to the branch's folder, against the branch's base, the
     /// folder found and the path confined here too: "Show what changed" in one ask (#1189).
     WhatChanged { path: String },
+    /// One hunk of that file put back (#5406): the one ask that writes, of the file alone, in the
+    /// same child, so it starts no program and is bounded as a read is.
+    Discard(super::Discard),
+    /// One file across a turn that ended on the branch, the latest when none is named (#5405,
+    /// #5408).
+    TurnChanged {
+        path: String,
+        turn: Option<super::TurnKey>,
+    },
+    /// Every file a turn changed put back as its start had them (#5411): the second ask that
+    /// writes, in the same child, so it starts no program and is bounded as a read is.
+    UndoTurn(super::TurnKey),
     /// Its offered list: what `git ls-files --cached --others --exclude-standard` lists, sorted,
     /// at most `most` of it (#1189).
     Offered { most: Option<usize> },
@@ -372,6 +384,9 @@ pub enum Answer {
     Compared(super::Compared),
     FileDiff(super::FileDiff),
     WhatChanged(super::Shown),
+    Discarded(super::Discarded),
+    TurnChanged(super::TurnChanged),
+    UndoneTurn(crate::humanedit::HumanEdit),
     Offered(super::offered::Offered),
     Ignored(super::offered::Ignored),
     /// To [`Ask::Offered`] and [`Ask::Ignored`] only: gitoxide could not read the branch's
@@ -743,6 +758,9 @@ fn not_asked_of_the_plane_root(ask: &Ask, branch: Branch<'_>) -> bool {
                 | Ask::Compare { .. }
                 | Ask::CompareFile { .. }
                 | Ask::WhatChanged { .. }
+                | Ask::Discard(_)
+                | Ask::TurnChanged { .. }
+                | Ask::UndoTurn(_)
         )
 }
 
@@ -797,6 +815,15 @@ fn serve() -> i32 {
         .map(Answer::FileDiff),
         Ask::WhatChanged { path } => {
             super::compare::what_changed_here(plane, branch, &path).map(Answer::WhatChanged)
+        }
+        Ask::Discard(ask) => {
+            super::compare::discard_here(plane, branch, &ask).map(Answer::Discarded)
+        }
+        Ask::TurnChanged { path, turn } => {
+            super::compare::turn_changed_here(plane, branch, &path, turn).map(Answer::TurnChanged)
+        }
+        Ask::UndoTurn(turn) => {
+            super::compare::undo_here(plane, branch, &turn).map(Answer::UndoneTurn)
         }
         Ask::Offered { most } => super::offered::offered_here(plane, branch, most),
         Ask::Ignored { paths, folders } => {
