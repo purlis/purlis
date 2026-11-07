@@ -58,6 +58,24 @@ const VALUE = "page-e2e-5246-7d1c";
 /** What the page says, which only a `curl` handed {@link VALUE} can print. */
 const PAGE = "the page some-page names was fetched";
 
+/**
+ * The Inbox's kinds #5227 is about: a secret's asks, a vault's, and a proposed change to a
+ * committed file, where the second approval came from.
+ */
+const SECRETS_KINDS = ["secret", "secret-fill", "run-grant", "vault", "proposed-change"];
+
+/** The items of {@link SECRETS_KINDS} the Inbox lists, by kind and the start of what they say. */
+async function aboutTheSecret(): Promise<string[]> {
+  return browser.execute(
+    (items: string, kinds: string[]) =>
+      [...document.querySelectorAll<HTMLElement>(items)]
+        .filter((item) => kinds.includes(item.dataset.source ?? ""))
+        .map((item) => `${item.dataset.source}: ${(item.textContent ?? "").slice(0, 160)}`),
+    ITEMS,
+    SECRETS_KINDS,
+  );
+}
+
 /** The project's directory, from the status line's item (qw357). */
 async function planeRoot(): Promise<string> {
   const said = await $('[data-testid="status-project"]');
@@ -202,21 +220,22 @@ describe("a run that needs a secret (#5227)", function () {
     expect(said).toContain(PAGE);
     expect(said).not.toContain(VALUE);
 
-    // **No second item**: in #5227 a proposal followed the Fill at once. Nothing is left, and
-    // nothing comes while the person looks a moment longer.
-    await browser.waitUntil(async () => !(await $(ITEMS).isExisting()), {
-      timeout: 20_000,
-      timeoutMsg: "an item stayed in the Inbox after the run's notice was answered",
-    });
+    // **No second item**: in #5227 a proposal followed the Fill at once. Nothing about a secret,
+    // a vault or a proposed change is left, and nothing comes while the person looks a moment
+    // longer. The chat's own turn ending once its command ran may list it as waiting on the
+    // person (`question`, `terminal`), which is the chat's and not the secret's.
+    await browser
+      .waitUntil(async () => (await aboutTheSecret()).length === 0, {
+        timeout: 20_000,
+        interval: 250,
+      })
+      .catch(async () => {
+        throw new Error(
+          `an item stayed in the Inbox after the run's notice was answered: ${JSON.stringify(await aboutTheSecret())}`,
+        );
+      });
     await browser.pause(3_000);
-    const after = await browser.execute(
-      (items: string) =>
-        [...document.querySelectorAll<HTMLElement>(items)].map(
-          (item) => `${item.dataset.source}: ${(item.textContent ?? "").slice(0, 120)}`,
-        ),
-      ITEMS,
-    );
-    expect(after).toEqual([]);
+    expect(await aboutTheSecret()).toEqual([]);
 
     // **Nothing in what the project commits**: no persona line, no tool line, nothing new.
     expect(changed(before, committable(plane))).toEqual([]);
