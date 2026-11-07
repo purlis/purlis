@@ -696,13 +696,16 @@ fn each_question_says_what_it_asks_and_hands_a_skill_as_its_files() {
         text: "---\n".to_owned(),
         executable: false,
     }];
-    assert_eq!(Ask::Skills.line(), serde_json::json!({ "ask": "skills" }));
+    assert_eq!(
+        Ask::Skills.line(crate::executor::PROTOCOL),
+        serde_json::json!({ "ask": "skills" })
+    );
     assert_eq!(
         Ask::Findings {
             skill: "deploy",
             files: &files
         }
-        .line(),
+        .line(crate::executor::PROTOCOL),
         serde_json::json!({
             "ask": "findings",
             "skill": "deploy",
@@ -1405,6 +1408,7 @@ fn a_router_is_asked_the_skills_it_may_hide_the_budget_and_nothing_of_the_chat()
         name: "deploy".to_owned(),
         description: "Deploys.".to_owned(),
         pinned: false,
+        chars: 8,
     }];
     let ask = Ask::Route {
         skills: &skills,
@@ -1416,15 +1420,20 @@ fn a_router_is_asked_the_skills_it_may_hide_the_budget_and_nothing_of_the_chat()
             skills: 1,
             chars: 40,
         },
+        index: RouteBudget {
+            skills: 1,
+            chars: 160,
+        },
     };
     assert_eq!(ask.capability(), Capability::SkillRouter);
     assert_eq!(
-        ask.line(),
+        ask.line(crate::executor::PROTOCOL),
         serde_json::json!({
             "ask": "route",
-            "skills": [{ "name": "deploy", "description": "Deploys.", "pinned": false }],
+            "skills": [{ "name": "deploy", "description": "Deploys.", "pinned": false, "chars": 8 }],
             "budget": { "skills": 10, "chars": 2000 },
             "besides": { "skills": 1, "chars": 40 },
+            "index": { "skills": 1, "chars": 160 },
         })
     );
 }
@@ -1514,7 +1523,7 @@ fn a_question_of_many_hands_each_skill_by_name_with_its_files() {
     }];
     let ask = Ask::FindingsOfEach { skills: &skills };
     assert_eq!(
-        ask.line(),
+        ask.line(crate::executor::PROTOCOL),
         serde_json::json!({
             "ask": "findings-of-each",
             "skills": [{
@@ -1624,7 +1633,7 @@ fn a_router_that_reads_prompts_is_asked_the_prompt_and_the_skills_not_in_the_lis
     );
     assert_eq!(ask.capability(), Capability::SkillRouter);
     assert_eq!(
-        ask.line(),
+        ask.line(crate::executor::PROTOCOL),
         serde_json::json!({
             "ask": "prompt",
             "prompt": "ship it",
@@ -1653,6 +1662,10 @@ fn a_router_that_reads_prompts_is_asked_the_prompt_and_the_skills_not_in_the_lis
             besides: RouteBudget {
                 skills: 0,
                 chars: 0
+            },
+            index: RouteBudget {
+                skills: 1,
+                chars: 1
             },
         }
         .unoffered("r", &reads(false))
@@ -1707,8 +1720,13 @@ fn a_routers_pointers_are_read_failing_closed() {
 }
 
 #[test]
-fn the_manifest_of_version_one_reads_as_the_contract_records_it() {
-    let contract = version_one();
+fn the_manifest_of_each_version_reads_as_its_contract_records_it() {
+    for contract in every_version() {
+        manifest_read_as_recorded(&contract);
+    }
+}
+
+fn manifest_read_as_recorded(contract: &serde_json::Value) {
     let read = read(&contract["manifest"].to_string(), true).expect("read");
     assert_eq!(
         read.capabilities,
@@ -1727,8 +1745,13 @@ fn the_manifest_of_version_one_reads_as_the_contract_records_it() {
 }
 
 #[test]
-fn every_answer_of_version_one_reads_as_the_contract_records_it() {
-    let contract = version_one();
+fn every_answer_of_each_version_reads_as_its_contract_records_it() {
+    for contract in every_version() {
+        answers_read_as_recorded(&contract);
+    }
+}
+
+fn answers_read_as_recorded(contract: &serde_json::Value) {
     let protocol = u32::try_from(contract["protocol"].as_u64().expect("a number")).expect("small");
     // Each answer is read as a real one is: its line first, in the protocol it was asked in.
     let answer = |of: &str, key: &str| {
@@ -1750,8 +1773,13 @@ fn every_answer_of_version_one_reads_as_the_contract_records_it() {
 }
 
 #[test]
-fn the_limits_of_version_one_are_the_ones_the_contract_records() {
-    let contract = version_one();
+fn the_limits_of_each_version_are_the_ones_its_contract_records() {
+    for contract in every_version() {
+        limits_as_recorded(&contract);
+    }
+}
+
+fn limits_as_recorded(contract: &serde_json::Value) {
     let limits = &contract["limits"];
     let of = |key: &str| usize::try_from(limits[key].as_u64().expect("a number")).expect("small");
     assert_eq!(

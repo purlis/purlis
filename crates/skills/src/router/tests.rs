@@ -496,6 +496,78 @@ fn a_router_s_candidates_are_the_skills_it_may_hide_with_the_pins_marked() {
 }
 
 #[test]
+fn a_router_s_candidate_costs_its_whole_line_where_the_harness_counts_whole_lines() {
+    // #4680: on Claude Code a skill costs its name, its description, its `when_to_use` and the
+    // line around them, not its description alone.
+    let tmp = tempfile::tempdir().unwrap();
+    let built_in = tmp.path().join("bundle");
+    let plane = tmp.path().join("plane");
+    skill(&built_in, "handoff", "Hands off.", "");
+    skill(
+        &plane.join(PROJECT_DIR),
+        "deploy",
+        "Does deploy.",
+        "when_to_use: When shipping.\n",
+    );
+    let whole_lines = Budget {
+        skills: 10,
+        chars: 100_000,
+        per_description: None,
+        lists_paths: false,
+        per_line: Some(10),
+    };
+
+    let asked = set_at_the_root(&plane, &built_in).candidates(whole_lines, &[]);
+    let on_another = set_at_the_root(&plane, &built_in).candidates(skills(10), &[]);
+
+    // "deploy" 6, "Does deploy." 12, "When shipping." 14, and 10 around them.
+    assert_eq!(asked.skills[0].chars, 42);
+    // Where only a description counts, it costs its description.
+    assert_eq!(on_another.skills[0].chars, 12);
+    // Hiding any skill lists the index in their place, at a cost the router cannot work out:
+    // "purlis-skill-index" 18, its description 169, and 10 around them.
+    assert_eq!(asked.index, 197);
+    assert_eq!(on_another.index, 169);
+}
+
+#[test]
+fn what_a_router_adds_of_its_question_is_what_its_routed_listing_spends() {
+    // #4680: a router that adds `besides`, each skill it lists and the index has purlis's own
+    // count, whatever the harness lists of a line: paths, cut descriptions, whole lines.
+    let tmp = tempfile::tempdir().unwrap();
+    let (plane, built_in) = three(tmp.path());
+    let set = set_at_the_root(&plane, &built_in);
+    let budget = Budget {
+        skills: 10,
+        chars: 100_000,
+        per_description: Some(8),
+        lists_paths: true,
+        per_line: Some(10),
+    };
+    let asked = set.candidates(budget, &[]);
+    let listed: usize = asked
+        .skills
+        .iter()
+        .filter(|one| one.name != "release")
+        .map(|one| one.chars)
+        .sum();
+
+    let routed = set
+        .routed_by(
+            by_the_router(),
+            budget,
+            &[],
+            &[("release".to_owned(), line("not here"))],
+        )
+        .expect("an answer it takes");
+
+    assert_eq!(
+        routed.spends(budget),
+        asked.besides.chars + listed + asked.index
+    );
+}
+
+#[test]
 fn a_router_s_answer_hides_what_it_names_each_with_its_own_line() {
     let tmp = tempfile::tempdir().unwrap();
     let (plane, built_in) = three(tmp.path());
