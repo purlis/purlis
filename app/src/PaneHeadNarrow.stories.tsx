@@ -9,13 +9,17 @@
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect } from "storybook/test";
+import { expectFocusInSight, untilFocused } from "./stories.testkit";
 import { ChatPersonaState } from "./ChatPersonaState";
 import { ChatsHere, fixedChats, nothingKnown, type ChatStates } from "./chatState";
-import { PaneHead, PaneTasksWord } from "./LayoutPanes";
+import { PaneHead, PaneTasksWord, type TasksOn } from "./LayoutPanes";
 import type { ChatHead } from "./paneHead";
 import { paneLinesOf } from "./paneHead";
 import { QuestionsHere } from "./QuestionsHere";
 import type { QuestionsHeld } from "./taskQuestions";
+import type { ChatRow } from "./chatsTree";
+import { stateClock } from "./stateClock";
+import { ChatTasks } from "./TabChip";
 
 /** The width of the pane each row is drawn as: under 470, where the head drops the word. */
 const NARROW = 400;
@@ -50,10 +54,59 @@ const CHATS = [
   listed(5, "ended"),
 ];
 
+/** A chat with two tasks, whose head with no word draws its tasks' button as the tasks' glyph. */
+const WITH_TASKS = listed(11, "with tasks");
+
+/** Its tasks, as the chat's tasks menu lists them: the chat first, then who it asked. */
+const TASK_ROWS: ChatRow[] = [
+  { ...WITH_TASKS, level: 1, posinset: 1, setsize: 1, orphaned: false },
+  ...[14, 15].map((session, at) => ({
+    ...listed(session, `task ${at + 1}`, { parent: 11, mode: "task" as const, report: "owed" }),
+    persona: "devops",
+    tab: false,
+    level: 2,
+    posinset: at + 1,
+    setsize: 2,
+    orphaned: false,
+  })),
+];
+
+/** The head's word opens the chat's tasks menu, as the window's does (`PlaneView.tasksOn`). */
+const withItsTasks: TasksOn = (session, _at, word, alone) =>
+  session !== 11 ? (
+    alone ? null : (
+      word
+    )
+  ) : (
+    <ChatTasks
+      id="tasks-of-with-tasks"
+      name="with tasks"
+      rows={TASK_ROWS}
+      ended={[]}
+      current={11}
+      asked={0}
+      clock={stateClock()}
+      dragging={() => false}
+      onShow={() => undefined}
+      alone={alone}
+    >
+      {word}
+    </ChatTasks>
+  );
+
 /** What the board says of each. */
 const STATES: ChatStates = {
   ...nothingKnown,
-  bySession: { 1: "waiting", 2: "running", 3: "running", 4: "waiting", 5: "done" },
+  bySession: {
+    1: "waiting",
+    2: "running",
+    3: "running",
+    4: "waiting",
+    5: "done",
+    11: "waiting",
+    14: "running",
+    15: "waiting",
+  },
   needsYou: [1],
 };
 
@@ -67,7 +120,7 @@ const QUESTIONS: QuestionsHeld = {
 const LINE = new Set(paneLinesOf("chat", NARROW, {}).head);
 
 /** One chat's head in a pane {@link NARROW} pixels wide: its mark, its name and its state. */
-function Head({ chat }: { chat: ChatHead["chat"] }) {
+function Head({ chat, tasksOn }: { chat: ChatHead["chat"]; tasksOn?: TasksOn }) {
   return (
     <div className="pane-frame pane-headed" style={{ inlineSize: NARROW, blockSize: 56 }}>
       <div className="pane-top">
@@ -85,6 +138,7 @@ function Head({ chat }: { chat: ChatHead["chat"] }) {
             </span>
             <span className="pane-name">{chat.name}</span>
             <PaneTasksWord
+              tasksOn={tasksOn}
               session={chat.session}
               at={undefined}
               word={LINE.has("mark")}
@@ -107,6 +161,7 @@ function NarrowHeads() {
           {CHATS.map((chat) => (
             <Head key={chat.session} chat={chat} />
           ))}
+          <Head chat={WITH_TASKS} tasksOn={withItsTasks} />
         </div>
       </QuestionsHere.Provider>
     </ChatsHere.Provider>
@@ -138,5 +193,26 @@ export const EachStateOnce: Story = {
       // Only the mark's badge draws the state: the line after the name draws no glyph.
       await expect(chips?.querySelector(".pane-state-mark svg") ?? null, name).toBeNull();
     }
+  },
+};
+
+/**
+ * **A head with no word, whose chat has tasks** (#5524): its tasks' button is drawn as the tasks'
+ * glyph, never the state's, which the mark beside it wears; it is named by the state's word, and
+ * opens the chat's tasks menu from the keyboard.
+ */
+export const TasksButtonWithNoWord: Story = {
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const chips = canvasElement.querySelector<HTMLElement>('[data-chat="with tasks"]');
+    const glyphs = [...(chips?.querySelectorAll("svg") ?? [])].map((one) =>
+      one.getAttribute("class"),
+    );
+    await expect(glyphs).toEqual([...new Set(glyphs)]);
+    await expect(chips?.querySelector(".pane-state-mark .lucide-list-tree") ?? null).not.toBeNull();
+    const button = canvas.getByRole("button", { name: /waiting/ });
+    await expect(button).toHaveAttribute("aria-haspopup", "menu");
+    await userEvent.tab();
+    await untilFocused(() => button, "Tab onto the head's tasks button");
+    expectFocusInSight();
   },
 };

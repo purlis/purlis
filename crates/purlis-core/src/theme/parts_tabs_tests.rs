@@ -333,6 +333,21 @@ fn what_a_chosen_tab_joins_it_takes_the_fill_of() {
 }
 
 #[test]
+fn a_tabs_x_stands_on_the_hover_pill_it_is_drawn_over() {
+    // #5524: the × of a hovered tab, and its fade over the name, stand on the pill the theme
+    // fills that tab with, never on another ground a shade apart (Classic light's was white on
+    // its grey pill).
+    let sheet = sheet_of(json!({ "tabs.tab.hover.fill": "surface.hover" }));
+    let over = format!(
+        "  :where({TAB}[data-hovered]:not([data-disabled]):not([data-selected])) \
+         {{ --tabs-closer-over: var(--surface-hover); }}"
+    );
+    assert!(sheet.contains(&over), "{over} in\n{sheet}");
+    // A theme that names no pill leaves the family's own, which `tabs.css` says once for both.
+    assert!(!sheet_of(json!({})).contains("--tabs-closer-over"));
+}
+
+#[test]
 fn a_tabs_words_are_held_to_their_floor_on_every_ground_the_strip_is_drawn_on() {
     // A tab's words in the panel's own colour cannot be read on it: the tab draws its default.
     let loaded = load(&own(json!({ "tabs.tab.text": "surface.raised" })));

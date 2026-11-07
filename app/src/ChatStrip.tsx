@@ -23,7 +23,6 @@ import {
 } from "./sortable";
 import { droppedReference, overChat, type ChatsForReferences } from "./references";
 import { FreshMark, freshMarkShown } from "./PlaneUpdated";
-import { TabBrowsers, type BrowserShown } from "./ChatBrowsersShown";
 import { REGION_CHROME } from "./RegionFrame";
 import { movedAt, sameList, useChatsSelect, type Chats } from "./chatState";
 import {
@@ -36,7 +35,6 @@ import {
   type Tabs,
 } from "./tabs";
 import { TabNeeds } from "./TabChip";
-import { SkillRunChip } from "./SkillRunChip";
 import { type Ended, type Needing } from "./tabTasks";
 import { TabCell, tabsPart, type TabVariant } from "./ui/tabs/Tabs";
 import { StripTab, TabStripRow, useTabStrip } from "./ui/tabs/TabStrip";
@@ -88,7 +86,7 @@ function tabTip(from: string | undefined, workItem: string | undefined): string 
 
 /**
  * **The chat strip** (ADR 0036, DS-6 #1836): the focused workspace's tabs above the panes, each
- * with its task chip, fresh mark and `×`, the `+` that opens a chat, and the show-more menu of
+ * with its fresh mark and `×`, the `+` that opens a chat, and the show-more menu of
  * what the strip is not drawing. Split out of `PlaneView.tsx` (#1035), which owns every value
  * it is handed.
  */
@@ -140,9 +138,6 @@ export function ChatStrip({
   handedFrom,
   workItems,
   restoring = NONE_RESTORING,
-  browsersOfTab,
-  openBrowser,
-  openSkillRun,
 }: ChatStripProps) {
   /** Where the pointer is while a tab is carried, for a tear-off (#4768). */
   const pointer = useFollowedPointer();
@@ -390,18 +385,14 @@ export function ChatStrip({
                       <QueueRead>
                         {(queue) => <TabNeeds needs={hiddenIn(queue, id)} onShow={showFromChip} />}
                       </QueueRead>
-                      {/* **The skill run open in the tab's chat** (SK-3): pressed, it
-                            opens the skill's Runs in the studio on that run. Beside the tab's button, as
-                            the tasks' chip is. */}
-                      {openSkillRun !== undefined && (
-                        <SkillRunChip session={chatOf(tabs, id)} onOpen={openSkillRun} />
-                      )}
-                      {/* **The tab's chats' browsers, live** (#2024): a thumbnail each,
-                            pressed to open its view. Beside the tab's button, as the fresh
-                            mark is. */}
-                      {browsersOfTab !== undefined && openBrowser !== undefined && (
-                        <TabBrowsers browsers={browsersOfTab(id)} onOpen={openBrowser} />
-                      )}
+                      {/* **No skill run and no browsers on a tab** (#5524): a tab says which
+                            chat this is and whether it needs you (#5339). What its chat uses now
+                            is on its pane head (`usingOn`), and its browsers are rows under it in
+                            the Chats list too. */}
+                      {/* **The fresh mark stays on the tab** (#5524, recorded): the ruling on
+                            charter#369 put it here, so the person, who alone can start the chat
+                            fresh, is told where they look for whether a chat needs them. Moving
+                            it is a change to that ruling, not a cleanup. */}
                       <FreshMark
                         id={freshMarkOf(id)}
                         // **Never on a task's own tab** (#1489): nothing drawn on
@@ -629,13 +620,6 @@ type ChatStripProps = {
   workItems: Record<number, string>;
   /** The chats the launch has still to start (`restoring.rs`): each one's tab says so. */
   restoring?: ReadonlySet<number>;
-  /** The browsers of tab `id`'s chats (#2024), drawn live beside it. */
-  browsersOfTab?: (id: number) => readonly BrowserShown[];
-  /** Opens a browser's view, from its thumbnail on a tab. */
-  openBrowser?: (shown: BrowserShown) => void;
-  /** Opens a skill's Runs in the studio on one of its runs, from the chip of the run open in a
-   *  tab's chat (`session`'s). */
-  openSkillRun?: (skill: string, run: string, session: number, level: string | null) => void;
 };
 
 /**

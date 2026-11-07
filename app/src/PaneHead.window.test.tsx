@@ -19,6 +19,7 @@ import type { Moved } from "./bindings";
 import { onTheWire } from "./chatEvents.testkit";
 import { aTabForEachChat } from "./laidOut.testkit";
 import { placementFor } from "./ui/tooltip/Tooltip";
+import { setSkillStudioOn } from "./skillStudio";
 
 /**
  * **A chat's pane head, against the whole window** (#4760, spec #4750 stories 54, 55, 60 and
@@ -330,6 +331,57 @@ describe("a chat wrapping up (#4760)", () => {
 
     await step("cancelled");
     await waitFor(() => expect(row.querySelector('[data-mark="wrapping-up"]')).toBeNull());
+  });
+});
+
+describe("what a chat uses now, on its pane head (#5524)", () => {
+  it("draws the skill run open in the chat on its pane head, and none on its tab", async () => {
+    mockIPC(
+      (cmd, args) => {
+        if (cmd === "skill_studio_on") return true;
+        if (cmd === "set_skill_studio_on") return (args as { on: boolean }).on;
+        if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
+        if (cmd === "opened_chats") return [CHAT];
+        if (cmd === "reopened_layout") return aTabForEachChat([CHAT], () => "alpha");
+        if (cmd === "plane_sidebar")
+          return {
+            root: PLANE,
+            personas: [],
+            persona: null,
+            unfiled: [],
+            workspaces: [{ name: "alpha", path: ALPHA, vision: "", todos: [], chats: [CHAT] }],
+          };
+        if (cmd === "asks_waiting") return { plane: PLANE, asks: [] };
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    // The studio is on: what the window heard of it before this test is kept (`skillStudio.ts`).
+    await setSkillStudioOn(true);
+    render(<App />);
+    await screen.findByTestId("pane");
+
+    await act(() =>
+      emit(
+        ...onTheWire("chat-skill-run", {
+          plane: PLANE,
+          session: 4,
+          run: {
+            skill: "deploy",
+            name: "deploy",
+            id: "01RUN",
+            tool_calls: 2,
+            tokens: null,
+            level: null,
+          },
+        }),
+      ),
+    );
+
+    const chip = await screen.findByTestId("pane-skill-run");
+    expect(head()).toContainElement(chip);
+    expect(chip.closest('[data-strip="Tabs"]')).toBeNull();
+    await setSkillStudioOn(false);
   });
 });
 

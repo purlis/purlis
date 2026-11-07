@@ -182,6 +182,13 @@ export type TasksOn = (
   alone: boolean,
 ) => ReactNode;
 
+/**
+ * **What a chat uses now, drawn on its pane head** (#5524): its skill run open and its browsers,
+ * each pressed to open what it is. They left its tab, which says which chat this is and whether
+ * it needs you (#5339). Nothing for a chat that uses nothing.
+ */
+export type UsingOn = (session: number) => ReactNode;
+
 /** The word as it is: a head with nothing to open. */
 const asItIs: TasksOn = (_session, _at, word, alone) => (alone ? null : word);
 
@@ -278,6 +285,7 @@ export function PaneFrame({
   ended,
   said,
   tasksOn,
+  usingOn,
   focused = false,
   oneJob = false,
   shell = false,
@@ -288,6 +296,8 @@ export function PaneFrame({
   plane: PlaneId;
   /** What the head's state word opens: its chat's tasks menu, where it has tasks (#5341). */
   tasksOn?: TasksOn;
+  /** What the chat uses now, after its state: its skill run and its browsers (#5524). */
+  usingOn?: UsingOn;
   /** **How the path is said for a task that has ended** (#4757, #4756): its state after the
    *  path and the names of chats no longer open. Its Brief is its state button's (#4760). */
   said?: { state?: ReactNode; gone?: (session: number) => boolean };
@@ -537,6 +547,11 @@ export function PaneFrame({
                 <span className="pane-wrapping">
                   <WrappingUp held />
                 </span>
+              )}
+              {/* **What it uses now** (#5524): its skill run and its browsers, which left its
+              tab, beside its state. */}
+              {head && usingOn !== undefined && (
+                <span className="pane-using">{usingOn(session)}</span>
               )}
               {/* **harness · workspace on a pane with no foot** (spec #5191): a shell's and a
               one-job program's keep their heads. */}
@@ -1200,6 +1215,7 @@ export function LayoutPanes({
   finished,
   explaining,
   tasksOn,
+  usingOn,
   others,
   asked,
   asks,
@@ -1272,6 +1288,8 @@ export function LayoutPanes({
   /** **What the head's state word opens** (#5341): the chat's tasks menu, around the word, for
    *  a chat that has tasks; the word as it is for one that has none. */
   tasksOn?: TasksOn;
+  /** What a chat uses now, on its pane head: its skill run and its browsers (#5524). */
+  usingOn?: UsingOn;
   /** **The panes left on a task that has ended** (#4757), by pane: the path it last had. Each
    *  keeps the task's last screen, read-only, under the ended band (#4756). */
   endedTasks: Readonly<Record<number, Crumbs>>;
@@ -1636,6 +1654,7 @@ export function LayoutPanes({
       <PaneFrame
         plane={plane}
         tasksOn={tasksOn}
+        usingOn={usingOn}
         pane={layout.pane}
         tab={tab}
         session={content.session}
@@ -1794,6 +1813,7 @@ export function LayoutPanes({
       finished={finished}
       explaining={explaining}
       tasksOn={tasksOn}
+      usingOn={usingOn}
       others={others}
       asked={asked}
       asks={asks}
