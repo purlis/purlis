@@ -77,9 +77,12 @@ async fn drained<R: Runtime>(app: &tauri::AppHandle<R>, config: &std::path::Path
     let looked_in = config.to_path_buf();
     let done = crate::off_the_window("removing runners that have drained", move || {
         let machine = Machine::here(&looked_in)?;
-        Ok::<_, String>(follow_and_drain(&machine, None, &|to| {
-            crate::runnerlinks::chats_on(to)
-        }))
+        Ok::<_, String>(follow_and_drain(
+            &machine,
+            None,
+            &|to| crate::runnerlinks::chats_on(to),
+            &|to| crate::runnerlinks::left_on(to, &machine.config),
+        ))
     })
     .await;
     links_to_gone_runners_end(app, config);
@@ -115,9 +118,12 @@ async fn look<R: Runtime>(app: &tauri::AppHandle<R>, config: &std::path::Path) {
     let looked_in = config.to_path_buf();
     let done = crate::off_the_window("moving pools to this version", move || {
         let machine = Machine::here(&looked_in)?;
-        Ok::<_, String>(follow_and_drain(&machine, image.as_ref(), &|to| {
-            crate::runnerlinks::chats_on(to)
-        }))
+        Ok::<_, String>(follow_and_drain(
+            &machine,
+            image.as_ref(),
+            &|to| crate::runnerlinks::chats_on(to),
+            &|to| crate::runnerlinks::left_on(to, &machine.config),
+        ))
     })
     .await;
     match done {
@@ -309,7 +315,9 @@ pub fn waiting_on(config: &std::path::Path, pool: &str) -> u32 {
 /// **What the draining runner `runner` of pool `pool` waited on is let go of**: it is removed.
 #[cfg(unix)]
 pub fn forget_waiting_on(config: &std::path::Path, pool: &str, runner: &str) {
-    lock_waiting().remove(&(config.to_path_buf(), pool.to_owned(), runner.to_owned()));
+    let at = (config.to_path_buf(), pool.to_owned(), runner.to_owned());
+    lock_waiting().remove(&at);
+    lock_left().remove(&at);
 }
 
 /// **What pool `pool`'s draining runners waited on is let go of** (#2865): the pool is removed,
@@ -317,6 +325,26 @@ pub fn forget_waiting_on(config: &std::path::Path, pool: &str, runner: &str) {
 #[cfg(unix)]
 pub fn forget_waiting(config: &std::path::Path, pool: &str) {
     lock_waiting().retain(|(home, of, _), _| !(home == config && of == pool));
+    lock_left().retain(|(home, of, _), _| !(home == config && of == pool));
+}
+
+/// **What pool `pool`'s draining runners hold that no fetch brings here, as the last look found
+/// it** (ruled 2026-11-07), in sentences: what keeps each, which the Pools group says.
+#[cfg(unix)]
+pub fn left_on(config: &std::path::Path, pool: &str) -> Vec<String> {
+    lock_left()
+        .iter()
+        .filter(|((home, of, _), _)| home == config && of == pool)
+        .flat_map(|(_, left)| left.iter().cloned())
+        .collect()
+}
+
+#[cfg(unix)]
+fn lock_left() -> std::sync::MutexGuard<'static, std::collections::BTreeMap<Waiting, Vec<String>>> {
+    static LEFT: std::sync::Mutex<std::collections::BTreeMap<Waiting, Vec<String>>> =
+        std::sync::Mutex::new(std::collections::BTreeMap::new());
+    LEFT.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// A draining runner, by its config home, its pool and its name.
@@ -341,6 +369,7 @@ pub fn follow_and_drain(
     machine: &Machine,
     image: Option<&Image>,
     chats_on: &dyn Fn(&ToARunner) -> Result<u32, String>,
+    left_on: &dyn Fn(&ToARunner) -> Result<Vec<String>, String>,
 ) -> Vec<String> {
     let mut said = Vec::new();
     if let Some(image) = image {
@@ -468,6 +497,8 @@ pub fn follow_and_drain(
         let look = machine
             .ran(&kept)
             .map(|ran| purlis_core::pools::drain_look(&kept, ran));
+        // Only a runner that runs is asked what it holds: one stopped goes without being woken.
+        let runs = matches!(look, Ok(DrainLook::Ask) | Err(_));
         let chats = match look {
             _ if kept.unpaired => Ok(0),
             Ok(DrainLook::Held) => {
@@ -539,12 +570,47 @@ pub fn follow_and_drain(
                 }
             }
         }
+        // **Nor with work no fetch brings** (ruled 2026-11-07): a fetch brings the branches of the
+        // clones that are here, so the runner lists every repository it holds, and each is proved
+        // home as a fresh runner's is. What is not stays on it, with the runner, and the Pools
+        // group says so.
+        if !kept.unpaired && runs {
+            let left = match left_on(&to) {
+                Ok(left) => left,
+                Err(why) => vec![format!("it did not list what it holds: {why}")],
+            };
+            if !left.is_empty() {
+                said.push(format!(
+                    "draining runner {} stays, since it holds work no fetch brings here: {}",
+                    kept.name(),
+                    left.join("; ")
+                ));
+                lock_left().insert(at, left);
+                continue;
+            }
+            lock_left().remove(&at);
+        }
         let unpair = |_: &purlis_core::runners::Kept| crate::runnerlinks::unpair(&to);
         said.push(said_of_a_drain(
             kept.name(),
             purlis_core::pools::drain(&machine.config, &machine.docker, kept.name(), Some(&unpair)),
         ));
     }
+    // What a runner held is said only while it still drains, held by no one: one removed, or the
+    // person's now, says nothing more.
+    let draining: Vec<Waiting> = purlis_core::runners::draining(&machine.config)
+        .unwrap_or_default()
+        .iter()
+        .filter(|kept| !kept.held)
+        .map(|kept| {
+            (
+                machine.config.clone(),
+                kept.pool().to_owned(),
+                kept.name().to_owned(),
+            )
+        })
+        .collect();
+    lock_left().retain(|at, _| at.0 != machine.config || draining.contains(at));
     said
 }
 

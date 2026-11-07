@@ -18,7 +18,7 @@ publish = false
 # from 3.0 it enables no features by default, and purlis needs none of them: it spawns the agent
 # itself and hands the SDK a `Lines` transport over the child's pipes, so neither `process` nor
 # `stdio` is wanted.
-agent-client-protocol = "3.0"
+agent-client-protocol = "5.0"
 blocking = "1"
 # A brokered `secret exec`'s output crosses the hook socket as base64 (#1407): a child's bytes
 # need not be UTF-8. The version the CLI and the app already use, so no crate is added.
@@ -67,7 +67,7 @@ purlis-unicode.workspace = true
 # What a chat's browser tools ask (#2013): the session protocol's browser acts, one vocabulary
 # from the tool server through the window to the session host. A crate of this workspace.
 purlis-session-protocol.workspace = true
-# `purlis check report` (#5407, ADR 0116): SARIF 2.1.0's own types, generated from the OASIS schema
+# `purlis check report` (#5407, ADR 0117): SARIF 2.1.0's own types, generated from the OASIS schema
 # by psastras' sarif-rs, MIT. No converter feature: purlis has no parser for any one tool.
 serde-sarif = "0.8"
 # ⌘P's fuzzy file names (FM-7, #1110): helix's matcher, the fzf algorithm with a bonus for
@@ -187,10 +187,11 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["f
 # workspace's lockfile through the app.
 ureq = { version = "3.4", default-features = false, features = ["rustls", "platform-verifier"] }
 # A cluster runner holds the operator's mint port to a pinned key, so it speaks TLS itself (#4207),
-# and proves its X25519 link key, which `snow` keeps to its handshake. Both are already in this
-# workspace's lockfile, through `ureq` and `snow`.
+# and proves its X25519 link key, which `snow` keeps to its handshake. `rustls` is already in this
+# workspace's lockfile through `ureq`; `curve25519-dalek` is a major ahead of the copy `snow` and
+# `ed25519-dalek` hold, which `deny.toml` allows.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
-curve25519-dalek = { version = "4", default-features = false }
+curve25519-dalek = { version = "5", default-features = false }
 # The request and response types `ureq` speaks, and the URL a token may be sent to is parsed with.
 http = "1"
 # GraphQL queries checked at build time against the forge's published schema, so a field the

@@ -3,7 +3,18 @@
 
 import { describe, expect, it } from "vitest";
 import { faceOf, type Naming } from "./tabFace";
-import { focusPane, noTabs, openTab, openView, splitFocusedPane, type Tabs } from "./tabs";
+import {
+  contentsOf,
+  focusPane,
+  noTabs,
+  openTab,
+  openView,
+  openViewBesidePane,
+  showInstead,
+  splitFocusedPane,
+  type Tabs,
+  type ViewRef,
+} from "./tabs";
 import { zoomFocusedPane } from "./tiling";
 
 /**
@@ -177,6 +188,38 @@ describe("a tab's face", () => {
     };
     expect(faceOf(beside, id, unnamed).name).toBe("Browser");
     expect(faceOf(tabs, front(tabs), unnamed).name).toBe("steward 1");
+  });
+
+  it("names a view beside a chat by its own title, which the tab takes when it is first (#5577)", () => {
+    // Opened beside chat 1 from a file's row: the view's own title is the file's name.
+    const file: ViewRef = { from: null, view: "file", key: "/repo/notes.md" };
+    const tabs = openViewBesidePane(
+      openTab(noTabs(), 1, "steward 1"),
+      1,
+      file,
+      "notes.md",
+      "alpha",
+      "row",
+    );
+    const untitled: Naming = { ...naming, view: () => undefined };
+    expect(faceOf(tabs, front(tabs), untitled).panes).toEqual(["steward 1", "notes.md"]);
+    // Its first chat's pane closed: the tab is named for the view, by its title.
+    const id = front(tabs);
+    const content = contentsOf(tabs, id)[1].content;
+    expect(content.kind === "view" && content.title).toBe("notes.md");
+  });
+
+  it("keeps a view's own title current when the view is shown anew in its pane (#5577)", () => {
+    const file: ViewRef = { from: null, view: "file", key: "/repo/notes.md" };
+    const moved: ViewRef = { from: null, view: "file", key: "/repo/later.md" };
+    const tabs = showInstead(
+      openViewBesidePane(openTab(noTabs(), 1, "steward 1"), 1, file, "notes.md", "alpha", "row"),
+      file,
+      moved,
+      "later.md",
+    );
+    const untitled: Naming = { ...naming, view: () => undefined };
+    expect(faceOf(tabs, front(tabs), untitled).panes).toEqual(["steward 1", "later.md"]);
   });
 
   it("says New chat for a tab that is not there to read", () => {

@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   act,
   cleanup,
+  fireEvent,
   render as renderBare,
   screen,
   waitFor,
@@ -673,7 +674,7 @@ describe("App", () => {
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(screen.queryAllByTestId("pane")).toEqual([]);
     // The strip's last tab keeps one empty pane.
-    expect(await screen.findByText("Nothing in this pane")).toBeInTheDocument();
+    expect(await screen.findByText("Nothing in this pane yet")).toBeInTheDocument();
     expect(asked.filter(({ cmd }) => cmd === "close_session")).toEqual([]);
   });
 
@@ -682,7 +683,7 @@ describe("App", () => {
     render(<App />);
     await openAChat();
     await userEvent.click(screen.getByRole("button", { name: "Close steward 1" }));
-    await screen.findByText("Nothing in this pane");
+    await screen.findByText("Nothing in this pane yet");
 
     await openAChat();
 
@@ -727,7 +728,7 @@ describe("App", () => {
 
       await userEvent.click(screen.getByRole("button", { name: "Close steward 1" }));
 
-      expect(await screen.findByText("Nothing in this pane")).toBeInTheDocument();
+      expect(await screen.findByText("Nothing in this pane yet")).toBeInTheDocument();
       expect(tabs()).toHaveLength(1);
     });
 
@@ -754,6 +755,33 @@ describe("App", () => {
 
       await waitFor(() => expect(panes()).toEqual(["session 1"]));
       expect(keyboardGiven).toEqual([1]);
+    });
+
+    it("leaves the keyboard where it was in the front tab, after a background tab's × (#5445)", async () => {
+      core();
+      render(<App />);
+      await openAChat();
+      await openAChat();
+      await waitFor(() => expect(panes()).toEqual(["session 2"]));
+      // The keyboard on something in the front tab: its pane's Split right.
+      const where = paneDoing(2).getByRole("button", { name: "Split right" });
+      where.focus();
+      keyboardGiven.length = 0;
+
+      // Pressed as Chromium presses a button: a mouse down that focuses it unless its default
+      // is prevented, then the click. Not `userEvent`'s pointer, which the panels' separators
+      // hear across the whole window in jsdom, where every box is at 0,0.
+      const x = screen.getByRole("button", { name: "Close steward 1" });
+      if (fireEvent.mouseDown(x)) x.focus();
+      fireEvent.mouseUp(x);
+      fireEvent.click(x);
+
+      await waitFor(() =>
+        expect(screen.queryByRole("button", { name: "Close steward 1" })).toBeNull(),
+      );
+      expect(panes()).toEqual(["session 2"]);
+      expect(document.activeElement).toBe(where);
+      expect(keyboardGiven).toEqual([]);
     });
 
     it("is not on an empty pane alone in its tab, whose two splits are", async () => {
@@ -1046,7 +1074,7 @@ describe("App", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "New tab" }));
 
-    await waitFor(() => expect(tabs()).toEqual(["steward 1", "steward 2", "New chat"]));
+    await waitFor(() => expect(tabs()).toEqual(["steward 1", "steward 2", "Empty tab"]));
   });
 
   it("draws its empty pane when the plane's sidebar cannot be read (#4758)", async () => {

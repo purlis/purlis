@@ -9,6 +9,7 @@ import type { Channel } from "@tauri-apps/api/core";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { BrowserFrame } from "./bindings";
+import { forgetOrigins } from "./browserWatch";
 import { pickIn, selectNamed } from "./ui/select/select.testkit";
 import { onAMac } from "./tabKeys";
 import { stripNamed } from "./test-strips";
@@ -53,6 +54,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   clearMocks();
+  // Where each browser's page is outlives a render: each test starts from none.
+  forgetOrigins();
 });
 
 const PLANE = "/home/dev/plane";
@@ -149,7 +152,7 @@ describe("a browser's view tab", () => {
     await fromThePalette("New browser");
 
     // Beside the empty tab every strip keeps (#4758).
-    await waitFor(() => expect(tabNames()).toEqual(["New chat", "Browser"]));
+    await waitFor(() => expect(tabNames()).toEqual(["Empty tab", "Browser"]));
     expect(host.asked("open_browser")).toEqual([{ plane: PLANE }]);
     await screen.findByLabelText("The browser's page");
     await waitFor(() =>
@@ -178,7 +181,7 @@ describe("a browser's view tab", () => {
 
     expect(await screen.findByText("Every chat purlis started is stopped.")).toBeInTheDocument();
     // Only the empty tab every strip keeps (#4758).
-    expect(tabNames()).toEqual(["New chat"]);
+    expect(tabNames()).toEqual(["Empty tab"]);
   });
 
   it("ends its browser when its tab closes, after closing its view", async () => {
@@ -190,7 +193,7 @@ describe("a browser's view tab", () => {
     );
     await screen.findByTestId("title-about");
     await fromThePalette("New browser");
-    await waitFor(() => expect(tabNames()).toEqual(["New chat", "Browser"]));
+    await waitFor(() => expect(tabNames()).toEqual(["Empty tab", "Browser"]));
     await waitFor(() => expect(host.asked("watch_browser").length).toBeGreaterThan(0));
 
     // Its tab's close: a view alone in its tab has no close of its own (#5318).
@@ -207,7 +210,7 @@ describe("a view alone in its tab (#5318)", () => {
     render(<App />);
     await screen.findByTestId("title-about");
     await fromThePalette("New browser");
-    await waitFor(() => expect(tabNames()).toEqual(["New chat", "Browser"]));
+    await waitFor(() => expect(tabNames()).toEqual(["Empty tab", "Browser"]));
     const frame = document.querySelector(".pane-frame.pane-viewed") as HTMLElement;
     expect(within(frame).queryByRole("button", { name: /^Split |^Close this view$/ })).toBeNull();
 
@@ -639,6 +642,25 @@ describe("a browser the person opened goes where they send it (#2176)", () => {
 
     expect(await screen.findByText("localhost:5173 on pool builds")).toBeInTheDocument();
     expect(screen.queryByText(/on this (Mac|computer)/)).toBeNull();
+  });
+
+  it("names no site, plainly, once its page is told with none, not even where it was sent", async () => {
+    besides.go_browser = () => ({ outcome: "went", address: "https://example.com/docs" });
+    const host = await opened();
+    fireEvent.change(await screen.findByRole("textbox", { name: "Address" }), {
+      target: { value: "example.com/docs" },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Go" }));
+    expect(await screen.findByText(/^example\.com on this/)).toBeInTheDocument();
+
+    // A page whose address holds what purlis kept out is told with no site at all.
+    host.page(null);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("browser-chip")).toHaveTextContent(/^On this (Mac|computer)$/),
+    );
+    expect(screen.queryByText(/example\.com/)).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("names no device while neither its view nor the chats' browsers say where it runs (#2050)", async () => {

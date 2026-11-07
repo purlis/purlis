@@ -85,10 +85,11 @@ const ALLOWED: &[(&str, usize, &str)] = &[
     ),
     (
         "crates/purlis-core/src/wscmd/saved.rs",
-        1,
+        2,
         "the LIVE block's line for one of a workspace's own files saved with the project \
          (#5377): `add` refuses an entry holding a `.git` and `block_for` drops one that has \
-         become one, so never a repo",
+         become one, so never a repo; and the path `Marks` asks git about (#5552), a path of \
+         the workspace files `Files` lists, which leaves every repo out",
     ),
     (
         "crates/purlis-core/src/wscmd/rename.rs",

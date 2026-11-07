@@ -124,7 +124,7 @@ describe("Inspect", () => {
     );
     // Beside the browser, in its tab: no tab more. The strip's first tab is the empty one every
     // strip keeps (#4758), which the browser opened beside.
-    expect(tabNames()).toEqual(["New chat", "Browser"]);
+    expect(tabNames()).toEqual(["Empty tab", "Browser"]);
     expect(screen.getByLabelText("The browser's page")).toBeInTheDocument();
 
     host.devtoolsSend("/9j/AA==");

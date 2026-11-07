@@ -221,6 +221,25 @@ pub struct ChatForSkills {
     /// Why its chats get no skills, where its harness is a declared one skills are not
     /// supported on (SK-30): [`purlis_core::skills::not_supported_on`].
     pub not_supported: Option<String>,
+    /// **What its runner said it armed it with** (SK-15h, #4218), for a chat its runner armed:
+    /// its set, in place of any this window works out. `None` for a chat armed here.
+    pub runners_word: Option<RunnersWord>,
+}
+
+/// **What a chat's runner said of the skills it armed it with** (SK-15h, #4218), at its start
+/// or to a window that reattached it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RunnersWord {
+    /// Their names and levels.
+    Said(Vec<purlis_session_protocol::session::ArmedSkill>),
+    /// Nothing: its runner's purlis is from before 1.77, which says none.
+    NotSaid,
+}
+
+impl RunnersWord {
+    fn of(said: Option<Vec<purlis_session_protocol::session::ArmedSkill>>) -> RunnersWord {
+        said.map_or(RunnersWord::NotSaid, RunnersWord::Said)
+    }
 }
 
 /// One chat open here that its start routed by a router extension ([`Chats::routings`]).
@@ -489,6 +508,8 @@ struct Running {
     /// **The persona it runs as, as its start named it**: its run's `persona` (ADR 0066), what a
     /// runner's skill run of it is logged by here (SK-20b, #3084). `None` on no persona.
     runs_as: Option<String>,
+    /// **What its runner said it armed it with** (SK-15h, #4218): `None` for a chat armed here.
+    runners_word: Option<RunnersWord>,
 }
 
 /// **Whether the plane's skills reach a chat starting now** (#3445, #3466): a chat
@@ -5294,6 +5315,12 @@ impl Chats {
         // **Its prompt key** (#3369): the one its host kept, for a chat reattached; the one the
         // runner mints, for a chat it composes (answered below); a fresh one for a harness chat
         // this window composes. Never on its line and never in a record.
+        // **The skills its runner armed it with, as the runner said** (SK-15h, #4218): its host
+        // kept them for a chat reattached; a start its runner composes answers them below.
+        let mut armed_skills = match (reattaching, chat.number) {
+            (true, Some(number)) if armed_by_its_runner => self.sessions.armed_skills_left(number),
+            _ => None,
+        };
         let mut prompt_key = match (reattaching, chat.number) {
             (true, Some(number)) => self.sessions.prompt_key_left(number),
             _ if on_the_runner || harness.is_none() => None,
@@ -5377,6 +5404,7 @@ impl Chats {
                     });
                     confinement = composed.confinement;
                     prompt_key = composed.prompt_key;
+                    armed_skills = composed.armed_skills;
                     composed.number
                 })
                 .map_err(|why| {
@@ -5563,6 +5591,7 @@ impl Chats {
                 clones_at_start: clones_at_start.take(),
                 prompt_key,
                 runs_as: runs_as.clone(),
+                runners_word: armed_by_its_runner.then(|| RunnersWord::of(armed_skills)),
             },
         );
         drop(open);
@@ -6770,6 +6799,7 @@ impl Chats {
                 .filter(|_| running.harness.is_none())
                 .and_then(purlis_core::skills::not_supported_on)
                 .map(|one| one.said),
+            runners_word: running.runners_word.clone(),
         })
     }
 
@@ -6974,7 +7004,8 @@ impl Chats {
     /// `pool`'s runner says it started or ended, logged in this project's skill log as a local
     /// run is, with this window's own word for where the chat ran: the persona it runs as, its
     /// harness and its workspace. Only for a chat open here that runs on that pool's runner, by
-    /// its id; any other line names no chat of this window's, and nothing is logged.
+    /// its id, or one still coming back as the window puts its chats back, or that its put-back
+    /// could not start (#4219), whose record says where it ran; any other line names no chat of this window's, and nothing is logged.
     pub fn skill_run_heard(
         &self,
         pool: Option<&str>,
@@ -6996,14 +7027,46 @@ impl Chats {
                     )
                 })
         };
-        let Some((number, persona, harness, workspace)) = ran_as else {
-            return;
+        let (persona, harness, workspace) = match ran_as {
+            Some((number, persona, harness, workspace)) => {
+                // Its pool, also where it was heard from a chat's own runner (#3818).
+                let of = pool.split_once("/fresh-").map_or(pool, |(pool, _)| pool);
+                if self.sessions.pool_of(number).as_deref() != Some(of) {
+                    return;
+                }
+                (persona, harness, workspace)
+            }
+            // **One still coming back** (#4219): a runner's lines come as the link comes up,
+            // before the chats put back are open, and its pool is known only once it is: its
+            // line came from the runner that keeps this project, under its id. Its record says
+            // where it ran.
+            None => {
+                let is_it = |chat: &Chat| chat.identity.id.as_deref() == Some(run.chat.as_str());
+                let coming = lock(&self.coming)
+                    .iter()
+                    .find(|one| is_it(&one.chat))
+                    .map(|one| (one.chat.clone(), one.workspace.clone()));
+                // Or one its put-back could not start, which is still this window's.
+                let waiting = || {
+                    lock(&self.would_not_start)
+                        .iter()
+                        .find(|one| is_it(&one.chat))
+                        .map(|one| {
+                            let workspace =
+                                workspace_at_start(Some(&self.project), one.chat.cwd.as_deref());
+                            (one.chat.clone(), workspace)
+                        })
+                };
+                let Some((chat, workspace)) = coming.or_else(waiting) else {
+                    return;
+                };
+                (
+                    chat.persona.clone(),
+                    chat.harness().map(Harness::name),
+                    workspace,
+                )
+            }
         };
-        // Its pool, also where it was heard from a chat's own runner (#3818).
-        let of = pool.split_once("/fresh-").map_or(pool, |(pool, _)| pool);
-        if self.sessions.pool_of(number).as_deref() != Some(of) {
-            return;
-        }
         // Under this machine's own device, as a run of its own is: the runner keeps its own file
         // under its device in its checkout, which this machine sends it.
         let device = self

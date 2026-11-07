@@ -26,9 +26,18 @@
 //
 // It needs `gh`, signed in, and `git`.
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, parse, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { take } from "./story-baselines.mjs";
@@ -76,6 +85,56 @@ export function notOf(drawn, head) {
   return undefined;
 }
 
+/** A pull's own download folder: `mkdtempSync` adds six characters to `story-baselines-`. */
+const LEFTOVER = /^story-baselines-[A-Za-z0-9]{6}$/;
+
+/** How long nothing has written to a pull's folder before it is taken for a killed pull's. */
+export const IDLE_MS = 24 * 60 * 60 * 1000;
+
+/** The newest time anything under `path` was written, not following links. */
+const newestWrite = (path) => {
+  const stat = lstatSync(path);
+  let newest = stat.mtimeMs;
+  if (stat.isDirectory())
+    for (const name of readdirSync(path)) newest = Math.max(newest, newestWrite(join(path, name)));
+  return newest;
+};
+
+/**
+ * Removes the `story-baselines-*` folders directly under `tmp` that nothing has written to for
+ * `idle` milliseconds before `now`, answering the paths it removed (#5348). A pull removes its
+ * folder in a `finally`, which a killed pull never reaches, and the temp folder is shared, so
+ * only age says a folder is a leftover: a pull running alongside writes to its own all along.
+ *
+ * Only a real folder (never a link) whose name is exactly a pull's own, directly in the resolved
+ * `tmp`, is removed; a `tmp` that resolves to nothing, or to a root, clears nothing.
+ */
+export function clearLeftovers({ tmp = tmpdir(), now = Date.now(), idle = IDLE_MS } = {}) {
+  if (typeof tmp !== "string" || tmp.trim() === "") return [];
+  let at;
+  try {
+    at = realpathSync(tmp);
+  } catch {
+    return [];
+  }
+  if (!at || !isAbsolute(at) || parse(at).root === at) return [];
+  const removed = [];
+  for (const entry of readdirSync(at, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !LEFTOVER.test(entry.name)) continue;
+    const path = join(at, entry.name);
+    if (dirname(path) !== at) continue;
+    try {
+      if (!lstatSync(path).isDirectory()) continue;
+      if (now - newestWrite(path) < idle) continue;
+      rmSync(path, { recursive: true, force: true });
+      removed.push(path);
+    } catch {
+      // Gone already, or not ours to read: another pull's business.
+    }
+  }
+  return removed;
+}
+
 /** Why a pull took nothing: said to the person, and the tool exits 1. */
 export class Refused extends Error {}
 
@@ -86,9 +145,11 @@ export class Refused extends Error {}
  *
  * Everything it downloads, `gh`'s own `gh-artifact.*.zip` among it, goes into one
  * `story-baselines-*` folder under `tmp`, which it removes when it finishes, taken or refused:
- * the only thing it keeps is the pictures it writes into `app/`.
+ * the only thing it keeps is the pictures it writes into `app/`. It first clears the folders that
+ * killed pulls left there (`clearLeftovers`).
  */
 export function pull({ pr, repo = REPO, root, tmp = tmpdir(), exec = spawnSync }) {
+  clearLeftovers({ tmp });
   const run = (command, args, options = {}) => {
     const done = exec(command, args, { encoding: "utf8", ...options });
     if (done.status !== 0)

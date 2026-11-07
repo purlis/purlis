@@ -46,6 +46,16 @@ describe("the strip's + (#4758; spec story 13)", () => {
     expect(workspaceOf(tabs, id, filedIn({}))).toBe("ops");
   });
 
+  it("names it Empty tab until it holds something (#5292)", () => {
+    const tabs = openEmptyTab(noTabs(), "ops");
+    const id = tabs.inFront ?? -1;
+    expect(tabs.byId[id].name).toBe("Empty tab");
+
+    const landed = press(tabs, { session: 2, chat: "2", who: "steward" }, at());
+
+    expect(landed.tabs.byId[id].name).toBe("steward 2");
+  });
+
   it("is a tab New chat then fills, adding no other", () => {
     const tabs: Tabs = openEmptyTab(openTab(noTabs(), 1, "1", "steward"), "ops");
 

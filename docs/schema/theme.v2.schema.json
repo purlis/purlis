@@ -7397,6 +7397,30 @@
         "popover.header.notice.font-weight": {
           "$ref": "#/$defs/part-font-weight"
         },
+        "popover.none.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "popover.none.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "popover.none.popover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "popover.none.popover.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "popover.none.menu.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "popover.none.menu.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "popover.none.notice.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "popover.none.notice.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
         "popover.footer.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -7935,6 +7959,96 @@
           "$ref": "#/$defs/part-font-size"
         },
         "review-page.answers.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "secret-ask.root.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "secret-ask.facts.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "secret-ask.facts.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "secret-ask.facts.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "secret-ask.facts.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "secret-ask.facts.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "secret-ask.facts.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "secret-ask.facts-head.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "secret-ask.facts-head.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "secret-ask.who.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "secret-ask.who.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "secret-ask.chat.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "secret-ask.chat.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "secret-ask.chat.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "secret-ask.command.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "secret-ask.command.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "secret-ask.control.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "secret-ask.control.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "secret-ask.control.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "secret-ask.value.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "secret-ask.scope-said.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "secret-ask.scope-said.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "secret-ask.tool-line.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "secret-ask.tool-line.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "secret-ask.tool-line.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "secret-ask.tool-line.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "secret-ask.tool-line.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "secret-ask.foot.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "secret-ask.foot.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "secret-ask.foot.gap": {
           "$ref": "#/$defs/part-gap"
         },
         "segment.root.fill": {

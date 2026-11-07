@@ -1918,3 +1918,28 @@ fn every_reason_reads_as_one_line() {
         assert!(!line.contains('\n'), "{reason:?} runs over lines: {line}");
     }
 }
+
+/// #4218: each level's word reads back as its origin, and no other word is one.
+#[test]
+fn each_levels_word_reads_back_as_its_origin() {
+    for origin in [
+        Origin::BuiltIn,
+        Origin::Project,
+        Origin::Workspace,
+        Origin::Persona,
+        Origin::Harness,
+        Origin::Repo,
+    ] {
+        // A level added to `Origin` fails here until it is listed and read back.
+        match origin {
+            Origin::BuiltIn
+            | Origin::Project
+            | Origin::Workspace
+            | Origin::Persona
+            | Origin::Harness
+            | Origin::Repo => {}
+        }
+        assert_eq!(Origin::from_level(origin.level()), Some(origin));
+    }
+    assert_eq!(Origin::from_level("local project"), None);
+}

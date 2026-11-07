@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **The Check reporter, end to end** (ADR 0116, #5410): the probe assembled as an operator would
+//! **The Check reporter, end to end** (ADR 0117, #5410): the probe assembled as an operator would
 //! install it, approved with the dialog's two clicks, handed a check's output and exit status
 //! through purlis's real executor, and its SARIF recorded through the same path as `purlis check
 //! report` — and refused when it was never approved, and kept as a fault naming it when what it
@@ -122,10 +122,10 @@ impl Probe {
 }
 
 #[test]
-fn the_probe_s_manifest_asks_for_the_check_reporter_in_protocol_5() {
+fn the_probe_s_manifest_asks_for_the_check_reporter_in_protocol_6() {
     let probe = Probe::assembled();
     let found = extension::read_at(&probe.ext()).expect("it reads");
-    assert_eq!(found.manifest.protocol, 5);
+    assert_eq!(found.manifest.protocol, 6);
     assert!(found.manifest.reports_checks());
     let asked = extension::prompt(&found, extension::Standing::New).declares;
     assert!(
@@ -192,7 +192,7 @@ fn an_extension_that_does_not_ask_for_the_capability_is_never_handed_a_check() {
     let at = probe.ext().join(extension::MANIFEST);
     std::fs::write(
         &at,
-        r#"{"version":5,"id":"check-probe","name":"Check probe","contributes":{"runs":"bin/check-probe"}}"#,
+        r#"{"version":6,"id":"check-probe","name":"Check probe","contributes":{"runs":"bin/check-probe"}}"#,
     )
     .expect("a manifest without the capability");
     probe.install_and_approve();

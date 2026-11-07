@@ -93,6 +93,11 @@ fn only_looked(config: &std::path::Path) -> bool {
         .all(|line| line.starts_with("container inspect ") || line.starts_with("container ls "))
 }
 
+/// A runner that holds nothing a fetch does not bring.
+fn nothing_held(_: &ToARunner) -> Result<Vec<String>, String> {
+    Ok(Vec::new())
+}
+
 fn names(machine: &Machine) -> Vec<String> {
     runners::read(&machine.config)
         .unwrap()
@@ -124,7 +129,7 @@ fn a_draining_runner_with_no_chat_left_stays_until_its_work_is_fetched() {
     })
     .unwrap();
 
-    let said = follow_and_drain(&machine, None, &|_| Ok(0));
+    let said = follow_and_drain(&machine, None, &|_| Ok(0), &nothing_held);
 
     assert_eq!(names(&machine), ["first", "first-fedcba98"]);
     assert!(
@@ -141,9 +146,84 @@ fn a_draining_runner_with_no_chat_left_stays_until_its_work_is_fetched() {
         store.branches_fetched(plane, "first", "ide");
     })
     .unwrap();
-    let said = follow_and_drain(&machine, None, &|_| Ok(0));
+    let said = follow_and_drain(&machine, None, &|_| Ok(0), &nothing_held);
 
     assert_eq!(names(&machine), ["first-fedcba98"], "{said:?}");
+}
+
+/// **A draining runner goes only once all it holds is here** (ruled 2026-11-07): its fetch ran,
+/// and still it holds work of a project no folder here holds, so it stays, and the Pools group
+/// says what. Once it holds nothing a fetch does not bring, it goes, and nothing is said.
+#[test]
+fn a_draining_runner_holding_work_no_fetch_brings_stays_and_the_pools_group_says_what() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine(config.path());
+    a_pool_draining(&machine);
+    let project = "01J9PRJCT00000000000000000";
+    let holds_work = |_: &ToARunner| -> Result<Vec<String>, String> {
+        Ok(vec![format!(
+            "work of a project no folder on this machine holds, which the runner keeps as {project}"
+        )])
+    };
+
+    let said = follow_and_drain(&machine, None, &|_| Ok(0), &holds_work);
+
+    assert_eq!(names(&machine), ["first", "first-fedcba98"], "{said:?}");
+    assert!(
+        said.iter().any(|line| line.contains("no fetch brings")),
+        "{said:?}"
+    );
+    assert!(
+        only_looked(config.path()),
+        "nothing of it is carried or removed"
+    );
+    let left = left_on(&machine.config, "first");
+    assert!(left.iter().any(|one| one.contains(project)), "{left:?}");
+
+    let said = follow_and_drain(&machine, None, &|_| Ok(0), &nothing_held);
+
+    assert_eq!(names(&machine), ["first-fedcba98"], "{said:?}");
+    assert_eq!(left_on(&machine.config, "first"), Vec::<String>::new());
+}
+
+/// What a look found on a runner that then holds nothing more is said no more.
+#[test]
+fn a_draining_runner_that_lists_again_and_holds_nothing_goes_and_is_said_no_more() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine(config.path());
+    a_pool_draining(&machine);
+    follow_and_drain(&machine, None, &|_| Ok(0), &|_| Err("down".into()));
+    assert_eq!(left_on(&machine.config, "first").len(), 1);
+
+    let said = follow_and_drain(&machine, None, &|_| Ok(0), &nothing_held);
+
+    assert_eq!(names(&machine), ["first-fedcba98"], "{said:?}");
+    assert_eq!(left_on(&machine.config, "first"), Vec::<String>::new());
+}
+
+/// A draining runner that does not list what it holds may hold anything, so it stays, and the
+/// Pools group says why.
+#[test]
+fn a_draining_runner_that_does_not_list_what_it_holds_stays() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine(config.path());
+    a_pool_draining(&machine);
+
+    let said = follow_and_drain(&machine, None, &|_| Ok(0), &|_| Err("down".into()));
+
+    assert_eq!(names(&machine), ["first", "first-fedcba98"], "{said:?}");
+    let left = left_on(&machine.config, "first");
+    assert!(
+        left.iter()
+            .any(|one| one.contains("did not list what it holds: down")),
+        "{left:?}"
+    );
+    forget_waiting(&machine.config, "first");
+    assert_eq!(
+        left_on(&machine.config, "first"),
+        Vec::<String>::new(),
+        "a removed pool says nothing"
+    );
 }
 
 /// **The Pools group names the project a draining runner waits on** (#5461): the one the drain
@@ -231,7 +311,7 @@ fn a_chat_on_the_pools_next_runner_does_not_hold_a_draining_one_back() {
     })
     .unwrap();
 
-    let said = follow_and_drain(&machine, None, &|_| Ok(0));
+    let said = follow_and_drain(&machine, None, &|_| Ok(0), &nothing_held);
 
     assert_eq!(names(&machine), ["first-fedcba98"], "{said:?}");
 }
@@ -243,7 +323,7 @@ fn a_draining_runner_is_removed_once_no_chat_is_left_on_it_and_not_before() {
     a_pool_draining(&machine);
 
     // Chats still run on it: it stays, and the pool says how many it waits on.
-    follow_and_drain(&machine, None, &|_| Ok(2));
+    follow_and_drain(&machine, None, &|_| Ok(2), &nothing_held);
     assert_eq!(names(&machine), ["first", "first-fedcba98"]);
     assert_eq!(waiting_on(&machine.config, "first"), 2);
     // Nor is a sign-in of it carried to the pool's runner while they run (#4055): a new chat
@@ -251,7 +331,7 @@ fn a_draining_runner_is_removed_once_no_chat_is_left_on_it_and_not_before() {
     let log = std::fs::read_to_string(config.path().join("log")).unwrap_or_default();
     assert!(!log.contains("-copy "), "{log}");
     // It does not answer: not known to be idle, so it stays.
-    let said = follow_and_drain(&machine, None, &|_| Err("down".into()));
+    let said = follow_and_drain(&machine, None, &|_| Err("down".into()), &nothing_held);
     assert_eq!(names(&machine), ["first", "first-fedcba98"]);
     assert!(
         said.iter()
@@ -260,7 +340,7 @@ fn a_draining_runner_is_removed_once_no_chat_is_left_on_it_and_not_before() {
     );
 
     // No chat is left: it is removed, its container and home with it, and the pool's own stays.
-    let said = follow_and_drain(&machine, None, &|_| Ok(0));
+    let said = follow_and_drain(&machine, None, &|_| Ok(0), &nothing_held);
     assert_eq!(names(&machine), ["first-fedcba98"]);
     assert!(
         said.iter().any(|line| line.contains("is removed")),
@@ -301,7 +381,12 @@ fn a_pool_already_of_this_versions_image_or_of_a_teams_own_is_left_as_it_is() {
     )
     .unwrap();
 
-    let said = follow_and_drain(&machine, Some(&Image::pinned(NEW).unwrap()), &|_| Ok(2));
+    let said = follow_and_drain(
+        &machine,
+        Some(&Image::pinned(NEW).unwrap()),
+        &|_| Ok(2),
+        &nothing_held,
+    );
 
     assert!(said.is_empty(), "{said:?}");
     // Asking whether a draining runner's container runs (#2051) is all docker was asked.
@@ -323,7 +408,7 @@ fn a_release_with_no_runner_image_leaves_the_pools_where_they_are() {
 
     note_named(&Ok(Found::NoneNamed));
     assert_eq!(this_versions_image_named(), Some(false));
-    follow_and_drain(&machine, None, &|_| Ok(1));
+    follow_and_drain(&machine, None, &|_| Ok(1), &nothing_held);
 
     assert_eq!(runners::read(&machine.config).unwrap(), before);
     assert_eq!(runners::pools(&machine.config).unwrap(), pools);
@@ -402,7 +487,7 @@ fn a_removed_pools_waiting_chats_are_let_go_of() {
     let config = tempfile::tempdir().unwrap();
     let machine = a_machine(config.path());
     a_pool_draining(&machine);
-    follow_and_drain(&machine, None, &|_| Ok(3));
+    follow_and_drain(&machine, None, &|_| Ok(3), &nothing_held);
     assert_eq!(waiting_on(&machine.config, "first"), 3);
 
     forget_waiting(&machine.config, "first");
@@ -455,9 +540,12 @@ fn a_runner_that_stopped_before_its_drain_began_is_removed_without_being_asked()
     a_pool_draining(&machine);
     drained_having_stopped_at(&machine, STOPPED_AT_SECS);
 
-    let said = follow_and_drain(&machine, None, &|_| {
-        panic!("a suspended runner is not asked")
-    });
+    let said = follow_and_drain(
+        &machine,
+        None,
+        &|_| panic!("a suspended runner is not asked"),
+        &|_| panic!("it is not asked what it holds"),
+    );
 
     assert_eq!(names(&machine), ["first-fedcba98"], "{said:?}");
     let log = std::fs::read_to_string(config.path().join("log")).unwrap();
@@ -473,7 +561,12 @@ fn a_draining_runner_found_stopped_keeps_its_home() {
     let machine = a_machine_whose_runners_are_suspended(config.path());
     a_pool_draining(&machine);
 
-    let said = follow_and_drain(&machine, None, &|_| panic!("a stopped runner is not asked"));
+    let said = follow_and_drain(
+        &machine,
+        None,
+        &|_| panic!("a stopped runner is not asked"),
+        &|_| panic!("it is not asked what it holds"),
+    );
 
     assert_eq!(names(&machine), ["first", "first-fedcba98"], "{said:?}");
     let log = std::fs::read_to_string(config.path().join("log")).unwrap();
@@ -489,7 +582,12 @@ fn a_runner_that_stopped_during_its_drain_keeps_its_home() {
     a_pool_draining(&machine);
     drained_having_stopped_at(&machine, 0);
 
-    let said = follow_and_drain(&machine, None, &|_| panic!("a stopped runner is not asked"));
+    let said = follow_and_drain(
+        &machine,
+        None,
+        &|_| panic!("a stopped runner is not asked"),
+        &|_| panic!("it is not asked what it holds"),
+    );
 
     assert_eq!(names(&machine), ["first", "first-fedcba98"], "{said:?}");
     assert!(said[0].contains("discarded in Devices"), "{said:?}");
@@ -514,7 +612,12 @@ fn a_runner_a_link_started_again_during_its_drain_keeps_its_home() {
     a_pool_draining(&machine);
     drained_having_stopped_at(&machine, 0);
 
-    let said = follow_and_drain(&machine, None, &|_| panic!("its answer says nothing"));
+    let said = follow_and_drain(
+        &machine,
+        None,
+        &|_| panic!("its answer says nothing"),
+        &|_| panic!("it is not asked what it holds"),
+    );
 
     assert_eq!(names(&machine), ["first", "first-fedcba98"], "{said:?}");
 }
@@ -526,10 +629,20 @@ fn a_held_runner_stays_held_once_it_runs_again() {
     let config = tempfile::tempdir().unwrap();
     let machine = a_machine_whose_runners_are_suspended(config.path());
     a_pool_draining(&machine);
-    follow_and_drain(&machine, None, &|_| panic!("a stopped runner is not asked"));
+    follow_and_drain(
+        &machine,
+        None,
+        &|_| panic!("a stopped runner is not asked"),
+        &|_| panic!("it is not asked what it holds"),
+    );
 
     let again = a_machine(config.path());
-    let said = follow_and_drain(&again, None, &|_| panic!("its answer says nothing"));
+    let said = follow_and_drain(
+        &again,
+        None,
+        &|_| panic!("its answer says nothing"),
+        &|_| panic!("it is not asked what it holds"),
+    );
 
     assert_eq!(names(&again), ["first", "first-fedcba98"], "{said:?}");
     assert!(said.is_empty(), "a hold is said once: {said:?}");
@@ -547,7 +660,9 @@ fn an_unpaired_runner_is_removed_without_being_asked_again() {
         .unwrap();
     drop(locked);
 
-    let said = follow_and_drain(&machine, None, &|_| panic!("it is not asked"));
+    let said = follow_and_drain(&machine, None, &|_| panic!("it is not asked"), &|_| {
+        panic!("it is not asked what it holds")
+    });
 
     assert_eq!(names(&machine), ["first-fedcba98"], "{said:?}");
 }
@@ -583,13 +698,23 @@ fn a_runner_with_only_its_home_left_is_only_removed() {
         .unwrap();
     drop(locked);
 
-    let said = follow_and_drain(&machine, None, &|_| panic!("nothing is left to ask"));
+    let said = follow_and_drain(
+        &machine,
+        None,
+        &|_| panic!("nothing is left to ask"),
+        &|_| panic!("it is not asked what it holds"),
+    );
 
     assert!(said[0].contains("is not all removed"), "{said:?}");
     assert_eq!(names(&machine), ["first", "first-fedcba98"]);
     std::fs::remove_file(config.path().join("volume-stays")).unwrap();
 
-    let said = follow_and_drain(&machine, None, &|_| panic!("nothing is left to ask"));
+    let said = follow_and_drain(
+        &machine,
+        None,
+        &|_| panic!("nothing is left to ask"),
+        &|_| panic!("it is not asked what it holds"),
+    );
 
     assert!(said[0].contains("had no chat left"), "{said:?}");
     assert_eq!(names(&machine), ["first-fedcba98"]);
@@ -616,7 +741,9 @@ fn a_held_runner_with_only_its_home_left_is_left_alone() {
     drop(locked);
     std::fs::remove_file(config.path().join("volume-stays")).unwrap();
 
-    let said = follow_and_drain(&machine, None, &|_| panic!("it is not asked"));
+    let said = follow_and_drain(&machine, None, &|_| panic!("it is not asked"), &|_| {
+        panic!("it is not asked what it holds")
+    });
 
     assert!(said.is_empty(), "{said:?}");
     assert_eq!(names(&machine), ["first", "first-fedcba98"]);
@@ -635,7 +762,7 @@ fn a_runner_whose_home_is_not_listed_either_is_not_removed_on_dockers_word() {
     drop(locked);
     std::fs::write(config.path().join("no-home"), "").unwrap();
 
-    let said = follow_and_drain(&machine, None, &|_| Err("down".into()));
+    let said = follow_and_drain(&machine, None, &|_| Err("down".into()), &nothing_held);
 
     assert!(said[0].contains("stays until it answers"), "{said:?}");
     assert_eq!(names(&machine), ["first", "first-fedcba98"]);
@@ -649,7 +776,7 @@ fn a_runner_whose_drain_did_not_begin_is_still_asked_when_docker_lists_no_contai
     let machine = a_machine_with_only_a_home_left(config.path());
     a_pool_draining(&machine);
 
-    let said = follow_and_drain(&machine, None, &|_| Err("down".into()));
+    let said = follow_and_drain(&machine, None, &|_| Err("down".into()), &nothing_held);
 
     assert!(said[0].contains("stays until it answers"), "{said:?}");
     assert_eq!(names(&machine), ["first", "first-fedcba98"]);
@@ -667,7 +794,7 @@ fn a_runner_carried_from_but_not_unpaired_is_still_asked() {
         .unwrap();
     drop(locked);
 
-    follow_and_drain(&machine, None, &|_| Ok(1));
+    follow_and_drain(&machine, None, &|_| Ok(1), &nothing_held);
 
     assert_eq!(names(&machine), ["first", "first-fedcba98"]);
 }
@@ -682,9 +809,12 @@ fn a_runner_that_stopped_before_its_drain_keeps_a_home_that_holds_a_conversation
     drained_having_stopped_at(&machine, STOPPED_AT_SECS);
     std::fs::write(config.path().join("conversations"), "conversations 3 3 0\n").unwrap();
 
-    let said = follow_and_drain(&machine, None, &|_| {
-        panic!("a suspended runner is not asked")
-    });
+    let said = follow_and_drain(
+        &machine,
+        None,
+        &|_| panic!("a suspended runner is not asked"),
+        &|_| panic!("it is not asked what it holds"),
+    );
 
     assert_eq!(names(&machine), ["first", "first-fedcba98"], "{said:?}");
     assert!(said[0].contains("conversations"), "{said:?}");
@@ -696,7 +826,12 @@ fn a_runner_that_stopped_before_its_drain_keeps_a_home_that_holds_a_conversation
     );
     let log = std::fs::read_to_string(config.path().join("log")).unwrap();
     assert!(!log.contains("start "), "{log}");
-    assert!(follow_and_drain(&machine, None, &|_| panic!("not asked")).is_empty());
+    assert!(
+        follow_and_drain(&machine, None, &|_| panic!("not asked"), &|_| panic!(
+            "it is not asked what it holds"
+        ))
+        .is_empty()
+    );
 }
 
 /// **A home that could not be read keeps its runner as it is**, neither held nor removed, until a
@@ -709,9 +844,12 @@ fn a_stopped_runner_whose_home_could_not_be_read_stays() {
     drained_having_stopped_at(&machine, STOPPED_AT_SECS);
     std::fs::write(config.path().join("conversations"), "").unwrap();
 
-    let said = follow_and_drain(&machine, None, &|_| {
-        panic!("a suspended runner is not asked")
-    });
+    let said = follow_and_drain(
+        &machine,
+        None,
+        &|_| panic!("a suspended runner is not asked"),
+        &|_| panic!("it is not asked what it holds"),
+    );
 
     assert_eq!(names(&machine), ["first", "first-fedcba98"], "{said:?}");
     assert!(said[0].contains("its home is read"), "{said:?}");
@@ -773,7 +911,12 @@ fn a_pruned_draining_runner_keeps_a_home_that_holds_a_conversation() {
     a_pool_draining_a_pruned_runner(&machine);
     std::fs::write(config.path().join("conversations"), "conversations 1 1 0\n").unwrap();
 
-    let said = follow_and_drain(&machine, None, &|_| panic!("a pruned runner is not asked"));
+    let said = follow_and_drain(
+        &machine,
+        None,
+        &|_| panic!("a pruned runner is not asked"),
+        &|_| panic!("it is not asked what it holds"),
+    );
 
     assert_eq!(names(&machine), ["first", "first-fedcba98"], "{said:?}");
     assert!(said[0].contains("conversations"), "{said:?}");
@@ -795,7 +938,12 @@ fn a_pruned_draining_runner_whose_home_holds_none_is_forgotten() {
     a_pool_draining_a_pruned_runner(&machine);
     std::fs::write(config.path().join("conversations"), "conversations 0 0 0\n").unwrap();
 
-    let said = follow_and_drain(&machine, None, &|_| panic!("a pruned runner is not asked"));
+    let said = follow_and_drain(
+        &machine,
+        None,
+        &|_| panic!("a pruned runner is not asked"),
+        &|_| panic!("it is not asked what it holds"),
+    );
 
     assert_eq!(names(&machine), ["first-fedcba98"], "{said:?}");
     assert!(said[0].contains("removed outside purlis"), "{said:?}");

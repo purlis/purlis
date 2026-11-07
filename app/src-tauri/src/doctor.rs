@@ -170,31 +170,90 @@ pub async fn plane_doctor_fix(
     let held = planes.held(&plane)?;
     let root = held.root().to_path_buf();
     let shipped = planes.shipped().clone();
-    let open = open_by_workspace(&held);
-    tauri::async_runtime::spawn_blocking(move || fixed(&root, &fix, &shipped, &open))
-        .await
-        .map_err(|err| format!("the fix did not finish: {err}"))?
+    tauri::async_runtime::spawn_blocking(move || {
+        fixed(&root, &fix, &shipped, &|| open_by_workspace(&held))
+    })
+    .await
+    .map_err(|err| format!("the fix did not finish: {err}"))?
+}
+
+/// **Move into repos/, as its confirmation showed it** (#5569): `move-into-repos` in the plane
+/// the window names, where each workspace moves only the repos `shown` listed for it, and one
+/// that has others now, or that it did not list, is refused with nothing moved. The chats open
+/// in a workspace are asked as it moves, and again once it has moved.
+#[tauri::command]
+#[specta::specta]
+pub async fn plane_doctor_move_into_repos(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    shown: Vec<MoveIntoReposPlan>,
+) -> Result<DoctorFixed, String> {
+    let held = planes.held(&plane)?;
+    let root = held.root().to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || {
+        moved_into_repos(&root, &shown, &|| open_by_workspace(&held))
+    })
+    .await
+    .map_err(|err| format!("the move did not finish: {err}"))
+}
+
+/// [`plane_doctor_move_into_repos`], on the calling thread.
+fn moved_into_repos(
+    root: &std::path::Path,
+    shown: &[MoveIntoReposPlan],
+    open: &dyn Fn() -> Vec<(Option<String>, String)>,
+) -> DoctorFixed {
+    use purlis_core::doctor::fix::{self as registry, FixId, move_into_repos::Shown};
+    let shown: Vec<Shown> = shown
+        .iter()
+        .map(|one| Shown {
+            workspace: one.workspace.clone(),
+            repos: one.repos.clone(),
+        })
+        .collect();
+    let applied =
+        registry::apply_moving_into_repos(root, &|_, ws| open_in(&open(), ws), Some(&shown));
+    answered(FixId::MoveIntoRepos, applied)
 }
 
 /// The chats this window has open, by the workspace each works in and the name each is shown
-/// under: what `move-into-repos` is refused over in a workspace (#5374). Asked before the fix
-/// runs, as a workspace rename asks it.
-pub(crate) fn open_by_workspace(held: &crate::planes::Held) -> Vec<(String, String)> {
+/// under: what `move-into-repos` is refused over in a workspace (#5374). Asked as each
+/// workspace moves and again once it has, so a chat opened during the move counts (#5569).
+pub(crate) fn open_by_workspace(held: &crate::planes::Held) -> Vec<(Option<String>, String)> {
     let chats = held.chats();
-    let on_disk = purlis_core::workspaces::Plane::open(held.root());
+    by_workspace(
+        held.root(),
+        chats
+            .open_now()
+            .into_iter()
+            .map(|one| (one.cwd, chats.shown_name(one.session), one.name))
+            .collect(),
+    )
+}
+
+/// Each open chat, by its folder, the name it is shown under if it has one, and its own name:
+/// the workspace it is in, or `None` for one with no folder, which could be in any (#5569), and
+/// the name to say. A chat in a folder outside every workspace is in none, and left out.
+fn by_workspace(
+    root: &std::path::Path,
+    chats: Vec<(Option<std::path::PathBuf>, Option<String>, String)>,
+) -> Vec<(Option<String>, String)> {
+    let on_disk = purlis_core::workspaces::Plane::open(root);
     chats
-        .open_now()
         .into_iter()
-        .filter_map(|one| {
-            let ws = on_disk.workspace_of(one.cwd.as_deref()?)?;
-            Some((ws, chats.shown_name(one.session)?))
+        .filter_map(|(cwd, shown, name)| {
+            let ws = match cwd {
+                Some(cwd) => Some(on_disk.workspace_of(&cwd)?),
+                None => None,
+            };
+            Some((ws, shown.unwrap_or(name)))
         })
         .collect()
 }
 
 /// One workspace **Move into repos/** would move (#5374): what its confirmation shows before
-/// anything moves.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+/// anything moves, and what it sends back when the operator presses Move (#5569).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
 pub struct MoveIntoReposPlan {
     pub workspace: String,
     /// The repos at its root that move, by name.
@@ -205,6 +264,9 @@ pub struct MoveIntoReposPlan {
     /// The chats open in it now, by the name each is shown under: while there are any, this
     /// workspace is left as it is.
     pub open: Vec<String>,
+    /// The repos a move cut short left in its repos/ with their branch folders unrepaired, by
+    /// name: the move repairs them first (#5569).
+    pub finishing: Vec<String>,
 }
 
 /// What **Move into repos/** would do in the plane the window names, workspace by workspace,
@@ -227,7 +289,7 @@ pub async fn plane_doctor_move_into_repos_plan(
 /// [`plane_doctor_move_into_repos_plan`], on the calling thread.
 pub(crate) fn move_into_repos_plan(
     root: &std::path::Path,
-    open: &[(String, String)],
+    open: &[(Option<String>, String)],
 ) -> Vec<MoveIntoReposPlan> {
     purlis_core::doctor::fix::move_into_repos::plan(root)
         .into_iter()
@@ -235,15 +297,16 @@ pub(crate) fn move_into_repos_plan(
             open: open_in(open, &one.workspace),
             unresumable: one.unresumable.into_iter().map(|chat| chat.title).collect(),
             repos: one.repos,
+            finishing: one.finishing,
             workspace: one.workspace,
         })
         .collect()
 }
 
-/// The names in `open` of the chats in workspace `ws`.
-fn open_in(open: &[(String, String)], ws: &str) -> Vec<String> {
+/// The names in `open` of the chats in workspace `ws`, and of those that could be in any.
+fn open_in(open: &[(Option<String>, String)], ws: &str) -> Vec<String> {
     open.iter()
-        .filter(|(of, _)| of == ws)
+        .filter(|(of, _)| of.as_deref().is_none_or(|of| of == ws))
         .map(|(_, name)| name.clone())
         .collect()
 }
@@ -257,7 +320,7 @@ fn fixed(
     root: &std::path::Path,
     fix: &str,
     shipped: &crate::Shipped,
-    open: &[(String, String)],
+    open: &dyn Fn() -> Vec<(Option<String>, String)>,
 ) -> Result<DoctorFixed, String> {
     use purlis_core::doctor::fix::{self as registry, FixId, Fixed};
     use purlis_core::plugin_install::Machine;
@@ -273,7 +336,9 @@ fn fixed(
             Ok(machine) => registry::apply_for(root, id, &machine),
             Err(why) => Fixed::Refused(why),
         },
-        FixId::MoveIntoRepos => registry::apply_moving_into_repos(root, &|_, ws| open_in(open, ws)),
+        FixId::MoveIntoRepos => {
+            registry::apply_moving_into_repos(root, &|_, ws| open_in(&open(), ws), None)
+        }
         _ => registry::apply_in_the_window(root, id),
     };
     Ok(answered(id, applied))
@@ -908,6 +973,35 @@ mod tests {
         }
     }
 
+    /// #5569: a chat with no folder could be in any workspace, so it holds every one back; one
+    /// with a folder outside every workspace holds none; and each is named, shown name or not.
+    #[test]
+    fn an_open_chat_with_no_folder_holds_every_workspace_and_one_with_no_shown_name_still_counts() {
+        let (_dir, root) = plane();
+        for ws in ["alpha", "beta"] {
+            std::fs::create_dir_all(root.join("workspaces").join(ws)).expect("a workspace");
+        }
+        let open = by_workspace(
+            &root,
+            vec![
+                (
+                    Some(root.join("workspaces/alpha")),
+                    None,
+                    "steward".to_owned(),
+                ),
+                (None, Some("nowhere".to_owned()), "chat 2".to_owned()),
+                (
+                    Some(root.clone()),
+                    Some("at the root".to_owned()),
+                    "chat 3".to_owned(),
+                ),
+            ],
+        );
+
+        assert_eq!(open_in(&open, "alpha"), ["steward", "nowhere"]);
+        assert_eq!(open_in(&open, "beta"), ["nowhere"]);
+    }
+
     #[test]
     fn a_fixable_row_names_its_fix_and_the_fix_leaves_the_doctor_clean() {
         // FX-1: the window's Fix button, from the row to the re-check.
@@ -925,7 +1019,7 @@ mod tests {
         assert_eq!(before.status, DoctorStatus::Warn, "{before:?}");
         assert_eq!(before.fix.as_deref(), Some("reinit"));
 
-        let done = fixed(&root, "reinit", &crate::Shipped::default(), &[])
+        let done = fixed(&root, "reinit", &crate::Shipped::default(), &Vec::new)
             .expect("a fix the registry has");
         assert_eq!(done.refused, None, "{done:?}");
         assert!(done.complete, "{done:?}");
@@ -969,8 +1063,13 @@ mod tests {
     #[test]
     fn plugin_install_from_an_app_that_ships_no_charter_is_refused() {
         let (_dir, root) = plane();
-        let done = fixed(&root, "plugin-install", &crate::Shipped::nothing(), &[])
-            .expect("a fix the registry has");
+        let done = fixed(
+            &root,
+            "plugin-install",
+            &crate::Shipped::nothing(),
+            &Vec::new,
+        )
+        .expect("a fix the registry has");
         assert!(!done.complete, "{done:?}");
         assert!(
             done.refused
@@ -1012,8 +1111,8 @@ mod tests {
     #[test]
     fn a_fix_the_registry_does_not_have_is_refused_by_name() {
         let (_dir, root) = plane();
-        let refused =
-            fixed(&root, "index-lock", &crate::Shipped::default(), &[]).expect_err("no such fix");
+        let refused = fixed(&root, "index-lock", &crate::Shipped::default(), &Vec::new)
+            .expect_err("no such fix");
         assert!(
             refused.contains("index-lock") && refused.contains("reinit"),
             "{refused}"

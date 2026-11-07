@@ -999,7 +999,7 @@ describe("discarding a hunk (#5406)", () => {
   });
 });
 
-describe("a branch's check results on the diff (ADR 0116)", () => {
+describe("a branch's check results on the diff (ADR 0117)", () => {
   const TEXT: WhatChanged["diff"] = {
     kind: "text",
     base: "one\n",

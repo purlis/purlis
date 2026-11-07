@@ -24,7 +24,8 @@ import {
 } from "lucide-react";
 import { keySaid, pressed } from "./keys/registry";
 import { Notice } from "./Notice";
-import { type Over, PaneDragLayer, PaneDragStore } from "./paneDragLayer";
+import { PaneDragLayer } from "./paneDragLayer";
+import { type Over, PaneDragStore } from "./paneDragStore";
 import { boxOfRect, PANE, RAIL, STRIP, stripTab, TAB } from "./paneHeld";
 import { REGION_CHROME } from "./RegionFrame";
 import {

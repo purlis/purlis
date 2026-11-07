@@ -2613,11 +2613,20 @@ impl Recorder {
                 }
             }
         }
-        self.append(under, "skill.started", body)?;
+        // What it ran, read once off this machine's plane, as its row says it: a desktop that
+        // logs a runner chat's runs from this line logs the runner's word for it (#4219).
         let starting = crate::skilluse::Starting::of_open(opened, who.harness.as_deref());
+        let ran = crate::skilluse::ran_by(plane, &starting, who.persona.as_deref());
+        if let Some(ran) = &ran {
+            body["tree"] = ran.word().into();
+        }
+        self.append(under, "skill.started", body)?;
         crate::skilluse::started(
             plane,
-            &starting,
+            &crate::skilluse::Starting {
+                ran: ran.as_ref(),
+                ..starting
+            },
             who.persona.as_deref(),
             chrono::Utc::now(),
             &self.log.device,

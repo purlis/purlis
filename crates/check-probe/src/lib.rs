@@ -1,13 +1,13 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! The check probe: a test-only **Check reporter** (ADR 0116, #5410), proven end to end through
+//! The check probe: a test-only **Check reporter** (ADR 0117, #5410), proven end to end through
 //! purlis's real registry, executor and check store, as `extension-probe` and `studio-probe`
 //! prove theirs.
 //!
 //! **It is never shipped and never installed on anyone's machine.** Written as a stranger's
 //! extension would be: it does not link purlis's core, and it knows one thing about purlis, the
-//! protocol — one line of JSON on stdin, `{"charter": 5, "check": {"output", "status"}}`, and
+//! protocol — one line of JSON on stdin, `{"charter": 6, "check": {"output", "status"}}`, and
 //! SARIF 2.1.0 back on stdout, exiting 0.
 //!
 //! It converts the one format it knows, a line `<file>:<line>: <message>`, into one result each,
@@ -19,8 +19,8 @@
 
 use serde_json::{Value, json};
 
-/// The protocol this program speaks: 5, which has the Check reporter's question.
-pub const PROTOCOL: u64 = 5;
+/// The protocol this program speaks: 6, which has the Check reporter's question.
+pub const PROTOCOL: u64 = 6;
 
 /// The manifest this program is installed with, so `assemble` writes the one that is tested.
 pub const MANIFEST: &str = include_str!("../purlis-extension.json");

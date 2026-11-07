@@ -451,6 +451,7 @@ export const commands = {
 	answerRunGrant: __WINDOW_ONLY_RESULT,
 	linkSecretAsk: __WINDOW_ONLY_RESULT,
 	secretAskEntries: __WINDOW_ONLY_RESULT,
+	runAskEntries: __WINDOW_ONLY_RESULT,
 	allowBrowserSites: __WINDOW_ONLY_RESULT,
 	allowPersonBrowserSites: __WINDOW_ONLY_RESULT,
 	keepBrowserSitesBlocked: __WINDOW_ONLY_RESULT,
@@ -2326,6 +2327,7 @@ export const commands = {
 	 *  chats this window has open in each.
 	 */
 	planeDoctorMoveIntoReposPlan: (plane: PlaneId) => typedError<MoveIntoReposPlan[], string>(__TAURI_INVOKE("plane_doctor_move_into_repos_plan", { plane })),
+	planeDoctorMoveIntoRepos: __WINDOW_ONLY_RESULT,
 	planeDoctorFixIdentity: __WINDOW_ONLY_RESULT,
 	/**
 	 *  What git's global identity holds now: the form locks the keys that are set, because the
@@ -2807,6 +2809,11 @@ export type Allowed = {
 export type AlwaysShown = {
 	line: string,
 	by_env: boolean,
+	/**
+	 *  **Something else of the persona's list waits on the person's Allow** (#5080): Always
+	 *  allow approves this line alone, and the persona's usual Notice stays up for the rest.
+	 */
+	others_wait: boolean,
 };
 
 /**
@@ -7644,7 +7651,7 @@ export type MouseButton = "none" | "left" | "middle" | "right";
 
 /**
  *  One workspace **Move into repos/** would move (#5374): what its confirmation shows before
- *  anything moves.
+ *  anything moves, and what it sends back when the operator presses Move (#5569).
  */
 export type MoveIntoReposPlan = {
 	workspace: string,
@@ -7660,6 +7667,11 @@ export type MoveIntoReposPlan = {
 	 *  workspace is left as it is.
 	 */
 	open: string[],
+	/**
+	 *  The repos a move cut short left in its repos/ with their branch folders unrepaired, by
+	 *  name: the move repairs them first (#5569).
+	 */
+	finishing: string[],
 };
 
 /**  What the window is told of a move it asked for to switch now. */
@@ -9858,6 +9870,13 @@ export type PoolVersion = {
 	owed: PoolOwed[],
 	/**  Why purlis could not read which projects those are, shown safely; none where it could. */
 	owed_why: string | null,
+	/**
+	 *  **What an older runner holds that bringing its work back does not reach**, as the last
+	 *  look found it (ruled 2026-11-07), a sentence each, shown safely: a stash, a commit on no
+	 *  branch, a clone only there, or one whose folder here was removed or renamed, keeps the
+	 *  runner. Empty where none does.
+	 */
+	left: string[],
 };
 
 /**  What the Pools group draws: the pools, and the limits a new pool gets by default. */
@@ -11282,6 +11301,8 @@ export type RunFillShown = {
 	key: string,
 	/**  What the persona's definition says it is for, where it declares it. */
 	declared?: string | null,
+	/**  The persona declares no Secret need for it: Remember would add one (#5080). */
+	need: boolean,
 	/**  The entry a link read, which is gone, where the key is such a link. */
 	gone?: SecretEntryShown | null,
 };
@@ -11303,6 +11324,26 @@ export type RunGrantPress =
 "allow-vault" | 
 /**  Fill, on a notice of value fields alone (#5242). */
 "fill";
+
+/**
+ *  **An entry the person picked for one of a run's fields** (#5080): the asked key becomes a
+ *  Linked entry reading `key` in `vault`, never a copy. Names only.
+ */
+export type RunLink = {
+	/**  The field's key, in the run's vault. */
+	field: string,
+	vault: string,
+	key: string,
+};
+
+/**
+ *  **A line *Remember this need for the persona* writes** (#5080, #5240): the field's key and the
+ *  purpose the person read and edited.
+ */
+export type RunNeedLine = {
+	key: string,
+	purpose: string,
+};
 
 /**
  *  **An ask to allow a program, as its row draws it** (ADR 0112, #5239). Every field is the app's
@@ -11345,6 +11386,12 @@ export type RunShown = {
 	 *  and the first run fixes how the values are handed.
 	 */
 	ahead: boolean,
+	/**
+	 *  **What *Remember this need for the persona* would write** (#5080, #5240), where a field's
+	 *  key is one the persona does not declare and it may: the file, and a line per such field.
+	 *  No `vault:` line: a run names its vault in its command.
+	 */
+	remember?: SecretNeedShown | null,
 };
 
 /**  What started a skill run, as the Runs panel draws it. */
@@ -15245,7 +15292,7 @@ export type WhatChanged = {
 	diff: FileDiff,
 	/**  What a discard of a hunk here is checked against (`null` for a file past what is drawn). */
 	stamp: string | null,
-	/**  The branch's check results as this file shows them (ADR 0116). */
+	/**  The branch's check results as this file shows them (ADR 0117). */
 	checks: CheckResults,
 	/**
 	 *  On a turn's diff, that the file changed since the turn ended: it is drawn from the turn's

@@ -164,13 +164,15 @@ fn requests_with_a_null_id_end_the_chat_once_their_answers_back_up() {
     );
 }
 
+/// The ACP SDK answers a whole batch with one short `-32600` (it has no batches since 5.0), so a
+/// batch earns the same answer however big it is: many small ones are what back answers up.
 #[test]
 fn batches_with_a_bad_member_end_the_chat_once_their_answers_back_up() {
     in_a_process_of_its_own(
         "batches_with_a_bad_member_end_the_chat_once_their_answers_back_up",
         "badbatch",
-        400,
-        1 << 20,
+        1_000_000,
+        0,
     );
 }
 

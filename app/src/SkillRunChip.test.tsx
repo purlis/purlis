@@ -39,7 +39,7 @@ function studioOn() {
   });
 }
 
-describe("the skill run chip on a chat's tab", () => {
+describe("the skill run chip on a chat's pane head", () => {
   it("shows the skill in use and its tool calls, and opens the skill's tab on that run", async () => {
     studioOn();
     const onOpen = vi.fn();
@@ -54,11 +54,11 @@ describe("the skill run chip on a chat's tab", () => {
       </SkillRunsHere.Provider>,
     );
 
-    const chip = await screen.findByTestId("tab-skill-run");
+    const chip = await screen.findByTestId("pane-skill-run");
     expect(chip.getAttribute("aria-label")).toBe(
       "Using the skill deploy, 3 tool calls so far. Open its runs",
     );
-    expect(screen.getAllByTestId("tab-skill-run")).toHaveLength(1);
+    expect(screen.getAllByTestId("pane-skill-run")).toHaveLength(1);
     fireEvent.click(chip);
     expect(onOpen).toHaveBeenCalledWith("deploy", RUN, 4, null);
     // A skill's own tab an older launch kept comes back as its page in the studio (#3682).
@@ -88,7 +88,7 @@ describe("the skill run chip on a chat's tab", () => {
       </SkillRunsHere.Provider>,
     );
 
-    const chips = await screen.findAllByTestId("tab-skill-run");
+    const chips = await screen.findAllByTestId("pane-skill-run");
     for (const chip of chips) fireEvent.click(chip);
     expect(onOpen.mock.calls).toEqual([
       ["secrets", RUN, 4, null],
@@ -111,11 +111,11 @@ describe("the skill run chip on a chat's tab", () => {
       </SkillRunsHere.Provider>,
     );
 
-    const chip = await screen.findByTestId("tab-skill-run");
+    const chip = await screen.findByTestId("pane-skill-run");
     expect(chip.getAttribute("aria-label")).toBe(
       "Using the skill deploy, 3 tool calls and 12k tokens so far. Open its runs",
     );
-    expect(screen.getByTestId("tab-skill-run-tokens")).toHaveTextContent("12k tokens");
+    expect(screen.getByTestId("pane-skill-run-tokens")).toHaveTextContent("12k tokens");
     // A persona's own skill opens on that persona's chats: the chip hands its level on.
     fireEvent.click(chip);
     expect(onOpen).toHaveBeenCalledWith("deploy", RUN, 4, "persona");
@@ -135,9 +135,9 @@ describe("the skill run chip on a chat's tab", () => {
         <SkillRunChip session={4} onOpen={() => undefined} />
       </SkillRunsHere.Provider>,
     );
-    const chip = await screen.findByTestId("tab-skill-run");
+    const chip = await screen.findByTestId("pane-skill-run");
     expect(chip.getAttribute("aria-label")).not.toMatch(/token/);
-    expect(screen.queryByTestId("tab-skill-run-tokens")).toBeNull();
+    expect(screen.queryByTestId("pane-skill-run-tokens")).toBeNull();
   });
 
   it("says tokens in a few characters, and a new count is a new run to draw", () => {

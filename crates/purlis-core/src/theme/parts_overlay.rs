@@ -54,6 +54,12 @@ pub(super) const POPOVER: Family = Family {
             properties: &[Prop::Text, Prop::FontSize, Prop::FontWeight],
         },
         Part {
+            name: "none",
+            since: super::NEXT,
+            description: "What a filtered list says when nothing matches what was typed.",
+            properties: &[Prop::Text, Prop::FontSize],
+        },
+        Part {
             name: "footer",
             since: 6,
             description: "The footer that says the keys its list answers to.",

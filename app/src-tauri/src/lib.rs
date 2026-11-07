@@ -180,6 +180,7 @@ mod saving;
 mod screenfit;
 mod searchfiles;
 mod secretasks;
+mod secretasksteps;
 mod secretfills;
 #[cfg(unix)]
 mod sessionhost;

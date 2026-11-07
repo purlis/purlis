@@ -355,14 +355,15 @@ export const SHORTCUTS_KEY_SAID = shortcutsKeySaid(onAMac());
 
 /** What a row does, as a value the window can carry out. */
 export type Does =
-  | { verb: "chat.new" }
+  /** `ownTab`: from the strip's `+` list (#5292), a tab of its own even where a pane is empty. */
+  | { verb: "chat.new"; ownTab?: true }
   /** The strip's `+` (#4758; spec story 13): a new tab holding one empty pane. */
   | { verb: "tab.new" }
   /** Opens a plain shell (SI-5) by the one rule (#5289): the operator's own `$SHELL`, no
    *  harness, no profile — in `workspace`'s directory and filed under it, or where a new chat
    *  would start when it names none. Nothing asks first: a shell starts no harness, so ADR 0022's picker has
    *  nothing to ask about. */
-  | { verb: "newShell"; workspace?: string }
+  | { verb: "newShell"; workspace?: string; ownTab?: true }
   /** Starts a browser in the session host and opens it in a view tab (#2012). The person's
    *  own act: nothing asks first, and Stop all refuses it. */
   | { verb: "newBrowser" }
@@ -802,6 +803,14 @@ export type Offer = {
    * it beside the focused pane. Only such a row has one; ⌥Enter on any other row runs it.
    */
   beside?: Does;
+  /**
+   * **A row of the strip's `+` list** (#5292; spec #5288 story 79): what starts goes first, then
+   * the views, each in the catalogue's order, and the list draws `said` where the row's title
+   * is not what the list should say ("New tab" is the list's "Empty tab"). Marked where the row
+   * is built, so a new view joins the list with no menu of its own (`newTabList.ts`). Each opens
+   * in a tab of its own there ({@link Does}'s `ownTab`).
+   */
+  plus?: { group: "start" | "view"; said?: string };
 };
 
 /** The window as it now stands: everything an offer's availability is decided from. */
@@ -1091,11 +1100,13 @@ export type ViewPlaced = { view: ViewId; name: string; region: RegionId; to?: Vi
 
 /** What the window does when a row is run. One function per verb, whichever surface asked. */
 export type Doing = {
-  newChat: () => void;
+  /** `ownTab`: from the strip's `+` list (#5292), a tab of its own. */
+  newChat: (opening?: { ownTab?: boolean }) => void;
   /** The strip's `+` (#4758): a new tab with one empty pane, on the strip in front. */
   newTab: () => void;
-  /** A shell tab, in `workspace` when a row names one, else where a new chat would start. */
-  newShell: (workspace?: string) => void;
+  /** A shell tab, in `workspace` when a row names one, else where a new chat would start, or
+   *  in a tab of its own with `ownTab` (#5292). */
+  newShell: (workspace?: string, opening?: { ownTab?: boolean }) => void;
   /** A browser, in a view tab of its own (#2012). */
   newBrowser: () => void;
   split: (direction: Direction) => void;
@@ -1981,6 +1992,11 @@ export const browserTimelineId = (session: number): string => `browser.timeline:
  * at fifty chats it is the TABS that crowd a query, and no version of this list ever left
  * those out.
  */
+/** The `+` list's groups (#5292): what starts, and the views. */
+const PLUS_STARTS = { group: "start" } as const;
+const PLUS_VIEWS = { group: "view" } as const;
+const EMPTY_TAB_ON_PLUS = { group: "start", said: "Empty tab" } as const;
+
 export function catalogue(now: Now): Offer[] {
   const front = now.tabs.inFront === undefined ? undefined : now.tabs.byId[now.tabs.inFront];
   // What the pane with the keyboard shows. A row about "the chat in front" is about THIS, and a
@@ -1995,7 +2011,10 @@ export function catalogue(now: Now): Offer[] {
   // A chat starts through the picker, which is the only path ADR 0022 admits. The palette
   // opens that question; it never answers it. **The chat opens by the one rule** (#5289,
   // `tabs.opensAt`): it fills an empty pane or gets a tab of its own, and replaces nothing.
-  offers.push(can("chat.new", SAID.newChat, { verb: "chat.new" }));
+  // **The strip's `+`** (#4758; spec story 13): a tab with one empty pane, which New chat then
+  // fills. "New tab" still means a tab, and its list calls it Empty tab (#5292).
+  offers.push({ ...can("tab.new", SAID.newTab, { verb: "tab.new" }), plus: EMPTY_TAB_ON_PLUS });
+  offers.push({ ...can("chat.new", SAID.newChat, { verb: "chat.new" }), plus: PLUS_STARTS });
 
   // **Beside it, and never inside the picker** (SI-5). A shell runs no harness, so there is no
   // profile to pick and nothing for ADR 0022 to ask. It is still a chat to the core — a session
@@ -2003,23 +2022,25 @@ export function catalogue(now: Now): Offer[] {
   offers.push({
     ...can("shell.new", "New shell", { verb: "newShell" }),
     note: `Your own shell, with no harness, in an empty pane or a new tab. ${SHELL_KEY_SAID}.`,
+    plus: PLUS_STARTS,
   });
-  // **The strip's `+`** (#4758; spec story 13): a tab with one empty pane, which New chat then
-  // fills. "New tab" still means a tab.
-  offers.push(can("tab.new", SAID.newTab, { verb: "tab.new" }));
 
   // A browser purlis runs and you watch in a tab (#2012): it never opens as a window of its own.
   // It goes to an address you type in its tab (#2176).
   offers.push({
     ...can("browser.new", "New browser", { verb: "newBrowser" }),
     note: "A browser purlis runs, shown live in a tab of its own, going where you type.",
+    plus: PLUS_VIEWS,
   });
 
   // **Always available, and available with nothing open.** ADR 0041 item 5: ADR 0035
   // shows what a project contributes in the dialog and nothing shows it afterwards, so the
   // surface every later trust decision is read on is the one that lists what is in force NOW.
   // It is about the machine and not about a project, which is why it does not wait for one.
-  offers.push(can("extensions.show", "Extensions…", { verb: "showExtensions" }));
+  offers.push({
+    ...can("extensions.show", "Extensions…", { verb: "showExtensions" }),
+    plus: PLUS_VIEWS,
+  });
 
   // **Search in files** (FM-8, #1137): the Search view ⌘⇧F shows on the left (#1676), searching
   // as narrow as the focus — the branch nearest the operator, else the workspace in front, else
@@ -2162,6 +2183,7 @@ export function catalogue(now: Now): Offer[] {
       title: SHORTCUTS_TITLE,
     }),
     note: `Every key the window answers, where it applies. ${SHORTCUTS_KEY_SAID}.`,
+    plus: PLUS_VIEWS,
   });
 
   // **Screen-reader mode** (DS-6, #629): one row whose words say what pressing it does now.
@@ -2562,6 +2584,7 @@ export function catalogue(now: Now): Offer[] {
   offers.push({
     ...can("settings.show", "Settings…", { verb: "openSettingsTab" }),
     note: "At the workspace you are in, else the project, else this machine's.",
+    plus: PLUS_VIEWS,
   });
   // **And the You level by name** (SE-23, D-SE23e as amended): Settings… lands on the focused
   // level, so this machine's own settings get a row of their own, there with or without a
@@ -2589,6 +2612,7 @@ export function catalogue(now: Now): Offer[] {
       title: AGENT_IDENTITY_TITLE,
     }),
     note: "What chats act as on GitHub. Your own sign-in never reaches a chat.",
+    plus: PLUS_VIEWS,
   });
   // **Devices** (#2052): this machine and every runner it keeps, offered once it keeps a pool,
   // so nothing about runners shows before the first is added (spec #2041 story 6).
@@ -2600,6 +2624,7 @@ export function catalogue(now: Now): Offer[] {
         title: DEVICES_TITLE,
       }),
       note: "This machine and each runner, with the chats and browsers on it and each pool's use.",
+      plus: PLUS_VIEWS,
     });
   offers.push(
     ...settingsGroupRows(
@@ -2778,6 +2803,7 @@ export function catalogue(now: Now): Offer[] {
           title: SHARED_MEMORY_TITLE,
         }),
         note: "What every persona in this project reads, in a tab of its own.",
+        plus: { group: "view", said: "Shared memory" },
       },
     );
     // **The project's dispatches, in a tab of their own** (#1452): every dispatch its chats
@@ -2790,6 +2816,7 @@ export function catalogue(now: Now): Offer[] {
         title: DISPATCHES_TITLE,
       }),
       note: "The work this project's chats handed to other chats, in a tab of its own.",
+      plus: { group: "view", said: "Dispatches" },
     });
     // **Every browser, live, in a tab of its own** (#2027): the Browsers grid, with the
     // Inbox's scope switch. The Chats view's heading draws this row as a button while the
@@ -2801,6 +2828,7 @@ export function catalogue(now: Now): Offer[] {
         title: BROWSERS_GRID_TITLE,
       }),
       note: "Every browser, live, in a tab of its own: this project's, a workspace's or every project's.",
+      plus: { group: "view", said: "Browsers" },
     });
     if (now.skillStudio)
       offers.push({
@@ -2810,6 +2838,7 @@ export function catalogue(now: Now): Offer[] {
           title: SKILL_STUDIO_TITLE,
         }),
         note: "Every skill this project's chats get, and why any other is left out.",
+        plus: { group: "view", said: "Skill studio" },
       });
   }
 
@@ -3546,13 +3575,15 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
   const does = offer.does;
   switch (does.verb) {
     case "chat.new":
-      doing.newChat();
+      if (does.ownTab === true) doing.newChat({ ownTab: true });
+      else doing.newChat();
       return DID;
     case "tab.new":
       doing.newTab();
       return DID;
     case "newShell":
-      doing.newShell(...(does.workspace === undefined ? [] : [does.workspace]));
+      if (does.ownTab === true) doing.newShell(does.workspace, { ownTab: true });
+      else doing.newShell(...(does.workspace === undefined ? [] : [does.workspace]));
       return DID;
     case "newBrowser":
       doing.newBrowser();

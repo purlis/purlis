@@ -689,7 +689,7 @@ pub async fn allow_refused_vault(
 /// anything (#1987). Its next try at the vault raises nothing, for as long as the chat is open.
 #[tauri::command]
 #[specta::specta]
-pub fn keep_vault_blocked(
+pub async fn keep_vault_blocked(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     session: u32,
@@ -697,19 +697,26 @@ pub fn keep_vault_blocked(
     reason: Option<String>,
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
-    vault_kept_blocked(&held, planes.network(), session, &vault);
-    crate::askoutcome::kept_blocked(
-        held.chats(),
-        session,
-        (crate::sandboxing::GrantWhat::Vault, &vault),
-        reason.as_deref(),
-    );
-    Ok(())
+    let network = planes.network().cloned();
+    // Off the window's thread (#5424): a Run grant's ask open on the vault is answered Don't
+    // allow, and that answer is audited on disk.
+    crate::off_the_window("keeping the vault blocked", move || {
+        vault_kept_blocked(&held, network.as_ref(), session, &vault);
+        crate::askoutcome::kept_blocked(
+            held.chats(),
+            session,
+            (crate::sandboxing::GrantWhat::Vault, &vault),
+            reason.as_deref(),
+        );
+        Ok(())
+    })
+    .await
 }
 
 /// What Keep blocked does to what the app holds for chat `session` and `vault`: its later tries
 /// raise nothing, and a Run grant's ask already open on the vault is answered Don't allow, since
-/// its Allow would open what the person just kept blocked.
+/// its Allow would open what the person just kept blocked. The asks hold it too, so a run the
+/// gate let past before it raises no ask after it (#5424).
 pub(crate) fn vault_kept_blocked(
     held: &crate::planes::Held,
     network: Option<&purlis_core::sandboxblock::record::Record>,
@@ -717,17 +724,15 @@ pub(crate) fn vault_kept_blocked(
     vault: &str,
 ) {
     held.vault_refusals().keep_blocked(session, vault);
-    for open in held.secret_asks().open_runs() {
-        if open.not_its_vault && open.bound.chat == session && open.bound.vault == vault {
-            let answered = crate::secretasks::run_grant_answered(
-                held,
-                network,
-                open.id,
-                crate::secretasks::RunGrantPress::Refuse,
-            );
-            if let Err(why) = answered {
-                tracing::warn!("purlis: a run grant's ask stayed up after Keep blocked: {why}");
-            }
+    for id in held.secret_asks().keep_vault_blocked(session, vault) {
+        let answered = crate::secretasks::run_grant_answered(
+            held,
+            network,
+            id,
+            crate::secretasks::RunGrantPress::Refuse,
+        );
+        if let Err(why) = answered {
+            tracing::warn!("purlis: a run grant's ask stayed up after Keep blocked: {why}");
         }
     }
 }

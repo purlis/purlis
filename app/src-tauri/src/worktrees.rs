@@ -410,7 +410,18 @@ fn not_a_task_s(
 ) -> Result<(), String> {
     let no_discard = || no_discard_there(plane, workspace, repo);
     purlis_core::dispatchplace::kept_from_the_explorer(
-        plane, workspace, repo, piece, merging, force, no_discard,
+        plane,
+        workspace,
+        repo,
+        piece,
+        merging,
+        force,
+        no_discard,
+        purlis_core::finished::Forge::asking(&purlis_core::finished::merged::of_the_plane(
+            plane,
+            workspace,
+            &purlis_core::forge::Caller::window(),
+        )),
     )
     .map_or(Ok(()), Err)
 }

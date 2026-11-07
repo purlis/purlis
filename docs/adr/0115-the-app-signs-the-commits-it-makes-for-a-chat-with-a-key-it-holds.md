@@ -66,3 +66,9 @@ holds, which never reaches the chat.
 - GitHub shows a commit as Verified only where the committer's email is a verified address of
   the account the key is on. Setup says so, and cannot check it without more of `gh`'s scopes.
 - GitLab reads the same signature; setup's check against GitLab is not made yet.
+
+## Later
+
+- **2026-11-07, ADR 0116**: setup moves into the window for people who never open a terminal,
+  adds the key through the app's forge account rather than `gh`, and covers GitLab as fully as
+  GitHub, its check included. This ADR's signing itself is unchanged.

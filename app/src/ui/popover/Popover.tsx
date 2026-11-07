@@ -37,6 +37,7 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import {
+  AutocompleteStateContext,
   Dialog as AriaDialog,
   DialogTrigger as AriaDialogTrigger,
   OverlayArrow,
@@ -722,6 +723,29 @@ export function PopoverFilter({ children }: { children: ReactNode }) {
       <PopoverRule />
     </>
   );
+}
+
+/**
+ * **The filter never names a row that is not drawn** (D-2906-14): a select's, and a menu's. While a person types,
+ * React Aria's Autocomplete holds back moving its `aria-activedescendant` for a moment, so the
+ * letter typed is heard first; the option it still names may be one the typing has just filtered
+ * out, which is an id nothing in the page has. Until the move lands, it names none.
+ */
+export function HeldAim({
+  typed,
+  list,
+}: {
+  typed: string;
+  list: RefObject<HTMLDivElement | null>;
+}) {
+  const autocomplete = useContext(AutocompleteStateContext);
+  const aimed = autocomplete?.focusedNodeId ?? null;
+  useLayoutEffect(() => {
+    if (aimed === null) return;
+    const drawn = list.current?.querySelector(`[id="${CSS.escape(aimed)}"]`) ?? null;
+    if (drawn === null) autocomplete?.setFocusedNodeId(null);
+  }, [typed, aimed, list, autocomplete]);
+  return null;
 }
 
 /** **A rule**: the line under the filter row, and between a menu's groups. */

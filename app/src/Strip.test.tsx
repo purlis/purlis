@@ -302,7 +302,7 @@ describe("the chat strip when it holds more than it has room for", () => {
 
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(ended).toEqual([]);
-    expect(tabNames()).toEqual(["New chat"]);
+    expect(tabNames()).toEqual(["Empty tab"]);
     expect(screen.queryByRole("button", { name: /the strip is not showing/ })).toBeNull();
   });
 

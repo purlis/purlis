@@ -226,6 +226,7 @@ pub mod rewrite;
 pub mod rootupdate;
 pub mod roster;
 pub mod rulespelling;
+pub mod runnercursors;
 #[cfg(unix)]
 pub mod runnerhours;
 #[cfg(unix)]

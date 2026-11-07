@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! A branch's check results, read from SARIF 2.1.0, kept per branch folder, and placed on a
-//! comparison (ADR 0116, #5407).
+//! comparison (ADR 0117, #5407).
 //!
 //! **purlis runs no check here and has no parser for any one tool.** `purlis check report` hands a
 //! SARIF file over; the store (`docs/plane-format.md`) keeps what each tool last said, with the
@@ -254,7 +254,7 @@ struct Record {
     faults: Vec<Fault>,
 }
 
-/// **A Check reporter whose last answer could not be recorded** (ADR 0116, #5410): what the
+/// **A Check reporter whose last answer could not be recorded** (ADR 0117, #5410): what the
 /// window draws as a Notice naming it. The results recorded before stay; its next answer that is
 /// recorded takes this away.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -337,7 +337,7 @@ pub fn report_inside(
     recorded(plane, branch, &folder, results, None, now)
 }
 
-/// **A Check reporter's answer, recorded for `branch`** (ADR 0116, #5410): `answered` is the SARIF
+/// **A Check reporter's answer, recorded for `branch`** (ADR 0117, #5410): `answered` is the SARIF
 /// it printed, or why it gave none. SARIF 2.1.0 is recorded as [`report`] records a file, and
 /// takes away the reporter's fault. Anything else is kept as its fault, naming it, and refused
 /// in the same sentence; the results recorded before stay, so the review goes on.
@@ -370,7 +370,7 @@ pub fn report_converted(
     }
 }
 
-/// **What a Check reporter answers for a check's `output` and exit `status`** (ADR 0116, #5410),
+/// **What a Check reporter answers for a check's `output` and exit `status`** (ADR 0117, #5410),
 /// asked through `executor` as its own process, never inside the window.
 ///
 /// The outer `Err` is a refusal before anything ran: no extension by that name, one not approved,

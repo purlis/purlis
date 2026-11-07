@@ -346,7 +346,9 @@ fn applied(root: &Path, id: FixId, machine: Option<&crate::plugin_install::Machi
         FixId::HandoffRule => handoff_rule(root),
         FixId::ProjectSkills => project_skills::apply(root),
         FixId::LiveSkills => live_skills(root),
-        FixId::MoveIntoRepos => move_into_repos::apply(root, &move_into_repos::open_in_record),
+        FixId::MoveIntoRepos => {
+            move_into_repos::apply(root, &move_into_repos::open_in_record, None)
+        }
         FixId::PluginInstall | FixId::RenameLocal => unreachable!("answered above"),
     }
 }
@@ -511,13 +513,18 @@ pub fn apply_in_the_window(root: &Path, id: FixId) -> Fixed {
 }
 
 /// [`apply`] of `move-into-repos`, refused in each workspace over the chats `open` says are open
-/// there: the window's way in, since it knows its own chats ([`move_into_repos::apply`]). The
-/// terminal's [`apply`] reads them from the app's record ([`move_into_repos::open_in_record`]).
-pub fn apply_moving_into_repos(root: &Path, open: &dyn Fn(&Path, &str) -> Vec<String>) -> Fixed {
+/// there, and where it is not as `shown`, what the confirmation showed: the window's way in,
+/// since it knows its own chats ([`move_into_repos::apply`]). The terminal's [`apply`] reads
+/// them from the app's record ([`move_into_repos::open_in_record`]) and shows nothing first.
+pub fn apply_moving_into_repos(
+    root: &Path,
+    open: &dyn Fn(&Path, &str) -> Vec<String>,
+    shown: Option<&[move_into_repos::Shown]>,
+) -> Fixed {
     if let Some(why) = refusal(root, FixId::MoveIntoRepos) {
         return Fixed::Refused(why);
     }
-    move_into_repos::apply(root, open)
+    move_into_repos::apply(root, open, shown)
 }
 
 fn discover(root: &Path, caller: &crate::forge::Caller) -> Fixed {

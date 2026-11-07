@@ -401,6 +401,7 @@ import {
   type PressHere,
   pressInProjectWindow,
   type HandedChat,
+  type StartedAs,
 } from "./tabWindows";
 import type { TabFacts } from "./ChatRows";
 import { rowFactsOf } from "./shownState";
@@ -418,7 +419,8 @@ import { sendToDriven } from "./browserDriving";
 import { programsOf, useBrowsersTakenBack, useChatBrowsers } from "./chatBrowsers";
 import { browserTimelineTitle, browserTimelineView } from "./browserTimelines";
 import { onInspect, openInspector } from "./inspector";
-import type { BrowserShown } from "./ChatBrowsersShown";
+import { PaneBrowsers, type BrowserShown } from "./ChatBrowsersShown";
+import { SkillRunChip } from "./SkillRunChip";
 import {
   forgetProjectsBrowsers,
   tellProjectBrowsers,
@@ -687,12 +689,19 @@ import {
   withNote,
   ChatNotices,
 } from "./ChatNotices";
-import { type EndedChat, LayoutPanes, type PaneFace, type TasksOn } from "./LayoutPanes";
+import {
+  type EndedChat,
+  LayoutPanes,
+  type PaneFace,
+  type TasksOn,
+  type UsingOn,
+} from "./LayoutPanes";
 import { drawnOf } from "./paneFold";
 import { usePaneRoom } from "./usePaneRoom";
 import { ChatPersonaState } from "./ChatPersonaState";
 import { carryPaneBand, forgetPaneBand, forgetPaneBands, paneBand } from "./noticeSettle";
 import { useWorkedHere } from "./workedHere";
+import { newTabRows } from "./newTabList";
 
 /** Whether two lists of the right side's extension panels draw the same tabs. */
 const samePanels = (a: readonly PanelTab[], b: readonly PanelTab[]) =>
@@ -701,8 +710,15 @@ const samePanels = (a: readonly PanelTab[], b: readonly PanelTab[]) =>
     (one, at) => one.view === b[at].view && one.name === b[at].name && one.mark === b[at].mark,
   );
 
+/** No browsers: a chat that uses none. */
+const NO_BROWSERS: readonly BrowserShown[] = [];
+
 /** One empty list, so a prop left out is the same list at every render. */
 const NONE: readonly never[] = [];
+
+/** The keys that open something, each its catalogue row's (#5292): ⌘⇧T, ⌘T and ⌘N. ⌘⇧T first,
+ *  so ⌘T's matcher never meets a Shift. */
+const OPENING_KEYS = ["shell.new", "tab.new", "chat.new"] as const;
 
 /** Where the picker's chat goes: a new tab — started in `in` when a row asked for one
  *  directory for that tab alone (charter-app#174), else where the explorer's pick says — or a
@@ -720,6 +736,9 @@ type Where =
       /** The empty pane New chat was pressed for (#5289): the chat takes it, while it stays
        *  empty, whichever tab is in front by the time the start answers. */
       pane?: PaneAt;
+      /** Asked from the strip's `+` list (#5292): a tab of its own, even where an empty pane
+       *  waits. */
+      ownTab?: boolean;
     }
   | { split: Direction };
 
@@ -2614,16 +2633,34 @@ export const PlaneView = memo(function PlaneView({
     },
     [filedAs, plane, tabWindow],
   );
+  /** **What a chat is known by is kept where it lands** (#5573): here, or by the window it is
+   *  handed to, so a tab window keeps nothing of a chat the project window shows. */
+  const keepStartedAs = useCallback((session: number, known: StartedAs) => {
+    if (known.shell) setShells((was) => new Set(was).add(session));
+    const { studio } = known;
+    if (studio !== undefined) setStudioLinks((was) => ({ ...was, [session]: studio }));
+  }, []);
   const showStarted = useCallback(
-    (chat: PressedChat, workspace: string, named = false, asked?: PaneAt) => {
+    (
+      chat: PressedChat,
+      workspace: string,
+      named = false,
+      asked?: PaneAt,
+      ownTab = false,
+      known: StartedAs = {},
+    ) => {
       // What it is called until its row arrives (#5308), drawn with its pane.
       setStartedAs((was) => new Map(was).set(chat.session, chat));
-      const land = () =>
-        landOn((tabs) => openNew(tabs, chat, filedAs(chat.session, workspace), { named, asked }));
+      const land = () => {
+        keepStartedAs(chat.session, known);
+        landOn((tabs) =>
+          openNew(tabs, chat, filedAs(chat.session, workspace), { named, asked, ownTab }),
+        );
+      };
       if (asked !== undefined) land();
-      else landOrHandOn({ filed: workspace, started: true, as: chat }, land);
+      else landOrHandOn({ filed: workspace, started: true, as: chat, ...known }, land);
     },
-    [filedAs, landOn, landOrHandOn],
+    [filedAs, keepStartedAs, landOn, landOrHandOn],
   );
   /**
    * **A chat that came back is a press** (#5289; spec #4750): a resumed chat or a reopened task
@@ -2644,7 +2681,7 @@ export const PlaneView = memo(function PlaneView({
    * since the start named its place.
    */
   const showPlaced = useCallback(
-    (chat: Placed) => {
+    (chat: Placed, known?: StartedAs) => {
       const workspace = chat.workspace ?? OUTSIDE;
       setStartedIn((was) => ({ ...was, [chat.session]: workspace }));
       showStarted(
@@ -2656,6 +2693,9 @@ export const PlaneView = memo(function PlaneView({
         },
         workspace,
         true,
+        undefined,
+        false,
+        known,
       );
     },
     [showStarted],
@@ -3821,10 +3861,15 @@ export const PlaneView = memo(function PlaneView({
   /** **New chat** (#5289): the picker, and the chat it starts opens by the one rule. An empty
    *  pane it would fill now is the pane it was pressed for, whichever tab is in front by the time
    *  the start answers. */
-  const newChat = useCallback(() => {
-    const opens = opensAt(now.current, { kind: "new" }, pressing);
-    void ask({ tab: true, pane: opens.how === "fills" ? opens.at : undefined });
-  }, [ask, pressing]);
+  const newChat = useCallback(
+    ({ ownTab = false }: { ownTab?: boolean } = {}) => {
+      // From the strip's `+` list (#5292): "a new tab with this", whatever waits empty.
+      if (ownTab) return void ask({ tab: true, ownTab });
+      const opens = opensAt(now.current, { kind: "new" }, pressing);
+      void ask({ tab: true, pane: opens.how === "fills" ? opens.at : undefined });
+    },
+    [ask, pressing],
+  );
   /** **The strip's `+`** (#4758; spec story 13): a tab with one empty pane on the strip in front,
    *  in front, which New chat then fills. */
   const newTab = useCallback(
@@ -3855,6 +3900,7 @@ export const PlaneView = memo(function PlaneView({
       typed?: Typed,
       named = false,
       oneJob = false,
+      ownTab = false,
     ) => {
       const name =
         oneJob && typed?.line !== undefined ? loginName(typed.line) : `shell ${takeChatNumber()}`;
@@ -3866,15 +3912,16 @@ export const PlaneView = memo(function PlaneView({
           }
           succeeded("shell");
           const session = opened.data;
-          setShells((was) => new Set(was).add(session));
           setStartedIn((was) => ({ ...was, [session]: filed }));
           if (oneJob) {
+            setShells((was) => new Set(was).add(session));
             setOneJobs((was) => new Set(was).add(session));
             change((tabs) => openOneJob(tabs, session, name));
             giveKeyboardTo(plane, session);
           }
           // A shell follows a chat's rules (#4758; spec story 63): it opens by the one rule.
-          else showStarted({ session, chat: name }, filed, named);
+          else
+            showStarted({ session, chat: name }, filed, named, undefined, ownTab, { shell: true });
           // A command typed in for the operator, run as if they had typed it: the shell reads
           // it once it is up, and the tab is theirs to leave. A harness's installer is named,
           // never spelled: the core types its own compiled-in line (FR-29, V65).
@@ -3927,7 +3974,7 @@ export const PlaneView = memo(function PlaneView({
     [change, plane, refusedBy, showStarted, signingOutIn, succeeded, takeChatNumber],
   );
   const openShell = useCallback(
-    (cwd: string | null, filed: string, typed?: Typed, named = false) =>
+    (cwd: string | null, filed: string, typed?: Typed, named = false, ownTab = false) =>
       startShell(
         (name) =>
           commands.openSession(
@@ -3942,6 +3989,8 @@ export const PlaneView = memo(function PlaneView({
         filed,
         typed,
         named,
+        false,
+        ownTab,
       ),
     [plane, startShell],
   );
@@ -4074,9 +4123,10 @@ export const PlaneView = memo(function PlaneView({
   /** A shell tab where a new chat would start — or in `workspace`'s own directory, filed under
    *  it, when a row names one. */
   const newShell = useCallback(
-    (workspace?: string) => {
+    (workspace?: string, { ownTab = false }: { ownTab?: boolean } = {}) => {
       if (workspace === undefined) {
-        openShell(startIn, filedFor(startIn, focused));
+        // From the strip's `+` list (#5292): a tab of its own, whatever waits empty.
+        openShell(startIn, filedFor(startIn, focused), undefined, false, ownTab);
         return;
       }
       // The plane root's own row (SI-1): the plane's directory, filed on the root's strip.
@@ -4321,7 +4371,7 @@ export const PlaneView = memo(function PlaneView({
         // **It opens by the one rule** (#5289), and replaces nothing. A start that names its
         // place, a directory or a strip the caller chose, keeps that place's strip.
         const named = where.in !== undefined || filedIn !== undefined;
-        showStarted(pressed, filed, named, where.pane);
+        showStarted(pressed, filed, named, where.pane, where.ownTab);
         return undefined;
       }
       // The tab that was to be split can have gone while the picker was open: the chat goes on
@@ -4783,7 +4833,7 @@ export const PlaneView = memo(function PlaneView({
       if (handed === undefined) pressHere(session);
       else {
         setStartedIn((was) => ({ ...was, [session]: handed.filed }));
-        if (handed.started) showStarted(handed.as, handed.filed, true);
+        if (handed.started) showStarted(handed.as, handed.filed, true, undefined, false, handed);
         else showResumed(handed.as, handed.filed);
       }
       if (tabWindow === undefined) paneUsed();
@@ -5700,8 +5750,9 @@ export const PlaneView = memo(function PlaneView({
   /**
    * **What a tab's panes are called on the strip** (#4762): a chat by its own name, never the
    * name of the tab whose pane it is in, which is the first pane's; a chat with a tab of its
-   * own by that tab's name, which a rename sets. A view beside another, as DevTools is beside
-   * its browser, has no title of its own, and is called what its tab is.
+   * own by that tab's name, which a rename sets. A view is called by its own title (#5577), the
+   * one it was opened with (a file's name, a settings page's), which its pane keeps
+   * (`tabFace.faceOf`); one opened with none is called what its tab is.
    */
   const naming = useMemo<Naming>(() => {
     const known = new Map(
@@ -5718,7 +5769,7 @@ export const PlaneView = memo(function PlaneView({
         const chat = known.get(session);
         return chat === undefined ? nameOf(session) : untabbedName(chat);
       },
-      // A view beside another has no title of its own: its tab's name is said (`tabFace`).
+      // A view's own title is its pane's (`tabFace`, #5577): nothing to say over it here.
       view: () => undefined,
     };
   }, [nameOf, reopened, sidebar, tabs]);
@@ -5769,12 +5820,6 @@ export const PlaneView = memo(function PlaneView({
       })),
     ],
     [chatBrowsersShown, keptShown, reopened],
-  );
-  /** The browsers of the chats tab `id` shows (#2024), drawn live beside it. */
-  const browsersOfTab = useCallback(
-    (id: number) =>
-      panesOf(tabs, id).flatMap(({ session }) => chatBrowsersShown.get(session) ?? []),
-    [tabs, chatBrowsersShown],
   );
   /** A chat's browser's view, in a tab of its own on its chat's strip (#2024). */
   const openChatBrowser = useCallback(
@@ -5904,6 +5949,8 @@ export const PlaneView = memo(function PlaneView({
                 outcome={factsOf(content.session)?.outcome ?? null}
               />
             ),
+            // Its mark wears the chat's state, ✋ among them: the rail draws no second (#5447).
+            stated: true,
           },
     [naming, personaOf, shells, factsOf],
   );
@@ -6949,8 +6996,7 @@ export const PlaneView = memo(function PlaneView({
           const chat = started.data;
           // What the core recorded on the chat, so its chip and the skill's page say it at once.
           const link = linkOfAsk(wanted);
-          if (link !== undefined) setStudioLinks((was) => ({ ...was, [chat.session]: link }));
-          showPlaced(chat);
+          showPlaced(chat, link === undefined ? undefined : { studio: link });
         });
     };
     window.addEventListener(SKILL_CHAT, asked);
@@ -9694,6 +9740,8 @@ export const PlaneView = memo(function PlaneView({
   const found = useMemo(() => catalogued(offers), [offers]);
 
   const by = useCallback((id: string) => found.get(id), [found]);
+  /** The strip's `+` list (#5292): the catalogue's rows marked for it. */
+  const plusRows = useMemo(() => newTabRows(offers), [offers]);
 
   /** Carries a row out and keeps what it answered. Everything below this line has already
    *  been asked about, where asking was owed. */
@@ -10069,6 +10117,20 @@ export const PlaneView = memo(function PlaneView({
     },
     [filedIn, personaOf, showView],
   );
+  /** **What a chat uses now, on its pane head** (#5524): its skill run open (SK-3) and its
+   *  browsers, live (#2024), each pressed to open what it is. They left its tab (#5339). */
+  const usingOn = useCallback<UsingOn>(
+    (session) => (
+      <>
+        <SkillRunChip session={session} onOpen={openSkillRun} />
+        <PaneBrowsers
+          browsers={chatBrowsersShown.get(session) ?? NO_BROWSERS}
+          onOpen={openChatBrowser}
+        />
+      </>
+    ),
+    [chatBrowsersShown, openChatBrowser, openSkillRun],
+  );
 
   /**
    * **A tab on the strip was pressed.** One that is behind comes forward, on whatever it was
@@ -10192,17 +10254,19 @@ export const PlaneView = memo(function PlaneView({
   );
 
   /**
-   * **The key that opens a shell tab** (`shellKey.ts`): the catalogue's `shell.new` row, pressed
-   * as the palette would press it. Claimed on the window, capture-phase, for the reason the
-   * palette's key is — a pane's terminal would otherwise have it first — and only by the
-   * project in front, so one keypress is one shell.
+   * **The keys that open things** (`shellKey.ts`; #5292): ⌘⇧T the catalogue's `shell.new` row,
+   * ⌘T its `tab.new` and ⌘N its `chat.new`, each pressed as the palette would press it. Claimed
+   * on the window, capture-phase, for the reason the palette's key is — a pane's terminal would
+   * otherwise have it first — and only by the project in front, so one keypress is one shell,
+   * one tab or one picker.
    */
   useEffect(() => {
     if (!inFront) return;
     const key = (e: KeyboardEvent) => {
       // The key and its rule are the key registry's (#2921): never under a modal.
-      if (pressed(e, ["shell.new"]) === undefined) return;
-      const offer = by("shell.new");
+      const act = pressed(e, OPENING_KEYS);
+      if (act === undefined) return;
+      const offer = by(act.id);
       if (offer === undefined) return;
       e.preventDefault();
       e.stopPropagation();
@@ -11739,6 +11803,7 @@ export const PlaneView = memo(function PlaneView({
               on its tabs. Tab still stops on it, in document order. */}
                     <ChatStrip
                       by={by}
+                      newTabRows={plusRows}
                       found={found}
                       press={press}
                       tabs={tabs}
@@ -11779,15 +11844,12 @@ export const PlaneView = memo(function PlaneView({
                       tasksRunningOf={tasksRunningOf}
                       waitingOn={waitingOn}
                       showFromChip={showFromChip}
-                      openSkillRun={openSkillRun}
                       freshOf={freshOf}
                       freshMarkOf={freshMarkOf}
                       planeUpdates={planeUpdates}
                       handedFrom={handedFrom}
                       workItems={workItems}
                       restoring={restoringChats}
-                      browsersOfTab={browsersOfTab}
-                      openBrowser={openChatBrowser}
                     />
                     {/* The centre is where a chat is, so its menu is the pane's rows: the two splits,
                 the tab in front's Tile all, the key the palette claimed, and — under the line —
@@ -11830,6 +11892,7 @@ export const PlaneView = memo(function PlaneView({
                                   finished={frontFinished}
                                   explaining={chipToExplain}
                                   tasksOn={tasksOn}
+                                  usingOn={usingOn}
                                   others={frontOthers}
                                   asked={frontAsked}
                                   asks={asksHere}

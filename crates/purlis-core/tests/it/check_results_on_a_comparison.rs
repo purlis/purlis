@@ -527,7 +527,7 @@ mod the_store {
         std::fs::create_dir_all(ext.join("bin")).unwrap();
         std::fs::write(
             ext.join(purlis_core::extension::MANIFEST),
-            r#"{"version":5,"id":"sh-reporter","capabilities":["check-reporter"],
+            r#"{"version":6,"id":"sh-reporter","capabilities":["check-reporter"],
                 "contributes":{"runs":"bin/run"}}"#,
         )
         .unwrap();

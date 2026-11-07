@@ -545,25 +545,37 @@ body {
   margin-left: var(--space-2);
 }
 
-/* **A chat's browsers on its tab** (#2024): each a live thumbnail beside the tab, as the fresh
-   mark is, with nothing of a button's chrome but a hairline frame the page's picture sits in.
-   As tall as a mark and as wide as a page that tall; a browser's mark until its first frame. */
-.tab-browsers {
+/* **What a chat uses now, on its pane head** (#5524): its skill run and its browsers, which left
+   its tab. Nothing is drawn, and no gap kept, for a chat that uses nothing. */
+.pane-using {
   display: inline-flex;
   flex: none;
   align-items: center;
   gap: var(--space-2);
-  margin-inline-start: var(--space-2);
 }
 
-.tab-browsers > .tab-browser {
+.pane-using:empty {
+  display: none;
+}
+
+/* **A chat's browsers on its pane head** (#2024, #5524): each a live thumbnail, with nothing of a
+   button's chrome but a hairline frame the page's picture sits in. As tall as a mark and as wide
+   as a page that tall; a browser's mark until its first frame. */
+.pane-browsers {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.pane-browsers > .pane-browser {
   block-size: auto;
   padding: 0;
   border-color: var(--border-subtle);
   border-radius: var(--radius-sm);
 }
 
-.tab-browsers > .tab-browser:hover {
+.pane-browsers > .pane-browser:hover {
   border-color: var(--border-strong);
 }
 
@@ -759,7 +771,8 @@ body {
     .pane-brief,
     .pane-from,
     .pane-work-item,
-    .pane-head-where
+    .pane-head-where,
+    .pane-using
   ) {
   height: var(--size-chrome);
 }
@@ -1635,6 +1648,19 @@ body {
   align-items: center;
 }
 
+/* **A head with no state word draws its tasks' button as the tasks' glyph** (#5446, #5524): the
+   mark it starts with wears the state's own, which is never drawn twice. The size of a state's. */
+.pane-tasks-glyph {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-secondary);
+}
+
+.pane-tasks-glyph svg {
+  width: 0.8rem;
+  height: 0.8rem;
+}
+
 /* **The menu's summary** (#5341): a count for each way its tasks stand, each with its state's
    mark, in the secondary words, as a tab's chip drew them, then the key that opens it too. */
 .tasks-menu-summary {
@@ -1663,19 +1689,17 @@ body {
   color: var(--text-quiet);
 }
 
-/* **The skill run open in a tab's chat** (SK-3): beside the tab's button, inside its cell, on a
-   sunken pill whose ring of the keyboard's focus is drawn inside it, as a strip's are. It does
-   not shrink: the name gives way. */
-.tabs .tab > .tab-run {
+/* **The skill run open in a chat** (SK-3), on its pane head (#5524): on a sunken pill whose ring of
+   the keyboard's focus is drawn inside it, as a strip's are. It does not shrink: the name gives
+   way. */
+.pane-using > .pane-skill-run {
   display: flex;
   flex: none;
   align-items: center;
   align-self: center;
-  min-height: var(--size-chrome);
-  margin-inline-end: var(--space-2);
 }
 
-.tabs .tab-run-pill {
+.skill-run-pill {
   display: flex;
   flex: none;
   align-items: center;
@@ -1684,17 +1708,17 @@ body {
   background: var(--surface-sunken);
 }
 
-.tabs .tab-run-pill:has(> [data-focus-visible]) {
+.skill-run-pill:has(> [data-focus-visible]) {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-inset);
 }
 
-.tabs .tab-run-counts {
+.skill-run-counts {
   flex: none;
   font-variant-numeric: tabular-nums;
 }
 
-.tab-run-counts .count {
+.skill-run-counts .count {
   display: inline-flex;
   flex: none;
   gap: var(--space-1);
@@ -1703,17 +1727,17 @@ body {
   color: var(--text-secondary);
 }
 
-.tab-run-counts > .count + .count {
+.skill-run-counts > .count + .count {
   margin-inline-start: var(--space-2);
 }
 
-.tab-run-counts .count svg {
+.skill-run-counts .count svg {
   width: 0.75rem;
   height: 0.75rem;
 }
 
-/* The skill run open in a tab's chat (SK-3): the skill's name, cut short where it is long. */
-.tab-skill-run .skill-run-name {
+/* The skill run open in a chat (SK-3): the skill's name, cut short where it is long. */
+.pane-skill-run .skill-run-name {
   max-width: 12ch;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5818,7 +5842,7 @@ nav.piece-files-head {
   color: var(--text-muted);
 }
 
-/* A branch's check results (ADR 0116): beside the comparison, and never taking all its room. */
+/* A branch's check results (ADR 0117): beside the comparison, and never taking all its room. */
 .check-results {
   flex: 0 1 auto;
   max-height: 40%;

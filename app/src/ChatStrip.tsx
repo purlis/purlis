@@ -23,7 +23,6 @@ import {
 } from "./sortable";
 import { droppedReference, overChat, type ChatsForReferences } from "./references";
 import { FreshMark, freshMarkShown } from "./PlaneUpdated";
-import { TabBrowsers, type BrowserShown } from "./ChatBrowsersShown";
 import { REGION_CHROME } from "./RegionFrame";
 import { movedAt, sameList, useChatsSelect, type Chats } from "./chatState";
 import {
@@ -36,7 +35,6 @@ import {
   type Tabs,
 } from "./tabs";
 import { TabNeeds } from "./TabChip";
-import { SkillRunChip } from "./SkillRunChip";
 import { type Ended, type Needing } from "./tabTasks";
 import { TabCell, tabsPart, type TabVariant } from "./ui/tabs/Tabs";
 import { StripTab, TabStripRow, useTabStrip } from "./ui/tabs/TabStrip";
@@ -53,6 +51,8 @@ import { faceOf, type Naming, type TabFace } from "./tabFace";
 import type { Ref } from "./fits";
 import type { RefObject } from "react";
 import { Doer, ShowMore, Pin, Closer } from "./StripMarks";
+import { NewTabButton } from "./NewTabButton";
+import type { NewTabRow } from "./newTabList";
 import { TIPS_BELOW } from "./ui/tooltip/Tooltip";
 
 /** What a tab with no tasks hands its chip, the same lists every time. */
@@ -88,12 +88,13 @@ function tabTip(from: string | undefined, workItem: string | undefined): string 
 
 /**
  * **The chat strip** (ADR 0036, DS-6 #1836): the focused workspace's tabs above the panes, each
- * with its task chip, fresh mark and `×`, the `+` that opens a chat, and the show-more menu of
+ * with its fresh mark and `×`, the `+` that opens a chat, and the show-more menu of
  * what the strip is not drawing. Split out of `PlaneView.tsx` (#1035), which owns every value
  * it is handed.
  */
 export function ChatStrip({
   by,
+  newTabRows,
   found,
   press,
   tabs,
@@ -140,9 +141,6 @@ export function ChatStrip({
   handedFrom,
   workItems,
   restoring = NONE_RESTORING,
-  browsersOfTab,
-  openBrowser,
-  openSkillRun,
 }: ChatStripProps) {
   /** Where the pointer is while a tab is carried, for a tear-off (#4768). */
   const pointer = useFollowedPointer();
@@ -390,18 +388,14 @@ export function ChatStrip({
                       <QueueRead>
                         {(queue) => <TabNeeds needs={hiddenIn(queue, id)} onShow={showFromChip} />}
                       </QueueRead>
-                      {/* **The skill run open in the tab's chat** (SK-3): pressed, it
-                            opens the skill's Runs in the studio on that run. Beside the tab's button, as
-                            the tasks' chip is. */}
-                      {openSkillRun !== undefined && (
-                        <SkillRunChip session={chatOf(tabs, id)} onOpen={openSkillRun} />
-                      )}
-                      {/* **The tab's chats' browsers, live** (#2024): a thumbnail each,
-                            pressed to open its view. Beside the tab's button, as the fresh
-                            mark is. */}
-                      {browsersOfTab !== undefined && openBrowser !== undefined && (
-                        <TabBrowsers browsers={browsersOfTab(id)} onOpen={openBrowser} />
-                      )}
+                      {/* **No skill run and no browsers on a tab** (#5524): a tab says which
+                            chat this is and whether it needs you (#5339). What its chat uses now
+                            is on its pane head (`usingOn`), and its browsers are rows under it in
+                            the Chats list too. */}
+                      {/* **The fresh mark stays on the tab** (#5524, recorded): the ruling on
+                            charter#369 put it here, so the person, who alone can start the chat
+                            fresh, is told where they look for whether a chat needs them. Moving
+                            it is a change to that ruling, not a cleanup. */}
                       <FreshMark
                         id={freshMarkOf(id)}
                         // **Never on a task's own tab** (#1489): nothing drawn on
@@ -435,9 +429,15 @@ export function ChatStrip({
                 **`New tab` stays on the strip and did not move onto a pane**, where the
                 splits and the close went: it acts on the strip, and there is one. **It
                 opens a tab with one empty pane** (#4758; spec story 13), which New chat
-                then fills: a chat is never a tab of its own. */}
+                then fills, and **a rest on it or Down shows the list of what else opens in
+                a new tab** (#5292), from the catalogue (`NewTabButton`). */}
             <span className="strip-doing" ref={chatControls}>
-              <Doer offer={by("tab.new")} onPress={press} iconOnly />
+              <NewTabButton
+                offer={by("tab.new")}
+                rows={newTabRows}
+                onPress={press}
+                dragging={() => draggingRef.current}
+              />
             </span>
           </TabStripRow>
         </SortableContext>
@@ -571,6 +571,8 @@ function useFollowedPointer() {
 /** Each is `PlaneView`'s own value of the same name: the strip reads them and holds none. */
 type ChatStripProps = {
   by: (id: string) => Offer | undefined;
+  /** The `+` list's rows, from the catalogue (#5292). */
+  newTabRows: readonly NewTabRow[];
   found: Catalogued;
   press: (offer: Offer) => void;
   tabs: Tabs;
@@ -629,13 +631,6 @@ type ChatStripProps = {
   workItems: Record<number, string>;
   /** The chats the launch has still to start (`restoring.rs`): each one's tab says so. */
   restoring?: ReadonlySet<number>;
-  /** The browsers of tab `id`'s chats (#2024), drawn live beside it. */
-  browsersOfTab?: (id: number) => readonly BrowserShown[];
-  /** Opens a browser's view, from its thumbnail on a tab. */
-  openBrowser?: (shown: BrowserShown) => void;
-  /** Opens a skill's Runs in the studio on one of its runs, from the chip of the run open in a
-   *  tab's chat (`session`'s). */
-  openSkillRun?: (skill: string, run: string, session: number, level: string | null) => void;
 };
 
 /**

@@ -483,3 +483,151 @@ fn a_wider_answer_on_a_program_not_reviewed_is_refused_from_the_window_too() {
     assert_eq!(asks.open_runs().len(), 1);
     assert!(asks.answer_run(id, RunAnswer::Refuse, window()).is_ok());
 }
+
+/// [`need`] for a vault its persona may not use: only the vault's own Allow would open it.
+fn on_a_vault_not_its(bound: Bound) -> RunNeed {
+    RunNeed {
+        not_its_vault: true,
+        offer: Offer::Vault { no_allow: None },
+        ..need(bound)
+    }
+}
+
+#[test]
+fn keep_blocked_after_the_gate_read_it_refuses_an_ask_opened_after_it() {
+    // The run read "not kept blocked" at the gate; the person's Keep blocked lands before its ask
+    // opens (#5424). It opens nothing, and is refused, rather than raise a notice after the sweep.
+    let tmp = tempfile::tempdir().unwrap();
+    let asks = Asks::new(tmp.path());
+    let swept = asks.keep_vault_blocked(7, "team");
+    assert!(swept.is_empty(), "nothing open to sweep yet");
+    let held = asks.allowed_or_held(
+        on_a_vault_not_its(bound(7, &["a"])),
+        Duration::ZERO,
+        &mut |_| {},
+    );
+    assert!(matches!(held, RunHeld::Refused { .. }), "{held:?}");
+    assert!(asks.open_runs().is_empty());
+    // Another chat, and a vault its persona uses, are another matter.
+    asks.allowed_or_held(
+        on_a_vault_not_its(bound(8, &["a"])),
+        Duration::ZERO,
+        &mut |_| {},
+    );
+    stopped(&asks, bound(7, &["a"]));
+    assert_eq!(asks.open_runs().len(), 2);
+}
+
+#[test]
+fn keep_blocked_names_the_open_asks_that_would_open_the_vault_and_ends_with_the_chat() {
+    let tmp = tempfile::tempdir().unwrap();
+    let asks = Asks::new(tmp.path());
+    asks.allowed_or_held(
+        on_a_vault_not_its(bound(7, &["a"])),
+        Duration::ZERO,
+        &mut |_| {},
+    );
+    stopped(&asks, bound(7, &["b"]));
+    let vaults = asks.open_runs();
+    let not_its = vaults.iter().find(|open| open.not_its_vault).unwrap().id;
+    assert_eq!(asks.keep_vault_blocked(7, "team"), vec![not_its]);
+    asks.forget(7);
+    let held = asks.allowed_or_held(
+        on_a_vault_not_its(bound(7, &["a"])),
+        Duration::ZERO,
+        &mut |_| {},
+    );
+    assert!(
+        matches!(held, RunHeld::StillOpen { .. }),
+        "a chat number used again starts clean: {held:?}"
+    );
+}
+
+/// What chat `chat`'s trace says of its Run grant asks, `(what, ask)`, in the order it was written.
+fn runs_traced(root: &std::path::Path, chat: u32) -> Vec<(String, u64)> {
+    let file = crate::trace::file(root, &chat.to_string());
+    std::fs::read_to_string(&file)
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|line| line["event"] == super::super::TRACED_AS && line["program"].is_string())
+        .map(|line| {
+            (
+                line["what"].as_str().unwrap_or_default().to_owned(),
+                line["ask"].as_u64().unwrap_or_default(),
+            )
+        })
+        .collect()
+}
+
+/// #5509, as #5220 holds for a Secret ask: a Run grant's ask is traced raised, and joined, before
+/// any answer to it, however soon the person answers. One thread raises and another joins while
+/// a third answers the moment the ask is listed, many times over.
+#[test]
+fn a_run_grants_raise_is_traced_before_its_answer_however_soon_it_is_answered() {
+    let tmp = tempfile::tempdir().unwrap();
+    let asks = Asks::new(tmp.path());
+    for round in 0..100 {
+        let args = [format!("round-{round}")];
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        std::thread::scope(|scope| {
+            let runs = [0, 1].map(|_| {
+                let (asks, bound) = (&asks, bound(7, &args));
+                scope.spawn(move || hold(asks, bound, Duration::from_secs(60)))
+            });
+            while !runs.iter().all(std::thread::ScopedJoinHandle::is_finished) {
+                if let Some(open) = asks
+                    .open_runs()
+                    .into_iter()
+                    .find(|open| open.bound.args == args)
+                {
+                    let _ = asks.answer_run(open.id, RunAnswer::Once, window());
+                }
+                std::thread::yield_now();
+            }
+        });
+    }
+    let traced = runs_traced(tmp.path(), 7);
+    let mut answered = std::collections::HashSet::new();
+    let mut raised = std::collections::HashSet::new();
+    for (what, ask) in &traced {
+        match what.as_str() {
+            "raised" => assert!(raised.insert(*ask), "raised twice: {traced:?}"),
+            "joined" => assert!(
+                raised.contains(ask) && !answered.contains(ask),
+                "joined {ask} out of turn: {traced:?}"
+            ),
+            _ => {
+                assert!(
+                    raised.contains(ask),
+                    "{what} for {ask} before its raise: {traced:?}"
+                );
+                answered.insert(*ask);
+            }
+        }
+    }
+    assert!(!answered.is_empty(), "{traced:?}");
+}
+
+#[test]
+fn keep_blocked_takes_back_a_grant_given_on_that_vault_for_that_chat() {
+    // A run past the gate before the press is covered by a grant, and never reaches an ask: the
+    // grant goes with the press (#5424), and another chat's stays.
+    let asks = Asks::new(std::path::Path::new("/nowhere"));
+    for chat in [7, 8] {
+        asks.allowed_or_held(
+            RunNeed {
+                not_its_vault: true,
+                ..need(bound(chat, &["a"]))
+            },
+            Duration::ZERO,
+            &mut |_| {},
+        );
+        answer_open(&asks, RunAnswer::ForChat);
+    }
+    assert!(asks.covers(&bound(7, &["b"])));
+    asks.keep_vault_blocked(7, "team");
+    assert!(!asks.covers(&bound(7, &["b"])), "taken back");
+    assert!(!asks.granted(&bound(7, &["b"])));
+    assert!(asks.covers(&bound(8, &["b"])), "another chat's stays");
+}

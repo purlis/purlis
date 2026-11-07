@@ -89,7 +89,17 @@ import {
 } from "./ChatNotices";
 import { Button, IconButton } from "./ui/button/Button";
 import { TIPS_BELOW } from "./ui/tooltip/Tooltip";
-import { Bell, Plus, Puzzle, Reply, ScrollText, Square, SquareTerminal, Undo2 } from "lucide-react";
+import {
+  Bell,
+  ListTree,
+  Plus,
+  Puzzle,
+  Reply,
+  ScrollText,
+  Square,
+  SquareTerminal,
+  Undo2,
+} from "lucide-react";
 import {
   paneKindOf,
   paneLinesOf,
@@ -172,6 +182,13 @@ export type TasksOn = (
   alone: boolean,
 ) => ReactNode;
 
+/**
+ * **What a chat uses now, drawn on its pane head** (#5524): its skill run open and its browsers,
+ * each pressed to open what it is. They left its tab, which says which chat this is and whether
+ * it needs you (#5339). Nothing for a chat that uses nothing.
+ */
+export type UsingOn = (session: number) => ReactNode;
+
 /** The word as it is: a head with nothing to open. */
 const asItIs: TasksOn = (_session, _at, word, alone) => (alone ? null : word);
 
@@ -182,7 +199,7 @@ const asItIs: TasksOn = (_session, _at, word, alone) => (alone ? null : word);
  * (a task's path says it, or the pane is too narrow) still draws the mark alone as that button
  * where the chat has tasks, so ⌘⇧J always has its menu to open.
  */
-function PaneTasksWord({
+export function PaneTasksWord({
   tasksOn = asItIs,
   session,
   at,
@@ -198,18 +215,33 @@ function PaneTasksWord({
   markWord: boolean;
   chat: ChatHead["chat"];
 }) {
-  const drawn = tasksOn(
-    session,
-    at,
+  // **The state's glyph is drawn once on a head** (#5446, #5524): the mark it starts with wears it
+  // on its badge, so the line says it again only with its word. A head with no word draws no
+  // state of its own: only the button of its tasks, where it has any, drawn as the tasks' glyph
+  // and named by the word, as it is with one.
+  const said = word && markWord;
+  const state = (
     <ChatShownState
       session={session}
       shell={chat.shell}
       report={chat.report}
       outcome={chat.outcome}
       harness={chat.harness}
-      markOnly={!word || !markWord}
-    />,
-    !word,
+      heardOnly={!said}
+    />
+  );
+  const drawn = tasksOn(
+    session,
+    at,
+    said ? (
+      state
+    ) : (
+      <span className="pane-tasks-glyph">
+        <ListTree aria-hidden="true" />
+        {state}
+      </span>
+    ),
+    !said,
   );
   return drawn == null ? null : <span className="pane-state-mark">{drawn}</span>;
 }
@@ -253,6 +285,7 @@ export function PaneFrame({
   ended,
   said,
   tasksOn,
+  usingOn,
   focused = false,
   oneJob = false,
   shell = false,
@@ -263,6 +296,8 @@ export function PaneFrame({
   plane: PlaneId;
   /** What the head's state word opens: its chat's tasks menu, where it has tasks (#5341). */
   tasksOn?: TasksOn;
+  /** What the chat uses now, after its state: its skill run and its browsers (#5524). */
+  usingOn?: UsingOn;
   /** **How the path is said for a task that has ended** (#4757, #4756): its state after the
    *  path and the names of chats no longer open. Its Brief is its state button's (#4760). */
   said?: { state?: ReactNode; gone?: (session: number) => boolean };
@@ -512,6 +547,11 @@ export function PaneFrame({
                 <span className="pane-wrapping">
                   <WrappingUp held />
                 </span>
+              )}
+              {/* **What it uses now** (#5524): its skill run and its browsers, which left its
+              tab, beside its state. */}
+              {head && usingOn !== undefined && (
+                <span className="pane-using">{usingOn(session)}</span>
               )}
               {/* **harness · workspace on a pane with no foot** (spec #5191): a shell's and a
               one-job program's keep their heads. */}
@@ -1127,8 +1167,9 @@ export function NoticeOfChat({
 const NO_HEADS = (): ChatHead | undefined => undefined;
 const NO_SHELLS: ReadonlySet<number> = new Set();
 
-/** **What a folded pane's rail shows for what it holds** (#4766): its name and its icon. */
-export type PaneFace = { name: string; mark: ReactNode };
+/** **What a folded pane's rail shows for what it holds** (#4766): its name and its icon, and
+ *  whether that icon wears its chat's one state (#5447), its needs badge among them. */
+export type PaneFace = { name: string; mark: ReactNode; stated?: boolean };
 
 /** A pane's face where the window gives none: its chat's own name, a view's, or what an empty
  *  pane would do, each with its kind's mark. */
@@ -1174,6 +1215,7 @@ export function LayoutPanes({
   finished,
   explaining,
   tasksOn,
+  usingOn,
   others,
   asked,
   asks,
@@ -1246,6 +1288,8 @@ export function LayoutPanes({
   /** **What the head's state word opens** (#5341): the chat's tasks menu, around the word, for
    *  a chat that has tasks; the word as it is for one that has none. */
   tasksOn?: TasksOn;
+  /** What a chat uses now, on its pane head: its skill run and its browsers (#5524). */
+  usingOn?: UsingOn;
   /** **The panes left on a task that has ended** (#4757), by pane: the path it last had. Each
    *  keeps the task's last screen, read-only, under the ended band (#4756). */
   endedTasks: Readonly<Record<number, Crumbs>>;
@@ -1390,8 +1434,6 @@ export function LayoutPanes({
 }) {
   // **Folding is decided here, as the tab is drawn, and never written to its tree** (#4766).
   const drawn = given ?? (room === undefined ? undefined : drawnOf(layout, focused, room));
-  // The pane is one side of a split. Read here: a chat's pane names its breadcrumb `path`.
-  const inSplit = path !== "";
   // **Whether the chat this pane draws has ended** (#4756): read for every layout, so the hooks
   // are the same whatever the pane shows, and false for all but a chat's.
   const shown = layout.kind === "pane" && layout.content.kind === "session" ? layout.content : null;
@@ -1433,8 +1475,8 @@ export function LayoutPanes({
             <EmptyPane
               running={runningIn(content.workspace)}
               newChat={offerFor("chat.new")}
+              newShell={offerFor("shell.new")}
               onPress={(offer) => onPaneDoes(layout.pane, offer)}
-              inSplit={inSplit}
               createWorkspace={noWorkspace ? offerFor("workspace.create") : undefined}
             />
           </div>
@@ -1610,6 +1652,7 @@ export function LayoutPanes({
       <PaneFrame
         plane={plane}
         tasksOn={tasksOn}
+        usingOn={usingOn}
         pane={layout.pane}
         tab={tab}
         session={content.session}
@@ -1768,6 +1811,7 @@ export function LayoutPanes({
       finished={finished}
       explaining={explaining}
       tasksOn={tasksOn}
+      usingOn={usingOn}
       others={others}
       asked={asked}
       asks={asks}

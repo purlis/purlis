@@ -40,7 +40,12 @@ export const RAIL = "data-drop-rail";
 /** A tab on the strip, by its id: one that is not a pane, which carries its tab's id too. */
 export const stripTab = (id: number) => `[${STRIP}] [${TAB}="${id}"]:not([${PANE}])`;
 
-/** What a terminal says of its own grid, to reckon what would fit in a box. */
+/**
+ * **What a terminal says of its own grid, to reckon what would fit in a box.** The shape of
+ * {@link TerminalCells}, but measured against the terminal and not its pane: {@link cellsIn} adds
+ * one to the other. Kept a type of its own so that the two cannot be confused and the terminal's
+ * own counted twice (#5573).
+ */
 export type OwnCells = {
   width: number;
   height: number;

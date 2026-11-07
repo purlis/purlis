@@ -896,6 +896,7 @@ fn route_about(names: &[&str]) -> Vec<purlis_core::extension::studio::RouteSkill
             name: (*name).to_owned(),
             description: format!("Does {name}."),
             pinned: false,
+            chars: 10,
         })
         .collect()
 }
@@ -914,6 +915,7 @@ fn routed_by(executor: &Executor, probe: &Probe, names: &[&str]) -> Result<Vec<S
             skills: &skills,
             budget,
             besides: budget,
+            index: budget,
         },
     )?;
     let hidden = purlis_core::extension::studio::routed_of(ID, names.len(), &doc)?;

@@ -842,8 +842,20 @@ const DIALOGS: Opened[] = [
       render(
         <MoveIntoReposConfirm
           plans={[
-            { workspace: "alpha", repos: ["api"], unresumable: ["In the clone"], open: [] },
-            { workspace: "beta", repos: ["web"], unresumable: [], open: ["steward 2"] },
+            {
+              workspace: "alpha",
+              repos: ["api"],
+              unresumable: ["In the clone"],
+              open: [],
+              finishing: [],
+            },
+            {
+              workspace: "beta",
+              repos: ["web"],
+              unresumable: [],
+              open: ["steward 2"],
+              finishing: [],
+            },
           ]}
           onCancel={nothing}
           onMove={nothing}

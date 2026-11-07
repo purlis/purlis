@@ -617,3 +617,32 @@ fn what_follows_any_accent_keeps_every_contrast_it_had_or_its_floor() {
         }
     }
 }
+
+#[test]
+fn a_link_that_follows_the_accent_stays_readable_on_the_launcher_s_deep_surface() {
+    // The launcher's links stand on `surface.deep` (#5347). Over Classic light this violet reads
+    // on every other ground a link is drawn on and falls under the text floor on that one alone
+    // (4.44:1, as #5263's story found it), so the link keeps a colour that reads there, given as a
+    // theme gives it or as a person does.
+    let theme = classic()
+        .of(Appearance::Light)
+        .expect("Classic's light appearance");
+    let violet = "#7c48d9";
+    for ground in [
+        "surface.base",
+        "surface.raised",
+        "surface.overlay",
+        "surface.sunken",
+    ] {
+        assert!(contrast(violet, theme.value(ground)) >= 4.5, "{ground}");
+    }
+    assert!(contrast(violet, theme.value("surface.deep")) < 4.5);
+    for (how, drawn) in [
+        ("given", given_accent(theme, violet)),
+        ("a person's", with_accent(theme, violet)),
+    ] {
+        let link = drawn.value("markdown.link");
+        let on = contrast(link, drawn.value("surface.deep"));
+        assert!(on >= 4.5, "{how}: {link} on surface.deep is {on}");
+    }
+}

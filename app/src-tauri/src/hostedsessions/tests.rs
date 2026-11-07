@@ -3837,3 +3837,140 @@ fn a_start_the_runner_was_asked_for_counts_as_one_that_may_have_run_however_it_f
     assert!(failed.is_err(), "{failed:?}");
     assert!(clashes.asked_to_run.was(), "asked, so it may have run");
 }
+
+/// **#4219: a runner chat's skill runs made while no window read the runner's log reach the
+/// studio once a window links again**, and none it told before is told again: the link keeps, per
+/// runner and project, how far it logged, and the next link reads on from there.
+#[test]
+fn a_runners_skill_runs_made_while_no_window_read_its_log_are_told_once_the_window_links_again() {
+    use purlis_core::skilluse::relayed::Relayed;
+    const PROJECT: &str = "01J9PRJCT00000000000000000";
+    let runtime = a_runtime();
+    let log = RunnersLog::default();
+    let runner = Hosting::running_with(
+        crate::sessionhost::Composes::as_the_tests_ship(),
+        StandIns::default(),
+    )
+    .recording_with(log.clone());
+    let desktop = runtime.block_on(async move { a_desktop_relaying_to(runner) });
+    let config = tempfile::tempdir().expect("this machine's config home");
+    let linked = |desktop: purlis_host::Hosting| {
+        let config = config.path().to_path_buf();
+        runtime
+            .block_on(async move {
+                let link = a_bare_link_to(purlis_host::Routed::new(desktop), || {}).await?;
+                HostLink::over_relayed_keeping(
+                    link,
+                    tokio::runtime::Handle::current(),
+                    || {},
+                    None,
+                    Some("builds"),
+                    Some(&config),
+                )
+                .await
+            })
+            .expect("the window's link is relayed")
+    };
+    let hearing = |link: &HostLink| {
+        let told: Arc<Mutex<Vec<Relayed>>> = Arc::default();
+        link.hear_skill_runs(PROJECT, {
+            let told = Arc::clone(&told);
+            Arc::new(move |_pool, run| told.lock().unwrap().push(run.clone()))
+        });
+        told
+    };
+    let ran = |run: &str| {
+        log.write(
+            "skill.started",
+            serde_json::json!({ "started_by": "skill-tool", "skill": "review", "skill_run": run }),
+        );
+        log.write(
+            "skill.ended",
+            serde_json::json!({ "skill": "review", "skill_run": run, "ended": "turn", "ms": 5 }),
+        );
+    };
+    let runs = |told: &Arc<Mutex<Vec<Relayed>>>| -> Vec<String> {
+        told.lock()
+            .unwrap()
+            .iter()
+            .map(|one| one.run.clone())
+            .collect()
+    };
+
+    let first = linked(desktop.clone());
+    let told = hearing(&first);
+    ran("01K6SKILLRUNA0000000000000");
+    until("the first run is told", || told.lock().unwrap().len() >= 2);
+    until("how far it was logged is kept", || {
+        purlis_core::runnercursors::logged_up_to(config.path(), RUNNERS_DEVICE, PROJECT) == Some(2)
+    });
+    drop(first);
+    // The window is closed while its runner chat runs a skill.
+    ran("01K6SKILLRUNB0000000000000");
+
+    let again = linked(desktop);
+    let told = hearing(&again);
+
+    until("the run made while no window read the log is told", || {
+        told.lock().unwrap().len() >= 2
+    });
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(
+        runs(&told),
+        ["01K6SKILLRUNB0000000000000", "01K6SKILLRUNB0000000000000"],
+        "the second run's start and end, and nothing of the first again"
+    );
+    drop(again);
+}
+
+/// **#4219: what a link let go of before a project was held on it is said, never skipped in
+/// silence**, and a project held before its runner said where its log ends is told the lines
+/// that come after.
+#[test]
+fn a_projects_hand_off_says_the_lines_let_go_past_its_cursor_and_hears_on_without_a_device() {
+    use purlis_core::skilluse::relayed::{Line, Relayed};
+    let run = |n: u64| Relayed {
+        chat: "01K6W0RKER000000000000000B".into(),
+        run: format!("01K6RUN{n:019}"),
+        at_ms: 1_793_440_800_000,
+        line: Line::Started {
+            skill: "review".into(),
+            started_by: purlis_core::skills::runs::StartedBy::SkillTool,
+            level: None,
+            tree: None,
+        },
+    };
+    let telling = || {
+        let told: Arc<Mutex<Vec<String>>> = Arc::default();
+        let tell: crate::host::SkillRunsHeard = {
+            let told = Arc::clone(&told);
+            Arc::new(move |_, run: &Relayed| told.lock().unwrap().push(run.run.clone()))
+        };
+        (told, tell)
+    };
+
+    let shared = Shared::default();
+    lock(&shared.runner_log).starts_at(RUNNERS_DEVICE.into(), 0, None);
+    for seq in 1..=(MOST_SKILL_LINES_HELD as u64 + 3) {
+        shared.skill_line(seq, run(seq));
+    }
+    assert!(!lock(&shared.runner_log).now().missed);
+    let (told, tell) = telling();
+    shared.hand_off("01J9PRJCT00000000000000000", tell);
+    until("the lines held are told", || {
+        told.lock().unwrap().len() == MOST_SKILL_LINES_HELD
+    });
+    assert!(
+        lock(&shared.runner_log).now().missed,
+        "the three let go are said"
+    );
+
+    let unsaid = Shared::default();
+    let (told, tell) = telling();
+    unsaid.hand_off("01J9PRJCT00000000000000000", tell);
+    lock(&unsaid.runner_log).starts_at(RUNNERS_DEVICE.into(), 0, None);
+    unsaid.skill_line(1, run(1));
+    until("a line after its device was said is told", || {
+        told.lock().unwrap().len() == 1
+    });
+}

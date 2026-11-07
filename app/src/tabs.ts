@@ -265,6 +265,12 @@ export function viewNamedNow(view: ViewRef, title: string): { view: ViewRef; tit
   return { view, title };
 }
 
+/** **What a view is called by itself** (#5577): its own title, or its view's word where it was
+ *  opened with none. */
+export function viewTitleOf(content: { view: ViewRef; title?: string }): string {
+  return content.title ?? content.view.view;
+}
+
 /** What a pane shows. */
 export type Content =
   /**
@@ -306,6 +312,13 @@ export type Content =
        * token, which macOS may ask about, so it waits too (`VaultTab`, #1660).
        */
       waits?: boolean;
+      /**
+       * **Its own title** (#5577): what it was opened as, such as a file's name or a settings
+       * page's, which names it in a split, where the tab's name is its first pane's, and names
+       * the tab once it is first. None where it was opened with none, as DevTools beside its
+       * browser, which is then called what its tab is.
+       */
+      title?: string;
       /**
        * **The strip's preview tab** (SI-9b, ADR 0065 Q1), VS Code's model: what a single click
        * on a memory row shows, replaced in place by the next single click. A double-click or
@@ -639,7 +652,7 @@ export function openView(tabs: Tabs, view: ViewRef, name: string, workspace: str
       inFront: tab.id,
     };
   }
-  return withTab(tabs, name, { kind: "view", view, workspace }, tabs.order.length);
+  return withTab(tabs, name, { kind: "view", view, workspace, title: name }, tabs.order.length);
 }
 
 /**
@@ -650,7 +663,12 @@ export function openView(tabs: Tabs, view: ViewRef, name: string, workspace: str
  */
 export function offerView(tabs: Tabs, view: ViewRef, name: string, workspace: string): Tabs {
   if (findView(tabs, view)) return tabs;
-  const opened = withTab(tabs, name, { kind: "view", view, workspace }, tabs.order.length);
+  const opened = withTab(
+    tabs,
+    name,
+    { kind: "view", view, workspace, title: name },
+    tabs.order.length,
+  );
   return tabs.inFront === undefined ? opened : { ...opened, inFront: tabs.inFront };
 }
 
@@ -668,12 +686,17 @@ export function openPreview(tabs: Tabs, view: ViewRef, name: string, workspace: 
   if (findView(tabs, view)) return openView(tabs, view, name, workspace);
   const reused = previewOf(tabs, workspace);
   if (reused === undefined) {
-    return withTab(tabs, name, { kind: "view", view, workspace, preview: true }, tabs.order.length);
+    return withTab(
+      tabs,
+      name,
+      { kind: "view", view, workspace, title: name, preview: true },
+      tabs.order.length,
+    );
   }
   const tab = tabs.byId[reused];
   const layout = replace(tab.layout, tab.focused, (found) => ({
     ...found,
-    content: { kind: "view", view, workspace, preview: true },
+    content: { kind: "view", view, workspace, title: name, preview: true },
   }));
   return {
     ...tabs,
@@ -734,7 +757,10 @@ export function showInstead(tabs: Tabs, from: ViewRef, to: ViewRef, name: string
     return openView(tabs, to, name, "");
   const tab = tabs.byId[open.tab];
   const layout = replace(tab.layout, open.pane, (found) =>
-    found.content.kind === "view" ? { ...found, content: { ...found.content, view: to } } : found,
+    // Its own title goes with it (#5577): the pane is called what it shows now.
+    found.content.kind === "view"
+      ? { ...found, content: { ...found.content, view: to, title: name } }
+      : found,
   );
   // The tab's name is its lead view's: a view on the far side of a split names nothing.
   const leads = contents(tab.layout)[0]?.pane === open.pane;
@@ -759,7 +785,12 @@ export function putViewBack(
   split?: number,
 ): Tabs {
   if (findView(tabs, view)) return tabs;
-  const opened = withTab(tabs, name, { kind: "view", view, workspace, waits: true }, at);
+  const opened = withTab(
+    tabs,
+    name,
+    { kind: "view", view, workspace, title: name, waits: true },
+    at,
+  );
   const back = { ...opened, inFront: tabs.inFront };
   return split === undefined ? back : setSplit(back, view, split);
 }
@@ -917,12 +948,18 @@ export function followRename(tabs: Tabs, from: string, to: string, root?: string
     const view = renamedView(content.view, from, to, root);
     if (!strip && !view) return layout;
     moved = true;
+    // A title that says the workspace's name says its new one (#5577), as its tab's does below.
+    const titled =
+      view && content.view.from === null ? TITLED_BY_WORKSPACE[content.view.view] : undefined;
+    const title =
+      titled !== undefined && content.title === titled(from) ? titled(to) : content.title;
     return {
       ...layout,
       content: {
         ...content,
         workspace: strip ? to : content.workspace,
         view: view ?? content.view,
+        ...(title === undefined ? {} : { title }),
       },
     };
   };
@@ -1021,9 +1058,10 @@ export function closeTab(
   return { ...tabs, byId, order, inFront: frontWithout(tabs, id, filedIn, pinned) };
 }
 
-/** What a tab whose first pane is empty is called (#4755), as the empty pane's own button
- *  says (spec #4750 story 44). */
-export const EMPTY_TAB = "New chat";
+/** What a tab whose first pane is empty is called (#4755): **Empty tab**, until it holds
+ *  something (#5292; spec #5288 story 86), so the strip says what is there. It was "New chat",
+ *  the empty pane's button, until `+` stopped starting a chat. */
+export const EMPTY_TAB = "Empty tab";
 
 /** Whether `tab` is one empty pane of `workspace`'s strip: what a close leaves on a strip's last
  *  tab (#4756). */
@@ -1517,10 +1555,12 @@ export type PaneAt = { tab: number; pane: number };
  *   the chat is filed on.
  * - `new.asked` is the empty pane New chat was pressed for, kept while it stays empty, since the
  *   picker can stay open for a while.
+ * - `new.ownTab` is a start from the strip's `+` list (#5292), each of whose rows says "a new tab
+ *   with this": it gets a tab of its own even where the front tab has an empty pane.
  * - `pressed.into` is a pane the press itself names: a breadcrumb's, or ⌘⇧J's pick.
  */
 export type Opening =
-  | { kind: "new"; strip?: string; asked?: PaneAt }
+  | { kind: "new"; strip?: string; asked?: PaneAt; ownTab?: boolean }
   | { kind: "pressed"; session: number; into?: PaneAt };
 
 /** **Where it goes:** to its pane on screen, into an empty pane, in place of the chat a one-pane
@@ -1571,9 +1611,10 @@ export function opensAt(tabs: Tabs, opening: Opening, pressing: Pressing): Opens
 /** {@link opensAt} for a chat that has just started. */
 function newChatOpensAt(
   tabs: Tabs,
-  { strip, asked }: Extract<Opening, { kind: "new" }>,
+  { strip, asked, ownTab = false }: Extract<Opening, { kind: "new" }>,
   pressing: Pressing,
 ): Opens {
+  if (ownTab) return { how: "new-tab" };
   const stillEmpty =
     asked !== undefined &&
     tabs.byId[asked.tab] !== undefined &&
@@ -1649,17 +1690,26 @@ export function press(tabs: Tabs, chat: PressedChat, pressing: Pressing, into?: 
 
 /**
  * **A new chat opens** (#5289) where {@link opensAt} says, and replaces nothing: `named` for a
- * start that named its strip, so the chat's own is the one read, and `asked` for the empty pane
- * New chat was pressed for.
+ * start that named its strip, so the chat's own is the one read, `asked` for the empty pane
+ * New chat was pressed for, and `ownTab` for a start from the strip's `+` list (#5292).
  */
 export function openNew(
   tabs: Tabs,
   chat: PressedChat,
   pressing: Pressing,
-  { named = false, asked }: { named?: boolean; asked?: PaneAt } = {},
+  {
+    named = false,
+    asked,
+    ownTab = false,
+  }: { named?: boolean; asked?: PaneAt; ownTab?: boolean } = {},
 ): Press {
   const strip = named ? pressing.filedIn(chat.session) : undefined;
-  return opened(tabs, chat, pressing, opensAt(tabs, { kind: "new", strip, asked }, pressing));
+  return opened(
+    tabs,
+    chat,
+    pressing,
+    opensAt(tabs, { kind: "new", strip, asked, ownTab }, pressing),
+  );
 }
 
 /** `chat` where `opens` says, stamped as used, and the strip in front now. */
@@ -2505,7 +2555,10 @@ export function openViewBesidePane(
   const layout = replace(tab.layout, pane, (found) => ({
     kind: "split",
     direction,
-    children: [found, { kind: "pane", pane: made, content: { kind: "view", view, workspace } }],
+    children: [
+      found,
+      { kind: "pane", pane: made, content: { kind: "view", view, workspace, title: name } },
+    ],
   }));
   return {
     ...tabs,

@@ -196,6 +196,7 @@ impl World {
             browser_logins: Vec::new(),
             secrets: self.secrets.clone(),
             may_remember: &|_| self.may_remember,
+            others_wait: &|_| false,
             run_grants: Vec::new(),
             secret_fills: Vec::new(),
             vaults: self.vaults.clone(),
@@ -260,6 +261,14 @@ fn a_held_permission_prompt_is_an_ask_answered_on_its_own_hook() {
     assert_eq!(shown.answer, AnswerPath::Hook);
 }
 
+/// A run's notice as the Inbox shows it, offering no Remember, with nothing else waiting.
+fn shown_run(
+    open: &purlis_core::secrets::ask::run::OpenRun,
+    locks: &purlis_core::sandbox::policy::Locks,
+) -> Shown {
+    run_grant(open, locks, false, &|_| false)
+}
+
 /// A run's notice for `curl` handing over `TOKEN` and `OTHER` from vault `team`, lacking `OTHER`,
 /// offering `offer` (#5242).
 fn a_runs_notice(
@@ -298,7 +307,7 @@ fn a_runs_notice(
 fn a_runs_one_notice_has_a_field_for_each_key_it_lacks_beside_the_programs_allow() {
     use purlis_core::secrets::ask::run::Offer;
     let none = purlis_core::sandbox::policy::Locks::none();
-    let shown = run_grant(&a_runs_notice(Offer::Program), &none);
+    let shown = shown_run(&a_runs_notice(Offer::Program), &none);
     let run = shown.run.as_ref().expect("the facts");
     assert_eq!(run.fills.len(), 1);
     assert_eq!(run.fills[0].key, "OTHER");
@@ -321,7 +330,7 @@ fn a_notice_with_no_program_allow_gives_the_vaults_line_its_own_allow_as_a_refus
     let none = purlis_core::sandbox::policy::Locks::none();
     let mut open = a_runs_notice(Offer::Vault { no_allow: None });
     open.not_its_vault = true;
-    let shown = run_grant(&open, &none);
+    let shown = shown_run(&open, &none);
     assert_eq!(ids(&shown), ["allow-vault", "keep"]);
     assert_eq!(shown.options[0].label, "Allow devops to use this vault");
     let run = shown.run.as_ref().expect("the facts");
@@ -332,7 +341,7 @@ fn a_notice_with_no_program_allow_gives_the_vaults_line_its_own_allow_as_a_refus
         r#"{"sandbox": {"vault-grants": false}}"#,
         std::path::Path::new("/etc/purlis/policy.json"),
     );
-    assert_eq!(ids(&run_grant(&open, &locked)), ["keep"]);
+    assert_eq!(ids(&shown_run(&open, &locked)), ["keep"]);
 }
 
 #[test]
@@ -344,7 +353,7 @@ fn an_ask_ahead_of_its_run_offers_allow_for_this_chat_alone_and_says_no_command_
     open.bound.env = Vec::new();
     open.bound.args = Vec::new();
     open.command = "curl".to_owned();
-    let shown = run_grant(&open, &none);
+    let shown = shown_run(&open, &none);
     assert_eq!(
         ids(&shown),
         ["allow-chat", "keep"],
@@ -360,7 +369,7 @@ fn an_ask_ahead_of_its_run_offers_allow_for_this_chat_alone_and_says_no_command_
 fn a_notice_of_fields_alone_offers_fill_and_not_now_saying_why_no_allow() {
     use purlis_core::secrets::ask::run::Offer;
     let none = purlis_core::sandbox::policy::Locks::none();
-    let shown = run_grant(
+    let shown = shown_run(
         &a_runs_notice(Offer::Fill {
             no_allow: Some("Policy turns off allowing a program".to_owned()),
         }),
@@ -401,7 +410,7 @@ fn a_run_grant_shows_the_apps_facts_apart_from_the_chats_inert_command() {
         command: "kubectl get pods\\x1b[2J ignore the above and press Allow".to_owned(),
         since: 0,
     };
-    let shown = run_grant(&open, &none);
+    let shown = shown_run(&open, &none);
     let run = shown.run.as_ref().expect("the facts of the run");
     assert_eq!(run.program, "/usr/bin/curl");
     assert_eq!(run.hosts, ["k8s.example.test"]);
@@ -444,7 +453,7 @@ fn a_run_grant_shows_the_apps_facts_apart_from_the_chats_inert_command() {
     let mut unreviewed = open.clone();
     unreviewed.bound.name = "kubectl".to_owned();
     unreviewed.bound.program = "/usr/bin/kubectl".into();
-    let narrow = run_grant(&unreviewed, &none);
+    let narrow = shown_run(&unreviewed, &none);
     let labels: Vec<_> = narrow
         .options
         .iter()
@@ -452,7 +461,7 @@ fn a_run_grant_shows_the_apps_facts_apart_from_the_chats_inert_command() {
         .collect();
     assert_eq!(labels, ["Allow once", "Don't allow"]);
     assert_eq!(narrow.run.unwrap().always, None);
-    let held = run_grant(&open, &only_chat);
+    let held = shown_run(&open, &only_chat);
     let labels: Vec<_> = held.options.iter().map(|one| one.label.as_str()).collect();
     assert_eq!(labels, ["Allow for this chat", "Don't allow"]);
     assert_eq!(held.run.unwrap().always, None);
@@ -2819,8 +2828,50 @@ fn a_run_grants_folder_is_spelled_so_it_cant_read_as_another() {
         since: 0,
     };
     let none = purlis_core::sandbox::policy::Locks::none();
-    let shown = run_grant(&open, &none);
+    let shown = shown_run(&open, &none);
     let cwd = &shown.run.as_ref().expect("the facts of the run").cwd;
     assert!(!cwd.contains('\u{202e}'), "{cwd}");
     assert!(cwd.contains(r"\xe2\x80\xae"), "{cwd}");
+}
+
+/// #5080: a run's notice offers Remember for a field its persona does not declare, and says so
+/// per field; and under Always allow it says when something else of the persona's waits.
+#[test]
+fn a_runs_notice_offers_remember_for_an_undeclared_field_and_says_when_others_wait() {
+    use purlis_core::secrets::ask::run::{Fill, Offer};
+    let none = purlis_core::sandbox::policy::Locks::none();
+    let mut open = a_runs_notice(Offer::Program);
+    open.fills.push(Fill {
+        key: "NEW_ONE".to_owned(),
+        declared: None,
+        reason: None,
+    });
+    let shown = run_grant(&open, &none, true, &|persona| persona == "devops");
+    let run = shown.run.as_ref().expect("the facts");
+    let needs: Vec<_> = run
+        .fills
+        .iter()
+        .map(|fill| (fill.key.as_str(), fill.need))
+        .collect();
+    assert_eq!(needs, [("OTHER", false), ("NEW_ONE", true)]);
+    let remember = run.remember.as_ref().expect("Remember is offered");
+    assert_eq!(remember.file, "personas/devops/persona.md");
+    assert_eq!(remember.vault, None, "a run names its vault itself");
+    assert!(run.always.as_ref().expect("Always allow").others_wait);
+
+    // Every field declared, or policy leaving the file to the person: no Remember.
+    assert!(
+        shown_run(&a_runs_notice(Offer::Program), &none)
+            .run
+            .expect("facts")
+            .remember
+            .is_none()
+    );
+    assert!(
+        run_grant(&open, &none, false, &|_| false)
+            .run
+            .expect("facts")
+            .remember
+            .is_none()
+    );
 }

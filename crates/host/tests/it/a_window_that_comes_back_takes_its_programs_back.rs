@@ -214,6 +214,7 @@ async fn every_program_a_held_project_has_is_answered_with_what_takes_it_back() 
                 note: None,
                 logins: Vec::new(),
                 prompt_key: None,
+                armed_skills: None,
             },
             HeldProgram {
                 program: shell,
@@ -232,6 +233,7 @@ async fn every_program_a_held_project_has_is_answered_with_what_takes_it_back() 
                 note: None,
                 logins: Vec::new(),
                 prompt_key: None,
+                armed_skills: None,
             },
         ],
         "running and ended, never closed"

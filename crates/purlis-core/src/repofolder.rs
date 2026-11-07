@@ -228,13 +228,20 @@ pub fn holdings(plane: &Path, ws: &str) -> Result<Holdings, Trouble> {
         }
     }
     let real = |row: &Row| row.git == Git::Directory && name_ok(&row.repo.name);
+    // By the name as a disk that ignores case reads it, and then asked of the disk: `Foo` at the
+    // root is beside `repos/foo` only where `repos/Foo` is that folder (#5569).
     let wins: BTreeSet<String> = in_repos
         .iter()
         .filter(|row| real(row))
-        .map(|row| row.repo.name.clone())
+        .map(|row| crate::files::workspace::folded(&row.repo.name))
         .collect();
+    let beside = |row: &Row| {
+        wins.contains(&crate::files::workspace::folded(&row.repo.name))
+            && repos_folder(&dir)
+                .is_some_and(|repos| std::fs::symlink_metadata(repos.join(&row.repo.name)).is_ok())
+    };
     for row in at_root {
-        if wins.contains(&row.repo.name) {
+        if beside(&row) {
             found.shadowed.push(row);
         } else if real(&row) {
             found.repos.push(row);

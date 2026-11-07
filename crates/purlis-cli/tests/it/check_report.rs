@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **`purlis check report <branch> <file.sarif>`** (#5407, ADR 0116): how a branch's check results
+//! **`purlis check report <branch> <file.sarif>`** (#5407, ADR 0117): how a branch's check results
 //! arrive. From a terminal it writes the store; a bad file is refused saying what to do.
 
 use crate::support;

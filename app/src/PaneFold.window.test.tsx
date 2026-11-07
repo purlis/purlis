@@ -9,7 +9,8 @@ import type { Shown } from "./bindings";
 import { LayoutPanes } from "./LayoutPanes";
 import { PaneRail } from "./PaneRail";
 import { RAIL } from "./paneHeld";
-import type { Layout } from "./tabs";
+import type { Content, Layout } from "./tabs";
+import { ChatMark } from "./ui/chat-mark/ChatMark";
 
 /**
  * **Narrow windows fold panes to rails, as `LayoutPanes` draws them** (#4766, spec #4750 stories
@@ -98,7 +99,7 @@ describe("a split below the minimum (#4766)", () => {
 
     expect(rails()).toHaveLength(1);
     expect(screen.getByRole("button", { name: "chat 2, folded" })).toBeInTheDocument();
-    expect(screen.getByText("An empty pane")).toBeInTheDocument();
+    expect(screen.getByText("Nothing in this pane yet")).toBeInTheDocument();
   });
 
   it("marks a rail as no place a drop lands in, for a drag to say why over it (#5415)", () => {
@@ -160,7 +161,7 @@ describe("a split below the minimum (#4766)", () => {
     render(<LayoutPanes {...propsOf(row(empty(1), empty(2)), {})} />);
 
     expect(rails()).toHaveLength(0);
-    expect(screen.getAllByText("An empty pane")).toHaveLength(2);
+    expect(screen.getAllByText("Nothing in this pane yet")).toHaveLength(2);
   });
 });
 
@@ -177,7 +178,7 @@ describe("a 3 × 3 grid at 770px (#4766)", () => {
 
     expect(rails()).toHaveLength(3);
     expect(rails().map((one) => within(one).getAllByRole("button").length)).toEqual([2, 2, 2]);
-    expect(screen.getAllByText("An empty pane")).toHaveLength(3);
+    expect(screen.getAllByText("Nothing in this pane yet")).toHaveLength(3);
   });
 
   it("puts a folded pane's ask on its row's rail, as ✋", () => {
@@ -193,6 +194,28 @@ describe("a 3 × 3 grid at 770px (#4766)", () => {
       asks.closest(".pane-rail-item")?.querySelector('[data-mark="needs-you"]'),
     ).not.toBeNull();
     expect(within(second).getByRole("button", { name: "chat 5, folded" })).toBeInTheDocument();
+  });
+
+  it("draws one ✋ for a folded chat that needs you, its mark's, never a second beside it (#5447)", () => {
+    // A chat's face as the window gives it: its mark, which wears its one state (#5340).
+    const faceOf = (content: Content) =>
+      content.kind !== "session"
+        ? undefined
+        : {
+            name: content.chat,
+            mark: <ChatMark state={content.session === 6 ? "needs" : "working"} />,
+            stated: true,
+          };
+    render(
+      <LayoutPanes
+        {...propsOf(grid, { room: { width: 770, height: 600 }, waiting: [asking(6)], faceOf })}
+      />,
+    );
+
+    const asks = within(rails()[1]).getByRole("button", { name: "chat 6, folded, asks you" });
+    const item = asks.closest(".pane-rail-item") as HTMLElement;
+    expect(item.querySelectorAll('[data-mark="needs-you"]')).toHaveLength(1);
+    expect(item.querySelector(".pane-rail-asks")).toBeNull();
   });
 });
 

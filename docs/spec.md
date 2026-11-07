@@ -646,7 +646,7 @@ Each milestone is something the operator actually uses, not a layer.
 ### Check results on a diff — added 2026-11-05
 
 `purlis check report <branch> <file.sarif>` hands purlis a branch's check results in SARIF 2.1.0,
-from a script, an agent's hook or CI (ADR 0116). purlis runs no check for this and has no parser for
+from a script, an agent's hook or CI (ADR 0117). purlis runs no check for this and has no parser for
 any one tool. In a file's comparison, a result on a changed line is marked in the gutter with its
 tool, severity and message, and every result is listed with those words: on the changed lines,
 outside them, or in other files, never dropped. Each opens at its line, in the file tab and in your

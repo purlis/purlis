@@ -144,11 +144,14 @@ use crate::skills::grade;
 ///   grade report (`report`). Each answer has [`DEADLINE`] from the line before it; while purlis
 ///   runs a chat the Grader has no deadline, and the question ends when the person stops the
 ///   grade ([`Executor::grade`]).
-/// - **5** (#5410, ADR 0116) — a Check reporter's question: `check`, holding what a check printed
+/// - **5** (#4680, ADR 0101 as amended 2026-11-07) — a router's route question gives each skill
+///   `chars`, what it costs of the budget on the chat's harness, and `index`, what the index
+///   skill costs ([`crate::extension::studio::ROUTE_COSTS_SINCE`]). Every other message is protocol 4's.
+/// - **6** (#5410, ADR 0117) — a Check reporter's question: `check`, holding what a check printed
 ///   (`output`, as text) and its exit `status` ([`Executor::check`]). Its answer is not a line of
 ///   JSON but what the program prints on stdout, SARIF 2.1.0, and its exit status, read whole as a
 ///   command's are.
-pub const PROTOCOL: u32 = 5;
+pub const PROTOCOL: u32 = 6;
 
 /// The most of a check's output a Check reporter is handed (#5410). A check's output is a log,
 /// and past this it is one no converter needs whole: refused rather than cut, since a cut log
@@ -369,7 +372,7 @@ enum Asked<'a> {
     /// *Run command `<name>` with `<args>`* (protocol 2, charter-app#342), from the `charter`
     /// command line.
     Command { name: &'a str, args: &'a [String] },
-    /// *Turn this check's output into SARIF* (protocol 5, #5410): what it printed, and its exit
+    /// *Turn this check's output into SARIF* (protocol 6, #5410): what it printed, and its exit
     /// status.
     Check { output: &'a str, status: i32 },
     /// A studio question (protocol 3, ADR 0101). Waits its turn behind a question in flight, as
@@ -567,7 +570,7 @@ impl Executor {
         })
     }
 
-    /// **Hand a Check reporter a check's output and exit status** (protocol 5, ADR 0116, #5410), or
+    /// **Hand a Check reporter a check's output and exit status** (protocol 6, ADR 0117, #5410), or
     /// say why charter did not: the same gate, bounds and watch on the plane every question takes.
     /// Refused for an extension that does not ask for the capability `check-reporter`, and for
     /// output past [`MOST_CHECK_OUTPUT_BYTES`].
@@ -2548,7 +2551,7 @@ fn request_line(
         // of a skill: nothing of the project is a path it is handed (ADR 0101 §2).
         Asked::Studio { ask, .. } => {
             doc.insert("studio".into(), ask.capability().as_str().into());
-            doc.insert("ask".into(), ask.line());
+            doc.insert("ask".into(), ask.line(protocol));
         }
         // A command is its name and its words, as the command line was given them, and nothing
         // about a view (charter-app#342).

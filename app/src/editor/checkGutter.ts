@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **A check result in the head's gutter** (ADR 0116, #5407): a letter on each changed line a result
+ * **A check result in the head's gutter** (ADR 0117, #5407): a letter on each changed line a result
  * is on, whose title says its tool, severity and message. A pointer reads it there; the keyboard and
  * a screen reader read the same words in the list beside it (`CheckResults.tsx`), since nothing in a
  * gutter takes focus.

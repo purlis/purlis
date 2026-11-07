@@ -1,5 +1,5 @@
 {
-  "version": 5,
+  "version": 6,
   "id": "check-probe",
   "name": "Check probe",
   "capabilities": ["check-reporter"],

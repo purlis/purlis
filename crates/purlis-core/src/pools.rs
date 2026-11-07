@@ -441,6 +441,103 @@ pub struct Owing {
     pub opened: u64,
 }
 
+/// How [`crate::codelink::held::not_home`] begins to say a runner lists no repository of the
+/// project's own.
+const NO_OWN_REPOSITORY: &str = "the runner no longer holds the project's own repository";
+
+/// **What the draining runner holds that no fetch brings here** (ruled 2026-11-07), in sentences:
+/// none only where every repository it keeps is proved home ([`crate::codelink::held::not_home`])
+/// against a folder this machine knows of its project, as a fresh runner's is. A fetch brings
+/// only the branches of the clones that are here, so a clone only on the runner, a clone or
+/// workspace removed or renamed here, a commit on no branch and a stash are each said, and so is
+/// the work of a project no folder here holds. `unread` is what the runner could not look
+/// through. Why, where this machine's records can't be read.
+pub fn left_beyond_a_fetch(
+    config_root: &Path,
+    held: &[crate::codelink::held::Held],
+    unread: &[String],
+) -> Result<Vec<String>, String> {
+    let loaded = crate::machine::read(config_root);
+    if let Some(why) = loaded.unreadable {
+        return Err(why);
+    }
+    let known: Vec<&Path> = loaded
+        .store
+        .recents
+        .iter()
+        .map(|recent| recent.plane.as_path())
+        .collect();
+    Ok(left_beyond_a_fetch_in(&known, held, unread))
+}
+
+/// [`left_beyond_a_fetch`], with each project found among the folders `known`.
+pub fn left_beyond_a_fetch_in(
+    known: &[&Path],
+    held: &[crate::codelink::held::Held],
+    unread: &[String],
+) -> Vec<String> {
+    let mut left: Vec<String> = unread.to_vec();
+    let mut projects: Vec<&str> = held.iter().map(|one| one.project.as_str()).collect();
+    projects.sort_unstable();
+    projects.dedup();
+    for project in projects {
+        let of: Vec<crate::codelink::held::Held> = held
+            .iter()
+            .filter(|one| one.project == project)
+            .cloned()
+            .collect();
+        // A folder that holds no commit and no change holds nothing to lose.
+        if of
+            .iter()
+            .all(|one| one.refs.is_empty() && one.changed.is_empty())
+        {
+            continue;
+        }
+        // Two folders here may be one project: its work is home where either has all of it.
+        let mut missing: Option<(String, Vec<String>)> = None;
+        let mut home = false;
+        for &root in known {
+            if !crate::scaffold::planefile::id_to_hold_by(root).is_ok_and(|id| id == project) {
+                continue;
+            }
+            let mut lacks = crate::codelink::held::not_home(root, project, &of, &[]);
+            // A project whose folder is no git repository was never sent as one, so the runner
+            // holds none of it: only its clones can be proved, and are.
+            if !crate::codelink::a_repository(root) && !of.iter().any(|one| one.path.is_empty()) {
+                lacks.retain(|one| !one.starts_with(NO_OWN_REPOSITORY));
+            }
+            if lacks.is_empty() {
+                home = true;
+                break;
+            }
+            if missing.is_none() {
+                let name = root.file_name().map_or_else(
+                    || root.display().to_string(),
+                    |name| name.to_string_lossy().into_owned(),
+                );
+                missing = Some((name, lacks));
+            }
+        }
+        if home {
+            continue;
+        }
+        match missing {
+            Some((name, lacks)) => {
+                left.extend(
+                    lacks
+                        .into_iter()
+                        .map(|one| format!("in project {name}, {one}")),
+                );
+            }
+            None => left.push(format!(
+                "work of a project no folder on this machine holds, which the runner keeps as \
+                 {project}"
+            )),
+        }
+    }
+    crate::codelink::held::marked(left)
+}
+
 /// **Chat `number` no longer runs where it was kept** (#4590): no restart asks for it, and its
 /// branches are still to come back. Nothing is written for a chat with no record, which is every
 /// chat of this machine.

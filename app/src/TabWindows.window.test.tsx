@@ -22,6 +22,8 @@ import { LAYOUT_MOVED, PRESS_HERE } from "./tabWindows";
 import { stripNamed } from "./test-strips";
 import type { Fixing } from "./bindings";
 import { tellFixStarted } from "./saving";
+import { askHarnessSetup } from "./harnessSetup";
+import { askSkillChat } from "./skillDraftAsks";
 
 /**
  * **Tab windows, as the window draws them** (#4768): a tab torn off into a bare window of its
@@ -100,6 +102,8 @@ function core(over: {
   states?: unknown[];
   /** The list of chats is answered once this settles, not at once. */
   listedAfter?: Promise<void>;
+  /** What other commands answer, by name. */
+  answers?: Record<string, unknown>;
 }) {
   const asked: { cmd: string; args: Record<string, unknown> }[] = [];
   const listeners = new Map<string, number[]>();
@@ -120,6 +124,7 @@ function core(over: {
     if (cmd === "plane_sidebar" && over.listedAfter !== undefined)
       return over.listedAfter.then(() => sidebarOf(plane));
     if (cmd === "plane_sidebar") return sidebarOf(plane);
+    if (over.answers !== undefined && cmd in over.answers) return over.answers[cmd];
     return answer(cmd);
   });
   function sidebarOf(plane: string) {
@@ -215,8 +220,72 @@ describe("a split tab in a tab window (#5342)", () => {
       ).toBe("needs"),
     );
     // And its picture of the layout in place of `+1`: two side by side.
-    expect(only.querySelectorAll('[data-scope="tabs"][data-part="picture"] line')).toHaveLength(1);
+    expect(only.querySelectorAll('[data-scope="tabs"][data-part="picture"] rect')).toHaveLength(2);
     expect(only).toHaveTextContent("2, split, 2 panes");
+  });
+});
+
+describe("what failed is seen in a tab window (#5448, #5340)", () => {
+  afterEach(() => void vi.restoreAllMocks());
+
+  /** Chat `session`'s board, with a task of it that failed and that nobody has looked at. */
+  const failedUnder = (session: number) => ({
+    plane: ONE,
+    session,
+    state: "waiting",
+    needs_you: false,
+    queue: [],
+    sequence: 1,
+    moved_at: 1,
+    reports: [],
+    refusals: [],
+    children: [],
+    needs: [
+      {
+        kind: "task_failed",
+        id: `failed-${session}`,
+        task: "check staging",
+        how: "failed",
+        why: "The cluster refused the login.",
+      },
+    ],
+  });
+
+  /** A tab window holding chat 2's tab in front and chat 3's behind it, each with a failure. */
+  async function aTabWindow(keyboard: boolean) {
+    vi.spyOn(document, "hasFocus").mockReturnValue(keyboard);
+    mockWindows("window-1");
+    const { sent } = core({
+      tabWindow: 1,
+      layout: { strip: null, tabs: [tab(0, true, 1), tab(1, true, 2), tab(1, false, 3)] },
+      chats: [1, 2, 3],
+      states: [failedUnder(1), failedUnder(2), failedUnder(3)],
+    });
+    render(<App />);
+    await screen.findByText("session 2");
+    // Its tab's mark says the failure until it is seen: the window has heard it.
+    await waitFor(() =>
+      expect(
+        within(stripNamed("Tabs"))
+          .getAllByRole("tab")
+          .map((one) =>
+            one.querySelector('[data-scope="chat-mark"]')?.getAttribute("data-variant"),
+          ),
+      ).toEqual(["failed", "failed"]),
+    );
+    return (sent as (cmd: string) => { args: Record<string, unknown> }[])("task_failure_seen").map(
+      (one) => one.args.session,
+    );
+  }
+
+  it("is seen of the chat focused in the front tab, in a window with the keyboard", async () => {
+    const seen = await aTabWindow(true);
+    expect(seen).toEqual([2]);
+  });
+
+  it("is not seen while that window is in the background", async () => {
+    const seen = await aTabWindow(false);
+    expect(seen).toEqual([]);
   });
 });
 
@@ -635,6 +704,163 @@ describe("a tab window's strip on a chat it did not press (#5533)", () => {
         expect.objectContaining({ window: 0, workspace: "beta", tree: { kind: "chat", chat: 5 } }),
       ),
     );
+  });
+});
+
+/**
+ * **A handed chat takes what it is known by along** (#5573): a chat a tab window starts for
+ * another strip opens in the project window (#5533) as the shell or the Skill studio's chat it
+ * is, and the notes its start found are said there.
+ */
+describe("a chat a tab window hands on, with its shell, notes and studio link (#5573)", () => {
+  const handed = {
+    tabWindow: 1,
+    layout: { strip: "alpha", tabs: [tab(0, true, 1, "alpha"), tab(1, true, 2, "alpha")] },
+    chats: [1, 2],
+    filed: { alpha: [1, 2] },
+  };
+  /** What the tab window sent the project window, each a press. */
+  const handedOn = (asked: ReturnType<typeof core>["asked"]) =>
+    asked
+      .filter((one) => one.cmd === "plugin:event|emit_to" && one.args.event === PRESS_HERE)
+      .map((one) => one.args.payload as { chat: number; handed?: Record<string, unknown> });
+  const LINT = { skill: "lint", level: { at: "project", local: false }, job: "outcome-evals" };
+  /** The tab chip of chat `name` in the project window. */
+  const chipOf = (name: string) =>
+    screen
+      .getAllByText(name)
+      .map((one) => one.closest('[role="tab"]'))
+      .find((one) => one !== null);
+
+  it("hands a shell started for another strip on as a shell", async () => {
+    mockWindows("window-1");
+    const { asked } = core({ ...handed, answers: { open_session: 5 } });
+    render(<App />);
+    await screen.findByText("session 2");
+    await waitFor(() => expect(asked.some((one) => one.cmd === "plane_sidebar")).toBe(true));
+
+    act(() =>
+      askHarnessSetup({ plane: ONE, harness: "claude", way: "install", workspace: "beta" }),
+    );
+
+    await waitFor(() =>
+      expect(handedOn(asked)).toEqual([
+        expect.objectContaining({
+          chat: 5,
+          handed: expect.objectContaining({ filed: "beta", started: true, shell: true }),
+        }),
+      ]),
+    );
+    expect(screen.queryByText("session 5")).toBeNull();
+  });
+
+  it("hands a Skill studio chat started for another strip on with its studio link", async () => {
+    mockWindows("window-1");
+    const placed = { session: 5, name: "5", label: "5", persona: null, harness: "claude" };
+    const { asked } = core({
+      ...handed,
+      answers: { skill_outcome_evals_chat: { ...placed, workspace: "beta" } },
+    });
+    render(<App />);
+    await screen.findByText("session 2");
+
+    act(() =>
+      askSkillChat({
+        plane: ONE,
+        kind: "evals",
+        level: { at: "project", local: false },
+        name: "lint",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(handedOn(asked)).toEqual([
+        expect.objectContaining({
+          chat: 5,
+          handed: expect.objectContaining({ studio: expect.objectContaining(LINT) }),
+        }),
+      ]),
+    );
+  });
+
+  it("handed on as a shell, opens in the project window as a shell", async () => {
+    const { fire } = core({ ...handed, tabWindow: undefined });
+    render(<App />);
+    await screen.findByText("session 1");
+
+    fire(PRESS_HERE, {
+      plane: ONE,
+      chat: 5,
+      handed: { filed: "beta", started: true, as: { session: 5, chat: "shell 5" }, shell: true },
+    });
+
+    await screen.findByText("session 5");
+    await waitFor(() =>
+      expect(chipOf("shell 5")?.querySelector('[data-mark="shell"]')).not.toBeNull(),
+    );
+  });
+
+  it("handed on with its studio link, says in the project window what the studio started it for", async () => {
+    const { fire } = core({ ...handed, tabWindow: undefined });
+    render(<App />);
+    await screen.findByText("session 1");
+
+    fire(PRESS_HERE, {
+      plane: ONE,
+      chat: 5,
+      handed: {
+        filed: "beta",
+        started: true,
+        as: { session: 5, chat: "5", who: "claude", label: "lint evals" },
+        studio: { ...LINT, done: false, started: "2026-11-07T10:00:00Z", finished: null },
+      },
+    });
+
+    await screen.findByText("session 5");
+    expect(await screen.findByTestId("pane-studio")).toBeInTheDocument();
+  });
+
+  it("hands the notes it holds of a chat it handed on to the project window, once that shows it", async () => {
+    mockWindows("window-1");
+    const SAID = "Its browsers ended with it.";
+    const wire = core(handed);
+    render(<App />);
+    await screen.findByText("session 2");
+    act(() =>
+      tellFixStarted(ONE, {
+        session: 5,
+        name: "5",
+        label: "5",
+        persona: null,
+        harness: "claude",
+        workspace: "beta",
+        existing: false,
+      }),
+    );
+    await waitFor(() => expect(handedOn(wire.asked)).toHaveLength(1));
+    wire.fire("chat-browsers-ended", { plane: ONE, session: 5, note: SAID });
+
+    // The project window reports the chat in its pane.
+    wire.fire("layout-reported", {
+      plane: ONE,
+      layout: {
+        strip: "alpha",
+        tabs: [tab(0, true, 1, "alpha"), tab(1, true, 2, "alpha"), tab(0, true, 5, "beta")],
+      },
+    });
+
+    await waitFor(() =>
+      expect(
+        wire
+          .sent("plugin:event|emit")
+          .map((one) => one.args as { event: string; payload: { session: number } })
+          .filter((one) => one.event === "notes-handed")
+          .map((one) => one.payload),
+      ).toContainEqual(
+        expect.objectContaining({ session: 5, start: { notes: [SAID], agentsMd: [] } }),
+      ),
+    );
+    expect(screen.queryByText(SAID)).toBeNull();
   });
 });
 

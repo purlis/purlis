@@ -42,13 +42,13 @@ fn the_test_capability_and_the_check_reporter_declare_no_shape_and_every_other_o
 }
 
 #[test]
-fn a_release_build_knows_the_check_reporter_and_it_needs_protocol_5() {
+fn a_release_build_knows_the_check_reporter_and_it_needs_protocol_6() {
     let known = Capability::known_where(false);
     assert_eq!(
         Capability::parse_in("check-reporter", &known),
         Some(Capability::CheckReporter)
     );
-    assert_eq!(Capability::CheckReporter.since(), 5);
+    assert_eq!(Capability::CheckReporter.since(), 6);
 }
 
 #[test]

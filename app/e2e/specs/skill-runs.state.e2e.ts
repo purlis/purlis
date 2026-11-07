@@ -8,21 +8,21 @@ import { USED_SKILL, USES_A_SKILL } from "../harness.js";
 import { closesTheTabsItOpens, tabNames } from "../reach.js";
 
 /**
- * **A chat uses a skill, and its tab shows the run** (SK-3, #2766), in the built app against the
+ * **A chat uses a skill, and its pane head shows the run** (SK-3, #2766; off its tab since #5524), in the built app against the
  * real core, with the `skill-studio` flag on for the run (`wdio.conf.ts`).
  *
  * Nothing is faked past the harness: the reporting harness, a Codex, reads a skill it was
  * briefed on and runs Codex's hook for that shell command through the real binary
  * (`USES_A_SKILL`); the hook tells the app over the socket the app opened, and the app opens
- * the run on the chat's tab and logs its start in the project's skill log. The harness holds
+ * the run on the chat's pane head and logs its start in the project's skill log. The harness holds
  * its turn, so the run stays open. Pressing the chip opens the Skill studio at the skill's page,
  * on its Runs (#3682), which lists that run marked, and its totals count it by what it ran on, persona and workspace (SK-20).
  * Ending the chat ends the run, and the chip goes.
  */
 
-const CHIP = '[data-testid="tab-skill-run"]';
+const CHIP = '[data-testid="pane-skill-run"]';
 
-describe("a skill run on a chat's tab", function () {
+describe("a skill run on a chat's pane head", function () {
   this.timeout(120_000);
 
   // Hooks of a kind run in the order they are registered: the strip is read once every chat is
@@ -51,7 +51,7 @@ describe("a skill run on a chat's tab", function () {
     await $(".xterm-helper-textarea").addValue("\n");
 
     const chip = await $(CHIP);
-    await chip.waitForExist({ timeout: 30_000, timeoutMsg: "the tab never showed the run" });
+    await chip.waitForExist({ timeout: 30_000, timeoutMsg: "the pane head never showed the run" });
     await expect(chip).toHaveText(expect.stringContaining(USED_SKILL));
     await expect(chip).toHaveAttribute(
       "aria-label",

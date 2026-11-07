@@ -90,15 +90,7 @@ pub fn started(
     }
     // What the chat ran (SK-19): the tree git holds of the copy's folder, or that its folder held
     // changes not committed, so the run is matched to its version by content, not by time.
-    if let Some(level) = run.level
-        && let Some(content) = content_of(
-            root,
-            &own_name(skill, Some(level)),
-            level,
-            run.workspace,
-            persona,
-        )
-    {
+    if let Some(content) = run.ran.cloned().or_else(|| ran_by(root, run, persona)) {
         row["tree"] = content.word().into();
     }
     crate::dispatch::append(&path_for(root, when, device), root, &row)
@@ -233,6 +225,9 @@ pub struct Starting<'a> {
     /// The harness the chat ran on, by the word the plane calls it (`claude`, `codex`), where
     /// the start knew it.
     pub harness: Option<&'a str>,
+    /// What the run ran, where whoever started it read it ([`ran_by`]): a runner's start, off
+    /// its own checkout (#4219). `None` reads it off the plane the row is logged in.
+    pub ran: Option<&'a Content>,
 }
 
 impl<'a> Starting<'a> {
@@ -245,6 +240,7 @@ impl<'a> Starting<'a> {
             workspace: open.whose.workspace.as_deref(),
             level: open.whose.level,
             harness,
+            ran: None,
         }
     }
 
@@ -260,8 +256,28 @@ impl<'a> Starting<'a> {
             workspace: started.workspace.as_deref(),
             level: started.level,
             harness,
+            ran: None,
         }
     }
+}
+
+/// **What run `run`, as `persona`, ran, read off the plane at `root`** (SK-19): the tree git
+/// holds of its copy's folder, or that the folder held changes not committed. `None` where its
+/// start knew no level, or its copy has no folder a history is kept of. What a start's row says
+/// and, on a runner, what its `skill.started` tells its desktop (#4219).
+pub fn ran_by(root: &Path, run: &Starting<'_>, persona: Option<&str>) -> Option<Content> {
+    let level = run.level?;
+    let skill = crate::memstore::py_strip(run.skill);
+    let persona = persona
+        .map(crate::memstore::py_strip)
+        .filter(|p| !p.is_empty());
+    content_of(
+        root,
+        &own_name(skill, Some(level)),
+        level,
+        run.workspace,
+        persona,
+    )
 }
 
 /// **Logs the end of skill run `run`**, with its signals and the `tokens` spent inside it where

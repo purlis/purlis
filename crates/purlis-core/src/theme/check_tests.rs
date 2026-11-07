@@ -304,6 +304,20 @@ fn a_markdown_render_s_words_are_measured_on_the_selection_over_every_ground() {
     }
 }
 
+/// **A link is held on the launcher's ground** (#5347): with no project open, the welcome's page
+/// is drawn on the window's deepest surface, and its links (a door page's back, Open a folder)
+/// are the button family's `link` look, drawn in `markdown.link`.
+#[test]
+fn a_markdown_link_is_held_on_the_window_s_deep_surface() {
+    let mut tokens = serde_json::Map::new();
+    tokens.insert(
+        "markdown.link".to_owned(),
+        json!(classic_dark().value("surface.deep")),
+    );
+    let report = check(&dark(Value::Object(tokens), json!({})));
+    assert_eq!(found(&report, "markdown.link", "surface.deep"), Some(1.0));
+}
+
 // ---------------------------------------------------------------------------------------
 // Danger words on a theme's selection
 // ---------------------------------------------------------------------------------------

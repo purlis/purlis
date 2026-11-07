@@ -7,7 +7,7 @@ import { basename, join } from "node:path";
 import process from "node:process";
 import { $, browser } from "@wdio/globals";
 import { THE_RUNS_TREE } from "../harness.js";
-import { closeProject, fromThePalette } from "../opening.js";
+import { closingByTheWindow, fromThePalette } from "../opening.js";
 import { ask } from "../switching.js";
 
 /**
@@ -151,16 +151,15 @@ describe("opening a repo says what it did to the project's forges", function () 
       if (!up) break;
       await browser.keys(["Escape"]);
     }
-    if (local !== "") {
-      const closer = `${PROJECTS} [role="tab"][aria-label="${basename(local)}"]`;
-      if (await $(closer).isExisting()) await closeProject(closer);
-    }
+    // Whatever the window's close did, the core closes what is left before it is said (#5580).
+    const failed = await closingByTheWindow(local);
     for (const plane of (await ask<string[]>("open_planes")).filter((one) => one !== first))
       await ask("close_plane", { plane });
     if (local !== "") {
       await ask("revoke_approval", { path: local }).catch(() => undefined);
       await ask("forget_project", { path: local }).catch(() => undefined);
     }
+    if (failed !== undefined) throw failed;
   });
 
   it("says GitLab was added when a GitLab repo joins a project that tracks GitHub", async () => {
