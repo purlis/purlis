@@ -2,7 +2,7 @@
 <html lang="en"><head><meta charset="utf-8"><title>Scrolled under a frame</title>
 <style>
   body { margin: 0; font: 24px sans-serif; }
-  .room { height: 400px; }
+  .room { height: 160px; }
   button { display: block; width: 300px; height: 40px; margin: 0; }
   .between { height: 80px; }
   .after { height: 2000px; }
@@ -16,9 +16,10 @@
   <div class="after"></div>
   <iframe title="Provider frame" src="http://auth.fixture.test/frame.html"></iframe>
   <script>
-    // Scrolled 300 down: the first button, laid out 400 down this document, is drawn 100 down
-    // this frame, under the provider's frame (80 to 140); the second, laid out 520 down, is
-    // drawn 220 down, clear of it. Unscrolled, 100 down is this document's own text.
-    window.scrollTo(0, 300);
+    // Scrolled 60 down: the first button, laid out 160 down this document, is drawn 100 down
+    // this frame, under the provider's frame (80 to 140); the second, laid out 280 down, is
+    // drawn 220 down, clear of it. Read as if unscrolled, 100 down is still inside this frame
+    // and on this document's own text, so a point that missed the scroll would be let through.
+    window.scrollTo(0, 60);
   </script>
 </body></html>
