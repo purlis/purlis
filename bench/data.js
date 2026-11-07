@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794032041610,
+  "lastUpdate": 1794034667574,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -41790,6 +41790,48 @@ window.BENCHMARK_DATA = {
             "value": 102.5753675,
             "unit": "ms",
             "extra": "median of 5 runs: 101.585, 102.039, 102.575, 102.921, 103.043 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "395d658a2c677d860f4196297f4b217703d42af0",
+          "message": "Bump taiki-e/install-action (#4296)\n\nBumps the actions group with 1 update in the / directory: [taiki-e/install-action](https://github.com/taiki-e/install-action).\n\n\nUpdates `taiki-e/install-action` from 2.87.32 to 2.89.1\n- [Release notes](https://github.com/taiki-e/install-action/releases)\n- [Changelog](https://github.com/taiki-e/install-action/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/taiki-e/install-action/compare/5488ac5a951645ce95062214902ac4b6bc1a1037...682ce6c3c696a4cd5168a05f98e51aa02b877941)\n\n---\nupdated-dependencies:\n- dependency-name: taiki-e/install-action\n  dependency-version: 2.88.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: actions\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>",
+          "timestamp": "2026-11-07T05:56:31Z",
+          "tree_id": "9b57db28997cfb66b1bbfebbd49cb9ffbc129813",
+          "url": "https://github.com/purlis/purlis/commit/395d658a2c677d860f4196297f4b217703d42af0"
+        },
+        "date": 1794034662646,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6901405,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.668, 0.688, 0.690, 0.706, 0.721 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.395740500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.348, 16.349, 16.396, 16.581, 16.649 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.2492555,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.794, 101.306, 102.249, 102.520, 102.715 ms"
           }
         ]
       }
