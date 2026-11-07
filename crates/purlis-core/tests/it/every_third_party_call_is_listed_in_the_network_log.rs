@@ -370,16 +370,24 @@ mod report {
             Arc::new(purlis_core::forge::cli::Cli::default()),
         );
         let caller = Caller::window();
-        let draft = purlis_core::report::Draft {
+        use purlis_core::report::{Evidence, Known, Outcome, Reports};
+        let reports = Reports::new(Known::default());
+        let evidence = Evidence::PersonDraft {
             kind: purlis_core::report::Kind::Bug,
-            title: "The picker crashes".into(),
-            body: "Open the picker.".into(),
-            scrubbed: Vec::new(),
+            text: "Open the picker.".into(),
+            title: Some("The picker crashes".into()),
         };
-        let tracker = purlis_core::report::as_the_reporter(&caller).expect("signed in");
-        purlis_core::report::search_duplicates(tracker.as_ref(), &caller, &draft)
-            .expect("searched");
-        purlis_core::report::file(tracker.as_ref(), &caller, &draft).expect("filed");
+        let Outcome::Drafted { draft, .. } = reports.take(evidence.clone(), &caller) else {
+            panic!("not drafted");
+        };
+        reports.duplicates(&draft, &caller).expect("searched");
+        assert!(
+            matches!(
+                reports.file(evidence, &caller, &draft.digest()),
+                Outcome::Sent { .. }
+            ),
+            "not filed"
+        );
         signin::take_back();
 
         let native: Vec<_> = own
