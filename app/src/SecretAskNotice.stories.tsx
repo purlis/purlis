@@ -43,6 +43,20 @@ function OnTheCard(props: Parameters<typeof SecretAskNotice>[0]) {
   );
 }
 
+/** **The whole card, nothing scrolling**, for a story about the notice's last line: drawn in a
+ *  window tall enough for all of it, so the bar stands at the card's own foot and is never held
+ *  by a scroll (a bar held a fraction of a pixel draws its words differently run to run). */
+function WholeCard(props: Parameters<typeof SecretAskNotice>[0]) {
+  return (
+    <div style={{ inlineSize: 420 }}>
+      <TheCard {...props} />
+    </div>
+  );
+}
+
+/** The window a whole card is drawn in. */
+const TALL = { width: 1200, height: 1600 } as const;
+
 const meta = {
   title: "Notices/One notice for a secret",
   component: OnTheCard,
@@ -58,19 +72,6 @@ const meta = {
 
 export default meta;
 type Story = StoryObj<typeof meta>;
-
-/** **The panel scrolled to its end**, for a story whose subject is the notice's last line: the
- *  bar then stands at the card's own foot, under it. */
-async function toTheEnd(canvasElement: HTMLElement) {
-  // Once the faces are in, so the list is as tall as the picture will find it.
-  await document.fonts.ready;
-  await new Promise((frame) => requestAnimationFrame(frame));
-  const list = canvasElement
-    .querySelector<HTMLElement>('[data-testid="secret-ask"]')
-    ?.closest("div[style]");
-  if (list instanceof HTMLElement) list.scrollTop = list.scrollHeight;
-  await new Promise((frame) => requestAnimationFrame(frame));
-}
 
 /** The press the story's notice sent last: its option's id and what it gave. */
 function pressed(onAnswer: unknown) {
@@ -162,7 +163,9 @@ export const SeveralKeys: Story = {
 
 /** Allow for this chat: what it lets happen, and where it is removed. */
 export const ScopeForThisChat: Story = {
+  render: (props) => <WholeCard {...props} />,
   play: async ({ canvasElement }) => {
+    await inAWindow(TALL.width, TALL.height);
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("radio", { name: "Allow once" }));
     await userEvent.keyboard("{ArrowRight}");
@@ -176,24 +179,25 @@ export const ScopeForThisChat: Story = {
     await expect(
       canvas.getByRole("button", { name: "Fill and allow for this chat" }),
     ).toBeVisible();
-    await toTheEnd(canvasElement);
   },
 };
 
 /** Always allow, nothing else of the persona's waiting: the line first, and the Allow moves with it. */
 export const ScopeAlways: Story = {
+  render: (props) => <WholeCard {...props} />,
   play: async ({ canvasElement }) => {
+    await inAWindow(TALL.width, TALL.height);
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("radio", { name: "Always allow" }));
     await expect(canvas.getByTestId("sa-tool-line")).toHaveTextContent('curl = { vault = "team"');
     await expect(canvas.getByTestId("sa-others-wait")).toHaveTextContent("moves with this line");
     await expect(canvas.getByTestId("sa-env-advice")).toBeVisible();
-    await toTheEnd(canvasElement);
   },
 };
 
 /** Always allow, with other changes of the persona's pending: this line alone is approved. */
 export const ScopeAlwaysOthersPending: Story = {
+  render: (props) => <WholeCard {...props} />,
   args: {
     ask: runAsk({
       always: {
@@ -204,18 +208,20 @@ export const ScopeAlwaysOthersPending: Story = {
     }),
   },
   play: async ({ canvasElement }) => {
+    await inAWindow(TALL.width, TALL.height);
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("radio", { name: "Always allow" }));
     await expect(canvas.getByTestId("sa-others-wait")).toHaveTextContent(
       "This approves only this line: their notice stays up",
     );
-    await toTheEnd(canvasElement);
   },
 };
 
 /** Don't allow: the value is still stored, and the press says so. Declined by keyboard alone. */
 export const ScopeDont: Story = {
+  render: (props) => <WholeCard {...props} />,
   play: async ({ canvasElement, args }) => {
+    await inAWindow(TALL.width, TALL.height);
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByLabelText("Value of STRIPE_API_KEY"));
     await userEvent.keyboard("sk_test_v4lue");
@@ -234,7 +240,6 @@ export const ScopeDont: Story = {
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(args.onAnswer).toHaveBeenCalled());
     await expect(pressed(args.onAnswer).id).toBe("keep");
-    await toTheEnd(canvasElement);
   },
 };
 
@@ -277,24 +282,26 @@ export const AllowOnceOnly: Story = {
 
 /** The key is held: the program's Allow alone. */
 export const AllowOnly: Story = {
+  render: (props) => <WholeCard {...props} />,
   args: { ask: runAsk({ fills: [], remember: null }) },
   play: async ({ canvasElement }) => {
+    await inAWindow(TALL.width, TALL.height);
     const canvas = within(canvasElement);
     await expect(canvas.queryByTestId("sa-key-fill")).toBeNull();
     await expect(canvas.getByRole("button", { name: "Allow once" })).toBeVisible();
     await expect(canvas.queryByRole("button", { name: "Not now" })).toBeNull();
-    await toTheEnd(canvasElement);
   },
 };
 
 /** Asked ahead of its run (#5244): no command yet, Allow for this chat alone. */
 export const AheadOfItsRun: Story = {
+  render: (props) => <WholeCard {...props} />,
   args: { ask: runAsk({ ahead: true, command: "", cwd: "", values: [], always: null }, AHEAD) },
   play: async ({ canvasElement }) => {
+    await inAWindow(TALL.width, TALL.height);
     const canvas = within(canvasElement);
     await expect(canvas.getByTestId("sa-ahead")).toHaveTextContent("None yet");
     await expect(canvas.queryByTestId("sa-command")).toBeNull();
-    await toTheEnd(canvasElement);
   },
 };
 
@@ -484,6 +491,8 @@ export const PickAnEntry: Story = {
     await userEvent.click(picker);
     const page = within(canvasElement.ownerDocument.body);
     await userEvent.click(await page.findByRole("option", { name: "STRIPE_TEST_KEY" }));
+    // The list gone before anything else, so the picture never finds it closing.
+    await waitFor(() => expect(page.queryByRole("listbox")).toBeNull());
     await expect(canvas.getByRole("status")).toHaveTextContent(
       "becomes a link to team/STRIPE_TEST_KEY",
     );
