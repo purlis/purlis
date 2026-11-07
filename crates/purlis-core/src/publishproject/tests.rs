@@ -742,6 +742,39 @@ fn in_the_remote(bare: &Path, args: &[&str]) -> String {
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
 
+/// **A first publish reads the whole history** (CI, as above): the remote has nothing yet, so
+/// every commit the push would send is scanned, whatever the project's own refs say.
+#[test]
+fn a_first_publish_scans_the_whole_history_whatever_the_projects_own_refs_say() {
+    let dir = tempfile::tempdir().unwrap();
+    let bare = a_remote(dir.path());
+    let root = dir.path().join("notebook");
+    a_repository_with_a_commit(&root);
+    let token = ["ghp", "_0123456789abcdefABCDEF"].concat();
+    std::fs::write(root.join("config.txt"), format!("token = {token}\n")).unwrap();
+    let who = ["-c", "user.name=t", "-c", "user.email=t@e.invalid"];
+    for args in [
+        &["add", "config.txt"][..],
+        &[
+            who[0], who[1], who[2], who[3], "commit", "-q", "-m", "config",
+        ][..],
+        &["update-ref", "refs/remotes/origin/main", "HEAD"][..],
+        &["rm", "-q", "config.txt"][..],
+        &[who[0], who[1], who[2], who[3], "commit", "-q", "-m", "tidy"][..],
+    ] {
+        assert!(crate::testgit::run(&root, args).ok(), "{args:?}");
+    }
+
+    let refused = published_to(&root, &bare).unwrap_err();
+
+    assert!(
+        refused.sentence.contains("looks like a secret"),
+        "{refused:?}"
+    );
+    let pushed = in_the_remote(&bare, &["for-each-ref"]);
+    assert_eq!(pushed.trim(), "", "something was pushed");
+}
+
 /// What the file outside the project holds: nothing the push's scan calls a secret, so only
 /// the one-name rule stands between it and the forge.
 const OUTSIDE: &str = "a line from outside the project: canary-3f8a21\n";
