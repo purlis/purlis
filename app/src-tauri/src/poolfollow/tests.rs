@@ -949,13 +949,26 @@ fn a_pruned_draining_runner_whose_home_holds_none_is_forgotten() {
     assert!(said[0].contains("removed outside purlis"), "{said:?}");
 }
 
-/// A runner that holds a stash of the project's own repository no fetch brings.
-fn holds_a_stash(_: &ToARunner) -> Result<Vec<String>, String> {
-    Ok(vec![
+/// What a runner that holds a stash of the project's own repository says of it.
+fn holds_a_stash_said() -> Vec<String> {
+    vec![
         "in project ide, the project's own repository on the runner holds 1 stashed change \
          (refs/stash), which Fetch again does not bring back"
             .to_owned(),
-    ])
+    ]
+}
+
+/// A runner that holds a stash of the project's own repository no fetch brings.
+fn holds_a_stash(_: &ToARunner) -> Result<Vec<String>, String> {
+    Ok(holds_a_stash_said())
+}
+
+/// What Devices showed of a runner that holds a stash, as the person confirmed it.
+fn shown_of_a_stash() -> Vec<String> {
+    holds_a_stash_said()
+        .iter()
+        .map(|one| crate::devices::shown_safely(one))
+        .collect()
 }
 
 /// **Let it go frees the runner the check kept, and only it** (ruled 2026-11-07): the person
@@ -970,7 +983,14 @@ fn a_runner_kept_for_work_left_on_it_goes_when_the_person_lets_it_go_and_the_poo
     assert_eq!(names(&machine), ["first", "first-fedcba98"]);
     assert_eq!(left_by(&machine.config, "first", "first").len(), 1);
 
-    let_go(&machine, "first", &|_| Ok(0)).unwrap();
+    let_go(
+        &machine,
+        "first",
+        &shown_of_a_stash(),
+        &|_| Ok(0),
+        &holds_a_stash,
+    )
+    .unwrap();
 
     assert_eq!(names(&machine), ["first-fedcba98"]);
     assert_eq!(
@@ -1012,9 +1032,30 @@ fn only_a_runner_kept_for_work_left_on_it_is_let_go() {
     let machine = a_machine(config.path());
     a_pool_draining(&machine);
 
-    let draining = let_go(&machine, "first", &|_| Ok(0)).unwrap_err();
-    let now = let_go(&machine, "first-fedcba98", &|_| Ok(0)).unwrap_err();
-    let none = let_go(&machine, "nobody", &|_| Ok(0)).unwrap_err();
+    let draining = let_go(
+        &machine,
+        "first",
+        &shown_of_a_stash(),
+        &|_| Ok(0),
+        &holds_a_stash,
+    )
+    .unwrap_err();
+    let now = let_go(
+        &machine,
+        "first-fedcba98",
+        &shown_of_a_stash(),
+        &|_| Ok(0),
+        &holds_a_stash,
+    )
+    .unwrap_err();
+    let none = let_go(
+        &machine,
+        "nobody",
+        &shown_of_a_stash(),
+        &|_| Ok(0),
+        &holds_a_stash,
+    )
+    .unwrap_err();
 
     assert!(
         draining.contains("not kept for work left on it"),
@@ -1035,11 +1076,91 @@ fn a_kept_runner_with_a_chat_on_it_or_that_does_not_answer_is_not_let_go() {
     a_pool_draining(&machine);
     follow_and_drain(&machine, None, &|_| Ok(0), &holds_a_stash);
 
-    let running = let_go(&machine, "first", &|_| Ok(1)).unwrap_err();
-    let silent = let_go(&machine, "first", &|_| Err("down".into())).unwrap_err();
+    let running = let_go(
+        &machine,
+        "first",
+        &shown_of_a_stash(),
+        &|_| Ok(1),
+        &holds_a_stash,
+    )
+    .unwrap_err();
+    let silent = let_go(
+        &machine,
+        "first",
+        &shown_of_a_stash(),
+        &|_| Err("down".into()),
+        &holds_a_stash,
+    )
+    .unwrap_err();
 
     assert!(running.contains("1 chat"), "{running}");
     assert!(silent.contains("down"), "{silent}");
+    assert_eq!(names(&machine), ["first", "first-fedcba98"]);
+    assert!(only_looked(config.path()), "nothing is removed");
+}
+
+/// **Only the work the person was shown goes** (ruled 2026-11-07): a runner that holds more now
+/// than the ask named, or that does not say what it holds, stays, and what it holds now is what
+/// Devices shows next.
+#[test]
+fn a_kept_runner_that_holds_more_than_the_person_was_shown_is_not_let_go() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine(config.path());
+    a_pool_draining(&machine);
+    follow_and_drain(&machine, None, &|_| Ok(0), &holds_a_stash);
+    let more = |to: &ToARunner| -> Result<Vec<String>, String> {
+        let mut left = holds_a_stash(to)?;
+        left.push("in project ide, HEAD of the project's own repository is at a commit no ref here reaches".to_owned());
+        Ok(left)
+    };
+
+    let grown = let_go(&machine, "first", &shown_of_a_stash(), &|_| Ok(0), &more).unwrap_err();
+    let silent = let_go(&machine, "first", &shown_of_a_stash(), &|_| Ok(0), &|_| {
+        Err("down".into())
+    })
+    .unwrap_err();
+
+    assert!(grown.contains("not shown"), "{grown}");
+    assert!(silent.contains("down"), "{silent}");
+    assert_eq!(names(&machine), ["first", "first-fedcba98"]);
+    assert_eq!(left_by(&machine.config, "first", "first").len(), 2);
+    assert!(only_looked(config.path()), "nothing is removed");
+}
+
+/// **A kept runner whose last chat's work is still to come back is not let go**: a fetch would
+/// bring it, and the ask did not name it.
+#[test]
+fn a_kept_runner_whose_work_is_still_to_be_fetched_is_not_let_go() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine(config.path());
+    a_pool_draining(&machine);
+    follow_and_drain(&machine, None, &|_| Ok(0), &holds_a_stash);
+    let plane = std::path::Path::new("/planes/a");
+    purlis_core::machine::update(&machine.config, |store| {
+        store.remember(plane, 1);
+        store.keep_chat_on_pool(
+            plane,
+            7,
+            purlis_core::machine::ChatOnPool {
+                pool: "first".to_owned(),
+                workspace: "ide".to_owned(),
+                runner: Some("first".to_owned()),
+            },
+        );
+        store.leave_chat_on_pool(plane, 7);
+    })
+    .unwrap();
+
+    let owed = let_go(
+        &machine,
+        "first",
+        &shown_of_a_stash(),
+        &|_| Ok(0),
+        &holds_a_stash,
+    )
+    .unwrap_err();
+
+    assert!(owed.contains("/planes/a"), "{owed}");
     assert_eq!(names(&machine), ["first", "first-fedcba98"]);
     assert!(only_looked(config.path()), "nothing is removed");
 }

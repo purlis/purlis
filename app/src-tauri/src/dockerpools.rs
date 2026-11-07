@@ -709,20 +709,27 @@ pub async fn docker_pool_remove_held_runner(
 
 /// **Lets the older runner `runner` go, as the person pressed Let it go in Devices** (the
 /// person's ruling of 2026-11-07): a draining runner the drain keeps for work no fetch brings
-/// here, removed with that work ([`crate::poolfollow::let_go`]). Its pool and the pool's runner
-/// now are untouched. The window's alone, as removing a held runner is. Why not, where it does
+/// here, removed with that work ([`crate::poolfollow::let_go`]), only where all it holds now is
+/// among what the person was `shown`. Its pool and the pool's runner now are untouched. The window's alone, as removing a held runner is. Why not, where it does
 /// not go.
 #[tauri::command]
 #[specta::specta]
 pub async fn docker_pool_let_runner_go(
     app: tauri::AppHandle,
     runner: String,
+    shown: Vec<String>,
 ) -> Result<(), String> {
     #[cfg(unix)]
     {
         crate::off_the_window("letting an older runner go", move || {
             let machine = Machine::here(&config_root()?)?;
-            crate::poolfollow::let_go(&machine, &runner, &|to| crate::runnerlinks::chats_on(to))?;
+            crate::poolfollow::let_go(
+                &machine,
+                &runner,
+                &shown,
+                &|to| crate::runnerlinks::chats_on(to),
+                &|to| crate::runnerlinks::left_on(to, &machine.config),
+            )?;
             if let Some(host) = tauri::Manager::try_state::<crate::sessionhost::SessionHost>(&app) {
                 host.connection().links_to_gone_runners_end(&machine.config);
             }
@@ -732,7 +739,7 @@ pub async fn docker_pool_let_runner_go(
     }
     #[cfg(not(unix))]
     {
-        let _ = (app, runner);
+        let _ = (app, runner, shown);
         Err(NOT_HERE.to_owned())
     }
 }

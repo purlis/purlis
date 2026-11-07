@@ -317,10 +317,14 @@ export async function removeHeldRunner(runner: string): Promise<string | undefin
 /**
  * **Lets the older runner `runner` go with the work it holds that no fetch brings** (ruled
  * 2026-11-07), as the person pressed Let it go in Devices: only that runner goes, and its pool
- * stays. Why not, in the core's words.
+ * stays. `shown` is what the ask named: a runner that holds more now stays. Why not, in the
+ * core's words.
  */
-export async function letRunnerGo(runner: string): Promise<string | undefined> {
-  const said = await caught(commands.dockerPoolLetRunnerGo(runner));
+export async function letRunnerGo(
+  runner: string,
+  shown: readonly string[],
+): Promise<string | undefined> {
+  const said = await caught(commands.dockerPoolLetRunnerGo(runner, [...shown]));
   return said.status === "error" ? said.error : undefined;
 }
 

@@ -325,6 +325,7 @@ export function DevicesView({ now = new Date() }: { now?: Date }) {
                   pool={row.runner.pool}
                   left={row.runner.left}
                   onDone={() => void rereadDevices()}
+                  onNotGone={() => void rereadDevices()}
                 />,
               ]
             : [],

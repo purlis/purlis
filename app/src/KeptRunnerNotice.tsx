@@ -12,19 +12,23 @@ import { AlertDialog } from "./ui/dialog/Dialog";
  * a commit on no branch or a clone only there. The Notice says so and offers Let it go…, which
  * names in plain words what is lost and asks before anything goes. Only that runner goes: its
  * pool, and the pool's runner now, are untouched. Once it is gone `onDone` is told; where it did
- * not go, the runner stays and why is said under the line.
+ * not go, as where it holds more now than the ask named, the runner stays, why is said under the
+ * line, and `onNotGone` is told so what it holds now is read again.
  */
 export function KeptRunnerNotice({
   runner,
   pool,
   left,
   onDone,
+  onNotGone,
 }: {
   runner: string;
   pool: string;
   /** What it holds that no fetch brings, a sentence each, as the drain's last look found it. */
   left: readonly string[];
   onDone: () => void;
+  /** Told where it did not go, so what it holds now can be read again and shown. */
+  onNotGone?: () => void;
 }) {
   const [asking, setAsking] = useState(false);
   const [going, setGoing] = useState(false);
@@ -42,10 +46,11 @@ export function KeptRunnerNotice({
     setAsking(false);
     setGoing(true);
     setSaid(undefined);
-    void letRunnerGo(runner).then((why) => {
+    void letRunnerGo(runner, left).then((why) => {
       setGoing(false);
       if (why === undefined) return onDone();
       setSaid(why);
+      onNotGone?.();
     });
   };
   return (

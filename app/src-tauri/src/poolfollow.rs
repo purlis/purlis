@@ -353,13 +353,16 @@ pub fn left_by(config: &std::path::Path, pool: &str, runner: &str) -> Vec<String
 /// **Lets the draining runner `runner` go, with the work it holds that no fetch brings** (the
 /// person's ruling of 2026-11-07), as the person pressed Let it go in Devices: only a runner the
 /// drain's last look kept for that work, held by no one, with no chat on it now as `chats_on`
-/// asks. It is removed as a drain removes it; its pool, and the pool's runner now, are untouched.
+/// asks, no work still owed a fetch, and nothing held now (`left_on`) that the person was not
+/// `shown`. It is removed as a drain removes it; its pool, and the pool's runner now, are untouched.
 /// Why not, in a sentence, where it does not go.
 #[cfg(unix)]
 pub fn let_go(
     machine: &Machine,
     runner: &str,
+    shown: &[String],
     chats_on: &dyn Fn(&ToARunner) -> Result<u32, String>,
+    left_on: &dyn Fn(&ToARunner) -> Result<Vec<String>, String>,
 ) -> Result<(), String> {
     let kept = purlis_core::runners::named(&machine.config, runner)
         .map_err(|why| why.to_string())?
@@ -399,6 +402,34 @@ pub fn let_go(
                 "Runner {runner} did not say whether a chat runs on it, so it stays: {why}"
             ));
         }
+    }
+    // **What a fetch would still bring is not let go** (#5393): the ask named none of it.
+    let owed = purlis_core::pools::work_owed_from(&machine.config, kept.pool(), kept.name())?;
+    if !owed.is_empty() {
+        let into: Vec<String> = owed
+            .iter()
+            .map(|owing| owing.plane.display().to_string())
+            .collect();
+        return Err(format!(
+            "Runner {runner} still has work to bring back into {}, so it stays until that is \
+             fetched.",
+            into.join(", ")
+        ));
+    }
+    // **Only what the person was shown goes**: what it holds now is asked again, and anything
+    // more than the ask named keeps it, said in Devices at its next read.
+    let now = left_on(&to).map_err(|why| {
+        format!("Runner {runner} did not say what it holds now, so it stays: {why}")
+    })?;
+    let more = now
+        .iter()
+        .any(|one| !shown.contains(&crate::devices::shown_safely(one)));
+    lock_left().insert(at, now);
+    if more {
+        return Err(format!(
+            "Runner {runner} now holds work you were not shown, so it stays. Look at what it \
+             holds in Devices and let it go again."
+        ));
     }
     let unpair = |_: &purlis_core::runners::Kept| crate::runnerlinks::unpair(&to);
     let removed =

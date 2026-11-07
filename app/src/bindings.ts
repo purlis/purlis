@@ -3687,11 +3687,11 @@ export const commands = {
 	/**
 	 *  **Lets the older runner `runner` go, as the person pressed Let it go in Devices** (the
 	 *  person's ruling of 2026-11-07): a draining runner the drain keeps for work no fetch brings
-	 *  here, removed with that work ([`crate::poolfollow::let_go`]). Its pool and the pool's runner
-	 *  now are untouched. The window's alone, as removing a held runner is. Why not, where it does
+	 *  here, removed with that work ([`crate::poolfollow::let_go`]), only where all it holds now is
+	 *  among what the person was `shown`. Its pool and the pool's runner now are untouched. The window's alone, as removing a held runner is. Why not, where it does
 	 *  not go.
 	 */
-	dockerPoolLetRunnerGo: (runner: string) => typedError<null, string>(__TAURI_INVOKE("docker_pool_let_runner_go", { runner })),
+	dockerPoolLetRunnerGo: (runner: string, shown: string[]) => typedError<null, string>(__TAURI_INVOKE("docker_pool_let_runner_go", { runner, shown })),
 	/**  **Which version the pool `name`'s runner runs, against this desktop's** (#2749). */
 	dockerPoolVersion: (name: string) => typedError<PoolVersion, string>(__TAURI_INVOKE("docker_pool_version", { name })),
 	/**

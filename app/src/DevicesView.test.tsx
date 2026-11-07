@@ -42,6 +42,7 @@ let bringBackSays: { error: string } | undefined;
 /** The kept runners the core was asked to let go of, and why it did not, where it did not. */
 let letGone: string[];
 let letGoSays: { error: string } | undefined;
+let letGoShown: unknown[];
 let devicesRead: number;
 /** The moment the fixture's contacts are said against: one for the fixture and the view, so a
  *  run across midnight never puts them on two days ("Last answered Nov 3 at …"). */
@@ -113,6 +114,7 @@ beforeEach(() => {
   bringBackSays = undefined;
   letGone = [];
   letGoSays = undefined;
+  letGoShown = [];
   devicesRead = 0;
   runnersAsked = [];
   holdAnswers = undefined;
@@ -125,6 +127,7 @@ beforeEach(() => {
       runner?: string;
       name?: string;
       discarding?: unknown;
+      shown?: unknown;
     };
     if (cmd === "devices") {
       devicesRead += 1;
@@ -149,6 +152,7 @@ beforeEach(() => {
     }
     if (cmd === "docker_pool_let_runner_go") {
       letGone.push(a.runner ?? "");
+      letGoShown.push(a.shown);
       if (letGoSays !== undefined) throw letGoSays.error;
       return null;
     }
@@ -499,6 +503,10 @@ describe("DevicesView", () => {
     await userEvent.click(within(asking).getByRole("button", { name: "Let it go" }));
 
     await vi.waitFor(() => expect(letGone).toEqual(["qa"]));
+    // Only what the ask named goes: the core is told it, and keeps a runner that holds more.
+    expect(letGoShown).toEqual([
+      ["in project alpha, the project's own repository on the runner holds 1 stashed change"],
+    ]);
     await vi.waitFor(() => expect(devicesRead).toBeGreaterThan(reads));
     expect(removed).toEqual([]);
     expect(heldRemoved).toEqual([]);
@@ -524,6 +532,7 @@ describe("DevicesView", () => {
     letGoSays = { error: "1 chat still runs on runner qa, so it stays until it ends." };
     render(<DevicesView />);
     const notice = await keptNotice();
+    const reads = devicesRead;
 
     await userEvent.click(within(notice).getByRole("button", { name: "Let it go…" }));
     await userEvent.click(
@@ -538,6 +547,8 @@ describe("DevicesView", () => {
       screen.getByText("1 chat still runs on runner qa, so it stays until it ends.").tagName,
     ).toBe("BDI");
     expect(document.querySelector('[data-cause="devices-kept-runner:qa"]')).not.toBeNull();
+    // What it holds now is read again, so the next ask names it.
+    await vi.waitFor(() => expect(devicesRead).toBeGreaterThan(reads));
   });
 
   it("offers Let it go on no runner that nothing keeps", async () => {
