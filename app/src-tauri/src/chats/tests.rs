@@ -9047,6 +9047,97 @@ fn two_chats_asking_live(plane: &std::path::Path) -> (Chats, [Arc<Told>; 2]) {
     (chats, boards)
 }
 
+/// Chat `number`, a harness chat named `name` working in `cwd`, open in `chats` with
+/// `confinement`.
+fn open_a_harness_chat(
+    chats: &Chats,
+    number: u32,
+    name: &str,
+    cwd: &std::path::Path,
+    confinement: Option<purlis_core::sandbox::Confinement>,
+) {
+    let mut chat = a_resumable_chat_in(cwd);
+    chat.identity.id = Some(format!("chat-{number}"));
+    chat.name = name.to_owned();
+    lock(&chats.open).insert(
+        number,
+        Running {
+            chat,
+            how: Reopened::Resumed(SessionId::new(ID).expect("an id")),
+            harness: Some(Harness::ClaudeCode),
+            declared: None,
+            workspace: None,
+            confinement,
+            confines: None,
+            started_with: StartedWith::default(),
+            composed_by_its_host: false,
+            ran: None,
+            grants_as: None,
+            skills: None,
+            plane_skills: true,
+            skills_read: Default::default(),
+            last_prompt: None,
+            runs_as: None,
+            runners_word: None,
+            clones_at_start: None,
+            prompt_key: None,
+        },
+    );
+}
+
+/// #5427: **a branch worked on by a chat on a runner or a pool's runner says so as why it has no
+/// turn**, since such a chat records none, though its harness reports its turns. A chat here with
+/// that harness gives no reason, and one in another folder is not asked about.
+#[test]
+fn a_chat_on_a_runner_or_a_pool_is_why_its_branch_has_no_turn() {
+    use super::NoTurnsFrom;
+    let plane = a_sandboxed_plane();
+    let root = plane.path();
+    let app = root.join("workspaces/ws/app");
+    let piece = root.join("workspaces/ws/.worktrees/app/fix");
+    for folder in [&app, &piece] {
+        std::fs::create_dir_all(folder).expect("the chat's folder");
+    }
+    let host = Pretend::default();
+    let chats = restartable_chats_of(root, host.clone());
+    let why = |piece: Option<&str>| chats.no_turns_from_in(root, "ws", "app", piece);
+
+    open_a_harness_chat(&chats, 1, "Here", &app, None);
+    assert_eq!(why(None), None, "a harness here records its turns");
+
+    let on_a_runner = purlis_core::sandbox::Confinement::held_on_another_machine(
+        purlis_core::sandbox::Placed {
+            http: 1,
+            socks: 2,
+            tmp: None,
+            routed: None,
+            ssh: None,
+            left_out: Vec::new(),
+            host_name: Some("build-box".to_owned()),
+        },
+        Box::new(HeldWith(Arc::new(Told::default()))),
+    );
+    open_a_harness_chat(&chats, 2, "Remote", &app, Some(on_a_runner));
+    assert_eq!(
+        why(None),
+        Some(NoTurnsFrom::OnARunner {
+            chat: "Remote".to_owned(),
+            runner: "build-box".to_owned(),
+        })
+    );
+
+    open_a_harness_chat(&chats, 3, "Pooled", &piece, None);
+    assert_eq!(why(Some("fix")), None, "not on a pool yet");
+    host.runs_on_pool(3, "builds");
+    assert_eq!(
+        why(Some("fix")),
+        Some(NoTurnsFrom::OnAPool {
+            chat: "Pooled".to_owned(),
+            pool: "builds".to_owned(),
+        })
+    );
+}
+
 fn hosts_of(told: &Mutex<Vec<(String, purlis_core::sandbox::reach::By)>>) -> Vec<String> {
     lock(told).iter().map(|(host, _)| host.clone()).collect()
 }
