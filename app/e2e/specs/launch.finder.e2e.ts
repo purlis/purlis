@@ -11,6 +11,7 @@ import { harnessRowsDrawn, pickAndStart, openThePicker } from "../opening.js";
 import { projectInFront, runningIn } from "../running.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 import { escapeUntilClosed } from "../tooltips.js";
+import { closesTheTabsItOpens } from "../reach.js";
 
 /**
  * A chat started on a BUILT-IN profile, in an app launched the way Finder launches one.
@@ -113,6 +114,9 @@ describe("an app opened from Finder", () => {
   after(async () => {
     await endTheChatsStartedSince(wereOpen);
   });
+
+  // The tabs it opens, unnamed "New chat" ones too, close here, after its chats end (#5586).
+  closesTheTabsItOpens();
 
   it("offers the built-in profile whose program only a shell's PATH would find", async () => {
     await openThePicker();

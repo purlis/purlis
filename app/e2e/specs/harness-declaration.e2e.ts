@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import { join } from "node:path";
 import { $, $$, browser, expect } from "@wdio/globals";
 import { harnessRowsDrawn, openThePicker } from "../opening.js";
+import { closesTheTabsItOpens } from "../reach.js";
 import { ask } from "../switching.js";
 import { SETTINGS_GROUPS, openProjectSettings } from "../settingsTab.js";
 
@@ -112,6 +113,9 @@ describe("a harness the project declares", function () {
     if (madeTheFolder && existsSync(folder) && readdirSync(folder).length === 0)
       rmSync(folder, { recursive: true, force: true });
   });
+
+  // The tabs it opens, unnamed "New chat" ones too, close here, after its chats end (#5586).
+  closesTheTabsItOpens();
 
   it("asks before running it, showing every word that would run (#969)", async () => {
     const panes = (await $$('[data-testid="pane"]').getElements()).length;

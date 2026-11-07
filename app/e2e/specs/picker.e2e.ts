@@ -5,6 +5,7 @@ import { browser, expect, $, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
 import { harnessRowsDrawn, pickAndStart, openThePicker } from "../opening.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
+import { closesTheTabsItOpens } from "../reach.js";
 
 /**
  * Picking a harness profile and a persona, against the real app in a copy of the `daily`
@@ -59,6 +60,9 @@ describe("starting a chat", () => {
     }
     if (trouble !== undefined) throw trouble;
   });
+
+  // The tabs it opens, unnamed "New chat" ones too, close here, after its chats end (#5586).
+  closesTheTabsItOpens();
 
   it("asks which profile and which persona, and starts nothing until a row is picked", async () => {
     const panes = (await $$('[data-testid="pane"]').getElements()).length;
