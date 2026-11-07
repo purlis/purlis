@@ -278,6 +278,7 @@ describe("the command palette", () => {
     await expect($(PALETTE)).not.toBeDisplayed();
     await answerThePicker();
     await expect($('[data-testid="pane"]')).toBeDisplayed();
+    throw new Error("TEMPORARY (#5580): forced failure, to show the tests after it stand alone");
   });
 
   it("raises the question from a keyboard-only press, and Escape answers it with no", async () => {
