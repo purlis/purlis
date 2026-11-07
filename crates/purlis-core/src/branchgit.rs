@@ -22,7 +22,9 @@
 //!   made with `git worktree add` anywhere else is left to the sandbox, since `purlis worktree
 //!   commit` would not commit there (the review of #3841);
 //! - and the line can be placed: a `cd` to a literal folder is followed only on a line whose
-//!   commands all run in one shell, one after another (`&&`, `;`). A `cd` in a subshell, a
+//!   commands all run in one shell, one after another (`&&`, `;`). A `cd` can fail, so after a
+//!   `;` or a new line the git is judged in the folder the `cd` left as well as the one it
+//!   names; only `&&` from the `cd` to the git says the `cd` was made. A `cd` in a subshell, a
 //!   pipeline or a substitution, or any move it cannot place (an expansion, `cd -`, `popd`),
 //!   leaves the line to the sandbox. A wrapper's own move to a literal folder
 //!   (`env -C <folder> git …`, #3931) places that one command; one it cannot place leaves that
@@ -134,8 +136,19 @@ fn found<T>(
         .all(|segment| in_turn(&segment.before) && in_turn(&segment.after));
     let argvs: Vec<Vec<String>> = segments.iter().map(|s| s.argv.clone()).collect();
     let exported = shellwrap::exported_env(&argvs);
-    let mut here = PathBuf::from(cwd);
+    // Every folder the shell may be in: a `cd` that fails leaves it where it was, and only
+    // `&&` stops what follows. So a `cd` adds the folder it names, and the folders it left come
+    // back at the first `;` or new line after it.
+    let mut here = vec![PathBuf::from(cwd)];
+    let mut if_a_move_failed: Vec<PathBuf> = Vec::new();
     for (segment, before) in segments.iter().zip(exported.iter()) {
+        if segment.before.as_deref().is_some_and(|op| op != "&&") {
+            for left in if_a_move_failed.drain(..) {
+                if !here.contains(&left) {
+                    here.push(left);
+                }
+            }
+        }
         let call = shellwrap::split_env_chdir(&segment.argv);
         let program = base_lower(&call.prog);
         match program.as_str() {
@@ -148,7 +161,12 @@ fn found<T>(
                         && to != "-"
                         && !to.starts_with('-') =>
                 {
-                    here = here.join(to);
+                    let moved: Vec<PathBuf> = here.iter().map(|from| from.join(to)).collect();
+                    for left in std::mem::replace(&mut here, moved) {
+                        if !if_a_move_failed.contains(&left) {
+                            if_a_move_failed.push(left);
+                        }
+                    }
                     continue;
                 }
                 _ => return seen,
@@ -159,31 +177,33 @@ fn found<T>(
         if program != "git" {
             continue;
         }
-        // `env -C <folder>` moves this one command, never the shell.
-        let at = if call.chdir.is_empty() {
-            here.clone()
-        } else if projectgit::unplaceable(&call.chdir) {
-            continue;
-        } else {
-            here.join(&call.chdir)
-        };
-        let (pre, rest) = shellwrap::git_globals(&call.argv);
-        let Some((sub, post)) = rest.split_first() else {
-            continue;
-        };
-        let Some(what) = wanted(sub, post) else {
-            continue;
-        };
-        let mut env = before.clone();
-        env.extend(call.env.iter().cloned());
-        if let Some(folder) = projectgit::repository(&at, &pre, &env)
-            .and_then(|repo| purlis_made(&repo, Path::new(root)))
-        {
-            seen.push(InAFolder {
-                sub: sub.clone(),
-                what,
-                folder,
+        if call.chdir.is_empty() || !projectgit::unplaceable(&call.chdir) {
+            let (pre, rest) = shellwrap::git_globals(&call.argv);
+            let Some((sub, post)) = rest.split_first() else {
+                continue;
+            };
+            let Some(what) = wanted(sub, post) else {
+                continue;
+            };
+            let mut env = before.clone();
+            env.extend(call.env.iter().cloned());
+            // `env -C <folder>` moves this one command, never the shell.
+            let folder = here.iter().find_map(|from| {
+                let at = if call.chdir.is_empty() {
+                    from.clone()
+                } else {
+                    from.join(&call.chdir)
+                };
+                projectgit::repository(&at, &pre, &env)
+                    .and_then(|repo| purlis_made(&repo, Path::new(root)))
             });
+            if let Some(folder) = folder {
+                seen.push(InAFolder {
+                    sub: sub.clone(),
+                    what,
+                    folder,
+                });
+            }
         }
     }
     seen

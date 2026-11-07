@@ -1372,7 +1372,11 @@ pub fn way_out(path: &Path, root: &Path) -> Option<&'static str> {
     match parts.as_slice() {
         // The rest of a clone's git folder, which a fetch in a branch folder writes: no grant
         // opens it, since the clone's `.git` stays denied there.
-        ["workspaces", _, _, ".git", _, ..] if !is_planted(&path) => Some(WORKTREE_COMMIT_WAY),
+        ["workspaces", _, _, ".git", _, ..] | ["workspaces", _, "repos", _, ".git", _, ..]
+            if !is_planted(&path) =>
+        {
+            Some(WORKTREE_COMMIT_WAY)
+        }
         // The project root's git folder, which the app writes for every chat.
         [".git", _, ..] if !is_planted(&path) => Some(ROOT_GIT_WAY),
         ["sessions", _] | ["workspaces", _, "sessions", _] => Some(

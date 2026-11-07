@@ -97,6 +97,32 @@ fn a_literal_cd_into_the_branch_folder_is_followed() {
     assert_eq!(l.ask(&back, &l.folder), None, "{back}");
 }
 
+/// A `cd` that fails leaves the shell where it was, and a command after a `;` or a new line runs
+/// all the same: so git there is judged in both folders, the one the `cd` names and the one it
+/// left. Only `&&` all the way from the `cd` to the git says the `cd` was made.
+#[test]
+fn git_after_a_cd_that_may_have_failed_is_judged_in_the_folder_the_shell_was_in_too() {
+    use crate::piececlaim::Act;
+    let l = Layout::new();
+    let elsewhere = l.root.join("not-there");
+    let elsewhere = elsewhere.display();
+    for cmd in [
+        format!("cd {elsewhere}; git add -A"),
+        format!("cd {elsewhere}\ngit commit -m x"),
+        format!("cd {elsewhere} && ls; git commit -m x"),
+        format!("cd {elsewhere}; cd {}; git add -A", l.clone.display()),
+    ] {
+        assert!(l.ask(&cmd, &l.folder).is_some(), "{cmd:?} was let through");
+    }
+    assert_eq!(
+        l.write(&format!("cd {elsewhere}; git push"), &l.folder),
+        Some(("push".to_owned(), Act::Push))
+    );
+    // Run only once the `cd` is made: the git is where the `cd` went.
+    let made = format!("cd {elsewhere} && git add -A");
+    assert_eq!(l.ask(&made, &l.folder), None, "{made}");
+}
+
 /// The review of #3841: a `cd` in a subshell or a pipeline does not move the shell the next
 /// command runs in, so it is never carried over to it.
 #[test]
