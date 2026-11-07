@@ -10155,9 +10155,9 @@ export const PlaneView = memo(function PlaneView({
     [],
   );
 
-  /** Moves a task from its line in a tab's menu (#1489): to a tab of its own, beside its
-   *  session, or back. The catalogue's own rows, read as they stand when pressed, and held
-   *  as one function for the window's life, as {@link showFromChip} is. */
+  /** Moves a task from its line in a tab's menu (#1489): to a tab of its own, beside the
+   *  chat that asked for it, or back. The catalogue's own rows, read as they stand when
+   *  pressed, and held as one function for the window's life, as {@link showFromChip} is. */
   const placeNow = useRef<(session: number, where: TaskPlace) => void>(() => undefined);
   useEffect(() => {
     placeNow.current = (session, where) => {
@@ -10167,6 +10167,12 @@ export const PlaneView = memo(function PlaneView({
   });
   const placeFromChip = useCallback(
     (session: number, where: TaskPlace) => placeNow.current(session, where),
+    [],
+  );
+  /** The catalogue's row a task's line in a tab's menu presses to move it (#5679): read as the
+   *  line is drawn, so its button says that row's title. */
+  const placeRowFromChip = useCallback(
+    (session: number, where: TaskPlace) => byNow.current(placeRowId(session, where)),
     [],
   );
   /** What a tab's chats used, for its menu (#1500): read only as the window asks. */
@@ -10279,6 +10285,7 @@ export const PlaneView = memo(function PlaneView({
           ends={taskEndsOf}
           onPress={pressTaskEnd}
           onPlace={placeFromChip}
+          placeOf={placeRowFromChip}
           used={usedFromChip}
           // The limits of this pane's own chat, the menu's first row (#1498).
           limits={runningSaid(rows[0])}
@@ -10299,6 +10306,7 @@ export const PlaneView = memo(function PlaneView({
       isDragging,
       nameOf,
       placeFromChip,
+      placeRowFromChip,
       pressTaskEnd,
       showPickedIn,
       stopAllOf,

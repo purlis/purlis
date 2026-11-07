@@ -539,7 +539,7 @@ describe("moving a task to a tab of its own", () => {
     // Then its Brief (#1494), which reads and moves nothing.
     expect(places.map((one) => one.dataset.says)).toEqual([
       "Move talk to its own tab",
-      "Open talk beside its session",
+      "Open talk beside steward 1",
       "Brief of talk",
     ]);
     // sweep is in its own tab: its line offers the way back, and not a second tab.
@@ -547,7 +547,7 @@ describe("moving a task to a tab of its own", () => {
       [...lineOf(menu, "sweep").querySelectorAll<HTMLElement>(".tasks-menu-place")].map(
         (one) => one.dataset.says,
       ),
-    ).toEqual(["Open sweep beside its session", "Send sweep back to its row", "Brief of sweep"]);
+    ).toEqual(["Open sweep beside steward 1", "Send sweep back to its row", "Brief of sweep"]);
     // The session's own chat has none: it is its tab.
     expect(lineOf(menu, "steward 1").querySelector(".tasks-menu-place")).toBeNull();
     press(places[1]);
@@ -556,7 +556,7 @@ describe("moving a task to a tab of its own", () => {
     // The tab keeps its first chat's name (#5342): the session's, with talk beside it.
     expect(tabNames()).toEqual(["steward 1", "steward 2", "sweep"]);
 
-    // Alt+Enter is beside its session.
+    // Alt+Enter is beside the chat that asked for it.
     menu = await open();
     lineOf(menu, "sweep").focus();
     await userEvent.keyboard("{Alt>}{Enter}{/Alt}");
@@ -633,7 +633,7 @@ describe("moving a task to a tab of its own", () => {
   });
 });
 
-describe("opening a task beside its session", () => {
+describe("opening a task beside the chat that asked for it", () => {
   it("splits the pane of the chat that asked on Space, the session on one side and the task on the other", async () => {
     const { tree, asked } = await drawn(withTasks());
 
@@ -823,7 +823,7 @@ describe("the session's End…, the one way it ends (#4756)", () => {
 });
 
 describe("after a relaunch", () => {
-  it("puts a task's own tab back as a task's tab, and a task beside its session back beside it", async () => {
+  it("puts a task's own tab back as a task's tab, and a task beside the chat that asked back beside it", async () => {
     const open = withTasks();
     open[2].from = taskOf(1, { tab: true });
     open[3].beside = 1;
@@ -1119,7 +1119,7 @@ describe("what the core is told is on screen (M1, M4)", () => {
     // An icon button's tooltip is its name, with the line's key as a second line under it.
     expect(titles).toEqual([
       "Move talk to its own tabCtrl+Enter on its line",
-      "Open talk beside its sessionAlt+Enter on its line",
+      "Open talk beside steward 1Alt+Enter on its line",
     ]);
   });
 });
