@@ -12873,6 +12873,16 @@ export type PublishAccepted = {
 /**  **How a publish ended.** */
 export type PublishDone = { kind: "opened"; url: string } | { kind: "already"; url: string } | { kind: "cannot-push"; why: string };
 
+/**  **The person's fork a publish goes through** (#4342). */
+export type PublishFork = {
+	/**  `owner/name` on the forge. */
+	path: string,
+	/**  Whether the publish makes it, once the person presses the button. */
+	made: boolean,
+	/**  Who can read it, as purlis says it before it sends. */
+	readers: string,
+};
+
 /**  One grade the description holds. */
 export type PublishGrade = {
 	skill: string,
@@ -12927,10 +12937,10 @@ export type PublishReviewView = {
 	/**  The request's description, whole. */
 	body: string,
 	/**
-	 *  Whether the forge says the person's account may not push to the source (#4342). The page
-	 *  says so up front and offers Export, and never refuses on it: the push answers for itself.
+	 *  The person's own fork the branch goes on, where the forge says their account may not push
+	 *  to the source (#4342). `None` for a branch on the source itself.
 	 */
-	forge_says_no_push: boolean,
+	fork: PublishFork | null,
 	accepted: PublishAccepted,
 };
 

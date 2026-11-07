@@ -75,11 +75,81 @@ enum Paged {
     Failed(ForgeError),
 }
 
+/// Who can read the repo GitHub answered: `visibility` names `internal` too, and a reply
+/// without it still says `private`.
+pub(super) fn visibility_of(answer: &Value) -> Option<Visibility> {
+    match answer["visibility"].as_str() {
+        Some(word) => Visibility::parse(word),
+        None => answer["private"].as_bool().map(|private| {
+            if private {
+                Visibility::Private
+            } else {
+                Visibility::Public
+            }
+        }),
+    }
+}
+
 fn owner_name(path: &str) -> (&str, &str) {
     path.split_once('/').unwrap_or((path, ""))
 }
 
 impl GitHub {
+    /// The newest pull request into `path` from `branch` of `head_repo`, which `head_owner`
+    /// holds: the repo itself, or the account's fork of it (#4342).
+    fn request_from(
+        &self,
+        caller: &Caller,
+        path: &str,
+        head_owner: &str,
+        head_repo: &str,
+        branch: &str,
+    ) -> Result<Option<Request>, ForgeError> {
+        let (owner, name) = owner_name(path);
+        let api = format!(
+            "repos/{}/{}/pulls?state=all&head={}:{}&per_page=1",
+            quote(owner),
+            quote(name),
+            quote(head_owner),
+            quote(branch)
+        );
+        let doing = format!("finding the pull request from {branch} in {path}");
+        let listing = self.0.ask(caller, &Call::get(&api, LIST_TIMEOUT), &doing)?;
+        let found = first(&listing);
+        // Asked, not assumed: `owner:branch` can match a branch in another repo the owner
+        // holds, and a head filter GitHub cannot parse is ignored rather than refused. A pull
+        // request from anywhere else is not this member's, and printing its checks as this
+        // member's would be the one wrong answer worse than none.
+        if let Some(pr) = found {
+            let from = (
+                pr["head"]["ref"].as_str(),
+                pr["head"]["repo"]["full_name"].as_str(),
+            );
+            if from != (Some(branch), Some(head_repo)) {
+                return Err(ForgeError::new(format!(
+                    "{doing}: the forge answered a pull request from {}:{}, not from this \
+                     branch",
+                    from.1.unwrap_or("?"),
+                    from.0.unwrap_or("?")
+                )));
+            }
+        }
+        let Some(record) = found else {
+            return Ok(None);
+        };
+        let pr = pr_of(record, "number", "html_url", &doing)?;
+        let head = record["head"]["sha"]
+            .as_str()
+            .filter(|sha| !sha.is_empty())
+            .ok_or_else(|| format!("{doing}: the forge named no head commit"))?;
+        Ok(Some(Request {
+            number: pr.number,
+            url: pr.url,
+            state: state_of(record, &doing)?,
+            head: head.to_string(),
+        }))
+    }
+
     /// The pull request's node id and whether its base branch has a merge queue, in one
     /// question.
     fn queue_probe(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<Value, ForgeError> {
@@ -352,18 +422,8 @@ impl Repos for GitHub {
         let api = format!("repos/{}/{}", quote(owner), quote(name));
         let doing = format!("reading {path}");
         let answer = self.0.ask(caller, &Call::get(&api, LIST_TIMEOUT), &doing)?;
-        // `visibility` names `internal` too; a reply without it still says `private`.
-        let visibility = match answer["visibility"].as_str() {
-            Some(word) => Visibility::parse(word),
-            None => answer["private"].as_bool().map(|private| {
-                if private {
-                    Visibility::Private
-                } else {
-                    Visibility::Public
-                }
-            }),
-        }
-        .ok_or_else(|| ForgeError::new(format!("{doing}: GitHub named no visibility")))?;
+        let visibility = visibility_of(&answer)
+            .ok_or_else(|| ForgeError::new(format!("{doing}: GitHub named no visibility")))?;
         // Anyone who can read a repo can open an issue in it, unless its issues are off. A
         // `permissions` block that denies reading is the account's own answer.
         let issues = if answer["archived"].as_bool() == Some(true) {
@@ -533,25 +593,32 @@ impl Requests for GitHub {
 
     fn open_draft_from_fork(
         &self,
-        _caller: &Caller,
-        _path: &str,
-        _fork: &Fork,
-        _branch: &str,
-        _base: &str,
-        _title: &str,
-        _body: &str,
+        caller: &Caller,
+        path: &str,
+        fork: &Fork,
+        branch: &str,
+        base: &str,
+        title: &str,
+        body: &str,
     ) -> Result<Pr, ForgeError> {
-        todo!("#4342")
+        self.open_draft(
+            caller,
+            path,
+            &format!("{}:{branch}", fork.owner()),
+            base,
+            title,
+            body,
+        )
     }
 
     fn by_head_from_fork(
         &self,
-        _caller: &Caller,
-        _path: &str,
-        _fork: &Fork,
-        _branch: &str,
+        caller: &Caller,
+        path: &str,
+        fork: &Fork,
+        branch: &str,
     ) -> Result<Option<Request>, ForgeError> {
-        todo!("#4342")
+        self.request_from(caller, path, fork.owner(), fork.path(), branch)
     }
 
     fn state(&self, caller: &Caller, path: &str, pr: &Pr) -> Result<State, ForgeError> {
@@ -591,49 +658,8 @@ impl Requests for GitHub {
         path: &str,
         branch: &str,
     ) -> Result<Option<Request>, ForgeError> {
-        let (owner, name) = owner_name(path);
-        let api = format!(
-            "repos/{}/{}/pulls?state=all&head={}:{}&per_page=1",
-            quote(owner),
-            quote(name),
-            quote(owner),
-            quote(branch)
-        );
-        let doing = format!("finding the pull request from {branch} in {path}");
-        let listing = self.0.ask(caller, &Call::get(&api, LIST_TIMEOUT), &doing)?;
-        let found = first(&listing);
-        // Asked, not assumed: `owner:branch` can match a branch in another repo the owner
-        // holds, and a head filter GitHub cannot parse is ignored rather than refused. A pull
-        // request from anywhere else is not this member's, and printing its checks as this
-        // member's would be the one wrong answer worse than none.
-        if let Some(pr) = found {
-            let from = (
-                pr["head"]["ref"].as_str(),
-                pr["head"]["repo"]["full_name"].as_str(),
-            );
-            if from != (Some(branch), Some(path)) {
-                return Err(ForgeError::new(format!(
-                    "{doing}: the forge answered a pull request from {}:{}, not from this \
-                     branch",
-                    from.1.unwrap_or("?"),
-                    from.0.unwrap_or("?")
-                )));
-            }
-        }
-        let Some(record) = found else {
-            return Ok(None);
-        };
-        let pr = pr_of(record, "number", "html_url", &doing)?;
-        let head = record["head"]["sha"]
-            .as_str()
-            .filter(|sha| !sha.is_empty())
-            .ok_or_else(|| format!("{doing}: the forge named no head commit"))?;
-        Ok(Some(Request {
-            number: pr.number,
-            url: pr.url,
-            state: state_of(record, &doing)?,
-            head: head.to_string(),
-        }))
+        let (owner, _) = owner_name(path);
+        self.request_from(caller, path, owner, path, branch)
     }
 
     fn request_auto_merge(

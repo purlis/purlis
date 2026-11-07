@@ -12,7 +12,16 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { ExportDialog, SkillPublishPage } from "./SkillPublish";
 import type { PublishReviewView, SkillLevel } from "./bindings";
-import { FORGE_SAYS_NO_PUSH, EXPORT, GITHUB, LOCAL, REVIEW, STOPPED } from "./skillPublish.testkit";
+import {
+  EXPORT,
+  FORK_TAKEN,
+  GITHUB,
+  LOCAL,
+  REVIEW,
+  STOPPED,
+  THROUGH_A_NEW_FORK,
+  THROUGH_THEIR_FORK,
+} from "./skillPublish.testkit";
 
 afterEach(() => {
   cleanup();
@@ -76,6 +85,7 @@ describe("the publish review", () => {
   it.each([
     ["a secret", STOPPED],
     ["a skill kept on this machine", LOCAL],
+    ["a repo of the person's at the fork's name that is not a fork", FORK_TAKEN],
   ])("keeps the button out of reach for %s", async (_what, review) => {
     const asked = core(review);
     page();
@@ -101,26 +111,45 @@ describe("the publish review", () => {
     expect(await opener()).not.toHaveAttribute("aria-disabled", "true");
   });
 
-  it("says up front when the forge says you cannot push, and offers Export", async () => {
-    core(FORGE_SAYS_NO_PUSH);
+  it("names the fork it will make and makes it only on the press", async () => {
+    const asked = core(THROUGH_A_NEW_FORK);
     const onExport = vi.fn();
     page({ onExport });
 
-    await screen.findByText(/GitHub says your account cannot push to this source, and publishing/);
+    await screen.findByText(
+      /GitHub says your account cannot push to this source, so publishing makes your fork ada\/skills/,
+    );
+    screen.getByText(/PUBLIC: everyone can read what is sent/);
+    screen.getByText("Made when you publish");
+    expect(asked.some((one) => one.cmd === "skill_publish")).toBe(false);
+
     await userEvent.click(screen.getByRole("button", { name: "Export…" }));
     expect(onExport).toHaveBeenCalled();
-  });
-
-  it("leaves the push to answer for itself where the forge says no", async () => {
-    // GitLab says no to an instance's admins and to access through a shared group.
-    const asked = core(FORGE_SAYS_NO_PUSH);
-    page();
-
-    await screen.findByText(/GitHub says your account cannot push to this source, and publishing/);
-    await userEvent.click(await opener());
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Fork and open draft pull request" }),
+    );
 
     await screen.findByTestId("publish-opened");
-    expect(asked.some((one) => one.cmd === "skill_publish")).toBe(true);
+    const sent = asked.find((one) => one.cmd === "skill_publish");
+    expect(sent?.args).toMatchObject({ accepted: THROUGH_A_NEW_FORK.accepted });
+  });
+
+  it("names the fork the person has, and says nothing is made", async () => {
+    core(THROUGH_THEIR_FORK);
+    page();
+
+    await screen.findByText(/so the branch goes on your fork ada\/skills/);
+    expect(screen.queryByText("Made when you publish")).toBeNull();
+    expect(await opener()).not.toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("says a failed push was to the fork", async () => {
+    core(THROUGH_THEIR_FORK, { kind: "cannot-push", why: "denied" });
+    page();
+
+    await userEvent.click(await opener());
+
+    await screen.findByText("Nothing was opened. git said: denied");
   });
 
   it("names a skill it refers to that is kept here, and offers no move of the wrong one", async () => {

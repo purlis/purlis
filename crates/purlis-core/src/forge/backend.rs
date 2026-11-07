@@ -279,8 +279,8 @@ pub trait Making {
 
     /// Fork the repo at `path` under the account's own name, at the forge's default
     /// visibility, and answer it once it can take a push: GitLab copies a fork in the
-    /// background, and is asked until its copy finished. A fork the account has already is
-    /// answered as it is. An answer that is not a fork of `path` is refused. Strict.
+    /// background, and is asked until its copy finished. An answer that is not a fork of `path`
+    /// is refused. Asked only where [`Making::fork_for`] said [`ForkPlace::ToMake`]. Strict.
     fn make_fork(&self, caller: &Caller, path: &str) -> Result<Fork, ForgeError>;
 }
 
@@ -355,14 +355,14 @@ impl Fork {
         self.parent.as_ref()
     }
 
-    /// A public fork for a test that never asks a forge.
+    /// A public fork for a test that never asks a forge, its page `clone_url` without `.git`.
     #[cfg(any(test, feature = "fenced"))]
-    pub fn for_a_test(host: &str, id: &str, path: &str, parent: Option<&str>) -> Self {
+    pub fn for_a_test(id: &str, path: &str, clone_url: &str, parent: Option<&str>) -> Self {
         Fork::answered(
             ForgeRef(id.to_string()),
             path.to_string(),
-            format!("https://{host}/{path}"),
-            format!("https://{host}/{path}.git"),
+            clone_url.trim_end_matches(".git").to_string(),
+            clone_url.to_string(),
             Visibility::Public,
             parent.map(|id| ForgeRef(id.to_string())),
         )

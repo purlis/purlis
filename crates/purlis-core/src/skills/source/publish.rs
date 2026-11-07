@@ -10,10 +10,17 @@
 //! refuses where any of it moved or anything stops it, so what goes is what was reviewed.
 //!
 //! **The commit is built from git's objects, never a checkout** of the source's own files: its
-//! tree at the reviewed commit, with each skill's folder replaced. It goes to a new branch of the
-//! source itself, named by the digest of what it holds, by the one refspec, never forced. The
-//! review asks the forge first whether the person's account may push there, so a no is said up
-//! front with Export beside it; the push still answers for itself. Nothing is forked (#4342).
+//! tree at the reviewed commit, with each skill's folder replaced. It goes to a new branch, named
+//! by the digest of what it holds, by the one refspec, never forced.
+//!
+//! **Where the branch goes** ([`Route`], #4342): the review asks the forge whether the person's
+//! account may push to the source. Where it says yes, or does not say, the branch goes on the
+//! source itself and the push answers for itself. Where it says no, the branch goes on the
+//! person's own fork of the source, under their own account and never an organisation's: the
+//! one they have, or one made at the forge's default visibility once they say yes to a review
+//! that named it and said it would be made. A repo of theirs at that name that the forge does
+//! not call a fork of the source stops the publish, and nothing is renamed. A fork is never
+//! deleted, so one made before a later step failed stays, and is said.
 //!
 //! **Grades go as a summary** in the request's description, and never in the skill's folder
 //! (decision 21): when, which harness, which grader, how it scored and how it ended. Never a
@@ -26,11 +33,12 @@ use purlis_skills::tree;
 use serde::{Deserialize, Serialize};
 use sha2::Digest as _;
 
-use super::fetch::{REMOTE, Scratch, handing};
+use super::fetch::{Handing, REMOTE, Scratch, handing};
 use super::outgoing::{self, OutSkill, Outgoing, Purpose, Stop};
 use super::{Commit, Source};
-use crate::forge::Caller;
+use crate::forge::backend::Visibility;
 use crate::forge::pr::Repo;
+use crate::forge::{Caller, Fork, ForkPlace};
 use crate::secretshape;
 use crate::skills::grades::{self, Graded};
 use crate::skills::verbs::Level;
@@ -46,11 +54,23 @@ pub trait PublishForge {
     /// Whether the person's account may push to the source, as the forge says it: `None` where
     /// its answer does not say. Read only, for the review alone.
     fn may_push(&self) -> Result<Option<bool>, String>;
-    /// The page of the open request already on `branch`. A closed or merged one does not count.
-    fn already(&self, branch: &str) -> Result<Option<String>, String>;
-    /// Opens the draft request, and answers its page.
-    fn open_draft(&self, head: &str, base: &str, title: &str, body: &str)
-    -> Result<String, String>;
+    /// Where the account's own fork of the source is, or would be. Read only, for the review.
+    fn fork_for(&self) -> Result<ForkPlace, String>;
+    /// Makes the account's fork of the source: only after a yes to a review that said so.
+    fn make_fork(&self) -> Result<Fork, String>;
+    /// The page of the open request already on `branch`, of `fork` where it is given. A closed
+    /// or merged one does not count.
+    fn already(&self, fork: Option<&Fork>, branch: &str) -> Result<Option<String>, String>;
+    /// Opens the draft request from `head`, a branch of `fork` where it is given, and answers
+    /// its page.
+    fn open_draft(
+        &self,
+        fork: Option<&Fork>,
+        head: &str,
+        base: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<String, String>;
 }
 
 /// The person's own forge, through their purlis sign-in.
@@ -130,12 +150,27 @@ impl PublishForge for OnTheForge {
         Ok(about.can_push)
     }
 
-    fn already(&self, branch: &str) -> Result<Option<String>, String> {
-        let found = self
-            .repo
+    fn fork_for(&self) -> Result<ForkPlace, String> {
+        self.repo
             .backend()
-            .by_head(&self.caller, &self.repo.path, branch)
-            .map_err(|why| why.to_string())?;
+            .fork_for(&self.caller, &self.repo.path)
+            .map_err(|why| why.to_string())
+    }
+
+    fn make_fork(&self) -> Result<Fork, String> {
+        self.repo
+            .backend()
+            .make_fork(&self.caller, &self.repo.path)
+            .map_err(|why| why.to_string())
+    }
+
+    fn already(&self, fork: Option<&Fork>, branch: &str) -> Result<Option<String>, String> {
+        let backend = self.repo.backend();
+        let found = match fork {
+            None => backend.by_head(&self.caller, &self.repo.path, branch),
+            Some(fork) => backend.by_head_from_fork(&self.caller, &self.repo.path, fork, branch),
+        }
+        .map_err(|why| why.to_string())?;
         Ok(found
             .filter(|request| request.state == crate::forge::pr::State::Open)
             .map(|request| request.url))
@@ -143,18 +178,74 @@ impl PublishForge for OnTheForge {
 
     fn open_draft(
         &self,
+        fork: Option<&Fork>,
         head: &str,
         base: &str,
         title: &str,
         body: &str,
     ) -> Result<String, String> {
-        let pr = self
-            .repo
-            .backend()
-            .open_draft(&self.caller, &self.repo.path, head, base, title, body)
-            .map_err(|why| why.to_string())?;
+        let backend = self.repo.backend();
+        let path = &self.repo.path;
+        let pr = match fork {
+            None => backend.open_draft(&self.caller, path, head, base, title, body),
+            Some(fork) => {
+                backend.open_draft_from_fork(&self.caller, path, fork, head, base, title, body)
+            }
+        }
+        .map_err(|why| why.to_string())?;
         Ok(pr.url)
     }
+}
+
+/// **Where a publish's branch goes** (#4342).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Route {
+    /// A new branch on the source itself.
+    Source,
+    /// A new branch on the person's own fork of the source, which they have already.
+    Fork(Fork),
+    /// A new branch on the person's own fork of the source, which is made at `path` once they
+    /// say yes, readable as `visibility`, the forge's default for it.
+    NewFork {
+        path: String,
+        visibility: Visibility,
+    },
+}
+
+impl Route {
+    /// The route, as a yes holds it.
+    fn shown(&self) -> String {
+        match self {
+            Route::Source => "source".to_owned(),
+            Route::Fork(fork) => format!("fork {} {}", fork.path(), fork.visibility().word()),
+            Route::NewFork { path, visibility } => {
+                format!("new fork {path} {}", visibility.word())
+            }
+        }
+    }
+}
+
+/// Where the branch goes, as the forge says now: the source unless the forge says the person's
+/// account may not push there. A repo of theirs that is not the source's fork stops it.
+fn route_of(forge: &dyn PublishForge, review: &mut PublishReview) -> Result<(), String> {
+    if review.stopped() {
+        return Ok(());
+    }
+    review.may_push = forge.may_push().ok().flatten();
+    if review.may_push != Some(false) {
+        return Ok(());
+    }
+    match forge
+        .fork_for()
+        .map_err(|why| format!("Where your fork of the source is could not be read: {why}"))?
+    {
+        ForkPlace::Yours(fork) => review.route = Route::Fork(fork),
+        ForkPlace::ToMake { path, visibility } => {
+            review.route = Route::NewFork { path, visibility };
+        }
+        ForkPlace::Taken { path } => review.outgoing.stops.push(Stop::ForkTaken { path }),
+    }
+    Ok(())
 }
 
 /// **Everything a person reads before a publish.**
@@ -173,12 +264,12 @@ pub struct PublishReview {
     pub author: (String, String),
     /// The grades the description holds.
     pub grades: Vec<GradeSent>,
-    /// Whether the person's account may push to the source, as its forge says (#4342). A reading
-    /// aid that says so up front and never refuses: GitLab answers no to an instance's admins and
-    /// to access through a shared group, and the forge's account need not be the one git pushes
-    /// as, so the push always answers for itself. `None` where the forge does not say, cannot be
-    /// asked, or the review is stopped already.
+    /// Whether the person's account may push to the source, as its forge says (#4342). A no
+    /// sends the branch to their fork ([`Route`]); nothing else refuses on it. `None` where the
+    /// forge does not say, cannot be asked, or the review is stopped already.
     pub may_push: Option<bool>,
+    /// Where the branch goes: the person's fork where the forge says they may not push.
+    pub route: Route,
     /// The request's description, the grades among it, whole.
     pub body: String,
 }
@@ -192,6 +283,7 @@ impl PublishReview {
     /// **What a yes to this review is a yes to**: everything it showed, by digest.
     pub fn accepted(&self) -> Accepted {
         let lands: Vec<&str> = self.lands.iter().map(|land| land.0.as_str()).collect();
+        let route = self.route.shown();
         let shown = [
             self.outgoing.digest().as_str(),
             self.base.as_str(),
@@ -202,6 +294,7 @@ impl PublishReview {
             self.author.0.as_str(),
             self.author.1.as_str(),
             self.body.as_str(),
+            route.as_str(),
         ]
         .map(|field| format!("{}:{field}", field.len()))
         .join("\n");
@@ -232,9 +325,7 @@ pub fn review(
 ) -> Result<PublishReview, String> {
     let scratch = Scratch::new()?;
     let mut review = reviewed(plane, built_in, level, name, source, &scratch, None)?;
-    if !review.stopped() {
-        review.may_push = forge.may_push().ok().flatten();
-    }
+    route_of(forge, &mut review)?;
     Ok(review)
 }
 
@@ -305,6 +396,7 @@ fn reviewed(
         grades,
         body,
         may_push: None,
+        route: Route::Source,
     })
 }
 
@@ -505,7 +597,8 @@ pub enum Published {
     Already {
         url: String,
     },
-    /// git could not push to the source, which takes write access. Nothing was opened.
+    /// git could not push to the source, which takes write access, or to the person's fork.
+    /// Nothing was opened.
     PushRefused {
         why: String,
     },
@@ -523,7 +616,7 @@ pub fn publish(
     forge: &dyn PublishForge,
 ) -> Result<Published, String> {
     let scratch = Scratch::new()?;
-    let now = reviewed(
+    let mut now = reviewed(
         plane,
         built_in,
         level,
@@ -532,6 +625,7 @@ pub fn publish(
         &scratch,
         Some(accepted),
     )?;
+    route_of(forge, &mut now)?;
     if now.accepted() != *accepted {
         return Err(
             "What would go out is not what you reviewed, so nothing was sent. Review it again"
@@ -541,29 +635,75 @@ pub fn publish(
     if let Some(first) = now.outgoing.stops.first() {
         return Err(format!("Nothing was sent: {first}"));
     }
-    if let Some(url) = forge.already(&now.branch)? {
+    let fork = match &now.route {
+        Route::Source | Route::NewFork { .. } => None,
+        Route::Fork(fork) => Some(fork.clone()),
+    };
+    // A fork not made yet has no request on it.
+    if !matches!(now.route, Route::NewFork { .. })
+        && let Some(url) = forge.already(fork.as_ref(), &now.branch)?
+    {
         return Ok(Published::Already { url });
     }
     let (commit, tree) = commit_of(&scratch, &now)?;
+    let fork = match &now.route {
+        Route::NewFork { path, .. } => {
+            // The one place a fork is made: after a yes to a review that named it and said so.
+            let made = forge.make_fork().map_err(|why| {
+                format!("Your fork could not be made, so nothing was sent: {why}")
+            })?;
+            if !made.path().eq_ignore_ascii_case(path) {
+                return Err(format!(
+                    "The forge answered your fork as {}, not {path} as reviewed, so nothing was \
+                     pushed. Review it again",
+                    made.web_url()
+                ));
+            }
+            Some(made)
+        }
+        _ => fork,
+    };
+    let made_now = matches!(now.route, Route::NewFork { .. });
+    let kept = |why: String| match (&fork, made_now) {
+        (Some(fork), true) => format!(
+            "{why}. Your fork {} was made and stays; a publish again uses it",
+            fork.web_url()
+        ),
+        _ => why,
+    };
+    let (remote, handed) = match &fork {
+        None => (source.remote.clone(), handing(plane, source)?),
+        Some(fork) => (
+            super::Remote {
+                url: fork.clone_url().to_owned(),
+                branch: None,
+            },
+            Handing::helper(forge.helper()),
+        ),
+    };
+    let place = match &fork {
+        None => source.to_string(),
+        Some(fork) => format!("your fork {}", fork.web_url()),
+    };
     // A branch an earlier publish pushed, whose request never opened or has since closed, is used
     // again when it holds these files, and nothing else is ever pushed over.
-    if !branch_holds(plane, source, &scratch, &now.branch, &tree)? {
+    if !branch_holds(&remote, &handed, &place, &scratch, &now.branch, &tree).map_err(kept)? {
         let helper = forge.helper();
         let pushed =
-            scratch.push_new_branch(&source.remote.url, helper.as_deref(), &commit, &now.branch)?;
+            scratch.push_new_branch(&remote.url, helper.as_deref(), &commit, &now.branch)?;
         if !pushed.ok() {
             return Ok(Published::PushRefused {
-                why: super::fetch::complaint(&pushed),
+                why: kept(super::fetch::complaint(&pushed)),
             });
         }
     }
     let url = forge
-        .open_draft(&now.branch, &now.base, &now.title, &now.body)
+        .open_draft(fork.as_ref(), &now.branch, &now.base, &now.title, &now.body)
         .map_err(|why| {
-            format!(
+            kept(format!(
                 "The branch {} was pushed, but its request could not be opened: {why}",
                 now.branch
-            )
+            ))
         })?;
     Ok(Published::Opened {
         url,
@@ -571,22 +711,19 @@ pub fn publish(
     })
 }
 
-/// Whether `branch` is on the source already and holds `tree`. Holding anything else is refused,
-/// as the branch is someone's work.
+/// Whether `branch` is on `remote`, called `place`, already and holds `tree`. Holding anything
+/// else is refused, as the branch is someone's work.
 fn branch_holds(
-    plane: &Path,
-    source: &Source,
+    remote: &super::Remote,
+    handed: &Handing,
+    place: &str,
     scratch: &Scratch,
     branch: &str,
     tree: &str,
 ) -> Result<bool, String> {
-    let handed = handing(plane, source)?;
+    let source = place;
     let wanted = format!("refs/heads/{branch}");
-    let listed = scratch.network(
-        &source.remote,
-        &handed,
-        &["ls-remote", "--", REMOTE, &wanted],
-    )?;
+    let listed = scratch.network(remote, handed, &["ls-remote", "--", REMOTE, &wanted])?;
     if !listed.ok() {
         return Err(format!(
             "{source} could not be asked: {}",
@@ -596,7 +733,7 @@ fn branch_holds(
     if listed.out.trim().is_empty() {
         return Ok(false);
     }
-    let run = scratch.fetch(&source.remote, &handed, &wanted, "refs/purlis/earlier")?;
+    let run = scratch.fetch(remote, handed, &wanted, "refs/purlis/earlier")?;
     let held = scratch.git(&["rev-parse", "refs/purlis/earlier^{tree}"])?;
     if run.ok() && held.ok() && held.line().trim() == tree {
         return Ok(true);

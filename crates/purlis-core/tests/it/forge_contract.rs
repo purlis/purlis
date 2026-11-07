@@ -1393,7 +1393,12 @@ const PUBLISHED: &str = "purlis/publish/deploy-0123456789ab";
 /// The account's fork of `api`, as each forge's recording answers it.
 fn the_fork(kind: &str) -> Fork {
     let id = if kind == "github" { "1296270" } else { "4242" };
-    Fork::for_a_test(&format!("{kind}.com"), id, "octocat/api", Some("1"))
+    Fork::for_a_test(
+        id,
+        "octocat/api",
+        &format!("https://{kind}.com/octocat/api.git"),
+        Some("1"),
+    )
 }
 
 /// A backend over `exchanges`, and their check.

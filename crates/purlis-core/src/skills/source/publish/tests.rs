@@ -4,7 +4,7 @@
 //! The publish seam (SK-18, #2781), against a git source in a temporary folder and a stand-in
 //! forge. Each forge's own request is held by `forge_contract`.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 
 use super::super::Remote;
@@ -80,22 +80,65 @@ struct StandIn {
     already: Option<String>,
     /// What the forge says of the account's write access: `Err` where it could not be asked.
     may_push: Option<Result<Option<bool>, String>>,
-    fails: std::cell::Cell<bool>,
+    /// What the forge says of the account's fork: none yet, one to make at [`FORK_PATH`], where
+    /// unset.
+    fork_place: Option<ForkPlace>,
+    /// Where a fork this forge makes goes: a bare copy of `.0`, the source, at `.1`.
+    makes: Option<(PathBuf, PathBuf)>,
+    /// Whether the fork it makes is answered at a place git cannot reach.
+    unreachable: bool,
+    /// How often the fork was asked about, and made.
+    asked_fork: Cell<u32>,
+    made: Cell<u32>,
+    fails: Cell<bool>,
     opened: RefCell<Vec<(String, String, String, String)>>,
+    /// The fork each request was opened from, where it was.
+    opened_from: RefCell<Vec<Option<String>>>,
+}
+
+/// Where the account's fork goes, in the stand-in forge.
+const FORK_PATH: &str = "ada/source";
+
+/// A fork of `bare` at `path`, as a forge would answer it.
+fn fork_at(path: &Path) -> Fork {
+    Fork::for_a_test("9", FORK_PATH, &path.display().to_string(), Some("1"))
+}
+
+/// A bare copy of `bare` at `to`: a fork, as a forge makes one.
+fn copy_of(bare: &Path, to: &Path) {
+    let (from, to) = (bare.display().to_string(), to.display().to_string());
+    assert!(crate::testgit::run(bare, &["clone", "-q", "--bare", &from, &to]).ok());
 }
 
 impl PublishForge for StandIn {
     fn helper(&self) -> Option<String> {
         None
     }
-    fn already(&self, _: &str) -> Result<Option<String>, String> {
+    fn already(&self, _: Option<&Fork>, _: &str) -> Result<Option<String>, String> {
         Ok(self.already.clone())
     }
     fn may_push(&self) -> Result<Option<bool>, String> {
         self.may_push.clone().unwrap_or(Ok(None))
     }
+    fn fork_for(&self) -> Result<ForkPlace, String> {
+        self.asked_fork.set(self.asked_fork.get() + 1);
+        Ok(self.fork_place.clone().unwrap_or(ForkPlace::ToMake {
+            path: FORK_PATH.to_owned(),
+            visibility: Visibility::Public,
+        }))
+    }
+    fn make_fork(&self) -> Result<Fork, String> {
+        self.made.set(self.made.get() + 1);
+        let (source, to) = self.makes.clone().ok_or("this forge makes no fork")?;
+        if self.unreachable {
+            return Ok(fork_at(&to.join("not-there.git")));
+        }
+        copy_of(&source, &to);
+        Ok(fork_at(&to))
+    }
     fn open_draft(
         &self,
+        fork: Option<&Fork>,
         head: &str,
         base: &str,
         title: &str,
@@ -104,6 +147,9 @@ impl PublishForge for StandIn {
         if self.fails.get() {
             return Err("the forge said no".to_owned());
         }
+        self.opened_from
+            .borrow_mut()
+            .push(fork.map(|fork| fork.path().to_owned()));
         self.opened.borrow_mut().push((
             head.to_owned(),
             base.to_owned(),
@@ -122,6 +168,8 @@ struct Set {
     _tmp: tempfile::TempDir,
     plane: PathBuf,
     bare: PathBuf,
+    /// Where a fork of `bare` goes: not there until one is made.
+    fork: PathBuf,
     source: Source,
 }
 
@@ -132,10 +180,12 @@ fn set() -> Set {
     plane_with_skill(&plane);
     let bare = upstream(tmp.path());
     let source = source_at(&bare);
+    let fork = tmp.path().join("fork.git");
     Set {
         _tmp: tmp,
         plane,
         bare,
+        fork,
         source,
     }
 }
@@ -282,11 +332,13 @@ fn publishing_over_a_skill_the_source_holds_replaces_its_folder_whatever_its_nam
     std::fs::write(work.join("deploy/SKILL.md"), "old\n").unwrap();
     std::fs::write(work.join("deploy/f\u{f6}o.md"), "old\n").unwrap();
     let bare = upstream_of(tmp.path(), &work);
+    let fork = tmp.path().join("fork.git");
     let set = Set {
         _tmp: tmp,
         plane,
         source: source_at(&bare),
         bare,
+        fork,
     };
 
     let review = review_of(&set);
@@ -387,23 +439,6 @@ fn a_forge_that_cannot_be_asked_leaves_write_access_unknown_and_the_review_stand
     let set = set();
     let forge = says_may_push(Err("the forge did not answer".to_owned()));
     assert_eq!(review_by(&set, &forge).may_push, None);
-}
-
-#[test]
-fn the_forge_saying_no_never_refuses_a_publish_the_push_itself_answers() {
-    // GitLab answers no to an admin and to a shared group's member, who can push all the same.
-    let set = set();
-    let forge = says_may_push(Ok(Some(false)));
-    let review = review_by(&set, &forge);
-
-    let done = publish_of(&set, &review.accepted(), &forge).unwrap();
-
-    assert!(matches!(done, Published::Opened { .. }), "{done:?}");
-    assert!(
-        branches(&set.bare).contains(&review.branch),
-        "{}",
-        branches(&set.bare)
-    );
 }
 
 #[test]
@@ -508,4 +543,146 @@ fn a_grade_goes_as_a_summary_with_no_chat_text_path_cost_or_device() {
     for never in ["secret", "/Users", "my-profile", "7.77", "12345"] {
         assert!(!row.contains(never), "{row}");
     }
+}
+
+/// A forge that says the account may not push, and makes its fork beside the source.
+fn says_no_push(set: &Set) -> StandIn {
+    StandIn {
+        may_push: Some(Ok(Some(false))),
+        makes: Some((set.bare.clone(), set.fork.clone())),
+        ..StandIn::default()
+    }
+}
+
+#[test]
+fn a_review_names_the_fork_it_would_make_and_makes_nothing() {
+    let set = set();
+    let forge = says_no_push(&set);
+
+    let review = review_by(&set, &forge);
+
+    assert_eq!(
+        review.route,
+        Route::NewFork {
+            path: FORK_PATH.to_owned(),
+            visibility: Visibility::Public,
+        }
+    );
+    assert_eq!(forge.made.get(), 0);
+    assert!(!set.fork.exists());
+}
+
+#[test]
+fn a_person_who_cannot_push_publishes_through_the_fork_the_yes_made() {
+    let set = set();
+    let forge = says_no_push(&set);
+    let review = review_by(&set, &forge);
+    let source_before = branches(&set.bare);
+
+    let done = publish_of(&set, &review.accepted(), &forge).unwrap();
+
+    assert!(matches!(done, Published::Opened { .. }), "{done:?}");
+    assert_eq!(forge.made.get(), 1);
+    assert!(
+        branches(&set.fork).contains(&review.branch),
+        "{}",
+        branches(&set.fork)
+    );
+    assert_eq!(branches(&set.bare), source_before, "nothing on the source");
+    assert_eq!(
+        *forge.opened_from.borrow(),
+        [Some(FORK_PATH.to_owned())],
+        "the request is opened from the fork"
+    );
+    assert_eq!(forge.opened.borrow()[0].1, "main");
+}
+
+#[test]
+fn a_fork_the_person_has_already_is_used_and_none_is_made() {
+    let set = set();
+    copy_of(&set.bare, &set.fork);
+    let forge = StandIn {
+        fork_place: Some(ForkPlace::Yours(fork_at(&set.fork))),
+        ..says_no_push(&set)
+    };
+    let review = review_by(&set, &forge);
+    assert_eq!(review.route, Route::Fork(fork_at(&set.fork)));
+
+    let done = publish_of(&set, &review.accepted(), &forge).unwrap();
+
+    assert!(matches!(done, Published::Opened { .. }), "{done:?}");
+    assert_eq!(forge.made.get(), 0);
+    assert!(branches(&set.fork).contains(&review.branch));
+}
+
+#[test]
+fn a_repo_of_the_persons_that_is_not_the_sources_fork_stops_the_publish() {
+    let set = set();
+    let forge = StandIn {
+        fork_place: Some(ForkPlace::Taken {
+            path: FORK_PATH.to_owned(),
+        }),
+        ..says_no_push(&set)
+    };
+    let review = review_by(&set, &forge);
+    assert!(review.stopped());
+    assert!(
+        review.outgoing.stops[0]
+            .to_string()
+            .contains("not a fork of the source"),
+        "{}",
+        review.outgoing.stops[0]
+    );
+
+    let refused = publish_of(&set, &review.accepted(), &forge).unwrap_err();
+
+    assert!(refused.starts_with("Nothing was sent"), "{refused}");
+    assert_eq!(forge.made.get(), 0);
+}
+
+#[test]
+fn a_yes_to_a_branch_on_the_source_is_never_a_yes_to_making_a_fork() {
+    let set = set();
+    let review = review_by(&set, &says_may_push(Ok(None)));
+    assert_eq!(review.route, Route::Source);
+    let forge = says_no_push(&set);
+
+    let refused = publish_of(&set, &review.accepted(), &forge).unwrap_err();
+
+    assert!(refused.contains("not what you reviewed"), "{refused}");
+    assert_eq!(forge.made.get(), 0);
+    assert!(!set.fork.exists());
+}
+
+#[test]
+fn a_fork_made_before_the_push_failed_stays_and_is_said() {
+    let set = set();
+    let forge = StandIn {
+        unreachable: true,
+        ..says_no_push(&set)
+    };
+    let review = review_by(&set, &forge);
+
+    let said = match publish_of(&set, &review.accepted(), &forge) {
+        Ok(Published::PushRefused { why }) => why,
+        Err(why) => why,
+        other => panic!("{other:?}"),
+    };
+
+    assert!(said.contains("was made and stays"), "{said}");
+    assert!(forge.opened.borrow().is_empty());
+}
+
+#[test]
+fn an_account_the_forge_does_not_say_of_gets_a_branch_on_the_source_and_no_fork() {
+    let set = set();
+    let forge = says_may_push(Err("the forge did not answer".to_owned()));
+    let review = review_by(&set, &forge);
+    assert_eq!(review.route, Route::Source);
+    assert_eq!(forge.asked_fork.get(), 0);
+
+    let done = publish_of(&set, &review.accepted(), &forge).unwrap();
+
+    assert!(matches!(done, Published::Opened { .. }), "{done:?}");
+    assert!(branches(&set.bare).contains(&review.branch));
 }

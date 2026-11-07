@@ -42,7 +42,7 @@ export const REVIEW: PublishReviewView = {
   ],
   broken: ["gone"],
   body: "Published with purlis.",
-  forge_says_no_push: false,
+  fork: null,
   grades: [
     {
       skill: "deploy",
@@ -71,8 +71,31 @@ export const STOPPED: PublishReviewView = {
 
 export const LOCAL: PublishReviewView = { ...REVIEW, local: ["deploy"] };
 
-/** A source whose forge says the person's account may not push to it (#4342). */
-export const FORGE_SAYS_NO_PUSH: PublishReviewView = { ...REVIEW, forge_says_no_push: true };
+/**
+ * A source whose forge says the person's account may not push to it, and who has no fork of it
+ * yet: the publish makes one (#4342).
+ */
+export const THROUGH_A_NEW_FORK: PublishReviewView = {
+  ...REVIEW,
+  fork: { path: "ada/skills", made: true, readers: "PUBLIC: everyone can read what is sent" },
+};
+
+/** The same, through the fork the person has already. */
+export const THROUGH_THEIR_FORK: PublishReviewView = {
+  ...REVIEW,
+  fork: { path: "ada/skills", made: false, readers: "PUBLIC: everyone can read what is sent" },
+};
+
+/** A repo of the person's at the fork's name that is not a fork of the source. */
+export const FORK_TAKEN: PublishReviewView = {
+  ...REVIEW,
+  stops: [
+    {
+      place: "ada/skills",
+      said: "Yours already, and not a fork of the source, so no fork can be made there. Rename or delete it on the forge, then review again",
+    },
+  ],
+};
 
 export const EXPORT: ExportReview = {
   skills: ["deploy", "notify"],
