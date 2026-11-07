@@ -4903,8 +4903,10 @@ impl Chats {
         // is asked, unless an administrator's policy turns that off. Never for a grade's chat,
         // which asks nobody (ADR 0105 §3): an answer would widen what the person consented to,
         // and an outcome eval's shell reaches no host at all (#4476). Its proxy refuses instead.
-        let asks = (!chat.graded
-            && !purlis_core::sandbox::policy::Locks::of(&self.project).forbids_live_asks())
+        let asks = asks_live(
+            chat.graded,
+            &purlis_core::sandbox::policy::Locks::of(&self.project),
+        )
         .then(|| {
             asked_by_the_proxy(
                 Asking {
@@ -8217,6 +8219,14 @@ fn refused_by_the_proxy(
                 });
         })
     })
+}
+
+/// **Whether a chat's proxy holds a connection to an unlisted host while the person is asked**
+/// (#1666): unless policy turns the live ask off, and never for a grade's chat (`graded`), which
+/// asks nobody (ADR 0105 §3, as #4476 makes exact): its proxy refuses, and no Allow is taken live
+/// by it.
+fn asks_live(graded: bool, locks: &purlis_core::sandbox::policy::Locks) -> bool {
+    !graded && !locks.forbids_live_asks()
 }
 
 /// What an Allow reached live ([`Chats::allow_live`], #1666).
