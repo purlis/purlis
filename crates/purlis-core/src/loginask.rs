@@ -85,8 +85,9 @@ pub enum Warning {
     OtherAlphabet { shown_as: String },
     /// The site is on a port of its own, so it's another server than the site's usual one.
     OtherPort { port: u16 },
-    /// The page isn't a site's front page or a usual login address. On a shared site a page can
-    /// be anyone's, and a page sees what's filled on it.
+    /// The page isn't the site's front page (the person's ruling of 2026-11-05). A page can sign
+    /// the browser in to another account as it opens, on a shared site it can be anyone's, and it
+    /// sees what's filled on it.
     ChatsPage { path: String },
     /// The vault isn't one this persona uses: the press lets this one login read it.
     NotItsVault { vault: String, persona: String },
@@ -119,8 +120,10 @@ impl Warning {
                  know."
             ),
             Self::ChatsPage { path } => format!(
-                "The chat chose the page {path}. A page sees what's filled on it, and on a shared \
-                 site a page can be anyone's."
+                "The chat chose the page {path}, not the site's front page. Opening a page can \
+                 sign the browser in to someone else's account, on a shared site a page can be \
+                 anyone's, and a page sees what's filled on it. Allow only if you know {path} as \
+                 this site's sign-in page."
             ),
             Self::NotItsVault { vault, persona } => format!(
                 "Vault {vault} isn't one {persona} uses. Allowing this lets this login read from \
@@ -281,20 +284,6 @@ pub(crate) fn plain(name: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
 }
 
-/// The login pages' usual addresses: anything else is said ([`Warning::ChatsPage`]).
-const USUAL_PAGES: [&str; 10] = [
-    "/",
-    "/login",
-    "/log-in",
-    "/signin",
-    "/sign-in",
-    "/sign_in",
-    "/auth/login",
-    "/account/login",
-    "/accounts/login",
-    "/users/sign_in",
-];
-
 /// **What the project at `root` holds of a suggestion**, or why the person isn't asked: the
 /// login's name and the vault's keys are plain, no key is one a `mint` line names, and the
 /// project's file can be read to tell. `granted` are the logins the person allowed for now,
@@ -400,8 +389,10 @@ pub fn warnings_of(root: &Path, proposal: &Proposal, granted: &[Tool]) -> Vec<Wa
             warnings.push(Warning::OtherPort { port });
         }
     }
+    // Any page but the front one (the person's ruling of 2026-11-05): a usual login address too,
+    // as the site decides what any of its pages does.
     let path = &proposal.page[proposal.origin.len()..];
-    if !USUAL_PAGES.contains(&path.trim_end_matches('/')) && path != "/" {
+    if path != "/" {
         warnings.push(Warning::ChatsPage {
             path: path.to_owned(),
         });

@@ -11,6 +11,9 @@
 //! removed folder's local branch is deleted, with `git branch -d`, or `-D` where it is carried,
 //! unless the branches are to be kept. A dry run says what would go and why each other folder
 //! stays, and removes nothing.
+//!
+//! Folders are read several at once, and the work says it is alive after each folder read, each
+//! folder's links read and each removal (#5439): a chat's wait on the app bounds a silence, never the whole prune.
 
 use std::path::Path;
 
@@ -19,6 +22,7 @@ use chrono::{DateTime, Utc};
 use crate::counts::counted;
 use crate::dispatchplace::{self, InFolder};
 use crate::finished::{self, Commits, Folder};
+use crate::hookwire::alive;
 use crate::piececlaim::{self, Live};
 use crate::pieces::Who;
 use crate::repocmd::Say;
@@ -87,11 +91,13 @@ pub fn prune(
     }
     let mut kept: Vec<(Folder, String)> = Vec::new();
     let mut candidates: Vec<Candidate> = Vec::new();
-    for (folder, gone) in &listed.folders {
-        if asked.repo.is_some_and(|repo| repo != folder.repo) {
-            continue;
-        }
-        let judged = if *gone {
+    let in_scope: Vec<&(Folder, bool)> = listed
+        .folders
+        .iter()
+        .filter(|(folder, _)| asked.repo.is_none_or(|repo| repo == folder.repo))
+        .collect();
+    let judged = finished::each_at_once(&in_scope, |(folder, gone)| {
+        if *gone {
             Err(format!(
                 "its folder is already gone, and only git's record of it is left: `purlis \
                  worktree remove {} {}` clears it",
@@ -101,7 +107,9 @@ pub fn prune(
             Err("this chat stands in it".to_owned())
         } else {
             why_kept(plane, ws, folder, asker)
-        };
+        }
+    });
+    for ((folder, _), judged) in in_scope.into_iter().zip(judged) {
         match judged {
             Ok(commits) => candidates.push(Candidate {
                 folder: folder.clone(),
@@ -136,6 +144,7 @@ pub fn prune(
         for at in ready.into_iter().rev() {
             let one = candidates.remove(at);
             let went = asked.dry_run || remove_one(plane, ws, &one, asked, asker, now, say);
+            alive::beat();
             if asked.dry_run {
                 say(Say::Info(would_go(&one, asked.keep_branches).into()));
             }
@@ -299,3 +308,6 @@ fn remove_one(
     }
     ok
 }
+
+#[cfg(test)]
+mod tests;

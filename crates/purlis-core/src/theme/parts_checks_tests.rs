@@ -15,7 +15,7 @@ fn the_checks_are_in_the_manifest_since_next() {
         .iter()
         .find(|one| one["name"] == "checks")
         .expect("the checks family is in the manifest");
-    assert_eq!(checks["since"], parts::NEXT);
+    assert_eq!(checks["since"], 13);
     let names = |key: &str| -> Vec<String> {
         checks[key]
             .as_array()

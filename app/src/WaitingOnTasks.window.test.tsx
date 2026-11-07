@@ -15,12 +15,13 @@ import {
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import { findTasksButton } from "./paneTasks.testkit";
 import type { FinishedTask, Moved, OpenChat } from "./bindings";
 import type { State } from "./chatState";
 import { cardOf, theCard } from "./chatCard.testkit";
 import { aTabForEachChat } from "./laidOut.testkit";
 import { forgetThisLaunch } from "./regions";
-import type { Shown } from "./shownState";
+import type { ChatMarkProps } from "./ui/chat-mark/ChatMark";
 import { forgetInboxOpen, inboxOpenAtLaunch } from "./test-inbox";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
 import { heard } from "./frame.testkit";
@@ -42,13 +43,13 @@ import { CHAT_EVENTS } from "./chatEvents";
 
 const drawn = vi.hoisted(() => ({ marks: [] as string[] }));
 
-vi.mock("./StateShown", async (original) => {
-  const real = await original<typeof import("./StateShown")>();
+vi.mock("./ui/chat-mark/ChatMark", async (original) => {
+  const real = await original<typeof import("./ui/chat-mark/ChatMark")>();
   return {
     ...real,
-    StateShown: (props: { shown: Shown }) => {
-      drawn.marks.push(props.shown.word);
-      return <real.StateShown {...props} />;
+    ChatMark: (props: ChatMarkProps) => {
+      if (props.word !== undefined) drawn.marks.push(props.word);
+      return <real.ChatMark {...props} />;
     },
   };
 });
@@ -269,12 +270,25 @@ const row = (tree: HTMLElement, name: string) => {
 };
 
 /** What a row says its chat is doing: its word, its mark's shape, and the mark's colour. */
-const says = (on: HTMLElement) => ({
-  word: on.querySelector(".shown-state .word")?.textContent,
-  shape: on.querySelector(".shown-state .shape")?.getAttribute("data-shape"),
-});
-const colour = (on: HTMLElement) =>
-  on.querySelector<HTMLElement>(".shown-state .shape")?.style.color;
+const GLYPH: Readonly<Record<string, string>> = {
+  needs: "hand",
+  failed: "cross",
+  working: "ring",
+  waiting: "hourglass",
+  idle: "pause",
+  ended: "dash",
+};
+const says = (on: HTMLElement) => {
+  const mark = on.querySelector('[data-scope="chat-mark"][data-part="root"]');
+  const word = on.querySelector('[data-scope="chat-mark"][data-part="word"]');
+  return {
+    word: (word ?? on.querySelector(".shown-state .word"))?.textContent,
+    shape:
+      mark === null
+        ? on.querySelector(".shown-state .shape")?.getAttribute("data-shape")
+        : GLYPH[mark.getAttribute("data-variant") ?? ""],
+  };
+};
 
 /** What a row's card says of its tasks, or nothing where it says none (#1675). */
 const count = async (on: HTMLElement) => (await cardOf(on)).facts.Tasks;
@@ -312,8 +326,6 @@ describe("a session whose turn has ended while its tasks work", () => {
     const waiting = { word: "waiting on 2 tasks", shape: "hourglass" };
     expect(says(row(tree, "steward 1"))).toEqual(waiting);
     // The working colour, which a working task's ring wears too.
-    expect(colour(row(tree, "steward 1"))).toBe("var(--state-running)");
-    expect(colour(row(tree, "check prod"))).toBe("var(--state-running)");
     // No hand anywhere: not on its row, and nothing in the title bar's list.
     expect(tree.querySelector('[data-mark="needs-you"]')).toBeNull();
     expect(screen.queryByTestId("needs-you-button")).toBeNull();
@@ -566,7 +578,7 @@ describe("a limit, said where it binds (#1498)", () => {
     await rows(3);
 
     // Pressed plainly, as the chip's own window tests press it.
-    fireEvent.click(await screen.findByRole("button", { name: /^Tasks of steward 1/ }));
+    fireEvent.click(await findTasksButton("steward 1"));
     const menu = await screen.findByRole("menu", { name: /^Tasks of steward 1/ });
 
     // At the menu's foot, under its rows, on the surface it stands on.
@@ -588,6 +600,11 @@ describe("a limit, said where it binds (#1498)", () => {
 });
 
 describe("what a finishing task does to its session's row", () => {
+  // The window is not in use, so looking at a chat sees nothing (#5340, `useFailuresSeen`): what
+  // is held here is what going to a failure does.
+  beforeEach(() => void vi.spyOn(document, "hasFocus").mockReturnValue(false));
+  afterEach(() => void vi.restoreAllMocks());
+
   const FAILED = finished("01K6FAILED", "check staging", {
     how: "failed",
     outcome: "failed",

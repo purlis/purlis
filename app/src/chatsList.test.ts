@@ -156,6 +156,7 @@ describe("the filter (V100-49)", () => {
     word: "working",
     shape: "ring",
     token: "state.running",
+    mark: "working",
   };
   const asks = (text: string, ranks: Rank[] = []) => matches(row, working, { text, ranks });
 
@@ -191,6 +192,7 @@ describe("the filter (V100-49)", () => {
       word: "running (no detail from claude)",
       shape: working.shape,
       token: "text.muted",
+      mark: null,
     };
     const asking: Shown = { ...working, kind: "asking", word: "asking steward 1" };
     expect(matches(row, unheard, { text: "", ranks: [1] })).toBe(true);

@@ -1373,6 +1373,8 @@ pub fn way_out(path: &Path, root: &Path) -> Option<&'static str> {
         // The rest of a clone's git folder, which a fetch in a branch folder writes: no grant
         // opens it, since the clone's `.git` stays denied there.
         ["workspaces", _, _, ".git", _, ..] if !is_planted(&path) => Some(WORKTREE_COMMIT_WAY),
+        // The project root's git folder, which the app writes for every chat.
+        [".git", _, ..] if !is_planted(&path) => Some(ROOT_GIT_WAY),
         ["sessions", _] | ["workspaces", _, "sessions", _] => Some(
             "purlis writes session records for a chat: write one with `purlis session record`.",
         ),
@@ -1405,6 +1407,13 @@ pub fn way_out(path: &Path, root: &Path) -> Option<&'static str> {
 /// Notice keeps no path.
 const NEW_WORKSPACE_WAY: &str = "purlis makes a workspace for a chat: create one with `purlis \
      workspace create <name> --vision \"<text>\"`.";
+
+/// What a Notice says of a refused write in the project root's git folder, which the app
+/// writes for every chat: a commit, a fetch or a rebase there.
+const ROOT_GIT_WAY: &str = "The project's own git is written by the app, so git add, git \
+     commit, a fetch or a rebase at the project root are refused. Save the project with `purlis \
+     save`, which the app runs for this chat, and bring it up to date with `purlis worktree \
+     update` at the project root. Reading git (status, log, diff) works as it did.";
 
 /// What a Notice says of a refused write in a branch folder's git record (#1476, #1055): a
 /// commit in one, or a raw `git worktree add` making one (#3798).

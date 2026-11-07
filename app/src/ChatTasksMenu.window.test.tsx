@@ -403,33 +403,16 @@ describe("a pick of ⌘⇧J's menu in a project with another window (#5058, #476
 describe("a pick of ⌘⇧J's menu when its pane has gone (#5058)", () => {
   const talk = () => chat(4, "alpha", { persona: "devops", label: "talk", from: taskOf(1) });
 
-  it("goes to the focused pane of the tab in front, once the tab it was asked from has closed", async () => {
-    const held = await drawn([chat(1, "alpha"), chat(2, "alpha"), talk()]);
-    await menuOpenOn("talk");
-
-    await held.stopped(1);
-    await waitFor(() => expect(tabNames()).toEqual(["steward 2"]));
-    await userEvent.click(line("talk"));
-
-    // In steward 2's tab, which takes the name of what it shows, and no tab was added.
-    await waitFor(() => expect(onScreen()).toEqual([4]));
-    expect(tabNames()).toEqual(["talk"]);
-    await waitFor(() => expect(document.activeElement).toBe(pane(4)));
-  });
-
-  it("goes to the pane left in the tab, once the pane it was asked from has closed", async () => {
+  it("goes with the pane it was asked from, so a pick never lands where nothing is (#5341)", async () => {
     const held = await drawn([chat(1, "alpha"), chat(2, "alpha"), talk()], {
       layout: { strip: "alpha", tabs: [tabOf(0, true, "alpha", 1, 2)] },
     });
     await menuOpenOn("talk");
 
     await held.stopped(1);
-    await waitFor(() => expect(onScreen()).toEqual([2]));
-    await userEvent.click(line("talk"));
 
-    await waitFor(() => expect(onScreen()).toEqual([4]));
-    expect(tabNames()).toHaveLength(1);
-    await waitFor(() => expect(document.activeElement).toBe(pane(4)));
+    await waitFor(() => expect(onScreen()).toEqual([2]));
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
   });
 
   it("goes to the pane asked from while it is still there, wherever the task is filed", async () => {

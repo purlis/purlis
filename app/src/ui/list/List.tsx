@@ -382,7 +382,11 @@ export function ListSection<T extends object>({
 // --- A list of rows that act -----------------------------------------------------------------
 
 export interface ListProps<T extends object>
-  extends Drawn, Omit<AriaGridListProps<T>, "className" | "style" | "renderEmptyState"> {}
+  extends Drawn, Omit<AriaGridListProps<T>, "className" | "style" | "renderEmptyState"> {
+  /** What Esc on a row does, in place of clearing what is chosen (#5332): a list in a mode of
+   *  its own leaves it. */
+  onEscape?: () => void;
+}
 
 /**
  * **A list of rows that act**: each row runs something (`onAction` on the list or on the row),
@@ -395,11 +399,21 @@ export function List<T extends object>({
   "aria-keyshortcuts": keys,
   ref,
   onAction,
+  onEscape,
   ...rest
 }: ListProps<T>) {
   const own = useCollectionElement(keys, ref);
   const [folds] = useState(() => new Map<string, ((open: boolean) => void) | undefined>());
-  const onKeyDownCapture = useFoldKeys(folds);
+  const foldKeys = useFoldKeys(folds);
+  const onKeyDownCapture = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (onEscape !== undefined && event.key === "Escape" && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      event.stopPropagation();
+      onEscape();
+      return;
+    }
+    foldKeys(event);
+  };
   return (
     // An element around the list that draws nothing, so → and ← on a row that folds are heard
     // before React Aria's row hears them (`useFoldKeys`).

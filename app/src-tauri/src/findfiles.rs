@@ -43,6 +43,10 @@ pub enum FileScope {
         workspace: String,
         near: Option<NearBranch>,
     },
+    /// **A workspace's folder as Explorer shows it** (#5375): its own files, then each of its
+    /// repos' own folders, and no branch folder. The filter's one scope in a workspace of one
+    /// repo, which covers the workspace files and that repo.
+    WorkspaceFolder { plane: PlaneId, workspace: String },
     /// Every branch of one project, `near` first: the branch the window's focus is on, so the
     /// nearest of equal hits leads.
     Project {
@@ -248,6 +252,7 @@ pub(crate) fn projects_of(scope: &FileScope, planes: &Planes) -> Result<Vec<Plan
         FileScope::OpenProjects { .. } => planes.open_now(),
         FileScope::Branch { plane, .. }
         | FileScope::Workspace { plane, .. }
+        | FileScope::WorkspaceFolder { plane, .. }
         | FileScope::Project { plane, .. } => {
             planes.held(plane)?;
             vec![plane.clone()]
@@ -285,6 +290,21 @@ pub(crate) fn branches_in(
             .into_iter()
             .filter(|(_, one)| &one.ws == workspace)
             .collect(),
+        FileScope::WorkspaceFolder { plane, workspace } => {
+            // The workspace's own files first, named as the window names them: no repo.
+            let own = Named {
+                ws: workspace.clone(),
+                repo: String::new(),
+                piece: None,
+            };
+            std::iter::once((plane.clone(), own))
+                .chain(
+                    nearest_first(branches_of, projects, Some(plane), &None)
+                        .into_iter()
+                        .filter(|(_, one)| &one.ws == workspace && one.piece.is_none()),
+                )
+                .collect()
+        }
         FileScope::Project { plane, near } => {
             nearest_first(branches_of, projects, Some(plane), near)
         }
@@ -397,6 +417,37 @@ mod tests {
         // Each project's own folder of the repo, and its piece.
         assert_eq!(wide.branches, 4);
         assert!(wide.refused.is_empty(), "{:?}", wide.refused);
+    }
+
+    #[test]
+    fn the_workspace_folders_scope_finds_its_own_files_and_each_repos_but_no_branch_folders() {
+        let (_dir, plane) = project();
+        std::fs::write(plane.root().join("workspaces/alpha/guide-notes.md"), "\n").unwrap();
+        std::fs::write(plane.root().join("workspaces/alpha/thing/guide.txt"), "\n").unwrap();
+        let mut finder = Finder::default();
+        let scope = FileScope::WorkspaceFolder {
+            plane: plane.clone(),
+            workspace: "alpha".into(),
+        };
+
+        let found = found_in(&mut finder, &scope, std::slice::from_ref(&plane), "guide");
+
+        let mut hits: Vec<(String, String)> = found
+            .files
+            .iter()
+            .map(|one| (one.repo.clone(), one.path.clone()))
+            .collect();
+        hits.sort();
+        assert_eq!(
+            hits,
+            [
+                (String::new(), "guide-notes.md".to_string()),
+                ("thing".to_string(), "guide.txt".to_string()),
+            ],
+            "the piece's docs/guide.md is a branch folder's, not the workspace folder's"
+        );
+        assert_eq!(found.branches, 2);
+        assert!(found.refused.is_empty(), "{:?}", found.refused);
     }
 
     fn piece() -> Option<NearBranch> {

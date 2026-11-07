@@ -677,7 +677,7 @@ export function SkillPage({
                 ? cannotChange
                 : "reason" in file
                   ? file.reason
-                  : `A chat ${chatPlace(level)} reads its runs and grades and drafts an edit for you to accept.`
+                  : `A chat ${chatPlace(level, plane)} reads its runs and grades and drafts an edit for you to accept.`
             }
           />
         </MenuItem>
@@ -858,7 +858,9 @@ export function SkillPage({
       case "runs":
         return (
           <div className="skill-page-panel">
-            {level !== null && <StudioChatsStarted name={name} level={level} drafts={drafts} />}
+            {level !== null && (
+              <StudioChatsStarted plane={plane} name={name} level={level} drafts={drafts} />
+            )}
             <SkillTotals name={name} stats={stats.data} refused={stats.refused} />
             {panels.refused !== undefined ? (
               <NotRead
@@ -931,7 +933,9 @@ export function SkillPage({
         </div>
       )}
       {/* A chat the studio started for it, while it runs (#5185). */}
-      {level !== null && <StudioChatLines name={name} level={level} drafts={drafts} />}
+      {level !== null && (
+        <StudioChatLines plane={plane} name={name} level={level} drafts={drafts} />
+      )}
       <PageTabs
         label={`${name}'s sections`}
         tabs={tabs}

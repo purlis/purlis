@@ -300,31 +300,42 @@ own** (#3147, the operator's ruling of 2026-10-24): its tab is its name and the 
 that tab's panel, so the view starts on the fill its chosen tab joins, with no band; the same
 `PaneHead` and `PaneActions` sit at its top right, over its first row, which holds what can be
 done to what the view is about (or Settings' levels) and keeps the actions' room at its end. In
-the band each Notice is a washed card
-(`wash.warning`, `danger.wash` for trouble, no edge), its words above its ways out, a consent's
-Allow set apart from Keep blocked and the only answer with an edge. The band is a `region`, "Pane
-notices", as its bell is "Pane notices: …" (apart from the status line's Notices and a chip's
-"Notices for …"); a card never shrinks in it, so past its room the cards scroll inside it whole. Esc
-on a warning with a Dismiss puts it away, and the keyboard goes on to the next warning or to the
-terminal, never onto an Allow: a consent is landed on by its line. A consent has no Dismiss and
-Esc leaves it. The press-settle guard (#1695) reads where each line is drawn against the band
-itself, scrolling aside, never its `offsetTop`, which a card positioned for its mark would pin. In the row they are stacked (the notice family's `stack`), in the
-order the pane writes them: the shown chat's own, the one that waits for an answer before
-anything starts first, then each hidden chat's. **There is no cap** (#4754): the band is
-**minimised or expanded**, one choice for every pane, minimised by default and kept in the layout
-file (`paneNotices.ts`). Minimised, its notes fold into **the bell** (`PaneBell`), in the pane's
-header in a fixed slot before split and close, and only its asks stand, as full cards (`waits`:
-a consent, or a blocking question, which has no Dismiss beside its answers). Expanded, every
-Notice stands, under a head row that says how many and how many wait on you, with Dismiss all,
-which skips the asks and counts what it clears, and Minimise. The bell's count is the pane's
-notes, never its asks, the same number in both states, in the trouble colour while one note is
-trouble; a new Notice never opens the band or takes the focus, and the bell says its count
-politely. A folded note is `hidden` where it is drawn, never moved, so it keeps its state, and one the
-keyboard is on stays until the focus leaves it. The band and the header are never more than
-about half the pane, and inside it the stack is never wider or taller than the pane: the sentence has the row,
-the ways out go under it when they do not fit beside it, and the stack scrolls (#1481). Every
-change of the row's height refits the terminal, which resizes the chat's pty and redraws its
-harness; minimised, a note arriving changes only the bell's count. The
+the band each Notice is **one compact row** (#5215, the person's approved prototype,
+`Notice.tsx`'s `BandRow`): its icon on its first line, what it says on one line with its sub-line
+muted beneath (who asks or what it is, and its age where known), its own buttons, a toggle where
+the line cuts it, and a × last, with a separator to the next row. A consent keeps its full
+waiting-coloured edge (ADR 0097 §6), and its Allow stands apart from Keep blocked as the only
+answer with an edge. **× never answers.** A note's is its Dismiss; an ask's closes it from this
+pane alone, so it leaves the pane's bell and stays in the Inbox and on ✋ until it is answered.
+
+The band is a `region` named with its count, "Pane notices: 3 waiting on you", as its bell is
+"Pane notices: …" (apart from the status line's Notices and a chip's "Notices for …"). Esc on a row
+folds a message opened whole, then puts away a row with a Dismiss, and the keyboard goes on to the
+next row or to the terminal, never onto an Allow: a consent is landed on by its line. A consent has
+no Dismiss and Esc leaves it. The press-settle guard (#1695) reads where each line is drawn against
+the band itself, scrolling aside, never its `offsetTop`. In the row they are stacked (the notice
+family's `stack`), in the order the pane writes them: the shown chat's own, the one that waits for
+an answer before anything starts first, then each hidden chat's.
+
+**There is no cap** (#4754): the band is **minimised or expanded**, one choice for every pane,
+minimised by default and kept in the layout file (`paneNotices.ts`). Minimised, its notes fold into
+**the bell** (`PaneBell`), in the pane's header in a fixed slot, and the band is one line, a button
+that says how many wait and on what ("3 waiting · A task's question, Sandbox block · Show"); with
+only notes, there is no line at all. Expanded, every row stands under a head that says how many
+wait, with Dismiss all where it clears any, which skips the asks and counts what it clears, and the
+fold. The bell's count is the pane's notes, never its asks, the same number in both states, in the
+trouble colour while one note is trouble; a new Notice never opens the band or takes the focus, and
+the bell says its count politely. A folded row is `hidden` where it is drawn, never moved, so it
+keeps its state, and one the keyboard is on stays until the focus leaves it.
+
+**An opened message shows whole** (`data-whole`): the band grows, the terminal gives way down to
+three lines (`.pane-body`'s floor, with the foot in place), and only past that does the band scroll,
+as one, with the message's buttons pinned at its foot and no inner scroll box. At rest the rows take
+about seven controls' height. A task's question (`TaskQuiz`) is such a row, with Answer, which opens
+it in the Inbox, and its box to answer in pinned at its foot when opened; a prompt in the chat's
+own terminal (`TerminalPromptNotice`) is one with Go to prompt; the where-you-answer note is an
+information line with Change. Every change of the row's height refits the terminal, which resizes the
+chat's pty and redraws its harness; minimised, a note arriving changes only the bell's count. The
 chat at a glance (its name, its state, the breadcrumb) is the pane line, and harness · workspace and
 the gauge are the pane foot, neither over the terminal. `Notice.pane.test.tsx` and `PaneBand.test.tsx` hold the shape and the rules, and
 `pane-notices.e2e.ts` and `pane-warnings.e2e.ts` measure them, with no Notice over the terminal in a narrow pane and a
@@ -450,7 +461,7 @@ own `min-width: max-content` beside the class.
 
 | Prop | Says |
 | --- | --- |
-| `variant` | `secondary` (the default, the plain button), `primary` (the answer purlis suggests), `ghost` (no box until the pointer reaches it), `danger` (what cannot be undone from purlis, D-1719-3), `grants` (an answer that grants, an Allow or an Accept), `soft-accent` (a suggestion that is not the answer), `warning-soft` (care, without ending anything), `link` (a button that reads as a link, as tall as its words so it can stand in a sentence), `quiet` (a ghost whose words are in the quiet tier until the pointer reaches it: a strip's end mark, a pane's split and close, a line's own marks, a breadcrumb's crumbs and a tab's task chip, #3214, #3264), `quiet-link` (a link in the quiet tier, underlined in the primary words under the pointer and the keyboard and never filled: a card's way on beside its one answer, Go to chat in an Inbox card's head, #5214) |
+| `variant` | `secondary` (the default, the plain button), `primary` (the answer purlis suggests), `ghost` (no box until the pointer reaches it), `danger` (what cannot be undone from purlis, D-1719-3), `grants` (an answer that grants, an Allow or an Accept), `soft-accent` (a suggestion that is not the answer), `warning-soft` (care, without ending anything), `link` (a button that reads as a link, as tall as its words so it can stand in a sentence), `quiet` (a ghost whose words are in the quiet tier until the pointer reaches it: a strip's end mark, a pane's split and close, a line's own marks, a breadcrumb's crumbs and a pane head's tasks button, #3214, #3264, #5341), `quiet-link` (a link in the quiet tier, underlined in the primary words under the pointer and the keyboard and never filled: a card's way on beside its one answer, Go to chat in an Inbox card's head, #5214) |
 | `size` | `sm` 24, `md` 28 (the default), `lg` 32, at the default text size and density; `lg` only beside a list's main filter field |
 | `inline` | words in a line of words, a breadcrumb's crumb (#3264): as tall as the line, no box padding or edge, cut to an ellipsis where the line squeezes it, underlined (no fill) under the pointer and the keyboard; words only |
 | `icon` | the icon before the words, drawn as the `icon` part; `IconButton` takes only an icon and an `aria-label`, and is square |
@@ -792,7 +803,7 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
 | Family | Wrapper | Parts | Variants |
 | --- | --- | --- | --- |
 | Card | `Card` (as a `div`, `li`, `p`, `section` or `article`), `CardTitle` (`ui/card/Card.tsx`); `Facts`, `Fact` (`Facts.tsx`); `Totals`, `Tile` (`Totals.tsx`); `CardButton`, a card pressed whole (`CardButton.tsx`, #3655), its own family `card-button` (#3885) | `root`, `title`; `facts-label`, `facts-value`, `tile`, `tile-value`; a pressed card's `root`, `mark`, `press`, `title`, `more`, `line` | `raised`, `ask`; a pressed card's `door`, `pick` |
-| Notice | `Notice`, `NoticeList`, `NoticePaneRow` (`src/Notice.tsx`), drawn through `ui/notice/Notice.tsx` | `root`, `message`, `whose`, `title`, `mark`, `sub` (a card's state and age), `chat-words` (a chat's own words on one), `head`, `heading` and `end` (a card's head, layout only), and `under` (what a way out opened); `notice-card`'s `said` holds a card's live region | `news`, `trouble`, `attention` |
+| Notice | `Notice`, `NoticeList`, `NoticePaneRow` (`src/Notice.tsx`), drawn through `ui/notice/Notice.tsx` | `root`, `message`, `whose`, `title`, `mark`, `sub` (a card's state and age), `head`, `heading` and `end` (a card's head, layout only), and `under` (what a way out opened); `notice-card`'s `said` holds a card's live region | `news`, `trouble`, `attention` |
 | Badge | `Badge`, `HostStatus` (`ui/badge/Badge.tsx`) | `root` | `neutral`, `accent`, `waiting`, `ok` |
 | Count | `Count`, `CountGroup` (`ui/badge/Badge.tsx`) | `root`, `group` | `neutral`, `accent`, `waiting`, `hot` |
 | Separator | `Separator` (`ui/separator/Separator.tsx`, on React Aria's) | `root` | none |
@@ -818,25 +829,26 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
   on a page as often as in a card, so a theme reaches them by their own attributes.
 - **A Notice is drawn by the notice family and is a Notice by `Notice.tsx`.** Its box is the
   family's `root`, its tone the variant and where it stands its `data-placement`: `pane` (its
-  pane's row; in a chat's pane the band draws it as a washed card with its mark and no edge,
-  `paneFrame.css`, #3142), `inbox` (in a list: in the Notices centre and the window's own lines there, a card of its own,
+  pane's row; in a chat's pane the band draws it as one compact row, `layout="row"`, `paneFrame.css`,
+  #5215), `inbox` (in a list: in the Notices centre and the window's own lines there, a card of its own,
   below; in the same layout, a row of the list's box under the title bar and on the page a window
   with no project shows) or `alone` (on a page, edged in the hairline, which takes the card's edge width: none in Purlis).
   Each way out is a button of the button family that says which it is (`data-way`: `go`, `fix`,
-  `link`, `copy`, `dismiss`, and the row's `more`). **A Notice holds Allow, so it is a consent
+  `link`, `copy`, `dismiss`, a band row's `whole` and `close`, and its folded line's `show`). **A Notice holds Allow, so it is a consent
   surface**: its fill is one of the grounds an answer that grants is measured on, and its edge's
   width is no theme's. The Inbox's list (`data-scope="notice-list"`) and a pane's row
   (`data-scope="notice-row"`) are the family's layout.
 - **A Notice in the Notices centre is a card in the Inbox card's style** (#5217). A one-line
   `head`: its mark, its `title` (what it names, whose it is, its label, or else its state), its
   state and age muted beneath (`sub`), Go to chat a quiet link and its ×. Under it, what it says at
-  the card's size; a chat's own words only through `ChatText` (`chatWords`), purlis's in plain
-  text; and its ways. One primary, where it has an answer, every other way a quiet link. **A
-  consent takes no primary** (ADR 0097 §6): Allow keeps `grants`, what stands beside it stays
-  `secondary`, and its card keeps its full waiting edge (`data-consent`), where any other Notice's
-  outline is softer, in its kind's colour. A sandbox block says it is one (`consent`), as an
-  answer that `allows` says it of itself, and says "Waiting on you" only where it has something
-  to answer. A pane's band and a Notice alone on a page do not take this layout.
+  the card's size, in purlis's plain words (no Notice in the centre carries a chat's own prose;
+  `chatWords` went for want of a caller, #5363); and its ways. One primary, where it has an
+  answer, every other way a quiet link. **A consent takes no primary** (ADR 0097 §6): Allow keeps
+  `grants`, what stands beside it stays `secondary`, and its card keeps its full waiting edge
+  (`data-consent`), where any other Notice's outline is softer, in its kind's colour. A sandbox
+  block says it is one (`consent`), as an answer that `allows` says it of itself, and says
+  "Waiting on you" only where it has something to answer. A pane's band and a Notice alone on a
+  page do not take this layout.
 - **Three tones** (#3678): `news` (nothing is wrong, the person is being told), `attention`
   (nothing is wrong, but the person must decide: a change a chat made to review, a grade plan
   that changed under them, a draft out of date) and `trouble` (something failed, and only then).
@@ -919,7 +931,8 @@ error (Get project's clone progress is still off, until it moves).
 
 **What a drag draws over the panes is the pane preview family** (`app/src/ui/pane-preview/`, #5291,
 spec #5288, ADR 0113): `PanePreviewArriving`, a pane the drop would make or a side that would fold;
-`PanePreviewLine`, on the strip, where a tab would go; `PanePreviewSize`, the columns and rows a
+`PanePreviewLine`, on the strip, where a tab would go; `PanePreviewOpening`, the mark along a tab a
+drag rests on until it comes forward (#5294); `PanePreviewSize`, the columns and rows a
 terminal will take; `PanePreviewRefused`, the mark on the pane a refused place means; and
 `PanePreviewHeld` and `PanePreviewWords`, what is held and what letting go would do, by the pointer.
 Only the wrapper writes `data-scope="pane-preview"`: `purlis/pane-preview-family` is an error.
@@ -928,9 +941,29 @@ Only the wrapper writes `data-scope="pane-preview"`: `purlis/pane-preview-family
   where each part goes is the drag's (`paneDragLayer.tsx`).
 - **None is read by a reader or takes the pointer.** A reader hears the drag from the window's status
   line, and the pointer has to reach what is under them.
-- **Its parts** are `arriving`, `name`, `line`, `size`, `refused`, `held` and `words`, in
+- **It is placement mode's preview too** (#5293): the keys' target is drawn as the pointer's place.
+- **Its parts** are `arriving`, `name`, `line`, `opening`, `size`, `refused`, `held` and `words`, in
   `pane-preview.css`; a theme's parts reach the same attributes (`pane-preview.*`, the next release's
   manifest version).
+
+## The chat mark family
+
+`ChatMark` (`app/src/ui/chat-mark`, ADR 0104 amended 2026-11-05, #5340) is a chat's mark on its tab, its row in the list, its pane's head and a folded pane's rail. A screen draws it through `ChatPersonaState`, which reads the chat's one state from `shownState`; `QuitWarning`'s list hands it a state directly.
+
+- **Props:** `state` (`needs`, `failed`, `working`, `waiting`, `idle`, `ended`, or nothing where none is known), `who`, `word`, `changed`.
+- **Parts:** `root` carries the state as its `data-variant`; `who`, `badge` and `word`. A glyph tells each state as well as its colour.
+- **The place sets** `--chat-mark-size` and `--chat-mark-ground`, nothing else.
+- **`who` is its own part** so a control can stand in it (the grip, #5290), with the badge left beside it. `ChatPersonaState`'s `grip` puts one there.
+
+## The grip family
+
+`Grip` (`app/src/ui/grip`, ADR 0104 amended 2026-11-06, #5290, spec #5288) is what a pane or a chat is picked up by: the persona's mark in a chat's row and its pane's head, and a view's mark at the head of a view in a split. At rest it is the mark; under the pointer, or with the keyboard on it or on the row it stands in, six dots in three rows of two take the mark's place in the same box. Only the grip under the pointer changes, so a list keeps its marks.
+
+- **Props:** `children` (the mark), `onPress`, and `label` ("Move" and what it moves), which makes it a control of its own, a React Aria `Button`: Tab reaches it, and a press, Enter or Space picks up (WCAG 2.5.7). With no `label` it stands inside a control that is pressable itself (a chat's row): it is no control and not heard, and its press picks up without the row's press. A drag from it is its row's or its head's drag either way.
+- **Parts:** `root`, `mark`, `dots` and each `dot`. Only `dot` has a property (`fill`), in the states `hover` and `focused`, which are keyed on `:hover` and on the keyboard on it or what holds it.
+- **No button ground**, in any state, in any stylesheet: `controls.guard.test.ts` holds it, and the root has no property a theme could set. The cursor is an open hand, closed while pressed and while a drag holds it.
+- **The place sets** `--grip-mark` and `--grip-reach` (a pane's head: the mark's size and the 24px target, which reaches past the mark and moves nothing), or neither.
+- **Where none is drawn:** a one-job program, an empty pane and a view alone in its tab, which moves by its tab. The row's menu, the tab's menu and the palette keep **Move…**, and ⌘⇧M picks up what has the keyboard.
 
 ## The pane foot family
 
@@ -1106,7 +1139,7 @@ families](#the-select-and-combobox-families)).
   where it was, or where the owner's `onClosed` puts it (a row that went into Settings sent it
   there). A press outside still reaches what it was on: **a menu is not modal**, so the rest of
   the window is not hidden from a screen reader and a menu on a strip is no question. A preview
-  the pointer's rest opened (a tab's task chip) takes no keyboard (`takesNoKeyboard`), and
+  the pointer's rest opened (a pane head's tasks menu) takes no keyboard (`takesNoKeyboard`), and
   Escape and a press outside close it from wherever the keyboard is.
 - **Drawn by its parts** (ADR 0103). The surface is `data-scope="popover" data-part="root"`, its
   `data-variant` `popover` or `menu`; inside it the `filter`, `rule`, `list`, `header`,
@@ -1138,7 +1171,8 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
 | `RowLead`, `RowLabel`, `RowDescription`, `RowTrail`, `RowBelow` (`Row.tsx`) | A row's slots, the same in a list, a tree and a table: its marks, its words (one line, cut with an ellipsis), the one line about it in the quiet tier, its end (a count, its own actions), and a line under its words inside it (what a search matched in its body, why the core refused it). **In an option, its words are its name and its one line its description** (React Aria's `label` and `description` slots), so a reader hears the name alone and then what it is, never the row's content run together. **A `RowBelow` with `clamp` and `tipWhenCut` says its whole words in its row's tooltip while the clamp cuts them** (#4711), under the pointer and while the keyboard is on the row, and nothing while they fit, the tooltip being the row's description while it is shown (a list's row is named by its `textValue` alone). One to a row, and a list's row's alone (`ListRow`, `ListOption`) |
 | `ListCardRow`, `RowMenuButton` (`CardRow.tsx`); `RowSummary`, `RowActions` (`Row.tsx`) | **A card row** (#3669, the sidebar Skills view's variant C): a row of a `List` drawn as a small card (`variant="card"`), as tall as its lines. Its first line is its name, its tag, its own actions (Use) and its **⋯**, which opens the row's own menu (`menu`), the one a right-click and Shift+F10 open; then **two lines about it** (`RowSummary`), its description cut cleanly after the second line, or a reason in its place in the waiting colour (it needs the person) or the quiet tier (it is left out); then its **action line** (`RowActions`), its one fix. The whole of its summary is its tooltip. ← and → reach Use, the ⋯ and the fix; a press on it runs it. A state changes a fill or a ring, never its height; it fits a 260 px side view |
 | `ListFoldSection`, `ListRun` (`Fold.tsx`) | **What folds** (#3670, in a `List`): a group whose name folds its rows, and a run of rows folded to one quiet line. A group's name is a row the keyboard reaches, with the tree's twist (`TwistMark`), its count at its end and an optional `waiting` tone (Needs you); Enter, Space, → and ← fold and unfold it, `aria-expanded` on its cell says which (a grid's row takes none), and it may start folded, its owner holding what is folded (`folded`, `onFoldedChange`). A run (`ListRun`, folded by default) is one row in the quiet tier, a mark and "N …"; pressing it unfolds its rows in place, then its closing line ("They ship with purlis…", with what may be done). A row of the run that must show (`standsOut`: it needs the person, it clashes, it matches the filter) is drawn on its own, outside the fold. Folding moves only what is under it, and a fold's row runs nothing of the list's `onAction` |
-| `AimedList`, `AimedOption` (`AimedList.tsx`) | **A list a field aims at**: a combobox's list drawn in place, the palette's actions, projects and files. The field keeps the keyboard and moves the aim (`aria-activedescendant`); the aimed row wears the keyboard's ring inside it and the aim's fill (`control.aimed`); a press runs a row |
+| `AimedList`, `AimedOption` (`AimedList.tsx`) | **A list a field aims at**: a combobox's list drawn in place, the palette's actions, projects and files. The field keeps the keyboard and moves the aim (`aria-activedescendant`); the aimed row wears the keyboard's ring inside it and the aim's fill (`control.aimed`); a press runs a row. Its owner gives it `count` and draws each option with `option(index)`: past 250 rows (`DRAWN_WHOLE`) it draws only the rows in sight and the aimed one, each with `aria-posinset` of `aria-setsize` (#5501) |
+| `useDrawnRows`, `useRowPlace` (`virtualRows.tsx`) | **A long list draws only the rows in sight** (#5501): the one wrapper of `@tanstack/react-virtual`. A list past `DRAWN_WHOLE` rows keeps the whole list's height and places each drawn row in it; the aimed row is always drawn, so `aria-activedescendant` names an element that is there, and each row says its place in the whole. Its geometry (padding, gap, row height) is read from the list's CSS. `AimedList` and the title bar's `SwitcherList` stand on it |
 | `ListFilter`, `useListFilter`, `noMatchSaid` (`ListFilter.tsx`) | **A list over about seven items gets a filter** (R164): from eight, a field at the large size over the list, the total in its placeholder ("Filter 28 personas"), a case-insensitive part of each name, and "No persona is called “x”." where nothing matches. What is typed is the caller's, so drawing the list again keeps the field, its focus and its caret (R168) |
 | `useRowDrag` (`drag.ts`) | What a dragged row carries, by type, to a drop target outside the window's collections (a file's reference onto a chat) |
 
@@ -1158,6 +1192,12 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
   list's edges** (`space.2`), so a pill never touches the panel the list is joined to.
 - **The keyboard is React Aria's**: one Tab stop, the row last focused; ↑ and ↓ move and stop at
   the ends; Home and End; typing finds a row by its `textValue`; Enter and Space choose or run.
+  **A list that chooses several** (`selectionMode="multiple"`, a `Checkbox` in the row's lead with
+  `slot="selection"`) takes a click or Space to tick a row, Shift-click and Shift+↑ ↓ for a range,
+  and ⌘A (Ctrl+A off macOS) for every row, which a list that draws its rows a screen at a time
+  answers with every item of its data, not only the rows drawn (`"all"`, the Library's Select
+  mode, #5332). Esc clears what is chosen, or does what `onEscape` says: a list in a mode of its
+  own leaves it.
 - **A row's menu and its tooltip are the row's own** (`menu` and `tip` on a row): a collection
   draws its rows itself, so no `ContextMenu` or `Tooltip` can be put around one. The menu opens
   on a right-click, or by Shift+F10 or the menu key while the row has the keyboard, on its first
@@ -1396,7 +1436,7 @@ WAI-ARIA "Tabs" pattern:
 - **The keyboard along it**: Left and Right move to the tab beside, wrapping past either end, Home
   and End to the first and the last, the direction following the locale. Only these keys are
   React Aria's, and only pressed on a tab: a `×` or a chip beside a tab keeps its own, Tab goes
-  on to the next stop in the document (the `+`), and a key the tab has taken is its own (a lifted
+  on to the next stop in the document, the front tab's `×` and then the `+` (#5341), and a key the tab has taken is its own (a lifted
   tab's arrows are the drag's).
 - **Manual activation**: moving is not choosing; Enter or Space chooses, through the strip's own
   press (`tab.select:<id>`), which can do what React Aria's selection cannot: a press on the tab in
@@ -1624,7 +1664,7 @@ family's, each in the same `components` layer.
 - **A Notice is not an overlay.** It stands in its pane's row or in the Inbox, never over
   anything (#1647), so it has no lift and no overlay ground. It is [the notice
   family's](#the-card-notice-badge-and-count-and-separator-families) box instead, on the page's
-  raised ground (`surface.raised`) with no shadow: a washed card with its mark in a chat pane's band (#3142), the
+  raised ground (`surface.raised`) with no shadow: a compact row with its mark in a chat pane's band (#5215), the
   danger ground for trouble, and in the Inbox's list the list's row, not a box of its own. What a
   way out opened under a Notice (a block's report, a dispatch's brief) is a card.
 
@@ -2323,12 +2363,9 @@ and `FourRegions.test.tsx` found it by holding a `nav` that had been replaced.
 **A terminal keeps Tab.** xterm prevents Tab and Shift+Tab and sends them to the shell —
 completion, and Claude Code's mode cycling — and nothing in the window takes either. So a
 terminal is a stop you can reach and cannot Tab out of, which is why the pane's own controls are
-written _before_ it in the document (they are absolutely positioned, so the look is unchanged).
-**They are shown on hover and while the keyboard is on them, and at no other time** — not
-because their pane is focused, which is the pane the operator is typing in and a corner he
-asked to keep clear. A `visibility: hidden` control is out of the sequence, so the focused
-pane's are hidden by `opacity` with `pointer-events: none` instead: Tab still lands on them, and
-`.pane-doing:focus-within` draws the group the moment it does.
+written _before_ it in the document, in the pane's head above it.
+**They are always drawn** (#5318, ADR 0111), so every pane's are in the sequence, in the order
+they are drawn. A tab's only pane has no Close, so no stop is left for it.
 
 **The way out is Ctrl+Tab, and Ctrl+Shift+Tab backwards** (`SessionPane.leavesTheChat`). It is
 the platforms' own key for leaving a control that keeps Tab — GTK's text view, Windows'
@@ -2406,7 +2443,7 @@ strip's tab carries an edge, and there is no `--nested` left to indent anything 
 A `tablist` may own `tab` elements only, and what it owns is everything under it in the DOM plus
 everything its `aria-owns` names: **`aria-owns` adds to a tablist's children and never takes them
 away.** A strip's cells hold more than a tab (a project's `×` and gear, a workspace's gear, a
-chat's `×`, fresh mark and task chip, every strip's own `+`), so the `tablist` role is not on the
+chat's `×`, fresh mark and hand, every strip's own `+`), so the `tablist` role is not on the
 element that holds them.
 
 - **The strip element** (`.projects`, `.workspaces-strip`, `.tabs`) has no role. It is marked
@@ -3001,16 +3038,16 @@ then never when it types a letter or a digit or is another of the window's keys.
 
 They are capture listeners on the window, held by the project in front. ⌘⇧J and ⌘⇧H press
 their catalogue rows (`tasks.menu`, `pane.back`), which the palette lists with their keys. ⌘⇧J
-opens a menu of the tasks the focused pane's chat asked for and nothing else's, under that pane's
-head (`ChatTasksMenu.tsx`, #5058): the one picked is shown in that pane as a press shows it, and
-one on screen already is jumped to. The pane and tab keys move the keyboard and have no rows. **Nothing is taken while a dialog has the keyboard.** Over a
+opens the menu of the focused pane's chat and its tasks, from that pane head's state word, the
+same menu a press of the word opens (`TabChip.ChatTasks`, #5058, #5341): the one picked is shown
+in that pane as a press shows it, and one on screen already is jumped to. The pane and tab keys move the keyboard and have no rows. **Nothing is taken while a dialog has the keyboard.** Over a
 terminal the chord is the window's whether or not its row can run, so the same chord never
 means two things from one tab to the next; in a text field or an editor a chord whose row
 cannot run is left to the field.
 
 **A menu that opens under a resting pointer takes no keyboard** (#1487, `TabChip.tsx`). The
-task menu on a tab's chip is Radix's dropdown menu, opened three ways: a press, Down on its tab,
-and the pointer resting on the chip. Radix moves the focus into a menu as it opens and onto
+tasks menu on a pane head's state word (a tab's chip until #5341) is Radix's dropdown menu,
+opened three ways: a press, ⌘⇧J, and the pointer resting on the word. Radix moves the focus into a menu as it opens and onto
 each row the pointer crosses, which is right for the first two and would take the keyboard out
 of a terminal for the third. So a rest-opened menu refuses both (the menu's `onOpenAutoFocus`,
 and each row's pointer handlers), the stylesheet's hover says which row the pointer is on, and

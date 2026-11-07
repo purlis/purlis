@@ -239,6 +239,9 @@ pub struct StudioSkill {
     pub source_label: Option<String>,
     /// Whether that chat's workspace or persona pins it, so no router hides it.
     pub pinned: bool,
+    /// Whether it is archived, so it never loads until it is restored (SK-19): what the
+    /// Library's Select mode counts its Archive and Unarchive by (#5332).
+    pub archived: bool,
     /// Which of the studio's workspace and persona have it in their pins, as written (SK-15d):
     /// what the row's Pin switch shows. Empty for a skill from outside the plane.
     pub pinned_by: Vec<crate::skillchange::SkillPinner>,
@@ -567,6 +570,7 @@ fn plane_shown(
         hidden: row.hidden.iter().map(Into::into).collect(),
         source_label: row.source_label.clone(),
         pinned: row.pinned,
+        archived: row.lifecycle == purlis_core::skills::Lifecycle::Archived,
         pinned_by,
     }
 }
@@ -1123,6 +1127,7 @@ fn outside_shown(row: purlis_core::skills::StudioRow) -> StudioSkill {
         hidden: row.hidden.iter().map(Into::into).collect(),
         source_label: row.source_label.clone(),
         pinned: row.pinned,
+        archived: row.lifecycle == purlis_core::skills::Lifecycle::Archived,
         pinned_by: Vec::new(),
     }
 }
@@ -1428,6 +1433,47 @@ pub(crate) async fn skill_runs(
             return Ok(Vec::new());
         }
         Ok(runs(held.root(), &skill, RUNS_SHOWN))
+    })
+    .await
+}
+
+/// How far back Make room counts a skill's runs (#5355): the last 30 days.
+pub(crate) const USES_DAYS: u64 = 30;
+
+/// **One skill's runs in the last [`USES_DAYS`] days**, by its own name (#5355).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillRunsLately {
+    pub skill: String,
+    pub runs: u32,
+}
+
+/// The runs of every skill the project at `root` recorded from [`USES_DAYS`] days before `now`
+/// (seconds since 1970) on, by name: a skill with none is not listed.
+pub(crate) fn uses(root: &std::path::Path, now: u64) -> Vec<SkillRunsLately> {
+    purlis_core::skilluse::runs_since(root, now.saturating_sub(USES_DAYS * 24 * 60 * 60))
+        .into_iter()
+        .map(|(skill, runs)| SkillRunsLately { skill, runs })
+        .collect()
+}
+
+/// **How much each skill was used lately** (#5355): its runs in the last 30 days, which Make room
+/// sorts the Library by, least used first. None while the flag is off. On a blocking thread, as
+/// it reads the project's skill log.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_uses(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+) -> Result<Vec<SkillRunsLately>, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading how much each skill was used", move || {
+        if !purlis_core::skills::studio_on_here() {
+            return Ok(Vec::new());
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_secs());
+        Ok(uses(held.root(), now))
     })
     .await
 }

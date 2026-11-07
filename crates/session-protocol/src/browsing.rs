@@ -296,6 +296,16 @@ pub struct FieldSaid {
     /// What the page labels it, made plain and short: the page's words, never purlis's.
     pub label: String,
     pub kind: FieldKind,
+    /// **The form it is in sends it by GET**, in the page's address (the person's ruling of
+    /// 2026-11-06): no grant fills it. Absent where a host doesn't read it, which a window takes
+    /// as not known, and asks the person about the fill.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by_get: Option<bool>,
+    /// **The page marks it a card's or payment field** (`autocomplete="cc-…"`, the steward's
+    /// decision of 2026-11-06): the person is asked each time, with Allow once alone. Absent
+    /// where a host doesn't read it, which a window takes as one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payment: Option<bool>,
 }
 
 /// **What kind of field a secret would go into** (1.72, #5115).
@@ -333,6 +343,12 @@ pub struct FillSecret {
     /// every fill to as well.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub also: Vec<String>,
+    /// **It goes in under a grant, with no notice for this fill** (the rulings of 2026-11-06):
+    /// the engine then fills no field whose form sends it by GET, and no card's or payment field,
+    /// judged as it writes. A window sends it only where the field's read said both, so a host
+    /// that doesn't read it was never sent such a fill.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub under_a_grant: bool,
 }
 
 /// **One download of a browser's, as an answer says it** (1.46, #2020): its name in the browser
@@ -510,6 +526,12 @@ pub struct KeptLogin {
     pub login: String,
     pub identity: String,
     pub address: String,
+    /// **The origin its form is on, where that's another site than its page's** (1.76, #5167): a
+    /// browser opened from it reaches that site from its start, as one logged in afresh does, its
+    /// pages kept from the agent outside a sign-in. A host before 1.76 holds such a browser to its
+    /// page's site alone until a login signs in there again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub form: Option<String>,
 }
 
 /// **The origin of `address`** (1.35, #2300): `scheme://host[:port]`, lower-cased, for an http
@@ -700,6 +722,7 @@ mod fill_tests {
             value: Secret::new("fixture-word-5115".into()),
             multi_line: false,
             also: Vec::new(),
+            under_a_grant: false,
         };
         let said = format!("{fill:?}");
         assert!(!said.contains("fixture-word-5115"), "{said}");

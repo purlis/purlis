@@ -267,3 +267,13 @@ fn a_runner_whose_operator_no_longer_gives_its_word_is_kept_though_its_work_look
     assert!(!gone);
     assert!(why[0].contains("no longer holds"), "{why:?}");
 }
+
+/// **A release that failed says its work is all here only where a proof said so** (#5393): a
+/// runner the person discarded may hold what is not.
+#[test]
+fn a_release_that_failed_says_its_work_is_here_only_on_proof() {
+    assert!(release_failed_said(true, "no route").starts_with("Its work is all here"));
+    let discarded = release_failed_said(false, "no route");
+    assert!(!discarded.contains("all here"), "{discarded}");
+    assert!(discarded.contains("no route"), "{discarded}");
+}

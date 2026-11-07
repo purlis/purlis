@@ -171,9 +171,7 @@ describe("the Drafts page", () => {
 
     // Its chat closed: a chat is asked afresh.
     const lint = await openDraft("lint", user);
-    await user.click(
-      within(lint).getByRole("button", { name: "Ask a chat at the project's root to redo it" }),
-    );
+    await user.click(within(lint).getByRole("button", { name: "Ask a chat at p to redo it" }));
     stop();
     expect(asks).toEqual([
       { plane: "p", kind: "redo", id: "triage-id", name: "triage", level: PROJECT, chat: 4 },
@@ -217,7 +215,7 @@ describe("the Drafts page", () => {
     expect(none).toHaveTextContent("No drafts");
     expect(
       within(none).getByRole("button", {
-        name: "Ask a chat at the project's root to draft a skill",
+        name: "Ask a chat at p to draft a skill",
       }),
     ).toBeInTheDocument();
   });

@@ -36,3 +36,26 @@ describe("the harness chip's words", () => {
     );
   });
 });
+
+/** A press of the foot's (the workspace, `↳ from`, `ctx`), drawn as the button family's inline
+ *  ghost, on a pane alone (#5204). */
+function footPress(): Element {
+  document.body.innerHTML = `<div class="pane-frame"><div class="pane-foot" data-scope="pane-foot" data-part="root"><div data-scope="pane-foot" data-part="start"><button id="press" class="pane-foot-press" data-scope="button" data-part="root" data-variant="ghost" data-size="md" data-inline="">↳ from steward 3</button></div></div></div>`;
+  return document.getElementById("press") as Element;
+}
+
+/**
+ * **The foot's presses keep the foot's tier too** (#5204, #5366): muted, as the foot's words are,
+ * and primary under the pointer or the keyboard. The family's quiet variant (#3214) is the quiet
+ * tier, a step under the foot's muted words in Purlis, so it is not theirs.
+ */
+describe("a press on the foot", () => {
+  it("is muted at rest, as the foot's words are", () => {
+    expect(drawnWith(footPress(), "color")).toBe("var(--text-muted)");
+  });
+
+  it("is primary under the pointer or the keyboard", () => {
+    expect(drawnWith(footPress(), "color", { hover: true })).toBe("var(--text-primary)");
+    expect(drawnWith(footPress(), "color", { focusVisible: true })).toBe("var(--text-primary)");
+  });
+});

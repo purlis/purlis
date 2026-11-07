@@ -1,0 +1,78 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The grip** (#5290, spec #5288): what a pane or a chat is picked up by. At rest it is the mark it
+   stands for; under the pointer, or with the keyboard on it or on the row it stands in, six dots
+   in three rows of two take the mark's place, in the same box, so nothing moves. **It has no
+   button ground**: no fill, edge or shadow in any state (`controls.guard.test.ts` holds it), and
+   the cursor is an open hand, closed while it is pressed and while a drag holds it
+   (`paneFrame.css`). A place that gives it more reach than its mark sets `--grip-mark`, the
+   mark's size, and `--grip-reach`, the box the pointer can press (at least 24px, WCAG 2.5.8):
+   the box reaches past the mark's and moves nothing around it. */
+[data-scope="grip"][data-part="root"] {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  /* With no reach set, `var()` leaves these invalid, so the box is its mark's (auto) and the
+     margin none. With one, never under 24px, in the compact density too, as the button family's
+     smallest is (`button.css`); the margin takes back the reach, so the line keeps the mark's
+     room (a little more in the compact density, where the floor is past the reach). */
+  inline-size: max(24px, var(--grip-reach));
+  block-size: max(24px, var(--grip-reach));
+  margin: calc((var(--grip-mark) - var(--grip-reach)) / 2);
+  /* A browser draws a button its own ground and edge: the grip takes them away, so a head's
+     grip, which is a button, is drawn as the row's, which is not. */
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: inherit;
+  cursor: grab;
+  touch-action: none;
+}
+
+[data-scope="grip"][data-part="root"]:active {
+  cursor: grabbing;
+}
+
+[data-scope="grip"][data-part="root"] > :is([data-part="mark"], [data-part="dots"]) {
+  grid-area: 1 / 1;
+}
+
+[data-scope="grip"][data-part="mark"] {
+  display: inline-flex;
+}
+
+/* Three rows of two, the prototype's dots: each a step across, half a step apart. */
+[data-scope="grip"][data-part="dots"] {
+  display: grid;
+  grid-template-columns: repeat(2, var(--space-1));
+  grid-auto-rows: var(--space-1);
+  gap: calc(var(--space-1) / 2);
+  visibility: hidden;
+}
+
+[data-scope="grip"][data-part="root"] [data-scope="grip"][data-part="dot"] {
+  border-radius: var(--radius-full);
+}
+
+/* Under the pointer, and with the keyboard on it or on what holds it: the dots, in the mark's
+   place. */
+[data-scope="grip"][data-part="root"]:hover [data-part="mark"],
+[data-scope="grip"][data-part="root"]:is(:focus-visible, :focus-visible *) [data-part="mark"] {
+  visibility: hidden;
+}
+
+[data-scope="grip"][data-part="root"]:hover [data-part="dots"],
+[data-scope="grip"][data-part="root"]:is(:focus-visible, :focus-visible *) [data-part="dots"] {
+  visibility: visible;
+}
+
+[data-scope="grip"][data-part="root"]:hover [data-scope="grip"][data-part="dot"] {
+  background-color: var(--text-muted);
+}
+
+[data-scope="grip"][data-part="root"]:is(:focus-visible, :focus-visible *)
+  [data-scope="grip"][data-part="dot"] {
+  background-color: var(--text-muted);
+}

@@ -3,6 +3,7 @@
 
 import { lazy, Suspense, useEffect, useId, useState } from "react";
 import { commands, type ProfileRow, type SkillDraft, type SkillDraftFile } from "./bindings";
+import { OPEN_CHAT } from "./actions";
 import { askAChat } from "./skillChanges";
 import { useStudioChats } from "./studioChats";
 import { counted } from "./dispatches";
@@ -45,8 +46,8 @@ function draftedBy(draft: SkillDraft): string {
 }
 
 /** **"Ask the chat to redo it"**, or "Ask a chat…" where the chat that drafted it is closed. */
-export function redoLabel(draft: SkillDraft): string {
-  return draft.chat_open ? "Ask the chat to redo it" : askAChat(draft.level, "redo it");
+export function redoLabel(draft: SkillDraft, plane: string): string {
+  return draft.chat_open ? "Ask the chat to redo it" : askAChat(draft.level, "redo it", plane);
 }
 
 /**
@@ -206,7 +207,7 @@ export function DraftPage({
               data-testid="draft-open-chat"
               onPress={() => studio.show(wrote.session)}
             >
-              Open chat
+              {OPEN_CHAT}
             </Button>
           )
         }
@@ -223,6 +224,7 @@ export function DraftPage({
         actions={
           graded === undefined ? undefined : (
             <DraftGradeActions
+              plane={plane}
               level={draft.level}
               state={graded}
               isNew={draft.new}
@@ -271,7 +273,7 @@ export function DraftPage({
             cause={`draft-out-of-date:${draft.id}`}
             tone="attention"
             label="Out of date"
-            fixes={[{ label: redoLabel(draft), onPress: redo }]}
+            fixes={[{ label: redoLabel(draft, plane), onPress: redo }]}
           >
             <span data-testid={`draft-stale-${draft.name}`}>
               {`The project's copy changed since ${draftedBy(draft)} drafted it, so it can't be accepted. ${

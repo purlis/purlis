@@ -38,6 +38,26 @@ pub fn command(program: impl AsRef<OsStr>) -> Command {
     command
 }
 
+/// **`command` from a terminal of the person's own** (#5357): every mark the app sets on what a
+/// chat runs (its number, its hook socket and token, its folder, its session, its sandbox's mark)
+/// removed under both names, so a test that means the person is the person even where the suite
+/// runs inside a chat. A command that writes skills reads all of them, and any one is a chat.
+pub fn at_a_terminal(command: &mut Command) -> &mut Command {
+    for name in [
+        purlis_core::hookwire::CHAT_ENV,
+        purlis_core::hookwire::SOCKET_ENV,
+        purlis_core::hookwire::TOKEN_ENV,
+        purlis_core::hookwire::SANDBOXED_ENV,
+        purlis_core::active::SESSION_ID_ENV,
+        purlis_core::sandboxblock::CHAT_DIR_ENV,
+    ] {
+        for spelling in purlis_core::envvar::spellings(name) {
+            command.env_remove(spelling);
+        }
+    }
+    command
+}
+
 /// **What purlis's own wrap on Linux is started with** (#2460): nothing but `env` carried for its
 /// program, to be set after `env_clear()`.
 pub fn carrying<K: AsRef<OsStr>, V: AsRef<OsStr>>(

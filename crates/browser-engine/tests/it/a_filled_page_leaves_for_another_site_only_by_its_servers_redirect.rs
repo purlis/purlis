@@ -178,6 +178,7 @@ fn filled_with(browser: &Browser, holder: &Arc<Holder>, label: &str, value: &str
         key: "the-api-key".to_owned(),
         value: value.to_owned().into(),
         multi_line: false,
+        under_a_grant: false,
     };
     let filled = browser.fill_secret(
         browser.epoch(),
@@ -352,6 +353,11 @@ fn what_a_script_sends_the_destination_as_the_page_leaves_is_refused() {
 
 /// A redirect whose address holds the value is refused, plainly or URL-encoded and in a fragment
 /// too, and the page stays.
+///
+/// The redirect is judged on a thread of its own, so the refusal's note may reach the click's
+/// answer or, where the click answered first, the very next one; it must reach one of them. What
+/// was refused is checked before the note, so a run that fails says which it was: nothing left
+/// and the note was late, or the page went.
 #[test]
 fn a_redirect_whose_address_holds_the_value_is_refused() {
     for (label, line) in [
@@ -362,18 +368,51 @@ fn a_redirect_whose_address_holds_the_value_is_refused() {
             return;
         };
         the_app_sends_it_to_sign_in(&browser, OTHER);
-        let before = site.sent_count("other.test");
+        let before = site.sent_count(OTHER);
         let holder = Holder::on(&site, None);
         filled_in(&browser, &holder, label);
 
-        let answer = click(&browser, line);
+        let clicked_at = Instant::now();
+        let clicked = click(&browser, line);
+        let answered_after = clicked_at.elapsed();
+        let next = call(
+            &browser,
+            Call::WaitForText {
+                page: None,
+                text: "Sign in".into(),
+                gone: false,
+                within: Duration::from_secs(10),
+            },
+        );
+        let seen = format!(
+            "{line}: the click answered after {answered_after:?} with note {:?} on {:?}; the next \
+             answer's note {:?} on {:?}; {OTHER} was sent {:?}; the holder was told {:?}",
+            clicked.note,
+            clicked.page.as_ref().map(|page| &page.address),
+            next.note,
+            next.page.as_ref().map(|page| &page.address),
+            site.sent_to(OTHER),
+            holder.said(),
+        );
 
-        let note = answer.note.unwrap_or_default();
-        assert!(note.contains("holds the secret"), "{line}: {note}");
-        assert!(!note.contains(VALUE), "{line}: {note}");
-        assert_eq!(holder.said(), ["held"], "{line}: the hold lives on");
-        assert!(sees(&browser, "Sign in"), "{line}: the page stays");
-        assert_eq!(site.sent_count("other.test"), before, "{line}");
+        assert_eq!(site.sent_count(OTHER), before, "nothing reached it: {seen}");
+        assert_eq!(holder.said(), ["held"], "the hold lives on: {seen}");
+        assert_eq!(next.content, Content::Seen(true), "the page stays: {seen}");
+        let notes = [&clicked.note, &next.note];
+        assert!(
+            notes
+                .iter()
+                .filter_map(|note| note.as_deref())
+                .any(|note| note.contains("holds the secret")),
+            "the refusal is said: {seen}"
+        );
+        assert!(
+            notes
+                .iter()
+                .filter_map(|note| note.as_deref())
+                .all(|note| !note.contains(VALUE)),
+            "the value is not said: {seen}"
+        );
     }
 }
 
@@ -618,6 +657,7 @@ fn a_fill_is_refused_beside_a_window_the_page_opened() {
         key: "the-api-key".to_owned(),
         value: VALUE.to_owned().into(),
         multi_line: false,
+        under_a_grant: false,
     };
 
     let filled = browser.fill_secret(

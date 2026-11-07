@@ -318,10 +318,10 @@ test("a process tree's CPU time and major faults are summed from the launched pr
     `${pid} (${comm}) S ${ppid} ${pid} ${pid} 0 -1 4194560 100 0 ${majflt} 0 ${utime} ${stime} 0 0 20 0 1 0 1 0 0`;
   const stats = [
     stat(1, "systemd", 0, 900, 5000, 5000),
-    stat(40, "charter-app", 1, 10, 80, 20),
+    stat(40, "purlis-app", 1, 10, 80, 20),
     // A name with a space and a parenthesis in it.
     stat(41, "WebKit (Web) x", 40, 5, 60, 10),
-    stat(42, "charter-app", 40, 1, 3, 2),
+    stat(42, "purlis-app", 40, 1, 3, 2),
     stat(43, "WebKitNetworkP", 41, 0, 1, 1),
     stat(50, "node", 1, 7, 70, 7),
   ];

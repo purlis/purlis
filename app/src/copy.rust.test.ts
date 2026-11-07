@@ -429,6 +429,8 @@ const NOT_FOLLOWED: Readonly<Record<string, string>> = {
   "app/src-tauri/src/dispatchaway.rs: with":
     "a parameter: the closure `reading` and `grounded` run over the ground they read",
   "app/src-tauri/src/dispatchaway.rs: Shown::default": "a derived Default: it writes no words",
+  "app/src-tauri/src/skillgrade/batch.rs: with":
+    "a parameter: the closure `batches` runs over the batches held; it writes no words",
   "app/src-tauri/src/curation.rs: StartRefused::from":
     "carries the sentence it is handed into a start refusal's words, unchanged: it writes none",
 };
@@ -462,6 +464,10 @@ const METHODS: Readonly<Record<string, string>> = {
   "app/src-tauri/src/personas.rs: .personas": "crates/purlis-core/src/workspaces.rs",
   "app/src-tauri/src/piecefiles.rs: .place": "crates/purlis-core/src/files.rs",
   "app/src-tauri/src/piecefiles.rs: .open": "crates/purlis-core/src/files.rs",
+  // `files::Root`'s, beside the workspace files' methods of the same names (#5375), which
+  // piecefiles.rs reaches through `in_workspace_files` and so reads by that signature.
+  "app/src-tauri/src/piecefiles.rs: .tree": "crates/purlis-core/src/files.rs",
+  "app/src-tauri/src/piecefiles.rs: .in_your_editor": "crates/purlis-core/src/files.rs",
 };
 
 /** Words that read like a call before `(` and are not one. */

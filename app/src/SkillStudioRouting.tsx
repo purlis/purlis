@@ -24,6 +24,7 @@ import { ViewPageHeader } from "./ui/panel/ViewFrame";
 import { routedChatId } from "./skillStudio";
 import { SkillBudgetTable, type BudgetWrite, type BudgetWriteTold } from "./SkillBudget";
 import { capitalised } from "./saving";
+import { overSaid } from "./makeRoom";
 
 /** The word a choice of the built-in router is written as (`purlis_core::skills::router`). */
 export const BUILT_IN_ROUTER = "built-in";
@@ -106,6 +107,8 @@ export function RoutingFacts({
   onGradeRunning,
   onGradePlan,
   onScorecard,
+  hidden = 0,
+  onMakeRoom,
 }: {
   plane: string;
   router: StudioRouter;
@@ -128,6 +131,11 @@ export function RoutingFacts({
   onGradePlan: () => void;
   /** Opens the scorecard of the router's grade `grade` beside the list (#3617). */
   onScorecard: (grade: string) => void;
+  /** How many skills the router hides from these chats' lists, their list being over the
+   *  budget: past none, Make room is offered (#5355). */
+  hidden?: number;
+  /** Opens the Library's Select mode, least used first: Make room (#5355). */
+  onMakeRoom?: () => void;
 }) {
   const [changing, setChanging] = useState(false);
   const extension = router.extension;
@@ -218,6 +226,14 @@ export function RoutingFacts({
               {` ${line}`}
             </span>
           ))}
+          {hidden > 0 && onMakeRoom !== undefined && (
+            <span data-testid="skill-routing-over">
+              <span className="honest">{` ${overSaid(hidden)}`}</span>{" "}
+              <Button size="sm" isDisabled={busy} onPress={onMakeRoom}>
+                Make room…
+              </Button>
+            </span>
+          )}
         </Fact>
         {router.extension !== null && (
           <Fact label="Grade">

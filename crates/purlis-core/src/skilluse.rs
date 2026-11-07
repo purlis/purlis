@@ -461,6 +461,19 @@ fn said<'de, D: serde::Deserializer<'de>>(
     serde::Deserialize::deserialize(deserializer).map(Some)
 }
 
+/// **How many runs each skill had from `since` on** (seconds since 1970), by its own name
+/// ([`Run::skill_name`]): what Make room sorts the Library by, least used first (#5355). A run
+/// whose stamp cannot be read is no run of the window. A skill with none is not in it.
+pub fn runs_since(root: &Path, since: u64) -> std::collections::BTreeMap<String, u32> {
+    let mut counted = std::collections::BTreeMap::new();
+    for run in runs(root) {
+        if run.started_secs().is_some_and(|at| at >= since) {
+            *counted.entry(run.skill_name().into_owned()).or_insert(0u32) += 1;
+        }
+    }
+    counted
+}
+
 /// **Every skill run the plane's skill log holds**, newest first: each start with its end
 /// where one is logged, and each row written before runs were recorded as a run of its own.
 pub fn runs(root: &Path) -> Vec<Run> {

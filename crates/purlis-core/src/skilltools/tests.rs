@@ -38,6 +38,7 @@ fn chat<'a>(plane: &'a Path, harness: Option<&'a str>) -> Asking<'a> {
         harness,
         route: crate::skills::route_of(harness, &declared_goose(true)).or(Some(Route::Mcp)),
         built_in: None,
+        handed: None,
     }
 }
 
@@ -345,8 +346,12 @@ fn a_skill_that_narrows_keeps_its_narrowing_where_the_harness_s_own_start_applie
         "Look, never touch.",
         "context: fork\n",
     );
+    let handed = handed_at_its_start(p.path());
     let (said, started) = called(
-        &chat(p.path(), Some("claude-code")),
+        &Asking {
+            handed: Some(&handed),
+            ..chat(p.path(), Some("claude-code"))
+        },
         SKILL_LOAD,
         &[("name", "audit")],
     );
@@ -356,6 +361,53 @@ fn a_skill_that_narrows_keeps_its_narrowing_where_the_harness_s_own_start_applie
     assert!(said.contains("as `skills:audit`"), "{said}");
     assert!(!said.contains("--- SKILL.md ---"), "nothing loaded: {said}");
     assert!(started.is_empty(), "the harness's own start opens the run");
+}
+
+/// The set's folder a Claude Code chat at the root of `plane` is handed at its start, as the
+/// host lays it out.
+fn handed_at_its_start(plane: &Path) -> std::path::PathBuf {
+    crate::skills::lay_out(
+        &chat(plane, Some("claude-code")).set(),
+        &plane.join("sets"),
+        &Harness::ClaudeCode.skill_frontmatter(),
+    )
+    .unwrap()
+    .expect("a set's folder")
+}
+
+#[test]
+fn a_narrowing_skill_made_since_the_chat_started_is_loaded_as_its_harness_does_not_know_it() {
+    // #4510: the harness was handed the set as it was at its start; `skills:audit` is a name
+    // its own Skill tool would answer "Unknown skill" to.
+    let p = a_plane();
+    skill(&p.path().join("skills"), "review", "Reads a change.", "");
+    let handed = handed_at_its_start(p.path());
+    skill(
+        &p.path().join("skills"),
+        "audit",
+        "Look, never touch.",
+        "disallowed-tools: Write\n",
+    );
+    for handed in [Some(handed.as_path()), None] {
+        let (said, started) = called(
+            &Asking {
+                handed,
+                ..chat(p.path(), Some("claude-code"))
+            },
+            SKILL_LOAD,
+            &[("name", "audit")],
+        );
+        let said = said.unwrap();
+        assert!(
+            said.starts_with("Loaded the skill `audit` (project)."),
+            "{handed:?}: {said}"
+        );
+        assert!(
+            said.contains("Narrowing not applied: this skill takes away Write"),
+            "{said}"
+        );
+        assert_eq!(started, ["audit"], "{handed:?}");
+    }
 }
 
 #[test]

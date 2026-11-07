@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { SkillGrant, SkillLevel, SkillWhose, StudioLevel, StudioSkill } from "./bindings";
+import { projectName } from "./projectName";
 import type { StudioScope } from "./skillStudio";
 
 /**
@@ -70,14 +71,15 @@ export function sameLevel(a: SkillLevel, b: SkillLevel): boolean {
 }
 
 /**
- * **Where a chat the studio starts for a skill of `level` starts** (#5184), as its button names
- * it: where the skill lives. `at the project's root`, `at purlis-demo` for a workspace's, and
- * `as steward` for a persona's, whose chat runs as it at the project's root.
+ * **Where a chat the studio starts for a skill of `level` starts** (#5184, #5248), as its button
+ * names it: where the skill lives. `at purlis-demo` for the project's own, by the name of the
+ * project at `plane`; `at ops` for a workspace's; and `as steward` for a persona's, whose chat
+ * runs as it at the project's root.
  */
-export function chatPlace(level: SkillLevel): string {
+export function chatPlace(level: SkillLevel, plane: string): string {
   switch (level.at) {
     case "project":
-      return "at the project's root";
+      return `at ${projectName(plane)}`;
     case "workspace":
       return `at ${level.name}`;
     case "persona":
@@ -86,8 +88,8 @@ export function chatPlace(level: SkillLevel): string {
 }
 
 /** **"Ask a chat at purlis-demo to write these"** (#5184): a studio chat's button, with its place. */
-export function askAChat(level: SkillLevel, what: string): string {
-  return `Ask a chat ${chatPlace(level)} to ${what}`;
+export function askAChat(level: SkillLevel, what: string, plane: string): string {
+  return `Ask a chat ${chatPlace(level, plane)} to ${what}`;
 }
 
 /** A level's key among the studio's drop targets: `project`, `ops-local`, `persona-reviewer`. */

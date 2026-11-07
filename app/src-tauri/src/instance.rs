@@ -248,6 +248,24 @@ mod tests {
         assert_eq!(old.locks, [runtime.path().join("dev.charter.app.lock")]);
     }
 
+    /// The app's program is `purlis-app` (#1309) in the bundle Tauri makes and in the build
+    /// Cargo makes, the name the `purlis` command beside it looks for to write a keyring item.
+    #[test]
+    fn the_app_program_is_named_as_the_keyring_writer_looks_for_it() {
+        let app = purlis_core::secrets::keyhold::APP_BINARY;
+        assert_eq!(app, "purlis-app");
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).expect("json");
+        assert_eq!(conf["mainBinaryName"], app);
+        let manifest = include_str!("../Cargo.toml");
+        let bin = manifest.split("[[bin]]").nth(1).expect("a [[bin]] table");
+        assert!(
+            bin.lines()
+                .any(|line| line.trim() == format!("name = \"{app}\"")),
+            "{bin}"
+        );
+    }
+
     /// The `.deb` takes the old package's place: `apt` removes `charter` rather than
     /// refusing two packages that both ship the app's files.
     #[test]

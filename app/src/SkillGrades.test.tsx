@@ -26,6 +26,7 @@ afterEach(() => {
   clearMocks();
 });
 
+const PLANE = "/home/dev/purlis-demo";
 const LEVEL = { at: "project", local: false } as const;
 
 /** A grade's row, `over` said on top of a whole one. */
@@ -66,7 +67,7 @@ const GRADES = [
 
 /** A step of the grade `grade` of deploy, running: of this copy, or of the copy at `level`. */
 const step = (grade: string, level: SkillLevel = LEVEL) => ({
-  plane: "p",
+  plane: PLANE,
   skill: "deploy",
   level,
   grade,
@@ -167,7 +168,7 @@ function renderTab(
   const onGrading = vi.fn<GradingGo>();
   render(
     <GradesTab
-      plane="p"
+      plane={PLANE}
       name="deploy"
       level={LEVEL}
       changed={0}
@@ -288,11 +289,11 @@ describe("a skill's Grades tab (S6)", () => {
     window.addEventListener(SKILL_CHAT, heard);
     fireEvent.click(
       within(none).getByRole("button", {
-        name: "Ask a chat at the project's root to write checks",
+        name: "Ask a chat at purlis-demo to write checks",
       }),
     );
     window.removeEventListener(SKILL_CHAT, heard);
-    expect(asks).toEqual([{ plane: "p", kind: "checks", level: LEVEL, name: "deploy" }]);
+    expect(asks).toEqual([{ plane: PLANE, kind: "checks", level: LEVEL, name: "deploy" }]);
   });
 
   it("writes them by hand from the template, which opens to write in (#3925)", async () => {
@@ -304,7 +305,7 @@ describe("a skill's Grades tab (S6)", () => {
     // The core starts the file, then it opens to write in.
     await waitFor(() => expect(open).toHaveBeenCalledTimes(1));
     expect(asked.find((one) => one.cmd === "skill_trigger_tests_start")?.args).toMatchObject({
-      plane: "p",
+      plane: PLANE,
       level: LEVEL,
       name: "deploy",
     });
@@ -315,10 +316,7 @@ describe("a skill's Grades tab (S6)", () => {
     renderTab({ reason: "Its file is outside the project." });
     const none = await screen.findByTestId("skill-checks-none");
     // Neither would land in the skill: not the template, nor a chat's draft.
-    for (const name of [
-      "Ask a chat at the project's root to write checks",
-      "Write them yourself",
-    ]) {
+    for (const name of ["Ask a chat at purlis-demo to write checks", "Write them yourself"]) {
       const offer = within(none).getByRole("button", { name });
       expect(offer.getAttribute("aria-disabled") === "true" || offer.hasAttribute("disabled")).toBe(
         true,
@@ -336,10 +334,10 @@ describe("a skill's Grades tab (S6)", () => {
     const heard = (event: Event) => asks.push((event as CustomEvent<SkillChatAsk>).detail);
     window.addEventListener(SKILL_CHAT, heard);
     fireEvent.click(
-      within(job).getByRole("button", { name: "Ask a chat at the project's root to write these" }),
+      within(job).getByRole("button", { name: "Ask a chat at purlis-demo to write these" }),
     );
     window.removeEventListener(SKILL_CHAT, heard);
-    expect(asks).toEqual([{ plane: "p", kind: "evals", level: LEVEL, name: "deploy" }]);
+    expect(asks).toEqual([{ plane: PLANE, kind: "evals", level: LEVEL, name: "deploy" }]);
   });
 
   it("shows a studio chat writing the job's checks in place of its button, with Open chat (#5185)", async () => {
@@ -350,16 +348,25 @@ describe("a skill's Grades tab (S6)", () => {
         {
           session: 7,
           name: "chat 7",
-          link: { skill: "deploy", level: LEVEL, job: "outcome-evals", done: false },
+          link: {
+            skill: "deploy",
+            level: LEVEL,
+            job: "outcome-evals",
+            done: false,
+            started: null,
+            finished: null,
+          },
         },
       ],
       show,
       openSkill: vi.fn(),
+      openDraft: vi.fn(),
+      stop: vi.fn(),
     };
     render(
       <StudioChatsHere.Provider value={lent}>
         <GradesTab
-          plane="p"
+          plane={PLANE}
           name="deploy"
           level={LEVEL}
           changed={0}
@@ -370,7 +377,7 @@ describe("a skill's Grades tab (S6)", () => {
       </StudioChatsHere.Provider>,
     );
     const job = await screen.findByRole("region", { name: "Does it do the job?" });
-    expect(job).toHaveTextContent("A chat at the project's root is writing outcome evals.");
+    expect(job).toHaveTextContent("A chat at purlis-demo is writing outcome evals · running");
     expect(within(job).queryByRole("button", { name: /to write these/ })).toBeNull();
     fireEvent.click(within(job).getByRole("button", { name: "Open chat" }));
     expect(show).toHaveBeenCalledWith(7);
@@ -381,7 +388,7 @@ describe("a skill's Grades tab (S6)", () => {
     renderTab({ reason: "Its file is outside the project." });
     const job = await screen.findByRole("region", { name: "Does it do the job?" });
     const offer = within(job).getByRole("button", {
-      name: "Ask a chat at the project's root to write these",
+      name: "Ask a chat at purlis-demo to write these",
     });
     expect(offer.getAttribute("aria-disabled") === "true" || offer.hasAttribute("disabled")).toBe(
       true,
@@ -457,7 +464,7 @@ describe("a skill's Grades tab (S6)", () => {
     fireEvent.click(within(draft).getByRole("button", { name: "Accept checks" }));
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_draft_accept")?.args).toEqual({
-        plane: "p",
+        plane: PLANE,
         id: "d1",
       }),
     );
@@ -472,7 +479,7 @@ describe("a skill's Grades tab (S6)", () => {
     fireEvent.click(within(draft).getByRole("button", { name: "Discard" }));
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_draft_reject")?.args).toEqual({
-        plane: "p",
+        plane: PLANE,
         id: "d1",
       }),
     );
@@ -491,7 +498,7 @@ describe("a skill's Grades tab (S6)", () => {
     window.removeEventListener(SKILL_CHAT, heard);
     expect(asks).toEqual([
       {
-        plane: "p",
+        plane: PLANE,
         kind: "redo",
         id: "d1",
         name: "deploy",
@@ -568,7 +575,7 @@ describe("a skill's Grades tab (S6)", () => {
     renderTab({ reason: "Its file is outside the project." }, { evalsFile: { open: vi.fn() } });
     const job = await screen.findByRole("region", { name: "Does it do the job?" });
     const offer = within(job).getByRole("button", {
-      name: "Ask a chat at the project's root to write these",
+      name: "Ask a chat at purlis-demo to write these",
     });
     expect(offer.getAttribute("aria-disabled") === "true" || offer.hasAttribute("disabled")).toBe(
       false,
@@ -639,7 +646,7 @@ describe("a skill's Grades tab (S6)", () => {
     await screen.findByText(/^Each edit you save grades this skill on work/);
     waits = "A grade of it now runs 18 chats, more than the 12 you accepted.";
     await emit("skill-grade-after-edit", {
-      plane: "p",
+      plane: PLANE,
       skill: "deploy",
       level: LEVEL,
       said: waits,
@@ -677,7 +684,7 @@ describe("a skill's Grades tab (S6)", () => {
     await emit("skill-grade", step("01NEW", ops));
     await emit("skill-grade", { ...step("01NEW", ops), ended: "stopped", said: "It stopped." });
     await emit("skill-grade-after-edit", {
-      plane: "p",
+      plane: PLANE,
       skill: "deploy",
       level: ops,
       said: "Your edit was not graded.",

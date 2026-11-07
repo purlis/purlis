@@ -415,7 +415,8 @@ pub struct Request {
 
 /// GitHub's methods in charter's order of preference: `(setting, GraphQL enum)`. Rebase keeps
 /// each save's commit as it was made; a merge commit keeps them too; squash rewrites them into
-/// one, which is why it comes last (ADR 0051).
+/// one, which is why it comes last (ADR 0051). A merge past a request GitHub says it cannot
+/// rebase skips the first (#5338).
 pub(super) const GITHUB_METHODS: [(&str, &str); 3] = [
     ("rebaseMergeAllowed", "REBASE"),
     ("mergeCommitAllowed", "MERGE"),

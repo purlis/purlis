@@ -709,6 +709,23 @@ pub fn list(root: &Path, place: &Place) -> Vec<Listed> {
         .collect()
 }
 
+/// What [`list`] gives for `files` — file names with their text, as a tree holds them rather
+/// than a folder: only what is named as a record, newest first (#5338). So what is rebuilt from
+/// a merge counts what the next record's rebuild would.
+pub(crate) fn listed_from(place: &Place, files: Vec<(String, String)>) -> Vec<Listed> {
+    let mut records: Vec<(String, String)> = files
+        .into_iter()
+        .filter(|(name, text)| {
+            is_record_name(name) && text.len() as u64 <= crate::memstore::MAX_BYTES
+        })
+        .collect();
+    records.sort_unstable_by(|a, b| b.0.cmp(&a.0));
+    records
+        .into_iter()
+        .map(|(file, text)| listed(place, file, &text))
+        .collect()
+}
+
 /// What a listing says of the record `file` of `place`, whose text is `text`.
 ///
 /// **Every value is read back as untrusted**: the file is on disk, a hand edit or a pull of a

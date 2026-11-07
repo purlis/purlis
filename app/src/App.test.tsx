@@ -41,6 +41,19 @@ vi.mock("./SessionPane", () => ({
   ),
 }));
 
+/** Which chats the window has owed the keyboard, the terminal itself being stubbed above. */
+const keyboardGiven = vi.hoisted(() => [] as number[]);
+vi.mock("./paneKeyboard", async (original) => {
+  const real = await original<typeof import("./paneKeyboard")>();
+  return {
+    ...real,
+    giveKeyboardTo: (plane: string, session: number) => {
+      keyboardGiven.push(session);
+      real.giveKeyboardTo(plane, session);
+    },
+  };
+});
+
 /** The app as `main.tsx` renders it: in StrictMode, which runs effects and state updates
  *  twice, so anything that opens or ends a session twice shows up here. */
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
@@ -675,6 +688,83 @@ describe("App", () => {
 
     expect(tabs()).toEqual(["steward 2"]);
     expect(panes()).toEqual(["session 2"]);
+  });
+
+  describe("the head's Close, by how many panes the tab has (#5318)", () => {
+    /** The Close of every pane on screen, read off the heads. */
+    const closes = () => screen.queryAllByRole("button", { name: "Close this pane" });
+
+    it("is not drawn on a tab's only pane, whose two splits are", async () => {
+      core();
+      render(<App />);
+      await openAChat();
+
+      expect(closes()).toEqual([]);
+      expect(paneDoing(1).getByRole("button", { name: "Split right" })).toBeInTheDocument();
+      expect(paneDoing(1).getByRole("button", { name: "Split down" })).toBeInTheDocument();
+    });
+
+    it("comes on both panes' heads with a second pane, and goes when it is closed again", async () => {
+      core();
+      render(<App />);
+      await openAChat();
+      await splitInto("Split right");
+
+      await waitFor(() => expect(closes()).toHaveLength(2));
+      expect(paneDoing(1).getByRole("button", { name: "Close this pane" })).toBeInTheDocument();
+      expect(paneDoing(2).getByRole("button", { name: "Close this pane" })).toBeInTheDocument();
+
+      await userEvent.click(paneDoing(2).getByRole("button", { name: "Close this pane" }));
+
+      await waitFor(() => expect(panes()).toEqual(["session 1"]));
+      expect(closes()).toEqual([]);
+    });
+
+    it("leaves the tab's × doing what the Close did on the strip's last tab: one empty pane", async () => {
+      core();
+      render(<App />);
+      await openAChat();
+
+      await userEvent.click(screen.getByRole("button", { name: "Close steward 1" }));
+
+      expect(await screen.findByText("Nothing in this pane")).toBeInTheDocument();
+      expect(tabs()).toHaveLength(1);
+    });
+
+    it("leaves the keyboard in the empty pane the strip's last tab keeps, after the tab's ×", async () => {
+      core();
+      render(<App />);
+      await openAChat();
+
+      await userEvent.click(screen.getByRole("button", { name: "Close steward 1" }));
+
+      const empty = await screen.findByTestId("empty-pane");
+      await waitFor(() => expect(empty).toContainElement(document.activeElement as HTMLElement));
+    });
+
+    it("puts the keyboard in the tab now in front, after the front tab's ×", async () => {
+      core();
+      render(<App />);
+      await openAChat();
+      await openAChat();
+
+      keyboardGiven.length = 0;
+
+      await userEvent.click(screen.getByRole("button", { name: "Close steward 2" }));
+
+      await waitFor(() => expect(panes()).toEqual(["session 1"]));
+      expect(keyboardGiven).toEqual([1]);
+    });
+
+    it("is not on an empty pane alone in its tab, whose two splits are", async () => {
+      core();
+      render(<App />);
+      const empty = await screen.findByTestId("empty-pane");
+      const frame = within(empty.closest(".pane-frame") as HTMLElement);
+
+      expect(frame.getByRole("button", { name: "Split right" })).toBeInTheDocument();
+      expect(frame.queryByRole("button", { name: "Close this pane" })).toBeNull();
+    });
   });
 
   it("clears a pane on Close pane, and its chat goes on (#4756)", async () => {

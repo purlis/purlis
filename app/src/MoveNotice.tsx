@@ -5,8 +5,6 @@ import { useEffect, useRef, useState } from "react";
 import { type ChatMove, type MoveSignIn, type PlaneId, type PlanRow } from "./bindings";
 import {
   askMove,
-  dismissMovedAfterSignIn,
-  forgetMove,
   moveCancellable,
   moveSaid,
   placeSaid,
@@ -16,6 +14,7 @@ import {
   useMovedAfterSignIn,
 } from "./chatMoves";
 import { Notice, type NoticeAction } from "./Notice";
+import { clearedHere, putAwayEverywhere } from "./notesClearedEverywhere";
 import { saveLimits } from "./pools";
 import { RaiseLimit } from "./RaiseLimit";
 import { askProfileSignIn } from "./settings/links";
@@ -39,6 +38,10 @@ import { PoolSignIn, approvesIn, drivenPlan } from "./settings/PoolSignIn";
  *
  * **A move refused by a pool's limit offers to raise it** (#4313), as Start a chat does: saving
  * the values asks for the move again.
+ *
+ * **A line dismissed here is dismissed in every window of the project** (#5363): another may hold
+ * it for the chat coming back to it. Cancel move needs no telling: the core tells every window
+ * the move is over.
  */
 export function MoveNotice({ plane, session }: { plane: PlaneId; session: number }) {
   const one = useChatMoves(plane)[session];
@@ -49,7 +52,7 @@ export function MoveNotice({ plane, session }: { plane: PlaneId; session: number
         cause={`chat-moved:${session}`}
         at="pane"
         label="Move"
-        onDismiss={() => dismissMovedAfterSignIn(plane, session)}
+        onDismiss={() => putAwayEverywhere(plane, session, { kind: "moved" })}
       >
         {`Moved to ${placeSaid(movedTo)}.`}
       </Notice>
@@ -73,7 +76,7 @@ export function MoveNotice({ plane, session }: { plane: PlaneId; session: number
         cause={`chat-move:${session}`}
         at="pane"
         label="Move"
-        onDismiss={() => forgetMove(plane, session)}
+        onDismiss={() => putAwayEverywhere(plane, session, { kind: "move" })}
         dismissSays="Hides this line. The move is being made, and goes on."
       >
         {said.words}
@@ -145,6 +148,7 @@ function MoveFailed({
       onDismiss={() => {
         left.current = true;
         putAwayMove(plane, session);
+        clearedHere(plane, session, { kind: "move" });
       }}
       under={
         offer === null ? undefined : (

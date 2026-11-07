@@ -621,6 +621,7 @@ jobs:
           cp "$RUNNER_TEMP/claude-code/node_modules/$package/claude" "$parity/claude-code"
           docker build --file tests/parity/runner.Dockerfile \
             --build-arg RUNNER=purlis-runner:parity --build-arg "AT=$PWD/target/debug" \
+            --build-arg "ENGINE_NOW=$(jq -r .issued crates/browser-engine/engine-pin.json)" \
             --tag localhost:5000/purlis-runner-parity:candidate "$parity"
           docker push localhost:5000/purlis-runner-parity:candidate
           image=$(docker image inspect --format '{{index .RepoDigests 0}}' localhost:5000/purlis-runner-parity:candidate)
@@ -1099,11 +1100,16 @@ jobs:
         run: |
           kept="$RUNNER_TEMP/coldstart"
           mkdir -p "$kept"
-          cp target/debug/charter-app "$kept/change"
+          mv target/debug/purlis-app "$kept/change"
           git worktree add --detach "$RUNNER_TEMP/main" "$BASE"
           if (cd "$RUNNER_TEMP/main/app" && npm ci \
                 && CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target" npx tauri build --debug --no-bundle); then
-            cp target/debug/charter-app "$kept/main"
+            # A base from before #1309 built the app as `charter-app`.
+            if [ -x target/debug/purlis-app ]; then
+              cp target/debug/purlis-app "$kept/main"
+            else
+              cp target/debug/charter-app "$kept/main"
+            fi
             echo "app=$kept/main" >> "$GITHUB_OUTPUT"
             # The change is launched from its copy beside main's, not from target/debug: the
             # app finds the `purlis` beside it and arms hooks and shims at start, so two builds
@@ -1112,7 +1118,7 @@ jobs:
           else
             node tools/coldstart-no-baseline.mjs "$BASE"
           fi
-          cp "$kept/change" target/debug/charter-app
+          cp "$kept/change" target/debug/purlis-app
       # Cold start on Linux (charter-app#24, program map FR-8). This runner IS the issue's machine:
       # its session bus is up and can activate a desktop portal that cannot start, which cost
       # 26-31 s before the app asked the portal first (`portal.rs`). A debug build on a shared
@@ -1287,7 +1293,7 @@ jobs:
       - name: The app starts and draws a window
         run: |
           runuser -u ci -- env HOME=/home/ci PATH="/home/ci/.cargo/bin:$PATH" \
-            APP=/home/ci/target/debug/charter-app LIMIT_MS=20000 CEILING_MS=30000 \
+            APP=/home/ci/target/debug/purlis-app LIMIT_MS=20000 CEILING_MS=30000 \
             dbus-run-session -- tools/coldstart-linux.sh bare
 
   # The core's and the app's tests on macOS, under the orphan check (#965). The leaks #923
@@ -1585,6 +1591,7 @@ jobs:
           a_no_seed_mark_is_made_only_in_the_window::
           no_old_name_is_spelled_in_the_window_or_its_assets::
           every_deferral_names_its_ticket::
+          every_repo_path_comes_from_the_resolver::
       - name: The plane writes, hooks, status line and doctor, as recorded
         if: needs.changes.outputs.rust != 'false'
         run: cargo test --locked -p purlis-cli --test recorded_behaviour
@@ -1700,8 +1707,14 @@ jobs:
       # `main` and only read by a pull request, as rust-cache's is (#1547). Turned on AFTER
       # rust-cache: rust-cache keys its cache on every RUST* and CARGO* variable, and a
       # RUSTC_WRAPPER set before it would key it apart from the one `stress` restores (#1826).
+      # Its own download of sccache from GitHub's releases is never fatal either (#5403): it
+      # asks three times, and a 504 on all three failed two merge groups on 2026-11-05. A job
+      # whose sccache did not arrive compiles without it: the next step finds no `sccache` to
+      # start and takes the same way as a cache that does not answer.
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        id: sccache
         if: runner.os == 'macOS'
+        continue-on-error: true
         with:
           version: v0.18.0
       # A cache that does not answer is a slower job, never a failed one: the storage behind
@@ -1714,6 +1727,7 @@ jobs:
         if: runner.os == 'macOS'
         env:
           MODE: ${{ github.ref == 'refs/heads/main' && 'READ_WRITE' || 'READ_ONLY' }}
+          ARRIVED: ${{ steps.sccache.outcome }}
         run: |
           export SCCACHE_GHA_ENABLED=true SCCACHE_GHA_RW_MODE="$MODE"
           if sccache --start-server >/dev/null 2>&1 && sccache --show-stats >/dev/null 2>&1; then
@@ -1723,8 +1737,10 @@ jobs:
               echo "SCCACHE_GHA_RW_MODE=$MODE"
               echo "SCCACHE_IGNORE_SERVER_IO_ERROR=1"
             } >> "$GITHUB_ENV"
-          else
+          elif [ "$ARRIVED" = success ]; then
             echo "::warning title=sccache::the build cache did not answer, so this job compiles without it"
+          else
+            echo "::warning title=sccache::sccache could not be downloaded, so this job compiles without it"
           fi
       # Whether macOS's sandbox matches a name as typed or as it is on disk, measured; that the
       # case-classed rules purlis writes for Claude Code hold every spelling (#2071, #2107); and
@@ -1868,7 +1884,7 @@ jobs:
           echo "PURLIS_E2E_POOL_IMAGE=$image" >> "$GITHUB_ENV"
       # What sccache found, as a notice: whether the experiment pays, without the log.
       - name: sccache's hits and misses
-        if: runner.os == 'macOS' && !cancelled()
+        if: runner.os == 'macOS' && !cancelled() && steps.sccache.outcome == 'success'
         continue-on-error: true
         # Its whole report, or what it said instead: the first version filtered it to five lines
         # and #1829's run showed no notice at all.

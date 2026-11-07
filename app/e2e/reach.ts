@@ -64,6 +64,21 @@ export async function everyTabName(): Promise<string[]> {
     menu,
   );
   await browser.keys(["Escape"]);
+  // Escape reaches the menu only where the keyboard went into it. Opened by a click from the
+  // page, it may not have: a second press of its own button closes it then, as a person's does.
+  // Since the 160px floor (#5341) a strip hides tabs it used to draw, so this menu is opened here
+  // more often than it was.
+  const closed = await $(menu)
+    .waitForExist({ timeout: 2_000, reverse: true })
+    .catch(() => false);
+  if (!closed)
+    await browser.execute(() => {
+      [...document.querySelectorAll<HTMLElement>("button[aria-haspopup='menu']")]
+        .find((one) =>
+          /^Show \d+ tabs? the strip is not showing/.test(one.getAttribute("aria-label") ?? ""),
+        )
+        ?.click();
+    });
   await $(menu).waitForExist({ timeout: 10_000, reverse: true });
   return [...drawn, ...hidden];
 }
@@ -216,14 +231,19 @@ export async function untilTheStripIsBare(spec: string): Promise<void> {
  * **This `describe` closes the view tabs it opens** (#5111, #5131): writes down the strip before
  * its specs and closes what is new after them, by {@link closeTheViewTabsOpenedSince}. A `before`
  * and an `after` registered where it is called, and hooks run in the order they are registered,
- * so call it below any `after` that has to come first, such as one ending the file's chats.
+ * so call it below any `after` that has to come first, such as one ending the file's chats. A
+ * strip never read, because a `before` above failed, is not closed.
  */
 export function closesTheTabsItOpens(): void {
-  let wereOpen: string[] = [];
+  // `null` until the strip is read: a `before` above that failed skips this one, and its `after`
+  // then closes nothing rather than every view tab on the strip.
+  let wereOpen: string[] | null = null;
   before(async () => {
     wereOpen = await tabNames();
   });
-  after(() => closeTheViewTabsOpenedSince(wereOpen));
+  after(async () => {
+    if (wereOpen !== null) await closeTheViewTabsOpenedSince(wereOpen);
+  });
 }
 
 /** Every workspace of the project in front, as the title bar's ⌄ lists them (#2916): the plane

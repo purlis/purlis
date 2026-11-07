@@ -373,7 +373,7 @@ describe("a task stopped on a permission prompt", () => {
     // the line away (qw386).
     const buttons = within(notice)
       .getAllByRole("button")
-      .map((one) => one.textContent);
+      .map((one) => one.getAttribute("aria-label") ?? one.textContent);
     expect(buttons).toEqual(["Show the task", "Dismiss"]);
 
     fireEvent.click(within(notice).getByRole("button", { name: "Show the task" }));
@@ -429,13 +429,13 @@ describe("a task stopped on a permission prompt", () => {
       return found;
     });
     // Without the prompt's words, which only the hold carried.
-    expect(notice.textContent).toBe(
-      "“sweep” (a task of “steward 1”) is stopped on a prompt and waiting on you. Answer it in its own pane.Show the taskDismiss",
+    expect(notice.querySelector('[data-part="message"]')?.textContent).toBe(
+      "“sweep” (a task of “steward 1”) is stopped on a prompt and waiting on you. Answer it in its own pane.",
     );
     expect(
       within(notice)
         .getAllByRole("button")
-        .map((one) => one.textContent),
+        .map((one) => one.getAttribute("aria-label") ?? one.textContent),
     ).toEqual(["Show the task", "Dismiss"]);
     expect(hand("steward 1")).not.toBeNull();
 
@@ -501,8 +501,9 @@ describe("putting a waiting chat's Notice away (qw386)", () => {
       return found;
     });
     const dismiss = within(notice).getByRole("button", { name: "Dismiss" });
+    // An icon button's tip is its name, then what it does.
     expect(tipOf(dismiss)).toEqual(
-      "Hides this line. The chat still waits on you, and the needs-you list still shows it.",
+      "DismissHides this line. The chat still waits on you, and the needs-you list still shows it.",
     );
 
     fireEvent.click(dismiss);
@@ -513,6 +514,38 @@ describe("putting a waiting chat's Notice away (qw386)", () => {
     // The same prompt said again does not bring it back.
     await asks(said, [prompt(5, "Run purlis persona where")]);
     expect(promptNotice(5)).toBeNull();
+  });
+
+  it("Dismiss tells every window of the project, which hides it too (#5363)", async () => {
+    const { said, asked } = await drawn(withTasks());
+    await waitFor(() => expect(onScreen()).toEqual([1]));
+    await asks(said, [prompt(5, "Run purlis persona where")]);
+    const notice = await waitFor(() => {
+      const found = promptNotice(5);
+      if (found === null) throw new Error("no Notice for sweep's prompt");
+      return found;
+    });
+    const cause = notice.getAttribute("data-cause");
+
+    fireEvent.click(within(notice).getByRole("button", { name: "Dismiss" }));
+
+    await waitFor(() =>
+      expect(
+        asked
+          .filter((one) => one.cmd === "plugin:event|emit" && one.args.event === "note-cleared")
+          .map((one) => one.args.payload),
+      ).toEqual([
+        {
+          plane: PLANE,
+          session: 5,
+          note: {
+            kind: "hidden",
+            causes: [cause, expect.stringMatching(/^task-permission:5:asked:/)],
+          },
+          from: "main",
+        },
+      ]),
+    );
   });
 
   it("a new prompt of the same chat shows again", async () => {
@@ -568,7 +601,7 @@ describe("putting a waiting chat's Notice away (qw386)", () => {
   });
 
   it("a dismissed permission keeps the stopped line hidden once the hold ends, for that wait", async () => {
-    const { said, move } = await drawn(withTasks());
+    const { said, move, asked } = await drawn(withTasks());
     await waitFor(() => expect(onScreen()).toEqual([1]));
     await move(5, "running", 1);
     await asks(said, [prompt(5, "Run purlis persona where")]);
@@ -584,6 +617,19 @@ describe("putting a waiting chat's Notice away (qw386)", () => {
     await move(5, "waiting", 2, [5], { asking: true });
     await asks(said, []);
     expect(promptNotice(5)).toBeNull();
+    // Kept away in every window of the project, which never saw it carried (#5363).
+    await waitFor(() =>
+      expect(
+        asked
+          .filter((one) => one.cmd === "plugin:event|emit" && one.args.event === "note-cleared")
+          .map((one) => (one.args.payload as { note: unknown }).note)
+          .at(-1),
+      ).toEqual({ kind: "hidden", causes: [expect.stringMatching(/^task-permission:5:asked:/)] }),
+    );
+    const told = asked.filter(
+      (one) => one.cmd === "plugin:event|emit" && one.args.event === "note-cleared",
+    );
+    expect(told).toHaveLength(2);
 
     // Answered, it goes on; its next stop is a new wait and shows.
     await move(5, "running", 3);

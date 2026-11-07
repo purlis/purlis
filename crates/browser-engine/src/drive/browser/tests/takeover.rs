@@ -1559,7 +1559,7 @@ fn a_large_page(
     takes: Duration,
     key_waits: Duration,
     read_may_take: Duration,
-) -> (super::Browser, Arc<super::Engine>) {
+) -> (super::StandIn, Arc<super::Engine>) {
     a_large_page_kept_for(takes, key_waits, read_may_take, Duration::from_secs(10))
 }
 
@@ -1569,7 +1569,7 @@ fn a_large_page_kept_for(
     key_waits: Duration,
     read_may_take: Duration,
     kept_for: Duration,
-) -> (super::Browser, Arc<super::Engine>) {
+) -> (super::StandIn, Arc<super::Engine>) {
     let (browser, engine) = super::browser_with(crate::drive::Limits {
         key_reads_within: key_waits,
         tree_reads_within: read_may_take,
@@ -1965,7 +1965,7 @@ fn the_last_box_is_read_only_at_the_hand_back(
 }
 
 /// A browser whose person's reads of a page wait at most `within` (#3277).
-fn reads_within(within: Duration) -> (super::Browser, Arc<super::Engine>) {
+fn reads_within(within: Duration) -> (super::StandIn, Arc<super::Engine>) {
     super::browser_with(crate::drive::Limits {
         key_reads_within: within,
         ..super::limits()

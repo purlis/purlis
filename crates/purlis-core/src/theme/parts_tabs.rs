@@ -50,6 +50,13 @@ pub(super) const TABS: Family = Family {
             properties: &[Prop::Fill, Prop::Text, Prop::CornerRadius],
         },
         Part {
+            name: "picture",
+            since: super::NEXT,
+            description: "A split tab's small picture of its layout's shape, after its name: \
+                      its box and the lines between its panes.",
+            properties: &[Prop::Text],
+        },
+        Part {
             name: "indicator",
             since: 8,
             description: "The mark on the chosen tab's edge: none until a theme gives it a height.",
@@ -114,13 +121,19 @@ pub(super) const TABS: Family = Family {
     defaults: tabs_look_in,
     states: &[State::Hover, State::Selected],
     focused: "[data-focus-visible]",
-    // Its ×, a faint mark on the tab, and its count, secondary words on the sunken pill of the
-    // tab's chip (`App.css`, #3264), which the count itself does not paint (#3099).
-    words: &[("closer", "text.faint"), ("count", "text.secondary")],
+    // Its ×, a faint mark on the tab, and its count, secondary words on the menu of a chat's
+    // tasks, whose summary it draws since a tab wears no count (`App.css`, #5341), and which the
+    // count itself does not paint (#3099); and a split tab's picture, in the quiet tier after the
+    // name it never outweighs (#5342).
+    words: &[
+        ("closer", "text.faint"),
+        ("count", "text.secondary"),
+        ("picture", "text.quiet"),
+    ],
     around: &["strip", "layout"],
     corner_most: None,
     fills: &[],
-    under: &[("count", &["surface.sunken"])],
+    under: &[("count", &["surface.overlay"])],
 };
 
 pub(super) const EDITOR: Family = Family {

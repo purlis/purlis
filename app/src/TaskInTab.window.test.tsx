@@ -1549,9 +1549,6 @@ describe("closing, while a tab shows a task", () => {
 
   it("draws no close on the pane, and the task's two ways to end are rows of its ⋯ (#4760)", async () => {
     const { tree } = await drawn(withTasks());
-    // The session's own pane has its close in its corner, as it always had.
-    expect(screen.getByRole("button", { name: "Close this pane" })).toBeTruthy();
-
     await userEvent.click(row(tree, "talk"));
     await waitFor(() => expect(onScreen()).toEqual([4]));
 

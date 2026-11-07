@@ -73,7 +73,7 @@ fn plane(root: &Path) -> String {
         format!("status:\n{}", git(root, &["status", "--porcelain"])),
         format!("config:\n{}", git(root, &["config", "--local", "--list"])),
     ];
-    let clone = root.join("workspaces/alpha/widget");
+    let clone = cloned_at(root, "alpha", "widget");
     if clone.join(".git").is_dir() {
         out.push(format!(
             "clone config:\n{}",
@@ -102,8 +102,14 @@ fn plane(root: &Path) -> String {
     side.replace_all(&out.join("\n"), "/<side>/").into_owned()
 }
 
+/// Where workspace `ws`'s clone `name` is, in either layout (ADR 0114): `repos/<name>` once a
+/// clone lands there, the workspace's root for one made before structure version 6.
+fn cloned_at(root: &Path, ws: &str, name: &str) -> std::path::PathBuf {
+    purlis_core::repofolder::folder(root, ws, name).expect("a repo's name")
+}
+
 fn clone(root: &Path, name: &str, ws: &str) -> String {
-    let clone = root.join("workspaces").join(ws).join(name);
+    let clone = cloned_at(root, ws, name);
     if !clone.join(".git").is_dir() {
         return "no clone".into();
     }
@@ -170,7 +176,7 @@ fn unrecorded(root: &Path) -> Result<String, String> {
 }
 
 fn restored_clone(root: &Path) -> Result<String, String> {
-    let tree = root.join("workspaces/alpha/api");
+    let tree = cloned_at(root, "alpha", "api");
     if !tree.join(".git").is_dir() {
         return Err("there is no clone at workspaces/alpha/api".into());
     }

@@ -143,7 +143,7 @@ fn base32_alone(text: &str) -> bool {
             return false;
         }
     }
-    count.one_case_seed()
+    count.seed()
 }
 
 /// Whether `line` holds a seed. Walks back from its end, as what isn't one stays none however far
@@ -175,10 +175,12 @@ fn seed_on(line: &str) -> bool {
             gap.chars()
                 .all(|c| OPENERS.contains(&c) || c.is_whitespace())
         } else {
-            gap.contains(|c: char| NAME_ENDS.contains(&c) || c.is_whitespace())
+            gap.contains(|c: char| {
+                NAME_ENDS.contains(&c) || JOINERS.contains(&c) || c.is_whitespace()
+            })
         };
         let group = last || at + 3 <= words.len() || is_white(words[at + 1].0);
-        if starts && group && (count.one_case_seed() || count.both_cases_seed()) {
+        if starts && group && count.seed() {
             return true;
         }
     }
@@ -193,6 +195,10 @@ const CLOSERS: [char; 8] = ['"', '\'', ')', ']', '}', ',', ';', '='];
 
 /// What stands between a name and the value after it, besides white space.
 const NAME_ENDS: [char; 7] = [':', '=', '"', '\'', ',', ';', '|'];
+
+/// **What joins a name to the value after it as one word** (the person's ruling of 2026-11-06):
+/// `secret_GEZD…` is a seed with its name before it.
+const JOINERS: [char; 2] = ['_', '-'];
 
 fn is_white(gap: &str) -> bool {
     gap.chars().all(char::is_whitespace)
@@ -223,8 +229,7 @@ fn words_of(text: &str) -> Vec<(&str, &str)> {
 /// How many characters of each kind a stretch of base32 holds.
 #[derive(Default)]
 struct Base32Count {
-    lower: usize,
-    upper: usize,
+    letters: usize,
     digits: usize,
 }
 
@@ -232,8 +237,7 @@ impl Base32Count {
     /// Counts `c`, or answers false where base32 has no such character.
     fn add(&mut self, c: char) -> bool {
         match c {
-            'a'..='z' => self.lower += 1,
-            'A'..='Z' => self.upper += 1,
+            'a'..='z' | 'A'..='Z' => self.letters += 1,
             '2'..='7' => self.digits += 1,
             _ => return false,
         }
@@ -241,25 +245,16 @@ impl Base32Count {
     }
 
     fn all(&self) -> usize {
-        self.lower + self.upper + self.digits
+        self.letters + self.digits
     }
 
-    /// In one case, with letters and digits from 80 bits' worth, or letters at a length apps give.
-    fn one_case_seed(&self) -> bool {
-        let letters = self.lower + self.upper;
-        (self.lower == 0 || self.upper == 0)
-            && letters > 0
+    /// **With letters, and digits from 80 bits' worth, or letters at a length apps give**,
+    /// whatever its case mix (the person's ruling of 2026-11-06): a seed with one letter
+    /// capitalised, or in random case, is still a seed.
+    fn seed(&self) -> bool {
+        self.letters > 0
             && ((self.digits > 0 && self.all() >= FEWEST_CHARACTERS)
                 || BARE_CHARACTERS.contains(&self.all()))
-    }
-
-    /// In both cases, each a good share of the letters, with a digit, at a length apps give.
-    fn both_cases_seed(&self) -> bool {
-        let letters = self.lower + self.upper;
-        self.lower.min(self.upper) * 3 >= letters
-            && self.lower > 0
-            && self.digits > 0
-            && BARE_CHARACTERS.contains(&self.all())
     }
 }
 

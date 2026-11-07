@@ -418,7 +418,10 @@ fn not_a_task_s(
 /// Whether the brokered route refuses to run git in `repo`'s clone, so a task's Discard there
 /// is refused too (`purlis_core::gitbroker::runs_a_program`).
 fn no_discard_there(plane: &Path, workspace: &str, repo: &str) -> bool {
-    let clone = plane.join("workspaces").join(workspace).join(repo);
+    // A name no repo has is refused, as a clone git cannot be run in safely would be.
+    let Ok(clone) = purlis_core::repofolder::folder(plane, workspace, repo) else {
+        return true;
+    };
     purlis_core::worktree::git::isolated(&crate::gitbroker::isolation(), || {
         purlis_core::gitbroker::runs_a_program(&clone).is_err()
     })

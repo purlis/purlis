@@ -222,3 +222,61 @@ fn a_stop_that_arrives_mid_save_returns_once_the_save_has_let_go_of_the_repo() {
         "the stop returned before the save let go of the repo"
     );
 }
+
+/// Whether recall, answered from the project index, finds a memory titled `title` by `word`.
+fn indexed(root: &Path, word: &str, title: &str) -> bool {
+    let got = purlis_core::recall::recall(
+        root,
+        &purlis_core::recall::Ask {
+            scopes: vec!["workspace".into()],
+            workspaces: Some(purlis_core::recall::Workspaces::One("alpha".into())),
+            persona: None,
+            session: "s1".into(),
+            query: Some(word.into()),
+            limit: 0,
+            since: None,
+        },
+    );
+    got.index.is_some() && got.hits.iter().any(|hit| hit.title == title)
+}
+
+#[test]
+fn a_memory_written_while_the_host_saves_its_project_is_found_within_two_seconds() {
+    let (_dir, root) = a_plane();
+    let memory = root.join("workspaces/alpha/memory");
+    std::fs::create_dir_all(&memory).expect("a workspace's journal");
+    std::fs::write(
+        memory.join("20260301-091400-first.md"),
+        "# First\n\n_2026-03-01 09:14 · persistent_\n\nalready here\n",
+    )
+    .expect("a memory");
+    let saving = InTheHost
+        .save(ToSave {
+            project: PROJECT.into(),
+            project_path: root.clone(),
+            told: Box::new(|_| {}),
+            working: Box::new(Vec::new),
+            ask_the_window: Box::new(|_| Some(Vec::new())),
+        })
+        .expect("it saves");
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !indexed(&root, "already", "First") {
+        assert!(Instant::now() < deadline, "the host never built the index");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    let written = Instant::now();
+    std::fs::write(
+        memory.join("20260302-091400-agent.md"),
+        "# Written by an agent\n\n_2026-03-02 09:14 · persistent_\n\nquokkas everywhere\n",
+    )
+    .expect("a memory");
+    while !indexed(&root, "quokkas", "Written by an agent") {
+        assert!(
+            written.elapsed() < Duration::from_secs(2),
+            "the memory was not found within two seconds"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    drop(saving);
+}

@@ -17,43 +17,43 @@ pub(super) const PAGE_TABS: Family = Family {
     name: "page-tabs",
     description: "The tabs inside a page that switch its panels: a skill's Overview, Text, \
                   History, Grades and Runs.",
-    since: super::NEXT,
+    since: 13,
     parts: &[
         Part {
             name: "tab",
-            since: super::NEXT,
+            since: 13,
             description: "One tab: its words' colour, at rest and in each state.",
             properties: &[Prop::Fill, Prop::Text, Prop::CornerRadius],
         },
         Part {
             name: "label",
-            since: super::NEXT,
+            since: 13,
             description: "The tab's words.",
             properties: &[Prop::FontSize, Prop::FontWeight],
         },
         Part {
             name: "count",
-            since: super::NEXT,
+            since: 13,
             description: "The count after a tab's words: how many it holds.",
             properties: &[Prop::Text, Prop::FontSize],
         },
         Part {
             name: "indicator",
-            since: super::NEXT,
+            since: 13,
             description: "The bar under the chosen tab, which tells it apart by more than its \
                           colour.",
             properties: &[Prop::Fill, Prop::CornerRadius],
         },
         Part {
             name: "list",
-            since: super::NEXT,
+            since: 13,
             description: "The row the tabs sit in: the line under it and the room between its \
                           tabs.",
             properties: &[Prop::BorderColour, Prop::BorderWidth, Prop::Gap, Prop::Padding],
         },
         Part {
             name: "panel",
-            since: super::NEXT,
+            since: 13,
             description: "The chosen tab's panel: the room around what it holds.",
             properties: &[Prop::Padding],
         },

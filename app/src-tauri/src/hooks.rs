@@ -93,6 +93,11 @@ pub struct Moved {
     /// as it did, and the chat is at work, so a restart or a move owed it waits. Absent otherwise.
     #[specta(optional)]
     pub background_turn: Option<bool>,
+    /// **It is in the queue only for tasks of its that came to nothing** (#5340,
+    /// `Board::needs_you_for_itself`, #1693): nothing of its own asks the person, so its mark
+    /// says a task failed and not that it needs them. Absent otherwise.
+    #[specta(optional)]
+    pub only_failures: Option<bool>,
     /// Which snapshot of the board this is — bigger was taken later (charter-app#248).
     ///
     /// **What lets the window put its events back in order.** Every `Moved` is built under the
@@ -3124,6 +3129,23 @@ impl Hooks {
         }
     }
 
+    /// **Records a Run grant given, taken back or not allowed** (ADR 0112, #5241), under the chat
+    /// it is of: before it takes effect, so no grant is made unrecorded.
+    pub fn record_run_grant(
+        &self,
+        root: &Path,
+        chat: u32,
+        audited: &purlis_core::secrets::ask::run::Audited<'_>,
+    ) -> Result<(), String> {
+        self.audit(
+            root,
+            Some(chat),
+            audited.kind(),
+            audited.body(),
+            ("changed", "run grant"),
+        )
+    }
+
     /// **Audits a sandbox grant or revoke** (#1342) in the host's event log, under chat
     /// `number` where it came from one, and made durable before it answers. Refused where this
     /// machine has no event log open: a grant nobody recorded is never made.
@@ -3821,6 +3843,9 @@ fn seen_by(board: &Board, plane: &PlaneId, session: u32) -> Moved {
         asking: board.waits_on_its_prompt(session).then_some(true),
         own_work: board.own_work(session).map(OwnWork::from),
         background_turn: board.background_turn(session).then_some(true),
+        only_failures: (!board.failed_tasks(session).is_empty()
+            && !board.needs_you_for_itself(session))
+        .then_some(true),
         counts_only: false,
         raised: false,
         children: board

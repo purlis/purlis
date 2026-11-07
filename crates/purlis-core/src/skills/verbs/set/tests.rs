@@ -14,21 +14,21 @@ use crate::skills::source::{Commit, Remote};
 use crate::skills::verbs::{By, restore};
 use crate::testgit::run;
 
-const TO_SPEC: &str =
+pub(super) const TO_SPEC: &str =
     "---\nname: to-spec\ndescription: Writes a spec.\n---\n\nCall skills:grilling first.\n";
 
-fn skill_text(name: &str) -> String {
+pub(super) fn skill_text(name: &str) -> String {
     format!("---\nname: {name}\ndescription: Does {name}.\n---\n\nbody\n")
 }
 
-fn remote() -> Remote {
+pub(super) fn remote() -> Remote {
     Remote {
         url: "https://example.invalid/acme/skills".to_owned(),
         branch: None,
     }
 }
 
-fn write(root: &Path, level: &str, name: &str, text: &str) {
+pub(super) fn write(root: &Path, level: &str, name: &str, text: &str) {
     let dir = root.join(level).join(name);
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("SKILL.md"), text).unwrap();
@@ -57,7 +57,7 @@ fn locked(level: Level, name: &str, text: &str) -> Locked {
 /// A plane that saves by committing: `grilling`, `tdd` and `review` installed from [`remote`] at
 /// the project's level, `to-spec` the project's own and naming `grilling`, a workspace `ops`, and
 /// `grilling` installed at the project's local level too.
-fn plane() -> tempfile::TempDir {
+pub(super) fn plane() -> tempfile::TempDir {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     std::fs::write(
@@ -99,11 +99,11 @@ fn plane() -> tempfile::TempDir {
     tmp
 }
 
-fn output(root: &Path, args: &[&str]) -> String {
+pub(super) fn output(root: &Path, args: &[&str]) -> String {
     git(root, args).unwrap()
 }
 
-fn did<T>(root: &Path, change: impl FnOnce(&mut Ctx<'_>) -> T) -> T {
+pub(super) fn did<T>(root: &Path, change: impl FnOnce(&mut Ctx<'_>) -> T) -> T {
     let mut say = |_: Say| {};
     change(&mut Ctx {
         plane: root,
@@ -113,31 +113,31 @@ fn did<T>(root: &Path, change: impl FnOnce(&mut Ctx<'_>) -> T) -> T {
     })
 }
 
-fn project(name: &str) -> Member {
+pub(super) fn project(name: &str) -> Member {
     Member {
         level: Level::project(),
         name: name.to_owned(),
     }
 }
 
-fn commits(root: &Path) -> usize {
+pub(super) fn commits(root: &Path) -> usize {
     output(root, &["rev-list", "--count", "HEAD"])
         .trim()
         .parse()
         .unwrap()
 }
 
-fn subject(root: &Path) -> String {
+pub(super) fn subject(root: &Path) -> String {
     output(root, &["log", "-1", "--format=%s"])
         .trim()
         .to_owned()
 }
 
-fn there(root: &Path, level: &str, name: &str) -> bool {
+pub(super) fn there(root: &Path, level: &str, name: &str) -> bool {
     root.join(level).join(name).join("SKILL.md").exists()
 }
 
-fn deleted_named(root: &Path) -> Vec<String> {
+pub(super) fn deleted_named(root: &Path) -> Vec<String> {
     let mut names: Vec<String> = deleted(root).into_iter().map(|one| one.name).collect();
     names.sort();
     names
@@ -428,7 +428,7 @@ fn the_review_warns_of_a_skill_left_naming_one_that_goes_and_says_what_could_com
     let root = tmp.path();
     // The local copy of the name would still answer, so it is taken out of the way.
     std::fs::remove_dir_all(root.join("skills.local/grilling")).unwrap();
-    let review = review_set(root, Act::Delete, &[project("grilling")], None);
+    let review = review_set(root, Act::Delete, &[project("grilling")], None, None);
     assert_eq!(review.names.len(), 1);
     let one = &review.names[0];
     assert_eq!(one.namer, "to-spec");
@@ -443,6 +443,7 @@ fn the_review_warns_of_a_skill_left_naming_one_that_goes_and_says_what_could_com
         root,
         Act::Delete,
         &[project("grilling"), project("to-spec")],
+        None,
         None,
     );
     assert!(both.names.is_empty());
@@ -459,7 +460,7 @@ fn a_skill_named_by_its_bare_name_in_quotes_is_warned_of_as_well() {
         "grill-with-docs",
         "---\nname: grill-with-docs\ndescription: Grills.\n---\n\nCall the Skill tool for \"grilling\".\n",
     );
-    let review = review_set(root, Act::Delete, &[project("grilling")], None);
+    let review = review_set(root, Act::Delete, &[project("grilling")], None, None);
     let namers: Vec<&str> = review.names.iter().map(|one| one.namer.as_str()).collect();
     assert_eq!(namers, ["grill-with-docs", "to-spec"]);
     // A word in a sentence names nothing.
@@ -469,7 +470,7 @@ fn a_skill_named_by_its_bare_name_in_quotes_is_warned_of_as_well() {
         "grill-with-docs",
         "---\nname: grill-with-docs\ndescription: Grills.\n---\n\nStop grilling people.\n",
     );
-    let review = review_set(root, Act::Delete, &[project("grilling")], None);
+    let review = review_set(root, Act::Delete, &[project("grilling")], None, None);
     let namers: Vec<&str> = review.names.iter().map(|one| one.namer.as_str()).collect();
     assert_eq!(namers, ["to-spec"]);
 }
@@ -478,7 +479,7 @@ fn a_skill_named_by_its_bare_name_in_quotes_is_warned_of_as_well() {
 fn another_copy_of_the_name_that_stays_answers_so_no_warning_is_given() {
     let tmp = plane();
     let root = tmp.path();
-    let review = review_set(root, Act::Delete, &[project("grilling")], None);
+    let review = review_set(root, Act::Delete, &[project("grilling")], None, None);
     assert!(review.names.is_empty(), "{:?}", review.names);
 }
 
@@ -495,6 +496,7 @@ fn the_review_marks_a_skill_that_cannot_apply_and_says_what_changed_since_instal
         root,
         Act::Delete,
         &[project("tdd"), project("review"), project("gone")],
+        None,
         None,
     );
     let of = |name: &str| {
@@ -568,4 +570,154 @@ fn a_set_one_of_which_cannot_turn_changes_nothing() {
     );
     assert_eq!(commits(root), before);
     assert!(crate::skills::turned_off(root, "ops").is_empty());
+}
+
+#[test]
+fn the_review_of_a_move_takes_out_one_the_level_it_goes_to_already_has() {
+    let tmp = plane();
+    let root = tmp.path();
+    write(root, "workspaces/ops/skills", "tdd", &skill_text("tdd"));
+    let ops = Level::workspace("ops");
+    let review = review_set(
+        root,
+        Act::Move,
+        &[
+            project("grilling"),
+            project("tdd"),
+            Member {
+                level: ops.clone(),
+                name: "tdd".into(),
+            },
+        ],
+        None,
+        Some(&ops),
+    );
+    let of = |at: usize| review.skills[at].cannot.clone();
+    assert_eq!(of(0), None);
+    assert!(
+        of(1).is_some_and(|why| why.contains("already have one named tdd")),
+        "{:?}",
+        of(1)
+    );
+    assert!(
+        of(2).is_some_and(|why| why.contains("already")),
+        "{:?}",
+        of(2)
+    );
+}
+
+#[test]
+fn the_review_of_an_archive_warns_of_a_skill_left_naming_one_that_goes() {
+    let tmp = plane();
+    let root = tmp.path();
+    std::fs::remove_dir_all(root.join("skills.local/grilling")).unwrap();
+    let review = review_set(root, Act::Archive, &[project("grilling")], None, None);
+    assert_eq!(review.names.len(), 1, "{:?}", review.names);
+    assert_eq!(review.names[0].namer, "to-spec");
+    let pins = review_set(root, Act::Pin, &[project("grilling")], None, None);
+    assert!(pins.names.is_empty(), "a pin takes nothing away");
+}
+
+/// #5457: the plane with a skill of its own whose name purlis holds now, deleted with `grilling`
+/// as one set from `acme/skills`, as a newer purlis lists them.
+fn deleted_with_a_name_purlis_holds(root: &Path) -> Vec<Deleted> {
+    write(
+        root,
+        "skills",
+        "purlis-secrets",
+        &skill_text("purlis-secrets"),
+    );
+    run(root, &["add", "-A"]);
+    run(root, &["commit", "-q", "-m", "purlis-secrets"]);
+    did(root, |cx| {
+        delete_set(
+            cx,
+            &[project("grilling"), project("purlis-secrets")],
+            Some("acme/skills"),
+            None,
+        )
+    })
+    .unwrap();
+    let mut listed = deleted(root);
+    listed.sort_by(|a, b| a.name.cmp(&b.name));
+    listed
+}
+
+#[test]
+fn a_set_brings_one_whose_name_purlis_holds_back_under_its_new_name_and_the_rest_as_named() {
+    let tmp = plane();
+    let root = tmp.path();
+    let listed = deleted_with_a_name_purlis_holds(root);
+    let before = commits(root);
+
+    let set = [
+        (listed[0].clone(), None),
+        (listed[1].clone(), Some("acme-skills-secrets".to_owned())),
+    ];
+    did(root, |cx| restore_set_as(cx, &set, None)).unwrap();
+
+    assert_eq!(commits(root), before + 1, "one commit, one Undo");
+    assert!(there(root, "skills", "grilling"));
+    assert!(there(root, "skills", "acme-skills-secrets"));
+    assert!(!root.join("skills/purlis-secrets").exists());
+    let text = std::fs::read_to_string(root.join("skills/acme-skills-secrets/SKILL.md")).unwrap();
+    assert!(text.contains("name: acme-skills-secrets\n"), "{text}");
+    assert!(deleted(root).is_empty(), "{:?}", deleted(root));
+    let status = run(root, &["status", "--porcelain", "--", "skills"]);
+    assert_eq!(status.out, "", "everything it brought back is committed");
+}
+
+#[test]
+fn a_set_whose_new_name_cannot_be_taken_brings_none_back() {
+    let tmp = plane();
+    let root = tmp.path();
+    let listed = deleted_with_a_name_purlis_holds(root);
+    let before = commits(root);
+    let named = |under: Option<&str>| {
+        [
+            (listed[0].clone(), None),
+            (listed[1].clone(), under.map(str::to_owned)),
+        ]
+    };
+
+    let unnamed = did(root, |cx| restore_set_as(cx, &named(None), None)).unwrap_err();
+    assert!(
+        unnamed.contains("purlis-secrets belongs to purlis now"),
+        "{unnamed}"
+    );
+    let taken = did(root, |cx| restore_set_as(cx, &named(Some("tdd")), None)).unwrap_err();
+    assert!(taken.contains("already have one named tdd"), "{taken}");
+    let reserved = did(root, |cx| {
+        restore_set_as(cx, &named(Some("purlis-browser")), None)
+    })
+    .unwrap_err();
+    assert!(
+        reserved.contains(crate::skills::NAME_RESERVED),
+        "{reserved}"
+    );
+    let twice = did(root, |cx| {
+        restore_set_as(cx, &named(Some("grilling")), None)
+    })
+    .unwrap_err();
+    assert!(twice.contains("two skills"), "{twice}");
+    let free = [(listed[0].clone(), Some("grill".to_owned()))];
+    let free = did(root, |cx| restore_set_as(cx, &free, None)).unwrap_err();
+    assert!(free.contains("under its own name"), "{free}");
+
+    assert_eq!(commits(root), before);
+    assert!(!there(root, "skills", "grilling"));
+    assert_eq!(deleted_named(root), ["grilling", "purlis-secrets"]);
+}
+
+#[test]
+fn a_deleted_skill_whose_name_purlis_holds_is_offered_a_name_as_an_install_offers_one() {
+    let tmp = plane();
+    let root = tmp.path();
+    let listed = deleted_with_a_name_purlis_holds(root);
+
+    assert_eq!(source::review::deleted_clash(root, &listed[0]), None);
+    let clash = source::review::deleted_clash(root, &listed[1]).expect("its name is taken");
+    assert_eq!(clash.offered, "acme-skills-purlis-secrets");
+    assert_eq!(clash.held_by, "the name purlis-secrets belongs to purlis");
+    assert!(clash.taken.contains(&"tdd".to_owned()), "{:?}", clash.taken);
 }

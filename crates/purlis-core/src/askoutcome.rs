@@ -65,6 +65,9 @@ pub enum About {
     /// A key a brokered run of the chat's found missing from vault `vault`, which the person
     /// was asked for (#5068, ADR 0109). Names only, never a value.
     Secret { vault: String, key: String },
+    /// A program its persona does not declare, which a brokered run of the chat's asked the
+    /// person to allow with vault `vault` (ADR 0112). Names only, never a value.
+    Run { program: String, vault: String },
 }
 
 impl About {
@@ -132,6 +135,9 @@ impl About {
                 format!("browser login {}", code(login))
             }
             Self::Secret { vault, key } => format!("secret {}", code(&format!("{vault}/{key}"))),
+            Self::Run { program, vault } => {
+                format!("running {} with vault {}", code(program), code(vault))
+            }
             Self::PoolLogin { pool } => {
                 format!(
                     "purlis filling your browser logins on pool {}'s runner",
@@ -222,6 +228,12 @@ pub enum Answer {
     Filled,
     /// The person declined the secret asked for (#5068): this chat is not asked about it again.
     Declined,
+    /// The person filled what a run lacked and allowed it, for `scope` (#5242): the chat may
+    /// retry.
+    FilledAndAllowed { scope: Scope },
+    /// The person filled what a run lacked and did not allow its program (#5242): the values
+    /// are stored, and the chat may not retry.
+    FilledNotAllowed,
 }
 
 /// One Ask's answer, as the chat it was the Ask of is told it.
@@ -266,6 +278,12 @@ impl Outcome {
             }
             Answer::Declined => "Declined by the person — don't ask for it again in this chat; \
                                  go on without it."
+                .to_owned(),
+            Answer::FilledAndAllowed { scope } => {
+                format!("Filled and allowed {} by the person — retry.", scope.said())
+            }
+            Answer::FilledNotAllowed => "Filled by the person, but the program was not allowed \
+                                         — don't retry or work around it."
                 .to_owned(),
         };
         format!("⬢ purlis: {} — {answered}", self.about.named())

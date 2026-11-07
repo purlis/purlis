@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Forms</title>
+<style>
+  body { margin: 0; font: 24px sans-serif; }
+  input { display: block; margin: 8px; font: 24px sans-serif; }
+</style></head>
+<body>
+  <h1>Forms</h1>
+  <form action="/search" method="get"><label>Search <input name="q"></label></form>
+  <form action="/sign-in" method="post"><label>Secret word <input name="word"></label></form>
+  <form action="/save" method="post">
+    <label>Token <input name="token"></label>
+    <button formmethod="get">Preview</button>
+  </form>
+  <form action="/pay" method="post">
+    <label>Card number <input name="number" aria-label="Card number" autocomplete="billing cc-number"></label>
+  </form>
+  <form action="/account" method="post">
+    <input type="hidden" name="method" value="get">
+    <label>Recovery word <input name="recovery"></label>
+  </form>
+  <label>Loose <input name="loose"></label>
+</body></html>

@@ -1035,6 +1035,7 @@ fn programs_held(
         stdin: false,
         link: extra.link.clone(),
         network: false,
+        writes_index: false,
     };
     let listed = match config_listing(dir, &args[..at], &lister)? {
         Ok(listed) => listed,
@@ -1299,6 +1300,9 @@ struct Extra {
     /// Whether the call crosses a network, and so takes its network settings from your own
     /// config only ([`network`]).
     network: bool,
+    /// Whether a `status` may write the index back ([`run_status_writing_index`]): every other
+    /// `status` purlis runs holds back git's optional locks (FD-11).
+    writes_index: bool,
 }
 
 /// The work tree and git directory a call in `dir` is held to where `dir` is in a linked
@@ -1522,6 +1526,10 @@ pub struct Isolated {
     /// is given both, so git uses the repository that was checked and no other (D-1335-9). A
     /// clone, and beside it the folder of a branch cut from it (D-1453-27).
     pins: Vec<Pin>,
+    /// The key the app signs the commits it makes for a chat with (#5480), where the person set
+    /// one up. Never a `-c` key: git is told to sign nothing, and purlis signs what git made
+    /// ([`crate::commitsign`]).
+    signer: Option<crate::commitsign::Signer>,
 }
 
 /// One pinned work tree: its git directory, and **which directory that was** when it was
@@ -1568,6 +1576,7 @@ impl Isolated {
         Self {
             config,
             pins: Vec::new(),
+            signer: None,
         }
     }
 
@@ -1639,6 +1648,18 @@ impl Isolated {
             .iter()
             .filter(|pin| dir.starts_with(&pin.tree))
             .max_by_key(|pin| pin.tree.components().count())
+    }
+
+    /// The same, signing the commits the app makes for a chat with `signer` (#5480).
+    #[must_use]
+    pub fn signing(mut self, signer: Option<crate::commitsign::Signer>) -> Self {
+        self.signer = signer;
+        self
+    }
+
+    /// The key the commits made under this isolation are signed with, where there is one.
+    pub fn signer(&self) -> Option<&crate::commitsign::Signer> {
+        self.signer.as_ref()
     }
 
     /// One more key. **For a test's stand-in forge only** (a `url.<base>.insteadOf` that points
@@ -1753,7 +1774,7 @@ fn spawn_with(dir: &Path, args: &[&str], extra: &Extra) -> Result<Child, GitUnav
     // the lock an agent's or the operator's `git add` then fails on (FD-11). Every `status`
     // charter runs is a read, so git's optional locks are held back for all of them here,
     // where no caller can forget it: `GIT_OPTIONAL_LOCKS=0` is `--no-optional-locks`.
-    if verb(args) == Some("status") {
+    if verb(args) == Some("status") && !extra.writes_index {
         cmd.env("GIT_OPTIONAL_LOCKS", "0");
     }
     if extra.credentials {
@@ -1804,9 +1825,9 @@ fn spawn_with(dir: &Path, args: &[&str], extra: &Extra) -> Result<Child, GitUnav
 /// **Not for charter's reads.** Measured on git 2.50 at 300,000 files: a read-only status
 /// (`--no-optional-locks`) uses a cache the index holds whether or not it is handed this `-c`,
 /// never writes one back — so the cache is only as fresh as the last status that could write
-/// it, the operator's own — and under `--untracked-files=all` git does not consult it at all.
-/// The branch reader (gitoxide) never reads it either. What keeps an idle repo from costing a
-/// status is the working-tree watch (`standings`), not this cache.
+/// it. Under `--untracked-files=all` git consults only a cache written for that mode, which
+/// this `add`'s is not: the project's is written by [`run_status_writing_index`] (#5505,
+/// measured on git 2.39.5). The branch reader (gitoxide) never reads it.
 pub const UNTRACKED_CACHE: &str = "core.untrackedCache=true";
 
 /// [`UNTRACKED_CACHE`] for `dir`, unless the operator's config already says what to do about
@@ -1826,6 +1847,106 @@ pub fn with_untracked_cache<'a>(dir: &Path, args: &[&'a str]) -> Vec<&'a str> {
         .unwrap_or_default();
     out.extend_from_slice(args);
     out
+}
+
+/// What the installed git can do to keep a large tree's `status` cheap (#5505), for the
+/// project's own status ([`crate::planegit`]). With neither, its calls are what they were.
+///
+/// - **The untracked cache** (git 2.35 and later serve a status of every untracked file,
+///   `--untracked-files=all`, from it when `status.showUntrackedFiles=all` asks for that mode):
+///   git remembers which directories held no untracked files by their modification time, and
+///   opens none of them again. Measured on git 2.39.5 at 60,000 files: the scan for untracked
+///   files went from 200 ms to 12 ms. A save's `git add` writes a cache too, but for its own
+///   mode, which such a read cannot use.
+/// - **git's own file system monitor** (`core.fsmonitor=true`, git 2.37 and later, on macOS and
+///   Windows only): a daemon of git's tells a status which files moved since the index was
+///   written, so it no longer `lstat`s every tracked file, the other half of a status's cost.
+///   `true` names git's built-in daemon, never a program a config chooses, so it is the one
+///   value [`NO_PROGRAMS`]'s `core.fsmonitor=false` gives way to. Where the daemon cannot
+///   start (a sandbox that refuses its socket, a network volume) git says so and reads every
+///   file, as it would without it.
+///
+/// Both are only as fresh as the last `status` that wrote the index
+/// ([`run_status_writing_index`]); a read never writes it (FD-11).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Tuning {
+    pub untracked_cache: bool,
+    pub fsmonitor: bool,
+}
+
+impl Tuning {
+    /// What git `version` (major, minor) can do, where `daemon` says whether the platform is
+    /// one git ships its fsmonitor daemon for. An unknown version is an old one.
+    pub fn for_git(version: Option<(u32, u32)>, daemon: bool) -> Self {
+        let at_least = |want: (u32, u32)| version.is_some_and(|have| have >= want);
+        Self {
+            untracked_cache: at_least((2, 35)),
+            fsmonitor: daemon && at_least((2, 37)),
+        }
+    }
+
+    /// The installed git's, asked once a process.
+    pub fn here() -> Self {
+        static HERE: std::sync::LazyLock<Tuning> = std::sync::LazyLock::new(|| {
+            let version = std::env::temp_dir();
+            let said = run(&version, &["version"], READ).ok();
+            Tuning::for_git(
+                said.and_then(|said| version_of(&said.out)),
+                cfg!(any(target_os = "macos", target_os = "windows")),
+            )
+        });
+        *HERE
+    }
+
+    /// The `-c` settings a read of the tree is given: the monitor, where there is one. The
+    /// untracked cache needs none: a read uses whatever cache the index holds.
+    pub fn for_a_read(self) -> Vec<&'static str> {
+        if self.fsmonitor {
+            vec!["-c", "core.fsmonitor=true"]
+        } else {
+            Vec::new()
+        }
+    }
+}
+
+/// (major, minor) of `git version`'s answer: `git version 2.39.5 (Apple Git-154)`.
+pub fn version_of(said: &str) -> Option<(u32, u32)> {
+    let number = said.split_whitespace().nth(2)?;
+    let mut parts = number.split('.').map(str::parse::<u32>);
+    Some((parts.next()?.ok()?, parts.next()?.ok()?))
+}
+
+/// One `status` of every untracked file that **writes the index back**, with the
+/// [`Tuning`] the installed git has: what leaves the untracked cache and the monitor's token
+/// in the index for the reads after it. The one `status` purlis runs with git's optional
+/// locks, so it is only for a caller that already holds the repository against purlis's
+/// own writers (a save, under its claim) and would write the index anyway; every automatic
+/// read stays without them (FD-11). `None` when the installed git can do neither.
+pub fn run_status_writing_index(dir: &Path, tuning: Tuning) -> Option<Result<Run, GitUnavailable>> {
+    let mut args: Vec<&str> = tuning.for_a_read();
+    if tuning.untracked_cache {
+        // The operator's own `core.untrackedCache` (`false`, `keep`) stands; the mode is ours.
+        if let Some(cache) = untracked_cache(dir) {
+            args.extend(["-c", cache]);
+        }
+        args.extend(["-c", "status.showUntrackedFiles=all"]);
+    }
+    if args.is_empty() {
+        return None;
+    }
+    args.extend(["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
+    let extra = Extra {
+        writes_index: true,
+        ..Extra::default()
+    };
+    let extra = match held(dir, &args, extra) {
+        Ok(Ok(extra)) => extra,
+        Ok(Err(answer)) => return Some(Ok(as_text(answer))),
+        Err(why) => return Some(Err(why)),
+    };
+    Some(counted(dir, &args, || {
+        Ok(wait(spawn_with(dir, &args, &extra)?, READ)?)
+    }))
 }
 
 /// `run`, counted in the test build's [`tally`]: one git process in `dir` from before it is

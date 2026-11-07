@@ -581,7 +581,7 @@ fn an_https_clone_the_window_runs_signs_in_with_the_persons_account_and_no_other
     let https = ProjectUrl::parse("https://github.example.com/acme/widget.git").unwrap();
     let ssh = ProjectUrl::parse("git@github.example.com:acme/widget.git").unwrap();
     let elsewhere = ProjectUrl::parse("https://gitlab.example.com/acme/widget.git").unwrap();
-    let exe = Path::new("/Applications/purlis.app/Contents/MacOS/charter-app");
+    let exe = Path::new("/Applications/purlis.app/Contents/MacOS/purlis-app");
 
     assert!(window_credential(&https).is_empty(), "outside the window");
     let (inside, over_ssh, no_account) =
@@ -650,7 +650,7 @@ fn a_clone_that_lands_records_its_remote_so_its_first_automatic_save_signs_in() 
     use crate::forge::route::HostScope;
 
     let home = signed_in_home("github.example.com");
-    let exe = Path::new("/Applications/purlis.app/Contents/MacOS/charter-app");
+    let exe = Path::new("/Applications/purlis.app/Contents/MacOS/purlis-app");
     let on = crate::forge::Forge {
         kind: crate::forge::Kind::GitHub,
         host: "github.example.com".to_string(),
@@ -685,7 +685,7 @@ fn an_account_on_a_port_serves_that_port_and_never_another_port_of_its_host() {
 
     let on_a_port = signed_in_home("git.example.com:8443");
     let on_the_host = signed_in_home("git.example.com");
-    let exe = Path::new("/Applications/purlis.app/Contents/MacOS/charter-app");
+    let exe = Path::new("/Applications/purlis.app/Contents/MacOS/purlis-app");
     let helper_for = |home: &Path, url: &str| {
         let url = ProjectUrl::parse(url).unwrap();
         as_the_window(&HostScope::for_a_test(), exe, home, || {

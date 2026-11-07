@@ -93,6 +93,7 @@ export function ProposedChangeNotice({
             at="pane"
             tone={said === undefined ? "news" : "trouble"}
             label="Proposed change"
+            since={ask.since}
             waits
             fixes={[first, ...rest]}
             under={under}

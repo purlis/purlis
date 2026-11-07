@@ -254,6 +254,39 @@ fn a_seed_in_both_cases_looks_like_one() {
 }
 
 #[test]
+fn a_seed_in_any_case_mix_looks_like_one() {
+    // The person's ruling of 2026-11-06: a capital letter or two, or random case, makes no
+    // value of base32's letters any less a seed, and a password of them alone is marked.
+    for value in [
+        "Gezdgnbvgy3tqojq",
+        "gezdgnbvgy3tqojQ",
+        "GEZDGNBVGY3tqojq",
+        "Dash Gezdgnbvgy3tqojq",
+        "MySecretPassword",
+        "Welcome2Password",
+        "Bluesky2mountain",
+        "aB3dE5fG7hJ2kL4mN6pQ",
+        "Blue-Sky2-Rain-Tree",
+        "Summer24 Password",
+    ] {
+        assert!(looks_like_a_seed(value), "{value:?}");
+    }
+}
+
+#[test]
+fn a_seed_joined_to_a_name_before_it_looks_like_one() {
+    for value in [
+        "secret_GEZDGNBVGY3TQOJQ",
+        "secret-GEZDGNBVGY3TQOJQ",
+        "secret_GeZdGnBvGy3tQoJq",
+        "dash_alice_gezdgnbvgy3tqojq",
+        "Abcd-ABCDEFGHIJKLMNOP",
+    ] {
+        assert!(looks_like_a_seed(value), "{value:?}");
+    }
+}
+
+#[test]
 fn an_ordinary_value_is_no_seed() {
     for value in [
         "CorrectHorseBatteryStaple",
@@ -261,32 +294,25 @@ fn an_ordinary_value_is_no_seed() {
         "Tr0ub4dor&3",
         "Summer2024!",
         "hunter2",
-        "MySecretPassword",
-        "AbCdEfGhIjKlMnOp",
-        "Blue Frog Tree Rock",
-        "Welcome2Password",
-        "Bluesky2mountain",
-        "Summer24 Password",
-        "Blue-Sky2-Rain-Tree",
-        "Welcome-To-The-Jungle-2",
         "thisismypassword2!",
         "THISISMYPASSWORD2!",
         "Password: thisismypassword2!",
         "christopher.johnson2",
         "administrator:password2",
         "mypassword2.example",
-        "aB3dE5fG7hJ2kL4mN6pQ",
         "GeZdGnBvGy3tQoJq!",
         "+GeZdGnBvGy3tQoJq",
-        "bLuE-mOuNtAiN-sKy2",
-        "mOuNtAiN-sKy2-bLuE",
-        "aB-cD-eF3gH4jK5mN6",
         "anna.bob2/mail:site",
         "https://example.com/login",
         "https://example.com/abcdefgh2345abcd",
-        "Abcd-ABCDEFGHIJKLMNOP",
         "Ab9+GeZdGnBvGy3tQoJq",
         "secret=GeZdGnBvGy3tQoJq/Zz9",
+        // A letter base32 has none of, or fewer than its 16 characters, spares a password.
+        "Welcome1Password",
+        "Welcome-To-The-Jungle-9",
+        "Welcome2Pass",
+        "correct-horse-battery-staple",
+        "my_password_2024",
     ] {
         assert!(!looks_like_a_seed(value), "{value:?}");
     }
@@ -300,7 +326,9 @@ fn a_cards_number_behind_a_name_is_no_seed() {
 
 #[test]
 fn a_very_long_value_of_short_words_is_read_in_one_pass() {
-    let long = "Gh ".repeat(1_000_000);
+    // Words of three letters never add up to a length a bare secret has, so the walk goes all
+    // the way back.
+    let long = "Ghi ".repeat(1_000_000);
     let started = std::time::Instant::now();
     assert!(!looks_like_a_seed(&long));
     assert!(started.elapsed() < std::time::Duration::from_secs(30));

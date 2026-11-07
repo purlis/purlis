@@ -69,6 +69,8 @@ hmac = "0.13"
 sha1 = "0.11"
 minisign = "0.10"
 stand-in.workspace = true
+# Counts the lib tests' threads (#5540), so a test sees a dropped stand-in browser's threads end.
+num_threads = "0.1.8"
 
 # Every integration test as a module of one binary (#3613, #3752): each `tests/*.rs` was a binary
 # of its own that linked the whole graph, 41 of them. `tests/it/main.rs` fails on a `.rs` left

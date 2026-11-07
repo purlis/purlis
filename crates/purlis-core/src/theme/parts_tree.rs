@@ -36,55 +36,55 @@ pub(super) const TREE: Family = Family {
     name: "tree",
     description: "A tree's row: a folder, a file, a repo and what is true of it, a chat and \
                   what runs under it.",
-    since: super::NEXT,
+    since: 13,
     parts: &[
         Part {
             name: "root",
-            since: super::NEXT,
+            since: 13,
             description: "The row itself: its fill, words, corners and size. Its indentation \
                           is the family's.",
             properties: TREE_ROW,
         },
         Part {
             name: "body",
-            since: super::NEXT,
+            since: 13,
             description: "The tree that holds the rows: the room it keeps around them, so a \
                           row's pill never touches the panel it is in.",
             properties: &[Prop::Padding, Prop::Gap],
         },
         Part {
             name: "twist",
-            since: super::NEXT,
+            since: 13,
             description: "The chevron that opens and closes a row's rows: a mark.",
             properties: &[Prop::Text],
         },
         Part {
             name: "lead",
-            since: super::NEXT,
+            since: 13,
             description: "Its marks before its words: a file's icon, a state.",
             properties: MARKS,
         },
         Part {
             name: "label",
-            since: super::NEXT,
+            since: 13,
             description: "Its words.",
             properties: WORDS,
         },
         Part {
             name: "description",
-            since: super::NEXT,
+            since: 13,
             description: "The one line about it, beside its words.",
             properties: &[Prop::Text, Prop::FontSize],
         },
         Part {
             name: "trail",
-            since: super::NEXT,
+            since: 13,
             description: "Its end: a count, a change's mark, the row's own actions.",
             properties: MARKS,
         },
         Part {
             name: "header",
-            since: super::NEXT,
+            since: 13,
             description: "A group's name over its rows.",
             properties: WORDS,
         },

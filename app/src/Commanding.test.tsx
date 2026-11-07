@@ -234,7 +234,6 @@ describe("the palette reaching what the window can do", () => {
         "New tab",
         "Split right",
         "Split down",
-        "Close this pane",
         "Close steward 1",
         "End chat steward 1…",
         "Focus workspace beta",
@@ -509,16 +508,26 @@ describe("one list, two surfaces", () => {
     const rows = rowTitles();
 
     await userEvent.keyboard("{Escape}");
-    for (const words of [
-      "New tab",
-      "Split right",
-      "Split down",
-      "Close this pane",
-      "Close steward 1",
-    ]) {
+    for (const words of ["New tab", "Split right", "Split down", "Close steward 1"]) {
       expect(rows).toContain(words);
       expect(screen.getByRole("button", { name: words })).toBeInTheDocument();
     }
+  });
+
+  it("has Close this pane in the palette only while the tab has another pane (#5318)", async () => {
+    core();
+    render(<App />);
+    await openAChat();
+
+    await palette("");
+    expect(rowTitles()).not.toContain("Close this pane");
+    await userEvent.keyboard("{Escape}");
+
+    await userEvent.click(screen.getByRole("button", { name: "Split right" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
+    await waitFor(() => expect(screen.getAllByTestId("pane")).toHaveLength(2));
+    await palette("");
+    expect(rowTitles()).toContain("Close this pane");
   });
 
   it("lists a row that cannot run, with its reason, where the button for it has gone", async () => {
@@ -558,6 +567,9 @@ describe("one list, two surfaces", () => {
     expect(askedByButton.map(({ cmd }) => cmd)).toContain("start_chat");
 
     cleanup();
+    // The first window's last watch (none, as its trees go) is sent as its effects end
+    // (`branchFolders.ts`, #5375): to its own core, not the second window's.
+    await Promise.resolve();
     clearMocks();
     // A second window, as the first was: what the first learned about its project's extensions
     // and themes is module state (`extensionsOn.ts`, `Extensions.tsx`, `projectTheme.ts`) that a

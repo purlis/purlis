@@ -182,6 +182,10 @@ wrong. A local run checks rendering, the keyboard and axe, and takes no picture.
 run shares, so a picture could differ by a pixel with the stories that ran before it; greyscale
 text draws the same each time.
 
+**Chromium's `monospace` is the image's own** where pictures are taken: each page pins it to
+`fc-match monospace` before its first story, so a picture never takes the family an earlier story
+left the browser drawing it in. `app/.storybook/monospace.ts` says why (#5402).
+
 **What a failure says.** In CI, each story that fails is one annotation on the `stories` check,
 titled `<story> in <browser>, <cell>`: its file, the gate it failed (`renders`, `keyboard`,
 `accessibility` or `screenshot`), the first line of why, and the axe rules it broke. It says the
