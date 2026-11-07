@@ -231,7 +231,8 @@ describe("a chat's arrived files in the Inbox (#5702)", () => {
         subject: "files that can run later",
         detail: "Fix the build: these appeared in a folder it can write: work/moved/.envrc.",
         workspaces: [],
-        since: Date.now() / 1000 - 2 * 60 * 60,
+        // Two and a half hours: the card's clock may be read a moment before this one.
+        since: Date.now() / 1000 - 2.5 * 60 * 60,
         way: { kind: "arrived-files", chat: "01M6M3VNN8GNE85XEV3194WJE6" },
       },
     ];
