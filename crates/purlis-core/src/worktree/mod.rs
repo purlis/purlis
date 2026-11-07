@@ -2041,10 +2041,9 @@ mod locate_tests {
         let dir = tempfile::tempdir().unwrap();
         let piped = dir.path().join("piped");
         std::fs::create_dir(&piped).unwrap();
-        let made = std::process::Command::new("mkfifo")
-            .arg(piped.join(".git"))
-            .status()
-            .unwrap();
+        let made =
+            crate::forklock::status(std::process::Command::new("mkfifo").arg(piped.join(".git")))
+                .unwrap();
         assert!(made.success());
         let (tx, rx) = std::sync::mpsc::channel();
         let asked = piped.clone();

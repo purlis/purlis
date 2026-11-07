@@ -2724,12 +2724,13 @@ mod tests {
             }
             stream.push('\n');
         }
-        let mut fed = std::process::Command::new("git")
-            .args(["fast-import", "--quiet"])
-            .current_dir(&repo)
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
+        let mut fed = crate::forklock::spawn(
+            std::process::Command::new("git")
+                .args(["fast-import", "--quiet"])
+                .current_dir(&repo)
+                .stdin(std::process::Stdio::piped()),
+        )
+        .unwrap();
         std::io::Write::write_all(fed.stdin.as_mut().unwrap(), stream.as_bytes()).unwrap();
         assert!(fed.wait().unwrap().success());
         let tip = testgit::run(&repo, &["rev-parse", "refs/heads/long"])
