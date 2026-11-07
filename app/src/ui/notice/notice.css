@@ -193,12 +193,7 @@
 }
 
 [data-scope="notice-card"][data-part="said"] {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
   min-inline-size: 0;
-  padding-block: var(--space-3);
-  padding-inline: var(--space-4);
 }
 
 [data-scope="notice"][data-part="head"] {
@@ -285,13 +280,13 @@
   border-block-start: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
 }
 
-/* **In the Notices centre each Notice is a card of its own** (#5217): the list draws no box, and
-   each Notice's outline is softer, in its kind's colour, the colour of its mark. A consent keeps
-   its full waiting edge (ADR 0097 §6, the person's ruling on #5222). */
+/* **In the Notices view each Notice is a row of the view** (#5649, ADR 0117 decision 6; it was a
+   card of its own, #5217): the list draws no box, and a hairline stands between two rows, past
+   their marks, as the message family draws it between rows that are siblings. Each row stands in
+   an element of its own, which the list moves (`Notice.tsx`), so the hairline is drawn here. */
 [data-scope="notice-list"][data-part="root"]:is([data-at="inbox"], [data-at="lines"]) {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
   border-width: 0;
   border-radius: 0;
   background-color: transparent;
@@ -304,32 +299,33 @@
 
 [data-scope="notice-list"]:is([data-at="inbox"], [data-at="lines"])
   > *
-  > [data-scope="notice"][data-part="root"] {
-  border-width: 1px;
-  border-style: solid;
-  border-color: color-mix(in oklab, var(--state-success) 40%, transparent);
-  border-radius: var(--radius-lg);
-  background-color: var(--surface-raised);
+  + *
+  [data-scope="message"][data-part="root"]::before {
+  content: "";
+  position: absolute;
+  inset-block-start: calc(var(--separator-width) * -1);
+  inset-inline: calc(var(--message-pad) + var(--message-mark) + var(--message-gap))
+    var(--message-pad);
+  block-size: var(--separator-width);
+  background-color: var(--border-subtle);
 }
 
 [data-scope="notice-list"]:is([data-at="inbox"], [data-at="lines"])
-  > *
-  > [data-scope="notice"][data-part="root"][data-variant="trouble"] {
-  border-color: color-mix(in oklab, var(--danger-text) 40%, transparent);
-  background-color: var(--danger-surface);
+  > *:has([data-scope="message"][data-part="root"]:is(:hover, :focus-within))
+  [data-scope="message"][data-part="root"]::before,
+[data-scope="notice-list"]:is([data-at="inbox"], [data-at="lines"])
+  > *:has([data-scope="message"][data-part="root"]:is(:hover, :focus-within))
+  + *
+  [data-scope="message"][data-part="root"]::before {
+  visibility: hidden;
 }
 
+/* What a way out opened stands under its row, where the row's words start. */
 [data-scope="notice-list"]:is([data-at="inbox"], [data-at="lines"])
-  > *
-  > [data-scope="notice"][data-part="root"][data-variant="attention"] {
-  border-color: color-mix(in oklab, var(--attention-text) 40%, transparent);
-  background-color: var(--attention-surface);
-}
-
-[data-scope="notice-list"]:is([data-at="inbox"], [data-at="lines"])
-  > *
-  > [data-scope="notice"][data-part="root"][data-consent] {
-  border-color: var(--state-waiting);
+  [data-scope="notice-card"][data-part="said"]
+  + [data-scope="notice"][data-part="under"] {
+  padding-block: 0 var(--space-4);
+  padding-inline: calc(var(--space-4) + var(--size-control) + var(--space-5)) var(--space-4);
 }
 
 [data-scope="notice-list"][data-part="root"][data-at="band"] {

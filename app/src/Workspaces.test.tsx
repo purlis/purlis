@@ -3,11 +3,19 @@
 
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render as renderBare, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render as renderBare,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { forgetThisLaunch } from "./regions";
+import { UNDO_MS } from "./undo";
 import { aTabForEachChat } from "./laidOut.testkit";
 import type { Moved, OpenChat } from "./bindings";
 import {
@@ -46,6 +54,7 @@ const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMo
 afterEach(() => {
   cleanup();
   clearMocks();
+  vi.useRealTimers();
   registry = undefined;
   // A test that opened the Inbox leaves the next one the side as it was at the launch.
   forgetThisLaunch();
@@ -420,7 +429,7 @@ describe("the workspace strip", () => {
     await waitFor(() => expect(focused()).toEqual(["alpha"]));
 
     await userEvent.click(await screen.findByRole("button", { name: "1 thing waits on you" }));
-    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
     await userEvent.click(
       await within(inbox).findByRole("button", { name: "Go to chat steward 5" }),
     );
@@ -462,6 +471,8 @@ describe("the workspace strip", () => {
   });
 
   it("takes the count off a workspace's row when its chat is ignored (charter-app#248)", async () => {
+    // The Ignore is held for its Undo first (story 54): the clock that takes it away is the test's.
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout"] });
     registry = [5];
     const { asked, move } = core([chat(5, "5", BETA)], [5]);
     render(<App />);
@@ -471,8 +482,9 @@ describe("the workspace strip", () => {
     await waitFor(async () => expect(await needs()).toBe("beta, 1 waiting"));
 
     await userEvent.click(await screen.findByRole("button", { name: "1 thing waits on you" }));
-    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    const inbox = await screen.findByRole("tabpanel", { name: "Asks" });
     await userEvent.click(await within(inbox).findByRole("button", { name: /^Ignore / }));
+    act(() => vi.advanceTimersByTime(UNDO_MS + 1));
     await vi.waitFor(() => expect(asked.some((one) => one.cmd === "ignore_needs_you")).toBe(true));
     // What the core answers an ignore with: the chat still waiting, and a queue without it.
     move({

@@ -119,6 +119,11 @@ pub struct InboxUpdate {
     pub says: String,
     /// The person has read it.
     pub read: bool,
+    /// The first-open baseline set it aside (#5648): listed From the project, read. Absent for
+    /// every other update.
+    #[specta(optional)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub baselined: Option<bool>,
 }
 
 impl From<Update> for InboxUpdate {
@@ -131,6 +136,7 @@ impl From<Update> for InboxUpdate {
             chain: one.chain,
             says: one.says,
             read: one.read,
+            baselined: one.baselined.then_some(true),
         }
     }
 }
@@ -158,6 +164,7 @@ impl From<UpdateNoted> for Update {
             says: one.says,
             read: false,
             dismissed: false,
+            baselined: false,
         }
     }
 }
@@ -301,6 +308,133 @@ pub async fn settle_inbox_updates(
     .await
 }
 
+/// One chat Snooze all puts away (#5647): its session, and the keys of the asks it holds now.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, specta::Type)]
+pub struct SnoozedChat {
+    pub session: u32,
+    pub asks: Vec<String>,
+}
+
+/// **Snooze all** (#5647, ADR 0117): puts each of `chats` away with the asks it holds, until it
+/// holds an ask it did not have. Nothing is answered, and no timer brings it back. Kept on this
+/// machine per project, never in the plane.
+#[tauri::command]
+#[specta::specta]
+pub async fn snooze_inbox_asks(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    chats: Vec<SnoozedChat>,
+) -> Result<(), String> {
+    let root = root_of(&planes, &plane)?;
+    off_the_window(move || {
+        let store = Store::here().ok_or_else(|| NOWHERE.to_owned())?;
+        store
+            .snooze(
+                &root,
+                chats
+                    .into_iter()
+                    .map(|one| (one.session, one.asks))
+                    .collect(),
+            )
+            .map(|_| ())
+            .map_err(|err| format!("purlis could not snooze the asks: {err}"))
+    })
+    .await
+}
+
+/// **Show them now, and Snooze all's Undo** (#5647): brings back the snoozed chats `sessions`,
+/// or every one where it is null.
+#[tauri::command]
+#[specta::specta]
+pub async fn wake_inbox_asks(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    sessions: Option<Vec<u32>>,
+) -> Result<(), String> {
+    let root = root_of(&planes, &plane)?;
+    off_the_window(move || {
+        let store = Store::here().ok_or_else(|| NOWHERE.to_owned())?;
+        store
+            .wake(&root, sessions.as_deref())
+            .map(|_| ())
+            .map_err(|err| format!("purlis could not bring the snoozed asks back: {err}"))
+    })
+    .await
+}
+
+/// **The first-open baseline** (#5648, ADR 0117), as the window reads it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct InboxBaseline {
+    /// When the project first opened on this machine, in seconds since 1970.
+    pub at: u32,
+    /// Whether that open set the past aside: false where this machine had seen the project.
+    pub fresh: bool,
+    /// The doctor findings already there, by the causes the window dismisses them by; null
+    /// until the window has set aside the first report's.
+    pub findings: Option<Vec<String>>,
+}
+
+impl From<purlis_core::inboxupdates::Baseline> for InboxBaseline {
+    fn from(one: purlis_core::inboxupdates::Baseline) -> Self {
+        Self {
+            at: u32::try_from(one.at).unwrap_or(u32::MAX),
+            fresh: one.fresh,
+            findings: one.findings,
+        }
+    }
+}
+
+/// [`Store::first_open`] as the window asks it.
+pub fn first_open_in(
+    store: Option<&Store>,
+    root: &std::path::Path,
+    now: u64,
+) -> Result<InboxBaseline, String> {
+    let store = store.ok_or_else(|| NOWHERE.to_owned())?;
+    store
+        .first_open(root, now)
+        .map(InboxBaseline::from)
+        .map_err(|err| format!("purlis could not keep what this machine has seen: {err}"))
+}
+
+/// **The project opens in the window** (#5648, ADR 0117): its first-open baseline, made where
+/// this machine has none. The first time a project opens on a machine with no seen record for
+/// it, what is already there counts as seen, and its hosts and presets as told; a project with
+/// a record keeps it, so updating purlis clears nothing.
+#[tauri::command]
+#[specta::specta]
+pub async fn inbox_first_open(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<InboxBaseline, String> {
+    let root = root_of(&planes, &plane)?;
+    off_the_window(move || {
+        first_open_in(Store::here().as_ref(), &root, crate::sandboxing::now_secs())
+    })
+    .await
+}
+
+/// **The doctor's first report after a fresh first open** (#5648): its findings, `keys`, were
+/// already there, and the window puts each away until it changes. Kept once. Answers the
+/// project's updates as [`inbox_updates`] does.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_aside_inbox_findings(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    keys: Vec<String>,
+) -> Result<Vec<InboxUpdate>, String> {
+    let root = root_of(&planes, &plane)?;
+    off_the_window(move || {
+        let store = Store::here().ok_or_else(|| NOWHERE.to_owned())?;
+        store
+            .set_aside_findings(&root, &keys, crate::sandboxing::now_secs())
+            .map(|all| all.into_iter().map(InboxUpdate::from).collect())
+            .map_err(|err| format!("purlis could not change the Inbox's updates: {err}"))
+    })
+    .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -393,6 +527,8 @@ mod tests {
             "inbox_updates",
             "note_inbox_updates",
             "settle_inbox_updates",
+            "inbox_first_open",
+            "set_aside_inbox_findings",
         ] {
             assert!(
                 purlis_session_protocol::ui::WINDOW_ONLY.contains(&command),

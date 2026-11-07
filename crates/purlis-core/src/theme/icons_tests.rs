@@ -418,10 +418,10 @@ fn a_parent_whose_icon_set_is_refused_refuses_its_child() {
 
 #[test]
 fn the_window_is_handed_the_set_with_the_appearance_it_draws() {
-    let loaded = dusk_with(&set(&[("inbox", "M1 1")]));
+    let loaded = dusk_with(&set(&[("asks", "M1 1")]));
     let drawn = follow(&loaded.theme, Appearance::Dark, Contrast::Standard);
     let theme = drawn.theme.expect("an appearance is drawn");
-    assert_eq!(theme.icons.views["inbox"].paths, ["M1 1"]);
+    assert_eq!(theme.icons.views["asks"].paths, ["M1 1"]);
 }
 
 #[test]

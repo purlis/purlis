@@ -271,34 +271,38 @@ describe("what a row is made of", () => {
     expect(document.body.textContent).not.toContain("Plane root");
   });
 
-  it("has one primary line, a secondary line of where, and a trailing kind and age", () => {
+  it("has its chat for its title, its age at the right, then its kind and where, then its words (#5649)", () => {
     draw([{ ...permission(3, "a"), since: Date.now() / 1000 - 5 * 60 }, question(9)], {
       ...strip("alpha"),
       personaOf: (session) => (session === 3 ? "steward" : null),
     });
     const ask = row(3);
+    expect(ask).toHaveAttribute("data-scope", "message");
+    expect(part(ask, '[data-part="title"]').textContent).toBe("steward 3");
+    expect(part(ask, '[data-part="time"]').textContent).toBe("5m");
+    expect(within(ask).getByText("5m").tagName).toBe("TIME");
+    // What it waits on, then where: workspace, then persona. The project only among others'.
+    expect(part(ask, '[data-part="meta"]').textContent).toBe(
+      "Asks your permission · alpha · steward",
+    );
+    expect(part(row(9), '[data-part="meta"]').textContent).toBe(
+      "Waiting on your reply · Plane root",
+    );
     const primary = part(ask, ".inbox-primary");
     expect(primary.textContent).toBe("Run cargo test");
+    expect(part(ask, '[data-part="body"]').contains(primary)).toBe(true);
     expect(ask.getAttribute("aria-labelledby")).toBe(primary.id);
-    // Where: workspace, then persona. The project is said only among other projects.
-    const where = part(ask, ".inbox-secondary");
-    expect(where.textContent).toBe("alpha · steward");
-    expect(part(row(9), ".inbox-secondary").textContent).toBe("Plane root");
-    // Kind and age, under the name in the card's head (#5214).
-    const meta = part(ask, ".inbox-meta");
-    expect(meta.textContent).toBe("Asks your permission · 5m");
-    expect(part(ask, ".inbox-ask-head").contains(meta)).toBe(true);
-    expect(within(ask).getByText("5m").tagName).toBe("TIME");
   });
 
-  it("marks the kind with an icon beside its words, never by colour alone", () => {
+  it("marks its state with a tinted glyph beside its words, never by colour alone (#5649)", () => {
     draw([permission(3, "a"), question(9)], strip("alpha"));
-    const decision = part(row(3), ".inbox-kind");
-    expect(decision.getAttribute("data-kind")).toBe("decision");
-    expect(decision.querySelector("svg")).not.toBeNull();
-    expect(decision.getAttribute("aria-hidden")).toBe("true");
-    expect(part(row(3), ".inbox-meta").textContent).toContain("Asks your permission");
-    expect(part(row(9), ".inbox-kind").getAttribute("data-kind")).toBe("reply");
+    const ask = row(3);
+    expect(ask).toHaveAttribute("data-variant", "waiting");
+    const mark = part(ask, '[data-part="mark"]');
+    expect(mark.querySelector("svg")).not.toBeNull();
+    expect(mark.getAttribute("aria-hidden")).toBe("true");
+    expect(part(ask, '[data-part="meta"]').textContent).toContain("Asks your permission");
+    expect(part(row(9), '[data-part="mark"]').querySelector("svg")).not.toBeNull();
   });
 
   it("cuts a long line to two with the whole of it in the tooltip", async () => {
@@ -346,8 +350,8 @@ describe("what a row is made of", () => {
     });
     expect(screen.getByRole("heading", { name: "Updates" })).toHaveAttribute("data-part", "title");
     const update = part(document, "li.inbox-update");
-    expect(update.querySelector(".inbox-primary")).not.toBeNull();
-    expect(update.querySelector(".inbox-meta time")).not.toBeNull();
+    expect(update).toHaveAttribute("data-scope", "message");
+    expect(update.querySelector('[data-part="time"] time')).not.toBeNull();
   });
 });
 
@@ -362,6 +366,7 @@ describe("a row's ranks are the text roles (#1920)", () => {
   const AS_WRITTEN: Record<string, string> = {
     "var(--font-weight-strong)": "600",
     "var(--font-weight-regular)": "400",
+    "var(--font-weight-medium)": "500",
   };
   /** What the window's stylesheets draw a word with: size, weight, colour. */
   const drawn = (word: Element) =>
@@ -382,7 +387,7 @@ describe("a row's ranks are the text roles (#1920)", () => {
     dismiss: () => undefined,
   });
 
-  it("draws each rank with the size, weight and colour it had before the roles", () => {
+  it("draws each rank as the message row does: title, quiet meta, the words (#5649)", () => {
     draw([{ ...permission(3, "a"), since: Date.now() / 1000 - 5 * 60 }], {
       ...strip("alpha"),
       personaOf: () => "steward",
@@ -393,44 +398,42 @@ describe("a row's ranks are the text roles (#1920)", () => {
       },
     });
     const ask = part(document, '.inbox-chat[data-session="3"] li.inbox-ask');
+    const title = part(ask, '[data-part="title"]');
+    const meta = part(ask, '[data-part="meta"]');
     const primary = part(ask, ".inbox-primary");
-    const where = part(ask, ".inbox-secondary");
-    const meta = part(ask, ".inbox-meta");
+    // The chat's name strongest; what it waits on and where quiet; its words as they were.
+    expect(drawn(title)).toEqual(["var(--font-size-base)", "600", "var(--text-primary)"]);
+    expect(drawn(meta)).toEqual(["var(--font-size-sm)", undefined, "var(--text-quiet)"]);
     expect([...primary.classList]).toEqual(
       expect.arrayContaining(["ui-text-body", "ui-text-strong"]),
     );
-    // The workspace is the card's quiet line at its top right (R132, #2917).
-    expect(where.classList).toContain("ui-text-meta");
-    expect(meta.classList).toContain("ui-text-meta");
-    // #1919's declarations: md / 600 / primary; sm / secondary; xs / quiet (#2902).
     expect(drawn(primary)).toEqual(["var(--font-size-md)", "600", "var(--text-primary)"]);
-    expect(drawn(where)).toEqual(["var(--font-size-xs)", "400", "var(--text-quiet)"]);
-    expect(drawn(meta)).toEqual(["var(--font-size-xs)", "400", "var(--text-quiet)"]);
-    expect(part(ask, ".inbox-who").textContent).not.toBe("");
-    // The kind's words inside the meta are the meta's, by inheritance.
-    expect(drawnWith(part(meta, ".inbox-source"), "font-size")).toBe("inherit");
-    // An ask's kind is its status line, in the waiting amber (R132, #2917).
-    expect(drawnWith(part(meta, ".inbox-source"), "color")).toBe("var(--state-waiting)");
+    expect(drawn(part(ask, '[data-part="time"]'))).toEqual([
+      "var(--font-size-sm)",
+      undefined,
+      "var(--text-quiet)",
+    ]);
+    // An ask's kind is its status, in the waiting amber (R132, #2917): the message family's own
+    // `state` part, which its waiting variant colours.
+    expect(drawnWith(part(meta, '[data-part="state"]'), "color")).toBe("var(--state-waiting)");
 
     const [fresh, read] = [...document.querySelectorAll("li.inbox-update")];
     expect(fresh.hasAttribute("data-read")).toBe(false);
     expect(read.hasAttribute("data-read")).toBe(true);
-    expect(drawn(part(fresh, ".inbox-primary"))).toEqual([
-      "var(--font-size-md)",
+    expect(drawn(part(fresh, '[data-part="title"]'))).toEqual([
+      "var(--font-size-base)",
       "600",
       "var(--text-primary)",
     ]);
-    expect(drawn(part(fresh, ".inbox-meta"))).toEqual([
-      "var(--font-size-xs)",
-      "400",
-      "var(--text-quiet)",
-    ]);
     expect(drawn(part(fresh, ".inbox-unread")).slice(1)).toEqual(["600", "var(--text-primary)"]);
-    // One read steps back to the regular weight and the secondary text, at the same size: no
-    // rank of the scale, so it wears no role and a role cannot outrank its rule.
-    const quiet = part(read, ".inbox-primary");
-    expect([...quiet.classList].filter((name) => name.startsWith("ui-text-"))).toEqual([]);
-    expect(drawn(quiet)).toEqual(["var(--font-size-md)", "400", "var(--text-secondary)"]);
+    // One read steps back: its title to the medium weight and the secondary text, its words to
+    // the secondary text.
+    expect(drawn(part(read, '[data-part="title"]'))).toEqual([
+      "var(--font-size-base)",
+      "500",
+      "var(--text-secondary)",
+    ]);
+    expect(drawnWith(part(read, ".ask-says"), "color")).toBe("var(--text-secondary)");
   });
 
   it("leaves the placing to the row's own classes, which set no size, weight or colour", () => {

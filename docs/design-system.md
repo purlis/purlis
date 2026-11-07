@@ -1157,7 +1157,7 @@ has it; nothing reads the key after that.
     was left (#1687). At most 48 are kept: past that, the folds of chats that are not open go
     first, the ones kept longest ago first. A chat that has no id has its fold kept for the
     window's run only.
-  - **`inbox`**: **`scope`**, whose asks the Inbox lists: `all` (All projects) or `workspace`
+  - **`inbox`**: **`scope`**, whose asks the Asks view lists (#5644 kept the Inbox's key): `all` (All projects) or `workspace`
     (This workspace). Leave it out for the project's, the default. A value that is neither is
     read as the default.
   - **`browsers`**: **`scope`**, which browsers the Browsers grid shows (#2027), in the Inbox's
@@ -1173,12 +1173,13 @@ has it; nothing reads the key after that.
   an object, or whose `regions` is not a list, is skipped, and the project starts from the
   machine's.
 - **`view`**, on a region that has views, is the one it shows: `chats`, `explorer`, `search`
-  or `changes` for `navigation`, `inbox`, `personas`, `vaults` or `panel:` and an extension's
+  or `changes` for `navigation`, `asks`, `updates`, `personas`, `vaults` or `panel:` and an extension's
   panel key (`panel:ext/<extension>/<id>`) for `aside` (#1678), `repos` for `panel-left`, and
-  `memory`, `todos` or `sessions` for `panel-right` (#1738).
-  Leave it out for the one it opens on: `chats` on the left, `inbox` on the right, `repos` and
-  `memory` in the Panel. A view the region does not have opens on that one, and the Inbox says
-  so — but a view another region of the same side holds now, as `aside` held `memory` before
+  `notices` (#5645), `memory`, `todos` or `sessions` for `panel-right` (#1738).
+  Leave it out for the one it opens on: `chats` on the left, `asks` on the right, `repos` and
+  `memory` in the Panel. A view the region does not have opens on that one, and the window says
+  so — but `inbox`, the view Asks and Updates took the place of (ADR 0117, #5644), opens on
+  `asks` without a word, and a view another region of the same side holds now, as `aside` held `memory` before
   #1738, or the place a view was moved to (`moved`, below), opens on it without a word; an
   extension's panel
   that is not contributed now opens on it too, and is kept, so it comes back when its extension

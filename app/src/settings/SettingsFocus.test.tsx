@@ -308,7 +308,7 @@ describe("every way into Settings leaves the keyboard on the nav's current group
     await screen.findByRole("tab", { name: /plane/ });
     const opener = await screen.findByRole("button", { name: /^Notices/ });
     await userEvent.click(opener);
-    const inbox = await screen.findByRole("tabpanel", { name: "Inbox" });
+    const inbox = await screen.findByRole("tabpanel", { name: "Notices" });
     const machine = await within(inbox).findByRole("region", { name: "Notices" });
 
     await userEvent.click(within(machine).getByRole("button", { name: "Fix it in Settings" }));

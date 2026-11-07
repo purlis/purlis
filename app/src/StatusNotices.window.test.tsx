@@ -8,6 +8,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { forgetRailMode } from "./railMode";
+import { showNotices } from "./test-strips";
 
 /**
  * **A project's or the app's result pops from the status bar** (#3653, spec #3647), on the real
@@ -104,7 +105,11 @@ const findCardNow = queryCard;
 const queryDot = () =>
   within(line()).queryByRole("button", { name: /^Show the notice on the status bar/ });
 /** The Notices centre's Results, where every result is listed too. */
-const results = () => screen.findByRole("region", { name: "Results" });
+const results = async () => {
+  // Listed in Notices since #5645, in the Panel under Asks.
+  await showNotices();
+  return screen.findByRole("region", { name: "Results" });
+};
 
 /** What the page lays out, in order (the `PopsFromNotices` story measures the rects, which are
  *  all zero here): each element of the work and of the status bar, by its

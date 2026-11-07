@@ -24,15 +24,18 @@ import {
   REPLY_HINT,
 } from "./Inbox";
 import { AnswerOpener } from "./AnswerPanel";
+import { drawnWith } from "./cascade.testkit";
 import { Notice } from "./Notice";
 import { IN_ANOTHER_WINDOW, OTHER_PROJECTS, type Elsewhere } from "./InboxElsewhere";
 import type { Needing, Quiet } from "./NeedsYou";
 import { SETTLE_MS } from "./TaskBlocksNotice";
+import { UNDO_MS } from "./undo";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
 import { askOfVault } from "./test-asks";
 import { forgetInbox, replyBytes } from "./inboxRules";
 import { keepInboxScope } from "./inboxScope";
 import { forgetProjectViews } from "./projectViews";
+import { openEveryAnswer } from "./test-inbox";
 import type { DispatchPending, InboxUpdate, Shown } from "./bindings";
 
 /**
@@ -166,7 +169,13 @@ function core(answers: Record<string, unknown> = {}) {
   return calls;
 }
 
-function draw(asks: readonly Shown[] | undefined, more: Partial<Parameters<typeof Inbox>[0]> = {}) {
+/** Draws the Inbox and opens every ask's Answer (`openEveryAnswer`), as most tests here are
+ *  about what an ask's form does; `closed` leaves them as they are drawn. */
+function draw(
+  asks: readonly Shown[] | undefined,
+  more: Partial<Parameters<typeof Inbox>[0]> = {},
+  { closed = false }: { closed?: boolean } = {},
+) {
   const props = {
     plane: PLANE,
     asks,
@@ -176,12 +185,14 @@ function draw(asks: readonly Shown[] | undefined, more: Partial<Parameters<typeo
     ...more,
   };
   const drawn = render(<Inbox {...props} />);
+  if (!closed) openEveryAnswer();
   read();
   return {
     ...drawn,
     props,
     again: (next: readonly Shown[]) => {
       drawn.rerender(<Inbox {...props} asks={next} />);
+      if (!closed) openEveryAnswer();
       read();
     },
   };
@@ -265,7 +276,7 @@ describe("the asks, grouped by chat", () => {
     expect(within(card).getByText("ops").tagName).toBe("EM");
   });
 
-  it("opens the Answer form on a task's question, for the task that asked (ADR 0107)", async () => {
+  it("opens the Answer form on a task's question in its row, for the task that asked (ADR 0107, #5651)", async () => {
     const question: Shown = {
       session: 9,
       ask: "task-question:9:4",
@@ -275,7 +286,8 @@ describe("the asks, grouped by chat", () => {
       chain: ["steward 6", "check prod"],
       answer: { via: "task-question", why: "no-reply", from: "steward 6", note: null },
     };
-    core();
+    const calls = core({ task_question: { number: 4, question: "Which host?" } });
+    // The window's Answer dialog is not what a row opens.
     const opened = vi.fn();
     render(
       <AnswerOpener value={opened}>
@@ -292,7 +304,13 @@ describe("the asks, grouped by chat", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /^Answer / }));
 
-    expect(opened).toHaveBeenCalledWith({ chat: 9, name: "check prod" });
+    expect(
+      await screen.findByRole("textbox", { name: "Your answer to check prod" }),
+    ).toBeInTheDocument();
+    expect(calls.filter((one) => one.cmd === "task_question")).toEqual([
+      { cmd: "task_question", args: { plane: PLANE, session: 9 } },
+    ]);
+    expect(opened).not.toHaveBeenCalled();
   });
 
   it("draws what an ask says as text: no word of it is ever a control", () => {
@@ -308,6 +326,7 @@ describe("the asks, grouped by chat", () => {
     expect(screen.getByRole("heading", { name: "<b>steward</b> 3" })).toBeTruthy();
     // The only buttons are the answers it offers, and Go to chat.
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Cancel",
       "Go to chat",
       "Allow",
       "Deny",
@@ -331,6 +350,7 @@ describe("the asks, grouped by chat", () => {
     draw([signIn]);
     expect(chats()).toEqual(["Profile work"]);
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Cancel",
       "Sign in",
       "Dismiss",
     ]);
@@ -346,6 +366,7 @@ describe("the asks, grouped by chat", () => {
     // What is drawn is not what would run, so nothing that lets it run is offered here
     // (`hooked::shown_in_full`'s rule): Deny, and the chat's own pane, which shows it whole.
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Cancel",
       "Go to chat",
       "Deny",
     ]);
@@ -362,6 +383,7 @@ describe("the asks, grouped by chat", () => {
     expect(mark).toHaveClass("invisible-char");
     expect(screen.getByText(hiddenSaid("⟦U+00A0⟧"))).toBeTruthy();
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Cancel",
       "Go to chat",
       "Deny",
     ]);
@@ -428,6 +450,7 @@ describe("the asks, grouped by chat", () => {
     expect(document.querySelector(".ask-lines")).not.toHaveClass("inbox-clamped");
     expect(screen.getByText("Allow is not offered. It runs over 2 lines.")).toBeTruthy();
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Cancel",
       "Go to chat",
       "Deny",
     ]);
@@ -510,6 +533,7 @@ describe("the asks, grouped by chat", () => {
     draw([permission(3, "lb", ["steward 3"], "Run a command: echo ⟦U+27E6⟧U+00A0⟧")]);
     expect(screen.queryByText(/Allow is not offered/)).toBeNull();
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Cancel",
       "Go to chat",
       "Allow",
       "Deny",
@@ -522,6 +546,7 @@ describe("the asks, grouped by chat", () => {
     draw([permission(3, "n", ["steward 3"], nfd)]);
     expect(screen.getByText(nfd)).toBeTruthy();
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Cancel",
       "Go to chat",
       "Allow",
       "Deny",
@@ -834,6 +859,7 @@ describe("answering in place", () => {
       </>
     );
     const { rerender } = render(both([DISPATCH]));
+    openEveryAnswer();
     const pane = screen.getByRole("region", { name: "pane" });
     const inbox = screen.getByRole("region", { name: "Inbox" });
     await within(pane).findByText("Check why the prod deploy is red.");
@@ -868,6 +894,7 @@ describe("answering in place", () => {
       },
     });
     render(<Inbox plane={PLANE} onGo={vi.fn()} onLeave={vi.fn()} asks={[DISPATCH]} />);
+    openEveryAnswer();
     const inbox = screen.getByRole("region", { name: "Inbox" });
     await within(inbox).findByText("Check why the prod deploy is red.");
     const allow = within(inbox).getByRole("button", { name: "Allow for this chat" });
@@ -945,18 +972,21 @@ describe("answering in place", () => {
     expect(within(card).getByText("graph")).toBeTruthy();
   });
 
-  it("folds a long message behind Show all, reached by ↓ past the head and before the reply (#5214)", async () => {
+  it("shows a long ask's three lines and Show all · N lines, reached by ↓ before its links (#5649)", async () => {
     core();
     const long = Array.from({ length: 9 }, (_, at) => `Line ${at + 1}`).join("\n");
-    draw([{ ...QUESTION, last_message: long }]);
+    draw([{ ...QUESTION, last_message: long }], { onIgnore: vi.fn() });
 
     const show = screen.getByRole("button", { name: "Show all · 9 lines" });
     expect(show).toHaveAttribute("aria-expanded", "false");
+    // Folded at three of its lines: the rest is still the page's, for a screen reader.
+    const body = document.getElementById(show.getAttribute("aria-controls") ?? "") as HTMLElement;
+    expect(body).toHaveAttribute("data-folded", "true");
+    expect(body).toHaveAttribute("data-fold-at", "3");
+    expect(drawnWith(body, "max-block-size")).toBe("3lh");
+    expect(body).toHaveTextContent("Line 9");
+
     await userEvent.tab();
-    await userEvent.keyboard("{ArrowDown}");
-    expect(document.activeElement).toBe(
-      screen.getByRole("button", { name: "Go to chat steward 6" }),
-    );
     await userEvent.keyboard("{ArrowDown}");
     expect(document.activeElement).toBe(show);
     await userEvent.keyboard("{Enter}");
@@ -964,44 +994,75 @@ describe("answering in place", () => {
       "aria-expanded",
       "true",
     );
+    expect(body).toHaveAttribute("data-folded", "false");
+    // Its links: Answer, open here, reading Cancel (#5651), then Go to chat.
+    await userEvent.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Cancel answering steward 6" }),
+    );
+    await userEvent.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Go to chat steward 6" }),
+    );
     await userEvent.keyboard("{ArrowDown}");
     expect(document.activeElement).toBe(
       screen.getByRole("textbox", { name: "Reply to steward 6" }),
     );
   });
 
-  it("draws the card's head in the pane band's style, Send its one button (#5214)", () => {
+  it("draws three lines of an ask whole, with no Show all (#5649)", () => {
+    core();
+    draw([{ ...QUESTION, last_message: "One\nTwo\nThree" }]);
+    expect(screen.queryByRole("button", { name: /^Show all/ })).toBeNull();
+  });
+
+  it("is a row of Asks, not a card: its title and age, its links, its reply, a × in the age's place (#5649)", () => {
     core();
     const ignored = vi.fn();
     draw([{ ...QUESTION, last_message: "Which branch?" }], { onIgnore: ignored });
 
-    const card = screen.getByRole("listitem", { name: "Waiting on your reply" });
-    const head = card.querySelector(".inbox-ask-head") as HTMLElement;
-    expect(within(head).getByText("steward 6")).toBeTruthy();
-    expect(within(head).getByText("Waiting on your reply")).toBeTruthy();
-    // Go to chat, a quiet link, and the queue's Ignore, a ×, in the head.
-    expect(within(head).getByRole("button", { name: "Go to chat steward 6" })).toHaveAttribute(
-      "data-variant",
-      "quiet-link",
-    );
+    const row = screen.getByRole("listitem", { name: "Waiting on your reply" });
+    const part = (name: string) =>
+      row.querySelector(`[data-scope="message"][data-part="${name}"]`) as HTMLElement;
+    expect(row).toHaveAttribute("data-scope", "message");
+    expect(row).toHaveAttribute("data-variant", "waiting");
+    expect(row.closest('[data-scope="card"]')).toBeNull();
+    expect(document.querySelector('[data-scope="card"]')).toBeNull();
+    expect(drawnWith(row, "border")).toBe("0");
+    expect(drawnWith(row, "background-color")).toBe("transparent");
+    expect(part("title")).toHaveTextContent("steward 6");
+    expect(part("meta")).toHaveTextContent("Waiting on your reply");
+    // What it waits on is the family's own part, drawn in the waiting colour by its variant.
+    expect(part("state")).toHaveTextContent("Waiting on your reply");
+    // Go to chat, a quiet link among its links; the queue's Ignore, its ×.
     expect(
-      within(head).getByRole("button", { name: "Ignore steward 6 until it asks again" }),
+      within(part("links")).getByRole("button", { name: "Go to chat steward 6" }),
+    ).toHaveAttribute("data-variant", "quiet-link");
+    expect(
+      within(part("dismiss")).getByRole("button", { name: "Ignore steward 6 until it asks again" }),
     ).toBeTruthy();
-    expect(within(card).queryByRole("button", { name: "Ignore" })).toBeNull();
-    // The send is the card's one button, inside the reply strip at its foot.
-    const strip = card.querySelector('[data-scope="textarea"][data-foot-strip]') as HTMLElement;
+    expect(row).toHaveAttribute("data-dismiss");
+    // The reply is answered in the row, under its links: Send its one button.
+    const strip = part("form").querySelector(
+      '[data-scope="textarea"][data-foot-strip]',
+    ) as HTMLElement;
     expect(within(strip).getByRole("button", { name: /^Send reply to / })).toBeTruthy();
-    expect(strip).toBe(card.querySelector(".inbox-reply")?.querySelector("[data-foot-strip]"));
-    expect(card.querySelectorAll('[data-scope="button"][data-variant="primary"]')).toHaveLength(0);
+    expect(row.querySelectorAll('[data-scope="button"][data-variant="primary"]')).toHaveLength(0);
   });
 
-  it("presses Ignore from the head's ×", async () => {
+  it("presses Ignore from the row's ×", async () => {
+    vi.useFakeTimers({
+      shouldAdvanceTime: true,
+      toFake: ["Date", "performance", "setTimeout", "clearTimeout"],
+    });
     core();
     const ignored = vi.fn();
     draw([{ ...QUESTION, last_message: "Which branch?" }], { onIgnore: ignored });
     await userEvent.click(
       screen.getByRole("button", { name: "Ignore steward 6 until it asks again" }),
     );
+    // Held for its Undo first (story 54).
+    act(() => vi.advanceTimersByTime(UNDO_MS + 1));
     expect(ignored).toHaveBeenCalledWith(6);
   });
 
@@ -1029,16 +1090,17 @@ describe("answering in place", () => {
     ).toBeTruthy();
   });
 
-  it("reaches a reply box from its card with one Tab and ↓, past its head and the message", async () => {
+  it("reaches a reply box from its card with one Tab and ↓, past its head, the message and its links", async () => {
     core();
     draw([{ ...QUESTION, last_message: "Which branch?" }]);
     await userEvent.tab();
     expect(document.activeElement).toBe(document.querySelector("li.inbox-ask"));
-    await userEvent.keyboard("{ArrowDown}{ArrowDown}");
+    // Its links first: Cancel, as its Answer is open (#5651), and Go to chat.
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}");
     expect(document.activeElement).toBe(
       screen.getByRole("textbox", { name: "Reply to steward 6" }),
     );
-    await userEvent.keyboard("{ArrowUp}{ArrowUp}");
+    await userEvent.keyboard("{ArrowUp}{ArrowUp}{ArrowUp}");
     expect(document.activeElement).toBe(document.querySelector("li.inbox-ask"));
     await userEvent.tab({ shift: true });
     expect(document.querySelector("li.inbox-ask")?.contains(document.activeElement)).toBe(false);
@@ -1386,8 +1448,12 @@ describe("the window's own lines, with a project in front (D-LB-1)", () => {
     // The window lists a line there: the section is drawn, and the line is in it.
     rerender(<Inbox {...props} windowLines={{ at, count: 1 }} />);
     expect(screen.getByRole("region", { name: NOTICES }).hidden).toBe(false);
+    // Its title heads it, with Dismiss all beside it where the view offers one (#5650).
     expect(
-      (screen.getByRole("region", { name: NOTICES }).firstElementChild as HTMLElement).tagName,
+      (
+        screen.getByRole("region", { name: NOTICES }).firstElementChild
+          ?.firstElementChild as HTMLElement
+      ).tagName,
     ).toBe("H3");
   });
 });
@@ -1470,6 +1536,14 @@ describe("a Notice that grants something waits to settle (#1695)", () => {
 });
 
 describe("ignoring a chat that waits on a reply", () => {
+  // An Ignore is held for its Undo (story 54): the clock that takes the Undo away is the test's.
+  beforeEach(() => {
+    vi.useFakeTimers({
+      shouldAdvanceTime: true,
+      toFake: ["Date", "performance", "setTimeout", "clearTimeout"],
+    });
+  });
+
   it("offers the queue's own Ignore on a chat waiting on a reply, and on nothing that asks a decision", async () => {
     core();
     const ignored: number[] = [];
@@ -1484,7 +1558,51 @@ describe("ignoring a chat that waits on a reply", () => {
       "Ignore steward 8 until it asks again",
     ]);
     await userEvent.click(ignores[0]);
+    act(() => vi.advanceTimersByTime(UNDO_MS + 1));
     expect(ignored).toEqual([6]);
+  });
+
+  describe("with its Undo (story 54)", () => {
+    const press = () => userEvent.setup({ advanceTimers: (ms) => vi.advanceTimersByTime(ms) });
+
+    it("takes the ask away at once and stands an Undo, ignoring nothing yet", async () => {
+      core();
+      const ignored = vi.fn();
+      draw([QUESTION, TERMINAL], { onIgnore: ignored });
+      await press().click(
+        screen.getByRole("button", { name: "Ignore steward 6 until it asks again" }),
+      );
+      expect(chats()).toEqual(["steward 8"]);
+      expect(screen.getByText("Ignored steward 6.")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Undo" })).toBeTruthy();
+      expect(ignored).not.toHaveBeenCalled();
+    });
+
+    it("brings the ask back on Undo, and never ignores it", async () => {
+      core();
+      const ignored = vi.fn();
+      draw([QUESTION, TERMINAL], { onIgnore: ignored });
+      await press().click(
+        screen.getByRole("button", { name: "Ignore steward 6 until it asks again" }),
+      );
+      await press().click(screen.getByRole("button", { name: "Undo" }));
+      expect(chats()).toEqual(["steward 6", "steward 8"]);
+      act(() => vi.advanceTimersByTime(UNDO_MS + 1));
+      expect(ignored).not.toHaveBeenCalled();
+      expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
+    });
+
+    it("ignores the chat once the Undo goes", async () => {
+      core();
+      const ignored = vi.fn();
+      draw([QUESTION, TERMINAL], { onIgnore: ignored });
+      await press().click(
+        screen.getByRole("button", { name: "Ignore steward 6 until it asks again" }),
+      );
+      act(() => vi.advanceTimersByTime(UNDO_MS + 1));
+      expect(ignored).toHaveBeenCalledExactlyOnceWith(6);
+      expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
+    });
   });
 });
 
@@ -1525,7 +1643,10 @@ describe("updates, after the asks (#1693)", () => {
         .getAllByRole("listitem")
         .map((row) => row.getAttribute("data-kind")),
     ).toEqual(["task-failed", "doctor"]);
-    expect(within(list).getByText("steward 3: drill: failed")).toBeTruthy();
+    // Whose it is for its title, what happened under it; named by both, as its line said them.
+    const failed = within(list).getByRole("listitem", { name: "steward 3: drill: failed" });
+    expect(within(failed).getByText("steward 3")).toBeTruthy();
+    expect(within(failed).getByText("drill: failed")).toBeTruthy();
     expect(within(list).getByText("git: no identity")).toBeTruthy();
     expect(within(list).getAllByText(/Task failed|Doctor/).length).toBe(2);
   });
@@ -1535,7 +1656,10 @@ describe("updates, after the asks (#1693)", () => {
     draw([], {
       updates: updates(rows([update("x", 1, { says: "<button>Allow</button>" })])),
     });
-    expect(screen.getByText("steward 3: <button>Allow</button>")).toBeTruthy();
+    expect(
+      screen.getByRole("listitem", { name: "steward 3: <button>Allow</button>" }),
+    ).toBeTruthy();
+    expect(screen.getByText("<button>Allow</button>")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Allow" })).toBeNull();
   });
 
@@ -1640,8 +1764,9 @@ describe("updates, after the asks (#1693)", () => {
     draw([permission(3, "a1", ["steward 3"])], { updates: these });
     const ask = screen.getAllByRole("listitem")[0];
     act(() => ask.focus());
-    // The ask, its two answers and Go to chat; then the updates' two buttons.
-    for (let step = 0; step < 4; step += 1) await userEvent.keyboard("{ArrowDown}");
+    // The ask, its links (Cancel, its Answer being open, and Go to chat) and its two answers;
+    // then the updates' two buttons.
+    for (let step = 0; step < 5; step += 1) await userEvent.keyboard("{ArrowDown}");
     expect(document.activeElement?.textContent).toBe("Mark all read");
     await userEvent.keyboard("{ArrowDown}");
     await userEvent.keyboard("{Enter}");
@@ -1669,6 +1794,8 @@ describe("the keyboard (I-11)", () => {
     draw([permission(3, "k1", ["steward 3"]), permission(5, "k2", ["steward 5"], "Run ls")]);
     const [first, second] = screen.getAllByRole("listitem");
     act(() => first.focus());
+    await userEvent.keyboard("{ArrowDown}");
+    expect(document.activeElement?.textContent).toBe("Cancel");
     await userEvent.keyboard("{ArrowDown}");
     expect(document.activeElement?.textContent).toBe("Go to chat");
     await userEvent.keyboard("{ArrowDown}");
@@ -1734,9 +1861,9 @@ describe("where a notification lands (#1694)", () => {
     });
     const group = screen.getByRole("region", { name: "steward 5" });
     expect(document.activeElement).toBe(within(group).getAllByRole("listitem")[0]);
-    // From there the keys go on as from any ask.
+    // From there the keys go on as from any ask: its links first, Cancel as its Answer is open.
     await userEvent.keyboard("{ArrowDown}");
-    expect(document.activeElement?.textContent).toBe("Go to chat");
+    expect(document.activeElement?.textContent).toBe("Cancel");
   });
 
   it("is nowhere for a chat with nothing left in the Inbox", () => {
@@ -1765,12 +1892,31 @@ describe("an Allow waits for its row to settle (#1695)", () => {
         onLeave={vi.fn()}
       />,
     );
+    openEveryAnswer();
     await userEvent.click(screen.getByRole("button", { name: "Allow" }));
     expect(screen.getByRole("status")).toHaveTextContent(MOVED_JUST_NOW);
     expect(calls.some(({ cmd }) => cmd === "answer_ask")).toBe(false);
 
     read();
     await userEvent.click(screen.getByRole("button", { name: "Allow" }));
+    await waitFor(() => expect(calls.some(({ cmd }) => cmd === "answer_ask")).toBe(true));
+  });
+
+  it("allows nothing pressed just after its Answer opened, though the ask was read long before (#5651)", async () => {
+    const calls = core();
+    draw([permission(3, "01J0A", ["steward 3"])], {}, { closed: true });
+    // Read long ago; the keyboard lands on Allow as Answer opens, and a second Enter on the
+    // link's heels must allow nothing.
+    const answer = screen.getByRole("button", { name: "Answer steward 3" });
+    act(() => answer.focus());
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Allow" })).toHaveFocus());
+    await userEvent.keyboard("{Enter}");
+    expect(screen.getByRole("status")).toHaveTextContent(MOVED_JUST_NOW);
+    expect(calls.some(({ cmd }) => cmd === "answer_ask")).toBe(false);
+
+    read();
+    await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(calls.some(({ cmd }) => cmd === "answer_ask")).toBe(true));
   });
 
@@ -1818,6 +1964,7 @@ describe("an Allow waits for its row to settle (#1695)", () => {
         onLeave={vi.fn()}
       />,
     );
+    openEveryAnswer();
     await userEvent.click(screen.getByRole("button", { name: "Deny" }));
     await waitFor(() => expect(calls.some(({ cmd }) => cmd === "answer_ask")).toBe(true));
   });

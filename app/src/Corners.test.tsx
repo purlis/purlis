@@ -23,7 +23,8 @@ const VIEWS: Partial<Record<ViewId, React.ReactNode>> = {
   repos: <div data-testid="v-repos">repos</div>,
   todos: <div data-testid="v-todos">todos</div>,
   memory: <div data-testid="v-memory">memory</div>,
-  inbox: <div data-testid="v-inbox">inbox</div>,
+  asks: <div data-testid="v-asks">asks</div>,
+  updates: <div data-testid="v-updates">updates</div>,
   personas: <div data-testid="v-personas">personas</div>,
   sessions: <div data-testid="v-sessions">sessions</div>,
   vaults: <div data-testid="v-vaults">vaults</div>,
@@ -125,22 +126,31 @@ describe("the left corner (#3144, R121–R123)", () => {
 });
 
 describe("the right corner (R117, R124, R125)", () => {
-  it("is a column: Inbox, Personas, Vaults, then Memory, Todos, Sessions at its foot", () => {
+  it("is a column: Asks, Updates, Personas, Vaults, then Notices, Memory, Todos, Sessions at its foot", () => {
     render(<Window from={DEFAULT_ARRANGEMENT} />);
     const column = document.querySelector(".activity-column[data-side='right']") as HTMLElement;
     expect(column).toHaveAttribute("data-variant", "bar");
     const names = [...column.querySelectorAll('[role="tab"]')].map((one) =>
       one.getAttribute("aria-label"),
     );
-    expect(names).toEqual(["Inbox", "Personas", "Vaults", "Memory", "Todos", "Sessions"]);
+    expect(names).toEqual([
+      "Asks",
+      "Updates",
+      "Personas",
+      "Vaults",
+      "Notices",
+      "Memory",
+      "Todos",
+      "Sessions",
+    ]);
   });
 
   it("toggles the right panel from its open icon, and its × closes it", async () => {
     render(<Window from={DEFAULT_ARRANGEMENT} />);
-    expect(within(slot("right")).getByRole("heading", { name: "Inbox" })).toBeInTheDocument();
+    expect(within(slot("right")).getByRole("heading", { name: "Asks" })).toBeInTheDocument();
 
-    await userEvent.click(within(slot("right")).getByRole("button", { name: "Close Inbox" }));
-    expect(screen.queryByRole("tabpanel", { name: "Inbox" })).toBeNull();
+    await userEvent.click(within(slot("right")).getByRole("button", { name: "Close Asks" }));
+    expect(screen.queryByRole("tabpanel", { name: "Asks" })).toBeNull();
 
     await userEvent.click(tabIn("Attention", "Personas"));
     expect(screen.getByRole("tabpanel", { name: "Personas" })).toBeInTheDocument();
@@ -177,7 +187,7 @@ describe("motion: only the part that opened (R122, R124, R127, R128, R151)", () 
   it("brings the right panel in only when it was closed, and never on a switch of its view", async () => {
     render(<Window from={closed("aside")} />);
 
-    await userEvent.click(tabIn("Attention", "Inbox"));
+    await userEvent.click(tabIn("Attention", "Asks"));
     expect(slot("right")).toHaveClass("arrived");
     fireEvent.animationEnd(slot("right"));
     expect(slot("right")).not.toHaveClass("arrived");
@@ -224,9 +234,9 @@ describe("the keyboard and the side put away (S4, S7, D-2917-18)", () => {
   it("gives the keyboard back to the icon that opened the right panel when its × closes it", async () => {
     render(<Window from={DEFAULT_ARRANGEMENT} />);
 
-    await userEvent.click(within(slot("right")).getByRole("button", { name: "Close Inbox" }));
+    await userEvent.click(within(slot("right")).getByRole("button", { name: "Close Asks" }));
 
-    expect(tabIn("Attention", "Inbox")).toHaveFocus();
+    expect(tabIn("Attention", "Asks")).toHaveFocus();
   });
 
   it("gives the keyboard back to the icon that opened a half when its × closes it", async () => {
@@ -259,7 +269,7 @@ describe("the keyboard and the side put away (S4, S7, D-2917-18)", () => {
 
   it("lets the right panel's arrival end, heard on the box that animates", async () => {
     render(<Window from={closed("aside")} />);
-    await userEvent.click(tabIn("Attention", "Inbox"));
+    await userEvent.click(tabIn("Attention", "Asks"));
     expect(slot("right")).toHaveClass("arrived");
 
     // An animation inside the panel that ends is not the panel's.

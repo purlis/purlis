@@ -212,6 +212,18 @@
   color: var(--needs-you-count-text);
 }
 
+/* **A Notice needs fixing** (ADR 0117, #5645): a dot in the danger colour where a count would
+   be, with no number, ringed in the bar's ground as a count is. */
+[data-scope="activity"][data-part="count"][data-tone="danger"] {
+  inset-block-start: var(--space-2);
+  inset-inline-end: var(--space-2);
+  min-inline-size: 8px;
+  inline-size: 8px;
+  block-size: 8px;
+  padding: 0;
+  background-color: var(--danger-base);
+}
+
 /* What the count says, for the item's description: read out, not drawn. */
 [data-scope="activity"][data-part="said"] {
   position: absolute;

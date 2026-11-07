@@ -103,6 +103,9 @@ export type DoctorState = {
   /** Apply the fix a row carries, by its id, then check again (the full doctor: the dialog
    *  is open). Absent where nothing can apply one. */
   fix?: (id: DoctorFix) => void;
+  /** Apply each of these fixes in turn, then check again once (#5645): the doctor's one Notice
+   *  line's Fix all. Stops at the first the core could not be asked to apply. */
+  fixAll?: (ids: readonly DoctorFix[]) => void;
   /** Apply `git-identity` with the form's name and email, then check again. Resolves with
    *  each field's refusal, or `undefined` once the fix ran or was refused as a whole. */
   fixIdentity?: (name: string, email: string) => Promise<IdentityRefused | undefined>;
@@ -224,6 +227,21 @@ export function useDoctor(plane: PlaneId): DoctorState {
     (id: DoctorFix) => sendFix(id, () => commands.planeDoctorFix(plane, id)),
     [plane, sendFix],
   );
+  const fixAll = useCallback(
+    (ids: readonly DoctorFix[]) => {
+      const [first] = ids;
+      if (first === undefined) return;
+      sendFix(first, async () => {
+        let answer = await commands.planeDoctorFix(plane, first);
+        for (const id of ids.slice(1)) {
+          if (answer.status !== "ok") break;
+          answer = await commands.planeDoctorFix(plane, id);
+        }
+        return answer;
+      });
+    },
+    [plane, sendFix],
+  );
   const moveIntoRepos = useCallback(
     (shown: MoveIntoReposPlan[]) =>
       sendFix(MOVE_INTO_REPOS, () => commands.planeDoctorMoveIntoRepos(plane, shown)),
@@ -261,6 +279,7 @@ export function useDoctor(plane: PlaneId): DoctorState {
     trouble,
     run,
     fix,
+    fixAll,
     fixIdentity,
     identityNow,
     movePlan,
@@ -519,58 +538,51 @@ export const FINDINGS_AS_NOTICES: ReadonlyMap<DoctorFix, string> = new Map<Docto
 /** The family of cause a doctor finding's Notice is (`doctor-finding:<fix id>`). */
 export const DOCTOR_FINDING = "doctor-finding";
 
-/** One doctor finding as a Notice, with its fix: a form for a fix that takes input. */
-function FindingNotice({
-  row,
-  doctor,
-  onDismiss,
-}: {
-  row: DoctorRow & { fix: DoctorFix };
-  doctor: DoctorState & { fix: (id: DoctorFix) => void };
-  onDismiss: () => void;
-}) {
-  const fixer: Fixer = {
-    apply: doctor.fix,
-    busy: doctor.running || doctor.fixing !== undefined,
-    identity: doctor.fixIdentity,
-    identityNow: doctor.identityNow,
-    movePlan: doctor.movePlan,
-    moveIntoRepos: doctor.moveIntoRepos,
-  };
-  const { offered, press, opens, form } = useFixForm(row.fix, fixer);
-  // What the last fix of this finding came to, when it did not mend it: the doctor checks
-  // again either way, and a finding still standing says why.
-  const fixed = doctor.fixed?.fix === row.fix ? doctor.fixed : undefined;
-  const why =
-    fixed !== undefined && fixed.refused !== null
-      ? `The fix was refused: ${fixed.refused}`
-      : fixed && !fixed.complete
-        ? fixed.said.join(" ")
-        : undefined;
-  const cause = `${DOCTOR_FINDING}:${row.fix}`;
-  return (
-    <Notice
-      cause={cause}
-      tone={row.status === "fail" ? "trouble" : "news"}
-      fixes={offered ? [{ label: "Fix", onPress: press, opens }] : undefined}
-      onDismiss={onDismiss}
-      under={form}
-    >
-      {`${row.name}: ${row.detail}`}
-      {why !== undefined && <p>{why}</p>}
-    </Notice>
-  );
+/** The cause the line dismisses a finding by (`doctor-finding:<…>`): a finding of
+ *  {@link FINDINGS_AS_NOTICES} by its fix id, as it stood as a Notice of its own before #5645, so
+ *  what was dismissed then stays so; any other by its row's name and its fix, if it has one, so
+ *  two findings of one row are told apart. */
+function causeOf(row: DoctorRow): string {
+  if (row.fix !== null && FINDINGS_AS_NOTICES.get(row.fix) === row.name)
+    return `${DOCTOR_FINDING}:${row.fix}`;
+  return `${DOCTOR_FINDING}:${row.name}${row.fix === null ? "" : `|${row.fix}`}`;
 }
 
+/** The name of the doctor row a finding's cause is about. */
+function rowNamed(cause: string): string {
+  const said = cause.slice(DOCTOR_FINDING.length + 1);
+  return FINDINGS_AS_NOTICES.get(said as DoctorFix) ?? said.split("|", 1)[0];
+}
+
+/** **What the doctor found** (#1693): each row that failed, and each warning of a check this
+ *  build runs (a row it does not run is no finding: `DoctorRow.checked`). */
+const isFinding = (row: DoctorRow): boolean =>
+  row.status === "fail" || (row.status === "warn" && row.checked);
+
+/** The causes of the findings `report` holds, as the doctor's line dismisses each: what the
+ *  first-open baseline puts away (#5648). */
+export const findingCauses = (report: DoctorReport): string[] =>
+  [...report.rows, ...report.app_rows].filter(isFinding).map(causeOf);
+
+/** The cause of the doctor's one Notice line (#5645): of the `doctor-finding` family, so the
+ *  status line's Notices count leaves it to the doctor's own item (`FROM_THE_DOCTOR`). */
+export const DOCTOR_LINE = `${DOCTOR_FINDING}:*`;
+
+/** What the line says: how many findings it lists. */
+const findingsSaid = (count: number) => `Doctor: ${count} ${count === 1 ? "finding" : "findings"}`;
+
 /**
- * **The doctor's findings that stand as Notices** (#1250, {@link FINDINGS_AS_NOTICES}): drawn in
- * the project's band from the doctor the window already runs, and gone once the doctor checks
- * again without them.
+ * **Every doctor finding, as one Notice line** (#5645, ADR 0117): "Doctor: N findings", in the
+ * Notices view, from the doctor the window already runs. It opens to the list (Show findings),
+ * each finding as the Doctor dialog's row says it. A finding of {@link FINDINGS_AS_NOTICES}
+ * (D-1301-1) carries its Fix there, a form for a fix that takes input (#1250); **Fix all**
+ * applies those that one press may, then checks again. Every other fix stays the dialog's.
  *
- * **Dismiss lasts until the finding changes** (V91j, `dismissals.ts`): every report the doctor
- * answers settles the `doctor-finding` family, so a finding that was mended lets its dismissal
- * go and shows again if it comes back. A report that did not check the finding's row (git could
- * not be asked) says nothing about it, and keeps its dismissal.
+ * **Dismiss puts away every finding it lists, until each changes** (V91j, `dismissals.ts`):
+ * every report the doctor answers settles the `doctor-finding` family, so a finding that was
+ * mended lets its dismissal go and shows again if it comes back, and a new finding stands the
+ * line again. A report that did not check a finding's row (git could not be asked), or does not
+ * hold it, says nothing about it, and keeps its dismissal.
  */
 export function DoctorNotices({
   doctor,
@@ -585,37 +597,91 @@ export function DoctorNotices({
   settle: (family: string, present: readonly string[]) => void;
 }) {
   const { report, fix } = doctor;
-  const findings = (report?.rows ?? []).filter(
-    (row): row is DoctorRow & { fix: DoctorFix } =>
-      row.status !== "ok" && row.checked && row.fix !== null && FINDINGS_AS_NOTICES.has(row.fix),
-  );
+  const [open, setOpen] = useState(false);
+  const listId = useId();
+  /** What is dismissed now, read when a report lands without the report waiting on it. */
+  const dismissedNow = useRef(dismissed);
+  useEffect(() => {
+    dismissedNow.current = dismissed;
+  }, [dismissed]);
 
   useEffect(() => {
     if (report === undefined) return;
-    const present = [...FINDINGS_AS_NOTICES].flatMap(([id, name]) => {
-      const cause = `${DOCTOR_FINDING}:${id}`;
-      const row = report.rows.find((one) => one.name === name);
-      // Not checked, or not in this report: unknown, so it is not let go.
-      if (row === undefined || !row.checked) return [cause];
-      return row.status !== "ok" && row.fix === id ? [cause] : [];
+    const rows = [...report.rows, ...report.app_rows];
+    const standing = rows.filter(isFinding).map(causeOf);
+    // A dismissed finding whose row this report did not check, or holds not at all, is unknown,
+    // so it is not let go.
+    const unknown = [...dismissedNow.current].filter((cause) => {
+      if (!cause.startsWith(`${DOCTOR_FINDING}:`)) return false;
+      const row = rows.find((one) => one.name === rowNamed(cause));
+      return row === undefined || !row.checked;
     });
-    settle(DOCTOR_FINDING, present);
+    settle(DOCTOR_FINDING, [...new Set([...standing, ...unknown])]);
   }, [report, settle]);
 
-  if (fix === undefined) return null;
+  if (fix === undefined || report === undefined) return null;
+  const listed = [...report.rows, ...report.app_rows]
+    .filter(isFinding)
+    .filter((row) => !dismissed.has(causeOf(row)));
+  if (listed.length === 0) return null;
+
+  const fixer: Fixer = {
+    apply: fix,
+    busy: doctor.running || doctor.fixing !== undefined,
+    identity: doctor.fixIdentity,
+    identityNow: doctor.identityNow,
+    movePlan: doctor.movePlan,
+    moveIntoRepos: doctor.moveIntoRepos,
+  };
+  // Only a finding of D-1301-1 is fixed from here; the rest are the dialog's.
+  const shown = listed.map((row) =>
+    row.fix !== null && FINDINGS_AS_NOTICES.has(row.fix) ? row : { ...row, fix: null },
+  );
+  const onePress = shown.flatMap((row) =>
+    row.fix !== null && !FIXES_WITH_A_FORM.has(row.fix) && row.fix !== MOVE_INTO_REPOS
+      ? [row.fix]
+      : [],
+  );
+  // What the last fix of a listed finding came to, when it did not mend it: the doctor checks
+  // again either way, and a finding still standing says why.
+  const fixed = shown.some((row) => row.fix !== null && row.fix === doctor.fixed?.fix)
+    ? doctor.fixed
+    : undefined;
+  const why =
+    fixed !== undefined && fixed.refused !== null
+      ? `The fix was refused: ${fixed.refused}`
+      : fixed && !fixed.complete
+        ? fixed.said.join(" ")
+        : undefined;
+  const { fixAll } = doctor;
   return (
-    <>
-      {findings
-        .filter((row) => !dismissed.has(`${DOCTOR_FINDING}:${row.fix}`))
-        .map((row) => (
-          <FindingNotice
-            key={row.fix}
-            row={row}
-            doctor={{ ...doctor, fix }}
-            onDismiss={() => dismiss(`${DOCTOR_FINDING}:${row.fix}`)}
-          />
-        ))}
-    </>
+    <Notice
+      cause={DOCTOR_LINE}
+      tone={listed.some((row) => row.status === "fail") ? "trouble" : "news"}
+      fixes={[
+        {
+          label: "Show findings",
+          onPress: () => setOpen((was) => !was),
+          opens: { id: listId, open },
+        },
+        ...(onePress.length > 0 && fixAll !== undefined
+          ? [{ label: "Fix all", onPress: () => fixAll(onePress), busy: fixer.busy }]
+          : []),
+      ]}
+      onDismiss={() => {
+        for (const row of listed) dismiss(causeOf(row));
+      }}
+      under={
+        open ? (
+          <div id={listId}>
+            <Rows rows={shown} fixer={fixer} label="Doctor findings" />
+          </div>
+        ) : undefined
+      }
+    >
+      {findingsSaid(listed.length)}
+      {why !== undefined && <p>{why}</p>}
+    </Notice>
   );
 }
 
@@ -634,13 +700,16 @@ function Rows({
   rows,
   fixer,
   onOpenSettings,
+  label,
 }: {
   rows: readonly DoctorRow[];
   fixer?: Fixer;
   onOpenSettings?: (group: string) => void;
+  /** The list's name, where nothing above it names it: the doctor's Notice line's (#5645). */
+  label?: string;
 }) {
   return (
-    <ul className="doctor-rows">
+    <ul className="doctor-rows" aria-label={label}>
       {rows.map((row) => (
         <li key={row.name} className={`doctor-row doctor-${row.status}`} data-row={row.name}>
           <span className="doctor-glyph" aria-hidden="true">

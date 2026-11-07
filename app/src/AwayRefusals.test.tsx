@@ -135,10 +135,11 @@ describe("a dispatch refused while nobody was there, in the Inbox's updates", ()
   it("is an update of its own, with no Go: Never for this pair, Allow from now on, and Dismiss", () => {
     render(<Updated refused={[refusal()]} />);
     const row = updateOf(/steward wanted devops/);
+    // Its answers, then its × (#5649), named Dismiss.
     expect(
       within(row)
         .getAllByRole("button")
-        .map((one) => one.textContent),
+        .map((one) => one.textContent || one.getAttribute("aria-label")?.split(":")[0]),
     ).toEqual(["Never for this pair", "Allow from now on", "Dismiss"]);
     expect(within(row).queryByRole("button", { name: /^Go to/ })).toBeNull();
   });

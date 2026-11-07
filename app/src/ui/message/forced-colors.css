@@ -1,0 +1,13 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **A message row in forced colours** (#5649, #3387): what `theme/forced-colors.css` says of the
+   window, said of this family's own parts, in the system's palette alone. Forced colours take
+   the mark's tint away, so the mark keeps a ring in the words' colour. A row under the keyboard
+   is told by the focus ring of the control it holds. */
+
+@media (forced-colors: active) {
+  [data-scope="message"][data-part="mark"] {
+    border: 1px solid CanvasText;
+  }
+}

@@ -267,9 +267,11 @@ describe("the gallery", () => {
     for (const where of ["inbox", "pane"]) {
       const notice = document.querySelector<HTMLElement>(`[data-cause="gallery-${where}"]`);
       expect(notice, `a Notice at ${where}`).not.toBeNull();
-      // Its box stands where it was put: in a pane's row, or a card of the Inbox's list.
-      expect(notice?.closest('[data-scope="notice"]')).toHaveAttribute("data-placement", where);
-      // A Notices centre card's × says its name, with no words on it (#5217).
+      // Its box stands where it was put: in a pane's row, or a row of the Notices view (#5649).
+      if (where === "pane")
+        expect(notice?.closest('[data-scope="notice"]')).toHaveAttribute("data-placement", where);
+      else expect(notice?.querySelector('[data-scope="message"][data-part="root"]')).not.toBeNull();
+      // A Notices view row's × says its name, with no words on it (#5217, #5649).
       const buttons = within(notice as HTMLElement)
         .getAllByRole("button")
         .map((one) => one.getAttribute("aria-label") ?? one.textContent);
@@ -355,9 +357,8 @@ describe("the gallery by keyboard", () => {
       "checkbox needs you",
       "button Save",
       "button Delete",
-      // A Notices centre card's × stands in its head, before its ways (#5217).
-      "button Dismiss",
-      ...notice("inbox").filter((one) => one !== "button Dismiss"),
+      // A Notices view row's × stands after its ways, over its time (#5649).
+      ...notice("inbox"),
       "button Go to it",
       ...notice("pane"),
     ]);

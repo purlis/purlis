@@ -19,8 +19,9 @@
  *   no theme's (`purlis_core::theme::parts`): Allow keeps its own look on it, and purlis speaking
  *   wherever the window draws its edge keeps its waiting edge. A chat pane's band draws its
  *   Notices as compact rows (`layout="row"`, `paneFrame.css`, #5215), a consent's waiting edge held.
- * - **The Inbox's list** (`NoticeListBox`, `data-scope="notice-list"`) is, in the Notices centre,
- *   a stack of cards in the Inbox card's style (`layout="head"`, #5217), and elsewhere one box of
+ * - **The Inbox's list** (`NoticeListBox`, `data-scope="notice-list"`) is, in the Notices view,
+ *   a column of the message family's rows (#5649; cards in the Inbox card's style before, #5217),
+ *   and elsewhere one box of
  *   rows with a separator between them; **a pane's row** (`NoticeRow`, `NoticeStack`,
  *   `data-scope="notice-row"`) stands above the terminal and takes the height it leaves. Both are
  *   layout, drawn here and themed through the Notices they hold.
@@ -172,41 +173,8 @@ export function NoticeMark({
   );
 }
 
-/** **A Notices centre card's head** (#5217): its mark, its title with its state and age under
- *  it, and at its end Go to chat and its ×. */
-export function NoticeHead({
-  mark,
-  title,
-  sub,
-  end,
-}: {
-  mark: ReactNode;
-  title: ReactNode;
-  /** What stands under the title: its state, where the title does not say it, and its age. */
-  sub: ReactNode;
-  end?: ReactNode;
-}) {
-  return (
-    <div data-scope="notice" data-part="head">
-      {mark}
-      <span data-scope="notice" data-part="heading">
-        {title}
-        {/* Its age changes every minute: nothing to read the whole card out again for. */}
-        <span data-scope="notice" data-part="sub" aria-live="off">
-          {sub}
-        </span>
-      </span>
-      {end !== undefined && (
-        <span data-scope="notice" data-part="end">
-          {end}
-        </span>
-      )}
-    </div>
-  );
-}
-
-/** **A Notices centre card's live words** (#5217): all it says with its ways, so a test and a
- *  screen reader find them as they do a line's, and never what a way out opened. */
+/** **A Notices view row's live words** (#5217, #5649): the whole row, its ways and its × with it,
+ *  so a test and a screen reader find them as they do a line's, and never what a way out opened. */
 export function NoticeSaid({
   children,
   label,

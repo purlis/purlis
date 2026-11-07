@@ -778,26 +778,37 @@ describe("which doctor findings stand as Notices (#1301, D-1301-1)", () => {
   const causes = () =>
     [...document.querySelectorAll("[data-cause]")].map((one) => one.getAttribute("data-cause"));
 
-  it("draws an unindexed memory as a Notice whose Fix links it, with no form", async () => {
+  /** Opens the doctor's one line to its list (#5645), and returns the list. */
+  async function opened(): Promise<HTMLElement> {
+    await userEvent.click(screen.getByRole("button", { name: "Show findings" }));
+    return screen.getByRole("list", { name: "Doctor findings" });
+  }
+
+  it("lists an unindexed memory in the doctor's line, whose Fix links it, with no form", async () => {
     const { fix } = draw([findings["memory-optimize"]]);
 
-    const notice = screen
-      .getByText(/^memory indexes: 0 dangling, 2 unindexed/)
-      .closest("[data-cause]") as HTMLElement;
-    expect(notice).toHaveAttribute("data-cause", "doctor-finding:memory-optimize");
-    await userEvent.click(within(notice).getByRole("button", { name: "Fix" }));
+    expect(screen.getByText("Doctor: 1 finding").closest("[data-cause]")).toHaveAttribute(
+      "data-cause",
+      "doctor-finding:*",
+    );
+    const list = await opened();
+    await userEvent.click(within(list).getByRole("button", { name: "Fix memory indexes" }));
     expect(fix).toHaveBeenCalledWith("memory-optimize");
     expect(screen.queryByRole("form")).toBeNull();
   });
 
-  it("leaves every other finding in the dialog, so opening a project is no band of rows", () => {
-    draw(Object.values(findings));
+  it("stands every finding as one line, and fixes from it only the findings of D-1301-1 (#5645)", async () => {
+    // A doctor that can send git identity's form, so its Fix is offered as the window's is.
+    draw(Object.values(findings), { fixIdentity: () => Promise.resolve(undefined) });
 
-    expect(causes()).toEqual([
-      "doctor-finding:git-identity",
-      "doctor-finding:memory-optimize",
-      "doctor-finding:persona-agents",
-    ]);
+    expect(causes()).toEqual(["doctor-finding:*"]);
+    expect(screen.getByText("Doctor: 9 findings")).toBeInTheDocument();
+    const list = await opened();
+    expect(
+      within(list)
+        .getAllByRole("button", { name: /^Fix / })
+        .map((one) => one.getAttribute("aria-label")),
+    ).toEqual(["Fix git identity", "Fix memory indexes", "Fix personas"]);
   });
 
   it("stands no other fix that runs only by its name as a Notice", () => {
@@ -834,15 +845,16 @@ describe("which doctor findings stand as Notices (#1301, D-1301-1)", () => {
     expect(causes()).toEqual([]);
   });
 
-  it("stands no Notice for a personas row that warns of something else", () => {
-    // #1990: only the generated sub-agent files are the Notice's; a persona lint warning
-    // carries no fix and stays in the dialog, and lets a dismissed Notice go.
+  it("tells a personas row that warns of something else from the sub-agent files (#1990)", async () => {
+    // A persona lint warning carries no fix: it is a finding of its own, with no Fix here, and
+    // lets the sub-agent files' dismissal go.
     const { settle } = draw([row("personas", "warn", { detail: "1 draft: devops" })], {}, [
       "doctor-finding:persona-agents",
     ]);
 
-    expect(causes()).toEqual([]);
-    expect(settle.mock.lastCall?.[1]).not.toContain("doctor-finding:persona-agents");
+    expect(screen.getByText("Doctor: 1 finding")).toBeInTheDocument();
+    expect(within(await opened()).queryByRole("button", { name: /^Fix / })).toBeNull();
+    expect(settle.mock.lastCall?.[1]).toEqual(["doctor-finding:personas"]);
   });
 });
 

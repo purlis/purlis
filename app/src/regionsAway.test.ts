@@ -22,7 +22,7 @@ describe("the regions put away, for the palette", () => {
   /** The left half put away, and the right half holding only an extension's panel. */
   const onlyAPanel = (): Arrangement => {
     let moved: Arrangement = DEFAULT_ARRANGEMENT;
-    for (const view of ["memory", "todos", "sessions"] as const)
+    for (const view of ["notices", "memory", "todos", "sessions"] as const)
       moved = viewMoved(moved, view, "aside");
     moved = viewMoved(moved, BURN, "panel-right");
     return moved.map((one) => (one.id === "panel-left" ? { ...one, collapsed: true } : one));
@@ -57,7 +57,7 @@ describe("⌘J where a half holds only panels not contributed now", () => {
   const BURN = "panel:ext/stats/burn" as const;
   const onlyAPanel = (): Arrangement => {
     let moved: Arrangement = DEFAULT_ARRANGEMENT;
-    for (const view of ["memory", "todos", "sessions"] as const)
+    for (const view of ["notices", "memory", "todos", "sessions"] as const)
       moved = viewMoved(moved, view, "aside");
     moved = viewMoved(moved, BURN, "panel-right");
     return moved.map((one) => (one.id === "panel-left" ? { ...one, collapsed: true } : one));

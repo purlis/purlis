@@ -205,25 +205,30 @@ export const NeedsADecision: Story = {
     // Every one is a polite status, and none an alert.
     await waitFor(() => expect(canvas.getAllByRole("status").length).toBeGreaterThanOrEqual(5));
     await expect(canvas.queryByRole("alert")).toBeNull();
+    // The card alone and the pane's line are the notice family's boxes; the Inbox's line is a
+    // row of the Notices view (#5649).
     const boxes = [
       ...canvasElement.querySelectorAll<HTMLElement>(
         '[data-scope="notice"][data-part="root"][data-variant="attention"]',
       ),
+      ...canvasElement.querySelectorAll<HTMLElement>(
+        '[data-scope="message"][data-part="root"][data-tone="attention"]',
+      ),
     ];
     await expect(boxes).toHaveLength(3);
     for (const box of boxes) {
-      // A pane's line says it to a reader with a colon, a Notices centre card in its head (#5217).
+      // A pane's line says it to a reader with a colon, a Notices view row before its title.
       await expect(box).toHaveTextContent(/Needs a decision/);
     }
-    // Its mark on the card and on the Inbox's line; the pane's band draws its own.
+    // Its mark on the card and on the Inbox's row; the pane's band draws its own.
     await expect(boxes[0].querySelector('[data-part="mark"] svg')).not.toBeNull();
-    await expect(boxes[1].querySelector('[data-part="mark"] svg')).not.toBeNull();
+    await expect(boxes[2].querySelector('[data-part="mark"] svg')).not.toBeNull();
     // In the Inbox's list it stands after trouble and before news.
     const order = [
       ...canvasElement.querySelectorAll<HTMLElement>(
-        '[data-scope="notice-list"] [data-scope="notice"][data-part="root"]',
+        '[data-scope="notice-list"] [data-scope="message"][data-part="root"]',
       ),
-    ].map((one) => one.getAttribute("data-variant"));
+    ].map((one) => one.getAttribute("data-tone"));
     await expect(order).toEqual(["trouble", "attention", "news"]);
     // The card's × at its top right, then its fix.
     await userEvent.tab();
@@ -254,8 +259,9 @@ const inTheCentre = (notice: ReactNode) => (
   </div>
 );
 
-/** **A note of a chat in no pane, in the Notices centre** (#4759, #5217): whose it is, its state and age
- *  beneath, Go to chat a quiet link and its ×, and its one answer the primary button. */
+/** **A note of a chat in no pane, in the Notices view** (#4759, #5649): a row, whose it is its
+ *  title with its age at the right, its state beneath, its ways as links (its one answer leading,
+ *  then Go to chat) and its × over its age. */
 export const CentreNote: Story = {
   render: () =>
     inTheCentre(
@@ -275,16 +281,16 @@ export const CentreNote: Story = {
   play: async ({ canvas: card, userEvent }) => {
     const go = await card.findByRole("button", { name: "Go to chat steward 4" });
     await userEvent.tab();
-    await expect(go).toHaveFocus();
-    expectFocusInSight();
-    await userEvent.tab();
-    await expect(card.getByRole("button", { name: "Dismiss" })).toHaveFocus();
-    expectFocusInSight();
-    await userEvent.tab();
     await expect(card.getByRole("button", { name: "Retry" })).toHaveFocus();
     expectFocusInSight();
     await userEvent.tab();
     await expect(card.getByRole("button", { name: "See its settings" })).toHaveFocus();
+    expectFocusInSight();
+    await userEvent.tab();
+    await expect(go).toHaveFocus();
+    expectFocusInSight();
+    await userEvent.tab();
+    await expect(card.getByRole("button", { name: "Dismiss" })).toHaveFocus();
     expectFocusInSight();
     // The picture is of the card at rest, never of a way the keyboard is on.
     (document.activeElement as HTMLElement).blur();
@@ -296,10 +302,10 @@ export const CentreNoteAlone: Story = {
   play: async ({ canvas, userEvent }) => {
     await waitFor(() => expect(canvas.getAllByRole("status")).toHaveLength(2));
     await userEvent.tab();
-    await expect(canvas.getAllByRole("button", { name: "Dismiss" })[0]).toHaveFocus();
+    await expect(canvas.getByRole("button", { name: "Undo" })).toHaveFocus();
     expectFocusInSight();
     await userEvent.tab();
-    await expect(canvas.getByRole("button", { name: "Undo" })).toHaveFocus();
+    await expect(canvas.getAllByRole("button", { name: "Dismiss" })[0]).toHaveFocus();
     expectFocusInSight();
     (document.activeElement as HTMLElement).blur();
   },
@@ -320,8 +326,8 @@ export const CentreNoteAlone: Story = {
     ),
 };
 
-/** **An arrival card in the Notices centre** (#4759, #5217): Go to chat a quiet link in its head,
- *  and no primary button, since it asks nothing. */
+/** **An arrival in the Notices view** (#4759, #5649): Go to chat a link, and no answer leading,
+ *  since it asks nothing. */
 export const CentreArrival: Story = {
   play: async ({ canvas, userEvent }) => {
     const go = await canvas.findByRole("button", { name: "Go to chat" });
@@ -347,14 +353,15 @@ export const CentreArrival: Story = {
     ),
 };
 
-/** **A sandbox block in the Notices centre** (ADR 0097 §6, #5217): its full waiting edge, Allow
- *  beside Keep blocked at equal weight, no primary button, and what opens more a quiet link. */
+/** **A sandbox block in the Notices view** (ADR 0097 §6, #5649): its waiting edge, Allow beside
+ *  Keep blocked at equal weight in the row, no answer leading, and what opens more a link. */
 export const CentreSandboxBlock: Story = {
   play: async ({ canvas, userEvent }) => {
     await canvas.findByRole("button", { name: "Go to chat steward 4" });
     await userEvent.tab();
+    await expect(canvas.getByRole("button", { name: "Show the request" })).toHaveFocus();
     await userEvent.tab();
-    await expect(canvas.getByRole("button", { name: "Dismiss" })).toHaveFocus();
+    await expect(canvas.getByRole("button", { name: "Go to chat steward 4" })).toHaveFocus();
     await userEvent.tab();
     // Nothing moves the keyboard onto Allow but a Tab the person pressed (ADR 0097 §6).
     await expect(canvas.getByRole("button", { name: "Allow for this chat" })).toHaveFocus();

@@ -17,7 +17,7 @@ import { opensSearch, searchKeySaid } from "./searchKey";
  * | Show Search (#1676) | `⌘⇧F` | `Ctrl+Shift+F` |
  * | Show Changes (#1676) | `⌃⇧G` | `Ctrl+Shift+G` |
  * | Show Skills (#3266) | `⌘⇧X` | `Ctrl+Shift+X` |
- * | Show the Inbox (#1692) | `⌘⇧I` | `Ctrl+Shift+I` |
+ * | Show Asks (#1692, #5644) | `⌘⇧I` | `Ctrl+Shift+I` |
  * | Show or hide the Panel (#1737, P-6) | `⌘J` | `Ctrl+J` |
  * | Focus the next region (#1741, P-13, `regionCycle.ts`) | `F6` | `F6` |
  * | Focus the previous region | `Shift+F6` | `Shift+F6` |
@@ -90,7 +90,7 @@ export function sideKeyOf(e: KeyboardEvent, mac: boolean): SideKey | undefined {
   if (letter === "e") return { show: "explorer" };
   if (letter === "x") return { show: "skills" };
   if (letter === "c") return mac ? { show: "chats" } : { show: "chats", chatKeeps: true };
-  if (letter === "i") return { show: "inbox" };
+  if (letter === "i") return { show: "asks" };
   return undefined;
 }
 
@@ -108,7 +108,7 @@ export function sideKeysSaid(
         search: searchKeySaid(mac),
         changes: "⌃⇧G",
         skills: "⌘⇧X",
-        inbox: "⌘⇧I",
+        asks: "⌘⇧I",
         panel: "⌘J",
         // F6 is a function key, the same on every platform (`regionCycle.ts`, #1751).
         next: "F6",
@@ -122,7 +122,7 @@ export function sideKeysSaid(
         search: searchKeySaid(mac),
         changes: "Ctrl+Shift+G",
         skills: "Ctrl+Shift+X",
-        inbox: "Ctrl+Shift+I",
+        asks: "Ctrl+Shift+I",
         panel: "Ctrl+J",
         next: "F6",
         previous: "Shift+F6",

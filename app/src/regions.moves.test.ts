@@ -92,7 +92,7 @@ describe("where a view can move (P-3, P-4)", () => {
   });
 
   it("is nowhere for the Inbox, pinned to the right sidebar", () => {
-    expect(movesTo(DEFAULT_ARRANGEMENT, "inbox")).toBeUndefined();
+    expect(movesTo(DEFAULT_ARRANGEMENT, "asks")).toBeUndefined();
   });
 
   it("is the right half for an extension's panel, which lives on the right", () => {
@@ -126,11 +126,17 @@ describe("moving a view (#1740)", () => {
   it("puts a half's view in its sidebar, open there", () => {
     const moved = viewMoved(DEFAULT_ARRANGEMENT, "memory", "aside");
 
-    expect(viewsOf(of(moved, "aside"))).toEqual(["inbox", "personas", "vaults", "memory"]);
-    expect(viewsOf(of(moved, "panel-right"))).toEqual(["todos", "sessions"]);
+    expect(viewsOf(of(moved, "aside"))).toEqual([
+      "asks",
+      "updates",
+      "personas",
+      "vaults",
+      "memory",
+    ]);
+    expect(viewsOf(of(moved, "panel-right"))).toEqual(["notices", "todos", "sessions"]);
     expect(openView(of(moved, "aside"))).toBe("memory");
-    // The half opens on what it has left.
-    expect(openView(of(moved, "panel-right"))).toBe("todos");
+    // The half opens on what it has left: Notices first (#5645).
+    expect(openView(of(moved, "panel-right"))).toBe("notices");
   });
 
   it("lets the place it left open on its first view, when the moved one was open there", () => {
@@ -180,7 +186,7 @@ describe("moving a view (#1740)", () => {
 
   it("brings the Panel back on a half that was emptied and has a view again", () => {
     let none = DEFAULT_ARRANGEMENT;
-    for (const view of ["repos", "changes", "memory", "todos", "sessions"] as const)
+    for (const view of ["repos", "changes", "notices", "memory", "todos", "sessions"] as const)
       none = viewMoved(none, view, view === "repos" || view === "changes" ? "navigation" : "aside");
     expect(panelShown(none)).toBe(false);
 
@@ -190,14 +196,20 @@ describe("moving a view (#1740)", () => {
   it("moves an extension's panel to the right half, out of the right sidebar's bar, and back", () => {
     const down = viewMoved(DEFAULT_ARRANGEMENT, BURN, "panel-right");
 
-    expect(tabsOf(down, "aside", [BURN])).toEqual(["inbox", "personas", "vaults"]);
-    expect(tabsOf(down, "panel-right", [BURN])).toEqual(["memory", "todos", "sessions", BURN]);
+    expect(tabsOf(down, "aside", [BURN])).toEqual(["asks", "updates", "personas", "vaults"]);
+    expect(tabsOf(down, "panel-right", [BURN])).toEqual([
+      "notices",
+      "memory",
+      "todos",
+      "sessions",
+      BURN,
+    ]);
     expect(of(down, "panel-right").view).toBe(BURN);
     // Not drawn while its extension contributes nothing, and kept for when it does again.
-    expect(tabsOf(down, "panel-right", [])).toEqual(["memory", "todos", "sessions"]);
+    expect(tabsOf(down, "panel-right", [])).toEqual(["notices", "memory", "todos", "sessions"]);
 
     const up = viewMoved(down, BURN, "aside");
-    expect(tabsOf(up, "aside", [BURN])).toEqual(["inbox", "personas", "vaults", BURN]);
+    expect(tabsOf(up, "aside", [BURN])).toEqual(["asks", "updates", "personas", "vaults", BURN]);
     expect(up.every((one) => one.views === undefined)).toBe(true);
   });
 });
@@ -212,8 +224,8 @@ describe("a move that is refused (P-3, P-4)", () => {
   });
 
   it("never moves the Inbox", () => {
-    expect(viewMoved(DEFAULT_ARRANGEMENT, "inbox", "panel-right")).toBe(DEFAULT_ARRANGEMENT);
-    expect(viewMoved(DEFAULT_ARRANGEMENT, "inbox", "panel-left")).toBe(DEFAULT_ARRANGEMENT);
+    expect(viewMoved(DEFAULT_ARRANGEMENT, "asks", "panel-right")).toBe(DEFAULT_ARRANGEMENT);
+    expect(viewMoved(DEFAULT_ARRANGEMENT, "asks", "panel-left")).toBe(DEFAULT_ARRANGEMENT);
   });
 
   it("does nothing for a move to where the view already is", () => {
@@ -226,10 +238,10 @@ describe("a move that is refused (P-3, P-4)", () => {
 
     act(() => result.current.moveView("chats", "sidebar"));
     act(() => result.current.moveView("memory", "panel"));
-    act(() => result.current.moveView("inbox", "panel"));
+    act(() => result.current.moveView("asks", "panel"));
 
     expect(result.current.arrangement).toEqual(before);
-    expect(regionOf("inbox", result.current.arrangement)).toBe("aside");
+    expect(regionOf("asks", result.current.arrangement)).toBe("aside");
   });
 });
 
@@ -319,13 +331,13 @@ describe("where each view lives, kept (#1740, B-11)", () => {
       act(() => result.current.resized({ panel: 41.25, left: 22.5, right: 27.75 }));
       for (const view of ["chats", "explorer", "search"] as const)
         act(() => result.current.moveView(view, "panel"));
-      for (const view of ["memory", "todos", "sessions"] as const)
+      for (const view of ["notices", "memory", "todos", "sessions"] as const)
         act(() => result.current.moveView(view, "sidebar"));
       act(() => result.current.moveView(BURN, "panel"));
       unmount();
     }
 
-    await vi.waitFor(() => expect(sent).toHaveLength(MOST_PROJECTS * 8));
+    await vi.waitFor(() => expect(sent).toHaveLength(MOST_PROJECTS * 9));
     const projects = lastWritten().projects as Record<string, unknown>;
     const bytes = new TextEncoder().encode(JSON.stringify(projects, null, 2)).length;
     expect(bytes).toBeLessThanOrEqual(PROJECTS_MOST_BYTES);
@@ -350,12 +362,12 @@ describe("a file's `moved`, read field by field", () => {
   });
 
   it("keeps the Inbox in the right sidebar whatever the file says, and says so", async () => {
-    const got = read([{ id: "panel-right", side: "right", moved: ["inbox", "personas"] }]);
+    const got = read([{ id: "panel-right", side: "right", moved: ["asks", "personas"] }]);
 
-    expect(regionOf("inbox", got)).toBe("aside");
+    expect(regionOf("asks", got)).toBe("aside");
     expect(regionOf("personas", got)).toBe("panel-right");
     await settleLayout();
-    expect(aboutThisMachine()[0].detail).toContain('"inbox" is pinned to aside');
+    expect(aboutThisMachine()[0].detail).toContain('"asks" is pinned to aside');
   });
 
   it("refuses a view of the other side, and one this build does not have, and says so", async () => {
@@ -402,8 +414,14 @@ describe("a file's `moved`, read field by field", () => {
     const got = read([{ id: "panel-right", side: "right", moved: [BURN] }]);
 
     expect(regionOf(BURN, got)).toBe("panel-right");
-    expect(tabsOf(got, "aside", [BURN])).toEqual(["inbox", "personas", "vaults"]);
-    expect(tabsOf(got, "panel-right", [BURN])).toEqual(["memory", "todos", "sessions", BURN]);
+    expect(tabsOf(got, "aside", [BURN])).toEqual(["asks", "updates", "personas", "vaults"]);
+    expect(tabsOf(got, "panel-right", [BURN])).toEqual([
+      "notices",
+      "memory",
+      "todos",
+      "sessions",
+      BURN,
+    ]);
   });
 
   it("refuses an extension's panel moved to the left, which takes none", async () => {
@@ -420,7 +438,7 @@ describe("a half whose moved panels are not contributed now (#1752, train 64's r
   /** The right side's own views moved out of its half, and an extension's panel moved in. */
   const onlyAPanel = (): Arrangement => {
     let moved: Arrangement = DEFAULT_ARRANGEMENT;
-    for (const view of ["memory", "todos", "sessions"] as const)
+    for (const view of ["notices", "memory", "todos", "sessions"] as const)
       moved = viewMoved(moved, view, "aside");
     return viewMoved(moved, BURN, "panel-right");
   };
@@ -457,13 +475,15 @@ describe("where each view lives, for the palette (#1752)", () => {
     expect(places.map((one) => [one.view, one.region, one.to])).toEqual([
       ["chats", "navigation", "panel"],
       ["explorer", "navigation", "panel"],
-      ["inbox", "aside", undefined],
+      ["asks", "aside", undefined],
+      ["updates", "aside", undefined],
       ["personas", "aside", "panel"],
       ["vaults", "aside", "panel"],
       ["panel:ext/stats/burn", "aside", "panel"],
       ["repos", "panel-left", "sidebar"],
       ["changes", "panel-left", "sidebar"],
       ["search", "panel-left", "sidebar"],
+      ["notices", "panel-right", "sidebar"],
       ["memory", "panel-right", "sidebar"],
       ["todos", "panel-right", "sidebar"],
       ["sessions", "panel-right", "sidebar"],

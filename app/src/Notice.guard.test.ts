@@ -108,11 +108,11 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: ACTION,
   },
   "ui/notice/Notice.tsx": {
-    count: 3,
+    count: 2,
     why:
-      "the notice family's message part, the live region of a card Notice (#3344), its said " +
-      "part, the live region of a Notices centre card, and its sub part, the place in that " +
-      "region it is switched off, for an age's own words (#5217): drawn live only by " +
+      "the notice family's message part, the live region of a card Notice (#3344), and its said " +
+      "part, the live region of a Notices view row (#5217, #5649; the row's age switches it off " +
+      "in `Notice.tsx`): drawn live only by " +
       "`Notice.tsx`, which this guard holds as the one way to draw a standing line",
   },
   "AddVision.tsx": {
@@ -129,6 +129,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
   "AskPersona.tsx": {
     count: 1,
     why: ACTION,
+  },
+  "inboxRowParts.tsx": {
+    count: 1,
+    why:
+      ACTION +
+      ". A grant pressed on an update that just moved, said in that update's row (#1693); a way out of a granting Notice pressed just after it was drawn or moved, said at the top of the Inbox's Notices (#1695): one line every Inbox view draws (`NothingDone`)",
   },
   "InspectorView.tsx": {
     count: 1,
@@ -345,11 +351,11 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 1,
     why: ACTION,
   },
-  "Inbox.tsx": {
+  "InboxAsks.tsx": {
     count: 3,
     why:
       ACTION +
-      ". An ask's answer, or a reply, the source refused: said in that ask's own row, which stays (#1692); a grant pressed on an update that just moved, said in that update's row (#1693); a way out of a granting Notice pressed just after it was drawn or moved, said at the top of the Inbox's Notices (#1695)",
+      ". An ask's answer, or a reply, the source refused: said in that ask's own row, which stays (#1692); a task's answer given in its row that the core refused, said under its box with what was typed kept (#5651)",
   },
   "KillSwitch.tsx": {
     count: 1,

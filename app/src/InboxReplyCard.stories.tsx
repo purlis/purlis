@@ -5,9 +5,9 @@
  * **The Inbox's card for a chat waiting on the person's reply** (#4550): what the chat said under
  * the status line, over the lines it wrote and never cut, and the one line that says so where
  * the app heard no message. The person answers from here, so the reply box is walked to. What
- * the chat said is its markdown under the safe subset, folded past six lines (#5214). The card's
- * head is one row in the pane band's style, with Go to chat and the × that ignores it; the reply
- * is a strip at its foot whose send is the card's one button.
+ * the chat said is its markdown under the safe subset, folded past three lines (#5649). It is a
+ * row of Asks (#5649): its chat and age on its first line, Go to chat among its links, the reply
+ * a strip in the row whose send is its one button, and the × that ignores it over its age.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, waitFor, within } from "storybook/test";
@@ -47,20 +47,23 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** The list is one Tab stop: Tab lands on the card, ↓ goes on past its head's Go to chat and ×
- *  to its reply strip, ↑ comes back, and Shift+Tab leaves the list. */
+/** The list is one Tab stop: Tab lands on the row, ↓ goes on (past its Show all, where it has
+ *  one) to its Go to chat and on to its reply strip, and Shift+Tab leaves the list. */
 async function theReplyBoxIsReached(canvasElement: HTMLElement) {
   const card = () => canvasElement.querySelector("li.inbox-ask");
   await userEvent.tab();
   await untilFocused(card, "Tab lands on the card");
   expectFocusInSight();
   await userEvent.keyboard("{ArrowDown}");
+  // Words that wrap past three lines fold first: their Show all is the row's next stop.
+  if ((document.activeElement?.textContent ?? "").startsWith("Show all"))
+    await userEvent.keyboard("{ArrowDown}");
   await untilFocused(
     () => within(canvasElement).getByRole("button", { name: "Go to chat steward 6" }),
-    "↓ reaches Go to chat in the head",
+    "↓ reaches Go to chat among the row's links",
   );
   expectFocusInSight();
-  await userEvent.keyboard("{ArrowDown}{ArrowDown}");
+  await userEvent.keyboard("{ArrowDown}");
   await untilFocused(
     () => within(canvasElement).getByRole("textbox", { name: "Reply to steward 6" }),
     "↓ reaches the reply strip",
@@ -105,8 +108,8 @@ const LONG = `I'm waiting for #5141 to merge before the last part of #5160. Unti
 
 I've sent you a note saying this. When you tell me #5141 has merged, I'll rebase onto main, do that last part, run tsc and eslint, and push.`;
 
-/** **A long message** (#5214): folded at six lines behind Show all, which ↓ reaches before the
- *  reply box; opened, it shows whole, and the reply strip stays at the card's foot. */
+/** **A long message** (#5649): folded at three lines behind Show all · N lines, which ↓ reaches
+ *  first; opened, it shows whole, and ↓ goes on past Go to chat to the reply strip. */
 export const ALongMessage: Story = {
   args: { last_message: LONG },
   play: async ({ canvasElement }) => {
@@ -114,8 +117,8 @@ export const ALongMessage: Story = {
     await expect(card.getAllByText("Still to do:")[0]?.tagName).toBe("STRONG");
     const show = () => card.getByRole("button", { name: /^Show all · \d+ lines$/ });
     await userEvent.tab();
-    await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}");
-    await untilFocused(show, "↓ reaches Show all, past the head");
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(show, "↓ reaches Show all, the row's first stop");
     expectFocusInSight();
     await userEvent.keyboard("{Enter}");
     await untilFocused(
@@ -123,10 +126,10 @@ export const ALongMessage: Story = {
       "Enter opens it whole",
     );
     expectFocusInSight();
-    await userEvent.keyboard("{ArrowDown}");
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}");
     await untilFocused(
       () => card.getByRole("textbox", { name: "Reply to steward 6" }),
-      "↓ goes on to the reply box at the card's foot",
+      "↓ goes on past Go to chat to the reply box in the row",
     );
     expectFocusInSight();
   },

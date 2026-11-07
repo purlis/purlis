@@ -423,10 +423,14 @@ export async function switches(shape: Shape, visits: readonly number[]): Promise
     // person would, so that its time running out is not counted as a switch's cost: a switch
     // slow enough here, forty panes on a busy runner, saw it go mid-switch and counted its 20
     // components among the unmounted.
-    // The cause is on the card's message; its Dismiss is beside it.
+    // The cause is on the card's message; its Dismiss is beside it, in Updates (#5644), which
+    // may be behind Asks.
     for (const said of document.querySelectorAll('[data-cause="layout-changed"]'))
       fireEvent.click(
-        within(said.parentElement as HTMLElement).getByRole("button", { name: "Dismiss" }),
+        within(said.parentElement as HTMLElement).getByRole("button", {
+          name: "Dismiss",
+          hidden: true,
+        }),
       );
     await settled(asked);
     expect(document.querySelector('[data-cause="layout-changed"]')).toBeNull();

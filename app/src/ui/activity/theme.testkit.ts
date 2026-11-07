@@ -7,7 +7,10 @@ import type { FamilyTheme } from "../../theme/families.testkit";
 
 export default {
   forced: {
-    marked: ['[data-scope="activity"][data-part="count"][data-tone="needs-you"]'],
+    marked: [
+      '[data-scope="activity"][data-part="count"][data-tone="needs-you"]',
+      '[data-scope="activity"][data-part="count"][data-tone="danger"]',
+    ],
     drawn: {
       '[data-scope="activity"][data-part="item"][data-selected] > [data-part="indicator"]': {
         "background-color": "SelectedItemText",

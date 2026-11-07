@@ -9,7 +9,6 @@
  * state, so each rule is tested on its own:
  *
  * - a task that finished or came to nothing: its finished row ({@link taskUpdates});
- * - a finding of the doctor: its report ({@link doctorUpdates});
  * - a chat that came back, resumed or fresh: the chats a launch or a Resume put back
  *   ({@link resumeUpdates});
  * - a chat another chat started, announced and not looked at yet: a handoff, or a task that
@@ -40,7 +39,6 @@ import {
   type AskEnded,
   type AwayRefusal,
   type ChatBlocked,
-  type DoctorReport,
   type FinishedTask,
   type InboxUpdate,
   type OpenChat,
@@ -90,6 +88,51 @@ export const KIND_SAID: Record<UpdateKind, string> = {
 };
 
 /**
+ * **Which of Updates' two lists an update is listed in** (#5646, ADR 0117): `mine`, From your
+ * chats, what the person's own chats and tasks did; or `project`, From the project, what is the
+ * project's and no chat's of theirs. The bell counts the unread Mine lines alone.
+ */
+export type UpdateFrom = "mine" | "project";
+
+/**
+ * **Each kind's list.** Every kind a chat or task of the person's makes is Mine. A doctor finding
+ * is about the plane, not about a chat, so it is Project's, and never rings the bell (#5645 folds
+ * it into one Notice line). No kind is about another person: what the core keeps is this
+ * machine's chats' and this project's, so there is nothing here to leave out.
+ */
+const FROM: Record<UpdateKind, UpdateFrom> = {
+  "task-done": "mine",
+  "task-failed": "mine",
+  doctor: "project",
+  resumed: "mine",
+  sandbox: "mine",
+  "refused-away": "mine",
+  "smart-close": "mine",
+  "report-undelivered": "mine",
+  "commit-refused": "mine",
+  "root-update-refused": "mine",
+  "browser-ask-ended": "mine",
+  "question-closed": "mine",
+  "question-failed": "mine",
+  arrived: "mine",
+};
+
+/** The list an update of `kind` is listed in. */
+export const fromOf = (kind: UpdateKind): UpdateFrom => FROM[kind];
+
+/**
+ * **The list `update` is listed in**: its kind's, except that a line the first-open baseline set
+ * aside (#5648, ADR 0117) is Project's, whatever made it: it was already there the first time
+ * the project opened on this machine.
+ */
+export const listedFrom = (update: Pick<InboxUpdate, "kind" | "baselined">): UpdateFrom =>
+  update.baselined === true ? "project" : fromOf(update.kind);
+
+/** **The bell's count** (#5646): the unread Mine lines. Project is never counted. */
+export const unreadMine = (updates: readonly InboxUpdate[] | undefined): number =>
+  (updates ?? []).filter((one) => !one.read && listedFrom(one) === "mine").length;
+
+/**
  * **A task that ended, done or come to nothing** (#1693): one update per finished row that
  * says when it ended, in the count its row is in (`finishedBucketOf`), worded as the row
  * words it. A row with no time it ended is no update: nothing places it. Nor is one that ended
@@ -116,25 +159,6 @@ export function taskUpdates(
     });
   }
   return out;
-}
-
-/**
- * **What the doctor found** (#1693): each row that failed, and each warning of a check this
- * build runs (a row it does not run is no finding: `DoctorRow.checked`). An update says when
- * the window first saw it (`now`); the same finding noted again keeps that time.
- */
-export function doctorUpdates(report: DoctorReport | undefined, now: number): UpdateNoted[] {
-  if (report === undefined) return [];
-  return [...report.rows, ...report.app_rows]
-    .filter((row) => row.status === "fail" || (row.status === "warn" && row.checked))
-    .map((row) => ({
-      key: `doctor:${row.name}:${row.status}`,
-      kind: "doctor",
-      at: secondsOf(now),
-      session: null,
-      chain: [],
-      says: row.detail === "" ? row.name : `${row.name}: ${row.detail}`,
-    }));
 }
 
 /**
@@ -325,7 +349,8 @@ export const reasonKey = (kind: UpdateKind, session: number, says: string) =>
  * **The updates as the Inbox lists them**: what the core keeps, newest first, leaving out an
  * update of a {@link LIVE} kind its source no longer lists, and putting in one its source lists
  * that the core does not keep (`live`): one that happened more than a day ago is still answered
- * where its source lists it, and is put away only there.
+ * where its source lists it, and is put away only there. A doctor finding the core kept from
+ * before #5645 is left out: every finding is the Notices view's one line now (`DoctorNotices`).
  */
 export function listed(
   kept: readonly InboxUpdate[],
@@ -334,7 +359,7 @@ export function listed(
   const listing = new Set(live.map((one) => one.key));
   const held = new Set(kept.map((one) => one.key));
   return [
-    ...kept.filter((one) => !LIVE.has(one.kind) || listing.has(one.key)),
+    ...kept.filter((one) => one.kind !== "doctor" && (!LIVE.has(one.kind) || listing.has(one.key))),
     ...live.filter((one) => !held.has(one.key)).map((one) => ({ ...one, read: false })),
   ].sort((one, other) => other.at - one.at || one.key.localeCompare(other.key));
 }
@@ -347,6 +372,8 @@ export type InboxUpdates = {
   trouble?: string;
   /** Mark read, or Dismiss: the ones named, or every one listed (`null`). */
   settle: (keys: readonly string[] | null, how: UpdateSettled) => void;
+  /** The doctor's findings already there at a fresh first open, by key (#5648): read. */
+  setAside: (keys: readonly string[]) => void;
 };
 
 /** What is said where the core answered with no list of updates. */
@@ -432,9 +459,19 @@ export function useInboxUpdates(plane: PlaneId, derived: readonly UpdateNoted[])
     [plane, derived, ask],
   );
 
+  const setAside = useCallback(
+    (keys: readonly string[]) => ask(plane, () => commands.setAsideInboxFindings(plane, [...keys])),
+    [plane, ask],
+  );
+
   const live = useMemo(() => derived.filter((one) => LIVE.has(one.kind)), [derived]);
   const updates = useMemo(() => {
-    if (trouble === undefined) return kept === undefined ? undefined : listed(kept, live);
+    // What this window dismissed is gone at once, before the core's answer lands (#5650): a
+    // line whose Undo went never shows again for the moment the core takes to answer.
+    if (trouble === undefined)
+      return kept === undefined
+        ? undefined
+        : listed(kept, live).filter((one) => settled.get(one.key) !== "dismissed");
     // Nothing kept on this machine: what the sources say now, as this window settled it.
     const here = derived
       .filter((one) => settled.get(one.key) !== "dismissed")
@@ -445,5 +482,5 @@ export function useInboxUpdates(plane: PlaneId, derived: readonly UpdateNoted[])
     );
   }, [kept, live, trouble, derived, settled]);
 
-  return { updates, trouble, settle };
+  return { updates, trouble, settle, setAside };
 }

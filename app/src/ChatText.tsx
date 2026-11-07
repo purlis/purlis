@@ -43,7 +43,7 @@ import { Button } from "./ui/button/Button";
  * app's one way to open a link). Anything but an http or https address, a `javascript:` or
  * `data:` one above all, is drawn as its words.
  *
- * **A long message folds** to {@link FOLD_LINES} lines with a fade and a "Show all · N lines"
+ * **A long message folds** to {@link FOLD_LINES} lines (three in an Inbox's row, `foldAt`) with a fade and a "Show all · N lines"
  * button; opened, it shows whole and "Show less" folds it. The fold is only to the eye: the
  * whole text is in the page for a screen reader all along.
  */
@@ -53,6 +53,7 @@ export function ChatText({
   className,
   foldStop = (button) => button,
   whole = false,
+  foldAt = FOLD_LINES,
 }: {
   /** The chat's words, as it wrote them. */
   text: string;
@@ -65,13 +66,16 @@ export function ChatText({
   foldStop?: (button: ReactElement) => ReactElement;
   /** **It never folds** (#5215): a pane's band opened it to show it whole. */
   whole?: boolean;
+  /** **The most lines it shows folded** (#5649): {@link FOLD_LINES}, or three in an Inbox's
+   *  row (`ASK_FOLD_LINES`). */
+  foldAt?: 3 | typeof FOLD_LINES;
 }) {
   const own = useId();
   const box = id ?? `${own}-text`;
   const body = useRef<HTMLDivElement>(null);
   const lines = useDrawnLines(body, text);
   const [open, setOpen] = useState(false);
-  const folds = !whole && lines > FOLD_LINES;
+  const folds = !whole && lines > foldAt;
   return (
     <div className={className === undefined ? "chat-text" : `chat-text ${className}`}>
       <div
@@ -80,6 +84,7 @@ export function ChatText({
         // `release-notes`: a markdown render's own colours, read in one place (`App.css`).
         className="chat-text-body release-notes"
         data-folded={folds ? String(!open) : undefined}
+        data-fold-at={foldAt === FOLD_LINES ? undefined : foldAt}
       >
         <Folded.Provider value={folds && !open}>
           <Markdown

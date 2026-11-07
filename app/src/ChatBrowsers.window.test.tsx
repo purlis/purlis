@@ -15,6 +15,7 @@ import { forgetThisLaunch } from "./regions";
 import { stripNamed } from "./test-strips";
 import { wears } from "./textRoles.testkit";
 import { eventually, tipOf } from "./ui/tooltip/tooltip.testkit";
+import { forgetInboxOpen, inboxOpenAtLaunch, waitOutTheUndo } from "./test-inbox";
 
 /**
  * **A chat's browsers, in the window** (#2024, spec #2008): each is a row under its chat in the
@@ -272,6 +273,7 @@ beforeEach(() => {
   painted.length = 0;
 });
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
   clearMocks();
   setChatsListPrefs({ beside: false });
@@ -627,6 +629,9 @@ describe("a pinned browser whose chat closed (#2022)", () => {
 });
 
 describe("the browsers open when purlis last quit (#2022)", () => {
+  // A Notice of the project's, listed in Updates since #5644: the window opens on it here.
+  beforeEach(inboxOpenAtLaunch);
+  afterEach(forgetInboxOpen);
   it("are offered once, each address a button, and nothing is loaded", async () => {
     atQuit = ["https://staging.example.test/cart", "http://127.0.0.1:5173/"];
     const host = core([]);
@@ -658,6 +663,8 @@ describe("the browsers open when purlis last quit (#2022)", () => {
   });
 
   it("are put away for good by Dismiss", async () => {
+    // A Dismiss is kept once its Undo has stood (#5650): the test waits it out.
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout"] });
     atQuit = ["https://staging.example.test/cart"];
     const host = core([]);
     await opened();
@@ -665,6 +672,7 @@ describe("the browsers open when purlis last quit (#2022)", () => {
     if (!(notice instanceof HTMLElement)) throw new Error("no Notice");
 
     await userEvent.click(within(notice).getByRole("button", { name: /Dismiss/ }));
+    waitOutTheUndo();
 
     await waitFor(() =>
       expect(host.asked("put_away_browsers_at_quit")).toEqual([{ plane: PLANE }]),

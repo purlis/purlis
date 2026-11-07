@@ -202,8 +202,9 @@ function draw(
     const every: ViewId[] = [
       // The Inbox is a view of its own and no panel (#1692): `Inbox.window.test.tsx` draws it.
       // The right half's views first, as the one region had them above Personas (#1738).
-      ...(CATALOGUE["panel-right"].views ?? []),
-      ...(CATALOGUE.aside.views ?? []).filter((view) => view !== "inbox"),
+      // Notices is the Inbox's too (#5645): drawn by the window, not by a panel.
+      ...(CATALOGUE["panel-right"].views ?? []).filter((view) => view !== "notices"),
+      ...(CATALOGUE.aside.views ?? []).filter((view) => view !== "asks" && view !== "updates"),
       ...attentionPanels(st, contributed).map((one) => one.view),
     ];
     return (

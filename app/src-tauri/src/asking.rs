@@ -74,6 +74,12 @@ pub struct Asking {
     /// its task's row alone says it, and nothing here is counted by the ✋ or listed in the
     /// Inbox, which read [`Asking::asks`].
     pub with_asking_chat: Vec<WithAskingChat>,
+    /// **The asks Snooze all put away** (#5647, ADR 0117): each held by a chat that holds no
+    /// ask it did not have when it was snoozed. Listed apart from [`Asking::asks`], so neither
+    /// the ✋ nor Asks counts them; the Chats view, which reads the board, still says the chat
+    /// waits. Only [`asks_waiting`] puts any here.
+    #[serde(default)]
+    pub snoozed: Vec<Shown>,
 }
 
 /// A task question its asking chat has, as the task's row says it: `asking steward 2 · 1m`.
@@ -609,6 +615,7 @@ pub fn asking(plane: &PlaneId, hooks: &HookAsks) -> Asking {
             .collect(),
         // A hook holds no task question: `every_ask` lists those.
         with_asking_chat: Vec::new(),
+        snoozed: Vec::new(),
     }
 }
 
@@ -743,7 +750,46 @@ pub async fn asks_waiting(
     plane: PlaneId,
 ) -> Result<Asking, String> {
     let held = planes.held(&plane)?;
-    crate::off_the_window(READING_ASKS, move || Ok(every_ask(&held))).await
+    crate::off_the_window(READING_ASKS, move || {
+        let root = held.root().to_path_buf();
+        Ok(snoozed_apart(
+            every_ask(&held),
+            purlis_core::inboxupdates::Store::here().as_ref(),
+            &root,
+        ))
+    })
+    .await
+}
+
+/// **Snooze all's asks, put apart** (#5647): every snoozed chat that holds an ask it did not
+/// have when snoozed is let go of first, so it is back with all its asks; what each chat still
+/// snoozed holds moves from [`Asking::asks`] to [`Asking::snoozed`]. Where this machine keeps no
+/// data home, nothing is snoozed; where the record cannot be written, it is read as it is.
+pub fn snoozed_apart(
+    mut asking: Asking,
+    store: Option<&purlis_core::inboxupdates::Store>,
+    root: &std::path::Path,
+) -> Asking {
+    let Some(store) = store else {
+        return asking;
+    };
+    let mut held = purlis_core::inboxupdates::Snoozed::new();
+    for ask in &asking.asks {
+        held.entry(ask.session).or_default().push(ask.ask.clone());
+    }
+    let away = store
+        .release(root, &held)
+        .unwrap_or_else(|_| store.snoozed(root));
+    if away.is_empty() {
+        return asking;
+    }
+    let (snoozed, asks) = asking
+        .asks
+        .into_iter()
+        .partition(|ask| away.contains_key(&ask.session));
+    asking.asks = asks;
+    asking.snoozed = snoozed;
+    asking
 }
 
 /// Answers chat `session`'s ask `ask` with its option `option`, as the operator in this window.
@@ -3564,6 +3610,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     Asking {
         plane: plane.clone(),
         with_asking_chat,
+        snoozed: Vec::new(),
         // A grade's chat is drawn nowhere, and asks nobody (SK-16): the grade ends it at its
         // first ask, with that end, and none of its asks is listed.
         asks: derive(&waiting)

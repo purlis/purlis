@@ -1372,19 +1372,43 @@ export const commands = {
 	 *  **A project's updates** (#1693): kept a day on this machine, newest first, dismissed ones
 	 *  left out. None where this machine keeps no data home.
 	 */
-	inboxUpdates: (plane: PlaneId) => typedError<InboxUpdate[], string>(__TAURI_INVOKE("inbox_updates", { plane })),
+	inboxUpdates: (plane: PlaneId) => typedError<InboxUpdate_Serialize[], string>(__TAURI_INVOKE("inbox_updates", { plane })),
 	/**
 	 *  **Notes what the window derived from a source** (#1693): each update whose key the project
 	 *  does not keep yet is kept, unread; one it keeps, dismissed or not, is left as it is. One
 	 *  older than a day is not kept. Answers the project's updates as [`inbox_updates`] does.
 	 */
-	noteInboxUpdates: (plane: PlaneId, noted: UpdateNoted[]) => typedError<InboxUpdate[], string>(__TAURI_INVOKE("note_inbox_updates", { plane, noted })),
+	noteInboxUpdates: (plane: PlaneId, noted: UpdateNoted[]) => typedError<InboxUpdate_Serialize[], string>(__TAURI_INVOKE("note_inbox_updates", { plane, noted })),
 	/**
 	 *  **Mark read, or Dismiss** (#1693, I-10): the updates named by `keys`, or every one the
 	 *  project keeps where `keys` is null — Mark all read and Dismiss all. Updates only: no ask is
 	 *  answered here. Answers the project's updates as [`inbox_updates`] does.
 	 */
-	settleInboxUpdates: (plane: PlaneId, keys: string[] | null, how: UpdateSettled) => typedError<InboxUpdate[], string>(__TAURI_INVOKE("settle_inbox_updates", { plane, keys, how })),
+	settleInboxUpdates: (plane: PlaneId, keys: string[] | null, how: UpdateSettled) => typedError<InboxUpdate_Serialize[], string>(__TAURI_INVOKE("settle_inbox_updates", { plane, keys, how })),
+	/**
+	 *  **Snooze all** (#5647, ADR 0117): puts each of `chats` away with the asks it holds, until it
+	 *  holds an ask it did not have. Nothing is answered, and no timer brings it back. Kept on this
+	 *  machine per project, never in the plane.
+	 */
+	snoozeInboxAsks: (plane: PlaneId, chats: SnoozedChat[]) => typedError<null, string>(__TAURI_INVOKE("snooze_inbox_asks", { plane, chats })),
+	/**
+	 *  **Show them now, and Snooze all's Undo** (#5647): brings back the snoozed chats `sessions`,
+	 *  or every one where it is null.
+	 */
+	wakeInboxAsks: (plane: PlaneId, sessions: number[] | null) => typedError<null, string>(__TAURI_INVOKE("wake_inbox_asks", { plane, sessions })),
+	/**
+	 *  **The project opens in the window** (#5648, ADR 0117): its first-open baseline, made where
+	 *  this machine has none. The first time a project opens on a machine with no seen record for
+	 *  it, what is already there counts as seen, and its hosts and presets as told; a project with
+	 *  a record keeps it, so updating purlis clears nothing.
+	 */
+	inboxFirstOpen: (plane: PlaneId) => typedError<InboxBaseline, string>(__TAURI_INVOKE("inbox_first_open", { plane })),
+	/**
+	 *  **The doctor's first report after a fresh first open** (#5648): its findings, `keys`, were
+	 *  already there, and the window puts each away until it changes. Kept once. Answers the
+	 *  project's updates as [`inbox_updates`] does.
+	 */
+	setAsideInboxFindings: (plane: PlaneId, keys: string[]) => typedError<InboxUpdate_Serialize[], string>(__TAURI_INVOKE("set_aside_inbox_findings", { plane, keys })),
 	/**
 	 *  The window says whether it has `plane`'s Inbox open (#1694): while it is, and the window
 	 *  is focused with the project in front, no notification is sent about that project's asks.
@@ -5979,6 +6003,13 @@ export type Asking = {
 	 *  Inbox, which read [`Asking::asks`].
 	 */
 	with_asking_chat: WithAskingChat[],
+	/**
+	 *  **The asks Snooze all put away** (#5647, ADR 0117): each held by a chat that holds no
+	 *  ask it did not have when it was snoozed. Listed apart from [`Asking::asks`], so neither
+	 *  the ✋ nor Asks counts them; the Chats view, which reads the board, still says the chat
+	 *  waits. Only [`asks_waiting`] puts any here.
+	 */
+	snoozed?: Shown[],
 };
 
 /**  Which command's question it is. */
@@ -9866,8 +9897,24 @@ export type InTurn =
 /**  The file, compared across the turn. */
 { kind: "changed"; shown: WhatChanged };
 
+/**  **The first-open baseline** (#5648, ADR 0117), as the window reads it. */
+export type InboxBaseline = {
+	/**  When the project first opened on this machine, in seconds since 1970. */
+	at: number,
+	/**  Whether that open set the past aside: false where this machine had seen the project. */
+	fresh: boolean,
+	/**
+	 *  The doctor findings already there, by the causes the window dismisses them by; null
+	 *  until the window has set aside the first report's.
+	 */
+	findings: string[] | null,
+};
+
 /**  One update, as the window draws it. */
-export type InboxUpdate = {
+export type InboxUpdate = InboxUpdate_Serialize | InboxUpdate_Deserialize;
+
+/**  One update, as the window draws it. */
+export type InboxUpdate_Deserialize = {
 	/**  Its source's own name for it: what the window notes, settles and matches it by. */
 	key: string,
 	kind: UpdateKind,
@@ -9881,6 +9928,33 @@ export type InboxUpdate = {
 	says: string,
 	/**  The person has read it. */
 	read: boolean,
+	/**
+	 *  The first-open baseline set it aside (#5648): listed From the project, read. Absent for
+	 *  every other update.
+	 */
+	baselined?: boolean | null,
+};
+
+/**  One update, as the window draws it. */
+export type InboxUpdate_Serialize = {
+	/**  Its source's own name for it: what the window notes, settles and matches it by. */
+	key: string,
+	kind: UpdateKind,
+	/**  When it happened, in seconds since 1970. */
+	at: number,
+	/**  The chat it is about, while that number means one. */
+	session: number | null,
+	/**  Who it is about, the session first: names, as data. */
+	chain: string[],
+	/**  What happened, in one line: data, never markup. */
+	says: string,
+	/**  The person has read it. */
+	read: boolean,
+	/**
+	 *  The first-open baseline set it aside (#5648): listed From the project, read. Absent for
+	 *  every other update.
+	 */
+	baselined?: boolean | null,
 };
 
 /**
@@ -16693,6 +16767,12 @@ export type SmartClosing = {
 	 *  plane's records.
 	 */
 	record: SavedRecord | null,
+};
+
+/**  One chat Snooze all puts away (#5647): its session, and the keys of the asks it holds now. */
+export type SnoozedChat = {
+	session: number,
+	asks: string[],
 };
 
 /**  What a source offers. */

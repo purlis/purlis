@@ -141,17 +141,13 @@ const ALLOWED: Readonly<Record<string, readonly string[]>> = {
     '[data-scope="dialog"] .pending on "piece-count pending ui-text-meta"',
     '.view-body .pending on "piece-count pending ui-text-meta"',
   ],
-  // An ask's row is never an `.inbox-update`, and a read update wears no role: only an unread
-  // one does (`UpdateItem`).
-  "Inbox.tsx": [
+  // An ask's row is never an `.inbox-update`, and an update's words wear no role (#5649).
+  "InboxAsks.tsx": [
     '.inbox-update[data-read] .ask-says on "ask-says ask-lines inbox-primary ui-text-body ui-text-strong"',
     '.inbox-update[data-read] .ask-says on "`ask-says inbox-primary ui-text-body ui-text-strong${whole ? "" : " inbox-clamped"}`"',
-    '.inbox-update[data-read] .ask-says on "`ask-says inbox-primary${update.read ? "" : " ui-text-body ui-text-strong"}${answers.some((one) => one.allows) ? "" : " inbox-clamped"}`"',
   ],
   // These are asks, never an `.inbox-update`.
   "InboxElsewhere.tsx": [
-    '.inbox-update[data-read] .ask-says on "ask-says inbox-primary ui-text-body ui-text-strong"',
-    '.inbox-update[data-read] .ask-says on "ask-says inbox-primary ui-text-body ui-text-strong inbox-clamped"',
     '.inbox-update[data-read] .ask-says on "ask-says inbox-primary ui-text-body ui-text-strong inbox-clamped"',
   ],
   // A clone under way says so in `ui-text-secondary` on purpose (#1920). `.state-bar` is the
@@ -187,7 +183,7 @@ const ALLOWED: Readonly<Record<string, readonly string[]>> = {
 /** How long each file's list may be: it only gets shorter. */
 const CEILING: Readonly<Record<string, number>> = {
   "Explorer.tsx": 15,
-  "Inbox.tsx": 3,
+  "InboxAsks.tsx": 3,
   "InboxElsewhere.tsx": 3,
   "NotCloned.tsx": 3,
   "PanelList.tsx": 4,

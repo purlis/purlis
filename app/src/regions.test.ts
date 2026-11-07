@@ -876,12 +876,12 @@ describe("the open view of a side (#1673)", () => {
       return found;
     };
 
-    act(() => result.current.pick("inbox"));
+    act(() => result.current.pick("asks"));
     expect(aside(result.current.arrangement).collapsed).toBe(true);
 
-    act(() => result.current.pick("inbox"));
+    act(() => result.current.pick("asks"));
     expect(aside(result.current.arrangement)).toMatchObject({ collapsed: false });
-    expect(openView(aside(result.current.arrangement))).toBe("inbox");
+    expect(openView(aside(result.current.arrangement))).toBe("asks");
   });
 
   it("brings a side that is away back on the view picked", () => {
@@ -997,14 +997,14 @@ describe("the open view of the right side (#1678)", () => {
   it("is the Inbox, first on its bar of Inbox, Personas and Vaults (#1738, P-2)", () => {
     const { result } = renderHook(() => useArrangement("/one"));
 
-    expect(CATALOGUE.aside.views).toEqual(["inbox", "personas", "vaults"]);
-    expect(openView(aside(result.current.arrangement))).toBe("inbox");
+    expect(CATALOGUE.aside.views).toEqual(["asks", "updates", "personas", "vaults"]);
+    expect(openView(aside(result.current.arrangement))).toBe("asks");
   });
 
   it("puts the side away on a pick of the Inbox while it is open, and opens Personas on a pick of it", () => {
     const { result } = renderHook(() => useArrangement("/one"));
 
-    act(() => result.current.pick("inbox"));
+    act(() => result.current.pick("asks"));
     expect(aside(result.current.arrangement).collapsed).toBe(true);
 
     act(() => result.current.pick("personas"));
@@ -1035,7 +1035,7 @@ describe("the open view of the right side (#1678)", () => {
     expect(remembers.view).toBe("panel:ext/stats/burn");
     expect(openView(remembers, ["panel:ext/stats/burn"])).toBe("panel:ext/stats/burn");
     // Its extension is not approved in this window: the side opens on its default.
-    expect(openView(remembers, [])).toBe("inbox");
+    expect(openView(remembers, [])).toBe("asks");
   });
 
   it("puts the side away on a pick of the view drawn open, when the remembered one is gone", () => {
@@ -1045,7 +1045,7 @@ describe("the open view of the right side (#1678)", () => {
     });
     const { result } = renderHook(() => useArrangement("/one"));
 
-    act(() => result.current.pick("inbox", []));
+    act(() => result.current.pick("asks", []));
 
     expect(aside(result.current.arrangement).collapsed).toBe(true);
   });
@@ -1074,9 +1074,17 @@ describe("the open view of the right side (#1678)", () => {
   it("refuses a view that is neither the side's nor an extension panel's, and says so", async () => {
     put({ version: 2, regions: [{ id: "aside", side: "right", view: "chats" }] });
 
-    expect(openView(aside(remembered()))).toBe("inbox");
+    expect(openView(aside(remembered()))).toBe("asks");
     await settleLayout();
     expect(aboutThisMachine()[0].detail).toContain('"chats" is not a view of aside');
+  });
+
+  it("opens Asks where the file names the Inbox view it took the place of, and says nothing (#5644)", async () => {
+    put({ version: 2, regions: [{ id: "aside", side: "right", view: "asks" }] });
+
+    expect(openView(aside(remembered()))).toBe("asks");
+    await settleLayout();
+    expect(aboutThisMachine()).toEqual([]);
   });
 
   it("is not an extension's panel on the left, which takes none", async () => {
@@ -1371,8 +1379,8 @@ describe("the Panel's right half (#1738)", () => {
     return found;
   };
 
-  it("holds Memory, Todos and Sessions, and opens on Memory beside Repos (P-2, P-14)", () => {
-    expect(CATALOGUE["panel-right"].views).toEqual(["memory", "todos", "sessions"]);
+  it("holds Notices, Memory, Todos and Sessions, and opens on Memory beside Repos (P-2, P-14)", () => {
+    expect(CATALOGUE["panel-right"].views).toEqual(["notices", "memory", "todos", "sessions"]);
     expect(openView(half(remembered(), "left"))).toBe("repos");
     expect(openView(half(remembered(), "right"))).toBe("memory");
     expect(shownIn(inSlots(remembered()).panel).map((one) => one.id)).toEqual([

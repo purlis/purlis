@@ -65,6 +65,9 @@ export function ProjectPresetsNotice({
         { label: "Got it", onPress: read },
         { label: "Review Internet access", onPress: onReview },
       ]}
+      // Dismiss is Got it (#5650): the change is recorded as seen, and a new one shows.
+      onDismiss={read}
+      dismissSays="Put this away until the project changes it again"
     >
       <p>
         What chats in this project may reach has changed in the project's settings, which everyone

@@ -450,6 +450,13 @@ pub const WINDOW_ONLY: &[&str] = &[
     "inbox_updates",
     "note_inbox_updates",
     "settle_inbox_updates",
+    // Snooze all on Asks, and its Show them now and Undo (#5647): the person's own press.
+    "snooze_inbox_asks",
+    "wake_inbox_asks",
+    // The first-open baseline (#5648): the window's own open of a project, and its first
+    // doctor report after it.
+    "inbox_first_open",
+    "set_aside_inbox_findings",
     // Settings' table: every change of what stands.
     "lift_dispatch_never",
     "allow_dispatch_to_any",
