@@ -101,9 +101,28 @@ pub enum Warning {
         page_host: String,
         form_host: String,
     },
+    /// The vault holds no value under these keys yet ([`not_in_vault`]): the person is asked for
+    /// each as the login is filled (#5074).
+    NotInVault { vault: String, keys: Vec<String> },
 }
 
 impl Warning {
+    /// **Whether the person was shown this, or more than this**, among `shown`: the same
+    /// warning, or keys missing from a vault of which these are some (one added since is no
+    /// news).
+    pub fn seen_in(&self, shown: &[Warning]) -> bool {
+        shown.iter().any(|one| match (self, one) {
+            (
+                Self::NotInVault { vault, keys },
+                Self::NotInVault {
+                    vault: was,
+                    keys: were,
+                },
+            ) => vault == was && keys.iter().all(|key| were.contains(key)),
+            _ => one == self,
+        })
+    }
+
     /// The warning in the words the notice says it.
     pub fn said(&self) -> String {
         match self {
@@ -143,6 +162,19 @@ impl Warning {
                 "The password goes to {form_host}, not {page_host}: {page_host} sent the browser \
                  there to sign in. Allow only if you know {form_host} as this site's sign-in."
             ),
+            Self::NotInVault { vault, keys } => {
+                let (values, names, them) = if keys.len() == 1 {
+                    ("its value", "the name", "it")
+                } else {
+                    ("their values", "the names", "them")
+                };
+                format!(
+                    "Vault {vault} has nothing under {} yet. If you allow this, purlis asks you \
+                     for {values} when it fills this login. Check {names} if you expected {them} \
+                     there.",
+                    keys.join(" or ")
+                )
+            }
         }
     }
 }
@@ -403,6 +435,34 @@ pub fn warnings_of(root: &Path, proposal: &Proposal, granted: &[Tool]) -> Vec<Wa
         });
     }
     warnings
+}
+
+/// The providers that list a vault's key names without asking anyone, from files or an index of
+/// purlis's own: the system's credential store's index, a plain file, references. Any other, as
+/// 1Password's CLI may, can ask the person to unlock it just to list.
+const LISTS_QUIETLY: &[&str] = &["keyring", "plain-file", "reference"];
+
+/// **The keys of `proposal` its vault holds no value under**, said, where its provider lists its
+/// key names without asking anyone ([`LISTS_QUIETLY`]): a suggested name that's wrong, or one an
+/// Always line would write, is shown before the press. Read by key names alone. `None` where
+/// each is there, or the vault can't be listed quietly.
+pub fn not_in_vault(ctx: &crate::secrets::Ctx, proposal: &Proposal) -> Option<Warning> {
+    let vault = crate::secrets::cmd::provider(ctx, &proposal.vault).ok()?;
+    if !LISTS_QUIETLY.contains(&vault.provider.as_str()) {
+        return None;
+    }
+    let held = crate::secrets::cmd::keys(ctx, &vault).ok()?;
+    let keys: Vec<String> = proposal
+        .user_key
+        .iter()
+        .chain(std::iter::once(&proposal.key))
+        .filter(|key| !held.contains(key))
+        .cloned()
+        .collect();
+    (!keys.is_empty()).then(|| Warning::NotInVault {
+        vault: proposal.vault.clone(),
+        keys,
+    })
 }
 
 /// Every tool the project's file declares, each persona's.
