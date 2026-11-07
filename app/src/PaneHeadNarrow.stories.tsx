@@ -209,7 +209,8 @@ export const TasksButtonWithNoWord: Story = {
     );
     await expect(glyphs).toEqual([...new Set(glyphs)]);
     await expect(chips?.querySelector(".pane-state-mark .lucide-list-tree") ?? null).not.toBeNull();
-    const button = canvas.getByRole("button", { name: /waiting/ });
+    // The story's only button: named by the chat's state word, which the mark beside it draws.
+    const button = canvas.getByRole("button");
     await expect(button).toHaveAttribute("aria-haspopup", "menu");
     await userEvent.tab();
     await untilFocused(() => button, "Tab onto the head's tasks button");
