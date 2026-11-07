@@ -23,8 +23,14 @@
 //! does not ignore. The tree names an ignored file, so the operator can see that a build output
 //! exists, but marks it ignored, and [`open`] refuses it.
 //!
-//! **Read only**, but for [`review_fetch`]: it fetches a request's head into the workspace's
-//! clone for its review and deletes those refs when nothing needs them (ADR 0084 §2).
+//! **Read only, but for four writes.** [`review_fetch`] fetches a request's head into the
+//! workspace's clone for its review and deletes those refs when nothing needs them (ADR 0084 §2).
+//! [`discard`] puts one hunk of a file back as the branch's base has it, or on a turn's diff as the
+//! turn's start had it (#5406, #5411; ADR 0081, as amended 2026-11-05), through the same names and
+//! the same guards, and a Human edit records it. [`undo_turn`] puts back every file a turn changed
+//! as its start had them, through those guards too, and commits nothing (#5411). [`turns`] records
+//! each turn of a chat as refs in the clone (#5405), and marks one undone, and moves no branch or
+//! file.
 
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
@@ -59,13 +65,16 @@ pub use offered::{Ignored, Offered};
 // The one diff engine (RC-2): every comparison, read in the same bounded child.
 mod compare;
 pub use compare::{
-    COUNTED, Compared, Comparison, FileChange, FileDiff, Head, Hunk, Lines, MemberCompared, Shown,
-    Sides, WhatChanged, Whitespace, compare, compare_change, compare_file, compare_file_with,
-    compare_with, line_hunks, what_changed,
+    Against, COUNTED, Compared, Comparison, Discard, Discarded, FileChange, FileDiff, Head, Hunk,
+    InTurn, Lines, MemberCompared, Shown, Sides, Target, TurnChanged, TurnKey, Undone, WhatChanged,
+    Whitespace, compare, compare_change, compare_file, compare_file_with, compare_with, discard,
+    line_hunks, turn_changed, undo_turn, what_changed,
 };
 // A request's head, fetched under `refs/purlis/review/` for its review (RC-2's kind (f)).
 pub mod review_fetch;
+// Each turn of a chat, as two refs (N3, RC-2's kind (d)).
 mod search;
+pub mod turns;
 pub use search::{
     BadQuery, Ended, FILE_LINES, FILL, FileHits, HitLine, LINE_CHARS, LONGEST_LINE, LONGEST_QUERY,
     PAGE_TIME, Part, Search, SearchOptions, Searched, search,
@@ -273,6 +282,12 @@ pub enum Refused {
     NotChanged(String),
     #[error("'{0}' is not a folder")]
     NotAFolder(String),
+    /// A discard of a file that cannot be put back, and why (#5406).
+    #[error("'{path}' was not discarded: {why}")]
+    NotDiscarded { path: String, why: String },
+    /// An undo of a turn refused, or stopped, at one of its files, and why (#5411).
+    #[error("The turn was not undone: '{path}' {why}.")]
+    NotUndone { path: String, why: String },
     /// The branch's own folder is a link (#1143): placed, it would be what the link leads to.
     #[error("the folder of '{0}' is a link, and purlis places no folder a link leads to")]
     FolderIsALink(String),
@@ -712,6 +727,120 @@ fn folder_inside<'p>(
         fd = Some(rustix::fs::openat(at, name, flags, Mode::empty())?);
     }
     Ok((fd, leaf))
+}
+
+/// The mode [`replace_inside`] writes a file with.
+#[derive(Debug, Clone, Copy)]
+enum WrittenMode {
+    /// The mode the file has, as a discard of one hunk leaves it; a new one is `executable` or
+    /// not, under the umask, as git checks one out.
+    Kept { executable: bool },
+    /// `executable` or not, under the umask, as git checks one out, whatever the file has: an
+    /// undo puts back the mode the turn changed (#5411).
+    Exactly { executable: bool },
+}
+
+/// `bytes` written at `relative` in the held folder, in a temporary file beside it renamed over
+/// it, so nothing ever finds half of them: the folders on the way opened one at a time following
+/// no link, and made where they are gone (a deleted file's). What was at `relative` is replaced
+/// and never followed.
+#[cfg(unix)]
+fn replace_inside(
+    held: &Held,
+    relative: &Path,
+    bytes: &[u8],
+    mode: WrittenMode,
+) -> std::io::Result<()> {
+    use std::io::Write as _;
+
+    use rustix::fs::{Mode, OFlags};
+    let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    let mut steps: Vec<&std::ffi::OsStr> = relative
+        .components()
+        .filter_map(|step| match step {
+            Component::Normal(name) => Some(name),
+            _ => None,
+        })
+        .collect();
+    let leaf = steps
+        .pop()
+        .ok_or_else(|| std::io::Error::other("no file named"))?;
+    let mut fd: Option<rustix::fd::OwnedFd> = None;
+    for name in steps {
+        let at = fd.as_ref().unwrap_or(&held.0);
+        let next = match rustix::fs::openat(at, name, flags, Mode::empty()) {
+            Err(rustix::io::Errno::NOENT) => {
+                rustix::fs::mkdirat(at, name, Mode::from_raw_mode(0o777))?;
+                rustix::fs::openat(at, name, flags, Mode::empty())?
+            }
+            opened => opened?,
+        };
+        fd = Some(next);
+    }
+    let at = fd.as_ref().unwrap_or(&held.0);
+    let (executable, keep) = match mode {
+        WrittenMode::Kept { executable } => (executable, true),
+        WrittenMode::Exactly { executable } => (executable, false),
+    };
+    let kept = rustix::fs::statat(at, leaf, rustix::fs::AtFlags::SYMLINK_NOFOLLOW)
+        .ok()
+        .filter(|was| {
+            keep && rustix::fs::FileType::from_raw_mode(was.st_mode)
+                == rustix::fs::FileType::RegularFile
+        })
+        .map(|was| Mode::from_raw_mode(was.st_mode & 0o7777));
+    let temporary = format!(".purlis-discard-{}", std::process::id());
+    let create =
+        OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    let mode = Mode::from_raw_mode(if executable { 0o777 } else { 0o666 });
+    let file = rustix::fs::openat(at, temporary.as_str(), create, mode)?;
+    let wrote = (|| {
+        if let Some(kept) = kept {
+            rustix::fs::fchmod(&file, kept)?;
+        }
+        let mut file = std::fs::File::from(file);
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        rustix::fs::renameat(at, temporary.as_str(), at, leaf)?;
+        Ok(())
+    })();
+    if wrote.is_err() {
+        let _ = rustix::fs::unlinkat(at, temporary.as_str(), rustix::fs::AtFlags::empty());
+    }
+    wrote
+}
+
+#[cfg(not(unix))]
+fn replace_inside(
+    held: &Held,
+    relative: &Path,
+    bytes: &[u8],
+    _mode: WrittenMode,
+) -> std::io::Result<()> {
+    let file = held.0.join(relative);
+    if let Some(folder) = file.parent() {
+        std::fs::create_dir_all(folder)?;
+    }
+    let temporary = file.with_file_name(format!(".purlis-discard-{}", std::process::id()));
+    std::fs::write(&temporary, bytes)?;
+    std::fs::rename(&temporary, &file).inspect_err(|_| {
+        let _ = std::fs::remove_file(&temporary);
+    })
+}
+
+/// The file `relative` names in the held folder removed, the folders on the way opened one at a
+/// time following no link. A link there is removed, never followed.
+#[cfg(unix)]
+fn remove_inside(held: &Held, relative: &Path) -> std::io::Result<()> {
+    let (folder, leaf) = folder_inside(held, relative)?;
+    let at = folder.as_ref().unwrap_or(&held.0);
+    rustix::fs::unlinkat(at, leaf, rustix::fs::AtFlags::empty())?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn remove_inside(held: &Held, relative: &Path) -> std::io::Result<()> {
+    std::fs::remove_file(held.0.join(relative))
 }
 
 /// The target of the link `relative` names in the held folder, as git stores a link: `None`
@@ -1559,6 +1688,24 @@ fn named_in(kept: &Kept, base: &Path, path: &str) -> Result<String, Refused> {
             what: path.to_string(),
             why: e.to_string(),
         }),
+    }
+}
+
+/// [`named_in`] for a path a comparison may list as deleted: one that is not on disk answers
+/// `(path, true)`, once every guard that does not need it there has passed, and the caller holds
+/// it to the comparison's own list. So a deleted file's diff can be drawn and its file put back,
+/// and nothing else is opened: whatever is read after this goes through the folder held open.
+fn named_or_gone(kept: &Kept, base: &Path, path: &str) -> Result<(String, bool), Refused> {
+    match named_in(kept, base, path) {
+        Ok(named) => Ok((named, false)),
+        Err(Refused::NotThere(_)) => {
+            let spelled = spelled_inside(path)?;
+            if gits(Path::new(&spelled)) {
+                return Err(Refused::NotInPiece(path.to_string()));
+            }
+            Ok((spelled, true))
+        }
+        Err(other) => Err(other),
     }
 }
 

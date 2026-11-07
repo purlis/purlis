@@ -104,6 +104,8 @@ import { AddToAChat } from "../AddToAChat";
 import { SkillBudgetChange } from "../SkillBudget";
 import { RouterChange } from "../SkillStudioRouting";
 import { KeepAsk } from "../ThemeDraftStrip";
+import { PieceDiffTab } from "../editor/PieceDiff";
+import { UndoTurn } from "../editor/UndoTurn";
 import { forgetThisLaunch } from "../regions";
 import { complaints } from "./complaints.testkit";
 import { MoveIntoReposConfirm } from "../MoveIntoReposConfirm";
@@ -566,6 +568,35 @@ function dialogCore() {
       case "extension_views":
       case "extension_panels":
         return [];
+      // A file's diff with one hunk, whose discard a working chat warns of (#5406).
+      case "what_changed":
+        return {
+          mark: "changed",
+          from: null,
+          uncommitted: true,
+          base: "main",
+          diff: {
+            kind: "text",
+            base: "one\n",
+            head: "one\ntwo\n",
+            hunks: [{ oldStart: 1, oldLines: 0, newStart: 2, newLines: 1 }],
+          },
+          stamp: "drawn",
+          checks: {
+            sets: [],
+            onLines: [],
+            outside: [],
+            elsewhere: [],
+            moreOnLines: 0,
+            moreOutside: 0,
+            moreElsewhere: 0,
+            trouble: null,
+            faults: [],
+          },
+          sinceTurnEnded: false,
+        };
+      case "discard_hunk":
+        return { kind: "busy", chats: [{ name: "Fix the parser", state: "is running" }] };
       default:
         throw new Error(`${cmd} is not answered in this test`);
     }
@@ -1804,6 +1835,30 @@ const DIALOGS: Opened[] = [
           onCancel={nothing}
         />,
       ),
+  },
+  {
+    name: "a discard's warning of a working chat (#5406)",
+    file: "editor/PieceDiff.tsx",
+    open: async () => {
+      render(
+        <PieceDiffTab
+          plane={P}
+          cut={{ workspace: "alpha", repo: "svc", piece: "fix-it" }}
+          path="src/lib.rs"
+        />,
+      );
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Discard the change at line 2" }),
+      );
+    },
+  },
+  {
+    name: "Undo a turn's question (#5411)",
+    file: "editor/UndoTurn.tsx",
+    open: async () => {
+      render(<UndoTurn number={3} files={["src/lib.rs"]} undoing={false} onUndo={nothing} />);
+      await userEvent.click(screen.getByRole("button", { name: "Undo turn 3…" }));
+    },
   },
 ];
 

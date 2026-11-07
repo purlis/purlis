@@ -222,11 +222,11 @@ fn a_manifest_that_is_not_json_is_refused() {
 fn a_manifest_of_another_version_is_refused_rather_than_guessed_at() {
     let made = Made::new();
     made.ordinary();
-    made.manifest(r#"{"version":5,"id":"x","contributes":{"runs":"p"}}"#);
+    made.manifest(r#"{"version":6,"id":"x","contributes":{"runs":"p"}}"#);
 
     let why = read_at(&made.at()).expect_err("no extension");
     assert!(
-        why.contains("is version 5, and this purlis reads versions 1 to 4"),
+        why.contains("is version 6, and this purlis reads versions 1 to 5"),
         "{why}"
     );
 }
@@ -2166,7 +2166,7 @@ fn an_unknown_capability_is_named_in_the_refusal_even_beside_a_known_one() {
     assert!(
         why.contains(
             "This purlis knows probe, badges, repo-columns, palette, actions, writes, events, \
-             briefing, cli."
+             briefing, cli, check-reporter."
         ),
         "{why}"
     );
@@ -2204,6 +2204,60 @@ fn a_capability_its_manifest_s_protocol_does_not_carry_is_refused() {
     assert!(
         why.contains("\"actions\", which needs protocol 2, and is version 1"),
         "{why}"
+    );
+}
+
+#[test]
+fn a_check_reporter_loads_in_protocol_5_with_a_program_and_no_shape() {
+    let made = Made::new();
+    made.manifest(
+        r#"{"version":5,"id":"mypy-sarif","capabilities":["check-reporter"],
+            "contributes":{"runs":"bin/run"}}"#,
+    );
+    made.file("bin/run", "#!/bin/sh\n");
+    let found = read_at(&made.at()).expect("a check reporter");
+    assert!(found.manifest.reports_checks());
+}
+
+#[test]
+fn a_check_reporter_in_an_earlier_protocol_is_refused() {
+    let made = Made::new();
+    made.manifest(
+        r#"{"version":4,"id":"mypy-sarif","capabilities":["check-reporter"],
+            "contributes":{"runs":"bin/run"}}"#,
+    );
+    made.file("bin/run", "#!/bin/sh\n");
+    let why = read_at(&made.at()).expect_err("a check reporter asked in protocol 4");
+    assert!(
+        why.contains("\"check-reporter\", which needs protocol 5, and is version 4"),
+        "{why}"
+    );
+}
+
+#[test]
+fn a_check_reporter_with_no_program_is_refused() {
+    let made = Made::new();
+    made.manifest(
+        r#"{"version":5,"id":"mypy-sarif","capabilities":["check-reporter"],
+            "contributes":{"panels":[{"id":"p","title":"P"}]}}"#,
+    );
+    let why = read_at(&made.at()).expect_err("a check reporter with nothing to run");
+    assert!(
+        why.contains("turns a check's output into SARIF, and declares no program ('runs')"),
+        "{why}"
+    );
+}
+
+#[test]
+fn an_extension_that_does_not_ask_for_the_check_reporter_does_not_report_checks() {
+    let made = Made::new();
+    made.manifest(r#"{"version":5,"id":"x","contributes":{"runs":"bin/run"}}"#);
+    made.file("bin/run", "#!/bin/sh\n");
+    assert!(
+        !read_at(&made.at())
+            .expect("loads")
+            .manifest
+            .reports_checks()
     );
 }
 

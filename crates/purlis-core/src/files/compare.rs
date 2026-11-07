@@ -52,6 +52,14 @@ use super::status::{Change, MARKED, Mark, Opened, RefusedChange, open, plain, re
 use super::{Branch, Refused};
 use crate::worktree::name;
 
+// The one write beside the comparison it undoes part of (#5406).
+mod discard;
+pub(super) use discard::discard_here;
+pub use discard::{Against, Discard, Discarded, Target};
+// Its turn's side, and Undo a turn, which put files back as a turn's start had them (#5411).
+mod restore;
+pub(super) use restore::undo_here;
+
 /// What to compare (R1). Each kind names its two sides (ADR 0084 §1's table).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Comparison {
@@ -76,6 +84,9 @@ pub enum Comparison {
     /// (c) What is not committed: the folder's last commit to its working tree, untracked
     /// files git does not ignore included, the index never touched.
     Uncommitted,
+    /// (d) One turn of a chat: from the state its start recorded to the state its end recorded
+    /// ([`super::turns`]), exactly.
+    Turn { chat: String, number: u32 },
 }
 
 /// The head of a comparison.
@@ -258,6 +269,15 @@ pub struct WhatChanged {
     pub base: Option<String>,
     /// Its lines and hunks, or the kind that is drawn as a sentence instead.
     pub diff: FileDiff,
+    /// What this was drawn from, as a digest of the base and the file on disk: what a
+    /// [`Discard`] is checked against. `None` for a file past [`super::LARGEST`] or unreadable.
+    pub stamp: Option<String>,
+    /// The branch's check results as this file shows them (ADR 0116): placed on the same hunks.
+    pub checks: Box<crate::checks::OnFile>,
+    /// On a turn's diff, that the file changed since the turn ended, so it is drawn from the
+    /// turn's start to the file as it is now (#5411). Always `false` against the base.
+    #[serde(default)]
+    pub since_turn_ended: bool,
 }
 
 /// One file of `branch`, by its path relative to the branch's folder, compared against the
@@ -287,7 +307,7 @@ pub fn what_changed(
         path: path.to_string(),
     };
     match reader.ask(plane, branch, ask)? {
-        super::Answer::WhatChanged(Shown::Changed(shown)) => Ok(shown),
+        super::Answer::WhatChanged(Shown::Changed(shown)) => Ok(*shown),
         super::Answer::WhatChanged(Shown::NotListed { more: 0 }) => {
             Err(Refused::NotChanged(path.to_string()))
         }
@@ -299,12 +319,27 @@ pub fn what_changed(
     }
 }
 
+/// [`Discard`] one hunk of `branch`, in `reader`'s child (see [`discard`]): the path's own
+/// spelling is checked here, before any child starts.
+pub fn discard(
+    reader: &super::Reader,
+    plane: &Path,
+    branch: Branch<'_>,
+    ask: &Discard,
+) -> Result<Discarded, Refused> {
+    super::spelled_inside(&ask.path)?;
+    match reader.ask(plane, branch, super::Ask::Discard(ask.clone()))? {
+        super::Answer::Discarded(answer) => Ok(answer),
+        _ => Err(Refused::Read("the reader answered something else".into())),
+    }
+}
+
 /// What the reader's child answers "Show what changed" with: the file compared, or that the
 /// comparison's file list does not hold it — and how many files past [`MARKED`] it left out, so
 /// the app says whether the file is unchanged or only not among the first.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Shown {
-    Changed(WhatChanged),
+    Changed(Box<WhatChanged>),
     NotListed { more: usize },
 }
 
@@ -316,19 +351,58 @@ pub(super) fn what_changed_here(
     path: &str,
 ) -> Result<Shown, Refused> {
     let opened = open(plane, branch)?;
-    let relative = super::named_in(
-        &super::Kept::of(plane, &opened.base, branch),
-        &opened.base,
-        path,
-    )?;
-    let compared = compared_in(
+    one_file_compared(
         plane,
         branch,
         &opened,
         &Comparison::BranchAndUncommitted,
-        Whitespace::Shown,
+        path,
+    )
+}
+
+/// One file of `comparison`: the path confined in the resolved folder before anything else is
+/// read, then the file list, then the file's hunks at the sides the list was read at.
+///
+/// **A turn's file** is drawn from the turn's two refs while it is on disk as the turn ended it,
+/// and otherwise from the turn's start to the file as it is now, said with
+/// [`WhatChanged::since_turn_ended`] (#5411): so a hunk discarded leaves it at once and each one
+/// left can be discarded, put back as the turn's start had it.
+pub(super) fn one_file_compared(
+    plane: &Path,
+    branch: Branch<'_>,
+    opened: &Opened,
+    comparison: &Comparison,
+    path: &str,
+) -> Result<Shown, Refused> {
+    // The path is checked before the comparison is made, which costs more.
+    super::named_or_gone(
+        &super::Kept::of(plane, &opened.base, branch),
+        &opened.base,
+        path,
+    )?;
+    let compared = compared_in(plane, branch, opened, comparison, Whitespace::Shown)?;
+    file_of_compared(plane, branch, opened, comparison, compared, path)
+}
+
+/// [`one_file_compared`] of a comparison already made, so a caller that needs its list too
+/// compares once ([`turn_changed_here`]).
+fn file_of_compared(
+    plane: &Path,
+    branch: Branch<'_>,
+    opened: &Opened,
+    comparison: &Comparison,
+    compared: Compared,
+    path: &str,
+) -> Result<Shown, Refused> {
+    let (relative, gone) = super::named_or_gone(
+        &super::Kept::of(plane, &opened.base, branch),
+        &opened.base,
+        path,
     )?;
     let Some(change) = compared.files.into_iter().find(|one| one.path == relative) else {
+        if gone {
+            return Err(Refused::NotThere(path.to_string()));
+        }
         return Ok(Shown::NotListed {
             more: compared.more,
         });
@@ -340,20 +414,201 @@ pub(super) fn what_changed_here(
         Some(from) => Some(plain(from).ok_or_else(|| Refused::NotInPiece(from.to_string()))?),
         None => None,
     };
-    let diff = file_diff_in(
-        plane,
-        branch,
-        &opened,
-        &compared.sides,
-        at,
-        from,
-        Whitespace::Shown,
-    )?;
-    Ok(Shown::Changed(WhatChanged {
+    // Read before the diff, so a write between the two reads as stale and never as drawn. A
+    // turn's stamp is of its start, which its discard puts a hunk back as.
+    let held = hold(plane, &opened.base).ok();
+    let stamp = held.as_ref().and_then(|held| {
+        discard::stamp_of(
+            compared.sides.base.as_deref(),
+            &on_disk(held, &at, super::LARGEST),
+        )
+    });
+    let mut sides = compared.sides.clone();
+    let mut since_turn_ended = false;
+    if let (Comparison::Turn { .. }, Head::Commit(end), Some(held)) =
+        (comparison, &compared.sides.head, held.as_ref())
+    {
+        let end = tree_of(&opened.repo, commit_id(end)).ok().flatten();
+        let paths = [Some(at.as_str()), from.as_deref()];
+        let attributes = HeldAttributes::read(
+            &mut opened.repo.clone(),
+            Some(held),
+            paths.into_iter().flatten(),
+        );
+        let mut to_git = ToGit::of(&attributes);
+        let ended = paths.into_iter().flatten().all(|path| {
+            restore::as_it_ended(&opened.repo, held, to_git.as_mut(), end.as_ref(), path)
+                .unwrap_or(true)
+        });
+        if !ended {
+            sides.head = Head::WorkingTree;
+            since_turn_ended = true;
+        }
+    }
+    let diff = file_diff_in(plane, branch, opened, &sides, at, from, Whitespace::Shown)?;
+    let head = opened.repo.head_commit().ok().map(|c| c.id.to_string());
+    let hunks: &[Hunk] = match &diff {
+        FileDiff::Text { hunks, .. } => hunks,
+        _ => &[],
+    };
+    let checks = if branch.is_plane_root() {
+        crate::checks::OnFile::default()
+    } else {
+        crate::checks::of_branch(plane, branch, &change.path, hunks, head.as_deref())
+    };
+    Ok(Shown::Changed(Box::new(WhatChanged {
         change,
         base: compared.base,
         diff,
-    }))
+        stamp,
+        checks: Box::new(checks),
+        since_turn_ended,
+    })))
+}
+
+/// A turn of a chat, as the file diff's turn picker names it (#5408).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TurnKey {
+    pub chat: String,
+    pub number: u32,
+}
+
+/// One file across one turn on a branch: what the file diff's turn picker draws (#5405, #5408).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum TurnChanged {
+    /// No turn has ended on this branch.
+    NoTurn,
+    /// The file across turn `number` of `chat`, and every turn of that chat that ended on the
+    /// branch, newest first: what the picker lists.
+    Of {
+        chat: String,
+        number: u32,
+        turns: Vec<u32>,
+        file: InTurn,
+        /// Where this turn is the one Undo is offered on, the latest not yet undone (#5411): every
+        /// path the undo would write, sorted, which its confirmation lists. `None` on any other.
+        undo: Option<Vec<String>>,
+    },
+}
+
+/// What one turn did to one file.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum InTurn {
+    /// The turn changed no file at all.
+    Nothing,
+    /// The turn changed other files and left this one as it found it.
+    NotThisFile,
+    /// The file, compared across the turn.
+    Changed(Box<WhatChanged>),
+}
+
+/// One file of `branch`, by its path relative to the branch's folder, across `turn`, or across the
+/// latest turn that ended there when `turn` is `None` ([`super::turns`]). Confined and read as
+/// [`what_changed`] reads.
+pub fn turn_changed(
+    reader: &super::Reader,
+    plane: &Path,
+    branch: Branch<'_>,
+    path: &str,
+    turn: Option<&TurnKey>,
+) -> Result<TurnChanged, Refused> {
+    super::spelled_inside(path)?;
+    let ask = super::Ask::TurnChanged {
+        path: path.to_string(),
+        turn: turn.cloned(),
+    };
+    match reader.ask(plane, branch, ask)? {
+        super::Answer::TurnChanged(changed) => Ok(changed),
+        _ => Err(Refused::Read("the reader answered something else".into())),
+    }
+}
+
+/// [`turn_changed`], in this process: only the bounded reader's child calls it.
+pub(super) fn turn_changed_here(
+    plane: &Path,
+    branch: Branch<'_>,
+    path: &str,
+    turn: Option<TurnKey>,
+) -> Result<TurnChanged, Refused> {
+    let opened = open(plane, branch)?;
+    let Some(on) = opened
+        .repo
+        .head_name()
+        .ok()
+        .flatten()
+        .map(|name| name.shorten().to_string())
+    else {
+        return Ok(TurnChanged::NoTurn);
+    };
+    let ended = super::turns::ended_on(&opened.repo, &on);
+    let Some(TurnKey { chat, number }) = turn.or_else(|| ended.opened(&opened.repo).cloned())
+    else {
+        return Ok(TurnChanged::NoTurn);
+    };
+    let turns = ended.of(&chat);
+    if !turns.contains(&number) {
+        return Err(Refused::Read(format!(
+            "this branch has no turn {number} of that chat"
+        )));
+    }
+    let comparison = Comparison::Turn {
+        chat: chat.clone(),
+        number,
+    };
+    let offered = ended
+        .offered(&opened.repo)
+        .is_some_and(|offered| offered.chat == chat && offered.number == number);
+    let compared = compared_in(plane, branch, &opened, &comparison, Whitespace::Shown)?;
+    let undo = offered
+        .then(|| restore::paths_of(&compared.files))
+        .filter(|paths| !paths.is_empty());
+    let nothing = compared.files.is_empty();
+    let file = match file_of_compared(plane, branch, &opened, &comparison, compared, path)? {
+        Shown::Changed(shown) => InTurn::Changed(shown),
+        Shown::NotListed { .. } if nothing => InTurn::Nothing,
+        Shown::NotListed { .. } => InTurn::NotThisFile,
+    };
+    Ok(TurnChanged::Of {
+        chat,
+        number,
+        turns,
+        file,
+        undo,
+    })
+}
+
+/// What an undo did (#5411).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Undone {
+    /// The record to keep: every file put back, and its lines.
+    pub edit: crate::humanedit::HumanEdit,
+    /// Why the turn could not be marked undone, with its files back, if it could not: Undo is
+    /// then offered on it again, and refused, as its files changed since it ended.
+    pub unmarked: Option<String>,
+}
+
+/// **Undo a turn** (#5411; ADR 0081 as amended 2026-11-05): every file `turn` changed in `branch`
+/// put back as the turn's start had it, in `reader`'s child ([`restore`]), and the turn then marked
+/// undone ([`super::turns::undone`]). Nothing is committed and no branch moves.
+///
+/// Refused, with nothing written, unless `turn` is the latest not yet undone on the branch, and
+/// when any file it changed is not on disk as it ended, naming the file. Whether the folder is
+/// idle is not this call's to know: the host checks it under the run's state lock, and makes this
+/// call in the same step (ADR 0084 §8).
+pub fn undo_turn(
+    reader: &super::Reader,
+    plane: &Path,
+    branch: Branch<'_>,
+    turn: &TurnKey,
+) -> Result<Undone, Refused> {
+    let edit = match reader.ask(plane, branch, super::Ask::UndoTurn(turn.clone()))? {
+        super::Answer::UndoneTurn(edit) => edit,
+        _ => return Err(Refused::Read("the reader answered something else".into())),
+    };
+    let unmarked = super::turns::undone(plane, branch, &turn.chat, turn.number)
+        .err()
+        .map(|why| why.to_string());
+    Ok(Undone { edit, unmarked })
 }
 
 /// One member of a cross-repo change, compared (e).
@@ -745,6 +1000,24 @@ fn resolve(
             Ok((Some(since), At::Commit(b), Some(from.clone())))
         }
         Comparison::Uncommitted => Ok((head_commit(), At::WorkingTree, None)),
+        Comparison::Turn { chat, number } => {
+            let side = |name: Option<String>| {
+                name.and_then(|name| repo.find_reference(name.as_str()).ok())
+                    .and_then(|mut found| found.peel_to_commit().ok())
+                    .map(|commit| commit.id)
+            };
+            let sides = super::turns::sides_of(chat, *number);
+            let (start, end) = sides.map_or((None, None), |(start, end)| (Some(start), Some(end)));
+            let start = side(start)
+                .ok_or_else(|| refused(format!("this branch has no turn {number} of that chat")))?;
+            let end = side(end)
+                .ok_or_else(|| refused(format!("turn {number} of that chat has not ended")))?;
+            Ok((
+                Some(start),
+                At::Commit(end),
+                Some(format!("the start of turn {number}")),
+            ))
+        }
     }
 }
 

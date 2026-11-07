@@ -976,6 +976,14 @@ pub struct Chats {
     /// Taken under the lock of [`Self::open`], so a report lands in one or the other.
     /// **In memory only.**
     named_while_starting: Mutex<NamedWhileStarting>,
+    /// **Who a chat starting here is, and its folder** (#5411), by its number: an entry from the
+    /// moment its start is announced, so before its program runs, until it is listed as open.
+    /// A harness fires its first prompt's hook as it starts, and that report is a boundary of the
+    /// chat's turn ([`crate::turns`]): [`Self::chat_at`] answers it from here, so it is not lost.
+    /// Only a chat started here, never one a runner starts, whose folder is the runner's.
+    /// Taken under the lock of [`Self::open`], as [`Self::named_while_starting`] is.
+    /// **In memory only.**
+    starting_at: Mutex<HashMap<u32, ChatAt>>,
     /// The folders a discard is taking away now, and the folders chats are starting in
     /// (#1472): no chat starts in a folder that is going, and none goes while one starts there.
     /// **In memory only.**
@@ -1545,6 +1553,7 @@ impl Chats {
             reserved: Mutex::new(HashMap::new()),
             starting_as: Mutex::new(HashMap::new()),
             named_while_starting: Mutex::new(HashMap::new()),
+            starting_at: Mutex::new(HashMap::new()),
             stops_below: Mutex::new(std::collections::HashSet::new()),
             owed: Mutex::new(HashMap::new()),
             restarting: Mutex::new(std::collections::HashSet::new()),
@@ -2097,6 +2106,48 @@ impl Chats {
             id: one.chat.identity.id.clone(),
             cwd: one.chat.cwd.clone(),
         })
+    }
+
+    /// [`Self::chat_at`], or, for a chat whose start here is under way, who it is starting as
+    /// ([`Self::starting_at`]): what a boundary of its turn is recorded by, since its harness may
+    /// report its first prompt before the chat is listed as open (#5411).
+    pub fn chat_at_or_starting(&self, session: u32) -> Option<ChatAt> {
+        let open = lock(&self.open);
+        match open.get(&session) {
+            Some(one) => Some(ChatAt {
+                id: one.chat.identity.id.clone(),
+                cwd: one.chat.cwd.clone(),
+            }),
+            None => lock(&self.starting_at).get(&session).cloned(),
+        }
+    }
+
+    /// **The name of a chat open in this branch's folder whose program reports no turns** (#5405):
+    /// a shell, or a harness purlis has no hooks for. What says why the branch has no turn.
+    pub fn silent_about_turns_in(
+        &self,
+        plane: &Path,
+        ws: &str,
+        repo: &str,
+        piece: Option<&str>,
+    ) -> Option<String> {
+        let open = lock(&self.open);
+        open.values()
+            .filter(|one| {
+                !one.chat
+                    .harness()
+                    .is_some_and(purlis_core::harness::Harness::prompt_hook)
+            })
+            .find(|one| {
+                one.chat
+                    .cwd
+                    .as_deref()
+                    .and_then(|cwd| purlis_core::files::turns::place_of(plane, cwd))
+                    .is_some_and(|place| {
+                        place.ws == ws && place.repo == repo && place.piece.as_deref() == piece
+                    })
+            })
+            .map(|one| one.chat.name.clone())
     }
 
     /// **The chats open here, each with its id, its name and the workspace it works in**, in
@@ -5197,6 +5248,15 @@ impl Chats {
             whose.store(session, std::sync::atomic::Ordering::SeqCst);
             lock(&self.starting_as).insert(session, chat.persona.clone());
             lock(&self.named_while_starting).insert(session, None);
+            if !reattaching && !on_the_runner && chat.runs_on.is_none() {
+                lock(&self.starting_at).insert(
+                    session,
+                    ChatAt {
+                        id: identity.id.clone(),
+                        cwd: chat.cwd.clone(),
+                    },
+                );
+            }
             untold.tell_untold();
             // A chat reattached is where it was: its state, its model and its run are as the
             // host kept them (#2006).
@@ -5373,6 +5433,7 @@ impl Chats {
             if announced > 0 {
                 lock(&self.starting_as).remove(&announced);
                 lock(&self.named_while_starting).remove(&announced);
+                lock(&self.starting_at).remove(&announced);
             }
             if announced > 0
                 && let Some(gone) = lock(&self.never_started).as_ref()
@@ -5460,6 +5521,7 @@ impl Chats {
             start.made = false;
         }
         let mut open = lock(&self.open);
+        lock(&self.starting_at).remove(&session);
         // What its harness named since its program began, which is newer than what it started
         // under. A shell tab keeps none, as `follow_conversation` keeps none for one that is open.
         let mut under = under;
@@ -5585,6 +5647,7 @@ impl Chats {
     fn close_as(&self, session: u32, a_chat: bool) -> Result<(), String> {
         lock(&self.starting_as).remove(&session);
         lock(&self.named_while_starting).remove(&session);
+        lock(&self.starting_at).remove(&session);
         lock(&self.untaken).remove(&session);
         lock(&self.ended).remove(&session);
         let gone = lock(&self.open).remove(&session);

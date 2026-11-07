@@ -120,6 +120,32 @@ pub enum Write {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         force: bool,
     },
+    /// `purlis check report <branch> <file.sarif>` (#5407, ADR 0116): a branch's check results.
+    /// **It names a folder only in the chat's own workspace, and a file only inside that folder**,
+    /// confined there as any file command's path is: a SARIF file can be far longer than a line of
+    /// the connection, so it is read by the app, and a chat cannot point the app at anything it
+    /// could not name as a file of its own workspace's branch.
+    ///
+    /// **With a `reporter`, `file` is a check's output, not SARIF** (#5410, `purlis check report
+    /// --reporter`): the app hands it to that Check reporter, as the app's own process and never in
+    /// the chat's sandbox, as every extension the app asks runs, and records what it answers.
+    CheckReport {
+        repo: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        piece: Option<String>,
+        file: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reporter: Option<CheckReporter>,
+    },
+}
+
+/// The Check reporter a check's output is handed to, and the status the check exited with
+/// (#5410).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CheckReporter {
+    /// The extension, by its id.
+    pub extension: String,
+    pub status: i32,
 }
 
 /// One of the chat's own memory stores (#1408). **Never a name**: which workspace and which
@@ -229,6 +255,18 @@ impl Write {
             Self::WorkspaceSnapshot { description, .. } => {
                 (description.as_deref().unwrap_or_default(), None, 0)
             }
+            Self::CheckReport {
+                repo,
+                piece,
+                file,
+                reporter,
+            } => (
+                file,
+                None,
+                repo.len()
+                    + piece.as_deref().map_or(0, str::len)
+                    + reporter.as_ref().map_or(0, |it| it.extension.len()),
+            ),
         };
         let bytes = text.len() + title.map_or(0, str::len) + more;
         if bytes > MOST_TEXT_BYTES {
@@ -257,6 +295,7 @@ impl Write {
                 | Self::Todo { .. }
                 | Self::WorkspaceVision { .. }
                 | Self::WorkspaceSection { .. }
+                | Self::CheckReport { .. }
         )
     }
 
@@ -278,6 +317,7 @@ impl Write {
             Self::TodoClose { .. } => "todo_close",
             Self::WorkspaceCreate { .. } => "workspace_create",
             Self::WorkspaceSnapshot { .. } => "workspace_snapshot",
+            Self::CheckReport { .. } => "check_report",
         }
     }
 }
@@ -405,6 +445,51 @@ pub fn answer(
             Written {
                 to: ws.name().to_owned(),
                 path: shown(root, &path),
+            }
+        }
+        Write::CheckReport {
+            repo,
+            piece,
+            file,
+            reporter,
+        } => {
+            let ws = own_workspace(root, asker)?;
+            let branch = match piece {
+                Some(piece) => crate::files::Branch::piece(ws.name(), repo, piece),
+                None => crate::files::Branch::repo(ws.name(), repo),
+            };
+            let relative = crate::files::named(root, branch, file).map_err(|e| e.to_string())?;
+            let path = crate::checks::store_path(root, ws.name(), repo, piece.as_deref());
+            guard(root, &path, None)?;
+            let when = chrono::TimeZone::from_local_datetime(&chrono::Local, &now)
+                .single()
+                .map_or_else(chrono::Utc::now, |local| local.with_timezone(&chrono::Utc));
+            let done = match reporter {
+                None => crate::checks::report_inside(root, branch, &relative, when)?,
+                Some(reporter) => {
+                    let config_root = crate::machine::config_root().ok_or_else(|| {
+                        "purlis cannot find its config home, where it records extensions, so it \
+                         asked no Check reporter"
+                            .to_owned()
+                    })?;
+                    let executor = crate::executor::Executor::with_built_in(
+                        crate::extension::BuiltIn::of_this_program(),
+                    );
+                    crate::checks::report_converted_inside(
+                        root,
+                        branch,
+                        &relative,
+                        &reporter.extension,
+                        reporter.status,
+                        &executor,
+                        &config_root,
+                        when,
+                    )?
+                }
+            };
+            Written {
+                to: ws.name().to_owned(),
+                path: shown(root, &done.path),
             }
         }
         // Answered by `upkeep` above; never reached, and refused rather than a panic.

@@ -67,6 +67,9 @@ purlis-unicode.workspace = true
 # What a chat's browser tools ask (#2013): the session protocol's browser acts, one vocabulary
 # from the tool server through the window to the session host. A crate of this workspace.
 purlis-session-protocol.workspace = true
+# `purlis check report` (#5407, ADR 0116): SARIF 2.1.0's own types, generated from the OASIS schema
+# by psastras' sarif-rs, MIT. No converter feature: purlis has no parser for any one tool.
+serde-sarif = "0.8"
 # ⌘P's fuzzy file names (FM-7, #1110): helix's matcher, the fzf algorithm with a bonus for
 # path boundaries, and no allocation per match. MPL-2.0, on deny.toml's allow-list as a
 # file-level copyleft used unmodified; its dependencies, memchr and unicode-segmentation, are

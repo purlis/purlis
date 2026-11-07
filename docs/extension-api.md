@@ -172,3 +172,42 @@ a chat. A line is at most 512 KiB. A chat past the plan or a run past `runs` end
 what ran is scored by purlis's own runner. When the grade
 has reached a limit, the next chat asked for is answered as not run so the Grader can report. A
 second one ends the grade.
+
+## A Check reporter (protocol 5)
+
+**`check-reporter` turns one tool's output into SARIF** (ADR 0116, #5410). It is not a studio
+word: it is known on every purlis, and an extension that declares it is watched, not confined, like
+any extension. It has no shape under `contributes`, and it needs a program (`runs`) and `version` 5:
+
+```json
+{
+  "version": 5,
+  "id": "mypy-sarif",
+  "name": "mypy to SARIF",
+  "capabilities": ["check-reporter"],
+  "contributes": { "runs": "bin/mypy-sarif" }
+}
+```
+
+It is asked when a check's output is reported through it, by the operator, a script, CI or a chat:
+
+```
+purlis check report <branch> <output> --reporter mypy-sarif --status <the check's exit status>
+```
+
+**The question** is one JSON line, with what the check printed as text (anything not UTF-8
+replaced), at most 8 MiB, and the status it exited with:
+
+```json
+{ "charter": 5, "extension": "mypy-sarif", "check": { "output": "a.py:3: error: …\n", "status": 1 }, "writes": [] }
+```
+
+**The answer is not a line of JSON.** It is what the program prints on stdout, which must be one
+SARIF 2.1.0 document, and the program must exit 0. Its stdout is at most 512 KiB, and it has 5
+seconds. A program that exits with another status gave no answer: purlis quotes what it printed on
+stderr. Each tool the SARIF names replaces that tool's earlier results for the branch.
+
+**A bad answer never stops the review.** SARIF purlis cannot read, a failed exit or a late answer is
+kept as the reporter's fault, which the review draws as a Notice naming the extension. The results
+recorded before stay, and its next answer that is recorded takes the fault away. The probe that
+proves all of this is `crates/check-probe`.

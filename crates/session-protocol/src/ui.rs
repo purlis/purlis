@@ -202,6 +202,10 @@ pub struct Server {
 /// `workspace_tree` and `workspace_file` do the same for a workspace's own files (#5375).
 pub const WINDOW_ONLY: &[&str] = &[
     "answer_ask",
+    // A hunk of a branch's file put back (#5406): the person's edit, recorded as theirs.
+    "discard_hunk",
+    // A turn's changes put back as it began (#5411): the person's edit, recorded as theirs.
+    "undo_turn",
     // The person's word that a key's value is no 2FA seed (#5237): theirs alone, so no chat lets
     // a seed into a page through a link.
     "vault_secret_mark_no_seed",
@@ -1471,6 +1475,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "todo_done",
     "todo_read",
     "todo_reopen",
+    // A turn's diff of a branch's file (#5405, #5408): a read, like `what_changed`.
+    "turn_changed",
     "unwatch_session",
     "update_channel",
     "use_built_in_theme",

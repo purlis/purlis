@@ -6,7 +6,7 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import { emit } from "@tauri-apps/api/event";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import type { BranchChanged, PlaneId, WhatChanged } from "../bindings";
+import type { BranchChanged, PlaneId, TurnChanged, WhatChanged } from "../bindings";
 import { PieceDiffTab } from "./PieceDiff";
 import { settleJump, useJumpAsks, type Pending } from "../fileJump";
 import { forgetYourEditor, setYourEditor } from "../yourEditor";
@@ -16,6 +16,18 @@ const CUT = { workspace: "alpha", repo: "svc", piece: "fix-it" };
 
 /** The core, answering `what_changed` with `answer`, or refusing with it when it is a string.
  *  An `open_in_your_editor` is noted as `editor:<path>:<line>:<editor>`. */
+const NO_CHECKS: WhatChanged["checks"] = {
+  sets: [],
+  onLines: [],
+  outside: [],
+  elsewhere: [],
+  moreOnLines: 0,
+  moreOutside: 0,
+  moreElsewhere: 0,
+  trouble: null,
+  faults: [],
+};
+
 function core(answer: WhatChanged | string) {
   const asked: string[] = [];
   mockIPC((cmd, args) => {
@@ -39,12 +51,371 @@ const changed = (diff: WhatChanged["diff"]): WhatChanged => ({
   uncommitted: true,
   base: "main",
   diff,
+  stamp: "drawn",
+  checks: NO_CHECKS,
+  sinceTurnEnded: false,
 });
 
 afterEach(() => {
   cleanup();
   clearMocks();
   forgetYourEditor();
+});
+
+/** The core, answering both comparisons: what each was asked is noted by its command, and a
+ *  turn asked by its pick (`turn:latest` or `turn:<chat>/<number>`). */
+function coreWithTurns(base: WhatChanged, turn: TurnChanged | ((number: number) => TurnChanged)) {
+  const asked: string[] = [];
+  mockIPC((cmd, args) => {
+    if (cmd === "what_changed") {
+      asked.push(cmd);
+      return base;
+    }
+    if (cmd === "turn_changed") {
+      const pick = (args as { turn: { chat: string; number: number } | null }).turn;
+      asked.push(pick === null ? "turn:latest" : `turn:${pick.chat}/${pick.number}`);
+      return typeof turn === "function" ? turn(pick?.number ?? 3) : turn;
+    }
+    throw new Error(`unexpected ${cmd}`);
+  });
+  return asked;
+}
+
+const CHAT = "01J9CHAT0000000000000000TN";
+
+describe("one turn beside against base (#5405, #5408)", () => {
+  const whole = changed({
+    kind: "text",
+    base: "one\n",
+    head: "one\ntwo\nthree\n",
+    hunks: [{ oldStart: 1, oldLines: 0, newStart: 2, newLines: 2 }],
+  });
+  const turnOf = (number: number, line: string, at: number): TurnChanged => ({
+    kind: "of",
+    chat: CHAT,
+    number,
+    turns: [3, 2, 1],
+    undo: null,
+    file: {
+      kind: "changed",
+      shown: {
+        ...changed({
+          kind: "text",
+          base: "one\ntwo\n",
+          head: `one\ntwo\n${line}\n`,
+          hunks: [{ oldStart: 2, oldLines: 0, newStart: at, newLines: 1 }],
+        }),
+        base: `the start of turn ${number}`,
+        stamp: null,
+      },
+    },
+  });
+  const ofTheTurn = turnOf(3, "three", 3);
+  const turnOption = () => screen.getByRole("button", { name: /Turn$/ });
+
+  it("opens against base, and a press draws the latest turn's own lines", async () => {
+    const asked = coreWithTurns(whole, ofTheTurn);
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
+    expect(await screen.findByText("against main")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Against base" })).toBeChecked();
+    expect(asked).toEqual(["what_changed"]);
+
+    await userEvent.click(screen.getByRole("radio", { name: "One turn" }));
+
+    expect(await screen.findByText("against the start of turn 3")).toBeInTheDocument();
+    await waitFor(() =>
+      expect([...document.querySelectorAll(".cm-changedLine")].map((l) => l.textContent)).toEqual([
+        "three",
+      ]),
+    );
+    expect(asked).toEqual(["what_changed", "turn:latest"]);
+  });
+
+  it("lists the chat's turns newest first, and opens on the latest", async () => {
+    coreWithTurns(whole, ofTheTurn);
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
+    await screen.findByText("against main");
+    expect(screen.queryByRole("button", { name: /Turn$/ })).toBeNull();
+
+    await userEvent.click(screen.getByRole("radio", { name: "One turn" }));
+    await screen.findByText("against the start of turn 3");
+    expect(turnOption()).toHaveTextContent("Turn 3, the latest");
+
+    await userEvent.click(turnOption());
+    const listed = within(await screen.findByRole("listbox")).getAllByRole("option");
+    expect(listed.map((option) => option.textContent)).toEqual([
+      "Turn 3, the latest",
+      "Turn 2",
+      "Turn 1",
+    ]);
+  });
+
+  it("steps to an earlier turn by the keyboard, and draws that turn's own lines", async () => {
+    const asked = coreWithTurns(whole, (number) =>
+      number === 2 ? turnOf(2, "two and a half", 3) : ofTheTurn,
+    );
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
+    await screen.findByText("against main");
+    await userEvent.click(screen.getByRole("radio", { name: "One turn" }));
+    await screen.findByText("against the start of turn 3");
+
+    turnOption().focus();
+    await userEvent.keyboard("{Enter}");
+    await screen.findByRole("listbox");
+    await userEvent.keyboard("{ArrowDown}{Enter}");
+
+    expect(await screen.findByText("against the start of turn 2")).toBeInTheDocument();
+    await waitFor(() =>
+      expect([...document.querySelectorAll(".cm-changedLine")].map((l) => l.textContent)).toEqual([
+        "two and a half",
+      ]),
+    );
+    expect(asked).toEqual(["what_changed", "turn:latest", `turn:${CHAT}/2`]);
+    expect(turnOption()).toHaveTextContent("Turn 2");
+  });
+
+  it("goes back to the latest turn each time one turn is chosen again", async () => {
+    const asked = coreWithTurns(whole, (number) =>
+      number === 2 ? turnOf(2, "two and a half", 3) : ofTheTurn,
+    );
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
+    await screen.findByText("against main");
+    await userEvent.click(screen.getByRole("radio", { name: "One turn" }));
+    await screen.findByText("against the start of turn 3");
+    await userEvent.click(turnOption());
+    await userEvent.click(await screen.findByRole("option", { name: "Turn 2" }));
+    await screen.findByText("against the start of turn 2");
+
+    await userEvent.click(screen.getByRole("radio", { name: "Against base" }));
+    await screen.findByText("against main");
+    await userEvent.click(screen.getByRole("radio", { name: "One turn" }));
+
+    expect(await screen.findByText("against the start of turn 3")).toBeInTheDocument();
+    expect(asked.at(-1)).toBe("turn:latest");
+  });
+
+  it("offers no Discard on a turn's hunks drawn with no stamp", async () => {
+    coreWithTurns({ ...whole, stamp: "drawn" }, ofTheTurn);
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
+    expect(await screen.findByRole("button", { name: /^Discard the change/ })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("radio", { name: "One turn" }));
+
+    await screen.findByText("against the start of turn 3");
+    expect(screen.queryByRole("button", { name: /^Discard/ })).toBeNull();
+  });
+
+  it("goes back to the branch's whole change by the arrow keys", async () => {
+    coreWithTurns(whole, ofTheTurn);
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
+    await screen.findByText("against main");
+    screen.getByRole("radio", { name: "Against base" }).focus();
+
+    await userEvent.keyboard("{ArrowRight}");
+    expect(await screen.findByText("against the start of turn 3")).toBeInTheDocument();
+    await userEvent.keyboard("{ArrowLeft}");
+    expect(await screen.findByText("against main")).toBeInTheDocument();
+  });
+
+  it("says why a branch has no turn to show, never an empty diff", async () => {
+    const why = "A shell runs a program that does not report its turns to purlis.";
+    coreWithTurns(whole, { kind: "no-turn", why });
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
+    await screen.findByText("against main");
+
+    await userEvent.click(screen.getByRole("radio", { name: "One turn" }));
+
+    expect(await screen.findByTestId("piece-diff-trouble")).toHaveTextContent(why);
+    expect(document.querySelector(".cm-mergeView")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Turn$/ })).toBeNull();
+  });
+
+  it("says a file the turn left alone by the turn's number", async () => {
+    coreWithTurns(whole, {
+      kind: "of",
+      chat: CHAT,
+      number: 3,
+      turns: [3, 2, 1],
+      undo: null,
+      file: { kind: "not-this-file" },
+    });
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
+    await screen.findByText("against main");
+
+    await userEvent.click(screen.getByRole("radio", { name: "One turn" }));
+
+    expect(await screen.findByTestId("piece-diff-trouble")).toHaveTextContent(
+      "Turn 3 did not change lib.rs",
+    );
+  });
+
+  it("says a turn that changed nothing, and keeps the picker to step past it", async () => {
+    coreWithTurns(whole, {
+      kind: "of",
+      chat: CHAT,
+      number: 2,
+      turns: [3, 2, 1],
+      undo: null,
+      file: { kind: "nothing" },
+    });
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
+    await screen.findByText("against main");
+
+    await userEvent.click(screen.getByRole("radio", { name: "One turn" }));
+
+    expect(await screen.findByTestId("piece-diff-trouble")).toHaveTextContent(
+      "Turn 2 changed no file",
+    );
+    expect(turnOption()).toHaveTextContent("Turn 2");
+  });
+});
+
+describe("discarding on a turn and undoing it (#5411)", () => {
+  const BASE = changed({
+    kind: "text",
+    base: "one\n",
+    head: "one\ntwo\n",
+    hunks: [{ oldStart: 1, oldLines: 0, newStart: 2, newLines: 1 }],
+  });
+  const FILES = ["src/lib.rs", "src/new.rs"];
+  const turnShown = (since: boolean): WhatChanged => ({
+    ...changed({
+      kind: "text",
+      base: "one\n",
+      head: "one\nTWO\n",
+      hunks: [{ oldStart: 1, oldLines: 0, newStart: 2, newLines: 1 }],
+    }),
+    base: "the start of turn 3",
+    stamp: "turn-drawn",
+    sinceTurnEnded: since,
+  });
+  const ofTurn = (undo: string[] | null, since = false): TurnChanged => ({
+    kind: "of",
+    chat: CHAT,
+    number: 3,
+    turns: [3, 2, 1],
+    undo,
+    file: { kind: "changed", shown: turnShown(since) },
+  });
+  /** The core: the base, the turn, and each discard or undo answered by the next of `answers`. */
+  function onATurn(turn: () => TurnChanged, answers: readonly unknown[]) {
+    const asked: { cmd: string; args: Record<string, unknown> }[] = [];
+    const left = [...answers];
+    mockIPC((cmd, args) => {
+      if (cmd === "what_changed") return BASE;
+      if (cmd === "turn_changed") {
+        asked.push({ cmd, args: args as Record<string, unknown> });
+        return turn();
+      }
+      if (cmd === "discard_hunk" || cmd === "undo_turn") {
+        asked.push({ cmd, args: args as Record<string, unknown> });
+        return left.shift();
+      }
+      throw new Error(`unexpected ${cmd}`);
+    });
+    return asked;
+  }
+  const toTheTurn = async () => {
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
+    await screen.findByText("against main");
+    await userEvent.click(screen.getByRole("radio", { name: "One turn" }));
+    await screen.findByText("against the start of turn 3");
+  };
+
+  it("discards a turn's hunk as the turn started, naming the turn to the core", async () => {
+    const asked = onATurn(
+      () => ofTurn(null),
+      [{ kind: "discarded", now: turnShown(true), unrecorded: null }],
+    );
+    await toTheTurn();
+    expect(screen.queryByText("You changed this file since the turn ended.")).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "Discard the change at line 2" }));
+
+    await waitFor(() => expect(asked.map((one) => one.cmd)).toContain("discard_hunk"));
+    expect(asked.find((one) => one.cmd === "discard_hunk")?.args).toEqual(
+      expect.objectContaining({
+        against: { kind: "opened", stamp: "turn-drawn" },
+        turn: { chat: CHAT, number: 3 },
+      }),
+    );
+    expect(await screen.findByText("You changed this file since the turn ended.")).toBeVisible();
+  });
+
+  it("offers Undo only on the turn offered, and asks once, listing every file", async () => {
+    let undo: string[] | null = FILES;
+    const asked = onATurn(
+      () => ofTurn(undo),
+      [{ kind: "undone", unrecorded: null, unmarked: null }],
+    );
+    await toTheTurn();
+
+    await userEvent.click(screen.getByRole("button", { name: "Undo turn 3…" }));
+    const question = await screen.findByRole("alertdialog", { name: "Undo turn 3?" });
+    expect(
+      within(question)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual(FILES);
+    expect(asked.map((one) => one.cmd)).not.toContain("undo_turn");
+    undo = null;
+    await userEvent.click(within(question).getByRole("button", { name: "Undo turn 3" }));
+
+    await waitFor(() => expect(asked.map((one) => one.cmd)).toContain("undo_turn"));
+    expect(asked.find((one) => one.cmd === "undo_turn")?.args).toEqual(
+      expect.objectContaining({ turn: { chat: CHAT, number: 3 } }),
+    );
+    // Read again once undone: the turn is no longer the one offered.
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Undo turn 3…" })).toBeNull());
+    expect(asked.filter((one) => one.cmd === "turn_changed")).toHaveLength(2);
+  });
+
+  it("says a refused undo by each chat's name and state, and changes nothing", async () => {
+    const asked = onATurn(
+      () => ofTurn(FILES),
+      [{ kind: "busy", chats: [{ name: "Fix the parser", state: "is running" }] }],
+    );
+    await toTheTurn();
+
+    await userEvent.click(screen.getByRole("button", { name: "Undo turn 3…" }));
+    const question = await screen.findByRole("alertdialog", { name: "Undo turn 3?" });
+    await userEvent.click(within(question).getByRole("button", { name: "Undo turn 3" }));
+
+    expect(
+      await screen.findByText(
+        "Turn 3 was not undone, because Fix the parser is running. Undo it once it stops.",
+      ),
+    ).toBeVisible();
+    expect(asked.filter((one) => one.cmd === "turn_changed")).toHaveLength(1);
+  });
+
+  it("offers no Undo of the turn left after the turn picked is refused", async () => {
+    mockIPC((cmd, args) => {
+      if (cmd === "what_changed") return BASE;
+      if (cmd === "turn_changed") {
+        const pick = (args as { turn: { number: number } | null }).turn;
+        if (pick?.number === 2) throw "this branch has no turn 2 of that chat";
+        return ofTurn(FILES);
+      }
+      throw new Error(`unexpected ${cmd}`);
+    });
+    await toTheTurn();
+    expect(screen.getByRole("button", { name: "Undo turn 3…" })).toBeVisible();
+
+    screen.getByRole("button", { name: /Turn$/ }).focus();
+    await userEvent.keyboard("{Enter}");
+    await screen.findByRole("listbox");
+    await userEvent.keyboard("{ArrowDown}{Enter}");
+
+    expect(await screen.findByText(/no turn 2 of that chat/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^Undo turn/ })).toBeNull();
+  });
+
+  it("offers no Undo on a turn that is not the one offered", async () => {
+    onATurn(() => ofTurn(null), []);
+    await toTheTurn();
+    expect(screen.queryByRole("button", { name: /^Undo turn/ })).toBeNull();
+  });
 });
 
 describe("what changed in one file (FM-11)", () => {
@@ -366,8 +737,10 @@ describe("a changed line opened in the file tab (#984)", () => {
     expect([...changes.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
       "Open at line 2",
       "Open in your editor at line 2",
+      "Discard",
       "Open at line 7",
       "Open in your editor at line 7",
+      "Discard",
     ]);
     await userEvent.click(screen.getByRole("button", { name: "Open at line 7" }));
 
@@ -430,7 +803,7 @@ describe("a changed line opened in the file tab (#984)", () => {
     expect(within(changes).getByRole("button", { name: "Choose your editor" })).toBeInTheDocument();
   });
 
-  it("offers no line of a deleted file, which the branch no longer has", async () => {
+  it("offers no line of a deleted file, which the branch no longer has, only its Discard", async () => {
     core({
       ...changed({
         kind: "text",
@@ -443,6 +816,303 @@ describe("a changed line opened in the file tab (#984)", () => {
     render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/old.rs" />);
 
     await screen.findByTestId("merge-viewer");
-    expect(screen.queryByRole("navigation")).toBeNull();
+    const changes = screen.getByRole("navigation", { name: "Changes in src/old.rs" });
+    expect([...changes.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
+      "Discard",
+    ]);
+  });
+});
+
+describe("discarding a hunk (#5406)", () => {
+  const TEXT: WhatChanged["diff"] = {
+    kind: "text",
+    base: "one\ntwo\nthree\nfour\n",
+    head: "ONE\ntwo\nthree\nFOUR\n",
+    hunks: [
+      { oldStart: 1, oldLines: 1, newStart: 1, newLines: 1 },
+      { oldStart: 4, oldLines: 1, newStart: 4, newLines: 1 },
+    ],
+  };
+  /** The core: `what_changed` answers `drawn`, and each `discard_hunk` the next of `answers`. */
+  function discarding(drawn: WhatChanged, answers: readonly unknown[]) {
+    const asked: Record<string, unknown>[] = [];
+    const left = [...answers];
+    let reads = 0;
+    mockIPC((cmd, args) => {
+      if (cmd === "what_changed") {
+        reads += 1;
+        return drawn;
+      }
+      if (cmd !== "discard_hunk") throw new Error(`unexpected ${cmd}`);
+      asked.push(args as Record<string, unknown>);
+      return left.shift();
+    });
+    return { asked, reads: () => reads };
+  }
+  const opened = async () => {
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="src/lib.rs" />);
+    return screen.findByRole("button", { name: "Discard the change at line 4" });
+  };
+
+  it("takes the hunk out of the diff at once, from what the core answers", async () => {
+    const left: WhatChanged["diff"] = {
+      kind: "text",
+      base: "one\ntwo\nthree\nfour\n",
+      head: "ONE\ntwo\nthree\nfour\n",
+      hunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1 }],
+    };
+    const { asked, reads } = discarding(changed(TEXT), [
+      { kind: "discarded", now: changed(left), unrecorded: null },
+    ]);
+    const control = await opened();
+
+    await userEvent.click(control);
+
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Discard the change at line 4" })).toBeNull(),
+    );
+    expect(screen.getByRole("button", { name: "Discard the change at line 1" })).toBeEnabled();
+    expect(asked).toEqual([
+      expect.objectContaining({
+        path: "src/lib.rs",
+        target: { kind: "hunk", hunk: { oldStart: 4, oldLines: 1, newStart: 4, newLines: 1 } },
+        against: { kind: "opened", stamp: "drawn" },
+        busyToo: false,
+      }),
+    ]);
+    expect(reads()).toBe(1);
+  });
+
+  it("warns of a chat that is not idle by name and state, and goes on only at the operator's word", async () => {
+    const { asked } = discarding(changed(TEXT), [
+      { kind: "busy", chats: [{ name: "Fix the parser", state: "is running" }] },
+      { kind: "discarded", now: changed(TEXT), unrecorded: null },
+    ]);
+    await userEvent.click(await opened());
+
+    const warned = await screen.findByRole("alertdialog", {
+      name: "Fix the parser is running",
+    });
+    expect(asked).toHaveLength(1);
+    await userEvent.click(within(warned).getByRole("button", { name: "Discard anyway" }));
+
+    await waitFor(() => expect(asked).toHaveLength(2));
+    expect(asked[1]).toEqual(expect.objectContaining({ busyToo: true }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  });
+
+  it("writes nothing when the warning is cancelled", async () => {
+    const { asked } = discarding(changed(TEXT), [
+      { kind: "busy", chats: [{ name: "Fix the parser", state: "is running" }] },
+    ]);
+    await userEvent.click(await opened());
+    const warned = await screen.findByRole("alertdialog");
+
+    await userEvent.click(within(warned).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(asked).toHaveLength(1);
+  });
+
+  it("offers Reload for a file changed on disk, which reads it again and writes nothing", async () => {
+    const { asked, reads } = discarding(changed(TEXT), [{ kind: "stale" }]);
+    await userEvent.click(await opened());
+    const stale = await screen.findByRole("alertdialog", {
+      name: "src/lib.rs changed on disk since this diff was drawn",
+    });
+
+    await userEvent.click(within(stale).getByRole("button", { name: "Reload" }));
+
+    await waitFor(() => expect(reads()).toBe(2));
+    expect(asked).toHaveLength(1);
+  });
+
+  it("offers Overwrite for a file changed on disk, sending what was drawn and merging nothing", async () => {
+    const { asked } = discarding(changed(TEXT), [
+      { kind: "stale" },
+      { kind: "discarded", now: changed(TEXT), unrecorded: null },
+    ]);
+    await userEvent.click(await opened());
+    const stale = await screen.findByRole("alertdialog");
+
+    await userEvent.click(within(stale).getByRole("button", { name: "Overwrite" }));
+
+    await waitFor(() => expect(asked).toHaveLength(2));
+    expect(asked[1]).toEqual(
+      expect.objectContaining({
+        against: { kind: "overwrite", head: "ONE\ntwo\nthree\nFOUR\n" },
+      }),
+    );
+  });
+
+  it("offers a binary file's change whole, and a deleted file's its one hunk", async () => {
+    discarding(changed({ kind: "binary" }), []);
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="logo.png" />);
+    expect(
+      await screen.findByRole("button", { name: "Discard the change to logo.png" }),
+    ).toBeInTheDocument();
+    cleanup();
+
+    discarding(
+      {
+        ...changed({
+          kind: "text",
+          base: "gone\n",
+          head: "",
+          hunks: [{ oldStart: 1, oldLines: 1, newStart: 0, newLines: 0 }],
+        }),
+        mark: "deleted",
+      },
+      [],
+    );
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="gone.txt" />);
+    expect(
+      await screen.findByRole("button", { name: "Discard the deletion of gone.txt" }),
+    ).toBeInTheDocument();
+  });
+
+  it("offers no discard for a file past what the comparison draws", async () => {
+    discarding({ ...changed({ kind: "too-large", bytes: 9_000_000 }), stamp: null }, []);
+    render(<PieceDiffTab plane={PLANE} cut={CUT} path="huge.txt" />);
+    await screen.findByTestId("piece-diff-trouble");
+    expect(screen.queryByRole("button", { name: /Discard/ })).toBeNull();
+  });
+
+  it("says the core's refusal, and that a discard the log refused is not in the chat's history", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "what_changed") return changed(TEXT);
+      throw "'src/lib.rs' was not discarded: it is a link or a submodule on one side";
+    });
+    await userEvent.click(await opened());
+    expect(await screen.findByText(/was not discarded/)).toBeInTheDocument();
+    cleanup();
+
+    discarding(changed(TEXT), [
+      { kind: "discarded", now: changed(TEXT), unrecorded: "the event log refused it" },
+    ]);
+    await userEvent.click(await opened());
+    expect(
+      await screen.findByText(
+        "Discarded, but it is not in the chat's history: the event log refused it",
+      ),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("a branch's check results on the diff (ADR 0116)", () => {
+  const TEXT: WhatChanged["diff"] = {
+    kind: "text",
+    base: "one\n",
+    head: "one\ntwo\nthree\n",
+    hunks: [{ oldStart: 1, oldLines: 0, newStart: 2, newLines: 2 }],
+  };
+  const result = (over: Partial<WhatChanged["checks"]["onLines"][number]>) => ({
+    tool: "eslint",
+    outOfDate: false,
+    severity: "error" as const,
+    path: "src/a.ts",
+    line: 2,
+    shownAt: 2,
+    rule: "no-undef",
+    message: "x is not defined",
+    ...over,
+  });
+  const reported = (checks: Partial<WhatChanged["checks"]>): WhatChanged => ({
+    ...changed(TEXT),
+    checks: {
+      ...NO_CHECKS,
+      sets: [{ tool: "eslint", head: "32f2ddcb58188242", outOfDate: false, results: 1 }],
+      ...checks,
+    },
+  });
+  const tab = () =>
+    render(
+      <PieceDiffTab
+        plane={"p" as PlaneId}
+        cut={{ workspace: "w", repo: "r", piece: "b" }}
+        path="src/a.ts"
+      />,
+    );
+
+  it("says nothing of checks where nothing was reported", async () => {
+    core(changed(TEXT));
+    tab();
+    await screen.findByTestId("merge-viewer");
+    expect(screen.queryByRole("region", { name: /Check results/ })).toBeNull();
+  });
+
+  it("marks a result on a changed line in the gutter with its tool, severity and message", async () => {
+    core(reported({ onLines: [result({})] }));
+    tab();
+    await screen.findByTestId("merge-viewer");
+    const mark = await waitFor(() => {
+      // The gutter's spacer, which holds its width, is one too, and says nothing.
+      const found = [...document.querySelectorAll<HTMLElement>(".cm-check-mark")].find(
+        (one) => one.title !== "",
+      );
+      if (!found) throw new Error("no mark yet");
+      return found;
+    });
+    expect(mark.title).toBe("eslint, error: x is not defined");
+    expect(mark.textContent).toBe("E");
+  });
+
+  it("lists a result outside every hunk under its file, and one on another file with its name", async () => {
+    core(
+      reported({
+        outside: [result({ line: 90, shownAt: null, message: "far away" })],
+        elsewhere: [result({ path: "src/b.ts", line: 4, shownAt: null, message: "in b" })],
+      }),
+    );
+    tab();
+    const list = await screen.findByRole("region", { name: "Check results for src/a.ts" });
+    const inside = within(list);
+    inside.getByRole("heading", { name: "Outside the changed lines" });
+    inside.getByText("far away");
+    inside.getByRole("heading", { name: "In other files" });
+    inside.getByText("eslint, no-undef, src/b.ts, line 4");
+  });
+
+  it("counts what a list could not hold", async () => {
+    core(reported({ elsewhere: [result({ shownAt: null })], moreElsewhere: 7 }));
+    tab();
+    await screen.findByText("And 7 results more.");
+  });
+
+  it("names the commit a set was reported for, and says when the branch has moved", async () => {
+    core(
+      reported({
+        sets: [{ tool: "eslint", head: "32f2ddcb58188242", outOfDate: true, results: 1 }],
+        onLines: [result({ outOfDate: true })],
+      }),
+    );
+    tab();
+    await screen.findByText("eslint: 1 result, reported for 32f2ddc");
+    screen.getByText("Out of date");
+    screen.getByText("The branch has moved since. Run the check and report it again.");
+  });
+
+  it("opens your editor at a result's line", async () => {
+    setYourEditor("zed");
+    const asked = core(reported({ outside: [result({ line: 90, shownAt: null })] }));
+    tab();
+    const list = await screen.findByRole("region", { name: "Check results for src/a.ts" });
+    await userEvent.click(within(list).getByRole("button", { name: /your editor/i }));
+    await waitFor(() => expect(asked).toContain("editor:src/a.ts:90:zed"));
+  });
+
+  it("offers no opening for a file the tool named outside the branch, and still lists it", async () => {
+    core(reported({ elsewhere: [result({ path: "/home/runner/a.ts", line: 1, shownAt: null })] }));
+    tab();
+    const list = await screen.findByRole("region", { name: "Check results for src/a.ts" });
+    within(list).getByText("eslint, no-undef, /home/runner/a.ts, line 1");
+    expect(within(list).queryByRole("button")).toBeNull();
+  });
+
+  it("draws the diff and says why when the results cannot be read", async () => {
+    core(reported({ sets: [], trouble: "purlis could not read the results" }));
+    tab();
+    await screen.findByText("purlis could not read the results");
+    await screen.findByTestId("merge-viewer");
   });
 });

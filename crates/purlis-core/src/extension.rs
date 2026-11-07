@@ -463,6 +463,12 @@ pub const THEMES_ONLY_KEYS: (&[&str], &[&str]) = (
 );
 
 impl Manifest {
+    /// Whether it asks for the Check reporter capability (ADR 0116, #5410): purlis may hand its
+    /// program a check's output and read the SARIF it answers.
+    pub fn reports_checks(&self) -> bool {
+        self.capabilities.contains(&Capability::CheckReporter)
+    }
+
     /// **Whether it contributes only themes** (ADR 0098 §3): it asks for no capability, names
     /// no program and no state directory, and contributes themes or icon themes and nothing
     /// else. Such an extension is a set of theme folders: it is not fingerprinted, it is never
@@ -1366,6 +1372,12 @@ fn parse_knowing(text: &str, known: &[Capability]) -> Result<Manifest, String> {
     if (events.is_some() || briefing.is_some()) && program.is_none() {
         return Err(
             "hears events or adds a briefing section, and declares no program ('runs') to ask"
+                .into(),
+        );
+    }
+    if capabilities.contains(&Capability::CheckReporter) && program.is_none() {
+        return Err(
+            "turns a check's output into SARIF, and declares no program ('runs') to hand it to"
                 .into(),
         );
     }

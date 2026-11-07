@@ -488,6 +488,10 @@ pub fn answer(held: &Held, asked: &Asked, connection: u64) -> Answer {
             held.tasks().ledger().handed_from_person(asker, numbers);
             task(Answered::Noted)
         }
+        // What the operator changed where this chat works, and only this chat's own line.
+        What::HumanEdits => task(Answered::HumanEdits {
+            line: crate::humanedits::line_for(held, asker),
+        }),
         // The reports this chat's turn read, in its own folder or its place's, and no other:
         // taken off disk here, where the folder is the app's to write (#3718's first slice).
         What::TookHandbacks { folder, names } => {

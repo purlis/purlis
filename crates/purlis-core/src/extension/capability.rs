@@ -63,6 +63,12 @@ pub enum Capability {
     /// charter passes back unchanged ([`super::cli`], charter-app#342, protocol 2). Its shape is
     /// `contributes.cli`.
     Cli,
+    /// **A Check reporter** (ADR 0116, #5410): it turns one tool's output into SARIF. purlis hands
+    /// its program what a check printed and its exit status, and reads the SARIF 2.1.0 it answers
+    /// on stdout into the branch's check results, as `purlis check report` records a SARIF file
+    /// ([`crate::checks`]). It has no shape: which tool it converts is the extension's own
+    /// business, and what the operator approves is that it is asked.
+    CheckReporter,
     /// **The six studio capabilities** (ADR 0101), known only where the `skill-studio` flag is
     /// on ([`crate::skills::STUDIO_FLAG`]). Three are version 1 of the public extension API and
     /// the rest are experimental ([`Self::VERSION_ONE`]). An extension that declares any of
@@ -156,6 +162,12 @@ impl Capability {
                  each one starts its program, and purlis passes back what it prints and its \
                  exit status. The ones that write are listed here",
             ),
+            Self::CheckReporter => (
+                "check-reporter",
+                "turns a check's output into SARIF. Its program is handed what a check printed \
+                 and its exit status, and purlis draws the results it answers on the branch's \
+                 diff",
+            ),
             Self::SkillSource => (
                 "skill-source",
                 "offers skills to install; purlis asks it what it has and for one skill's files, \
@@ -199,6 +211,8 @@ impl Capability {
             // The studio questions are protocol 3's (ADR 0101, #2777), but for the Grader's, a
             // question of many lines, which is protocol 4's (#3236).
             Self::Grader => 4,
+            // A check's output, answered in SARIF on stdout (ADR 0116, #5410).
+            Self::CheckReporter => 5,
             Self::SkillSource
             | Self::SkillLint
             | Self::SkillTemplate
@@ -234,6 +248,7 @@ impl Capability {
             Self::Events,
             Self::Briefing,
             Self::Cli,
+            Self::CheckReporter,
         ]);
         if studio {
             known.extend(Self::STUDIO);
@@ -250,7 +265,7 @@ impl Capability {
     /// does must declare one, and a shape under its word is refused without it.
     pub fn has_shape(self) -> bool {
         match self {
-            Self::Probe => false,
+            Self::Probe | Self::CheckReporter => false,
             Self::Badges
             | Self::RepoColumns
             | Self::Palette

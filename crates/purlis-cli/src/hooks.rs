@@ -442,9 +442,10 @@ pub fn sessionstart(payload: &str, now: Option<&str>) {
 /// ([`purlis_core::commitgate`], charter#369), which tells a prompt asking for work with a real
 /// fork in it to scout and ask before building; and any report a chat this one handed work to
 /// has sent back (charter-app#259), quoted as data, never typed into the chat; one line when
-/// where the chat is working has changed ([`crate::whereworking`], #1450); and what the chat's
+/// where the chat is working has changed ([`crate::whereworking`], #1450); what the chat's
 /// router points the prompt at, where its start armed it for a router that reads prompts
-/// (SK-15c).
+/// (SK-15c); and one line naming the files the operator changed since its last turn (ADR 0084
+/// §8).
 ///
 /// Of the rest of the Python handler, the persona roster went with `routing:`, which is
 /// retired, and "control plane updated" is the window's to say, as a mark on the chat's tab
@@ -489,6 +490,9 @@ pub fn userpromptsubmit(payload: &str, now: Option<&str>) {
         }
         parts.extend(person.as_ref().map(|person| person.told.clone()));
         parts.extend(working);
+        // What the operator changed since this chat's last turn (ADR 0084 §8): context on a
+        // turn it began anyway. The report made after this hook is what closes those edits.
+        parts.extend(chat.and_then(|_| crate::dispatch::human_edits()));
         if !parts.is_empty() {
             say(&purlis_core::handback::emitted(
                 "UserPromptSubmit",
