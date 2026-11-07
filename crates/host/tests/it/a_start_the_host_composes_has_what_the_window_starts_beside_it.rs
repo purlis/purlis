@@ -43,6 +43,10 @@ impl Compose for ComposesItself {
         if starting.start.first_message.as_deref() == Some("refuse") {
             return Err("this one is refused".into());
         }
+        // Armed with a skill, as the core's composition says each it armed (#4218).
+        if starting.start.first_message.as_deref() == Some("armed") {
+            starting.beside.armed(vec![armed_skill()]);
+        }
         let mut spec = Spec::new("/bin/echo", starting.size);
         spec.env
             .push(("CONFINED".into(), confined.confinement.into()));
@@ -60,6 +64,13 @@ impl Compose for ComposesItself {
         spec.env
             .push(("STARTED_BY".into(), starting.started_by.word().into()));
         Ok(spec)
+    }
+}
+
+fn armed_skill() -> session::ArmedSkill {
+    session::ArmedSkill {
+        name: "deploy".into(),
+        level: "project".into(),
     }
 }
 
@@ -463,4 +474,39 @@ async fn a_start_whose_confinement_could_not_be_started_runs_nothing() {
         linked.runs.ran().is_empty(),
         "nothing runs without its proxy"
     );
+}
+
+/// **SK-15h, #4218: the skills a start the host composed was armed with are answered** to the
+/// start, and to a window that takes the chat back, by name and level; a start whose composition
+/// said nothing of them answers none, never an empty set it was not told.
+#[tokio::test]
+async fn the_skills_a_composed_start_was_armed_with_are_answered_to_its_start_and_its_window() {
+    let linked = linked().await;
+
+    let armed = linked
+        .client
+        .start_program_told(composed(Some("armed")))
+        .await
+        .expect("started");
+    let plain = linked
+        .client
+        .start_program_told(composed(None))
+        .await
+        .expect("started");
+
+    assert_eq!(armed.armed_skills, Some(vec![armed_skill()]));
+    assert_eq!(plain.armed_skills, None);
+    let programs = linked
+        .client
+        .programs_of(PROJECT)
+        .await
+        .expect("its programs");
+    let said = |program: &str| {
+        programs
+            .iter()
+            .find(|held| held.program == program)
+            .and_then(|held| held.armed_skills.clone())
+    };
+    assert_eq!(said(&armed.program), Some(vec![armed_skill()]));
+    assert_eq!(said(&plain.program), None);
 }

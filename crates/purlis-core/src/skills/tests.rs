@@ -3258,3 +3258,37 @@ fn a_running_chat_has_the_plugins_its_start_held_and_lacks_one_installed_since()
     assert_eq!(off[0].name, "superpowers");
     assert_eq!(off[0].why, crate::harness_plugin::OffWhy::AfterStart);
 }
+
+/// **SK-15h, #4218: a runner chat's set is the names and levels its runner said**, and Use skill…
+/// types one of them as it types the same skill of a set armed here: by its level, in its
+/// harness's syntax, with its run held. A level this build does not know leaves that skill out.
+#[test]
+fn a_set_its_runner_said_is_offered_and_typed_as_one_armed_here() {
+    let said = |name: &str, level: &str| purlis_session_protocol::session::ArmedSkill {
+        name: name.into(),
+        level: level.into(),
+    };
+    let chat = armed_by_its_runner(
+        Harness::ClaudeCode,
+        Some("smart-ide"),
+        &[
+            said("review", "project"),
+            said("purlis-handoff", "built-in"),
+            said("someday", "a-level-of-a-later-purlis"),
+        ],
+    );
+
+    assert_eq!(offered_names(&chat), ["review", "purlis-handoff"]);
+    assert_eq!(chat.offered[0].effective.origin, Origin::Project);
+    assert_eq!(chat.offered[1].effective.origin, Origin::BuiltIn);
+    let salt = crate::skillspan::PromptSalt::of_key("01JB00000000000000000000C4").unwrap();
+    let typing = chat.typed("review", &[], &salt).unwrap();
+    assert_eq!(typing.text, "/skills:review");
+    let Start::Held(held) = typing.start else {
+        panic!("a listed skill's run is held")
+    };
+    assert_eq!(held.skill, "skills:review");
+    assert_eq!(held.workspace.as_deref(), Some("smart-ide"));
+    assert_eq!(held.level.map(|level| level.origin), Some(Origin::Project));
+    assert!(chat.typed("someday", &[], &salt).is_err());
+}

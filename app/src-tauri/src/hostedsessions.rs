@@ -4370,8 +4370,16 @@ impl HostedSessions {
                 confined,
                 sandbox,
                 prompt_key,
+                armed_skills,
                 ..
-            }) => (program, process, confined, sandbox, prompt_key),
+            }) => (
+                program,
+                process,
+                confined,
+                sandbox,
+                prompt_key,
+                armed_skills.map(|armed| session::ArmedSkill::bounded(*armed)),
+            ),
             Ok(other) => {
                 return Err(unclear(format!(
                     "the session host answered a start with {other:?}"
@@ -4391,7 +4399,7 @@ impl HostedSessions {
             }
             Err(refused) => return Err(unclear(refused.why)),
         };
-        let (program, pid, confined, ran, prompt_key) = started;
+        let (program, pid, confined, ran, prompt_key, armed_skills) = started;
         // A chat that runs on a pool's runner with nothing holding its files leaves that runner
         // trusted with no browser and no login until it is made again (D-2050-27): kept here,
         // where no runner reaches, before it is kept as running. Where that cannot be kept, it
@@ -4419,6 +4427,7 @@ impl HostedSessions {
             prompt_key: prompt_key
                 .as_ref()
                 .and_then(purlis_core::skillspan::PromptSalt::answered),
+            armed_skills,
         })
     }
 }
@@ -4444,6 +4453,8 @@ struct Begun {
     ran: Option<session::RunSandbox>,
     /// The chat's prompt key, as the host said it (1.60, #3369).
     prompt_key: Option<purlis_core::skillspan::PromptSalt>,
+    /// The skills the host armed it with, where it composed it and says (1.77, #4218).
+    armed_skills: Option<Vec<session::ArmedSkill>>,
 }
 
 /// Each call is documented once, on [`SessionHost`].
@@ -4601,6 +4612,7 @@ impl SessionHost for HostedSessions {
             confined,
             ran,
             prompt_key,
+            armed_skills,
         } = self
             .started(&link, id, start, false, announce, &named.asked_to_run)
             .inspect_err(|_| unheard(&confinement))?;
@@ -4615,6 +4627,7 @@ impl SessionHost for HostedSessions {
                 confinement: None,
                 ran,
                 prompt_key,
+                armed_skills,
             });
         };
         let held = HeldInTheHost::new(confinement, Arc::clone(&link), true);
@@ -4635,6 +4648,7 @@ impl SessionHost for HostedSessions {
             confinement: Some(confinement),
             ran,
             prompt_key,
+            armed_skills,
         })
     }
 
@@ -5178,6 +5192,15 @@ impl SessionHost for HostedSessions {
             .prompt_key
             .as_ref()
             .and_then(purlis_core::skillspan::PromptSalt::answered)
+    }
+
+    fn armed_skills_left(&self, number: u32) -> Option<Vec<session::ArmedSkill>> {
+        self.link().ok()?;
+        lock(&self.left)
+            .get(&number)?
+            .armed_skills
+            .clone()
+            .map(session::ArmedSkill::bounded)
     }
 
     fn prompt_key_started(

@@ -491,9 +491,15 @@ use crate::view::{Limits, Views};
 /// A host before 1.76 refuses such a login [`BROWSER_REFUSED`], and the window spends both as it
 /// always did. And a kept login may name its form's origin (#5167), which a browser opened from it
 /// reaches from its start; a host before 1.76 ignores it.
+///
+/// 1.77 has a host say the skills it armed a chat it composed with (SK-15h, #4218):
+/// `program_started` and `programs` may carry `armed_skills`, each skill's name and level alone
+/// ([`ArmedSkill`]), at most [`MOST_ARMED_SKILLS`], so a window shows a runner's chat the set its
+/// runner handed it. It gives the chat nothing: the window only lists and types them. A host
+/// before 1.77 says none, and the window says the runner does not say them.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 76,
+    minor: 77,
 };
 
 /// The version that first starts every login clean on its own site (#5272): no login is sent to
@@ -2035,6 +2041,45 @@ impl std::fmt::Debug for PromptKey {
     }
 }
 
+/// The most skills a host says it armed one chat with (1.77, #4218): a set past it is said cut
+/// to its first ones, never refused.
+pub const MOST_ARMED_SKILLS: usize = 512;
+
+/// The longest name and level of a skill a host says it armed a chat with.
+pub const MOST_ARMED_SKILL_NAME: usize = 200;
+const MOST_ARMED_SKILL_LEVEL: usize = 32;
+
+/// **A skill a host armed a chat it composed with** (1.77, SK-15h, #4218): its name, as its
+/// set names it, and its level's word (`built-in`, `project`, `workspace`, `persona`,
+/// `installed`, `repo`), and nothing else. A level kept as a word, so a host that knows a level
+/// this window does not costs only that one skill.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArmedSkill {
+    pub name: String,
+    pub level: String,
+}
+
+impl ArmedSkill {
+    /// Whether it is one a host may say: a name and a level, each short, with no control
+    /// character.
+    pub fn fits(&self) -> bool {
+        let said = |text: &str, most: usize| {
+            !text.trim().is_empty() && text.len() <= most && !text.chars().any(char::is_control)
+        };
+        said(&self.name, MOST_ARMED_SKILL_NAME) && said(&self.level, MOST_ARMED_SKILL_LEVEL)
+    }
+
+    /// **`skills`, as a host says them and a window takes them**: each that fits, at most
+    /// [`MOST_ARMED_SKILLS`] of them, in their order.
+    pub fn bounded(skills: impl IntoIterator<Item = ArmedSkill>) -> Vec<ArmedSkill> {
+        skills
+            .into_iter()
+            .filter(ArmedSkill::fits)
+            .take(MOST_ARMED_SKILLS)
+            .collect()
+    }
+}
+
 /// Where a chat's hooks report, and the token they carry (1.2).
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Reporting {
@@ -2125,6 +2170,11 @@ pub enum Answer {
         /// it composed. Absent for a program that has none, and from a host before 1.58.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         prompt_key: Option<PromptKey>,
+        /// The skills the host armed it with, where the host composed it (1.77, #4218): absent
+        /// for a launch the window composed, and from a host before 1.77. Boxed, so the answer
+        /// that carries it stays as small as the rest.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        armed_skills: Option<Box<Vec<ArmedSkill>>>,
     },
     /// Whether a program is ready to be typed at: [`Command::Readiness`] (1.2).
     Readiness(Readiness),
@@ -2249,6 +2299,10 @@ pub struct HeldProgram {
     /// chat back digests what it types into it under.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_key: Option<PromptKey>,
+    /// The skills the host armed it with at its start, where the host composed it (1.77,
+    /// #4218): what a window that takes the chat back lists. Absent from a host before 1.77.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub armed_skills: Option<Vec<ArmedSkill>>,
 }
 
 /// The kill switch as the host holds it (1.5, ADR 0071).
@@ -2285,6 +2339,8 @@ pub struct ProgramStarted {
     pub sandbox: Option<RunSandbox>,
     /// Its prompt key, where it has one (1.60).
     pub prompt_key: Option<PromptKey>,
+    /// The skills the host armed it with, where it composed it and says (1.77, #4218).
+    pub armed_skills: Option<Vec<ArmedSkill>>,
 }
 
 /// One chat, as [`Command::List`] lists it.
@@ -3238,6 +3294,9 @@ fn reply(re: u64, answer: Result<Answer, Refusal>) -> Frame {
 }
 
 /// What a call's task ends with.
+// Nearly every one is an answer, and each lives only until its link sends it: boxing it would cost
+// every call an allocation to save space in the two words a subscribe ends with.
+#[allow(clippy::large_enum_variant)]
 enum Finished {
     /// Its answer, ready to send.
     Answered(Frame),
@@ -3848,6 +3907,7 @@ impl Client {
                 confined,
                 sandbox,
                 prompt_key,
+                armed_skills,
             } => Ok(ProgramStarted {
                 program,
                 number,
@@ -3855,6 +3915,7 @@ impl Client {
                 confined,
                 sandbox,
                 prompt_key,
+                armed_skills: armed_skills.map(|armed| ArmedSkill::bounded(*armed)),
             }),
             other => Err(unexpected(&other)),
         }
@@ -4816,5 +4877,42 @@ mod base64_bytes {
     pub fn deserialize<'de, D: Deserializer<'de>>(from: D) -> Result<Vec<u8>, D::Error> {
         let text = String::deserialize(from)?;
         STANDARD.decode(text).map_err(serde::de::Error::custom)
+    }
+}
+
+#[cfg(test)]
+mod armed_skills_tests {
+    use super::*;
+
+    fn skill(name: &str, level: &str) -> ArmedSkill {
+        ArmedSkill {
+            name: name.into(),
+            level: level.into(),
+        }
+    }
+
+    /// **A host's word on a chat's skills is names and levels, bounded** (#4218): one with no
+    /// name, a long one or a control character is not taken, nor more than the most.
+    #[test]
+    fn a_hosts_armed_skills_are_taken_each_that_fits_and_at_most_the_most() {
+        let said = vec![
+            skill("deploy", "workspace"),
+            skill("", "project"),
+            skill("x".repeat(MOST_ARMED_SKILL_NAME + 1).as_str(), "project"),
+            skill("bell\u{7}", "project"),
+            skill("review", "a-level-far-too-long-to-be-any-level-word"),
+            skill("purlis-secrets", "built-in"),
+        ];
+        assert_eq!(
+            ArmedSkill::bounded(said),
+            vec![
+                skill("deploy", "workspace"),
+                skill("purlis-secrets", "built-in")
+            ]
+        );
+        let many = (0..MOST_ARMED_SKILLS + 5).map(|n| skill(&format!("s{n}"), "project"));
+        let taken = ArmedSkill::bounded(many);
+        assert_eq!(taken.len(), MOST_ARMED_SKILLS);
+        assert_eq!(taken[0].name, "s0");
     }
 }

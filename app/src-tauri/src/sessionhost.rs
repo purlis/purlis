@@ -183,6 +183,9 @@ impl purlis_host::Compose for Composes {
                 // The chat's confinement as it is now, which its tool's runs here are held to
                 // (#3407).
                 |confinement: &str| beside.reach_of(confinement),
+                // The skills it was armed with, which the host answers its start and a window
+                // that takes it back with (#4218).
+                |skills| beside.armed(skills),
             ),
         )
     }

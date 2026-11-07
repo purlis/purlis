@@ -45,7 +45,8 @@
 //! id 191), 1.72's field described and secret filled (#5115, ids 192 and 193), 1.73's read of
 //! whether a page asks to sign in (#5121, id 194), 1.74's fill with the other origins its key is
 //! approved for (#5230, id 195), 1.75's login with no form on its clean load (#5272, id 196),
-//! and 1.76's login refused before it ran (#5251, id 197).
+//! 1.76's login refused before it ran (#5251, id 197), and 1.77's skills a host armed a chat it
+//! composed with, as its start and its programs answer them (#4218, ids 198 and 199).
 //! 1.35 adds no frame of the
 //! control lane: its origin frame is a browser view's bytes, held by
 //! `a_browser_views_bytes_are_whole_frames_however_they_are_cut.rs` (#2300). Each must read back

@@ -291,6 +291,12 @@ const COPIED: crate::references::Copied = crate::references::Copied {
 /// Why a skill is typed into no chat that runs no tool purlis knows: the words Use skill… says.
 const NO_TOOL: &str = "This chat runs no tool purlis knows, so it has no skills to use here.";
 
+/// Why a runner's chat is offered no skills where its runner did not say which it armed it with
+/// (#4218): the words Use skill… and the chip say.
+const NOT_SAID_BY_ITS_RUNNER: &str = "This chat's runner runs an older purlis, which doesn't say \
+     which skills it armed the chat with, so none are listed here. Update purlis on the runner \
+     to list them.";
+
 /// Why a skill is typed into no chat whose start has not given it its id yet.
 const NOT_STARTED: &str =
     "This chat has not started yet, so nothing was typed. Try again once it has.";
@@ -301,7 +307,8 @@ pub(crate) fn small(n: usize) -> u32 {
 }
 
 /// **The skills of `chat` of `held`, as the core works them out**, and the salt its prompts are
-/// digested under, or `None` for a chat that runs no tool purlis knows the skills of.
+/// digested under, or `None` for a chat that runs no tool purlis knows the skills of. A runner's
+/// chat's are what its runner said it armed it with (#4218): none where it said nothing.
 fn of_this_chat(
     held: &Held,
     chat: &crate::chats::ChatForSkills,
@@ -309,6 +316,20 @@ fn of_this_chat(
     purlis_core::skills::ChatSkills,
     Option<purlis_core::skillspan::PromptSalt>,
 )> {
+    match &chat.runners_word {
+        Some(crate::chats::RunnersWord::Said(armed)) => {
+            return Some((
+                purlis_core::skills::armed_by_its_runner(
+                    chat.harness?,
+                    chat.workspace.as_deref(),
+                    armed,
+                ),
+                chat.salt.clone(),
+            ));
+        }
+        Some(crate::chats::RunnersWord::NotSaid) => return None,
+        None => {}
+    }
     let built_in =
         crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin));
     let skills = purlis_core::skills::for_use_skill(&purlis_core::skills::Running {
@@ -348,6 +369,29 @@ fn offered_shown(one: &purlis_core::skills::Offered) -> ChatSkill {
         hint: one.declared.hint.clone(),
         hidden: one.hidden.as_ref().map(Into::into),
         source_label: one.source_label.clone(),
+    }
+}
+
+/// **A runner's chat's skills, for the window, as its runner said them** (#4218): its set by
+/// name and level, with no budget, which only its runner knows; or, where its runner said none,
+/// nothing, and why.
+fn from_its_runner(
+    word: &crate::chats::RunnersWord,
+    harness: Option<purlis_core::harness::Harness>,
+    workspace: Option<&str>,
+) -> ChatSkills {
+    let (crate::chats::RunnersWord::Said(armed), Some(harness)) = (word, harness) else {
+        return ChatSkills {
+            not_supported: matches!(word, crate::chats::RunnersWord::NotSaid)
+                .then(|| NOT_SAID_BY_ITS_RUNNER.to_owned()),
+            ..ChatSkills::none(true)
+        };
+    };
+    ChatSkills {
+        budget: None,
+        ..shown(Some(&purlis_core::skills::armed_by_its_runner(
+            harness, workspace, armed,
+        )))
     }
 }
 
@@ -413,6 +457,13 @@ pub(crate) async fn chat_skills(
         let Some(chat) = held.chats().skills_of(session) else {
             return Ok(shown(None));
         };
+        if let Some(word) = &chat.runners_word {
+            return Ok(from_its_runner(
+                word,
+                chat.harness,
+                chat.workspace.as_deref(),
+            ));
+        }
         let mut shown = shown(
             of_this_chat(&held, &chat)
                 .map(|(skills, _)| skills)
@@ -462,9 +513,11 @@ pub(crate) fn use_skill(
         .skills_of(session)
         .ok_or_else(|| NO_TOOL.to_owned())?;
     let (skills, salt) = of_this_chat(&held, &chat).ok_or_else(|| {
-        chat.not_supported
-            .clone()
-            .unwrap_or_else(|| NO_TOOL.to_owned())
+        match &chat.runners_word {
+            Some(crate::chats::RunnersWord::NotSaid) => Some(NOT_SAID_BY_ITS_RUNNER.to_owned()),
+            _ => chat.not_supported.clone(),
+        }
+        .unwrap_or_else(|| NO_TOOL.to_owned())
     })?;
     let typing = typing_of(&skills, salt.as_ref(), &skill, &values)?;
     typed_and_held(&held, session, typing, &|text| clipboard.put_text(text))

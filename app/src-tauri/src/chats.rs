@@ -221,6 +221,25 @@ pub struct ChatForSkills {
     /// Why its chats get no skills, where its harness is a declared one skills are not
     /// supported on (SK-30): [`purlis_core::skills::not_supported_on`].
     pub not_supported: Option<String>,
+    /// **What its runner said it armed it with** (SK-15h, #4218), for a chat its runner armed:
+    /// its set, in place of any this window works out. `None` for a chat armed here.
+    pub runners_word: Option<RunnersWord>,
+}
+
+/// **What a chat's runner said of the skills it armed it with** (SK-15h, #4218), at its start
+/// or to a window that reattached it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RunnersWord {
+    /// Their names and levels.
+    Said(Vec<purlis_session_protocol::session::ArmedSkill>),
+    /// Nothing: its runner's purlis is from before 1.77, which says none.
+    NotSaid,
+}
+
+impl RunnersWord {
+    fn of(said: Option<Vec<purlis_session_protocol::session::ArmedSkill>>) -> RunnersWord {
+        said.map_or(RunnersWord::NotSaid, RunnersWord::Said)
+    }
 }
 
 /// One chat open here that its start routed by a router extension ([`Chats::routings`]).
@@ -489,6 +508,8 @@ struct Running {
     /// **The persona it runs as, as its start named it**: its run's `persona` (ADR 0066), what a
     /// runner's skill run of it is logged by here (SK-20b, #3084). `None` on no persona.
     runs_as: Option<String>,
+    /// **What its runner said it armed it with** (SK-15h, #4218): `None` for a chat armed here.
+    runners_word: Option<RunnersWord>,
 }
 
 /// **Whether the plane's skills reach a chat starting now** (#3445, #3466): a chat
@@ -5234,6 +5255,12 @@ impl Chats {
         // **Its prompt key** (#3369): the one its host kept, for a chat reattached; the one the
         // runner mints, for a chat it composes (answered below); a fresh one for a harness chat
         // this window composes. Never on its line and never in a record.
+        // **The skills its runner armed it with, as the runner said** (SK-15h, #4218): its host
+        // kept them for a chat reattached; a start its runner composes answers them below.
+        let mut armed_skills = match (reattaching, chat.number) {
+            (true, Some(number)) if armed_by_its_runner => self.sessions.armed_skills_left(number),
+            _ => None,
+        };
         let mut prompt_key = match (reattaching, chat.number) {
             (true, Some(number)) => self.sessions.prompt_key_left(number),
             _ if on_the_runner || harness.is_none() => None,
@@ -5317,6 +5344,7 @@ impl Chats {
                     });
                     confinement = composed.confinement;
                     prompt_key = composed.prompt_key;
+                    armed_skills = composed.armed_skills;
                     composed.number
                 })
                 .map_err(|why| {
@@ -5501,6 +5529,7 @@ impl Chats {
                 clones_at_start: clones_at_start.take(),
                 prompt_key,
                 runs_as: runs_as.clone(),
+                runners_word: armed_by_its_runner.then(|| RunnersWord::of(armed_skills)),
             },
         );
         drop(open);
@@ -6707,6 +6736,7 @@ impl Chats {
                 .filter(|_| running.harness.is_none())
                 .and_then(purlis_core::skills::not_supported_on)
                 .map(|one| one.said),
+            runners_word: running.runners_word.clone(),
         })
     }
 

@@ -467,6 +467,44 @@ where
     }
 }
 
+/// The host's [`Beside`] as two calls, what asks a chat's router extension at its start
+/// (SK-15b), what reads a confinement it started as it is now (#3407), and what keeps the skills
+/// the chat was armed with (#4218).
+impl<C, R, L, A> Beside
+    for (
+        C,
+        R,
+        std::sync::Arc<dyn crate::skills::router::AskRouter>,
+        L,
+        A,
+    )
+where
+    C: Fn(&session::ConfinePlan) -> Result<session::Confined, String>,
+    R: Fn(serde_json::Value) -> Result<(), String>,
+    L: Fn(&str) -> Option<crate::hostedchats::Live>,
+    A: Fn(Vec<session::ArmedSkill>),
+{
+    fn confine(&self, plan: &session::ConfinePlan) -> Result<session::Confined, String> {
+        (self.0)(plan)
+    }
+
+    fn record(&self, entry: serde_json::Value) -> Result<(), String> {
+        (self.1)(entry)
+    }
+
+    fn router(&self) -> Option<std::sync::Arc<dyn crate::skills::router::AskRouter>> {
+        Some(std::sync::Arc::clone(&self.2))
+    }
+
+    fn reach_of(&self, confinement: &str) -> Option<crate::hostedchats::Live> {
+        (self.3)(confinement)
+    }
+
+    fn armed(&self, skills: Vec<session::ArmedSkill>) {
+        (self.4)(skills);
+    }
+}
+
 /// What the host does beside a start it composes: what [`compose`] asks of it.
 pub trait Beside {
     /// The confinement `plan` plans, started by the host as the program's own.
@@ -486,6 +524,12 @@ pub trait Beside {
     fn reach_of(&self, confinement: &str) -> Option<crate::hostedchats::Live> {
         let _ = confinement;
         None
+    }
+    /// **Told the skills the chat being composed was armed with** (1.77, SK-15h, #4218): each
+    /// one's name and level alone, which the host answers its start and a window that takes it
+    /// back with. A host that keeps none ignores it.
+    fn armed(&self, skills: Vec<session::ArmedSkill>) {
+        let _ = skills;
     }
 }
 
@@ -699,6 +743,20 @@ fn forge_programs_settings_in(wrapped: &[(String, String)]) -> Vec<(String, Stri
     })
 }
 
+/// **The skills of `set` a chat was handed, by name and level alone** (#4218): none its router
+/// hid, and within [`session::ArmedSkill::bounded`].
+fn armed_skills(set: &crate::skills::ChatSkills) -> Vec<session::ArmedSkill> {
+    session::ArmedSkill::bounded(
+        set.offered
+            .iter()
+            .filter(|one| one.hidden.is_none())
+            .map(|one| session::ArmedSkill {
+                name: one.effective.skill.name.clone(),
+                level: one.effective.origin.level().to_owned(),
+            }),
+    )
+}
+
 /// [`compose`] from what [`crate::start::ready`] decided for it: the seam a test hands a sandbox
 /// compiled for another machine through.
 pub fn compose_ready(
@@ -783,6 +841,22 @@ pub fn compose_ready(
         skills: &skills,
     })?;
     let (hooks, armed_env) = armed;
+    // What it was armed with, by name and level, for its host to answer its start and a window
+    // that takes it back (#4218): as Use skill… works its set out, from what its start read.
+    if let Some(harness) = ready.harness {
+        let built_in = kit.plugin.as_deref().and_then(crate::skills::in_bundle);
+        beside.armed(armed_skills(&crate::skills::for_use_skill(
+            &crate::skills::Running {
+                plane: root,
+                workspace: skills.workspace.as_deref(),
+                persona: skills.persona.as_deref(),
+                harness,
+                built_in: built_in.as_deref(),
+                plane_skills,
+                start: Some(&skills),
+            },
+        )));
+    }
     // No watcher of the project's own settings runs here, so a sandboxed Claude Code chat is
     // started on the person's settings and purlis's, as the window starts one it cannot watch.
     let hooks = if sandbox.is_some() && ready.harness == Some(Harness::ClaudeCode) {

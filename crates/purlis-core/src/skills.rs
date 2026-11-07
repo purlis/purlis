@@ -1212,6 +1212,69 @@ pub fn for_use_skill(chat: &Running<'_>) -> ChatSkills {
     }
 }
 
+/// **The set a chat's runner said it armed it with, as Use skill… offers it** (SK-15h, #4218):
+/// each skill of `armed` by its name and level alone, in its order, on `harness`, a run of it in
+/// `workspace`. Nothing else is known of them here (what they declare, their budget), so none
+/// asks for arguments and the budget spends nothing. A level this build does not know is left
+/// out. The runner's word gives the chat nothing: it is only what the window lists and types.
+pub fn armed_by_its_runner(
+    harness: Harness,
+    workspace: Option<&str>,
+    armed: &[purlis_session_protocol::session::ArmedSkill],
+) -> ChatSkills {
+    const LEVELS: [Origin; 6] = [
+        Origin::BuiltIn,
+        Origin::Project,
+        Origin::Workspace,
+        Origin::Persona,
+        Origin::Harness,
+        Origin::Repo,
+    ];
+    let offered = armed
+        .iter()
+        .filter_map(|one| {
+            let origin = LEVELS
+                .into_iter()
+                .find(|origin| origin.level() == one.level)?;
+            Some(Offered {
+                known_as: harness.skill_name(&one.name, origin),
+                effective: Effective {
+                    skill: Skill {
+                        name: one.name.clone(),
+                        description: String::new(),
+                        path: PathBuf::new(),
+                    },
+                    root: PathBuf::new(),
+                    route: if origin.handed() {
+                        harness.skills()
+                    } else {
+                        Route::Own
+                    },
+                    origin,
+                    local: false,
+                    deprecated: None,
+                },
+                declared: Declared::default(),
+                takes_arguments: false,
+                hidden: None,
+                source_label: None,
+            })
+        })
+        .collect();
+    ChatSkills {
+        harness,
+        workspace: workspace.map(str::to_owned),
+        offered,
+        spent: purlis_skills::budget::spent(std::iter::empty(), harness.skill_budget()),
+        still_over: None,
+        pinned_by: Vec::new(),
+        pins_together: None,
+        program: Vec::new(),
+        plugins_off: Vec::new(),
+        own: OwnCatalogue::default(),
+    }
+}
+
 /// What Use skill… types into a chat to start one of its skills ([`ChatSkills::typed`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Typing {
