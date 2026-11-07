@@ -765,6 +765,9 @@ impl RouterGradeScorecard {
                 tokens: graded.spent.tokens.map(|tokens| tokens as f64),
                 cost_usd: graded.spent.cost_usd,
                 limit_usd: graded.report.cost_cap_usd,
+                resumed: false,
+                earlier_tokens: None,
+                earlier_usd: None,
             },
             asked: graded.report.asked(),
             skills: graded

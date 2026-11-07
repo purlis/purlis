@@ -51,9 +51,12 @@ pub struct Stopped {
     pub skill: String,
     /// The copy's level, as its row records it.
     pub level: Option<String>,
-    /// The draft it graded, where it graded one.
+    /// The draft it graded, where it graded one: its mark, as its row has it, and its id, as the
+    /// drafts are found by.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub draft: Option<draft::Mark>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draft_of: Option<String>,
     /// What it asked, and what each of its chats did.
     pub request: GradeRequest,
     pub kept: Kept,
@@ -98,11 +101,23 @@ pub struct Deciding {
     pub skill: String,
     /// Its trigger tests and the outcome evals ticked, with the files they stage.
     pub tests: String,
-    /// The profile its chats run on, and the model picked (the profile's own where none).
+    /// The profile its chats run on, the program (its harness) that profile starts, and the
+    /// model picked (the profile's own where none).
     pub profile: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub program: Option<String>,
     pub model: Option<String>,
     /// The grade's settings: its arms, its runs, its chats' shell, and its Grader.
     pub settings: String,
+}
+
+/// **What a grade's chats run on**: the profile, the program it starts (its harness's name), and
+/// the model picked.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct On<'a> {
+    pub profile: Option<&'a str>,
+    pub program: Option<&'a str>,
+    pub model: Option<&'a str>,
 }
 
 /// **What changed of what decides a grade's result**, each as a sentence's part.
@@ -111,7 +126,7 @@ pub struct Deciding {
 pub enum Changed {
     Skill,
     Tests,
-    Profile,
+    Program,
     Model,
     Settings,
 }
@@ -122,7 +137,7 @@ impl Changed {
         match self {
             Self::Skill => "the skill's text",
             Self::Tests => "its tests",
-            Self::Profile => "the profile its chats run on",
+            Self::Program => "the program its chats run on",
             Self::Model => "the model",
             Self::Settings => "the grade's settings",
         }
@@ -130,15 +145,9 @@ impl Changed {
 }
 
 impl Deciding {
-    /// **What decides a grade of `request`, of the copy `copy`, on `profile` and `model`, by the
-    /// Grader `grader`** (its id; `None` for purlis's own runner).
-    pub fn of(
-        request: &GradeRequest,
-        copy: &SkillCopy,
-        profile: Option<&str>,
-        model: Option<&str>,
-        grader: Option<&str>,
-    ) -> Self {
+    /// **What decides a grade of `request`, of the copy `copy`, run `on` a profile, its program
+    /// and a model, by the Grader `grader`** (its id; `None` for purlis's own runner).
+    pub fn of(request: &GradeRequest, copy: &SkillCopy, on: On<'_>, grader: Option<&str>) -> Self {
         use sha2::Digest as _;
         let fixture = |path: &str| path.starts_with(&format!("{}/", grade::EVALS_DIR));
         let files = |digest: &mut sha2::Sha256, snapshot: &Snapshot| {
@@ -173,8 +182,9 @@ impl Deciding {
         Self {
             skill: super::hex_of(skill),
             tests: super::hex_of(tests),
-            profile: profile.map(str::to_owned),
-            model: model.map(str::to_owned),
+            profile: on.profile.map(str::to_owned),
+            program: on.program.map(str::to_owned),
+            model: on.model.map(str::to_owned),
             settings: super::hex_of(settings),
         }
     }
@@ -185,7 +195,10 @@ impl Deciding {
         [
             (self.skill != now.skill, Changed::Skill),
             (self.tests != now.tests, Changed::Tests),
-            (self.profile != now.profile, Changed::Profile),
+            (
+                self.profile != now.profile || self.program != now.program,
+                Changed::Program,
+            ),
             (self.model != now.model, Changed::Model),
             (self.settings != now.settings, Changed::Settings),
         ]
@@ -342,6 +355,30 @@ pub fn forget(root: &Path, grade: &str) {
 
 /// The most kept files looked at as a new grade forgets its copy's.
 const MOST_FILES: usize = 600;
+
+/// **Every stopped grade this machine keeps of the project at `root`**, newest first: what
+/// Needs you lists, each saying when Resume can run.
+pub fn all(root: &Path) -> Vec<Stopped> {
+    let Some(dir) = dir(root) else {
+        return Vec::new();
+    };
+    if !std::fs::symlink_metadata(&dir).is_ok_and(|meta| meta.is_dir()) {
+        return Vec::new();
+    }
+    let Ok(reader) = std::fs::read_dir(&dir) else {
+        return Vec::new();
+    };
+    let mut stopped: Vec<Stopped> = reader
+        .take(MOST_FILES)
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            of(root, name.strip_suffix(".json")?)
+        })
+        .collect();
+    stopped.sort_by(|a, b| b.ts.cmp(&a.ts));
+    stopped
+}
 
 /// **Forgets every stopped grade of the copy of `skill` recorded at `level`, or of its draft where
 /// `draft`** (a draft's mint): a new grade of it starts, and Resume goes on from that one.

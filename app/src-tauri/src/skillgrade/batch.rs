@@ -578,6 +578,7 @@ fn start_one(
                     let _ = tell.send(Heard::Step(at, Box::new(step.clone())));
                 }),
             }),
+            resume: None,
         },
         planned,
     )

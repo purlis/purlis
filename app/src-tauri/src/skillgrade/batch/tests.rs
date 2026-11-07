@@ -29,6 +29,7 @@ fn plan(
             models: Vec::new(),
             model: None,
             evals_refused: None,
+            harness: None,
         },
     );
     plan.estimate = cost_usd.map(|cost_usd| GradeEstimate {

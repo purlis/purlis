@@ -41,8 +41,16 @@ fn copy(skill_md: &str, triggers: &str) -> SkillCopy {
     }
 }
 
+fn on<'a>(profile: Option<&'a str>, program: Option<&'a str>, model: Option<&'a str>) -> On<'a> {
+    On {
+        profile,
+        program,
+        model,
+    }
+}
+
 fn deciding_of(request: &GradeRequest, copy: &SkillCopy) -> Deciding {
-    Deciding::of(request, copy, Some("work"), None, None)
+    Deciding::of(request, copy, on(Some("work"), Some("claude"), None), None)
 }
 
 fn ran(end: ChatEnd, tokens: u64) -> ChatRan {
@@ -66,6 +74,7 @@ fn stopped(grade: &str) -> Stopped {
         skill: "deploy".into(),
         level: Some("skills".into()),
         draft: None,
+        draft_of: None,
         request: request(),
         kept: Kept {
             triggers: vec![vec![
@@ -113,12 +122,29 @@ fn each_input_that_decides_the_result_is_named_where_it_changed() {
         then.changed(&deciding_of(&more_tests, &copy("v1", "[]"))),
         [Changed::Tests]
     );
-    let on = |profile: Option<&str>, model: Option<&str>| {
-        Deciding::of(&request(), &copy("v1", "[]"), profile, model, None)
+    let running_on = |profile: Option<&str>, program: Option<&str>, model: Option<&str>| {
+        Deciding::of(
+            &request(),
+            &copy("v1", "[]"),
+            on(profile, program, model),
+            None,
+        )
     };
-    assert_eq!(then.changed(&on(Some("home"), None)), [Changed::Profile]);
     assert_eq!(
-        then.changed(&on(Some("work"), Some("claude-opus-5-5"))),
+        then.changed(&running_on(Some("home"), Some("claude"), None)),
+        [Changed::Program]
+    );
+    assert_eq!(
+        then.changed(&running_on(Some("work"), Some("codex"), None)),
+        [Changed::Program],
+        "the same profile, set to start another program"
+    );
+    assert_eq!(
+        then.changed(&running_on(
+            Some("work"),
+            Some("claude"),
+            Some("claude-opus-5-5")
+        )),
         [Changed::Model]
     );
     let mut more_runs = request();
@@ -127,7 +153,12 @@ fn each_input_that_decides_the_result_is_named_where_it_changed() {
         then.changed(&deciding_of(&more_runs, &copy("v1", "[]"))),
         [Changed::Settings]
     );
-    let by_a_grader = Deciding::of(&request(), &copy("v1", "[]"), Some("work"), None, Some("x"));
+    let by_a_grader = Deciding::of(
+        &request(),
+        &copy("v1", "[]"),
+        on(Some("work"), Some("claude"), None),
+        Some("x"),
+    );
     assert_eq!(then.changed(&by_a_grader), [Changed::Settings]);
 }
 
@@ -190,6 +221,17 @@ fn a_new_grade_of_the_copy_forgets_its_stopped_one_and_no_other() {
         chats: 6,
     });
     keep(root, &of_draft).unwrap();
+    let mut newest = all(root);
+    assert_eq!(
+        newest
+            .iter()
+            .map(|one| one.grade.as_str())
+            .collect::<Vec<_>>()
+            .len(),
+        3
+    );
+    newest.retain(|one| one.grade == "01OLD");
+    assert_eq!(newest.len(), 1);
     forget_of(root, "deploy", Some("skills"), None);
     assert_eq!(of(root, "01OLD"), None);
     assert!(of(root, "01OTHER").is_some());

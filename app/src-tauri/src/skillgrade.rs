@@ -247,6 +247,8 @@ pub(crate) struct On {
     pub(crate) model: Option<String>,
     /// Why outcome evals cannot run there, where they cannot (`grades::outcome_refused`).
     pub(crate) evals_refused: Option<String>,
+    /// The program the profile starts, by its harness's name, where it could start (#5718).
+    pub(crate) harness: Option<String>,
 }
 
 /// **Whether a grade's chats can run on `profile`** (the project's default where none) and on
@@ -271,6 +273,7 @@ pub(crate) fn chats_on(
                     models: Vec::new(),
                     model,
                     evals_refused: None,
+                    harness: None,
                 };
             }
         },
@@ -299,6 +302,11 @@ pub(crate) fn chats_on(
         Some(picked) => grades::ready_to_grade_on(&start, root, Some(picked)),
     };
     let evals_refused = ready.as_ref().ok().and_then(grades::outcome_refused);
+    let harness = ready
+        .as_ref()
+        .ok()
+        .and_then(|ready| ready.harness)
+        .map(|harness| harness.name().to_owned());
     let priced = ready
         .as_ref()
         .map_or_else(|_| grades::price::of_model(None), grades::priced);
@@ -320,6 +328,7 @@ pub(crate) fn chats_on(
         models,
         model,
         evals_refused,
+        harness,
     }
 }
 
@@ -649,6 +658,10 @@ pub enum GradeEnded {
     SpendNotReported,
     /// A fault in purlis ended it before it was scored (#3353): recorded as interrupted.
     Failed,
+    /// Its program's usage limit was reached (#5718).
+    UsageLimit,
+    /// Its program could not reach its service (#5718).
+    Unreachable,
 }
 
 impl From<GradeEnd> for GradeEnded {
@@ -660,6 +673,8 @@ impl From<GradeEnd> for GradeEnded {
             GradeEnd::OverCap => GradeEnded::OverCap,
             GradeEnd::OverLimit => GradeEnded::OverLimit,
             GradeEnd::SpendNotReported => GradeEnded::SpendNotReported,
+            GradeEnd::UsageLimit => GradeEnded::UsageLimit,
+            GradeEnd::Unreachable => GradeEnded::Unreachable,
             // Recorded at a start for a grade purlis stopped under, never told as one ends; and a
             // Grader extension's question that ended its grade (#3236), told with its sentence.
             GradeEnd::Interrupted | GradeEnd::GraderFailed => GradeEnded::Failed,
@@ -796,6 +811,11 @@ fn running_of(plane: &PlaneId, skill: &str) -> Option<String> {
         .map(|(id, _)| id.clone())
 }
 
+/// **The outcome evals `request` runs**, by id: what a resume of its grade ticks again (#5718).
+pub(crate) fn ticked_ids(request: &grading::GradeRequest) -> Vec<u64> {
+    request.outcomes.iter().map(|eval| eval.id).collect()
+}
+
 /// **The outcome evals the window says were ticked**, by id: none are, until the person ticks them.
 pub(crate) fn ticked(evals: &[String]) -> Vec<u64> {
     evals.iter().filter_map(|id| id.parse().ok()).collect()
@@ -900,6 +920,7 @@ pub(crate) async fn skill_grade_start(
                 follower: None,
                 draft: None,
                 batch: None,
+                resume: None,
             },
             planned,
         )
@@ -942,6 +963,8 @@ impl From<GradeEnded> for session::GradeEndTold {
             GradeEnded::OverLimit => session::GradeEndTold::OverLimit,
             GradeEnded::SpendNotReported => session::GradeEndTold::SpendNotReported,
             GradeEnded::Failed => session::GradeEndTold::Failed,
+            // A terminal is told these as a stop, with the window's sentence of why (#5718).
+            GradeEnded::UsageLimit | GradeEnded::Unreachable => session::GradeEndTold::Stopped,
         }
     }
 }
@@ -1067,6 +1090,7 @@ fn answering_a_terminal(
                     follower: Some(follower),
                     draft: None,
                     batch: None,
+                    resume: None,
                 },
                 planned,
             )?;
@@ -1100,6 +1124,9 @@ pub(crate) struct Begin {
     pub draft: Option<DraftBegun>,
     /// The batch it is one of (#5356), where Select's Grade started it.
     pub batch: Option<InBatch>,
+    /// **The stopped grade it resumes** (#5718), where it resumes one: only its unfinished cases
+    /// run, held to this grade's own limits.
+    pub resume: Option<grades::resumable::Stopped>,
 }
 
 /// **The batch a grade is one of** (#5356): its id, and what hears each of its steps.
@@ -1129,6 +1156,14 @@ fn handed_to_a_grader(request: &grading::GradeRequest) -> grading::GradeRequest 
     }
 }
 
+/// The chats `arms` ran, outcome evals' and judges' among them: what a row's spend counts.
+fn ran_in(arms: &[grading::ArmScore]) -> u32 {
+    arms.iter().fold(0, |all: u32, arm| {
+        all.saturating_add(arm.chats)
+            .saturating_add(arm.outcome_chats)
+    })
+}
+
 /// **The report of `request`, graded by `by`** (purlis's own runner where none), its chats run by
 /// `chats` and held to `limits`: the same host and the same limits either way.
 fn graded_by(
@@ -1137,22 +1172,41 @@ fn graded_by(
     request: &grading::GradeRequest,
     chats: &mut dyn Chats,
     limits: grading::Limits,
-) -> grading::GradeReport {
+    resume: Option<grading::Kept>,
+) -> (grading::GradeReport, Option<grading::Kept>) {
     let Some(by) = by else {
-        return grading::grade(request, chats, Some(limits));
+        // purlis's own runner keeps what it ran, so a grade that stops can be resumed (#5718).
+        let (report, kept) = match resume {
+            None => grading::grade_keeping(request, chats, Some(limits)),
+            Some(kept) => match grading::resume(request, chats, Some(limits.clone()), kept) {
+                Ok(done) => done,
+                // Its shape was checked as its plan was; a run of nothing scores nothing.
+                // Its shape was checked as it started: one that does not fit runs nothing.
+                Err(why) => {
+                    tracing::warn!("purlis: a grade was not resumed ({why})");
+                    let mut report = grading::Held::new(request, chats, Some(limits))
+                        .scored(grading::BUILT_IN, None);
+                    report.ended = GradeEnd::Cancelled;
+                    return (report, None);
+                }
+            },
+        };
+        return (report, Some(kept));
     };
     let request = &handed_to_a_grader(request);
-    purlis_core::skills::studio::with_studio(&by.executor, root, |studio| match studio {
-        Some(studio) => studio.grade(&by.id, request, chats, Some(limits)),
-        // Its plan listed it, so this machine's config home went since: still a report.
-        None => purlis_core::extension::studio::grading::Grading::new(
-            &by.id,
-            request,
-            chats,
-            Some(limits),
-        )
-        .finished(Err("this machine has no config home now".to_owned())),
-    })
+    let report =
+        purlis_core::skills::studio::with_studio(&by.executor, root, |studio| match studio {
+            Some(studio) => studio.grade(&by.id, request, chats, Some(limits)),
+            // Its plan listed it, so this machine's config home went since: still a report.
+            None => purlis_core::extension::studio::grading::Grading::new(
+                &by.id,
+                request,
+                chats,
+                Some(limits),
+            )
+            .finished(Err("this machine has no config home now".to_owned())),
+        });
+    (report, None)
 }
 
 /// **Starts a grade of `planned`**, the plan whose consent was checked or whose bounds the
@@ -1175,6 +1229,7 @@ pub(crate) fn begin(
         follower,
         draft,
         batch,
+        resume,
     } = begin;
     let root = held.root().to_path_buf();
     // The one read of the copy the consent was taken from: laid out and recorded as is.
@@ -1188,13 +1243,34 @@ pub(crate) fn begin(
         checked,
         priced,
         model,
+        harness: program,
         ..
     } = chats_on(&root, profile, model);
     checked?;
     let profile = profile.ok_or("The grade did not start: no profile was found.")?;
+    // What decides its result, kept with it should it stop, so a resume is offered only while
+    // each is what it was (#5718).
+    let deciding = grades::resumable::Deciding::of(
+        &request,
+        &copy,
+        grades::resumable::On {
+            profile: Some(&profile),
+            program: program.as_deref(),
+            // The model its chats run on as its plan named it: the profile's own where none
+            // was picked.
+            model: priced.model.as_deref().or(model.as_deref()),
+        },
+        grader.as_ref().map(|by| by.id.as_str()),
+    );
+    if resume.is_some() && grader.is_some() {
+        return Err("A Grader's grade is the Grader's to run, so it cannot be resumed.".to_owned());
+    }
     let id = purlis_core::reopen::mint();
     let stop = Arc::new(AtomicBool::new(false));
-    let of = grading::plan(&request).chats;
+    // A resume runs the chats its stopped grade left, and its step counts those (#5718).
+    let of = resume
+        .as_ref()
+        .map_or_else(|| grading::plan(&request).chats, |stopped| stopped.left());
     // The cap the plan showed, read again as the grade starts: the one it is held to.
     let cap = planned.cap.tokens;
     let limits = grading::Limits {
@@ -1267,6 +1343,15 @@ pub(crate) fn begin(
         }
     }
     let grade = id.clone();
+    // Resume goes on from a copy's latest grade alone: a new one forgets the one stopped before,
+    // which a resume holds as it starts (#5718).
+    grades::resumable::forget_of(
+        &root,
+        &skill,
+        grades::recorded_level(&level).as_deref(),
+        draft.as_ref().map(|one| one.mark.id.as_str()),
+    );
+    let draft_of = draft.as_ref().map(|one| one.id.clone());
     // A draft's chats are kept apart: its grades never push out the skill's own.
     let keeps = if draft.is_some() {
         grades::kept::of_draft(&skill)
@@ -1386,12 +1471,30 @@ pub(crate) fn begin(
                     inputs: &copy.inputs,
                     left: None,
                 };
-                let report =
-                    graded_by(grader.as_ref(), &root, &request, &mut chats, limits.clone());
+                let (report, kept) = graded_by(
+                    grader.as_ref(),
+                    &root,
+                    &request,
+                    &mut chats,
+                    limits.clone(),
+                    resume.as_ref().map(|stopped| stopped.kept.clone()),
+                );
                 let harness = chats.harness.take();
                 let plugins_off = chats.plugins_off.take();
                 let reported = grades::reported_model(chats.reported.iter().map(String::as_str));
-                let spent = chats.spent;
+                // A resumed grade's row says both runs: the chats its arms count, and what both
+                // spent, as its report adds them (#5718).
+                let this_run = chats.spent;
+                let spent = if resume.is_some() {
+                    Spent {
+                        chats: ran_in(&report.arms),
+                        tokens: report.spent_tokens,
+                        cost_usd: report.spent_usd,
+                        asked_for: None,
+                    }
+                } else {
+                    chats.spent
+                };
                 let graded = Graded {
                     harness,
                     plugins_off,
@@ -1408,6 +1511,26 @@ pub(crate) fn begin(
                     &purlis_core::machine::this_log_name(),
                 );
                 grades::underway::ended(&root, &grade);
+                // A grade that stopped short keeps what it ran, to be resumed (#5718).
+                if let Some(kept) = kept.filter(|_| graded.report.ended.resumable()) {
+                    let stopped = grades::resumable::Stopped {
+                        v: grades::resumable::VERSION,
+                        grade: grade.clone(),
+                        skill: skill.clone(),
+                        level: graded.level.clone(),
+                        draft: graded.draft.clone(),
+                        draft_of: draft_of.clone(),
+                        request: request.clone(),
+                        kept,
+                        deciding: deciding.clone(),
+                        ended: graded.report.ended,
+                        resets_at: graded.report.resets_at.clone(),
+                        ts: graded.ts.clone(),
+                    };
+                    if let Err(why) = grades::resumable::keep(&root, &stopped) {
+                        tracing::warn!("purlis: grade {grade} cannot be resumed ({why})");
+                    }
+                }
                 // The chats of the skill's older grades go: its newest keep theirs (SK-59).
                 grades::kept::sweep_of(&root, &keeps);
                 drop(marker.borrow_mut().take());
@@ -1435,11 +1558,17 @@ pub(crate) fn begin(
                     ),
                     (None, Some(_)) => None,
                 };
-                tell(
+                // A resume's step counts its own chats against the ones it left (#5718).
+                let told = if resume.is_some() {
+                    this_run
+                } else {
                     Spent {
                         tokens: graded.report.spent_tokens,
                         ..graded.spent
-                    },
+                    }
+                };
+                tell(
+                    told,
                     graded.report.asked(),
                     Some(graded.report.ended.into()),
                     said,
@@ -1729,6 +1858,9 @@ pub struct GradeScorecard {
     /// none, and null, in a grade that scored none.
     pub evals: Vec<ScoredEval>,
     pub outcome_arms: Option<GradeArms>,
+    /// **When the program's usage limit resets**, an RFC 3339 time, where it stopped there and
+    /// was told (#5718).
+    pub resets_at: Option<String>,
 }
 
 /// **How a grade ended, as its list marks it** (S6): graded whole, stopped by the person, stopped
@@ -1747,7 +1879,9 @@ impl From<GradeEnd> for GradeOutcome {
     fn from(end: GradeEnd) -> GradeOutcome {
         match end {
             GradeEnd::Whole => GradeOutcome::Graded,
-            GradeEnd::Cancelled => GradeOutcome::Stopped,
+            GradeEnd::Cancelled | GradeEnd::UsageLimit | GradeEnd::Unreachable => {
+                GradeOutcome::Stopped
+            }
             GradeEnd::OverCap | GradeEnd::OverLimit | GradeEnd::SpendNotReported => {
                 GradeOutcome::AtLimit
             }
@@ -1777,6 +1911,11 @@ pub struct GradeSpent {
     pub tokens: Option<f64>,
     pub cost_usd: Option<f64>,
     pub limit_usd: Option<f64>,
+    /// **Whether it resumed a stopped grade** (#5718): its tokens and cost are then both runs',
+    /// and these the earlier run's, where it said.
+    pub resumed: bool,
+    pub earlier_tokens: Option<f64>,
+    pub earlier_usd: Option<f64>,
 }
 
 impl GradeArms {
@@ -1828,6 +1967,13 @@ impl GradeSpent {
             tokens: graded.spent.tokens.map(|tokens| tokens as f64),
             cost_usd: graded.spent.cost_usd,
             limit_usd: graded.report.cost_cap_usd,
+            resumed: graded.report.earlier.is_some(),
+            earlier_tokens: graded
+                .report
+                .earlier
+                .and_then(|earlier| earlier.tokens)
+                .map(|tokens| tokens as f64),
+            earlier_usd: graded.report.earlier.and_then(|earlier| earlier.usd),
         }
     }
 }
@@ -1858,7 +2004,7 @@ impl GradeRow {
             graded: studio::said_at(&graded.ts),
             version: studio::version_said(graded),
             ran_on: studio::ran_on_said(graded),
-            ended: grades::ended_said(graded.report.ended).to_owned(),
+            ended: grades::ended_said_on(graded.report.ended, graded.harness.as_deref()),
             outcome: graded.report.ended.into(),
             arms: GradeArms::of(graded),
             outcome_arms: GradeArms::of_outcomes(graded),
@@ -2040,8 +2186,9 @@ impl GradeScorecard {
             // With a Grader's own sentence, where it ended its grade (#3236).
             ended: match &graded.report.failed {
                 Some(why) => format!("{} {why}", grades::ended_said(graded.report.ended)),
-                None => grades::ended_said(graded.report.ended).to_owned(),
+                None => grades::ended_said_on(graded.report.ended, graded.harness.as_deref()),
             },
+            resets_at: graded.report.resets_at.clone(),
             delta: graded.report.delta.map(|delta| (delta * 100.0).round()),
             against: graded
                 .compared_with()
@@ -2705,6 +2852,7 @@ fn gathered(pieces: &std::sync::mpsc::Receiver<String>, begun: Instant) -> Optio
 pub(crate) mod after_edit;
 pub(crate) mod batch;
 pub(crate) mod drafted;
+pub(crate) mod resumed;
 
 #[cfg(test)]
 mod tests;

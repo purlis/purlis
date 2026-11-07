@@ -414,6 +414,8 @@ macro_rules! app_commands {
                 skilldrafts::skill_levels_confirm,
                 skillgrade::skill_grade_plan,
                 skillgrade::skill_grade_start,
+                skillgrade::resumed::skill_grade_resume_plan,
+                skillgrade::resumed::skill_grade_resume,
                 skillgrade::drafted::skill_draft_grade,
                 skillgrade::drafted::skill_draft_grade_plan,
                 skillgrade::drafted::skill_draft_grade_start,

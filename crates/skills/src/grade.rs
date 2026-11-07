@@ -702,7 +702,7 @@ impl KeptEvalRun {
 impl Kept {
     /// **Whether this is what a grade of `request` ran**: a cell for each test and judged eval in
     /// each arm, each at most its runs.
-    fn fits(&self, request: &GradeRequest) -> Result<(), String> {
+    pub fn fits(&self, request: &GradeRequest) -> Result<(), String> {
         let runs = usize::from(request.runs);
         let arms = request.arms.len();
         let evals = judged_evals(request).count();
