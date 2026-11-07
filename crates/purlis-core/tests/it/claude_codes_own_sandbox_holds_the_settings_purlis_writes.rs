@@ -705,6 +705,14 @@ fn two_claude_code_chats_each_write_a_temporary_folder_of_their_own_and_not_the_
             .create(folder)
             .expect("its folder");
     }
+    let script = at.join("temporary-folders.sh");
+    fs::write(
+        &script,
+        "printf 'tmp=%s\\n' \"$TMPDIR\"\n\
+         (echo mine > \"$TMPDIR/body.md\") 2>/dev/null && echo own=written || echo own=refused\n\
+         (echo theirs > \"$1/body.md\") 2>/dev/null && echo other=written || echo other=refused\n",
+    )
+    .expect("the script");
     for (chat, line) in lines.iter().enumerate() {
         let what = format!("chat {chat}");
         let settings = line
@@ -715,12 +723,10 @@ fn two_claude_code_chats_each_write_a_temporary_folder_of_their_own_and_not_the_
             .expect("its settings");
         let file = at.join(format!("claude-{chat}.json"));
         fs::write(&file, settings).expect("the settings");
+        // A script the call runs, as the probes are run: Claude Code's own permission check
+        // reads a command's words, and a write it can see outside the project is not run.
         let other = rooted[1 - chat].display();
-        let command = format!(
-            "printf 'tmp=%s\\n' \"$TMPDIR\"; \
-             (echo mine > \"$TMPDIR/body.md\") 2>/dev/null && echo own=written || echo own=refused; \
-             (echo theirs > '{other}/body.md') 2>/dev/null && echo other=written || echo other=refused"
-        );
+        let command = format!("/bin/sh '{}' '{other}'", script.display());
         let said = ran(
             &program,
             &home,

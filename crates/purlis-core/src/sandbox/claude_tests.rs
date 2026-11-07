@@ -296,9 +296,10 @@ fn a_claude_code_chat_through_purlis_s_proxy_is_given_its_own_pair_of_ports() {
     // Claude Code runs outside its sandbox, with its hooks: no file in the chat's temp
     // directory is on its PATH or its git's ssh (#1667).
     assert!(applied.ssh_route(Some(&one)).is_none());
-    // Proxy-only (#1699): a Claude Code chat's harness keeps its own temp folder, so purlis
-    // makes none it would never use.
-    assert_eq!(one.tmp(), None);
+    // Proxy-only (#1699) beside a temp folder of the chat's own, which Claude Code is named
+    // in `CLAUDE_CODE_TMPDIR` (#5675), with no ssh route written in it.
+    assert!(one.tmp().is_some_and(std::path::Path::is_dir));
+    assert_ne!(one.tmp(), two.tmp());
     assert!(
         two.proxy_ports()
             .iter()
