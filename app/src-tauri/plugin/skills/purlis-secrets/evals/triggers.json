@@ -1,0 +1,194 @@
+[
+  {
+    "query": "Run the migrations against staging; the database password is in the team vault.",
+    "should_trigger": true
+  },
+  {
+    "query": "I need to call the Stripe API with our test key to create a few charges.",
+    "should_trigger": true
+  },
+  {
+    "query": "Save the new deploy token in the ops vault so the release script can use it.",
+    "should_trigger": true
+  },
+  {
+    "query": "kubectl get pods on the prod cluster; the kubeconfig is in our purlis vault.",
+    "should_trigger": true
+  },
+  {
+    "query": "Which secrets do we have in the shop vault?",
+    "should_trigger": true
+  },
+  {
+    "query": "Deploy the build to the box over ssh with the key we keep in purlis's vault.",
+    "should_trigger": true
+  },
+  {
+    "query": "The API answers 401 with the token from the vault; it must have expired.",
+    "should_trigger": true
+  },
+  {
+    "query": "Connect psql to the analytics database with the connection string we saved in purlis.",
+    "should_trigger": true
+  },
+  {
+    "query": "Run the e2e suite; it needs SHOP_TOKEN, and I don't think we have that one yet.",
+    "should_trigger": true
+  },
+  {
+    "query": "Check whether the prod and staging vaults hold the same Sentry DSN, without showing it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Write the TLS certificate from the vault to a file nginx can read.",
+    "should_trigger": true
+  },
+  {
+    "query": "Hit the internal metrics endpoint with curl; it needs the bearer token from my vault.",
+    "should_trigger": true
+  },
+  {
+    "query": "Add the OpenAI key I just got to the team vault.",
+    "should_trigger": true
+  },
+  {
+    "query": "Set up a 1Password vault for this project's credentials.",
+    "should_trigger": true
+  },
+  {
+    "query": "Is the AWS access key for the backups bucket in our purlis vault?",
+    "should_trigger": true
+  },
+  {
+    "query": "Run terraform plan with the cloud credentials from the infra persona's vault.",
+    "should_trigger": true
+  },
+  {
+    "query": "Seed the dev database; the password lives in purlis, so don't paste it here.",
+    "should_trigger": true
+  },
+  {
+    "query": "Publish the npm package; the npm token is in the release vault.",
+    "should_trigger": true
+  },
+  {
+    "query": "The Slack webhook URL leaked; get a new value into the vault and use that.",
+    "should_trigger": true
+  },
+  {
+    "query": "Run redis-cli against the cache with the password from the vault.",
+    "should_trigger": true
+  },
+  {
+    "query": "What keys does my persona's vault hold?",
+    "should_trigger": true
+  },
+  {
+    "query": "Send a test email through our SMTP server; its login is a purlis secret.",
+    "should_trigger": true
+  },
+  {
+    "query": "Make sure the deploy script gets the registry password without it showing up in this chat.",
+    "should_trigger": true
+  },
+  {
+    "query": "Pull the private image from the registry; the registry token is in our vault.",
+    "should_trigger": true
+  },
+  {
+    "query": "Log in to the Grafana dashboard in a browser and screenshot the error panel.",
+    "should_trigger": false
+  },
+  {
+    "query": "Open our admin site, sign in, and check that the new settings page renders.",
+    "should_trigger": false
+  },
+  {
+    "query": "Run two logged-in browser sessions as different users to test the chat feature.",
+    "should_trigger": false
+  },
+  {
+    "query": "Ask the ops persona to restart the staging deploy.",
+    "should_trigger": false
+  },
+  {
+    "query": "Create a new persona for release management.",
+    "should_trigger": false
+  },
+  {
+    "query": "Hand this research to the reviewer persona and wait for its answer.",
+    "should_trigger": false
+  },
+  {
+    "query": "Commit this change in the api repo's branch folder.",
+    "should_trigger": false
+  },
+  {
+    "query": "Run the test suite in the web repo and fix what fails.",
+    "should_trigger": false
+  },
+  {
+    "query": "Open a new chat to carry on the database migration work tomorrow.",
+    "should_trigger": false
+  },
+  {
+    "query": "Tidy this workspace's memory; there are three duplicate notes about how the vault was set up.",
+    "should_trigger": false
+  },
+  {
+    "query": "Rename the email column in the users table.",
+    "should_trigger": false
+  },
+  {
+    "query": "Explain how JWT signing works.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a function that hashes passwords with argon2.",
+    "should_trigger": false
+  },
+  {
+    "query": "Add a .env.example file listing the variables the app reads.",
+    "should_trigger": false
+  },
+  {
+    "query": "Why does this regex not match unicode letters?",
+    "should_trigger": false
+  },
+  {
+    "query": "Generate a random 32-byte key in Python for the unit tests' fixtures.",
+    "should_trigger": false
+  },
+  {
+    "query": "Review the auth middleware for timing attacks.",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a README section on how to configure the app's API key.",
+    "should_trigger": false
+  },
+  {
+    "query": "Add retries with exponential backoff to the HTTP client.",
+    "should_trigger": false
+  },
+  {
+    "query": "Convert this CSV of users to JSON.",
+    "should_trigger": false
+  },
+  {
+    "query": "Draw a sequence diagram of the OAuth login flow.",
+    "should_trigger": false
+  },
+  {
+    "query": "Fix the flaky test in the payment module.",
+    "should_trigger": false
+  },
+  {
+    "query": "Summarise what we did in this chat.",
+    "should_trigger": false
+  },
+  {
+    "query": "Bump the dependencies and run the tests.",
+    "should_trigger": false
+  }
+]
