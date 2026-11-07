@@ -39,9 +39,11 @@ import {
   type SkillLifecycle,
   type SkillPanel,
   type Studio,
+  type StudioClone,
   type StudioSkill,
 } from "./bindings";
 import { counted } from "./dispatches";
+import { cloneChosen, placeTitle, type InAPlace } from "./studioPlace";
 import { Notice, type NoticeAction } from "./Notice";
 import { Badge, type BadgeVariant } from "./ui/badge/Badge";
 import { Button, IconButton } from "./ui/button/Button";
@@ -177,6 +179,9 @@ export type Beyond = {
   review?: SkillDraft;
   /** A newer version of it at its source, by its short commit. */
   update?: string;
+  /** **The clone the chat previewed starts in** (#4227), where one is chosen, and whether a chat
+   *  at the workspace's root lists the skill: its hidden banner says where, and why. */
+  place?: { clone: StudioClone; listedAtRoot: boolean };
 };
 
 /**
@@ -241,10 +246,17 @@ export function bannerOf(
   const pinner = pinnerOf(scope);
   if (skill.hidden.length > 0 && !skill.pinned) {
     const on = skill.hidden.map((one) => one.title).join(", ");
+    const place = beyond.place;
+    const where = place === undefined ? "" : ` for a chat started in ${place.clone.clone}`;
+    // Listed at the root, it is the clone's repo skills that push it out (#4227).
+    const why =
+      place?.listedAtRoot === true
+        ? ` A chat at the workspace's root lists it: ${place.clone.clone}'s ${counted(place.clone.repo_skills, "repo skill pushes", "repo skills push")} it out.`
+        : "";
     return {
       cause: "hidden",
       tone: "news",
-      text: `Hidden by the router on ${on}: ${skill.hidden[0].hidden.said}. The chat can still load it.`,
+      text: `Hidden by the router on ${on}${where}: ${skill.hidden[0].hidden.said}. The chat can still load it.${why}`,
       ...(pinner !== null && PINNABLE.has(skill.level) ? { fix: { kind: "pin" as const } } : {}),
     };
   }
@@ -372,11 +384,15 @@ export function SkillPage({
   onPress,
   onOpenView,
   onGrading,
+  inPlaces = [],
 }: {
   plane: string;
   studio: Studio;
   skill: StudioSkill;
   scope: StudioScope;
+  /** **Whether it is listed or hidden in each place a chat can start** (#4227): at the
+   *  workspace's root, then in each clone that holds repo skills. Empty where there is none. */
+  inPlaces?: readonly InAPlace[];
   /** The chats' drafts: one that changes this skill waits for review. */
   drafts: readonly SkillDraft[];
   tab: SkillPageTab;
@@ -456,7 +472,11 @@ export function SkillPage({
       : (Array.isArray(updates.data?.offers) ? (updates.data?.offers ?? []) : []).find(
           (one) => one.name === name && sameLevel(one.level, level),
         );
+  const placeChosen = cloneChosen(studio, scope.where);
   const banner = bannerOf(skill, studio, scope, {
+    ...(placeChosen === undefined
+      ? {}
+      : { place: { clone: placeChosen, listedAtRoot: inPlaces[0]?.listed === true } }),
     ...(copy === undefined ? {} : { copy }),
     ...(review === undefined ? {} : { review }),
     ...(offer === undefined ? {} : { update: offer.newer.short }),
@@ -750,6 +770,7 @@ export function SkillPage({
             onPin={pin}
             onOwners={() => setAsked("owners")}
             onAgain={tryAgain}
+            inPlaces={inPlaces}
           />
         );
       case "text":
@@ -1041,11 +1062,13 @@ function Overview({
   onPin,
   onOwners,
   onAgain,
+  inPlaces,
 }: {
   plane: string;
   studio: Studio;
   skill: StudioSkill;
   scope: StudioScope;
+  inPlaces: readonly InAPlace[];
   level: SkillLevel | null;
   busy: boolean;
   change: Change;
@@ -1134,6 +1157,17 @@ function Overview({
             </>
           )}
         </Fact>
+        {inPlaces.length > 0 && (
+          <Fact label="In a chat's list">
+            <Facts aria-label="Where a chat starts" className="skill-studio-places">
+              {inPlaces.map((one) => (
+                <Fact key={one.clone ?? ""} label={placeTitle(one.clone)}>
+                  <span data-testid={`skill-in-${one.clone ?? "root"}`}>{one.said}</span>
+                </Fact>
+              ))}
+            </Facts>
+          </Fact>
+        )}
         {personaAct !== null && persona !== null && (
           <Fact label={`In ${persona}'s list`}>
             {skill.named ? `${persona} names it.` : `${persona} doesn't name it.`}{" "}

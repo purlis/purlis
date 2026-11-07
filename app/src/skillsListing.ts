@@ -298,6 +298,8 @@ function rowOfChat(skill: ChatSkill): StudioSkill {
     lint: [],
     hidden: [],
     pinned: false,
+    hidden_in: [],
+    replaced_in: [],
     archived: false,
     pinned_by: [],
   };

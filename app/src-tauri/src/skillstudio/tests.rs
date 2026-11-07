@@ -94,6 +94,7 @@ fn the_studio_shows_nothing_while_its_flag_is_off() {
             pins_refused: None,
             not_supported: Vec::new(),
             router: None,
+            places: Vec::new(),
             levels_to_confirm: None,
             needs: Vec::new(),
         }
@@ -653,8 +654,26 @@ fn the_studio_says_which_router_its_chats_are_routed_by() {
     assert_eq!(
         router(Some("alpha")).preview,
         "The rows' hidden marks are what the built-in router hides for a chat at the \
-         workspace's root. A chat started in a clone counts that clone's repo skills too, and \
-         its own Skills view says what it hides."
+         workspace's root. A chat started in a clone counts that clone's repo skills too: where \
+         the chat starts is chosen beside Whose chats, at the top."
+    );
+    // #4227: that clone is a place to preview a chat in, with its own line.
+    let places = studio(root, None, true, Some("alpha"), None, &no_harness()).places;
+    assert_eq!(
+        places,
+        [StudioClone {
+            clone: "api".to_owned(),
+            repo_skills: 1,
+            preview: "The rows' hidden marks are what the built-in router hides for a chat \
+                      started in api: its 1 repo skill counts against the budget too."
+                .to_owned(),
+        }]
+    );
+    assert!(
+        studio(root, None, true, None, None, &no_harness())
+            .places
+            .is_empty(),
+        "a chat at the project's root is in no workspace's clone"
     );
 
     std::fs::write(
@@ -672,7 +691,8 @@ fn the_studio_says_which_router_its_chats_are_routed_by() {
         chosen.preview,
         "The rows' hidden marks are what the built-in router hides for a chat at the workspace's \
          root, since the router relevance is asked only at each chat's start. A chat started in \
-         a clone counts that clone's repo skills too, and its own Skills view says what it hides.",
+         a clone counts that clone's repo skills too: where the chat starts is chosen beside \
+         Whose chats, at the top.",
         "#4215: never the extension's, which a read of the studio does not ask"
     );
 

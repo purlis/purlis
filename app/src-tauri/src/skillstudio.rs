@@ -235,6 +235,12 @@ pub struct StudioSkill {
     /// Each harness whose chats a router hid it from the list of, and why (SK-15), each by its
     /// own budget: the chat still has it, through the index skill. Empty where every one lists it.
     pub hidden: Vec<SkillHiddenOn>,
+    /// **Each clone whose chats a router hid it from, on each harness** (#4227): the marks once
+    /// that clone is chosen as where the chat starts. A repo skill's are its own clone's alone.
+    pub hidden_in: Vec<SkillHiddenIn>,
+    /// **Each clone whose repo copy a chat there takes in place of this one**, on each harness
+    /// (#4227).
+    pub replaced_in: Vec<SkillInAClone>,
     /// The label of the source it was installed from (ADR 0100, amended 2026-11-01).
     pub source_label: Option<String>,
     /// Whether that chat's workspace or persona pins it, so no router hides it.
@@ -323,6 +329,61 @@ impl From<&purlis_core::skills::HiddenOn> for SkillHiddenOn {
             hidden: (&on.hidden).into(),
         }
     }
+}
+
+/// A skill a router hid on one harness's chats started in one clone (#4227).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillHiddenIn {
+    /// The clone, by its name in the workspace.
+    pub clone: String,
+    pub harness: HarnessKind,
+    /// The harness, as a person reads its name.
+    pub title: String,
+    pub hidden: SkillHidden,
+}
+
+impl From<&purlis_core::skills::HiddenIn> for SkillHiddenIn {
+    fn from(one: &purlis_core::skills::HiddenIn) -> SkillHiddenIn {
+        SkillHiddenIn {
+            clone: one.clone.clone(),
+            harness: one.harness.into(),
+            title: one.harness.title().to_owned(),
+            hidden: (&one.hidden).into(),
+        }
+    }
+}
+
+/// One harness's chats started in one clone (#4227).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillInAClone {
+    /// The clone, by its name in the workspace.
+    pub clone: String,
+    pub harness: HarnessKind,
+    /// The harness, as a person reads its name.
+    pub title: String,
+}
+
+impl From<&purlis_core::skills::InAClone> for SkillInAClone {
+    fn from(one: &purlis_core::skills::InAClone) -> SkillInAClone {
+        SkillInAClone {
+            clone: one.clone.clone(),
+            harness: one.harness.into(),
+            title: one.harness.title().to_owned(),
+        }
+    }
+}
+
+/// **A clone the studio can preview a chat in** (#4227): one that holds repo skills, so a chat
+/// started there counts more than a chat at the workspace's root.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct StudioClone {
+    /// The clone, by its name in the workspace.
+    pub clone: String,
+    /// How many repo skills it holds on, by name.
+    pub repo_skills: u32,
+    /// What the rows' hidden marks preview with it chosen, in a sentence: the Routing page's
+    /// Preview line ([`StudioRouter::preview`] at the root).
+    pub preview: String,
 }
 
 /// How well a skill fits a harness, as its badge draws it (SK-8): the core's `Fit`.
@@ -568,6 +629,8 @@ fn plane_shown(
         compat: row.compat.iter().map(Into::into).collect(),
         lint: row.lint,
         hidden: row.hidden.iter().map(Into::into).collect(),
+        hidden_in: row.hidden_in.iter().map(Into::into).collect(),
+        replaced_in: row.replaced_in.iter().map(Into::into).collect(),
         source_label: row.source_label.clone(),
         pinned: row.pinned,
         archived: row.lifecycle == purlis_core::skills::Lifecycle::Archived,
@@ -644,6 +707,10 @@ pub struct Studio {
     /// The router its chats are routed by, and how it did at each one's start (SK-15b). Null
     /// while the studio is off.
     pub router: Option<StudioRouter>,
+    /// **The clones a chat can be previewed in** (#4227): each of the workspace's that holds
+    /// repo skills, in its order. Empty at the project's root, while the studio is off, and
+    /// where no clone holds one.
+    pub places: Vec<StudioClone>,
     /// Where purlis cannot confirm which of the project's workspace and persona folders the
     /// person accepted (#3718): the one item the studio shows for the project, whose Accept
     /// accepts the folders it lists (`skill_levels_confirm`). Null otherwise.
@@ -865,7 +932,7 @@ fn router_of(
         .map(|p| purlis_core::skills::PinnedBy::Persona(p.to_owned()))
         .or_else(|| workspace.map(|ws| purlis_core::skills::PinnedBy::Workspace(ws.to_owned())));
     StudioRouter {
-        preview: preview_of(workspace, persona, extension.as_deref(), in_a_clone),
+        preview: preview_of(workspace, persona, extension.as_deref(), in_a_clone, None),
         said,
         problem,
         extension,
@@ -879,21 +946,23 @@ fn router_of(
 }
 
 /// **What the studio's hidden marks preview** (#4215; ADR 0102 as amended 2026-10-31): the
-/// start of a chat at the root of `workspace` (or of the project), as `persona` where the studio
-/// is filtered to one, which is in no clone, so no repo skill counts against its budget, routed
-/// by the built-in router, which asks nothing. An extension's router (`extension`) is asked only
-/// at a chat's real start, never by a read of the studio, so where one is chosen the marks are
-/// the built-in router's choice and say so. Where a clone holds repo skills (`in_a_clone`), a
-/// chat started there counts them too, which the line says.
+/// start of a chat at the root of `workspace` (or of the project), or, with `place` chosen, in
+/// that clone, whose repo skills count against its budget too (#4227); as `persona` where the
+/// studio is filtered to one; routed by the built-in router, which asks nothing. An extension's
+/// router (`extension`) is asked only at a chat's real start, never by a read of the studio, so
+/// where one is chosen the marks are the built-in router's choice and say so. At the root, where
+/// a clone holds repo skills (`in_a_clone`), the line says where another place is chosen.
 fn preview_of(
     workspace: Option<&str>,
     persona: Option<&str>,
     extension: Option<&str>,
     in_a_clone: bool,
+    place: Option<&purlis_core::skills::ClonePlace>,
 ) -> String {
-    let at = match workspace {
-        Some(_) => "a chat at the workspace's root",
-        None => "a chat at the project's root",
+    let at = match (place, workspace) {
+        (Some(place), _) => format!("a chat started in {}", place.clone),
+        (None, Some(_)) => "a chat at the workspace's root".to_owned(),
+        (None, None) => "a chat at the project's root".to_owned(),
     };
     let as_persona = persona.map_or_else(String::new, |persona| format!(" as {persona}"));
     let since = extension.map_or_else(String::new, |id| {
@@ -902,15 +971,24 @@ fn preview_of(
             purlis_core::skills::Router::Extension(id.to_owned()).shown()
         )
     });
-    let clones = if in_a_clone {
-        " A chat started in a clone counts that clone's repo skills too, and its own Skills view \
-         says what it hides."
-    } else {
-        ""
+    let more = match place {
+        Some(place) => format!(
+            ": its {} against the budget too.",
+            purlis_core::counts::counted(
+                place.repo_skills,
+                "repo skill counts",
+                "repo skills count"
+            )
+        ),
+        None if in_a_clone => {
+            ". A chat started in a clone counts that clone's repo skills too: where the chat \
+             starts is chosen beside Whose chats, at the top."
+                .to_owned()
+        }
+        None => ".".to_owned(),
     };
     format!(
-        "The rows' hidden marks are what the built-in router hides for {at}{as_persona}{since}.\
-         {clones}"
+        "The rows' hidden marks are what the built-in router hides for {at}{as_persona}{since}{more}"
     )
 }
 
@@ -1014,6 +1092,7 @@ fn studio_read(
             pins_refused: None,
             not_supported: Vec::new(),
             router: None,
+            places: Vec::new(),
             levels_to_confirm: None,
             needs: Vec::new(),
         };
@@ -1049,12 +1128,9 @@ fn studio_read(
             plane_shown(root, workspace.as_deref(), &off, by, row)
         })
         .collect();
-    // Whether a chat started in a clone counts repo skills a chat at the root does not (#4215).
-    let in_a_clone = all.iter().any(|one| {
-        one.outside
-            .iter()
-            .any(|found| found.origin == purlis_core::skills::Origin::Repo && !found.off)
-    });
+    // The clones a chat started in counts repo skills a chat at the root does not (#4215, #4227).
+    let clones = purlis_core::skills::clones_with_repo_skills(&all);
+    let in_a_clone = !clones.is_empty();
     let (harnesses, clashes) = harnesses(&all);
     let workspaces = if whole {
         purlis_core::workspaces::Plane::open(root)
@@ -1065,6 +1141,23 @@ fn studio_read(
     };
     let router =
         whole.then(|| router_of(root, workspace.as_deref(), persona.as_deref(), in_a_clone));
+    let places = match &router {
+        Some(router) => clones
+            .iter()
+            .map(|place| StudioClone {
+                clone: place.clone.clone(),
+                repo_skills: capped(place.repo_skills),
+                preview: preview_of(
+                    workspace.as_deref(),
+                    persona.as_deref(),
+                    router.extension.as_deref(),
+                    true,
+                    Some(place),
+                ),
+            })
+            .collect(),
+        None => Vec::new(),
+    };
     let mut studio = Studio {
         on,
         workspace,
@@ -1082,6 +1175,7 @@ fn studio_read(
         pins_refused,
         not_supported: not_supported.into_iter().map(Into::into).collect(),
         router,
+        places,
         levels_to_confirm: purlis_core::skills::levels::to_confirm(root).map(|(said, folders)| {
             StudioLevelsToConfirm {
                 said: said.to_owned(),
@@ -1125,6 +1219,8 @@ fn outside_shown(row: purlis_core::skills::StudioRow) -> StudioSkill {
         compat: row.compat.iter().map(Into::into).collect(),
         lint: row.lint,
         hidden: row.hidden.iter().map(Into::into).collect(),
+        hidden_in: row.hidden_in.iter().map(Into::into).collect(),
+        replaced_in: row.replaced_in.iter().map(Into::into).collect(),
         source_label: row.source_label.clone(),
         pinned: row.pinned,
         archived: row.lifecycle == purlis_core::skills::Lifecycle::Archived,

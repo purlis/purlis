@@ -58,6 +58,8 @@ import { Select } from "./ui/select/Select";
 import { Choice } from "./settings/components";
 import { askAChat, labelOf, levelFrom, levelOf, levelsFor, sameLevel } from "./skillChanges";
 import { DeleteDialog, MoveDialog, RenameDialog } from "./SkillChangeDialogs";
+import { StudioWhosePicker } from "./StudioWhosePicker";
+import { cloneChosen, placesOf, studioIn } from "./studioPlace";
 import {
   SkillPage,
   changed as answered,
@@ -87,11 +89,11 @@ import {
   sameScope,
   scopeChat,
   scopeKey,
-  scopeOfKey,
   samePlace,
   skillOfRowId,
   skillRowId,
   skillRowNamed,
+  startedIn,
   studioHistoryOf,
   useStudioStart,
   whoseChats,
@@ -470,7 +472,14 @@ export function SkillStudioTab({
   );
   const key = scopeKey(scope);
   // What was read for another scope is not this one's: placeholders until this one's is.
-  const studio = read?.key === key ? read.studio : undefined;
+  const asRead = read?.key === key ? read.studio : undefined;
+  // **Where the chat it previews starts** (#4227): every page draws the studio as a chat started
+  // there sees it, from the one read, which covers every place.
+  const where = scope.where;
+  const studio = useMemo(
+    () => (asRead === undefined ? undefined : studioIn(asRead, where)),
+    [asRead, where],
+  );
   const refused = read?.key === key ? read.refused : undefined;
   const on = studio?.on === true;
   // Read once the studio has said it is on: a scope picked later reads its skills, not these.
@@ -1181,23 +1190,19 @@ export function SkillStudioTab({
   const start = levelFrom(scope, levels);
 
   const picker = (
-    <Select
-      size="sm"
-      aria-label="Whose chats"
-      value={key}
-      options={[
+    <StudioWhosePicker
+      scope={scope}
+      whose={[
         AT_THE_ROOT,
         ...(studio?.workspaces ?? []).map(inWorkspace),
         // The scope shown is always among them, while its skills are still being read too.
         ...(scope.at === "persona" ||
         (scope.at === "workspace" && !(studio?.workspaces ?? []).includes(scope.name))
-          ? [scope]
+          ? [startedIn(scope, undefined)]
           : []),
-      ].map((one) => ({ value: scopeKey(one), label: scopeChat(one) }))}
-      onValueChange={(to) => {
-        const next = scopeOfKey(to);
-        if (!sameScope(next, scope)) go({ page, scope: next });
-      }}
+      ]}
+      places={studio?.places ?? []}
+      onScope={(next) => go({ page, scope: next })}
     />
   );
   const controls = (
@@ -1230,7 +1235,13 @@ export function SkillStudioTab({
   );
   // What is chosen on Harness skills (#3692): a program's own skill, by its place's id.
   const groups =
-    page === "harness" ? harnessGroups(studio?.harnesses ?? [], studio?.not_supported ?? []) : [];
+    page === "harness"
+      ? harnessGroups(
+          studio?.harnesses ?? [],
+          studio?.not_supported ?? [],
+          cloneChosen(studio, where)?.clone,
+        )
+      : [];
   const harnessRow = page === "harness" ? harnessRowAt(groups, at.skill) : undefined;
   // What is chosen on Routing: a chat's start, by its number.
   const routedChat =
@@ -1819,6 +1830,11 @@ export function SkillStudioTab({
           studio={studio}
           skill={chosen}
           scope={scope}
+          inPlaces={placesOf(
+            // As read: its marks at the root beside each clone's.
+            asRead?.skills.find((one) => skillRowId(one) === skillRowId(chosen)) ?? chosen,
+            studio.places,
+          )}
           drafts={drafts}
           tab={at.tab ?? "overview"}
           run={at.run}

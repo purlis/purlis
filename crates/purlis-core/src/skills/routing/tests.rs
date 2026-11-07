@@ -1056,6 +1056,115 @@ fn the_studio_routes_a_harness_as_a_chat_at_the_workspace_root_starts_whatever_i
     );
 }
 
+/// #4227: with a clone chosen, the studio marks hidden exactly what a chat's start in that clone
+/// hides, and says of a plane skill that clone's repo copy replaces that it is replaced there.
+/// A clone that holds no repo skill is no place to preview: a chat there lists what one at the
+/// root lists.
+#[test]
+fn the_studio_marks_hidden_in_a_clone_what_a_chat_s_start_there_hides_4227() {
+    let (tmp, bundle) = a_plane_of(MOST - 2);
+    let root = tmp.path();
+    for repo in ["api", "web", "docs"] {
+        std::fs::create_dir_all(root.join("workspaces/smart-ide").join(repo).join(".git")).unwrap();
+    }
+    for (repo, count) in [("api", 4), ("web", 1)] {
+        for at in 0..count {
+            let name = format!("{repo}-{at}");
+            write(
+                &root
+                    .join("workspaces/smart-ide")
+                    .join(repo)
+                    .join(".claude/skills")
+                    .join(&name),
+                &format!("---\nname: {name}\ndescription: The repo's {at}.\n---\n"),
+            );
+        }
+    }
+    // A copy of a plane skill in api, which a Codex chat there takes in its place (decision 51).
+    write(
+        &root.join("workspaces/smart-ide/api/.agents/skills/skill-01"),
+        "---\nname: skill-01\ndescription: The repo's copy.\n---\n",
+    );
+
+    let list = studio(root, &bundle);
+
+    let api = root.join("workspaces/smart-ide/api");
+    let started =
+        crate::hoststart::ChatSkills::read(true, root, Some(Harness::ClaudeCode), Some(&api), None);
+    let in_api = for_use_skill(&Running {
+        start: Some(&started),
+        ..running(root, &bundle, None)
+    });
+    let mut expected = hidden(&in_api);
+    expected.sort_unstable();
+    expected.dedup();
+    assert!(!expected.is_empty(), "a chat in api is over its budget");
+
+    let marked_in = |clone: &str| {
+        let mut marked: Vec<&str> = list
+            .rows
+            .iter()
+            .chain(list.harnesses.iter().flat_map(|one| one.rows.iter()))
+            .filter(|row| {
+                row.hidden_in
+                    .iter()
+                    .any(|one| one.clone == clone && one.harness == Harness::ClaudeCode)
+            })
+            .map(|row| row.name.as_str())
+            .collect();
+        marked.sort_unstable();
+        marked.dedup();
+        marked
+    };
+    assert_eq!(
+        marked_in("api"),
+        expected,
+        "the marks in api are its start's"
+    );
+    assert!(
+        marked_in("web")
+            .iter()
+            .all(|name| !name.starts_with("api-")),
+        "a chat in web holds none of api's"
+    );
+
+    let replaced = list
+        .rows
+        .iter()
+        .find(|row| row.name == "skill-01" && row.origin.of_the_plane())
+        .expect("the plane's skill-01");
+    assert!(
+        replaced
+            .replaced_in
+            .iter()
+            .any(|one| one.clone == "api" && one.harness == Harness::Codex),
+        "{:?}",
+        replaced.replaced_in
+    );
+    assert!(
+        replaced
+            .hidden_in
+            .iter()
+            .all(|one| one.clone != "api" || one.harness != Harness::Codex),
+        "the repo's copy is what api's Codex chat lists or hides, never the plane's"
+    );
+
+    let places = list.clones_with_repo_skills();
+    let places: Vec<(&str, usize)> = places
+        .iter()
+        .map(|one| (one.clone.as_str(), one.repo_skills))
+        .collect();
+    assert_eq!(places, [("api", 5), ("web", 1)], "docs holds none");
+    // A row of api's own is marked in api alone.
+    let api_0 = list
+        .harnesses
+        .iter()
+        .flat_map(|one| one.rows.iter())
+        .find(|row| row.name == "api-0")
+        .expect("api's api-0");
+    assert!(api_0.hidden_in.iter().all(|one| one.clone == "api"));
+}
+
 /// **Past a written budget the router hides all it may, and a pin stays the way to keep one**
 /// (#4610): a plane of skills that fit each harness's own numbers, written down to five.
 #[test]

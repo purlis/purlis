@@ -2044,6 +2044,12 @@ pub struct HarnessInTheStudio {
     /// the built-in router. That chat is in no clone, so it holds no repo skill, and what the
     /// harness finds itself is beside it and counts against nothing.
     pub at_the_root: SkillSet,
+    /// **What a chat started in each clone would list** (#4227): for each clone that holds a
+    /// repo skill on for this harness, in the workspace's order, the set of a chat started in
+    /// that clone's own folder, routed as that chat's start routes it, by the built-in router:
+    /// [`Self::at_the_root`] with that clone's repo skills counted too. Worked out from what the
+    /// list already read, so it reads nothing more.
+    pub in_clones: Vec<ACloneSet>,
     /// The skills from outside the plane, with whose each is and how it switches.
     pub outside: Vec<OutsideSkill>,
     /// The skills of its plugins a new chat here would lack, each with its plugin (#4477).
@@ -2060,6 +2066,25 @@ pub struct HarnessInTheStudio {
     /// **Its own catalogue, measured** ([`own_catalogue`], #3324): `None` where the list was read
     /// only for a count of needs ([`Reading::Needs`]), which shows no figure.
     pub own: Option<OwnCatalogue>,
+}
+
+/// **A chat started in one clone, on one harness, as its start routes it** (#4227).
+pub struct ACloneSet {
+    /// The clone, by its name in the workspace.
+    pub clone: String,
+    /// The repo skills it holds on for this harness, by name.
+    pub repo_skills: Vec<String>,
+    pub set: SkillSet,
+}
+
+/// **A clone a chat can be previewed in** (#4227): one that holds a repo skill on for some
+/// harness, so a chat started there counts more than a chat at the workspace's root.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClonePlace {
+    /// The clone, by its name in the workspace.
+    pub clone: String,
+    /// How many repo skills it holds on, by name, on any harness.
+    pub repo_skills: usize,
 }
 
 /// **What a harness's own catalogue holds** (#3324; ADR 0102 as amended 2026-10-31): the skills
@@ -2212,18 +2237,47 @@ fn harnesses_in_the_studio(
                 crate::harness_plugin::harness_skills_split(adapter, env, &choices, &plugins_off);
             let repo = crate::harness_plugin::repo_skills(adapter, &choices, &clones);
             let route = harness.skills();
-            let set = set.clone();
+            let budget = budget_in(plane, workspace, harness);
             // A chat at the workspace's root, routed as its start routes it, by this harness's
             // own budget (SK-15; #4215): what the harness finds itself is beside the set and
             // counted in nothing, and the chat is in no clone, so no repo skill is in it.
             let at_the_root = as_a_start_routes(
-                set,
+                set.clone(),
                 route,
                 &own,
-                Some(budget_in(plane, workspace, harness)),
+                Some(budget),
                 || pins.to_vec(),
                 None,
             );
+            // A chat started in each clone that holds a repo skill on (#4227): the same, with
+            // that clone's repo skills beside, as its start counts them.
+            let in_clones = clones
+                .iter()
+                .filter_map(|clone| {
+                    let mut here = own.clone();
+                    let mut repo_skills = Vec::new();
+                    for one in repo.iter().filter(
+                        |one| matches!(&one.owner, Owner::Repo(name) if *name == clone.name),
+                    ) {
+                        if !one.off && !repo_skills.contains(&one.skill.name) {
+                            repo_skills.push(one.skill.name.clone());
+                        }
+                        here.push(one.clone());
+                    }
+                    (!repo_skills.is_empty()).then(|| ACloneSet {
+                        clone: clone.name.clone(),
+                        repo_skills,
+                        set: as_a_start_routes(
+                            set.clone(),
+                            route,
+                            &here,
+                            Some(budget),
+                            || pins.to_vec(),
+                            None,
+                        ),
+                    })
+                })
+                .collect();
             // Every clone's repo skills beside that, for their clashes, their rows and what a
             // repo leaves out: no one chat's set, so no routing.
             let set = SkillSet {
@@ -2243,6 +2297,7 @@ fn harnesses_in_the_studio(
                 repo_left_out: rows_of(&by_a_repo, plane, names, reading),
                 set,
                 at_the_root,
+                in_clones,
                 own: (reading == Reading::Whole).then(|| own_catalogue(harness, &outside)),
                 outside,
                 off_rows,
@@ -2250,6 +2305,18 @@ fn harnesses_in_the_studio(
                 rows: Vec::new(),
             };
             one.rows = outside_rows(&one, plane, known, reading);
+            // A repo skill is a chat's only in its own clone, so it is marked only there.
+            for row in one.rows.iter_mut().filter(|row| row.left_out.is_none()) {
+                if let Some(OutsideRow {
+                    owner: Owner::Repo(repo),
+                    ..
+                }) = &row.outside
+                {
+                    let repo = repo.clone();
+                    let own = one.in_clones.iter().filter(|clone| clone.clone == repo);
+                    marked_in_clones(row, harness, own);
+                }
+            }
             Some(one)
         })
         .collect()
@@ -2345,6 +2412,7 @@ pub fn branch_folder_rows(
         harness,
         set,
         at_the_root: SkillSet::default(),
+        in_clones: Vec::new(),
         outside,
         off_rows: Vec::new(),
         plugins_off: Vec::new(),
@@ -2438,6 +2506,14 @@ pub struct StudioRow {
     pub hidden: Vec<HiddenOn>,
     /// Whether the chat's workspace or persona pins it, so no router hides it (ADR 0102 §4).
     pub pinned: bool,
+    /// **Each clone whose chat a router hid it from, on each harness** (#4227): what the studio
+    /// marks once that clone is chosen as where the chat starts, routed as that chat's start
+    /// routes it, with the clone's repo skills counted too ([`HarnessInTheStudio::in_clones`]).
+    /// A repo skill is marked only in its own clone. Empty where every such chat lists it.
+    pub hidden_in: Vec<HiddenIn>,
+    /// **Each clone whose repo copy a chat there takes in place of this plane skill**, on each
+    /// harness (#4227): what the studio says of it once that clone is chosen.
+    pub replaced_in: Vec<InAClone>,
 }
 
 /// **A skill a router hid on one harness's chats** (SK-15).
@@ -2445,6 +2521,23 @@ pub struct StudioRow {
 pub struct HiddenOn {
     pub harness: Harness,
     pub hidden: Hidden,
+}
+
+/// **A skill a router hid on one harness's chats started in one clone** (#4227).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HiddenIn {
+    /// The clone, by its name in the workspace.
+    pub clone: String,
+    pub harness: Harness,
+    pub hidden: Hidden,
+}
+
+/// **One harness's chats started in one clone** (#4227).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InAClone {
+    /// The clone, by its name in the workspace.
+    pub clone: String,
+    pub harness: Harness,
 }
 
 /// What a studio row says of a skill from outside the plane.
@@ -2528,6 +2621,8 @@ fn outside_rows(
                 owners: Vec::new(),
                 hidden: Vec::new(),
                 pinned: false,
+                hidden_in: Vec::new(),
+                replaced_in: Vec::new(),
             }
         })
         .collect()
@@ -2980,6 +3075,13 @@ pub fn not_supported(declarations: &crate::harness_declaration::Declarations) ->
 }
 
 impl StudioList {
+    /// **The clones a chat can be previewed in** (#4227): each that holds a repo skill on for
+    /// some harness, in the workspace's order, with how many it holds by name. A clone that
+    /// holds none is no place of its own: a chat there lists what a chat at the root lists.
+    pub fn clones_with_repo_skills(&self) -> Vec<ClonePlace> {
+        clones_with_repo_skills(&self.harnesses)
+    }
+
     /// **The clashes of a plane or built-in row** (SK-46, #3149; decision 51): each skill from
     /// outside the plane with its name, harness by harness, as the studio marks the row of the
     /// copy purlis hands. What `purlis skill list` and the window both say of it, each in
@@ -3005,6 +3107,34 @@ impl StudioList {
                     .map(move |clash| (one.harness, clash))
             })
     }
+}
+
+/// **The clones a chat can be previewed in** (#4227), of `harnesses`: each that holds a repo
+/// skill on for some harness, in the workspace's order, with how many it holds by name. A clone
+/// that holds none is no place of its own: a chat there lists what a chat at the root lists.
+pub fn clones_with_repo_skills(harnesses: &[HarnessInTheStudio]) -> Vec<ClonePlace> {
+    let mut places: Vec<(String, Vec<&str>)> = Vec::new();
+    for clone in harnesses.iter().flat_map(|one| one.in_clones.iter()) {
+        let at = match places.iter().position(|(name, _)| *name == clone.clone) {
+            Some(at) => at,
+            None => {
+                places.push((clone.clone.clone(), Vec::new()));
+                places.len() - 1
+            }
+        };
+        for name in &clone.repo_skills {
+            if !places[at].1.contains(&name.as_str()) {
+                places[at].1.push(name);
+            }
+        }
+    }
+    places
+        .into_iter()
+        .map(|(clone, names)| ClonePlace {
+            clone,
+            repo_skills: names.len(),
+        })
+        .collect()
 }
 
 /// **A clash as the studio and `purlis skill list` say it** (SK-46, #3149; ADR 0099 §3): whose
@@ -3292,6 +3422,45 @@ fn with_routing(rows: &mut [StudioRow], harnesses: &[HarnessInTheStudio]) {
             .iter()
             .any(|one| one.at_the_root.is_pinned(&row.name));
     }
+    for row in rows.iter_mut().filter(|row| row.left_out.is_none()) {
+        for one in harnesses {
+            marked_in_clones(row, one.harness, &one.in_clones);
+        }
+    }
+}
+
+/// **What `harness`'s router made of `row` in each of `clones`** (#4227), where a chat there
+/// gets it with the origin it has: each clone whose chat on `harness` a router hid it from,
+/// and, for a plane skill, each whose repo copy that chat takes in its place.
+fn marked_in_clones<'a>(
+    row: &mut StudioRow,
+    harness: Harness,
+    clones: impl IntoIterator<Item = &'a ACloneSet>,
+) {
+    for clone in clones {
+        let named = || {
+            clone
+                .set
+                .effective
+                .iter()
+                .filter(|got| got.skill.name == row.name)
+        };
+        // Where the harness loads both copies of a name, each is a row of its own.
+        if !named().any(|got| got.origin == row.origin) {
+            if row.origin.of_the_plane() && named().any(|got| got.origin == Origin::Repo) {
+                row.replaced_in.push(InAClone {
+                    clone: clone.clone.clone(),
+                    harness,
+                });
+            }
+        } else if let Some(hidden) = clone.set.hidden_by_router(&row.name) {
+            row.hidden_in.push(HiddenIn {
+                clone: clone.clone.clone(),
+                harness,
+                hidden: hidden.clone(),
+            });
+        }
+    }
 }
 
 /// What is said of a harness skill a persona names that purlis could not check this machine for
@@ -3359,6 +3528,8 @@ fn rows_of(set: &SkillSet, plane: &Path, names: &[Reference], reading: Reading) 
                 // Each harness's router, by its own budget ([`with_routing`]).
                 hidden: Vec::new(),
                 pinned: false,
+                hidden_in: Vec::new(),
+                replaced_in: Vec::new(),
             }
         })
         .chain(set.from_the_harness.iter().map(|h| {
@@ -3383,6 +3554,8 @@ fn rows_of(set: &SkillSet, plane: &Path, names: &[Reference], reading: Reading) 
                 owners: Vec::new(),
                 hidden: Vec::new(),
                 pinned: false,
+                hidden_in: Vec::new(),
+                replaced_in: Vec::new(),
             }
         }))
         .chain(set.left_out.iter().map(|l| {
@@ -3423,6 +3596,8 @@ fn rows_of(set: &SkillSet, plane: &Path, names: &[Reference], reading: Reading) 
                 owners: owners(l.origin, &l.folder),
                 hidden: Vec::new(),
                 pinned: false,
+                hidden_in: Vec::new(),
+                replaced_in: Vec::new(),
             }
         }))
         .collect();
