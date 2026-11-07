@@ -63,6 +63,9 @@ pub struct FillWait {
     /// Its number in the project: what its answer names.
     pub id: u32,
     pub session: u32,
+    /// The chat's id (ADR 0066) as it raised this: what an Allow for this chat is bound to,
+    /// beside its number.
+    pub chat: Option<String>,
     /// The chat's browser, by the name the chat knows it by (`b1`).
     pub browser: String,
     pub vault: String,
@@ -160,8 +163,23 @@ pub enum Heard {
     Gone,
 }
 
-/// A key on an origin for one chat: by chat, vault, key and origin.
-type ForChat = (u32, String, String, String);
+/// A key on an origin for one chat: by chat's number and id, vault, key and origin.
+type ForChat = (u32, Option<String>, String, String, String);
+
+/// **A chat, by its number and its id** (ADR 0066): what it was allowed answers it alone, never
+/// a later chat dealt the same number.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Chat<'a> {
+    pub session: u32,
+    pub id: Option<&'a str>,
+}
+
+impl Chat<'_> {
+    /// Whether `(number, id)` is this chat.
+    fn is(&self, (number, id): (&u32, &Option<String>)) -> bool {
+        *number == self.session && id.as_deref() == self.id
+    }
+}
 
 /// **Whose Keep blocked it is** (the person's ruling of 2026-11-07): a persona's, for all its
 /// chats until purlis restarts, so a new chat starts no fresh tries. A chat that runs as no
@@ -302,27 +320,27 @@ impl Fills {
     }
 
     /// Whether the person allowed this key on this origin for this chat (#5116).
-    fn granted(&self, session: u32, vault: &str, key: &str, origin: &str) -> bool {
+    fn granted(&self, chat: Chat<'_>, vault: &str, key: &str, origin: &str) -> bool {
         self.lock()
             .granted
             .iter()
-            .any(|(chat, v, k, o)| *chat == session && v == vault && k == key && o == origin)
+            .any(|(n, id, v, k, o)| chat.is((n, id)) && v == vault && k == key && o == origin)
     }
 
     /// Whether the person allowed codes of this key on this origin for this chat (#5118).
-    fn code_granted(&self, session: u32, vault: &str, key: &str, origin: &str) -> bool {
+    fn code_granted(&self, chat: Chat<'_>, vault: &str, key: &str, origin: &str) -> bool {
         self.lock()
             .codes_granted
             .iter()
-            .any(|(chat, v, k, o)| *chat == session && v == vault && k == key && o == origin)
+            .any(|(n, id, v, k, o)| chat.is((n, id)) && v == vault && k == key && o == origin)
     }
 
     /// The origins the person allowed this key on for this chat (#5230).
-    fn granted_origins(&self, session: u32, vault: &str, key: &str) -> Vec<String> {
+    fn granted_origins(&self, chat: Chat<'_>, vault: &str, key: &str) -> Vec<String> {
         self.lock()
             .granted
             .iter()
-            .filter(|(chat, v, k, _)| *chat == session && v == vault && k == key)
+            .filter(|(n, id, v, k, _)| chat.is((n, id)) && v == vault && k == key)
             .map(|(.., origin)| origin.clone())
             .collect()
     }
@@ -492,6 +510,11 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<A
     // Whose grants it fills under, and whose tools Always writes in: a narrowed chat's are the
     // persona it was narrowed to (the decision of 2026-11-06).
     let persona = held.chats().secret_grants_of(session);
+    let id = held.chats().id_of(session);
+    let chat = Chat {
+        session,
+        id: id.as_deref(),
+    };
     if fills.kept(
         session,
         persona.as_deref(),
@@ -503,15 +526,8 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<A
     }
     // A browser on a runner is asked about each time: a grant here holds this machine's
     // browsers (#5122).
-    let asks_the_person = runner.is_some()
-        || asks(
-            held.root(),
-            fills,
-            session,
-            persona.as_deref(),
-            asked,
-            &origin,
-        );
+    let asks_the_person =
+        runner.is_some() || asks(held.root(), fills, chat, persona.as_deref(), asked, &origin);
     // A grant fills no field whose form sends it in the page's address (the person's ruling of
     // 2026-11-06).
     if !asks_the_person && asked.field.by_get == Some(true) {
@@ -523,6 +539,7 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<A
             FillWait {
                 id: 0,
                 session,
+                chat: id.clone(),
                 browser: asked.browser.clone(),
                 vault: asked.vault.clone(),
                 key: asked.key.clone(),
@@ -562,14 +579,7 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<A
         );
     }
     let persona = persona_of_fill(held, session);
-    let also = approved_elsewhere(
-        held.root(),
-        fills,
-        session,
-        persona.as_deref(),
-        asked,
-        &origin,
-    );
+    let also = approved_elsewhere(held.root(), fills, chat, persona.as_deref(), asked, &origin);
     Ok(Allowed {
         value,
         multi_line,
@@ -600,7 +610,7 @@ fn persona_of_fill(held: &Held, session: u32) -> Option<String> {
 fn approved_elsewhere(
     root: &std::path::Path,
     fills: &Fills,
-    session: u32,
+    chat: Chat<'_>,
     persona: Option<&str>,
     asked: &FillAsked,
     origin: &str,
@@ -608,10 +618,10 @@ fn approved_elsewhere(
     let ctx = Ctx::new(root, Env::from_process());
     let mut named =
         purlis_core::secretfill::origins_of_lines(&ctx, persona, &asked.vault, &asked.key);
-    named.extend(fills.granted_origins(session, &asked.vault, &asked.key));
+    named.extend(fills.granted_origins(chat, &asked.vault, &asked.key));
     named.sort();
     named.dedup();
-    named.retain(|one| one != origin && granted(root, fills, session, persona, asked, one));
+    named.retain(|one| one != origin && granted(root, fills, chat, persona, asked, one));
     named
 }
 
@@ -635,7 +645,7 @@ pub struct Allowed {
 fn asks(
     root: &std::path::Path,
     fills: &Fills,
-    session: u32,
+    chat: Chat<'_>,
     persona: Option<&str>,
     asked: &FillAsked,
     origin: &str,
@@ -643,7 +653,7 @@ fn asks(
     asked.field.kind != FieldKind::OneLine
         || asked.field.payment != Some(false)
         || asked.field.by_get.is_none()
-        || !granted(root, fills, session, persona, asked, origin)
+        || !granted(root, fills, chat, persona, asked, origin)
 }
 
 /// **Whether a fill goes in without a notice** (#5116): a line Always wrote, allowed here, or the
@@ -652,7 +662,7 @@ fn asks(
 fn granted(
     root: &std::path::Path,
     fills: &Fills,
-    session: u32,
+    chat: Chat<'_>,
     persona: Option<&str>,
     asked: &FillAsked,
     origin: &str,
@@ -665,11 +675,11 @@ fn granted(
     }
     let locks = Locks::of(root);
     if asked.code {
-        return fills.code_granted(session, &asked.vault, &asked.key, origin)
+        return fills.code_granted(chat, &asked.vault, &asked.key, origin)
             && locks.scope_removed(Level::Chat).is_none();
     }
     (lines.always && locks.scope_removed(Level::You).is_none())
-        || (fills.granted(session, &asked.vault, &asked.key, origin)
+        || (fills.granted(chat, &asked.vault, &asked.key, origin)
             && locks.scope_removed(Level::Chat).is_none())
 }
 
@@ -1032,6 +1042,7 @@ pub fn answer(
         if inner.waits.iter().any(|(one, _)| one.id == wait.id) {
             let grant = (
                 wait.session,
+                wait.chat.clone(),
                 wait.vault.clone(),
                 wait.key.clone(),
                 wait.origin.clone(),
