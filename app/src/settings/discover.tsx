@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useState } from "react";
-import { commands, type DoctorFixed, type PlaneId } from "../bindings";
+import { commands, type DoctorFix, type DoctorFixed, type PlaneId } from "../bindings";
 import type { LiveSetting } from "./groups";
 import { Button } from "../ui/button/Button";
 
 /** The doctor's fix that catalogues what the project's forges list (FX-2, `doctor/fix.rs`). */
-export const DISCOVER = "discover";
+export const DISCOVER: DoctorFix = "discover";
 
 /**
  * **Settings › Saving's way to discover** (#1390; the spec on #1221, "Repo save policies: they

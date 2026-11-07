@@ -54,7 +54,7 @@ pub(crate) enum AlertWay {
         setting: Option<String>,
     },
     /// A fix of the doctor's registry, by the id `charter doctor --fix` takes (FX-1).
-    Fix { id: String },
+    Fix { id: crate::doctor::DoctorFix },
     /// Another project to open: the one whose `workspaces/` this one is nested in.
     OpenProject { path: String },
     /// The project's Saving view, where a save is resolved.
@@ -101,7 +101,7 @@ fn way_out(alert: &alerts::Alert) -> AlertWay {
         }
         alerts::Alert::FrontDoor { .. } => general_at(&["persona", "default"]),
         alerts::Alert::Reinit { .. } => AlertWay::Fix {
-            id: FixId::WorkspaceReinit.id().to_owned(),
+            id: FixId::WorkspaceReinit.into(),
         },
         alerts::Alert::NestedPlane { outer, .. } => AlertWay::OpenProject {
             path: outer.display().to_string(),

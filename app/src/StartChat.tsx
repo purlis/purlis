@@ -17,6 +17,7 @@ import { FirstOnHarness, noteHarness } from "./cardLink";
 import { ApprovalSentence } from "./ProfileApproval";
 import {
   commands,
+  type DoctorFix,
   type PlaneId,
   type PoolLimitOffer,
   type ProfileRow,
@@ -279,7 +280,7 @@ export function StartChat({
   fixing?: boolean;
   /** Applies a doctor fix by its id — the `local-ignore` the refusal offers (NO-8) — and reads
    *  the picker again. Absent, the refusal shows the fix's words alone. */
-  onFix?: (id: string) => void;
+  onFix?: (id: DoctorFix) => void;
   /** Opens Settings at a group (SE-22's address), with the setting to focus there: where a
    *  refused profile is mended (NO-8, #1296). */
   onOpenSettings?: (group: string, setting?: string) => void;

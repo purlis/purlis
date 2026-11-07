@@ -103,7 +103,12 @@ let rows: AlertRow[] = [];
 let others: PlaneAlerts[] = [];
 /** What the reading answers instead, where it fails. */
 let readingFails: string | undefined;
-let fixAnswer: DoctorFixed | string = { fix: "", refused: null, said: [], complete: true };
+let fixAnswer: DoctorFixed | string = {
+  fix: "workspace-reinit",
+  refused: null,
+  said: [],
+  complete: true,
+};
 let asked: { cmd: string; args: unknown }[] = [];
 
 /** What `review_plane` answers (#2647): the project's trust ask, none, or a refusal. */
@@ -278,7 +283,7 @@ describe("each alert in the Inbox", () => {
   });
 
   it("names what a fix acts on, even for a fix it has no words of its own for (#1719)", async () => {
-    rows = [{ ...REINIT, subject: "something new", way: { kind: "fix", id: "some-new-fix" } }];
+    rows = [{ ...REINIT, subject: "something new", way: { kind: "fix", id: "discover" } }];
     const open = await drawer();
 
     expect(

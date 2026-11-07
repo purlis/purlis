@@ -147,7 +147,10 @@ fn the_picker_names_the_doctors_fix_where_one_ignore_line_cures_the_local_file()
     let options = start_options_in(plane.path()).expect("read");
 
     assert!(options.ignore_fix.is_some(), "git would carry the file");
-    assert_eq!(options.ignore_fix_id.as_deref(), Some("local-ignore"));
+    assert_eq!(
+        options.ignore_fix_id,
+        Some(crate::doctor::DoctorFix::LocalIgnore)
+    );
 }
 
 #[test]
