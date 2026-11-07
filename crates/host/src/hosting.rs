@@ -149,6 +149,11 @@ pub trait Beside {
         let _ = confinement;
         None
     }
+    /// **Told the skills the program being composed was armed with** (1.77, SK-15h, #4218):
+    /// kept with it in memory alone, and answered to its start and a window that takes it back.
+    fn armed(&self, skills: Vec<session::ArmedSkill>) {
+        let _ = skills;
+    }
 }
 
 /// What a confinement's board holds now, read each time it is asked ([`Beside::reach_of`]).
@@ -981,6 +986,9 @@ struct Hosted {
     /// composed here. Kept in memory alone, for the window that takes it back, and written to
     /// no record.
     prompt_key: Option<session::PromptKey>,
+    /// The skills it was armed with, by name and level, where this host composed it (1.77,
+    /// #4218): kept in memory alone, for its start's answer and a window that takes it back.
+    armed_skills: Option<Vec<session::ArmedSkill>>,
 }
 
 /// **Who opened a hosted program** (#2050): a link of this host's own (its window), or a link
@@ -2325,7 +2333,7 @@ impl Hosting {
         };
         // Answered only to a link that may compose a start or take one back: the window's, or
         // its host's relaying it (#3369).
-        let answers_prompt_key = peer.scope().may(Power::Launch);
+        let answers_a_launch = peer.scope().may(Power::Launch);
         // Read now: the link may end while the program starts, and the chat stays its window's.
         let started_for = opened_by(&self.state(), peer);
         // Composed off the runtime: a start the host composes itself reads the project's files
@@ -2349,8 +2357,9 @@ impl Hosting {
                         window,
                         alone: start.alone.clone(),
                     })),
+                    armed: Mutex::default(),
                 };
-                hosting.inner.compose.compose(&ToCompose {
+                let composed = hosting.inner.compose.compose(&ToCompose {
                     project: &at.project,
                     project_path: &at.path,
                     number,
@@ -2360,14 +2369,20 @@ impl Hosting {
                     prompt_key: prompt_key.as_ref(),
                     started_by,
                     beside: &beside,
-                })
+                });
+                let armed = beside
+                    .armed
+                    .into_inner()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                composed.map(|spec| (spec, armed))
             })
             .await
             .map_err(|why| why.to_string())
             .and_then(|composed| composed)
         };
-        let spec = match composed {
-            Ok(spec) => spec,
+        let (spec, armed) = match composed {
+            // A launch the window composed says its own skills: only a start composed here.
+            Ok((spec, armed)) => (spec, armed.filter(|_| start.launch.is_none())),
             Err(why) => {
                 forget(&channel);
                 self.end_confinements_of(&program);
@@ -2449,6 +2464,7 @@ impl Hosting {
                     harness: start.harness.clone(),
                     ends_with_its_window,
                     prompt_key: prompt_key.clone(),
+                    armed_skills: armed.clone(),
                 },
             );
             windowless
@@ -2543,7 +2559,8 @@ impl Hosting {
             process,
             confined,
             sandbox: Some(sandbox),
-            prompt_key: prompt_key.filter(|_| answers_prompt_key),
+            prompt_key: prompt_key.filter(|_| answers_a_launch),
+            armed_skills: armed.filter(|_| answers_a_launch).map(Box::new),
         })
     }
 
@@ -2678,8 +2695,9 @@ impl Hosting {
                 harness: None,
                 // A browser lives as its chat's window keeps it (#2025), never by this word.
                 ends_with_its_window: false,
-                // A browser has no prompts of a chat's to digest.
+                // A browser has no prompts of a chat's to digest, nor skills.
                 prompt_key: None,
+                armed_skills: None,
             },
         );
         drop(state);
@@ -2706,6 +2724,7 @@ impl Hosting {
             confined: None,
             sandbox: Some(session::RunSandbox::Off),
             prompt_key: None,
+            armed_skills: None,
         })
     }
 
@@ -2958,6 +2977,7 @@ impl Hosting {
                     Vec::new()
                 },
                 prompt_key: hosted.prompt_key.clone(),
+                armed_skills: hosted.armed_skills.clone(),
             })
             .collect();
         programs.sort_by(|a, b| (a.number, &a.program).cmp(&(b.number, &b.program)));
@@ -3440,6 +3460,8 @@ struct ForTheProgram {
     /// What the start named for the confinement composed for it (#2407): taken by the first
     /// confinement started.
     named: Mutex<Option<NamedTo>>,
+    /// The skills its composition said it armed it with (#4218), where it said.
+    armed: Mutex<Option<Vec<session::ArmedSkill>>>,
 }
 
 /// The id a start gave the confinement composed for it, the link it is named to (#2407), the
@@ -3452,6 +3474,14 @@ struct NamedTo {
 }
 
 impl Beside for ForTheProgram {
+    fn armed(&self, skills: Vec<session::ArmedSkill>) {
+        *self
+            .armed
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Some(session::ArmedSkill::bounded(skills));
+    }
+
     fn confine(&self, plan: &session::ConfinePlan) -> Result<session::Confined, String> {
         let taken = self
             .named

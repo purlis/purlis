@@ -253,3 +253,38 @@ fn the_budget_says_a_workspace_and_a_persona_pin_past_64_together_3391() {
     }
     assert_eq!(shown(Some(&chat(None))).budget.unwrap().pins_together, None);
 }
+
+/// #4218 (SK-15h): a runner's chat is offered the skills its runner said it armed it with, by
+/// name and level, with no budget, which this window does not know; one whose runner said none
+/// (a runner before 1.77) is offered nothing and told why, never shown an empty set.
+#[test]
+fn a_runners_chat_is_offered_what_its_runner_said_or_told_its_runner_said_nothing_4218() {
+    let said =
+        crate::chats::RunnersWord::Said(vec![purlis_session_protocol::session::ArmedSkill {
+            name: "deploy".into(),
+            level: "project".into(),
+        }]);
+
+    let shown = from_its_runner(&said, Some(Harness::ClaudeCode), Some("alpha"));
+
+    assert!(shown.on && shown.known);
+    let skills: Vec<(&str, &str)> = shown
+        .skills
+        .iter()
+        .map(|one| (one.name.as_str(), one.label.as_str()))
+        .collect();
+    assert_eq!(skills, [("deploy", "project")]);
+    assert_eq!(shown.budget, None);
+
+    let not_said = from_its_runner(
+        &crate::chats::RunnersWord::NotSaid,
+        Some(Harness::ClaudeCode),
+        None,
+    );
+    assert!(!not_said.known);
+    assert!(not_said.skills.is_empty());
+    assert_eq!(
+        not_said.not_supported.as_deref(),
+        Some(NOT_SAID_BY_ITS_RUNNER)
+    );
+}
