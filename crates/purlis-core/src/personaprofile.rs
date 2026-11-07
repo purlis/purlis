@@ -1030,7 +1030,8 @@ mod tests {
                  naming that one with --profile."
             ),
         );
-        // The person, asking from a chat: no `--profile` is theirs to give, and the sentence says "this chat", not "the asking chat".
+        // The person, asking from a chat: no `--profile` is theirs to give, and the sentence says
+        // "this chat", not "the asking chat".
         assert_eq!(
             said(Who::AskingChat, Road::Person, &["work"]),
             "this chat runs on profile 'codex', which this project does not list for \

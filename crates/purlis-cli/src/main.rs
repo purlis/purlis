@@ -583,7 +583,8 @@ enum Command {
     /// the project gives that persona, and is listed under this chat in the explorer. Its
     /// report reaches this chat as context on its next turn. A persona other than this chat's
     /// own needs a dispatch grant, which the person gives: where there is none the
-    /// person is asked in the Inbox, and on this chat's pane when it is on screen, and the task starts when they allow it.
+    /// person is asked in the Inbox, and on this chat's pane when it is on screen, and the task
+    /// starts when they allow it.
     ///
     /// It starts on the persona's own harness profile where its definition names one, else on
     /// this chat's; --profile names another of the project's profiles. Where the project
@@ -654,7 +655,8 @@ enum Command {
 
     /// Open a chat in a workspace you name, already working on a brief you pass as a quoted
     /// heredoc on stdin. A handoff is a dispatch: to this chat's own persona it opens at
-    /// once, and to another purlis asks you once for the pair, in the Inbox, and on this chat's pane when it is on screen.
+    /// once, and to another purlis asks you once for the pair, in the Inbox, and on this chat's
+    /// pane when it is on screen.
     ///
     /// Work this chat needs an answer from, for its own persona or another, is `purlis
     /// dispatch` (with `--in workspace:<name>` when it must run elsewhere). A handoff is

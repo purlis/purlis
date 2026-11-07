@@ -944,7 +944,8 @@ fn waiting_line(working: &Working) -> Option<String> {
         })
         .collect();
     Some(format!(
-        "⬢ A task of yours is stopped ({AS_DATA}): {}. Only the person answers it, from the Inbox: tell them, and do not answer it or work around it.",
+        "⬢ A task of yours is stopped ({AS_DATA}): {}. Only the person answers it, from the Inbox: \
+         tell them, and do not answer it or work around it.",
         said.join("; ")
     ))
 }

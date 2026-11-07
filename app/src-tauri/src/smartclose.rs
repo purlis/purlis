@@ -1093,7 +1093,11 @@ mod tests {
             ..a_chat(State::Waiting, 3)
         });
         assert!(!shell.available);
-        assert!(shell.why.is_some_and(|why| why.contains("A shell runs no harness")));
+        assert!(
+            shell
+                .why
+                .is_some_and(|why| why.contains("A shell runs no harness"))
+        );
         for ended in [State::Done, State::Failed] {
             assert!(!offer(&a_chat(ended, 3)).available);
         }

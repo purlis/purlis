@@ -388,7 +388,8 @@ impl Block {
 }
 
 /// **What the chat is told, in the turn it was blocked**, of the blocks the app took (#1631):
-/// what was blocked, in this module's fixed words, that the person has a Notice about it, and to say what was blocked and wait rather than go around it. None when
+/// what was blocked, in this module's fixed words, that the person has a Notice about it, and to
+/// say what was blocked and wait rather than go around it. None when
 /// the app took none, since then no Notice is up to point at. The briefing says how blocks
 /// work once, at the start (`briefing::SANDBOXED_NOTE`); this is said where it happens, so a
 /// chat many turns in does not route around a block without a word. A write to macOS's
@@ -426,10 +427,12 @@ pub fn told_the_chat(taken: &[Block]) -> Option<String> {
         ));
     }
     Some(format!(
-        "⬢ purlis's sandbox blocked {}. The person has a Notice about it in the Inbox, and on this chat's pane when it is on screen, with what they can do about it.{ours} Say in a line what was blocked and what you \
-         need it for, then wait for their answer: do not work around the block (another host, \
-         another tool, another way in) and do not retry before they answer. If they allow it, \
-         this chat is started again on this conversation and told to retry.{way_round}",
+        "⬢ purlis's sandbox blocked {}. The person has a Notice about it in the Inbox, and on this \
+         chat's pane when it is on screen, with what they can do about it.{ours} Say in a line \
+         what was blocked and what you need it for, then wait for their answer: do not work around \
+         the block (another host, another tool, another way in) and do not retry before they \
+         answer. If they allow it, this chat is started again on this conversation and told to \
+         retry.{way_round}",
         said.join("; ")
     ))
 }
@@ -450,10 +453,11 @@ pub fn told_the_chat_of_a_read(taken: &[Block]) -> Option<String> {
         }
     }
     Some(format!(
-        "⬢ What you just read holds the words of a sandbox refusal: {}. The person has a quiet line about it, and nothing waits on their answer, so carry on. If a \
-         command of yours needs what was refused, say so in a line and run it again where its \
-         result comes back to you: a refusal of a command you run raises a Notice the person can \
-         answer. Do not work around the block.",
+        "⬢ What you just read holds the words of a sandbox refusal: {}. The person has a quiet \
+         line about it, and nothing waits on their answer, so carry on. If a command of yours \
+         needs what was refused, say so in a line and run it again where its result comes back to \
+         you: a refusal of a command you run raises a Notice the person can answer. Do not work \
+         around the block.",
         said.join("; ")
     ))
 }

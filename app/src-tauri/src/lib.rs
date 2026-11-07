@@ -276,7 +276,8 @@ fn shell_tab_shims<R: tauri::Runtime>(
         Err(why) if why.kind() == std::io::ErrorKind::Unsupported => None,
         Err(why) => {
             tracing::warn!(
-                "purlis: no shell shims at {} ({why}); a harness started in a shell will not be warned about",
+                "purlis: no shell shims at {} ({why}); a harness started in a shell will not be \
+                 warned about",
                 dir.display()
             );
             None

@@ -270,7 +270,10 @@ pub enum Uncovered {
 }
 
 /// What a chat that runs on another chat's grants is told when it asks to dispatch.
-pub const HELD_DISPATCHES_TO_NO_ONE: &str = "this chat runs on another chat's grants until the person allows its own, so it dispatches to no one yet. Ask the person to allow this chat its own grants.";
+pub const HELD_DISPATCHES_TO_NO_ONE: &str = "this chat runs on another chat's grants until the \
+                                             person allows its own, so it dispatches to no one \
+                                             yet. Ask the person to allow this chat its own \
+                                             grants.";
 
 /// **What the task a held dispatch would start is** (#1456): what its Notice names besides
 /// the pair and the brief.

@@ -10,8 +10,9 @@ one needs you.**
 ![The purlis window: a workspace's chats listed on the left, a Claude Code chat in the middle, the Inbox on the right with a chat waiting on a reply, and the workspace's repos, branches and memory below.](docs/images/purlis-window.png)
 
 purlis is a desktop app for people who work with coding agents all day. Claude Code, Codex and
-opencode chats run side by side, each in its own tab, each in the workspace and repo it works
-on. The window tells you which chat is waiting for you, so you stop checking terminals.
+opencode chats run side by side, each in the workspace and repo it works on. Every chat is listed in
+the sidebar, and you split the window to watch several at once. The window tells you which chat is
+waiting for you, so you stop checking terminals.
 
 Everything purlis knows is in a git repository you own: your workspaces, the roles your agents
 play, and what earlier chats learned. A new chat starts already knowing what the last one
@@ -115,7 +116,7 @@ The step-by-step guides start from a clean machine:
 | --- | --- |
 | **Project** | The git repo that holds your workspaces, personas, memory and settings. A code repo is never a project: purlis calls it a **repo**. |
 | **Workspace** | A named piece of work in a project, with its own `workspace.md`, memory, todos and clones of the repos it works on. |
-| **Chat** | One conversation with a coding agent, in a tab, in a workspace or at the project root. |
+| **Chat** | One conversation with a coding agent, in a workspace or at the project root. Every chat is listed in the sidebar, and picking one shows it in a pane; closing the pane leaves it running. |
 | **Persona** | A role a chat runs as, with its own `persona.md`, memory and vault. Work for another persona goes to its own chat, by dispatch. |
 | **Memory** | What the next chat starts with: a workspace's journal, a persona's memory, shared memory, and the session records chats write when they close. |
 

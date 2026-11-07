@@ -276,7 +276,7 @@ window keeps no list of its own (#2393). Purlis Classic's recipe, the one a them
 - on the whole window, from the workspace in front: `accent.base`, `accent.surface`,
   `accent.text` and the washes it stands on, `accent.wash` and `accent.wash-hover` (which a recipe turning the accent turns with it where the words stay apart from waiting and danger, #3100; the washes take the words' answer, #4666), `focus.ring`, `tab.active`, `list.selected`, `list.selected-edge` (`tint.window`, drawn by
   `drawTint`);
-- on that workspace's own tab and on the chat strip, which holds its chats, the same and
+- on that workspace's own tab and on its tab strip, which holds its tabs, the same and
   `layer.workspace`, `layer.chat`, `layer.selected` (`tint.tabs`), set on the element as
   custom properties by `tabTint`. Each workspace tab carries its own tint whether or not it
   is in front: a `.workspace-mark` dot in its accent and its own shade. (The title bar's
@@ -285,7 +285,7 @@ window keeps no list of its own (#2393). Purlis Classic's recipe, the one a them
   `purple` 305°, `pink` 350° (OKLCH).
 
 The strip shades (`layer.workspace`, `layer.chat`, `layer.selected`, `layer.divider`) are only ever
-tinted on a workspace's own tab and chat strip, never on the window. `app/src/theme/tint.ts` does
+tinted on a workspace's own tab and tab strip, never on the window. `app/src/theme/tint.ts` does
 the arithmetic in OKLCH, the same as the engine's (`purlis_core::theme::tint`, held to one another
 by `theme/tint-cases.json`), and then keeps each token's **relative luminance**: each channel is
 rounded to the byte that keeps the luminance nearest the original on its own side of WCAG's middle
@@ -1715,7 +1715,7 @@ comes out `--size-control` tall. A control with a class is its rule's; the primi
 What a tab on the three strips draws, and in what (the operator's asks of 2026-10-13):
 
 - **The title** is `--font-size-md`, one step under the window's text, on every strip. A strip's
-  height is a floor (`--size-chrome` on the chat strip), not a share of the text.
+  height is a floor (`--size-chrome` on the tab strip), not a share of the text.
 - **Counts are one pill** (`CountPill.tsx`, `.count-pill`): the open chats in the neutral count
   style and, where any needs you, a second segment in the needs-you colours, at `--font-size-xs`
   with `--space-2` at the sides. One accessible name says both ("3 chats, 1 needs you"). A
@@ -2396,9 +2396,9 @@ It cannot see a question named without its "?", a toast or status line that carr
 or a native OS dialog such as the folder picker; a review has to.
 
 So a surface that has to ask something on the way to the first chat is named by its question,
-and the budget sees it. What costs nothing is a tab opened beside the chat (the first task, the
-repo's agent instructions, the harness setup), a `status` line, and a sign-in run in a shell tab
-the operator can leave.
+and the budget sees it. What costs nothing is a view opened in a tab of its own behind the chat (the
+first task, the repo's agent instructions, the harness setup), a `status` line, and a sign-in run in
+a split beside the focused pane, which goes when the sign-in exits.
 
 **Amended 2026-10-12: creating a project asks where it lives (#1810, Q1/Q2).** The operator
 ruled in the onboarding grill: *"The welcome screen offers: Create a project (with a stack

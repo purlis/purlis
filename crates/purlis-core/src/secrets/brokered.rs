@@ -2440,8 +2440,9 @@ fn refused_block(asker: &Asker, vault: &str, target: String) -> RunBlocked {
 pub fn refused_note(target: &str) -> String {
     format!(
         "purlis's sandbox refused this command a connection to {target}, which this chat's \
-         hosts do not list. It is the sandbox, not the server. The person can allow it in the Inbox, or on this chat's pane when it is on screen (Allow for this chat, or Always allow); the chat is then started again \
-         with it, and the command can be run again."
+         hosts do not list. It is the sandbox, not the server. The person can allow it in the \
+         Inbox, or on this chat's pane when it is on screen (Allow for this chat, or Always \
+         allow); the chat is then started again with it, and the command can be run again."
     )
 }
 

@@ -259,7 +259,9 @@ const A_RECORD_TAKES_AT_MOST: std::time::Duration = std::time::Duration::from_se
 
 /// What becomes of the chat when nobody started a smart close for the chat: the sentence the
 /// skill relays to the operator.
-pub const NO_PASS: &str = "No smart close was started for this chat (Smart close in its End… dialog, or typing /purlis-smart-close), so it will not end by itself. End it when you are done.";
+pub const NO_PASS: &str = "No smart close was started for this chat (Smart close in its End… \
+                           dialog, or typing /purlis-smart-close), so it will not end by itself. \
+                           End it when you are done.";
 
 /// Hands the record to the app that started this chat, over the chat's hook socket (#1332).
 fn forwarded(here: &Here, title: &str, body: &str, pieces: &[String]) -> Forwarded {
@@ -389,7 +391,8 @@ fn tell_the_app(
         Err(kept) => (
             format!(
                 "The app did not hear it ({not_heard}), and purlis could not leave it for this \
-                 chat's hook ({kept}), so the chat will not end by itself. End it yourself when you are done."
+                 chat's hook ({kept}), so the chat will not end by itself. End it yourself when \
+                 you are done."
             ),
             true,
         ),

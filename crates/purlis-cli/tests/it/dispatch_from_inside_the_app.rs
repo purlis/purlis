@@ -448,10 +448,11 @@ fn a_dispatch_the_person_is_asked_about_is_held_and_says_what_happens_next() {
     assert_eq!(
         text(&out.stdout),
         "purlis dispatch: held for the person. 'steward' chats may not dispatch to 'qa' yet, so \
-         the person is being asked in the Inbox, and on this chat's pane when it is on screen, with this brief in front of them. Nothing \
-         has started. If they allow it, 'check the queue' starts then and its report reaches \
-         this chat as context on a later turn; if they keep it blocked, this chat is told on \
-         its next turn. Carry on with other work, and do not dispatch it again.\n"
+         the person is being asked in the Inbox, and on this chat's pane when it is on screen, \
+         with this brief in front of them. Nothing has started. If they allow it, 'check the \
+         queue' starts then and its report reaches this chat as context on a later turn; if they \
+         keep it blocked, this chat is told on its next turn. Carry on with other work, and do not \
+         dispatch it again.\n"
     );
     assert_eq!(the_dispatch(&asked).to.as_deref(), Some("qa"));
 }

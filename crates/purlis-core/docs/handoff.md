@@ -165,8 +165,8 @@ does not carry the stamp of a handoff from the asking chat. Having checked it, t
 chat's name in its place. Minutes, not seconds: the stamp is read by a person deciding which
 handoff this message came from.
 
-The same note is in the corner of the new chat's pane once it is shown, and on a tab it fills,
-as its tooltip:
+The same note is in the corner of the new chat's pane once it is shown, and on its sidebar row, as
+its tooltip:
 `↳ from steward 3 · platform-next` (`↳ from steward 3 · plane root` from the plane root).
 
 ## A report back
@@ -273,14 +273,15 @@ record, as its report would have (#1472).
 
 **Either takes a second step.** A task that is not mid-turn is asked about where you pressed:
 "Stop it" or "Close it", beside "Keep", which has the keyboard. A task mid-turn, or with tasks
-of its own still working, is asked about in one question. **Closing a task's tab ends
-nothing**: the tab goes, and the task goes back to the Chats list and keeps working. A task
+of its own still working, is asked about in one question. **Closing a task's pane ends nothing**:
+the pane clears, and the task keeps working in the Chats list. A task
 you are closing is in its stop until its program is gone: a report it still gets in is the
 stop's report, and it starts no chat. If you quit while a task is being stopped, it is closed.
 
 **Stop all tasks** stops every task at work below a session, at any depth, and keeps the
-session running. It is on the session's row menu and its tab menu, beside Stop with everything
-below it, and on the last line of the tab's task menu, under "End a task". It asks once, naming
+session running. It is in the session's list (its pane head's ⋯, its row's ⋯ and the palette),
+beside Stop with everything below it, and on the last line of its tasks menu (⌘⇧J), under "End a
+task". It asks once, naming
 how many it ends, and ends those and no more: a task started after you were asked is not
 stopped by your answer. Each is stopped as Stop and get its report stops one, deepest first,
 and the chat that asked for each is told `stopped by the person` (or `closed by the person`
@@ -303,7 +304,8 @@ A chat can cancel a task it dispatched itself (`purlis dispatch cancel`, below),
 that task for a short report and ends nothing. **Only you stop any other chat**: no command or
 tool stops a chat its caller did not dispatch, and none ends one. A chat that is being
 stopped, and any chat below it, cannot hand off or dispatch: it is refused, so nothing it
-starts outlives the stop. You can still ask a persona from its tab yourself. A task you are
+starts outlives the stop. You can still ask a persona yourself, with Ask <persona>… on it. A task
+you are
 stopping cannot be cancelled as well, and a cancel under way stands down when you stop its
 task: the stop is the later word.
 
@@ -448,7 +450,8 @@ The new chat works in the asking chat's folder unless the dispatch says one word
   prompts are off) starts a chat in another workspace only under a grant that already stands
   for the pair, yours on this machine or the project's. Its own persona does not cross at all
   that way: no grant is kept for a persona's dispatch to itself, so none can stand, and the
-  person starts such a chat from the asking chat's tab. A chat started in another workspace than its
+  person starts such a chat with Ask <persona>… on the asking chat. A chat started in another
+  workspace than its
   asker's is told so in a line under its stamp: the stamp names the asking chat's workspace,
   and the line names its own.
 - **`--in worktree`** gives it a new worktree of the repo the asking chat works in, on a new
@@ -585,7 +588,7 @@ its report about what changed. It shows what purlis can tell of that task's own 
 **Two tasks in one folder are named.** There are no file locks between tasks. When a chat
 dispatches a task into a folder where another task still works, with no branch of its own,
 whichever chat asked for that one (#1534), the dispatch's answer names both and says how to
-keep them apart (`--in worktree`), and the asking chat's tab says it to you, by every task's
+keep them apart (`--in worktree`), and the asking chat says it to you in a Notice, by every task's
 name, for as long as they share the folder. **Ask a persona…** names the tasks already
 working in the folder you pick before it starts one there.
 
@@ -665,17 +668,17 @@ A chat that has dispatched tasks and then ends its turn is waiting on them, not 
   counts them: `2 working · 1 waiting`, with `· 1 failed` when any did, then `· 3 done`.
   Working is a task at work or asking the chat that asked; waiting is one that needs you or
   is at rest. At the most tasks it may have running, the row says `6 of 6 tasks`.
-- **A limit is said where it binds.** Its tab's menu ends with how many of its tasks run
+- **A limit is said where it binds.** Its tasks menu (⌘⇧J) ends with how many of its tasks run
   against the limit in force for it: `4 of 6 running`. A dispatch from it that a count refused
   (how many it may have running, how many its lineage may hold, or a persona's two counts)
   puts a line under its row naming which limit binds, with its number, the whole sentence on
   it and a way to Settings › Project › Dispatch. Only its own running limit is `at its task
-  limit (6)`, the number its tab menu counts against; its chain's says `at its chain's limit
+  limit (6)`, the number its tasks menu counts against; its chain's says `at its chain's limit
   (16 live)`, and a persona's says it is that persona's, across the project (`devops is full
   (1 at once), not this chat's limit`). A dispatch into another workspace refused at that
   workspace's limit names it (`at its task limit in beta (2)`) and is re-checked against it, as
-  it was decided. Any limit that binds other than its own running one is said on its tab
-  menu's footer too, after the count (`2 of 6 running · at its chain's limit (16 live)`). The
+  it was decided. Any limit that binds other than its own running one is said on its tasks menu's
+  footer too, after the count (`2 of 6 running · at its chain's limit (16 live)`). The
   line goes as soon as a slot frees: a task reports or ends, you raise the limit, the chat
   dispatches again and is let through, or it closes. A refusal no slot frees (the depth, a
   limit of 0) is said to whoever asked, and puts nothing on the row. The line is held in
@@ -795,7 +798,7 @@ are looking at it or a task of its own is still working.
 purlis's record of each chat, written when the chat was started; the command names a chat by
 number and says nothing else. A sibling's task, the chat that dispatched this one, a chat a
 handoff opened and a number no chat has are all refused in the same sentence. A task that has
-reported cannot be cancelled. A wait on a task whose tab you closed says how it ended.
+reported cannot be cancelled. A wait on a task you closed (Close now) says how it ended.
 
 The rule is about chats. A helper sub-agent runs inside its chat and is that chat to purlis,
 so what keeps one from these commands and tools is the same hook that keeps it from
@@ -856,7 +859,7 @@ purlis dispatch pass-on <chat> --note "..." # the asking chat, on to you, in the
   on: that rule is in the asking chat's briefing and is not enforced, because code cannot
   classify a question's meaning. The asking chat's answer is never your word, and the task is
   told who answered. `purlis dispatch answer` answers only a question the app holds. Where
-  there is none, it is refused, whatever the task's tab is showing, and nothing an answer says
+  there is none, it is refused, whatever the task's pane is showing, and nothing an answer says
   is ever typed into a chat.
 
 **Messages travel only along the lineage.** `tell` and `answer` go to a task the sender
@@ -887,8 +890,8 @@ A task is never lost for want of the chat that was doing it, or of the chat that
 - **A persona chat that ends without a report is reported for.** If its program ends on its
   own before it sent its report, purlis tells the chat that asked `failed: ended without a
   report`, in its own words and with the path of that chat's session record where one was
-  written. It is said as soon as the program is gone, once, and it is final: a chat started
-  again in that tab cannot report for the task. If you close it before it reported, the
+  written. It is said as soon as the program is gone, once, and it is final: a chat started again in
+  that pane cannot report for the task. If you close it before it reported, the
   chat that asked is told it was closed by the person instead, and that is final too.
 - **Stopping every agent, quitting, closing the project and restarting a chat report
   nothing.** Those chats are kept, and each reports when it runs again.
@@ -1320,7 +1323,7 @@ dispatch from such a chat is never one that asks.
   answering that chat included. A dispatch to the chat's own persona needs no grant, as for any
   chat, and a pair an administrator's policy locks is refused with the policy's sentence.
 - **A missing grant is a refusal, not a Notice.** Nothing starts, nothing is kept waiting for
-  you and nothing appears on the chat's tab, so no grant can be made from an unattended chat's
+  you and nothing appears on the chat, so no grant can be made from an unattended chat's
   ask. The chat is told which pair is missing and that only a person makes the grant, under
   Settings › Project › Dispatch: **Add a grant** there makes one for you on this machine or
   for everyone in this project, in one workspace or in any, with no dispatch waiting (#1465).

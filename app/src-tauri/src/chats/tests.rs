@@ -3015,7 +3015,8 @@ fn a_restart_the_person_asked_for_that_is_refused_is_not_owed_again() {
         refused,
         format!(
             "purlis did not restart chat {session}: it has no conversation to resume. If it \
-                 has only just started, send it a message and restart it again. Start fresh on its ⋯ menu starts it again without a conversation."
+                 has only just started, send it a message and restart it again. Start fresh on its \
+                 ⋯ menu starts it again without a conversation."
         )
     );
     assert!(
