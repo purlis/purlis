@@ -674,7 +674,14 @@ pub(crate) fn not_home_within(
             )]);
         }
     };
-    let held: Vec<codelink::held::Held> = repos
+    codelink::held::not_home(root, project, &held_of(repos), &unread)
+}
+
+/// The repositories a runner listed, as the proof reads them.
+pub(crate) fn held_of(
+    repos: Vec<purlis_session_protocol::session::RepoHeld>,
+) -> Vec<codelink::held::Held> {
+    repos
         .into_iter()
         .map(|one| codelink::held::Held {
             project: one.project,
@@ -689,8 +696,7 @@ pub(crate) fn not_home_within(
                 })
                 .collect(),
         })
-        .collect();
-    codelink::held::not_home(root, project, &held, &unread)
+        .collect()
 }
 
 /// How long a fresh runner's end waits for the programs of its project there to end (#4569).

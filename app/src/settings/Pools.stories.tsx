@@ -43,6 +43,7 @@ const LEVEL: PoolVersion = {
   waiting: 0,
   owed: [],
   owed_why: null,
+  left: [],
 };
 
 /** The core, faked: this machine keeps `pools`, whose runner answers `link` and says `version`,

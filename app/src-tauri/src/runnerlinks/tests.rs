@@ -897,3 +897,20 @@ fn keeping_a_profile_has_the_time_its_limit_could_take() {
         std::time::Duration::from_secs(4096)
     );
 }
+
+/// **A runner too old to list what it holds goes as it did before purlis could ask**
+/// (ruled 2026-11-07): nothing is proved of it, and nothing is said.
+#[test]
+fn a_runner_too_old_to_list_what_it_holds_leaves_nothing_to_prove() {
+    assert_eq!(
+        super::left_of(None, |_, _| panic!("nothing listed is proved")),
+        Ok(Vec::new())
+    );
+    assert_eq!(
+        super::left_of(
+            Some((Vec::new(), vec!["a folder ran out".to_owned()])),
+            |_, unread| { Ok(unread.to_vec()) }
+        ),
+        Ok(vec!["a folder ran out".to_owned()])
+    );
+}
