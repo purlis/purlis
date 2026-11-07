@@ -111,6 +111,41 @@ export function appProcessesIn(listing: string, binary: string): AppProcesses {
   return found;
 }
 
+/**
+ * The app's processes running `binary` below `launcher` in `listing` (`ps -A -o
+ * pid=,ppid=,command=`): the windows anything the launcher started started, and the session
+ * hosts those windows started (#5653).
+ *
+ * By the tree, not the binary alone: another run's app on the same build is not this run's to
+ * end. The host runs in a process group of its own (#2006), so its parent is what ties it to
+ * the window; a host whose window already went has been handed to `init` and is not found.
+ */
+export function theRunsApp(listing: string, launcher: number, binary: string): AppProcesses {
+  const parents = new Map<number, number>();
+  const commands = new Map<number, string>();
+  for (const raw of listing.split("\n")) {
+    const found = raw.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/);
+    if (!found) continue;
+    parents.set(Number(found[1]), Number(found[2]));
+    commands.set(Number(found[1]), found[3]);
+  }
+  const below = (pid: number): boolean => {
+    const seen = new Set<number>();
+    for (let up = parents.get(pid); up !== undefined && !seen.has(up); up = parents.get(up)) {
+      if (up === launcher) return true;
+      seen.add(up);
+    }
+    return false;
+  };
+  const ours = [...commands].filter(([pid]) => below(pid));
+  return appProcessesIn(ours.map(([pid, command]) => `${pid} ${command}`).join("\n"), binary);
+}
+
+/** The app this process started, running `binary`, asked of the operating system. */
+export function theRunsAppNow(binary: string): AppProcesses {
+  return theRunsApp(ps(["-A", "-o", "pid=,ppid=,command="]), process.pid, binary);
+}
+
 /** The app's processes running `binary`, asked of the operating system. */
 export function appProcesses(binary: string): AppProcesses {
   return appProcessesIn(ps(["-A", "-o", "pid=,command="]), binary);
