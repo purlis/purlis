@@ -180,6 +180,9 @@ fn an_unlocked_session_is_asked_for_a_workspace_first_and_told_who_it_is() {
     assert!(got[0].starts_with("⬢ **Confirm the workspace before any repo work.**"));
     assert!(got[0].contains("(existing: `alpha`, `beta`)"), "{}", got[0]);
     assert!(got[0].contains("That **locks** the workspace"));
+    // #5722 (i): the person is asked through purlis's own tool, not one harness's.
+    assert!(got[0].contains("`ask_operator`"), "{}", got[0]);
+    assert!(!got[0].contains("AskUserQuestion"), "{}", got[0]);
     let who = &got[1];
     assert!(who.starts_with(
         "⬢ **You are the `ops` persona for this session** — purlis selected it (via \
@@ -1650,7 +1653,8 @@ fn a_chat_the_app_started_is_told_the_one_route_for_work_that_reports_back() {
              read-only work (searching, reading, reviewing), and from inside one `purlis \
              worktree add`, `commit` and `push` are refused. {} This \
              says where such work goes, not that work should go: what this chat can do itself, \
-             it does.",
+             it does, and it dispatches when the work needs another persona's charter, memory \
+             or vault.",
             crate::handoff::ONE_ROUTE
         ))
     );
@@ -1786,8 +1790,8 @@ fn only_the_exact_mark_the_app_sets_reads_as_a_sandboxed_chat() {
         "`/sandbox exclude`",
         "`excludedCommands`",
         "Start without the sandbox",
-        // D-PE-browser-1: a website login is a declared tool too.
-        "browser-login tool",
+        // D-PE-browser-1, #5722 (a): a website login is the browser login tool.
+        "`browser_login` tool",
         // #3798: git work in a sandboxed chat goes through branch folders purlis cuts.
         "`purlis worktree add <repo> <piece>`",
         "`purlis worktree commit`",

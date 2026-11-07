@@ -69,7 +69,9 @@ purlis secret set <vault> <key> --from-file <path>    # multi-line or verbatim: 
 ```
 
 An argument list is not private. It shows up in `ps`, in shell history and in this
-transcript. Ask the user to supply the value by stdin or a file, or to set it themselves.
+transcript. Never ask the person for a value to store: raise a Secret ask (above), and they
+fill it in purlis's window. Store one yourself only when you already hold it, such as a key a
+command generated.
 
 **In a sandboxed chat these are the user's:** `secret set`, `secret rm`, `secret audit`,
 `vault add`, `vault remove` and `vault verify` are refused before anything is read, with a
@@ -112,7 +114,8 @@ purlis secret cp <vault> <key> <dest>     # persist it at 0600; <dest> must be a
 ```
 
 `<dest>` must be a **real file that does not exist yet**. purlis refuses a device, a FIFO, a
-directory or a symlink. It also refuses an existing file unless you pass `--force`. This is
+directory or a symlink. It also refuses an existing file unless you pass `--force`, which you pass only on the
+person's word in this chat. This is
 not pedantry: `purlis secret cp <vault> <key> /dev/stdout` would write the plaintext
 straight into this conversation. Do not go looking for a path that gets around the refusal.
 
