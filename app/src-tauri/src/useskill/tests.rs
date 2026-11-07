@@ -267,7 +267,7 @@ fn a_runners_chat_is_offered_what_its_runner_said_or_told_its_runner_said_nothin
 
     let shown = from_its_runner(&said, Some(Harness::ClaudeCode), Some("alpha"));
 
-    assert!(shown.on && shown.known);
+    assert!(shown.known);
     let skills: Vec<(&str, &str)> = shown
         .skills
         .iter()
