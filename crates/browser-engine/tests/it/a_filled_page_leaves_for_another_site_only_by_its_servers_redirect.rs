@@ -590,7 +590,6 @@ fn a_load_that_fails_says_nothing_of_the_address_it_failed_at() {
         "going back sent it again: {:?}",
         site.sent_to(HELD_SITE)
     );
-    assert_eq!(waited.content, Content::Seen(true), "purlis's own page");
     for (what, said) in [
         ("the click's answer", format!("{clicked:?}")),
         ("the wait's answer", format!("{waited:?}")),
@@ -599,6 +598,7 @@ fn a_load_that_fails_says_nothing_of_the_address_it_failed_at() {
     ] {
         assert!(!holds_the_value(&said), "{what} holds it: {said}");
     }
+    assert_eq!(waited.content, Content::Seen(true), "purlis's own page");
 }
 
 /// The page the answer is on: what a chat goes back to.
