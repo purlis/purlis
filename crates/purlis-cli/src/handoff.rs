@@ -447,8 +447,8 @@ fn who_asks(from: Option<&str>) -> String {
 
 /// What a chat is told where its handoff waits on the person for a dispatch grant: nothing
 /// has opened, the person is being asked in the Inbox, and on this chat's pane when it is on
-/// screen, and what happens next. A
-/// dispatch's own sentence (`crate::dispatch`), in a handoff's words.
+/// screen, and what happens next. A dispatch's own sentence (`crate::dispatch`), in a handoff's
+/// words.
 fn held_for_the_person(from: Option<&str>, to: &str, ws: &str, creates: bool) -> String {
     let created = if creates {
         format!(" '{ws}' is created then too, and not before.")

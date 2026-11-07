@@ -1438,7 +1438,7 @@ _Avoid_: reopen, restore (a relaunch reopens the chats that were open)
 **Plane updated** (of a chat):
 A chat started before the plane's start-time instructions (`CLAUDE.md`, the harness settings
 and sub-agents, a persona's charter) changed on disk. It runs on what it read until it is
-started fresh, and its row, and a tab that shows it, carry a quiet mark saying so. It is not a
+started fresh, and its row carries a quiet mark saying so. It is not a
 needs-you item.
 _Avoid_: stale, behind, outdated, Incoming (that is the remote's commits)
 
