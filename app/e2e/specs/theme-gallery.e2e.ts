@@ -121,7 +121,8 @@ async function point(over: boolean): Promise<void> {
  *
  * Its failure says the last surface seen, read when it fails: a `timeoutMsg` is written before
  * the wait, when nothing had been seen (#5586). With it go what puts a preview back unasked, the
- * window's focus and visibility, and the theme the window says it draws.
+ * window's focus and visibility, the theme the window says it draws, and whether the card heard
+ * the pointer (react-aria's `data-hovered`).
  */
 async function surfaceBecomes(want: string | readonly string[], why: string): Promise<void> {
   const wanted = typeof want === "string" ? [want] : want;
@@ -135,11 +136,20 @@ async function surfaceBecomes(want: string | readonly string[], why: string): Pr
       { timeout: 20_000 },
     );
   } catch {
-    const window = await browser.execute(() => ({
-      focused: document.hasFocus(),
-      visibility: document.visibilityState,
-      theme: document.documentElement.dataset.theme ?? null,
-    }));
+    const window = await browser.execute((card: string) => {
+      const cards = document.querySelectorAll<HTMLElement>(card);
+      const it = cards[0];
+      return {
+        focused: document.hasFocus(),
+        visibility: document.visibilityState,
+        theme: document.documentElement.dataset.theme ?? null,
+        cards: cards.length,
+        hovered: it?.dataset.hovered ?? null,
+        disabled: it?.dataset.disabled ?? null,
+        inert: it?.closest("[inert]") != null,
+        active: document.activeElement?.outerHTML.slice(0, 80) ?? null,
+      };
+    }, CARD);
     throw new Error(
       `${why}: the window drew ${saw || "nothing"}, not ${wanted.join(" or ")} ` +
         `(${JSON.stringify(window)})`,

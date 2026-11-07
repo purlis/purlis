@@ -71,11 +71,12 @@ const OPEN_TARGET = 200;
  * Raised from 15 to 30 minutes on 2026-11-07 (#5586): by then the two hundred took 680 s to
  * open on a macOS runner and 330 s to close on Ubuntu, so the 15 minutes no longer held the
  * whole test, and a run that {@link holdsTheTimeBudgets | reports its time budgets} has to
- * reach its end to say anything.
+ * reach its end to say anything. Raised again to 60 minutes the same day: on a macOS runner the
+ * two hundred then took 1,353 s to open, and their close was cut off by the 30 (#5615).
  *
  * `budget.test.ts` keeps this on the suite, because the mistake is invisible from the spec.
  */
-const BUDGET = 30 * 60_000;
+const BUDGET = 60 * 60_000;
 
 /**
  * How long one round of fifty may take. The slowest round measured on a macOS runner on
