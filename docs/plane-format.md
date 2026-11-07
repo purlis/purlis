@@ -234,6 +234,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`workspaces/<ws>/.claude/settings.json` — the generated harness layer](#workspaceswsclaudesettingsjson--the-generated-harness-layer)
   - [`workspaces/<ws>/repos/<repo>/` — a cloned repo (guest checkout)](#workspaceswsreposrepo--a-cloned-repo-guest-checkout)
   - [`refs/purlis/turns/<chat>/<n>/start` and `…/end` — each turn of a chat, in a clone's git](#refspurlisturnschatnstart-and-end--each-turn-of-a-chat-in-a-clones-git)
+  - [`refs/purlis/runners/<pool>/turns/…` — a runner's turns, on the desktop](#refspurlisrunnerspoolturns--a-runners-turns-on-the-desktop)
   - [`workspaces/<ws>/themes/` — the workspace's theme folders](#workspaceswsthemes--the-workspaces-theme-folders)
   - [`<clone>/.git/info/exclude` — purlis's managed block](#clonegitinfoexclude--purliss-managed-block)
   - [`workspaces/<ws>/.worktrees/<repo>/<piece>/` — pieces](#workspaceswsworktreesrepopiece--pieces)
@@ -2922,11 +2923,33 @@ The branch's state before and after turn `<n>` of a chat (N3, ADR 0084 §1's com
   program end, through `files::turns` and the git runner, with hooks and the repo's programs off.
   Only a chat whose folder is on this machine and in a workspace's repo records any, and only while
   the app holds its project: a turn that ends with no window open has no `end` until the next one.
+  **On a pool's runner** (#5427, session protocol 1.78), the runner's `purlisd` writes them the same
+  way, in the clone it keeps in `<data>/projects/<project id>/`, as its hook channel hears the chat
+  (`hookchannel::HostedTurns`), and undoes one there when the window asks; the desktop keeps a copy
+  of them ([the next section](#refspurlisrunnerspoolturns--a-runners-turns-on-the-desktop)).
 - **And `…/undone`, once the turn is undone** (**Undo a turn**, #5411): the same tier, and
   pointing at the turn's `end`. It is written by the app in the step that puts the turn's files
   back, and it is what makes the turn before it the one Undo is offered on next. A turn with it
   is still compared, and goes with the chat's other refs.
 - **Removed** when the chat is removed: `turns::forget`.
+
+### `refs/purlis/runners/<pool>/turns/…` — a runner's turns, on the desktop
+
+A pool's runner's `refs/purlis/turns/<chat>/<n>/{start,end,undone}`, as the desktop last fetched
+them (#5427, ADR 0078 §7, session protocol 1.78), which the file diff reads as it reads its own.
+
+- **Tier:** Clone state, rebuildable — in the desktop's clone's own git, never pushed by anything
+  purlis runs, and fetched again from the runner, which keeps the turns themselves.
+- **Its names:** `<pool>` is the pool's name, as its branches are kept under `refs/remotes/<pool>/`,
+  and the rest is the runner's ref under `refs/purlis/turns/`. Not under `refs/remotes/<pool>/`: a
+  fetch prunes that folder to the runner's branches and lists each ref there as one.
+- **Written by** the app's fetch of a pool's runner's code (`codelink::fetch_back_with_turns`),
+  from a runner of 1.78 or later: only refs a runner names that are turns as purlis writes them,
+  and a copy the runner no longer names goes. And `…/undone`, by the app, once the runner says it
+  has undone the turn. A runner before 1.78 names none, and none is fetched.
+- **Read by** the file diff: a turn here is compared as it ended on the runner, never with this
+  machine's folder, which never had its files. Undo is the runner's to carry out.
+- **Removed** when the chat is removed, with its own refs: `turns::forget`.
 
 ### `workspaces/<ws>/themes/` — the workspace's theme folders
 

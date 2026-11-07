@@ -196,7 +196,8 @@ pub enum NoTurnsFrom {
     Unreported { chat: String },
     /// It runs on runner `runner`, in a folder of the runner's (#5427).
     OnARunner { chat: String, runner: String },
-    /// It runs on a runner of pool `pool`, in a folder of the runner's (#5427).
+    /// It runs on a runner of pool `pool`, in a folder of the runner's, too old to record its
+    /// turns there (#5427: before session protocol 1.78).
     OnAPool { chat: String, pool: String },
 }
 
@@ -2179,9 +2180,11 @@ impl Chats {
             })
             .find_map(|(session, one)| {
                 let chat = one.chat.name.clone();
-                // A pool's runner first: a chat on one is told by its pool, not its machine.
+                // A pool's runner first: a chat on one is told by its pool, not its machine. A
+                // runner of 1.78 records its turns, which come back with its code (#5427).
                 if let Some(pool) = self.sessions.pool_of(*session) {
-                    return Some(NoTurnsFrom::OnAPool { chat, pool });
+                    return (!self.sessions.records_turns_of(*session))
+                        .then_some(NoTurnsFrom::OnAPool { chat, pool });
                 }
                 let runner = one.confinement.as_ref().and_then(|held| held.runner());
                 if let Some(runner) = runner {

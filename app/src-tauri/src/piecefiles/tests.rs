@@ -819,7 +819,7 @@ fn no_turn_names_the_chat_and_whether_it_reports_none_or_runs_on_a_runner() {
             chat: chat(),
             pool: "builds".to_owned(),
         })),
-        "Builder runs on a runner of pool builds, and purlis does not record the turns of a chat \
-         on a runner yet, so it has no turn to show here. Against base still shows this file."
+        "Builder runs on a runner of pool builds whose purlis is too old to record its turns, so \
+         it has no turn to show here. Against base still shows this file."
     );
 }

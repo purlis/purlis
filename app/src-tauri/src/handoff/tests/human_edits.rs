@@ -341,6 +341,121 @@ fn an_undo_is_refused_by_name_while_the_folders_chat_works_and_once_idle_is_told
     );
 }
 
+/// #5427: **Undo a turn of a chat on a pool's runner is that runner's to carry out**, through the
+/// link (session protocol 1.78), under its own idle check: what it waits on is said by name as a
+/// chat here would be, and once it has put the files back the window keeps the edit, tells the
+/// chat at its next turn and marks its copy of the turn undone. A refusal of the runner's is said
+/// in its words. The runner's own side is `purlis_core::hookchannel::HostedTurns`.
+#[test]
+fn an_undo_of_a_pool_runners_turn_is_asked_of_its_runner_and_its_answer_kept_here() {
+    use crate::humanedits::{UndoAnswer, undo_in};
+    use purlis_core::eventlog::{ArgsKey, Log, Recorder};
+    use purlis_core::humanedit::{EditKind, EditedFile, EditedLines, HumanEdit};
+    use purlis_session_protocol::session::{self as wire, UndoWaitsOn};
+    let plane = Plane::new();
+    let host = Pretend::default();
+    let logs = plane.root.join("events");
+    let events = crate::hooks::Events::here(Recorder::new(
+        Log::open(&logs, "DEVICE").expect("a log"),
+        ArgsKey::open(&logs).expect("a key"),
+    ));
+    let planes = planes_on(&host).recording_events(Some(events.clone()));
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let folder = a_folder_with_the_agents_change(&plane.root);
+    let at = Branch::piece("alpha", "svc", "piece");
+    let chat = a_chat_in(&held, &folder);
+    host.runs_on_pool(chat, "builds");
+    host.records_turns_of_chat(chat);
+    let chat_id = held.chats().id_of(chat).expect("the chat's id");
+    its_prompt_is_recorded(&events, held.root(), chat);
+    // The runner's turn, as its fetch keeps it here: under the pool, never as this machine's.
+    files::turns::began(held.root(), at, &chat_id).expect("the turn begins");
+    std::fs::write(folder.join(FILE), "the runner's\n").expect("its edit");
+    files::turns::ended(held.root(), at, &chat_id).expect("the turn ends");
+    for side in ["start", "end"] {
+        let own = format!("refs/purlis/turns/{chat_id}/1/{side}");
+        let copy = format!("refs/purlis/runners/builds/turns/{chat_id}/1/{side}");
+        git(&folder, &["update-ref", &copy, &own]);
+        git(&folder, &["update-ref", "-d", &own]);
+    }
+    let on_disk = std::fs::read_to_string(folder.join(FILE)).expect("the file");
+    let turn = files::TurnKey {
+        chat: chat_id.clone(),
+        number: 1,
+    };
+
+    // The runner says its chat is running: nothing is written, and it is named as here.
+    host.answers_undo_with(Some(wire::Answer::UndoWaits {
+        chats: vec![UndoWaitsOn {
+            number: chat,
+            state: "is running".into(),
+        }],
+    }));
+    let UndoAnswer::Busy { chats } = undo_in(&held, at, &turn).expect("an answer") else {
+        panic!("the runner's working chat holds the undo back");
+    };
+    assert_eq!(chats.len(), 1);
+    assert_eq!(chats[0].state, "is running");
+    assert!(!chats[0].name.is_empty());
+    assert_eq!(host.undone_on_runners(), [("builds".to_owned(), turn.clone())]);
+    assert_eq!(
+        std::fs::read_to_string(folder.join(FILE)).expect("the file"),
+        on_disk,
+        "nothing of this machine's folder is written"
+    );
+
+    // The runner refuses one, in its words.
+    host.answers_undo_with(None);
+    let refused = undo_in(&held, at, &turn).unwrap_err();
+    assert!(refused.contains("the runner refused it"), "{refused}");
+
+    // The runner put the files back: kept here as the edit, told, and the copy marked undone.
+    let edit = HumanEdit {
+        kind: EditKind::UndoneTurn,
+        repo: "svc".into(),
+        piece: Some("piece".into()),
+        files: vec![EditedFile {
+            path: FILE.into(),
+            lines: vec![EditedLines { start: 1, count: 3 }],
+        }],
+        busy: false,
+        chats: Vec::new(),
+        chat_ids: Vec::new(),
+    };
+    host.answers_undo_with(Some(wire::Answer::TurnUndone {
+        edit: edit.body(),
+        unmarked: None,
+    }));
+    let answer = undo_in(&held, at, &turn).expect("the undo");
+    assert_eq!(
+        answer,
+        UndoAnswer::Undone {
+            unrecorded: None,
+            unmarked: None
+        }
+    );
+    let marked = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&folder)
+        .args([
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("refs/purlis/runners/builds/turns/{chat_id}/1/undone"),
+        ])
+        .output()
+        .expect("git runs");
+    assert!(marked.status.success(), "the copy is marked undone");
+    assert_eq!(
+        told(&held, &id, chat).as_deref(),
+        Some(
+            "The operator undid a turn since your last turn, so these files are as they were \
+             before it. Read them again before you change them: `src/lib.rs` in `svc`."
+        )
+    );
+}
+
 /// **The ticket's whole path, through the fake harness** (#5411): its first turn edits the file
 /// and its hooks record the turn; the operator discards that turn's hunk, as the turn's start had
 /// it; its next turn edits again and is undone, refused while it works and done once it is idle;

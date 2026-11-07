@@ -12,7 +12,9 @@
 //! - **Before a chat starts in a workspace there**, the window sends each of that workspace's
 //!   clones the same way, so the chat works on the code as it is here, uncommitted work and all.
 //! - **It fetches each clone's branches back** into `refs/remotes/<pool>/*`, and nowhere else,
-//!   where Changes shows them ready to push or open as a pull request here.
+//!   where Changes shows them ready to push or open as a pull request here; and, from a runner
+//!   of 1.78, the turns its chats recorded there into `refs/purlis/runners/<pool>/turns/*`,
+//!   where the turn diff reads them (#5427).
 //!
 //! What the runner held after each send is kept for the next, so a send carries only what the
 //! runner lacks. It is forgotten after a send that failed, and whenever the project is held
@@ -593,6 +595,15 @@ fn fetch_clones(
                     .map(|(heads, wrote)| (core_refs(heads), wrote))
             };
             let repo = folder_of(root, rel)?;
+            // A runner of 1.78 gives its chats' turns too (#5427), kept beside its branches.
+            if !left && !beside && link.knows_turns() {
+                let through = |have, into: &Path| {
+                    link.fetch_code_with_turns(project, rel, have, into)
+                        .map(|(heads, wrote)| (core_refs(heads), wrote))
+                };
+                return codelink::fetch_back_with_turns(&repo, pool, scratch.path(), through)
+                    .map_err(|why| why.to_string());
+            }
             if left {
                 codelink::fetch_back_left(&repo, pool, beside, scratch.path(), through)
             } else if beside {

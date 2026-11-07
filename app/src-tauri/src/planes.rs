@@ -684,6 +684,13 @@ impl Held {
         Some((at.id?, at.cwd?))
     }
 
+    /// Chat `session`'s id and folder, wherever it runs: where its turns, or this machine's copies
+    /// of a runner chat's, are kept (#5427).
+    fn turns_kept_of(&self, session: u32) -> Option<(String, PathBuf)> {
+        let at = self.chats.chat_at_or_starting(session)?;
+        Some((at.id?, at.cwd?))
+    }
+
     /// A report the board took, which may be a boundary of chat `report.chat`'s turn (#5405).
     fn turn_heard(&self, report: &purlis_core::hookwire::Report) {
         if let Some((id, cwd)) = self.turn_place(report.chat) {
@@ -1458,8 +1465,9 @@ impl Held {
         {
             crate::chatbrowsers::timeline_closed(self, &chat);
         }
-        // And so do its turns' refs (#5405).
-        if let Some((id, cwd)) = self.turn_place(session) {
+        // And so do its turns' refs (#5405), and this machine's copies of a runner chat's
+        // (#5427): its runner's host removes its own as it forgets it.
+        if let Some((id, cwd)) = self.turn_place(session).or_else(|| self.turns_kept_of(session)) {
             self.turns.removed(self.root(), &id, &cwd);
         }
         self.proposals.forget(session);

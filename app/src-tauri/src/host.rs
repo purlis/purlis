@@ -382,6 +382,28 @@ pub trait SessionHost: Send + Sync {
         None
     }
 
+    /// **Whether the runner chat `id` runs on records its turns** (session protocol 1.78,
+    /// #5427): they come back with its code, and one is undone there. False for a chat here,
+    /// whose turns the window records itself, and for a runner too old to.
+    fn records_turns_of(&self, id: u32) -> bool {
+        let _ = id;
+        false
+    }
+
+    /// **Has the runner of `pool` undo `turn`** of a chat it runs, in the folder `place` names
+    /// (1.78, #5427): answered as the runner answers, or why it could not be asked.
+    fn undo_turn_on(
+        &self,
+        pool: &str,
+        place: &purlis_core::files::turns::Place,
+        turn: &purlis_core::files::TurnKey,
+    ) -> Result<purlis_session_protocol::session::Answer, String> {
+        let _ = (place, turn);
+        Err(format!(
+            "this window reaches no runner of pool {pool}, so the turn was not undone"
+        ))
+    }
+
     /// **Whether Move here brings back a clone the runner chat `id` runs on made** (#3811): its
     /// runner names the clones it holds (session protocol 1.51). False for a chat here, and for
     /// one on a runner before 1.51, or one this window has no link to now.
@@ -1045,6 +1067,11 @@ pub(crate) mod pretend {
         composed_armed: Mutex<Option<Vec<purlis_session_protocol::session::ArmedSkill>>>,
         /// The chats it says run on a pool's runner, and the pool ([`Pretend::runs_on_pool`]).
         pools: Mutex<Vec<(u32, String)>>,
+        /// The chats whose runner records their turns (#5427).
+        records_turns: Mutex<Vec<u32>>,
+        /// Each undo asked of a runner, by its pool, and what it answers.
+        undone: Mutex<Vec<(String, purlis_core::files::TurnKey)>>,
+        undo_answers: Mutex<Option<purlis_session_protocol::session::Answer>>,
         /// Every input, resize and view of a terminal, in the order it reached the host
         /// ([`Pretend::terminal`], #4734).
         terminal: Mutex<Vec<String>>,
@@ -1056,6 +1083,21 @@ pub(crate) mod pretend {
         /// Says chat `id` runs on `pool`'s runner from now on (#2047), as a router does.
         pub fn runs_on_pool(&self, id: u32, pool: &str) {
             lock(&self.seen.pools).push((id, pool.to_owned()));
+        }
+
+        /// Says the runner chat `id` runs on records its turns (#5427).
+        pub fn records_turns_of_chat(&self, id: u32) {
+            lock(&self.seen.records_turns).push(id);
+        }
+
+        /// What the runner answers an undo from now on (#5427): `None` refuses it.
+        pub fn answers_undo_with(&self, answer: Option<purlis_session_protocol::session::Answer>) {
+            *lock(&self.seen.undo_answers) = answer;
+        }
+
+        /// Each undo asked of a runner, by its pool (#5427).
+        pub fn undone_on_runners(&self) -> Vec<(String, purlis_core::files::TurnKey)> {
+            lock(&self.seen.undone).clone()
         }
 
         /// Runs its chats on a runner from now on, which composes each harness chat (#2446).
@@ -1502,6 +1544,20 @@ pub(crate) mod pretend {
                 .iter()
                 .find(|(chat, _)| *chat == id)
                 .map(|(_, pool)| pool.clone())
+        }
+        fn records_turns_of(&self, id: u32) -> bool {
+            lock(&self.seen.records_turns).contains(&id)
+        }
+        fn undo_turn_on(
+            &self,
+            pool: &str,
+            _place: &purlis_core::files::turns::Place,
+            turn: &purlis_core::files::TurnKey,
+        ) -> Result<purlis_session_protocol::session::Answer, String> {
+            lock(&self.seen.undone).push((pool.to_owned(), turn.clone()));
+            lock(&self.seen.undo_answers)
+                .clone()
+                .ok_or_else(|| "the runner refused it".to_owned())
         }
         fn pool_for(
             &self,

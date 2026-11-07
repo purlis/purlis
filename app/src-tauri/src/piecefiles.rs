@@ -721,9 +721,10 @@ fn no_turn_why(silent: Option<&NoTurnsFrom>) -> String {
         Some(NoTurnsFrom::OnARunner { chat, runner }) => {
             on_a_runner(chat, &format!("runner {runner}"))
         }
-        Some(NoTurnsFrom::OnAPool { chat, pool }) => {
-            on_a_runner(chat, &format!("a runner of pool {pool}"))
-        }
+        Some(NoTurnsFrom::OnAPool { chat, pool }) => format!(
+            "{chat} runs on a runner of pool {pool} whose purlis is too old to record its turns, \
+             so it has no turn to show here. Against base still shows this file."
+        ),
         None => "No chat has finished a turn on this branch yet.".to_owned(),
     }
 }
