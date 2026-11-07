@@ -120,10 +120,10 @@ pub struct Runs {
 }
 
 /// What a chat that holds another persona's grants is told (#1362): what it runs with is not
-/// yet its own persona's, and only the person's Allow on its tab makes it so.
+/// yet its own persona's, and only the person's Allow makes it so.
 pub const HOLDS_ANOTHERS: &str = "this chat still runs on the grants of the chat that opened \
      it, and it runs with its harness's permission prompts off, so nobody is here to allow it \
-     its own. It dispatches to nobody until a person allows them on its tab.";
+     its own. It dispatches to nobody until a person allows them.";
 
 /// **What an unattended chat, `asking`, is answered when it asks to dispatch to `target`** in
 /// the project at `root` under `locks`. `runs` is how this app started and records the chat.

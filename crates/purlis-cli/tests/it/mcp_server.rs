@@ -386,7 +386,7 @@ fn a_session_record_written_over_mcp_with_no_app_lands_where_the_chat_works() {
         "{written}"
     );
     assert!(
-        text(&written).contains("tab will not close by itself"),
+        text(&written).contains("will not end by itself"),
         "{written}"
     );
     let records: Vec<String> = std::fs::read_dir(p.path().join("workspaces/alpha/sessions"))

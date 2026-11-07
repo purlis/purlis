@@ -34,7 +34,7 @@ fn an_app_that_ended_the_connection_at_once_did_not_take_the_record() {
 }
 
 #[test]
-fn a_written_record_under_a_pass_says_the_tab_closes_when_the_turn_ends() {
+fn a_written_record_under_a_pass_says_the_chat_ends_when_the_turn_ends() {
     let Forwarded::Written(saved) = answered(Ok(hookwire::Answer::Recorded {
         record: "sessions/r.md".to_owned(),
         closes: true,
@@ -42,7 +42,7 @@ fn a_written_record_under_a_pass_says_the_tab_closes_when_the_turn_ends() {
     })) else {
         panic!("not written");
     };
-    assert!(saved.tab.contains("when this turn ends"), "{}", saved.tab);
+    assert!(saved.ends.contains("when this turn ends"), "{}", saved.ends);
 }
 
 /// SK-50 (#3173): a record's title is its frontmatter, which any chat or hand edit writes, so a

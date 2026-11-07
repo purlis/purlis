@@ -7401,7 +7401,7 @@ fn the_person_s_ask_is_held_to_the_same_checks_and_limits_and_refused_in_the_per
     let shell = a_shell_chat(&held);
     let said = ask_from_the_tab(&held, &id, shell, "devops", "x y").unwrap_err();
     assert!(
-        said.starts_with("This tab is not on a harness profile"),
+        said.starts_with("This chat is not on a harness profile"),
         "{said}"
     );
     assert_eq!(held.chats().open_now().len(), before + 1, "only the shell");

@@ -2222,8 +2222,7 @@ fn a_vault_tagged_for_another_persona_is_refused_naming_both_ways_forward() {
     assert_eq!(
         refusal(&frames),
         "vault 'ops' is not one persona 'devops' may use, so purlis did not open it (it may use \
-         'team'). Two ways forward: ask the operator to press Allow in the notice on this \
-         chat's tab, then run the command again (no restart is needed); or, to have 'ops', the \
+         'team'). Two ways forward: ask the operator to press Allow on this chat's vault notice, then run the command again (no restart is needed); or, to have 'ops', the \
          persona the vault is tagged for, do the work, dispatch to it: `purlis dispatch --to \
          ops`. A chat's persona is fixed for its life, so nothing run in this chat changes \
          which vaults it may use."

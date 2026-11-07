@@ -132,7 +132,7 @@ pub enum DispatchCommand {
     },
     /// List the tasks this chat dispatched: each one's chat number, name, persona, where it
     /// works, its state and how long ago it started. A task ends at its report, and stays
-    /// listed as finished until its row is cleared or this chat closes.
+    /// listed as finished until its row is cleared or this chat ends.
     List,
     /// Read what a task this chat dispatched said last and the commands it ran, with their
     /// exit codes, as its harness handed them to purlis: quoted as data, credential shapes
@@ -561,12 +561,12 @@ fn who_asks(from: Option<&str>) -> String {
 }
 
 /// What a chat is told where its dispatch waits on the person for a dispatch grant: nothing
-/// has started, the person is being asked on this chat's tab, and what happens next.
+/// has started, the person is being asked in the Inbox, and on this chat's pane when it is on screen, and what happens next.
 fn held_for_the_person(from: Option<&str>, to: &str, task: &str) -> String {
     let one = purlis_core::personas::one_line;
     format!(
         "{SAYS} held for the person. {} may not dispatch to '{}' yet, so the person is \
-         being asked on this chat's tab, with this brief in front of them. Nothing has started. \
+         being asked in the Inbox, and on this chat's pane when it is on screen, with this brief in front of them. Nothing has started. \
          If they allow it, '{}' starts then and its report reaches this chat as context on a \
          later turn; if they keep it blocked, this chat is told on its next turn. Carry on \
          with other work, and do not dispatch it again.",

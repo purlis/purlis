@@ -1450,7 +1450,7 @@ pub fn routes(ctx: &Ctx, not: &NotTagged) -> String {
 }
 
 /// The first way forward: the operator's Allow, which the next run reads.
-const ALLOW: &str = "ask the operator to press Allow in the notice on this chat's tab, then run \
+const ALLOW: &str = "ask the operator to press Allow on this chat's vault notice, then run \
                      the command again (no restart is needed)";
 
 /// Whether `persona` may use `vault`: the vault registry tags it with that persona
@@ -2440,8 +2440,7 @@ fn refused_block(asker: &Asker, vault: &str, target: String) -> RunBlocked {
 pub fn refused_note(target: &str) -> String {
     format!(
         "purlis's sandbox refused this command a connection to {target}, which this chat's \
-         hosts do not list. It is the sandbox, not the server. The person can allow it on this \
-         chat's tab (Allow for this chat, or Always allow); the chat is then started again \
+         hosts do not list. It is the sandbox, not the server. The person can allow it in the Inbox, or on this chat's pane when it is on screen (Allow for this chat, or Always allow); the chat is then started again \
          with it, and the command can be run again."
     )
 }
@@ -2459,7 +2458,7 @@ pub fn more_refused_note(more: usize) -> Option<String> {
     Some(format!(
         "purlis's sandbox also refused this command connections to {hosts} that this chat's \
          hosts do not list. purlis keeps only the first {REFUSALS_KEPT} it refuses, so these \
-         are neither named nor offered on the chat's tab."
+         are neither named nor offered to the person."
     ))
 }
 

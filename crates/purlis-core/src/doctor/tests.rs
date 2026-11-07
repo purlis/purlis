@@ -3593,7 +3593,7 @@ fn the_sandbox_blocks_row_counts_seven_days_of_blocks_per_operation() {
         Some(Row::warn(
             "sandbox blocks",
             "write 2 (1 purlis's own), lookup 1 in the last 7 days",
-            "A block of purlis's own operation is a purlis bug. The chat's tab offers Report, \
+            "A block of purlis's own operation is a purlis bug. Its Notice on the chat offers Report, \
              which shows a draft naming only the operation, the kind of path and the versions, \
              and sends nothing until you press File report."
         ))

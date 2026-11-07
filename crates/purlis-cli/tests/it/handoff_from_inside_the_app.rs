@@ -403,7 +403,7 @@ fn a_handoff_the_person_is_asked_about_is_held_and_says_what_happens_next() {
     assert_eq!(
         text(&out.stdout),
         "purlis handoff: held for the person. 'steward' chats may not dispatch to 'devops' yet, \
-         so the person is being asked on this chat's tab, with this brief in front of them. \
+         so the person is being asked in the Inbox, and on this chat's pane when it is on screen, with this brief in front of them. \
          Nothing has been opened. If they allow it, the chat opens in workspace 'alpha' then, \
          started on the brief; if they keep it blocked, this chat is told on its next turn. \
          Carry on with other work, and do not hand it off again.\n"

@@ -805,9 +805,9 @@ switch. Not a tab's pin.
 _Avoid_: keep, hold, save (that is the plane's)
 
 **Browser view**:
-A browser's **view**: its frames as they come, drawn in a view tab, a tile of the Browsers grid
-or a chat tab's thumbnail. Its snapshot is the latest frame. The same on this device and on a
-runner.
+A browser's **view**: its frames as they come, drawn in a view tab, a tile of the Browsers grid or a
+thumbnail beside the chat that started it. Its snapshot is the latest frame. The same on this device
+and on a runner.
 _Avoid_: screen share, preview (that is a tab's), remote desktop, video
 
 **Browser tools**:
@@ -950,9 +950,9 @@ _Avoid_: transfer, session record (that is what a closing chat writes)
 
 **Asking chat**:
 The chat that dispatched. A task's report goes to it, and it may stop only the chats it started.
-A task the person asked for themselves from that chat's tab is a task of that session, marked
-`asked by you`: its report goes to that chat, which can wait on, tell, answer and cancel
-nothing of it, and is told the person asked.
+A task the person asked for themselves on that chat (**Ask <persona>…** in its ⋯ list or the
+palette) is a task of that session, marked `asked by you`: its report goes to that chat, which can
+wait on, tell, answer and cancel nothing of it, and is told the person asked.
 _Avoid_: dispatcher, caller, parent (a parent run is a harness's child run's)
 
 **Task question**:
@@ -969,9 +969,10 @@ _Avoid_: escalate, forward
 
 **Where you answer**:
 The person's one remembered setting for where a **task question** that has reached them appears:
-**from the top**, in the tab of the nearest chat above that has one, or **from each session**, in
-the task's own tab. It changes what is shown and never who is asked, and any task can still be
-opened and answered.
+**from the top**, on the nearest chat above it that the person started (its row, and its pane when
+one shows it), or **from each session**, on the task's own row, and its pane when one shows it. It
+is in the Inbox either way. It changes what is shown and never who is asked, and any task can still
+be picked and answered.
 
 **Persona chat**:
 The chat a dispatch starts, running as one persona for its whole life. It is told who asked,
@@ -989,13 +990,13 @@ _Avoid_: reply, result (for a handoff), handback (in UI text)
 What the asking chat may see of a task it dispatched: the task's last few messages and the
 shell commands it ran with their exit codes, as its harness handed them to purlis, quoted as
 data and masked as tool output is. Only the chat that asked can read its own tasks, while they
-run and after they end. The whole conversation stays the person's, in the task's tab.
+run and after they end. The whole conversation stays the person's, in the task's pane.
 _Avoid_: transcript, log, output (for the whole conversation)
 
 **Quiet note** (on a task):
 purlis's note that a task at work has gone quiet: nothing heard from its harness for a while,
-or one command running long, named by its program. It goes to the asking chat and to the
-task's tab, and ends nothing. The times are settings (`quiet-note-minutes`,
+or one command running long, named by its program. It goes to the asking chat and to the task's row,
+and to its pane when one shows it, and ends nothing. The times are settings (`quiet-note-minutes`,
 `one-command-note-minutes`).
 _Avoid_: heartbeat, timeout, stall (it ends nothing)
 
@@ -1217,8 +1218,10 @@ that ended, a budget or policy pause) and its own items (a report it wrote that 
 go, a refused commit, a secret waiting for approval), and never a state of its own. A report
 that reaches the chat that asked is that chat's to read, and is not an item. An item shows on
 its chat's row and on every row above it in the Chats section. Every project's are counted on the
-title bar's ✋, which opens the **Inbox**, and each is counted in red on its tab and on any
-show-more hiding it. **Ignore** clears a chat's items until the next one arrives (ADR 0076).
+title bar's ✋, which opens the **Inbox**, and on the workspace chip, and each is counted in red on
+its chat's row. An item never takes a pane or the focus: a chat in no pane is answered in the Inbox,
+and a chat on screen in its pane too. **Ignore** clears a chat's items until the next one arrives
+(ADR 0076).
 _Avoid_: notification, alert (an alert is a **Notice**), waiting (for the state)
 
 **Waiting strip**:
@@ -1379,7 +1382,7 @@ A view tab showing one comparison (or one per member of a cross-repo change), wh
 reads the diff, ticks files as viewed, comments on lines, and ends by sending the comments to the
 chat, publishing them to the request, or approving. There is one per branch, and it remembers
 where the operator was. The forge's own review of a request stays the review of record. "Review"
-on its own is the plain verb, as on the chat tab's button, and is not a purlis noun. It is a view
+on its own is the plain verb, as on a chat's Review button, and is not a purlis noun. It is a view
 of a **Workspace**'s repos (ADR 0084).
 _Avoid_: Review (as a noun for the tab), code review (for purlis's), PR review (that is the
 forge's), diff view
@@ -1409,17 +1412,19 @@ the newest in the next chat's briefing (ADR 0064).
 _Avoid_: handoff, log, transcript
 
 **Smart close**:
-Closing a chat after it has written its session record: the app sends it one line naming
-purlis's `purlis-smart-close` skill (the operator's click is the consent, the exception to a curation
-action's never-sent prompt), and the tab closes when `purlis session record` tells the app the
-record is saved — never on anything the chat printed. Until then the chat is **wrapping up**:
-its tab says so, and the operator's Cancel smart close or their own typing stops it.
+Ending a chat after it has written its session record: the third answer of **End…**'s dialog,
+wherever End… is. The app sends it one line naming purlis's `purlis-smart-close` skill (the
+operator's click is the consent, the exception to a curation action's never-sent prompt), and the
+chat ends when `purlis session record` tells the app the record is saved, never on anything the chat
+printed. Until then the chat is **wrapping up**: a breathing mark on its pane head and its row says
+so, and **Cancel smart close** or the operator's own typing stops it. Once it ends, its pane keeps
+the last screen with Resume and Clear pane.
 _Avoid_: save and close, archive
 
 **Smart-close pass**:
-What a person's own start of a smart close gives that chat: the tab's **Smart close**, or the
+What a person's own start of a smart close gives that chat: **Smart close** in End…'s dialog, or the
 person typing `/purlis-smart-close` into a waiting chat. It is bound to that chat and that close, ends
-with it, and is the only thing that lets a record close the tab. A chat can't give itself one: a
+with it, and is the only thing that lets a record end the chat. A chat can't give itself one: a
 typed `/purlis-smart-close` counts only beside the person's own Enter in the chat's pane (#1332).
 _Avoid_: token, ticket (that is a handoff's), approval
 
@@ -1435,7 +1440,8 @@ _Avoid_: reopen, restore (a relaunch reopens the chats that were open)
 **Plane updated** (of a chat):
 A chat started before the plane's start-time instructions (`CLAUDE.md`, the harness settings
 and sub-agents, a persona's charter) changed on disk. It runs on what it read until it is
-started fresh, and its tab carries a quiet mark saying so. It is not a needs-you item.
+started fresh, and its row, and a tab that shows it, carry a quiet mark saying so. It is not a
+needs-you item.
 _Avoid_: stale, behind, outdated, Incoming (that is the remote's commits)
 
 ### Themes
@@ -1635,9 +1641,9 @@ _Avoid_: scope (that word is kept off settings), layer, tier (tiers are where st
 ### The sandbox
 
 **Sandbox level**:
-How much a chat's sandbox holds, shown on its tab: **full sandbox** (a project's `mode = "on"`:
-the hosts it lists, the folders a chat writes, the asks), **floor** (the default, #2071), or
-**no sandbox** (a person's choice for a chat, or where the floor cannot be applied).
+How much a chat's sandbox holds, shown on its pane head and its row: **full sandbox** (a project's
+`mode = "on"`: the hosts it lists, the folders a chat writes, the asks), **floor** (the default,
+#2071), or **no sandbox** (a person's choice for a chat, or where the floor cannot be applied).
 _Avoid_: mode (that is the file's key), strict, relaxed
 
 **Floor**:
@@ -1715,8 +1721,8 @@ _Avoid_: patch, suggestion, edit ask (that is the harness's own)
 **Block**:
 One refused reach: a sandboxed chat was refused a host and port, a local socket, a service on
 this Mac, a lookup or a file. purlis records the chat, what was refused, the time and why in this machine's network
-record, kept 30 days and never committed, shows a **Notice** on the chat's tab, and lists it
-under Blocked lately.
+record, kept 30 days and never committed, shows a **Notice** about it (an ask in the Inbox, and in
+its pane's band when one shows it, where it can be allowed), and lists it under Blocked lately.
 _Avoid_: denial, violation (that is the sandbox's own report), egress refusal
 
 **Policy**:

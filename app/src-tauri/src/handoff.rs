@@ -3666,10 +3666,10 @@ pub(crate) fn start_approved(
             tell_the_asker(held, wanted, Answered::Started, &detail);
             said
         }
-        // Its grant is asked for on the chat's tab now, as for any dispatch: that answer
+        // Its grant is asked for in the Inbox now, as for any dispatch: that answer
         // starts it, or tells the chat it was kept blocked.
         Ok(Dispatched::Held { waiting: None, .. }) => {
-            "It now waits on a dispatch grant, asked on the chat's tab.".to_owned()
+            "It now waits on a dispatch grant, asked in the Inbox.".to_owned()
         }
         // Not kept: the person is asked about the pair for an earlier task already, so nothing
         // of this one will start, and its chat is told so.
@@ -4553,7 +4553,9 @@ pub(crate) fn said_to_the_person(why: &dispatchdecision::Refused) -> String {
     use purlis_core::shown::short;
     const IN_SETTINGS: &str = "in Settings › Project › Dispatch";
     match why {
-        Refused::Profile(Profile::NoProfile) => "This tab is not on a harness profile, so there                                                  is no harness to start the new chat on. Ask                                                  from a chat that was started on a profile."
+        Refused::Profile(Profile::NoProfile) => "This chat is not on a harness profile, so there \
+             is no harness to start the new chat on. Ask from a chat that was started on a \
+             profile."
             .to_owned(),
         // The person's ask names no profile, so what they can do about one the project does
         // not list for the persona is theirs: ask from another chat, or change the list or
