@@ -861,13 +861,15 @@ pub fn asked(
         harness: open.harness,
     };
     // A chat on a pool's runner runs its commands there, where no Run grant reaches: a program
-    // it names ahead is asked about as any Secret ask is, by the link the line came over.
-    let _on_a_runner = crate::hooks::heard_from_a_pool().is_some();
+    // it names ahead is asked about as any Secret ask is (D-5244-4). Judged by the link the line
+    // came over, else the router's record of the chat, as a brokered write and a dispatch are, so
+    // either alone keeps the Allow off (#5246's review).
+    let on_a_runner = crate::runnerdispatches::heard_from_a_pool(held, asked.chat).is_some();
     let chat = purlis_core::secrets::ask::Chat {
         chat: asked.chat,
         persona: open.persona.as_deref(),
         harness: open.harness,
-        asker: Some(&asker), // RED ON PURPOSE (#5246): D-5244-4 taken out
+        asker: (!on_a_runner).then_some(&asker),
     };
     match purlis_core::secrets::ask::raised(&ctx, held.secret_asks(), chat, asked, &|| {
         held.chats().asks_may_have_moved();
