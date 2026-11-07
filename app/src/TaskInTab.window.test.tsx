@@ -1181,10 +1181,15 @@ describe("the tab's label", () => {
 
     await userEvent.dblClick(tab("talk"));
 
-    // The name is open for editing, and it is the task's: the tab is named for what its pane
-    // shows (#4757, #4762).
-    const box = await within(strip()).findByRole("textbox", { name: /^Rename chat/ });
-    expect((box as HTMLInputElement).value).toBe("talk");
+    // Its Rename is open, and it is the task's: the tab is named for what its pane shows
+    // (#4757, #4762), and the chat it renames is that one, never the session's (#5287, #5343).
+    const asking = await screen.findByRole("dialog", { name: "Rename talk" });
+    expect(within(asking).getByLabelText("New name")).toHaveValue("talk");
+    expect(
+      within(asking).getByRole("checkbox", { name: "Only this tab" }),
+    ).toHaveAccessibleDescription("The chat keeps its name, talk.");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     await new Promise((resolve) => setTimeout(resolve, 400));
     expect(onScreen()).toEqual([4]);
     expect(crumbsSay()).toMatch(/^steward 1 › talk · /);
@@ -1722,7 +1727,8 @@ describe("a handoff is a session of its own (#1492, V100-69)", () => {
   /** Renames the chat called `was`, on its tab, as a person does. */
   const rename = async (was: string, to: string) => {
     await userEvent.dblClick(tab(was));
-    await within(strip()).findByRole("textbox", { name: /^Rename chat/ });
+    const asking = await screen.findByRole("dialog", { name: `Rename ${was}` });
+    await waitFor(() => expect(within(asking).getByLabelText("New name")).toHaveFocus());
     await userEvent.keyboard(`{Control>}a{/Control}${to}{Enter}`);
     await waitFor(() => expect(tabNames()).toContain(to));
   };

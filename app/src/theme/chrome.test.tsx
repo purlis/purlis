@@ -95,7 +95,7 @@ import { SavingView } from "../SavingView";
 import { StartChat } from "../StartChat";
 import { ChatsSection } from "../ChatsSection";
 import { chatsTree } from "../chatsTree";
-import { TabRename } from "../TabRename";
+import { RenameTab } from "../RenameTab";
 import { TaskEndAsk } from "../TaskEnd";
 import { PinItem, UpdateItem } from "../Updates";
 import { VaultTab } from "../VaultTab";
@@ -439,6 +439,8 @@ const SKILL: StudioSkill = {
   lint: [],
   hidden: [],
   pinned: false,
+  hidden_in: [],
+  replaced_in: [],
   archived: false,
   pinned_by: [],
 };
@@ -1658,15 +1660,21 @@ const DIALOGS: Opened[] = [
   },
   {
     name: "a tab's name refused",
-    file: "TabRename.tsx",
-    open: async () => {
+    file: "RenameTab.tsx",
+    open: async () =>
       render(
-        <TabRename name="claude 4" onSave={async () => "That name is taken"} onDone={nothing} />,
-      );
-      const box = await screen.findByRole("textbox");
-      await userEvent.clear(box);
-      await userEvent.type(box, "web{Enter}");
-    },
+        <RenameTab
+          renames={{ kind: "chat", session: 4 }}
+          name="claude 4"
+          chat="claude 4"
+          own={false}
+          trouble="That name is taken"
+          busy={false}
+          onRename={nothing}
+          onClear={nothing}
+          onCancel={nothing}
+        />,
+      ),
   },
   {
     name: "ending a task",

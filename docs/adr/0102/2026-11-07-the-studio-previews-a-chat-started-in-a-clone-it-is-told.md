@@ -1,0 +1,12 @@
+# The studio previews a chat started in a clone it is told
+
+**Amends [ADR 0102](../0102-a-skill-router-decides-what-a-chat-sees-and-nothing-it-hides-is-out-of-reach.md), 2026-11-07**, ticket #4227, under the operator's spec #2762. It builds what [The studio previews a chat at the workspace's root](2026-10-31-the-studio-previews-a-chat-at-the-workspace-s-root.md) left to its own design: previewing a chat started in one clone, whose repo skills count against its budget too. The operator chose variant A of the prototype (`app/src/SkillStudioPlace.prototype.html`, commit 71b51f075), with variant C's per-place list on a skill's page (verdict on #4227, 2026-11-07).
+
+## The decision
+
+- **The studio's scope picker gains where the chat starts.** In a workspace whose clones hold repo skills, the header's Whose chats picker is one menu of two parts: Whose chats, then Where it starts, at the workspace's root or in each clone that holds a repo skill on for some harness. A clone that holds none is no place of its own: a chat there lists what a chat at the root lists. With no such clone, the picker is the select it was. Where it starts is part of the scope the studio's history holds (`StudioScope.where`), never of its tab's key.
+- **Every page follows it.** With a clone chosen, the Library's marks, a skill's page, Harness skills and the Routing page's Preview line are a chat started in that clone, routed as its start routes it, by the built-in router (`HarnessInTheStudio::in_clones`, through `as_a_start_routes`): the root's set with that clone's repo skills counted too. A row a router would hide there carries it in `StudioRow::hidden_in`, a plane skill whose repo copy that chat takes in its place in `replaced_in`. A repo skill is marked only in its own clone, and on Harness skills another clone's repo skills are left out of the chat previewed.
+- **A skill's page lists each place.** Its Overview says, at the workspace's root and in each clone that holds repo skills, whether the skill is listed, hidden by the router on which programs, or replaced by the repo's own copy.
+- **Choosing a place reads nothing.** The list already read every clone's repo skills once (§ 2 of the amendment of 2026-10-31); routing each clone's start from them is work in memory, done in the one read, so a place is drawn again from the answer the studio holds. An extension's router is still never asked by a read of the studio.
+
+**Built by #4227.**

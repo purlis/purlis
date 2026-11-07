@@ -467,7 +467,7 @@ describe("a chat's list (#4753)", () => {
 
     expect(said(menu)).toEqual([
       [
-        "Rename…",
+        "Rename chat…",
         `Ask ▸ [${PERSONAS.map((one) => `${one}…`).join(", ")}]`,
         "Link to work item…",
         "Unlink work item",
@@ -492,7 +492,7 @@ describe("a chat's list (#4753)", () => {
     ).toBe(top.length);
     const none = world({ ask: { personas: [], locked: null } });
     expect(said(menuOf({ on: "chat", session: 7 }, none.offers))[0]).toEqual([
-      "Rename…",
+      "Rename chat…",
       "Link to work item…",
       "Unlink work item",
     ]);
@@ -535,7 +535,7 @@ describe("a chat's list (#4753)", () => {
 
     // Move…'s key picks the chat up from its row or its pane (#4764).
     expect(keys).toEqual({
-      "Rename…": "F2",
+      "Rename chat…": "F2",
       "Move…": expect.stringMatching(/^(⌘⇧M|Ctrl\+Shift\+M)$/),
     });
   });
@@ -588,8 +588,9 @@ describe("a tab's menu (#4753)", () => {
     // The tab's press switches to it, so Switch to is no row; and a tab behind has its own
     // Close other tabs (#4760), and its own Tile all (#4765).
     expect(said(menuOf({ on: "tab", tab: behind }, offers))).toEqual([
-      // Move to new window (#4768): a tab into a tab window of its project.
-      ["Pinned", "Tile all", "Move…", "Move to new window"],
+      // Move to new window (#4768): a tab into a tab window of its project. Rename… (#5343):
+      // the tab holds one chat, so it renames the chat, and says so in its dialog.
+      ["Rename…", "Pinned", "Tile all", "Move…", "Move to new window"],
       ["Close other tabs", "Close"],
     ]);
     const inFront = rowsOf(menuOf({ on: "tab", tab: front }, offers));
@@ -613,6 +614,8 @@ describe("a tab's menu (#4753)", () => {
       rows.filter((row) => row.keys !== undefined).map((row) => [row.said, row.keys]),
     );
     expect(keys).toEqual({
+      // F2 on the tab opens its Rename (#5343).
+      "Rename…": "F2",
       Close: expect.stringMatching(/^(⌫|Delete)$/),
       // Placement mode's key, which picks the tab up from the strip (#4764).
       "Move…": expect.stringMatching(/^(⌘⇧M|Ctrl\+Shift\+M)$/),
@@ -676,7 +679,11 @@ describe("the other tabs' menus", () => {
 
   it("a task's list, which has its own two ends and no End…", () => {
     expect(said(menuOf({ on: "chat", session: 11 }, offers))).toEqual([
-      ["Rename…", `Ask ▸ [${PERSONAS.map((one) => `${one}…`).join(", ")}]`, "Link to work item…"],
+      [
+        "Rename chat…",
+        `Ask ▸ [${PERSONAS.map((one) => `${one}…`).join(", ")}]`,
+        "Link to work item…",
+      ],
       [
         "Move to its own tab",
         "Open beside console-developer 16",

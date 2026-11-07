@@ -6,9 +6,11 @@ import { Field, SettingRow } from "./settings/components";
 import { Dialog } from "./ui/dialog/Dialog";
 
 /**
- * **Renaming a chat that has no tab of its own** (#4753): its Rename… row, from its sidebar
- * row's menu, its pane's ⋯ or the palette. A chat that is its tab's own is renamed in place on
- * the strip instead (`TabRename`), and renaming never changes what is on screen.
+ * **Rename chat** (#4753, #5343): its Rename chat… row, from its sidebar row's menu, its pane's
+ * ⋯, the palette, or F2 on its row. It says it renames the chat everywhere: the
+ * list, its head, and any tab named for it, which follows unless the tab has a name of its own
+ * (`tabRenaming.chatRenamed`). A tab's own Rename is `RenameTab`. Renaming never changes what
+ * is on screen.
  *
  * **This dialog validates nothing**, for `RenameWorkspace`'s reason: the core trims the name,
  * gives a blank back as the default, and refuses a name it will not draw in its own words, which
@@ -41,6 +43,7 @@ export function RenameChat({
       onClose={onCancel}
       title={`Rename chat ${name}`}
       titleId="rename-chat"
+      description="This renames the chat everywhere: in the list, on its head and on a tab named for it."
       // The box, with its name chosen, so what is typed replaces it.
       initialFocus={(dialog) => {
         const box = dialog.querySelector("input");

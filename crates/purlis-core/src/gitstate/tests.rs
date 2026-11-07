@@ -181,6 +181,26 @@ fn a_conflicted_merge_is_stopped_with_its_file_and_its_way_out() {
     assert!(why.contains("git merge --abort"), "{why}");
 }
 
+/// The standing asks this on every look (#5486): on the scale run's macOS runner a walk of the
+/// work tree to find what is unmerged cost 24 s at 200,000 files, for an answer the index holds.
+#[test]
+fn what_is_unmerged_is_read_from_the_index_without_walking_the_work_tree() {
+    let dir = diverged();
+    assert!(!git(dir.path(), &["merge", "side"]).ok());
+    let before = crate::worktree::git::tally::asked(dir.path()).len();
+
+    let got = unmerged(dir.path());
+
+    assert_eq!(got, vec!["README.md".to_string()]);
+    let asked = crate::worktree::git::tally::asked(dir.path())[before..].to_vec();
+    assert!(
+        asked.iter().all(|args| !args
+            .iter()
+            .any(|a| matches!(a.as_str(), "diff-files" | "status" | "diff"))),
+        "a work-tree walk was asked: {asked:?}"
+    );
+}
+
 #[test]
 fn a_rebase_stopped_part_way_is_a_rebase() {
     let dir = diverged();

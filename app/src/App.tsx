@@ -2023,6 +2023,7 @@ function App() {
       closeOtherTabs: () => undefined,
       selectTab: () => undefined,
       renameChat: () => undefined,
+      renameTab: () => undefined,
       linkWorkItem: () => undefined,
       startFresh: () => undefined,
       restartChat: () => undefined,
