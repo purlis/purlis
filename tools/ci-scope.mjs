@@ -153,8 +153,6 @@ export const READ_BY_RUST = [
   "app/src/ui/pane-foot/pane-foot.css",
   "app/src/ui/panel/panel.css",
   "app/src/ui/popover/popover.css",
-  "app/src/ui/rail/rail.css",
-  "app/src/ui/pane-preview/pane-preview.css",
   "app/src/ui/review-page/review-page.css",
   "app/src/ui/select/select.css",
   "app/src/ui/separator/separator.css",

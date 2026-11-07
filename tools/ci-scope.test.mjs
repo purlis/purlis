@@ -577,6 +577,8 @@ const NAMED_NOT_READ = {
 const WINDOW_WALK_MISSES = {
   "app/src-tauri/src/savefix/tests.rs":
     "a unit test of the app crate, whose test build needs Tauri: one call site of mergeSaveRequest",
+  "crates/purlis-core/src/theme/part_fills_tests.rs":
+    "a unit test of the theme manifest, which reads its parts' private grounds: finds each part's stylesheet under app/src/ui (#5573)",
 };
 
 // `files` is every tracked path, `read` reads one. Each string literal of a Rust file is read

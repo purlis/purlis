@@ -2,21 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useLayoutEffect, useMemo, useSyncExternalStore } from "react";
-import { boxOfRect, cellsIn, HeldPanes, type PaneBase, PANES_ROOM, stripTab } from "./paneHeld";
-import { holdKeyboard } from "./paneKeyboard";
-import {
-  type Box,
-  type DropContext,
-  heldPane,
-  judgeDrop,
-  type Size,
-  sourceName,
-  type Source,
-  type Target,
-} from "./paneDrop";
+import { boxOfRect, cellsIn, type PaneBase, PANES_ROOM, stripTab } from "./paneHeld";
+import { type Box, type DropContext, heldPane, judgeDrop, sourceName } from "./paneDrop";
+import { heldAt, type PaneDragStore, shownIn, wordsAt } from "./paneDragStore";
 import { gridIn, planOf, sameSize, type TerminalCells, wouldBe } from "./panePreview";
-import { layoutShown, type Layout, panes, type Tabs } from "./tabs";
-import { zoomedLayout } from "./tiling";
+import { panes, type Tabs } from "./tabs";
 import {
   PanePreviewArriving,
   PanePreviewHeld,
@@ -35,175 +25,10 @@ import {
  * what a drop would do is `paneDrop.ts`'s answer for them. Nothing here reaches `change`, the core
  * or a terminal, so a cancel is letting go of what was written (`paneHeld.ts`).
  *
- * **A component of its own, on a store of its own**, so that a pointer moving draws this, and never
- * the whole window its hook is called in. A label following the pointer is written straight on its
- * element; a target changing draws this and writes the frames.
+ * **A component of its own, on a store of its own** (`paneDragStore.ts`), so that a pointer moving
+ * draws this, and never the whole window its hook is called in. A label following the pointer is
+ * written straight on its element; a target changing draws this and writes the frames.
  */
-
-/** Where the pointer's over, and what is known of the place. */
-export type Over = {
-  target: Target;
-  /** The pane's size at the drag's start, for the floor the drop keeps; none on the strip. */
-  size?: Size;
-  /** On the strip, the line where the tab would go. */
-  line?: Box;
-};
-
-/**
- * How it is held: by a pointer, or by the keys and single presses of placement mode (#5293), which
- * draw the same preview and want no grabbing cursor.
- */
-export type HeldBy = "pointer" | "keys";
-
-type Dragging = {
-  source: Source;
-  over?: Over;
-  base?: PaneBase;
-  /** The tab on the strip a drag rests on, until it comes forward (#5294): it wears a mark. */
-  opening?: number;
-  /** Over a side folded to a rail, which takes no drop and says why (#5415). */
-  onRail?: boolean;
-};
-
-/** What a tab draws, as the window asks for it (`PlaneView`'s `LayoutPanes`). */
-function shownIn(tabs: Tabs): { front: number; layout: Layout } | undefined {
-  const front = tabs.inFront;
-  const layout = front === undefined ? undefined : layoutShown(tabs, front);
-  return front === undefined || layout === undefined
-    ? undefined
-    : { front, layout: zoomedLayout(tabs, front, layout) };
-}
-
-const measuredAs = (shown: ReturnType<typeof shownIn>) =>
-  shown === undefined ? "" : `${shown.front}:${placesOf(shown.layout)}`;
-
-/** How far from the pointer the label and the words sit. */
-const heldAt = (x: number, y: number) => ({ left: x + 14, top: y + 12 });
-/** How far from the window's end the words keep, so they stay in it (`pane-preview.css`). */
-const WORDS_ROOM = 350;
-const wordsAt = (x: number, y: number) => ({
-  left: Math.min(x + 14, window.innerWidth - WORDS_ROOM),
-  top: y + 40,
-});
-
-/**
- * What a zone depends on in a tree: which panes, in which splits, at which shares. A chat shown in
- * a pane's place draws another tree of the same panes, which is no reason to measure anything.
- */
-function placesOf(layout: Layout | undefined): string {
-  if (layout === undefined) return "";
-  if (layout.kind === "pane") return String(layout.pane);
-  const [a, b] = layout.children;
-  return `${layout.direction}${layout.share ?? ""}(${placesOf(a)} ${placesOf(b)})`;
-}
-
-/** **The drag in progress**, read by its layer and written by the pointer's half. */
-export class PaneDragStore {
-  private state: Dragging | undefined;
-  private readonly heard = new Set<() => void>();
-  readonly held = new HeldPanes();
-  /** Lets go of the keyboard the drag holds where it is (#5523), while it lasts. */
-  private keyboard: (() => void) | undefined;
-  /** What was measured: the tab in front, and the places of its panes. */
-  private measuredFor = "";
-  private at = { x: 0, y: 0 };
-  /** The elements that follow the pointer, while they are drawn. */
-  private heldLabel: HTMLElement | null = null;
-  private wordsLabel: HTMLElement | null = null;
-  readonly heldHere = (element: HTMLElement | null) => {
-    this.heldLabel = element;
-  };
-  readonly wordsHere = (element: HTMLElement | null) => {
-    this.wordsLabel = element;
-  };
-
-  readonly get = () => this.state;
-  readonly subscribe = (listener: () => void) => {
-    this.heard.add(listener);
-    return () => {
-      this.heard.delete(listener);
-    };
-  };
-
-  private set(next: Dragging | undefined) {
-    this.state = next;
-    for (const listener of this.heard) listener();
-  }
-
-  /** Something is picked up: the window is read, every terminal is held at its size, and the
-   *  keyboard where it is: no terminal of a tab brought forward takes it (`holdKeyboard`). */
-  start(source: Source, tabs: Tabs, x: number, y: number, by: HeldBy = "pointer") {
-    document.documentElement.dataset.paneDragging = by;
-    this.keyboard ??= holdKeyboard();
-    this.at = { x, y };
-    const shown = shownIn(tabs);
-    this.measuredFor = measuredAs(shown);
-    this.set({ source, base: shown === undefined ? undefined : this.held.measure(shown.front) });
-  }
-
-  /** The window as it is now, when the tab in front or the room has changed under the drag. */
-  retake(tabs: Tabs) {
-    const shown = shownIn(tabs);
-    if (this.state === undefined || shown === undefined) return;
-    this.measuredFor = measuredAs(shown);
-    this.set({ ...this.state, base: this.held.measure(shown.front) });
-  }
-
-  /** Whether `tabs` draws what was measured. */
-  measuredIs(tabs: Tabs) {
-    return this.measuredFor === measuredAs(shownIn(tabs));
-  }
-
-  /** The pointer moved: what follows it goes with it, and nothing else is drawn for it. */
-  moveTo(x: number, y: number) {
-    this.at = { x, y };
-    const held = heldAt(x, y);
-    if (this.heldLabel !== null) {
-      this.heldLabel.style.left = `${held.left}px`;
-      this.heldLabel.style.top = `${held.top}px`;
-    }
-    const words = wordsAt(x, y);
-    if (this.wordsLabel !== null) {
-      this.wordsLabel.style.left = `${words.left}px`;
-      this.wordsLabel.style.top = `${words.top}px`;
-    }
-  }
-
-  /** Where the pointer was last. */
-  pointer() {
-    return this.at;
-  }
-
-  /** The place it is over has changed. */
-  overPlace(over: Over | undefined) {
-    if (this.state !== undefined) this.set({ ...this.state, over });
-  }
-
-  /** Whether it is over a side folded to a rail (#5415): no place, and a refusal that says why. */
-  overRail(on: boolean) {
-    if (this.state !== undefined && (this.state.onRail ?? false) !== on)
-      this.set({ ...this.state, onRail: on });
-  }
-
-  /** The tab it rests on, about to come forward, or none (#5294). */
-  restOn(tab: number | undefined) {
-    if (this.state !== undefined && this.state.opening !== tab)
-      this.set({ ...this.state, opening: tab });
-  }
-
-  /** **The drag is over**: everything it wrote is taken off, in this very event. */
-  stop() {
-    const root = document.documentElement.dataset;
-    delete root.paneDragging;
-    delete root.panePreviewing;
-    delete root.paneRefused;
-    this.held.letGo();
-    this.keyboard?.();
-    this.keyboard = undefined;
-    this.measuredFor = "";
-    if (this.state !== undefined) this.set(undefined);
-  }
-}
 
 /** The cells a pane with no terminal yet would have: those of a terminal on screen. */
 function anyCells(base: PaneBase): TerminalCells | undefined {
