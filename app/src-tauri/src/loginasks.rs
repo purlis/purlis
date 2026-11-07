@@ -45,6 +45,8 @@ pub struct LoginWait {
     /// Its number in the project: what its answer names.
     pub id: u32,
     pub session: u32,
+    /// The chat's id (ADR 0066) as it raised this: what its grant is bound to, beside its number.
+    pub chat: Option<String>,
     pub proposal: Proposal,
     pub since: u64,
     /// The persona needs its vault allowed too: what Always then also does.
@@ -70,10 +72,22 @@ pub enum Heard {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Grant {
     session: u32,
+    /// The id of the chat it was allowed for (ADR 0066): a number dealt again never reads it.
+    chat: Option<String>,
     persona: String,
     tool: Tool,
     /// Allow once: it goes with the read of its values.
     once: bool,
+}
+
+impl Grant {
+    /// Whether it's login `name`, allowed for chat `session` whose id is `chat`, as `persona`.
+    fn is_for(&self, session: u32, chat: Option<&str>, persona: Option<&str>, name: &str) -> bool {
+        self.session == session
+            && self.chat.as_deref() == chat
+            && persona == Some(self.persona.as_str())
+            && self.tool.name == name
+    }
 }
 
 #[derive(Debug, Default)]
@@ -212,6 +226,7 @@ impl Grants {
         inner.from_notices.push((persona.to_owned(), tool.clone()));
         inner.grants.push(Grant {
             session: wait.session,
+            chat: wait.chat.clone(),
             persona: persona.to_owned(),
             tool,
             once,
@@ -250,32 +265,42 @@ impl Grants {
         mine().count() >= KEPT_AT_MOST || mine().any(|(_, name, on)| name == login && on == origin)
     }
 
-    /// The login `name` the person allowed for chat `session` running as `persona`.
-    pub fn granted(&self, session: u32, persona: Option<&str>, name: &str) -> Option<Tool> {
+    /// The login `name` the person allowed for chat `session`, whose id is `chat`, running as
+    /// `persona`.
+    pub fn granted(
+        &self,
+        session: u32,
+        chat: Option<&str>,
+        persona: Option<&str>,
+        name: &str,
+    ) -> Option<Tool> {
         self.lock()
             .grants
             .iter()
-            .find(|one| {
-                one.session == session
-                    && persona == Some(one.persona.as_str())
-                    && one.tool.name == name
-            })
+            .find(|one| one.is_for(session, chat, persona, name))
             .map(|one| one.tool.clone())
     }
 
     /// **The login `name` to read now**: as [`Self::granted`], and Allow once goes with it, in
     /// one step, so two calls never both fill it and a read that fails leaves nothing behind.
-    pub fn take(&self, session: u32, persona: Option<&str>, name: &str) -> Option<Tool> {
+    pub fn take(
+        &self,
+        session: u32,
+        chat: Option<&str>,
+        persona: Option<&str>,
+        name: &str,
+    ) -> Option<Tool> {
         let mut inner = self.lock();
-        let at = inner.grants.iter().position(|one| {
-            one.session == session && persona == Some(one.persona.as_str()) && one.tool.name == name
-        })?;
+        let at = inner
+            .grants
+            .iter()
+            .position(|one| one.is_for(session, chat, persona, name))?;
         if inner.grants[at].once {
             let taken = inner.grants.remove(at);
             let tool = taken.tool.clone();
-            inner.taken.retain(|one| {
-                !(one.session == session && one.persona == taken.persona && one.tool.name == name)
-            });
+            inner
+                .taken
+                .retain(|one| !one.is_for(session, chat, persona, name));
             inner.taken.push(taken);
             Some(tool)
         } else {
@@ -286,18 +311,27 @@ impl Grants {
     /// **Chat `session`'s login `name` answered** (#5251): an Allow once [`Self::take`] took for it
     /// is the chat's again where the login was refused before it ran (`ran` false), and is spent
     /// otherwise. Given back only where nothing of that name was allowed since.
-    pub fn answered(&self, session: u32, persona: Option<&str>, name: &str, ran: bool) {
+    pub fn answered(
+        &self,
+        session: u32,
+        chat: Option<&str>,
+        persona: Option<&str>,
+        name: &str,
+        ran: bool,
+    ) {
         let mut inner = self.lock();
-        let at = inner.taken.iter().position(|one| {
-            one.session == session && persona == Some(one.persona.as_str()) && one.tool.name == name
-        });
+        let at = inner
+            .taken
+            .iter()
+            .position(|one| one.is_for(session, chat, persona, name));
         let Some(at) = at else {
             return;
         };
         let taken = inner.taken.remove(at);
-        let allowed_since = inner.grants.iter().any(|one| {
-            one.session == session && one.persona == taken.persona && one.tool.name == name
-        });
+        let allowed_since = inner
+            .grants
+            .iter()
+            .any(|one| one.is_for(session, chat, persona, name));
         if !ran && !allowed_since {
             inner.grants.push(taken);
         }
@@ -421,7 +455,11 @@ pub fn before_the_login(
     }
     let no = |why: String| Some(Answer::No { why });
     let grants = held.login_grants();
-    if grants.granted(session, Some(&persona), login).is_some() {
+    let chat = held.chats().id_of(session);
+    if grants
+        .granted(session, chat.as_deref(), Some(&persona), login)
+        .is_some()
+    {
         return None;
     }
     // A declared login a call names another site for asks to replace that site (#4996).
@@ -472,6 +510,7 @@ pub fn before_the_login(
         Ok(Some(judged)) => LoginWait {
             id: 0,
             session,
+            chat,
             since: now,
             pool: pool.map(str::to_owned),
             proposal: judged.proposal,
