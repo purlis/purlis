@@ -1087,7 +1087,7 @@ describe("one list per chat, on the row, the pane and the palette (#4753)", () =
       fireEvent.contextMenu(own);
     });
     // Not a short list: the chat's rows, and the ways to end it.
-    expect(byRightClick).toEqual(expect.arrayContaining(["Rename…", "Open", "Stop", "End…"]));
+    expect(byRightClick).toEqual(expect.arrayContaining(["Rename chat…", "Open", "Stop", "End…"]));
 
     const more = own.closest("li")?.querySelector<HTMLElement>(".chat-more button");
     if (more == null) throw new Error("steward 1's row has no ⋯");
@@ -1117,7 +1117,7 @@ describe("one list per chat, on the row, the pane and the palette (#4753)", () =
     });
     // Its name, its reads, its run and its two ends; no End…, which is not a task's.
     expect(task).toEqual(
-      expect.arrayContaining(["Rename…", "Open", "Restart", "Stop and get its report"]),
+      expect.arrayContaining(["Rename chat…", "Open", "Restart", "Stop and get its report"]),
     );
     expect(task).not.toContain("End…");
   });

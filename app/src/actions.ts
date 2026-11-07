@@ -301,13 +301,14 @@ export const PASS_THROUGH_BYTES = "\u001bOQ";
 export const CHAT_KEYBOARD = "data-chat-keyboard";
 
 /**
- * The mark a chat's tab puts on itself to say `F2` renames it there (charter-app#254).
+ * The mark a tab, and a chat's row in the list (#5343), puts on itself to say `F2` renames it
+ * there (charter-app#254): a tab's Rename, a row's Rename chat.
  *
  * `F2` is the platform's rename key for a focused item — and it is also the palette's, claimed
  * on the window, capture-phase, from anywhere (`Palette.opensIt`). **A focused chat tab is the
- * one place the palette stands back**, for the reason `CHAT_KEYBOARD` gives about a pane: the
+ * one place the palette stands back**, with a chat's row,, for the reason `CHAT_KEYBOARD` gives about a pane: the
  * key means something else where it landed. The palette is still `⌘K` from the tab, and `F2`
- * from anywhere else. The rename box carries it too, so `F2` typed into a name opens nothing. An attribute rather than the tab's role, because the role is what the tab
+ * from anywhere else. An attribute rather than the tab's role, because the role is what the tab
  * IS and this is what the key MEANS on it: a view's tab is a tab too, and has no rename.
  */
 export const RENAMES_ON_F2 = "data-renames-on-f2";

@@ -2,10 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { emit } from "@tauri-apps/api/event";
 import App from "./App";
 import type { OpenChat } from "./bindings";
 import { findStripNamed, goToWorkspace, stripNamed } from "./test-strips";
@@ -333,7 +332,7 @@ describe("the window's strips", () => {
       ]);
   });
 
-  it("owns no name box while a chat tab is being renamed (#1204)", async () => {
+  it("keeps every tab while one's Rename is open, which is a dialog and not on the strip (#1204, #5343)", async () => {
     core();
     render(<App />);
     // alpha, from the title bar's ⌄ (#2916).
@@ -343,32 +342,11 @@ describe("the window's strips", () => {
     within(stripNamed("Tabs")).getAllByRole("tab")[0].focus();
     await userEvent.keyboard("{F2}");
 
-    // The name box is drawn in the tab's place, in the strip, and the tablist does not own it.
-    expect(await within(stripNamed("Tabs")).findByRole("textbox")).toBeInTheDocument();
-    expect(within(stripNamed("Tabs")).getAllByRole("tab")).toHaveLength(1);
-    expect(notTabs(screen.getByRole("tablist", { name: "Tabs" }))).toEqual([]);
-  });
-
-  it("owns no name box while a chat whose name is open starts wrapping up (#1204, #4760)", async () => {
-    core();
-    render(<App />);
-    // alpha, from the title bar's ⌄ (#2916).
-    await goToWorkspace("alpha");
-    await vi.waitFor(() => expect(within(stripNamed("Tabs")).getAllByRole("tab")).toHaveLength(2));
-    within(stripNamed("Tabs")).getAllByRole("tab")[0].focus();
-    await userEvent.keyboard("{F2}");
-    await within(stripNamed("Tabs")).findByRole("textbox");
-
-    // The core says the chat is wrapping up, from wherever it was asked. Its tab no longer turns
-    // into a chip (#4760): it stays where it is, its name still open, and the tablist still owns
-    // only the tabs it draws, never the name box (`stripNamed` holds it to that).
-    await act(() => emit("smart-close", { plane: PLANE, session: 1, phase: "sent", record: null }));
-    await vi.waitFor(() =>
-      expect(stripNamed("Tabs").querySelector(".tab[data-wrapping-up]")).not.toBeNull(),
-    );
-    expect(stripNamed("Tabs").querySelector(".tab[data-chip]")).toBeNull();
-    expect(within(stripNamed("Tabs")).getByRole("textbox")).toBeInTheDocument();
-    expect(within(stripNamed("Tabs")).getAllByRole("tab")).toHaveLength(1);
-    expect(notTabs(screen.getByRole("tablist", { name: "Tabs" }))).toEqual([]);
+    await screen.findByRole("dialog", { name: /^Rename/ });
+    // The strip draws both tabs still, and its tablist owns them and nothing else.
+    const tabs = document.querySelector('[data-strip="Tabs"]');
+    expect(tabs?.querySelectorAll('[role="tab"]')).toHaveLength(2);
+    expect(tabs?.querySelector("input")).toBeNull();
+    expect(notTabs(screen.getByRole("tablist", { name: "Tabs", hidden: true }))).toEqual([]);
   });
 });

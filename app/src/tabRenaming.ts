@@ -33,8 +33,9 @@ export function nameTab(tabs: Tabs, id: number, own: string | undefined): Tabs {
   if (tab === undefined) return tabs;
   const given = own?.trim() || undefined;
   if (tab.own === given) return tabs;
-  const { own: _was, ...rest } = tab;
-  return { ...tabs, byId: { ...tabs.byId, [id]: given === undefined ? rest : { ...rest, own: given } } };
+  const named = { ...tab, own: given };
+  if (given === undefined) delete named.own;
+  return { ...tabs, byId: { ...tabs.byId, [id]: named } };
 }
 
 /**

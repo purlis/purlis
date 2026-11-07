@@ -1556,6 +1556,8 @@ words are written once, in `app/src/menuWords.ts`; and every menu is drawn by th
    *Rename chat console-developer 16…*. The thing is said once, as the menu's own accessible
    name (`aria-label` on the content: "Tab console-developer 16"). **A row keeps a name only
    when it is another thing's**: *Go to steward 4*, *Open beside steward 4*, *Merge into svc*.
+   A row keeps the KIND of thing it acts on where a pane and its tab are both in front of the
+   person: *Rename chat…* on a chat's ⋯, *Rename tab…* on a split tab's menu (#5343).
    The catalogue's title still names the thing, for the palette, where a row stands among every
    other row of the window (`docs/ui-copy.md`, "Buttons and menu items").
 2. **A row's note is its tooltip and its description, not a line under it.** The tooltip is the

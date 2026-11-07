@@ -91,7 +91,8 @@ export type Yield =
   | "terminal-off-mac"
   /** Off a Mac, the keystroke landed in a view, whose Back and Forward are Alt and an arrow. */
   | "view-off-mac"
-  /** The keystroke landed on a tab that answers the key itself (`F2` renames it). */
+  /** The keystroke landed on a tab, or a chat's row, that answers the key itself (`F2`
+   *  renames it). */
   | "tab"
   /** The keystroke landed in a text editor, whose keymap has it. */
   | "editor"
@@ -213,7 +214,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
     said: (mac) => (mac ? "⌘K" : "Ctrl+K"),
     alsoSaid: () => ["F2"],
     // A modal's keys are its own; the palette's own second press is the palette's (`handBack`);
-    // Ctrl+K is a chat's kill-line; a chat's tab renames on F2; and in a code editor the editor
+    // Ctrl+K is a chat's kill-line; a tab and a chat's row rename on F2; and in a code editor the editor
     // keeps its deleteLine (⌘⇧K, Ctrl+Shift+K) and a Mac's deleteToLineEnd (Ctrl+K), as VS Code
     // leaves them to its editor (D-2921-25). ⌘K is the palette's there too.
     yields: ["modal", "palette", "terminal-ctrl", "tab", "editor-chords"],
@@ -701,9 +702,21 @@ export const SHORTCUTS: readonly Shortcut[] = [
   },
   {
     id: "tab.rename",
-    does: "Rename the focused chat tab",
+    does: "Rename the focused tab, or its one chat",
     group: "Tabs and chats",
     where: "tab",
+    kind: "key",
+    chords: both(bare("F2")),
+    said: says("F2"),
+    yields: [],
+    rows: ["tab.rename:"],
+    matches: (e) => e.key === "F2" && plain(e),
+  },
+  {
+    id: "row.rename",
+    does: "Rename the focused chat in the list",
+    group: "Tabs and chats",
+    where: "row",
     kind: "key",
     chords: both(bare("F2")),
     said: says("F2"),
@@ -1230,7 +1243,8 @@ function covers(rule: Yield, platform: Platform, chord: Chord): readonly Scope[]
     case "view-off-mac":
       return platform === "other" ? ["view"] : [];
     case "tab":
-      return ["tab"];
+      // A chat's row renames on F2 too (#5343), marked as a tab is (`RENAMES_ON_F2`).
+      return ["tab", "row"];
     case "editor":
       return ["editor"];
     case "editor-chords":
