@@ -127,12 +127,7 @@ impl Recorder {
 
 /// One boundary, where `cwd` is a folder of a workspace's repo. A chat working anywhere else has
 /// no branch, so it has no turn to record.
-fn record(
-    plane: &Path,
-    chat: &str,
-    cwd: &Path,
-    boundary: Boundary,
-) -> Result<(), Refused> {
+fn record(plane: &Path, chat: &str, cwd: &Path, boundary: Boundary) -> Result<(), Refused> {
     let Some(place) = super::place_of(plane, cwd) else {
         return Ok(());
     };
@@ -150,7 +145,7 @@ fn record(
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     const CHAT: &str = "01J9CHAT0000000000000000TN";
 
     fn report(event: Event, payload: &str) -> Report {

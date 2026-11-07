@@ -3134,7 +3134,9 @@ impl Hosting {
         peer: &Peer,
     ) -> Result<Answer, Refusal> {
         self.kept_project_held(project, peer)?;
-        let channel = self.held_channel(project, peer)?.ok_or_else(records_no_turns)?;
+        let channel = self
+            .held_channel(project, peer)?
+            .ok_or_else(records_no_turns)?;
         tokio::task::spawn_blocking(move || channel.undo_turn(&turn))
             .await
             .map_err(|why| Refusal {
@@ -4743,6 +4745,14 @@ fn stop_together(programs: Vec<Arc<dyn Running>>) {
     }
 }
 
+/// What a host whose project hears no hooks answers an undo: it records no turn there.
+pub(crate) fn records_no_turns() -> Refusal {
+    Refusal {
+        code: session::NOT_ALLOWED.into(),
+        why: "this host records no turns of its chats, so it has none to undo".into(),
+    }
+}
+
 #[cfg(test)]
 mod a_browsers_folders {
     use std::path::Path;
@@ -4799,13 +4809,5 @@ mod a_browsers_folders {
         };
         assert_eq!(folder_named(&save), Some("/p"));
         assert_eq!(folder_named(&Act::Pages), None);
-    }
-}
-
-/// What a host whose project hears no hooks answers an undo: it records no turn there.
-pub(crate) fn records_no_turns() -> Refusal {
-    Refusal {
-        code: session::NOT_ALLOWED.into(),
-        why: "this host records no turns of its chats, so it has none to undo".into(),
     }
 }

@@ -1467,7 +1467,10 @@ impl Held {
         }
         // And so do its turns' refs (#5405), and this machine's copies of a runner chat's
         // (#5427): its runner's host removes its own as it forgets it.
-        if let Some((id, cwd)) = self.turn_place(session).or_else(|| self.turns_kept_of(session)) {
+        if let Some((id, cwd)) = self
+            .turn_place(session)
+            .or_else(|| self.turns_kept_of(session))
+        {
             self.turns.removed(self.root(), &id, &cwd);
         }
         self.proposals.forget(session);

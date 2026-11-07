@@ -398,7 +398,10 @@ fn an_undo_of_a_pool_runners_turn_is_asked_of_its_runner_and_its_answer_kept_her
     assert_eq!(chats.len(), 1);
     assert_eq!(chats[0].state, "is running");
     assert!(!chats[0].name.is_empty());
-    assert_eq!(host.undone_on_runners(), [("builds".to_owned(), turn.clone())]);
+    assert_eq!(
+        host.undone_on_runners(),
+        [("builds".to_owned(), turn.clone())]
+    );
     assert_eq!(
         std::fs::read_to_string(folder.join(FILE)).expect("the file"),
         on_disk,
@@ -435,18 +438,16 @@ fn an_undo_of_a_pool_runners_turn_is_asked_of_its_runner_and_its_answer_kept_her
             unmarked: None
         }
     );
-    let marked = std::process::Command::new("git")
-        .arg("-C")
-        .arg(&folder)
-        .args([
+    // The copy is marked undone: `git` asserts the ref is there.
+    git(
+        &folder,
+        &[
             "rev-parse",
             "--verify",
             "--quiet",
             &format!("refs/purlis/runners/builds/turns/{chat_id}/1/undone"),
-        ])
-        .output()
-        .expect("git runs");
-    assert!(marked.status.success(), "the copy is marked undone");
+        ],
+    );
     assert_eq!(
         told(&held, &id, chat).as_deref(),
         Some(

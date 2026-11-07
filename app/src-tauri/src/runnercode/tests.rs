@@ -292,7 +292,10 @@ fn a_runner_chats_turns_come_back_with_its_code_and_the_turn_diff_reads_them() {
     let copy = format!("refs/purlis/runners/builds/turns/{CHAT}/1/end");
     assert_eq!(
         git(&here, &["rev-parse", &copy]),
-        git(&there, &["rev-parse", &format!("refs/purlis/turns/{CHAT}/1/end")])
+        git(
+            &there,
+            &["rev-parse", &format!("refs/purlis/turns/{CHAT}/1/end")]
+        )
     );
     let read = files::turn_changed(&crate::reader(), &world.root, web, "login.rs", None)
         .expect("it reads");

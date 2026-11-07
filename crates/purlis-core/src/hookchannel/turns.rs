@@ -113,10 +113,12 @@ impl HostedTurns {
             chat: turn.chat.clone(),
             number: turn.number,
         };
-        let undone = crate::files::undo_turn(&self.reader, &self.root, branch, &key)
-            .map_err(|refused| Refusal {
-                code: session::NOT_ALLOWED.into(),
-                why: refused.to_string(),
+        let undone =
+            crate::files::undo_turn(&self.reader, &self.root, branch, &key).map_err(|refused| {
+                Refusal {
+                    code: session::NOT_ALLOWED.into(),
+                    why: refused.to_string(),
+                }
             })?;
         let edit = serde_json::to_value(&undone.edit).map_err(|why| Refusal {
             code: session::NOT_STARTED.into(),

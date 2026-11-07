@@ -177,17 +177,18 @@ fn a_turn_ref_a_runner_names_that_purlis_never_writes_is_refused_and_nothing_is_
     let (runner, desk) = a_turn_on_the_runner();
     let scratch = tempfile::tempdir().unwrap();
 
-    let refused = codelink::fetch_back_with_turns(&desk.clone, POOL, scratch.path(), |have, into| {
-        let (mut refs, bundled) =
-            codelink::give_with_turns(&runner.clone, &have, into).map_err(|e| e.to_string())?;
-        let oid = refs[0].oid.clone();
-        refs.push(codelink::Ref {
-            name: format!("refs/purlis/turns/{CHAT}/1/elsewhere"),
-            oid,
-        });
-        Ok((refs, bundled == Bundled::Wrote))
-    })
-    .unwrap_err();
+    let refused =
+        codelink::fetch_back_with_turns(&desk.clone, POOL, scratch.path(), |have, into| {
+            let (mut refs, bundled) =
+                codelink::give_with_turns(&runner.clone, &have, into).map_err(|e| e.to_string())?;
+            let oid = refs[0].oid.clone();
+            refs.push(codelink::Ref {
+                name: format!("refs/purlis/turns/{CHAT}/1/elsewhere"),
+                oid,
+            });
+            Ok((refs, bundled == Bundled::Wrote))
+        })
+        .unwrap_err();
 
     assert!(refused.to_string().contains("elsewhere"), "{refused}");
     assert!(refs(&desk.clone, "refs/purlis/runners/").is_empty());
@@ -225,7 +226,10 @@ mod on_the_runner {
     fn until(what: &str, done: impl Fn() -> bool) {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
         while !done() {
-            assert!(std::time::Instant::now() < deadline, "{what} never happened");
+            assert!(
+                std::time::Instant::now() < deadline,
+                "{what} never happened"
+            );
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
     }
@@ -284,7 +288,7 @@ mod on_the_runner {
 
     #[test]
     fn the_runners_host_records_its_chats_turn_from_its_prompt_and_stop_and_the_desktop_fetches_it()
-     {
+    {
         let mut runner = Runner::new();
         runner.hears(Event::UserPromptSubmit);
         std::fs::write(runner.f.clone.join("README.md"), "one\nthree\n").unwrap();

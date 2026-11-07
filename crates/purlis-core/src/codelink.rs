@@ -1445,7 +1445,14 @@ pub fn fetch_back_left(
     through: impl FnOnce(Vec<String>, &Path) -> Result<(Vec<Ref>, bool), String>,
 ) -> Result<Vec<Ref>, Refused> {
     let its_own = format!("refs/remotes/{pool}/");
-    fetch_back_as(repo, pool, Taking::beside(beside), &its_own, scratch, through)
+    fetch_back_as(
+        repo,
+        pool,
+        Taking::beside(beside),
+        &its_own,
+        scratch,
+        through,
+    )
 }
 
 fn fetch_back_as(

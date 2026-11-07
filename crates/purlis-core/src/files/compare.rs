@@ -428,9 +428,7 @@ fn file_of_compared(
     // A runner's turn ended in the runner's folder, not this one: it is drawn as it ended there
     // (#5427).
     let here = match comparison {
-        Comparison::Turn { chat, number } => {
-            !super::turns::a_runners(&opened.repo, chat, *number)
-        }
+        Comparison::Turn { chat, number } => !super::turns::a_runners(&opened.repo, chat, *number),
         _ => false,
     };
     if let (true, Comparison::Turn { .. }, Head::Commit(end), Some(held)) =

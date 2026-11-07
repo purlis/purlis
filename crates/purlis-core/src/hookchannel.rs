@@ -790,7 +790,10 @@ impl purlis_host::Channel for HookChannel {
     }
 
     /// Under this host's own idle check, read off the board kept here while it is held (#5427).
-    fn undo_turn(&self, turn: &purlis_host::TurnToUndo) -> Result<session::Answer, session::Refusal> {
+    fn undo_turn(
+        &self,
+        turn: &purlis_host::TurnToUndo,
+    ) -> Result<session::Answer, session::Refusal> {
         let Some(turns) = &self.turns else {
             return Err(session::Refusal {
                 code: session::NOT_ALLOWED.into(),

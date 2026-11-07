@@ -111,7 +111,11 @@ fn reference(chat: &str, number: u32, side: Side) -> String {
 
 /// The ref of turn `number`'s `start` or `end`, in the bounded reader's child: this machine's
 /// own, or a runner's copy where only that has it (#5427).
-pub(super) fn sides_of(repo: &gix::Repository, chat: &str, number: u32) -> Option<(String, String)> {
+pub(super) fn sides_of(
+    repo: &gix::Repository,
+    chat: &str,
+    number: u32,
+) -> Option<(String, String)> {
     let at = kept_at(repo, chat, number)?;
     Some((
         format!("{at}{chat}/{number}/{}", Side::Start.word()),
@@ -132,7 +136,10 @@ fn kept_at(repo: &gix::Repository, chat: &str, number: u32) -> Option<String> {
         return None;
     }
     let end = format!("{chat}/{number}/{}", Side::End.word());
-    if repo.find_reference(format!("{NAMESPACE}{end}").as_str()).is_ok() {
+    if repo
+        .find_reference(format!("{NAMESPACE}{end}").as_str())
+        .is_ok()
+    {
         return Some(NAMESPACE.to_owned());
     }
     let platform = repo.references().ok()?;
@@ -302,7 +309,15 @@ pub fn runner_of(plane: &Path, branch: Branch<'_>, chat: &str, number: u32) -> O
 fn copy_of_turn(folder: &Path, chat: &str, number: u32) -> Result<Option<String>, Refused> {
     checked(chat)?;
     let end = format!("{chat}/{number}/{}", Side::End.word());
-    let own = ran(folder, &["rev-parse", "--verify", "--quiet", &format!("{NAMESPACE}{end}")])?;
+    let own = ran(
+        folder,
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("{NAMESPACE}{end}"),
+        ],
+    )?;
     if own.ok() {
         return Ok(None);
     }
@@ -324,8 +339,12 @@ fn copies_in(folder: &Path, chat: &str) -> Result<String, Refused> {
         .out
         .lines()
         .filter(|name| name.contains(&marker))
-        .map(|name| format!("{name}
-"))
+        .map(|name| {
+            format!(
+                "{name}
+"
+            )
+        })
         .collect())
 }
 
