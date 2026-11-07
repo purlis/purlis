@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794065123454,
+  "lastUpdate": 1794066758828,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -42252,6 +42252,48 @@ window.BENCHMARK_DATA = {
             "value": 101.6616225,
             "unit": "ms",
             "extra": "median of 5 runs: 100.289, 101.565, 101.662, 101.880, 102.222 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "452202a6872c0b844e5c40ec8de0c4b56a7af0fd",
+          "message": "Records sweep: docs, skills and agent-facing strings say a chat is in a pane, not a tab (#4770) (#5600)\n\n* Agent-facing strings, skills and the glossary say a chat is in a pane, not a tab (#4770)\n\nThe session record tool and purlis session record say the chat ends, not that a tab closes.\nAsks name the Inbox and the chat's pane when it is on screen; notes name no place.\nVault Allow is not an Inbox ask yet, so its strings name the chat's vault notice only.\nThree recorded rows (22, 57, 244) move with the core sentences they hold.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TAN66088AYYJRQ6GZDHX47\nPurlis-Persona: steward\n\n* Docs, the site and the README say a chat is listed in the sidebar and shown in a pane (#4770)\n\nspec.md's centre is a strip of tabs, each a tree of split panes, and smart close ends the chat\nwith no strip chip. handoff, personas, secrets, hooks and control-plane (served by purlis docs\nshow), plane-format's prose, getting-started, design-system and the site follow. Rust literals the\nfirst commit joined are wrapped again, and a changelog fragment says what moved.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TAN66088AYYJRQ6GZDHX47\nPurlis-Persona: steward\n\n* A changelog fragment for the records sweep (#4770)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TAN66088AYYJRQ6GZDHX47\nPurlis-Persona: steward\n\n* Review fixes: a chat's menu, not its ⋯ menu; tabbed and beside docs; stray tab words (#4770)\n\nThe ⋯ is on a pane head only while the chat is on screen, so refusals say \"this chat's menu\"\n(row 22 moves with it). design-system and plane-format say an older tabbed is read as absent,\nand beside opens in a split. Plane updated is marked on the row.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TAN66088AYYJRQ6GZDHX47\nPurlis-Persona: steward\n\n* Fix the pins CI caught, and two agent-facing lines the sweep missed (#4770)\n\nThe no-app session record answer says the chat will not end by itself, as its siblings do.\nThe held-dispatch refusal and the sandboxed chat's briefing no longer name a tab; row 19 moves\nwith the refusal. Two app tests take the new sentences.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TAN66088AYYJRQ6GZDHX47\nPurlis-Persona: steward\n\n* plane-format: four live lines still said a chat's tab or a shell tab (#4770)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TAN66088AYYJRQ6GZDHX47\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-07T14:45:45Z",
+          "tree_id": "f6ca77c752882d65eb745ba9796d5b1c7da01f8f",
+          "url": "https://github.com/purlis/purlis/commit/452202a6872c0b844e5c40ec8de0c4b56a7af0fd"
+        },
+        "date": 1794066753287,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.573218,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.571, 0.572, 0.573, 0.574, 0.591 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.162863,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.083, 16.153, 16.163, 16.183, 16.204 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.29468349999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.235, 101.279, 101.295, 101.652, 102.975 ms"
           }
         ]
       }
