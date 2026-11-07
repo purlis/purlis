@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794042442601,
+  "lastUpdate": 1794044330700,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -41958,6 +41958,48 @@ window.BENCHMARK_DATA = {
             "value": 100.75786299999999,
             "unit": "ms",
             "extra": "median of 5 runs: 98.946, 100.545, 100.758, 100.773, 101.116 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c8eb2d1d480558f9dc3e8f08b88de8ad4c12ca4c",
+          "message": "Moving panes: a handed chat's shell follows it, and the drag store split by job (#5573) (#5576)\n\n* part_fills_tests finds each part's rule by itself; only the parts drawn apart keep a row (#5573)\n\nA part that takes a fill and words, drawn by its own [data-scope][data-part] rule in one\nstylesheet under app/src/ui, is now found without a row. The five drawn otherwise (a nested\ncloser, the tasks summary's count, the keys footer, two titlebar rows on the overlay) keep one\nin APART, which a test holds to parts that exist.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6SC97R0K8KTNSA2YE81H0TV\nPurlis-Persona: steward\n\n* lifted and moved stay states of the pane frame, and say why they are not theme parts (#5573)\n\nA part is an element its family draws; .pane-frame is no family's. lifted is a dim and no theme\nproperty takes an opacity; moved is the accent at the focus ring's width, both set by a theme\nalready. They become parts when the pane frame becomes a family.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6SC97R0K8KTNSA2YE81H0TV\nPurlis-Persona: steward\n\n* OwnCells stays apart from TerminalCells, and says why (#5573)\n\nThe same shape against two boxes: a terminal's own padding and scrollbar, and its pane's around\nthat. cellsIn adds the one to the other, so separate types keep the terminal's own from being\ncounted twice. Merging them would also rename the fields a drag test's fixture is written in.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6SC97R0K8KTNSA2YE81H0TV\nPurlis-Persona: steward\n\n* A chat a tab window hands on keeps its shell's mark and its studio link (#5573)\n\nA start says what its chat is known by, a shell or what the Skill studio started it for, to\nshowStarted, and the window the chat lands in keeps it: the tab window where it lands there, or\nthe project window, sent it in press-here's handed field. The tab window keeps nothing of a chat\nit handed on. Its start's notes already follow: the window holding them hands them to the one\nthat shows the chat (#5225), which a window test now holds.\n\nWindow tests in TabWindows.window.test.tsx; the four for the shell and the studio link were red\nfirst.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6SC97R0K8KTNSA2YE81H0TV\nPurlis-Persona: steward\n\n* PaneDragStore split by job, behind the same interface (#5573)\n\npaneDragStore.ts holds the store as one interface over four parts: DragState (what is held and\nwhere, and who hears it), Measured (the window as the drag measured it), PointerLabels (the\npointer and what follows it) and WindowHold (the root's marks and the keyboard, while the drag\nlasts). paneDragLayer.tsx draws, and re-exports the store, so paneDrag.tsx is unchanged. No\nbehaviour moves: the drag, rail and placement suites pass unchanged.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6SC97R0K8KTNSA2YE81H0TV\nPurlis-Persona: steward\n\n* Review of #5573: the store's own file is imported directly, a plain one-of match, comments wrapped\n\npaneDrag.tsx takes the store from paneDragStore.ts and the layer re-exports nothing. Dragging\nstays private; the parts' methods say what they do. The project window keeps what a handed chat\nis known by from handed itself. part_fills_tests says exactly one with a slice pattern. The\nchangelog fragment claims only what this pull request fixes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6SC97R0K8KTNSA2YE81H0TV\nPurlis-Persona: steward\n\n* CI scope: part_fills_tests walks the family stylesheets, a known miss with why (#5573)\n\nThe test finds each part's stylesheet under app/src/ui instead of naming it, so rail.css and\npane-preview.css, which only it named, leave READ_BY_RUST. A guard is a module of tests/it, and\nthis unit test reads the manifest's private grounds, so it is listed in WINDOW_WALK_MISSES: the\nmerge group, which runs every scope, runs it on a change to the window alone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6SC97R0K8KTNSA2YE81H0TV\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-07T08:44:26Z",
+          "tree_id": "b8b4941f2998c6008fac51b7a8628b25e1d6c82a",
+          "url": "https://github.com/purlis/purlis/commit/c8eb2d1d480558f9dc3e8f08b88de8ad4c12ca4c"
+        },
+        "date": 1794044325213,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.51281,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.499, 0.504, 0.513, 0.524, 0.541 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.283450000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.185, 16.223, 16.283, 16.317, 16.587 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.825265,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.625, 101.764, 101.825, 102.272, 102.474 ms"
           }
         ]
       }
