@@ -25,6 +25,7 @@ import { heard } from "./frame.testkit";
 import { aBatchOf } from "./chatEvents.testkit";
 import { CHAT_EVENTS } from "./chatEvents";
 import { aTabForEachChat } from "./laidOut.testkit";
+import { measuring } from "./stripRoom.testkit";
 
 /**
  * **The Chats list at fifty chats, against the whole window** (#1499, V100-47 to V100-50): the
@@ -1148,6 +1149,37 @@ describe("a chat's tab and its row wear one mark (#5340)", () => {
 
     await waitFor(() => expect(markIn(tabOf("steward 1")).state).toBe("needs"));
     expect(markIn(tabOf("steward 1"))).toEqual(markIn(row("steward 1")));
+  });
+
+  it("keeps its row's mark on a pinned tab drawn as its icon alone (#5448)", async () => {
+    const room = measuring();
+    try {
+      const { move } = core([
+        chat(1, "alpha", { pinned: true }),
+        chat(2, "alpha", { pinned: true }),
+        chat(3, "alpha"),
+        chat(4, "alpha", { in_front: true }),
+      ]);
+      render(<App />);
+      await section();
+      await waitFor(() => expect(tabOf("steward 1").querySelector(".pinned")).not.toBeNull());
+
+      // Room for three tabs: the two pins alone would take over half, so they are icons only.
+      room.roomFor(3);
+      await waitFor(() => expect(tabOf("steward 1").closest("[data-icon-only]")).not.toBeNull());
+
+      for (const [state, queue, expected] of [
+        ["waiting", [1], "needs"],
+        ["running", [], "working"],
+        ["waiting", [], "idle"],
+      ] as [State, number[], string][]) {
+        move(1, state, queue);
+        await waitFor(() => expect(markIn(row("steward 1")).state).toBe(expected));
+        expect(markIn(tabOf("steward 1"))).toEqual(markIn(row("steward 1")));
+      }
+    } finally {
+      room.stop();
+    }
   });
 
   it("wears no state on a view's tab", async () => {
