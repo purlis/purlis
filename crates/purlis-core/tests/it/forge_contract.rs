@@ -91,7 +91,7 @@ const CASES: [&str; 32] = [
 /// The cases the live run does not run, each with why and the ticket that will run it. Each one
 /// would merge or queue the fixture's one open request, which the read cases need open; running
 /// them needs a request opened afresh for each run.
-const NOT_LIVE: [(&str, &str); 17] = [
+const NOT_LIVE: [(&str, &str); 15] = [
     (
         "open_draft",
         "each run would leave one more draft on the fixture; it needs a request opened per run (#712)",
@@ -149,11 +149,6 @@ const NOT_LIVE: [(&str, &str); 17] = [
          (#3395)",
     ),
     (
-        "fork_for",
-        "the fixture account owns the scene's repos, so it has no fork of them to find; it needs \
-         a second account (#712)",
-    ),
-    (
         "make_fork",
         "it makes a fork on the fixture account each run, which only a run that can delete it \
          may (#712)",
@@ -161,10 +156,6 @@ const NOT_LIVE: [(&str, &str); 17] = [
     (
         "open_draft_from_fork",
         "each run would leave one more draft on the fixture, from a fork it does not have (#712)",
-    ),
-    (
-        "by_head_from_fork",
-        "it needs a request open from a second account's fork of the fixture (#712)",
     ),
 ];
 
@@ -919,19 +910,28 @@ mod cases {
     }
 
     /// Where the account's fork of `api` is: none yet, so one would be made under the account's
-    /// own name, as public as the source.
+    /// own name, as public as the source. Live, the fixture account has no fork of its own repo
+    /// either, so one would be made under its name, wherever the scene's owner is.
     pub fn fork_for(kind: &str, how: How) {
         let Some(over) = over(kind, "fork_for", how) else {
             return;
         };
         let scene = &over.scene;
-        assert_eq!(
-            over.backend.fork_for(&over.caller, &scene.path("api")),
-            Ok(ForkPlace::ToMake {
-                path: "octocat/api".into(),
-                visibility: Visibility::Public,
-            })
-        );
+        let place = over.backend.fork_for(&over.caller, &scene.path("api"));
+        if let How::Live = how {
+            let Ok(ForkPlace::ToMake { path, .. }) = &place else {
+                panic!("live, no fork would be made: {place:?}");
+            };
+            assert!(path.ends_with("/api"), "{path}");
+        } else {
+            assert_eq!(
+                place,
+                Ok(ForkPlace::ToMake {
+                    path: "octocat/api".into(),
+                    visibility: Visibility::Public,
+                })
+            );
+        }
         spent(&over);
     }
 
@@ -987,8 +987,13 @@ mod cases {
         let found = over
             .backend
             .by_head_from_fork(&over.caller, &scene.path("api"), &the_fork(kind), PUBLISHED)
-            .unwrap()
-            .expect("a request");
+            .unwrap();
+        // Live, the fixture has no request from that fork: asked and answered, there is none.
+        if let How::Live = how {
+            assert_eq!(found, None);
+            return spent(&over);
+        }
+        let found = found.expect("a request");
         assert_eq!(
             (found.number, found.state, found.head.as_str()),
             (13, State::Open, SHA)
@@ -2424,9 +2429,11 @@ mod network_log {
             // search is one call (#806). A draft is one call (#2781). What a failed check found is one call (qw378). Browser
             // proof (#2026): GitHub keeps two pictures in eight calls on a branch that is there
             // and six on a first proof, and reads three or two of one it refuses, GitLab in two uploads, and a comment is one call on each.
+            // A fork (#4342): who the account is, the source and the fork's place, the fork, the
+            // draft and the request from it; GitLab reads the fork once more while it copies.
             let expected = match kind {
-                "github" => 80,
-                _ => 96,
+                "github" => 86,
+                _ => 103,
             };
             assert_eq!(paths.len(), expected, "{kind}: the recorded REST calls");
             for path in paths {
