@@ -194,6 +194,83 @@ fn an_unlocked_session_is_asked_for_a_workspace_first_and_told_who_it_is() {
     );
 }
 
+/// A plane with `n` workspaces `w01`..`wNN`, each last active one day before the one before
+/// it, so `w01` is the most recent and `wNN` the least. The plane's own `alpha` and `beta` are
+/// the oldest of all.
+fn plane_of_workspaces(n: usize) -> (tempfile::TempDir, PathBuf) {
+    let (d, root) = plane();
+    let set = |md: &Path, at: i64| {
+        std::fs::File::options()
+            .write(true)
+            .open(md)
+            .unwrap()
+            .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(at as u64))
+            .unwrap();
+    };
+    for i in 1..=n {
+        let ws = format!("w{i:02}");
+        let dir = root.join("workspaces").join(&ws);
+        std::fs::create_dir_all(&dir).unwrap();
+        let md = dir.join("workspace.md");
+        std::fs::write(&md, format!("# {ws}\n")).unwrap();
+        set(&md, now().timestamp() - 86_400 * i as i64);
+    }
+    for ws in ["alpha", "beta"] {
+        set(&root.join("workspaces").join(ws).join("workspace.md"), 0);
+    }
+    (d, root)
+}
+
+#[test]
+fn the_gate_names_the_ten_most_recently_used_workspaces_and_counts_the_rest() {
+    // Ruling 2026-11-07 (#5486): on a project of a thousand workspaces the gate named every
+    // one, about 16 KB a chat.
+    let (_d, root) = plane_of_workspaces(13);
+    let got = told(&root, &[("PURLIS_SESSION_ID", "s1")], serde_json::json!({}));
+    assert!(got[0].starts_with("⬢ **Confirm the workspace before any repo work.**"));
+    assert!(
+        got[0].contains(
+            "(existing: `w01`, `w02`, `w03`, `w04`, `w05`, `w06`, `w07`, `w08`, `w09`, `w10`, \
+             …and 5 more: `purlis workspace list`)"
+        ),
+        "{}",
+        got[0]
+    );
+}
+
+#[test]
+fn ten_workspaces_are_all_named_by_the_gate_in_the_order_they_always_were() {
+    // alpha, beta and w01..w08: ten, the most the gate names, listed as the plane lists them
+    // and not by when each was last used.
+    let (_d, root) = plane_of_workspaces(8);
+    let got = told(&root, &[("PURLIS_SESSION_ID", "s1")], serde_json::json!({}));
+    assert!(
+        got[0].contains(
+            "(existing: `alpha`, `beta`, `w01`, `w02`, `w03`, `w04`, `w05`, `w06`, `w07`, \
+             `w08`)"
+        ),
+        "{}",
+        got[0]
+    );
+    assert!(!got[0].contains("more:"), "{}", got[0]);
+}
+
+#[test]
+fn an_unattended_run_is_told_only_the_ten_most_recently_used_workspaces_too() {
+    let (_d, root) = plane_of_workspaces(13);
+    let got = told(
+        &root,
+        &[("PURLIS_SESSION_ID", "s1")],
+        serde_json::json!({"permission_mode": UNATTENDED_MODE}),
+    );
+    assert!(got[0].starts_with("⬢ **STOP"), "{}", got[0]);
+    assert!(
+        got[0].contains("`w10`, …and 5 more: `purlis workspace list`)"),
+        "{}",
+        got[0]
+    );
+}
+
 #[test]
 fn a_locked_or_pinned_session_is_not_asked() {
     let (_d, root) = plane();
@@ -1991,5 +2068,22 @@ fn the_unshared_nudge_says_what_the_host_last_recorded_and_runs_no_git() {
             "⬤ 1 persona memory/ref file is **uncommitted** — durable knowledge not yet \
              shared. Commit + push it with `purlis save`."
         )
+    );
+}
+
+#[test]
+fn the_gate_takes_the_most_recently_used_workspaces_from_the_index_where_there_is_one() {
+    let (_d, root) = plane_of_workspaces(13);
+    indexed(&root);
+    // After the index was built: the files now say `w13` is the newest, and the index does not.
+    aged(&root.join("workspaces/w13/workspace.md"), 0);
+    let got = told(&root, &[("PURLIS_SESSION_ID", "s1")], serde_json::json!({}));
+    assert!(
+        got[0].contains(
+            "(existing: `w01`, `w02`, `w03`, `w04`, `w05`, `w06`, `w07`, `w08`, `w09`, `w10`, \
+             …and 5 more: `purlis workspace list`)"
+        ),
+        "{}",
+        got[0]
     );
 }
