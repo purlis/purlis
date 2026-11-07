@@ -492,7 +492,7 @@ describe("the Skills chip on a chat's pane", () => {
   });
 
   it("says its row's title where it presses one, and promises no press where it has none (#5366)", async () => {
-    studioOn();
+    aCoreAskedNothing();
     const row = { title: "Show skills of chat 4", press: vi.fn() };
     render(
       <ChatSkillSetsHere.Provider value={{ 4: held({ budget: { ...BUDGET, warns: "chars" } }) }}>

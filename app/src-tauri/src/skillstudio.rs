@@ -1600,7 +1600,7 @@ pub(crate) fn uses(root: &std::path::Path, now: u64) -> Vec<SkillRunsLately> {
 }
 
 /// **How much each skill was used lately** (#5355): its runs in the last 30 days, which Make room
-/// sorts the Library by, least used first. None while the flag is off. On a blocking thread, as
+/// sorts the Library by, least used first. On a blocking thread, as
 /// it reads the project's skill log.
 #[tauri::command]
 #[specta::specta]
@@ -1610,9 +1610,6 @@ pub(crate) async fn skill_uses(
 ) -> Result<Vec<SkillRunsLately>, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading how much each skill was used", move || {
-        if !purlis_core::skills::studio_on_here() {
-            return Ok(Vec::new());
-        }
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |since| since.as_secs());

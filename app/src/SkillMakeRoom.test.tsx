@@ -69,8 +69,6 @@ function core(skills: StudioSkill[], uses: { skill: string; runs: number }[]) {
         return studio(skills, { workspace: "ops", router: ROUTER });
       case "skill_uses":
         return uses;
-      case "skill_studio_on":
-        return true;
       case "skills_deleted":
       case "skill_drafts":
         return [];

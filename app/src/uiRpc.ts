@@ -1158,7 +1158,7 @@ export const commands = {
 	skillStats: (plane: PlaneId, skill: string) => typedError<SkillStats, string>(__TAURI_INVOKE("skill_stats", { plane, skill })),
 	/**
 	 *  **How much each skill was used lately** (#5355): its runs in the last 30 days, which Make room
-	 *  sorts the Library by, least used first. None while the flag is off. On a blocking thread, as
+	 *  sorts the Library by, least used first. On a blocking thread, as
 	 *  it reads the project's skill log.
 	 */
 	skillUses: (plane: PlaneId) => typedError<SkillRunsLately[], string>(__TAURI_INVOKE("skill_uses", { plane })),
