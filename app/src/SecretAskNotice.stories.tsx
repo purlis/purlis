@@ -506,8 +506,9 @@ export const ThePickerOpen: Story = {
     const picker = await canvas.findByRole("button", { name: /Entry STRIPE_API_KEY reads/ });
     await userEvent.click(picker);
     const page = within(canvasElement.ownerDocument.body);
-    await page.findByRole("option", { name: "STRIPE_TEST_KEY" });
-    await expect(page.getByRole("option", { name: "SENTRY_DSN" })).toBeVisible();
+    // Every vault's entries are listed, grouped by vault; the list scrolls, so some sit below.
+    await expect(await page.findByRole("option", { name: "STRIPE_TEST_KEY" })).toBeInTheDocument();
+    await expect(page.getByRole("option", { name: "SENTRY_DSN" })).toBeInTheDocument();
     await document.fonts.ready;
     await new Promise((frame) => requestAnimationFrame(frame));
   },
