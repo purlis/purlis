@@ -13,7 +13,7 @@ made. [CONTRIBUTING.md](../CONTRIBUTING.md) says how a change gets in.
 | `crates/stand-in` | Test-only: the one way a test writes a program it is about to run |
 | `crates/same-user` | Whether a socket's peer, a directory or a file is this user's alone: the one copy of the checks `charterd.sock`, the hook sockets and the client scopes' credentials rest on |
 | `crates/browser-engine` | The engine a browser runs on: a pinned Chrome for Testing, verified against its manifest before it runs, started over an inherited DevTools pipe with no port, in a process group its keeper ends when the host ends |
-| `crates/scale-project` | Developer-only, never shipped: a seeded project at the scale spec's target size (#5486), written through the core's own writers, and the timing of a git standing look on it. What the nightly scale run measures on |
+| `crates/scale-project` | Developer-only, never shipped: a seeded project at the scale spec's target size (#5486), written through the core's own writers, the index the session host would build on it, and the timing of a git standing look on it. What the nightly scale run measures on |
 | `crates/persona-statistics` | purlis's first built-in extension, and the executor's first consumer: the persona statistics view (ADR 0041 stage 2). The release build assembles it into the app's resources (`persona-statistics assemble <dir>`), and it links the core's stats code so its numbers are `purlis persona stats`'s |
 | `app/` | The desktop app: React + TypeScript UI |
 | `app/src-tauri` | The app's Rust side: Tauri commands that call the core |
@@ -133,9 +133,15 @@ bytes:
 cargo build --release -p scale-project -p purlis-cli
 target/release/scale-project generate --out /tmp/scale-project   # --small for a few of everything
 git -C /tmp/scale-project init -q && git -C /tmp/scale-project add -A && git -C /tmp/scale-project commit -qm seed
-node tools/scale-run.mjs --project /tmp/scale-project --os macos --out rows.jsonl   # the hook, recall, git standing
+node tools/scale-run.mjs --project /tmp/scale-project --os macos --out rows.jsonl   # index build, hook, recall, git standing
 node tools/scale-report.mjs rows.jsonl                                              # each against #5486's budgets
 ```
+
+`scale-run.mjs` builds the project index first (`scale-project index`, as the session host does
+when it opens a project) and times the hook and `recall` on it: the CLI never writes an index,
+so timed without one they measure the file scan the index replaces. On a project with an index
+already, `scale-project index` sweeps it instead of building it, so its row is a full build only
+on a fresh project. The window's idle minute waits for the host to log that the index is ready.
 
 The window's half (the sidebar answer, the watcher's setup, a minute of idle CPU, and the chat
 events busy chats send the window) is `npm run e2e:scale` in `app/`, on a release `e2e` build:

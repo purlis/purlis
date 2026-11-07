@@ -20,6 +20,8 @@ const everyBudget = (hookMs) => [
   ms("recall-all", "linux", [60]),
   ms("watcher-setup", "macos", [400]),
   ms("watcher-setup", "linux", [3000]),
+  ms("index-rebuild", "macos", [30_000]),
+  ms("index-rebuild", "linux", [30_000]),
 ];
 
 const of = (found, budget, os) => found.find((v) => v.budget === budget && v.os === os);
@@ -56,8 +58,13 @@ test("a budget whose subject is not built yet is pending, on every system", () =
   const found = verdicts([]);
   for (const os of ["macos", "linux"]) {
     assert.equal(of(found, "project-search", os).status, "pending");
-    assert.equal(of(found, "index-rebuild", os).status, "pending");
   }
+});
+
+test("a full index rebuild is held to its budget now that the index is built (#5486)", () => {
+  const found = verdicts([ms("index-rebuild", "linux", [30_000]), ms("index-rebuild", "macos", [95_000])]);
+  assert.equal(of(found, "index-rebuild", "linux").status, "met");
+  assert.equal(of(found, "index-rebuild", "macos").status, "missed");
 });
 
 test("a budget that should have been measured and was not is said to be not measured", () => {
