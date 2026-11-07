@@ -111,6 +111,7 @@ fn request() -> GradeRequest {
         outcomes: Vec::new(),
         arms: vec![Arm::With, Arm::Without],
         runs: RUNS,
+        shell: false,
     }
 }
 
@@ -615,7 +616,10 @@ fn a_grader_is_refused_an_outcome_evals_or_a_judges_chat() {
     let mut host = Scripted::of(a_good_skill);
     let mut held = Held::new(&request, &mut host, None);
     for kind in [
-        ChatKind::Outcome { files: Vec::new() },
+        ChatKind::Outcome {
+            files: Vec::new(),
+            shell: false,
+        },
         ChatKind::Judge {
             of: "01J".into(),
             task: "{}".into(),

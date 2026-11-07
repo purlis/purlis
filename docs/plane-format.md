@@ -228,10 +228,12 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`workspaces/<ws>/changes/log/pending/<device>.jsonl` — pending landings](#workspaceswschangeslogpendingdevicejsonl--pending-landings)
   - [`workspaces/<ws>/pieces/<device>.jsonl` — the piece claim log](#workspaceswspiecesdevicejsonl--the-piece-claim-log)
   - [`workspaces/<ws>/pieces/seen/<repo>.json` and `pieces/seen/<repo>/<piece>.json`](#workspaceswspiecesseenrepojson-and-piecesseenrepopiecejson)
+  - [`workspaces/<ws>/pieces/checks/<repo>.json` and `pieces/checks/<repo>/<piece>.json` — a branch's check results](#workspaceswspieceschecksrepojson-and-pieceschecksrepopiecejson--a-branchs-check-results)
   - [`workspaces/<ws>/.charter-structure` — the layout stamp](#workspaceswscharter-structure--the-layout-stamp)
   - [`workspaces/<ws>/.charter-generated` — the harness-layer ownership marker](#workspaceswscharter-generated--the-harness-layer-ownership-marker)
   - [`workspaces/<ws>/.claude/settings.json` — the generated harness layer](#workspaceswsclaudesettingsjson--the-generated-harness-layer)
   - [`workspaces/<ws>/repos/<repo>/` — a cloned repo (guest checkout)](#workspaceswsreposrepo--a-cloned-repo-guest-checkout)
+  - [`refs/purlis/turns/<chat>/<n>/start` and `…/end` — each turn of a chat, in a clone's git](#refspurlisturnschatnstart-and-end--each-turn-of-a-chat-in-a-clones-git)
   - [`workspaces/<ws>/themes/` — the workspace's theme folders](#workspaceswsthemes--the-workspaces-theme-folders)
   - [`<clone>/.git/info/exclude` — purlis's managed block](#clonegitinfoexclude--purliss-managed-block)
   - [`workspaces/<ws>/.worktrees/<repo>/<piece>/` — pieces](#workspaceswsworktreesrepopiece--pieces)
@@ -395,6 +397,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`<data>/app-state/<clone key>/skill-grade-chats/<skill>/<grade>/<chat>.screen`](#dataapp-stateclone-keyskill-grade-chatsskillgradechatscreen)
   - [`<data>/app-state/<clone key>/router-grade-chats/<router>/<workspace>/<persona>/<grade>/<chat>.screen`](#dataapp-stateclone-keyrouter-grade-chatsrouterworkspacepersonagradechatscreen)
   - [`<data>/app-state/<clone key>/skill-tries/<id>/`](#dataapp-stateclone-keyskill-triesid)
+  - [`/tmp/purlis-g-<random>/`](#tmppurlis-g-random)
   - [`<data>/app-state/<clone key>/skill-levels/<chat id>.json`](#dataapp-stateclone-keyskill-levelschat-idjson)
   - [Environment variables that move or key this state](#environment-variables-that-move-or-key-this-state)
   - [What the tmux frame and the status line read that a **hook** wrote](#what-the-tmux-frame-and-the-status-line-read-that-a-hook-wrote)
@@ -2706,6 +2709,38 @@ alike.
   (temp beside, fsync, rename) and refuses one that is a symlink; `Path.write_text` truncated
   it in place and followed a link.
 
+### `workspaces/<ws>/pieces/checks/<repo>.json` and `pieces/checks/<repo>/<piece>.json` — a branch's check results
+
+- **Format:** one JSON object, **replaced whole** at each report.
+- **Status:** stable — written by `purlis check report` and read by the window, which are different
+  processes (ADR 0117, #5407).
+- **Tier:** Clone state — never committed; what a tool last reported for a folder's branch. purlis
+  cannot rebuild it, since it runs no check: deleting it loses the results until they are reported again.
+- **Written by:** `checks::report` (`crates/purlis-core/src/checks.rs`), from `purlis check report`,
+  which in a chat the app started hands the write to the app (`Write::CheckReport`); and
+  `checks::report_converted`, from `purlis check report --reporter`, with the SARIF a **Check
+  reporter** answered (#5410).
+- **Read by:** `checks::read_sets`, for "What changed" in one file.
+- **Git:** never committed (under `pieces/`).
+- **Encoding details:** a clone's own record is `checks/<repo>.json` and a piece's is
+  `checks/<repo>/<piece>.json`, placed as `pieces/seen/` is, so a piece named like anything cannot
+  collide with the clone's record. The object is `{"sets": [...]}`, one set per tool: a report
+  replaces the set of each tool it names and keeps the others. A set has `tool` (SARIF's
+  `tool.driver.name`), `branch`, `head` (the full commit the branch was at when it was reported, or
+  `null` for a branch with no commit), `reported_at` (UTC ISO seconds) and `diagnostics`. A
+  diagnostic has `severity` (SARIF's `error`, `warning`, `note` or `none`) and `message`, and, when
+  the result gave them, `path`, `line`, `end_line` and `rule`. `path` is relative to the folder
+  where it could be placed there and otherwise as the tool spelled it, and it is absent for a result
+  that names no file. A set whose `head` is not the branch's head now is drawn out of date. The write
+  holds `pieces/.claims.lock`, so two reports at once keep both tools' sets. A link at the record,
+  or at a folder down to it, is refused and never written through.
+- **`faults`** (#5410), absent where there are none and read as `[]` when absent, so a record
+  written before it reads the same: one entry per **Check reporter** whose last answer could not be
+  recorded, with `extension` (its id), `said` (what was wrong, in purlis's sentence) and
+  `reported_at` (UTC ISO seconds). A reporter's fault replaces its earlier one, its next answer that
+  is recorded removes it, and neither touches `sets`: what was recorded before stays. The window
+  draws each as a Notice naming the extension, above the results.
+
 ### `workspaces/<ws>/.charter-structure` — the layout stamp
 
 Written as `.purlis-structure`. A `.charter-structure` (or a pre-charter `.edm-structure`) is
@@ -2867,6 +2902,31 @@ beside a purlis one is removed when the record is published (V93i).
   harness root (`_generated_roots`, `charter/workspace.py:2587`) whose content still matches
   the recorded digest (`charter/workspace.py:2642`), and empty parent directories are pruned
   (`_prune_empty`, `charter/workspace.py:4123`).
+
+### `refs/purlis/turns/<chat>/<n>/start` and `…/end` — each turn of a chat, in a clone's git
+
+The branch's state before and after turn `<n>` of a chat (N3, ADR 0084 §1's comparison (d),
+#5405), which a file's diff compares as *Latest turn*.
+
+- **Tier:** Clone state — in the clone's own git, never pushed by anything purlis runs, and not
+  rebuildable: a turn's states exist nowhere else.
+- **What each is:** a commit of the folder as it was, uncommitted work and untracked files git does
+  not ignore included, staged in an index of its own so the folder's index is untouched. Its parent
+  is the folder's `HEAD`, and its message names the branch in a `Branch:` line. Nothing git would
+  stage is left out, what a save to the forge refuses included, because these refs stay on this
+  machine and a turn's undo has to put back every file. No filter runs on the way in.
+- **Its names:** `<chat>` is the chat's id (letters, digits, `_` and `-`, starting with a letter or
+  digit, at most 64 characters) and `<n>` counts from 1. A second prompt in a turn that has no `end`
+  yet takes no second `start`.
+- **Written by** the app as it hears the chat's own harness start a turn and end one, or the chat's
+  program end, through `files::turns` and the git runner, with hooks and the repo's programs off.
+  Only a chat whose folder is on this machine and in a workspace's repo records any, and only while
+  the app holds its project: a turn that ends with no window open has no `end` until the next one.
+- **And `…/undone`, once the turn is undone** (**Undo a turn**, #5411): the same tier, and
+  pointing at the turn's `end`. It is written by the app in the step that puts the turn's files
+  back, and it is what makes the turn before it the one Undo is offered on next. A turn with it
+  is still compared, and goes with the chat's other refs.
+- **Removed** when the chat is removed: `turns::forget`.
 
 ### `workspaces/<ws>/themes/` — the workspace's theme folders
 
@@ -8670,9 +8730,32 @@ of 2026-11-01). A purlis from before it refuses a file holding it, as it refuses
   of the built-in router has no `router`. Both arms hold `pins`, the pins of the workspace or persona that chose
   the router, one name a line (absent for none), which the chat's set is routed with
   (`drafts::pins_of_arm`).
+  And `drafts::stage`, for an outcome eval's chat (SK-55, #3235): a file `outcome` beside
+  `graded`, which arms its chat as one that may write its piece (`drafts::outcome_piece`). It is
+  empty, or holds `shell` where the skill's `allowed-tools` names Bash (#4476): its chat then has
+  a shell (`drafts::shell_piece`), its start held to its piece and to no host
+  (`sandbox::policy::holding_to_its_folder`), and a file `temp` beside it names that chat's
+  [temp folder](#tmppurlis-g-random) (`drafts::temp_of`). `drafts::lay_out_judge` writes `judge` in
+  its place for a judge's chat, held to reading (`drafts::judge_piece`).
 - **Removed by:** with its [throwaway piece](#workspacesthrowawaypurlis-try-id), the same way and
   at the same moments. What is left is the skill run the chat recorded, under the skill's name.
 - **Git:** outside every project, in the data home; the piece is ignored and never staged.
+
+### `/tmp/purlis-g-<random>/`
+- **Format:** a folder, `0700`, of one outcome eval's chat that has a shell (#4476), `<random>`
+  eight random letters and digits, made in `/tmp` (the system's temp folder off Unix,
+  `drafts::temp_base`) as the piece is staged (`drafts::stage`) and named by its try's `temp`
+  file. Its chat is handed it as `TMPDIR` and `CLAUDE_CODE_TMPDIR`, and its commands write their
+  temporary files in it, under `claude-<uid>/`. It is outside the piece, and short, because
+  Claude Code makes its sandbox's sockets there, and hands a command `claude-<uid>/` in it only
+  where that path is 44 bytes at most (`drafts::CLAUDE_CODE_TEMP_MOST`), its shared
+  `/tmp/claude-<uid>` otherwise; on macOS the system's temp folder alone is longer (#5655).
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
+- **Tier:** Machine, device-bound, transient — it lasts as long as its chat.
+- **Written by:** that chat's commands, under its sandbox. No other chat can write it.
+- **Removed by:** `drafts::end_try`, with its piece, and only a folder named so, in
+  `drafts::temp_base`, that is no link.
+- **Git:** outside every project.
 
 ### `<data>/app-state/<clone key>/skill-levels/<chat id>.json`
 - **Format:** JSON, one file per sandboxed chat that is running (SK-9, #2772): `name`, the chat's

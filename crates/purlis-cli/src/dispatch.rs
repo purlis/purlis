@@ -1375,6 +1375,24 @@ pub fn from_the_person() -> Option<FromThePerson> {
     })
 }
 
+/// **The line this turn is told of what the operator changed** since the chat's last turn (ADR
+/// 0084 §8): asked of the app, which holds the event log. `None` for none, outside a chat the
+/// app started, and where the app does not answer.
+pub fn human_edits() -> Option<String> {
+    let (mut asking, chat) = the_app()?;
+    let asked = Ask::Task(Box::new(Asked {
+        chat,
+        what: What::HumanEdits,
+    }));
+    let Ok(Answer::Task(answered)) = asking.ask(&asked, A_HOOK_WAITS) else {
+        return None;
+    };
+    match *answered {
+        Answered::HumanEdits { line } => line,
+        _ => None,
+    }
+}
+
 /// **The reports waiting for `whose` that this turn is handed**, read and then taken.
 ///
 /// **The app takes them.** In a chat the app started, the hook reads the reports and the app

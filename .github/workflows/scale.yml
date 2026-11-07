@@ -73,18 +73,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # The app's release link needs about 26 GB at its peak, and an Ubuntu runner has 16 of memory
-      # and 3 of swap: out of both, the runner itself goes ("The runner has received a shutdown
-      # signal"), as this run's first two did while compiling `purlis-app`. The same swap file as
-      # `release.yml`'s and `ci.yml`'s (#5277, #5379), gone with the runner.
-      - name: More swap for the build
-        if: runner.os == 'Linux'
-        timeout-minutes: 2
-        run: |
-          sudo fallocate -l 32G /swapfile-build
-          sudo chmod 600 /swapfile-build
-          sudo mkswap /swapfile-build
-          sudo swapon /swapfile-build
+      # No swap file is added for the app's release build: with the app crate at `opt-level = 1`
+      # (ADR 0092 amended 2026-11-07) it peaks at about 6.6 GB on an Ubuntu runner, which has 16.
+      # At 3 one `rustc` took it to 14.4 GB and the runner shut down while compiling `purlis-app`
+      # (#5277).
       - name: Tauri's Linux build dependencies and a display to run in
         if: runner.os == 'Linux'
         timeout-minutes: 11

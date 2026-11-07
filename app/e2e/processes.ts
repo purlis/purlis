@@ -19,6 +19,7 @@ import {
   PROGRAM_COLUMNS,
   PS_COLUMNS,
   type ProcessRow,
+  descendants,
   harnessMemory,
   parseFootprints,
   parseProcesses,
@@ -82,10 +83,39 @@ export function harnessesRunning(): number {
  */
 export const SESSION_HOST_ARGUMENT = "purlis-serve-for-the-window";
 
+/**
+ * The first arguments the app gives its own binary when it starts it as a short-lived helper
+ * rather than a window (#5586): a Linux chat's sandbox wrap (`purlis_linux_sandbox::COMMAND`
+ * and `NO_NAMESPACES`), a browser engine's keeper (`browsers::KEEPER`), git's credential helper
+ * (`gitcredential::HELPER_ARG`) and the keyring item writer (`keyhold::HOLD_ARG`). Spelled here
+ * as {@link SESSION_HOST_ARGUMENT} is. Counted as windows, a chat's wrap still closing read as a
+ * second app and failed the stress test on Linux.
+ */
+export const HELPER_ARGUMENTS: readonly string[] = [
+  "_sandbox",
+  "_no-namespaces",
+  "purlis-engine-keeper",
+  "purlis-git-credential",
+  "charter-hold-a-keyring-item",
+];
+
+/** The LAST argument of the binary started as a branch's bounded reader (`reader::READ_ARG`). */
+export const READER_ARGUMENT = "charter-read-a-branch";
+
 /** The app's processes, by pid: its windows, and the session hosts they started. */
 export interface AppProcesses {
   windows: number[];
   sessionHosts: number[];
+}
+
+/** Which of the app's processes `command` is, when it runs `binary`; `null` when it does not,
+ *  or runs it as a helper ({@link HELPER_ARGUMENTS}, {@link READER_ARGUMENT}). */
+function appProcessKind(command: string, binary: string): keyof AppProcesses | null {
+  if (!(command === binary || command.startsWith(`${binary} `))) return null;
+  const words = command.slice(binary.length).trim().split(/\s+/);
+  const first = words[0];
+  if (HELPER_ARGUMENTS.includes(first) || words[words.length - 1] === READER_ARGUMENT) return null;
+  return first === SESSION_HOST_ARGUMENT ? "sessionHosts" : "windows";
 }
 
 /**
@@ -93,22 +123,58 @@ export interface AppProcesses {
  * windows and its session hosts.
  *
  * By the command line, not the parent: the host is the window's own binary started again with
- * {@link SESSION_HOST_ARGUMENT} as its first argument, and a window is that binary started with
- * anything else. Counting by the binary alone found every run's host as a second app (#2384).
+ * {@link SESSION_HOST_ARGUMENT} as its first argument, a helper with one of
+ * {@link HELPER_ARGUMENTS} (or {@link READER_ARGUMENT} last) is neither, and a window is that
+ * binary started with anything else. Counting by the binary alone found every run's host as a second app (#2384).
  */
 export function appProcessesIn(listing: string, binary: string): AppProcesses {
   const found: AppProcesses = { windows: [], sessionHosts: [] };
   for (const raw of listing.split("\n")) {
     const line = raw.trim();
     const pid = Number.parseInt(line, 10);
-    const command = line.slice(line.indexOf(" ") + 1).trimStart();
-    if (!Number.isInteger(pid) || !(command === binary || command.startsWith(`${binary} `))) {
-      continue;
-    }
-    const first = command.slice(binary.length).trimStart().split(/\s+/)[0];
-    (first === SESSION_HOST_ARGUMENT ? found.sessionHosts : found.windows).push(pid);
+    const kind = appProcessKind(line.slice(line.indexOf(" ") + 1).trimStart(), binary);
+    if (Number.isInteger(pid) && kind !== null) found[kind].push(pid);
   }
   return found;
+}
+
+/** The run's app: its windows and session hosts, and every program they started. */
+export interface RunsApp extends AppProcesses {
+  /**
+   * Everything below the windows and hosts that is neither: a chat's harness and what it runs,
+   * each in a process group of its own (`purlis_core::executor`), so a host that is killed
+   * leaves them running.
+   */
+  programs: number[];
+}
+
+/**
+ * The app's processes running `binary` below `launcher` in `rows`: the windows anything the
+ * launcher started started, the session hosts those windows started, and every program below
+ * them (#5653).
+ *
+ * By the tree, not the binary alone: another run's app on the same build is not this run's to
+ * end. The host runs in a process group of its own (#2006), so its parent is what ties it to
+ * the window; a host whose window already went has been handed to `init` and is not found.
+ */
+export function theRunsApp(rows: ProcessRow[], launcher: number, binary: string): RunsApp {
+  const found: RunsApp = { windows: [], sessionHosts: [], programs: [] };
+  for (const row of descendants(rows, launcher)) {
+    const kind = appProcessKind(row.command, binary);
+    if (kind !== null) found[kind].push(row.pid);
+  }
+  const app = new Set([...found.windows, ...found.sessionHosts]);
+  for (const pid of app) {
+    for (const row of descendants(rows, pid)) {
+      if (!app.has(row.pid) && !found.programs.includes(row.pid)) found.programs.push(row.pid);
+    }
+  }
+  return found;
+}
+
+/** The app this process started, running `binary`, asked of the operating system. */
+export function theRunsAppNow(binary: string): RunsApp {
+  return theRunsApp(processes(), process.pid, binary);
 }
 
 /** The app's processes running `binary`, asked of the operating system. */

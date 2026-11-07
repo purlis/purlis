@@ -1587,13 +1587,13 @@ body {
 }
 
 /* **A task's own tab** (#1489, V100-38): the task mark before its name, whose task it is after
-   it, dimmer (`talk · steward 4`), and a minimise where a session's tab has its close. The
+   it, dimmer (`talk · steward 4`), and a minimise where a chat's tab has its close. The
    minimise ends nothing, as no close does (#4756). */
 .tab[data-task-tab] .tab-mark[data-mark="task"] {
   color: var(--text-secondary);
 }
 
-/* The hand a session's tab wears for a task of its own that needs you and is not on screen
+/* The hand a chat's tab wears for a task of its own that needs you and is not on screen
    (#1486): the mark the Chats list's rows wear, at the tab's size. */
 .tabs .tab .needs-you-mark,
 .more-menu .needs-you-mark {
@@ -1712,7 +1712,13 @@ body {
   color: var(--text-secondary);
 }
 
-.skill-run-counts > .count + .count {
+/* The chip's words, heard as one sentence (#5614): laid out as if it were not there, so its pills
+   are the button's own items, and the spaces between them are never drawn. */
+.skill-run-said {
+  display: contents;
+}
+
+.skill-run-said > .count ~ .count {
   margin-inline-start: var(--space-2);
 }
 
@@ -5825,6 +5831,72 @@ nav.piece-files-head {
 .piece-files-trouble {
   margin: 0;
   color: var(--text-muted);
+}
+
+/* A branch's check results (ADR 0117): beside the comparison, and never taking all its room. */
+.check-results {
+  flex: 0 1 auto;
+  max-height: 40%;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-5);
+}
+
+.check-results-set {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-muted);
+}
+
+.check-results-title {
+  margin: 0;
+  font: inherit;
+  color: var(--text-quiet);
+}
+
+.check-results-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.check-result {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-4);
+}
+
+.check-result-severity {
+  color: var(--text-muted);
+}
+
+.check-result-severity[data-severity="error"] {
+  color: var(--danger-text);
+}
+
+.check-result-severity[data-severity="warning"] {
+  color: var(--state-waiting);
+}
+
+.check-result-said {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-wrap: anywhere;
+}
+
+.check-result-from {
+  color: var(--text-quiet);
 }
 
 .light-editor {

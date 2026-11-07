@@ -399,6 +399,7 @@ export function PaneFrame({
     studio: startedByStudio,
     workItem: Boolean(workItem),
     sandbox: lastHead?.sandbox?.level != null,
+    using: usingOn !== undefined,
     closes,
     alone,
   });
@@ -549,8 +550,8 @@ export function PaneFrame({
                 </span>
               )}
               {/* **What it uses now** (#5524): its skill run and its browsers, which left its
-              tab, beside its state. */}
-              {head && usingOn !== undefined && (
+              tab, beside its state; a narrow pane drops them after the state's word (#5614). */}
+              {head && usingOn !== undefined && line.has("using") && (
                 <span className="pane-using">{usingOn(session)}</span>
               )}
               {/* **harness · workspace on a pane with no foot** (spec #5191): a shell's and a
@@ -1080,7 +1081,7 @@ export type HiddenChat = {
  * (`NoticePaneRow`, #1647, #4754).
  *
  * **Of every chat that lives in the pane, whichever one it shows** (#1486, the train-1 part of
- * V100-56). A session's tab shows one of its chats at a time: the session's own, or a task
+ * V100-56). A pane shows one of its chats at a time: its own, or a task
  * below it. A Notice that waits for the person belongs to one of them, and the other may be on
  * screen. So the shown chat's Notices come first, as they always read, and after them every
  * other chat's, each saying whose it is and with **Go to it** (`NoticeOf`). An answer on one of

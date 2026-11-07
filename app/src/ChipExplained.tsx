@@ -9,7 +9,7 @@ import { Notice } from "./Notice";
 /**
  * **The first dispatch on a machine explains the chip, once** (#1501, V100-55).
  *
- * The first time a session the person is at has a task, one Notice on that session's tab says
+ * The first time a session the person is at has a task, one Notice on that chat's pane says
  * that its tasks work inside the tab, and how to see them: the state word on the pane's head
  * (#5341), which opens their menu. It goes on Dismiss and on its own action (which opens that
  * menu), and either is kept as

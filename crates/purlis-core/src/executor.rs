@@ -147,7 +147,16 @@ use crate::skills::grade;
 /// - **5** (#4680, ADR 0101 as amended 2026-11-07) — a router's route question gives each skill
 ///   `chars`, what it costs of the budget on the chat's harness, and `index`, what the index
 ///   skill costs ([`crate::extension::studio::ROUTE_COSTS_SINCE`]). Every other message is protocol 4's.
-pub const PROTOCOL: u32 = 5;
+/// - **6** (#5410, ADR 0117) — a Check reporter's question: `check`, holding what a check printed
+///   (`output`, as text) and its exit `status` ([`Executor::check`]). Its answer is not a line of
+///   JSON but what the program prints on stdout, SARIF 2.1.0, and its exit status, read whole as a
+///   command's are.
+pub const PROTOCOL: u32 = 6;
+
+/// The most of a check's output a Check reporter is handed (#5410). A check's output is a log,
+/// and past this it is one no converter needs whole: refused rather than cut, since a cut log
+/// converts into results that are wrong without a word.
+pub const MOST_CHECK_OUTPUT_BYTES: usize = 8 << 20;
 
 /// How long a program has, from being started to its answer's last byte.
 ///
@@ -237,6 +246,13 @@ pub fn how_it_runs(manifest: &extension::Manifest) -> String {
     }
     if manifest.studio.is_some() {
         when.push("when the Skill studio asks it about a skill".to_owned());
+    }
+    if manifest.reports_checks() {
+        when.push(format!(
+            "when you or a chat report a check's output through it (`purlis check report … \
+             --reporter {}`)",
+            manifest.id
+        ));
     }
     let when = match when.as_slice() {
         [one] => one.clone(),
@@ -356,6 +372,9 @@ enum Asked<'a> {
     /// *Run command `<name>` with `<args>`* (protocol 2, charter-app#342), from the `charter`
     /// command line.
     Command { name: &'a str, args: &'a [String] },
+    /// *Turn this check's output into SARIF* (protocol 6, #5410): what it printed, and its exit
+    /// status.
+    Check { output: &'a str, status: i32 },
     /// A studio question (protocol 3, ADR 0101). Waits its turn behind a question in flight, as
     /// an event does: the studio asks several things of one extension at once. `until` is when
     /// its answer must be in by, its wait and its start inside it, where its asker holds a
@@ -548,6 +567,52 @@ impl Executor {
         .map(|put| Told {
             overreach: put.overreach,
             offer: put.offer,
+        })
+    }
+
+    /// **Hand a Check reporter a check's output and exit status** (protocol 6, ADR 0117, #5410), or
+    /// say why charter did not: the same gate, bounds and watch on the plane every question takes.
+    /// Refused for an extension that does not ask for the capability `check-reporter`, and for
+    /// output past [`MOST_CHECK_OUTPUT_BYTES`].
+    ///
+    /// The answer is read as a command's is: what the program printed on stdout, which is its
+    /// SARIF, and on stderr, and its exit status. What the SARIF says is [`crate::checks`]'s to
+    /// read. It is handed no plane path, so anything it changes in the plane is reported.
+    pub fn check(
+        &self,
+        config_root: &Path,
+        project: &extension::project::Choices,
+        extension: &str,
+        output: &str,
+        status: i32,
+    ) -> Result<Ran, String> {
+        if output.len() > MOST_CHECK_OUTPUT_BYTES {
+            return Err(format!(
+                "the check's output is {} bytes, and purlis hands a Check reporter at most {} MiB \
+                 of it, so '{extension}' was not asked",
+                output.len(),
+                MOST_CHECK_OUTPUT_BYTES >> 20
+            ));
+        }
+        let put = self.put(
+            config_root,
+            project,
+            extension,
+            Asked::Check { output, status },
+            |_| serde_json::Value::Null,
+        )?;
+        let Printed {
+            stdout,
+            stderr,
+            status,
+        } = put.whole.unwrap_or_default();
+        Ok(Ran {
+            stdout,
+            stderr,
+            status,
+            gate: put.gate,
+            round_trip: put.round_trip,
+            overreach: put.overreach,
         })
     }
 
@@ -890,6 +955,15 @@ impl Executor {
                 }
                 (None, None)
             }
+            Asked::Check { .. } => {
+                if !declared.reports_checks() {
+                    return Err(format!(
+                        "'{extension}' does not ask for the capability \"check-reporter\", so \
+                         purlis does not hand it a check's output"
+                    ));
+                }
+                (None, None)
+            }
             Asked::Briefing(_) => {
                 if declared.briefing.is_none() {
                     return Err(format!(
@@ -946,8 +1020,9 @@ impl Executor {
         let given = view.as_ref().map(|view| hand(view.about));
         // What a command may write: the declared paths for one that says it writes, and none for
         // one that says it only reads — so that anything it changes is reported.
-        let may_write: &[String] = match &commanded {
-            Some(command) if !command.writes => &[],
+        let may_write: &[String] = match (&commanded, asked) {
+            (Some(command), _) if !command.writes => &[],
+            (None, Asked::Check { .. }) => &[],
             _ => &declared.writes,
         };
         let writes = match project.plane() {
@@ -1032,7 +1107,7 @@ impl Executor {
             &found,
             &at,
             &request,
-            commanded.is_some(),
+            commanded.is_some() || matches!(asked, Asked::Check { .. }),
             bound,
             talk,
         );
@@ -2483,6 +2558,13 @@ fn request_line(
         Asked::Command { name, args } => {
             doc.insert("command".into(), name.into());
             doc.insert("args".into(), args.to_vec().into());
+        }
+        // A check is what it printed and how it ended, and nothing of the plane (#5410).
+        Asked::Check { output, status } => {
+            doc.insert(
+                "check".into(),
+                serde_json::json!({ "output": output, "status": status }),
+            );
         }
         Asked::View { .. } | Asked::Action { .. } => {
             if let Asked::Action { action, .. } = asked {

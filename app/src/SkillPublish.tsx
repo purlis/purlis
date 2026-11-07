@@ -130,7 +130,8 @@ export function SkillPublishPage({
           : stopped
             ? "Fix what stops it first."
             : undefined;
-  const main = `Open draft ${request}`;
+  const fork = review?.fork ?? null;
+  const main = fork?.made === true ? `Fork and open draft ${request}` : `Open draft ${request}`;
 
   return (
     <ReviewPage
@@ -142,7 +143,14 @@ export function SkillPublishPage({
       cancel={{ children: "Cancel", isDisabled: sending }}
       main={{
         children: sending ? "Opening…" : main,
-        reserve: [main, "Opening…", "Open draft merge request", "Open draft pull request"],
+        reserve: [
+          main,
+          "Opening…",
+          "Open draft merge request",
+          "Open draft pull request",
+          "Fork and open draft merge request",
+          "Fork and open draft pull request",
+        ],
         byReturn: false,
         isDisabled: why !== undefined,
         tooltip: why,
@@ -153,33 +161,42 @@ export function SkillPublishPage({
         Publish <code>{name}</code> to a source
       </h2>
       <p className="honest">
-        This opens a draft {request} under your own account. Nothing is sent until you press the
-        button below.
+        {fork === null
+          ? `This opens a draft ${request} under your own account. Nothing is sent until you press the button below.`
+          : fork.made
+            ? `This makes your fork ${fork.path} and opens a draft ${request} from it, under your own account. Nothing is made or sent until you press the button below.`
+            : `This opens a draft ${request} from your fork ${fork.path}, under your own account. Nothing is sent until you press the button below.`}
       </p>
       {done?.kind === "cannot-push" && (
         <Notice
           cause="skill-publish-cannot-push"
           tone="trouble"
-          label="git could not push to this source"
+          label={
+            fork === null ? "git could not push to this source" : "git could not push to your fork"
+          }
           fixes={[
             { label: "Try again", onPress: () => setDone(undefined) },
             { label: "Export…", onPress: onExport },
           ]}
         >
-          {`Nothing was sent. It takes write access to the source: ask for it, or export the skill and send it to them. git said: ${done.why}`}
+          {fork === null
+            ? `Nothing was sent. It takes write access to the source: ask for it, or export the skill and send it to them. git said: ${done.why}`
+            : `Nothing was opened. git said: ${done.why}`}
         </Notice>
       )}
-      {review?.forge_says_no_push === true && done === undefined && (
+      {review !== undefined && fork !== null && done === undefined && (
         <Notice
-          cause="skill-publish-forge-says-no-push"
-          tone="trouble"
+          cause="skill-publish-through-a-fork"
+          tone="attention"
           label={`${review.forge} says your account cannot push to this source`}
           fixes={[
             { label: "Export…", onPress: onExport },
             { label: "Review again", onPress: again },
           ]}
         >
-          {`${review.forge} says your account cannot push to this source, and publishing takes write access to it, so the push will likely be refused. Ask its owners for access, or export the skill and send it to them.`}
+          {fork.made
+            ? `${review.forge} says your account cannot push to this source, so publishing makes your fork ${fork.path} under your own account (${fork.readers}) and opens the draft from it. Nothing is made until you press the button below, and the fork stays afterwards: purlis never deletes one. To send it another way, export the skill.`
+            : `${review.forge} says your account cannot push to this source, so the branch goes on your fork ${fork.path} (${fork.readers}), and the draft is opened from it.`}
         </Notice>
       )}
       {refused !== undefined && (
@@ -272,7 +289,7 @@ function Reviewed({ review, onAgain }: { review: PublishReviewView; onAgain: () 
             label={`${counted(review.stops.length, "thing stops", "things stop")} this publish`}
             fixes={[{ label: "Review again", onPress: onAgain }]}
           >
-            {`${counted(review.stops.length, "thing stops", "things stop")} this publish. Fix ${review.stops.length === 1 ? "it" : "them"} in the skill, then review again. There is no way to send it past ${review.stops.length === 1 ? "it" : "them"}.`}
+            {`${counted(review.stops.length, "thing stops", "things stop")} this publish. Fix ${review.stops.length === 1 ? "it" : "them"}, then review again. There is no way to send it past ${review.stops.length === 1 ? "it" : "them"}.`}
           </Notice>
           <ul className="skill-publish-rows">
             {review.stops.map((stop) => (
@@ -288,6 +305,14 @@ function Reviewed({ review, onAgain }: { review: PublishReviewView; onAgain: () 
         <Fact label="Goes into">
           <code>{review.base}</code>, reviewed at <code>{review.commit_short}</code>
         </Fact>
+        {review.fork !== null && (
+          <Fact label="Your fork">
+            <span className="skill-publish-path">
+              <code>{review.fork.path}</code>
+              {review.fork.made && <Badge variant="waiting">Made when you publish</Badge>}
+            </span>
+          </Fact>
+        )}
         <Fact label="New branch">
           <code>{review.branch}</code>
         </Fact>

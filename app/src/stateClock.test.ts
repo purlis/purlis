@@ -5,6 +5,7 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { moved, nothingKnown, type ChatStates, type State } from "./chatState";
 import { chatsTree, type ListedChat } from "./chatsTree";
+import { useNow as useAgeNow } from "./InboxRow";
 import { stateClock, useStateSince } from "./stateClock";
 import { forgetShown, windowShown } from "./test-shown";
 
@@ -168,6 +169,28 @@ describe("a row's time while the window is hidden (#1392)", () => {
     act(() => windowShown(true));
     // No beat waited for: ten minutes, at once.
     expect(result.current).toBe(600);
+    unmount();
+  });
+
+  it("moves an Inbox's or a Notice's age on the same beat, never on a timer of its own (#3032)", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    let drawn = 0;
+    const { result, unmount } = renderHook(() => {
+      drawn += 1;
+      return useAgeNow();
+    });
+    const once = drawn;
+    expect(result.current).toBe(1_000_000);
+
+    // A minute of its own was a commit of its own, a hidden window's and a project's kept
+    // behind another's too, which drew the Inbox again after a switch had settled.
+    act(() => windowShown(false));
+    act(() => void vi.advanceTimersByTime(10 * 60_000));
+    expect(drawn).toBe(once);
+
+    act(() => windowShown(true));
+    expect(result.current).toBe(1_000_000 + 10 * 60_000);
     unmount();
   });
 });

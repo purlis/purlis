@@ -125,7 +125,7 @@ import {
   harnessCardView,
   panesOf,
   placedOf,
-  sessionOf,
+  returnsTo,
   SHORTCUTS_TITLE,
   SHORTCUTS_VIEW,
   AGENT_IDENTITY_TITLE,
@@ -460,7 +460,7 @@ export type Does =
   | { verb: "paneBack" }
   /** Gives a task a tab of its own (#1489). Nothing ends, and nothing is asked. */
   | { verb: "ownTab"; session: number }
-  /** Opens a task beside the session that asked for it, inside that session's tab (#1489). */
+  /** Opens a task beside the session that asked for it, split from that chat's pane (#1489). */
   | { verb: "beside"; session: number }
   /** Sends a task back out of its own tab or its pane (#1489): the minimise. **It ends
    *  nothing**, so it is never asked about, and it is not a close. */
@@ -1177,9 +1177,9 @@ export type Doing = {
   paneBack: () => void;
   /** Gives a task a tab of its own, in front. */
   ownTab: (session: number) => void;
-  /** Opens a task beside its session, in the session's tab, with the keyboard in it. */
+  /** Opens a task beside its session, split from its pane, with the keyboard in it. */
   beside: (session: number) => void;
-  /** Takes a task's own tab or pane away. The task goes on, in its session's tab. */
+  /** Takes a task's own tab or pane away. The task goes on, a row in the Chats list. */
   sendBack: (session: number) => void;
   /** Opens the menu of the tasks chat `session` asked for, with the keyboard on the first. */
   showChatTasks: (session: number) => void;
@@ -3287,14 +3287,14 @@ export function catalogue(now: Now): Offer[] {
     const name = tabNameOf(now.tabs.byId[tab]);
     const chats = panesOf(now.tabs, tab).length;
     // **A task's own tab has no close** (#1489, V100-38): the row its `−` runs sends the task
-    // back into its session's tab, and ends nothing. The same id, so the tab's key, its menu
+    // back to the Chats list, and ends nothing. The same id, so the tab's key, its menu
     // and its button all do the one thing a task's tab can do.
     const own = chatOf(now.tabs, tab);
     if (own !== undefined && askedBy(own) !== undefined) {
       offers.push({
         ...can(
           `tab.close:${tab}`,
-          backTitle(now.tabs, own, now.nameOf, askedBy),
+          backTitle(now.nameOf(own)),
           { verb: "sendBack", session: own },
           name,
         ),
@@ -4402,11 +4402,11 @@ export function taskEndRows(listed: readonly ListedChat[], stopping: readonly nu
 
 /**
  * **A row for each task** (#1499, V100-49), so the palette's search finds a task as it finds a
- * tab: `chat.show:<session>`, which shows the task as its row in the Chats list does, inside
- * the tab of the session that asked for it (#1486). Its title says where it works and who
- * asked, so either finds it. **Every task, shown or not**: a task on screen is in its
- * session's tab and has no `Switch to tab` row of its own, so leaving it out would make the
- * one the person is looking at the one the palette cannot find.
+ * tab: `chat.show:<session>`, which shows the task as its row in the Chats list does (#1486,
+ * #4757). Its title says where it works and who asked, so either finds it. **Every task,
+ * shown or not**: a task on screen may be in a pane it was pressed into, and has no `Switch to
+ * tab` row of its own, so leaving it out would make the one the person is looking at the one
+ * the palette cannot find.
  */
 export function taskRows(listed: readonly ListedChat[]): Offer[] {
   return listed
@@ -5015,37 +5015,26 @@ export const TASK_NOT_FRESH =
 
 /** What moving a task to its own tab does that its title cannot fit. */
 export const OWN_TAB_NOTE =
-  "It gets a tab on the strip with − in place of ×. − sends it back into its session's tab. Its − ends nothing.";
+  "It gets a tab on the strip with − in place of ×. − sends it back and ends nothing. Its row in the Chats list stays.";
 
 /** What opening a task beside its session does that its title cannot fit. */
 export const BESIDE_NOTE =
-  "Splits its session's tab: the session's chat on one side, the task on the other. Space on its row in the Chats list.";
+  "Splits the pane of the chat it opens beside: that chat on one side, the task on the other. Space on its row in the Chats list.";
 
 /** What sending a task back does that its title cannot fit. */
-export const BACK_NOTE = "The task goes on. Its session's tab still lists it.";
+export const BACK_NOTE = "Nothing ends. Its row in the Chats list stays.";
 
 /** Why Space on a row of the Chats list does nothing for a chat that is not a task. */
 export const ONLY_A_TASK_OPENS_BESIDE =
   "Only a task opens beside the chat that asked for it. Press Enter to show this chat.";
 
 /**
- * **What sending a task back is called**, by where it is and where it goes (#1489): out of a
- * tab of its own, back into its session's tab, which is the name its minimise button says;
- * out of a pane beside its session, back among that session's tasks; and for a task whose
- * session has no tab in this window, back to the Chats list, which is the one place it is.
+ * **What sending a task back is called** (#1489, #5667): out of a tab of its own or a pane
+ * beside a chat, back to being its row in the Chats list, which never left (`BACK_NOTE`). One
+ * title wherever it is pressed: its minimise, its menus, the palette and its tab's chip.
  */
-export function backTitle(
-  tabs: Tabs,
-  task: number,
-  nameOf: (session: number) => string,
-  askedBy: AskedBy,
-): string {
-  const name = nameOf(task);
-  const session = sessionOf(tabs, task, askedBy);
-  if (session === undefined) return `Send ${name} back to the Chats list`;
-  return placedOf(tabs, task, askedBy) === "beside"
-    ? `Send ${name} back among ${nameOf(session.own)}'s tasks`
-    : `Send ${name} back into ${nameOf(session.own)}'s tab`;
+export function backTitle(name: string): string {
+  return `Send ${name} back to its row`;
 }
 
 /**
@@ -5068,7 +5057,7 @@ export function placeRows(
     .flatMap((chat) => {
       const { session, name } = chat;
       const placed = placedOf(tabs, session, askedBy);
-      const home = sessionOf(tabs, session, askedBy);
+      const home = returnsTo(tabs, session, askedBy);
       const own = `Move ${name} to its own tab`;
       const beside =
         home === undefined
@@ -5097,12 +5086,7 @@ export function placeRows(
       ];
       if (placed !== undefined)
         rows.push({
-          ...can(
-            backId(session),
-            backTitle(tabs, session, nameOf, askedBy),
-            { verb: "sendBack", session },
-            name,
-          ),
+          ...can(backId(session), backTitle(name), { verb: "sendBack", session }, name),
           note: BACK_NOTE,
         });
       return rows;
@@ -5128,7 +5112,7 @@ function besideInFront(
       title,
       "The chat in front is not a task. Space on a task's row in the Chats list opens it beside the chat that asked for it.",
     );
-  const home = sessionOf(tabs, shown, askedBy);
+  const home = returnsTo(tabs, shown, askedBy);
   if (home === undefined)
     return cannot(
       BESIDE_ID,
@@ -5431,7 +5415,7 @@ export function paneCloseOf(
     return {
       ...can(
         "pane.close",
-        backTitle(tabs, content.session, nameOf, askedBy),
+        backTitle(nameOf(content.session)),
         { verb: "sendBack", session: content.session },
         nameOf(content.session),
       ),
@@ -6327,7 +6311,7 @@ function branchFolderRows(cut: Cut, what: string): Offer[] {
       absolute: true,
     }),
     can(`worktree.reveal:${id}`, `Reveal ${what} in ${FILE_MANAGER}`, { verb: "revealPath", at }),
-    can(`worktree.shell:${id}`, `Open a shell tab in ${what}`, { verb: "shellInFolder", at }),
+    can(`worktree.shell:${id}`, `Open a shell in ${what}`, { verb: "shellInFolder", at }),
   ];
 }
 

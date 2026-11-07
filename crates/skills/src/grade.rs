@@ -94,6 +94,11 @@ pub struct GradeRequest {
     pub outcomes: Vec<OutcomeEval>,
     pub arms: Vec<Arm>,
     pub runs: u8,
+    /// **Whether its outcome evals' chats have a shell** (#4476): where the skill asks for one
+    /// ([`crate::handed::asks_for_a_shell`]), every eval of it runs with one in every arm, held to
+    /// its own folder and reaching no host. Said only where it is so.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub shell: bool,
 }
 
 impl GradeRequest {
@@ -137,7 +142,14 @@ pub enum ChatKind {
     /// An outcome eval's: it runs its turn to the end, with `files` (paths in the skill's folder,
     /// as the eval names them) staged into its piece first, and the host keeps what it left for
     /// its judge.
-    Outcome { files: Vec<String> },
+    ///
+    /// With `shell` (#4476), its chat has a shell, held to its piece and reaching no host; said
+    /// only where it is so, so a request written before reads as it did.
+    Outcome {
+        files: Vec<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        shell: bool,
+    },
     /// A judge's, of the outcome eval chat `of` (its id, as its [`ChatRan`] said it): its piece
     /// holds only what that chat left, as purlis kept it, and `task`, the task it grades
     /// ([`outcomes::judge_task`]). It changes nothing: the host holds it to reading.
@@ -747,6 +759,7 @@ impl<'a> Held<'a> {
             prompt: outcomes::outcome_prompt(eval),
             kind: ChatKind::Outcome {
                 files: eval.files.clone(),
+                shell: self.request.shell,
             },
         };
         let Asked::Ran(done) = self.run(&chat, a) else {

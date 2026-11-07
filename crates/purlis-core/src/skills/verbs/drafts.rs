@@ -723,26 +723,114 @@ const OUTCOME: &str = "outcome";
 /// **Whether `cwd` is an outcome eval's chat's piece** in the project at `root` ([`stage`]): a
 /// grade's arm marked so. Only this machine's state says so, and no chat writes it.
 pub fn outcome_piece(root: &Path, cwd: &Path) -> bool {
-    graded_piece(root, cwd)
-        && try_of(root, cwd).is_some_and(|id| {
-            crate::appstate::dir(root).is_some_and(|state| {
-                read_at(&state, &format!("{TRIES_DIR}/{id}/{OUTCOME}"))
-                    .ok()
-                    .flatten()
-                    .is_some()
-            })
-        })
+    outcome_mark(root, cwd).is_some()
+}
+
+/// What the mark of the outcome eval's piece `cwd` says (empty, or [`SHELL`]), where `cwd` is a
+/// grade's arm marked as one: the one read [`outcome_piece`] and [`shell_piece`] share.
+fn outcome_mark(root: &Path, cwd: &Path) -> Option<String> {
+    if !graded_piece(root, cwd) {
+        return None;
+    }
+    let id = try_of(root, cwd)?;
+    let state = crate::appstate::dir(root)?;
+    read_at(&state, &format!("{TRIES_DIR}/{id}/{OUTCOME}"))
+        .ok()
+        .flatten()
+}
+
+/// **Whether `cwd` is the piece of an outcome eval's chat that has a shell** (#4476): an
+/// [`outcome_piece`] staged with one. Only this machine's state says so, and no chat writes it.
+pub fn shell_piece(root: &Path, cwd: &Path) -> bool {
+    outcome_mark(root, cwd).is_some_and(|said| said == SHELL)
+}
+
+/// What an outcome eval's piece's mark says where its chat has a shell (#4476).
+const SHELL: &str = "shell";
+
+/// A grade's arm's file that names the temp folder of its outcome eval's chat that has a shell
+/// (#4476).
+const TEMP: &str = "temp";
+
+/// How the name of a shell eval's temp folder starts: short, as on Linux Claude Code's sandbox
+/// makes its proxy's sockets in it, and a socket's path holds 108 bytes at most.
+const TEMP_PREFIX: &str = "purlis-g-";
+
+/// The most bytes Claude Code's temp folder for a chat, `<CLAUDE_CODE_TMPDIR>/claude-<uid>`, may
+/// hold for it to hand that folder to the chat's commands: read in 2.1.300, which otherwise hands
+/// them its shared `/tmp/claude-<uid>`, so that its sandbox's sockets fit.
+pub const CLAUDE_CODE_TEMP_MOST: usize = 44;
+
+/// **Where a shell eval's temp folder is made**: `/tmp`, by that name, where Unix has it. A folder
+/// in the system's temp folder would be too long on macOS, where that is
+/// `/var/folders/<two>/<thirty-one>/T/`, and its commands would be handed Claude Code's shared
+/// temp folder in its place (measured on CI, #5655; [`CLAUDE_CODE_TEMP_MOST`]). Elsewhere, the
+/// system's temp folder.
+pub fn temp_base() -> PathBuf {
+    if cfg!(unix) {
+        PathBuf::from("/tmp")
+    } else {
+        std::env::temp_dir()
+    }
+}
+
+/// **The temp folder of the outcome eval's chat that has a shell, in the piece `cwd`** (#4476,
+/// the person's choice of 2026-11-07): a folder of its own in `/tmp` ([`temp_base`]), `0700`,
+/// made as its piece was staged and removed with it ([`end_try`]), which its chat is given as its
+/// `TMPDIR`. Its shell writes its piece and this folder, and nowhere else. Not in the piece, as a
+/// socket's path there would be too long on Linux (measured on CI, #5589). `None` for any other
+/// piece. Only this machine's state names it, and no chat writes it.
+pub fn temp_of(root: &Path, cwd: &Path) -> Option<PathBuf> {
+    if !shell_piece(root, cwd) {
+        return None;
+    }
+    let id = try_of(root, cwd)?;
+    let state = crate::appstate::dir(root)?;
+    read_at(&state, &format!("{TRIES_DIR}/{id}/{TEMP}"))
+        .ok()
+        .flatten()
+        .map(|text| PathBuf::from(text.trim_end()))
+        .filter(|path| one_of_ours(path))
+}
+
+/// Whether `path` is a temp folder [`stage`] made: in [`temp_base`], named so, and a
+/// folder itself, never a link to one. Only such a folder is handed to a chat or removed.
+fn one_of_ours(path: &Path) -> bool {
+    path.parent() == Some(temp_base().as_path())
+        && path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with(TEMP_PREFIX))
+        && std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_dir())
+}
+
+/// Removes the temp folder the try `id` names, where it has one of [`stage`]'s.
+fn remove_temp(state: &Path, id: &str) {
+    let Some(path) = read_at(state, &format!("{TRIES_DIR}/{id}/{TEMP}"))
+        .ok()
+        .flatten()
+        .map(|text| PathBuf::from(text.trim_end()))
+    else {
+        return;
+    };
+    if one_of_ours(&path)
+        && let Err(why) = std::fs::remove_dir_all(&path)
+    {
+        tracing::warn!("purlis: a grade's temp folder was not removed ({why})");
+    }
 }
 
 /// **Stages an outcome eval's input files into the throwaway piece of `laid`** (SK-55, #3235):
 /// each of `files` (paths in the skill's folder, as the eval names them) at the same path in the
 /// piece, from `inputs`, what the grade read of them once. A file it did not read refuses the
-/// chat, as the eval would not be the one the plan showed.
+/// chat, as the eval would not be the one the plan showed. With `shell` (#4476) the piece is
+/// marked as one whose chat has a shell, and a temp folder of its own is made ([`temp_of`]).
 pub fn stage(
     root: &Path,
     laid: &Try,
     files: &[String],
     inputs: &BTreeMap<String, Vec<u8>>,
+    shell: bool,
 ) -> Result<(), String> {
     if let Some(path) = files.iter().find(|path| !inputs.contains_key(*path)) {
         return Err(format!(
@@ -754,10 +842,34 @@ pub fn stage(
         &app_state(root)?,
         &format!("{TRIES_DIR}/{}/{OUTCOME}", laid.id),
         None,
-        "",
+        if shell { SHELL } else { "" },
         usize::MAX,
     )
     .map_err(|why| super::not_written("the grade's record of its folder", why))?;
+    if shell {
+        // Made before the chat starts, a new name of its own, `0700` from the start: `/tmp` is
+        // shared, and the umask alone would leave it readable by all.
+        let mut builder = tempfile::Builder::new();
+        builder.prefix(TEMP_PREFIX).rand_bytes(8);
+        #[cfg(unix)]
+        builder.permissions(std::os::unix::fs::PermissionsExt::from_mode(0o700));
+        let made = builder
+            .tempdir_in(temp_base())
+            .map_err(|why| {
+                format!("the chat's folder for temporary files could not be made ({why})")
+            })?
+            .keep();
+        if let Err(why) = write_at(
+            &app_state(root)?,
+            &format!("{TRIES_DIR}/{}/{TEMP}", laid.id),
+            None,
+            &made.display().to_string(),
+            usize::MAX,
+        ) {
+            let _ = std::fs::remove_dir_all(&made);
+            return Err(super::not_written("the grade's record of its folder", why));
+        }
+    }
     hand_on_what_narrows(root, laid)?;
     for path in files {
         let bytes = inputs.get(path).ok_or_else(|| {
@@ -1611,7 +1723,10 @@ fn started_by_these_words(skills: &Path, name: &str) -> bool {
 /// Ends the try `id`: [`end_try_at`] by its id.
 pub fn end_try(root: &Path, id: &str) -> Result<(), String> {
     remove_piece(root, id)?;
-    remove_in(&app_state(root)?, TRIES_DIR, id)
+    let state = app_state(root)?;
+    // A shell eval's temp folder goes with its piece (#4476).
+    remove_temp(&state, id);
+    remove_in(&state, TRIES_DIR, id)
 }
 
 #[cfg(test)]

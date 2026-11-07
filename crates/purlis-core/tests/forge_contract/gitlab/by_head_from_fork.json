@@ -1,0 +1,21 @@
+{
+  "source": "GitLab 19.4 REST API docs (gitlab-org/gitlab 19-4-stable-ee, doc/api), merge_requests.md: List project merge requests by source_branch; only one whose source_project_id is the fork's is the person's",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "projects/acme%2Fapi/merge_requests?source_branch=purlis%2Fpublish%2Fdeploy-0123456789ab&state=all&per_page=100"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "[{\"iid\": 14, \"web_url\": \"https://gitlab.com/acme/api/-/merge_requests/14\", \"state\": \"opened\", \"sha\": \"0000000000000000000000000000000000000000\", \"source_project_id\": 999, \"target_project_id\": 1}, {\"iid\": 13, \"web_url\": \"https://gitlab.com/acme/api/-/merge_requests/13\", \"state\": \"opened\", \"sha\": \"6dcb09b5b57875f334f61aebed695e2e4193db5e\", \"source_project_id\": 4242, \"target_project_id\": 1}]",
+        "err": ""
+      }
+    }
+  ]
+}

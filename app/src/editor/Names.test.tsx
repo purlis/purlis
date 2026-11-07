@@ -65,6 +65,18 @@ function core() {
             from: null,
             uncommitted: true,
             base: "main",
+            stamp: "drawn",
+            checks: {
+              sets: [],
+              onLines: [],
+              outside: [],
+              elsewhere: [],
+              moreOnLines: 0,
+              moreOutside: 0,
+              moreElsewhere: 0,
+              trouble: null,
+              faults: [],
+            },
             diff: {
               kind: "text",
               base: "one\ntwo\n",

@@ -281,7 +281,7 @@ fn lock_path(plane: &Path, ws: &str) -> PathBuf {
 const A_CLAIM_WAITS_AT_MOST: Duration = Duration::from_secs(5);
 
 /// Takes workspace `ws`'s claim lock, or says why not. The file is opened through no link.
-fn locked(plane: &Path, ws: &str) -> Result<crate::filelock::Held, String> {
+pub(crate) fn locked(plane: &Path, ws: &str) -> Result<crate::filelock::Held, String> {
     let path = lock_path(plane, ws);
     let opened = (|| -> std::io::Result<std::fs::File> {
         crate::contain::writable(plane, &path).map_err(std::io::Error::other)?;

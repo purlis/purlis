@@ -162,7 +162,7 @@ describe("what a menu lists", () => {
       // The branch's own folder (#1143).
       "Copy the absolute path of branch fix-it",
       expect.stringMatching(/^Reveal branch fix-it in /),
-      "Open a shell tab in branch fix-it",
+      "Open a shell in branch fix-it",
       "Merge branch fix-it into svc",
     ]);
     expect(shown.below).toEqual(["Remove folder fix-it in svc"]);

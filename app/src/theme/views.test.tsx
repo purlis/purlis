@@ -1904,10 +1904,22 @@ const STATES: State[] = [
     view: { from: null, view: "piece-diff", key: "alpha/svc/fix-it/notes.txt" },
     answers: {
       what_changed: {
+        checks: {
+          sets: [],
+          onLines: [],
+          outside: [],
+          elsewhere: [],
+          moreOnLines: 0,
+          moreOutside: 0,
+          moreElsewhere: 0,
+          trouble: null,
+          faults: [],
+        },
         mark: "changed",
         from: null,
         uncommitted: true,
         base: "main",
+        stamp: "drawn",
         diff: {
           kind: "text",
           base: "kept line\n",

@@ -1461,6 +1461,9 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
             && cwd.is_some_and(|cwd| crate::skills::verbs::drafts::judge_piece(root, cwd)),
         writes_its_piece: graded
             && cwd.is_some_and(|cwd| crate::skills::verbs::drafts::outcome_piece(root, cwd)),
+        // And of those, one whose skill asked for a shell, held to its piece (#4476).
+        runs_a_shell: graded
+            && cwd.is_some_and(|cwd| crate::skills::verbs::drafts::shell_piece(root, cwd)),
         laid_out: linked.as_deref(),
     };
     // Which folder the chat is handed, for its terminal to note while it runs (SK-24).
@@ -1474,10 +1477,24 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
     // a router that reads prompts was chosen for it, and its list leaves skills out.
     let prompt_router =
         points.then(|| (crate::skills::PROMPT_ROUTER_ENV.to_owned(), "1".to_owned()));
+    // An outcome eval's shell has a temp folder of its own (#4476), its program's and Claude
+    // Code's, which its sandbox lets its commands write and which goes with its piece.
+    let temp = graded
+        .then(|| cwd.and_then(|cwd| crate::skills::verbs::drafts::temp_of(root, cwd)))
+        .flatten()
+        .map(|temp| temp.display().to_string());
+    let temp = temp.into_iter().flat_map(|temp| {
+        [
+            ("TMPDIR".to_owned(), temp.clone()),
+            (crate::sandbox::claude_wrap::TMP_ENV.to_owned(), temp),
+        ]
+    });
     match harness.state_hooks(armed, cwd, plugins, sandbox) {
         StateHooks::ThisSessionOnly { args, mut env, .. } => {
             env.extend(held);
             env.extend(prompt_router);
+            env.retain(|(key, _)| key != "TMPDIR" && key != crate::sandbox::claude_wrap::TMP_ENV);
+            env.extend(temp);
             Ok((args, env))
         }
         // A grade's chat is never started without its limits.
@@ -1486,6 +1503,27 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
         )),
         StateHooks::None => Ok((Vec::new(), Vec::new())),
     }
+}
+
+/// **What arms a chat, then what its sandbox's wrap sets over both**, onto `env`: the wrap's
+/// value wins over a profile's or the arming's of the same name (its proxy, its temp
+/// directory), but for Claude Code's temp folder where the wrap sets no `TMPDIR` of its own.
+/// There the line names the chat's own temp folder (#5675) and the arming may name a narrower
+/// one, an outcome eval shell's (#4476), which its sandbox holds it to; that one stands.
+/// Sorting cannot decide it, since the session applies the pairs in order and two of one name
+/// would leave the later one standing.
+pub fn wrapped_over(
+    env: &mut Vec<(String, String)>,
+    armed: Vec<(String, String)>,
+    mut wrapped: Vec<(String, String)>,
+) {
+    let temp = crate::sandbox::claude_wrap::TMP_ENV;
+    if armed.iter().any(|(key, _)| key == temp) && !wrapped.iter().any(|(key, _)| key == "TMPDIR") {
+        wrapped.retain(|(key, _)| key != temp);
+    }
+    env.extend(armed);
+    env.retain(|(key, _)| !wrapped.iter().any(|(set, _)| set == key));
+    env.extend(wrapped);
 }
 
 /// **A chat's environment, finished** as every chat's is where it opens: what arms it after
@@ -1498,10 +1536,7 @@ pub fn finished_env(
     watched: &Watched<'_>,
     binary: Option<&Path>,
 ) -> Vec<(String, String)> {
-    env.extend(armed);
-    // What the wrap sets wins over a profile's or the arming's value of the same name.
-    env.retain(|(key, _)| !wrapped.iter().any(|(set, _)| set == key));
-    env.extend(wrapped);
+    wrapped_over(&mut env, armed, wrapped);
     what_its_hooks_read(&mut env, watched);
     env.sort();
     crate::start::with_chat_path(env, binary)

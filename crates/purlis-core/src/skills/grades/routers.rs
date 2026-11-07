@@ -212,6 +212,7 @@ pub fn planned(
                 outcomes: Vec::new(),
                 arms: engine::ARMS.to_vec(),
                 runs: RUNS,
+                shell: false,
             });
         }
         copies.push(LibraryCopy { level, copy });

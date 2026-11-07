@@ -335,17 +335,7 @@ fn probed(
             .display(),
         root.display()
     );
-    ran(
-        program,
-        home,
-        tmp,
-        root,
-        settings,
-        sources,
-        what,
-        command,
-        &[],
-    )
+    ran(program, home, tmp, root, settings, sources, what, command)
 }
 
 /// Claude Code at `program`, started in `root` with the settings at `settings` against a
@@ -361,7 +351,32 @@ fn ran(
     sources: &[String],
     what: &str,
     command: String,
-    env: &[(String, String)],
+) -> String {
+    ran_with(
+        program,
+        home,
+        tmp,
+        root,
+        settings,
+        sources,
+        what,
+        command,
+        &[],
+    )
+}
+
+/// [`ran`], with `env` set besides, as a chat's arming sets it.
+#[allow(clippy::too_many_arguments)]
+fn ran_with(
+    program: &Path,
+    home: &Path,
+    tmp: &Path,
+    root: &Path,
+    settings: &Path,
+    sources: &[String],
+    what: &str,
+    command: String,
+    env: &[(&str, &Path)],
 ) -> String {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -387,11 +402,11 @@ fn ran(
     let log = tmp.join("claude.log");
     let out = fs::File::create(&log).expect("a log");
     let mut command = claude(program, home, tmp);
+    command.envs(env.iter().copied());
     command
         .current_dir(root)
         .env("ANTHROPIC_BASE_URL", server.uri())
         .env("ANTHROPIC_API_KEY", NOT_A_CREDENTIAL)
-        .envs(env.iter().map(|(key, value)| (key, value)))
         .args(["-p", "Run the sandbox probes.", "--bare"])
         .args(sources)
         .arg("--settings")
@@ -607,7 +622,6 @@ fn a_chat_at_the_floor_makes_its_tools_folders_in_a_bare_home() {
         &screened.setting_sources(),
         what,
         command,
-        &[],
     );
     assert!(
         said.lines()
@@ -620,6 +634,239 @@ fn a_chat_at_the_floor_makes_its_tools_folders_in_a_bare_home() {
             "{gone} stayed once the chat ended"
         );
     }
+}
+
+/// **An outcome eval's shell, run by Claude Code's own sandbox on what purlis compiles for it**
+/// (#4476, the person's rulings of 2026-11-07): a command writes its piece and its own temp
+/// folder, and is refused a write anywhere else, in the project, the home, the system's temp
+/// folder and another shell eval's piece and temp folder, and a connection to a host the project
+/// lists for its other chats, which purlis's own proxy refuses. The same project's other grade
+/// chats are given that host and its package caches, so the hold is what takes them away.
+#[test]
+fn an_outcome_evals_shell_writes_only_its_own_folders_and_reaches_no_host() {
+    purlis_core::unsteered!();
+    use purlis_core::sandbox::egress;
+    use purlis_core::skills::verbs::drafts;
+    let program = std::env::var_os("PURLIS_CLAUDE_CODE").map(PathBuf::from);
+    let scratch = tempfile::tempdir().expect("a folder");
+    let at = scratch.path().canonicalize().expect("a real folder");
+    let home = at.join("home");
+    let bin = at.join("bin");
+    let root = at.join("project");
+    for folder in [&home.join(".claude"), &bin, &root] {
+        fs::create_dir_all(folder).expect("a folder");
+    }
+    fs::write(
+        root.join("charter.toml"),
+        "[sandbox]\nmode = \"on\"\negress = [\"model-providers\", \"forge\", \"toolchains\"]\n\
+         hosts = [\"example.com\"]\n",
+    )
+    .expect("the manifest");
+    let machine = Machine {
+        env: purlis_core::secrets::Env::of(&[("PATH", &bin.display().to_string())]),
+        home: Some(home.clone()),
+        os: Os::this(),
+    };
+    // Two shell evals' chats of one grade, each with its piece and its temp folder; both go,
+    // temp folders and all, however the test ends.
+    struct Ended<'a>(&'a Path, Vec<String>);
+    impl Drop for Ended<'_> {
+        fn drop(&mut self) {
+            for id in &self.1 {
+                let _ = drafts::end_try(self.0, id);
+            }
+        }
+    }
+    let arm = drafts::lay_out_arm(&root, None).expect("an arm's piece");
+    let second = drafts::lay_out_arm(&root, None).expect("another arm's piece");
+    let _ended = Ended(&root, vec![arm.id.clone(), second.id.clone()]);
+    for one in [&arm, &second] {
+        drafts::stage(&root, one, &[], &Default::default(), true).expect("staged with a shell");
+    }
+    let piece = arm.piece.clone();
+    let temp = drafts::temp_of(&root, &piece).expect("its temp folder");
+    let other_temp = drafts::temp_of(&root, &second.piece).expect("the other's temp folder");
+    let decide = || {
+        let decided = sandbox::decide(Harness::ClaudeCode, &root, &machine, &|_| true, None, None)
+            .expect("decided")
+            .expect("a sandbox in force");
+        let Decided::Sandboxed(applied) = decided else {
+            panic!("not sandboxed: {decided:?}");
+        };
+        applied
+    };
+    let settings_of = |applied: &sandbox::Applied| {
+        let Form::ClaudeCode(compiled) = applied.form_in(Some(&piece)) else {
+            panic!("not Claude Code's settings");
+        };
+        compiled
+    };
+    // Not vacuous: without the hold, a grade's chat here is given the host and the caches.
+    let other = sandbox::policy::holding_no_kept_grants(decide);
+    assert!(
+        other
+            .confines()
+            .hosts
+            .iter()
+            .any(|host| host == "example.com"),
+        "{:?}",
+        other.confines().hosts
+    );
+    assert!(
+        settings_of(&other).sandbox["filesystem"]
+            .get("allowWrite")
+            .is_some(),
+        "the project's package caches"
+    );
+    // Claude Code's shared temp folder is denied to the shell alone: another grade's chat
+    // keeps what Claude Code gives every chat.
+    let denies_shared_temp = |compiled: &sandbox::claude::Settings| {
+        let denied = compiled.sandbox["filesystem"]["denyWrite"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        sandbox::claude::SHARED_TEMP
+            .iter()
+            .all(|path| denied.contains(&json!(path)))
+    };
+    assert!(!denies_shared_temp(&settings_of(&other)));
+    let held =
+        sandbox::policy::holding_no_kept_grants(|| sandbox::policy::holding_to_its_folder(decide));
+    assert_eq!(held.level(), Level::Full);
+    assert!(
+        held.confines().hosts.is_empty(),
+        "{:?}",
+        held.confines().hosts
+    );
+    let compiled = settings_of(&held);
+    assert_eq!(compiled.sandbox["network"]["allowedDomains"], json!([]));
+    assert!(
+        compiled.sandbox["filesystem"].get("allowWrite").is_none(),
+        "{}",
+        compiled.sandbox
+    );
+    assert!(
+        denies_shared_temp(&compiled),
+        "Claude Code's shared temp folder: {}",
+        compiled.sandbox
+    );
+    // Its commands are handed a folder inside its own, which Claude Code does only where that
+    // is short enough (#5655): on macOS the system's temp folder is not.
+    assert!(
+        temp.join("claude-4294967295").as_os_str().len() <= drafts::CLAUDE_CODE_TEMP_MOST,
+        "{}",
+        temp.display()
+    );
+    let Some(program) = program else {
+        return;
+    };
+    // purlis's own proxy, carrying what the chat was compiled with, as a start runs it.
+    let refusals = egress::Refusals::default();
+    let proxy = egress::Proxy::start_keeping(held.confines().hosts.clone(), refusals.clone())
+        .expect("the chat's proxy");
+    compiled.make_empty();
+    let reporting = compiled
+        .reporting_on(None)
+        .through([proxy.port(), proxy.socks_port()]);
+    let file = at.join("claude.json");
+    fs::write(
+        &file,
+        // A grade's chat runs in the mode that asks (ADR 0105, amended 2026-10-26), whatever
+        // mode the program would start in: no classifier decides its commands.
+        json!({
+            "sandbox": reporting.sandbox,
+            "permissions": { "deny": reporting.deny, "defaultMode": "default" },
+        })
+        .to_string(),
+    )
+    .expect("the settings");
+    let command = format!(
+        "w() {{ if (mkdir -p \"$(dirname \"$1\")\" && echo x > \"$1\") 2>/dev/null; \
+         then echo \"wrote $2\"; else echo \"refused $2\"; fi; }}; \
+         w '{piece}/made.txt' piece; w \"$TMPDIR/made.txt\" temp; echo \"temp at $TMPDIR\"; \
+         w '{root}/outside.txt' project; w '{home}/outside.txt' home; \
+         w '{other_piece}/made.txt' other-piece; w '{other_temp}/made.txt' other-temp; \
+         w /tmp/purlis-4476-$$ tmp; w /tmp/claude/purlis-4476-$$ claude-tmp; \
+         w /private/tmp/claude/purlis-4476-$$ private-claude-tmp; \
+         if curl -sS -m 20 -o /dev/null https://example.com/ 2>/dev/null; \
+         then echo 'reached example.com'; else echo 'refused example.com'; fi",
+        piece = piece.display(),
+        root = root.display(),
+        home = home.display(),
+        other_piece = second.piece.display(),
+        other_temp = other_temp.display(),
+    );
+    let what = "an outcome eval's shell";
+    // As its start hands it its temp folder: the program's and Claude Code's.
+    let said = ran_with(
+        &program,
+        &home,
+        &temp,
+        &piece,
+        &file,
+        &["--setting-sources".to_owned(), String::new()],
+        what,
+        command,
+        &[("CLAUDE_CODE_TMPDIR", &temp)],
+    );
+    // Every probe, each with what the ruling wants, and every one that came out otherwise
+    // named with this system, so a red run says which platform allowed or refused what.
+    let os = if cfg!(target_os = "macos") {
+        "macOS"
+    } else {
+        "Linux"
+    };
+    let shared = if cfg!(target_os = "macos") {
+        Some((
+            "refused private-claude-tmp",
+            "Claude Code's shared temp folder, by its real name",
+        ))
+    } else {
+        None
+    };
+    let wrong: Vec<String> = [
+        ("wrote piece", "it writes its piece"),
+        ("wrote temp", "it writes its temp folder"),
+        ("refused project", "the project outside its piece"),
+        ("refused home", "the home"),
+        ("refused other-piece", "another shell eval's piece"),
+        ("refused other-temp", "another shell eval's temp folder"),
+        ("refused tmp", "the system's temp folder"),
+        (
+            "refused claude-tmp",
+            "Claude Code's shared temp folder, /tmp/claude",
+        ),
+        ("refused example.com", "a host the project lists"),
+    ]
+    .into_iter()
+    .chain(shared)
+    .filter(|(line, _)| !said.lines().any(|said| said.trim() == *line))
+    .map(|(line, why)| format!("{why}: wanted `{line}`"))
+    .collect();
+    assert!(
+        wrong.is_empty(),
+        "{what}, on {os} (Claude Code {}), temp folder {}: {}\nwhat its command said:\n{said}",
+        SUPPORTED.trim(),
+        temp.display(),
+        wrong.join("; ")
+    );
+    // Claude Code hands each command a temp folder inside the one the chat was given.
+    assert!(
+        said.lines().any(|line| line
+            .trim()
+            .strip_prefix("temp at ")
+            .is_some_and(|at| Path::new(at).starts_with(&temp))),
+        "{what}, on {os}: its commands' temp folder is not inside its own, {}:\n{said}",
+        temp.display()
+    );
+    assert!(!root.join("outside.txt").exists() && !home.join("outside.txt").exists());
+    assert!(!second.piece.join("made.txt").exists() && !other_temp.join("made.txt").exists());
+    // Refused by purlis's proxy, where this Claude Code hands its connections to one.
+    let refused = refusals.refused();
+    assert!(
+        refused.is_empty() || refused.iter().any(|one| one.starts_with("example.com")),
+        "{refused:?}"
+    );
 }
 
 /// **Two Claude Code chats each write a temporary folder of their own, and not the other's**
@@ -727,7 +974,12 @@ fn two_claude_code_chats_each_write_a_temporary_folder_of_their_own_and_not_the_
         // reads a command's words, and a write it can see outside the project is not run.
         let other = rooted[1 - chat].display();
         let command = format!("/bin/sh '{}' '{other}'", script.display());
-        let said = ran(
+        let env: Vec<(&str, &Path)> = line
+            .env
+            .iter()
+            .map(|(key, value)| (key.as_str(), Path::new(value)))
+            .collect();
+        let said = ran_with(
             &program,
             &home,
             &tmp,
@@ -736,7 +988,7 @@ fn two_claude_code_chats_each_write_a_temporary_folder_of_their_own_and_not_the_
             &screened.setting_sources(),
             &what,
             command,
-            &line.env,
+            &env,
         );
         let named = said
             .lines()

@@ -997,6 +997,14 @@ pub struct Chats {
     /// Taken under the lock of [`Self::open`], so a report lands in one or the other.
     /// **In memory only.**
     named_while_starting: Mutex<NamedWhileStarting>,
+    /// **Who a chat starting here is, and its folder** (#5411), by its number: an entry from the
+    /// moment its start is announced, so before its program runs, until it is listed as open.
+    /// A harness fires its first prompt's hook as it starts, and that report is a boundary of the
+    /// chat's turn ([`crate::turns`]): [`Self::chat_at`] answers it from here, so it is not lost.
+    /// Only a chat started here, never one a runner starts, whose folder is the runner's.
+    /// Taken under the lock of [`Self::open`], as [`Self::named_while_starting`] is.
+    /// **In memory only.**
+    starting_at: Mutex<HashMap<u32, ChatAt>>,
     /// The folders a discard is taking away now, and the folders chats are starting in
     /// (#1472): no chat starts in a folder that is going, and none goes while one starts there.
     /// **In memory only.**
@@ -1566,6 +1574,7 @@ impl Chats {
             reserved: Mutex::new(HashMap::new()),
             starting_as: Mutex::new(HashMap::new()),
             named_while_starting: Mutex::new(HashMap::new()),
+            starting_at: Mutex::new(HashMap::new()),
             stops_below: Mutex::new(std::collections::HashSet::new()),
             owed: Mutex::new(HashMap::new()),
             restarting: Mutex::new(std::collections::HashSet::new()),
@@ -2118,6 +2127,48 @@ impl Chats {
             id: one.chat.identity.id.clone(),
             cwd: one.chat.cwd.clone(),
         })
+    }
+
+    /// [`Self::chat_at`], or, for a chat whose start here is under way, who it is starting as
+    /// ([`Self::starting_at`]): what a boundary of its turn is recorded by, since its harness may
+    /// report its first prompt before the chat is listed as open (#5411).
+    pub fn chat_at_or_starting(&self, session: u32) -> Option<ChatAt> {
+        let open = lock(&self.open);
+        match open.get(&session) {
+            Some(one) => Some(ChatAt {
+                id: one.chat.identity.id.clone(),
+                cwd: one.chat.cwd.clone(),
+            }),
+            None => lock(&self.starting_at).get(&session).cloned(),
+        }
+    }
+
+    /// **The name of a chat open in this branch's folder whose program reports no turns** (#5405):
+    /// a shell, or a harness purlis has no hooks for. What says why the branch has no turn.
+    pub fn silent_about_turns_in(
+        &self,
+        plane: &Path,
+        ws: &str,
+        repo: &str,
+        piece: Option<&str>,
+    ) -> Option<String> {
+        let open = lock(&self.open);
+        open.values()
+            .filter(|one| {
+                !one.chat
+                    .harness()
+                    .is_some_and(purlis_core::harness::Harness::prompt_hook)
+            })
+            .find(|one| {
+                one.chat
+                    .cwd
+                    .as_deref()
+                    .and_then(|cwd| purlis_core::files::turns::place_of(plane, cwd))
+                    .is_some_and(|place| {
+                        place.ws == ws && place.repo == repo && place.piece.as_deref() == piece
+                    })
+            })
+            .map(|one| one.chat.name.clone())
     }
 
     /// **The chats open here, each with its id, its name and the workspace it works in**, in
@@ -4644,11 +4695,12 @@ impl Chats {
         // (#2036). Set on the harness's program as it starts; the commands, hooks and tools it
         // starts inherit them.
         // One its vault holds none of is a Secret ask (#5074, ADR 0109), raised and waited on
-        // by nothing: the start is refused, saying so, and the ask stays in the Inbox, where the
-        // person fills it and starts the chat again, which reads the value filled. No start
-        // waits, as none waits on a sign-in (ADR 0095 §3): the Start dialog is modal, so the
-        // person could not reach the ask while it waited, and any other start (a relaunch, a
-        // dispatch's) may run under a lock the window's commands wait on.
+        // by nothing: the start is refused, saying so, and names the ask beside its refusal
+        // (`profilesignin::attempt`). The Start dialog draws that ask, and once it is filled
+        // there it starts again, which reads the value filled (#5137). Any other start is
+        // pointed to the ask in the Inbox. No start waits, as none waits on a sign-in (ADR 0095
+        // §3): a relaunch or a dispatch's start may run under a lock the window's commands
+        // wait on.
         let secret_asks = lock(&self.secret_asks).clone();
         let moved = || self.asks_may_have_moved();
         let missing = secret_asks
@@ -4921,22 +4973,27 @@ impl Chats {
         let reached =
             reached_by_the_proxy(Arc::clone(&self.reached), Arc::clone(&whose), who.clone());
         // The live ask (#1666): a connection to a host nothing lists is held while the person
-        // is asked, unless an administrator's policy turns that off.
-        let asks = (!purlis_core::sandbox::policy::Locks::of(&self.project).forbids_live_asks())
-            .then(|| {
-                asked_by_the_proxy(
-                    Asking {
-                        hear: Arc::clone(&self.refused),
-                        reached: Arc::clone(&self.reached),
-                        whose: Arc::clone(&whose),
-                        who,
-                        harness,
-                        blocks: Arc::clone(&self.blocks),
-                        moved: Arc::clone(&self.asks_moved),
-                    },
-                    self.project.clone(),
-                )
-            });
+        // is asked, unless an administrator's policy turns that off. Never for a grade's chat,
+        // which asks nobody (ADR 0105 §3): an answer would widen what the person consented to,
+        // and an outcome eval's shell reaches no host at all (#4476). Its proxy refuses instead.
+        let asks = asks_live(
+            chat.graded,
+            &purlis_core::sandbox::policy::Locks::of(&self.project),
+        )
+        .then(|| {
+            asked_by_the_proxy(
+                Asking {
+                    hear: Arc::clone(&self.refused),
+                    reached: Arc::clone(&self.reached),
+                    whose: Arc::clone(&whose),
+                    who,
+                    harness,
+                    blocks: Arc::clone(&self.blocks),
+                    moved: Arc::clone(&self.asks_moved),
+                },
+                self.project.clone(),
+            )
+        });
         // Started where the chat runs, from the plan its sandbox compiled to: in the window, or
         // in the session host, which holds it for as long as the chat runs (#1999). A chat
         // reattached runs in the one it ran in, heard by this window from now on (#2006).
@@ -5151,12 +5208,9 @@ impl Chats {
             _ => all,
         };
         let mut env = env;
-        env.extend(armed);
         // What the wrap sets wins over a profile's or the arming's value of the same name: its
-        // proxy, its temp directory. Sorting cannot decide it, since the session applies the
-        // pairs in order and two of one name would leave the later one standing.
-        env.retain(|(key, _)| !wrapped.iter().any(|(set, _)| set == key));
-        env.extend(wrapped);
+        // proxy, its temp directory, but an outcome eval shell's own temp folder (#4476).
+        purlis_core::hoststart::wrapped_over(&mut env, armed, wrapped);
         // A cluster on this Mac the person pointed this chat's kubectl at (qw384b): its own
         // copy, in its own folder, named for it alone and ahead of any kubeconfig of theirs.
         if let (false, Some(config), Some(confinement)) = (
@@ -5218,6 +5272,15 @@ impl Chats {
             whose.store(session, std::sync::atomic::Ordering::SeqCst);
             lock(&self.starting_as).insert(session, chat.persona.clone());
             lock(&self.named_while_starting).insert(session, None);
+            if !reattaching && !on_the_runner && chat.runs_on.is_none() {
+                lock(&self.starting_at).insert(
+                    session,
+                    ChatAt {
+                        id: identity.id.clone(),
+                        cwd: chat.cwd.clone(),
+                    },
+                );
+            }
             untold.tell_untold();
             // A chat reattached is where it was: its state, its model and its run are as the
             // host kept them (#2006).
@@ -5401,6 +5464,7 @@ impl Chats {
             if announced > 0 {
                 lock(&self.starting_as).remove(&announced);
                 lock(&self.named_while_starting).remove(&announced);
+                lock(&self.starting_at).remove(&announced);
             }
             if announced > 0
                 && let Some(gone) = lock(&self.never_started).as_ref()
@@ -5488,6 +5552,7 @@ impl Chats {
             start.made = false;
         }
         let mut open = lock(&self.open);
+        lock(&self.starting_at).remove(&session);
         // What its harness named since its program began, which is newer than what it started
         // under. A shell tab keeps none, as `follow_conversation` keeps none for one that is open.
         let mut under = under;
@@ -5614,6 +5679,7 @@ impl Chats {
     fn close_as(&self, session: u32, a_chat: bool) -> Result<(), String> {
         lock(&self.starting_as).remove(&session);
         lock(&self.named_while_starting).remove(&session);
+        lock(&self.starting_at).remove(&session);
         lock(&self.untaken).remove(&session);
         lock(&self.ended).remove(&session);
         let gone = lock(&self.open).remove(&session);
@@ -8277,6 +8343,14 @@ fn refused_by_the_proxy(
                 });
         })
     })
+}
+
+/// **Whether a chat's proxy holds a connection to an unlisted host while the person is asked**
+/// (#1666): unless policy turns the live ask off, and never for a grade's chat (`graded`), which
+/// asks nobody (ADR 0105 §3, as #4476 makes exact): its proxy refuses, and no Allow is taken live
+/// by it.
+fn asks_live(graded: bool, locks: &purlis_core::sandbox::policy::Locks) -> bool {
+    !graded && !locks.forbids_live_asks()
 }
 
 /// What an Allow reached live ([`Chats::allow_live`], #1666).

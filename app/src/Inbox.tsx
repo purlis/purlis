@@ -128,7 +128,7 @@ const timeSaid = (at: number) =>
  * - **a question** a chat's turn ended on gets a reply box, sent as the person's message;
  * - **a prompt in a harness's own terminal** says so, and is answered there.
  *
- * Every ask has **Go to chat**, which for a task opens it in its session's tab (`onGo`).
+ * Every ask has **Go to chat**, which for a task opens it in the pane it returns to (`onGo`).
  *
  * **The keyboard** (I-11): ↑ and ↓ move between the asks and their buttons, Enter presses the
  * focused button, as it does anywhere, and Escape leaves for the chat in front. **No key of a
@@ -191,7 +191,7 @@ export function Inbox({
   plane: PlaneId;
   /** The project's asks, as the registry derived them last; nothing before the first read. */
   asks: readonly Shown[] | undefined;
-  /** The chat that asked, in front: a task in its session's tab. */
+  /** The chat that asked, in front: a task in the pane it returns to. */
   onGo: (session: number) => void;
   /** Escape: the keyboard goes back to the chat in front. */
   onLeave: () => void;

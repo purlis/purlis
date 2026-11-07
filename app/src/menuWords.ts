@@ -80,7 +80,7 @@ export const SAID = {
   // A file's or folder's rows, and a branch's own folder's (`actions.ts`, `fileRows`).
   copyRelativePath: "Copy relative path",
   copyAbsolutePath: "Copy absolute path",
-  shellHere: "Open a shell tab here",
+  shellHere: "Open a shell here",
   openInEditor: "Open in your editor",
   // The person's own workspace files' writes (#5376): each asks first, so each has its ellipsis.
   newFile: "New file…",

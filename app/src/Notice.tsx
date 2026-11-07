@@ -239,8 +239,8 @@ export type NoticeProps = LineProps | CardProps;
 /**
  * **Whose Notice this is, for a Notice of a chat that is not the one its pane shows** (#1486).
  *
- * A session's tab shows one of its chats at a time, and every chat that lives in the tab says
- * what it has to say on that tab's pane: nothing that waits for the person may be off screen.
+ * A pane shows one of its chats at a time, and every chat at home in the pane says
+ * what it has to say on that pane: nothing that waits for the person may be off screen.
  * So a Notice of a chat that is not on screen says whose it is before its sentence, `steward
  * 4:` or, for a task, its whole path, `deep (a task of steward 4 › talk):` (#1508), and has
  * **Go to it**, which switches the tab to that

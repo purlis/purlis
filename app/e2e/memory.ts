@@ -136,13 +136,24 @@ export interface HarnessMemory extends Resident {
   largestKb: number;
 }
 
-/** `root` and every process under it, by parent. */
-function tree(rows: ProcessRow[], root: ProcessRow): ProcessRow[] {
-  const found = [root];
-  for (let i = 0; i < found.length; i++) {
-    for (const row of rows) if (row.ppid === found[i].pid) found.push(row);
+/** Every process under `pid`, by parent, at any depth; `pid` itself need not be listed. */
+export function descendants(rows: ProcessRow[], pid: number): ProcessRow[] {
+  const found: ProcessRow[] = [];
+  const parents = [pid];
+  for (let i = 0; i < parents.length; i++) {
+    for (const row of rows) {
+      if (row.ppid === parents[i] && !parents.includes(row.pid)) {
+        found.push(row);
+        parents.push(row.pid);
+      }
+    }
   }
   return found;
+}
+
+/** `root` and every process under it, by parent. */
+function tree(rows: ProcessRow[], root: ProcessRow): ProcessRow[] {
+  return [root, ...descendants(rows, root.pid)];
 }
 
 /**

@@ -3350,6 +3350,10 @@ pub struct Compiled {
     pub homes: Homes,
     /// What the presets widen past the hosts.
     pub widened: Widened,
+    /// Whether its commands write no temp folder but the one the chat is handed: an outcome
+    /// eval's shell's (#4476, [`policy::holding_to_its_folder`]). A compiler denies them its
+    /// harness's own shared temp folder ([`claude::SHARED_TEMP`]).
+    pub own_temp_only: bool,
 }
 
 /// What a project's sandbox widens past the hosts it lets a chat reach (spec #1330's coupled
@@ -3731,6 +3735,7 @@ impl Compiled {
                 codex_project: Homes::codex_project(machine, root),
                 ..Homes::of(machine)
             },
+            own_temp_only: locks.holds_to_its_folder(),
         }
     }
 
@@ -3911,6 +3916,7 @@ impl Compiled {
                 codex_project: Homes::codex_project(machine, root),
                 ..Homes::of(machine)
             },
+            own_temp_only: locks.holds_to_its_folder(),
         }
     }
 }
@@ -5616,6 +5622,7 @@ fn never_with(compile: Option<Compiler>, held_back: Option<u32>, os: Os) -> Opti
         os,
         homes: Homes::default(),
         widened: Widened::default(),
+        own_temp_only: false,
     };
     match compile(&nothing) {
         Err(Uncompilable {

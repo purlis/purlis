@@ -15,7 +15,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import type { Shown } from "./bindings";
 import { WaitingStrip } from "./WaitingStrip";
 import { STRIP } from "./waitingOn";
-import { expectFocusInSight, untilFocused } from "./stories.testkit";
+import { expectFocusInSight, expectFrameOnItsLine, untilFocused } from "./stories.testkit";
 import { inForce, terminalFont, xtermLook, xtermTheme } from "./theme/theme";
 
 const CHAT = 4;
@@ -237,6 +237,9 @@ export const OverARealTerminal: StoryObj<typeof OverATerminal> = {
     await waitFor(() => expect(host.dataset.rowsBefore).toBeDefined());
     const typing = host.querySelector<HTMLTextAreaElement>(".xterm-helper-textarea");
     await untilFocused(() => typing, "the terminal has the keyboard");
+    // The story's frame stands at the top of its line while the pane's top is empty, and goes
+    // on standing there once the strip fills it (#5463): its picture is cut on whole pixels.
+    expectFrameOnItsLine(canvasElement, "before the strip");
     const frame = canvasElement.querySelector(".pane-frame") as HTMLElement;
     // Measured against the pane, not the page: the story's page may scroll as the frame
     // changes, and what is claimed is where the terminal stands in its pane (#4708's run).
@@ -256,6 +259,7 @@ export const OverARealTerminal: StoryObj<typeof OverATerminal> = {
     await expect(frame.getBoundingClientRect().height).toBe(paneBefore);
     await expect(footGap()).toBe(0);
     await expect(host.dataset.inputAtFoot).toBe("true");
+    expectFrameOnItsLine(canvasElement, "with the strip");
     // The strip took nothing from the person: the keyboard is where it was, and typing goes on.
     await untilFocused(() => typing, "the keyboard stays in the terminal");
     await userEvent.keyboard("st");

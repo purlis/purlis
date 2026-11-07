@@ -108,11 +108,12 @@ describe("the old install the upgrade spec launches over", () => {
     expect(tracked).not.toContain("charter.local.toml");
   });
 
-  it("is taken away whole, and the run's home stays", () => {
+  it("is taken away whole, and the run's home stays", async () => {
     const home = mkdtempSync(join(THE_RUNS_TREE, "home-"));
     const old = anOldInstall(THE_RUNS_TREE, home, SHELL);
 
-    removeTheOldInstall(old);
+    // No app of this process's runs `/bin/true`, so there is nothing to end first.
+    await removeTheOldInstall(old, SHELL);
 
     expect(existsSync(old.plane)).toBe(false);
     expect(existsSync(old.configRoot)).toBe(false);

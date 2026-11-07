@@ -374,6 +374,34 @@ fn the_window_is_answered_while_the_reads_a_switch_makes_are_still_working() {
     }
 }
 
+#[test]
+fn the_window_is_answered_while_the_asks_waiting_are_still_being_read() {
+    // #5582: `asks_waiting` reads the project's files (its locks, sign-ins, removals and, since
+    // #5579, each waiting persona's tools), and the window asks it on every burst of a chat's
+    // moves. Held at the start of its reads, the thread that asked is back at once, the window
+    // is answered meanwhile, and the list answers once let go.
+    let dir = a_project();
+    let (app, plane) = app_on(dir.path());
+    let held = crate::off_the_main_thread::gate::close(crate::asking::READING_ASKS);
+
+    let (held_for, answer) = ask_and_go_on(&app, "asks_waiting", json!({ "plane": plane }));
+    assert!(
+        held_for < Duration::from_secs(1),
+        "the thread that asked was held for {held_for:?}"
+    );
+    let meanwhile = ask(&app, "open_planes", json!({}));
+    assert_eq!(meanwhile.answer, Ok(json!([plane])));
+    assert!(answer.try_recv().is_err(), "the held read answered");
+
+    drop(held);
+    assert!(
+        answer
+            .recv_timeout(Duration::from_secs(30))
+            .expect("it answered once let go"),
+        "it answered with a refusal"
+    );
+}
+
 /// **The synchronous commands, each with why it may stay so** (#1949). Every other command
 /// answers off the window's thread. A command is synchronous only when it touches no file, no
 /// process and no lock another purlis holds (`IN_MEMORY`), or when the window relies on the
@@ -388,7 +416,6 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "diagnostics_here",
             "activity_chat",
             "pending_asks",
-            "asks_waiting",
             "forget_sandbox_block",
             "keep_dispatch_blocked",
             "put_away_refused_vault",

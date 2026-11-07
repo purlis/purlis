@@ -42,7 +42,7 @@ pub struct Target {
 }
 
 /// Every link on this machine: vault → key → the entry it reads.
-type Index = BTreeMap<String, BTreeMap<String, Target>>;
+pub type Index = BTreeMap<String, BTreeMap<String, Target>>;
 
 /// The links index's file name under the state directory.
 pub const FILE: &str = "vault-links.json";
@@ -183,10 +183,18 @@ fn is_link(index: &Index, vault: &str, key: &str) -> bool {
 
 /// The entry `key` in `vault` reads, if it is a linked entry.
 pub fn of(ctx: &Ctx, vault: &str, key: &str) -> Result<Option<Target>, VaultError> {
-    Ok(load(ctx)?
-        .get(vault)
-        .and_then(|keys| keys.get(key))
-        .cloned())
+    Ok(target_in(&load(ctx)?, vault, key))
+}
+
+/// **Every link on this machine, read once** (#5582): for a judge of many keys, which looks each
+/// one up here ([`target_in`]) and reads the index no more.
+pub fn every(ctx: &Ctx) -> Result<Index, VaultError> {
+    load(ctx)
+}
+
+/// The entry `key` of `vault` reads in `index`, where it is a link: [`of`] on an index read once.
+pub fn target_in(index: &Index, vault: &str, key: &str) -> Option<Target> {
+    index.get(vault).and_then(|keys| keys.get(key)).cloned()
 }
 
 /// Every linked entry in `vault`, by key.
@@ -359,6 +367,9 @@ pub fn pickable(ctx: &Ctx, but: Option<&Target>) -> Result<Vec<Pickable>, VaultE
     use crate::sandbox::tools::mint;
     let index = load(ctx)?;
     let registered = registry::vaults(&registry::load_registry(ctx)?);
+    // Read once for every key (#5582), as `mint::raw` reads it for one: `None` where the file
+    // can't be read, which keeps a key as `mint::raw` does (a raw read refuses it then).
+    let marks = mint::marked(&ctx.root);
     let mut names: Vec<&String> = registered.keys().collect();
     names.sort();
     Ok(names
@@ -373,7 +384,9 @@ pub fn pickable(ctx: &Ctx, but: Option<&Target>) -> Result<Vec<Pickable>, VaultE
                         .filter(|key| but.is_none_or(|at| at.vault != *name || at.key != *key))
                         .filter(|key| !mint::reserved(key))
                         .filter(|key| {
-                            !matches!(mint::raw(&ctx.root, name, key), mint::Raw::Refused(_))
+                            !marks.as_ref().is_some_and(|marks| {
+                                marks.iter().any(|(v, k)| v == name.as_str() && k == key)
+                            })
                         })
                         .collect();
                     keys.sort();

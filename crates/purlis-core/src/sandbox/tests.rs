@@ -2244,6 +2244,7 @@ fn compiled(denied: Denied, os: Os) -> Compiled {
         os,
         homes: Homes::default(),
         widened: Widened::default(),
+        own_temp_only: false,
     }
 }
 
