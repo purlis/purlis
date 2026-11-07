@@ -229,6 +229,10 @@ pub struct Locks {
     /// sandbox there, as where this machine's policy forbids the opt-out, and said as the
     /// project's.
     team_never: bool,
+    /// Whether the chat decided is an outcome eval's that has a shell (#4476,
+    /// [`holding_to_its_folder`]): its commands then write no temp folder but the one it is
+    /// handed.
+    to_its_folder: bool,
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -269,6 +273,26 @@ impl Locks {
             team_never: super::team::Team::of(root).policy == super::team::Policy::Never,
             ..locks
         };
+        // An outcome eval's shell reaches no host and writes no cache (#4476,
+        // [`holding_to_its_folder`]), and keeps no Allow, as every grade's chat.
+        if HOLDING_TO_ITS_FOLDER.get() {
+            return Self {
+                presets: Some(Vec::new()),
+                hosts: Some(Vec::new()),
+                no_personal_hosts: true,
+                no_persona_hosts: true,
+                no_persona_tools: true,
+                no_write_grants: true,
+                no_vault_grants: true,
+                no_socket_grants: true,
+                no_run_grants: true,
+                no_live_asks: true,
+                allow_scopes: Some(Vec::new()),
+                relayed_internal: Vec::new(),
+                to_its_folder: true,
+                ..held
+            };
+        }
         // A grade's chat keeps no Allow of any scope (SK-16, [`holding_no_kept_grants`]).
         if HOLDING_NO_KEPT_GRANTS.get() {
             return Self {
@@ -326,6 +350,7 @@ impl Locks {
             no_dispatch: true,
             dispatch_locked: Vec::new(),
             team_never: false,
+            to_its_folder: false,
         }
     }
 
@@ -454,6 +479,12 @@ impl Locks {
     /// workspace's, a persona's and your own. A limit it does not name is not capped.
     pub fn dispatch_ceiling(&self) -> &crate::dispatchlimits::Level {
         &self.dispatch
+    }
+
+    /// Whether these are an outcome eval's shell's locks, held to its own folders (#4476,
+    /// [`holding_to_its_folder`]): its commands write no temp folder but the one it is handed.
+    pub fn holds_to_its_folder(&self) -> bool {
+        self.to_its_folder
     }
 
     /// Whether policy forbids every folder a grant would let a chat write.
@@ -942,6 +973,7 @@ fn parsed(text: &str, file: &Path) -> Result<Locks, String> {
         no_dispatch,
         dispatch_locked,
         team_never: false,
+        to_its_folder: false,
     })
 }
 
@@ -1169,6 +1201,26 @@ pub fn machine_folder() -> PathBuf {
 thread_local! {
     /// Whether this thread is deciding a grade's chat's sandbox ([`holding_no_kept_grants`]).
     static HOLDING_NO_KEPT_GRANTS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Whether this thread is deciding the sandbox of an outcome eval's chat that has a shell
+    /// ([`holding_to_its_folder`]).
+    static HOLDING_TO_ITS_FOLDER: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// **Decides `decide` as for an outcome eval's chat that has a shell** (#4476, the person's
+/// ruling of 2026-11-07): as an administrator's policy that fixes no preset and no host would
+/// hold it, so its commands reach no host, its package caches are none of the project's, and
+/// no socket, service, folder or Allow of any scope reaches it. Its writes are then its own
+/// folder's alone, as the sandbox holds every chat's. Only the thread that asks is held, and only
+/// while `decide` runs.
+pub fn holding_to_its_folder<T>(decide: impl FnOnce() -> T) -> T {
+    struct Held(bool);
+    impl Drop for Held {
+        fn drop(&mut self) {
+            HOLDING_TO_ITS_FOLDER.set(self.0);
+        }
+    }
+    let _held = Held(HOLDING_TO_ITS_FOLDER.replace(true));
+    decide()
 }
 
 /// **Decides `decide` as for a grade's chat** (SK-16, the operator's ruling of 2026-10-26 on

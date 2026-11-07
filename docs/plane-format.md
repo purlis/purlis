@@ -397,6 +397,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`<data>/app-state/<clone key>/skill-grade-chats/<skill>/<grade>/<chat>.screen`](#dataapp-stateclone-keyskill-grade-chatsskillgradechatscreen)
   - [`<data>/app-state/<clone key>/router-grade-chats/<router>/<workspace>/<persona>/<grade>/<chat>.screen`](#dataapp-stateclone-keyrouter-grade-chatsrouterworkspacepersonagradechatscreen)
   - [`<data>/app-state/<clone key>/skill-tries/<id>/`](#dataapp-stateclone-keyskill-triesid)
+  - [`/tmp/purlis-g-<random>/`](#tmppurlis-g-random)
   - [`<data>/app-state/<clone key>/skill-levels/<chat id>.json`](#dataapp-stateclone-keyskill-levelschat-idjson)
   - [Environment variables that move or key this state](#environment-variables-that-move-or-key-this-state)
   - [What the tmux frame and the status line read that a **hook** wrote](#what-the-tmux-frame-and-the-status-line-read-that-a-hook-wrote)
@@ -8729,9 +8730,32 @@ of 2026-11-01). A purlis from before it refuses a file holding it, as it refuses
   of the built-in router has no `router`. Both arms hold `pins`, the pins of the workspace or persona that chose
   the router, one name a line (absent for none), which the chat's set is routed with
   (`drafts::pins_of_arm`).
+  And `drafts::stage`, for an outcome eval's chat (SK-55, #3235): a file `outcome` beside
+  `graded`, which arms its chat as one that may write its piece (`drafts::outcome_piece`). It is
+  empty, or holds `shell` where the skill's `allowed-tools` names Bash (#4476): its chat then has
+  a shell (`drafts::shell_piece`), its start held to its piece and to no host
+  (`sandbox::policy::holding_to_its_folder`), and a file `temp` beside it names that chat's
+  [temp folder](#tmppurlis-g-random) (`drafts::temp_of`). `drafts::lay_out_judge` writes `judge` in
+  its place for a judge's chat, held to reading (`drafts::judge_piece`).
 - **Removed by:** with its [throwaway piece](#workspacesthrowawaypurlis-try-id), the same way and
   at the same moments. What is left is the skill run the chat recorded, under the skill's name.
 - **Git:** outside every project, in the data home; the piece is ignored and never staged.
+
+### `/tmp/purlis-g-<random>/`
+- **Format:** a folder, `0700`, of one outcome eval's chat that has a shell (#4476), `<random>`
+  eight random letters and digits, made in `/tmp` (the system's temp folder off Unix,
+  `drafts::temp_base`) as the piece is staged (`drafts::stage`) and named by its try's `temp`
+  file. Its chat is handed it as `TMPDIR` and `CLAUDE_CODE_TMPDIR`, and its commands write their
+  temporary files in it, under `claude-<uid>/`. It is outside the piece, and short, because
+  Claude Code makes its sandbox's sockets there, and hands a command `claude-<uid>/` in it only
+  where that path is 44 bytes at most (`drafts::CLAUDE_CODE_TEMP_MOST`), its shared
+  `/tmp/claude-<uid>` otherwise; on macOS the system's temp folder alone is longer (#5655).
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
+- **Tier:** Machine, device-bound, transient — it lasts as long as its chat.
+- **Written by:** that chat's commands, under its sandbox. No other chat can write it.
+- **Removed by:** `drafts::end_try`, with its piece, and only a folder named so, in
+  `drafts::temp_base`, that is no link.
+- **Git:** outside every project.
 
 ### `<data>/app-state/<clone key>/skill-levels/<chat id>.json`
 - **Format:** JSON, one file per sandboxed chat that is running (SK-9, #2772): `name`, the chat's

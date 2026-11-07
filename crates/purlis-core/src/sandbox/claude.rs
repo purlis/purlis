@@ -109,6 +109,15 @@ fn both_names(path: &Path) -> Vec<std::path::PathBuf> {
     }
 }
 
+/// **Claude Code's shared temp folder**, by both of its names on macOS: what its sandbox lets
+/// every command write besides the folders its settings name, on every system (read in
+/// 2.1.300's sandbox runtime, whose list of paths always written holds exactly these two). A
+/// chat whose commands write only the temp folder it is handed is denied it
+/// ([`super::Compiled::own_temp_only`], #4476). On Linux a path that is not there is left out
+/// of what a command writes, so a chat there was refused it only while no Claude Code had made
+/// it.
+pub const SHARED_TEMP: [&str; 2] = ["/tmp/claude", "/private/tmp/claude"];
+
 /// Claude Code's own tools that reach the network from its process rather than through its
 /// sandbox, so the sandbox's allowed hosts do not hold them.
 pub const WEB_TOOLS: [&str; 2] = ["WebFetch", "WebSearch"];
@@ -432,6 +441,15 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
                 edit_rules.push(format!("Edit(/{name}/**)"));
                 deny_write.push(name);
             }
+        }
+    }
+    // An outcome eval's shell writes no temp folder but its own (#4476): Claude Code lets every
+    // command write its shared one, whatever the settings say, so it is denied by name.
+    if compiled.own_temp_only {
+        for path in SHARED_TEMP {
+            edit_rules.push(format!("Edit(/{path})"));
+            edit_rules.push(format!("Edit(/{path}/**)"));
+            deny_write.push(path.to_owned());
         }
     }
     let mut filesystem = json!({

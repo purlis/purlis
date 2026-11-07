@@ -15,6 +15,7 @@ pub(super) fn planned(query: &str) -> Planned {
         outcomes: Vec::new(),
         arms: grades::ARMS.to_vec(),
         runs: grading::RUNS,
+        shell: false,
     };
     let after_edit_chats = grading::plan(&request).per_arm * 3;
     Planned {
@@ -47,6 +48,7 @@ pub(super) fn planned(query: &str) -> Planned {
         },
         outcomes_left_out: Vec::new(),
         offered: Vec::new(),
+        shell: false,
         eval_chats: 12,
         consent: Some("abc".into()),
         previous: None,
@@ -1038,6 +1040,7 @@ fn a_grader_is_handed_the_trigger_tests_alone() {
         }],
         arms: grades::ARMS.to_vec(),
         runs: grading::RUNS,
+        shell: false,
     };
     assert_eq!(request.outcomes.len(), 1);
     let handed = handed_to_a_grader(&request);

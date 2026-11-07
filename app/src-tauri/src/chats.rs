@@ -4972,22 +4972,27 @@ impl Chats {
         let reached =
             reached_by_the_proxy(Arc::clone(&self.reached), Arc::clone(&whose), who.clone());
         // The live ask (#1666): a connection to a host nothing lists is held while the person
-        // is asked, unless an administrator's policy turns that off.
-        let asks = (!purlis_core::sandbox::policy::Locks::of(&self.project).forbids_live_asks())
-            .then(|| {
-                asked_by_the_proxy(
-                    Asking {
-                        hear: Arc::clone(&self.refused),
-                        reached: Arc::clone(&self.reached),
-                        whose: Arc::clone(&whose),
-                        who,
-                        harness,
-                        blocks: Arc::clone(&self.blocks),
-                        moved: Arc::clone(&self.asks_moved),
-                    },
-                    self.project.clone(),
-                )
-            });
+        // is asked, unless an administrator's policy turns that off. Never for a grade's chat,
+        // which asks nobody (ADR 0105 §3): an answer would widen what the person consented to,
+        // and an outcome eval's shell reaches no host at all (#4476). Its proxy refuses instead.
+        let asks = asks_live(
+            chat.graded,
+            &purlis_core::sandbox::policy::Locks::of(&self.project),
+        )
+        .then(|| {
+            asked_by_the_proxy(
+                Asking {
+                    hear: Arc::clone(&self.refused),
+                    reached: Arc::clone(&self.reached),
+                    whose: Arc::clone(&whose),
+                    who,
+                    harness,
+                    blocks: Arc::clone(&self.blocks),
+                    moved: Arc::clone(&self.asks_moved),
+                },
+                self.project.clone(),
+            )
+        });
         // Started where the chat runs, from the plan its sandbox compiled to: in the window, or
         // in the session host, which holds it for as long as the chat runs (#1999). A chat
         // reattached runs in the one it ran in, heard by this window from now on (#2006).
@@ -8340,6 +8345,14 @@ fn refused_by_the_proxy(
                 });
         })
     })
+}
+
+/// **Whether a chat's proxy holds a connection to an unlisted host while the person is asked**
+/// (#1666): unless policy turns the live ask off, and never for a grade's chat (`graded`), which
+/// asks nobody (ADR 0105 §3, as #4476 makes exact): its proxy refuses, and no Allow is taken live
+/// by it.
+fn asks_live(graded: bool, locks: &purlis_core::sandbox::policy::Locks) -> bool {
+    !graded && !locks.forbids_live_asks()
 }
 
 /// What an Allow reached live ([`Chats::allow_live`], #1666).
