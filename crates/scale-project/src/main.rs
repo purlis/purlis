@@ -13,8 +13,9 @@
 //! builds the project index as the session host's keeper does when it opens a project (ADR
 //! 0079), and prints how long it took: a person's chats meet a project the host has indexed, so
 //! the run's timings of the hook and of recall are taken on one. `look` times the project's git
-//! standing as the app takes it (`planegit::standing`) and prints the samples as one line of
-//! JSON.
+//! standing as the app takes it (`planegit::standing`), after priming it as auto-save does when
+//! the app opens the project (`planegit::prime`), and prints how long the prime took and the
+//! samples as one line of JSON.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -51,7 +52,7 @@ enum Command {
         #[arg(long)]
         project: PathBuf,
     },
-    /// Time the project's git standing, as the app takes it.
+    /// Prime the project's git standing as auto-save does, then time it as the app takes it.
     Look {
         #[arg(long)]
         project: PathBuf,
@@ -126,6 +127,12 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Command::Look { project, times } => {
+            // What the app does once as auto-save starts (`planegit::prime`), before any look
+            // a person meets: without it every look reads the whole tree, a state the app
+            // leaves within one status of opening the project (#5486). Timed on its own row.
+            let started = Instant::now();
+            purlis_core::planegit::prime(&project);
+            let primed = started.elapsed().as_secs_f64() * 1000.0;
             let samples: Vec<f64> = (0..times.max(1))
                 .map(|_| {
                     let started = Instant::now();
@@ -134,7 +141,10 @@ fn main() -> ExitCode {
                     started.elapsed().as_secs_f64() * 1000.0
                 })
                 .collect();
-            println!("{}", serde_json::json!({ "samples_ms": samples }));
+            println!(
+                "{}",
+                serde_json::json!({ "primed_ms": primed, "samples_ms": samples })
+            );
             ExitCode::SUCCESS
         }
     }
