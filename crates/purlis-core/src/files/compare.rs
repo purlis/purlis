@@ -425,8 +425,16 @@ fn file_of_compared(
     });
     let mut sides = compared.sides.clone();
     let mut since_turn_ended = false;
-    if let (Comparison::Turn { .. }, Head::Commit(end), Some(held)) =
-        (comparison, &compared.sides.head, held.as_ref())
+    // A runner's turn ended in the runner's folder, not this one: it is drawn as it ended there
+    // (#5427).
+    let here = match comparison {
+        Comparison::Turn { chat, number } => {
+            !super::turns::a_runners(&opened.repo, chat, *number)
+        }
+        _ => false,
+    };
+    if let (true, Comparison::Turn { .. }, Head::Commit(end), Some(held)) =
+        (here, comparison, &compared.sides.head, held.as_ref())
     {
         let end = tree_of(&opened.repo, commit_id(end)).ok().flatten();
         let paths = [Some(at.as_str()), from.as_deref()];
@@ -1006,7 +1014,7 @@ fn resolve(
                     .and_then(|mut found| found.peel_to_commit().ok())
                     .map(|commit| commit.id)
             };
-            let sides = super::turns::sides_of(chat, *number);
+            let sides = super::turns::sides_of(repo, chat, *number);
             let (start, end) = sides.map_or((None, None), |(start, end)| (Some(start), Some(end)));
             let start = side(start)
                 .ok_or_else(|| refused(format!("this branch has no turn {number} of that chat")))?;

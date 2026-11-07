@@ -80,6 +80,49 @@ pub fn forget(root: &Path, number: u32) {
     held().remove(&(root.to_path_buf(), number));
 }
 
+/// Each chat composed here, sandboxed or not, by its project's path and its number there: its
+/// own id and the folder it works in, what its turns are recorded under (#5427).
+type Placed = HashMap<(PathBuf, u32), (String, PathBuf)>;
+
+fn placed() -> MutexGuard<'static, Placed> {
+    static PLACED: OnceLock<Mutex<Placed>> = OnceLock::new();
+    PLACED
+        .get_or_init(Mutex::default)
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+}
+
+/// **Chat `number` of the project at `root`, id `id`, works in `folder`** (#5427): what its
+/// host records its turns under, as its hooks are heard.
+pub fn record_place(root: &Path, number: u32, id: &str, folder: &Path) {
+    placed().insert(
+        (root.to_path_buf(), number),
+        (id.to_owned(), folder.to_path_buf()),
+    );
+}
+
+/// Chat `number` of the project at `root`'s id and folder, where this host composed it.
+pub fn place(root: &Path, number: u32) -> Option<(String, PathBuf)> {
+    placed().get(&(root.to_path_buf(), number)).cloned()
+}
+
+/// Every chat of the project at `root` this host composed and has not forgotten: its number, id
+/// and folder.
+pub fn placed_in(root: &Path) -> Vec<(u32, String, PathBuf)> {
+    let mut all: Vec<(u32, String, PathBuf)> = placed()
+        .iter()
+        .filter(|((at, _), _)| at == root)
+        .map(|((_, number), (id, folder))| (*number, id.clone(), folder.clone()))
+        .collect();
+    all.sort();
+    all
+}
+
+/// Chat `number` of the project at `root` is removed: where it worked is forgotten.
+pub fn forget_place(root: &Path, number: u32) {
+    placed().remove(&(root.to_path_buf(), number));
+}
+
 /// **Chat `number` of the project at `root` as it asks for a run here**, where this host
 /// composed it in a sandbox: the asker a brokered run is held to, from this host's own record
 /// and never from a line, with the hosts its confinement allows live now (#3407). Values are

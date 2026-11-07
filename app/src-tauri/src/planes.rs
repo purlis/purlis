@@ -346,7 +346,7 @@ pub struct Held {
     /// Which chats run with their harness's permission prompts off (#1446).
     unattended: crate::handoff::Unattended,
     /// Each turn of a chat, as refs in its branch's clone (#5405).
-    turns: crate::turns::TurnRecorder,
+    turns: purlis_core::files::turns::Recorder,
     /// Which chats were waiting on the person at their last report: what counts a dispatch's
     /// needs-you once per wait (#1452).
     dispatches: crate::dispatches::Waiting,
@@ -692,7 +692,7 @@ impl Held {
     }
 
     /// The turns of its chats, recorded as refs (#5405).
-    pub fn turns(&self) -> &crate::turns::TurnRecorder {
+    pub fn turns(&self) -> &purlis_core::files::turns::Recorder {
         &self.turns
     }
 
@@ -5152,7 +5152,7 @@ impl Planes {
             held_dispatches: crate::handoff::HeldDispatches::default(),
             at_limits: crate::atlimit::AtLimits::default(),
             unattended: crate::handoff::Unattended::default(),
-            turns: crate::turns::TurnRecorder::default(),
+            turns: purlis_core::files::turns::Recorder::default(),
             dispatches: crate::dispatches::Waiting::default(),
             touched_files: crate::taskchanges::Touched::default(),
             talk_sweep,

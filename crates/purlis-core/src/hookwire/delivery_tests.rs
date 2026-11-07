@@ -397,7 +397,7 @@ fn a_line_the_host_took_late_while_the_window_heard_it_and_its_hook_spooled_is_r
                     Ok(())
                 })
             },
-            heard_from: Box::new(|_| {}),
+            heard_from: Box::new(|_, _| {}),
             unheard: Box::new(|_| {}),
         },
     );

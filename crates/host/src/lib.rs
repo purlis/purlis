@@ -93,7 +93,7 @@ pub use connector::{
     BeforeEach, BeforeEachChecked, CommandConnector, Connected, NotChecked, Prepare, Prepared,
 };
 #[cfg(unix)]
-pub use hearing::{Channel, HandOn, Hear, HearsNothing};
+pub use hearing::{Channel, HandOn, Hear, HearsNothing, TurnToUndo};
 #[cfg(unix)]
 pub use hosting::{
     ASK_WITHIN, AskTheWindow, Beside, Compose, ComposesNothing, ENDS_WITHIN, HeldToForget, Hosting,

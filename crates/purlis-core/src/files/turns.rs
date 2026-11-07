@@ -26,8 +26,36 @@ use std::path::Path;
 use super::{Branch, Refused};
 use crate::worktree::git;
 
+mod recorder;
+pub use recorder::Recorder;
+
 /// Where every turn's refs live.
-const NAMESPACE: &str = "refs/purlis/turns/";
+pub const NAMESPACE: &str = "refs/purlis/turns/";
+
+/// **Where a runner's turns are kept on the desktop** (#5427): `refs/purlis/runners/<pool>/turns/`
+/// holds a pool's runner's `refs/purlis/turns/…` as its last fetch brought them
+/// ([`crate::codelink::fetch_back_with_turns`]). Beside `refs/remotes/<pool>/`, never in it: a
+/// fetch prunes that folder to the runner's branches, and lists every ref in it as one.
+pub const RUNNERS: &str = "refs/purlis/runners/";
+
+/// Where `pool`'s runner's turns are kept here.
+pub fn copies_of(pool: &str) -> String {
+    format!("{RUNNERS}{pool}/turns/")
+}
+
+/// **Whether `name` is a ref of a turn as purlis writes one**:
+/// `refs/purlis/turns/<chat>/<n>/start`, `…/end` or `…/undone`, the chat a plain name and `n` a
+/// number. What a runner may send of its turns, and nothing else.
+pub fn a_turn_ref(name: &str) -> bool {
+    let Some(rest) = name.strip_prefix(NAMESPACE) else {
+        return false;
+    };
+    let parts: Vec<&str> = rest.split('/').collect();
+    matches!(parts.as_slice(), [chat, number, side]
+        if chat_ok(chat)
+            && number.parse::<u32>().is_ok_and(|n| n.to_string() == *number)
+            && [Side::Start, Side::End, Side::Undone].iter().any(|one| one.word() == *side))
+}
 
 /// The line of a state's message that says which branch it is of: what [`ended_on`] reads.
 const BRANCH_LINE: &str = "Branch: ";
@@ -81,14 +109,40 @@ fn reference(chat: &str, number: u32, side: Side) -> String {
     format!("{NAMESPACE}{chat}/{number}/{}", side.word())
 }
 
-/// The ref of turn `number`'s `start` or `end`, in the bounded reader's child.
-pub(super) fn sides_of(chat: &str, number: u32) -> Option<(String, String)> {
-    chat_ok(chat).then(|| {
-        (
-            reference(chat, number, Side::Start),
-            reference(chat, number, Side::End),
-        )
-    })
+/// The ref of turn `number`'s `start` or `end`, in the bounded reader's child: this machine's
+/// own, or a runner's copy where only that has it (#5427).
+pub(super) fn sides_of(repo: &gix::Repository, chat: &str, number: u32) -> Option<(String, String)> {
+    let at = kept_at(repo, chat, number)?;
+    Some((
+        format!("{at}{chat}/{number}/{}", Side::Start.word()),
+        format!("{at}{chat}/{number}/{}", Side::End.word()),
+    ))
+}
+
+/// **Whether turn `number` of `chat` is a runner's copy here** (#5427), in the reader's child:
+/// its diff is of the turn as it ended there, never of this machine's folder.
+pub(super) fn a_runners(repo: &gix::Repository, chat: &str, number: u32) -> bool {
+    kept_at(repo, chat, number).is_some_and(|at| at != NAMESPACE)
+}
+
+/// Where turn `number` of `chat` is kept in `repo`: [`NAMESPACE`], or a runner's
+/// [`copies_of`]. This machine's own first; a chat's turns are only ever one machine's.
+fn kept_at(repo: &gix::Repository, chat: &str, number: u32) -> Option<String> {
+    if !chat_ok(chat) {
+        return None;
+    }
+    let end = format!("{chat}/{number}/{}", Side::End.word());
+    if repo.find_reference(format!("{NAMESPACE}{end}").as_str()).is_ok() {
+        return Some(NAMESPACE.to_owned());
+    }
+    let platform = repo.references().ok()?;
+    let found = platform
+        .prefixed(RUNNERS)
+        .ok()?
+        .flatten()
+        .map(|one| one.name().as_bstr().to_string())
+        .find(|name| name.ends_with(&format!("/turns/{end}")))?;
+    Some(found.strip_suffix(&end)?.to_owned())
 }
 
 /// Where a chat's folder is, by the names a [`Branch`] is made of.
@@ -187,7 +241,8 @@ pub fn ended(plane: &Path, branch: Branch<'_>, chat: &str) -> Result<Option<u32>
 pub fn forget(plane: &Path, ws: &str, repo: &str, chat: &str) -> Result<(), Refused> {
     checked(chat)?;
     let clone = crate::worktree::clone_dir(plane, ws, repo)?;
-    let listed = refs_of(&clone, chat)?;
+    // This machine's own, and any runner's copy of them (#5427).
+    let listed = refs_of(&clone, chat)? + &copies_in(&clone, chat)?;
     let mut input = String::from("start\n");
     let mut any = false;
     for name in listed.lines() {
@@ -220,14 +275,58 @@ pub fn forget(plane: &Path, ws: &str, repo: &str, chat: &str) -> Result<(), Refu
 pub fn undone(plane: &Path, branch: Branch<'_>, chat: &str, number: u32) -> Result<(), Refused> {
     checked(chat)?;
     let folder = super::folder_of(plane, branch)?;
-    let end = reference(chat, number, Side::End);
-    let name = reference(chat, number, Side::Undone);
+    // A runner's copy is marked as its runner marked its own (#5427).
+    let at = copy_of_turn(&folder, chat, number)?.unwrap_or_else(|| NAMESPACE.to_owned());
+    let end = format!("{at}{chat}/{number}/{}", Side::End.word());
+    let name = format!("{at}{chat}/{number}/{}", Side::Undone.word());
     // The empty old value: written only where no mark is yet.
     let written = ran(&folder, &["update-ref", &name, &end, ""])?;
     if !written.ok() {
         return Err(failed("mark the turn undone", &written));
     }
     Ok(())
+}
+
+/// **The pool whose runner turn `number` of `chat` in `branch` is a copy of** (#5427): its undo
+/// is that runner's to carry out. `None` for a turn of this machine's own, or none at all.
+pub fn runner_of(plane: &Path, branch: Branch<'_>, chat: &str, number: u32) -> Option<String> {
+    let folder = super::folder_of(plane, branch).ok()?;
+    let at = copy_of_turn(&folder, chat, number).ok()??;
+    at.strip_prefix(RUNNERS)?
+        .strip_suffix("/turns/")
+        .map(str::to_owned)
+}
+
+/// Where a runner's copy of turn `number` of `chat` is kept in the clone `folder` belongs to,
+/// where this machine has no turn of its own by that number.
+fn copy_of_turn(folder: &Path, chat: &str, number: u32) -> Result<Option<String>, Refused> {
+    checked(chat)?;
+    let end = format!("{chat}/{number}/{}", Side::End.word());
+    let own = ran(folder, &["rev-parse", "--verify", "--quiet", &format!("{NAMESPACE}{end}")])?;
+    if own.ok() {
+        return Ok(None);
+    }
+    Ok(copies_in(folder, chat)?
+        .lines()
+        .find_map(|name| name.strip_suffix(&end))
+        .filter(|at| at.ends_with("/turns/"))
+        .map(str::to_owned))
+}
+
+/// The names of every runner's copy of `chat`'s turns in the clone `folder` belongs to.
+fn copies_in(folder: &Path, chat: &str) -> Result<String, Refused> {
+    let listed = ran(folder, &["for-each-ref", "--format=%(refname)", RUNNERS])?;
+    if !listed.ok() {
+        return Err(failed("list a runner's turns", &listed));
+    }
+    let marker = format!("/turns/{chat}/");
+    Ok(listed
+        .out
+        .lines()
+        .filter(|name| name.contains(&marker))
+        .map(|name| format!("{name}
+"))
+        .collect())
 }
 
 /// The last turn a chat has here.
@@ -420,63 +519,75 @@ pub(super) fn ended_on(repo: &gix::Repository, branch: &str) -> Ended {
     let Ok(platform) = repo.references() else {
         return Ended(Vec::new());
     };
-    let Ok(prefixed) = platform.prefixed(NAMESPACE) else {
-        return Ended(Vec::new());
-    };
     let mut ended = Vec::new();
-    for mut found in prefixed.flatten() {
-        let name = found.name().as_bstr().to_string();
-        let Some((chat, rest)) = name
-            .strip_prefix(NAMESPACE)
-            .and_then(|rest| rest.split_once('/'))
-        else {
+    for prefix in [NAMESPACE, RUNNERS] {
+        let Ok(prefixed) = platform.prefixed(prefix) else {
             continue;
         };
-        let Some(number) = rest
-            .strip_suffix("/end")
-            .and_then(|number| number.parse::<u32>().ok())
-        else {
-            continue;
-        };
-        let Ok(commit) = found.peel_to_commit() else {
-            continue;
-        };
-        let names_it = commit
-            .message_raw_sloppy()
-            .to_string()
-            .lines()
-            .any(|line| line.strip_prefix(BRANCH_LINE) == Some(branch));
-        if !names_it {
-            continue;
-        }
-        let when = commit.time().map_or(0, |time| time.seconds);
-        ended.push((
-            when,
-            super::TurnKey {
+        for mut found in prefixed.flatten() {
+            let name = found.name().as_bstr().to_string();
+            let Some((at, chat, number)) = an_end(&name) else {
+                continue;
+            };
+            let Ok(commit) = found.peel_to_commit() else {
+                continue;
+            };
+            let names_it = commit
+                .message_raw_sloppy()
+                .to_string()
+                .lines()
+                .any(|line| line.strip_prefix(BRANCH_LINE) == Some(branch));
+            if !names_it {
+                continue;
+            }
+            let when = commit.time().map_or(0, |time| time.seconds);
+            let turn = super::TurnKey {
                 chat: chat.to_owned(),
                 number,
-            },
-        ));
+            };
+            ended.push((when, turn, at.to_owned()));
+        }
     }
-    ended.sort_unstable_by_key(|(when, turn)| std::cmp::Reverse((*when, turn.number)));
-    Ended(ended.into_iter().map(|(_, turn)| turn).collect())
+    ended.sort_unstable_by_key(|(when, turn, _)| std::cmp::Reverse((*when, turn.number)));
+    Ended(ended.into_iter().map(|(_, turn, at)| (turn, at)).collect())
 }
 
-/// The turns that ended on a branch, newest first ([`ended_on`]).
-pub(super) struct Ended(Vec<super::TurnKey>);
+/// `name` as a turn's end: where it is kept, its chat and its number. Kept here
+/// (`refs/purlis/turns/<chat>/<n>/end`) or as a runner's copy
+/// (`refs/purlis/runners/<pool>/turns/<chat>/<n>/end`); anything else is passed over.
+fn an_end(name: &str) -> Option<(&str, &str, u32)> {
+    let rest = name.strip_suffix("/end")?;
+    let (rest, number) = rest.rsplit_once('/')?;
+    let number = number.parse::<u32>().ok()?;
+    let (at, chat) = rest.rsplit_once('/')?;
+    let at = &name[..at.len() + 1];
+    let ours = at == NAMESPACE
+        || at
+            .strip_prefix(RUNNERS)
+            .and_then(|pool| pool.strip_suffix("/turns/"))
+            .is_some_and(|pool| !pool.is_empty());
+    (ours && chat_ok(chat)).then_some((at, chat, number))
+}
+
+/// The turns that ended on a branch, newest first, each with where it is kept ([`ended_on`]).
+pub(super) struct Ended(Vec<(super::TurnKey, String)>);
 
 impl Ended {
     /// **The turn Undo is offered on** (#5411; ADR 0081 as amended 2026-11-05): the latest turn
     /// that ended on the branch not yet undone, whichever chat's it was. Only that one, since
     /// undoing an older turn whose files a later one changed would need a merge.
     pub(super) fn offered(&self, repo: &gix::Repository) -> Option<&super::TurnKey> {
-        self.0.iter().find(|turn| !is_undone(repo, turn))
+        self.0
+            .iter()
+            .find(|(turn, at)| !is_undone(repo, turn, at))
+            .map(|(turn, _)| turn)
     }
 
     /// **The turn the file diff opens on**: the one Undo is offered on, so that after an undo the
     /// turn before it is drawn with its Undo; and where every turn is undone, the latest.
     pub(super) fn opened(&self, repo: &gix::Repository) -> Option<&super::TurnKey> {
-        self.offered(repo).or_else(|| self.0.first())
+        self.offered(repo)
+            .or_else(|| self.0.first().map(|(turn, _)| turn))
     }
 
     /// **The turns of `chat`, newest first** (#5408): what the file diff's turn picker lists,
@@ -485,20 +596,18 @@ impl Ended {
         let mut numbers: Vec<u32> = self
             .0
             .iter()
-            .filter(|turn| turn.chat == chat)
-            .map(|turn| turn.number)
+            .filter(|(turn, _)| turn.chat == chat)
+            .map(|(turn, _)| turn.number)
             .collect();
         numbers.sort_unstable_by(|a, b| b.cmp(a));
         numbers
     }
 }
 
-/// Whether turn `turn` has its `undone` mark.
-fn is_undone(repo: &gix::Repository, turn: &super::TurnKey) -> bool {
-    chat_ok(&turn.chat)
-        && repo
-            .find_reference(reference(&turn.chat, turn.number, Side::Undone).as_str())
-            .is_ok()
+/// Whether turn `turn`, kept at `at`, has its `undone` mark.
+fn is_undone(repo: &gix::Repository, turn: &super::TurnKey, at: &str) -> bool {
+    let mark = format!("{at}{}/{}/{}", turn.chat, turn.number, Side::Undone.word());
+    chat_ok(&turn.chat) && repo.find_reference(mark.as_str()).is_ok()
 }
 
 #[cfg(test)]
