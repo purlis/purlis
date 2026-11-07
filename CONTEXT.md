@@ -232,6 +232,23 @@ token. It mints nothing for an agent. It is a setting of the **Project**, like t
 that uses it (ADR 0072 §2, ADR 0077 as amended 2026-10-12).
 _Avoid_: OAuth app (unqualified), GitHub App (for purlis's sign-in), integration, client
 
+**Signed commits**:
+The commits the app makes for a chat carrying a signature the forge shows as Verified. Opt-in,
+and on while this device has a signing key; then it holds in every repo. Set up and removed
+only from the window, never by a chat (ADR 0115, ADR 0116).
+_Avoid_: commit signing (in the window), GPG, verified commits (for the setting)
+
+**Signing key**:
+The one key per device the app signs chat commits with, kept in the **Keyring** tier and never
+exported. It is added to each forge account that needs it; a new device makes its own
+(ADR 0115 §1, ADR 0116 §7).
+_Avoid_: SSH key (in the window), GPG key, deploy key
+
+**Sign and retry**:
+What the window offers on work a forge refused for unsigned commits, once signing is set up:
+re-sign the branch's commits and send it again, for one lane or every waiting one (ADR 0116 §4).
+_Avoid_: resign, re-push
+
 **Forge capability**:
 One thing a forge may or may not do for one repo, such as a merge queue, judged per forge, host
 and tier, with the fallback purlis uses where it is unavailable (ADR 0070).
