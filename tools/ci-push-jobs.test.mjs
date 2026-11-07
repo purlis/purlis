@@ -278,9 +278,10 @@ test("ci.yml's standings are the ones this ticket read", () => {
   const sorted = sortJobs(readFileSync(CI, "utf8"), { required: REQUIRED_CHECKS, listed: LISTED });
   const ids = (list) => list.map((job) => job.id).sort();
   assert.deepEqual(ids(sorted.listed), Object.keys(LISTED).sort());
-  // The macOS leg is evidence until the Skill studio's flag goes (#2786); the Linux leg is required
-  // through its carrier since #5277.
-  assert.ok(ids(sorted.evidence).includes("outcome-bars"));
+  // Both legs are required through their carriers: Linux's since #5277, macOS's since the Skill
+  // studio's flag went (#2786).
+  assert.ok(ids(sorted.reached).includes("outcome-bars"));
+  assert.ok(ids(sorted.required).includes("outcome-bars-checks"));
   assert.ok(ids(sorted.reached).includes("outcome-bars-linux"));
   assert.ok(ids(sorted.required).includes("outcome-bars-linux-checks"));
   // Pool setup's run on Docker is required through its carrier since #5176.
