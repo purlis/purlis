@@ -5015,14 +5015,14 @@ export const TASK_NOT_FRESH =
 
 /** What moving a task to its own tab does that its title cannot fit. */
 export const OWN_TAB_NOTE =
-  "It gets a tab on the strip with − in place of ×. − closes that tab and ends nothing: the task stays in the Chats list.";
+  "It gets a tab on the strip with − in place of ×. − sends it back and ends nothing. Its row in the Chats list stays.";
 
 /** What opening a task beside its session does that its title cannot fit. */
 export const BESIDE_NOTE =
-  "Splits the pane the chat that asked for it is in: that chat on one side, the task on the other. Space on its row in the Chats list.";
+  "Splits the pane of the chat it opens beside: that chat on one side, the task on the other. Space on its row in the Chats list.";
 
 /** What sending a task back does that its title cannot fit. */
-export const BACK_NOTE = "The task keeps working. Its row in the Chats list stays.";
+export const BACK_NOTE = "Nothing ends. Its row in the Chats list stays.";
 
 /** Why Space on a row of the Chats list does nothing for a chat that is not a task. */
 export const ONLY_A_TASK_OPENS_BESIDE =
