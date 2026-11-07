@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794077680155,
+  "lastUpdate": 1794081152787,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -42462,6 +42462,48 @@ window.BENCHMARK_DATA = {
             "value": 101.4437365,
             "unit": "ms",
             "extra": "median of 5 runs: 100.778, 101.234, 101.444, 102.584, 103.659 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "22d743de0ef3a90e4a14f6f094b4fc78b47c7d70",
+          "message": "The kill-switch retry test waits for host A's record, not just host B's stop (#5673) (#5674)\n\nHost A notes that host B was reached only once B's answer to the stop comes\nback, after B shows stopped, so the test read A's why inside that window and\ncould abort A's look before it recorded the reach. It now polls A's why within\nPATIENCE and lets the look run until then. Seen red with the window widened by\na 500 ms sleep in try_the_owed_again, at the same line CI failed on.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VH3RBHF6DE97CQ7J9F0MGR\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-07T18:07:47Z",
+          "tree_id": "2ab254bab1db076a309700e59b161383a69bf4be",
+          "url": "https://github.com/purlis/purlis/commit/22d743de0ef3a90e4a14f6f094b4fc78b47c7d70"
+        },
+        "date": 1794081147771,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3577855,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.334, 0.356, 0.358, 0.368, 0.374 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6400645,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.219, 16.602, 16.640, 16.660, 16.920 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8751425,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.007, 101.225, 101.875, 102.088, 102.354 ms"
           }
         ]
       }
