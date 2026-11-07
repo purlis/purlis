@@ -27,6 +27,8 @@ import {
   type GrantLevel,
   type Press,
   type RunGrantPress,
+  type RunLink,
+  type RunNeedLine,
   type RunValue,
   type Shown,
 } from "./bindings";
@@ -246,6 +248,14 @@ const RUN_PRESS_OF: Readonly<Record<string, RunGrantPress | undefined>> = {
   keep: "refuse",
 };
 
+/** **What the person gave a run's notice besides the press** (#5242, #5080): a value typed or
+ *  an entry picked for each field, by key, and the lines Remember writes. */
+export type RunGiven = {
+  values: RunValue[];
+  links: RunLink[];
+  remember: RunNeedLine[];
+};
+
 /** The press a login notice's option sends (#4595), by the option's id. */
 const PRESS_OF: Readonly<Record<string, Press | undefined>> = {
   once: "once",
@@ -259,6 +269,12 @@ const PRESS_OF: Readonly<Record<string, Press | undefined>> = {
  * vault by vault, but the asked one. Names only. Refused for an ask that is not a Secret ask.
  */
 export async function secretAskEntries(plane: string, ask: Shown): Promise<EntriesOf[]> {
+  if (ask.answer.via === "run-grant") {
+    // A run's notice's fields (#5080): the same entries, but its own fields'.
+    const listed = await commands.runAskEntries(plane, ask.answer.id);
+    if (listed.status === "error") throw new Error(listed.error);
+    return listed.data;
+  }
   if (ask.answer.via !== "secret") throw new Error("only a secret ask is filled with an entry");
   const listed = await commands.secretAskEntries(plane, ask.answer.id);
   if (listed.status === "error") throw new Error(listed.error);
@@ -285,8 +301,11 @@ export async function answerTaken(
   picked?: { vault: string; key: string },
   /** The purpose of the line a Secret ask's Fill writes, where Remember is ticked (#5240). */
   remember?: string,
-  /** What the person typed in a run's notice's value fields, by key (#5242). */
-  values?: RunValue[],
+  /** What the person gave a run's notice (#5242, #5080): a value typed or an entry picked for
+   *  each field, and the needs Remember writes. */
+  run?: RunGiven,
+  /** Where a Secret ask's value is stored, where the person changed it (#5072, Change). */
+  named?: { vault?: string; key?: string },
 ): Promise<{ refused: string | undefined; live: boolean; opened?: boolean }> {
   const path = ask.answer;
   if (path.via === "in-its-pane") return { refused: IN_ITS_CHAT, live: false };
@@ -473,10 +492,16 @@ export async function answerTaken(
         // it lacks and a vault it may not use. An Allow is a Run grant for that chat, or, where
         // it offers none, the vault's own Allow or Fill; the values typed go with any answer, and
         // the command that waits goes on at once.
-        const typedIn = values ?? [];
         const press = RUN_PRESS_OF[option];
         if (press === undefined) break;
-        return commands.answerRunGrant(plane, path.id, press, typedIn);
+        return commands.answerRunGrant(
+          plane,
+          path.id,
+          press,
+          run?.values ?? [],
+          run?.links ?? [],
+          run?.remember ?? [],
+        );
       }
       case "secret":
         // A key a chat's brokered run missed (#5068, ADR 0109): Fill stores the value typed in
@@ -492,8 +517,8 @@ export async function answerTaken(
             plane,
             path.id,
             typed ?? "",
-            null,
-            null,
+            named?.vault ?? null,
+            named?.key ?? null,
             remember ?? null,
           );
         if (option === "keep")

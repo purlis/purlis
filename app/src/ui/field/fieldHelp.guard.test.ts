@@ -32,6 +32,11 @@ const HELPED: Record<string, { grounds: string[]; where: string }> = {
     grounds: ["surface.raised"],
     where: "RaiseLimit: a limit's new value, on its own ground (as refusingFields.guard says)",
   },
+  "SecretAskNotice.tsx": {
+    grounds: ["surface.raised"],
+    where:
+      "a secret's one notice (#5080): where a value is stored, and a new name the chat hears, on the ask's card",
+  },
   "SkillBudget.tsx": {
     grounds: ["surface.overlay"],
     where: "SkillBudgetChange: where each number comes from, in its Change… dialog (#5353)",

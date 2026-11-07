@@ -164,6 +164,16 @@ fn nothing_waits(root: &Path, text: &str, persona: &str) -> bool {
         .all(|one| one.persona != persona || !one.asks() || one.standing == Standing::Allowed)
 }
 
+/// **Whether anything else of `persona`'s list waits on the person's Allow** (#5080): then Always
+/// allow approves its own line alone, and the persona's usual Notice stays up for the rest. Said
+/// so where the project's file can't be read, since nothing could be moved with the line then.
+pub fn others_wait(root: &Path, persona: &str) -> bool {
+    match super::on_disk(root, Which::Shared) {
+        Ok((_, base)) => !nothing_waits(root, &base, persona),
+        Err(_) => true,
+    }
+}
+
 /// **Writes `bound`'s line to `persona`'s tools in `charter.toml`**, and answers what of the
 /// persona's list may be allowed with it ([`Written`]). Refused, with a sentence and nothing
 /// written or allowed, where the file cannot take it. It is written as the file was read: a file

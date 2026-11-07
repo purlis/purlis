@@ -946,6 +946,34 @@ Only the wrapper writes `data-scope="pane-preview"`: `purlis/pane-preview-family
   `pane-preview.css`; a theme's parts reach the same attributes (`pane-preview.*`, the next release's
   manifest version).
 
+## The secret ask family
+
+**A secret's one notice is drawn from the secret ask family** (`app/src/ui/secret-ask/`, #5080,
+spec #5235, ADR 0112): `SecretAskBody`, `SecretAskFacts` and its `SecretAskLine`s, `SecretAskChat`
+with `SecretAskCommand` and `SecretAskQuote`, `SecretAskField`, `SecretAskTarget`,
+`SecretAskValue`, `SecretAskAllow` with `SecretAskScopeSaid` and `SecretAskToolLine`,
+`SecretAskNeedRow` and `SecretAskFoot`. `SecretAskNotice.tsx` composes them for a Secret ask and
+for a run's one notice, in the Inbox's card. Only the wrapper writes `data-scope="secret-ask"`:
+`purlis/secret-ask-family` is an error.
+
+- **Who says what is drawn apart.** The app's facts sit in the `facts` panel under *From purlis*,
+  and nothing of the chat's is ever a child of it. The chat's command and purpose sit behind the
+  `chat` rule, said to be the chat's, and every control or invisible character in them is drawn
+  as its name (`Inert`), on one flow.
+- **A value box has an edge on the card**: a box inside `SecretAskValue` takes the `value` part's
+  edge (`border.strong` by default), except a refused one, which keeps its danger edge. The
+  window's control edge may be clear on a raised card.
+- **The Allow is one choice and one press.** The scopes the registry offers, narrowest first and
+  chosen; what the choice does under it; the line Always allow writes before it is pressed. The
+  press that grants is the button family's `grants` variant, never the primary look, and nothing
+  in the notice takes the keyboard as it comes. The action is never disabled: a press with a field
+  still empty says what is missing.
+- **The action bar stays in reach**: `foot` is held at the body's foot as it scrolls, and the body
+  scrolls a focused control clear of it.
+- **Its parts** are `root`, `facts`, `facts-head`, `who`, `chat`, `command`, `control`, `value`,
+  `scope-said`, `tool-line` and `foot`, in `secret-ask.css`; a theme's parts reach the same
+  attributes (`secret-ask.*`, the next release's manifest version).
+
 ## The chat mark family
 
 `ChatMark` (`app/src/ui/chat-mark`, ADR 0104 amended 2026-11-05, #5340) is a chat's mark on its tab, its row in the list, its pane's head and a folded pane's rail. A screen draws it through `ChatPersonaState`, which reads the chat's one state from `shownState`; `QuitWarning`'s list hands it a state directly.
