@@ -6,7 +6,7 @@ import { READY } from "../harness.js";
 import { pressAndStart } from "../opening.js";
 import { roomForTwoPanes } from "../paneRoom.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
-import { openedSince } from "../reach.js";
+import { minimiseNoticesExpandedHere, openedSince } from "../reach.js";
 
 /**
  * **A pane's warnings live inside the pane, and keep the tab joined** (#3142, the operator's
@@ -72,7 +72,11 @@ async function raise(pane: number, sentence: string, ways: string[]): Promise<vo
       if (!stack) return false;
       // The band open (#5215): folded, what it holds is one line, however it is marked.
       const bell = frames[at]?.querySelector('[aria-label^="Pane notices:"]');
-      if (bell?.getAttribute("aria-expanded") === "false") (bell as HTMLElement).click();
+      if (bell?.getAttribute("aria-expanded") === "false") {
+        (bell as HTMLElement).click();
+        // The window keeps this choice: `minimiseNoticesExpandedHere` undoes it (#5586).
+        (window as unknown as Record<string, boolean>).__e2eNoticesExpanded = true;
+      }
       const el = [
         (tag: string, cls: string, text?: string): HTMLElement => {
           const made = document.createElement(tag);
@@ -275,6 +279,8 @@ describe("a pane's warnings, inside the pane", () => {
   afterEach(lower);
 
   after(async () => {
+    // While its panes are still open: only a pane's bell sets the choice.
+    await minimiseNoticesExpandedHere();
     await browser.setWindowSize(was.width, was.height);
     await endTheChatsStartedSince(chatsBefore);
     await browser.waitUntil(

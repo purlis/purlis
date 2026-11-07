@@ -50,6 +50,20 @@ describe("the app's processes in a ps listing", () => {
     expect(appProcessesIn(listing, app).windows).toEqual([23721, 24000]);
   });
 
+  it("are never the binary started as a helper: a chat's sandbox wrap, a keeper, a reader (#5586)", () => {
+    const listing = [
+      `23721 ${app}`,
+      `23778 ${app} purlis-serve-for-the-window`,
+      `24000 ${app} _sandbox --profile /tmp/p -- /bin/fake-harness`,
+      `24001 ${app} _no-namespaces -- /bin/fake-harness`,
+      `24002 ${app} purlis-engine-keeper 7`,
+      `24003 ${app} purlis-git-credential get`,
+      `24004 ${app} charter-hold-a-keyring-item`,
+      `24005 ${app} /repo main charter-read-a-branch`,
+    ].join("\n");
+    expect(appProcessesIn(listing, app)).toEqual({ windows: [23721], sessionHosts: [23778] });
+  });
+
   it("are not another binary whose path only begins with the app's", () => {
     const listing = [`300 ${app}-helper`, `301 /usr/bin/grep ${app}`].join("\n");
     expect(appProcessesIn(listing, app)).toEqual({ windows: [], sessionHosts: [] });

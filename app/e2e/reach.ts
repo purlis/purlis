@@ -148,30 +148,44 @@ export const KEPT_EMPTY = "Empty tab";
 
 /**
  * **The tabs on `now` that were not on `before`**: by name, and as many times as each was added,
- * so a second tab of a name the strip already had is one. **The strip's kept empty tab is never
- * one** (#4756): closing a strip's last tab keeps one empty pane, named "Empty tab", and closing
- * that changes nothing. The one rule both a spec's own `after` and `tabsLeft.ts`'s guard use.
+ * so a second tab of a name the strip already had is one. **One kept empty tab is never one**
+ * (#4756): closing a strip's last tab keeps one empty pane, named "Empty tab", and a fresh strip
+ * starts with one, so one "Empty tab" is always the strip's own. **Past that one, or past as many
+ * as the strip began with, an "Empty tab" is a tab left open** (#5586): the strip's `+`, or a
+ * chat's pane emptied, leaves an unnamed tab, and a file that leaves them fills the strip of
+ * every file after it. The one rule both a spec's own `after` and `tabsLeft.ts`'s guard use.
  */
 export function openedSince(before: readonly string[], now: readonly string[]): string[] {
   const had = new Map<string, number>();
   for (const name of before) had.set(name, (had.get(name) ?? 0) + 1);
+  had.set(KEPT_EMPTY, Math.max(had.get(KEPT_EMPTY) ?? 0, 1));
   const opened: string[] = [];
   for (const name of now) {
     const kept = had.get(name) ?? 0;
     if (kept > 0) had.set(name, kept - 1);
-    else if (name !== KEPT_EMPTY) opened.push(name);
+    else opened.push(name);
   }
   return opened;
 }
 
-/** Presses each named tab's own `Close <name>` on the strip in front, from the page. */
+/**
+ * Presses each named tab's own `Close <name>` on the strip in front, from the page: a name
+ * called twice presses two tabs of that name, the strip's last ones, since unnamed "Empty tab"
+ * tabs share one name.
+ */
 export async function pressClose(names: readonly string[]): Promise<void> {
   await browser.execute(
     (strip: string, called: string[]) => {
-      for (const name of called)
-        document
-          .querySelector<HTMLElement>(`${strip} button[aria-label="Close ${CSS.escape(name)}"]`)
-          ?.click();
+      const times = new Map<string, number>();
+      for (const name of called) times.set(name, (times.get(name) ?? 0) + 1);
+      for (const [name, count] of times) {
+        const buttons = [
+          ...document.querySelectorAll<HTMLElement>(
+            `${strip} button[aria-label="Close ${CSS.escape(name)}"]`,
+          ),
+        ];
+        for (const button of buttons.slice(-count)) button.click();
+      }
     },
     TABS,
     [...names],
@@ -244,6 +258,37 @@ export function closesTheTabsItOpens(): void {
   after(async () => {
     if (wereOpen !== null) await closeTheViewTabsOpenedSince(wereOpen);
   });
+}
+
+/**
+ * **Pane notices minimised again, where this file expanded them** (#5586). Minimised or expanded
+ * is the window's one choice, kept (`paneNoticesPref.ts`), so a file that presses a pane's bell
+ * to show what it raised leaves every later file's notices expanded: `skill-compat.e2e.ts` then
+ * found its bell open in a single-process run. A file that presses it sets
+ * `window.__e2eNoticesExpanded`, and calls this in its `after` while a pane is still open, since
+ * only a pane's bell sets the choice.
+ */
+export async function minimiseNoticesExpandedHere(): Promise<void> {
+  const pressed = await browser.execute(() => {
+    const page = window as unknown as Record<string, boolean | undefined>;
+    if (page.__e2eNoticesExpanded !== true) return true;
+    page.__e2eNoticesExpanded = undefined;
+    const bell = document.querySelector<HTMLElement>('[data-way="bell"][aria-expanded="true"]');
+    bell?.click();
+    return bell !== null || document.querySelector('[data-way="bell"]') !== null;
+  });
+  // Said, never thrown: it runs first in an `after` that still has chats to end.
+  if (!pressed) {
+    console.warn("no pane's bell was left to minimise the notices this file expanded");
+    return;
+  }
+  await browser
+    .waitUntil(
+      () =>
+        browser.execute(() => !document.querySelector('[data-way="bell"][aria-expanded="true"]')),
+      { timeout: 5_000, interval: 100, timeoutMsg: "the pane notices stayed expanded" },
+    )
+    .catch((trouble: unknown) => console.warn(trouble));
 }
 
 /** Every workspace of the project in front, as the title bar's ⌄ lists them (#2916): the plane

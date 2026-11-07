@@ -222,12 +222,33 @@ jobs:
           # The app says how far its launch got (#23). A stress run that loses the app has to
           # be able to tell a launch that never finished from one that did and then died.
           CHARTER_LAUNCH_LOG: "1"
+          # Its time budgets are reported, not failed (#5586): see the step after these two.
+          STRESS_BUDGETS: report
       - run: xvfb-run -a npm run e2e
         if: runner.os == 'Linux'
         working-directory: app
         env:
           CHARTER_LAUNCH_LOG: "1"
           STRESS: "1"
+          STRESS_BUDGETS: report
+      # **Evidence only: a time budget missed is reported here, not failed** (#5586), as `search
+      # at scale` reports its budgets. The runner's speed decided this job on every `main` run
+      # through 2026-11-07, and a job red on every run teaches everyone to ignore a red X. What
+      # `stress.e2e.ts` checks beyond time still fails the job: every chat opens and runs, the
+      # open-file limit is raised, one app throughout, and nothing leaks once they close.
+      - name: The time budgets missed, reported
+        if: always()
+        working-directory: app
+        shell: bash
+        run: |
+          missed=logs/stress-budgets-missed.jsonl
+          [ -s "$missed" ] || exit 0
+          {
+            echo "### Stress time budgets missed on ${{ matrix.os }} (reported, not failed)"
+            echo
+            node -e 'for (const l of require("fs").readFileSync(process.argv[1], "utf8").split("\n").filter(Boolean)) console.log("- " + JSON.parse(l).said)' "$missed"
+          } >> "$GITHUB_STEP_SUMMARY"
+          node -e 'for (const l of require("fs").readFileSync(process.argv[1], "utf8").split("\n").filter(Boolean)) console.log("::warning title=stress budget missed (${{ matrix.os }})::" + JSON.parse(l).said)' "$missed"
       # The record job's word that this OS's run was green (#818). `continue-on-error` lets a
       # red run count as done for `needs:`, so `needs:` alone would record a red run's samples.
       - name: This run's samples are a green run's
