@@ -262,8 +262,8 @@ pub const HELPER: &str = "a dispatch is refused from inside a helper. A task bel
 
 /// What a chat that holds another persona's grants is told ([`Refused::Held`]).
 pub const HELD: &str = "this chat runs with another persona's grants until the person allows \
-     its own, so it cannot dispatch yet. Ask the person to allow this chat its own grants on \
-     its tab, then dispatch again.";
+     its own, so it cannot dispatch yet. Ask the person to allow this chat its own grants, then \
+     dispatch again.";
 
 /// What a chat is told to do about a dispatch a policy locks ([`Refused::Locked`]), after the
 /// policy's own sentence: no grant lifts it, so asking the person again does nothing.

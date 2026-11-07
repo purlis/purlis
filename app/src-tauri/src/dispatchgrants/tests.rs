@@ -1239,9 +1239,8 @@ fn a_held_chat_s_dispatch_is_refused_with_a_sentence_and_raises_no_notice() {
         "devops 4".to_owned(),
         world.root(),
     );
-    let said = "this chat runs on another chat's grants until the person allows its own on its \
-                tab, so it dispatches to no one yet. Ask the person to press Allow on this chat's \
-                tab.";
+    let said = "this chat runs on another chat's grants until the person allows its own, so it \
+                dispatches to no one yet. Ask the person to allow this chat its own grants.";
     // Its recorded persona: not "the same persona", so no dispatch starts unasked.
     for target in ["devops", "prod", "steward", "qa"] {
         let (asked, raised) = world.on(|ground| {
