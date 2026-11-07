@@ -609,6 +609,25 @@ impl Store {
         Ok(true)
     }
 
+    /// A new, empty file `name`, opened to write, never through a link and never over
+    /// anything already there (`EXIST`): for a writer that streams into it, as an import does.
+    pub(crate) fn create_new(&self, name: &str) -> rustix::io::Result<std::fs::File> {
+        let flags =
+            OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+        rustix::fs::openat(&self.fd, name, flags, new_file()).map(std::fs::File::from)
+    }
+
+    /// A new, empty directory `name`, never over anything already there (`EXIST`).
+    pub(crate) fn create_dir_new(&self, name: &str) -> rustix::io::Result<()> {
+        rustix::fs::mkdirat(&self.fd, name, new_dir())
+    }
+
+    /// The directory this store holds, as its own descriptor sees it: which one it is, by its
+    /// device and inode, whatever name it has by now.
+    pub(crate) fn itself(&self) -> rustix::io::Result<Entry> {
+        Ok(Entry::of(&rustix::fs::fstat(&self.fd)?))
+    }
+
     /// Add `bytes` to the end of `name`, making it with `first` in front when it is not there.
     pub(crate) fn append(&self, name: &str, first: &str, bytes: &[u8]) -> Result<(), String> {
         self.append_at(name, first, bytes, new_file())
