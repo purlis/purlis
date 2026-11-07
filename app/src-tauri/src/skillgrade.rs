@@ -60,6 +60,9 @@ pub const CHAT_TIME: Duration = Duration::from_secs(5 * 60);
 /// folder. It has spent nothing by then.
 const A_CHAT_BEGINS_WITHIN: Duration = Duration::from_secs(120);
 
+/// Why a grade's chat whose turn an error other than a limit's ended has no run (#5718).
+const STOPPED_ON_AN_ERROR: &str = "its program stopped on an error before its turn ended";
+
 /// What a chat that never began is told in the grade.
 const NEVER_BEGAN: &str = "its chat did not get as far as starting: Claude Code may be waiting for \
      you to trust this project's folder, so open a chat here once and accept it";
@@ -2616,6 +2619,27 @@ impl InChats<'_> {
                         };
                     }
                     Ok(Watched::ReadPast | Watched::RefusedOtherwise) => {}
+                    // An error ended its turn, as its harness's own category says (#5718): at the
+                    // usage limit, with when it resets where the harness said; out of reach of
+                    // its service; or another, which is no run, as a chat that did not start.
+                    Ok(Watched::Failed(failed)) => {
+                        break match failed {
+                            purlis_core::state::Failed::UsageLimit => ChatEnd::UsageLimit {
+                                resets_at: id
+                                    .as_deref()
+                                    .and_then(|id| purlis_core::usage::limit_reset(&root, id)),
+                            },
+                            purlis_core::state::Failed::Unreachable => ChatEnd::Unreachable,
+                            purlis_core::state::Failed::Other if whole_turn => {
+                                ChatEnd::ClosedEarly {
+                                    why: STOPPED_ON_AN_ERROR.to_owned(),
+                                }
+                            }
+                            purlis_core::state::Failed::Other => ChatEnd::NotStarted {
+                                why: STOPPED_ON_AN_ERROR.to_owned(),
+                            },
+                        };
+                    }
                     Ok(Watched::TurnEnded) => break ChatEnd::Turn,
                     // A grade's chat waits on nobody: ended at its first ask, with that end.
                     Ok(Watched::Asked) => break ChatEnd::Asked,

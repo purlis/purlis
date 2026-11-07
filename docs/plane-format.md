@@ -338,6 +338,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`app/dispatches/ended.json` — the summary of ended dispatches](#appdispatchesendedjson--the-summary-of-ended-dispatches)
   - [`app/dispatches/refused-while-away.json`](#appdispatchesrefused-while-awayjson)
   - [`app/spend/<chat>.json` — what a chat's harness says its session has cost](#appspendchatjson--what-a-chats-harness-says-its-session-has-cost)
+  - [`app/spend/<chat>.limit.json` — when a chat's usage limit resets](#appspendchatlimitjson--when-a-chats-usage-limit-resets)
   - [`app/arrived/<chat>.json` — what can run later and has appeared in a chat's folders](#apparrivedchatjson--what-can-run-later-and-has-appeared-in-a-chats-folders)
   - [`app/hooks.sock`](#apphookssock)
   - [`app/slots.sock`](#appslotssock)
@@ -393,6 +394,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`<data>/app-state/<clone key>/skill-grade-after-edit.json`](#dataapp-stateclone-keyskill-grade-after-editjson)
   - [`<data>/app-state/<clone key>/skill-earlier-names.json`](#dataapp-stateclone-keyskill-earlier-namesjson)
   - [`<data>/app-state/<clone key>/grades-under-way/<grade>.json`](#dataapp-stateclone-keygrades-under-waygradejson)
+  - [`<data>/app-state/<clone key>/skill-grade-resume/<grade>.json`](#dataapp-stateclone-keyskill-grade-resumegradejson)
   - [`<data>/app-state/<clone key>/grades-under-way.lock`](#dataapp-stateclone-keygrades-under-waylock)
   - [`<data>/app-state/<clone key>/skill-grade-chats/<skill>/<grade>/<chat>.screen`](#dataapp-stateclone-keyskill-grade-chatsskillgradechatscreen)
   - [`<data>/app-state/<clone key>/router-grade-chats/<router>/<workspace>/<persona>/<grade>/<chat>.screen`](#dataapp-stateclone-keyrouter-grade-chatsrouterworkspacepersonagradechatscreen)
@@ -4027,8 +4029,16 @@ An end row, never a pass or a fail:
   `purlis_core::skills::grades::price`), and `counted_usd`, what the limit counted where a chat
   said its tokens and not its cost (its tokens at the dearest price; absent otherwise), both
   since #3469 and absent in older rows; `report.ended` `over-limit` where it stopped at that
-  limit before its tokens' cap (ADR 0105 as amended 2026-10-27, the dollar limit); `spent`,
-  `{chats, tokens, cost_usd}` as the chats' harness reported them, null where it did not; each
+  limit before its tokens' cap (ADR 0105 as amended 2026-10-27, the dollar limit);
+  `report.ended` `usage-limit` where a chat's harness said its usage limit was reached, with
+  `report.resets_at`, an RFC 3339 time, where it said when the limit resets, and `unreachable`
+  where it said it could not reach its service (#5718; `resets_at` absent otherwise); and, in a
+  grade that **resumed** a stopped one (#5718, ADR 0105 as amended 2026-11-08), `report.earlier`,
+  `{tokens, usd, outcome_tokens, outcome_usd}` the stopped run spent, each absent where it did not
+  say: the report's `spent_tokens`, `spent_usd`, `outcome_tokens` and `outcome_usd` and the row's
+  `spent` are then both runs' together, its arms score both runs' chats, and its `cap` and
+  `cost_cap_usd` are the resume's own, which held only its spend (absent in every other row);
+  `spent`, `{chats, tokens, cost_usd}` as the chats' harness reported them, null where it did not; each
   trigger test's `asked` in `report.triggers`, its chats that asked the person something and were
   ended there (no run; SK-59, #3239), absent where none did and in a row written before; and
   `plugins_off`, the ids of the harness's own plugins its chats were handed off (every one it had
@@ -7240,6 +7250,20 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
 - **Git:** gitignored. Collected when untouched for 30 days unless the reopen record brings the
   chat back (`retention::on_open`).
 
+### `app/spend/<chat>.limit.json` — when a chat's usage limit resets
+- **Format:** one line of JSON, `{"resets_at": n}`, seconds since 1970, ending in a newline:
+  the latest `resets_at` of the windows of Claude Code's status-line `rate_limits` that are used
+  up whole (`used_percentage` 100 or more), as its payload last said (#5718). Written over whole
+  where a payload says a window is used up, taken away where one says none is, and left as it
+  was by a payload that says nothing of limits.
+- **Status:** **internal** — **purlis only**. Written by `purlis statusline`, under the chat the
+  app started the harness as, out of a chat's reach as its spend file is.
+- **Tier:** Clone state, transient
+- **Written by:** `purlis_core::usage::record_limit`, from `purlis statusline`.
+- **Read by:** `purlis_core::usage::limit_reset`: by the app when a grade's chat stopped at its
+  usage limit, for when Resume can run (#5718).
+- **Git:** gitignored. Collected with the spend files.
+
 ### `app/hooks.sock`
 - **Format:** a unix socket, not a file. Each chat's hooks write one JSON line to it with the
   chat's number and token (`hookwire`), and the app answers. One kind of line, `touching`, names
@@ -8660,6 +8684,29 @@ of 2026-11-01). A purlis from before it refuses a file holding it, as it refuses
   sound row is removed unrecorded.
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag.
 - **Tier:** Machine, device-bound, transient — it lasts as long as its grade.
+- **Git:** outside every project, in the data home.
+
+### `<data>/app-state/<clone key>/skill-grade-resume/<grade>.json`
+- **Format:** one JSON object per grade that stopped short of its plan on this machine and can be
+  resumed (#5718, `grades::resumable`): `v`; `grade`, `skill` and `level`, as its row in the
+  [eval record](#personas_gradesyyyy-mmdevicejsonl) has them; `draft`, its row's draft mark, and
+  `draft_of`, the draft's id, where it graded a draft; `request`, what it asked (its trigger tests,
+  the outcome evals ticked, its arms, runs and shell); `kept`, what each chat did in its place,
+  `triggers[test][arm][run]` (each a run-chat result, ADR 0105 §2) and `outcomes[eval][arm][run]`
+  (each `{run, asked, ran}`: the judged run and its chats asked for and run), and `earlier`, what it
+  spent in all; `deciding`, digests of what decides its result (`skill`: the copy's files but its
+  fixtures, what its folder held and the version it compares with; `tests`: its trigger tests,
+  the outcome evals ticked and the files they stage; `settings`: its arms, runs, shell and
+  Grader), and `profile`, `program` and `model` its chats ran on; `ended`; `resets_at`, where a
+  usage limit stopped it; and `ts`. Written `0600` through no link, to `.<grade>.json.partial`
+  beside it and renamed over it, in a folder made `0700`, when a grade of purlis's own runner ends
+  with a resumable end (`grades::resumable::keep`); read through no link and at most 16 MiB, a
+  file that does not read, is of another id or of an end that cannot be resumed being none.
+  Removed when a new grade of the same copy (or of the same draft) starts, a resume among them
+  (`grades::resumable::forget_of`).
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
+- **Tier:** Machine, device-bound, transient — the chats ran here; losing it loses only Resume,
+  and Grade again runs the grade whole.
 - **Git:** outside every project, in the data home.
 
 ### `<data>/app-state/<clone key>/grades-under-way.lock`

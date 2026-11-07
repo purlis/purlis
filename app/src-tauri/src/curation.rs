@@ -905,7 +905,7 @@ impl Typed {
                     _ => false,
                 }
             }
-            Event::UserPromptSubmit | Event::Stop | Event::SessionEnd => {
+            Event::UserPromptSubmit | Event::Stop | Event::StopFailure | Event::SessionEnd => {
                 self.forget(report.chat);
                 false
             }
