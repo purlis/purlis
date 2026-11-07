@@ -61,7 +61,8 @@ default. `purlis persona list` says so and names the way out: `purlis persona us
 Every persona declares a `delegate-when:`: the work that belongs to it. `purlis persona list`
 shows who exists.
 
-- **Clear match: dispatch** the work to that persona rather than doing it yourself. A dispatch
+- **What this chat can do itself, it does. Dispatch** when the work needs another persona's
+  charter, memory or vault, as its `delegate-when:` names. A dispatch
   starts a chat of its own that runs as that persona, with *its* vault, hosts and tools, and
   reports back to this chat. **Use purlis's tools first**: the `dispatch` tool, with `to`,
   `name` and `brief`. They need no shell, so there is nothing to pipe, and a Claude Code chat
@@ -130,7 +131,9 @@ shows who exists.
 - **When this chat is the task**, it owes the chat that dispatched it one report, and it can
   talk to that chat while it works, with `dispatch_note` (a note; nothing waits on it, so
   carry on), `dispatch_ask` (a question; this chat waits for the answer) and
-  `dispatch_report` (outcome `done`, `blocked` or `failed`, and what you found or did). A
+  `dispatch_report` (outcome `done`, `blocked` or `failed`, and what you found or did).
+  **Write your session record before `dispatch_report`** (the `purlis-smart-close` skill): the
+  report carries its path. A
   follow-up says its instruction number: once you have taken it in, acknowledge it with
   `dispatch_note`'s `ack`. In a terminal:
 
@@ -163,8 +166,10 @@ it is waiting; do not look for another way to be allowed.
 sub-agent runs inside this chat, with this chat's vault and hosts, so it could not do that
 persona's work anyway. A sub-agent call named for a persona is refused and names the
 dispatch route. A helper that is not named for a persona (your harness's own, such as an
-explorer) still runs, as this chat's persona, and is the right tool for work this chat's own
-persona owns.
+explorer) still runs, as this chat's persona, for read-only work this chat's own persona owns
+(searching, reading, reviewing). Work that writes, commits, needs its own branch folder or runs
+long is a purlis task, through `dispatch`: from inside a helper, `purlis worktree add`, `commit`
+and `push` are refused.
 
 ## Capability handoff
 
@@ -223,7 +228,8 @@ it:
 
 1. Write what the persona owns and how it works.
 2. Delete the `draft: true` line.
-3. Commit it. Personas are shared.
+3. Save it: in a sandboxed chat the app saves it; in a terminal chat run `purlis save`.
+   Personas are shared.
 
 A persona's author may list the personas it usually works with:
 
@@ -251,7 +257,8 @@ purlis persona remove <name>      # refused while another persona extends or use
 ## Guardrails
 
 - Work as one persona at a time, and never mix two personas' vaults.
-- Editing or removing a persona changes a committed file. Commit it.
+- Editing or removing a persona changes a committed file. In a sandboxed chat the app saves
+  it; in a terminal chat run `purlis save`.
 - A chat as a persona is started with that persona's MCP servers (`personas/<name>/mcp.json`)
   and its denied tools (`disallowed-tools:`) on Claude Code. If the briefing says a server
   was not started because nobody approved it, tell the operator: `purlis persona approve-mcp`

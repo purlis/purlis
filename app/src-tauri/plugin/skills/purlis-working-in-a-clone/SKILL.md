@@ -41,9 +41,10 @@ build and test commands. Use those — never commands carried over from a differ
 A clone is its own git repository, so committing there touches *its* history and never the
 plane's. Push per that repo's workflow.
 
-In a sandboxed chat (one the purlis app started), plain `git commit` and `git push` in a
-branch folder are refused: its git record lives in the clone's `.git`, which no chat writes.
-Use `purlis worktree commit` and `purlis worktree push` there (§5).
+In a branch folder, every chat commits with `purlis worktree commit` and pushes with `purlis
+worktree push` (§5), a terminal chat too. In a sandboxed chat (one the purlis app started),
+plain `git commit` and `git push` there are refused: its git record lives in the clone's
+`.git`, which no chat writes.
 
 The plane's own tracked files are a separate concern — `purlis save` commits and pushes
 those. In a sandboxed Claude Code chat the project root's `.git` is the app's too, so `purlis save` is run
@@ -105,10 +106,10 @@ purlis worktree prune --dry-run        # every finished folder of the workspace,
 - Run `commit`, `update`, `remove` and `prune` alone in their call: a `cd … &&` before them, a pipe or
   redirection, or a `$(…)` anywhere (a message from `$(cat msg)` too) is refused. Write the
   message out in the `-m` text.
-- `commit` only commits: no amend, reset, rebase or push, and the repo's own hooks don't run.
-- `purlis worktree commit` is for a sandboxed chat. A chat outside the sandbox, such as a
-  terminal `claude`, is told to use git: it commits with plain `git commit` in the piece, and
-  pushes with `git push` or `purlis worktree push`.
+- `commit` only commits: no amend, reset, rebase or push, and in a sandboxed chat the repo's
+  own hooks don't run.
+- `purlis worktree commit` and `purlis worktree push` are how every chat commits and pushes in a
+  piece, a terminal `claude` too; outside the sandbox they run with your git's hooks and signing.
 - **A piece has one live writer.** The first chat to commit, update or push in it holds it. In a
   piece another live chat holds, those are refused, through `purlis worktree` and with plain
   `git commit`, `git pull`, `git rebase` or `git push` alike, naming the chat that holds it. Cut a piece of your own; the
