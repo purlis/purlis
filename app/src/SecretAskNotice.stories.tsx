@@ -36,7 +36,8 @@ function TheCard(props: Parameters<typeof SecretAskNotice>[0]) {
  *  bar is held at the panel's foot as it is in the window, and the picture is the panel's top. */
 function OnTheCard(props: Parameters<typeof SecretAskNotice>[0]) {
   return (
-    <div style={{ inlineSize: 420, maxBlockSize: 720, overflow: "auto" }}>
+    // No scrollbar drawn: one scrolled by a story fades as the picture is taken.
+    <div style={{ inlineSize: 420, maxBlockSize: 720, overflow: "auto", scrollbarWidth: "none" }}>
       <TheCard {...props} />
     </div>
   );
@@ -580,7 +581,10 @@ export const Undeclared: Story = {
 export const InAnOrdinaryWindow: Story = {
   args: { ask: runAsk({ not_its_vault: true }) },
   render: (props) => (
-    <div style={{ inlineSize: 420, maxBlockSize: "60vh", overflow: "auto" }} data-testid="band">
+    <div
+      style={{ inlineSize: 420, maxBlockSize: "60vh", overflow: "auto", scrollbarWidth: "none" }}
+      data-testid="band"
+    >
       <TheCard {...props} />
     </div>
   ),
