@@ -856,6 +856,15 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_updates",
     "skill_update_review",
     "skill_update",
+    // Extension skill sources (#3092, #3089): each asks an extension the person approved, and an
+    // install or an update is one commit to the project, of what the person's review read.
+    "skill_extension_sources",
+    "skill_extension_source_browse",
+    "skill_extension_install_review",
+    "skill_extension_install_set_review",
+    "skill_extension_install",
+    "skill_extension_update_review",
+    "skill_extension_update",
     // A publish and an export: the person's own press in their window (#2781).
     "skill_publish_review",
     "skill_publish",

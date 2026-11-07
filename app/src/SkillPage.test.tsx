@@ -672,7 +672,11 @@ describe("a skill's banner", () => {
             name: "brainstorming",
             level: { at: "project", local: false },
             label: "project",
-            remote: { url: "https://example.org/s.git", branch: null, label: "Superpowers" },
+            source: {
+              kind: "git",
+              remote: { url: "https://example.org/s.git", branch: null, label: "Superpowers" },
+              label: "Superpowers",
+            },
             pinned: { id: "1".repeat(40), short: "1111111" },
             newer: { id: "3".repeat(40), short: "3f2a1c9" },
             edited: false,

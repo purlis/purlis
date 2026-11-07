@@ -107,11 +107,11 @@ fn still_a_source(
     if on {
         Ok(())
     } else {
-        Err(format!(
-            "The extension {} is no longer approved or on here, so nothing was changed. Turn it \
-             on in Extensions, then review it again.",
-            esc(id)
-        ))
+        Err(
+            "That extension is no longer approved or on here, so nothing was changed. Turn it on \
+             in Extensions, then review it again."
+                .to_owned(),
+        )
     }
 }
 
