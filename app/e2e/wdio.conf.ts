@@ -101,6 +101,15 @@ async function evidence(error?: unknown): Promise<Evidence> {
   };
 }
 
+const STRESS_SPEC = "stress.e2e.ts";
+
+/** Every scenario spec's file name, in name order; `exclude` still drops the ones run apart. */
+function scenarioSpecs(): string[] {
+  return readdirSync(join(dirname(fileURLToPath(import.meta.url)), "specs"))
+    .filter((name) => name.endsWith(".e2e.ts"))
+    .sort();
+}
+
 export const config: WebdriverIO.Config = {
   runner: "local",
   // The state specs run separately, against a harness that reports through hooks
@@ -109,14 +118,19 @@ export const config: WebdriverIO.Config = {
   // One part of a split run when `PURLIS_E2E_PART` says which ("2/4", CI's `scenario` legs):
   // cut by measured time, not WebdriverIO's equal count (`parts.ts`, #3615). `exclude` still
   // applies to a part, so the specs run apart (below) stay apart.
+  //
+  // A stress run (STRESS=1) runs the stress spec LAST, after everything the others left open,
+  // which is what the stress job says it does. In name order it ran 82nd of 106, and the
+  // specs after it ran in an app slowed down by its two hundred chats (#5615). Those specs
+  // failed there and nowhere else: theme-gallery on Ubuntu, and workspace-explorer's chat
+  // start on macOS (#5586).
   specs: process.env.PURLIS_E2E_PART
-    ? specsOfPart(
-        readdirSync(join(dirname(fileURLToPath(import.meta.url)), "specs")).filter((name) =>
-          name.endsWith(".e2e.ts"),
-        ),
-        process.env.PURLIS_E2E_PART,
-      ).map((name) => `./specs/${name}`)
-    : ["./specs/**/*.e2e.ts"],
+    ? specsOfPart(scenarioSpecs(), process.env.PURLIS_E2E_PART).map((name) => `./specs/${name}`)
+    : process.env.STRESS === "1"
+      ? [...scenarioSpecs().filter((name) => name !== STRESS_SPEC), STRESS_SPEC].map(
+          (name) => `./specs/${name}`,
+        )
+      : ["./specs/**/*.e2e.ts"],
   // The state specs run separately (above). The stress spec runs separately too, and for a
   // different reason: it exists to give charter-app#16 — an app that died once while fifty
   // tabs were opening — a chance to recur where the evidence is kept. Fifty windows on a
