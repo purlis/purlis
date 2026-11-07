@@ -496,6 +496,37 @@ fn a_router_s_candidates_are_the_skills_it_may_hide_with_the_pins_marked() {
 }
 
 #[test]
+fn a_router_s_candidate_costs_its_whole_line_where_the_harness_counts_whole_lines() {
+    // #4680: on Claude Code a skill costs its name, its description, its `when_to_use` and the
+    // line around them, not its description alone.
+    let tmp = tempfile::tempdir().unwrap();
+    let built_in = tmp.path().join("bundle");
+    let plane = tmp.path().join("plane");
+    skill(&built_in, "handoff", "Hands off.", "");
+    skill(
+        &plane.join(PROJECT_DIR),
+        "deploy",
+        "Does deploy.",
+        "when_to_use: When shipping.\n",
+    );
+    let whole_lines = Budget {
+        skills: 10,
+        chars: 100_000,
+        per_description: None,
+        lists_paths: false,
+        per_line: Some(10),
+    };
+
+    let asked = set_at_the_root(&plane, &built_in).candidates(whole_lines, &[]);
+    let on_another = set_at_the_root(&plane, &built_in).candidates(skills(10), &[]);
+
+    // "deploy" 6, "Does deploy." 12, "When shipping." 14, and 10 around them.
+    assert_eq!(asked.skills[0].chars, 42);
+    // Where only a description counts, it costs its description.
+    assert_eq!(on_another.skills[0].chars, 12);
+}
+
+#[test]
 fn a_router_s_answer_hides_what_it_names_each_with_its_own_line() {
     let tmp = tempfile::tempdir().unwrap();
     let (plane, built_in) = three(tmp.path());

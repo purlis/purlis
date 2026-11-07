@@ -2665,11 +2665,47 @@ fn asked_line_with(
 }
 
 #[test]
-fn every_question_of_version_one_is_asked_as_the_contract_records_it() {
+fn every_question_of_each_version_is_asked_as_its_contract_records_it() {
+    for contract in extension::studio::every_version() {
+        asked_as_recorded(&contract);
+    }
+}
+
+/// #4680: protocol 5 says what each skill costs; a router of protocol 4 is asked as it was frozen.
+#[test]
+fn a_route_question_says_what_each_skill_costs_only_from_protocol_five() {
+    use extension::studio::{Ask, RouteBudget, RouteSkill};
+    let skills = [RouteSkill {
+        name: "pdf".to_owned(),
+        description: "Makes PDFs.".to_owned(),
+        pinned: false,
+        chars: 58,
+    }];
+    let none = RouteBudget {
+        skills: 0,
+        chars: 0,
+    };
+    let ask = Ask::Route {
+        skills: &skills,
+        budget: none,
+        besides: none,
+    };
+    assert_eq!(asked_line(5, &ask)["ask"]["skills"][0]["chars"], 58);
+    for frozen in [3, 4] {
+        let line = asked_line(frozen, &ask);
+        assert_eq!(
+            line["ask"]["skills"][0],
+            serde_json::json!({ "name": "pdf", "description": "Makes PDFs.", "pinned": false }),
+            "protocol {frozen}"
+        );
+    }
+}
+
+/// The questions `contract` records, each asked as a build asks it in its protocol.
+fn asked_as_recorded(contract: &serde_json::Value) {
     use extension::studio::{Ask, HandedFile, HandedPrompt, PromptSkill, RouteBudget, RouteSkill};
     use purlis_skills::grade::{Arm, GradeRequest, TriggerTest};
 
-    let contract = extension::studio::version_one();
     let protocol = u32::try_from(contract["protocol"].as_u64().expect("a number")).expect("small");
     let files = [HandedFile {
         path: "SKILL.md".to_owned(),
@@ -2680,6 +2716,7 @@ fn every_question_of_version_one_is_asked_as_the_contract_records_it() {
         name: "pdf".to_owned(),
         description: "Makes PDFs.".to_owned(),
         pinned: false,
+        chars: 58,
     }];
     let prompt = [PromptSkill {
         name: "pdf".to_owned(),
@@ -2739,7 +2776,11 @@ fn every_question_of_version_one_is_asked_as_the_contract_records_it() {
         *with_settings
     );
 
-    // An extension whose manifest names protocol 3 reads the same question, under its own number.
+    // An extension whose manifest names protocol 3 reads protocol 4's question, under its own
+    // number.
+    if protocol != 4 {
+        return;
+    }
     for (asked, kept) in [
         (asked_line(3, &panel()), &contract["panel"]["question"]),
         (asked_line(3, &routed()), &contract["route"]["question"]),

@@ -108,7 +108,7 @@ impl AskRouter for Fake {
         self.asked
             .lock()
             .unwrap()
-            .push((extension.to_owned(), ask.line()));
+            .push((extension.to_owned(), ask.line(crate::executor::PROTOCOL)));
         std::thread::sleep(self.wait);
         self.answer
             .clone()

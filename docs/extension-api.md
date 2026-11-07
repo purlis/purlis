@@ -1,15 +1,15 @@
 # The extension API
 
-An extension is a program purlis asks one question at a time. This page records **version 1 of
-the Skill studio's capabilities**: the three words an extension can rely on, the messages each
-one exchanges, and how they may change. The reasons are in
+An extension is a program purlis asks one question at a time. This page records **versions 1 and
+2 of the Skill studio's capabilities**: the three words an extension can rely on, the messages
+each one exchanges, and how they may change. The reasons are in
 [ADR 0101](adr/0101-the-skill-studio-is-built-from-six-extension-capabilities-and-an-extension-that-declares-one-is-confined.md)
 and [ADR 0053](adr/0053-an-extension-is-granted-capabilities-one-at-a-time.md).
 
 The words are known only where the Skill studio is on, until the studio's finish line (#2786).
 Where it is off, a manifest that names one is refused like any unknown word.
 
-## What version 1 holds
+## What versions 1 and 2 hold
 
 | Word | Since protocol | What purlis does for the extension |
 |---|---|---|
@@ -17,7 +17,7 @@ Where it is off, a manifest that names one is refused like any unknown word.
 | `studio-panel` | 3 | Asks it for a panel on a skill's tab, answered in panel blocks. |
 | `skill-router` | 3 | Asks it which skills a chat's listing hides, and, if it reads prompts, which skills suit a prompt. |
 
-**Three studio words are not in version 1.** `skill-source`, `skill-lint` and `skill-template`
+**Three studio words are in neither version.** `skill-source`, `skill-lint` and `skill-template`
 work but are not fully wired, so the approval prompt calls them experimental and they may change
 shape with no protocol promise:
 
@@ -27,26 +27,32 @@ shape with no protocol promise:
 | `skill-lint` | Its findings in the install review (#3090). |
 | `skill-template` | Landing as a draft skill (#3091). |
 
-## How version 1 changes
+## How the API changes
 
 `version` in a manifest is the protocol the extension speaks, and purlis asks each extension in
 the protocol its manifest names.
 
-- **A change to what a request or an answer holds is a new protocol.** Protocol 4 stays as it is.
+- **A change to what a request or an answer holds is a new protocol.** Each protocol stays as it
+  is once recorded.
 - **purlis keeps answering every earlier protocol**, so an extension written for version 1 keeps
   working as purlis moves on.
 - **Every answer is read against a closed shape.** A key purlis does not know refuses the answer,
   so an extension cannot add a field of its own.
 
-The messages below are recorded in
-[`tests/fixtures/extension-api/v1.json`](../tests/fixtures/extension-api/v1.json), and
-purlis-core's tests hold each build to that file. It changes only with a new protocol.
+| API version | Protocol | Recorded in | What changed |
+|---|---|---|---|
+| 1 | 4 | [`v1.json`](../tests/fixtures/extension-api/v1.json) | The first freeze. |
+| 2 | 5 | [`v2.json`](../tests/fixtures/extension-api/v2.json) | A route question gives each skill its `chars` (#4680). |
+
+purlis-core's tests hold each build to every one of those files, and none changes once recorded.
+The messages below are version 2's, under `"charter": 5`; a version 1 extension is asked the
+same messages under `"charter": 4`, with no `chars` on a route question's skills.
 
 ## The manifest
 
 ```json
 {
-  "version": 4,
+  "version": 5,
   "id": "house-studio",
   "name": "House studio",
   "capabilities": ["grader", "studio-panel", "skill-router"],
@@ -78,12 +84,12 @@ a model: every chat it needs is one purlis runs. Where purlis cannot confine it,
 Each question is one JSON line:
 
 ```json
-{ "charter": 4, "extension": "house-studio", "studio": "skill-router", "ask": { "ask": "…" }, "writes": [] }
+{ "charter": 5, "extension": "house-studio", "studio": "skill-router", "ask": { "ask": "…" }, "writes": [] }
 ```
 
 `charter` is the protocol, and every answer must repeat it. `writes` is always empty for a
 confined extension. `settings` is there too, with the person's values, if the manifest declares
-settings. An answer is one line of JSON, or `{"charter": 4, "error": "<sentence>"}`. An answer
+settings. An answer is one line of JSON, or `{"charter": 5, "error": "<sentence>"}`. An answer
 has 5 seconds, unless this page says otherwise.
 
 ### An event's answer may offer a view
@@ -119,9 +125,16 @@ Asked with `ask` `panel`, naming `panel`, `skill` and the skill's text `files`, 
 ### A router
 
 **Which skills a chat's listing hides.** Asked with `ask` `route` at a chat's start: `skills`
-(each `name`, `description` and `pinned`), the `budget`, and what the rest of the listing spends,
-`besides`, each in `skills` and `chars`. Answered with `hidden`, each a `skill` and a one-line
-`why`. It has 100 ms, from before its program starts. It never sees the prompt or the chat.
+(each `name`, `description`, `pinned` and `chars`), the `budget`, and what the rest of the listing
+spends, `besides`, each in `skills` and `chars`. Answered with `hidden`, each a `skill` and a
+one-line `why`. It has 100 ms, from before its program starts. It never sees the prompt or the
+chat.
+
+A skill's `chars` is what it costs of the budget's `chars` on the chat's harness, counted as
+`besides` is. On a harness that counts whole lines, such as Claude Code, that is its name, its
+description, its `when_to_use` and the line around them, so a router that adds description lengths
+under-counts there. A router can add each listed skill's `chars` to `besides` and keep the total
+within `budget`. Protocol 4 has no `chars` on a skill: a router of version 1 is asked as it was.
 
 **Which skills suit a prompt.** Asked with `ask` `prompt`, only of a router that declares
 `reads-prompts` and that the person has turned on for reading prompts on the Skill studio's
@@ -141,13 +154,13 @@ Grader: the person unticks them or picks purlis's own runner.
 
 Each line the Grader answers is one of two:
 
-- **A run-chat request**, `{"charter": 4, "run_chat": {"arm": "with", "prompt": "…"}}`, on one of
+- **A run-chat request**, `{"charter": 5, "run_chat": {"arm": "with", "prompt": "…"}}`, on one of
   the grade's arms and the query of one of its tests. purlis runs the chat and writes back
   `chat_ran`: `chat`, `started` (the skills that started), `tokens`, `cost_usd`, `ms`, and `end`,
   one of `turn`, `timed-out`, `not-started` (with a fixed sentence beside it, `why`), `cancelled`,
   `asked`, `over-cap` or `over-limit`. `chat`, `tokens` and `cost_usd` are `null` where there is
   none to say, as for a chat that did not run.
-- **Its grade report**, `{"charter": 4, "report": {"triggers": […], "arms": […], "delta": …}}`,
+- **Its grade report**, `{"charter": 5, "report": {"triggers": […], "arms": […], "delta": …}}`,
   which ends the question. What a grade spent, how it ended and who graded it are purlis's to say,
   so a report that carries them is refused.
 

@@ -737,6 +737,7 @@ fn asked_at_start(
             name: one.name,
             description: one.description,
             pinned: one.pinned,
+            chars: one.chars,
         })
         .collect();
     let spent = |skills: usize, chars: usize| RouteBudget { skills, chars };

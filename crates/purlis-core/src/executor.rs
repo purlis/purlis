@@ -144,7 +144,10 @@ use crate::skills::grade;
 ///   grade report (`report`). Each answer has [`DEADLINE`] from the line before it; while purlis
 ///   runs a chat the Grader has no deadline, and the question ends when the person stops the
 ///   grade ([`Executor::grade`]).
-pub const PROTOCOL: u32 = 4;
+/// - **5** (#4680, ADR 0101 as amended 2026-11-07) — a router's route question gives each skill
+///   `chars`, what it costs of the budget on the chat's harness
+///   ([`crate::extension::studio::ROUTE_COSTS_SINCE`]). Every other message is protocol 4's.
+pub const PROTOCOL: u32 = 5;
 
 /// How long a program has, from being started to its answer's last byte.
 ///
@@ -2473,7 +2476,7 @@ fn request_line(
         // of a skill: nothing of the project is a path it is handed (ADR 0101 §2).
         Asked::Studio { ask, .. } => {
             doc.insert("studio".into(), ask.capability().as_str().into());
-            doc.insert("ask".into(), ask.line());
+            doc.insert("ask".into(), ask.line(protocol));
         }
         // A command is its name and its words, as the command line was given them, and nothing
         // about a view (charter-app#342).
