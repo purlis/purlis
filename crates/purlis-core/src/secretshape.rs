@@ -1209,13 +1209,17 @@ const FORGE_TOKEN: (&str, &str) = ("forge-token", "a token by its forge's prefix
 
 /// Every rule [`leaks`] asks, by the id an allowlist entry names it with and the words a
 /// refusal uses for it, in the order they are asked. `charter scan --explain` prints this.
+///
+/// Read from the rules' tables, never their compiled patterns: the project index asks this at
+/// every chat start for its version, and compiling every pattern to name them cost each one
+/// milliseconds (#5486).
 pub fn leak_rules() -> Vec<(&'static str, &'static str)> {
-    let keys = compiled()
-        .iter()
+    let keys = checks()
+        .into_iter()
         .filter(|(rule, ..)| rule.is_a_key())
-        .map(|(rule, kind, ..)| (rule.id(), *kind));
-    let vendors = gitleaks().iter().map(|(id, kind, _)| (*id, *kind));
-    let personal = pii().iter().map(|(id, kind, ..)| (*id, *kind));
+        .map(|(rule, kind, ..)| (rule.id(), kind));
+    let vendors = GITLEAKS.iter().map(|(id, kind, ..)| (*id, *kind));
+    let personal = pii_rules().into_iter().map(|(id, kind, ..)| (id, kind));
     keys.chain(std::iter::once(FORGE_TOKEN))
         .chain(vendors)
         .chain(personal)
@@ -1659,10 +1663,11 @@ const ID_NAME_GAP: &str = r"(?:[ \t]*(?i:no|nr|number)\.?)?[^\w\n]{1,4}";
 
 type PiiRule = (&'static str, &'static str, Regex, Personal);
 
-fn pii() -> &'static [PiiRule] {
-    static ONCE: OnceLock<Vec<PiiRule>> = OnceLock::new();
-    ONCE.get_or_init(|| {
-        [
+/// [`pii`]'s rules before their patterns are compiled: what [`leak_rules`] lists, which a
+/// process that only asks the rules' names (the project index's version, at every chat start)
+/// never pays a compile of every pattern for (#5486).
+fn pii_rules() -> [(&'static str, &'static str, String, Personal); 12] {
+    [
             (
                 "email",
                 "an email address",
@@ -1747,17 +1752,23 @@ fn pii() -> &'static [PiiRule] {
                 ),
                 Personal::NlBsn,
             ),
-        ]
-        .into_iter()
-        .map(|(id, kind, pattern, check)| {
-            (
-                id,
-                kind,
-                Regex::new(&pattern).expect("a pattern this module wrote"),
-                check,
-            )
-        })
-        .collect()
+    ]
+}
+
+fn pii() -> &'static [PiiRule] {
+    static ONCE: OnceLock<Vec<PiiRule>> = OnceLock::new();
+    ONCE.get_or_init(|| {
+        pii_rules()
+            .into_iter()
+            .map(|(id, kind, pattern, check)| {
+                (
+                    id,
+                    kind,
+                    Regex::new(&pattern).expect("a pattern this module wrote"),
+                    check,
+                )
+            })
+            .collect()
     })
 }
 
