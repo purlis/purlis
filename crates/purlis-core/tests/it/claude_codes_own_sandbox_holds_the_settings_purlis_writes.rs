@@ -718,6 +718,18 @@ fn an_outcome_evals_shell_writes_only_its_own_folders_and_reaches_no_host() {
             .is_some(),
         "the project's package caches"
     );
+    // Claude Code's shared temp folder is denied to the shell alone: another grade's chat
+    // keeps what Claude Code gives every chat.
+    let denies_shared_temp = |compiled: &sandbox::claude::Settings| {
+        let denied = compiled.sandbox["filesystem"]["denyWrite"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        sandbox::claude::SHARED_TEMP
+            .iter()
+            .all(|path| denied.contains(&json!(path)))
+    };
+    assert!(!denies_shared_temp(&settings_of(&other)));
     let held =
         sandbox::policy::holding_no_kept_grants(|| sandbox::policy::holding_to_its_folder(decide));
     assert_eq!(held.level(), Level::Full);
@@ -732,6 +744,18 @@ fn an_outcome_evals_shell_writes_only_its_own_folders_and_reaches_no_host() {
         compiled.sandbox["filesystem"].get("allowWrite").is_none(),
         "{}",
         compiled.sandbox
+    );
+    assert!(
+        denies_shared_temp(&compiled),
+        "Claude Code's shared temp folder: {}",
+        compiled.sandbox
+    );
+    // Its commands are handed a folder inside its own, which Claude Code does only where that
+    // is short enough (#5655): on macOS the system's temp folder is not.
+    assert!(
+        temp.join("claude-4294967295").as_os_str().len() <= drafts::CLAUDE_CODE_TEMP_MOST,
+        "{}",
+        temp.display()
     );
     let Some(program) = program else {
         return;
@@ -763,6 +787,7 @@ fn an_outcome_evals_shell_writes_only_its_own_folders_and_reaches_no_host() {
          w '{root}/outside.txt' project; w '{home}/outside.txt' home; \
          w '{other_piece}/made.txt' other-piece; w '{other_temp}/made.txt' other-temp; \
          w /tmp/purlis-4476-$$ tmp; w /tmp/claude/purlis-4476-$$ claude-tmp; \
+         w /private/tmp/claude/purlis-4476-$$ private-claude-tmp; \
          if curl -sS -m 20 -o /dev/null https://example.com/ 2>/dev/null; \
          then echo 'reached example.com'; else echo 'refused example.com'; fi",
         piece = piece.display(),
@@ -784,7 +809,22 @@ fn an_outcome_evals_shell_writes_only_its_own_folders_and_reaches_no_host() {
         command,
         &[("CLAUDE_CODE_TMPDIR", &temp)],
     );
-    for (line, why) in [
+    // Every probe, each with what the ruling wants, and every one that came out otherwise
+    // named with this system, so a red run says which platform allowed or refused what.
+    let os = if cfg!(target_os = "macos") {
+        "macOS"
+    } else {
+        "Linux"
+    };
+    let shared = if cfg!(target_os = "macos") {
+        Some((
+            "refused private-claude-tmp",
+            "Claude Code's shared temp folder, by its real name",
+        ))
+    } else {
+        None
+    };
+    let wrong: Vec<String> = [
         ("wrote piece", "it writes its piece"),
         ("wrote temp", "it writes its temp folder"),
         ("refused project", "the project outside its piece"),
@@ -792,21 +832,32 @@ fn an_outcome_evals_shell_writes_only_its_own_folders_and_reaches_no_host() {
         ("refused other-piece", "another shell eval's piece"),
         ("refused other-temp", "another shell eval's temp folder"),
         ("refused tmp", "the system's temp folder"),
-        ("refused claude-tmp", "Claude Code's own temp folder"),
+        (
+            "refused claude-tmp",
+            "Claude Code's shared temp folder, /tmp/claude",
+        ),
         ("refused example.com", "a host the project lists"),
-    ] {
-        assert!(
-            said.lines().any(|said| said.trim() == line),
-            "{what}: {why}:\n{said}"
-        );
-    }
+    ]
+    .into_iter()
+    .chain(shared)
+    .filter(|(line, _)| !said.lines().any(|said| said.trim() == *line))
+    .map(|(line, why)| format!("{why}: wanted `{line}`"))
+    .collect();
+    assert!(
+        wrong.is_empty(),
+        "{what}, on {os} (Claude Code {}), temp folder {}: {}\nwhat its command said:\n{said}",
+        SUPPORTED.trim(),
+        temp.display(),
+        wrong.join("; ")
+    );
     // Claude Code hands each command a temp folder inside the one the chat was given.
     assert!(
         said.lines().any(|line| line
             .trim()
             .strip_prefix("temp at ")
             .is_some_and(|at| Path::new(at).starts_with(&temp))),
-        "{what}: its commands' temp folder is its own:\n{said}"
+        "{what}, on {os}: its commands' temp folder is not inside its own, {}:\n{said}",
+        temp.display()
     );
     assert!(!root.join("outside.txt").exists() && !home.join("outside.txt").exists());
     assert!(!second.piece.join("made.txt").exists() && !other_temp.join("made.txt").exists());

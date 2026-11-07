@@ -57,20 +57,27 @@ the person's own chats, and a graded skill could leave something there for one o
 Ruling 2a first put its temp folder inside its piece. On Linux that cannot be built, as measured
 on CI with the Claude Code purlis pins. Its sandbox makes its proxy's unix sockets in the
 program's own `TMPDIR`, and a path inside a piece goes past a socket path's 108 bytes, so the
-sandbox does not start. It also ignores `CLAUDE_CODE_TMPDIR` there, and hands each command
-`<the program's TMPDIR>/claude-<uid>` as its `TMPDIR`, writable. So, as the person chose, each
+sandbox does not start. It hands each command `<CLAUDE_CODE_TMPDIR>/claude-<uid>` as its
+`TMPDIR`, writable, but only where that path is 44 bytes at most; otherwise it hands its shared
+`/tmp/claude-<uid>`, which every Claude Code of that user writes. So, as the person chose, each
 such chat is given a temp folder of its own (`drafts::temp_of`):
 
-- **Short and new.** It is `purlis-g-` and sixteen random hex characters, made in the system's
-  temp folder as its piece is staged, `0700`.
+- **Short and new.** It is `purlis-g-` and eight random letters and digits, made in `/tmp` as its
+  piece is staged, `0700`. Not in the system's temp folder: on macOS that is
+  `/var/folders/<two>/<thirty-one>/T/`, too long by itself, and the queue's macOS run of #5655
+  found its commands handed `/tmp/claude-501` (`drafts::temp_base`).
 - **Its chat's alone.** Its record is in this machine's state, which no chat writes, and it is
   handed to that chat alone as its `TMPDIR` and `CLAUDE_CODE_TMPDIR`.
 - **Gone with its piece** (`drafts::end_try`).
 
 Another grading chat's temp folder is not one it can write, nor is another's piece. The judge
 never reads either temp folder. It writes nowhere else: not the project outside its piece, not
-the home, not the rest of the system's temp folder. Writes by Write and Edit stay held to its
-piece by their guard, as before.
+the home, not the rest of the system's temp folder, and not Claude Code's own shared one,
+`/tmp/claude`. Claude Code's sandbox lets every command write that folder whatever its settings
+say (read in 2.1.300; on Linux only where it is already there, which is why only the macOS run
+found it), so a shell eval's settings deny it by both its names
+(`sandbox::claude::SHARED_TEMP`). Writes by Write and Edit stay held to its piece by their guard,
+as before.
 
 **The same sandbox and consent as any chat, and no new bypass.** The shell runs under the chat's
 full sandbox, in Claude Code's default permission mode with its prompts kept. Its commands run

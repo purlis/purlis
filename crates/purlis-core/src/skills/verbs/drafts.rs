@@ -756,8 +756,26 @@ const TEMP: &str = "temp";
 /// makes its proxy's sockets in it, and a socket's path holds 108 bytes at most.
 const TEMP_PREFIX: &str = "purlis-g-";
 
+/// The most bytes Claude Code's temp folder for a chat, `<CLAUDE_CODE_TMPDIR>/claude-<uid>`, may
+/// hold for it to hand that folder to the chat's commands: read in 2.1.300, which otherwise hands
+/// them its shared `/tmp/claude-<uid>`, so that its sandbox's sockets fit.
+pub const CLAUDE_CODE_TEMP_MOST: usize = 44;
+
+/// **Where a shell eval's temp folder is made**: `/tmp`, by that name, where Unix has it. A folder
+/// in the system's temp folder would be too long on macOS, where that is
+/// `/var/folders/<two>/<thirty-one>/T/`, and its commands would be handed Claude Code's shared
+/// temp folder in its place (measured on CI, #5655; [`CLAUDE_CODE_TEMP_MOST`]). Elsewhere, the
+/// system's temp folder.
+pub fn temp_base() -> PathBuf {
+    if cfg!(unix) {
+        PathBuf::from("/tmp")
+    } else {
+        std::env::temp_dir()
+    }
+}
+
 /// **The temp folder of the outcome eval's chat that has a shell, in the piece `cwd`** (#4476,
-/// the person's choice of 2026-11-07): a folder of its own in the system's temp folder, `0700`,
+/// the person's choice of 2026-11-07): a folder of its own in `/tmp` ([`temp_base`]), `0700`,
 /// made as its piece was staged and removed with it ([`end_try`]), which its chat is given as its
 /// `TMPDIR`. Its shell writes its piece and this folder, and nowhere else. Not in the piece, as a
 /// socket's path there would be too long on Linux (measured on CI, #5589). `None` for any other
@@ -775,10 +793,10 @@ pub fn temp_of(root: &Path, cwd: &Path) -> Option<PathBuf> {
         .filter(|path| one_of_ours(path))
 }
 
-/// Whether `path` is a temp folder [`stage`] made: in the system's temp folder, named so, and a
+/// Whether `path` is a temp folder [`stage`] made: in [`temp_base`], named so, and a
 /// folder itself, never a link to one. Only such a folder is handed to a chat or removed.
 fn one_of_ours(path: &Path) -> bool {
-    path.parent() == Some(std::env::temp_dir().as_path())
+    path.parent() == Some(temp_base().as_path())
         && path
             .file_name()
             .and_then(|name| name.to_str())
@@ -829,14 +847,14 @@ pub fn stage(
     )
     .map_err(|why| super::not_written("the grade's record of its folder", why))?;
     if shell {
-        // Made before the chat starts, a new name of its own, `0700` from the start: the
-        // system's temp folder is shared, and the umask alone would leave it readable by all.
+        // Made before the chat starts, a new name of its own, `0700` from the start: `/tmp` is
+        // shared, and the umask alone would leave it readable by all.
         let mut builder = tempfile::Builder::new();
         builder.prefix(TEMP_PREFIX).rand_bytes(8);
         #[cfg(unix)]
         builder.permissions(std::os::unix::fs::PermissionsExt::from_mode(0o700));
         let made = builder
-            .tempdir_in(std::env::temp_dir())
+            .tempdir_in(temp_base())
             .map_err(|why| {
                 format!("the chat's folder for temporary files could not be made ({why})")
             })?

@@ -1464,7 +1464,7 @@ fn try_it_starts_the_drafted_skill_unless_it_cannot_be_started_by_its_name() {
 
 /// #4476 (the person's choice of 2026-11-07): an outcome eval's piece says whether its chat has a
 /// shell, as this machine's state alone says it, and one that has gets a temp folder of its own in
-/// the system's, private to it, which goes with its piece; a second shell eval's is another.
+/// `/tmp`, private to it, which goes with its piece; a second shell eval's is another.
 #[test]
 fn a_shell_evals_piece_has_a_private_temp_folder_of_its_own_that_goes_with_it() {
     let tmp = tempfile::tempdir().unwrap();
@@ -1476,7 +1476,7 @@ fn a_shell_evals_piece_has_a_private_temp_folder_of_its_own_that_goes_with_it() 
     assert!(outcome_piece(root, &with.piece) && shell_piece(root, &with.piece));
     let temp = temp_of(root, &with.piece).expect("a temp folder");
     assert!(temp.is_dir() && !temp.starts_with(&with.piece), "{temp:?}");
-    assert_eq!(temp.parent(), Some(std::env::temp_dir().as_path()));
+    assert_eq!(temp.parent(), Some(temp_base().as_path()));
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;
@@ -1504,4 +1504,26 @@ fn a_shell_evals_piece_has_a_private_temp_folder_of_its_own_that_goes_with_it() 
     assert!(theirs.is_dir());
     end_try(root, &other.id).unwrap();
     assert!(!theirs.exists());
+}
+
+/// #4476 on macOS (#5655): Claude Code hands a command `<its temp folder>/claude-<uid>` only
+/// where that path is short enough for its sockets, and its shared `/tmp/claude-<uid>`
+/// otherwise. A shell eval's temp folder is short enough for any uid, wherever the system's temp
+/// folder is: on macOS that alone is longer.
+#[test]
+fn a_shell_evals_temp_folder_is_short_enough_for_claude_code_to_hand_its_commands() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = &std::fs::canonicalize(tmp.path()).unwrap();
+    std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
+    let laid = lay_out_arm(root, None).unwrap();
+    stage(root, &laid, &[], &BTreeMap::new(), true).unwrap();
+    let temp = temp_of(root, &laid.piece).expect("a temp folder");
+    let commands = temp.join(format!("claude-{}", u32::MAX));
+    let long = commands.as_os_str().len();
+    end_try(root, &laid.id).unwrap();
+    assert!(
+        long <= CLAUDE_CODE_TEMP_MOST,
+        "{} is {long} bytes, past Claude Code's {CLAUDE_CODE_TEMP_MOST}",
+        commands.display()
+    );
 }

@@ -229,6 +229,10 @@ pub struct Locks {
     /// sandbox there, as where this machine's policy forbids the opt-out, and said as the
     /// project's.
     team_never: bool,
+    /// Whether the chat decided is an outcome eval's that has a shell (#4476,
+    /// [`holding_to_its_folder`]): its commands then write no temp folder but the one it is
+    /// handed.
+    to_its_folder: bool,
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -285,6 +289,7 @@ impl Locks {
                 no_live_asks: true,
                 allow_scopes: Some(Vec::new()),
                 relayed_internal: Vec::new(),
+                to_its_folder: true,
                 ..held
             };
         }
@@ -345,6 +350,7 @@ impl Locks {
             no_dispatch: true,
             dispatch_locked: Vec::new(),
             team_never: false,
+            to_its_folder: false,
         }
     }
 
@@ -473,6 +479,12 @@ impl Locks {
     /// workspace's, a persona's and your own. A limit it does not name is not capped.
     pub fn dispatch_ceiling(&self) -> &crate::dispatchlimits::Level {
         &self.dispatch
+    }
+
+    /// Whether these are an outcome eval's shell's locks, held to its own folders (#4476,
+    /// [`holding_to_its_folder`]): its commands write no temp folder but the one it is handed.
+    pub fn holds_to_its_folder(&self) -> bool {
+        self.to_its_folder
     }
 
     /// Whether policy forbids every folder a grant would let a chat write.
@@ -961,6 +973,7 @@ fn parsed(text: &str, file: &Path) -> Result<Locks, String> {
         no_dispatch,
         dispatch_locked,
         team_never: false,
+        to_its_folder: false,
     })
 }
 
