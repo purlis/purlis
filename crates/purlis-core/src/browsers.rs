@@ -1902,14 +1902,11 @@ impl EngineScreen {
                 state_said(one.state)
             )));
         }
-        let bound = self.sites.as_ref().map(|sites| sites.bound());
-        let whose = DownloadsSite {
-            kept_off: browser.download_kept_off(download),
-            from_no_origin: one.origin.is_none(),
-            began_on_the_sign_ins_page: browser.download_began_on_the_sign_ins_page(download),
-            keeps_off: bound.and_then(|bound| bound.keeps_off().map(|site| site.to_string())),
-            signing_on: bound.and_then(|bound| bound.signing_on().map(|site| site.to_string())),
-        };
+        let whose = DownloadsSite::of(
+            &one,
+            browser.as_ref(),
+            self.sites.as_ref().map(|sites| sites.bound()),
+        );
         if let Some(why) = whose.refused(download) {
             return Err(NotActed::Refused(why));
         }
@@ -1957,6 +1954,7 @@ impl EngineScreen {
 }
 
 /// What decides whether a done download is the chat's to bring in, by the site it may be of.
+#[derive(Debug, PartialEq, Eq)]
 struct DownloadsSite {
     /// The site the agent is kept off it is of, judged on the page it began on.
     kept_off: Option<String>,
@@ -1970,7 +1968,43 @@ struct DownloadsSite {
     signing_on: Option<String>,
 }
 
+/// Where a browser says a download began: what [`DownloadsSite`] is gathered from.
+trait DownloadsWhence {
+    /// The site the agent is kept off that download `id` is of ([`Browser::download_kept_off`]).
+    fn kept_off(&self, id: &str) -> Option<String>;
+    /// Whether download `id` began on the sign-in's own page
+    /// ([`Browser::download_began_on_the_sign_ins_page`]).
+    fn began_on_the_sign_ins_page(&self, id: &str) -> bool;
+}
+
+impl DownloadsWhence for Browser {
+    fn kept_off(&self, id: &str) -> Option<String> {
+        self.download_kept_off(id)
+    }
+
+    fn began_on_the_sign_ins_page(&self, id: &str) -> bool {
+        self.download_began_on_the_sign_ins_page(id)
+    }
+}
+
 impl DownloadsSite {
+    /// **What decides whether done download `one` is brought in**: where `browser` says it
+    /// began, and what the browser's login `bound` holds now (none for a browser given no
+    /// reach).
+    fn of(
+        one: &drive::DownloadInfo,
+        browser: &impl DownloadsWhence,
+        bound: Option<&Bound>,
+    ) -> Self {
+        Self {
+            kept_off: browser.kept_off(&one.id),
+            from_no_origin: one.origin.is_none(),
+            began_on_the_sign_ins_page: browser.began_on_the_sign_ins_page(&one.id),
+            keeps_off: bound.and_then(|bound| bound.keeps_off().map(|site| site.to_string())),
+            signing_on: bound.and_then(|bound| bound.signing_on().map(|site| site.to_string())),
+        }
+    }
+
     /// **Why download `download` is not brought in**, or `None` where its site does not keep it.
     fn refused(&self, download: &str) -> Option<String> {
         // One from the site the browser signs in on is that site's to read (#5152), and during
