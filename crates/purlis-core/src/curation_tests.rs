@@ -755,6 +755,44 @@ fn a_subject_that_is_not_there_is_refused() {
     );
 }
 
+#[test]
+fn one_reading_of_the_project_answers_every_subject_as_resolving_each_alone_does() {
+    let dir = plane(&["ops", "qa"], &["web", "api"], Some("ops"));
+    let root = dir.path();
+    declare(root, "ops", "review", REVIEW);
+    declare(
+        root,
+        "qa",
+        "broken",
+        "---\non: workspace\n---\n\nNo label.\n",
+    );
+    let read = Offers::read(root);
+    for subject in [
+        ws("web"),
+        ws("api"),
+        persona("ops"),
+        persona("qa"),
+        Subject::parse("plane").unwrap(),
+        ws("nope"),
+    ] {
+        assert_eq!(read.resolve(&subject), resolve(root, &subject));
+    }
+}
+
+#[test]
+fn one_reading_of_the_project_reads_its_actions_once_for_every_subject() {
+    // The window asks for a thousand subjects at once (#5486): each is answered from what was
+    // read, not by reading every persona's curation folder again.
+    let dir = plane(&["ops"], &["web", "api"], None);
+    let root = dir.path();
+    let file = declare(root, "ops", "review", REVIEW);
+    let read = Offers::read(root);
+    std::fs::remove_file(file).unwrap();
+    for subject in [ws("web"), ws("api")] {
+        assert!(ids(&read.resolve(&subject).unwrap()).contains(&"ops/review"));
+    }
+}
+
 // ------------------------------------------------------------------------------------------
 // charter's own
 

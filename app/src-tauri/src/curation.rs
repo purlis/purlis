@@ -211,31 +211,41 @@ pub async fn curate(
 }
 
 /// Every subject's list, against a root the registry has already vouched for.
+///
+/// The project is read once for all of them (#5486): the window asks for every workspace and
+/// every persona at once.
 pub fn offers(root: &Path, subjects: &[String]) -> Curations {
+    let read = curation::Offers::read(root);
+    let harness = curation::default_harness(root);
     Curations {
-        subjects: subjects.iter().map(|spec| offered(root, spec)).collect(),
+        subjects: subjects
+            .iter()
+            .map(|spec| offered(root, &read, harness, spec))
+            .collect(),
         cannot: launch_profile(root).err(),
     }
 }
 
 /// One subject's list.
-fn offered(root: &Path, spec: &str) -> SubjectCurations {
+fn offered(
+    root: &Path,
+    read: &curation::Offers,
+    harness: Option<purlis_core::harness::Harness>,
+    spec: &str,
+) -> SubjectCurations {
     let listed = Subject::parse(spec).and_then(|subject| {
-        let resolution = curation::resolve(root, &subject)?;
+        let resolution = read.resolve(&subject)?;
         Ok((subject, resolution))
     });
     match listed {
         Ok((subject, resolution)) => SubjectCurations {
             subject: spec.to_owned(),
             name: name_of(root, &subject),
-            actions: {
-                let harness = curation::default_harness(root);
-                resolution
-                    .actions
-                    .iter()
-                    .map(|one| drawn(one, harness))
-                    .collect()
-            },
+            actions: resolution
+                .actions
+                .iter()
+                .map(|one| drawn(one, harness))
+                .collect(),
             left_out: resolution.warnings.into_iter().map(left_out).collect(),
             trouble: None,
         },
