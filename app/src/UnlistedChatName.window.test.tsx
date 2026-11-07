@@ -133,7 +133,7 @@ describe("a chat with no row yet (#5308)", () => {
     expect(await hoverTipOf(theTab())).toContain("the build · steward build");
   });
 
-  it("left first by its tab's own chat's close, names the tab as its row will, never its number", async () => {
+  it("left first when the pane of its tab's own chat closes, names the tab as its row will, never its number", async () => {
     const listed = chat(1, "build");
     // Run as a persona, so what its row will say is more than its pane's own name (#5308).
     const unlisted = chat(2, "review", { persona: "devops" });
