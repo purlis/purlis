@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794063286642,
+  "lastUpdate": 1794065123454,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -42210,6 +42210,48 @@ window.BENCHMARK_DATA = {
             "value": 100.454932,
             "unit": "ms",
             "extra": "median of 5 runs: 100.170, 100.352, 100.455, 100.531, 103.111 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "425db523e7815fb17ecb9a133b703c1429522f6c",
+          "message": "The picker answers at once on a case-folding disk; names fold as the disk does; branch-folder git and push scans follow up (#5652)\n\n* The picker answers at once on a case-folding disk; names fold as the disk folds them; branch-folder git and push scans follow up\n\nThe sandbox's ground check folds each name once, before any pair is compared, so a start on a\nvolume that folds case no longer takes time in proportion to the denied list times the ground.\nThe shared fold decomposes a name first and keeps the dotless i apart, as APFS does, and is\nchecked against the disk both ways.\n\nAn unsandboxed chat's guard names a git that may write a branch where the line cannot be\nfollowed (a move it cannot place, too many places, an alias it cannot read) and refuses it\nwith the shape that places it. A branch folder's clone git folder is held as its own record\nnames it, and by name in either layout.\n\nThe pre-push scan asks the remote at the address git pushes to, from outside the repository\nand reading no configuration, asks a forge over SSH at its HTTPS address, and leaves out what\na deleted ref held there.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6V17PG0TF5V7XSD7ZDVEN6F\nPurlis-Persona: steward\n\n* Say what the push scan asks, as behaviour\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6V17PG0TF5V7XSD7ZDVEN6F\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-07T14:31:23Z",
+          "tree_id": "1566529c57ca2acd7baca515ac7642860ea93623",
+          "url": "https://github.com/purlis/purlis/commit/425db523e7815fb17ecb9a133b703c1429522f6c"
+        },
+        "date": 1794065117825,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5180215,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.508, 0.512, 0.518, 0.524, 0.527 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3314275,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.238, 16.239, 16.331, 16.453, 16.541 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.6616225,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.289, 101.565, 101.662, 101.880, 102.222 ms"
           }
         ]
       }
