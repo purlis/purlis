@@ -47,24 +47,27 @@ const SkillEditor = lazy(() => import("./SkillEditor"));
  * own lints of the text now; it only warns, so Save never waits on it. The studio asks them
  * again of what is saved.
  */
+/** What a lint found, and the skill and text it was found in ({@link lintedOf}). */
+type Linted = { of: string; findings: readonly SkillLintFinding[] };
+
+const NOT_LINTED: Linted = { of: "", findings: [] };
+
+/** The key of the skill `name`'s text `text`, as {@link Linted.of} holds it. */
+const lintedOf = (name: string | undefined, text: string | undefined) =>
+  `${name ?? ""}\u0000${text ?? ""}`;
+
 function useSkillLint(
   plane: string,
   edit: SkillEdit | undefined,
 ): { findings: readonly SkillLintFinding[]; checked: boolean } {
-  const [lint, setLint] = useState<{ of: string; findings: readonly SkillLintFinding[] }>({
-    of: "",
-    findings: [],
-  });
-  const [theirs, setTheirs] = useState<{ of: string; findings: readonly SkillLintFinding[] }>({
-    of: "",
-    findings: [],
-  });
+  const [lint, setLint] = useState<Linted>(NOT_LINTED);
+  const [theirs, setTheirs] = useState<Linted>(NOT_LINTED);
   const level = edit?.level;
   const name = edit?.skill.name;
   const text = edit?.now;
   const opened = edit?.was;
-  const of = `${name ?? ""}\u0000${text ?? ""}`;
-  const openedOf = `${name ?? ""}\u0000${opened ?? ""}`;
+  const of = lintedOf(name, text);
+  const openedOf = lintedOf(name, opened);
   useEffect(() => {
     if (level === undefined || name === undefined || text === undefined) return;
     let live = true;
@@ -97,7 +100,7 @@ function useSkillLint(
     };
   }, [plane, level, name, opened, openedOf]);
   // Another skill's findings are never shown as this one's.
-  const ours = lint.of.startsWith(`${name ?? ""}\u0000`) ? lint.findings : [];
+  const ours = lint.of.startsWith(lintedOf(name, "")) ? lint.findings : [];
   const extensions = theirs.of === openedOf ? theirs.findings : [];
   return { findings: [...ours, ...extensions], checked: lint.of === of };
 }

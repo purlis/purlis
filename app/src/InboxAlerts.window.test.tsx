@@ -283,6 +283,7 @@ describe("each alert in the Inbox", () => {
   });
 
   it("names what a fix acts on, even for a fix it has no words of its own for (#1719)", async () => {
+    // `discover`: a fix this window has no label of its own for (`FIX_LABELS`).
     rows = [{ ...REINIT, subject: "something new", way: { kind: "fix", id: "discover" } }];
     const open = await drawer();
 
