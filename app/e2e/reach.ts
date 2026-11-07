@@ -260,6 +260,37 @@ export function closesTheTabsItOpens(): void {
   });
 }
 
+/**
+ * **Pane notices minimised again, where this file expanded them** (#5586). Minimised or expanded
+ * is the window's one choice, kept (`paneNoticesPref.ts`), so a file that presses a pane's bell
+ * to show what it raised leaves every later file's notices expanded: `skill-compat.e2e.ts` then
+ * found its bell open in a single-process run. A file that presses it sets
+ * `window.__e2eNoticesExpanded`, and calls this in its `after` while a pane is still open, since
+ * only a pane's bell sets the choice.
+ */
+export async function minimiseNoticesExpandedHere(): Promise<void> {
+  const pressed = await browser.execute(() => {
+    const page = window as unknown as Record<string, boolean | undefined>;
+    if (page.__e2eNoticesExpanded !== true) return true;
+    page.__e2eNoticesExpanded = undefined;
+    const bell = document.querySelector<HTMLElement>('[data-way="bell"][aria-expanded="true"]');
+    bell?.click();
+    return bell !== null || document.querySelector('[data-way="bell"]') !== null;
+  });
+  // Said, never thrown: it runs first in an `after` that still has chats to end.
+  if (!pressed) {
+    console.warn("no pane's bell was left to minimise the notices this file expanded");
+    return;
+  }
+  await browser
+    .waitUntil(
+      () =>
+        browser.execute(() => !document.querySelector('[data-way="bell"][aria-expanded="true"]')),
+      { timeout: 5_000, interval: 100, timeoutMsg: "the pane notices stayed expanded" },
+    )
+    .catch((trouble: unknown) => console.warn(trouble));
+}
+
 /** Every workspace of the project in front, as the title bar's ⌄ lists them (#2916): the plane
  *  root first (`Plane root`), the one in front `selected`. */
 export async function workspaceTabs(): Promise<{ name: string; selected: boolean }[]> {

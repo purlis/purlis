@@ -68,9 +68,14 @@ const OPEN_TARGET = 200;
  * and a message of its own that fires long before it. `ROUND_BUDGET` bounds the one loop
  * that had none.
  *
+ * Raised from 15 to 30 minutes on 2026-11-07 (#5586): by then the two hundred took 680 s to
+ * open on a macOS runner and 330 s to close on Ubuntu, so the 15 minutes no longer held the
+ * whole test, and a run that {@link holdsTheTimeBudgets | reports its time budgets} has to
+ * reach its end to say anything.
+ *
  * `budget.test.ts` keeps this on the suite, because the mistake is invisible from the spec.
  */
-const BUDGET = 15 * 60_000;
+const BUDGET = 30 * 60_000;
 
 /**
  * How long one round of fifty may take. The slowest round measured on a macOS runner on
@@ -88,6 +93,24 @@ const ROUND_BUDGET = 4 * 60_000;
  * is over three times the slower one.
  */
 const OPEN_TARGET_BUDGET = 10 * 60_000;
+
+/**
+ * **Whether a time budget missed fails the test, or is reported and the test goes on** (#5586).
+ * `STRESS_BUDGETS=report`, which the `stress` workflow sets: this spec is evidence only (V70),
+ * and a runner's speed decided its result on every `main` run, which taught everyone to ignore
+ * its red X. Reported, each missed budget is a line in `logs/stress-budgets-missed.jsonl`, which
+ * the workflow puts in its summary and as a warning. Everything else this spec checks still
+ * fails it: every chat opening and running, the open-file limit raised, one app throughout,
+ * nothing leaked once they close. As `CHARTER_MEASURE_BUDGETS=report` does for search at scale.
+ */
+const holdsTheTimeBudgets = process.env.STRESS_BUDGETS !== "report";
+
+/** A time budget missed: thrown, or written down and passed over (see {@link holdsTheTimeBudgets}). */
+function budgetMissed(said: string): void {
+  if (holdsTheTimeBudgets) throw new Error(said);
+  logLine("stress-budgets-missed.jsonl", { said });
+  console.warn(`stress: a time budget missed, reported (STRESS_BUDGETS=report): ${said}`);
+}
 
 /** How often the round writes down how far it has got, in tabs. */
 const PROGRESS_EVERY = 10;
@@ -277,6 +300,8 @@ describe("fifty tabs over and over, then two hundred at once", function () {
     const afterClosing: Looked[] = [];
     for (let round = 1; round <= ROUNDS; round++) {
       const roundBegan = Date.now();
+      // Said once a round: a reported budget lets the round go on past it.
+      let roundMissed = false;
       // No pause: the next tab is asked for as soon as the last one's picker has gone. Every
       // tenth tab is written down, because a round that runs out of time has to say how far
       // it got: the five timeouts of 2026-09-20 all landed inside this loop, and the trace
@@ -287,8 +312,9 @@ describe("fifty tabs over and over, then two hundred at once", function () {
           look(started, round, `${opened + 1} of ${TABS} open`, began);
         }
         const spent = Date.now() - roundBegan;
-        if (spent > ROUND_BUDGET) {
-          throw new Error(
+        if (spent > ROUND_BUDGET && !roundMissed) {
+          roundMissed = true;
+          budgetMissed(
             `round ${round}: ${opened + 1} of ${TABS} tabs took ${spent / 1000}s, past the ` +
               `${ROUND_BUDGET / 1000}s a round is given (see logs/stress.jsonl)`,
           );
@@ -342,6 +368,8 @@ describe("fifty tabs over and over, then two hundred at once", function () {
     const started = theApp();
     await closeEveryTab();
     const began = Date.now();
+    // Said once: a reported budget lets the opens go on past it.
+    let openMissed = false;
     look(started, 0, `${OPEN_TARGET}: nothing open, started with a limit of ${startedWith}`, began);
 
     for (let opened = 0; opened < OPEN_TARGET; opened++) {
@@ -350,8 +378,9 @@ describe("fifty tabs over and over, then two hundred at once", function () {
         look(started, 0, `${opened + 1} of ${OPEN_TARGET} open`, began);
       }
       const spent = Date.now() - began;
-      if (spent > OPEN_TARGET_BUDGET) {
-        throw new Error(
+      if (spent > OPEN_TARGET_BUDGET && !openMissed) {
+        openMissed = true;
+        budgetMissed(
           `${opened + 1} of ${OPEN_TARGET} tabs took ${spent / 1000}s, past the ` +
             `${OPEN_TARGET_BUDGET / 1000}s they are given (see logs/stress.jsonl)`,
         );

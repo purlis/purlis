@@ -82,6 +82,25 @@ export function harnessesRunning(): number {
  */
 export const SESSION_HOST_ARGUMENT = "purlis-serve-for-the-window";
 
+/**
+ * The first arguments the app gives its own binary when it starts it as a short-lived helper
+ * rather than a window (#5586): a Linux chat's sandbox wrap (`purlis_linux_sandbox::COMMAND`
+ * and `NO_NAMESPACES`), a browser engine's keeper (`browsers::KEEPER`), git's credential helper
+ * (`gitcredential::HELPER_ARG`) and the keyring item writer (`keyhold::HOLD_ARG`). Spelled here
+ * as {@link SESSION_HOST_ARGUMENT} is. Counted as windows, a chat's wrap still closing read as a
+ * second app and failed the stress test on Linux.
+ */
+export const HELPER_ARGUMENTS: readonly string[] = [
+  "_sandbox",
+  "_no-namespaces",
+  "purlis-engine-keeper",
+  "purlis-git-credential",
+  "charter-hold-a-keyring-item",
+];
+
+/** The LAST argument of the binary started as a branch's bounded reader (`reader::READ_ARG`). */
+export const READER_ARGUMENT = "charter-read-a-branch";
+
 /** The app's processes, by pid: its windows, and the session hosts they started. */
 export interface AppProcesses {
   windows: number[];
@@ -93,8 +112,9 @@ export interface AppProcesses {
  * windows and its session hosts.
  *
  * By the command line, not the parent: the host is the window's own binary started again with
- * {@link SESSION_HOST_ARGUMENT} as its first argument, and a window is that binary started with
- * anything else. Counting by the binary alone found every run's host as a second app (#2384).
+ * {@link SESSION_HOST_ARGUMENT} as its first argument, a helper with one of
+ * {@link HELPER_ARGUMENTS} (or {@link READER_ARGUMENT} last) is neither, and a window is that
+ * binary started with anything else. Counting by the binary alone found every run's host as a second app (#2384).
  */
 export function appProcessesIn(listing: string, binary: string): AppProcesses {
   const found: AppProcesses = { windows: [], sessionHosts: [] };
@@ -105,7 +125,9 @@ export function appProcessesIn(listing: string, binary: string): AppProcesses {
     if (!Number.isInteger(pid) || !(command === binary || command.startsWith(`${binary} `))) {
       continue;
     }
-    const first = command.slice(binary.length).trimStart().split(/\s+/)[0];
+    const words = command.slice(binary.length).trim().split(/\s+/);
+    const first = words[0];
+    if (HELPER_ARGUMENTS.includes(first) || words[words.length - 1] === READER_ARGUMENT) continue;
     (first === SESSION_HOST_ARGUMENT ? found.sessionHosts : found.windows).push(pid);
   }
   return found;
