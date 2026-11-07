@@ -11,7 +11,7 @@ import {
   THE_RUNS_GIT_CONFIG_TEXT,
 } from "../harness.js";
 import { bandNotice } from "../reading.js";
-import { openAgain, openedOnceBefore } from "../switching.js";
+import { asksTheDoctorAgain, openedWithTheDoctorHeard } from "../switching.js";
 
 /**
  * **A machine with no git identity is told so by a Notice** (#1250), in the built app against
@@ -19,12 +19,13 @@ import { openAgain, openedOnceBefore } from "../switching.js";
  *
  * `app/src/DoctorNotice.window.test.tsx` drives the Notice against a mocked core. What only a
  * real window can show is the whole path: git asked through charter's hardened runner, the
- * preflight the window runs when a project opens, and the finding standing in the band.
+ * doctor the window runs, and the finding standing in the doctor's one Notice line (#5645).
  *
  * **Every other spec runs with an identity** (`THE_RUNS_HOME`, D-1250-8), so this one takes it
- * away: it empties the run's own `.gitconfig` — never the runner's — opens a project of its
- * own, whose preflight then finds no identity, and puts the file back before anything else is
- * asked. One app process serves the whole run, so it also lets its project go again.
+ * away: it opens a project of its own and lets its doctor answer, so the first-open baseline
+ * (#5648) holds nothing to find, then empties the run's own `.gitconfig` — never the runner's —
+ * asks the doctor again, which finds no identity, and puts the file back before anything else
+ * is asked. One app process serves the whole run, so it also lets its project go again.
  */
 
 const PROJECTS = '[data-strip="Projects"]';
@@ -34,7 +35,8 @@ const NAME = "no-identity";
 /** The doctor's one Notice line (#5645, `DOCTOR_LINE`), whose list holds the finding. */
 const CAUSE = "doctor-finding:*";
 /** The finding's row in the line's list, by the doctor row's name. */
-const ROW = `[data-cause="${CAUSE}"] li.doctor-row[data-row="git identity"]`;
+const LINE = `[role="tabpanel"][data-view="notices"] [data-cause="${CAUSE}"]`;
+const ROW = `${LINE} li.doctor-row[data-row="git identity"]`;
 
 /** This spec's own project: the fixture plane, with nothing to put back on open. */
 const mine = (() => {
@@ -92,13 +94,14 @@ describe("a machine with no git identity", function () {
   });
 
   it("is shown the doctor's finding in its Notice line, with its Fix", async () => {
-    // Opened once with the identity in place: what a project holds the first time it opens on a
-    // machine counts as seen (#5648), and this spec's finding has to be new.
-    await openedOnceBefore(mine);
+    // Opened with the identity in place and its doctor heard: what a project holds the first
+    // time it opens on a machine counts as seen (#5648), and this spec's finding has to be new.
+    await openedWithTheDoctorHeard(mine);
     writeFileSync(THE_RUNS_GIT_CONFIG, "");
     try {
-      // The preflight is asked when a project opens, and that is the read this spec is about.
-      await openAgain(mine);
+      // The doctor asked again, as the person does from its status item: the read this spec is
+      // about.
+      await asksTheDoctorAgain();
 
       let said = "";
       await browser.waitUntil(
@@ -111,7 +114,7 @@ describe("a machine with no git identity", function () {
       );
       expect(said).toMatch(/Doctor: \d+ findings?/);
       // Its list, opened from the line: the finding, as the Doctor dialog's row says it.
-      await $(`[data-cause="${CAUSE}"]`).$("button=Show findings").click();
+      await $(LINE).$("button=Show findings").click();
       const row = await $(ROW);
       await row.waitForDisplayed({ timeout: 20_000 });
       await expect(row).toHaveText(expect.stringContaining("not set: user.name, user.email"));

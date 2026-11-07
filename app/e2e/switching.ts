@@ -8,6 +8,7 @@ import type { Bench, Plan } from "../src/bench.ts";
 import { anEmptyRecord, copyFixturePlane } from "./harness.js";
 import { closeProject, openThroughTheTrustQuestion } from "./opening.js";
 import { attributesOfEach } from "./reading.js";
+import { escapeUntilClosed } from "./tooltips.js";
 import { OPEN, summarise, type Switches } from "./switchTimes.js";
 
 export { BUDGET_MS, OPEN, heldToBudget, type Switches } from "./switchTimes.js";
@@ -99,31 +100,46 @@ export async function openFromTheStrip(plane: string): Promise<void> {
   });
 }
 
-/**
- * **Opens `plane` once and lets it go, so this machine has seen it** (#5648, ADR 0119): what a
- * project already holds the first time it opens on a machine counts as seen, so a spec that
- * needs a doctor's finding to be new opens its project this way first, with nothing to find.
- * The first-open record is asked for here, not left to the window, whose own ask may not have
- * landed before the project is let go. Opened again, `plane` is approved: no trust question.
- */
-export async function openedOnceBefore(plane: string): Promise<void> {
-  await openFromTheStrip(plane);
-  await ask("inbox_first_open", { plane });
-  await ask("close_plane", { plane });
+/** Whether the status line's doctor has answered for the project in front: its label once a
+ *  report has landed, not the one it wears before (`onTheLine`, `Doctor.tsx`). */
+async function theDoctorHasAnswered(): Promise<boolean> {
+  const label = await browser.execute(
+    () => document.querySelector('[data-testid="status-doctor"]')?.getAttribute("aria-label") ?? "",
+  );
+  return label !== "" && label !== "Doctor" && !label.startsWith("Doctor —");
 }
 
-/** Opens `plane` again after {@link openedOnceBefore}: approved, so no trust question. */
-export async function openAgain(plane: string): Promise<void> {
-  await $(`${PROJECTS} button[aria-label="Open a project…"]`).click();
-  const box = await $('[data-setting="open-by-path"] input');
-  await box.waitForDisplayed({ timeout: 20_000 });
-  await box.addValue(plane);
-  await $('form.by-path button[type="submit"]').click();
-  await openThroughTheTrustQuestion({ ifAsked: true, within: 5_000 });
-  await browser.waitUntil(async () => (await inFront()) === plane, {
-    timeout: 30_000,
-    timeoutMsg: `${plane} never came to the front again`,
+/**
+ * **Opens `plane` and waits for its doctor's first report** (#5648, ADR 0119): what a project
+ * holds the first time it opens on a machine counts as seen, so a spec that needs a doctor's
+ * finding to be new opens its project this way, with nothing to find, and then makes the
+ * finding and {@link asksTheDoctorAgain}. The first-open record is asked for here as well, so it
+ * is kept whichever ask lands first.
+ */
+export async function openedWithTheDoctorHeard(plane: string): Promise<void> {
+  await openFromTheStrip(plane);
+  await ask("inbox_first_open", { plane });
+  await browser.waitUntil(theDoctorHasAnswered, {
+    timeout: 60_000,
+    interval: 250,
+    timeoutMsg: `the doctor never answered for ${plane}`,
   });
+}
+
+/** **Runs the doctor again for the project in front**, as the person does: its status item opens
+ *  the Doctor dialog, which checks again in full; the dialog is closed once it has answered. */
+export async function asksTheDoctorAgain(): Promise<void> {
+  await $('[data-testid="status-doctor"]').click();
+  const dialog = $('[role="dialog"]');
+  await dialog.waitForDisplayed({ timeout: 20_000 });
+  await browser.waitUntil(
+    async () => {
+      const said = await dialog.getText();
+      return said.includes("each harness profile probed") && !said.includes("Checking again");
+    },
+    { timeout: 90_000, interval: 250, timeoutMsg: "the full doctor never answered" },
+  );
+  await escapeUntilClosed(() => dialog.isDisplayed());
 }
 
 /**

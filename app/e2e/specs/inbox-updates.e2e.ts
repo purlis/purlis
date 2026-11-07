@@ -11,7 +11,13 @@ import {
   THE_RUNS_GIT_CONFIG_TEXT,
 } from "../harness.js";
 import { showView } from "../opening.js";
-import { PROJECTS, ask, inFront, openAgain, openedOnceBefore } from "../switching.js";
+import {
+  PROJECTS,
+  ask,
+  inFront,
+  asksTheDoctorAgain,
+  openedWithTheDoctorHeard,
+} from "../switching.js";
 
 /**
  * **The doctor's findings stand as one Notice line, never as an update, and Dismiss all puts it
@@ -19,10 +25,11 @@ import { PROJECTS, ask, inFront, openAgain, openedOnceBefore } from "../switchin
  * core and the real doctor.
  *
  * The finding is made the way `git-identity.e2e.ts` makes it: the run's own `.gitconfig` (never
- * the runner's) is emptied, and a project of the spec's own is opened, whose preflight then finds
- * no git identity. A finding already there the first time a project opens on a machine counts as
- * seen (#5648), so the project is opened once with the identity in place, let go, and opened
- * again without it: the finding is then new.
+ * the runner's) is emptied, and the doctor of a project of the spec's own then finds no git
+ * identity. A finding already there the first time a project opens on a machine counts as
+ * seen (#5648), so the project is opened with the identity in place and its doctor heard, and
+ * the doctor is asked again, from its status item, once the identity is gone: the finding is
+ * then new.
  *
  * - The Notices view lists it as the doctor's one line, "Doctor: N findings".
  * - Updates lists no line for it, under Mine or Project: a doctor finding is a Notice only.
@@ -139,11 +146,11 @@ describe("the doctor's Notice line", function () {
 
   it("stands as one Notice line and no update, and Dismiss all puts it away", async () => {
     // Opened first with the identity in place, so the first-open baseline holds no finding.
-    await openedOnceBefore(mine);
+    await openedWithTheDoctorHeard(mine);
     writeFileSync(THE_RUNS_GIT_CONFIG, "");
     try {
-      // The preflight is asked when a project opens: the read this spec's finding comes from.
-      await openAgain(mine);
+      // The doctor asked again, from its status item: the read this spec's finding comes from.
+      await asksTheDoctorAgain();
       await showView("Notices");
       await browser
         .waitUntil(async () => /^Doctor: \d+ findings?/.test((await doctorLine()) ?? ""), {

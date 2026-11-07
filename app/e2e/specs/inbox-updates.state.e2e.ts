@@ -18,7 +18,13 @@ import {
 } from "../harness.js";
 import { closeProject, showView } from "../opening.js";
 import { endChatById, startAChat, type Started } from "../started.js";
-import { PROJECTS, ask, inFront, openAgain, openedOnceBefore } from "../switching.js";
+import {
+  PROJECTS,
+  ask,
+  inFront,
+  asksTheDoctorAgain,
+  openedWithTheDoctorHeard,
+} from "../switching.js";
 
 /**
  * **Dismiss all on the Notices answers nothing, with a real ask waiting in Asks** (#1693,
@@ -31,10 +37,11 @@ import { PROJECTS, ask, inFront, openAgain, openedOnceBefore } from "../switchin
  *
  * - **the Notice** is the doctor's one line (#5645), from its git-identity finding, the one the
  *   run can make deterministically: the run's own `.gitconfig` is emptied and a project of the
- *   spec's own is opened again, whose preflight finds no identity. Opened once before with the
- *   identity in place, so the first-open baseline (#5648) does not count the finding as seen.
- *   The identity is put back at once: the doctor runs when the project opens, so the line stands
- *   until it is put away, and the chat below starts with the run's identity as every other does;
+ *   spec's own is checked again by the doctor, which finds no identity. Opened with the identity
+ *   in place and its doctor heard first, so the first-open baseline (#5648) does not count the
+ *   finding as seen.
+ *   The identity is put back at once: the doctor is not asked again, so the line stands until
+ *   it is put away, and the chat below starts with the run's identity as every other does;
  * - **the ask** is the reporting harness's permission ask (`ASKS_A_PERMISSION`). The project
  *   declares that harness as its own profile, the piece D-1693-1 named as missing: the state
  *   run declares it in the launch's project only.
@@ -197,11 +204,11 @@ describe("the Notices' Dismiss all, with an ask waiting in Asks", function () {
     first = (await ask<string[]>("open_planes"))[0];
 
     // Opened first with the identity in place, so the first-open baseline holds no finding.
-    await openedOnceBefore(mine);
-    // The Notice: the preflight is asked when a project opens, and finds no identity.
+    await openedWithTheDoctorHeard(mine);
+    // The Notice: the doctor, asked again, finds no identity.
     writeFileSync(THE_RUNS_GIT_CONFIG, "");
     try {
-      await openAgain(mine);
+      await asksTheDoctorAgain();
       await showView("Notices");
       await browser
         .waitUntil(doctorLineStands, { timeout: 60_000, interval: 500 })
