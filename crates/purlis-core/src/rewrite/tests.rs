@@ -555,7 +555,8 @@ fn a_held_folder_refuses_past_the_wait() {
     assert_eq!(refused.kind(), io::ErrorKind::WouldBlock);
     assert!(refused.to_string().contains("try"), "{refused}");
     drop(held);
-    assert!(Lock::waiting(dir.path(), std::time::Duration::ZERO).is_ok());
+    // The wait that gave up takes it for a moment once it is let go (`in_turn`), and lets go.
+    assert!(Lock::waiting(dir.path(), std::time::Duration::from_secs(5)).is_ok());
 }
 
 /// A holder that lets go within the wait is waited for.
@@ -569,4 +570,53 @@ fn a_folder_let_go_within_the_wait_is_taken() {
     });
     assert!(Lock::waiting(dir.path(), std::time::Duration::from_secs(5)).is_ok());
     letting_go.join().unwrap();
+}
+
+/// **A writer waiting gets its turn** (#5559): another that lets go and asks again at once, over
+/// and over, does not keep taking the lock straight back. Asked for every 25 ms, as a wait once
+/// asked, ten turns took 1.6 to 5.2 s here; waited for in turn, 0.1 to 0.2 s.
+#[cfg(unix)]
+#[test]
+fn a_waiting_writer_gets_its_turn_behind_one_that_keeps_asking() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().to_path_buf();
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let greedy = {
+        let (path, stop) = (path.clone(), stop.clone());
+        std::thread::spawn(move || {
+            while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                let held = Lock::waiting(&path, std::time::Duration::from_secs(10)).unwrap();
+                std::thread::sleep(std::time::Duration::from_millis(10));
+                drop(held);
+            }
+        })
+    };
+    std::thread::sleep(std::time::Duration::from_millis(30));
+
+    let began = std::time::Instant::now();
+    let turns: Vec<bool> = (0..10)
+        .map(|_| Lock::waiting(&path, std::time::Duration::from_secs(5)).is_ok())
+        .collect();
+    let took = began.elapsed();
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    greedy.join().unwrap();
+    assert_eq!(turns, [true; 10]);
+    assert!(
+        took < std::time::Duration::from_secs(2),
+        "ten turns took {took:?}"
+    );
+}
+
+/// A wait that gave up leaves the lock to the next writer once its holder lets go: its thread,
+/// still queued, takes it and lets go at once.
+#[cfg(unix)]
+#[test]
+fn a_wait_that_gave_up_lets_go_once_the_holder_does() {
+    let dir = tempfile::tempdir().unwrap();
+    let held = Lock::on(dir.path());
+    assert!(Lock::waiting(dir.path(), std::time::Duration::from_millis(30)).is_err());
+    drop(held);
+
+    let again = Lock::waiting(dir.path(), std::time::Duration::from_secs(5));
+    assert!(again.is_ok(), "{:?}", again.err());
 }

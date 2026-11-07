@@ -86,6 +86,9 @@ pub(crate) struct Store {
     /// What a link in it reaches outside of, as a sentence names it: `its workspace`, or
     /// `the persona store` for a persona's memory held from the project's root.
     within: String,
+    /// Whether this store holds its own lock for as long as it is held ([`Store::open`]): a
+    /// [`Store::lock`] of it then takes nothing more.
+    kept: bool,
 }
 
 /// The sentence for a store reached through a link, or holding one at `inside`. Never the
@@ -150,21 +153,29 @@ impl Entry {
     }
 }
 
-/// The store's lock, let go when it is dropped.
-pub(crate) struct Locked<'a>(&'a Store);
+/// The store's lock, let go when it is dropped: held on an open file of the store's directory
+/// of its own ([`Store::lock`]), `None` where the filesystem can't lock.
+pub(crate) struct Locked<'a>(Option<OwnedFd>, std::marker::PhantomData<&'a Store>);
 
 impl Drop for Locked<'_> {
     fn drop(&mut self) {
-        let _ = rustix::fs::flock(&self.0.fd, FlockOperation::Unlock);
+        if let Some(held) = self.0.take() {
+            let _ = rustix::fs::flock(&held, FlockOperation::Unlock);
+        }
     }
 }
 
 /// A store kept locked ([`Store::locked`]), let go when it is dropped.
-pub(crate) struct LockedStore(Store);
+pub(crate) struct LockedStore {
+    _store: Store,
+    held: Option<OwnedFd>,
+}
 
 impl Drop for LockedStore {
     fn drop(&mut self) {
-        let _ = rustix::fs::flock(&self.0.fd, FlockOperation::Unlock);
+        if let Some(held) = self.held.take() {
+            let _ = rustix::fs::flock(&held, FlockOperation::Unlock);
+        }
     }
 }
 
@@ -244,7 +255,8 @@ impl Store {
             return Ok(None);
         };
         // Best effort, as `rewrite::Lock` is: released when the descriptor closes.
-        let _ = rustix::fs::flock(&held.fd, FlockOperation::LockExclusive);
+        let mut held = held;
+        held.kept = rustix::fs::flock(&held.fd, FlockOperation::LockExclusive).is_ok();
         held.refuse_anything_odd()?;
         Ok(Some(held))
     }
@@ -277,6 +289,7 @@ impl Store {
             below: String::new(),
             said: said.clone(),
             within,
+            kept: false,
         };
         let Some(mut held) = below.sub(store, make != Make::Nothing)? else {
             return Ok(None);
@@ -311,6 +324,7 @@ impl Store {
             below: format!("workspaces/{ws}"),
             said,
             within: "its workspace".to_owned(),
+            kept: false,
         }))
     }
 
@@ -324,6 +338,7 @@ impl Store {
             below: String::new(),
             said: "the project".to_owned(),
             within: "the project".to_owned(),
+            kept: false,
         })
     }
 
@@ -386,6 +401,7 @@ impl Store {
             below,
             said: self.said.clone(),
             within: self.within.clone(),
+            kept: false,
         }))
     }
 
@@ -394,26 +410,38 @@ impl Store {
     ///
     /// **Waited for a bounded time, never for ever.** The lock is an flock on the store's own
     /// directory, which a chat can take too, and keep: waited for without a bound, that wedged
-    /// the operator's command or the window on the chat's store. Asked again every few
-    /// milliseconds for [`LOCK_WAIT`], then refused in a sentence. A filesystem that cannot
-    /// lock at all is written without one, as `rewrite::Lock` writes.
+    /// the operator's command or the window on the chat's store. Waited for in turn behind
+    /// whoever waited first ([`crate::rewrite::in_turn`]) for [`LOCK_WAIT`], then refused in a
+    /// sentence. A filesystem that cannot lock at all is written without one, as
+    /// `rewrite::Lock` writes.
     pub(crate) fn lock(&self) -> Result<Locked<'_>, String> {
-        let gave_up = std::time::Instant::now() + LOCK_WAIT;
-        loop {
-            match rustix::fs::flock(&self.fd, FlockOperation::NonBlockingLockExclusive) {
-                Ok(()) => return Ok(Locked(self)),
-                Err(rustix::io::Errno::WOULDBLOCK | rustix::io::Errno::INTR) => {}
-                Err(_) => return Ok(Locked(self)),
-            }
-            if std::time::Instant::now() >= gave_up {
-                return Err(format!(
-                    "{} is busy: another process has held its lock for over {} seconds, so \
-                     nothing was done. Try again once it lets go",
-                    self.said,
-                    LOCK_WAIT.as_secs()
-                ));
-            }
-            std::thread::sleep(std::time::Duration::from_millis(20));
+        self.lock_within(LOCK_WAIT)
+    }
+
+    /// [`Self::lock`], waiting `most`. **On an open file of the store's directory of its own**,
+    /// never on the store's own descriptor: a wait that gave up leaves its thread queued on the
+    /// file it waited on ([`crate::rewrite::in_turn`]), and one this store asked again on would
+    /// be the very file that thread is then granted, and lets go of, under its new holder.
+    fn lock_within(&self, most: std::time::Duration) -> Result<Locked<'_>, String> {
+        use crate::rewrite::Waited;
+        // Held whole already, by this holder ([`Store::open`]): taken again on another open file
+        // it would wait on itself (#5572), and let go it would end the hold early.
+        if self.kept {
+            return Ok(Locked(None, std::marker::PhantomData));
+        }
+        let dir = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC;
+        let Ok(own) = rustix::fs::openat(&self.fd, ".", dir, Mode::empty()) else {
+            return Ok(Locked(None, std::marker::PhantomData));
+        };
+        match crate::rewrite::in_turn(own.as_fd(), most) {
+            Waited::Taken => Ok(Locked(Some(own), std::marker::PhantomData)),
+            Waited::Unlockable => Ok(Locked(None, std::marker::PhantomData)),
+            Waited::Busy => Err(format!(
+                "{} is busy: another process has held its lock for over {} seconds, so nothing \
+                 was done. Try again once it lets go",
+                self.said,
+                most.as_secs()
+            )),
         }
     }
 
@@ -422,9 +450,8 @@ impl Store {
     /// copy of it until its exec, and a close alone would leave the lock held by that copy
     /// (#1316).
     pub(crate) fn locked(self) -> Result<LockedStore, String> {
-        // The guard would let go at once; the store's own guard lets go when it is dropped.
-        std::mem::forget(self.lock()?);
-        Ok(LockedStore(self))
+        let held = self.lock()?.0.take();
+        Ok(LockedStore { _store: self, held })
     }
 
     /// Refuse the store whole when it holds a link, a file with more than one name, anything
@@ -1030,6 +1057,51 @@ mod tests {
         let _ = child.wait();
 
         assert!(next.is_ok(), "the lock outlived its store: {next:?}");
+    }
+
+    /// **A store's lock is held on an open file of its own** (#5559), not on the store's
+    /// descriptor: a wait it gave up leaves a thread queued on the file it waited on, which
+    /// must never be the one a later lock of the same store is taken on.
+    #[test]
+    fn a_stores_lock_is_held_on_a_file_of_its_own_not_the_stores() {
+        let root = tempfile::tempdir().unwrap();
+        let place = Place::Workspace("alpha".to_owned());
+        let store = Store::hold(root.path(), &place, "memory", Make::All, Who::Operator)
+            .unwrap()
+            .expect("the store");
+        let held = store.lock().expect("locked");
+
+        let asked_on_the_store =
+            rustix::fs::flock(&store.fd, FlockOperation::NonBlockingLockExclusive);
+        assert!(
+            asked_on_the_store.is_err(),
+            "the store's own file holds the lock"
+        );
+        drop(held);
+        assert!(rustix::fs::flock(&store.fd, FlockOperation::NonBlockingLockExclusive).is_ok());
+    }
+
+    /// **A store held whole is locked again at once, and stays held** (#5572): the chat tools
+    /// hold a store locked for as long as they use it ([`Store::open`]), and a write within
+    /// takes its lock again ([`Store::lock`]). On an open file of its own, that waited on its
+    /// own holder and was refused as busy after 5 s.
+    #[test]
+    fn a_store_held_whole_is_locked_again_at_once_and_stays_held() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("workspaces/alpha")).unwrap();
+        let place = Place::Workspace("alpha".to_owned());
+        let store = Store::open(root.path(), &place, "todos", true)
+            .unwrap()
+            .expect("the store");
+
+        let again = store.lock_within(std::time::Duration::from_millis(100));
+        assert!(again.is_ok(), "{:?}", again.err());
+        drop(again);
+        let other = std::fs::File::open(root.path().join("workspaces/alpha/todos")).unwrap();
+        assert!(
+            rustix::fs::flock(&other, FlockOperation::NonBlockingLockExclusive).is_err(),
+            "the hold ended with the lock taken within it"
+        );
     }
 
     /// An entry the listing named and that went before it was looked at (an edit's temporary

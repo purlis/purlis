@@ -1655,7 +1655,9 @@ fn a_sandboxed_chat_starts_on_a_record_of_its_folder_and_what_appears_after_is_t
     let session = chats.start_ready(&chat, &ready, SIZE).expect("starts");
     let id = chats.id_of(session).expect("an id");
 
+    // At once, as a chat's program may, while the start may still be recording (#5555).
     std::fs::write(plane.path().join(".mcp.json"), "{}\n").expect("a name");
+    crate::arrived::recorded(&id);
     let looked = arrived::look(plane.path(), &id, None)
         .expect("a look")
         .expect("its record");
@@ -2540,6 +2542,9 @@ fn a_restart_keeps_the_conversation_and_compiles_the_sandbox_the_project_has_now
         .start(&a_resumable_chat_in(plane.path()), SIZE)
         .expect("starts");
     let id = chats.record().chats[0].identity.id.clone();
+    // Its record written, as a slow walk finishes it after the start (#5555): the record's folder
+    // under `.charter` is part of what a start compiles.
+    crate::arrived::recorded(id.as_deref().expect("an id"));
     let before = chats.confines_of(session).expect("it started sandboxed");
     assert!(!reaches(&before, "a.example"), "{before:?}");
 

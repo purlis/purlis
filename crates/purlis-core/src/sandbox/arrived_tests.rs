@@ -113,6 +113,30 @@ fn a_name_that_appears_is_told_once_and_one_that_was_there_is_not() {
     assert_eq!(told[0].paths.len(), 3);
 }
 
+/// A start's walk may finish beside the chat's first moments (#5555): what the chat writes before
+/// the walk reaches it is told, and what was there is still not.
+#[test]
+fn a_name_made_after_the_start_began_is_told_though_the_walk_found_it() {
+    let fix = Fixture::new();
+    file(&fix.folder.join(".envrc"), "there at the start\n");
+    file(&fix.folder.join(".vscode/settings.json"), "{}\n");
+    let since = std::time::SystemTime::now();
+    // Past a file timestamp's coarser clock.
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    file(&fix.folder.join(".mcp.json"), "{}\n");
+    file(&fix.folder.join(".vscode/tasks.json"), "{}\n");
+    arrived::begin_since(
+        &fix.plane,
+        CHAT,
+        Some("Fix the build"),
+        &fix.watched(),
+        since,
+    )
+    .expect("a record");
+
+    assert_eq!(fix.look(), [".mcp.json"]);
+}
+
 #[test]
 fn a_name_in_another_case_is_told() {
     let fix = Fixture::new();

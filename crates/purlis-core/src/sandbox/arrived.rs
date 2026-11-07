@@ -314,6 +314,33 @@ fn ctime(_: &std::fs::Metadata) -> i64 {
     0
 }
 
+/// Whether what is at `path` was made at or after `since` ([`begin_since`]): by its birth where
+/// the disk keeps one, else by its last change. What can't be said was not.
+fn made_since(path: &Path, since: std::time::SystemTime) -> bool {
+    let Ok(meta) = std::fs::symlink_metadata(path) else {
+        return false;
+    };
+    meta.created()
+        .ok()
+        .or_else(|| changed_at(&meta))
+        .is_some_and(|made| made >= since)
+}
+
+#[cfg(unix)]
+fn changed_at(meta: &std::fs::Metadata) -> Option<std::time::SystemTime> {
+    use std::os::unix::fs::MetadataExt;
+    let at = Duration::new(
+        u64::try_from(meta.ctime()).ok()?,
+        u32::try_from(meta.ctime_nsec()).ok()?,
+    );
+    std::time::SystemTime::UNIX_EPOCH.checked_add(at)
+}
+
+#[cfg(not(unix))]
+fn changed_at(_: &std::fs::Metadata) -> Option<std::time::SystemTime> {
+    None
+}
+
 impl Pin {
     /// What is at `path`, without following a link there.
     #[cfg(unix)]
@@ -533,10 +560,28 @@ fn holding<T>(plane: &Path, then: impl FnOnce() -> io::Result<T>) -> io::Result<
 
 /// **As chat `chat` starts**: what is in `watched` now is what it started with. Where the walk
 /// takes longer than a start may wait, the caller lets it finish beside the chat's first moments
-/// ([`BEGIN_WAITS_AT_MOST`]). A chat that comes back keeps the record it had, so what appeared
-/// while the app was closed is told at its next look; a folder it may write now that it could not
-/// before is added as it is.
+/// ([`BEGIN_WAITS_AT_MOST`]), and says when the start began ([`begin_since`]). A chat that comes
+/// back keeps the record it had, so what appeared while the app was closed is told at its next
+/// look; a folder it may write now that it could not before is added as it is.
 pub fn begin(plane: &Path, chat: &str, name: Option<&str>, watched: &Watched) -> io::Result<()> {
+    begin_since(plane, chat, name, watched, std::time::SystemTime::now())
+}
+
+/// [`begin`] for a start that began at `since`: **what was made at or after `since` is not what
+/// the chat started with** (#5555). A walk that finishes beside the chat's first moments may
+/// reach a name the chat has just written, and taken as there at the start it would never be
+/// told. Made is by its birth, where the disk keeps one, so a change inside a name that was
+/// there is still not told; elsewhere by its last change, which may tell a name rewritten in
+/// those first moments. A chat's program starts only once the walk is done or the start's wait
+/// is over, so a file timestamp's coarser clock, a few milliseconds behind, never puts what it
+/// writes before `since`.
+pub fn begin_since(
+    plane: &Path,
+    chat: &str,
+    name: Option<&str>,
+    watched: &Watched,
+    since: std::time::SystemTime,
+) -> io::Result<()> {
     let path = file(plane, chat)?;
     let had = read(&path).ok().flatten().unwrap_or_default();
     let new_folders: Vec<PathBuf> = watched
@@ -545,7 +590,7 @@ pub fn begin(plane: &Path, chat: &str, name: Option<&str>, watched: &Watched) ->
         .filter(|folder| !had.watched.folders.contains(folder))
         .cloned()
         .collect();
-    let walked = walk(&Watched {
+    let mut walked = walk(&Watched {
         folders: new_folders.clone(),
         home: watched.home.clone().filter(|_| had.watched.home.is_none()),
         contents: watched.contents,
@@ -553,6 +598,7 @@ pub fn begin(plane: &Path, chat: &str, name: Option<&str>, watched: &Watched) ->
         held_git: watched.held_git.clone(),
         placeholders: Vec::new(),
     });
+    walked.found.retain(|found, _| !made_since(found, since));
     let repos = repos_at_start(&new_folders, &walked);
     holding(plane, || {
         let mut record = read(&path).ok().flatten().unwrap_or_default();
