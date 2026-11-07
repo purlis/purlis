@@ -56,8 +56,15 @@ Done when every finding is applied, merged, kept on purpose, or declined by the 
 ## 3. Improve the charter
 
 A lesson that has held across several memories, or that every chat in this workspace or persona
-should act on from its first turn, belongs in the charter. Write it there in a sentence that
-says what to do and why, then archive the memories it replaces.
+should act on from its first turn, belongs in the charter. Say it in a sentence that says what
+to do and why, then archive the memories it replaces.
 
-Show the operator the charter's diff. Done when they have read it. Both files are committed, so
-the change travels with the plane's next save.
+- **A workspace's charter:** purlis writes `workspace.md` for this chat, so a sandboxed chat is
+  not refused. Add a rule with the `workspace_section` tool and section `decisions`
+  (`## Context & decisions`), a term with section `glossary` (`## Glossary`), and a changed goal
+  with the `workspace_vision` tool. Both write the workspace this chat works in; for another
+  workspace, give the operator the entries to add.
+- **A persona's charter:** the rule goes into its `persona.md`.
+
+Show the operator what changed in the charter. Done when they have read it. Both files are
+committed, so the change travels with the plane's next save.

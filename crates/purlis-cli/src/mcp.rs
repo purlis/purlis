@@ -85,18 +85,11 @@ impl ServerHandler for Server {
     ) -> Result<ListToolsResult, ErrorData> {
         // The skill tools (SK-13), only where the project's skills reach this chat: the
         // `skill-studio` flag, or a project that requires them (#2784).
-        let skills: &[chattools::Tool] = if skills_reach_here() {
-            &purlis_core::skilltools::TOOLS
-        } else {
-            &[]
-        };
+        let skills = skills_reach_here();
         let graded = self.graded;
         Ok(ListToolsResult::with_all_items(
-            chattools::TOOLS
-                .iter()
-                .chain(purlis_core::browsertools::TOOLS.iter())
-                .chain(purlis_core::themepreview::TOOLS.iter())
-                .chain(skills.iter())
+            every_tool()
+                .filter(|one| skills || !purlis_core::skilltools::is_one(one.name))
                 .filter(|one| !graded || chattools::PRE_ALLOWED.contains(&one.name))
                 .map(tool)
                 .collect(),
@@ -278,6 +271,17 @@ fn skills_reach_here() -> bool {
         Ok(here) => purlis_core::skills::reach_chats_here(here.plane.root()),
         Err(_) => purlis_core::skills::studio_on_here(),
     }
+}
+
+/// **Every tool this server can list**, before a chat's place narrows it: the skill tools reach
+/// only where skills do, and a grade's chat lists only the ones that read. The shipped skills
+/// are held to it, so a skill never names a tool no chat is handed (#5721).
+pub(crate) fn every_tool() -> impl Iterator<Item = &'static chattools::Tool> {
+    chattools::TOOLS
+        .iter()
+        .chain(purlis_core::browsertools::TOOLS.iter())
+        .chain(purlis_core::themepreview::TOOLS.iter())
+        .chain(purlis_core::skilltools::TOOLS.iter())
 }
 
 /// What the server tells the harness it is for: its tools, and the one line about its skills
