@@ -715,7 +715,7 @@ pub(crate) fn did_not_start_said(
 /// tool here runs or reads as its settings, every one a save would refuse, and every link, by
 /// its path in the project. None where nothing such came.
 pub(crate) fn came_back_said(from: Option<&str>, came: &CameBack) -> Option<String> {
-    if came.watch.is_empty() && came.made.is_empty() {
+    if came.watch.is_empty() && came.made.is_empty() && came.stayed.is_empty() {
         return None;
     }
     let from = from.map_or_else(|| "a runner".to_owned(), |pool| format!("pool {pool}"));
@@ -739,6 +739,8 @@ pub(crate) fn came_back_said(from: Option<&str>, came: &CameBack) -> Option<Stri
             ),
         });
     }
+    // Each its own sentence: why it stayed, and what brings it here (#5601).
+    said.extend(came.stayed.iter().map(|why| format!("{why}.")));
     if !came.watch.is_empty() {
         said.push(format!(
             "Its work came back from {from} with files a tool on this machine runs or reads, or \

@@ -414,6 +414,29 @@ pub fn make_repos_folder(dest: &Path) -> Result<bool, String> {
     }
 }
 
+/// **`dir` made in `repos/`**, with `mkdir` alone, and its `repos/` made again where another run
+/// took it away first (#5601): a run takes away a `repos/` it found missing and left empty, which
+/// may be after another run made it and before that run made its own folder in it. Answers
+/// whether this made `repos/`. A folder in anything but a `repos/` is made as `mkdir` makes it.
+pub fn make_in_repos(dir: &Path) -> std::io::Result<bool> {
+    let mut made = false;
+    for _ in 0..3 {
+        match std::fs::create_dir(dir) {
+            Err(why)
+                if why.kind() == std::io::ErrorKind::NotFound
+                    && dir
+                        .parent()
+                        .and_then(Path::file_name)
+                        .is_some_and(|name| name == repofolder::REPOS) =>
+            {
+                made |= make_repos_folder(dir).map_err(std::io::Error::other)?;
+            }
+            done => return done.map(|()| made),
+        }
+    }
+    std::fs::create_dir(dir).map(|()| made)
+}
+
 /// Python's `contain.refusal`: the sentence a name that is a path is refused with.
 pub fn not_a_segment(name: &str) -> String {
     format!(

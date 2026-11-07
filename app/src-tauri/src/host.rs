@@ -215,6 +215,9 @@ pub struct CameBack {
     /// Each clone made here fresh from the runner's chat's work (#3811): every file of it was
     /// made there (#3990).
     pub made: Vec<MadeHere>,
+    /// Each clone the runner's chat made that stayed on the runner, said with why and what to do
+    /// (#5601).
+    pub stayed: Vec<String>,
 }
 
 /// **A clone made here fresh from a runner's chat's work** (#3811, #3985).

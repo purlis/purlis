@@ -215,7 +215,7 @@ fn a_tab_names_what_came_back_that_a_local_tool_runs_and_nothing_when_none_did()
                 "workspaces/app/web/.envrc".into(),
                 "workspaces/app/web/package.json".into(),
             ],
-            made: Vec::new(),
+            ..CameBack::default()
         },
     )
     .unwrap();
@@ -225,6 +225,23 @@ fn a_tab_names_what_came_back_that_a_local_tool_runs_and_nothing_when_none_did()
         "{said}"
     );
     assert!(!said.contains("made there"), "{said}");
+}
+
+/// A clone the runner's chat made that stayed on the runner is said, with why (#5601).
+#[test]
+fn a_tab_says_a_clone_that_stayed_on_the_runner_and_why() {
+    let said = came_back_said(
+        Some("builds"),
+        &CameBack {
+            stayed: vec!["workspaces/app/api stayed on the runner: rename it".into()],
+            ..CameBack::default()
+        },
+    )
+    .unwrap();
+    assert!(
+        said.contains("workspaces/app/api stayed on the runner: rename it"),
+        "{said}"
+    );
 }
 
 /// A clone the runner's chat made is said to be whole from the runner (#3990): every file of
@@ -239,6 +256,7 @@ fn a_tab_says_a_clone_made_fresh_is_whole_from_the_runner() {
                 clone: "workspaces/app/api".into(),
                 remote: Ok("https://github.com/owner/api.git".into()),
             }],
+            ..CameBack::default()
         },
     )
     .unwrap();
@@ -268,6 +286,7 @@ fn a_tab_offers_the_runners_remote_for_a_fresh_clone_or_says_why_none_is() {
                     remote: Err("the runner named no origin a forge reaches for it".into()),
                 },
             ],
+            ..CameBack::default()
         },
     )
     .unwrap();
