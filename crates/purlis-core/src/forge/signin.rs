@@ -270,6 +270,31 @@ pub fn signed_in_backend(
     Ok(forge.backend_for(window_over(&host, forge, Some(refused), feature)))
 }
 
+/// [`signed_in_backend`]'s transport itself, for a forge module whose calls are not a backend's
+/// (a signing key, [`super::signingkeys`]): refused as that one is, and its CLI route refusing
+/// every call.
+pub(super) fn signed_in_transport(
+    forge: &Forge,
+    caller: &Caller,
+    feature: crate::netlog::Feature,
+) -> Result<Arc<dyn Transport>, ForgeError> {
+    let host = handed()
+        .filter(|host| the_person_in_the_window(caller) && signed_in(host, forge).is_some());
+    let Some(host) = host else {
+        return Err(ForgeError::of(
+            Failure::Auth,
+            format!(
+                "purlis sends this only with its own sign-in to {} on {}, which is the app's, \
+                 for the person in its window ({SIGN_IN_AT})",
+                forge.kind.display(),
+                forge.host
+            ),
+        ));
+    };
+    let refused: Arc<dyn Transport> = Arc::new(NoCliRoute);
+    window_over(&host, forge, Some(refused), feature).for_caller(caller)
+}
+
 /// The CLI route of [`signed_in_backend`]: every call and login check refused, unsent.
 struct NoCliRoute;
 

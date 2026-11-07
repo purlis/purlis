@@ -64,6 +64,7 @@ pub mod registration;
 pub mod revoke;
 pub mod route;
 pub mod signin;
+pub mod signingkeys;
 pub mod transport;
 
 pub use backend::{

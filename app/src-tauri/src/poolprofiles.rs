@@ -553,7 +553,8 @@ pub fn tells_through(app: tauri::AppHandle) {
 }
 
 /// **Listens for `purlis profile remove` in the person's own terminal** (#4141), off the launch's
-/// path, and has the runners told as Remove in the window has them told. Said and left at that
+/// path, and has the runners told as Remove in the window has them told. `purlis signing`'s
+/// reads of the forge come this way too (#5625). Said and left at that
 /// where it cannot listen: the command says the runners forget it at their next tidy.
 #[cfg(unix)]
 pub fn listen_for_the_command_line() {
@@ -563,6 +564,11 @@ pub fn listen_for_the_command_line() {
         };
         let socket = purlis_core::windowline::socket();
         let listening = purlis_core::windowline::serve_watching(&socket, move |asked, hung_up| {
+            // `purlis signing` in the person's own terminal holds no sign-in, so it asks this
+            // window, which asks the forge with its own (#5625).
+            if let purlis_core::windowline::Asked::Signing(asked) = &asked {
+                return purlis_core::signingsetup::said_in_the_window(asked);
+            }
             purlis_core::windowline::answer(
                 &config,
                 asked,

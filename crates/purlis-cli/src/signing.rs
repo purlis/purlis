@@ -1,43 +1,47 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **`purlis signing`** (#5480): the key the app signs a chat's commits with, set up once by the
-//! person in their own terminal, in plain steps.
+//! **`purlis signing`** (#5480, #5625): the key the app signs a chat's commits with, set up by
+//! the person in their own terminal, in plain steps. The window's Signed commits card does the
+//! same (ADR 0116), from the same module ([`purlis_core::signingsetup`]).
 //!
 //! A repository that requires signed commits refuses a pull request whose commits are unsigned.
 //! The commits a sandboxed chat makes are made by the app, so the app signs them, with a key it
 //! keeps in this machine's keychain ([`purlis_core::commitsign`]). The chat never holds it, so
 //! none of this runs in a chat.
+//!
+//! **This command holds no forge sign-in** (ADR 0070 ruling 5; the person's ruling of 2026-11-07
+//! on #5625): it never runs `gh`, and it asks the running purlis window whether GitHub has the
+//! key or shows a commit as Verified, which the window asks with its own sign-in. The key is
+//! added on GitHub's page by hand from here; with no window running, the command gives those
+//! steps and says to open the window.
 
 use std::io::{BufRead as _, IsTerminal as _, Write as _};
 use std::path::PathBuf;
-use std::time::Duration;
 
 use clap::Subcommand;
 use purlis_core::commitsign::{self, SETUP, Signer};
-use purlis_core::forge::Kind;
-use purlis_core::forge::cli::Cli;
+use purlis_core::forge::signingkeys;
+use purlis_core::signingsetup::{self, Asked, Heard, Reached};
 
 use crate::voice;
 
 #[derive(Subcommand)]
 pub enum SigningCommand {
     /// Set up the key the app signs your chats' commits with, step by step: purlis makes one (or
-    /// takes yours with `--key`), adds it to your GitHub account as a signing key, and checks
-    /// that GitHub has it.
+    /// takes yours with `--key`), shows how to add it to your GitHub account as a signing key,
+    /// and has the purlis window check that GitHub has it.
     Setup {
         /// Use a key you already have (an Ed25519 private key file, such as `~/.ssh/id_ed25519`)
         /// instead of a new one. If it has a passphrase, you type it once here.
         #[arg(long, value_name = "FILE")]
         key: Option<PathBuf>,
-        /// Don't add the key to GitHub with `gh`: show the steps to add it by hand.
-        #[arg(long)]
-        by_hand: bool,
     },
-    /// Say whether this machine has a signing key, show its public half, and ask GitHub whether
-    /// your account has it.
+    /// Say whether this machine has a signing key, show its public half, and have the purlis
+    /// window ask GitHub whether your account has it.
     Status,
-    /// Ask GitHub whether a pushed commit shows as Verified, and if not, why and what to do.
+    /// Have the purlis window ask GitHub whether a pushed commit shows as Verified, and if not,
+    /// why and what to do.
     Check {
         /// The repository on GitHub, as `owner/name`.
         repo: String,
@@ -48,9 +52,6 @@ pub enum SigningCommand {
     Remove,
 }
 
-/// How long one GitHub call may take.
-const GITHUB: Duration = Duration::from_secs(30);
-
 pub fn run(command: &SigningCommand) -> std::process::ExitCode {
     std::process::ExitCode::from(ran(command))
 }
@@ -59,7 +60,8 @@ fn ran(command: &SigningCommand) -> u8 {
     if std::env::var_os(purlis_core::hookwire::CHAT_ENV).is_some() {
         voice::err(
             "this runs in your own terminal, not in a chat: the signing key is kept where no \
-             chat can reach it. Open a terminal and run the same command there.",
+             chat can reach it. Open a terminal and run the same command there, or set it up \
+             in the purlis window: Settings › You › Accounts › Signed commits.",
         );
         return 1;
     }
@@ -69,7 +71,7 @@ fn ran(command: &SigningCommand) -> u8 {
     };
     let keyring = commitsign::this_builds_keyring(&config);
     let said = match command {
-        SigningCommand::Setup { key, by_hand } => setup(&config, &*keyring, key.clone(), *by_hand),
+        SigningCommand::Setup { key } => setup(&config, &*keyring, key.clone()),
         SigningCommand::Status => status(&config, &*keyring),
         SigningCommand::Check { repo, commit } => check(repo, commit),
         SigningCommand::Remove => match commitsign::forget(&config, &*keyring) {
@@ -101,7 +103,6 @@ fn setup(
     config: &std::path::Path,
     keyring: &dyn purlis_core::secrets::keyring::Store,
     key: Option<PathBuf>,
-    by_hand: bool,
 ) -> Result<u8, String> {
     voice::info(
         "Some repositories accept only signed commits, so GitHub can show who made each one. \
@@ -114,7 +115,7 @@ fn setup(
         Some(file) => {
             let text = std::fs::read_to_string(&file)
                 .map_err(|why| format!("purlis could not read {} ({why}).", file.display()))?;
-            let passphrase = needs_passphrase(&text)
+            let passphrase = commitsign::take_needs_passphrase(&text)
                 .then(|| ask_secret(&format!("Passphrase for {}: ", file.display())))
                 .transpose()?;
             let taken = commitsign::take(config, keyring, &text, passphrase.as_deref())
@@ -126,9 +127,8 @@ fn setup(
             taken
         }
         None => {
-            let had = commitsign::kept(config, keyring)?;
-            let made = commitsign::make(config, keyring)?;
-            if had.is_some() {
+            let (made, had) = signingsetup::key_made(config, keyring)?;
+            if had {
                 voice::ok(format!(
                     "this machine already has a signing key ({}). It is kept as it is.",
                     made.fingerprint()
@@ -145,8 +145,13 @@ fn setup(
     };
     eprintln!();
     voice::info("Step 2 of 3: tell GitHub the key is yours.");
-    let added = if by_hand { false } else { add_with_gh(&signer) };
-    if !added {
+    let first = on_github(&signer);
+    if matches!(first, Reached::Heard(Heard::KeyOnAccount { on: true, .. })) {
+        voice::ok("GitHub already has this key as a signing key on your account.");
+    } else {
+        if let Some(why) = why_by_hand(&first) {
+            voice::info(why);
+        }
         by_hand_steps(&signer);
         if !wait_for_enter() {
             return Ok(0);
@@ -155,7 +160,7 @@ fn setup(
     eprintln!();
     voice::info("Step 3 of 3: check that GitHub has it.");
     match on_github(&signer) {
-        Ok(true) => {
+        Reached::Heard(Heard::KeyOnAccount { on: true, .. }) => {
             voice::ok(
                 "GitHub has the key as a signing key on your account. The commits your chats \
                  make are signed from now on, and show as Verified on GitHub.",
@@ -167,7 +172,7 @@ fn setup(
             );
             Ok(0)
         }
-        Ok(false) => {
+        Reached::Heard(Heard::KeyOnAccount { on: false, .. }) => {
             voice::warn(format!(
                 "GitHub does not list the key on your account yet. Add it as described above, \
                  with Key type Signing Key, then run `{SETUP}` again: the key is kept, so it \
@@ -175,73 +180,74 @@ fn setup(
             ));
             Ok(1)
         }
-        Err(why) => {
+        other => {
             voice::warn(format!(
-                "purlis could not ask GitHub ({why}). If you added the key, commits are signed \
-                 already; `purlis signing status` checks again later."
+                "{} If you added the key, commits are signed already; `purlis signing status` \
+                 checks again later.",
+                not_asked(&other)
             ));
             Ok(1)
         }
     }
 }
 
-/// Whether the key file `text` is locked with a passphrase.
-fn needs_passphrase(text: &str) -> bool {
-    commitsign::take_needs_passphrase(text)
+/// What the running window heard from GitHub of `signer`'s key on the account.
+fn on_github(signer: &Signer) -> Reached {
+    ask_the_window(Asked::KeyOnAccount {
+        key: signer.public_line(),
+    })
 }
 
-/// The key added to the GitHub account `gh` is signed in to, as a signing key, or `false`
-/// where it was not, said.
-fn add_with_gh(signer: &Signer) -> bool {
-    if on_github(signer).unwrap_or(false) {
-        voice::ok("GitHub already has this key as a signing key on your account.");
-        return true;
+#[cfg(unix)]
+fn ask_the_window(asked: Asked) -> Reached {
+    signingsetup::reach(asked, purlis_core::windowline::ask)
+}
+
+/// The window line is a Unix socket: elsewhere this command reaches no window.
+#[cfg(not(unix))]
+fn ask_the_window(_asked: Asked) -> Reached {
+    Reached::NoWindow
+}
+
+/// Why the key is added by hand, said before the steps, where there is more to say than the steps.
+fn why_by_hand(reached: &Reached) -> Option<String> {
+    match reached {
+        Reached::Heard(Heard::KeyOnAccount { on: false, .. }) => None,
+        other => Some(format!("{} Add the key by hand:", not_asked(other))),
     }
-    let args = vec![
-        "api".to_owned(),
-        "--method".to_owned(),
-        "POST".to_owned(),
-        "user/ssh_signing_keys".to_owned(),
-        "-f".to_owned(),
-        format!("title={}", title()),
-        "-f".to_owned(),
-        format!("key={}", signer.public_line()),
-    ];
-    match Cli::as_the_operator().run(Kind::GitHub, &args, GITHUB) {
-        Ok(reply) if reply.code == 0 => {
-            voice::ok("the key is added to your GitHub account as a signing key.");
-            true
+}
+
+/// Why the window could not say whether GitHub has the key, or how a commit shows, in a sentence.
+fn not_asked(reached: &Reached) -> String {
+    match reached {
+        Reached::NoWindow => "No purlis window is running, so purlis could not ask GitHub: this \
+                              command holds no sign-in of its own, and asks the window's. Open \
+                              purlis to have it checked."
+            .to_owned(),
+        Reached::NoAnswer => {
+            "The purlis window did not answer in time, so GitHub was not asked.".to_owned()
         }
-        Ok(reply) if reply.err.contains("admin:ssh_signing_key") || reply.status == Some(404) => {
-            voice::warn(
-                "GitHub's command-line tool `gh` is not allowed to add signing keys yet. To let \
-                 it, run `gh auth refresh -h github.com -s admin:ssh_signing_key`, follow what it \
-                 says, then run this again. Or add the key by hand:",
-            );
-            false
-        }
-        Ok(reply) => {
-            voice::warn(format!(
-                "GitHub did not take the key ({}). Add it by hand:",
-                reply.err.lines().next().unwrap_or("no reason given").trim()
-            ));
-            false
-        }
-        Err(_) => {
-            voice::info(
-                "GitHub's command-line tool `gh` is not set up here, so add the key by hand:",
-            );
-            false
+        Reached::Heard(Heard::NeedsPermission) => "purlis's sign-in to GitHub may not read your \
+             signing keys yet. Set up signing in the purlis window (Settings › You › Accounts › \
+             Signed commits), which asks GitHub for that."
+            .to_owned(),
+        Reached::Refused(why) => format!(
+            "The purlis window could not ask GitHub: {}.",
+            why.trim_end_matches('.')
+        ),
+        Reached::Heard(_) => {
+            "The purlis window answered another question: update purlis.".to_owned()
         }
     }
 }
 
 /// The steps to add the key on GitHub's site.
 fn by_hand_steps(signer: &Signer) {
-    voice::info(
-        "1. Open https://github.com/settings/ssh/new (GitHub › Settings › SSH and GPG keys › New SSH key).",
-    );
-    voice::info(format!("2. Title: {}", title()));
+    voice::info(format!(
+        "1. Open {} (GitHub › Settings › SSH and GPG keys › New SSH key).",
+        signingsetup::NEW_KEY_PAGE
+    ));
+    voice::info(format!("2. Title: {}", signingkeys::title()));
     voice::info("3. Key type: Signing Key (not Authentication Key).");
     voice::info("4. Key: paste this line, whole:");
     println!("{}", signer.public_line());
@@ -270,46 +276,6 @@ fn wait_for_enter() -> bool {
 fn ask_secret(prompt: &str) -> Result<String, String> {
     rpassword::prompt_password(prompt)
         .map_err(|why| format!("purlis could not read the passphrase ({why})."))
-}
-
-/// What GitHub calls the key: which machine's it is.
-fn title() -> String {
-    let machine = std::env::var("HOSTNAME")
-        .ok()
-        .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| std::env::consts::OS.to_owned());
-    format!("purlis on {machine}")
-}
-
-/// Whether the GitHub account `gh` is signed in to has the key as a signing key.
-fn on_github(signer: &Signer) -> Result<bool, String> {
-    let args = vec![
-        "api".to_owned(),
-        "user/ssh_signing_keys".to_owned(),
-        "--paginate".to_owned(),
-    ];
-    let reply = Cli::as_the_operator()
-        .run(Kind::GitHub, &args, GITHUB)
-        .map_err(|_| "GitHub's command-line tool `gh` is not set up here".to_owned())?;
-    if reply.code != 0 {
-        if reply.err.contains("admin:ssh_signing_key") || reply.status == Some(404) {
-            return Err(
-                "`gh` may not read your signing keys: run `gh auth refresh -h \
-                 github.com -s admin:ssh_signing_key`"
-                    .to_owned(),
-            );
-        }
-        return Err(reply
-            .err
-            .lines()
-            .next()
-            .unwrap_or("no reason given")
-            .trim()
-            .to_owned());
-    }
-    // `--paginate` writes one list after another: read them as one.
-    let joined = reply.out.trim().replace("][", ",");
-    commitsign::listed_on_github(&joined, signer)
 }
 
 /// Says which email address the commits carry, which GitHub must know as the account's.
@@ -353,47 +319,31 @@ fn status(
     ));
     println!("{}", signer.public_line());
     match on_github(&signer) {
-        Ok(true) => voice::ok("GitHub has it as a signing key on your account."),
-        Ok(false) => voice::warn(format!(
+        Reached::Heard(Heard::KeyOnAccount { on: true, .. }) => {
+            voice::ok("GitHub has it as a signing key on your account.");
+        }
+        Reached::Heard(Heard::KeyOnAccount { on: false, .. }) => voice::warn(format!(
             "GitHub does not list it on your account, so its commits don't show as Verified. \
              Run `{SETUP}` to add it."
         )),
-        Err(why) => voice::warn(format!("purlis could not ask GitHub ({why}).")),
+        other => voice::warn(not_asked(&other)),
     }
     email_line();
     Ok(0)
 }
 
 fn check(repo: &str, commit: &str) -> Result<u8, String> {
-    let named = |part: &str| {
-        !part.is_empty()
-            && part
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+    signingkeys::repo_named(repo)?;
+    signingkeys::commit_named(commit)?;
+    let reached = ask_the_window(Asked::Check {
+        repo: repo.to_owned(),
+        commit: commit.to_owned(),
+    });
+    let Reached::Heard(Heard::Checked(checked)) = reached else {
+        return Err(not_asked(&reached));
     };
-    let (owner, name) = repo
-        .split_once('/')
-        .filter(|(owner, name)| named(owner) && named(name))
-        .ok_or_else(|| format!("{repo} is not a repository as `owner/name`."))?;
-    if commit.is_empty() || !commit.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return Err(format!("{commit} is not a commit id."));
-    }
-    let args = vec![
-        "api".to_owned(),
-        format!("repos/{owner}/{name}/commits/{commit}"),
-    ];
-    let reply = Cli::as_the_operator()
-        .run(Kind::GitHub, &args, GITHUB)
-        .map_err(|_| "GitHub's command-line tool `gh` is not set up here.".to_owned())?;
-    if reply.code != 0 {
-        return Err(format!(
-            "GitHub did not find commit {commit} in {repo}: is it pushed? ({})",
-            reply.err.lines().next().unwrap_or("").trim()
-        ));
-    }
-    let (verified, reason) = commitsign::verification(&reply.out)?;
-    let said = commitsign::reason_said(&reason);
-    if verified {
+    let said = checked.said();
+    if checked.verified {
         voice::ok(format!("{commit} in {repo}: {said}."));
         Ok(0)
     } else {
