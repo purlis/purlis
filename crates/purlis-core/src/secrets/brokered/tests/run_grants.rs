@@ -1522,6 +1522,39 @@ tools = { pay = { vault = "other", key = "token", fill = "https://pay.example.te
     }
 }
 
+/// **D-5246-1** (the person's ruling, amending D-5080-11): a key of the persona's vault that is a
+/// link into a vault the persona may not use goes to no granted program, however the link came to
+/// be, and nobody is asked: the notice would name only the persona's own vault. Covers links made
+/// before the picker and the press were narrowed.
+#[test]
+fn a_key_linked_into_a_vault_the_persona_may_not_use_is_never_offered_to_a_program() {
+    let project = project();
+    let root = project.path();
+    std::fs::write(
+        root.join("other.json"),
+        serde_json::json!({"PROD_PW": "pr0d-v4lue"}).to_string(),
+    )
+    .unwrap();
+    let ctx = Ctx::new(root, Env::of(&[]));
+    std::fs::create_dir_all(&ctx.state).unwrap();
+    std::fs::write(
+        crate::secrets::links::path(&ctx),
+        r#"{"links": {"team": {"DEPLOY": {"vault": "other", "key": "PROD_PW"}}}}"#,
+    )
+    .unwrap();
+    let asks = Asks::new(root);
+    let mut want = curl(root, &["--version"]);
+    want.env = vec!["X=DEPLOY".into()];
+
+    let frames = run_with(&the_chat(root), want, &asks, Duration::ZERO);
+
+    let (why, code) = refusal(&frames);
+    assert_eq!(code, 1, "{frames:?}");
+    assert!(why.contains("other"), "names where the link leads: {why}");
+    assert!(!why.contains("pr0d-v4lue"), "never the value: {why}");
+    assert!(asks.open_runs().is_empty(), "asked nobody");
+}
+
 /// A key that came to be a browser's while the person read the notice goes to no program, however
 /// they answer: the gate judges it again once allowed, as it judges policy.
 #[test]
@@ -1628,7 +1661,9 @@ fn a_missing_key_filled_with_a_link_to_a_browsers_key_is_not_handed_on() {
             );
             std::thread::yield_now();
         };
-        asks.answer(
+        // The press itself is refused now, before anything is linked (D-5246-1): the gate's
+        // own check after a Fill is the second line behind it.
+        let pressed = asks.answer(
             &Ctx::new(root, Env::of(&[])),
             id,
             crate::secrets::ask::Answer::Link(crate::secrets::links::Target {
@@ -1636,13 +1671,26 @@ fn a_missing_key_filled_with_a_link_to_a_browsers_key_is_not_handed_on() {
                 key: "TOKEN".into(),
             }),
             window(),
+        );
+        assert!(
+            pressed
+                .as_ref()
+                .is_err_and(|why| why.contains("fills in a browser")),
+            "{pressed:?}"
+        );
+        asks.answer(
+            &Ctx::new(root, Env::of(&[])),
+            id,
+            crate::secrets::ask::Answer::Decline,
+            window(),
         )
         .unwrap();
         run.join().unwrap()
     });
-    assert!(
-        refusal(&frames).0.contains("fills in a browser"),
-        "{frames:?}"
+    assert_eq!(
+        crate::secrets::links::of(&Ctx::new(root, Env::of(&[])), "team", "SHOP_PASSWORD").unwrap(),
+        None,
+        "nothing linked"
     );
     assert!(
         !frames

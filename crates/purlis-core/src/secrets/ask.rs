@@ -1148,28 +1148,49 @@ impl Asks {
         self.answer_as(ctx, id, answer, Named::as_asked(), by)
     }
 
-    /// Whether the person may link asked key `key` of vault `vault` to an entry: refused where
-    /// the vault is one the asking persona may not use, as [`fillable`] refuses a Fill. A vault the
-    /// project does not have yet is left to the link's own write, as before.
-    fn linkable(&self, ctx: &Ctx, vault: &str, key: &str) -> Result<(), String> {
+    /// Whether the person may link asked key `key` of vault `vault` to entry `to`, judged as the
+    /// press comes and before anything is written. Where `into_too`, refused where `vault` is one
+    /// the asking persona may not use, as [`fillable`] refuses a Fill (a vault the project does
+    /// not have yet is left to the link's own write, as before). Always refused for an entry the
+    /// run's picker would not list (D-5246-1, amending D-5080-11): one of a vault the persona may
+    /// not use, or one no program is handed ([`super::brokered::NoProgram`]). A link is for good
+    /// and every run reads through it, while the notice of a run names only the persona's vault.
+    fn linkable(
+        &self,
+        ctx: &Ctx,
+        vault: &str,
+        key: &str,
+        into_too: bool,
+        to: &super::links::Target,
+    ) -> Result<(), String> {
         let persona = self
             .inner()
             .open
             .get(&(vault.to_owned(), key.to_owned()))
             .map(|asked| asked.persona.clone())
             .unwrap_or_default();
-        let doc = super::registry::load_registry(ctx).map_err(|e| e.message.to_string())?;
-        if super::registry::vault_in(&doc, vault).is_err() {
-            return Ok(());
+        if into_too {
+            let doc = super::registry::load_registry(ctx).map_err(|e| e.message.to_string())?;
+            if super::registry::vault_in(&doc, vault).is_ok() {
+                super::brokered::authorise(ctx, Some(&persona), vault).map_err(|why| {
+                    format!(
+                        "{why} Allow it for {persona} first, or link the key into {persona}'s \
+                         own vault."
+                    )
+                })?;
+            }
         }
-        super::brokered::authorise(ctx, Some(&persona), vault)
-            .map(|_| ())
-            .map_err(|why| {
-                format!(
-                    "{why} Allow it for {persona} first, or link the key into {persona}'s own \
-                     vault."
-                )
-            })
+        if super::brokered::authorise(ctx, Some(&persona), &to.vault).is_err() {
+            return Err(format!(
+                "{persona} can't use vault {}, so its entries can't fill this ask. Pick another \
+                 entry, or type a value.",
+                to.vault
+            ));
+        }
+        if let Some(why) = super::brokered::no_program_is_handed(ctx, &to.vault, &[&to.key]) {
+            return Err(format!("{why}. Pick another entry, or type a value."));
+        }
+        Ok(())
     }
 
     /// **[`Self::answer`], storing a fill as `named`** (#5072): in another vault or under
@@ -1276,10 +1297,9 @@ impl Asks {
                 }
                 // Only into a vault the persona may use, as a Fill is (#5246's review): a link
                 // planted in another persona's vault is read by that persona's tools. A replace
-                // was judged so as it was asked.
-                if reason.is_none()
-                    && let Err(why) = self.linkable(ctx, &vault, &key)
-                {
+                // was judged so as it was asked. And only to an entry the run's picker would
+                // list (D-5246-1), whatever the window listed.
+                if let Err(why) = self.linkable(ctx, &vault, &key, reason.is_none(), &to) {
                     still_open();
                     return Err(why);
                 }
