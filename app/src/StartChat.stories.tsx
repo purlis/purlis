@@ -627,6 +627,19 @@ export const DetailsPending: Story = {
   },
 };
 
+/** The dialog as it opens on a start refused on its Secret ask: no Runs on row is drawn, so it
+ *  waits for the ask's body rather than that row. */
+async function openedAsked() {
+  const page = within(document.body);
+  await page.findByRole("dialog", { name: "Start a chat" });
+  await untilFocused(
+    () => page.getByRole("button", { name: "Cancel" }),
+    "Start a chat: the keyboard starts on Cancel",
+  );
+  await page.findByRole("group", { name: "steward asks for anthropic from vault providers" });
+  return page;
+}
+
 /** **Tabs forward until `target` has the keyboard** (`step` names it), the focus in sight at
  *  every stop: the path a person without a pointer takes. */
 async function tabTo(
@@ -649,7 +662,7 @@ async function tabTo(
 export const MissingCredential: Story = {
   args: { missing: true },
   play: async ({ userEvent }) => {
-    const page = await opened();
+    const page = await openedAsked();
     const body = page.getByRole("group", {
       name: "steward asks for anthropic from vault providers",
     });
@@ -680,7 +693,7 @@ export const MissingCredential: Story = {
 export const MissingCredentialDeclined: Story = {
   args: { missing: true },
   play: async ({ userEvent }) => {
-    const page = await opened();
+    const page = await openedAsked();
     const body = page.getByRole("group", {
       name: "steward asks for anthropic from vault providers",
     });
