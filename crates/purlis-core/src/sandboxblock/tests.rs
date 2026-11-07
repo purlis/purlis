@@ -1515,7 +1515,7 @@ fn the_chat_is_told_what_was_blocked_and_to_wait_only_when_a_notice_is_up() {
     );
     for words in [
         "Notice",
-        "this chat's tab",
+        "in the Inbox",
         "wait for their answer",
         "do not work around",
     ] {

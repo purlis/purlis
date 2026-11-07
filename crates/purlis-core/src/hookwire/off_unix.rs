@@ -83,7 +83,7 @@ pub fn tell(
 }
 
 /// [`send`]'s refusal, for a saved session record: the record is written all the same, and
-/// `charter session record` says the tab will not close by itself.
+/// `charter session record` says the chat will not end by itself.
 pub fn tell_saved(
     _path: &std::path::Path,
     _token: Option<&ChatToken>,

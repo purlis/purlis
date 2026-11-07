@@ -523,7 +523,7 @@ enum Command {
     #[command(subcommand)]
     Report(report::ReportCommand),
 
-    /// What a shell tab's shims run in front of a harness started by hand there (ADR 0062):
+    /// What a shell's shims run in front of a harness started by hand there (ADR 0062):
     /// says it runs outside purlis's session tracking, tells the app, and runs the real one.
     ///
     /// Hidden: nobody types it. The shims purlis writes at every launch are its one caller.
@@ -583,7 +583,8 @@ enum Command {
     /// the project gives that persona, and is listed under this chat in the explorer. Its
     /// report reaches this chat as context on its next turn. A persona other than this chat's
     /// own needs a dispatch grant, which the person gives: where there is none the
-    /// person is asked on this chat's tab, and the task starts when they allow it.
+    /// person is asked in the Inbox, and on this chat's pane when it is on screen, and the task
+    /// starts when they allow it.
     ///
     /// It starts on the persona's own harness profile where its definition names one, else on
     /// this chat's; --profile names another of the project's profiles. Where the project
@@ -654,7 +655,8 @@ enum Command {
 
     /// Open a chat in a workspace you name, already working on a brief you pass as a quoted
     /// heredoc on stdin. A handoff is a dispatch: to this chat's own persona it opens at
-    /// once, and to another purlis asks you once for the pair, on this chat's tab.
+    /// once, and to another purlis asks you once for the pair, in the Inbox, and on this chat's
+    /// pane when it is on screen.
     ///
     /// Work this chat needs an answer from, for its own persona or another, is `purlis
     /// dispatch` (with `--in workspace:<name>` when it must run elsewhere). A handoff is

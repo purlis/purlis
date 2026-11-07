@@ -150,7 +150,7 @@ impl Shims {
     pub fn write(&self, _charter: &Path) -> io::Result<()> {
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
-            "a shell tab's shims are POSIX shell scripts, and this platform has no answer yet",
+            "a shell's shims are POSIX shell scripts, and this platform has no answer yet",
         ))
     }
 
@@ -255,7 +255,7 @@ fi
 # The app that wrote this has gone: run the real one, without this directory on PATH. Once
 # only, so a PATH that names this directory another way cannot bring it back here for ever.
 if [ -n "${passed}" ]; then
-  echo "purlis: no {word} on PATH outside purlis's shell-tab shims" >&2
+  echo "purlis: no {word} on PATH outside purlis's shell shims" >&2
   exit 127
 fi
 {passed}=1

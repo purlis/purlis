@@ -99,7 +99,7 @@ impl PluginOff {
             }
             OffWhy::ProjectUnread => format!(
                 "Only this project's settings turn the {name} plugin on, and this chat does not \
-                 read them. The chat's tab says why."
+                 read them. A Notice on the chat says why."
             ),
             OffWhy::AfterStart => {
                 format!(

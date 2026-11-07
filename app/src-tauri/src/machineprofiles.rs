@@ -459,7 +459,7 @@ pub fn type_profile_sign_in(
     let held = tauri::Manager::state::<Planes>(&app).held(&plane)?;
     if !held.chats().is_shell_at(session, held.root()) {
         return Err(
-            "that tab is not a shell at the project root, so no sign-in was typed.".to_owned(),
+            "that pane is not a shell at the project root, so no sign-in was typed.".to_owned(),
         );
     }
     if let Some(pool) = pool {
@@ -509,7 +509,7 @@ pub async fn type_profile_sign_out(
     let held = tauri::Manager::state::<Planes>(&app).held(&plane)?;
     if !held.chats().is_shell_at(session, held.root()) {
         return Err(
-            "that tab is not a shell at the project root, so no sign-out was typed.".to_owned(),
+            "that pane is not a shell at the project root, so no sign-out was typed.".to_owned(),
         );
     }
     // Off the window's thread: it waits on the runners' lock, which a carry holds for minutes.
@@ -517,7 +517,7 @@ pub async fn type_profile_sign_out(
     // It may have waited minutes: the line runs as it is typed, so only into a shell still.
     if !held.chats().is_shell_at(session, held.root()) {
         return Err(
-            "that tab is not a shell at the project root, so no sign-out was typed.".to_owned(),
+            "that pane is not a shell at the project root, so no sign-out was typed.".to_owned(),
         );
     }
     held.operator_input(session, line.as_bytes())?;

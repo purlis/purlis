@@ -153,29 +153,29 @@ allowed: a sandboxed chat never reads a value itself. Use `purlis secret list <v
 key names and `purlis secret exec` through a declared tool for a value. Anything else that would
 read the keyring is refused too; each refusal names what to run instead.
 
-**When the command cannot reach a host** ("Forbidden", a refused connection) and purlis adds
-that its sandbox refused a connection to a host, that host is not one this chat may reach.
-Tell the user the host purlis named: a notice on this chat's tab lets them allow it. Once they
-have, the chat is started again with it, and you run the same command again. Do not retry it
-before then, and do not try to reach the host some other way.
+**When the command cannot reach a host** ("Forbidden", a refused connection) and purlis adds that
+its sandbox refused a connection to a host, that host is not one this chat may reach. Tell the user
+the host purlis named: a Notice in the Inbox, and on this chat's pane when it is on screen, lets
+them allow it. Once they have, the chat is started again with it, and you run the same command
+again. Do not retry it before then, and do not try to reach the host some other way.
 
 **A database client** (`psql`, `usql`, `mysql`, `redis-cli`) declared as the persona's tool
 works in a sandboxed chat with the command unchanged. Hand it the connection string from the vault with `--env` (`purlis secret exec <vault> --env DSN=<key> -- usql "$DSN"`): when the chat may
 reach that host and port, purlis points the value at a tunnel to it; when it may not, purlis says
-so and the tab offers Allow, as above. Do not rewrite the host or the port yourself.
+so and the user is offered Allow, as above. Do not rewrite the host or the port yourself.
 **ssh, and git over ssh,** need no vault: run them as you would, and they reach a host this chat
-may reach; one it may not is refused with the same Allow on the tab. Do not add a
+may reach; one it may not is refused with the same Allow. Do not add a
 `ProxyCommand` or `-F` of your own.
 
-**When a vault is refused for this chat's persona**, the refusal names the ways forward. A
-notice on this chat's tab lets the user press *Allow*; once they have, purlis tells this chat
-what now runs (`purlis secret list <vault>` and this persona's declared tools with it), with no
-restart. Run that, not a direct read of a value. Or dispatch the work to the persona the vault is tagged for, with the
-command the refusal names. A chat's persona is fixed for its life: do not try to change it,
-and do not edit a persona's file or the vault registry to get at the vault. `purlis vault
-list` shows which vaults this chat may use.
-Prefer `--file` for a credential the command can read from a file. The rules above still hold:
-you choose the command, so the credential goes wherever that command sends it.
+**When a vault is refused for this chat's persona**, the refusal names the ways forward. A Notice
+about it lets the user press *Allow*; once they have, purlis tells this chat what now runs (`purlis
+secret list <vault>` and this persona's declared tools with it), with no restart. Run that, not a
+direct read of a value. Or dispatch the work to the persona the vault is tagged for, with the
+command the refusal names. A chat's persona is fixed for its life: do not try to change it, and do
+not edit a persona's file or the vault registry to get at the vault. `purlis vault list` shows which
+vaults this chat may use. Prefer `--file` for a credential the command can read from a file. The
+rules above still hold: you choose the command, so the credential goes wherever that command sends
+it.
 
 **To check that one is present:**
 

@@ -70,13 +70,13 @@ uses the one being removed. A refusal is the answer: relay it in its own words a
 purlis window.** Neither command deletes anything there, because the sandbox would stop a
 delete partway.
 
-- `purlis workspace remove <name>` hands the name to purlis, which asks the operator on this
-  chat's tab: **Remove…** or **Keep**. Remove… opens the window's Delete workspace, and the
-  operator's press there is what removes. The command says the operator has been asked and
-  exits without removing anything. That is not a failure. Tell the operator the question is
-  waiting on this chat's tab, then end your turn. purlis tells you what they decided on your
-  next turn. Do not run it again, do not pass `--force`, and do not delete any part of the
-  workspace another way. If they kept it, it stays unless they ask again.
+- `purlis workspace remove <name>` hands the name to purlis, which asks the operator in the Inbox,
+  and on this chat's pane when it is on screen: **Remove…** or **Keep**. Remove… opens the window's
+  Delete workspace, and the operator's press there is what removes. The command says the operator
+  has been asked and exits without removing anything. That is not a failure. Tell the operator the
+  question is waiting in the Inbox, then end your turn. purlis tells you what they decided on your
+  next turn. Do not run it again, do not pass `--force`, and do not delete any part of the workspace
+  another way. If they kept it, it stays unless they ask again.
 - `purlis persona remove <name>` is refused: say so, and ask the operator to remove the
   persona from the window.
 

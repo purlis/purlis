@@ -144,7 +144,7 @@ folder `$PURLIS_DATA_HOME` names, else `purlis/` in `$XDG_DATA_HOME`. It holds:
 the rename):
 
 - `~/Library/Application Support/dev.purlis.app/` on macOS, `~/.local/share/dev.purlis.app/` on
-  Linux: the shims a shell tab finds first on its `PATH` and the git hooks a chat's commits go
+  Linux: the shims a shell finds first on its `PATH` and the git hooks a chat's commits go
   through, both written again at the app's next launch, and, on Linux, the app's log and its
   crash log in `logs/`;
 - `~/Library/Logs/dev.purlis.app/` on macOS: the app's log and its crash log;
