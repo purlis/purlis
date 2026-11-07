@@ -140,7 +140,8 @@ impl HarnessAdapter for ClaudeCode {
                         &denied_tools(kit),
                         screened.as_ref(),
                         kit.graded,
-                        kit.writes_its_piece,
+                        // An outcome eval's chat has no shell unless its skill asked for one (#4476).
+                        kit.writes_its_piece && !kit.runs_a_shell,
                         &own_of(kit, cwd),
                     ),
                 ]),
@@ -801,8 +802,9 @@ fn settings(
     if sandbox.is_some_and(crate::sandbox::claude::Settings::is_off) {
         allow.push("Bash".to_owned());
     }
-    // **An outcome eval's chat has no shell in v1** (SK-55, #4476): no rule allows one, and below
-    // every call asks, which ends the run.
+    // **An outcome eval's chat has no shell unless its skill asks for one** (SK-55, #4476): no
+    // rule allows one, and below every call asks, which ends the run. One that has a shell runs
+    // its commands as any sandboxed chat does, under a sandbox its start held to its piece.
     if no_shell {
         allow.retain(|rule| !rule.starts_with("Bash"));
     }
@@ -986,7 +988,8 @@ const JUDGE_TOOLS: &str = "Read,Grep";
 
 /// **The only built-in tools an outcome eval's chat has** (SK-55): what a task reads and writes
 /// with, and the skill under test. This names no server's tools, so [`denied_tools`] answers for
-/// those. The shell is on the list so that a call asks, and so ends the run (#4476).
+/// those. The shell is on the list either way: where the chat has none a call asks, and so ends
+/// the run; where its skill asked for one, it runs under its sandbox (#4476).
 const OUTCOME_TOOLS: &str = "Read,Grep,Glob,Write,Edit,MultiEdit,Skill,Bash";
 
 /// **Claude Code's tools a judge's chat is denied**, beside [`JUDGE_TOOLS`] (SK-55, #3235): every one that writes a file,

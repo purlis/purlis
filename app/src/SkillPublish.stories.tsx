@@ -4,7 +4,7 @@
 /**
  * **The publish review and the export dialog** (#2781, `prototype/skill-publish`): the review in
  * the studio's own panel, clean, stopped by a secret, kept on this machine, and on a source the
- * account cannot push to (#4342), then the dialog.
+ * account cannot push to, through a fork it makes and one it has (#4342), then the dialog.
  * Walked by the keyboard, held to axe, and pictured in every pictured theme cell. The core is
  * faked at its command boundary.
  */
@@ -16,7 +16,15 @@ import { STORY_HISTORY as HISTORY, StudioInPanel } from "./skillStudioStory.test
 import { inWorkspace, skillRowId } from "./skillStudio";
 import { skill, studio } from "./skillsListing.testkit";
 import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
-import { FORGE_SAYS_NO_PUSH, EXPORT, GITHUB, LOCAL, REVIEW, STOPPED } from "./skillPublish.testkit";
+import {
+  EXPORT,
+  GITHUB,
+  LOCAL,
+  REVIEW,
+  STOPPED,
+  THROUGH_A_NEW_FORK,
+  THROUGH_THEIR_FORK,
+} from "./skillPublish.testkit";
 import { expectFocusInSight } from "./stories.testkit";
 import { ExportDialog } from "./SkillPublish";
 
@@ -76,11 +84,23 @@ export const SomethingStopsIt: Story = {
   },
 };
 
-export const ForgeSaysNoPush: Story = {
-  args: { review: FORGE_SAYS_NO_PUSH },
+export const ThroughANewFork: Story = {
+  args: { review: THROUGH_A_NEW_FORK },
   play: async ({ canvas }) => {
-    await canvas.findByText(/GitHub says your account cannot push to this source, and publishing/);
-    await expect(canvas.getByRole("button", { name: "Export…" })).toBeVisible();
+    await canvas.findByText(/so publishing makes your fork ada\/skills/);
+    await expect(canvas.getByText("Made when you publish")).toBeVisible();
+    const open = canvas.getByRole("button", { name: "Fork and open draft pull request" });
+    await waitFor(() => expect(open).not.toHaveAttribute("aria-disabled", "true"));
+    for (let step = 0; step < 40 && document.activeElement !== open; step++) await userEvent.tab();
+    await expect(open).toHaveFocus();
+    expectFocusInSight();
+  },
+};
+
+export const ThroughTheirFork: Story = {
+  args: { review: THROUGH_THEIR_FORK },
+  play: async ({ canvas }) => {
+    await canvas.findByText(/so the branch goes on your fork ada\/skills/);
     await expect(
       canvas.getByRole("button", { name: "Open draft pull request" }),
     ).not.toHaveAttribute("aria-disabled", "true");

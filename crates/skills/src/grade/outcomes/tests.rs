@@ -22,6 +22,7 @@ fn request() -> GradeRequest {
         outcomes: vec![eval()],
         arms: vec![Arm::With, Arm::Without],
         runs: RUNS,
+        shell: false,
     }
 }
 
@@ -116,7 +117,8 @@ fn each_eval_chat_is_judged_by_a_chat_of_its_own_on_what_it_left() {
     assert_eq!(
         host.asked[0].kind,
         ChatKind::Outcome {
-            files: vec!["evals/files/form.txt".into()]
+            files: vec!["evals/files/form.txt".into()],
+            shell: false,
         }
     );
     assert!(
@@ -527,10 +529,85 @@ fn the_kinds_are_spelled_on_the_wire() {
     assert_eq!(
         outcome.kind,
         ChatKind::Outcome {
-            files: vec!["a.txt".into()]
+            files: vec!["a.txt".into()],
+            shell: false,
         }
     );
     let trigger: RunChat =
         serde_json::from_value(serde_json::json!({"arm": "with", "prompt": "p"})).unwrap();
     assert_eq!(trigger.kind, ChatKind::Trigger);
+}
+
+/// #4476: a grade whose skill asks for a shell runs each outcome eval with one, in every arm, so
+/// the arm without the skill is not judged with less; its judges never have one.
+#[test]
+fn a_grade_that_uses_a_shell_asks_for_it_in_every_arm_and_never_for_a_judge() {
+    let mut host = Judged {
+        asked: Vec::new(),
+        eval_end: turns,
+        judge: fair_judge,
+    };
+    let asked = GradeRequest {
+        shell: true,
+        ..request()
+    };
+    grade(&asked, &mut host, None);
+    let (evals, judges): (Vec<&RunChat>, Vec<&RunChat>) = host
+        .asked
+        .iter()
+        .partition(|chat| matches!(chat.kind, ChatKind::Outcome { .. }));
+    assert_eq!((evals.len(), judges.len()), (6, 6));
+    for chat in evals {
+        assert!(
+            matches!(chat.kind, ChatKind::Outcome { shell: true, .. }),
+            "{chat:?}"
+        );
+    }
+    assert!(
+        judges
+            .iter()
+            .all(|chat| matches!(chat.kind, ChatKind::Judge { .. }))
+    );
+    // A grade that does not keeps its evals' chats without one.
+    let mut host = Judged {
+        asked: Vec::new(),
+        eval_end: turns,
+        judge: fair_judge,
+    };
+    grade(&request(), &mut host, None);
+    assert!(
+        host.asked
+            .iter()
+            .all(|chat| !matches!(chat.kind, ChatKind::Outcome { shell: true, .. }))
+    );
+}
+
+/// #4476: the shell is said on the wire only where a chat has one, so a request written before
+/// reads as it did, and one that has one says so.
+#[test]
+fn an_outcome_chats_shell_is_on_the_wire_only_where_it_has_one() {
+    let without = RunChat {
+        arm: Arm::With,
+        prompt: "p".into(),
+        kind: ChatKind::Outcome {
+            files: Vec::new(),
+            shell: false,
+        },
+    };
+    assert_eq!(
+        serde_json::to_value(&without).unwrap()["kind"],
+        serde_json::json!({"is": "outcome", "files": []})
+    );
+    let with = RunChat {
+        kind: ChatKind::Outcome {
+            files: Vec::new(),
+            shell: true,
+        },
+        ..without
+    };
+    let wire = serde_json::to_value(&with).unwrap();
+    assert_eq!(wire["kind"]["shell"], true);
+    assert_eq!(serde_json::from_value::<RunChat>(wire).unwrap(), with);
+    let request = serde_json::to_value(request()).unwrap();
+    assert!(request.get("shell").is_none(), "{request}");
 }

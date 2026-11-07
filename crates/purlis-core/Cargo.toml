@@ -67,6 +67,9 @@ purlis-unicode.workspace = true
 # What a chat's browser tools ask (#2013): the session protocol's browser acts, one vocabulary
 # from the tool server through the window to the session host. A crate of this workspace.
 purlis-session-protocol.workspace = true
+# `purlis check report` (#5407, ADR 0117): SARIF 2.1.0's own types, generated from the OASIS schema
+# by psastras' sarif-rs, MIT. No converter feature: purlis has no parser for any one tool.
+serde-sarif = "0.8"
 # ⌘P's fuzzy file names (FM-7, #1110): helix's matcher, the fzf algorithm with a bonus for
 # path boundaries, and no allocation per match. MPL-2.0, on deny.toml's allow-list as a
 # file-level copyleft used unmodified; its dependencies, memchr and unicode-segmentation, are
@@ -209,6 +212,10 @@ flate2 = "1"
 # A browser login's host written in another script is compared in its ASCII spelling, as the
 # engine records a page's address (#2016). Already in the tree through `url`.
 idna = "1"
+# **The part of a suggested login's host its owner registered**, marked in the notice so a swapped
+# letter or a borrowed name on the left stands out (the person's ruling of 2026-11-07). The list
+# is compiled in, with no download. Already in the tree through the browser engine.
+psl = "2.1"
 uuid = { version = "1.26.1", features = ["v4"] }
 # RC-20's hand-off to your editor (`youreditor`): a file's path percent-encoded into a
 # `vscode://`, `zed://` or `idea://` URL, and `$VISUAL`/`$EDITOR` split into a program and its

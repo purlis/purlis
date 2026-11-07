@@ -64,7 +64,7 @@ pub enum NeedFix {
     Library,
     /// Move the project's skills where every program reads them: the doctor's fix, by its id
     /// (`plane_doctor_fix`).
-    MoveSkills { fix: String },
+    MoveSkills { fix: crate::doctor::DoctorFix },
     /// Propose the files without the old keys, for the person to apply
     /// (`remove_old_harness_plugins`); or leave them, which says so once
     /// (`dismiss_old_harness_plugins`).
@@ -343,9 +343,7 @@ pub(crate) fn of(studio: &Studio) -> Vec<NeedsYou> {
                 purlis_core::counts::plural(unmoved.skills, "it", "them"),
                 purlis_core::counts::plural(unmoved.skills, "it", "them"),
             ),
-            fix: NeedFix::MoveSkills {
-                fix: unmoved.fix.clone(),
-            },
+            fix: NeedFix::MoveSkills { fix: unmoved.fix },
             fix_label: format!(
                 "Move {}",
                 purlis_core::counts::plural(unmoved.skills, "it", "them")

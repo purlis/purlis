@@ -49,6 +49,7 @@ mod createproject;
 mod curation;
 mod layout;
 mod questiontrail;
+mod turns;
 // The Devices view (#2052).
 mod clusterpools;
 mod debug5478; // [DEBUG-5478] temporary diagnostics, removed with the rest of the tag.
@@ -116,6 +117,7 @@ mod hostfailing;
 mod hostlost;
 #[cfg(unix)]
 mod hostsaving;
+mod humanedits;
 mod inputlanes;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod instance;
@@ -1487,7 +1489,7 @@ struct StartOptions {
     /// The doctor's fix id for that state (`local-ignore`), where one ignore line cures it, so
     /// the picker offers the fix the doctor row does (NO-8). Null for a file git already
     /// tracks: that needs the operator's `git rm --cached`, which charter never runs.
-    ignore_fix_id: Option<String>,
+    ignore_fix_id: Option<doctor::DoctorFix>,
     /// Whether this plane declares no profiles of its own. The built-ins still start, and
     /// the picker says so rather than looking empty or broken.
     declares_none: bool,
@@ -1792,7 +1794,7 @@ fn start_first_of(
         ignore_fix: (!check.passes()).then(|| check.fix.clone()),
         ignore_fix_id: check
             .one_line_cures(root)
-            .then(|| purlis_core::doctor::fix::FixId::LocalIgnore.id().to_owned()),
+            .then_some(doctor::DoctorFix::LocalIgnore),
         declares_none: set
             .profiles()
             .iter()
@@ -3887,7 +3889,13 @@ pub fn run() {
     app.invoke_handler(commands.invoke_handler())
         .menu(lifecycle::menu)
         .on_menu_event(|app, event| lifecycle::clicked(app, event.id().as_ref()))
+        // A drop from the file manager (#5378): its files held for the window's import of them,
+        // as the system tells the window, so the window never sends a path from outside the
+        // workspace.
+        .manage(workspacewrites::Dropped::default())
         .on_window_event(|window, event| {
+            // A drop from the file manager is told to the window, not its webview (#5378).
+            workspacewrites::window_event(window, event);
             // The close button hides the window. Every session is a child of this process
             // (ADR 0025), so a close that ended them would end the day's work; the way out
             // is Quit, which says what it is about to end.

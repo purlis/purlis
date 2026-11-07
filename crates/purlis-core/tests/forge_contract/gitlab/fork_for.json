@@ -1,0 +1,54 @@
+{
+  "source": "GitLab 19.4 REST API docs (gitlab-org/gitlab 19-4-stable-ee, doc/api): users.md (GET /user), projects.md (GET /projects/:id; a project that is not there answers 404)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "user"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"username\": \"octocat\", \"id\": 4021}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "projects/acme%2Fapi"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"id\": 1, \"path\": \"api\", \"path_with_namespace\": \"acme/api\", \"visibility\": \"public\"}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": null,
+            "path": "projects/octocat%2Fapi"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 1,
+        "out": "{\"message\": \"404 Project Not Found\"}",
+        "err": "glab: 404 Project Not Found (HTTP 404)",
+        "status": 404
+      }
+    }
+  ]
+}

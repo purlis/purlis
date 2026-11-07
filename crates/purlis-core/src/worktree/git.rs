@@ -214,7 +214,39 @@ pub struct GitUnavailable(#[from] std::io::Error);
 /// PATH. So the inherited `PATH` is searched here, in the parent, and what the child gets is
 /// the absolute path that search found plus the directory holding it.
 pub(crate) fn git_binary() -> (PathBuf, String) {
-    git_binary_in(&GIT_DIRS, std::env::var_os("PATH").as_deref())
+    let found = git_binary_in(&GIT_DIRS, std::env::var_os("PATH").as_deref());
+    #[cfg(test)]
+    if let Some(stand_in) = STAND_IN.with(|held| held.borrow().clone()) {
+        return (stand_in, found.1);
+    }
+    found
+}
+
+#[cfg(test)]
+thread_local! {
+    static STAND_IN: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Runs `then` with every git call this thread makes running `binary` in place of the git
+/// [`git_binary`] finds: for a test that plays an older git than the machine's.
+#[cfg(test)]
+pub(crate) fn with_stand_in<T>(binary: &Path, then: impl FnOnce() -> T) -> T {
+    struct Restore(Option<PathBuf>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let before = self.0.take();
+            STAND_IN.with(|held| *held.borrow_mut() = before);
+        }
+    }
+    let before = STAND_IN.with(|held| held.borrow_mut().replace(binary.to_path_buf()));
+    let _restore = Restore(before);
+    then()
+}
+
+/// The git [`git_binary`] finds, by its full path, for a test's stand-in to hand calls on to.
+#[cfg(test)]
+pub(crate) fn real_binary() -> PathBuf {
+    git_binary_in(&GIT_DIRS, std::env::var_os("PATH").as_deref()).0
 }
 
 /// [`git_binary`] against `fixed` and an inherited `path`, so the search can be tested
@@ -2440,15 +2472,40 @@ pub fn run_in_hook(dir: &Path, args: &[&str], timeout: Duration) -> Result<RawRu
 /// repository's config, so [`programs_held`] never tells its filter, and a repository it brings
 /// can name where that filter goes in its own `.lfsconfig` (#4400).
 pub fn run_network(dir: &Path, helper: Option<&str>, args: &[&str]) -> Result<Run, GitUnavailable> {
+    run_network_with(dir, helper, args, Vec::new())
+}
+
+/// [`run_network`] in **no repository at all**, for a call that names its remote by address and
+/// needs none (`ls-remote <url>`): `GIT_DIR` names `/dev/null`, so git reads no repository's
+/// configuration, not even one a `.git` in `dir` would be found as.
+pub fn run_network_in_no_repository(
+    dir: &Path,
+    helper: Option<&str>,
+    args: &[&str],
+) -> Result<Run, GitUnavailable> {
+    run_network_with(
+        dir,
+        helper,
+        args,
+        vec![("GIT_DIR".to_owned(), "/dev/null".into())],
+    )
+}
+
+/// [`run_network`], with `more` variables in git's environment.
+fn run_network_with(
+    dir: &Path,
+    helper: Option<&str>,
+    args: &[&str],
+    more: Vec<(String, std::ffi::OsString)>,
+) -> Result<Run, GitUnavailable> {
     let mut config: Vec<String> = NETWORK_RULE.iter().map(|s| (*s).to_string()).collect();
     if let Some(helper) = helper {
         config.push(format!("credential.helper={helper}"));
     }
-    let pass = if verb(args) == Some("clone") {
-        vec![(LFS_SKIP_SMUDGE.to_owned(), "1".into())]
-    } else {
-        Vec::new()
-    };
+    let mut pass = more;
+    if verb(args) == Some("clone") {
+        pass.push((LFS_SKIP_SMUDGE.to_owned(), "1".into()));
+    }
     let extra = Extra {
         config,
         credentials: true,

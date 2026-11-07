@@ -91,6 +91,11 @@ pub enum Stop {
         skill: String,
         level: String,
     },
+    /// Where the person's fork of the source would go, their account holds a repo the forge does
+    /// not call its fork (#4342). purlis renames nothing.
+    ForkTaken {
+        path: String,
+    },
 }
 
 impl std::fmt::Display for Stop {
@@ -106,6 +111,11 @@ impl std::fmt::Display for Stop {
             Stop::Local { skill, level } => write!(
                 f,
                 "{skill} is at {level}, this machine's alone. Move it to a shared level first"
+            ),
+            Stop::ForkTaken { path } => write!(
+                f,
+                "your account already has {path}, and it is not a fork of the source, so no fork \
+                 can be made there. Rename or delete it on the forge, then review again"
             ),
         }
     }

@@ -5,8 +5,11 @@
 //! not purlis's, so each is spliced into its line escaped: a conceal (`\x1b[8m`), a bidi
 //! override or a zero-width character is shown as its mark and never obeyed.
 
+use purlis_core::forge::Fork;
+use purlis_core::forge::backend::Visibility;
 use purlis_core::skills::graph::{Use, UsesOf};
 use purlis_core::skills::history::{History, Version};
+use purlis_core::skills::source::publish::Route;
 use purlis_core::skilluse::Totals;
 
 use super::*;
@@ -156,11 +159,34 @@ fn a_publish_asks_only_at_a_terminal_outside_any_chat_and_a_doubt_counts_as_a_ch
 }
 
 #[test]
-fn a_publish_the_forge_says_cannot_push_names_the_forge_and_offers_export() {
-    let said = forge_says_no_push("GitHub");
+fn a_publish_to_the_source_itself_says_nothing_of_a_fork() {
+    assert_eq!(route_said(&Route::Source, "GitHub"), None);
+}
+
+#[test]
+fn a_publish_that_makes_a_fork_names_it_who_reads_it_and_that_it_is_made_on_a_yes() {
+    let said = route_said(
+        &Route::NewFork {
+            path: "ada/skills".to_owned(),
+            visibility: Visibility::Public,
+        },
+        "GitHub",
+    )
+    .unwrap();
     assert!(
         said.starts_with("GitHub says your account cannot push"),
         "{said}"
     );
+    assert!(said.contains("makes your fork ada/skills"), "{said}");
+    assert!(said.contains("PUBLIC: everyone can read"), "{said}");
+    assert!(said.contains("Nothing is made until you say yes"), "{said}");
     assert!(said.contains("`purlis skill export`"), "{said}");
+}
+
+#[test]
+fn a_publish_through_a_fork_the_person_has_names_it_and_makes_nothing() {
+    let fork = Fork::for_a_test("9", "ada/skills", "https://github.com/ada/skills.git", None);
+    let said = route_said(&Route::Fork(fork), "GitHub").unwrap();
+    assert!(said.contains("https://github.com/ada/skills"), "{said}");
+    assert!(!said.contains("makes"), "{said}");
 }

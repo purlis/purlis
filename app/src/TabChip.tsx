@@ -30,7 +30,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { Offer } from "./actions";
-import { backId, besideId, ownTabId } from "./actions";
+import { backId, backTitle, besideId, ownTabId } from "./actions";
 import { onAMac } from "./tabKeys";
 import { briefTitle, useOpenBrief, type BriefAsk } from "./Brief";
 import { answerTitle, useOpenAnswer, type AnswerAsk } from "./AnswerPanel";
@@ -1054,7 +1054,7 @@ function TaskLine({
             )}
             {line.placed !== undefined && (
               <PlaceButton
-                says={`Send ${line.name} back into this tab`}
+                says={backTitle(line.name)}
                 onPress={() => onPlace(moves.session, "back")}
               >
                 <Minus />

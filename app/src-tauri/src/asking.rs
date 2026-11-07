@@ -347,6 +347,11 @@ pub struct LoginShown {
     /// **The host the password is typed on** (#4995), with a port where it has one: the login
     /// form's, which the page may have sent the browser to. The domain where they're one.
     pub form: String,
+    /// **The part of the domain's host its owner registered** (the person's ruling of
+    /// 2026-11-07), by the public suffix list: the end of its host, which the notice marks.
+    pub registrable: String,
+    /// The same of the form's host.
+    pub form_registrable: String,
     pub vault: String,
     #[specta(optional)]
     pub user_key: Option<String>,
@@ -718,16 +723,27 @@ pub fn pending_asks(planes: tauri::State<'_, Planes>, plane: PlaneId) -> Result<
     Ok(planes.held(&plane)?.asks())
 }
 
+/// What [`asks_waiting`]'s reads are named off the window's thread (#5582).
+pub(crate) const READING_ASKS: &str = "reading the asks waiting";
+
 /// **Every ask a project has waiting now** (#1690), from every source ([`every_ask`]): what
 /// the window lists and the title bar counts. Read again whenever a source may have moved:
 /// [`EVENT`], a chat moving, a dispatch held, a block heard, an answer.
 ///
 /// The window's alone: what waits on the person, dispatches and refused hosts included, is
 /// never a link's to read, as `dispatch_grants_needed` is not.
+///
+/// Read off the window's thread (#5582): it reads the project's files (its locks, sign-ins and
+/// removals, and each waiting persona's tools), and the window asks it on every burst of moves.
+/// Two reads may answer out of order, and the window draws only the newest (`asks.ts`).
 #[tauri::command]
 #[specta::specta]
-pub fn asks_waiting(planes: tauri::State<'_, Planes>, plane: PlaneId) -> Result<Asking, String> {
-    Ok(every_ask(&*planes.held(&plane)?))
+pub async fn asks_waiting(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<Asking, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window(READING_ASKS, move || Ok(every_ask(&held))).await
 }
 
 /// Answers chat `session`'s ask `ask` with its option `option`, as the operator in this window.
@@ -1800,6 +1816,14 @@ pub fn browser_login(
                 .strip_prefix("https://")
                 .unwrap_or(&proposal.form)
                 .to_owned(),
+            registrable: purlis_core::loginask::registrable(purlis_core::loginask::host_of(
+                &proposal.origin,
+            ))
+            .to_owned(),
+            form_registrable: purlis_core::loginask::registrable(purlis_core::loginask::host_of(
+                &proposal.form,
+            ))
+            .to_owned(),
             domain,
             vault: proposal.vault.clone(),
             user_key: proposal.user_key.clone(),

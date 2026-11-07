@@ -375,7 +375,7 @@ export function Closer({
 }) {
   if (!offer) return null;
   // **A task's own tab has a minimise where a session's has its close** (#1489, V100-38): `−`,
-  // named for what it does, "Send talk back into steward 4's tab". It ends nothing.
+  // named for what it does, "Send talk back to its row". It ends nothing.
   const minimise = offer.does.verb === "sendBack";
   return (
     <Tooltip tip={offer.note ? `${offer.title} — ${offer.note}` : offer.title}>

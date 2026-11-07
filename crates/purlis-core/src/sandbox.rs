@@ -3350,6 +3350,10 @@ pub struct Compiled {
     pub homes: Homes,
     /// What the presets widen past the hosts.
     pub widened: Widened,
+    /// Whether its commands write no temp folder but the one the chat is handed: an outcome
+    /// eval's shell's (#4476, [`policy::holding_to_its_folder`]). A compiler denies them its
+    /// harness's own shared temp folder ([`claude::SHARED_TEMP`]).
+    pub own_temp_only: bool,
 }
 
 /// What a project's sandbox widens past the hosts it lets a chat reach (spec #1330's coupled
@@ -3731,6 +3735,7 @@ impl Compiled {
                 codex_project: Homes::codex_project(machine, root),
                 ..Homes::of(machine)
             },
+            own_temp_only: locks.holds_to_its_folder(),
         }
     }
 
@@ -3911,6 +3916,7 @@ impl Compiled {
                 codex_project: Homes::codex_project(machine, root),
                 ..Homes::of(machine)
             },
+            own_temp_only: locks.holds_to_its_folder(),
         }
     }
 }
@@ -5611,6 +5617,7 @@ fn never_with(compile: Option<Compiler>, held_back: Option<u32>, os: Os) -> Opti
         os,
         homes: Homes::default(),
         widened: Widened::default(),
+        own_temp_only: false,
     };
     match compile(&nothing) {
         Err(Uncompilable {
@@ -5778,18 +5785,20 @@ fn ground(root: &Path, home: Option<&Path>) -> Vec<PathBuf> {
 pub fn covering(denied: &[Denial], ground: &[PathBuf]) -> Option<NotStarted> {
     // Each name is folded once, before any pair is compared: the list is read against the ground
     // several times for every start, and folding inside the pairs made a start on a volume that
-    // folds case take time in proportion to the two lists multiplied.
-    let ground: Vec<(PathBuf, Option<PathBuf>)> = ground
+    // folds case take time in proportion to the two lists multiplied. Every name is decomposed
+    // too, whether its volume folds case or not: APFS keeps case on a volume that asks it to,
+    // but never the form a name's accents are written in.
+    let ground: Vec<(PathBuf, PathBuf, Option<PathBuf>)> = ground
         .iter()
         .flat_map(|folder| {
             let folds = folds_case(folder);
             spellings(folder).into_iter().map(move |name| {
                 let as_folded = folds.then(|| folded(&name));
-                (name, as_folded)
+                (decomposed(&name), name, as_folded)
             })
         })
         .collect();
-    let any_folds = ground.iter().any(|(_, as_folded)| as_folded.is_some());
+    let any_folds = ground.iter().any(|(_, _, as_folded)| as_folded.is_some());
     // An entry held alone holds nothing below it (#2752), so no ground is under it.
     denied
         .iter()
@@ -5797,8 +5806,10 @@ pub fn covering(denied: &[Denial], ground: &[PathBuf]) -> Option<NotStarted> {
         .find_map(|denial| {
             let covers = spellings(&denial.path).iter().any(|name| {
                 let name_folded = any_folds.then(|| folded(name));
-                ground.iter().any(|(folder, as_folded)| {
+                let name_decomposed = decomposed(name);
+                ground.iter().any(|(folder_decomposed, folder, as_folded)| {
                     folder.starts_with(name)
+                        || folder_decomposed.starts_with(&name_decomposed)
                         || as_folded
                             .as_ref()
                             .zip(name_folded.as_ref())
@@ -5823,6 +5834,17 @@ fn spellings(path: &Path) -> Vec<PathBuf> {
     let twins: Vec<PathBuf> = out.iter().filter_map(|it| firmlink_twin(it)).collect();
     out.extend(twins);
     out
+}
+
+/// `path` with every accented letter written as a letter and its accent (NFD), as APFS compares
+/// a name whether or not its volume folds case. A path of plain ASCII is as it is.
+fn decomposed(path: &Path) -> PathBuf {
+    use unicode_normalization::UnicodeNormalization as _;
+    let name = path.to_string_lossy();
+    if name.is_ascii() {
+        return path.to_path_buf();
+    }
+    PathBuf::from(name.nfd().collect::<String>())
 }
 
 /// `path` as a volume that folds case compares it ([`crate::casefold::folded`]).

@@ -30,8 +30,9 @@
 //!   allowed the fill: the call waits on that too, and fills what they add.
 //! - **What's filled is what the person pressed on.** A press names the notice and carries its
 //!   digest ([`FillWait::digest`]); one waits for each chat, and another call is refused.
-//! - **Keep blocked fills nothing and tells the chat**, and the chat isn't asked about that key
-//!   on that site again; after [`KEPT_AT_MOST`] it's asked about nothing more.
+//! - **Keep blocked fills nothing and tells the chat**, and the persona's chats aren't asked about
+//!   that key on that site again until purlis restarts; after [`KEPT_AT_MOST`] they're asked about
+//!   nothing more (the person's ruling of 2026-11-07). A chat with no persona keeps its own.
 //! - **The engine judges again at the moment of filling**: the field's own frame must still be
 //!   on the approved origin, and the field one line. The window's read is only what it shows.
 //!
@@ -42,7 +43,8 @@
 //!   window, and the notice warns that the value goes to that runner. The fill and its hold run
 //!   there, through the runner's link, as a login's do.
 //!
-//! In memory only: a relaunch starts with none, and a chat's close takes its waits with it.
+//! In memory only: a relaunch starts with none, and a chat's close takes its waits and grants
+//! with it.
 
 use std::sync::{Mutex, MutexGuard, PoisonError, mpsc};
 
@@ -61,6 +63,9 @@ pub struct FillWait {
     /// Its number in the project: what its answer names.
     pub id: u32,
     pub session: u32,
+    /// The chat's id (ADR 0066) as it raised this: what an Allow for this chat is bound to,
+    /// beside its number.
+    pub chat: Option<String>,
     /// The chat's browser, by the name the chat knows it by (`b1`).
     pub browser: String,
     pub vault: String,
@@ -158,15 +163,48 @@ pub enum Heard {
     Gone,
 }
 
-/// A key on an origin for one chat: by chat, vault, key and origin.
-type ForChat = (u32, String, String, String);
+/// A key on an origin for one chat: by chat's number and id, vault, key and origin.
+type ForChat = (u32, Option<String>, String, String, String);
+
+/// **A chat, by its number and its id** (ADR 0066): what it was allowed answers it alone, never
+/// a later chat dealt the same number.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Chat<'a> {
+    pub session: u32,
+    pub id: Option<&'a str>,
+}
+
+impl Chat<'_> {
+    /// Whether `(number, id)` is this chat.
+    fn is(&self, (number, id): (&u32, &Option<String>)) -> bool {
+        *number == self.session && id.as_deref() == self.id
+    }
+}
+
+/// **Whose Keep blocked it is** (the person's ruling of 2026-11-07): a persona's, for all its
+/// chats until purlis restarts, so a new chat starts no fresh tries. A chat that runs as no
+/// persona keeps its own, which goes when it closes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Whose {
+    Persona(String),
+    Chat(u32),
+}
+
+impl Whose {
+    fn of(session: u32, persona: Option<&str>) -> Self {
+        match persona {
+            Some(persona) if !persona.is_empty() => Self::Persona(persona.to_owned()),
+            _ => Self::Chat(session),
+        }
+    }
+}
 
 #[derive(Debug, Default)]
 struct Inner {
     next: u32,
     waits: Vec<(FillWait, Option<mpsc::Sender<Heard>>)>,
-    /// What the person kept blocked.
-    kept: Vec<ForChat>,
+    /// What the person kept blocked, by whose it is, vault, key and origin.
+    kept: Vec<(Whose, String, String, String)>,
     /// What the person allowed for the chat (#5116): in memory, for the chat's life.
     granted: Vec<ForChat>,
     /// The 2FA codes the person allowed for the chat (#5118): a grant of its own, so neither a
@@ -174,8 +212,9 @@ struct Inner {
     codes_granted: Vec<ForChat>,
 }
 
-/// How many Keep blocked one chat is given before it's asked about no more fills, so a chat can't
-/// change a key's name or a field until someone presses yes.
+/// How many Keep blocked one persona is given before its chats are asked about no more fills until
+/// purlis restarts (a chat with no persona, that chat), so a chat can't change a key's name or a
+/// field, or a new chat start again, until someone presses yes.
 pub const KEPT_AT_MOST: usize = 2;
 
 /// What a chat is told while the person is being asked about another of its fills.
@@ -252,7 +291,11 @@ impl Fills {
 
     /// Ends the wait numbered `id` with `heard`: answers whether it waited.
     fn end(&self, id: u32, heard: Heard) -> bool {
-        let mut inner = self.lock();
+        Self::ended(&mut self.lock(), id, heard)
+    }
+
+    /// [`Self::end`], under a lock already held.
+    fn ended(inner: &mut Inner, id: u32, heard: Heard) -> bool {
         let Some(at) = inner.waits.iter().position(|(one, _)| one.id == id) else {
             return false;
         };
@@ -263,37 +306,45 @@ impl Fills {
         true
     }
 
-    /// Whether the person kept this blocked for this chat, or kept enough blocked that it's
-    /// asked about no more.
-    fn kept(&self, session: u32, vault: &str, key: &str, origin: &str) -> bool {
+    /// Whether the person kept this blocked for chat `session` running as `persona`, or kept
+    /// enough blocked that it's asked about no more ([`Whose`]).
+    fn kept(
+        &self,
+        session: u32,
+        persona: Option<&str>,
+        vault: &str,
+        key: &str,
+        origin: &str,
+    ) -> bool {
+        let whose = Whose::of(session, persona);
         let inner = self.lock();
-        let mine = || inner.kept.iter().filter(|(chat, ..)| *chat == session);
+        let mine = || inner.kept.iter().filter(|(one, ..)| *one == whose);
         mine().count() >= KEPT_AT_MOST
             || mine().any(|(_, v, k, o)| v == vault && k == key && o == origin)
     }
 
     /// Whether the person allowed this key on this origin for this chat (#5116).
-    fn granted(&self, session: u32, vault: &str, key: &str, origin: &str) -> bool {
+    fn granted(&self, chat: Chat<'_>, vault: &str, key: &str, origin: &str) -> bool {
         self.lock()
             .granted
             .iter()
-            .any(|(chat, v, k, o)| *chat == session && v == vault && k == key && o == origin)
+            .any(|(n, id, v, k, o)| chat.is((n, id)) && v == vault && k == key && o == origin)
     }
 
     /// Whether the person allowed codes of this key on this origin for this chat (#5118).
-    fn code_granted(&self, session: u32, vault: &str, key: &str, origin: &str) -> bool {
+    fn code_granted(&self, chat: Chat<'_>, vault: &str, key: &str, origin: &str) -> bool {
         self.lock()
             .codes_granted
             .iter()
-            .any(|(chat, v, k, o)| *chat == session && v == vault && k == key && o == origin)
+            .any(|(n, id, v, k, o)| chat.is((n, id)) && v == vault && k == key && o == origin)
     }
 
     /// The origins the person allowed this key on for this chat (#5230).
-    fn granted_origins(&self, session: u32, vault: &str, key: &str) -> Vec<String> {
+    fn granted_origins(&self, chat: Chat<'_>, vault: &str, key: &str) -> Vec<String> {
         self.lock()
             .granted
             .iter()
-            .filter(|(chat, v, k, _)| *chat == session && v == vault && k == key)
+            .filter(|(n, id, v, k, _)| chat.is((n, id)) && v == vault && k == key)
             .map(|(.., origin)| origin.clone())
             .collect()
     }
@@ -307,7 +358,9 @@ impl Fills {
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         let mut inner = self.lock();
-        inner.kept.retain(|(chat, ..)| *chat != session);
+        inner
+            .kept
+            .retain(|(whose, ..)| *whose != Whose::Chat(session));
         inner.granted.retain(|(chat, ..)| *chat != session);
         inner.codes_granted.retain(|(chat, ..)| *chat != session);
         inner.waits.retain(|(one, tell)| {
@@ -458,23 +511,27 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<A
         None => None,
     };
     let fills = held.secret_fills();
-    if fills.kept(session, &asked.vault, &asked.key, &origin) {
-        return Err(kept_said(&asked.key, &origin, None));
-    }
     // Whose grants it fills under, and whose tools Always writes in: a narrowed chat's are the
     // persona it was narrowed to (the decision of 2026-11-06).
     let persona = held.chats().secret_grants_of(session);
+    let id = held.chats().id_of(session);
+    let chat = Chat {
+        session,
+        id: id.as_deref(),
+    };
+    if fills.kept(
+        session,
+        persona.as_deref(),
+        &asked.vault,
+        &asked.key,
+        &origin,
+    ) {
+        return Err(kept_said(&asked.key, &origin, None));
+    }
     // A browser on a runner is asked about each time: a grant here holds this machine's
     // browsers (#5122).
-    let asks_the_person = runner.is_some()
-        || asks(
-            held.root(),
-            fills,
-            session,
-            persona.as_deref(),
-            asked,
-            &origin,
-        );
+    let asks_the_person =
+        runner.is_some() || asks(held.root(), fills, chat, persona.as_deref(), asked, &origin);
     // A grant fills no field whose form sends it in the page's address (the person's ruling of
     // 2026-11-06).
     if !asks_the_person && asked.field.by_get == Some(true) {
@@ -486,6 +543,7 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<A
             FillWait {
                 id: 0,
                 session,
+                chat: id.clone(),
                 browser: asked.browser.clone(),
                 vault: asked.vault.clone(),
                 key: asked.key.clone(),
@@ -525,14 +583,7 @@ pub fn asked(held: &Held, session: u32, asked: &FillAsked, now: u64) -> Result<A
         );
     }
     let persona = persona_of_fill(held, session);
-    let also = approved_elsewhere(
-        held.root(),
-        fills,
-        session,
-        persona.as_deref(),
-        asked,
-        &origin,
-    );
+    let also = approved_elsewhere(held.root(), fills, chat, persona.as_deref(), asked, &origin);
     Ok(Allowed {
         value,
         multi_line,
@@ -563,7 +614,7 @@ fn persona_of_fill(held: &Held, session: u32) -> Option<String> {
 fn approved_elsewhere(
     root: &std::path::Path,
     fills: &Fills,
-    session: u32,
+    chat: Chat<'_>,
     persona: Option<&str>,
     asked: &FillAsked,
     origin: &str,
@@ -571,10 +622,10 @@ fn approved_elsewhere(
     let ctx = Ctx::new(root, Env::from_process());
     let mut named =
         purlis_core::secretfill::origins_of_lines(&ctx, persona, &asked.vault, &asked.key);
-    named.extend(fills.granted_origins(session, &asked.vault, &asked.key));
+    named.extend(fills.granted_origins(chat, &asked.vault, &asked.key));
     named.sort();
     named.dedup();
-    named.retain(|one| one != origin && granted(root, fills, session, persona, asked, one));
+    named.retain(|one| one != origin && granted(root, fills, chat, persona, asked, one));
     named
 }
 
@@ -598,7 +649,7 @@ pub struct Allowed {
 fn asks(
     root: &std::path::Path,
     fills: &Fills,
-    session: u32,
+    chat: Chat<'_>,
     persona: Option<&str>,
     asked: &FillAsked,
     origin: &str,
@@ -606,7 +657,7 @@ fn asks(
     asked.field.kind != FieldKind::OneLine
         || asked.field.payment != Some(false)
         || asked.field.by_get.is_none()
-        || !granted(root, fills, session, persona, asked, origin)
+        || !granted(root, fills, chat, persona, asked, origin)
 }
 
 /// **Whether a fill goes in without a notice** (#5116): a line Always wrote, allowed here, or the
@@ -615,7 +666,7 @@ fn asks(
 fn granted(
     root: &std::path::Path,
     fills: &Fills,
-    session: u32,
+    chat: Chat<'_>,
     persona: Option<&str>,
     asked: &FillAsked,
     origin: &str,
@@ -628,11 +679,11 @@ fn granted(
     }
     let locks = Locks::of(root);
     if asked.code {
-        return fills.code_granted(session, &asked.vault, &asked.key, origin)
+        return fills.code_granted(chat, &asked.vault, &asked.key, origin)
             && locks.scope_removed(Level::Chat).is_none();
     }
     (lines.always && locks.scope_removed(Level::You).is_none())
-        || (fills.granted(session, &asked.vault, &asked.key, origin)
+        || (fills.granted(chat, &asked.vault, &asked.key, origin)
             && locks.scope_removed(Level::Chat).is_none())
 }
 
@@ -870,13 +921,24 @@ pub fn answer(
     }
     let level = match asked.press {
         Press::Keep => {
-            fills.lock().kept.push((
-                wait.session,
+            // Counted only with the wait it ends, in one step: a Keep that lost to the time
+            // running out is never counted.
+            let mut inner = fills.lock();
+            if !inner.waits.iter().any(|(one, _)| one.id == wait.id) {
+                return Err(NO_MORE.to_owned());
+            }
+            inner.kept.push((
+                Whose::of(wait.session, wait.persona.as_deref()),
                 wait.vault.clone(),
                 wait.key.clone(),
                 wait.origin.clone(),
             ));
-            fills.end(wait.id, Heard::Kept(asked.reason.map(str::to_owned)));
+            Fills::ended(
+                &mut inner,
+                wait.id,
+                Heard::Kept(asked.reason.map(str::to_owned)),
+            );
+            drop(inner);
             return Ok(Pressed::Done {
                 said: "Kept blocked. Nothing was filled.".to_owned(),
             });
@@ -995,6 +1057,7 @@ pub fn answer(
         if inner.waits.iter().any(|(one, _)| one.id == wait.id) {
             let grant = (
                 wait.session,
+                wait.chat.clone(),
                 wait.vault.clone(),
                 wait.key.clone(),
                 wait.origin.clone(),

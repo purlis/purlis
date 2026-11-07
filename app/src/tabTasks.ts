@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **What a session's tab says of its tasks** (#1487, V100-32, V100-33): the counts its chip
+ * **What a chat's tab says of its tasks** (#1487, V100-32, V100-33): the counts its chip
  * wears, the lines its menu lists, and which chat is the next one. Pure: the rows are the
  * tab's own (`tabChats.chatsOfTab`), each chat's state is the one function's (`shownState`),
  * the counts are the one rule's (`taskBuckets.ts`), and nothing here is state, so the chip, the

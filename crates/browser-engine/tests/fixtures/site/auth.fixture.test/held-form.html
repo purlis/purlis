@@ -21,6 +21,14 @@
   <label>Key posted <input type="password" name="key"></label>
   <button>Post elsewhere</button>
 </form>
+<form method="get" action="http://other.test/landed.html">
+  <label>Key sent elsewhere <input type="password" name="key"></label>
+  <button>Send elsewhere</button>
+</form>
+<form method="get" action="https://other.test/landed.html">
+  <label>Key sent over https <input type="password" name="key"></label>
+  <button>Send over https</button>
+</form>
 <form method="get" action="/hangs-up">
   <label>Key failing <input type="password" name="key"></label>
   <button>Send and fail</button>

@@ -29,7 +29,7 @@ import { onTheWire } from "./chatEvents.testkit";
 import { aTabForEachChat } from "./laidOut.testkit";
 
 /**
- * **A session's tab wears a chip of its tasks, which opens the menu to switch between them**
+ * **A chat's tab wears a chip of its tasks, which opens the menu to switch between them**
  * (#1487), against the whole window and a core that is a fixture, as
  * `TaskInTab.window.test.tsx` has it: a task is a chat whose `from` says `task: true`.
  *
@@ -319,7 +319,7 @@ const tab = (name: string) => {
   return found;
 };
 
-/** The cell of the strip that session's tab is drawn in: the tab, its chip and its close. */
+/** The cell of the strip that chat's tab is drawn in: the tab, its chip and its close. */
 const cell = (name: string) => tab(name).closest<HTMLElement>(".tab") as HTMLElement;
 
 /** What a tasks button is described by: its counts, in words. */
@@ -541,7 +541,7 @@ describe("what a tab shows of its tasks (#5341)", () => {
   });
 });
 
-describe("the chip on a session's tab", () => {
+describe("the chip on a chat's tab", () => {
   it("is not worn by a tab with no tasks, which is drawn as it always was", async () => {
     // What a tab's cell holds in a window where nothing has a task.
     await drawn([chat(1, "alpha"), chat(2, "alpha")]);

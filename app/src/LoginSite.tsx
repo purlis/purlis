@@ -9,6 +9,26 @@ import { TextField } from "./ui/field/Field";
 const siteOf = (login: LoginShown) => `${login.domain}${login.path === "/" ? "" : login.path}`;
 
 /**
+ * **A host with the part its owner registered marked** (the person's ruling of 2026-11-07): the
+ * labels on its left are anyone's to write, so a borrowed name there, or a swapped letter in the
+ * owner's, stands out. The host is drawn whole, its port after the mark.
+ */
+function MarkedHost({ host, registrable }: { host: string; registrable: string }) {
+  const name = host.replace(/:\d+$/, "");
+  const port = host.slice(name.length);
+  if (registrable === "" || !name.endsWith(registrable)) return <>{host}</>;
+  return (
+    <>
+      {name.slice(0, name.length - registrable.length)}
+      <strong className="login-site-registrable" data-testid="login-site-registrable">
+        {registrable}
+      </strong>
+      {port}
+    </>
+  );
+}
+
+/**
  * **The site the person typed over a login's** (#4595): `undefined` until they change it, and
  * again once the notice is drawn anew, so the field never shows what isn't being asked.
  */
@@ -50,7 +70,8 @@ export function LoginSite({
       )}
       <p className="ui-text-meta">Opens</p>
       <p className="login-site-domain ui-text-title">
-        https://{login.domain}
+        https://
+        <MarkedHost host={login.domain} registrable={login.registrable} />
         {login.path === "/" ? "/" : ""}
       </p>
       {login.path !== "/" && (
@@ -73,7 +94,8 @@ export function LoginSite({
           : "That site sends the browser to sign in elsewhere. The password is typed only on"}
       </p>
       <p className="login-site-domain ui-text-title" data-testid="login-site-form">
-        https://{login.form}
+        https://
+        <MarkedHost host={login.form} registrable={login.form_registrable} />
       </p>
       <p className="ui-text-meta">
         Fills{" "}

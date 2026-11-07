@@ -1,0 +1,25 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "check-probe"
+version.workspace = true
+description = "Test-only: a Check reporter extension that turns a check's output into SARIF, so the capability is proven through the real registry, executor and check store"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+# **No dependency on purlis-core**, for extension-probe's reason: an extension is written the way
+# a stranger would write one, knowing the protocol and nothing of purlis's insides.
+[dependencies]
+serde_json.workspace = true
+
+[dev-dependencies]
+purlis-core.workspace = true
+tempfile.workspace = true
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+
+[lints]
+workspace = true

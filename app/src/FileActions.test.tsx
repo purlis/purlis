@@ -189,11 +189,11 @@ describe("a file or folder row's actions (FM-10)", () => {
     );
   });
 
-  it("opens a shell tab in a folder the core resolves, and draws its tab", async () => {
+  it("opens a shell in a folder the core resolves, and draws its tab", async () => {
     const asked = core();
     render(<App />);
 
-    await fromTheMenu("src", "Open a shell tab here");
+    await fromTheMenu("src", "Open a shell here");
 
     await waitFor(() =>
       expect(asks(asked, "open_shell_in_branch")).toEqual([

@@ -9,9 +9,9 @@ import {
   SquareTerminal,
   TriangleAlert,
 } from "lucide-react";
-import { useEffect, useState } from "react";
 import type { Shown, UpdateKind } from "./bindings";
 import { agoSaid } from "./inboxRules";
+import { useNow as useRowClockNow } from "./rowClock";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
@@ -84,19 +84,17 @@ export function KindMark({ kind }: { kind: RowKind }) {
   );
 }
 
-/** How often a drawn age is read again. */
-const AGE_READ_MS = 60_000;
-
-/** The time as of the last reading: at the first drawing, then again each minute, so an age
- *  drawn from it is the same however often its row is drawn in between. */
-export function useNow(): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const again = setInterval(() => setNow(Date.now()), AGE_READ_MS);
-    return () => clearInterval(again);
-  }, []);
-  return now;
-}
+/**
+ * **The time as of the window's last reading** (#3032): the row clock every row's time is read
+ * on (`rowClock.ts`), so an age drawn from it is the same however often its row is drawn in
+ * between, and it moves at most twice a minute.
+ *
+ * On the window's one beat (`whileShown.ts`), not a timer of its own. Each Inbox and Notice once
+ * kept its own minute, each in a commit of its own, a hidden project's and a hidden window's
+ * too: a tick one of them made while the person switched projects drew the Inbox again after
+ * the switch had settled. Now every age moves in the one commit the row times move in.
+ */
+export const useNow = useRowClockNow;
 
 /**
  * **How long a row has waited, or when it happened**: `5m`, as `agoSaid` says it, with the time

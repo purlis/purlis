@@ -872,3 +872,92 @@ fn always_writes_nothing_over_a_line_that_changed_since_it_was_shown() {
         assert!(with_line(&changed, &one).is_err(), "{changed}");
     }
 }
+
+// ---- A key the vault doesn't hold ----
+
+/// A project whose vault `qa` is a plain file holding `held`, and `op`, a 1Password vault.
+fn with_vaults(held: &str) -> tempfile::TempDir {
+    let dir = project("");
+    std::fs::write(
+        dir.path().join("vaults.json"),
+        r#"{"vaults":{
+            "qa":{"provider":"plain-file","config":{"file":"q.json"}},
+            "op":{"provider":"1password","config":{"vault":"Team"}}
+        }}"#,
+    )
+    .expect("a registry");
+    std::fs::write(dir.path().join("q.json"), held).expect("a vault file");
+    dir
+}
+
+fn ctx(root: &Path) -> crate::secrets::Ctx {
+    crate::secrets::Ctx::new(root, crate::secrets::Env::of(&[]))
+}
+
+#[test]
+fn a_key_its_vault_has_nothing_under_is_said_by_name() {
+    let dir = with_vaults(r#"{"password":"p"}"#);
+    let one = proposed(dir.path(), "https://shop.example.test/");
+    assert_eq!(
+        not_in_vault(&ctx(dir.path()), &one),
+        Some(Warning::NotInVault {
+            vault: "qa".to_owned(),
+            keys: vec!["username".to_owned()],
+        })
+    );
+    let said = not_in_vault(&ctx(dir.path()), &one)
+        .expect("a warning")
+        .said();
+    assert_eq!(
+        said,
+        "Vault qa has nothing under username yet. If you allow this, purlis asks you for its \
+         value when it fills this login. Check the name if you expected it there."
+    );
+}
+
+#[test]
+fn keys_its_vault_holds_are_not_said() {
+    let dir = with_vaults(r#"{"password":"p","username":"u"}"#);
+    let one = proposed(dir.path(), "https://shop.example.test/");
+    assert_eq!(not_in_vault(&ctx(dir.path()), &one), None);
+}
+
+#[test]
+fn a_vault_that_cant_be_listed_quietly_is_not_listed() {
+    let dir = with_vaults("{}");
+    let one = Proposal {
+        vault: "op".to_owned(),
+        ..proposed(dir.path(), "https://shop.example.test/")
+    };
+    assert_eq!(not_in_vault(&ctx(dir.path()), &one), None);
+}
+
+#[test]
+fn two_keys_its_vault_has_nothing_under_are_said_as_two() {
+    let dir = with_vaults("{}");
+    let one = proposed(dir.path(), "https://shop.example.test/");
+    let said = not_in_vault(&ctx(dir.path()), &one)
+        .expect("a warning")
+        .said();
+    assert_eq!(
+        said,
+        "Vault qa has nothing under username or password yet. If you allow this, purlis asks \
+         you for their values when it fills this login. Check the names if you expected them \
+         there."
+    );
+}
+
+#[test]
+fn the_registrable_part_of_a_host_is_its_owner_s_name_by_the_public_suffix_list() {
+    // The left labels are anyone's to write: the owner's name is what's left of the suffix.
+    assert_eq!(registrable("paypal.com.evil.example"), "evil.example");
+    assert_eq!(registrable("login.paypal.com"), "paypal.com");
+    assert_eq!(registrable("paypa1.com"), "paypa1.com");
+    assert_eq!(registrable("shop.example.co.uk"), "example.co.uk");
+    // A suffix anyone may register under is a suffix too.
+    assert_eq!(registrable("mallory.github.io"), "mallory.github.io");
+    // A name the list has no rule for keeps its last label as its suffix.
+    assert_eq!(registrable("shop.example.test"), "example.test");
+    // A name in another alphabet is read in the ASCII spelling a browser fills it on.
+    assert_eq!(registrable("login.xn--pypal-4ve.com"), "xn--pypal-4ve.com");
+}

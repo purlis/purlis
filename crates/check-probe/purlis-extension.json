@@ -1,0 +1,9 @@
+{
+  "version": 6,
+  "id": "check-probe",
+  "name": "Check probe",
+  "capabilities": ["check-reporter"],
+  "contributes": {
+    "runs": "bin/check-probe"
+  }
+}

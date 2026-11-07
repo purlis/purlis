@@ -9,14 +9,23 @@
 //!   default. A group that asks for more refuses the create, and the refusal is said.
 //! - **Create**: `POST projects`, in a group by its `namespace_id`, with
 //!   `initialize_with_readme: false`, so the project is empty.
+//! - **A fork** (#4342): `GET user`, the source, and the project at the account's username and
+//!   the source's path, which is the account's fork only where its `forked_from_project` is the
+//!   source by id. `POST projects/{source}/fork` makes it in the account's namespace, and GitLab
+//!   copies it in the background, so `GET projects/{id}` is asked until its `import_status` is
+//!   `finished`, for at most [`FORK_WAIT`].
 //! - **Delete**: `DELETE projects/{id}`, by the id the create answered: GitLab's ids never move
 //!   to another project, so only the one this run made can be named. A project GitLab keeps for
 //!   a few days before it deletes it ("delayed deletion") is out of the way at once: GitLab
 //!   renames it and frees its path.
 
+use std::time::{Duration, Instant};
+
 use serde_json::Value;
 
-use super::super::backend::{Caller, MadeRepo, Making, NewRepo, OwnerKind, RepoOwner, Visibility};
+use super::super::backend::{
+    Caller, Fork, ForkPlace, MadeRepo, Making, NewRepo, OwnerKind, RepoOwner, Visibility,
+};
 use super::super::transport::{Call, Field, Method, Reply};
 use super::super::{Failure, ForgeError, ForgeRef, Kind, listed_id, listed_str, quote};
 use super::GitLab;
@@ -151,6 +160,149 @@ impl Making for GitLab {
             Err(no) => Err(no.error(no.said().to_string())),
         }
     }
+
+    fn fork_for(&self, caller: &Caller, path: &str) -> Result<ForkPlace, ForgeError> {
+        let me = self
+            .0
+            .strict(caller, "user", "reading who this GitLab account is")?;
+        let login = listed_str(&me, "username");
+        if login.is_empty() {
+            return Err(ForgeError::new(
+                "GitLab answered who this account is without a username".to_string(),
+            ));
+        }
+        let doing = format!("reading {path}");
+        let source = self
+            .0
+            .strict(caller, &format!("projects/{}", quote(path)), &doing)?;
+        let (Some(id), name) = (listed_id(&source), listed_str(&source, "path")) else {
+            return Err(ForgeError::new(format!(
+                "{doing}: GitLab named no project id"
+            )));
+        };
+        let visibility = listed_visibility(&source)
+            .ok_or_else(|| ForgeError::new(format!("{doing}: GitLab named no visibility")))?;
+        if name.is_empty() {
+            return Err(ForgeError::new(format!("{doing}: GitLab named no path")));
+        }
+        let at = format!("{login}/{name}");
+        let doing = format!("reading {at}, where the fork of {path} goes");
+        let asked = format!("projects/{}", quote(&at));
+        match self.0.found(caller, &asked, &doing, not_there)? {
+            None => Ok(ForkPlace::ToMake {
+                path: at,
+                visibility,
+            }),
+            Some(there) => Ok(match fork_of(&there, &id) {
+                Some(fork) => ForkPlace::Yours(fork),
+                None => ForkPlace::Taken { path: at },
+            }),
+        }
+    }
+
+    fn make_fork(&self, caller: &Caller, path: &str) -> Result<Fork, ForgeError> {
+        let doing = format!("forking {path} on GitLab");
+        let call = Call::write(
+            Method::Post,
+            format!("projects/{}/fork", quote(path)),
+            Vec::new(),
+        );
+        let mut answer = self.0.ask(caller, &call, &doing)?;
+        let Some(parent) = listed_id(&answer["forked_from_project"]) else {
+            return Err(ForgeError::new(format!(
+                "{doing}: GitLab's answer is not a fork"
+            )));
+        };
+        let named = answer["forked_from_project"]["path_with_namespace"]
+            .as_str()
+            .unwrap_or_default();
+        if !named.eq_ignore_ascii_case(path) {
+            return Err(ForgeError::new(format!(
+                "{doing}: GitLab answered a fork of {named}, which is not a fork of {path}"
+            )));
+        }
+        // GitLab copies a fork in the background: it takes no push until its copy finished.
+        let started = Instant::now();
+        let mut pause = FIRST_PAUSE;
+        loop {
+            match answer["import_status"].as_str() {
+                Some("finished") | None => break,
+                Some("failed") => {
+                    return Err(ForgeError::new(format!(
+                        "{doing}: GitLab made the fork {}, but its copy failed. Delete that fork \
+                         on GitLab, then publish again",
+                        listed_str(&answer, "path_with_namespace")
+                    )));
+                }
+                Some(_) if started.elapsed() > FORK_WAIT => {
+                    return Err(ForgeError::transport(format!(
+                        "{doing}: GitLab is still copying the fork {} after {} seconds. Publish \
+                         again once it is done",
+                        listed_str(&answer, "path_with_namespace"),
+                        FORK_WAIT.as_secs()
+                    )));
+                }
+                Some(_) => {}
+            }
+            let Some(ForgeRef(id)) = listed_id(&answer) else {
+                return Err(ForgeError::new(format!(
+                    "{doing}: GitLab named no id for the fork"
+                )));
+            };
+            let read = self.0.strict(
+                caller,
+                &format!("projects/{}", quote(&id)),
+                &format!("{doing}: reading whether its copy finished"),
+            )?;
+            if read["import_status"].as_str() != Some("finished")
+                && read["import_status"].as_str() != Some("failed")
+            {
+                std::thread::sleep(pause);
+                pause = (pause * 2).min(LAST_PAUSE);
+            }
+            answer = read;
+        }
+        fork_of(&answer, &parent).ok_or_else(|| {
+            ForgeError::new(format!(
+                "{doing}: GitLab's answer names no fork with an id, a visibility and an HTTPS \
+                 clone URL"
+            ))
+        })
+    }
+}
+
+/// The longest a fork's copy is waited for.
+const FORK_WAIT: Duration = Duration::from_secs(120);
+/// The pause after the first answer that its copy has not finished, doubled after each until
+/// [`LAST_PAUSE`].
+const FIRST_PAUSE: Duration = Duration::from_millis(500);
+const LAST_PAUSE: Duration = Duration::from_secs(4);
+
+/// Who can read the project GitLab answered.
+fn listed_visibility(answer: &Value) -> Option<Visibility> {
+    answer["visibility"].as_str().and_then(Visibility::parse)
+}
+
+/// The fork of the project `parent` in GitLab's answer, or `None` where it is not one: a project
+/// whose `forked_from_project` has the id `parent`, with an id, a path, a visibility and an HTTPS
+/// clone URL.
+fn fork_of(answer: &Value, parent: &ForgeRef) -> Option<Fork> {
+    let path = listed_str(answer, "path_with_namespace");
+    let clone_url = listed_str(answer, "http_url_to_repo");
+    if listed_id(&answer["forked_from_project"]).as_ref() != Some(parent)
+        || path.is_empty()
+        || !clone_url.starts_with("https://")
+    {
+        return None;
+    }
+    Some(Fork::answered(
+        listed_id(answer)?,
+        path,
+        listed_str(answer, "web_url"),
+        clone_url,
+        listed_visibility(answer)?,
+        Some(parent.clone()),
+    ))
 }
 
 /// The made project in GitLab's answer to a create, or why the answer is not one.

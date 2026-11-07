@@ -1355,6 +1355,10 @@ export const commands = {
 	 * 
 	 *  The window's alone: what waits on the person, dispatches and refused hosts included, is
 	 *  never a link's to read, as `dispatch_grants_needed` is not.
+	 * 
+	 *  Read off the window's thread (#5582): it reads the project's files (its locks, sign-ins and
+	 *  removals, and each waiting persona's tools), and the window asks it on every burst of moves.
+	 *  Two reads may answer out of order, and the window draws only the newest (`asks.ts`).
 	 */
 	asksWaiting: (plane: PlaneId) => typedError<Asking, string>(__TAURI_INVOKE("asks_waiting", { plane })),
 	/**
@@ -2174,8 +2178,13 @@ export const commands = {
 	 *  **The live lint** of `text`, a `SKILL.md` being edited for the skill `name` at `level` of
 	 *  `plane` (SK-7; SK-8, #2771): each line the editor shows, checked against the project's skills
 	 *  and this machine's programs. Save waits only on one that blocks.
+	 * 
+	 *  **The extensions' lints only where `extensions`** (#3093): each starts its extension's
+	 *  program confined, its own proxy and folder with it, which took 345 to 449 ms a question on
+	 *  macOS where the editor asks 200 ms after a keystroke. The editor asks them as an edit opens,
+	 *  and purlis's own as it is typed; what an extension says only warns, so Save never waits on it.
 	 */
-	skillLint: (plane: PlaneId, level: SkillLevel, name: string, text: string) => typedError<SkillLintFinding[], string>(__TAURI_INVOKE("skill_lint", { plane, level, name, text })),
+	skillLint: (plane: PlaneId, level: SkillLevel, name: string, text: string, extensions: boolean) => typedError<SkillLintFinding[], string>(__TAURI_INVOKE("skill_lint", { plane, level, name, text, extensions })),
 	/**  **Makes a skill** from `template` at `level`. */
 	skillNew: (plane: PlaneId, level: SkillLevel, name: string, description: string, template: SkillTemplateId) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_new", { plane, level, name, description, template })),
 	/**  The text of a skill's `SKILL.md`, which the light editor opens. */
@@ -3477,6 +3486,12 @@ export const commands = {
 	 */
 	workspaceFilesImport: (plane: PlaneId, workspace: string, folder: string) => typedError<string[], string>(__TAURI_INVOKE("workspace_files_import", { plane, workspace, folder })),
 	/**
+	 *  **A drop from the file manager**, onto the folder `folder` of a workspace's own files
+	 *  (#5378): the files the system dropped on this webview last, copied in as Import files… copies
+	 *  them, each imported once. The paths they were given; none when nothing was dropped.
+	 */
+	workspaceFilesImportDropped: (plane: PlaneId, workspace: string, folder: string) => typedError<string[], string>(__TAURI_INVOKE("workspace_files_import_dropped", { plane, workspace, folder })),
+	/**
 	 *  **Save with the project** (#5377): one file or folder at the top of a LIVE workspace's folder
 	 *  gets one line in the workspace's LIVE allowlist, so the next save shares it. `true` when the
 	 *  line was added, `false` when it was there already.
@@ -3495,6 +3510,19 @@ export const commands = {
 	 *  sentence, for a path any file command would refuse and for a file the branch did not change.
 	 */
 	whatChanged: (plane: PlaneId, workspace: string, repo: string, piece: string | null, path: string) => typedError<WhatChanged, string>(__TAURI_INVOKE("what_changed", { plane, workspace, repo, piece, path })),
+	discardHunk: (plane: PlaneId, workspace: string, repo: string, piece: string | null, path: string, target: DiscardTarget, against: DiscardAgainst, busyToo: boolean, turn: {
+	chat: string,
+	number: number,
+} | null) => typedError<DiscardAnswer, string>(__TAURI_INVOKE("discard_hunk", { plane, workspace, repo, piece, path, target, against, busyToo, turn })),
+	undoTurn: (plane: PlaneId, workspace: string, repo: string, piece: string | null, turn: TurnPick) => typedError<UndoAnswer, string>(__TAURI_INVOKE("undo_turn", { plane, workspace, repo, piece, turn })),
+	/**
+	 *  One file of a branch across a turn that ended there, the latest when `turn` is null, or why
+	 *  there is none.
+	 */
+	turnChanged: (plane: PlaneId, workspace: string, repo: string, piece: string | null, path: string, turn: {
+	chat: string,
+	number: number,
+} | null) => typedError<TurnChanged, string>(__TAURI_INVOKE("turn_changed", { plane, workspace, repo, piece, path, turn })),
 	/**
 	 *  The folders of branches this window's explorer has expanded, watched until it names others
 	 *  (FM-1). A folder that does not resolve — gone, or refused as the tree refuses it — is not
@@ -4814,7 +4842,7 @@ export const commands = {
 	 * 
 	 *  On a blocking thread, as [`plane_doctor`] is: a fix writes files and takes the plane's lock.
 	 */
-	planeDoctorFix: (plane: PlaneId, fix: string) => typedError<DoctorFixed, string>(__TAURI_INVOKE("plane_doctor_fix", { plane, fix })),
+	planeDoctorFix: (plane: PlaneId, fix: DoctorFix) => typedError<DoctorFixed, string>(__TAURI_INVOKE("plane_doctor_fix", { plane, fix })),
 	/**
 	 *  What **Move into repos/** would do in the plane the window names, workspace by workspace,
 	 *  for its confirmation: the core's [`purlis_core::doctor::fix::move_into_repos::plan`], with the
@@ -5390,7 +5418,7 @@ export type AlertWay =
  */
 { kind: "settings"; group: string; setting: string | null } | 
 /**  A fix of the doctor's registry, by the id `charter doctor --fix` takes (FX-1). */
-{ kind: "fix"; id: string } | 
+{ kind: "fix"; id: DoctorFix } | 
 /**  Another project to open: the one whose `workspaces/` this one is nested in. */
 { kind: "open-project"; path: string } | 
 /**  The project's Saving view, where a save is resolved. */
@@ -6359,6 +6387,13 @@ export type BusNotice = {
 	can_restart: boolean,
 };
 
+/**  A chat working in the folder that is not idle. */
+export type BusyChat = {
+	name: string,
+	/**  Its state, as a sentence ends: "is running". */
+	state: string,
+};
+
 /**
  *  A harness the operator started by hand in a shell tab, as the window draws its banner.
  * 
@@ -6919,6 +6954,68 @@ export type ChatsRunOn = {
 	pools: string[],
 };
 
+/**
+ *  A Check reporter whose last answer could not be recorded: what the review says in a Notice
+ *  naming it (#5410). The results before it stay.
+ */
+export type CheckFault = {
+	/**  The extension, by its id. */
+	extension: string,
+	/**  What was wrong, in the core's sentence, naming it. */
+	said: string,
+};
+
+/**  One result of a check. */
+export type CheckResult = {
+	tool: string,
+	outOfDate: boolean,
+	severity: CheckSeverity,
+	/**
+	 *  The file as the tool named it, relative to the branch's folder where it could be placed
+	 *  there; `null` for a result on no file.
+	 */
+	path: string | null,
+	/**  Its first line, from 1; `null` for a result on the file as a whole. */
+	line: number | null,
+	/**  The first of its lines a hunk shows, where one does: where the gutter marks it. */
+	shownAt: number | null,
+	rule: string | null,
+	message: string,
+};
+
+/**
+ *  A branch's check results as one file of its comparison shows them. Every result is in a list or
+ *  counted past it.
+ */
+export type CheckResults = {
+	sets: CheckSet[],
+	/**  On a line a hunk shows. */
+	onLines: CheckResult[],
+	/**  In this file, on no line a hunk shows. */
+	outside: CheckResult[],
+	/**  In any other file, or in none. */
+	elsewhere: CheckResult[],
+	moreOnLines: number,
+	moreOutside: number,
+	moreElsewhere: number,
+	/**  Why they could not be read, where they could not. */
+	trouble: string | null,
+	/**  Each Check reporter whose last answer could not be recorded, for the whole branch (#5410). */
+	faults: CheckFault[],
+};
+
+/**  One tool's results for a branch, and whether the branch has moved since they were reported. */
+export type CheckSet = {
+	tool: string,
+	/**  The commit they were reported for; `null` for a branch with no commit then. */
+	head: string | null,
+	outOfDate: boolean,
+	results: number,
+};
+
+/**  How much a check result matters, in SARIF's words. */
+export type CheckSeverity = "error" | "warning" | "note" | "none";
+
 /**  One child agent of a chat, as the window draws it under the chat (ADR 0066, ADR 0076 §6). */
 export type ChildAgent = {
 	/**  The harness's id for it, unique within the chat. */
@@ -7238,6 +7335,32 @@ export type DiagnosticsHere = {
 	 */
 	hot: number,
 };
+
+/**  What a discard is checked against. */
+export type DiscardAgainst = 
+/**  The stamp the diff came with: the file must still be as it was drawn. */
+{ kind: "opened"; stamp: string } | 
+/**  The operator's Overwrite: the file is written as it was drawn, less the hunk. */
+{ kind: "overwrite"; head: string | null };
+
+/**  What a discard came to. */
+export type DiscardAnswer = 
+/**
+ *  It is written. `now` is the file's diff without the hunk, or `null` when nothing of its
+ *  change is left to draw; `unrecorded` says why the log did not take it, if it did not.
+ */
+{ kind: "discarded"; now: WhatChanged | null; unrecorded: string | null } | 
+/**  Nothing was written: these chats are not idle, and the choice is the operator's. */
+{ kind: "busy"; chats: BusyChat[] } | 
+/**  Nothing was written: the file changed on disk since the diff was drawn. */
+{ kind: "stale" };
+
+/**  What of the file's change a discard puts back. */
+export type DiscardTarget = 
+/**  One hunk of a text file, as the diff drew it. */
+{ kind: "hunk"; hunk: GitHunk } | 
+/**  A binary file's change, whole. */
+{ kind: "whole" };
 
 /**  **The disk each pool's runners hold**, as the use table says it (#3493). */
 export type DiskHeld = 
@@ -7792,10 +7915,18 @@ export type Dispatches = {
 	undrawn: number,
 };
 
+/**
+ *  **A fix the doctor can make, by its id** (FX-1, #3138): the core's
+ *  [`purlis_core::doctor::fix::FixId`] as the window names it, spelled as `charter doctor --fix
+ *  <id>` takes it. Every way the window asks for a fix carries this, so it can only ask for one
+ *  the core has, and an id that names none is refused as the command's argument is read.
+ */
+export type DoctorFix = "rename-local" | "plugin-install" | "reinit" | "local-ignore" | "memory-optimize" | "discover" | "git-identity" | "rename-plane" | "persona-agents" | "workspace-reinit" | "handoff-rule" | "project-skills" | "live-skills" | "move-into-repos";
+
 /**  What applying a fix came to, as the Doctor dialog draws it. */
 export type DoctorFixed = {
 	/**  The fix that was asked for, by its id. */
-	fix: string,
+	fix: DoctorFix,
 	/**  Why it was refused, before anything was written. `None` when it ran. */
 	refused: string | null,
 	/**  What it changed, line by line, in the words and marks `charter doctor --fix` prints. */
@@ -7876,7 +8007,7 @@ export type DoctorRow = {
 	 *  by the id `charter doctor --fix <id>` takes: the dialog draws a Fix button for it, which
 	 *  calls [`plane_doctor_fix`]. `None` for a row charter cannot fix, and for the app's own.
 	 */
-	fix: string | null,
+	fix: DoctorFix | null,
 };
 
 /**  A row's verdict, as the window draws it. */
@@ -9008,6 +9139,11 @@ export type GradeEval = {
 	/**  Whether the person ticked it (off until they do), and the chats ticking it adds. */
 	on: boolean,
 	chats: number,
+	/**
+	 *  Whether its chats have a shell, as its skill asks (#4476): held to its own folder and
+	 *  reaching no host. Said before it is ticked.
+	 */
+	shell: boolean,
 };
 
 /**  **An outcome eval a grade leaves out** (`grades::LeftOutEval`): its id, and why. */
@@ -9531,6 +9667,15 @@ export type InForce = {
 	source: string,
 };
 
+/**  What one turn did to one file. */
+export type InTurn = 
+/**  The turn changed no file at all. */
+{ kind: "nothing" } | 
+/**  The turn changed other files and left this one as it found it. */
+{ kind: "not-this-file" } | 
+/**  The file, compared across the turn. */
+{ kind: "changed"; shown: WhatChanged };
+
 /**  One update, as the window draws it. */
 export type InboxUpdate = {
 	/**  Its source's own name for it: what the window notes, settles and matches it by. */
@@ -9872,6 +10017,12 @@ export type LimitRefused = {
 	 *  found the pool missing or its link down ([`unavailable`]). Absent for every other refusal.
 	 */
 	pool_unavailable?: string | null,
+	/**
+	 *  **The Secret ask a start was refused on** (#5137): the open ask for its profile's
+	 *  credential, which the Start dialog fills so the start goes on. Only where the core named
+	 *  it beside this refusal ([`purlis_core::profilesignin::attempt`]), never read from words.
+	 */
+	secret_ask?: StartSecretAsk | null,
 };
 
 /**  A range of lines, as the window names one: both ends counted from 1 and included. */
@@ -9970,6 +10121,13 @@ export type LoginShown = {
 	 *  form's, which the page may have sent the browser to. The domain where they're one.
 	 */
 	form: string,
+	/**
+	 *  **The part of the domain's host its owner registered** (the person's ruling of
+	 *  2026-11-07), by the public suffix list: the end of its host, which the notice marks.
+	 */
+	registrable: string,
+	/**  The same of the form's host. */
+	form_registrable: string,
 	vault: string,
 	user_key?: string | null,
 	key: string,
@@ -10440,7 +10598,7 @@ export type NeedFix =
  *  Move the project's skills where every program reads them: the doctor's fix, by its id
  *  (`plane_doctor_fix`).
  */
-{ kind: "move-skills"; fix: string } | 
+{ kind: "move-skills"; fix: DoctorFix } | 
 /**
  *  Propose the files without the old keys, for the person to apply
  *  (`remove_old_harness_plugins`); or leave them, which says so once
@@ -12873,6 +13031,16 @@ export type PublishAccepted = {
 /**  **How a publish ended.** */
 export type PublishDone = { kind: "opened"; url: string } | { kind: "already"; url: string } | { kind: "cannot-push"; why: string };
 
+/**  **The person's fork a publish goes through** (#4342). */
+export type PublishFork = {
+	/**  `owner/name` on the forge. */
+	path: string,
+	/**  Whether the publish makes it, once the person presses the button. */
+	made: boolean,
+	/**  Who can read it, as purlis says it before it sends. */
+	readers: string,
+};
+
 /**  One grade the description holds. */
 export type PublishGrade = {
 	skill: string,
@@ -12927,10 +13095,10 @@ export type PublishReviewView = {
 	/**  The request's description, whole. */
 	body: string,
 	/**
-	 *  Whether the forge says the person's account may not push to the source (#4342). The page
-	 *  says so up front and offers Export, and never refuses on it: the push answers for itself.
+	 *  The person's own fork the branch goes on, where the forge says their account may not push
+	 *  to the source (#4342). `None` for a branch on the source itself.
 	 */
-	forge_says_no_push: boolean,
+	fork: PublishFork | null,
 	accepted: PublishAccepted,
 };
 
@@ -15736,6 +15904,11 @@ export type SkillLintFinding = {
 	level: SkillLintLevel,
 	/**  What it says, the core's sentence. */
 	says: string,
+	/**
+	 *  The extension's lint that said it, by the title it is said under; `None` for purlis's
+	 *  own. The editor asks the extensions only as an edit opens (#3093) and keeps theirs apart.
+	 */
+	by: string | null,
 };
 
 /**  How much a lint's finding stops, as the editor draws it: the core's `Severity`. */
@@ -16342,7 +16515,7 @@ export type StartOptions = {
 	 *  the picker offers the fix the doctor row does (NO-8). Null for a file git already
 	 *  tracks: that needs the operator's `git rm --cached`, which charter never runs.
 	 */
-	ignore_fix_id: string | null,
+	ignore_fix_id: DoctorFix | null,
 	/**
 	 *  Whether this plane declares no profiles of its own. The built-ins still start, and
 	 *  the picker says so rather than looking empty or broken.
@@ -16389,6 +16562,22 @@ export type StartRunsOn = {
 	at_root: boolean,
 	pools: string[],
 	ran_on: string[],
+};
+
+/**
+ *  **A start's Secret ask, as the Start dialog finds it** (#5137): the ask it draws is the one
+ *  open for this vault and key.
+ */
+export type StartSecretAsk = {
+	/**  The variable the chat's harness is handed the value in. */
+	variable: string,
+	vault: string,
+	key: string,
+	/**
+	 *  What the dialog says once the person declines it: the core's words for a start whose ask
+	 *  was declined.
+	 */
+	declined: string,
 };
 
 /**  A chat that started: its session, and the name it was given as charter holds it. */
@@ -16883,7 +17072,7 @@ export type StudioSkill = {
 export type StudioUnmoved = {
 	skills: number,
 	/**  The doctor's fix that moves them, by its id (`planeDoctorFix`). */
-	fix: string,
+	fix: DoctorFix,
 };
 
 /**  What one subject is offered. */
@@ -17352,6 +17541,37 @@ export type TodoView = {
 	/**  Everything under the stamp line, trimmed. Empty for a todo that is only a title. */
 	body: string,
 };
+
+/**  One file across one turn on a branch: the file diff's turn picker (#5405, #5408). */
+export type TurnChanged = 
+/**  No turn to show, and why, in a sentence. */
+{ kind: "no-turn"; why: string } | 
+/**
+ *  The file across turn `number` of `chat`, and that chat's turns on the branch, newest
+ *  first: what the picker lists.
+ */
+{ kind: "of"; chat: string; number: number; turns: number[]; file: InTurn; 
+/**
+ *  Where this turn is the one Undo is offered on, the latest not yet undone: every path
+ *  the undo would write, which its confirmation lists (#5411). `null` on any other.
+ */
+undo: string[] | null };
+
+/**  A turn the picker names: a chat's id and the turn's number. */
+export type TurnPick = {
+	chat: string,
+	number: number,
+};
+
+/**  What an undo came to. */
+export type UndoAnswer = 
+/**
+ *  Every file is back. `unrecorded` says why the log did not take it, `unmarked` why the turn
+ *  is not marked undone, if either.
+ */
+{ kind: "undone"; unrecorded: string | null; unmarked: string | null } | 
+/**  Nothing was written: these chats are not idle, and an undo waits until they are. */
+{ kind: "busy"; chats: BusyChat[] };
 
 /**
  *  Why a vault read through an identity variable could not be read: the core's own sentence,
@@ -17867,6 +18087,15 @@ export type WhatChanged = {
 	/**  The branch it is compared against; `null` when against the last commit. */
 	base: string | null,
 	diff: FileDiff,
+	/**  What a discard of a hunk here is checked against (`null` for a file past what is drawn). */
+	stamp: string | null,
+	/**  The branch's check results as this file shows them (ADR 0117). */
+	checks: CheckResults,
+	/**
+	 *  On a turn's diff, that the file changed since the turn ended: it is drawn from the turn's
+	 *  start to the file as it is now (#5411).
+	 */
+	sinceTurnEnded: boolean,
 };
 
 /**

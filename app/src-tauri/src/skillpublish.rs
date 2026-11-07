@@ -11,7 +11,9 @@
 
 use std::path::{Path, PathBuf};
 
-use purlis_core::skills::source::publish::{self, Accepted, OnTheForge, PublishReview, Published};
+use purlis_core::skills::source::publish::{
+    self, Accepted, OnTheForge, PublishReview, Published, Route,
+};
 use purlis_core::skills::source::{self, Outgoing, Purpose, Stop};
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -94,10 +96,21 @@ pub struct PublishReviewView {
     pub grades: Vec<PublishGrade>,
     /// The request's description, whole.
     pub body: String,
-    /// Whether the forge says the person's account may not push to the source (#4342). The page
-    /// says so up front and offers Export, and never refuses on it: the push answers for itself.
-    pub forge_says_no_push: bool,
+    /// The person's own fork the branch goes on, where the forge says their account may not push
+    /// to the source (#4342). `None` for a branch on the source itself.
+    pub fork: Option<PublishFork>,
     pub accepted: PublishAccepted,
+}
+
+/// **The person's fork a publish goes through** (#4342).
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+pub struct PublishFork {
+    /// `owner/name` on the forge.
+    pub path: String,
+    /// Whether the publish makes it, once the person presses the button.
+    pub made: bool,
+    /// Who can read it, as purlis says it before it sends.
+    pub readers: String,
 }
 
 /// What a yes hands back.
@@ -169,8 +182,45 @@ fn stops_of(out: &Outgoing) -> Vec<OutgoingStop> {
                 said: esc(&format!("Holds {kind}: {masked}")),
             }),
             Stop::Local { .. } => None,
+            Stop::ForkTaken { path } => Some(OutgoingStop {
+                place: esc(path),
+                said: FORK_TAKEN.to_owned(),
+            }),
         })
         .collect()
+}
+
+/// Who can read a fork, as the window says it: in sentence case (`docs/ui-copy.md`), where the
+/// terminal's words shout PUBLIC.
+fn readers_said(visibility: purlis_core::forge::backend::Visibility) -> &'static str {
+    use purlis_core::forge::backend::Visibility;
+    match visibility {
+        Visibility::Public => "public: everyone can read what is sent",
+        Visibility::Internal => "internal: everyone signed in to the instance can read it",
+        Visibility::Private => "private",
+    }
+}
+
+/// What the page says of a repo of the person's at the fork's name that is not the source's fork.
+const FORK_TAKEN: &str = "Your account already has it, and it is not a fork of the source, so no \
+                          fork can be made there. Rename or delete it on the forge, then review \
+                          again";
+
+/// The fork the page names, where the branch goes on one.
+fn fork_of(route: &Route) -> Option<PublishFork> {
+    match route {
+        Route::Source => None,
+        Route::Fork(fork) => Some(PublishFork {
+            path: esc(fork.path()),
+            made: false,
+            readers: readers_said(fork.visibility()).to_owned(),
+        }),
+        Route::NewFork { path, visibility } => Some(PublishFork {
+            path: esc(path),
+            made: true,
+            readers: readers_said(*visibility).to_owned(),
+        }),
+    }
 }
 
 fn view_of(review: &PublishReview, forge: &OnTheForge) -> PublishReviewView {
@@ -192,7 +242,7 @@ fn view_of(review: &PublishReview, forge: &OnTheForge) -> PublishReviewView {
             .iter()
             .filter_map(|stop| match stop {
                 Stop::Local { skill, .. } => Some(esc(skill)),
-                Stop::Found { .. } => None,
+                Stop::Found { .. } | Stop::ForkTaken { .. } => None,
             })
             .collect(),
         lands: review
@@ -205,7 +255,7 @@ fn view_of(review: &PublishReview, forge: &OnTheForge) -> PublishReviewView {
             .collect(),
         broken: review.outgoing.broken.iter().map(|one| esc(one)).collect(),
         body: esc(&review.body),
-        forge_says_no_push: review.may_push == Some(false),
+        fork: fork_of(&review.route),
         grades: review
             .grades
             .iter()

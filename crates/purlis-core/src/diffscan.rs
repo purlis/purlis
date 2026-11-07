@@ -583,10 +583,11 @@ pub fn remote_has(dir: &Path, helper: Option<&str>, remote: &str) -> Option<Vec<
 /// address itself, for a push git hands to a hook ([`pushed`]); `None` where it cannot be asked.
 ///
 /// **The address is asked as git handed it.** git gives the hook the address it resolved
-/// already, so it is asked from an empty folder outside the repository, reading no configuration
-/// but its own ([`git::isolated`]): neither the repository's, nor the global or system file, nor
-/// one `XDG_CONFIG_HOME` points at. An address that is also a remote's name in `dir`, or a path
-/// that means something only from the repository's own folder, is not asked.
+/// already, so it is asked from `/`, a folder no chat can write, in no repository at all
+/// ([`address_asked_from`]), reading no configuration but its own ([`git::isolated`]): neither
+/// a repository's, nor the global or system file, nor one `XDG_CONFIG_HOME` points at. An
+/// address that is also a remote's name in `dir`, or a path that means something only from the
+/// repository's own folder, is not asked.
 fn address_has(dir: &Path, helper: Option<&str>, url: &str) -> Option<Vec<String>> {
     if url.is_empty() || url.starts_with('-') || !an_address_anywhere(url) {
         return None;
@@ -597,10 +598,15 @@ fn address_has(dir: &Path, helper: Option<&str>, url: &str) -> Option<Vec<String
     if names.out.lines().any(|name| name.trim() == url) {
         return None;
     }
-    let away = tempfile::tempdir().ok()?;
+    address_asked_from(Path::new("/"), helper, url)
+}
+
+/// What the address `url` says it has, asked with git run in `from` and in no repository: a
+/// `.git` there, or above it, is not read, so nothing written in it says where `url` goes.
+fn address_asked_from(from: &Path, helper: Option<&str>, url: &str) -> Option<Vec<String>> {
     let asked = git::isolated(&git::Isolated::default(), || {
-        git::run_network(
-            away.path(),
+        git::run_network_in_no_repository(
+            from,
             helper,
             &["ls-remote", "--heads", "--tags", "--", url],
         )
@@ -648,9 +654,9 @@ fn forge_of(url: &str) -> Option<crate::forge::Forge> {
 /// What a push to `url` from `repo` leaves out of its scan: what the remote says it has
 /// ([`address_has`]). A remote on a forge is asked at its HTTPS address with the forge's
 /// credential, whichever way the push spells it, so a push over SSH is answered too. Where the
-/// remote cannot be asked, nothing: the scan then reads all the push sends past the remote's
-/// side of each ref git named.
-fn known_to(repo: &Path, url: &str) -> Vec<String> {
+/// remote cannot be asked, `None`: the scan then reads all the push sends past the remote's
+/// side of each ref git named, up to [`UNASKED_AT_MOST`] commits.
+fn known_to(repo: &Path, url: &str) -> Option<Vec<String>> {
     let forge = forge_of(url);
     let https = forge
         .as_ref()
@@ -660,8 +666,14 @@ fn known_to(repo: &Path, url: &str) -> Vec<String> {
         Some(https) => address_has(repo, helper.as_deref(), &https),
         None => address_has(repo, None, url),
     }
-    .unwrap_or_default()
 }
+
+/// The most commits a push's scan reads when the remote could not be asked what it has
+/// ([`pushed_without_asking`]). Past this the push is refused at once, saying why, rather than
+/// read for minutes: a new branch's whole history is what such a scan reads, and on a project
+/// of a few thousand commits that is hundreds of megabytes of diff. A thousand commits of
+/// purlis's own history were 105 MB and 9 s of git alone to show.
+pub const UNASKED_AT_MOST: usize = 1000;
 
 /// How long git may take to show what a push sends. A push is a network operation already, and
 /// a branch's first push to a new remote shows its whole history.
@@ -705,12 +717,37 @@ fn is_nothing(oid: &str) -> bool {
 /// `Err` is input git did not write, a ref that is not a commit, or git failing to answer, all
 /// of which the caller refuses on.
 pub fn pushed(repo: &Path, url: &str, updates: &str) -> Result<Scan, String> {
-    pushed_knowing(repo, updates, &known_to(repo, url))
+    match known_to(repo, url) {
+        Some(known) => pushed_knowing(repo, updates, &known),
+        None => pushed_without_asking(repo, updates),
+    }
 }
 
 /// [`pushed`], with what the remote has given as the commits the caller just asked it for
-/// (`known`): none at all where it has nothing, or could not be asked.
+/// (`known`): none at all where it has nothing.
 pub fn pushed_knowing(repo: &Path, updates: &str, known: &[String]) -> Result<Scan, String> {
+    pushed_within(repo, updates, known, None)
+}
+
+/// [`pushed`] where the remote could not be asked what it has: only the remote's side of each
+/// ref git named is left out, and a push that would send more than [`UNASKED_AT_MOST`]
+/// commits past it is refused before any is read (`Err`), saying how to push it.
+///
+/// **Nothing the repository holds stands in for the remote's answer.** Its remote-tracking
+/// refs are what a chat can write, so they never shrink what is read; and a ref the remote
+/// named on git's standard input already leaves out all it reaches.
+pub fn pushed_without_asking(repo: &Path, updates: &str) -> Result<Scan, String> {
+    pushed_within(repo, updates, &[], Some(UNASKED_AT_MOST))
+}
+
+/// The scan of [`pushed_knowing`], refused where `at_most` is given and the push sends more
+/// commits than that.
+fn pushed_within(
+    repo: &Path,
+    updates: &str,
+    known: &[String],
+    at_most: Option<usize>,
+) -> Result<Scan, String> {
     let commit_of = |oid: &str| {
         git::run_in_hook(
             repo,
@@ -772,6 +809,12 @@ pub fn pushed_knowing(repo: &Path, updates: &str, known: &[String]) -> Result<Sc
     let mut range = sends;
     range.extend(has);
     range.extend(known.iter().map(|id| format!("^{id}")));
+    if let Some(most) = at_most {
+        let sent = commits_in(repo, &range)?;
+        if sent > most {
+            return Err(too_much_unasked(sent, most));
+        }
+    }
     let ask = |head: &[&str]| {
         let mut args: Vec<&str> = head.to_vec();
         // The remote's side of a ref names a commit this clone may never have fetched.
@@ -869,6 +912,34 @@ pub fn pushed_knowing(repo: &Path, updates: &str, known: &[String]) -> Result<Sc
     let mut scan = through(text, read);
     scan.changes_the_allowlist = changes_the_allowlist;
     Ok(scan)
+}
+
+/// How many commits `range` (revisions as `rev-list` takes them) holds in `repo`.
+fn commits_in(repo: &Path, range: &[String]) -> Result<usize, String> {
+    let mut args = vec!["rev-list", "--count", "--ignore-missing"];
+    args.extend(range.iter().map(String::as_str));
+    args.push("--");
+    let run = git::run_in_hook(repo, &args, SHOWING_A_PUSH).map_err(|gone| gone.to_string())?;
+    match run.code {
+        Some(0) => String::from_utf8_lossy(&run.out)
+            .trim()
+            .parse()
+            .map_err(|_| "git did not say how many commits the push sends".to_owned()),
+        None => Err("git took too long to count what the push sends".to_owned()),
+        Some(_) => Err(String::from_utf8_lossy(&run.err).trim().to_owned()),
+    }
+}
+
+/// Why a push to a remote that could not be asked what it has is refused, `sent` commits
+/// being more than `most`.
+fn too_much_unasked(sent: usize, most: usize) -> String {
+    format!(
+        "the remote could not be asked which commits it already has, so this push would send \
+         {sent} commits that purlis would have to read, more than the {most} it reads for a \
+         remote it cannot ask. Nothing was pushed. Push to the remote by an https address on a \
+         forge purlis knows, so it can be asked, or, from a branch folder, with `purlis \
+         worktree push`"
+    )
 }
 
 /// Everything the staged diff in `repo` adds that looks like a secret or personal data, in the
@@ -2579,6 +2650,28 @@ mod tests {
         }
     }
 
+    /// A `.git` in the folder the address is asked from says nothing of where the address goes:
+    /// git asks the address it was handed, in no repository.
+    #[test]
+    fn a_dot_git_in_the_folder_the_address_is_asked_from_changes_nothing_it_answers() {
+        let (dir, repo) = repo();
+        let url = a_remote_beside(&repo);
+        let tip = a_history_the_clone_says_the_remote_has(&repo);
+        let other = dir.path().join("other.git");
+        testgit::run(dir.path(), &["init", "-q", "--bare", "other.git"]);
+        let other = other.display().to_string();
+        testgit::run(
+            &repo,
+            &["push", "-q", &other, &format!("{tip}:refs/heads/main")],
+        );
+        let from = dir.path().join("asked-from");
+        std::fs::create_dir(&from).unwrap();
+        testgit::run(&from, &["init", "-q"]);
+        testgit::run(&from, &["config", &format!("url.{other}.insteadOf"), &url]);
+
+        assert_eq!(address_asked_from(&from, None, &url), Some(Vec::new()));
+    }
+
     /// A ref the push deletes sends nothing, and what the remote had there is what it has: a new
     /// branch pushed beside it does not answer for those commits again.
     #[test]
@@ -2614,6 +2707,49 @@ mod tests {
         let scan = pushed(&repo, &nowhere, &update(&tip, NOTHING)).unwrap();
 
         assert_eq!(scan.refused.len(), 1, "{:?}", scan.refused);
+    }
+
+    /// A remote that cannot be asked, and a push that would send more than a scan reads for
+    /// one: refused at once, saying so, rather than read for minutes.
+    #[test]
+    fn a_push_past_what_is_read_for_a_remote_that_cannot_be_asked_is_refused_at_once() {
+        let (dir, repo) = repo();
+        let mut stream = String::new();
+        for at in 1..=UNASKED_AT_MOST + 1 {
+            stream.push_str(&format!(
+                "commit refs/heads/long\nmark :{at}\ncommitter A <a@b> 0 +0000\ndata 0\n"
+            ));
+            if at > 1 {
+                stream.push_str(&format!("from :{}\n", at - 1));
+            }
+            stream.push('\n');
+        }
+        let mut fed = crate::forklock::spawn(
+            std::process::Command::new("git")
+                .args(["fast-import", "--quiet"])
+                .current_dir(&repo)
+                .stdin(std::process::Stdio::piped()),
+        )
+        .unwrap();
+        std::io::Write::write_all(fed.stdin.as_mut().unwrap(), stream.as_bytes()).unwrap();
+        assert!(fed.wait().unwrap().success());
+        let tip = testgit::run(&repo, &["rev-parse", "refs/heads/long"])
+            .out
+            .trim()
+            .to_owned();
+        let nowhere = dir.path().join("not-there.git").display().to_string();
+
+        let why = pushed(&repo, &nowhere, &update(&tip, NOTHING)).unwrap_err();
+
+        assert!(why.contains("could not be asked"), "{why}");
+        assert!(why.contains(&format!("{}", UNASKED_AT_MOST + 1)), "{why}");
+        // One commit fewer is read, as it was.
+        let parent = format!("{tip}~1");
+        let parent = testgit::run(&repo, &["rev-parse", &parent])
+            .out
+            .trim()
+            .to_owned();
+        assert!(pushed(&repo, &nowhere, &update(&parent, NOTHING)).is_ok());
     }
 
     /// What the remote says it has, on any of its branches, is left out: a new branch's push

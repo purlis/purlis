@@ -7,7 +7,7 @@ import { layoutPref } from "./layoutPref";
 /**
  * **Where you answer** (#4565, spec #4551, ADR 0107): where the person sees a task question that
  * has reached them. **From the top**, the default: one at a time, as a quiz in the notices band of
- * the pane of the nearest chat above it with a tab (`sessionOf`, as a task's session tab is defined).
+ * the pane of the nearest chat above it with a pane, the one it returns to (`returnsTo`).
  * **From each session**: in its task's own pane. It moves what the person sees, never who is
  * asked first, and nothing is rerouted when it changes: every surface reads it as it draws. Any
  * task can still be opened and answered in its own pane either way, and the question stays in the

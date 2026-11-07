@@ -3193,6 +3193,48 @@ impl Hooks {
         )
     }
 
+    /// **A human edit** (ADR 0084 §8, #5406) in the event log, under the chat `number` it is told
+    /// to first. Made durable before it answers.
+    pub fn record_human_edit(
+        &self,
+        root: &Path,
+        number: Option<u32>,
+        edit: &purlis_core::humanedit::HumanEdit,
+    ) -> Result<(), String> {
+        let events = self
+            .events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .ok_or("purlis's event log is not open on this machine")?;
+        events
+            .record(Entry::HumanEdit {
+                plane: root.to_path_buf(),
+                number,
+                edit: edit.clone(),
+            })
+            .map_err(|why| format!("the event log refused it ({why})"))
+    }
+
+    /// **The folder this project's event log is read from**: the log this process holds, or,
+    /// where the session host holds it, this machine's. `None` where there is none.
+    pub fn event_log_dir(&self) -> Option<std::path::PathBuf> {
+        let events = self
+            .events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()?;
+        match events.held() {
+            Some(log) => Some(
+                log.lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .log_written_in()
+                    .to_path_buf(),
+            ),
+            None => crate::EVENT_LOG.get()?.as_ref().ok().cloned(),
+        }
+    }
+
     /// [`Hooks::record_dispatch_grant`] for one the person made on a refusal kept while nobody
     /// was there (#1507): the same event with no chat, whose body says `from: "away"`.
     pub fn record_dispatch_grant_from_away(
@@ -3520,17 +3562,31 @@ impl Hooks {
 }
 
 /// The in-process host's board. Each call is documented once, on [`ChatBoard`].
+/// Chat `session` as `board` has it now.
+fn glance_on(board: &Board, session: u32) -> Glance {
+    Glance {
+        state: board.state(session),
+        asking: board.asking(session),
+        turns: board.turns(session),
+        prompt: board.its_prompt(session),
+        own_work: board.own_work(session).is_some(),
+        wakes_on_its_own_work: board.wakes_on_its_own_work(session),
+    }
+}
+
+impl Hooks {
+    /// **`act` under the run's state lock** (ADR 0084 §8, as ADR 0081 §4 checks `place`): handed
+    /// how each chat stands, read while no hook can move one, and done in the same step, so a
+    /// prompt heard meanwhile waits until it is (#5411). `act` must not read the board itself.
+    pub(crate) fn while_held<R>(&self, act: impl FnOnce(&dyn Fn(u32) -> Glance) -> R) -> R {
+        let board = self.board();
+        act(&|session| glance_on(&board, session))
+    }
+}
+
 impl ChatBoard for Hooks {
     fn glance(&self, session: u32) -> Glance {
-        let board = self.board();
-        Glance {
-            state: board.state(session),
-            asking: board.asking(session),
-            turns: board.turns(session),
-            prompt: board.its_prompt(session),
-            own_work: board.own_work(session).is_some(),
-            wakes_on_its_own_work: board.wakes_on_its_own_work(session),
-        }
+        glance_on(&self.board(), session)
     }
 
     fn conversation(&self, session: u32) -> Option<String> {

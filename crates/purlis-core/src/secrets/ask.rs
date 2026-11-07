@@ -519,7 +519,7 @@ fn vault_and_key(vault: &str, key: &str) -> String {
 }
 
 /// What a chat whose ask was declined hears.
-pub(super) fn declined_said(vault: &str, key: &str) -> String {
+pub(crate) fn declined_said(vault: &str, key: &str) -> String {
     format!("declined {}", vault_and_key(vault, key))
 }
 

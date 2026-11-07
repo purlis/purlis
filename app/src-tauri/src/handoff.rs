@@ -422,7 +422,7 @@ pub fn answer(
         Ask::Task(asked) => crate::dispatched::answer(held, &asked, connection),
         // A browser tool's call (#2013): no ticket, for the record's reason. The line names a
         // browser of the chat whose token it carries, looked up among that chat's alone.
-        Ask::Browse(browse) => crate::chatbrowsers::answered(held, &browse),
+        Ask::Browse(browse) => crate::chatbrowsers::answered(held, &browse, connection),
         // The theme specimen (#2330): no ticket, for the record's reason. The line names a theme
         // by its id, an appearance and option values; where the chat works, and whose drafts are
         // its own, are this app's record of the chat whose token the line carries (#2536). The

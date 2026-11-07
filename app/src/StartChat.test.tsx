@@ -1139,7 +1139,7 @@ describe("a chat in a project that runs every chat sandboxed (ADR 0067 §7, V78 
     });
   });
 
-  it("shows the distribution's install command and types it in a shell tab only when asked", async () => {
+  it("shows the distribution's install command and types it in a shell only when asked", async () => {
     const onInstall = vi.fn();
     const { onStart, user } = showWith(
       {
@@ -1152,7 +1152,7 @@ describe("a chat in a project that runs every chat sandboxed (ADR 0067 §7, V78 
     );
 
     expect(screen.getByText("sudo apt install socat").tagName).toBe("CODE");
-    await user.click(screen.getByRole("button", { name: "Type it in a shell tab" }));
+    await user.click(screen.getByRole("button", { name: "Type it in a shell" }));
 
     expect(onInstall).toHaveBeenCalledTimes(1);
     expect(onStart).not.toHaveBeenCalled();
@@ -1277,9 +1277,7 @@ describe("a harness charter cannot wrap on this system in a sandboxed project", 
 
     expect(screen.getByRole("alert")).toHaveTextContent(said);
     expect(screen.queryByRole("button", { name: "Start chat" })).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Type it in a shell tab" }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Type it in a shell" })).not.toBeInTheDocument();
     await userEvent
       .setup()
       .click(screen.getByRole("button", { name: "Start without the sandbox" }));

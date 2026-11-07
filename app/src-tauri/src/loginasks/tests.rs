@@ -17,9 +17,17 @@ const VAULTS: &str = r#"{"vaults":{
     "prod":{"provider":"plain-file","config":{"file":"p.json"},"persona":"ops"}
 }}"#;
 
+/// What vault qa holds: each key a test suggests.
+const QA_HOLDS: &str = r#"{"username":"u","password":"p"}"#;
+
+/// The id of chat 7, the chat the tests raise their logins for.
+const CHAT_7: Option<&str> = Some("01JX0000000000000000000007");
+
 fn project(file: &str) -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("a folder");
     std::fs::write(dir.path().join("vaults.json"), VAULTS).expect("a registry");
+    // Vault qa holds every key the tests suggest, so no notice says one is missing.
+    std::fs::write(dir.path().join("q.json"), QA_HOLDS).expect("vault qa");
     std::fs::write(purlis_core::names::manifest(dir.path()), file).expect("a project file");
     dir
 }
@@ -69,6 +77,7 @@ fn raised_finding(
         .raise(LoginWait {
             id: 0,
             session: 7,
+            chat: CHAT_7.map(str::to_owned),
             proposal: judged.proposal,
             since: 1,
             vault_too: judged.vault_too,
@@ -122,7 +131,7 @@ fn file_of(root: &Path) -> String {
 }
 
 fn tool_of(grants: &Grants, name: &str) -> Option<Tool> {
-    grants.granted(7, Some("qa"), name)
+    grants.granted(7, CHAT_7, Some("qa"), name)
 }
 
 #[test]
@@ -147,9 +156,9 @@ fn allow_once_fills_what_was_confirmed_writes_nothing_and_goes_with_its_read() {
         tool.login.expect("a login").origin,
         "https://shop.example.test"
     );
-    assert!(grants.take(7, Some("qa"), "shop-login").is_some());
+    assert!(grants.take(7, CHAT_7, Some("qa"), "shop-login").is_some());
     assert!(tool_of(&grants, "shop-login").is_none(), "used once");
-    assert!(grants.take(7, Some("qa"), "shop-login").is_none());
+    assert!(grants.take(7, CHAT_7, Some("qa"), "shop-login").is_none());
 }
 
 #[test]
@@ -165,15 +174,43 @@ fn allow_for_this_chat_stays_for_that_chat_and_persona_alone() {
         &press(id, Press::Chat, &proposal.digest()),
     )
     .expect("allowed");
-    assert!(grants.take(7, Some("qa"), "shop-login").is_some());
+    assert!(grants.take(7, CHAT_7, Some("qa"), "shop-login").is_some());
     assert!(tool_of(&grants, "shop-login").is_some());
-    assert!(grants.granted(8, Some("qa"), "shop-login").is_none());
-    assert!(grants.granted(7, Some("ops"), "shop-login").is_none());
+    assert!(grants.granted(8, None, Some("qa"), "shop-login").is_none());
+    assert!(
+        grants
+            .granted(7, CHAT_7, Some("ops"), "shop-login")
+            .is_none()
+    );
     grants.forget(7);
     assert!(
         tool_of(&grants, "shop-login").is_none(),
         "a later chat dealt 7 gets nothing"
     );
+}
+
+#[test]
+fn a_grant_is_never_read_by_another_chat_dealt_its_number() {
+    let dir = project("");
+    let grants = Grants::default();
+    let (id, proposal, _heard) = raised(dir.path(), &grants, "https://shop.example.test/login");
+    let audited = Audited::default();
+    answered(
+        dir.path(),
+        &grants,
+        &audited,
+        &press(id, Press::Chat, &proposal.digest()),
+    )
+    .expect("allowed");
+    let another = Some("01JX0000000000000000000008");
+    assert!(
+        grants
+            .granted(7, another, Some("qa"), "shop-login")
+            .is_none()
+    );
+    assert!(grants.take(7, another, Some("qa"), "shop-login").is_none());
+    assert!(grants.granted(7, None, Some("qa"), "shop-login").is_none());
+    assert!(tool_of(&grants, "shop-login").is_some(), "still chat 7's");
 }
 
 #[test]
@@ -217,6 +254,7 @@ fn a_second_call_never_replaces_the_proposal_shown() {
     let refused = grants.raise(LoginWait {
         id: 0,
         session: 7,
+        chat: CHAT_7.map(str::to_owned),
         proposal: other.proposal,
         since: 2,
         vault_too: false,
@@ -302,6 +340,7 @@ fn a_warning_that_came_up_while_the_notice_was_drawn_is_drawn_before_a_press_cou
         .raise(LoginWait {
             id: 0,
             session: 9,
+            chat: None,
             proposal: judged(
                 dir.path(),
                 "qa",
@@ -318,7 +357,7 @@ fn a_warning_that_came_up_while_the_notice_was_drawn_is_drawn_before_a_press_cou
         })
         .expect("raised");
     assert!(grants.allow(other_id, "qa", other, true));
-    grants.take(9, Some("qa"), "other");
+    grants.take(9, None, Some("qa"), "other");
     let audited = Audited::default();
     let drawn = answered(
         dir.path(),
@@ -364,6 +403,43 @@ fn a_vault_that_isnt_the_personas_is_said() {
 }
 
 #[test]
+fn a_key_the_vault_has_nothing_under_is_said_on_the_notice() {
+    let dir = project("");
+    let wrong = Suggested {
+        key: "pasword".to_owned(),
+        ..suggested("https://shop.example.test/")
+    };
+    let judged = judged(dir.path(), "qa", "shop-login", &wrong, &[]).expect("judged");
+    let missing = loginask::Warning::NotInVault {
+        vault: "qa".to_owned(),
+        keys: vec!["pasword".to_owned()],
+    };
+    assert!(
+        judged.proposal.warnings.contains(&missing),
+        "{:?}",
+        judged.proposal.warnings
+    );
+}
+
+#[test]
+fn a_key_put_in_the_vault_while_the_notice_is_up_is_no_reason_to_draw_it_again() {
+    let dir = project("");
+    std::fs::write(dir.path().join("q.json"), "{}").expect("vault qa, empty");
+    let grants = Grants::default();
+    let (id, proposal, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
+    std::fs::write(dir.path().join("q.json"), r#"{"username":"u"}"#).expect("one key added");
+    let audited = Audited::default();
+    let done = answered(
+        dir.path(),
+        &grants,
+        &audited,
+        &press(id, Press::Once, &proposal.digest()),
+    );
+    assert!(matches!(done, Ok(Pressed::Done { .. })), "{done:?}");
+    assert_eq!(heard.try_recv(), Ok(Heard::Allowed));
+}
+
+#[test]
 fn a_vault_the_project_doesnt_have_is_never_asked_about() {
     let dir = project("");
     let unknown = Suggested {
@@ -373,14 +449,19 @@ fn a_vault_the_project_doesnt_have_is_never_asked_about() {
     assert!(judged(dir.path(), "qa", "shop-login", &unknown, &[]).is_err());
 }
 
+/// The person's ruling of 2026-11-07: Keep blocked counts for the persona until purlis restarts,
+/// so a new chat of the same persona starts no fresh tries.
 #[test]
-fn two_keep_blocked_end_a_chats_login_notices() {
+fn two_keep_blocked_end_a_personas_login_notices_for_this_run() {
     let grants = Grants::default();
-    grants.keep(7, "one", "https://a.example.test");
-    assert!(!grants.kept(7, "two", "https://b.example.test"));
-    grants.keep(7, "two", "https://b.example.test");
-    assert!(grants.kept(7, "three", "https://c.example.test"));
-    assert!(!grants.kept(8, "three", "https://c.example.test"));
+    grants.keep("qa", "one", "https://a.example.test");
+    assert!(!grants.kept("qa", "two", "https://b.example.test"));
+    grants.keep("qa", "two", "https://b.example.test");
+    assert!(grants.kept("qa", "three", "https://c.example.test"));
+    assert!(!grants.kept("ops", "three", "https://c.example.test"));
+    // A chat closing takes none of it with it.
+    grants.forget(7);
+    assert!(grants.kept("qa", "three", "https://c.example.test"));
 }
 
 #[test]
@@ -420,7 +501,7 @@ fn always_on_a_typed_site_shows_its_line_first() {
 }
 
 #[test]
-fn keep_blocked_is_not_asked_again_in_that_chat() {
+fn keep_blocked_is_not_asked_again_of_that_persona_in_any_chat() {
     let dir = project("");
     let grants = Grants::default();
     let (id, proposal, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
@@ -435,8 +516,9 @@ fn keep_blocked_is_not_asked_again_in_that_chat() {
         heard.try_recv(),
         Ok(Heard::Kept(Some("not that site".to_owned())))
     );
-    assert!(grants.kept(7, "shop-login", "https://shop.example.test"));
-    assert!(!grants.kept(8, "shop-login", "https://shop.example.test"));
+    grants.forget(7);
+    assert!(grants.kept("qa", "shop-login", "https://shop.example.test"));
+    assert!(!grants.kept("ops", "shop-login", "https://shop.example.test"));
     assert!(audited.borrow().is_empty());
 }
 
@@ -723,6 +805,7 @@ fn raised_replacing(root: &Path, grants: &Grants) -> (u32, Proposal, mpsc::Recei
         .raise(LoginWait {
             id: 0,
             session: 7,
+            chat: CHAT_7.map(str::to_owned),
             proposal: judged.proposal,
             since: 1,
             vault_too: judged.vault_too,
@@ -989,19 +1072,88 @@ fn allow_once_is_given_back_only_to_a_login_that_never_ran() {
     )
     .expect("allowed");
 
-    assert!(grants.take(7, Some("qa"), "shop-login").is_some());
+    assert!(grants.take(7, CHAT_7, Some("qa"), "shop-login").is_some());
     assert!(
         tool_of(&grants, "shop-login").is_none(),
         "taken by its read"
     );
-    grants.answered(7, Some("qa"), "shop-login", false);
+    grants.answered(7, CHAT_7, Some("qa"), "shop-login", false);
     assert!(tool_of(&grants, "shop-login").is_some(), "the chat's again");
     // Another chat's or persona's answer gives nothing back to this one.
-    grants.answered(8, Some("qa"), "shop-login", false);
+    grants.answered(8, None, Some("qa"), "shop-login", false);
 
-    assert!(grants.take(7, Some("qa"), "shop-login").is_some());
-    grants.answered(7, Some("qa"), "shop-login", true);
+    assert!(grants.take(7, CHAT_7, Some("qa"), "shop-login").is_some());
+    grants.answered(7, CHAT_7, Some("qa"), "shop-login", true);
     assert!(tool_of(&grants, "shop-login").is_none(), "spent");
-    grants.answered(7, Some("qa"), "shop-login", false);
+    grants.answered(7, CHAT_7, Some("qa"), "shop-login", false);
     assert!(tool_of(&grants, "shop-login").is_none(), "answered once");
+}
+
+/// A call cancelled while its notice waits is noticed: the notice goes, and nothing is held for
+/// the chat's next call.
+#[test]
+fn a_call_whose_asker_hung_up_ends_its_wait_and_its_notice() {
+    let dir = project("");
+    let grants = Grants::default();
+    let (id, _, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
+    let looked = std::cell::Cell::new(0);
+    let gone = || {
+        looked.set(looked.get() + 1);
+        looked.get() >= 2
+    };
+    let started = Instant::now();
+
+    let waited = waited_for_the_person(&grants, id, &heard, Duration::from_secs(600), &gone);
+
+    assert_eq!(waited, Waited::AskerGone);
+    assert!(
+        started.elapsed() < Duration::from_secs(60),
+        "it looked again, and stopped"
+    );
+    assert!(grants.waiting().is_empty(), "the notice went");
+    assert!(tool_of(&grants, "shop-login").is_none());
+}
+
+#[test]
+fn a_wait_nobody_answers_ends_its_notice_and_a_press_in_time_is_heard() {
+    let dir = project("");
+    let grants = Grants::default();
+    let (id, _, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
+    let here = || false;
+    assert_eq!(
+        waited_for_the_person(&grants, id, &heard, Duration::from_millis(20), &here),
+        Waited::NotAnswered
+    );
+    assert!(grants.waiting().is_empty(), "the notice went");
+
+    let (id, _, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
+    grants.end(id, Heard::Kept(None));
+    assert_eq!(
+        waited_for_the_person(&grants, id, &heard, Duration::from_secs(600), &here),
+        Waited::Heard(Heard::Kept(None))
+    );
+}
+
+/// The person's ruling of 2026-11-07: a runner chat's notice, which no call waits on, goes after
+/// as long as a waiting call waits, unless it was answered or its chat closed by then.
+#[test]
+fn a_notice_nobody_waits_on_goes_unanswered_after_its_time_unless_answered() {
+    let dir = project("");
+    let grants = Grants::default();
+    let (id, _, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
+    let went = went_unanswered(&heard, Duration::from_millis(20), || {
+        Some(&grants).filter(|grants| grants.end(id, Heard::Gone))
+    });
+    assert!(went.is_some(), "nobody answered, so it went");
+    assert!(grants.waiting().is_empty());
+
+    let (id, _, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
+    grants.end(id, Heard::Allowed);
+    let went = went_unanswered(&heard, Duration::from_millis(20), || Some(()));
+    assert!(went.is_none(), "an answer ends the watch");
+
+    let (_, _, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
+    grants.forget(7);
+    let went = went_unanswered(&heard, Duration::from_millis(20), || Some(()));
+    assert!(went.is_none(), "a close ends the watch");
 }

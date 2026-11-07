@@ -29,6 +29,7 @@
 
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard, PoisonError, mpsc};
+use std::time::{Duration, Instant};
 
 use purlis_core::hookwire::{Answer, BrowseAsk, Browsing};
 use purlis_core::loginask::{self, FindsForm, Proposal, Suggested};
@@ -45,6 +46,8 @@ pub struct LoginWait {
     /// Its number in the project: what its answer names.
     pub id: u32,
     pub session: u32,
+    /// The chat's id (ADR 0066) as it raised this: what its grant is bound to, beside its number.
+    pub chat: Option<String>,
     pub proposal: Proposal,
     pub since: u64,
     /// The persona needs its vault allowed too: what Always then also does.
@@ -70,10 +73,22 @@ pub enum Heard {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Grant {
     session: u32,
+    /// The id of the chat it was allowed for (ADR 0066): a number dealt again never reads it.
+    chat: Option<String>,
     persona: String,
     tool: Tool,
     /// Allow once: it goes with the read of its values.
     once: bool,
+}
+
+impl Grant {
+    /// Whether it's login `name`, allowed for chat `session` whose id is `chat`, as `persona`.
+    fn is_for(&self, session: u32, chat: Option<&str>, persona: Option<&str>, name: &str) -> bool {
+        self.session == session
+            && self.chat.as_deref() == chat
+            && persona == Some(self.persona.as_str())
+            && self.tool.name == name
+    }
 }
 
 #[derive(Debug, Default)]
@@ -84,8 +99,10 @@ struct Inner {
     /// **Each Allow once a read took, until its login answers** (#5251): spent then, or the chat's
     /// again where the login was refused before it ran.
     taken: Vec<Grant>,
-    /// What the person kept blocked, by chat, login and origin: not asked of them again.
-    kept: Vec<(u32, String, String)>,
+    /// **What the person kept blocked, by persona, login and origin**: not asked of them again
+    /// until purlis restarts, whichever of the persona's chats asks (the person's ruling of
+    /// 2026-11-07), so a new chat starts no fresh tries.
+    kept: Vec<(String, String, String)>,
     /// Every login allowed from a notice since purlis started, used up or closed too: where a key
     /// went counts for a warning whatever became of the grant.
     filled: Vec<Tool>,
@@ -97,8 +114,9 @@ struct Inner {
 const ALREADY_ASKED: &str = "the person is already being asked about a browser login for this \
                              chat: wait for their answer before suggesting another";
 
-/// How many Keep blocked one chat is given before it's asked about no more logins, so a chat
-/// can't change a name or a subdomain until someone presses yes.
+/// How many Keep blocked one persona is given before its chats are asked about no more logins
+/// until purlis restarts, so a chat can't change a name or a subdomain, or a new chat start
+/// again, until someone presses yes.
 const KEPT_AT_MOST: usize = 2;
 
 /// **The logins a project's chats wait on the person for, and what they allowed.**
@@ -212,6 +230,7 @@ impl Grants {
         inner.from_notices.push((persona.to_owned(), tool.clone()));
         inner.grants.push(Grant {
             session: wait.session,
+            chat: wait.chat.clone(),
             persona: persona.to_owned(),
             tool,
             once,
@@ -224,7 +243,11 @@ impl Grants {
 
     /// Ends the wait numbered `id` with `heard`: answers whether it waited.
     fn end(&self, id: u32, heard: Heard) -> bool {
-        let mut inner = self.lock();
+        Self::ended(&mut self.lock(), id, heard)
+    }
+
+    /// [`Self::end`], under a lock already held.
+    fn ended(inner: &mut Inner, id: u32, heard: Heard) -> bool {
         let Some(at) = inner.waits.iter().position(|(one, _)| one.id == id) else {
             return false;
         };
@@ -235,47 +258,76 @@ impl Grants {
         true
     }
 
-    /// Chat `session`'s login `login` kept blocked on `origin`.
-    fn keep(&self, session: u32, login: &str, origin: &str) {
+    /// `persona`'s login `login` kept blocked on `origin`.
+    #[cfg(test)]
+    fn keep(&self, persona: &str, login: &str, origin: &str) {
         self.lock()
             .kept
-            .push((session, login.to_owned(), origin.to_owned()));
+            .push((persona.to_owned(), login.to_owned(), origin.to_owned()));
     }
 
-    /// Whether the person kept this blocked for this chat, or kept enough blocked that it's
-    /// asked about no more.
-    fn kept(&self, session: u32, login: &str, origin: &str) -> bool {
+    /// **The wait numbered `id` kept blocked, in one step**: counted for its persona and its call
+    /// told, or nothing where it waits no more, so a Keep that lost to the time running out or
+    /// the call ending is never counted.
+    fn keep_wait(&self, id: u32, reason: Option<String>) -> bool {
+        let mut inner = self.lock();
+        let Some((wait, _)) = inner.waits.iter().find(|(one, _)| one.id == id) else {
+            return false;
+        };
+        let proposal = &wait.proposal;
+        let kept = (
+            proposal.persona.clone(),
+            proposal.login.clone(),
+            proposal.origin.clone(),
+        );
+        inner.kept.push(kept);
+        Self::ended(&mut inner, id, Heard::Kept(reason))
+    }
+
+    /// Whether the person kept this blocked for `persona`, or kept enough of its logins blocked
+    /// that its chats are asked about no more, until purlis restarts.
+    fn kept(&self, persona: &str, login: &str, origin: &str) -> bool {
         let inner = self.lock();
-        let mine = || inner.kept.iter().filter(|(chat, _, _)| *chat == session);
-        mine().count() >= KEPT_AT_MOST || mine().any(|(_, name, on)| name == login && on == origin)
+        let its = || inner.kept.iter().filter(|(whose, _, _)| whose == persona);
+        its().count() >= KEPT_AT_MOST || its().any(|(_, name, on)| name == login && on == origin)
     }
 
-    /// The login `name` the person allowed for chat `session` running as `persona`.
-    pub fn granted(&self, session: u32, persona: Option<&str>, name: &str) -> Option<Tool> {
+    /// The login `name` the person allowed for chat `session`, whose id is `chat`, running as
+    /// `persona`.
+    pub fn granted(
+        &self,
+        session: u32,
+        chat: Option<&str>,
+        persona: Option<&str>,
+        name: &str,
+    ) -> Option<Tool> {
         self.lock()
             .grants
             .iter()
-            .find(|one| {
-                one.session == session
-                    && persona == Some(one.persona.as_str())
-                    && one.tool.name == name
-            })
+            .find(|one| one.is_for(session, chat, persona, name))
             .map(|one| one.tool.clone())
     }
 
     /// **The login `name` to read now**: as [`Self::granted`], and Allow once goes with it, in
     /// one step, so two calls never both fill it and a read that fails leaves nothing behind.
-    pub fn take(&self, session: u32, persona: Option<&str>, name: &str) -> Option<Tool> {
+    pub fn take(
+        &self,
+        session: u32,
+        chat: Option<&str>,
+        persona: Option<&str>,
+        name: &str,
+    ) -> Option<Tool> {
         let mut inner = self.lock();
-        let at = inner.grants.iter().position(|one| {
-            one.session == session && persona == Some(one.persona.as_str()) && one.tool.name == name
-        })?;
+        let at = inner
+            .grants
+            .iter()
+            .position(|one| one.is_for(session, chat, persona, name))?;
         if inner.grants[at].once {
             let taken = inner.grants.remove(at);
             let tool = taken.tool.clone();
-            inner.taken.retain(|one| {
-                !(one.session == session && one.persona == taken.persona && one.tool.name == name)
-            });
+            inner
+                .taken
+                .retain(|one| !one.is_for(session, chat, persona, name));
             inner.taken.push(taken);
             Some(tool)
         } else {
@@ -286,18 +338,27 @@ impl Grants {
     /// **Chat `session`'s login `name` answered** (#5251): an Allow once [`Self::take`] took for it
     /// is the chat's again where the login was refused before it ran (`ran` false), and is spent
     /// otherwise. Given back only where nothing of that name was allowed since.
-    pub fn answered(&self, session: u32, persona: Option<&str>, name: &str, ran: bool) {
+    pub fn answered(
+        &self,
+        session: u32,
+        chat: Option<&str>,
+        persona: Option<&str>,
+        name: &str,
+        ran: bool,
+    ) {
         let mut inner = self.lock();
-        let at = inner.taken.iter().position(|one| {
-            one.session == session && persona == Some(one.persona.as_str()) && one.tool.name == name
-        });
+        let at = inner
+            .taken
+            .iter()
+            .position(|one| one.is_for(session, chat, persona, name));
         let Some(at) = at else {
             return;
         };
         let taken = inner.taken.remove(at);
-        let allowed_since = inner.grants.iter().any(|one| {
-            one.session == session && one.persona == taken.persona && one.tool.name == name
-        });
+        let allowed_since = inner
+            .grants
+            .iter()
+            .any(|one| one.is_for(session, chat, persona, name));
         if !ran && !allowed_since {
             inner.grants.push(taken);
         }
@@ -327,7 +388,6 @@ impl Grants {
         let mut inner = self.lock();
         inner.grants.retain(|one| one.session != session);
         inner.taken.retain(|one| one.session != session);
-        inner.kept.retain(|(chat, _, _)| *chat != session);
         inner.waits.retain(|(one, tell)| {
             if one.session != session {
                 return true;
@@ -388,11 +448,14 @@ pub const NOT_ANSWERED: &str = "nobody answered about this login in time, so not
 /// persona, one its host composed, a call that suggests nothing, or a browser nobody allowed yet,
 /// whose Ask comes first. Otherwise it answers with why not, or having waited. Allowed answers
 /// `None`, and the normal path fills what's now held.
+///
+/// `gone` says whether the call's asker hung up: its wait then ends, and its notice goes with it.
 pub fn before_the_login(
     held: &Held,
     browse: &BrowseAsk,
     pool: Option<&str>,
     now: u64,
+    gone: &dyn Fn() -> bool,
 ) -> Option<Answer> {
     let Browsing::LogIn { login, suggested } = &browse.asked else {
         return None;
@@ -421,7 +484,11 @@ pub fn before_the_login(
     }
     let no = |why: String| Some(Answer::No { why });
     let grants = held.login_grants();
-    if grants.granted(session, Some(&persona), login).is_some() {
+    let chat = held.chats().id_of(session);
+    if grants
+        .granted(session, chat.as_deref(), Some(&persona), login)
+        .is_some()
+    {
         return None;
     }
     // A declared login a call names another site for asks to replace that site (#4996).
@@ -444,7 +511,7 @@ pub fn before_the_login(
         None => kept_said(login, None),
     };
     if let Ok((origin, _)) = loginask::site_of(&suggested.site)
-        && grants.kept(session, login, &origin)
+        && grants.kept(&persona, login, &origin)
     {
         return no(kept());
     }
@@ -466,12 +533,13 @@ pub fn before_the_login(
     ) {
         // The site the call names is the one declared: the declared login fills it.
         Ok(None) => return None,
-        Ok(Some(judged)) if grants.kept(session, login, &judged.proposal.origin) => {
+        Ok(Some(judged)) if grants.kept(&persona, login, &judged.proposal.origin) => {
             return no(kept());
         }
         Ok(Some(judged)) => LoginWait {
             id: 0,
             session,
+            chat,
             since: now,
             pool: pool.map(str::to_owned),
             proposal: judged.proposal,
@@ -488,25 +556,130 @@ pub fn before_the_login(
     tracing::info!("purlis: chat {session}'s browser login asks the person about its site");
     held.chats().asks_may_have_moved();
     if let Some(pool) = pool {
+        let_go_unanswered(held, session, login, id, heard);
         return no(asked_on_a_runner_said(login, pool));
     }
-    match heard.recv_timeout(loginask::THE_PERSON_IS_WAITED_FOR) {
-        Ok(Heard::Allowed) => None,
-        Ok(Heard::Kept(reason)) => no(match &replaces {
+    let waited =
+        waited_for_the_person(grants, id, &heard, loginask::THE_PERSON_IS_WAITED_FOR, gone);
+    match waited {
+        Waited::Heard(Heard::Allowed) => None,
+        Waited::Heard(Heard::Kept(reason)) => no(match &replaces {
             Some(old) => kept_where_it_is_said(login, &old.page, reason.as_deref()),
             None => kept_said(login, reason.as_deref()),
         }),
-        Ok(Heard::Gone) | Err(mpsc::RecvTimeoutError::Disconnected) => no(NOT_ANSWERED.to_owned()),
-        Err(mpsc::RecvTimeoutError::Timeout) => {
-            // A press in that very moment has ended it, and its answer is waiting here.
-            if !grants.end(id, Heard::Gone)
-                && let Ok(Heard::Allowed) = heard.try_recv()
-            {
-                return None;
-            }
+        Waited::Heard(Heard::Gone) => no(NOT_ANSWERED.to_owned()),
+        Waited::NotAnswered => {
             held.chats().asks_may_have_moved();
             no(NOT_ANSWERED.to_owned())
         }
+        Waited::AskerGone => {
+            tracing::info!("purlis: chat {session}'s browser login call ended, so its notice went");
+            held.chats().asks_may_have_moved();
+            no(ASKER_GONE.to_owned())
+        }
+    }
+}
+
+/// What a call is answered where its asker hung up while its notice waited: nobody reads it.
+const ASKER_GONE: &str = "the call ended while the person was asked, so its notice went and \
+                          nothing was filled";
+
+/// **How a wait on the person ended** ([`waited_for_the_person`]).
+#[derive(Debug, PartialEq, Eq)]
+enum Waited {
+    /// The press, or the chat's close.
+    Heard(Heard),
+    /// Nobody answered in time: the notice went.
+    NotAnswered,
+    /// The call's asker hung up: the notice went.
+    AskerGone,
+}
+
+/// How often a waiting call looks whether its asker hung up.
+const LOOKS_AGAIN: Duration = Duration::from_secs(1);
+
+/// **The answer to the notice numbered `id`**, waited for `at_most`, looking every
+/// [`LOOKS_AGAIN`] whether the call's asker is `gone`: past the time, or with nobody waiting any
+/// more, the notice goes. A press in that very moment wins, and its answer is what was heard.
+fn waited_for_the_person(
+    grants: &Grants,
+    id: u32,
+    heard: &mpsc::Receiver<Heard>,
+    at_most: Duration,
+    gone: &dyn Fn() -> bool,
+) -> Waited {
+    let until = Instant::now() + at_most;
+    loop {
+        let left = until.saturating_duration_since(Instant::now());
+        match heard.recv_timeout(left.min(LOOKS_AGAIN)) {
+            Ok(one) => return Waited::Heard(one),
+            Err(mpsc::RecvTimeoutError::Disconnected) => return Waited::Heard(Heard::Gone),
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                let hung_up = gone();
+                if !hung_up && Instant::now() < until {
+                    continue;
+                }
+                // A press in that very moment has ended it, and its answer is waiting here.
+                if !grants.end(id, Heard::Gone)
+                    && let Ok(one) = heard.try_recv()
+                {
+                    return Waited::Heard(one);
+                }
+                return if hung_up {
+                    Waited::AskerGone
+                } else {
+                    Waited::NotAnswered
+                };
+            }
+        }
+    }
+}
+
+/// **A runner chat's notice lets go after as long as a waiting call waits** (the person's ruling
+/// of 2026-11-07): nothing waits on it, so where nobody answered by then it goes, and the chat is
+/// told so on its next turn. A press or the chat's close ends the watch.
+fn let_go_unanswered(
+    held: &Held,
+    session: u32,
+    login: &str,
+    id: u32,
+    heard: mpsc::Receiver<Heard>,
+) {
+    let held = held.weak();
+    let login = login.to_owned();
+    let watched = std::thread::Builder::new()
+        .name(format!("login notice {id}"))
+        .spawn(move || {
+            let went = went_unanswered(&heard, loginask::THE_PERSON_IS_WAITED_FOR, || {
+                held.upgrade()
+                    .filter(|held| held.login_grants().end(id, Heard::Gone))
+            });
+            if let Some(held) = went {
+                held.chats().asks_may_have_moved();
+                held.chats().tell_outcome(
+                    session,
+                    purlis_core::askoutcome::Outcome {
+                        about: purlis_core::askoutcome::About::BrowserLogin { login },
+                        answer: purlis_core::askoutcome::Answer::NotAnswered,
+                    },
+                );
+            }
+        });
+    if let Err(why) = watched {
+        tracing::warn!("purlis: login notice {id} has no time limit: {why}");
+    }
+}
+
+/// **What a notice nobody waits on went with**: `None` where it was answered or its chat closed
+/// within `at_most`; otherwise what `ends` answers, which ends it unless a press just did.
+fn went_unanswered<T>(
+    heard: &mpsc::Receiver<Heard>,
+    at_most: Duration,
+    ends: impl FnOnce() -> Option<T>,
+) -> Option<T> {
+    match heard.recv_timeout(at_most) {
+        Err(mpsc::RecvTimeoutError::Timeout) => ends(),
+        Ok(_) | Err(mpsc::RecvTimeoutError::Disconnected) => None,
     }
 }
 
@@ -610,6 +783,9 @@ fn finish(root: &Path, locks: &Locks, proposal: Proposal) -> Result<Judged, Stri
         .map_err(|why| why.message.to_string())?;
     let vault_too = brokered::not_tagged(&ctx, Some(&proposal.persona), &proposal.vault).is_some();
     let mut proposal = proposal;
+    proposal
+        .warnings
+        .extend(loginask::not_in_vault(&ctx, &proposal));
     if vault_too {
         proposal.warnings.push(loginask::Warning::NotItsVault {
             vault: proposal.vault.clone(),
@@ -734,8 +910,9 @@ pub fn answer(
         return Err(CHANGED.to_owned());
     }
     if press == Press::Keep {
-        grants.keep(session, &wait.proposal.login, &wait.proposal.origin);
-        grants.end(id, Heard::Kept(reason.map(str::to_owned)));
+        if !grants.keep_wait(id, reason.map(str::to_owned)) {
+            return Err(NO_MORE.to_owned());
+        }
         let said = if wait.proposal.replaces.is_some() {
             "Kept the recorded site. Nothing changed or was filled."
         } else {
@@ -804,7 +981,7 @@ pub fn answer(
         .proposal
         .warnings
         .iter()
-        .any(|warning| !wait.proposal.warnings.contains(warning));
+        .any(|warning| !warning.seen_in(&wait.proposal.warnings));
     if changed && (!spelled || unseen || press == Press::Always) {
         let said = format!(
             "purlis would open {} and type the password on {}. Check it, then choose again.",

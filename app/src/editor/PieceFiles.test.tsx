@@ -850,7 +850,7 @@ describe("a row of the file tab's tree (FM-10)", () => {
 
     fireEvent.contextMenu(await row("src"));
     const menu = await screen.findByRole("menu");
-    expect(within(menu).getByRole("menuitem", { name: "Open a shell tab here" })).toBeVisible();
+    expect(within(menu).getByRole("menuitem", { name: "Open a shell here" })).toBeVisible();
     await userEvent.click(within(menu).getByRole("menuitem", { name: "Copy absolute path" }));
 
     expect(pressed.map((offer) => offer.does)).toEqual([

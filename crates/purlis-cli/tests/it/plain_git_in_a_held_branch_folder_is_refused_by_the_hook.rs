@@ -333,6 +333,20 @@ fn where_no_app_answers_in_time_the_git_runs() {
     assert_eq!(p.denial("git push", &p.p1, &chat_3(&socket, &token)), None);
 }
 
+/// A git the line cannot place is refused whatever the app takes to answer for the rest: the
+/// guard's wait for the app is never what lets it through.
+#[test]
+fn a_git_the_line_cannot_place_is_refused_though_the_app_is_slow() {
+    let p = Project::new();
+    let (_app, token, socket) = p.an_app(App::Slow);
+    // Two writes the app is asked about, each waited on, then one the line cannot place.
+    let line = "git commit -m x && git push && cd \"$ELSEWHERE\" && git merge main";
+    let why = p
+        .denial(line, &p.p1, &chat_3(&socket, &token))
+        .expect("the git after the move was let through");
+    assert!(why.contains("cannot tell which folder"), "{why}");
+}
+
 /// The review of #4129: the guard refuses only where the app says another live chat holds the
 /// folder. Any other `No` from the app (a chat it does not have open, a name it cannot read, a
 /// claim it could not judge) lets the git run, as no answer does.

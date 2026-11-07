@@ -316,6 +316,12 @@ someone chose (the operator, a policy, the kill switch, the host); **failed** is
 A chat's state is its current run's (ADR 0076).
 _Avoid_: status, session state (the old five), done (for completed), idle (for a state)
 
+**Turn**:
+One stretch of a **Run** from a prompt being sent until the run is next `input-required`, or
+ends. A run has many turns. What a turn changed is the diff of the chat's branch from before
+it to after it, which is what the operator reviews and can undo.
+_Avoid_: step, exchange, checkpoint, iteration
+
 **Hot chat**:
 A chat whose current run has a process: `starting`, `working`, `input-required` or `paused`.
 An **open** chat is any chat whose current run is live, hot or not; a hibernated one is open and
@@ -1395,12 +1401,21 @@ and it leaves only by **Send to agent**, **Publish** or being kept. It belongs t
 _Avoid_: pending review (that is GitHub's), draft (unqualified)
 
 **Human edit**:
-An edit the operator saved to a file in a chat's branch from the light editor. purlis records
-which file and lines, and announces it to the chat's harness at its next turn: one line of
-context naming the files edited since its last turn, paths only, never contents. Edits from
+A change the operator makes to a file in a chat's branch from purlis: an edit typed and saved
+in the light editor, a hunk discarded, or a turn undone (**Undo a turn**). purlis records which
+file and lines, and announces it to the chat's harness at its next **Turn**: one line of
+context naming the files changed since its last turn, paths only, never contents. Changes from
 several sittings add up until that turn, and the announcement is never a prompt sent for the
 operator. It is a part of a **Chat**'s history (ADR 0084).
-_Avoid_: manual edit, override
+_Avoid_: manual edit, override, discard (for the whole of it)
+
+**Undo a turn**:
+The operator putting every file a **Turn** changed in a chat's branch back as it was before
+that turn, from the git ref purlis keeps per turn (N3). Only the latest turn not yet undone
+can be, and only while the folder is idle (ADR 0084 §8). It is a **Human edit**, so the agent
+hears of it at its next turn. It is steering an agent's work, not a repo-wide refactor (ADR 0081,
+as amended).
+_Avoid_: rollback, revert (git's revert makes a commit; this does not), restore a checkpoint
 
 **Session record**:
 A summary a chat writes of its own session when it closes through **Smart close** — its goal,
@@ -1775,6 +1790,11 @@ SkillTemplate, StudioPanel and SkillRouter. Each has a built-in first user. An e
 declares one is confined. Grader, StudioPanel and SkillRouter are version 1 of the public extension
 API; the other three stay experimental until they are fully wired (ADR 0101).
 _Avoid_: studio extension point, skill capability
+
+**Check reporter**:
+The capability by which an **Extension** turns one tool's output into SARIF, so a branch's checks
+show as diagnostics on its diff. purlis itself reads only SARIF.
+_Avoid_: linter plugin, problem matcher, diagnostics provider
 
 **SkillSource**:
 The studio capability for a source of skills that is not git, such as a registry or an artifact

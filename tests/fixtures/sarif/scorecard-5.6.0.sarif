@@ -1,0 +1,449 @@
+{
+ "runs": [
+  {
+   "artifacts": [
+    {
+     "location": {
+      "index": 0,
+      "uri": ".github/workflows/release.yml"
+     }
+    },
+    {
+     "location": {
+      "index": 1,
+      "uri": "runner-image/Dockerfile"
+     }
+    },
+    {
+     "location": {
+      "index": 2,
+      "uri": "tests/parity/runner.Dockerfile"
+     }
+    },
+    {
+     "location": {
+      "index": 3,
+      "uri": "no file associated with this alert"
+     }
+    }
+   ],
+   "automationDetails": {
+    "id": "supply-chain/local/61e84743356275f6ffca23b1b2f2cb945e19eb96-02 Nov 26 12:51 +0000"
+   },
+   "conversion": {
+    "tool": {
+     "driver": {
+      "name": "GitHub Code Scanning"
+     }
+    }
+   },
+   "results": [
+    {
+     "correlationGuid": "4d55d72f-a5e6-4317-b59f-9fc52c80c67e",
+     "level": "error",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "index": 0,
+         "uri": ".github/workflows/release.yml"
+        },
+        "region": {
+         "endLine": 185,
+         "startColumn": 1,
+         "startLine": 185
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "score is 0: untrusted code checkout '${{ github.event.workflow_run.head_sha || github.sha }}'\nRemediation tip: Avoid the dangerous workflow patterns.\nSee [this post](https://securitylab.github.com/research/github-actions-preventing-pwn-requests/) for information on avoiding untrusted code checkouts.\nClick Remediation section below for further remediation help"
+     },
+     "partialFingerprints": {
+      "primaryLocationLineHash": "47dd4236d0567f53:1"
+     },
+     "properties": {
+      "github/alertNumber": 37,
+      "github/alertUrl": "https://api.github.com/repos/purlis/purlis/code-scanning/alerts/37"
+     },
+     "rule": {
+      "id": "DangerousWorkflowID",
+      "index": 1
+     },
+     "ruleId": "DangerousWorkflowID"
+    },
+    {
+     "correlationGuid": "46e4ada4-42bf-480a-bfda-9966deeb4116",
+     "level": "error",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "index": 1,
+         "uri": "runner-image/Dockerfile"
+        },
+        "region": {
+         "endLine": 38,
+         "startColumn": 1,
+         "startLine": 38
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "score is 9: containerImage not pinned by hash\nClick Remediation section below to solve this issue"
+     },
+     "partialFingerprints": {
+      "primaryLocationLineHash": "168afd606f516e58:1"
+     },
+     "properties": {
+      "github/alertNumber": 576,
+      "github/alertUrl": "https://api.github.com/repos/purlis/purlis/code-scanning/alerts/576"
+     },
+     "rule": {
+      "id": "PinnedDependenciesID",
+      "index": 6
+     },
+     "ruleId": "PinnedDependenciesID"
+    },
+    {
+     "correlationGuid": "15ca0a10-26a8-4d69-b51f-5683168ff7db",
+     "level": "error",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "index": 2,
+         "uri": "tests/parity/runner.Dockerfile"
+        },
+        "region": {
+         "endLine": 13,
+         "startColumn": 1,
+         "startLine": 13
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "score is 9: containerImage not pinned by hash\nClick Remediation section below to solve this issue"
+     },
+     "partialFingerprints": {
+      "primaryLocationLineHash": "791c7fb169fd68fd:1"
+     },
+     "properties": {
+      "github/alertNumber": 278,
+      "github/alertUrl": "https://api.github.com/repos/purlis/purlis/code-scanning/alerts/278"
+     },
+     "rule": {
+      "id": "PinnedDependenciesID",
+      "index": 6
+     },
+     "ruleId": "PinnedDependenciesID"
+    },
+    {
+     "correlationGuid": "26859f5e-fdad-4dd1-8f5c-357531a08c8b",
+     "level": "error",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "index": 3,
+         "uri": "no file associated with this alert"
+        },
+        "region": {
+         "endLine": 1,
+         "startColumn": 1,
+         "startLine": 1
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "score is 1: 9 existing vulnerabilities detected:\nWarn: Project is vulnerable to: https://osv.dev/RUSTSEC-2024-0429\nWarn: Project is vulnerable to: https://osv.dev/RUSTSEC-2024-0436\nWarn: Project is vulnerable to: https://osv.dev/RUSTSEC-2024-0370\nWarn: Project is vulnerable to: https://osv.dev/RUSTSEC-2026-0371\nWarn: Project is vulnerable to: https://osv.dev/RUSTSEC-2026-0370\nWarn: Project is vulnerable to: https://osv.dev/RUSTSEC-2026-0372\nWarn: Project is vulnerable to: https://osv.dev/GHSA-3g3m-2fjr-6pw4\nWarn: Project is vulnerable to: https://osv.dev/GHSA-g3hv-75wg-m249\nWarn: Project is vulnerable to: https://osv.dev/RUSTSEC-2024-0449\nClick Remediation section below to solve this issue"
+     },
+     "partialFingerprints": {
+      "primaryLocationLineHash": ""
+     },
+     "properties": {
+      "github/alertNumber": 38,
+      "github/alertUrl": "https://api.github.com/repos/purlis/purlis/code-scanning/alerts/38"
+     },
+     "rule": {
+      "id": "VulnerabilitiesID",
+      "index": 10
+     },
+     "ruleId": "VulnerabilitiesID"
+    },
+    {
+     "correlationGuid": "1e4eb743-0b98-4367-aaa4-2dc508ed3800",
+     "level": "error",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "index": 3,
+         "uri": "no file associated with this alert"
+        },
+        "region": {
+         "endLine": 1,
+         "startColumn": 1,
+         "startLine": 1
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "score is 0: project is not fuzzed:\nWarn: no fuzzer integrations found\nClick Remediation section below to solve this issue"
+     },
+     "partialFingerprints": {
+      "primaryLocationLineHash": ""
+     },
+     "properties": {
+      "github/alertNumber": 39,
+      "github/alertUrl": "https://api.github.com/repos/purlis/purlis/code-scanning/alerts/39"
+     },
+     "rule": {
+      "id": "FuzzingID",
+      "index": 3
+     },
+     "ruleId": "FuzzingID"
+    }
+   ],
+   "tool": {
+    "driver": {
+     "name": "Scorecard",
+     "rules": [
+      {
+       "defaultConfiguration": {
+        "level": "error"
+       },
+       "helpUri": "https://github.com/ossf/scorecard/blob/61e84743356275f6ffca23b1b2f2cb945e19eb96/docs/checks.md#binary-artifacts",
+       "id": "BinaryArtifactsID",
+       "name": "Binary-Artifacts",
+       "properties": {
+        "precision": "high",
+        "security-severity": "7",
+        "tags": [
+         "dependencies",
+         "security",
+         "supply-chain"
+        ]
+       },
+       "shortDescription": {
+        "text": "Binary-Artifacts"
+       }
+      },
+      {
+       "defaultConfiguration": {
+        "level": "error"
+       },
+       "helpUri": "https://github.com/ossf/scorecard/blob/61e84743356275f6ffca23b1b2f2cb945e19eb96/docs/checks.md#dangerous-workflow",
+       "id": "DangerousWorkflowID",
+       "name": "Dangerous-Workflow",
+       "properties": {
+        "precision": "high",
+        "security-severity": "9",
+        "tags": [
+         "infrastructure",
+         "security",
+         "supply-chain"
+        ]
+       },
+       "shortDescription": {
+        "text": "Dangerous-Workflow"
+       }
+      },
+      {
+       "defaultConfiguration": {
+        "level": "error"
+       },
+       "helpUri": "https://github.com/ossf/scorecard/blob/61e84743356275f6ffca23b1b2f2cb945e19eb96/docs/checks.md#dependency-update-tool",
+       "id": "DependencyUpdateToolID",
+       "name": "Dependency-Update-Tool",
+       "properties": {
+        "precision": "high",
+        "security-severity": "7",
+        "tags": [
+         "dependencies",
+         "security",
+         "supply-chain"
+        ]
+       },
+       "shortDescription": {
+        "text": "Dependency-Update-Tool"
+       }
+      },
+      {
+       "defaultConfiguration": {
+        "level": "error"
+       },
+       "helpUri": "https://github.com/ossf/scorecard/blob/61e84743356275f6ffca23b1b2f2cb945e19eb96/docs/checks.md#fuzzing",
+       "id": "FuzzingID",
+       "name": "Fuzzing",
+       "properties": {
+        "precision": "high",
+        "security-severity": "4",
+        "tags": [
+         "security",
+         "supply-chain",
+         "testing"
+        ]
+       },
+       "shortDescription": {
+        "text": "Fuzzing"
+       }
+      },
+      {
+       "defaultConfiguration": {
+        "level": "error"
+       },
+       "helpUri": "https://github.com/ossf/scorecard/blob/61e84743356275f6ffca23b1b2f2cb945e19eb96/docs/checks.md#license",
+       "id": "LicenseID",
+       "name": "License",
+       "properties": {
+        "precision": "high",
+        "security-severity": "1",
+        "tags": [
+         "license"
+        ]
+       },
+       "shortDescription": {
+        "text": "License"
+       }
+      },
+      {
+       "defaultConfiguration": {
+        "level": "error"
+       },
+       "helpUri": "https://github.com/ossf/scorecard/blob/61e84743356275f6ffca23b1b2f2cb945e19eb96/docs/checks.md#packaging",
+       "id": "PackagingID",
+       "name": "Packaging",
+       "properties": {
+        "precision": "high",
+        "security-severity": "4",
+        "tags": [
+         "releases",
+         "security",
+         "supply-chain"
+        ]
+       },
+       "shortDescription": {
+        "text": "Packaging"
+       }
+      },
+      {
+       "defaultConfiguration": {
+        "level": "error"
+       },
+       "helpUri": "https://github.com/ossf/scorecard/blob/61e84743356275f6ffca23b1b2f2cb945e19eb96/docs/checks.md#pinned-dependencies",
+       "id": "PinnedDependenciesID",
+       "name": "Pinned-Dependencies",
+       "properties": {
+        "precision": "high",
+        "security-severity": "4",
+        "tags": [
+         "dependencies",
+         "security",
+         "supply-chain"
+        ]
+       },
+       "shortDescription": {
+        "text": "Pinned-Dependencies"
+       }
+      },
+      {
+       "defaultConfiguration": {
+        "level": "error"
+       },
+       "helpUri": "https://github.com/ossf/scorecard/blob/61e84743356275f6ffca23b1b2f2cb945e19eb96/docs/checks.md#sast",
+       "id": "SASTID",
+       "name": "SAST",
+       "properties": {
+        "precision": "high",
+        "security-severity": "4",
+        "tags": [
+         "security",
+         "supply-chain",
+         "testing"
+        ]
+       },
+       "shortDescription": {
+        "text": "SAST"
+       }
+      },
+      {
+       "defaultConfiguration": {
+        "level": "error"
+       },
+       "helpUri": "https://github.com/ossf/scorecard/blob/61e84743356275f6ffca23b1b2f2cb945e19eb96/docs/checks.md#security-policy",
+       "id": "SecurityPolicyID",
+       "name": "Security-Policy",
+       "properties": {
+        "precision": "high",
+        "security-severity": "4",
+        "tags": [
+         "policy",
+         "security",
+         "supply-chain"
+        ]
+       },
+       "shortDescription": {
+        "text": "Security-Policy"
+       }
+      },
+      {
+       "defaultConfiguration": {
+        "level": "error"
+       },
+       "helpUri": "https://github.com/ossf/scorecard/blob/61e84743356275f6ffca23b1b2f2cb945e19eb96/docs/checks.md#token-permissions",
+       "id": "TokenPermissionsID",
+       "name": "Token-Permissions",
+       "properties": {
+        "precision": "high",
+        "security-severity": "7",
+        "tags": [
+         "infrastructure",
+         "security",
+         "supply-chain"
+        ]
+       },
+       "shortDescription": {
+        "text": "Token-Permissions"
+       }
+      },
+      {
+       "defaultConfiguration": {
+        "level": "error"
+       },
+       "helpUri": "https://github.com/ossf/scorecard/blob/61e84743356275f6ffca23b1b2f2cb945e19eb96/docs/checks.md#vulnerabilities",
+       "id": "VulnerabilitiesID",
+       "name": "Vulnerabilities",
+       "properties": {
+        "precision": "high",
+        "security-severity": "7",
+        "tags": [
+         "security",
+         "supply-chain",
+         "vulnerabilities"
+        ]
+       },
+       "shortDescription": {
+        "text": "Vulnerabilities"
+       }
+      }
+     ],
+     "semanticVersion": "v5.6.0"
+    }
+   },
+   "versionControlProvenance": [
+    {
+     "branch": "refs/heads/main",
+     "repositoryUri": "https://github.com/purlis/purlis",
+     "revisionId": "a0efdc62468e45eb0641453a8121530826fcabf2"
+    }
+   ]
+  }
+ ],
+ "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+ "version": "2.1.0"
+}

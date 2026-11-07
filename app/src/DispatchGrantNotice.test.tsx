@@ -734,7 +734,7 @@ describe("the dispatch grant Notice", () => {
 });
 
 /**
- * **Drawn for a chat that is not on screen** (#1538): on its session's tab a task's question
+ * **Drawn for a chat that is not on screen** (#1538): on the pane a task returns to, its question
  * starts with the task's whole path (`NoticeOf`), so its own sentence says "it", never "this
  * chat", which would read as the chat on screen.
  */
