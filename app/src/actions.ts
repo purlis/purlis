@@ -301,15 +301,16 @@ export const PASS_THROUGH_BYTES = "\u001bOQ";
 export const CHAT_KEYBOARD = "data-chat-keyboard";
 
 /**
- * The mark a tab, and a chat's row in the list (#5343), puts on itself to say `F2` renames it
- * there (charter-app#254): a tab's Rename, a row's Rename chat.
+ * The mark that says `F2` renames here (charter-app#254, #5343): on a tab (its Rename), a chat's
+ * row in the list and a pane head's controls (Rename chat).
  *
  * `F2` is the platform's rename key for a focused item — and it is also the palette's, claimed
- * on the window, capture-phase, from anywhere (`Palette.opensIt`). **A focused chat tab is the
- * one place the palette stands back**, with a chat's row,, for the reason `CHAT_KEYBOARD` gives about a pane: the
- * key means something else where it landed. The palette is still `⌘K` from the tab, and `F2`
- * from anywhere else. An attribute rather than the tab's role, because the role is what the tab
- * IS and this is what the key MEANS on it: a view's tab is a tab too, and has no rename.
+ * on the window, capture-phase, from anywhere (`Palette.opensIt`). **These are the places the
+ * palette stands back**, for the reason `CHAT_KEYBOARD` gives about a pane: the key means
+ * something else where it landed. The palette is still `⌘K` from them, and `F2` from anywhere
+ * else, a chat's terminal included. An attribute rather than a role, because the role is what
+ * the thing IS and this is what the key MEANS on it: a view's tab is a tab too, and has no
+ * rename.
  */
 export const RENAMES_ON_F2 = "data-renames-on-f2";
 
@@ -2310,15 +2311,18 @@ export function catalogue(now: Now): Offer[] {
 
   // **Rename…** (#5343): a tab's own, which its dialog says the meaning of: the chat of a tab
   // that holds one, or the tab alone. A view's tab has none: it says the view's own name. On a
-  // tab's menu, a double-click on it and F2 on it; the palette lists the tab in front's.
+  // tab's menu, a double-click on it and F2 on it; the palette lists a split tab's in front.
   for (const tab of now.tabs.order) {
     const renames = renameOf(now.tabs, tab);
     if (renames === undefined) continue;
     const name = tabNameOf(now.tabs.byId[tab]);
     const split = renames.kind === "tab";
+    // A tab with one chat renames the chat, and says so: the palette has that chat's own row,
+    // so this one is the tab's menu's, its double-click's and its F2's alone.
+    const title = split ? `Rename tab ${name}…` : `Rename chat ${name}…`;
     offers.push({
-      ...can(tabRenameId(tab), `Rename tab ${name}…`, { verb: "renameTab", tab, split }, name),
-      ...(tab !== now.tabs.inFront ? { menuOnly: true as const } : {}),
+      ...can(tabRenameId(tab), title, { verb: "renameTab", tab, split }, name),
+      ...(tab !== now.tabs.inFront || !split ? { menuOnly: true as const } : {}),
     });
   }
 

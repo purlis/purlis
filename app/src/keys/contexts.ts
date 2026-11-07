@@ -66,9 +66,10 @@ export function inAnEditor(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest(`[${EDITOR_HOLDER}]`) !== null;
 }
 
-/** Whether the keystroke landed on a chat's tab, where `F2` renames it (charter-app#254). */
+/** Whether the keystroke landed where `F2` renames (charter-app#254, #5343): a tab, a chat's
+ *  row, or a pane head's controls. */
 export function onARenamingTab(target: EventTarget | null): boolean {
-  return target instanceof Element && target.hasAttribute(RENAMES_ON_F2);
+  return target instanceof Element && target.closest(`[${RENAMES_ON_F2}]`) !== null;
 }
 
 /** Whether the keystroke landed in an open menu, whose own keys it is. */

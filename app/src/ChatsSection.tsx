@@ -200,6 +200,13 @@ const NO_FOLDS: ReadonlyMap<number, boolean> = new Map();
 /** What a key on a row asks for beside opening it. */
 type Asked = "beside" | "stop" | "rename";
 
+/** The catalogue's row each of a chat row's own keys presses. */
+const ROW_OF_ASKED: Readonly<Record<Asked, (session: number) => string>> = {
+  beside: besideId,
+  stop: taskStopId,
+  rename: renameId,
+};
+
 /** **What a chat's row says of its dispatches waiting on memory** (#1617): how many. */
 function onMemoryWords(waiting: number): string {
   return waiting === 1 ? "1 dispatch waits on memory" : `${waiting} dispatches wait on memory`;
@@ -755,13 +762,7 @@ export function ChatsSection({
       // opens is the row the key was pressed on. A chat that is not a task has neither row,
       // and Space says why.
       // **F2 opens Rename chat** (#5343), the platform's rename key on a focused item: its row.
-      const offer = offers.get(
-        what === "beside"
-          ? besideId(session)
-          : what === "rename"
-            ? renameId(session)
-            : taskStopId(session),
-      );
+      const offer = offers.get(ROW_OF_ASKED[what](session));
       if (offer === undefined) {
         if (what === "beside") setSaid(ONLY_A_TASK_OPENS_BESIDE);
         return;

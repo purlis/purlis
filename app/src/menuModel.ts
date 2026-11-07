@@ -193,15 +193,15 @@ const stopped = (warns: string, said: Dress["said"] = unnamed): Dress => ({
   warns,
 });
 
+/** A tab's Rename… as its menu says it: a split's names the tab only (#5343). */
+const tabRenameSaid = (offer: Offer): string =>
+  offer.does.verb === "renameTab" && offer.does.split ? SAID.renameTab : SAID.rename;
+
 /**
  * **Every row a menu can list, by the part of its id before the colon, and how it is drawn.**
  * A row that is not here is drawn by its title, where `actions.menuOn` put it, so a new row is
  * never lost; `menuModel.test.ts` lists the ones that are meant to be.
  */
-/** A tab's Rename… as its menu says it: a split's names the tab only (#5343). */
-const tabRenameSaid = (offer: Offer): string =>
-  offer.does.verb === "renameTab" && offer.does.split ? SAID.renameTab : SAID.rename;
-
 const DRESS: Readonly<Record<string, Dress>> = {
   // A chat's one list (#4753): its pane head's ⋯, its sidebar row's ⋯ and right-click.
   // Where policy locks all dispatch, the Ask row that says why, in Ask's place.

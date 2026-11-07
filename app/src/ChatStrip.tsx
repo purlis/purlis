@@ -144,7 +144,7 @@ export function ChatStrip({
   const tileAll = tabs.inFront === undefined ? undefined : by(tileAllId(tabs.inFront));
   /** The tab's own Rename… row (#5343): a double-click on it and F2 on it press it, as its menu
    *  does, and its dialog says what it renames. A view's tab has none. */
-  const renameOf = (id: number) => by(tabRenameId(id));
+  const renameRowOf = (id: number) => by(tabRenameId(id));
   // The tabs drawn, as React Aria's tablist knows them (`ui/tabs/TabStrip`).
   const drawn = shown.map(String);
   // What each tab wears (#4762), read once a draw for every tab it is drawn or listed by.
@@ -318,7 +318,7 @@ export function ChatStrip({
                         }
                         // F2 renames here rather than opening the palette (`RENAMES_ON_F2`), on a
                         // tab that has a rename row, and never a view's.
-                        {...(renameOf(id) ? { [RENAMES_ON_F2]: "" } : {})}
+                        {...(renameRowOf(id) ? { [RENAMES_ON_F2]: "" } : {})}
                         {...sortable.listeners}
                         onKeyDown={(event) => {
                           // A tab that is up is being carried: its keys are the drag's.
@@ -326,7 +326,7 @@ export function ChatStrip({
                           sortable.listeners?.onKeyDown?.(event);
                           if (sortable.isDragging) return;
                           closeOnDelete(event, by(`tab.close:${id}`), press);
-                          renameOnF2(event, renameOf(id), press);
+                          renameOnF2(event, renameRowOf(id), press);
                         }}
                         // The catalogue's row, not a second copy of it. The tab already in front
                         // has a row that says so and cannot run — a tab is never disabled, because
@@ -340,7 +340,7 @@ export function ChatStrip({
                           // Not a press to go back to the main chat (#1486).
                           notGoingBack();
                           // …and keeps a preview tab, VS Code's double-click (SI-9b).
-                          const offer = renameOf(id) ?? by(`tab.keep:${id}`);
+                          const offer = renameRowOf(id) ?? by(`tab.keep:${id}`);
                           if (offer?.available) press(offer);
                         }}
                       >
