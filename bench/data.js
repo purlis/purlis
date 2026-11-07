@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794072633889,
+  "lastUpdate": 1794074863190,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -42378,6 +42378,48 @@ window.BENCHMARK_DATA = {
             "value": 102.4792175,
             "unit": "ms",
             "extra": "median of 5 runs: 100.974, 102.389, 102.479, 102.523, 103.220 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a0be96db5caf717dc0bad26e965840daea780ce1",
+          "message": "Sending a task back says it stays in the Chats list (#5664) (#5665)\n\n* Sending a task back says it stays in the Chats list (#5664)\n\nBACK_NOTE, and the two notes on the same rows (OWN_TAB_NOTE, BESIDE_NOTE),\nsaid \"its session's tab\": the model where a chat is a tab. They now say\nwhat CONTEXT.md says happens: the task keeps working, and the Chats list\nis where it is listed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VCE7678C1SX1Y54KD4VA4V\nPurlis-Persona: steward\n\n* The notes on a task's rows say only what is true of every task (#5664)\n\nReview: a done or failed task is sent back too, so BACK_NOTE says nothing\nends rather than that it keeps working. The beside split is of the chat\nthe row names, not always the asker. − closes a task's tab only when its\npane is the tab's one pane.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VCE7678C1SX1Y54KD4VA4V\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-07T17:09:10Z",
+          "tree_id": "c5ee2e158c1ea36a8e79cecf3bfdfb38d1856dc5",
+          "url": "https://github.com/purlis/purlis/commit/a0be96db5caf717dc0bad26e965840daea780ce1"
+        },
+        "date": 1794074858947,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6972240000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.687, 0.688, 0.697, 0.710, 0.713 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.570566,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.388, 16.407, 16.571, 16.701, 16.715 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.9000295,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.505, 101.736, 101.900, 102.146, 102.265 ms"
           }
         ]
       }
