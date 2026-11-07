@@ -1,0 +1,17 @@
+# The account's own fork of a repository, under whatever name it has (#4342).
+query ForkOfMine($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) {
+    forks(first: 1, affiliations: [OWNER], ownerAffiliations: [OWNER]) {
+      nodes {
+        databaseId
+        nameWithOwner
+        url
+        visibility
+        owner {
+          __typename
+          login
+        }
+      }
+    }
+  }
+}

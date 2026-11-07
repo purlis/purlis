@@ -1,0 +1,52 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest, pulls: Create a pull request (draft), its head named username:branch for a branch in a fork",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "POST",
+            "path": "repos/acme/api/pulls"
+          }
+        },
+        "fields": [
+          {
+            "text": [
+              "head",
+              "octocat:purlis/publish/deploy-0123456789ab"
+            ]
+          },
+          {
+            "text": [
+              "base",
+              "main"
+            ]
+          },
+          {
+            "text": [
+              "title",
+              "Add the skill deploy"
+            ]
+          },
+          {
+            "text": [
+              "body",
+              "Published with purlis."
+            ]
+          },
+          {
+            "typed": [
+              "draft",
+              "true"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"number\": 13, \"html_url\": \"https://github.com/acme/api/pull/13\", \"state\": \"open\"}",
+        "err": ""
+      }
+    }
+  ]
+}

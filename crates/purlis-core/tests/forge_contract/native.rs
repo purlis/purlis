@@ -276,12 +276,18 @@ pub fn over(kind: &str, host: &str, recording: &str) -> Over {
     let file: Value = serde_json::from_str(recording).unwrap();
     for exchange in file["exchanges"].as_array().cloned().unwrap_or_default() {
         let exchange: Exchange = serde_json::from_value(exchange).unwrap();
-        assert_eq!(
-            exchange.reply.code, 0,
-            "a native recording replays answers only"
-        );
+        // A refusal is replayed as the HTTP status the recording names, a `404` for a repo that
+        // is not there; one that names none is no answer a native transport could have had.
+        let status = if exchange.reply.code == 0 {
+            200
+        } else {
+            exchange
+                .reply
+                .status
+                .expect("a native recording replays answers, or refusals with their status")
+        };
         let mock = Mock::given(expected(kind, &exchange.call))
-            .respond_with(ResponseTemplate::new(200).set_body_string(exchange.reply.out))
+            .respond_with(ResponseTemplate::new(status).set_body_string(exchange.reply.out))
             .up_to_n_times(1)
             .expect(1);
         rt.block_on(mock.mount(&server));
