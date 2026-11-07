@@ -546,8 +546,7 @@ fn work_tree(
     }
     let index = scratch.join("snapshot.index");
     let _ = std::fs::remove_file(&index);
-    let empty = empty_tree(tree)?;
-    let attr = format!("--attr-source={empty}");
+    let attr = no_attributes(tree)?;
     // An ignored name that git does not track is never staged, and git refuses a pathspec that
     // names one: only such a name goes unnamed. One git tracks is staged with its changes however
     // it is ignored, so it is left out by name. Where the repository ignores case, so does the
@@ -708,6 +707,45 @@ fn empty_tree(repo: &Path) -> Result<String, Refused> {
         return Err(git_failed("name the empty tree", &ran));
     }
     Ok(ran.line().to_owned())
+}
+
+/// The first git that reads a tree's attributes from a tree it is named (`--attr-source`).
+const ATTR_SOURCE_SINCE: (u32, u32) = (2, 40);
+
+/// **`--attr-source=` the empty tree**, the option that keeps every attribute of `repo`'s work
+/// tree unread while git stages or checks out its files, so no filter it names runs. Refused in
+/// a sentence where the git purlis runs is older than 2.40, which has no such option: that git
+/// would refuse it in its own usage (the person's notice of 2026-11-07), and staging without it
+/// would run what the work tree's attributes name.
+fn no_attributes(repo: &Path) -> Result<String, Refused> {
+    let ran = run(repo, &["version"])?;
+    if let Some(found) = ran.ok().then(|| version_of(ran.line())).flatten()
+        && found < ATTR_SOURCE_SINCE
+    {
+        let (binary, _) = git::git_binary();
+        let named = ran.line().trim_start_matches("git version ").trim();
+        return Err(Refused::Git(format!(
+            "{} is git {named}, and sending code to a runner needs git {}.{} or later. Update \
+             that git, then try again",
+            binary.display(),
+            ATTR_SOURCE_SINCE.0,
+            ATTR_SOURCE_SINCE.1
+        )));
+    }
+    Ok(format!("--attr-source={}", empty_tree(repo)?))
+}
+
+/// The major and minor version in git's answer to `git version` (`git version 2.39.3 (Apple
+/// Git-143)`, `git version 2.45.1.windows.1`), or `None` where it names none.
+fn version_of(said: &str) -> Option<(u32, u32)> {
+    let number = said
+        .strip_prefix("git version ")?
+        .split_whitespace()
+        .next()?;
+    let mut parts = number.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    Some((major, minor))
 }
 
 /// **What no snapshot of a project's own repository carries**: purlis's state folder, where its
@@ -993,8 +1031,7 @@ pub fn check_out_fresh(
     if checked_out.ok() {
         return Ok(());
     }
-    let empty = empty_tree(repo)?;
-    let attr = format!("--attr-source={empty}");
+    let attr = no_attributes(repo)?;
     let quiet = ["-c", "core.attributesFile=/dev/null", attr.as_str()];
     let mut args: Vec<&str> = quiet.to_vec();
     args.extend(["checkout", "--quiet", "--force", "--no-guess", short, "--"]);
