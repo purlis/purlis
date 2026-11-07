@@ -750,11 +750,12 @@ fn members_of(
             })
             .collect());
     };
-    let members: Vec<set::Member> = set::installed_from(root, &source::Origin::Git(remote.clone()), None)
-        .into_iter()
-        .map(|one| one.member)
-        .filter(|member| !at.named() || member.level == at.level())
-        .collect();
+    let members: Vec<set::Member> =
+        set::installed_from(root, &source::Origin::Git(remote.clone()), None)
+            .into_iter()
+            .map(|one| one.member)
+            .filter(|member| !at.named() || member.level == at.level())
+            .collect();
     if members.is_empty() {
         return Err(nothing_from(&remote));
     }

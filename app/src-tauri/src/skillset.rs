@@ -139,25 +139,22 @@ pub struct SkillSetTurned {
     pub changed: Vec<String>,
 }
 
-/// **The copies installed from the source `remote`**, read from the lockfiles and asking the
-/// source nothing, each with whether it changed since install and is on in `workspace`.
+/// **The copies installed from `source`**, a git source or an extension's (#3092), read from
+/// the lockfiles and asking the source nothing, each with whether it changed since install and is
+/// on in `workspace`.
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_source_installed(
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
-    remote: SourceRemote,
+    source: crate::skillsources::SourceOrigin,
     workspace: Option<String>,
 ) -> Result<Vec<InstalledCopy>, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading what is installed from the source", move || {
         flag_on()?;
         Ok(
-            set::installed_from(
-                held.root(),
-                &purlis_core::skills::source::Origin::Git(remote.core()),
-                workspace.as_deref(),
-            )
+            set::installed_from(held.root(), &source.core(), workspace.as_deref())
                 .iter()
                 .map(|one| InstalledCopy {
                     member: (&one.member).into(),

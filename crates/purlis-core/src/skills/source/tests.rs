@@ -1938,12 +1938,18 @@ fn the_skills_installed_from_a_source_are_counted_from_the_lockfiles() {
     .unwrap();
     let (locked, _) = lock::every(root);
     // deploy, and notify, which it brought along.
-    assert_eq!(checked::installed_from(&locked, &Origin::Git(source.remote.clone())), 2);
+    assert_eq!(
+        checked::installed_from(&locked, &Origin::Git(source.remote.clone())),
+        2
+    );
     let other = Remote {
         url: "https://example.com/other".into(),
         branch: None,
     };
-    assert_eq!(checked::installed_from(&locked, &Origin::Git(other.clone())), 0);
+    assert_eq!(
+        checked::installed_from(&locked, &Origin::Git(other.clone())),
+        0
+    );
 }
 
 #[test]

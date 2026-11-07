@@ -1366,6 +1366,13 @@ export const commands = {
 	skillUpdates: __WINDOW_ONLY_RESULT,
 	skillUpdateReview: __WINDOW_ONLY_RESULT,
 	skillUpdate: __WINDOW_ONLY_RESULT,
+	skillExtensionSources: __WINDOW_ONLY_RESULT,
+	skillExtensionSourceBrowse: __WINDOW_ONLY_RESULT,
+	skillExtensionInstallReview: __WINDOW_ONLY_RESULT,
+	skillExtensionInstallSetReview: __WINDOW_ONLY_RESULT,
+	skillExtensionInstall: __WINDOW_ONLY_RESULT,
+	skillExtensionUpdateReview: __WINDOW_ONLY_RESULT,
+	skillExtensionUpdate: __WINDOW_ONLY_RESULT,
 	skillStudioSwitch: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **The skills chat `session` has, as Use skill… offers them, and its skill budget**: nothing

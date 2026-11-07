@@ -172,7 +172,10 @@ fn an_entry_that_mixes_a_git_source_with_a_revision_or_names_a_bad_extension_is_
     assert!(refused(both), "a source that is both git and an extension");
     let mut commit = good();
     commit["commit"] = "a".repeat(40).into();
-    assert!(refused(commit), "a pin that is both a commit and a revision");
+    assert!(
+        refused(commit),
+        "a pin that is both a commit and a revision"
+    );
     let mut git_revision = good();
     git_revision["source"] = serde_json::json!({ "url": "https://example.com/skills" });
     assert!(refused(git_revision), "a git source pinned by a revision");

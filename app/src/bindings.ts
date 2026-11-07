@@ -2302,10 +2302,11 @@ export const commands = {
 	 */
 	skillRestore: (plane: PlaneId, id: string, under: string | null) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_restore", { plane, id, under })),
 	/**
-	 *  **The copies installed from the source `remote`**, read from the lockfiles and asking the
-	 *  source nothing, each with whether it changed since install and is on in `workspace`.
+	 *  **The copies installed from `source`**, a git source or an extension's (#3092), read from
+	 *  the lockfiles and asking the source nothing, each with whether it changed since install and is
+	 *  on in `workspace`.
 	 */
-	skillSourceInstalled: (plane: PlaneId, remote: SourceRemote, workspace: string | null) => typedError<InstalledCopy[], string>(__TAURI_INVOKE("skill_source_installed", { plane, remote, workspace })),
+	skillSourceInstalled: (plane: PlaneId, source: SourceOrigin, workspace: string | null) => typedError<InstalledCopy[], string>(__TAURI_INVOKE("skill_source_installed", { plane, source, workspace })),
 	/**
 	 *  **The one review of `act` on `members`**: what each is marked with, who is left naming one that
 	 *  goes, and how many open chats started with them. Reads only.
@@ -2789,6 +2790,52 @@ export const commands = {
 { to: "all" } | 
 /**  The workspaces named. */
 { to: "only"; workspaces: string[] } | null) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_update", { plane, level, name, reviewed, grant })),
+	/**
+	 *  **The extensions' skill sources** (#3092): each extension this machine approved, the project
+	 *  has on, and that declares `skill-source`, in id order. Read from the record of extensions and
+	 *  the lockfiles: no extension is asked.
+	 */
+	skillExtensionSources: (plane: PlaneId) => typedError<ExtensionSkillSource[], string>(__TAURI_INVOKE("skill_extension_sources", { plane })),
+	/**  **Browses an extension's skill source** at the revision it names now: its listing alone. */
+	skillExtensionSourceBrowse: (plane: PlaneId, id: string) => typedError<SourceBrowse, string>(__TAURI_INVOKE("skill_extension_source_browse", { plane, id })),
+	/**
+	 *  **The install review** of `names` from an extension's source into `level`: the git source's
+	 *  review, and what it read held for the install.
+	 */
+	skillExtensionInstallReview: (plane: PlaneId, id: string, names: string[], level: SkillLevel) => typedError<InstallReview, string>(__TAURI_INVOKE("skill_extension_install_review", { plane, id, names, level })),
+	/**
+	 *  **The review of installing `names` from an extension's source together** (Install all…): one
+	 *  review, those named that the level holds already left out (#4153), what it read held for the
+	 *  install.
+	 */
+	skillExtensionInstallSetReview: (plane: PlaneId, id: string, names: string[], level: SkillLevel) => typedError<InstallSetReview, string>(__TAURI_INVOKE("skill_extension_install_set_review", { plane, id, names, level })),
+	/**
+	 *  **Installs what was reviewed** from an extension's source at `level`: the bytes its review
+	 *  read, never asked of the extension again.
+	 */
+	skillExtensionInstall: (plane: PlaneId, id: string, level: SkillLevel, reviewed: Reviewed, grant: 
+/**  Chats at the project's root alone. */
+{ to: "root" } | 
+/**  Every workspace's chats too. */
+{ to: "all" } | 
+/**  The workspaces named. */
+{ to: "only"; workspaces: string[] } | null, renames: SkillRename[]) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_extension_install", { plane, id, level, reviewed, grant, renames })),
+	/**
+	 *  **The review of updating `name` at `level`**, a skill from an extension's source, to the
+	 *  revision its source names now; what it read held for the update.
+	 */
+	skillExtensionUpdateReview: (plane: PlaneId, level: SkillLevel, name: string) => typedError<UpdateReview, string>(__TAURI_INVOKE("skill_extension_update_review", { plane, level, name })),
+	/**
+	 *  **Accepts an update** of a skill from an extension's source that was reviewed: from what its
+	 *  review read, the pin moved to the revision, as one commit.
+	 */
+	skillExtensionUpdate: (plane: PlaneId, level: SkillLevel, name: string, reviewed: Reviewed, grant: 
+/**  Chats at the project's root alone. */
+{ to: "root" } | 
+/**  Every workspace's chats too. */
+{ to: "all" } | 
+/**  The workspaces named. */
+{ to: "only"; workspaces: string[] } | null) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_extension_update", { plane, level, name, reviewed, grant })),
 	/**
 	 *  **Turns one of a harness's own skills on or off** (SK-6, #2769) for the chats the studio
 	 *  shows (a plugin's is the plugin's, and refused, #3467): at the project's root on this machine alone (`charter.local.toml`), in a
@@ -8364,6 +8411,16 @@ export type ExtensionRow = {
 	refused: string | null,
 	/**  The question to ask about it, when there is one to ask. */
 	ask: ExtensionAsk | null,
+};
+
+/**
+ *  **An extension's skill source**, as the studio lists one: the extension's id, the name it
+ *  gives itself, and how many skills are installed from it here.
+ */
+export type ExtensionSkillSource = {
+	id: string,
+	label: string,
+	installed: number,
 };
 
 /**  One theme an approved extension is contributing, as the window receives it. */
@@ -16309,12 +16366,12 @@ export type SkillTemplate = {
  */
 export type SkillTemplateId = { kind: "blank" } | { kind: "steps" } | { kind: "extension"; extension: string; template: string };
 
-/**  One newer commit offered for an installed skill. */
+/**  One newer commit, or an extension's newer revision, offered for an installed skill. */
 export type SkillUpdateOffer = {
 	name: string,
 	level: SkillLevel,
 	label: string,
-	remote: SourceRemote,
+	source: SourceOrigin,
 	pinned: SourceCommit,
 	newer: SourceCommit,
 	edited: boolean,
@@ -16522,6 +16579,12 @@ export type SourceOffering =
 "catalogue" | 
 /**  A collection someone else keeps that people use widely. */
 "well-known";
+
+/**
+ *  **Where an installed skill came from** (#3092): a git source, by its repository and branch,
+ *  or an extension's source, by the extension's id; `label` as a person reads it either way.
+ */
+export type SourceOrigin = { kind: "git"; remote: SourceRemote; label: string } | { kind: "extension"; id: string; label: string };
 
 /**  A repository and the branch read from it. */
 export type SourceRemote = {

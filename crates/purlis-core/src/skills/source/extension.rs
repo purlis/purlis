@@ -435,18 +435,18 @@ pub fn update(
 }
 
 /// A skill a test's [`Held`] holds: its name, its description, and each file's path and text.
-#[cfg(test)]
-pub(crate) type HeldSkill<'a> = (&'a str, &'a str, &'a [(&'a str, &'a str)]);
+#[cfg(any(test, feature = "test-support"))]
+pub type HeldSkill<'a> = (&'a str, &'a str, &'a [(&'a str, &'a str)]);
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl Held {
     /// The review a review of the extension would answer, read from what it holds.
-    pub(crate) fn review(&self, plane: &Path, names: &[String], level: &Level) -> Review {
+    pub fn review(&self, plane: &Path, names: &[String], level: &Level) -> Review {
         review_in(self, &self.extension, &self.revision, plane, names, level).expect("reviewed")
     }
 
     /// The review of updating `name` at `level` to what it holds.
-    pub(crate) fn update_review(
+    pub fn update_review(
         &self,
         plane: &Path,
         level: &Level,
@@ -457,7 +457,7 @@ impl Held {
     }
 
     /// What a review of the extension `id` would hold, its files given here.
-    pub(crate) fn of(id: &str, revision: &str, skills: &[HeldSkill<'_>]) -> Held {
+    pub fn of(id: &str, revision: &str, skills: &[HeldSkill<'_>]) -> Held {
         Held {
             extension: id.to_owned(),
             revision: Revision::parse(revision).expect("a revision"),

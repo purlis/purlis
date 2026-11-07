@@ -1292,7 +1292,10 @@ fn one_way_on_every_disk(extension: &str, files: &[HandedFile]) -> Result<(), St
         std::collections::BTreeMap::new();
     for file in files {
         let path = file.path.as_str();
-        let mut ends = path.match_indices('/').map(|(at, _)| at).collect::<Vec<_>>();
+        let mut ends = path
+            .match_indices('/')
+            .map(|(at, _)| at)
+            .collect::<Vec<_>>();
         ends.push(path.len());
         for (i, end) in ends.iter().enumerate() {
             let spelled = &path[..*end];

@@ -512,14 +512,9 @@ pub(super) fn reviewed_update(
     let mut skills = reviewed.into_iter();
     let review = skills.next().unwrap_or_else(|| {
         let held_names: Vec<String> = found.iter().map(|f| f.name.clone()).collect();
-        review_of(
-            one,
-            &now,
-            left,
-            None,
-            &held_names,
-            &|other| other != at_source && met_here(other),
-        )
+        review_of(one, &now, left, None, &held_names, &|other| {
+            other != at_source && met_here(other)
+        })
     });
     let brought: Vec<SkillReview> = skills.collect();
     let grant = grant_here(plane, level, name);
