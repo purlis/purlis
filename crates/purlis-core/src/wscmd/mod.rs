@@ -165,7 +165,7 @@ pub(crate) fn block_for(
         lines.extend(workspace_lines(n));
         for entry in saved.get(n).into_iter().flatten() {
             if !saved::holds_a_repo(root, n, entry) {
-                lines.push(saved::line_for(n, entry));
+                lines.extend(saved::lines_for(n, entry));
             }
         }
     }
