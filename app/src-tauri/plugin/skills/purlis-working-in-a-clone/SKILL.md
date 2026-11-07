@@ -120,6 +120,20 @@ purlis worktree prune --dry-run        # every finished folder of the workspace,
   own `main` is stale. `update --base <branch>` moves the piece onto it carrying only the
   piece's own commits.
 
+## 6. Show a check's results on the branch's diff
+
+After a typecheck, a linter or a test run, hand purlis its results so the person sees them on
+the diff they review. purlis reads SARIF 2.1.0 only: run the tool with its SARIF output, write the
+file inside the branch folder, then, in a call of its own:
+
+```bash
+purlis check report <branch> <file.sarif>   # --repo <repo> where two repos have the branch
+```
+
+Each tool's results replace its own last report. They are marked out of date once the branch's
+head moves, so report again after committing. A file that is not SARIF 2.1.0 is refused, saying
+what is wrong, and nothing is recorded. purlis has no converter for any other format.
+
 ## The boundary that is easy to get wrong
 
 Claude Code binds configuration to the **project root fixed when the session launched**.

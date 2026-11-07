@@ -33,6 +33,7 @@ mod bridge;
 mod brokered;
 mod browsing;
 mod change;
+mod check;
 mod curation;
 mod dispatch;
 mod extcmd;
@@ -187,6 +188,11 @@ enum Command {
     /// Pieces: worktrees of a workspace's clones — cut, declared done or abandoned, removed.
     #[command(subcommand, alias = "wt")]
     Worktree(piece::WorktreeCommand),
+
+    /// A branch's check results: hand purlis what a typecheck, a linter or a test run found, in
+    /// SARIF 2.1.0, and they are drawn on the branch's diff.
+    #[command(subcommand)]
+    Check(check::CheckCommand),
 
     /// A cross-repo change: one piece of work across several of a workspace's repos — why,
     /// which repos, which branch in each, and which must land first
@@ -720,7 +726,8 @@ enum Command {
     /// `userpromptsubmit` keeps the session's heartbeat and adds, as `additionalContext`, the
     /// commitment gate — a prompt asking for work with a real fork in it is told to scout and
     /// ask before building; never on a lookup, never unattended, then quiet for three prompts —
-    /// and any report a chat this one handed work to has sent back.
+    /// any report a chat this one handed work to has sent back, and one line naming the files
+    /// the operator changed since the chat's last turn.
     ///
     /// `pretooluse` is the Bash guard and the persona tool gate, `pretooluse-read` the vault
     /// guard on Read/Grep, `pretooluse-edit` the state-directory guard on Write/Edit, and
@@ -3792,6 +3799,7 @@ fn run(command: Command) -> Result<u8, String> {
         Command::Recall(args) => return memory::recall(&here, args),
         Command::Persona(command) => return memory::persona(&here, command),
         Command::Worktree(command) => return piece::run(&here, command),
+        Command::Check(command) => return check::run(&here, command),
         Command::Change(command) => return change::run(&here, command),
         Command::Curation(command) => return curation::run(here.plane.root(), command),
         Command::Skill(command) => return skill::run(here.plane.root(), command),

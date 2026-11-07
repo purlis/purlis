@@ -30,13 +30,34 @@ fn the_prompt_names_each_capability_by_its_word_and_says_what_it_does() {
 }
 
 #[test]
-fn the_test_capability_declares_no_shape_and_every_other_one_does() {
+fn the_test_capability_and_the_check_reporter_declare_no_shape_and_every_other_one_does() {
     assert!(!Capability::Probe.has_shape());
+    assert!(!Capability::CheckReporter.has_shape());
     assert!(
         Capability::known()
             .into_iter()
-            .filter(|it| *it != Capability::Probe)
+            .filter(|it| ![Capability::Probe, Capability::CheckReporter].contains(it))
             .all(Capability::has_shape)
+    );
+}
+
+#[test]
+fn a_release_build_knows_the_check_reporter_and_it_needs_protocol_6() {
+    let known = Capability::known_where(false);
+    assert_eq!(
+        Capability::parse_in("check-reporter", &known),
+        Some(Capability::CheckReporter)
+    );
+    assert_eq!(Capability::CheckReporter.since(), 6);
+}
+
+#[test]
+fn the_prompt_says_the_check_reporter_is_handed_a_check_s_output_and_answers_sarif() {
+    assert_eq!(
+        Capability::CheckReporter.asks(),
+        "the capability “check-reporter” — turns a check's output into SARIF. Its program is \
+         handed what a check printed and its exit status, and purlis draws the results it \
+         answers on the branch's diff"
     );
 }
 

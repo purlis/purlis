@@ -83,6 +83,14 @@ pub enum Entry {
         kind: String,
         body: serde_json::Value,
     },
+    /// **A human edit** the operator made from the window (ADR 0084 §8), under chat `number` where
+    /// a chat works in the folder ([`Recorder::human_edit`]).
+    HumanEdit {
+        plane: PathBuf,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        number: Option<u32>,
+        edit: crate::humanedit::HumanEdit,
+    },
     /// A line the window wrote in the kill switch's journal ([`Recorder::kill_switch_wrote`]):
     /// or, on a runner, its desktop over its link, whose device id it names (#2051).
     KillSwitchWrote {
@@ -223,6 +231,11 @@ impl Recorder {
                 kind,
                 body,
             } => one(trust_kind(&kind).and_then(|()| self.audited(&plane, number, &kind, body))),
+            Entry::HumanEdit {
+                plane,
+                number,
+                edit,
+            } => one(self.human_edit(&plane, number, &edit)),
             Entry::KillSwitchWrote { line, device } => {
                 let config = self.config()?;
                 self.kill_switch_wrote_by(line, device.as_deref(), &config)

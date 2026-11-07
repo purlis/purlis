@@ -18,6 +18,7 @@
 import { EDITOR_HOLDER } from "../keys/contexts";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { MergeView } from "@codemirror/merge";
+import { checkGutter, type CheckMark } from "./checkGutter";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import {
   EditorView,
@@ -184,17 +185,22 @@ export function LightEditor({
  * view's own diff runs only inside each hunk, for the words (`hunks.ts`). Unchanged stretches
  * are collapsed to three lines of context.
  */
+const NO_MARKS: readonly CheckMark[] = [];
+
 export function MergeViewer({
   path,
   base,
   head,
   hunks,
+  marks = NO_MARKS,
   label,
 }: {
   path: string;
   base: string;
   head: string;
   hunks: readonly GitHunk[];
+  /** The check results to mark in the head's gutter (ADR 0117). */
+  marks?: readonly CheckMark[];
   /** Its accessible name: which file, and against what (#1189). */
   label?: string;
 }) {
@@ -208,7 +214,7 @@ export function MergeViewer({
     const merge = new MergeView({
       parent: host.current,
       a: { doc: base, extensions: reading(language, `${path}, before`) },
-      b: { doc: head, extensions: reading(language, `${path}, after`) },
+      b: { doc: head, extensions: [checkGutter(marks), reading(language, `${path}, after`)] },
       gutter: true,
       collapseUnchanged: { margin: 3, minSize: 4 },
       diffConfig: { override: () => changes },
@@ -220,7 +226,7 @@ export function MergeViewer({
       views.current = [];
       merge.destroy();
     };
-  }, [path, base, head, hunks]);
+  }, [path, base, head, hunks, marks]);
   return (
     <>
       <div
