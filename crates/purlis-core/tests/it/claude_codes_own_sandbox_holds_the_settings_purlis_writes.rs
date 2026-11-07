@@ -644,10 +644,9 @@ fn a_chat_at_the_floor_makes_its_tools_folders_in_a_bare_home() {
 /// caches, so the hold is what takes them away.
 #[test]
 fn an_outcome_evals_shell_writes_only_its_piece_and_reaches_no_host() {
+    purlis_core::unsteered!();
     use purlis_core::sandbox::egress;
     use purlis_core::skills::verbs::drafts;
-
-    purlis_core::unsteered!();
     let program = std::env::var_os("PURLIS_CLAUDE_CODE").map(PathBuf::from);
     let scratch = tempfile::tempdir().expect("a folder");
     let at = scratch.path().canonicalize().expect("a real folder");
@@ -733,9 +732,11 @@ fn an_outcome_evals_shell_writes_only_its_piece_and_reaches_no_host() {
     let file = at.join("claude.json");
     fs::write(
         &file,
+        // A grade's chat runs in the mode that asks (ADR 0105, amended 2026-10-26), whatever
+        // mode the program would start in: no classifier decides its commands.
         json!({
             "sandbox": reporting.sandbox,
-            "permissions": { "deny": reporting.deny },
+            "permissions": { "deny": reporting.deny, "defaultMode": "default" },
         })
         .to_string(),
     )
