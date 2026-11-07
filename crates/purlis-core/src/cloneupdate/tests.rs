@@ -977,6 +977,54 @@ fn a_path_is_denied_by_its_name_at_any_depth_whatever_its_case() {
     assert!(!own.path("tests/fixtures/purlis.toml", &fake));
 }
 
+/// A name a case-folding disk treats as the same as a denied one is that file there, however it
+/// is spelled, and is judged as that file.
+#[test]
+fn a_name_the_disk_treats_as_the_same_as_a_denied_one_is_denied_too() {
+    use crate::casefold::spelled_alike;
+    let fake = Fake::default();
+    let own = Denies::of(
+        "/project/workspaces/ide/repo",
+        "/project",
+        Some(Path::new("/project/workspaces/ide/repo")),
+    );
+    let manifests = [spelled_alike("purlis.toml"), spelled_alike("PURLIS.toml")].concat();
+    assert!(!manifests.is_empty(), "no other spelling to try");
+    for spelled in manifests {
+        assert!(own.path(&spelled, &fake), "{}", spelled.escape_default());
+    }
+    let denies = Denies::of(TOP, "/project", Some(Path::new("/project/workspaces/ide")));
+    let folders = [spelled_alike(".ssh"), spelled_alike(".SSH")].concat();
+    assert!(!folders.is_empty(), "no other spelling to try");
+    for folder in folders {
+        for spelled in [
+            format!("{folder}/authorized_keys"),
+            format!("a/{folder}/config"),
+        ] {
+            assert!(denies.path(&spelled, &fake), "{}", spelled.escape_default());
+        }
+    }
+}
+
+/// A disk that folds case compares names in one canonical form: a project whose name has an
+/// accented letter holds its manifests however that letter is written, whole or as a letter and
+/// its accent.
+#[test]
+fn a_manifest_is_held_under_an_accented_name_written_in_either_form() {
+    let fake = Fake::default();
+    let whole = "/proj\u{e9}t";
+    let apart = "/proje\u{301}t";
+    for (top, root) in [(whole, apart), (apart, whole)] {
+        let own = Denies::of(
+            &format!("{top}/workspaces/ide/repo"),
+            root,
+            Some(Path::new(&format!("{root}/workspaces/ide/repo"))),
+        );
+        assert!(own.path("purlis.toml", &fake), "{}", top.escape_unicode());
+        assert!(own.path("PURLIS.TOML", &fake), "{}", top.escape_unicode());
+    }
+}
+
 // (c) A fresh clone of a repository that tracks a denied path.
 
 #[test]

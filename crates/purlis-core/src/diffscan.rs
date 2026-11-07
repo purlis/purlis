@@ -562,6 +562,109 @@ fn through(text: String, found: Read) -> Scan {
     scan
 }
 
+/// The most commits of a remote a push's scan is told to leave out: past this, what it would
+/// send is scanned with more around it, never with less.
+pub const KNOWN_AT_MOST: usize = 4096;
+
+/// The commits the remote at `remote` (a configured remote's name, or a URL) says its branches
+/// and tags are at, asked of it now from the repository at `dir`, as a push from there would
+/// reach it, with `helper` as git's one credential ([`git::run_network`]); `None` where it cannot
+/// be asked. What a push the app makes leaves out of its scan ([`pushed_knowing`]), at most
+/// [`KNOWN_AT_MOST`] of them.
+pub fn remote_has(dir: &Path, helper: Option<&str>, remote: &str) -> Option<Vec<String>> {
+    if remote.is_empty() || remote.starts_with('-') {
+        return None;
+    }
+    let asked = git::run_network(dir, helper, &["ls-remote", "--heads", "--tags", remote]).ok();
+    tips(asked?)
+}
+
+/// The commits the remote at the address `url` says its branches and tags are at, asked of the
+/// address itself, for a push git hands to a hook ([`pushed`]); `None` where it cannot be asked.
+///
+/// **Nothing the repository at `dir` says is read.** git hands the hook the address it resolved
+/// already, so the address is asked from an empty folder outside the repository, reading no
+/// configuration but its own ([`git::isolated`]): neither the repository's, nor the global or
+/// system file, nor one `XDG_CONFIG_HOME` points at. No remote, `insteadOf` or
+/// `pushInsteadOf` a chat wrote can then point the question at another repository than the one
+/// the push goes to, and the scan show nothing. An address that is also a remote's name in
+/// `dir`, or a path that means something only from the repository's own folder, is not asked.
+fn address_has(dir: &Path, helper: Option<&str>, url: &str) -> Option<Vec<String>> {
+    if url.is_empty() || url.starts_with('-') || !an_address_anywhere(url) {
+        return None;
+    }
+    let names = git::run(dir, &["remote"], git::READ)
+        .ok()
+        .filter(git::Run::ok)?;
+    if names.out.lines().any(|name| name.trim() == url) {
+        return None;
+    }
+    let away = tempfile::tempdir().ok()?;
+    let asked = git::isolated(&git::Isolated::default(), || {
+        git::run_network(
+            away.path(),
+            helper,
+            &["ls-remote", "--heads", "--tags", "--", url],
+        )
+    })
+    .ok();
+    tips(asked?)
+}
+
+/// The commits an `ls-remote` that answered names, at most [`KNOWN_AT_MOST`] of them; `None`
+/// where it did not answer.
+fn tips(asked: git::Run) -> Option<Vec<String>> {
+    if !asked.ok() {
+        return None;
+    }
+    let full = |id: &str| matches!(id.len(), 40 | 64) && id.bytes().all(|b| b.is_ascii_hexdigit());
+    Some(
+        asked
+            .out
+            .lines()
+            .filter_map(|line| line.split_once('\t'))
+            .map(|(id, _)| id)
+            .filter(|id| full(id))
+            .map(str::to_owned)
+            .take(KNOWN_AT_MOST)
+            .collect(),
+    )
+}
+
+/// Whether `url` names the same repository from any folder: a URL with a scheme, or an absolute
+/// path. A relative path, or an SSH address written `host:path`, is neither: the first means
+/// another folder from elsewhere, and the second is read the same everywhere but is SSH, which
+/// git is never let use ([`git::run_network`]).
+fn an_address_anywhere(url: &str) -> bool {
+    url.contains("://") || Path::new(url).is_absolute()
+}
+
+/// The forge the remote at `url` is on, where it is on one the project this runs in manages.
+fn forge_of(url: &str) -> Option<crate::forge::Forge> {
+    match crate::envvar::var("PURLIS_ROOT").filter(|root| !root.is_empty()) {
+        Some(root) => crate::forge::resolve_host(url, Path::new(&root)),
+        None => crate::forge::resolve_in(url, &crate::forge::known_in(&toml::Table::new())),
+    }
+}
+
+/// What a push to `url` from `repo` leaves out of its scan: what the remote says it has
+/// ([`address_has`]). A remote on a forge is asked at its HTTPS address with the forge's
+/// credential, whichever way the push spells it, so a push over SSH is answered too. Where the
+/// remote cannot be asked, nothing: the scan then reads all the push sends past the remote's
+/// side of each ref git named.
+fn known_to(repo: &Path, url: &str) -> Vec<String> {
+    let forge = forge_of(url);
+    let https = forge
+        .as_ref()
+        .and_then(|forge| crate::forge::https_of(url, forge));
+    let helper = forge.as_ref().map(crate::forge::helper_for);
+    match https {
+        Some(https) => address_has(repo, helper.as_deref(), &https),
+        None => address_has(repo, None, url),
+    }
+    .unwrap_or_default()
+}
+
 /// How long git may take to show what a push sends. A push is a network operation already, and
 /// a branch's first push to a new remote shows its whole history.
 const SHOWING_A_PUSH: std::time::Duration = git::NETWORK;
@@ -571,13 +674,14 @@ fn is_nothing(oid: &str) -> bool {
     oid.bytes().all(|b| b == b'0')
 }
 
-/// What a push from `repo` to `remote` (at `url`) would publish, from the lines git writes on
+/// What a push from `repo` to the remote at `url` would publish, from the lines git writes on
 /// `pre-push`'s standard input (`updates`: `<local ref> <local oid> <remote ref> <remote oid>`),
 /// filtered through the allowlist the remote already has.
 ///
-/// The commits read are those reachable from what is pushed and from neither what the remote
-/// has for those refs nor, when the push names a configured remote, any of its remote-tracking
-/// refs: what the push sends. Each is read as its own diff, root commits included whatever
+/// The commits read are those reachable from what is pushed and from none of what the remote
+/// has: its side of each ref pushed, as git says it, and every branch and tag the remote itself
+/// says it has, asked of it just now ([`remote_has`]), never what this clone's own refs say it
+/// has. Where the remote cannot be asked, the rest of the history is read. Each is read as its own diff, root commits included whatever
 /// `log.showRoot` says, so a secret one commit adds and a later one removes is found: the history
 /// still publishes it. **A merge is read for what its resolution adds** (SQ-7): its diff from git
 /// merging its two parents again (`--diff-merges=remerge`), so a value no side's commit holds —
@@ -602,19 +706,13 @@ fn is_nothing(oid: &str) -> bool {
 ///
 /// `Err` is input git did not write, a ref that is not a commit, or git failing to answer, all
 /// of which the caller refuses on.
-pub fn pushed(repo: &Path, remote: &str, url: &str, updates: &str) -> Result<Scan, String> {
-    pushed_knowing(repo, remote, url, updates, None)
+pub fn pushed(repo: &Path, url: &str, updates: &str) -> Result<Scan, String> {
+    pushed_knowing(repo, updates, &known_to(repo, url))
 }
 
-/// [`pushed`], with what the remote has given as the commits it just said it has (`known`),
-/// where the caller asked it, in place of what this clone's remote-tracking branches say.
-pub fn pushed_knowing(
-    repo: &Path,
-    remote: &str,
-    url: &str,
-    updates: &str,
-    known: Option<&[String]>,
-) -> Result<Scan, String> {
+/// [`pushed`], with what the remote has given as the commits the caller just asked it for
+/// (`known`): none at all where it has nothing, or could not be asked.
+pub fn pushed_knowing(repo: &Path, updates: &str, known: &[String]) -> Result<Scan, String> {
     let commit_of = |oid: &str| {
         git::run_in_hook(
             repo,
@@ -647,6 +745,10 @@ pub fn pushed_knowing(
             return Err(format!("a line git wrote could not be read: {line:?}"));
         }
         if is_nothing(local) {
+            // A ref the push deletes sends nothing, and what the remote had there it has.
+            if !is_nothing(theirs) {
+                has.push(format!("^{theirs}"));
+            }
             continue;
         }
         let Some(tip) = commit_of(local) else {
@@ -671,16 +773,7 @@ pub fn pushed_knowing(
     }
     let mut range = sends;
     range.extend(has);
-    // git hands a push to a URL with no remote configured the URL twice, and a URL is no
-    // remote-tracking namespace.
-    match known {
-        Some(known) => range.extend(known.iter().map(|id| format!("^{id}"))),
-        None if remote != url => {
-            range.push("--not".to_owned());
-            range.push(format!("--remotes={remote}"));
-        }
-        None => {}
-    }
+    range.extend(known.iter().map(|id| format!("^{id}")));
     let ask = |head: &[&str]| {
         let mut args: Vec<&str> = head.to_vec();
         // The remote's side of a ref names a commit this clone may never have fetched.
@@ -1984,7 +2077,7 @@ mod tests {
         assert_eq!(scan.refused[0].fingerprint, scanallow::fingerprint(&token));
 
         let tip = commit_all(&repo, "two");
-        let pushed = pushed(&repo, "url", "url", &update(&tip, &base)).unwrap();
+        let pushed = pushed(&repo, "url", &update(&tip, &base)).unwrap();
         assert_eq!(pushed.refused.len(), 1, "{:?}", pushed.refused);
     }
 
@@ -2374,8 +2467,8 @@ mod tests {
         std::fs::write(repo.join("owners"), "ada@lovelace.dev\n").unwrap();
         let tip = commit_all(&repo, "new");
 
-        let url = "https://forge.invalid/o/r.git";
-        let scan = pushed(&repo, url, url, &update(&tip, &published)).unwrap();
+        let url = "/nowhere/o/r.git";
+        let scan = pushed(&repo, url, &update(&tip, &published)).unwrap();
 
         assert_eq!(
             scan.refused
@@ -2394,17 +2487,160 @@ mod tests {
 
         let url = "/elsewhere.git";
         assert_eq!(
-            pushed(&repo, url, url, &update(&tip, NOTHING))
+            pushed(&repo, url, &update(&tip, NOTHING))
                 .unwrap()
                 .refused
                 .len(),
             1
         );
         assert!(
-            pushed(&repo, url, url, &update(NOTHING, &tip))
+            pushed(&repo, url, &update(NOTHING, &tip))
                 .unwrap()
                 .refused
                 .is_empty()
+        );
+    }
+
+    /// An empty bare repository beside `repo`, which the clone names `origin`.
+    fn a_remote_beside(repo: &Path) -> String {
+        let bare = repo.parent().unwrap().join("origin.git");
+        testgit::run(
+            repo.parent().unwrap(),
+            &["init", "-q", "--bare", "origin.git"],
+        );
+        let url = bare.display().to_string();
+        testgit::run(repo, &["remote", "add", "origin", &url]);
+        url
+    }
+
+    /// A clone's history with a credential in a commit that a later one takes out again, and
+    /// the clone's own refs saying the remote has all of it.
+    fn a_history_the_clone_says_the_remote_has(repo: &Path) -> String {
+        std::fs::write(repo.join("README.md"), "one\n").unwrap();
+        commit_all(repo, "one");
+        std::fs::write(repo.join("deploy.sh"), format!("T={}\n", key())).unwrap();
+        commit_all(repo, "deploy");
+        std::fs::remove_file(repo.join("deploy.sh")).unwrap();
+        let tip = commit_all(repo, "tidy");
+        testgit::run(repo, &["update-ref", "refs/remotes/origin/main", &tip]);
+        tip
+    }
+
+    /// What the remote has is asked of the remote: a commit it does not have is read, whatever
+    /// the clone's own refs say it has.
+    #[test]
+    fn a_push_reads_what_the_remote_itself_says_it_lacks_whatever_the_clone_says() {
+        let (_dir, repo) = repo();
+        let url = a_remote_beside(&repo);
+        let tip = a_history_the_clone_says_the_remote_has(&repo);
+
+        let scan = pushed(&repo, &url, &update(&tip, NOTHING)).unwrap();
+
+        assert_eq!(
+            scan.refused
+                .iter()
+                .map(|f| f.path.as_str())
+                .collect::<Vec<_>>(),
+            ["deploy.sh"]
+        );
+    }
+
+    /// What the push's own repository says of an address is not read when the remote is asked:
+    /// an `insteadOf`, or a remote named as the address itself, that points the question at a
+    /// copy holding the whole history would otherwise have the scan show nothing.
+    #[test]
+    fn a_push_asks_the_address_git_pushes_to_whatever_the_repository_says_of_it() {
+        for decoy_by in ["url.{decoy}.insteadOf", "remote.{url}.url"] {
+            let (dir, repo) = repo();
+            let url = a_remote_beside(&repo);
+            let tip = a_history_the_clone_says_the_remote_has(&repo);
+            let decoy = dir.path().join("decoy.git");
+            testgit::run(dir.path(), &["init", "-q", "--bare", "decoy.git"]);
+            let decoy = decoy.display().to_string();
+            testgit::run(
+                &repo,
+                &["push", "-q", &decoy, &format!("{tip}:refs/heads/main")],
+            );
+            let key = decoy_by.replace("{decoy}", &decoy).replace("{url}", &url);
+            let value = if decoy_by.starts_with("url.") {
+                &url
+            } else {
+                &decoy
+            };
+            testgit::run(&repo, &["config", &key, value]);
+
+            let scan = pushed(&repo, &url, &update(&tip, NOTHING)).unwrap();
+
+            assert_eq!(
+                scan.refused
+                    .iter()
+                    .map(|f| f.path.as_str())
+                    .collect::<Vec<_>>(),
+                ["deploy.sh"],
+                "{decoy_by}"
+            );
+        }
+    }
+
+    /// A ref the push deletes sends nothing, and what the remote had there is what it has: a new
+    /// branch pushed beside it does not answer for those commits again.
+    #[test]
+    fn what_a_deleted_ref_held_on_the_remote_is_left_out_of_the_scan() {
+        let (_dir, repo) = repo();
+        std::fs::write(repo.join("old.sh"), format!("T={}\n", key())).unwrap();
+        let old = commit_all(&repo, "long ago");
+        std::fs::write(repo.join("owners"), format!("{}\n", address())).unwrap();
+        let tip = commit_all(&repo, "new");
+        let updates = format!(
+            "(delete) {NOTHING} refs/heads/old {old}\nrefs/heads/topic {tip} refs/heads/topic {NOTHING}\n"
+        );
+
+        let scan = pushed(&repo, "/nowhere/r.git", &updates).unwrap();
+
+        assert_eq!(
+            scan.refused
+                .iter()
+                .map(|f| (f.path.as_str(), f.rule))
+                .collect::<Vec<_>>(),
+            [("owners", "email")]
+        );
+    }
+
+    /// A remote that cannot be asked what it has: the whole history the push sends is read.
+    #[test]
+    fn a_push_to_a_remote_that_cannot_be_asked_reads_the_whole_history() {
+        let (dir, repo) = repo();
+        let tip = a_history_the_clone_says_the_remote_has(&repo);
+        let nowhere = dir.path().join("not-there.git").display().to_string();
+        testgit::run(&repo, &["remote", "add", "origin", &nowhere]);
+
+        let scan = pushed(&repo, &nowhere, &update(&tip, NOTHING)).unwrap();
+
+        assert_eq!(scan.refused.len(), 1, "{:?}", scan.refused);
+    }
+
+    /// What the remote says it has, on any of its branches, is left out: a new branch's push
+    /// does not answer for the commits the remote's other branches already hold.
+    #[test]
+    fn a_new_branch_leaves_out_what_the_remote_says_its_other_branches_hold() {
+        let (_dir, repo) = repo();
+        let url = a_remote_beside(&repo);
+        std::fs::write(repo.join("old.sh"), format!("T={}\n", key())).unwrap();
+        commit_all(&repo, "long ago");
+        testgit::run(&repo, &["push", "-q", "origin", "main"]);
+        testgit::run(&repo, &["update-ref", "-d", "refs/remotes/origin/main"]);
+        std::fs::write(repo.join("owners"), format!("{}\n", address())).unwrap();
+        let tip = commit_all(&repo, "new");
+        let new = format!("refs/heads/topic {tip} refs/heads/topic {NOTHING}\n");
+
+        let scan = pushed(&repo, &url, &new).unwrap();
+
+        assert_eq!(
+            scan.refused
+                .iter()
+                .map(|f| (f.path.as_str(), f.rule))
+                .collect::<Vec<_>>(),
+            [("owners", "email")]
         );
     }
 
@@ -2415,7 +2651,7 @@ mod tests {
         let tip = commit_all(&repo, "new");
         let unknown = "1234567890abcdef1234567890abcdef12345678";
 
-        let scan = pushed(&repo, "/r.git", "/r.git", &update(&tip, unknown)).unwrap();
+        let scan = pushed(&repo, "/r.git", &update(&tip, unknown)).unwrap();
 
         assert_eq!(scan.refused.len(), 1);
     }
@@ -2424,9 +2660,9 @@ mod tests {
     fn input_git_did_not_write_is_refused_not_waved_through() {
         let (_dir, repo) = repo();
         for updates in ["refs/heads/main abc", "a b c d e", "r not-an-oid r 0000"] {
-            assert!(pushed(&repo, "o", "/o", updates).is_err(), "{updates}");
+            assert!(pushed(&repo, "/o", updates).is_err(), "{updates}");
         }
-        assert!(pushed(&repo, "o", "/o", "").unwrap().refused.is_empty());
+        assert!(pushed(&repo, "/o", "").unwrap().refused.is_empty());
     }
 
     #[test]
@@ -2455,7 +2691,7 @@ mod tests {
         std::fs::write(repo.join("deploy.sh"), format!("T={}\n", key())).unwrap();
         let root = commit_all(&repo, "root");
 
-        let scan = pushed(&repo, "/r.git", "/r.git", &update(&root, NOTHING)).unwrap();
+        let scan = pushed(&repo, "/r.git", &update(&root, NOTHING)).unwrap();
 
         assert_eq!(scan.refused.len(), 1, "{scan:?}");
     }
@@ -2469,7 +2705,7 @@ mod tests {
             .trim()
             .to_owned();
         let tag = format!("refs/tags/x {blob} refs/tags/x {NOTHING}\n");
-        let why = pushed(&repo, "/r.git", "/r.git", &tag).unwrap_err();
+        let why = pushed(&repo, "/r.git", &tag).unwrap_err();
         assert!(
             why.contains("refs/tags/x") && why.contains("not name a commit"),
             "{why}"
@@ -2484,13 +2720,7 @@ mod tests {
             .trim()
             .to_owned();
         let tag = format!("refs/tags/v1 {annotated} refs/tags/v1 {NOTHING}\n");
-        assert_eq!(
-            pushed(&repo, "/r.git", "/r.git", &tag)
-                .unwrap()
-                .refused
-                .len(),
-            1
-        );
+        assert_eq!(pushed(&repo, "/r.git", &tag).unwrap().refused.len(), 1);
     }
 
     #[test]
@@ -2504,11 +2734,11 @@ mod tests {
             .trim()
             .to_owned();
 
-        let scan = pushed(&repo, "/r.git", "/r.git", &update(&tip, &published)).unwrap();
+        let scan = pushed(&repo, "/r.git", &update(&tip, &published)).unwrap();
 
         assert!(scan.changes_the_allowlist);
         assert!(
-            !pushed(&repo, "/r.git", "/r.git", &update(&published, NOTHING))
+            !pushed(&repo, "/r.git", &update(&published, NOTHING))
                 .unwrap()
                 .changes_the_allowlist,
             "a range that does not touch the file"
@@ -2528,7 +2758,7 @@ mod tests {
         testgit::run(&repo, &["checkout", "-q", "-b", "elsewhere", &published]);
         allowlist_at_head(&repo, DOCS_EMAIL);
 
-        let scan = pushed(&repo, "/r.git", "/r.git", &update(&tip, &published)).unwrap();
+        let scan = pushed(&repo, "/r.git", &update(&tip, &published)).unwrap();
 
         assert_eq!(scan.refused.len(), 1, "{scan:?}");
         assert!(scan.allowed.is_empty());
@@ -2546,7 +2776,7 @@ mod tests {
         std::fs::write(repo.join("docs/intro.md"), "By ada@lovelace.dev\n").unwrap();
         let tip = commit_all(&repo, "docs");
 
-        let scan = pushed(&repo, "/r.git", "/r.git", &update(&tip, &published)).unwrap();
+        let scan = pushed(&repo, "/r.git", &update(&tip, &published)).unwrap();
 
         assert!(scan.refused.is_empty(), "{scan:?}");
         assert_eq!(scan.allowed.len(), 1);
@@ -2612,8 +2842,8 @@ mod tests {
         .unwrap();
         let tip = commit_all(&repo, "new");
 
-        let url = "https://forge.invalid/o/r.git";
-        let scan = pushed(&repo, url, url, &update(&tip, &published)).unwrap();
+        let url = "/nowhere/o/r.git";
+        let scan = pushed(&repo, url, &update(&tip, &published)).unwrap();
 
         assert_eq!(
             scan.refused
@@ -2706,7 +2936,7 @@ mod tests {
         );
 
         let tip = commit_all(&repo, "three files");
-        let scan = pushed(&repo, "/r.git", "/r.git", &update(&tip, &published)).unwrap();
+        let scan = pushed(&repo, "/r.git", &update(&tip, &published)).unwrap();
         assert_eq!(scan.refused.len(), 3, "{:?}", scan.refused);
 
         // A threshold lowered so far that every file is "big" shows nothing as text either.
@@ -2760,7 +2990,7 @@ mod tests {
 
         assert_eq!(staged(&repo).unwrap(), Vec::new());
         let tip = commit_all(&repo, "pictures, a pointer and a submodule");
-        let scan = pushed(&repo, "/r.git", "/r.git", &update(&tip, &published)).unwrap();
+        let scan = pushed(&repo, "/r.git", &update(&tip, &published)).unwrap();
         assert_eq!(refused(&scan), []);
     }
 
@@ -2787,8 +3017,9 @@ mod tests {
         testgit::run(&repo, &["switch", "-q", "main"]);
         std::fs::write(repo.join("g"), "g\n").unwrap();
         let ours = commit_all(&repo, "ours");
-        // The side is published: the remote's tracking ref holds it.
-        testgit::run(&repo, &["update-ref", "refs/remotes/origin/side", &side]);
+        // The side is published: the remote has it.
+        let url = a_remote_beside(&repo);
+        testgit::run(&repo, &["push", "-q", "origin", "side"]);
 
         // An honest merge: nothing of its own.
         testgit::run(&repo, &["merge", "-q", "--no-edit", "side"]);
@@ -2796,7 +3027,7 @@ mod tests {
             .out
             .trim()
             .to_owned();
-        let scan = pushed(&repo, "origin", "/r.git", &update(&honest, &ours)).unwrap();
+        let scan = pushed(&repo, &url, &update(&honest, &ours)).unwrap();
         assert_eq!(refused(&scan), []);
 
         // The same parents, and a tree with a credential no parent has.
@@ -2804,7 +3035,7 @@ mod tests {
         testgit::run(&repo, &["add", "evil.sh"]);
         let tree = testgit::run(&repo, &["write-tree"]).out.trim().to_owned();
         let evil = commit_tree(&repo, &tree, &[&ours, &side], "merge");
-        let scan = pushed(&repo, "origin", "/r.git", &update(&evil, &ours)).unwrap();
+        let scan = pushed(&repo, &url, &update(&evil, &ours)).unwrap();
         assert_eq!(refused(&scan), [("evil.sh", "forge-token")]);
 
         // Three parents: git does not merge them again; the merge is read against its first.
@@ -2813,7 +3044,7 @@ mod tests {
         let third = commit_all(&repo, "third");
         testgit::run(&repo, &["update-ref", "refs/remotes/origin/third", &third]);
         let octopus = commit_tree(&repo, &tree, &[&ours, &side, &third], "octopus");
-        let scan = pushed(&repo, "origin", "/r.git", &update(&octopus, &ours)).unwrap();
+        let scan = pushed(&repo, &url, &update(&octopus, &ours)).unwrap();
         assert!(
             refused(&scan).contains(&("evil.sh", "forge-token")),
             "{:?}",
@@ -2836,12 +3067,12 @@ mod tests {
                 address()
             ),
         );
-        let scan = pushed(&repo, "/r.git", "/r.git", &update(&ordinary, &published)).unwrap();
+        let scan = pushed(&repo, "/r.git", &update(&ordinary, &published)).unwrap();
         assert_eq!(refused(&scan), []);
 
         std::fs::write(repo.join("f"), "three\n").unwrap();
         let told = commit_all(&repo, &format!("Three\n\nuse {} to push", key()));
-        let scan = pushed(&repo, "/r.git", "/r.git", &update(&told, &ordinary)).unwrap();
+        let scan = pushed(&repo, "/r.git", &update(&told, &ordinary)).unwrap();
         let short = &told[..12];
         assert_eq!(
             refused(&scan),
@@ -2870,7 +3101,7 @@ mod tests {
             .trim()
             .to_owned();
         let update = format!("refs/tags/v1 {tag} refs/tags/v1 {NOTHING}\n");
-        let scan = pushed(&repo, "/r.git", "/r.git", &update).unwrap();
+        let scan = pushed(&repo, "/r.git", &update).unwrap();
         assert!(
             refused(&scan).contains(&("tag refs/tags/v1 (its message)", "forge-token")),
             "{:?}",
@@ -2911,7 +3142,7 @@ mod tests {
         };
         // The people a commit's header names are not a finding.
         let plain = object(&repo, "commit", &header("x-note nothing here"));
-        let scan = pushed(&repo, "/r.git", "/r.git", &update(&plain, &published)).unwrap();
+        let scan = pushed(&repo, "/r.git", &update(&plain, &published)).unwrap();
         assert_eq!(refused(&scan), []);
 
         for extra in [
@@ -2922,7 +3153,7 @@ mod tests {
             ),
         ] {
             let told = object(&repo, "commit", &header(&extra));
-            let scan = pushed(&repo, "/r.git", "/r.git", &update(&told, &published)).unwrap();
+            let scan = pushed(&repo, "/r.git", &update(&told, &published)).unwrap();
             let short = &told[..12];
             assert_eq!(
                 refused(&scan),
@@ -2944,7 +3175,7 @@ mod tests {
             ),
         );
         let update = format!("refs/tags/v2 {tag} refs/tags/v2 {NOTHING}\n");
-        let scan = pushed(&repo, "/r.git", "/r.git", &update).unwrap();
+        let scan = pushed(&repo, "/r.git", &update).unwrap();
         assert_eq!(
             refused(&scan),
             [("tag refs/tags/v2 (its header)", "forge-token")],
@@ -2962,7 +3193,7 @@ mod tests {
         std::fs::write(repo.join("f"), "two\n").unwrap();
         let told = commit_all(&repo, &format!("Two\n\nuse {} to push", key()));
         testgit::run(&repo, &["config", "i18n.logOutputEncoding", "UTF-16"]);
-        let scan = pushed(&repo, "/r.git", "/r.git", &update(&told, &published)).unwrap();
+        let scan = pushed(&repo, "/r.git", &update(&told, &published)).unwrap();
         let short = &told[..12];
         assert_eq!(
             refused(&scan),

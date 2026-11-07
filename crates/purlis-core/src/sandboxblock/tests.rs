@@ -1682,6 +1682,8 @@ fn a_write_to_a_clones_git_folder_names_the_app_and_never_a_grant() {
     for path in [
         "/Users/dev/plane/workspaces/alpha/repo/.git/objects/pack/tmp_pack_1",
         "/Users/dev/plane/workspaces/alpha/repo/.git/refs/remotes/origin/main.lock",
+        // A clone made since ADR 0114, in `repos/<repo>`.
+        "/Users/dev/plane/workspaces/alpha/repos/repo/.git/objects/pack/tmp_pack_1",
     ] {
         let way = way_out(Path::new(path), Path::new(ROOT)).expect(path);
         assert!(way.contains("--fetch-only"), "{way}");

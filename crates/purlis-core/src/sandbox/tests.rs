@@ -3341,6 +3341,46 @@ fn a_chat_in_a_branch_folder_purlis_cut_leaves_its_clones_git_folder_to_the_app(
     }
 }
 
+/// ADR 0114: a clone made since lives in `repos/<repo>`, and its branch folders are cut in the
+/// same `.worktrees/<repo>/<piece>`, so its git folder is held as an older clone's is.
+#[test]
+fn a_chat_in_a_branch_folder_of_a_clone_in_repos_leaves_its_clones_git_folder_to_the_app() {
+    let plane = plane_saying(ON);
+    let root = plane.path().canonicalize().expect("real");
+    let workspace = root.join("workspaces/w");
+    let piece = workspace.join(".worktrees/repo/p1");
+    let clone = workspace.join("repos/repo");
+    std::fs::create_dir_all(clone.join(".git")).unwrap();
+    std::fs::create_dir_all(&piece).unwrap();
+    let held = clone.join(".git");
+
+    let settings = claude_settings_in(&root, &piece);
+    assert!(claude_holds(&settings, &held));
+}
+
+/// The clone a branch folder was cut from is the one its own record names, whatever it is
+/// called: git there writes that clone's git folder, so that is the one held.
+#[test]
+fn a_chat_in_a_branch_folder_leaves_the_clone_its_own_record_names_to_the_app() {
+    let plane = plane_saying(ON);
+    let root = plane.path().canonicalize().expect("real");
+    let workspace = root.join("workspaces/w");
+    let piece = workspace.join(".worktrees/repo/p1");
+    let clone = workspace.join("repos/elsewhere");
+    let record = clone.join(".git/worktrees/p1");
+    std::fs::create_dir_all(&record).unwrap();
+    std::fs::write(record.join("commondir"), "../..\n").unwrap();
+    std::fs::create_dir_all(&piece).unwrap();
+    std::fs::write(
+        piece.join(".git"),
+        format!("gitdir: {}\n", record.display()),
+    )
+    .unwrap();
+
+    let settings = claude_settings_in(&root, &piece);
+    assert!(claude_holds(&settings, &clone.join(".git")));
+}
+
 #[test]
 fn a_chat_anywhere_in_the_project_leaves_the_project_roots_git_folder_to_the_app() {
     let plane = plane_saying(ON);
@@ -5738,6 +5778,57 @@ fn a_missing_folder_that_differs_from_the_ground_only_in_case_covers_it_where_ca
         "../newer",
     )];
     assert_eq!(covering(&denied, &ground), None);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_missing_folder_the_disk_takes_for_the_grounds_own_name_covers_it_where_case_folds() {
+    // A name a case-folding volume treats as the same as the ground's is the same folder there,
+    // spelled however it is spelled.
+    let base = tempfile::tempdir().expect("a base");
+    let base = base.path().canonicalize().expect("the base");
+    std::fs::create_dir_all(base.join("plane")).expect("the plane");
+    let folds = std::fs::metadata(base.join("PLANE")).is_ok();
+    let ground = [base.join("plane/session/repo")];
+    let alike: Vec<String> = ["session", "SESSION"]
+        .iter()
+        .flat_map(|name| crate::casefold::spelled_alike(name))
+        .collect();
+    assert!(!alike.is_empty(), "no other spelling to try");
+    for written in alike {
+        let written = format!("plane/{written}");
+        let denied = [later_code(
+            base.join(&written).to_str().expect("a path"),
+            "/f",
+            "./x",
+        )];
+        assert_eq!(
+            covering(&denied, &ground).is_some(),
+            folds,
+            "{}",
+            written.escape_default()
+        );
+    }
+    // A name the disk keeps apart from the ground's is another folder, and covers nothing.
+    let apart: Vec<String> = ["session", "SESSION"]
+        .iter()
+        .flat_map(|name| crate::casefold::spelled_apart(name))
+        .collect();
+    assert!(!apart.is_empty(), "no spelling kept apart to try");
+    for written in apart {
+        let written = format!("plane/{written}");
+        let denied = [later_code(
+            base.join(&written).to_str().expect("a path"),
+            "/f",
+            "./x",
+        )];
+        assert_eq!(
+            covering(&denied, &ground),
+            None,
+            "{}",
+            written.escape_default()
+        );
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -8181,4 +8272,33 @@ fn a_cluster_pools_program_whose_package_would_be_the_home_or_above_it_is_held_a
             denied.paths
         );
     }
+}
+
+/// A chat's start reads its whole denied list against its ground, several times for each
+/// harness the picker offers: each name is folded once, however many pairs are compared, so the
+/// check takes time in proportion to the two lists and not to their product.
+#[test]
+fn the_ground_check_folds_each_name_once_however_many_pairs_it_compares() {
+    let base = tempfile::tempdir().expect("a base");
+    let base = base.path().canonicalize().expect("the base");
+    let root = base.join("plane");
+    std::fs::create_dir_all(&root).expect("the plane");
+    let ground = ground(&root, Some(&base));
+    let denied: Vec<Denial> = (0..200)
+        .map(|i| {
+            later_code(
+                &format!("{}/Tools/tool-{i}/config", base.display()),
+                "/f",
+                "./x",
+            )
+        })
+        .collect();
+
+    let before = crate::casefold::folds_made();
+    assert!(covering(&denied, &ground).is_none());
+    let made = crate::casefold::folds_made() - before;
+
+    // Every spelling of every name, once: no more than eight of each.
+    let names = denied.len() + ground.len();
+    assert!(made <= names * 8, "{made} folds for {names} names");
 }

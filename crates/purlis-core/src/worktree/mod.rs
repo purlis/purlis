@@ -1708,6 +1708,19 @@ pub fn locate(plane: &Path, path: &Path) -> Option<Located> {
     }
 }
 
+/// **The git folder of the clone a branch folder was cut from**, as git in `folder` finds it:
+/// the record its `.git` file names, and the common folder that record's `commondir` names,
+/// with its links resolved. `None` where any of it cannot be read.
+pub fn clone_git_dir_of(folder: &Path) -> Option<PathBuf> {
+    let pointer = std::fs::read_to_string(folder.join(".git")).ok()?;
+    let record = pointer
+        .trim_end_matches(['\n', '\r'])
+        .strip_prefix("gitdir: ")?;
+    let record = folder.join(record);
+    let common = common_dir(&record).ok()??;
+    std::fs::canonicalize(common).ok()
+}
+
 /// Whether `dot_git` is a clone's own git folder: a real folder, never a link to one, nor a
 /// `.git` file pointing elsewhere (#3831).
 pub fn is_own_git_dir(dot_git: &Path) -> bool {

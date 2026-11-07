@@ -1809,7 +1809,7 @@ fn pushed(
     // Fetched first, so the lease and the scan read what the remote has now.
     crate::repocmd::sync::fetch_remote(piece.root, &here.clone, &remote, reach.hosts)
         .map_err(|why| format!("{why}. Nothing was pushed"))?;
-    let (url, helper) =
+    let (_, helper) =
         crate::repocmd::sync::reach(piece.root, &here.clone, &remote, reach.hosts, true)?;
     let local_ref = name::as_ref(branch);
     let ours =
@@ -1830,8 +1830,7 @@ fn pushed(
         "{local_ref} {ours} {local_ref} {}\n",
         theirs.as_deref().unwrap_or(NOTHING)
     );
-    let scan =
-        crate::diffscan::pushed_knowing(&here.folder, &remote, &url, &updates, Some(&has.ids))?;
+    let scan = crate::diffscan::pushed_knowing(&here.folder, &updates, &has.ids)?;
     if scan.changes_the_allowlist {
         return Err(crate::diffscan::PUSH_ALLOWLIST_REFUSAL.trim().to_owned());
     }
@@ -1895,10 +1894,6 @@ fn pushed(
     Ok(0)
 }
 
-/// The most commits of a remote a push's scan is told to leave out: past this, what it would
-/// send is scanned with more around it, never with less.
-const KNOWN_AT_MOST: usize = 4096;
-
 /// What a remote said it has, asked just now.
 struct RemoteHas {
     /// The commit of each of its branches.
@@ -1924,7 +1919,7 @@ impl RemoteHas {
             .iter()
             .map(|(_, id)| id.clone())
             .chain(tags)
-            .take(KNOWN_AT_MOST)
+            .take(crate::diffscan::KNOWN_AT_MOST)
             .collect();
         Self { branches, ids }
     }

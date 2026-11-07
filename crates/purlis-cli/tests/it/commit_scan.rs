@@ -133,6 +133,15 @@ impl Chat {
     }
 
     fn git_as(&self, args: &[&str], chat: bool) -> Output {
+        self.git_as_with(args, chat, &[])
+    }
+
+    /// git as the chat runs it, with `more` in its environment as well.
+    fn git_with(&self, args: &[&str], more: &[(&str, &Path)]) -> Output {
+        self.git_as_with(args, true, more)
+    }
+
+    fn git_as_with(&self, args: &[&str], chat: bool, more: &[(&str, &Path)]) -> Output {
         let mut cmd = support::command("git");
         cmd.arg("-C").arg(&self.repo).args(args);
         cmd.env("GIT_CONFIG_GLOBAL", "/dev/null")
@@ -148,6 +157,9 @@ impl Chat {
             for (k, v) in &self.env {
                 cmd.env(k, v);
             }
+        }
+        for (k, v) in more {
+            cmd.env(k, v);
         }
         purlis_core::forklock::output(&mut cmd).unwrap()
     }
@@ -587,6 +599,72 @@ fn a_secret_added_and_removed_again_before_the_push_is_still_refused() {
 
     assert!(!ran.status.success(), "the history still holds it: {ran:?}");
     assert_eq!(chat.remote_main(&origin), published);
+}
+
+/// What the remote has is asked of the remote: the clone's own refs saying it has everything
+/// take nothing out of what the push is scanned for.
+#[test]
+fn a_secret_is_refused_before_push_whatever_the_clones_own_refs_say_the_remote_has() {
+    let chat = Chat::new();
+    let origin = chat.with_origin();
+    let published = chat.remote_main(&origin);
+    std::fs::write(chat.repo.join("deploy.sh"), format!("TOKEN={}\n", key())).unwrap();
+    chat.operator_git(&["add", "deploy.sh"]);
+    chat.operator_git(&["commit", "-q", "-m", "oops"]);
+    chat.operator_git(&["rm", "-q", "deploy.sh"]);
+    chat.operator_git(&["commit", "-q", "-m", "gone again"]);
+    let head = chat.head();
+    chat.operator_git(&["update-ref", "refs/remotes/origin/main", head.trim()]);
+
+    let ran = chat.git(&["push", "origin", "main"]);
+
+    assert!(!ran.status.success(), "{ran:?}");
+    assert_eq!(chat.remote_main(&origin), published, "nothing was pushed");
+    let said = String::from_utf8_lossy(&ran.stderr);
+    assert!(said.contains("deploy.sh:1"), "{said}");
+}
+
+/// The remote is asked at the address git pushes to, reading none of the configuration the
+/// chat's environment points at: a global config that rewrites that address to a copy holding
+/// the whole history takes nothing out of what the push is scanned for.
+#[test]
+fn a_secret_is_refused_before_push_whatever_a_config_the_chat_points_at_rewrites() {
+    let chat = Chat::new();
+    let origin = chat.with_origin();
+    let published = chat.remote_main(&origin);
+    std::fs::write(chat.repo.join("deploy.sh"), format!("TOKEN={}\n", key())).unwrap();
+    chat.operator_git(&["add", "deploy.sh"]);
+    chat.operator_git(&["commit", "-q", "-m", "oops"]);
+    chat.operator_git(&["rm", "-q", "deploy.sh"]);
+    chat.operator_git(&["commit", "-q", "-m", "gone again"]);
+    let decoy = chat.dir.path().join("decoy.git");
+    let made = support::command("git")
+        .args(["init", "-q", "--bare"])
+        .arg(&decoy)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .output()
+        .unwrap();
+    assert!(made.status.success(), "{made:?}");
+    let copied = chat.operator_git(&["push", "-q", &decoy.display().to_string(), "main"]);
+    assert!(copied.status.success(), "{copied:?}");
+    let config = chat.dir.path().join("xdg");
+    std::fs::create_dir_all(config.join("git")).unwrap();
+    std::fs::write(
+        config.join("git/config"),
+        format!(
+            "[url \"{}\"]\n\tinsteadOf = {}\n",
+            decoy.display(),
+            origin.display()
+        ),
+    )
+    .unwrap();
+
+    let ran = chat.git_with(&["push", "origin", "main"], &[("XDG_CONFIG_HOME", &config)]);
+
+    assert!(!ran.status.success(), "{ran:?}");
+    assert_eq!(chat.remote_main(&origin), published, "nothing was pushed");
+    let said = String::from_utf8_lossy(&ran.stderr);
+    assert!(said.contains("deploy.sh:1"), "{said}");
 }
 
 #[test]
