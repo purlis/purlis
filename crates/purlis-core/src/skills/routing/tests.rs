@@ -1149,7 +1149,7 @@ fn the_studio_marks_hidden_in_a_clone_what_a_chat_s_start_there_hides_4227() {
         "the repo's copy is what api's Codex chat lists or hides, never the plane's"
     );
 
-    let places = list.clones_with_repo_skills();
+    let places = crate::skills::clones_with_repo_skills(&list.harnesses);
     let places: Vec<(&str, usize)> = places
         .iter()
         .map(|one| (one.clone.as_str(), one.repo_skills))

@@ -67,8 +67,7 @@ describe("the Skill studio previews a chat started in a clone (#4227)", () => {
 
     await user.click(screen.getByRole("button", { name: "A chat in smart-ide · at its root" }));
     const menu = await screen.findByRole("menu", { name: "Whose chats and where they start" });
-    expect(within(menu).getByText("Its 12 repo skills count too.")).toBeInTheDocument();
-    await user.click(within(menu).getByRole("menuitemradio", { name: /In purlis/ }));
+    await user.click(within(menu).getByRole("menuitemradio", { name: "In purlis" }));
 
     await waitFor(() =>
       expect(

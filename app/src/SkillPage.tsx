@@ -476,7 +476,12 @@ export function SkillPage({
   const banner = bannerOf(skill, studio, scope, {
     ...(placeChosen === undefined
       ? {}
-      : { place: { clone: placeChosen, listedAtRoot: inPlaces[0]?.listed === true } }),
+      : {
+          place: {
+            clone: placeChosen,
+            listedAtRoot: inPlaces.some((one) => one.clone === undefined && one.listed),
+          },
+        }),
     ...(copy === undefined ? {} : { copy }),
     ...(review === undefined ? {} : { review }),
     ...(offer === undefined ? {} : { update: offer.newer.short }),

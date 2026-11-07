@@ -10,15 +10,13 @@ import { counted } from "./dispatches";
 import { sameScope, scopeChat, scopeKey, startedIn, type StudioScope } from "./skillStudio";
 import { placeTitle } from "./studioPlace";
 
-/** What the menu's Where section says under the workspace's root. */
-const NO_REPO_COUNTS = "No repo's skills count.";
+/** **The note of the Where row of the workspace's root**, its tooltip (the menus' rule 2): a
+ *  clone with no repo skills is no place of its own. */
+export const ROOT_NOTE =
+  "No repo's skills count. A chat in a clone that holds no repo skills lists the same.";
 
-/** What stands under the menu's rows: a clone with no repo skills is no place of its own. */
-export const WHERE_FOOT =
-  "A chat in a clone that holds no repo skills lists what a chat at the root lists.";
-
-/** The key of the Where row of the workspace's root. */
-const AT_ROOT = "\u0000root";
+/** The key of the Where row of the workspace's root: no clone's name is it. */
+const WHERE_ROOT_KEY = "\u0000root";
 
 /** **The trigger's words**: whose chats, then where the chat starts (#4227). */
 export function whoseAndWhere(scope: StudioScope): string {
@@ -75,7 +73,6 @@ export function StudioWhosePicker({
       <Menu
         align="end"
         aria-label="Whose chats and where they start"
-        footer={WHERE_FOOT}
         {...(long
           ? {
               filter: {
@@ -108,27 +105,25 @@ export function StudioWhosePicker({
         <MenuSection
           title="Where it starts"
           selectionMode="single"
-          selectedKeys={[scope.where ?? AT_ROOT]}
+          selectedKeys={[scope.where ?? WHERE_ROOT_KEY]}
           shouldCloseOnSelect
         >
           {[undefined, ...places].map((place) => {
             const clone = place?.clone;
             return (
               <MenuItem
-                key={clone ?? AT_ROOT}
-                id={clone ?? AT_ROOT}
+                key={clone ?? WHERE_ROOT_KEY}
+                id={clone ?? WHERE_ROOT_KEY}
                 textValue={placeTitle(clone)}
+                tooltip={
+                  place === undefined
+                    ? ROOT_NOTE
+                    : `Its ${counted(place.repo_skills, "repo skill counts", "repo skills count")} too.`
+                }
                 onAction={() => pick(startedIn(scope, clone))}
                 data-testid={`studio-where-${clone ?? "root"}`}
               >
-                <MenuWords
-                  said={placeTitle(clone)}
-                  under={
-                    place === undefined
-                      ? NO_REPO_COUNTS
-                      : `Its ${counted(place.repo_skills, "repo skill counts", "repo skills count")} too.`
-                  }
-                />
+                <MenuWords said={placeTitle(clone)} />
               </MenuItem>
             );
           })}

@@ -54,12 +54,8 @@ export function studioIn(studio: Studio, where: string | undefined): Studio {
   };
 }
 
-/** **Where a chat starts, as a sentence names it**: `at the workspace's root`, `in purlis`. */
-export function placeSaid(clone: string | undefined): string {
-  return clone === undefined ? "at the workspace's root" : `in ${clone}`;
-}
-
-/** **The same, as a heading or a list's first word starts it**: `At the workspace's root`. */
+/** **Where a chat starts, as a heading or a list's first word says it**: `At the workspace's
+ *  root`, `In purlis`. */
 export function placeTitle(clone: string | undefined): string {
   return clone === undefined ? "At the workspace's root" : `In ${clone}`;
 }

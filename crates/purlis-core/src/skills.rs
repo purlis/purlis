@@ -3075,13 +3075,6 @@ pub fn not_supported(declarations: &crate::harness_declaration::Declarations) ->
 }
 
 impl StudioList {
-    /// **The clones a chat can be previewed in** (#4227): each that holds a repo skill on for
-    /// some harness, in the workspace's order, with how many it holds by name. A clone that
-    /// holds none is no place of its own: a chat there lists what a chat at the root lists.
-    pub fn clones_with_repo_skills(&self) -> Vec<ClonePlace> {
-        clones_with_repo_skills(&self.harnesses)
-    }
-
     /// **The clashes of a plane or built-in row** (SK-46, #3149; decision 51): each skill from
     /// outside the plane with its name, harness by harness, as the studio marks the row of the
     /// copy purlis hands. What `purlis skill list` and the window both say of it, each in

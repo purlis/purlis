@@ -13,7 +13,7 @@ import { expect, screen, waitFor, within } from "storybook/test";
 import type { StudioClone } from "./bindings";
 import { AT_THE_ROOT, asPersona, inWorkspace, type StudioScope } from "./skillStudio";
 import { StudioWhosePicker } from "./StudioWhosePicker";
-import { expectFocusInSight, untilFocusWithin } from "./stories.testkit";
+import { expectFocusInSight, untilFocusWithin, untilFocused } from "./stories.testkit";
 
 const PLACES: StudioClone[] = [
   { clone: "purlis", repo_skills: 12, preview: "" },
@@ -22,12 +22,39 @@ const PLACES: StudioClone[] = [
 
 const WHOSE: StudioScope[] = [AT_THE_ROOT, inWorkspace("smart-ide"), asPersona("steward")];
 
-/** The picker as the studio's header holds it: what is picked is drawn again. */
-function Picker({ places, start }: { places: StudioClone[]; start: StudioScope }) {
+/** Twelve workspaces: a list long enough to be filtered. */
+const MANY: StudioScope[] = [
+  AT_THE_ROOT,
+  ...[
+    "smart-ide",
+    "billing",
+    "checkout",
+    "docs-site",
+    "infra",
+    "mobile",
+    "payments",
+    "search",
+    "support",
+    "web",
+    "warehouse",
+  ].map(inWorkspace),
+];
+
+/** The picker as the studio's header holds it, after a button the keyboard leaves to: what is
+ *  picked is drawn again. */
+function Picker({
+  places,
+  start,
+  whose = WHOSE,
+}: {
+  places: StudioClone[];
+  start: StudioScope;
+  whose?: StudioScope[];
+}) {
   const [scope, setScope] = useState(start);
   return (
     <div style={{ display: "flex", justifyContent: "flex-end", inlineSize: 560 }}>
-      <StudioWhosePicker scope={scope} whose={WHOSE} places={places} onScope={setScope} />
+      <StudioWhosePicker scope={scope} whose={whose} places={places} onScope={setScope} />
     </div>
   );
 }
@@ -43,52 +70,67 @@ type Story = StoryObj<typeof meta>;
 /** Takes a moment longer than a frame: the menu's surface goes as it closes. */
 const CLOSES = { timeout: 3_000 };
 
+const MENU = "Whose chats and where they start";
+
 /**
- * **At the workspace's root**: Tab reaches the picker, Enter opens its menu on Whose chats, ↓
- * walks down to Where it starts and In purlis, Enter picks it and the picker says it; Escape
- * closes the menu again without a change. The picture is the picker at the root.
+ * **At the workspace's root**: Tab reaches the picker, Enter opens its menu, ↓ walks past Whose
+ * chats to Where it starts and In purlis, Enter picks it and the picker says it; Enter opens it
+ * again with purlis ticked, Escape closes it with nothing changed, and Shift+Tab leaves. The
+ * picture is the picker in purlis.
  */
 export const AtTheRoot: Story = {
   play: async ({ canvas, userEvent }) => {
     const picker = canvas.getByRole("button", { name: "A chat in smart-ide · at its root" });
     await userEvent.tab();
-    await expect(picker).toHaveFocus();
+    await untilFocused(() => picker, "the picker");
     expectFocusInSight();
 
     await userEvent.keyboard("{Enter}");
-    const menu = await screen.findByRole("menu", { name: "Whose chats and where they start" });
-    await untilFocusWithin(menu);
-    await expect(within(menu).getByText("Its 12 repo skills count too.")).toBeVisible();
-    // Past the three of Whose chats and the workspace's root, to purlis.
-    for (let step = 0; step < 4; step++) await userEvent.keyboard("{ArrowDown}");
-    const purlis = within(menu).getByRole("menuitemradio", { name: /In purlis/ });
-    await waitFor(() => expect(purlis).toHaveFocus());
+    const menu = await screen.findByRole("menu", { name: MENU });
+    await untilFocusWithin(() => menu, "the menu");
     expectFocusInSight();
+    // Past the three of Whose chats and the workspace's root, to purlis.
+    for (let step = 0; step < 4; step++) {
+      await userEvent.keyboard("{ArrowDown}");
+      expectFocusInSight();
+    }
+    const purlis = within(menu).getByRole("menuitemradio", { name: "In purlis" });
+    await untilFocused(() => purlis, "In purlis");
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull(), CLOSES);
     const there = canvas.getByRole("button", { name: "A chat in smart-ide · in purlis" });
-    await waitFor(() => expect(there).toHaveFocus());
+    await untilFocused(() => there, "the picker, in purlis");
+    expectFocusInSight();
 
     await userEvent.keyboard("{Enter}");
-    const again = await screen.findByRole("menu", { name: "Whose chats and where they start" });
-    await expect(within(again).getByRole("menuitemradio", { name: /In purlis/ })).toHaveAttribute(
+    const again = await screen.findByRole("menu", { name: MENU });
+    await expect(within(again).getByRole("menuitemradio", { name: "In purlis" })).toHaveAttribute(
       "aria-checked",
       "true",
     );
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull(), CLOSES);
-    await expect(there).toHaveFocus();
-    (document.activeElement as HTMLElement | null)?.blur();
+    await untilFocused(() => there, "the picker, after Escape");
+    expectFocusInSight();
+    await userEvent.tab({ shift: true });
+    await waitFor(() => expect(there).not.toHaveFocus());
   },
 };
 
-/** **Open, in purlis**: the menu as the person sees it, the place ticked. */
+/** **Open, in purlis**: the menu as the person sees it, opened from the keyboard, its place and
+ *  its workspace ticked. */
 export const OpenInAClone: Story = {
   args: { start: { ...inWorkspace("smart-ide"), where: "purlis" } },
+  parameters: { screenshot: "page" },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.click(canvas.getByRole("button", { name: "A chat in smart-ide · in purlis" }));
-    const menu = await screen.findByRole("menu", { name: "Whose chats and where they start" });
-    await expect(within(menu).getByRole("menuitemradio", { name: /In purlis/ })).toHaveAttribute(
+    const picker = canvas.getByRole("button", { name: "A chat in smart-ide · in purlis" });
+    await userEvent.tab();
+    await untilFocused(() => picker, "the picker");
+    await userEvent.keyboard("{ArrowDown}");
+    const menu = await screen.findByRole("menu", { name: MENU });
+    await untilFocusWithin(() => menu, "the menu");
+    expectFocusInSight();
+    await expect(within(menu).getByRole("menuitemradio", { name: "In purlis" })).toHaveAttribute(
       "aria-checked",
       "true",
     );
@@ -98,11 +140,47 @@ export const OpenInAClone: Story = {
   },
 };
 
-/** **No clone holds repo skills**: the select it always was, with nothing to choose of where. */
+/** **Many workspaces**: the menu opens on its filter row, and what is typed narrows Whose chats
+ *  while Where it starts stays; Escape closes it. The picture is the menu narrowed. */
+export const ManyWorkspaces: Story = {
+  args: { whose: MANY },
+  parameters: { screenshot: "page" },
+  play: async ({ canvas, userEvent }) => {
+    const picker = canvas.getByRole("button", { name: "A chat in smart-ide · at its root" });
+    await userEvent.tab();
+    await untilFocused(() => picker, "the picker");
+    await userEvent.keyboard("{Enter}");
+    const menu = await screen.findByRole("menu", { name: MENU });
+    const filter = await screen.findByRole("textbox", { name: "Filter" });
+    await untilFocused(() => filter, "the filter");
+    expectFocusInSight();
+    await userEvent.keyboard("pay");
+    await waitFor(() =>
+      expect(within(menu).queryByRole("menuitemradio", { name: "A chat in billing" })).toBeNull(),
+    );
+    await expect(
+      within(menu).getByRole("menuitemradio", { name: "A chat in payments" }),
+    ).toBeVisible();
+    await expect(within(menu).getByRole("menuitemradio", { name: "In purlis" })).toBeVisible();
+  },
+};
+
+/** **No clone holds repo skills**: the select it always was. Tab reaches it, Enter opens its
+ *  list, Escape closes it, and Tab leaves. */
 export const NoPlace: Story = {
   args: { places: [] },
-  play: async ({ canvas }) => {
-    await expect(canvas.getByRole("button", { name: /Whose chats/ })).toBeVisible();
+  play: async ({ canvas, userEvent }) => {
+    const select = canvas.getByRole("button", { name: /Whose chats/ });
+    await userEvent.tab();
+    await untilFocused(() => select, "the select");
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await screen.findByRole("listbox");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull(), CLOSES);
+    await untilFocused(() => select, "the select, after Escape");
     await expect(canvas.queryByText("Where it starts")).toBeNull();
+    await userEvent.tab();
+    await waitFor(() => expect(select).not.toHaveFocus());
   },
 };
