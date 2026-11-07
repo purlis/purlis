@@ -16427,8 +16427,7 @@ export type Studio = {
 	router: StudioRouter | null,
 	/**
 	 *  **The clones a chat can be previewed in** (#4227): each of the workspace's that holds
-	 *  repo skills, in its order. Empty at the project's root, while the studio is off, and
-	 *  where no clone holds one.
+	 *  repo skills, in its order. Empty at the project's root and where no clone holds one.
 	 */
 	places: StudioClone[],
 	/**
