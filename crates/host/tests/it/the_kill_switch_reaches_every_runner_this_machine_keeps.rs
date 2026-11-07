@@ -346,8 +346,16 @@ async fn a_runner_not_reached_is_tried_again_while_the_desktop_stays_stopped() {
     })
     .await
     .expect("host B was stopped once it could be reached");
+    // Host A notes that host B was reached only once host B's answer comes back, after host B
+    // shows stopped (#5673), so its record is waited for, and its look is let run until then.
+    timeout(PATIENCE, async {
+        while window.kill_switch().await.unwrap().why.is_some() {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("host A no longer names host B as not reached");
     looking.abort();
-    assert!(window.kill_switch().await.unwrap().why.is_none());
 }
 
 #[tokio::test]
