@@ -142,6 +142,10 @@ pub fn outcomes_of(planned: &super::Planned) -> Option<String> {
     }
     let mut digest = sha2::Sha256::new();
     digest.update(serde_json::to_vec(&request.outcomes).unwrap_or_default());
+    // Whether their chats have a shell (#4476): an edit that gives or takes one is seen again.
+    if request.shell {
+        digest.update(b"\0shell");
+    }
     if let Some(copy) = &planned.copy {
         for (path, bytes) in &copy.inputs {
             if request

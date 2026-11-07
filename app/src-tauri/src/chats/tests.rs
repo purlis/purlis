@@ -10470,6 +10470,22 @@ fn a_chat_the_studio_did_not_start_has_no_job_to_be_done() {
     let _ = chats.close(session);
 }
 
+/// #4476: a grade's chat asks nobody, so its proxy never holds a connection for the person's
+/// answer, and so takes no Allow live; any other chat does unless policy turns it off.
+#[test]
+fn a_grades_chat_has_no_live_ask_and_another_chat_has_one_unless_policy_says_not() {
+    let open = purlis_core::sandbox::policy::Locks::none();
+    assert!(super::asks_live(false, &open));
+    assert!(!super::asks_live(true, &open));
+    let off = purlis_core::sandbox::policy::Locks::parse(
+        r#"{"sandbox": {"live-asks": false}}"#,
+        std::path::Path::new("/etc/purlis/policy.json"),
+    );
+    assert!(off.refused_because().is_none(), "{off:?}");
+    assert!(off.forbids_live_asks());
+    assert!(!super::asks_live(false, &off));
+}
+
 /// #5248: a studio chat's job stops as its program ends, runs again with a later start, and the
 /// chat is kept for its skill's Runs once it closes.
 #[test]

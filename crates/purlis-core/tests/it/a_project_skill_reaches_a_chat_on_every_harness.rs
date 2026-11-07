@@ -60,6 +60,7 @@ fn kit<'a>(here: &'a Here, skills: Option<PlaneSkills<'a>>, laid_out: Option<&'a
         laid_out,
         judging: false,
         writes_its_piece: false,
+        runs_a_shell: false,
     }
 }
 

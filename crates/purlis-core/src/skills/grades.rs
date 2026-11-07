@@ -1324,6 +1324,10 @@ pub struct Planned {
     /// [`Self::request`].
     pub offered: Vec<grade::OutcomeEval>,
     pub eval_chats: u32,
+    /// **Whether the evals it offers run with a shell** (#4476): its skill asks for one
+    /// ([`purlis_skills::handed::asks_for_a_shell`]), so each is said to use one before it is
+    /// ticked, and the consent covers it once one is.
+    pub shell: bool,
     /// The token cap the grade is held to ([`cap::token_cap`]).
     pub cap: cap::Cap,
     /// What the person consents to by pressing Grade on this plan ([`consent_of`]): a grade
@@ -1696,8 +1700,11 @@ fn planned_from(
             }
         });
     }
-    // A skill that runs a command as it loads needs the shell its eval's chat does not have (#4476):
-    // the call fails with no sign, and the chat would be judged as though it had loaded.
+    // A skill that asks for a shell has its evals graded with one (#4476), every arm alike: where
+    // either version it is compared in asks, as each arm runs the same task with the same tools.
+    let mut shell = false;
+    // A skill that runs a command as it loads stays left out (#4476): its command runs as the
+    // skill is read, before the chat's first tool call, with nothing a grade can hold or show.
     if let Some(copy) = &copy {
         let runs_one = |snapshot: &Snapshot| {
             snapshot
@@ -1715,6 +1722,12 @@ fn planned_from(
             std::iter::once(&copy.snapshot)
                 .chain(copy.previous.as_ref().map(|previous| &previous.snapshot))
         };
+        shell = copies().any(|snapshot| {
+            snapshot
+                .files
+                .get("SKILL.md")
+                .is_some_and(|text| purlis_skills::handed::asks_for_a_shell(text))
+        });
         if copies().any(refused) {
             for eval in evals.drain(..) {
                 outcomes_left_out.push(LeftOutEval {
@@ -1727,8 +1740,8 @@ fn planned_from(
             for eval in evals.drain(..) {
                 outcomes_left_out.push(LeftOutEval {
                     id: eval.id,
-                    why: "its skill runs a command as it loads, and an outcome eval's chat has no \
-                          shell yet"
+                    why: "its skill runs a command as it loads, which a grade cannot hold or \
+                          show before it runs"
                         .to_owned(),
                 });
             }
@@ -1759,6 +1772,7 @@ fn planned_from(
     let eval_chats = u32::from(RUNS) * u32::try_from(arms.len()).unwrap_or(u32::MAX) * 2;
     let request = (!sendable.is_empty() || !evals.is_empty()).then(|| GradeRequest {
         skill: name.to_owned(),
+        shell: shell && !evals.is_empty(),
         triggers: sendable,
         outcomes: evals,
         arms,
@@ -1808,6 +1822,7 @@ fn planned_from(
         outcomes_left_out,
         offered,
         eval_chats,
+        shell,
         cap: cap::token_cap(root),
         consent,
         previous,
@@ -1984,6 +1999,10 @@ pub fn consent_of(request: &GradeRequest, copy: &SkillCopy) -> String {
         for (path, bytes) in copy.inputs.iter().filter(|(path, _)| staged(path)) {
             digest_input(&mut digest, path, bytes);
         }
+        // Their chats' shell (#4476): one that gains or loses it is seen again.
+        if request.shell {
+            digest.update(b"\0shell");
+        }
     }
     digest.update(b"\0");
     digest.update(copy.content.word().as_bytes());
@@ -2091,6 +2110,10 @@ pub fn outcome_refused(ready: &crate::start::Ready) -> Option<String> {
 /// full sandbox on a profile that keeps its permission prompts ([`chat_refused`]). The one answer
 /// a grade's plan and its chats both take.
 ///
+/// **An outcome eval's chat that has a shell reaches no host and writes only its folder** (#4476):
+/// decided besides as [`crate::sandbox::policy::holding_to_its_folder`] holds it, as its piece
+/// says ([`crate::skills::verbs::drafts::shell_piece`]).
+///
 /// **Its chats have only purlis's plugin on** (P8, #3468): every plugin the harness has
 /// installed is handed off for the chat alone, by the harness's own per-chat switch, and
 /// nothing of the person's own settings is written ([`crate::harness_plugin::only_purlis_on`]),
@@ -2112,8 +2135,19 @@ pub fn ready_to_grade_on(
     root: &Path,
     model: Option<&str>,
 ) -> Result<crate::start::Ready, String> {
-    let mut ready =
-        crate::sandbox::policy::holding_no_kept_grants(|| crate::start::ready(start, root))?;
+    // An outcome eval's chat that has a shell is held to its own folder besides (#4476): its
+    // commands reach no host and write none of the project's package caches.
+    let shell = start
+        .cwd
+        .as_deref()
+        .is_some_and(|cwd| crate::skills::verbs::drafts::shell_piece(root, cwd));
+    let mut ready = crate::sandbox::policy::holding_no_kept_grants(|| {
+        if shell {
+            crate::sandbox::policy::holding_to_its_folder(|| crate::start::ready(start, root))
+        } else {
+            crate::start::ready(start, root)
+        }
+    })?;
     chat_refused(&ready)?;
     if let Some(model) = model {
         let adapter = ready.harness.map(crate::harness::Harness::adapter);

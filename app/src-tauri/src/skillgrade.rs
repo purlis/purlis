@@ -111,6 +111,9 @@ pub struct GradeEval {
     /// Whether the person ticked it (off until they do), and the chats ticking it adds.
     pub on: bool,
     pub chats: u32,
+    /// Whether its chats have a shell, as its skill asks (#4476): held to its own folder and
+    /// reaching no host. Said before it is ticked.
+    pub shell: bool,
 }
 
 /// **An outcome eval a grade leaves out** (`grades::LeftOutEval`): its id, and why.
@@ -579,6 +582,7 @@ impl SkillGradePlan {
                             request.outcomes.iter().any(|one| one.id == eval.id)
                         }),
                         chats: planned.eval_chats,
+                        shell: planned.shell,
                     }
                 })
                 .collect(),
@@ -2294,8 +2298,14 @@ impl InChats<'_> {
                     task,
                 )
             }
-            ChatKind::Outcome { files } => (self.lay_out)(chat.arm).and_then(|laid| {
-                match purlis_core::skills::verbs::drafts::stage(&root, &laid, files, self.inputs) {
+            ChatKind::Outcome { files, shell } => (self.lay_out)(chat.arm).and_then(|laid| {
+                match purlis_core::skills::verbs::drafts::stage(
+                    &root,
+                    &laid,
+                    files,
+                    self.inputs,
+                    *shell,
+                ) {
                     Ok(())
                         if !self.held.chats().binary().is_some_and(|binary| {
                             purlis_core::toolhooks::outcome_guard_answers(binary, &laid.piece)
