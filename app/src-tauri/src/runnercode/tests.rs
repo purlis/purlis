@@ -830,3 +830,83 @@ fn a_clone_the_runner_chat_made_lands_in_repos_beside_a_folder_of_that_name_at_t
         "the person's folder is as it was"
     );
 }
+
+/// **A clone the runner chat made is never a second copy beside an old clone at the root**
+/// (#5601): a folder here whose `.git` is a link is not one a runner is sent, and still holds
+/// the name, so the runner's clone of it is not made in `repos/`, where it would hide this one.
+#[test]
+fn a_clone_the_runner_chat_made_is_not_made_again_beside_a_root_clone_whose_git_is_a_link() {
+    let world = World::new();
+    world.sessions.hold_with_the_code().expect("sent");
+    let (link, project) = world.sessions.moving_link_in_a_test().unwrap();
+    let api = world.root.join("workspaces/app/api");
+    std::fs::create_dir_all(&api).unwrap();
+    std::os::unix::fs::symlink(world.root.join("workspaces/app/web/.git"), api.join(".git"))
+        .unwrap();
+    let there = world.kept().join("workspaces/app/repos/api");
+    std::fs::create_dir_all(&there).unwrap();
+    git(&there, &["init", "-q", "-b", "main"]);
+    committed(&there, "lib.rs", "pub fn api() {}\n");
+
+    let came =
+        super::move_workspace_back(&link, &project, &world.root, "app", "builds").expect("moved");
+
+    assert_eq!(came.made, []);
+    assert!(!world.root.join("workspaces/app/repos/api").exists());
+}
+
+/// **A fresh runner's clone is never a second copy beside an old clone at the root whose name
+/// differs only in case** (#5601): this machine's disk may not tell `API` from `api`, so the
+/// runner's `api` is the root's `API`, and no `repos/api` is made to hide it.
+#[test]
+fn a_fresh_runners_clone_is_not_made_again_beside_a_root_clone_named_in_another_case() {
+    let world = World::new();
+    world.sessions.hold_with_the_code().expect("sent");
+    let (link, project) = world.sessions.moving_link_in_a_test().unwrap();
+    let upper = world.root.join("workspaces/app/API");
+    std::fs::create_dir_all(&upper).unwrap();
+    git(&upper, &["init", "-q", "-b", "main"]);
+    committed(&upper, "README", "api\n");
+    let there = world.kept().join("workspaces/app/repos/api");
+    std::fs::create_dir_all(&there).unwrap();
+    git(&there, &["init", "-q", "-b", "main"]);
+    committed(&there, "lib.rs", "pub fn api() {}\n");
+
+    let _ = super::fetch_whole(&link, &project, &world.root, "app", "builds");
+
+    let repos = world.root.join("workspaces/app/repos");
+    let made: Vec<_> = std::fs::read_dir(&repos)
+        .map(|entries| entries.flatten().map(|one| one.file_name()).collect())
+        .unwrap_or_default();
+    assert!(made.is_empty(), "{made:?}");
+}
+
+/// **An old clone named `repos` holds back only what would go in `repos/`** (#5601): the
+/// runner's chat's clone stays there, said with what to do, and the rest of the chat's work
+/// still comes back.
+#[test]
+fn an_old_clone_named_repos_keeps_a_runner_made_clone_there_and_the_rest_comes_back() {
+    let world = World::new();
+    world.sessions.hold_with_the_code().expect("sent");
+    let (link, project) = world.sessions.moving_link_in_a_test().unwrap();
+    let old = world.root.join("workspaces/app/repos");
+    std::fs::create_dir_all(&old).unwrap();
+    git(&old, &["init", "-q", "-b", "main"]);
+    committed(&old, "README", "old\n");
+    let there = world.kept().join("workspaces/app/api");
+    std::fs::create_dir_all(&there).unwrap();
+    git(&there, &["init", "-q", "-b", "main"]);
+    committed(&there, "lib.rs", "pub fn api() {}\n");
+
+    let came =
+        super::move_workspace_back(&link, &project, &world.root, "app", "builds").expect("moved");
+
+    assert_eq!(came.made, []);
+    assert_eq!(came.stayed.len(), 1, "{:?}", came.stayed);
+    let said = &came.stayed[0];
+    assert!(said.contains("workspaces/app/api"), "{said}");
+    assert!(said.contains("stayed on the runner"), "{said}");
+    assert!(said.contains("Rename it"), "{said}");
+    assert!(!said.contains("add the repo again"), "{said}");
+    assert!(!world.root.join("workspaces/app/repos/api").exists());
+}

@@ -78,6 +78,7 @@ pub(super) struct Route<'a> {
 }
 
 /// What came of it.
+#[derive(Debug)]
 pub(super) enum Landed {
     Cloned,
     Refused(String),
@@ -419,8 +420,9 @@ impl Hidden {
         confine::within_workspace(route.root, route.ws, &path).map_err(|why| why.to_string())?;
         contain::writable(route.root, &path).map_err(|why| why.to_string())?;
         for _ in 0..3 {
-            match std::fs::create_dir(&path) {
-                Ok(()) => {}
+            // A `repos/` another run took away is made again (#5601).
+            match super::make_in_repos(&path) {
+                Ok(_) => {}
                 Err(why) if why.kind() == std::io::ErrorKind::AlreadyExists => {}
                 Err(why) => return Err(why.to_string()),
             }

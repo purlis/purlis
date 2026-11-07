@@ -712,11 +712,11 @@ pub fn take_work_fresh(
     let parent = repo.parent().ok_or_else(|| not_made("has no folder"))?;
     // `repos/`, where a new clone goes (ADR 0114), is made by the clone that needs it, with
     // `mkdir` alone, which follows no link (#5534).
-    let made_repos = parent
+    let mut made_repos = parent
         .file_name()
         .is_some_and(|name| name == crate::repofolder::REPOS)
         && std::fs::create_dir(parent).is_ok();
-    let unmake_repos = || {
+    let unmake_repos = |made_repos: bool| {
         if made_repos {
             // Only an empty folder goes, and only the one made here.
             let _ = std::fs::remove_dir(parent);
@@ -726,14 +726,17 @@ pub fn take_work_fresh(
         return Err(not_made("is not in a folder here"));
     }
     // Made, or refused where anything is there already: the folder removed below is only ever
-    // the one made here.
-    if let Err(why) = std::fs::create_dir(repo) {
-        unmake_repos();
-        return Err(if why.kind() == std::io::ErrorKind::AlreadyExists {
-            not_made("is here already")
-        } else {
-            Refused::Git(format!("{} could not be made: {why}", repo.display()))
-        });
+    // the one made here. A `repos/` another run took away meanwhile is made again (#5601).
+    match crate::repocmd::clone::make_in_repos(repo) {
+        Ok(again) => made_repos |= again,
+        Err(why) => {
+            unmake_repos(made_repos);
+            return Err(if why.kind() == std::io::ErrorKind::AlreadyExists {
+                not_made("is here already")
+            } else {
+                Refused::Git(format!("{} could not be made: {why}", repo.display()))
+            });
+        }
     }
     let made = super::made(repo).and_then(|()| {
         fetch_incoming(repo, bundle, heads)?;
@@ -753,7 +756,7 @@ pub fn take_work_fresh(
     if made.is_err() {
         // Only what this made: nothing was at `repo` before it.
         let _ = std::fs::remove_dir_all(repo);
-        unmake_repos();
+        unmake_repos(made_repos);
     } else {
         drop_incoming(repo);
     }
