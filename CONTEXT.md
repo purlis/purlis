@@ -1100,8 +1100,8 @@ _Avoid_: tab bar, scroller
 **Tab** (on a workspace's strip):
 A layout of **panes**, kept as a tree: each split holds two parts, side by side or one above
 the other, and each pane holds a chat, a view or nothing. A tab is made when the person asks for
-one: the strip's `+` (a tab with an empty pane), **Open in new tab** on a chat, or opening a
-view. It is made too when a chat the person opens has nowhere to go that replaces nothing they
+one: the strip's `+` (a tab with an empty pane, ⌘T) or a row of its list, **Open in new tab**
+on a chat, or opening a view. It is made too when a chat the person opens has nowhere to go that replaces nothing they
 built (the rule under **Pane**). A chat never gets a tab by a dispatch or by a handoff, and a
 launch draws only the tabs the record keeps. A tab knows which strip it is on. Closing it ends
 no chat: its chats keep running in the sidebar (ADR 0043 as amended, #4587, #4758).
@@ -1148,10 +1148,12 @@ anything (ADR 0111, #5202, #5204).
 _Avoid_: footer, status bar, gauge row
 
 **Empty pane**:
-A pane that holds nothing. It says "Nothing in this pane", how many chats are running in the
-workspace, and offers **New chat**. A strip's last tab keeps one when its last pane closes, so
+A pane that holds nothing. It says "Nothing in this pane yet", offers **New chat** and **New shell**, and,
+while chats run in the workspace, says one can be dragged in from the sidebar and how many are
+running. Splitting a pane gives one, and the strip's `+` opens a tab of one, an **Empty tab**,
+named so until it holds something. A strip's last tab keeps one when its last pane closes, so
 a strip always has a pane for a sidebar pick. In a plane with no workspace it says
-"No workspaces yet" and offers **Create a workspace**.
+"No workspaces yet" and offers **Create a workspace** (ADR 0043 as amended 2026-11-06).
 _Avoid_: blank tab, empty window
 
 **Side**:

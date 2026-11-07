@@ -412,7 +412,7 @@ describe("a persona's own view, opened from the Personas panel", () => {
     // No chat on the plane: the strip keeps one empty tab, and nothing else (#4758).
     core(DECLARED, []);
     render(<App />);
-    await within(await findStripNamed("Tabs")).findByRole("tab", { name: /New chat/ });
+    await within(await findStripNamed("Tabs")).findByRole("tab", { name: /Empty tab/ });
     const panel = await showThePanel("Personas");
 
     // As the scenario specs press a row (`e2e/acting.ts`): the row's own click, with no pointer.

@@ -40,7 +40,7 @@ describe("the tabs a spec file left open", () => {
   });
 
   it("are never the strip's kept empty tab (#4756)", () => {
-    expect(tabsLeftOver(strip(["Settings"]), strip(["New chat"]))).toEqual([]);
+    expect(tabsLeftOver(strip(["Settings"]), strip(["Empty tab"]))).toEqual([]);
   });
 
   it("are none when another project or workspace is in front: that strip says nothing of this one", () => {
@@ -61,7 +61,7 @@ describe("where a spec file ended", () => {
   });
 
   it("judges the strip a file ended on, away from where it began, as if it held nothing", () => {
-    const ended = strip(["New chat", "Settings"], "/p", "alpha");
+    const ended = strip(["Empty tab", "Settings"], "/p", "alpha");
     expect(tabsLeftOver({ ...ended, tabs: [] }, ended)).toEqual(["Settings"]);
   });
 

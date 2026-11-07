@@ -465,7 +465,7 @@ describe("a task kept in its pane when the plane was read again before its end (
     expect(screen.getByRole("button", { name: "Clear pane" })).toBeInTheDocument();
     // And no other strip has it.
     await goToWorkspace("beta");
-    await waitFor(() => expect(tabNames()).toEqual(["New chat"]));
+    await waitFor(() => expect(tabNames()).toEqual(["Empty tab"]));
   });
 
   it("stays on the strip it was filed on, where its end arrived first, away from its asker's", async () => {

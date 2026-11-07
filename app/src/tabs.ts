@@ -1021,9 +1021,10 @@ export function closeTab(
   return { ...tabs, byId, order, inFront: frontWithout(tabs, id, filedIn, pinned) };
 }
 
-/** What a tab whose first pane is empty is called (#4755), as the empty pane's own button
- *  says (spec #4750 story 44). */
-export const EMPTY_TAB = "New chat";
+/** What a tab whose first pane is empty is called (#4755): **Empty tab**, until it holds
+ *  something (#5292; spec #5288 story 86), so the strip says what is there. It was "New chat",
+ *  the empty pane's button, until `+` stopped starting a chat. */
+export const EMPTY_TAB = "Empty tab";
 
 /** Whether `tab` is one empty pane of `workspace`'s strip: what a close leaves on a strip's last
  *  tab (#4756). */
@@ -1517,10 +1518,12 @@ export type PaneAt = { tab: number; pane: number };
  *   the chat is filed on.
  * - `new.asked` is the empty pane New chat was pressed for, kept while it stays empty, since the
  *   picker can stay open for a while.
+ * - `new.ownTab` is a start from the strip's `+` list (#5292), each of whose rows says "a new tab
+ *   with this": it gets a tab of its own even where the front tab has an empty pane.
  * - `pressed.into` is a pane the press itself names: a breadcrumb's, or ⌘⇧J's pick.
  */
 export type Opening =
-  | { kind: "new"; strip?: string; asked?: PaneAt }
+  | { kind: "new"; strip?: string; asked?: PaneAt; ownTab?: boolean }
   | { kind: "pressed"; session: number; into?: PaneAt };
 
 /** **Where it goes:** to its pane on screen, into an empty pane, in place of the chat a one-pane
@@ -1571,9 +1574,10 @@ export function opensAt(tabs: Tabs, opening: Opening, pressing: Pressing): Opens
 /** {@link opensAt} for a chat that has just started. */
 function newChatOpensAt(
   tabs: Tabs,
-  { strip, asked }: Extract<Opening, { kind: "new" }>,
+  { strip, asked, ownTab = false }: Extract<Opening, { kind: "new" }>,
   pressing: Pressing,
 ): Opens {
+  if (ownTab) return { how: "new-tab" };
   const stillEmpty =
     asked !== undefined &&
     tabs.byId[asked.tab] !== undefined &&
@@ -1649,17 +1653,26 @@ export function press(tabs: Tabs, chat: PressedChat, pressing: Pressing, into?: 
 
 /**
  * **A new chat opens** (#5289) where {@link opensAt} says, and replaces nothing: `named` for a
- * start that named its strip, so the chat's own is the one read, and `asked` for the empty pane
- * New chat was pressed for.
+ * start that named its strip, so the chat's own is the one read, `asked` for the empty pane
+ * New chat was pressed for, and `ownTab` for a start from the strip's `+` list (#5292).
  */
 export function openNew(
   tabs: Tabs,
   chat: PressedChat,
   pressing: Pressing,
-  { named = false, asked }: { named?: boolean; asked?: PaneAt } = {},
+  {
+    named = false,
+    asked,
+    ownTab = false,
+  }: { named?: boolean; asked?: PaneAt; ownTab?: boolean } = {},
 ): Press {
   const strip = named ? pressing.filedIn(chat.session) : undefined;
-  return opened(tabs, chat, pressing, opensAt(tabs, { kind: "new", strip, asked }, pressing));
+  return opened(
+    tabs,
+    chat,
+    pressing,
+    opensAt(tabs, { kind: "new", strip, asked, ownTab }, pressing),
+  );
 }
 
 /** `chat` where `opens` says, stamped as used, and the strip in front now. */

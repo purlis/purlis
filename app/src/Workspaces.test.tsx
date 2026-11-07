@@ -336,7 +336,7 @@ describe("the workspace strip", () => {
     expect(await screen.findByTestId("empty-pane")).toHaveTextContent(
       "Nothing runs in this workspace yet.",
     );
-    expect(chatTabs()).toEqual(["New chat"]);
+    expect(chatTabs()).toEqual(["Empty tab"]);
     expect(panes()).toEqual([]);
   });
 

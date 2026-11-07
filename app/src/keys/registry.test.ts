@@ -516,3 +516,43 @@ describe("the keys once a chat isn't a tab (#4767, ruled on #4699)", () => {
     expect(pressed(other, ["tab.previous"], { mac: false })?.id).toBe("tab.previous");
   });
 });
+
+describe("the + keys (#5292; spec #5288 stories 82 and 83)", () => {
+  it("are ⌘T for an empty tab, ⌘N for a new chat, and ⌘⇧T stays New shell", () => {
+    expect(keySaid("tab.new", true)).toBe("⌘T");
+    expect(keySaid("chat.new", true)).toBe("⌘N");
+    expect(keySaid("shell.new", true)).toBe("⌘⇧T");
+    expect(keySaid("tab.new", false)).toBe("Ctrl+T");
+    expect(keySaid("chat.new", false)).toBe("Ctrl+N");
+  });
+
+  it("say at the end of the rows that do what they say", () => {
+    expect(rowKey("tab.new", true, true)).toBe("⌘T");
+    expect(rowKey("chat.new", true, true)).toBe("⌘N");
+    expect(shortcut("tab.new").does).toBe("Open an empty tab");
+    expect(shortcut("chat.new").does).toBe("Start a new chat");
+  });
+
+  it("take ⌘T and ⌘N from a chat on a Mac, and leave it Ctrl+T and Ctrl+N elsewhere", () => {
+    const terminal = landOn({}, { [CHAT_KEYBOARD]: "" });
+    const tab = keystroke({ key: "t", meta: true }, terminal);
+    expect(pressed(tab, ["tab.new"], { mac: true })?.id).toBe("tab.new");
+    const chat = keystroke({ key: "n", meta: true }, terminal);
+    expect(pressed(chat, ["chat.new"], { mac: true })?.id).toBe("chat.new");
+    // Transpose and the next line of history are the shell's.
+    const transpose = keystroke({ key: "t", ctrl: true }, terminal);
+    expect(pressed(transpose, ["tab.new"], { mac: false })).toBeUndefined();
+    const next = keystroke({ key: "n", ctrl: true }, terminal);
+    expect(pressed(next, ["chat.new"], { mac: false })).toBeUndefined();
+    // Away from a chat, they are the window's off a Mac too.
+    const away = landOn();
+    expect(
+      pressed(keystroke({ key: "t", ctrl: true }, away), ["tab.new"], { mac: false })?.id,
+    ).toBe("tab.new");
+  });
+
+  it("are not ⌘⇧T, which is the shell's", () => {
+    const shell = keystroke({ key: "T", meta: true, shift: true }, landOn());
+    expect(pressed(shell, ["tab.new", "shell.new"], { mac: true })?.id).toBe("shell.new");
+  });
+});

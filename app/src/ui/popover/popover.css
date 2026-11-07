@@ -209,6 +209,16 @@
   white-space: nowrap;
 }
 
+/* What a filtered list says when nothing matches what was typed: quiet words where its rows
+   would be (#5292). */
+[data-scope="popover"][data-part="none"] {
+  display: block;
+  padding-block: var(--space-2);
+  padding-inline: var(--space-3);
+  color: var(--text-quiet);
+  font-size: var(--font-size-sm);
+}
+
 /* The point a popover takes from what opened it, in the surface's own ground. */
 [data-scope="popover"][data-part="arrow"] svg {
   display: block;

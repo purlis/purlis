@@ -1390,8 +1390,6 @@ export function LayoutPanes({
 }) {
   // **Folding is decided here, as the tab is drawn, and never written to its tree** (#4766).
   const drawn = given ?? (room === undefined ? undefined : drawnOf(layout, focused, room));
-  // The pane is one side of a split. Read here: a chat's pane names its breadcrumb `path`.
-  const inSplit = path !== "";
   // **Whether the chat this pane draws has ended** (#4756): read for every layout, so the hooks
   // are the same whatever the pane shows, and false for all but a chat's.
   const shown = layout.kind === "pane" && layout.content.kind === "session" ? layout.content : null;
@@ -1433,8 +1431,8 @@ export function LayoutPanes({
             <EmptyPane
               running={runningIn(content.workspace)}
               newChat={offerFor("chat.new")}
+              newShell={offerFor("shell.new")}
               onPress={(offer) => onPaneDoes(layout.pane, offer)}
-              inSplit={inSplit}
               createWorkspace={noWorkspace ? offerFor("workspace.create") : undefined}
             />
           </div>

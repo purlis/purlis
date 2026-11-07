@@ -144,12 +144,12 @@ export async function endTheSessionsStartedSince(before: readonly number[]): Pro
 }
 
 /** What the strip's kept empty tab is called (`tabs.EMPTY_TAB`, #4755). */
-export const KEPT_EMPTY = "New chat";
+export const KEPT_EMPTY = "Empty tab";
 
 /**
  * **The tabs on `now` that were not on `before`**: by name, and as many times as each was added,
  * so a second tab of a name the strip already had is one. **The strip's kept empty tab is never
- * one** (#4756): closing a strip's last tab keeps one empty pane, named "New chat", and closing
+ * one** (#4756): closing a strip's last tab keeps one empty pane, named "Empty tab", and closing
  * that changes nothing. The one rule both a spec's own `after` and `tabsLeft.ts`'s guard use.
  */
 export function openedSince(before: readonly string[], now: readonly string[]): string[] {

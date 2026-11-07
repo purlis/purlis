@@ -98,7 +98,7 @@ describe("a split below the minimum (#4766)", () => {
 
     expect(rails()).toHaveLength(1);
     expect(screen.getByRole("button", { name: "chat 2, folded" })).toBeInTheDocument();
-    expect(screen.getByText("An empty pane")).toBeInTheDocument();
+    expect(screen.getByText("Nothing in this pane yet")).toBeInTheDocument();
   });
 
   it("marks a rail as no place a drop lands in, for a drag to say why over it (#5415)", () => {
@@ -160,7 +160,7 @@ describe("a split below the minimum (#4766)", () => {
     render(<LayoutPanes {...propsOf(row(empty(1), empty(2)), {})} />);
 
     expect(rails()).toHaveLength(0);
-    expect(screen.getAllByText("An empty pane")).toHaveLength(2);
+    expect(screen.getAllByText("Nothing in this pane yet")).toHaveLength(2);
   });
 });
 
@@ -177,7 +177,7 @@ describe("a 3 × 3 grid at 770px (#4766)", () => {
 
     expect(rails()).toHaveLength(3);
     expect(rails().map((one) => within(one).getAllByRole("button").length)).toEqual([2, 2, 2]);
-    expect(screen.getAllByText("An empty pane")).toHaveLength(3);
+    expect(screen.getAllByText("Nothing in this pane yet")).toHaveLength(3);
   });
 
   it("puts a folded pane's ask on its row's rail, as ✋", () => {

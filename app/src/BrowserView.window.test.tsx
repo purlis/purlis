@@ -149,7 +149,7 @@ describe("a browser's view tab", () => {
     await fromThePalette("New browser");
 
     // Beside the empty tab every strip keeps (#4758).
-    await waitFor(() => expect(tabNames()).toEqual(["New chat", "Browser"]));
+    await waitFor(() => expect(tabNames()).toEqual(["Empty tab", "Browser"]));
     expect(host.asked("open_browser")).toEqual([{ plane: PLANE }]);
     await screen.findByLabelText("The browser's page");
     await waitFor(() =>
@@ -178,7 +178,7 @@ describe("a browser's view tab", () => {
 
     expect(await screen.findByText("Every chat purlis started is stopped.")).toBeInTheDocument();
     // Only the empty tab every strip keeps (#4758).
-    expect(tabNames()).toEqual(["New chat"]);
+    expect(tabNames()).toEqual(["Empty tab"]);
   });
 
   it("ends its browser when its tab closes, after closing its view", async () => {
@@ -190,7 +190,7 @@ describe("a browser's view tab", () => {
     );
     await screen.findByTestId("title-about");
     await fromThePalette("New browser");
-    await waitFor(() => expect(tabNames()).toEqual(["New chat", "Browser"]));
+    await waitFor(() => expect(tabNames()).toEqual(["Empty tab", "Browser"]));
     await waitFor(() => expect(host.asked("watch_browser").length).toBeGreaterThan(0));
 
     // Its tab's close: a view alone in its tab has no close of its own (#5318).
@@ -207,7 +207,7 @@ describe("a view alone in its tab (#5318)", () => {
     render(<App />);
     await screen.findByTestId("title-about");
     await fromThePalette("New browser");
-    await waitFor(() => expect(tabNames()).toEqual(["New chat", "Browser"]));
+    await waitFor(() => expect(tabNames()).toEqual(["Empty tab", "Browser"]));
     const frame = document.querySelector(".pane-frame.pane-viewed") as HTMLElement;
     expect(within(frame).queryByRole("button", { name: /^Split |^Close this view$/ })).toBeNull();
 
