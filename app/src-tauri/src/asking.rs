@@ -347,6 +347,11 @@ pub struct LoginShown {
     /// **The host the password is typed on** (#4995), with a port where it has one: the login
     /// form's, which the page may have sent the browser to. The domain where they're one.
     pub form: String,
+    /// **The part of the domain's host its owner registered** (the person's ruling of
+    /// 2026-11-07), by the public suffix list: the end of its host, which the notice marks.
+    pub registrable: String,
+    /// The same of the form's host.
+    pub form_registrable: String,
     pub vault: String,
     #[specta(optional)]
     pub user_key: Option<String>,
@@ -1811,6 +1816,14 @@ pub fn browser_login(
                 .strip_prefix("https://")
                 .unwrap_or(&proposal.form)
                 .to_owned(),
+            registrable: purlis_core::loginask::registrable(purlis_core::loginask::host_of(
+                &proposal.origin,
+            ))
+            .to_owned(),
+            form_registrable: purlis_core::loginask::registrable(purlis_core::loginask::host_of(
+                &proposal.form,
+            ))
+            .to_owned(),
             domain,
             vault: proposal.vault.clone(),
             user_key: proposal.user_key.clone(),

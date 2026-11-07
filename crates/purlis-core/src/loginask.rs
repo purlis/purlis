@@ -297,8 +297,15 @@ pub fn form_from(found: &str) -> Result<String, String> {
     Ok(origin)
 }
 
+/// **The part of `host` its owner registered** (the person's ruling of 2026-11-07): the name the
+/// public suffix list says was registered under its suffix, which the notice marks so a swapped
+/// letter or a borrowed name on the left stands out. The whole host where the list can't tell.
+pub fn registrable(host: &str) -> &str {
+    psl::domain_str(host).unwrap_or(host)
+}
+
 /// The host of `origin`, as [`site_of`] and [`login::origin_of`] write one.
-fn host_of(origin: &str) -> &str {
+pub fn host_of(origin: &str) -> &str {
     let host = origin.strip_prefix("https://").unwrap_or(origin);
     match host.rsplit_once(':') {
         Some((name, port)) if port.bytes().all(|b| b.is_ascii_digit()) => name,

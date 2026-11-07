@@ -2067,6 +2067,13 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* The part of a host its owner registered (the person's ruling of 2026-11-07): what a lookalike
+   can't borrow, so it's what the eye lands on. */
+.login-site-registrable {
+  font-weight: var(--font-weight-strong);
+  text-decoration: underline;
+}
+
 .login-site-warning {
   color: var(--state-waiting);
 }

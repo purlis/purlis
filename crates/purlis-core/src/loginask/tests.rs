@@ -946,3 +946,18 @@ fn two_keys_its_vault_has_nothing_under_are_said_as_two() {
          there."
     );
 }
+
+#[test]
+fn the_registrable_part_of_a_host_is_its_owner_s_name_by_the_public_suffix_list() {
+    // The left labels are anyone's to write: the owner's name is what's left of the suffix.
+    assert_eq!(registrable("paypal.com.evil.example"), "evil.example");
+    assert_eq!(registrable("login.paypal.com"), "paypal.com");
+    assert_eq!(registrable("paypa1.com"), "paypa1.com");
+    assert_eq!(registrable("shop.example.co.uk"), "example.co.uk");
+    // A suffix anyone may register under is a suffix too.
+    assert_eq!(registrable("mallory.github.io"), "mallory.github.io");
+    // A name the list has no rule for keeps its last label as its suffix.
+    assert_eq!(registrable("shop.example.test"), "example.test");
+    // A name in another alphabet is read in the ASCII spelling a browser fills it on.
+    assert_eq!(registrable("login.xn--pypal-4ve.com"), "xn--pypal-4ve.com");
+}

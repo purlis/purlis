@@ -7445,6 +7445,13 @@ export type LoginShown = {
 	 *  form's, which the page may have sent the browser to. The domain where they're one.
 	 */
 	form: string,
+	/**
+	 *  **The part of the domain's host its owner registered** (the person's ruling of
+	 *  2026-11-07), by the public suffix list: the end of its host, which the notice marks.
+	 */
+	registrable: string,
+	/**  The same of the form's host. */
+	form_registrable: string,
 	vault: string,
 	user_key?: string | null,
 	key: string,
