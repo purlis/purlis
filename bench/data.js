@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794040046033,
+  "lastUpdate": 1794042442601,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -41916,6 +41916,48 @@ window.BENCHMARK_DATA = {
             "value": 101.490129,
             "unit": "ms",
             "extra": "median of 5 runs: 100.718, 101.054, 101.490, 101.848, 102.178 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4812a14385885a7758c859500e1e2381a93777bc",
+          "message": "Scenarios: one failed close or picker no longer takes the next specs down (#5580) (#5599)\n\n* Scenarios: a failed close or picker no longer takes the next specs down (#5580)\n\nOn macOS in the merge queue (run 42295165656) onboarding.e2e.ts's after-all\nfailed to close the local project by its question, and stopped there: the\nproject stayed open and in front. opened-repo-forges then found it already\nopen, and the palette's first test pressed New chat in it, where no harness\ncan start, so the window opened Set up a harness instead of the picker\n(FR-29). pickAndStart waited 20 s for a Start that could never come.\n\n- pickAndStart says at once when the Set up a harness tab came in the\n  picker's place, instead of timing out on 'never offered Start'.\n- onboarding's and opened-repo-forges's after hooks close what is left\n  through the core even when the window's close fails, then throw.\n- palette.e2e.ts: a failed test ends this file's chats and closes its\n  tabs, and the tests that need a chat in front start one when the test\n  before left none.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TA2XR17QN0G0E8K6SE72Q9\nPurlis-Persona: steward\n\n* TEMPORARY: force palette's first test to fail (#5580), to be removed\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TA2XR17QN0G0E8K6SE72Q9\nPurlis-Persona: steward\n\n* Remove the temporary forced failure; take the review's findings (#5580)\n\nThe forced failure in palette's first test (a43ab5d) showed on Linux\nthat the tests after it stand alone: 8 passing, 1 failing, no after-all\nfailure (run 42346937369). It is removed here.\n\nFrom the two-axis review:\n- whatCameInsteadOfThePicker is null while a picker is up, even one still\n  checking its rows, so a picker drawn over the setup tab is not taken\n  for its absence.\n- palette's afterEach also puts away a question left up.\n- aChatOfThisFileInFront matches the chat by project as well as number,\n  and reads the pane through started.ts's paneInFront.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TA2XR17QN0G0E8K6SE72Q9\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-07T08:00:56Z",
+          "tree_id": "4a667bbe1087ccb1ab1df4fe47083314a1c40b07",
+          "url": "https://github.com/purlis/purlis/commit/4812a14385885a7758c859500e1e2381a93777bc"
+        },
+        "date": 1794042438121,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5535494999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.543, 0.548, 0.554, 0.565, 0.568 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.1363175,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.068, 16.081, 16.136, 16.192, 16.438 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.75786299999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 98.946, 100.545, 100.758, 100.773, 101.116 ms"
           }
         ]
       }
