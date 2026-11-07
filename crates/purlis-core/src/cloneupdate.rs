@@ -757,7 +757,8 @@ impl Asks for Asked {
 /// What a chat's sandbox denies it writing in one working tree, judged by name.
 pub struct Denies {
     top: PathBuf,
-    /// The manifests held for this chat ([`sandbox::manifests_held`]), lower-cased.
+    /// The manifests held for this chat ([`sandbox::manifests_held`]), as a case-folding disk
+    /// compares them ([`folded`]).
     manifests: Vec<String>,
 }
 
@@ -767,7 +768,7 @@ impl Denies {
     pub fn of(top: &str, root: &str, chat_dir: Option<&Path>) -> Self {
         let manifests = sandbox::manifests_held(Path::new(root), chat_dir)
             .into_iter()
-            .map(|held| held.path.to_string_lossy().to_lowercase())
+            .map(|held| folded(&held.path.to_string_lossy()))
             .collect();
         Self {
             top: PathBuf::from(top),
@@ -793,14 +794,14 @@ impl Denies {
         });
         for planted in never_made {
             for (at, part) in folders.iter().enumerate() {
-                if part.eq_ignore_ascii_case(planted.path)
+                if folded(part) == folded(planted.path)
                     && !asks.is_there(&self.top.join(parts[..=at].join("/")))
                 {
                     return true;
                 }
             }
         }
-        let whole = self.top.join(rel).to_string_lossy().to_lowercase();
+        let whole = folded(&self.top.join(rel).to_string_lossy());
         self.manifests.contains(&whole)
     }
 

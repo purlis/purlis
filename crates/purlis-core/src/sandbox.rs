@@ -1409,10 +1409,9 @@ pub struct Denied {
 /// A worktree the person made elsewhere keeps its own git, since the app commits for none of those.
 fn clones_git_held(root: &Path, cwd: Option<&Path>) -> Option<Denial> {
     let here = crate::worktree::locate(root, cwd?)?;
-    let dot_git = root
-        .join(WORKSPACES)
-        .join(&here.workspace)
-        .join(&here.repo)
+    // In either layout (ADR 0114): `repos/<repo>` or the workspace's own `<repo>`.
+    let dot_git = crate::repofolder::folder(root, &here.workspace, &here.repo)
+        .ok()?
         .join(".git");
     // The one shape the app keeps a branch folder's clone in: it updates no other.
     crate::worktree::is_own_git_dir(&dot_git).then_some(())?;

@@ -977,6 +977,25 @@ fn a_path_is_denied_by_its_name_at_any_depth_whatever_its_case() {
     assert!(!own.path("tests/fixtures/purlis.toml", &fake));
 }
 
+/// A case-folding disk takes `ſ` for `s` and the Kelvin sign for `k`: a name spelled with
+/// either is the denied file there, and is judged as that file.
+#[test]
+fn a_denied_name_spelled_as_a_case_folding_disk_reads_it_is_denied_too() {
+    let fake = Fake::default();
+    let own = Denies::of(
+        "/project/workspaces/ide/repo",
+        "/project",
+        Some(Path::new("/project/workspaces/ide/repo")),
+    );
+    for spelled in ["purliſ.toml", "PURLIſ.toml"] {
+        assert!(own.path(spelled, &fake), "{spelled}");
+    }
+    let denies = Denies::of(TOP, "/project", Some(Path::new("/project/workspaces/ide")));
+    for spelled in [".ſsh/authorized_keys", "a/.ſSH/config"] {
+        assert!(denies.path(spelled, &fake), "{spelled}");
+    }
+}
+
 // (c) A fresh clone of a repository that tracks a denied path.
 
 #[test]
