@@ -211,6 +211,19 @@ pub(crate) fn remove_unless_running(
             say(said);
         }
     }
+    // #5552: what it saved with the project goes with it, or a new workspace of the same name
+    // would share those files though nobody pressed Save with the project for it.
+    if let Err(why) = wscmd::saved::forget(root, name) {
+        say(Say::Warn(
+            format!(
+                "'{name}' is removed, but purlis could not take the files it saved with the \
+             project out of the project's .gitignore ({}). Remove the lines that start with \
+             '!/workspaces/{name}/' from its LIVE block by hand.",
+                crate::rewrite::os_words(&why)
+            )
+            .into(),
+        ));
+    }
     // The dispatch grants limited to this workspace cover nothing from here on, and none of
     // them is for a workspace made under the name later (#1505).
     let left = crate::dispatchwithin::naming(root, name);

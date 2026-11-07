@@ -8,11 +8,12 @@ use std::path::{Path, PathBuf};
 use super::{Files, Kept, NotHere};
 use crate::wscmd::saved::NotSaved;
 
-/// A project whose `.gitignore` has `init`'s workspace lines, with workspace `alpha` holding a
-/// repo, its memory, its local skills, a note folder and a script.
+/// A project, a git repo, whose `.gitignore` has `init`'s workspace lines, with workspace
+/// `alpha` holding a repo, its memory, its local skills, a note folder and a script.
 fn project(live: bool) -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let plane = std::fs::canonicalize(dir.path()).unwrap();
+    assert!(crate::testgit::run(&plane, &["init", "-q"]).ok());
     std::fs::write(plane.join("charter.toml"), "").unwrap();
     std::fs::write(
         plane.join(".gitignore"),
@@ -84,6 +85,13 @@ fn save_with_the_project_marks_that_entry_and_what_it_holds_and_nothing_else() {
         kept_at(&plane, "notes"),
         [("plan.md".to_string(), Some(Kept::WithTheProject))]
     );
+}
+
+#[test]
+fn a_project_that_is_no_git_repo_marks_nothing_since_git_commits_nothing_there() {
+    let (_dir, plane) = project(true);
+    std::fs::remove_dir_all(plane.join(".git")).unwrap();
+    assert!(kept_at(&plane, "").iter().all(|(_, kept)| kept.is_none()));
 }
 
 #[test]

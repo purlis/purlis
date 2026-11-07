@@ -79,6 +79,32 @@ fn an_empty_workspace_is_removed() {
 }
 
 #[test]
+fn removing_a_workspace_drops_its_saved_lines_and_a_new_one_of_its_name_starts_with_none() {
+    let dir = plane();
+    let root = dir.path();
+    for ws in ["beta", "gamma"] {
+        std::fs::create_dir_all(root.join("workspaces").join(ws).join("notes")).unwrap();
+        crate::wscmd::set_live(root, ws, true).unwrap();
+        crate::wscmd::saved::add(root, ws, "notes").unwrap();
+    }
+
+    let (code, said) = run(root, "beta", false);
+
+    assert_eq!(code, 0, "{said:?}");
+    let ignore = std::fs::read_to_string(root.join(".gitignore")).unwrap();
+    assert!(!ignore.contains("!/workspaces/beta/notes"), "{ignore}");
+    assert!(
+        ignore.contains("!/workspaces/gamma/notes"),
+        "another workspace keeps its own: {ignore}"
+    );
+    std::fs::create_dir_all(root.join("workspaces/beta/notes")).unwrap();
+    assert!(
+        crate::wscmd::saved::saved(root, "beta").is_empty(),
+        "a new workspace of the same name shares nothing unasked"
+    );
+}
+
+#[test]
 fn a_workspace_a_chat_runs_in_is_refused_forced_or_not_and_kept() {
     // V27d (ADR 0076 §10): a removal must not leave a program running in a deleted folder.
     let dir = plane();

@@ -7,24 +7,30 @@
 //! **The line.** Saving an entry at the top of a LIVE workspace's folder adds one line to the
 //! LIVE block, `!/workspaces/<ws>/<entry>`, after that workspace's own lines. It un-ignores that
 //! file or folder and nothing else: `/workspaces/*/*` ignores only the entries at a workspace's
-//! top, so a folder's contents follow it. A line of that shape inside the block that the block
+//! top, so a folder's contents follow it. A name whose composed form (NFC) is not how it is
+//! spelled on disk gets a second line in that form ([`lines_for`], #5552): git on a Mac that
+//! precomposes names reads `café` composed whatever the disk holds, and one that does not reads
+//! the disk's bytes, so one of the two always matches. A line of that shape inside the block that the block
 //! does not write for every LIVE workspace is a saved entry ([`saved_in`]), so every rewrite of
 //! the block keeps it: `refresh_live_block` (and so `reinit`), `rename`, and making another
-//! workspace LIVE or LOCAL. Making this workspace LOCAL drops its lines with the rest.
+//! workspace LIVE or LOCAL. Making this workspace LOCAL drops its lines with the rest, and
+//! removing it drops them too ([`forget`], #5552): a new workspace of the same name shares
+//! nothing its person did not pick.
 //!
 //! **Nothing else adds one.** Only the person's press of Save with the project calls [`add`]:
 //! a script in a workspace may hold a token, so nothing is shared that they did not pick.
 //!
-//! **Where each entry is kept** ([`Marks`]) is read from the plane's `.gitignore` as git reads
-//! it, through the `ignore` crate's matcher: an entry is saved with the project when neither it
-//! nor a folder above it is ignored. Asked only of a LIVE workspace: a LOCAL one's files are all
-//! this machine's, and the window marks none of them.
+//! **Where each entry is kept** ([`Marks`]) is git's own answer (#5552), never a reading of the
+//! block: `git check-ignore`, which reads every `.gitignore` on the way, `info/exclude` and the
+//! person's global excludes, and which never calls a path ignored that the index tracks. So a
+//! tracked file whose line is gone is marked saved, because a save commits it. Asked only of a
+//! LIVE workspace: a LOCAL one's files are all this machine's, and the window marks none.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use ignore::gitignore::{Gitignore, GitignoreBuilder};
+use unicode_normalization::UnicodeNormalization as _;
 
 use super::{in_blocks, live_in, pattern_name, workspace_lines, workspace_of};
 
@@ -59,7 +65,25 @@ pub(super) fn saved_in(text: &str) -> BTreeMap<String, BTreeSet<String>> {
             .or_default()
             .insert(entry.to_string());
     }
+    // An entry spelled decomposed has a second line in its composed form; that line is the same
+    // entry, not another one.
+    for entries in saved.values_mut() {
+        let spelled: Vec<String> = entries
+            .iter()
+            .filter(|entry| composed(entry) != **entry)
+            .cloned()
+            .collect();
+        for entry in spelled {
+            entries.remove(&composed(&entry));
+        }
+    }
     saved
+}
+
+/// `entry` in Unicode's composed form (NFC), the form git reads a name in on a Mac that
+/// precomposes names.
+fn composed(entry: &str) -> String {
+    entry.nfc().collect()
 }
 
 /// Whether `entry` is one name at the top of a workspace's folder that one line can spell: no
@@ -76,6 +100,17 @@ pub(crate) fn one_entry(entry: &str) -> bool {
 /// The one line that saves `entry` of workspace `ws`.
 pub(super) fn line_for(ws: &str, entry: &str) -> String {
     format!("!/workspaces/{ws}/{entry}")
+}
+
+/// The lines that save `entry` of workspace `ws`: [`line_for`], and the same in the composed
+/// form when the entry is not spelled in it.
+pub(super) fn lines_for(ws: &str, entry: &str) -> Vec<String> {
+    let mut lines = vec![line_for(ws, entry)];
+    let nfc = composed(entry);
+    if nfc != entry {
+        lines.push(line_for(ws, &nfc));
+    }
+    lines
 }
 
 /// The entries workspace `ws` has saved with the project, as its plane's `.gitignore` stands.
@@ -137,14 +172,13 @@ pub fn add(root: &Path, ws: &str, entry: &str) -> Result<bool, NotSaved> {
             return None;
         }
         let mut saved = saved_in(text);
+        let entries = saved.entry(ws.to_string()).or_default();
         if workspace_lines(ws).contains(&line_for(ws, entry))
-            || !saved
-                .entry(ws.to_string())
-                .or_default()
-                .insert(entry.to_string())
+            || entries.iter().any(|one| composed(one) == composed(entry))
         {
             return None;
         }
+        entries.insert(entry.to_string());
         Some(super::with_block(
             text,
             &super::block_for(root, &live, &saved),
@@ -160,10 +194,24 @@ pub fn add(root: &Path, ws: &str, entry: &str) -> Result<bool, NotSaved> {
     Ok(changed)
 }
 
-/// **Where each file of one LIVE workspace is kept**, read from its plane's `.gitignore` once.
+/// **Forget what workspace `ws` saved with the project** (#5552): its lines leave the LIVE
+/// block, and the rest of the block is as it was. What removing a workspace does, so a new one
+/// of the same name starts with nothing saved. `true` when a line went.
+pub fn forget(root: &Path, ws: &str) -> io::Result<bool> {
+    super::rewrite_gitignore(root, |text| {
+        let mut saved = saved_in(text);
+        saved.remove(ws)?;
+        Some(super::with_block(
+            text,
+            &super::block_for(root, &live_in(text), &saved),
+        ))
+    })
+}
+
+/// **Where each file of one LIVE workspace is kept**, as the plane's git decides it.
 #[derive(Debug)]
 pub struct Marks {
-    ignored: Gitignore,
+    root: PathBuf,
     ws: String,
 }
 
@@ -173,35 +221,64 @@ impl Marks {
     /// no LIVE block, so none either.
     pub fn of(root: &Path, ws: &str) -> Option<Self> {
         let text = std::fs::read_to_string(root.join(".gitignore")).ok()?;
-        if !live_in(&text).contains(ws) {
-            return None;
-        }
-        let mut builder = GitignoreBuilder::new(root);
-        for line in text.lines() {
-            // A line the matcher cannot read is one git skips too.
-            let _ = builder.add_line(None, line);
-        }
-        let ignored = builder.build().ok()?;
-        Some(Self {
-            ignored,
+        live_in(&text).contains(ws).then(|| Self {
+            root: root.to_path_buf(),
             ws: ws.to_string(),
         })
     }
 
-    /// Where `path`, a path of the workspace's files, is kept. As git reads it: ignored when a
-    /// folder above it is, each folder judged from the top down, and otherwise by its own match.
-    pub fn of_path(&self, path: &str, is_folder: bool) -> Kept {
-        let mut at = format!("workspaces/{}", self.ws);
-        let steps: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-        for (i, step) in steps.iter().enumerate() {
-            at.push('/');
-            at.push_str(step);
-            let folder = i + 1 < steps.len() || is_folder;
-            if self.ignored.matched(&at, folder).is_ignore() {
-                return Kept::ThisMachineOnly;
-            }
+    /// Where each of `paths`, paths of the workspace's files, is kept, asked of git in one
+    /// `check-ignore`: kept on this machine only when git ignores it, which it never says of a
+    /// path the index tracks or of a folder holding one. A name not spelled composed is asked in
+    /// both forms, and is saved when git would take either. `None` when git cannot answer, as in
+    /// a project that is no git repo: then nothing is committed by anybody, and nothing marked.
+    pub fn of_paths(&self, paths: &[&str]) -> Option<Vec<Kept>> {
+        let asked: Vec<Vec<String>> = paths
+            .iter()
+            .map(|path| {
+                let path = format!("workspaces/{}/{}", self.ws, path.trim_matches('/'));
+                let nfc = composed(&path);
+                if nfc == path {
+                    vec![path]
+                } else {
+                    vec![path, nfc]
+                }
+            })
+            .collect();
+        let mut input = Vec::new();
+        for path in asked.iter().flatten() {
+            input.extend_from_slice(path.as_bytes());
+            input.push(0);
         }
-        Kept::WithTheProject
+        // Paths go to git as data on its standard input, never as arguments.
+        let run = crate::worktree::git::run_with_input(
+            &self.root,
+            &["--no-optional-locks", "check-ignore", "--stdin", "-z"],
+            input,
+            crate::worktree::git::READ,
+        )
+        .ok()?;
+        // 0: some are ignored; 1: none is. Anything else is git failing to answer.
+        if !matches!(run.code, Some(0 | 1)) {
+            return None;
+        }
+        let ignored: BTreeSet<&[u8]> = run
+            .out
+            .split(|byte| *byte == 0)
+            .filter(|path| !path.is_empty())
+            .collect();
+        Some(
+            asked
+                .iter()
+                .map(|forms| {
+                    if forms.iter().all(|form| ignored.contains(form.as_bytes())) {
+                        Kept::ThisMachineOnly
+                    } else {
+                        Kept::WithTheProject
+                    }
+                })
+                .collect(),
+        )
     }
 }
 

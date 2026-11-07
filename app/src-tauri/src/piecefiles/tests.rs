@@ -747,6 +747,8 @@ fn copy_path_and_reveal_place_a_workspace_file_and_never_a_repos() {
 #[test]
 fn a_live_workspaces_entries_say_where_they_are_kept_and_a_save_moves_one() {
     let (_dir, root) = workspace();
+    // The marks are git's answer, so the project is a git repo, as one is.
+    git(&root, &["init", "-q"]);
     std::fs::write(
         root.join(".gitignore"),
         "/workspaces/*/*\n!/workspaces/.gitkeep\n",

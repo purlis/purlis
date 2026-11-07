@@ -38,30 +38,54 @@ fn gitignore(root: &Path) -> String {
     std::fs::read_to_string(root.join(".gitignore")).unwrap()
 }
 
-fn kept(root: &Path, path: &str, folder: bool) -> Kept {
-    Marks::of(root, "alpha").unwrap().of_path(path, folder)
+/// Where `path` of workspace `alpha` is kept, as the plane's git, made a repo if it is not one,
+/// says.
+fn kept(root: &Path, path: &str) -> Kept {
+    if !root.join(".git").exists() {
+        assert!(git(root, &["init", "-q"]).status.success());
+    }
+    Marks::of(root, "alpha").unwrap().of_paths(&[path]).unwrap()[0]
+}
+
+/// `git commit` of everything git would add, by an identity of the test's own.
+fn commit_all(root: &Path) {
+    assert!(git(root, &["init", "-q"]).status.success());
+    assert!(git(root, &["add", "-A"]).status.success());
+    let committed = git(
+        root,
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-qm",
+            "saved",
+        ],
+    );
+    assert!(committed.status.success(), "{committed:?}");
 }
 
 #[test]
 fn the_marks_follow_the_allowlist() {
     let dir = plane();
     let root = dir.path();
-    assert_eq!(kept(root, "notes", true), Kept::ThisMachineOnly);
-    assert_eq!(kept(root, "notes/plan.md", false), Kept::ThisMachineOnly);
-    assert_eq!(kept(root, "deploy.sh", false), Kept::ThisMachineOnly);
-    assert_eq!(kept(root, "memory", true), Kept::WithTheProject);
-    assert_eq!(kept(root, "memory/MEMORY.md", false), Kept::WithTheProject);
+    assert_eq!(kept(root, "notes"), Kept::ThisMachineOnly);
+    assert_eq!(kept(root, "notes/plan.md"), Kept::ThisMachineOnly);
+    assert_eq!(kept(root, "deploy.sh"), Kept::ThisMachineOnly);
+    assert_eq!(kept(root, "memory"), Kept::WithTheProject);
+    assert_eq!(kept(root, "memory/MEMORY.md"), Kept::WithTheProject);
     assert_eq!(
-        kept(root, "changes/log/this.jsonl", false),
+        kept(root, "changes/log/this.jsonl"),
         Kept::ThisMachineOnly,
         "the block re-ignores the change log under the changes it shares"
     );
 
     assert!(add(root, "alpha", "notes").unwrap());
 
-    assert_eq!(kept(root, "notes", true), Kept::WithTheProject);
-    assert_eq!(kept(root, "notes/plan.md", false), Kept::WithTheProject);
-    assert_eq!(kept(root, "deploy.sh", false), Kept::ThisMachineOnly);
+    assert_eq!(kept(root, "notes"), Kept::WithTheProject);
+    assert_eq!(kept(root, "notes/plan.md"), Kept::WithTheProject);
+    assert_eq!(kept(root, "deploy.sh"), Kept::ThisMachineOnly);
     assert_eq!(saved(root, "alpha"), BTreeSet::from(["notes".to_string()]));
 }
 
@@ -210,7 +234,10 @@ fn git(root: &Path, args: &[&str]) -> std::process::Output {
 
 /// What `git ls-files <args>` lists of workspace `alpha`.
 fn listed(root: &Path, args: &[&str]) -> Vec<String> {
-    let listed = git(root, &[&["ls-files"], args].concat());
+    let listed = git(
+        root,
+        &[&["-c", "core.quotepath=false", "ls-files"], args].concat(),
+    );
     assert!(listed.status.success());
     String::from_utf8(listed.stdout)
         .unwrap()
@@ -308,4 +335,95 @@ fn save_with_the_project_unignores_exactly_that_entry_in_the_planes_git() {
             "workspaces/alpha/notes/plan.md"
         ]
     );
+}
+
+#[test]
+fn a_tracked_entry_whose_line_is_gone_is_marked_as_shared_as_git_commits_it() {
+    let dir = plane();
+    let root = dir.path();
+    add(root, "alpha", "notes").unwrap();
+    commit_all(root);
+    // An older purlis on a teammate's machine rewrites the block without the saved line.
+    let without = gitignore(root).replace("!/workspaces/alpha/notes\n", "");
+    std::fs::write(root.join(".gitignore"), without).unwrap();
+    std::fs::write(root.join("workspaces/alpha/notes/new.md"), "new\n").unwrap();
+
+    assert_eq!(kept(root, "notes"), Kept::WithTheProject);
+    assert_eq!(kept(root, "notes/plan.md"), Kept::WithTheProject);
+    assert_eq!(
+        kept(root, "notes/new.md"),
+        Kept::ThisMachineOnly,
+        "git adds no file it ignores and does not track"
+    );
+    assert_eq!(kept(root, "deploy.sh"), Kept::ThisMachineOnly);
+}
+
+#[test]
+fn the_marks_read_a_nested_gitignore_and_info_exclude_as_git_does() {
+    let dir = plane();
+    let root = dir.path();
+    add(root, "alpha", "notes").unwrap();
+    assert!(git(root, &["init", "-q"]).status.success());
+    std::fs::write(
+        root.join("workspaces/alpha/notes/.gitignore"),
+        "secret.md\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join(".git/info/exclude"),
+        "/workspaces/alpha/notes/draft.md\n",
+    )
+    .unwrap();
+    for file in ["secret.md", "draft.md"] {
+        std::fs::write(root.join("workspaces/alpha/notes").join(file), "x\n").unwrap();
+    }
+
+    assert_eq!(kept(root, "notes/plan.md"), Kept::WithTheProject);
+    assert_eq!(kept(root, "notes/secret.md"), Kept::ThisMachineOnly);
+    assert_eq!(kept(root, "notes/draft.md"), Kept::ThisMachineOnly);
+}
+
+#[test]
+fn an_nfd_named_entry_that_is_saved_is_committed_by_git_however_git_reads_names() {
+    // `café` spelled decomposed, as a name from an older Mac disk or an archive is.
+    let nfd = "cafe\u{301}";
+    for precompose in ["true", "false"] {
+        let dir = plane();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("workspaces/alpha").join(nfd)).unwrap();
+        std::fs::write(
+            root.join("workspaces/alpha").join(nfd).join("menu.md"),
+            "x\n",
+        )
+        .unwrap();
+        assert!(git(root, &["init", "-q"]).status.success());
+        assert!(
+            git(root, &["config", "core.precomposeunicode", precompose])
+                .status
+                .success()
+        );
+
+        add(root, "alpha", nfd).unwrap();
+
+        let listed: Vec<String> = unignored(root)
+            .into_iter()
+            .filter(|path| path.ends_with("/menu.md"))
+            .collect();
+        assert_eq!(
+            listed.len(),
+            1,
+            "precompose {precompose}: {}",
+            gitignore(root)
+        );
+        assert_eq!(
+            kept(root, &format!("{nfd}/menu.md")),
+            Kept::WithTheProject,
+            "precompose {precompose}"
+        );
+        assert_eq!(
+            saved(root, "alpha"),
+            BTreeSet::from([nfd.to_string()]),
+            "one entry, however many spellings its lines take"
+        );
+    }
 }

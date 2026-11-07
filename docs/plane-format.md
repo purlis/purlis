@@ -1196,7 +1196,10 @@ key refuses.
   after that workspace's own lines, sorted. `<entry>` is one name at the top of the workspace's
   folder: no `/`, nothing git reads as a pattern (`*`, `?`, `[`, `]`, `\`, `!`), and no trailing
   whitespace. A file or folder; a folder's contents follow it, because `/workspaces/*/*` ignores
-  only the entries at a workspace's top.
+  only the entries at a workspace's top. A name not spelled in Unicode's composed form (NFC), as a name
+  from an older Mac disk or an archive may be, has a second line in that form beside it (#5552):
+  git on a Mac that precomposes names reads it composed, and one that does not reads the disk's
+  bytes. The two lines are one entry.
 - **Status:** **stable** — **purlis only** (ADR 0038, amended 2026-11-05; #5377).
 - **Tier:** Plane — committed, as the rest of `.gitignore` is; it shares the entry it names, which
   is then Plane too while the workspace is LIVE.
@@ -1206,11 +1209,14 @@ key refuses.
   the block keeps a LIVE workspace's lines: `refresh_live_block` (so `reinit`), `rename`, and
   another workspace made LIVE or LOCAL. Making the workspace itself LOCAL drops them with its
   other lines, and `live --off` untracks the entries they named with its other shared paths
-  (`wscmd::meta_paths`).
+  (`wscmd::meta_paths`). Removing the workspace drops them too (`wscmd::saved::forget`, #5552),
+  so a new workspace of the same name starts with nothing saved.
 - **Read by:** `wscmd::saved::saved_in`: a line of that shape inside the block that the block
   does not write for every LIVE workspace (`workspace.json`, `memory`, `skills` and the rest) is
-  a saved entry. Explorer's marks (*This machine only*, *Saved with the project*) are read from
-  the whole `.gitignore` as git reads it (`wscmd::saved::Marks`), for a LIVE workspace only.
+  a saved entry. Explorer's marks (*This machine only*, *Saved with the project*) are git's own
+  answer, `git check-ignore` in the project (`wscmd::saved::Marks`, #5552): every `.gitignore`,
+  `info/exclude` and the person's excludes are read, and a path the index tracks is saved,
+  whatever line names it. For a LIVE workspace only; none where the project is no git repo.
 - **Git:** committed.
 
 ---
