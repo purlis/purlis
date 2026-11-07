@@ -31,10 +31,12 @@ import { fileURLToPath } from "node:url";
 export const REQUIRED_CHECKS = [
   "app builds (macos-latest)",
   "app builds (ubuntu-24.04)",
+  // Required with the Skill studio's flag gone (#2786): the outcome bars' macOS leg the finish line
+  // set (#4343), carried by `outcome-bars-checks`.
+  "outcome bars (macos-latest)",
   // Required since #5277: the outcome bars' Linux leg, carried by `outcome-bars-linux-checks`. It
   // passed all 14 of main's runs that finished it from #5379's merge to 2026-11-06, by the person's
-  // ruling of 2026-11-05 that Linux becomes required once #5277 is fixed. macOS's leg is not
-  // required yet (#2786).
+  // ruling of 2026-11-05 that Linux becomes required once #5277 is fixed.
   "outcome bars (ubuntu-24.04)",
   // Required since #4335 (2026-11-02): it passed 60 of 60 merge-queue runs and 40 of 40 pushes on
   // 2026-11-01 and 11-02, and always ended before the slowest other job, so it costs no wait.
