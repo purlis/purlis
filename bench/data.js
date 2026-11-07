@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794014565255,
+  "lastUpdate": 1794028755582,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -41706,6 +41706,48 @@ window.BENCHMARK_DATA = {
             "value": 101.87218200000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.730, 101.734, 101.872, 102.018, 102.351 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "6d2e4e248e6dbf9d3ccc6ecb25e5a2bf3a8cc35d",
+          "message": "A page named by a filled text shows no site; the input hit-test reads a scrolled page's point (#5564)\n\n* Bringing a download in: what its site decides is one rule, tested on its own\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6S70SNY5DXFH7P8A85ZDGKT\nPurlis-Persona: steward\n\n* Tests: a scrolled page's hit-test, and a screencast frame of a page whose address holds a text kept out\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6S70SNY5DXFH7P8A85ZDGKT\nPurlis-Persona: steward\n\n* A frame of a page whose address holds a text kept out names no address; the input hit-test asks for the document's point\n\nThe screencast hands an empty address for a page whose address holds a text kept out, so a view\nnames no site for it. DOM.getNodeForLocation takes a point of the document: each document's\nscroll is added to the viewport point before it is asked, so a scrolled page is judged by what\nis drawn where the input lands.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6S70SNY5DXFH7P8A85ZDGKT\nPurlis-Persona: steward\n\n* Changelog: a page named by a filled text shows no site; a scrolled click is judged where it lands\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6S70SNY5DXFH7P8A85ZDGKT\nPurlis-Persona: steward\n\n* Scrolled hit-test stand-in: one hook answers both the scroll and the hit, and the frame is known kept off first\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6S70SNY5DXFH7P8A85ZDGKT\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-07T04:36:54Z",
+          "tree_id": "9cc5fa2d63e2520d1a91c6980efb1e627ced1272",
+          "url": "https://github.com/purlis/purlis/commit/6d2e4e248e6dbf9d3ccc6ecb25e5a2bf3a8cc35d"
+        },
+        "date": 1794028750609,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5533035,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.537, 0.552, 0.553, 0.556, 0.564 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.447665999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.394, 16.412, 16.448, 16.618, 16.630 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.9410825,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.388, 101.669, 101.941, 102.055, 103.435 ms"
           }
         ]
       }
