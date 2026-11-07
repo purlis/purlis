@@ -3,7 +3,7 @@
 
 /**
  * **You › Accounts › Signed commits** (#5628, `prototype/commit-signing`): the card not set up,
- * with no GitHub account to add the key to, on and verified, and on with no Check yet. Each is
+ * with no GitHub account to add the key to, on and verified, and on with no Check run. Each is
  * drawn, held to axe, walked by the keyboard, and pictured in every pictured theme cell
  * (`docs/component-stories.md`). The core is faked at its command boundary.
  */
@@ -116,7 +116,7 @@ export const OnVerified: Story = {
   },
 };
 
-/** **On, not checked yet in this window**: Check, never a ✓ GitHub didn't give. */
+/** **On, unchecked in this window**: Check, never a ✓ GitHub didn't give. */
 export const OnNotChecked: Story = {
   parameters: { signing: ON },
   play: async ({ canvasElement }) => {

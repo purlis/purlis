@@ -322,7 +322,7 @@ describe("the Signed commits card", () => {
     expect(screen.getByText(/purlis signing setup --key/)).toBeTruthy();
   });
 
-  it("on, with no Check yet in this window, offers Check rather than a ✓", async () => {
+  it("on, with no Check run in this window, offers Check rather than a ✓", async () => {
     state = structuredClone(ON);
     render(<Card />);
     expect(await screen.findByRole("button", { name: "Check signing on octocat" })).toBeTruthy();
