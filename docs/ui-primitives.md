@@ -1086,7 +1086,7 @@ item families (`purlis/tooltip-family`, an error). A frame's `title` is its name
   all of it, and stands under its anchor where neither side has (#3328, `ui/tooltip/side.ts`).
 - **A strip's tooltips stand below it** (#3361): a strip is a row of targets, and a tooltip at a
   target's end would sit on the row, over the next. A target inside an element marked
-  `TIPS_BELOW` (`data-tips="below"`; the chat strip's row) has its tooltip below it, or above
+  `TIPS_BELOW` (`data-tips="below"`; the tab strip's row) has its tooltip below it, or above
   where the window has no room, at the same 10 px. The strip says so, never a call site, and it
   is read from where the target stands in the DOM (`placementFor`), so a menu or a popover opened
   from the strip, portalled out of it, keeps R166's placement.
@@ -1446,9 +1446,9 @@ outside one answers nothing.
 - **Stories hold it** (`Dialog.stories.tsx`): a form, Esc, a question, a dialog longer than the
   window with every field walked and never under the footer, and a list beside its details
   whose choice moves nothing, in Chromium and WebKit, with axe.
-## The session tabs are drawn by the tabs family's parts (#2914)
+## A workspace's tabs are drawn by the tabs family's parts (#2914)
 
-The chat strip's tabs are drawn by `app/src/ui/tabs`: `TabCell` is one tab's cell (its
+The tabs on a workspace's strip are drawn by `app/src/ui/tabs`: `TabCell` is one tab's cell (its
 `data-variant`, `data-selected`, `data-hovered` for a mouse and `data-first`), `tabsPart` marks the
 column (`layout`), the strip and the panel under it (`body`), `tabPart` the label, the `×` and a
 count, and `editorToolbar` the bar over a file. `tabs.css` draws Purlis's docked tabs from those
@@ -1819,7 +1819,7 @@ read-only, drawn outside the grid; ⌘F (Ctrl+F elsewhere) opens the find bar on
 the whole screen and ⌘C copies the selection. A saved grade chat and the theme specimen's
 terminals are drawn by it, and no `role="img"` stands for a terminal's text.
 
-And the chat strip's **show-more menu** (`@radix-ui/react-dropdown-menu`, ADR 0039),
+And the tab strip's **show-more menu** (`@radix-ui/react-dropdown-menu`, ADR 0039),
 which is the first surface built under this rule rather than converted to it. Two decisions it
 does NOT share with the four dialogs, both because it is a menu and not a question:
 
@@ -1840,7 +1840,7 @@ own tabs, so `n` tabs fit in `width` when `width / n >= least`. It replaced an
 a loop on a strip that collapses.
 
 And the **context menus** (`app/src/Menus.tsx`): `@radix-ui/react-context-menu`, on the project
-tabs, the workspace tabs, the chat tabs, the panes, the explorer's worktree and clone rows, the
+tabs, the workspace tabs, the tabs on a workspace's strip, the panes, the explorer's worktree and clone rows, the
 persona rows, the Changes view's repo rows and the activity bars' view icons (#1740: "Move to
 panel" or "Move to sidebar", built for the icon as a file row's rows are). Four things about them are decisions and not
 details:
@@ -1862,7 +1862,7 @@ details:
   rows out of the catalogue by id — purlis's own, then one named `ContextMenu.Label` group per
   declaring persona, then each action the core left out as a disabled row with the core's
   sentence under it — and it runs inside the menu's content, which Radix mounts only while the
-  menu is open, so a strip's fifty tabs do not pay the scan per render. "Ask ▸" on a chat's tab
+  menu is open, so a strip's fifty tabs do not pay the scan per render. "Ask ▸" on a chat's menu
   is the same shape: `actions.askRows`, a row per persona.
   "Move to ▸" on a memory's row is the same shape (#1190): `actions.moveRows` picks that
   memory's `memory.move:<key>:<store>` rows, one per store but its own, each named as the
@@ -1968,7 +1968,8 @@ role exists for. Two consequences worth knowing before the next one:
   so the rule the four `Dialog`s write out by hand is the primitive here. A reviewer looking for
   the missing line should find this paragraph rather than a hole.
 - **It is asked in one place** — `PlaneView`'s `run`, which carries out a catalogue row from
-  whichever surface pressed it — so a tab's `×`, a pane's `×` and the palette's rows all ask.
+  whichever surface pressed it — so End… on a chat's ⋯, on its row's menu and in the palette
+  all ask. A tab's `×` and a pane's `×` end nothing, so they ask nothing (#4756).
   A confirmation on one surface and not another is the second answer the catalogue exists to
   not have.
 - **Three answers since Smart close (ADR 0064): Cancel, Close, Smart close, in that order.**
@@ -2310,7 +2311,7 @@ carries the rest.
 ## Where Tab goes in the rest of the window (purlis#189)
 
 The attribute above fixed the dialogs. Outside them it is the floor and not the answer: a
-`tabIndex={0}` on every button would put fifty chat tabs between the explorer and the terminal.
+`tabIndex={0}` on every button would put fifty tabs between the explorer and the terminal.
 So the window takes the WAI-ARIA Authoring Practices' shape, with the primitive this repo already
 had in its tree under the radio groups and the menus, **`@radix-ui/react-roving-focus`**. It is
 the package Radix's own `Tabs`, `RadioGroup`, `Menu` and `Toolbar` are built on rather than one of
@@ -2358,16 +2359,16 @@ model and a select-on-`mousedown` this window's strips do not have:
   _Plane root_ and the tree is the whole project's files (the point above). A view's key gives
   the keyboard to the first tree drawn in the view, past the headings.
 - **Every other control says `tabIndex={0}`**, and a tab's `×` says `-1`: fifty closers would be
-  fifty stops again. **Delete on a focused project or chat tab presses the row its `×` presses**
+  fifty stops again. **Delete on a focused project tab or tab presses the row its `×` presses**
   (purlis#239, `closeOnDelete` in `app/src/tabKeys.ts`), and so does Backspace on a Mac,
-  whose key marked "delete" sends it: ending a chat still asks first, a view tab still closes
-  without asking, closing a project with chats open now asks first too (`ClosingProject`, on
+  whose key marked "delete" sends it: closing a tab ends nothing and asks nothing, since its
+  chats go on in the sidebar (#4756), a task's own tab sends the task back (#1489), closing a project with chats open now asks first too (`ClosingProject`, on
   the row's verb, so the `×`, the menu and the palette ask it as well), and the keyboard lands
   back on the tab after a Cancel and on the strip's stop after a close. A new strip with a `×`
   (a vault tab's) calls it from its tab's `onKeyDown` with that `×`'s row. The palette and the
   tab's own menu reach the same row.
 - **The order is the document's, which is the order the window is drawn in**: the title bar,
-  the workspace strip, then the regions as the arrangement places them, with the chat strip at
+  the workspace strip, then the regions as the arrangement places them, with the tab strip at
   the top of the editor, before the panes (ADR 0036 as amended 2026-10-12) (ADR 0038 — a region moves,
   and its stops move with it; a fixed order would contradict the layout on screen), each
   resize handle between them (`react-resizable-panels` makes a separator a keyboard control),
@@ -2455,11 +2456,12 @@ rows. Three properties of that answer are decisions rather than details:
   front of nothing that the rule at the top of this file refuses.
 
 **And a tab's label is centred in its cell** — _"also lets make tabs labels center aligned"_ —
-which is one `justify-content` on the rule that already says what a tab is. A chat tab's `×` is
-outside the button, so a chat's name is centred in the room the `×` leaves rather than in the
+which is one `justify-content` on the rule that already says what a tab is. A tab's `×` is
+outside the button, so a tab's name is centred in the room the `×` leaves rather than in the
 whole cell: the same rule, not an exception to it.
 
-**Since 2026-10-12 the chat strip is the editor's tab bar** (ADR 0036 as amended, #1836): it is
+**Since 2026-10-12 the tab strip (the chat strip, until a chat stopped being a tab in
+#4750) is the editor's tab bar** (ADR 0036 as amended, #1836): it is
 drawn at the top of the centre column and begins at that column's edge rather than the window's.
 It still adds no inset of its own, and its shade is still `layer.chat`.
 
@@ -2473,16 +2475,16 @@ strip's tab carries an edge, and there is no `--nested` left to indent anything 
 A `tablist` may own `tab` elements only, and what it owns is everything under it in the DOM plus
 everything its `aria-owns` names: **`aria-owns` adds to a tablist's children and never takes them
 away.** A strip's cells hold more than a tab (a project's `×` and gear, a workspace's gear, a
-chat's `×`, fresh mark and hand, every strip's own `+`), so the `tablist` role is not on the
+tab's `×`, fresh mark and hand, every strip's own `+`), so the `tablist` role is not on the
 element that holds them.
 
 - **The strip element** (`.projects`, `.workspaces-strip`, `.tabs`) has no role. It is marked
   `data-strip="Projects" | "Workspaces" | "Tabs"`, and keeps its cells, its keyboard (React Aria's
-  on the chat strip, `TabStripRow`; a `RovingFocusGroup.Root` on the others, whose arrows, Home and
+  on the tab strip, `TabStripRow`; a `RovingFocusGroup.Root` on the others, whose arrows, Home and
   End read the order from the document, not from a role), its `DndContext` and the ref `useRoom`
   measures.
 - **The tablist** is an empty `<span role="tablist" aria-label=…>` first inside it
-  (`TabStripRow` on the chat strip, `StripTablist.tsx` on the others), owning the tabs drawn by
+  (`TabStripRow` on the tab strip, `StripTablist.tsx` on the others), owning the tabs drawn by
   id, in order. The stylesheet lays it over the strip with `pointer-events: none`, so it takes no
   room and no press.
 - **Reaching a strip's tabs**: code, the stylesheet and the scenario specs go through
@@ -3045,11 +3047,12 @@ keyboard protocol**, which Claude Code asks for, the off-a-Mac chords become byt
 fails: they then need a `chatKeeps` review.
 
 **Where a task is drawn has keys too, and each is on the thing it moves** (#1489). On a task's
-row in the Chats list, Space opens it beside the session that asked for it. On its line in its
-tab's task menu, Enter goes to it and Enter with a modifier opens it elsewhere, as a link is
-opened in a new tab: `⌘`/`Ctrl`+Enter gives it a tab of its own, and `Alt`+Enter opens it beside
-its session. On a task's own tab, the key that closes a tab (Delete; Backspace on a Mac) sends
-it back into its session's tab and ends nothing. None of these is a window-wide key: each is
+row in the Chats list, Space opens it beside the chat that asked for it. On its line in the
+task menu on that chat's pane head (#5341), Enter goes to it and Enter with a modifier opens it
+elsewhere, as a link is opened in a new tab: `⌘`/`Ctrl`+Enter gives it a tab of its own, and
+`Alt`+Enter opens it beside the chat that asked for it. On a task's own tab, the key that closes
+a tab (Delete; Backspace on a Mac) sends it back under the chat that asked for it and ends
+nothing. None of these is a window-wide key: each is
 handled by the row, the menu line or the tab that has the keyboard, so no chat loses a key.
 The buttons at the end of a menu line are the pointer's way to the same, and are not in the
 accessibility tree, as a list row's fold is not: the keyboard's way is the line's own keys and

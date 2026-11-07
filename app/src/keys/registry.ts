@@ -542,7 +542,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   // Tabs and chats
   {
     id: "shell.new",
-    does: "Open a shell tab",
+    does: "Open a shell",
     group: "Tabs and chats",
     where: "window",
     kind: "key",

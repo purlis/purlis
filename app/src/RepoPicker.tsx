@@ -145,7 +145,7 @@ export function RepoPicker({
                       onLeave?.();
                     }}
                   >
-                    Type it in a shell tab
+                    Type it in a shell
                   </Button>
                 </p>
               )}

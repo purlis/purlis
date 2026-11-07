@@ -1128,7 +1128,7 @@ describe("the one list of actions", () => {
     ).toBe("Focus on folder fix-it");
   });
 
-  it("offers each branch's own folder its absolute path, a reveal and a shell tab (#1143)", async () => {
+  it("offers each branch's own folder its absolute path, a reveal and a shell (#1143)", async () => {
     const cut = { workspace: "alpha", repo: "svc", piece: "fix-it", branch: "fix/login" };
     const offers = catalogue(now({ plane: "/plane", pieces: [cut] }));
     const hands = doing();
@@ -1149,7 +1149,7 @@ describe("the one list of actions", () => {
       /^Reveal branch fix\/login in (Finder|File Explorer|Files)$/,
     );
     expect(by(offers, "worktree.shell:svc/fix-it")?.title).toBe(
-      "Open a shell tab in branch fix/login",
+      "Open a shell in branch fix/login",
     );
     expect(by(offers, "worktree.shell:svc/fix-it")?.name).toBe("fix/login");
     expect(by(offers, "worktree.copypath:svc/fix-it")?.does).toEqual({
@@ -1178,7 +1178,7 @@ describe("the one list of actions", () => {
     // A folder git has on no branch is named as a folder; with no plane, nothing is placed.
     const folder = catalogue(now({ plane: "/plane", pieces: [{ ...cut, branch: null }] }));
     expect(by(folder, "worktree.shell:svc/fix-it")?.title).toBe(
-      "Open a shell tab in folder fix-it",
+      "Open a shell in folder fix-it",
     );
     const planeless = catalogue(now({ plane: undefined, pieces: [cut] }));
     for (const id of ["copypath", "reveal", "shell"])
@@ -1192,7 +1192,7 @@ describe("the one list of actions", () => {
     expect(rows.map((row) => [row.title, row.does])).toEqual([
       ["Copy absolute path", { verb: "copyPath", at, absolute: true }],
       [revealSaid(navigator.platform), { verb: "revealPath", at }],
-      ["Open a shell tab here", { verb: "shellInFolder", at }],
+      ["Open a shell here", { verb: "shellInFolder", at }],
     ]);
   });
 
@@ -3396,12 +3396,12 @@ describe("a branch's file and folder rows (FM-10)", () => {
     ]);
   });
 
-  it("offers a folder its paths, a reveal and a shell tab there", () => {
+  it("offers a folder its paths, a reveal and a shell there", () => {
     expect(titles(folder)).toEqual([
       "Copy relative path",
       "Copy absolute path",
       revealSaid(navigator.platform),
-      "Open a shell tab here",
+      "Open a shell here",
       "Start a chat here",
       "Add to a chat's context",
     ]);

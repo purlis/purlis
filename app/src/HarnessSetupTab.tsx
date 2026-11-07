@@ -112,7 +112,7 @@ export function HarnessSetupTab({
                 A chat runs a harness, and none is installed on this machine.
               </p>
               <p className="came-back">
-                Install one with its own installer: Install runs that command in a shell tab. When
+                Install one with its own installer: Install runs that command in a shell. When
                 it has finished, press Check again. Signing in is the harness&apos;s own first
                 screen, when its chat starts.
               </p>
