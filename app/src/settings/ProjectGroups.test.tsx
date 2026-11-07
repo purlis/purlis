@@ -872,7 +872,9 @@ describe("the project's own save keys, in Saving (charter-app#300, ADR 0051)", (
     expect(within(saving).getByLabelText("Mode")).toHaveValue("pr");
     expect(within(saving).getByLabelText("Target branch")).toHaveValue("");
     expect(within(saving).getByLabelText("Save branch")).toHaveValue("");
-    expect(within(saving).getByRole("switch", { name: "Sign commits" })).toBeChecked();
+    expect(
+      within(saving).getByRole("switch", { name: "Sign saves with your own git setup" }),
+    ).toBeChecked();
     // Not set in either file: the switch shows the value in force, the default (#1865).
     expect(within(saving).getByRole("switch", { name: "Auto-save" })).toBeChecked();
     expect(within(rowOf("Auto-save")).queryByRole("button", { name: "Reset" })).toBeNull();
@@ -908,9 +910,9 @@ describe("the project's own save keys, in Saving (charter-app#300, ADR 0051)", (
     expect(
       within(rowOf("Mode")).getByText("This machine", { selector: "[data-scope=badge]" }),
     ).toBeVisible();
-    expect(within(saving).getByLabelText("Sign commits")).toHaveAccessibleDescription(
-      /In this project: on, from charter\.toml\./,
-    );
+    expect(
+      within(saving).getByLabelText("Sign saves with your own git setup"),
+    ).toHaveAccessibleDescription(/In this project: on, from charter\.toml\./);
     expect(within(saving).getByLabelText("Auto-save after")).toHaveAccessibleDescription(
       /In this project: 1m, its default\./,
     );
@@ -953,7 +955,9 @@ describe("the project's own save keys, in Saving (charter-app#300, ADR 0051)", (
     await userEvent.click(screen.getByRole("switch", { name: "Auto-save" }));
     await userEvent.type(screen.getByLabelText("Save branch"), "charter/save/team");
     await leave();
-    await userEvent.click(within(rowOf("Sign commits")).getByRole("button", { name: "Reset" }));
+    await userEvent.click(
+      within(rowOf("Sign saves with your own git setup")).getByRole("button", { name: "Reset" }),
+    );
 
     await waitFor(() => expect(sent).toHaveLength(4));
     expect(sent.every((one) => one.which === "shared")).toBe(true);
@@ -982,7 +986,9 @@ describe("the project's own save keys, in Saving (charter-app#300, ADR 0051)", (
     expect(allSelects(rowOf("Auto-save"))).toEqual([]);
     expect(within(saving).queryByRole("switch", { name: "Auto-save" })).toBeNull();
     // Set here, so its switch shows what the file holds, and does not wait.
-    expect(within(saving).getByRole("switch", { name: "Sign commits" })).toBeChecked();
+    expect(
+      within(saving).getByRole("switch", { name: "Sign saves with your own git setup" }),
+    ).toBeChecked();
 
     settle();
 
@@ -1010,16 +1016,20 @@ describe("the project's own save keys, in Saving (charter-app#300, ADR 0051)", (
     const saving = await at("Saving");
 
     // Not a switch, which could only show it as on or off and write one over it.
-    expect(within(saving).queryByRole("switch", { name: "Sign commits" })).toBeNull();
-    expect(within(saving).getByLabelText("Sign commits")).toHaveValue("yes");
+    expect(
+      within(saving).queryByRole("switch", { name: "Sign saves with your own git setup" }),
+    ).toBeNull();
+    expect(within(saving).getByLabelText("Sign saves with your own git setup")).toHaveValue("yes");
   });
 
   it("draws an on/off key as a select of on, off and not set until the core says what is in force", async () => {
     core({ shared: SAVES_SHARED, saving: { trouble: "no git" } });
     const saving = await at("Saving");
 
-    expect(within(saving).queryByRole("switch", { name: "Sign commits" })).toBeNull();
-    expect(within(saving).getByLabelText("Sign commits")).toHaveValue("on");
+    expect(
+      within(saving).queryByRole("switch", { name: "Sign saves with your own git setup" }),
+    ).toBeNull();
+    expect(within(saving).getByLabelText("Sign saves with your own git setup")).toHaveValue("on");
   });
 
   it("says the reader's refusal of a value beside it, in its words", async () => {

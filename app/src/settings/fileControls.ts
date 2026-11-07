@@ -563,7 +563,12 @@ const PLANE_KEYS: readonly SaveKey[] = [
     hint: "The one branch per machine that pr and pr-merge push to.",
     none: "purlis/save/<this machine's name>",
   },
-  { key: "sign", label: "Sign commits", kind: "bool", hint: "Sign the commits a save makes." },
+  {
+    key: "sign",
+    label: "Sign saves with your own git setup",
+    kind: "bool",
+    hint: "Sign the commits a save makes, the way your own git signs. Signed commits, in You › Accounts, signs what chats commit.",
+  },
   {
     key: "refuse_unsandboxed_commit",
     label: "Refuse unsandboxed commits",
@@ -594,7 +599,12 @@ const REPO_KEYS: readonly SaveKey[] = [
     hint: "The branch a request goes into.",
     none: "the repo's default branch",
   },
-  { key: "sign", label: "sign", kind: "bool", hint: "Sign the commits a save makes." },
+  {
+    key: "sign",
+    label: "sign",
+    kind: "bool",
+    hint: "Sign the commits a save makes, the way your own git signs.",
+  },
   { key: "autosave", label: "auto-save", kind: "bool", hint: "Save this repo by itself." },
   { key: "autosave_after", label: "auto-save after", kind: "text", hint: QUIET_HINT },
 ];
