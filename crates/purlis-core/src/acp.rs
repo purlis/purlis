@@ -65,7 +65,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
 use agent_client_protocol::schema::ProtocolVersion;
-use agent_client_protocol::schema::v1::{
+use agent_client_protocol::v1::schema::{
     CancelNotification, ClientCapabilities, ContentBlock, CreateElicitationRequest,
     CreateElicitationResponse, ElicitationAcceptAction, ElicitationAction, ElicitationCapabilities,
     ElicitationFormCapabilities, Implementation, InitializeRequest, NewSessionRequest,
@@ -73,7 +73,8 @@ use agent_client_protocol::schema::v1::{
     RequestPermissionResponse, SelectedPermissionOutcome, SessionId, SessionNotification,
     SessionUpdate, StopReason, TextContent,
 };
-use agent_client_protocol::{Client, ConnectionTo, Responder, UntypedMessage};
+use agent_client_protocol::v1::{ConnectionTo, Responder};
+use agent_client_protocol::{Client, UntypedMessage};
 use futures::StreamExt;
 
 pub mod elicit;
@@ -186,9 +187,9 @@ impl ToolKind {
     }
 }
 
-impl From<agent_client_protocol::schema::v1::ToolKind> for ToolKind {
-    fn from(kind: agent_client_protocol::schema::v1::ToolKind) -> Self {
-        use agent_client_protocol::schema::v1::ToolKind as Acp;
+impl From<agent_client_protocol::v1::schema::ToolKind> for ToolKind {
+    fn from(kind: agent_client_protocol::v1::schema::ToolKind) -> Self {
+        use agent_client_protocol::v1::schema::ToolKind as Acp;
         match kind {
             Acp::Read => Self::Read,
             Acp::Edit => Self::Edit,
@@ -230,9 +231,9 @@ impl ToolStatus {
     }
 }
 
-impl From<agent_client_protocol::schema::v1::ToolCallStatus> for ToolStatus {
-    fn from(status: agent_client_protocol::schema::v1::ToolCallStatus) -> Self {
-        use agent_client_protocol::schema::v1::ToolCallStatus as Acp;
+impl From<agent_client_protocol::v1::schema::ToolCallStatus> for ToolStatus {
+    fn from(status: agent_client_protocol::v1::schema::ToolCallStatus) -> Self {
+        use agent_client_protocol::v1::schema::ToolCallStatus as Acp;
         match status {
             Acp::Pending => Self::Pending,
             Acp::InProgress => Self::InProgress,
@@ -1241,7 +1242,7 @@ impl Protocol {
         );
         let failed = ready.clone();
         let outcome = Client
-            .builder()
+            .v1()
             .name("charter")
             .on_receive_notification(
                 async move |notification: SessionNotification, _cx| {
@@ -1516,7 +1517,7 @@ async fn handshake(
         .block_task()
         .await
         .map_err(|err| {
-            if err.code == agent_client_protocol::ErrorCode::AuthRequired {
+            if err.code == agent_client_protocol::Error::auth_required().code {
                 NotStarted::Login
             } else {
                 NotStarted::Handshake(err.to_string())
