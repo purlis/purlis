@@ -307,3 +307,18 @@ fn a_frontmatter_widens_beyond_another_by_each_widening_key_it_adds_or_changes()
     // Against nothing, every widening key it sets is new.
     assert_eq!(tools.widens_beyond(None), [Field::AllowedTools]);
 }
+
+/// #4476: a skill asks for a shell where its `allowed-tools` names Bash, bare or as a rule, in
+/// either spelling of the list; another tool, a mention in its body, or `disallowed-tools` does not.
+#[test]
+fn a_skill_asks_for_a_shell_only_where_its_allowed_tools_name_bash() {
+    let asks = |front: &str| asks_for_a_shell(&format!("---\nname: s\n{front}---\nRun Bash.\n"));
+    assert!(asks("allowed-tools: Read, Bash\n"));
+    assert!(asks("allowed-tools: Bash(python scripts/run.py:*)\n"));
+    assert!(asks("allowed-tools:\n  - Read\n  - Bash\n"));
+    assert!(!asks("allowed-tools: Read, Grep\n"));
+    assert!(!asks("allowed-tools: BashOutput\n"));
+    assert!(!asks("disallowed-tools: Bash\n"));
+    assert!(!asks(""));
+    assert!(!asks_for_a_shell("no frontmatter, Bash\n"));
+}

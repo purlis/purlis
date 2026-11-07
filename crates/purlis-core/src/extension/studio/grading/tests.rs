@@ -52,6 +52,7 @@ fn request() -> GradeRequest {
         outcomes: Vec::new(),
         arms: vec![Arm::With, Arm::Without],
         runs: RUNS,
+        shell: false,
     }
 }
 

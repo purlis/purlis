@@ -77,6 +77,7 @@ fn skill(name: &str) -> GradeRequest {
         outcomes: Vec::new(),
         arms: ARMS.to_vec(),
         runs: RUNS,
+        shell: false,
     }
 }
 

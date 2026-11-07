@@ -2754,6 +2754,7 @@ fn asked_as_recorded(contract: &serde_json::Value, protocol: u32) {
         outcomes: Vec::new(),
         arms: vec![Arm::With, Arm::Without],
         runs: 1,
+        shell: false,
     };
     let panel = || Ask::Panel {
         panel: "checks",

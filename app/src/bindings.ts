@@ -9008,6 +9008,11 @@ export type GradeEval = {
 	/**  Whether the person ticked it (off until they do), and the chats ticking it adds. */
 	on: boolean,
 	chats: number,
+	/**
+	 *  Whether its chats have a shell, as its skill asks (#4476): held to its own folder and
+	 *  reaching no host. Said before it is ticked.
+	 */
+	shell: boolean,
 };
 
 /**  **An outcome eval a grade leaves out** (`grades::LeftOutEval`): its id, and why. */
