@@ -513,6 +513,14 @@ fn every_read(browser: &Browser) -> String {
     read
 }
 
+/// Goes back, as the person may once the hold is over: what it answered, or why it went nowhere.
+/// A page whose history purlis cleared has no earlier address, and says so.
+fn went_back(browser: &Browser) -> Result<Answer, String> {
+    browser
+        .call(&next_id(), Call::Back { page: None })
+        .map_err(|refused| refused.to_string())
+}
+
 /// A form sent by GET to another site, its query holding the value, reaches nothing: not as it is
 /// sent, and not from the history the person goes back through once the hold is over.
 #[test]
@@ -531,7 +539,7 @@ fn a_form_sent_by_get_to_another_site_is_never_sent_later() {
         let clicked = click(&browser, line);
         // Whatever it was to do, and the hold's end where it ends, have had their moment.
         std::thread::sleep(THE_HOLD_ENDS_AFTER * 3);
-        let back = call(&browser, Call::Back { page: None });
+        let back = went_back(&browser);
         std::thread::sleep(Duration::from_millis(800));
         let read = every_read(&browser);
 
@@ -580,7 +588,7 @@ fn a_load_that_fails_says_nothing_of_the_address_it_failed_at() {
             .count()
     };
     let sent_before = failing();
-    let back = call(&browser, Call::Back { page: None });
+    let back = went_back(&browser);
     std::thread::sleep(Duration::from_millis(800));
     let read = every_read(&browser);
 
