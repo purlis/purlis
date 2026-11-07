@@ -269,6 +269,39 @@ fn a_workspaces_clones_reach_the_runner_before_a_chat_starts_there_and_its_commi
     );
 }
 
+/// **Each branch tip a fetch brings is recorded** (ruled 2026-11-07): once here, it is home when
+/// an older runner is let go, though the branch is squashed or deleted here since.
+#[test]
+fn the_branch_tips_a_fetch_brings_are_recorded_for_the_project() {
+    let world = World::new();
+    world.sends_its_clones();
+    let there = world.kept().join("workspaces/app/web");
+    let on_the_runner = committed(&there, "login.rs", "fn log_in() { done() }\n");
+    let (link, project) = world
+        .sessions
+        .link_of_a_start_in_a_test()
+        .expect("held, its own code sent");
+    let config = tempfile::tempdir().unwrap();
+
+    let failed = crate::runnercode::fetch_workspace(
+        &link,
+        &project,
+        &world.root,
+        "app",
+        "builds",
+        false,
+        false,
+        Some(config.path()),
+    );
+
+    assert_eq!(failed, Vec::<String>::new());
+    assert!(
+        purlis_core::tipsfetched::read(config.path(), &project).contains(&on_the_runner),
+        "{:?}",
+        purlis_core::tipsfetched::read(config.path(), &project)
+    );
+}
+
 #[test]
 fn a_runner_that_lost_a_repository_since_the_last_send_is_sent_it_whole() {
     let world = World::new();

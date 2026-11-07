@@ -450,8 +450,10 @@ const NO_OWN_REPOSITORY: &str = "the runner no longer holds the project's own re
 /// against a folder this machine knows of its project, as a fresh runner's is. A fetch brings
 /// only the branches of the clones that are here, so a clone only on the runner, a clone or
 /// workspace removed or renamed here, a commit on no branch and a stash are each said, and so is
-/// the work of a project no folder here holds. `unread` is what the runner could not look
-/// through. Why, where this machine's records can't be read.
+/// the work of a project no folder here holds. **A branch tip purlis already fetched from a
+/// runner into the project is home** (ruled 2026-11-07, [`crate::tipsfetched`]), though it was
+/// squashed or rebased here since, or its clone or workspace removed or renamed. `unread` is
+/// what the runner could not look through. Why, where this machine's records can't be read.
 pub fn left_beyond_a_fetch(
     config_root: &Path,
     held: &[crate::codelink::held::Held],
@@ -467,7 +469,34 @@ pub fn left_beyond_a_fetch(
         .iter()
         .map(|recent| recent.plane.as_path())
         .collect();
-    Ok(left_beyond_a_fetch_in(&known, held, unread))
+    let held = without_tips_fetched(held, |project| {
+        crate::tipsfetched::read(config_root, project)
+    });
+    Ok(left_beyond_a_fetch_in(&known, &held, unread))
+}
+
+/// `held`, without each branch, and each `HEAD`, at a tip purlis fetched into its project
+/// (`fetched` answers a project's), which came here once and so is home. A stash is never one:
+/// no fetch brings it.
+fn without_tips_fetched(
+    held: &[crate::codelink::held::Held],
+    fetched: impl Fn(&str) -> Vec<String>,
+) -> Vec<crate::codelink::held::Held> {
+    let mut of: std::collections::BTreeMap<&str, Vec<String>> = std::collections::BTreeMap::new();
+    held.iter()
+        .map(|one| {
+            let tips = of
+                .entry(one.project.as_str())
+                .or_insert_with(|| fetched(&one.project));
+            let mut one = one.clone();
+            one.refs.retain(|kept| {
+                let a_tip = kept.name == crate::codelink::held::HEAD
+                    || kept.name.starts_with(crate::codelink::HEADS);
+                !(a_tip && tips.contains(&kept.oid))
+            });
+            one
+        })
+        .collect()
 }
 
 /// [`left_beyond_a_fetch`], with each project found among the folders `known`.

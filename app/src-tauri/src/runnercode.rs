@@ -472,7 +472,10 @@ pub(crate) fn send_workspace(
 
 /// **Fetch the branches of every clone of `workspace` back from the runner**, into each clone's
 /// `refs/remotes/<pool>/*`. Each clone fetches on its own: one that fails is said, and the rest
-/// still fetch. `left` is a pool the workspace no longer runs on (#4590).
+/// still fetch. `left` is a pool the workspace no longer runs on (#4590). Each branch tip that
+/// came is recorded in `tips_in`, this machine's config home, where there is one: a tip fetched
+/// once is home when an older runner is let go (ruled 2026-11-07, [`purlis_core::tipsfetched`]).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn fetch_workspace(
     link: &HostLink,
     project: &str,
@@ -481,6 +484,7 @@ pub(crate) fn fetch_workspace(
     pool: &str,
     beside: bool,
     left: bool,
+    tips_in: Option<&Path>,
 ) -> Vec<String> {
     fetch_clones(
         link,
@@ -490,10 +494,12 @@ pub(crate) fn fetch_workspace(
         pool,
         beside,
         left,
+        tips_in,
     )
 }
 
 /// [`fetch_workspace`], of the clones `clones`.
+#[allow(clippy::too_many_arguments)]
 fn fetch_clones(
     link: &HostLink,
     project: &str,
@@ -502,6 +508,7 @@ fn fetch_clones(
     pool: &str,
     beside: bool,
     left: bool,
+    tips_in: Option<&Path>,
 ) -> Vec<String> {
     let mut failed = Vec::new();
     for rel in clones {
@@ -520,11 +527,20 @@ fn fetch_clones(
             }
             .map_err(|why| why.to_string())
         });
-        if let Err(why) = fetched {
-            failed.push(format!(
+        match fetched {
+            Ok(came) => {
+                if let Some(config) = tips_in {
+                    let tips: Vec<String> = came.into_iter().map(|one| one.oid).collect();
+                    // Only a record: a tip not in it keeps an older runner, never loses work.
+                    if let Err(why) = purlis_core::tipsfetched::record(config, project, &tips) {
+                        tracing::warn!("purlis: in {}: {why}", shown(rel));
+                    }
+                }
+            }
+            Err(why) => failed.push(format!(
                 "the runner's branches of {} were not fetched: {why}",
                 shown(rel)
-            ));
+            )),
         }
     }
     failed
@@ -595,7 +611,7 @@ fn fetch_whole_said(
         here.push(String::new());
     }
     failed.extend(
-        fetch_clones(link, project, root, &here, runner, true, false)
+        fetch_clones(link, project, root, &here, runner, true, false, None)
             .into_iter()
             .filter(|why| !why.contains(codelink::NO_REPOSITORY_THERE)),
     );
