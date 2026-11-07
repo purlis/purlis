@@ -77,20 +77,20 @@ impl Trash for SystemTrash {
         context.delete(path).map_err(|e| e.to_string())
     }
 
-    /// **Only what the Trash can take whole** (#5551). Where the volume's own trash cannot be
-    /// written, `trash` falls back to the home Trash, and across disks it copies rather than
-    /// moves: the copy loses permissions, extended attributes and hard links, and a FIFO in a
-    /// folder hangs it. So an entry on another disk than the home Trash is refused, and left
-    /// where it is.
+    /// **Only what the Trash can take whole** (#5551). An entry on the home Trash's disk is
+    /// moved there; one on another disk goes to that disk's own Trash, a move too. Only where
+    /// that Trash cannot be used does `trash` fall back to the home Trash, and across disks it
+    /// copies rather than moves: the copy loses permissions, extended attributes and hard links,
+    /// and a FIFO in a folder hangs it. So that entry alone is refused, and left where it is.
     #[cfg(all(unix, not(target_os = "macos")))]
     fn put(&self, path: &Path) -> Result<(), String> {
         use std::os::unix::fs::MetadataExt;
         let entry = std::fs::symlink_metadata(path).map_err(|e| e.to_string())?;
-        if home_trash_disk().is_some_and(|disk| disk != entry.dev()) {
+        if home_trash().is_some_and(|(_, disk)| disk != entry.dev()) && !moved_whole(path) {
             return Err(
-                "it is on another disk than your Trash, and across disks the system \
-                        copies an entry into the Trash rather than moving it, losing its \
-                        permissions and links"
+                "it is on another disk than your Trash, and that disk has no Trash of its own \
+                        purlis can use, so the system would copy it into yours rather than \
+                        move it, losing its permissions and links"
                     .to_string(),
             );
         }
@@ -103,19 +103,117 @@ impl Trash for SystemTrash {
     }
 }
 
-/// The disk the home Trash is on, as the freedesktop.org trash names it (`$XDG_DATA_HOME/Trash`,
-/// or `~/.local/share/Trash`): that of the nearest folder of its path that is there.
+/// The home Trash, as the freedesktop.org trash names it (`$XDG_DATA_HOME/Trash`, or
+/// `~/.local/share/Trash`), and the disk it is on: that of the nearest folder of its path that
+/// is there.
 #[cfg(all(unix, not(target_os = "macos")))]
-fn home_trash_disk() -> Option<u64> {
+fn home_trash() -> Option<(PathBuf, u64)> {
     use std::os::unix::fs::MetadataExt;
     let set = |name| std::env::var_os(name).filter(|value| !value.is_empty());
     let data = set("XDG_DATA_HOME")
         .map(PathBuf::from)
         .or_else(|| set("HOME").map(|home| PathBuf::from(home).join(".local/share")))?;
-    data.join("Trash")
+    let trash = data.join("Trash");
+    let disk = trash
         .ancestors()
         .find_map(|folder| std::fs::metadata(folder).ok())
-        .map(|meta| meta.dev())
+        .map(|meta| meta.dev())?;
+    Some((trash, disk))
+}
+
+/// **Whether trash 5.3 moves `path`, on another disk than the home Trash, rather than copying
+/// it**: when the top of its disk is not the home Trash's (which trash would copy into) and that
+/// disk's own Trash can be used. Unknown, it is not.
+#[cfg(all(unix, not(target_os = "macos")))]
+fn moved_whole(path: &Path) -> bool {
+    let Ok(mounts) = std::fs::read_to_string("/proc/mounts") else {
+        return false;
+    };
+    let canonical = |path: &Path| -> Option<PathBuf> {
+        // As trash finds it: the folder followed to where it is, the name kept.
+        Some(path.parent()?.canonicalize().ok()?.join(path.file_name()?))
+    };
+    let (Some(entry), Some((home, _))) = (canonical(path), home_trash()) else {
+        return false;
+    };
+    let home = home
+        .ancestors()
+        .find_map(|folder| folder.canonicalize().ok())
+        .unwrap_or(home);
+    match (volume_top(&entry, &mounts), volume_top(&home, &mounts)) {
+        (Some(top), Some(home_top)) if top != home_top => {
+            volume_trash_usable(&top, rustix::process::getuid().as_raw())
+        }
+        _ => false,
+    }
+}
+
+/// **The spare name a case-only rename passes through**: random, so two renames at once never
+/// meet on it, and none purlis keeps ([`managed`]), so a file stranded there by a rename that
+/// could not finish is the person's to rename or delete from the window.
+#[cfg(unix)]
+fn spare_name() -> String {
+    format!(".renaming-{}", uuid::Uuid::new_v4().simple())
+}
+
+/// **Whether the Trash of the disk whose top is `top` takes an entry of user `uid`'s**, as
+/// trash 5.3 tries it before the home Trash: `$top/.Trash/$uid` when `$top/.Trash` is a folder
+/// with its sticky bit and no link and `$uid` is in it, or else `$top/.Trash-$uid`, made when it
+/// is not there. Usable when it can be written (or, not there yet, made), with its `files` and
+/// `info` folders: where it cannot, trash falls back to the home Trash, copying across disks.
+#[cfg(all(unix, any(test, not(target_os = "macos"))))]
+fn volume_trash_usable(top: &Path, uid: u32) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    let writable = |folder: &Path| {
+        rustix::fs::access(
+            folder,
+            rustix::fs::Access::WRITE_OK | rustix::fs::Access::EXEC_OK,
+        )
+        .is_ok()
+    };
+    let takes = |trash: &Path| {
+        writable(trash)
+            && ["files", "info"].iter().all(|sub| {
+                let sub = trash.join(sub);
+                std::fs::symlink_metadata(&sub).is_err() || writable(&sub)
+            })
+    };
+    let shared = top.join(".Trash");
+    let sticky = std::fs::symlink_metadata(&shared)
+        .is_ok_and(|meta| meta.is_dir() && meta.permissions().mode() & 0o1000 != 0);
+    let users = shared.join(uid.to_string());
+    if sticky && users.is_dir() {
+        return takes(&users);
+    }
+    let own = top.join(format!(".Trash-{uid}"));
+    if own.is_dir() {
+        takes(&own)
+    } else {
+        !own.exists() && writable(top)
+    }
+}
+
+/// **The top of the disk `path` is on, as trash 5.3 finds it**: the longest mount point in
+/// `mounts` (as `/proc/mounts` lists them) that `path` is in, a whole step at a time. `None`
+/// when `mounts` names none.
+#[cfg(any(test, all(unix, not(target_os = "macos"))))]
+fn volume_top(path: &Path, mounts: &str) -> Option<PathBuf> {
+    mounts
+        .lines()
+        .filter_map(|line| line.split_whitespace().nth(1))
+        .map(|dir| PathBuf::from(unescaped_mount(dir)))
+        .filter(|dir| path.starts_with(dir))
+        .max_by_key(|dir| dir.as_os_str().len())
+}
+
+/// A mount point as `/proc/mounts` writes it, its space, tab, newline and backslash as octal
+/// escapes (`\040`), read back.
+#[cfg(any(test, all(unix, not(target_os = "macos"))))]
+fn unescaped_mount(dir: &str) -> String {
+    dir.replace("\\040", " ")
+        .replace("\\011", "\t")
+        .replace("\\012", "\n")
+        .replace("\\134", "\\")
 }
 
 /// The longest name a file may have, in bytes, on the file systems purlis runs on.
@@ -374,17 +472,24 @@ impl Files {
             // apart takes for the name it already has: through a spare name, each step never
             // over anything, so what has the new name on a disk that does tell them apart is
             // refused rather than replaced.
-            let spare = format!(".purlis-renaming-{}", std::process::id());
-            if !folder
-                .rename_into_new(leaf, folder, &spare)
+            // A spare name never taken over either: one something already has is passed by
+            // for another.
+            let mut spare = spare_name();
+            let mut tries = 0;
+            while !folder
+                .rename_only_into_new(leaf, folder, &spare)
                 .map_err(failed)?
             {
-                return Err(failed(format!("'{spare}' is in the way")));
+                tries += 1;
+                if tries == 8 {
+                    return Err(failed(format!("'{spare}' is in the way")));
+                }
+                spare = spare_name();
             }
-            return match folder.rename_into_new(&spare, folder, name) {
+            return match folder.rename_only_into_new(&spare, folder, name) {
                 Ok(true) => Ok(renamed),
                 moved => {
-                    let back = folder.rename_into_new(&spare, folder, leaf);
+                    let back = folder.rename_only_into_new(&spare, folder, leaf);
                     if !matches!(back, Ok(true)) {
                         return Err(failed(format!(
                             "it could not be given its name back, and is '{}'",
@@ -395,7 +500,10 @@ impl Files {
                 }
             };
         }
-        if folder.rename_into_new(leaf, folder, name).map_err(failed)? {
+        if folder
+            .rename_only_into_new(leaf, folder, name)
+            .map_err(failed)?
+        {
             Ok(renamed)
         } else {
             Err(taken())

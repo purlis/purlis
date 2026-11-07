@@ -191,3 +191,151 @@ fn an_import_that_stops_partway_says_which_files_were_copied() {
     assert!(ws.join("notes/first.md").is_file());
     assert!(!ws.join("notes/last.md").exists());
 }
+
+#[cfg(unix)]
+#[test]
+fn a_case_only_rename_is_not_stopped_by_a_file_left_from_another() {
+    crate::unsteered!();
+    let (_dir, plane) = project();
+    let ws = plane.join("workspaces/alpha");
+    let left = ws.join(format!("notes/.purlis-renaming-{}", std::process::id()));
+    std::fs::write(&left, "left from another rename\n").unwrap();
+
+    let renamed = files(&plane)
+        .rename("notes/plan.md", "Plan.md", &[])
+        .unwrap();
+
+    assert_eq!(renamed, "notes/Plan.md");
+    assert_eq!(
+        std::fs::read_to_string(&left).unwrap(),
+        "left from another rename\n"
+    );
+    let names: Vec<String> = std::fs::read_dir(ws.join("notes"))
+        .unwrap()
+        .map(|one| one.unwrap().file_name().into_string().unwrap())
+        .collect();
+    assert!(names.contains(&"Plan.md".to_string()), "{names:?}");
+    assert!(!names.contains(&"plan.md".to_string()), "{names:?}");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_case_only_renames_spare_name_is_the_persons_and_new_each_time() {
+    let one = super::spare_name();
+    let other = super::spare_name();
+
+    assert_ne!(one, other);
+    for spare in [&one, &other] {
+        assert!(!super::managed(spare, &[]), "{spare} is purlis's");
+        assert!(super::checked_name(spare).is_ok(), "{spare}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_rename_on_a_disk_with_no_no_replace_rename_is_refused() {
+    crate::unsteered!();
+    let (_dir, plane) = project();
+    let ws = plane.join("workspaces/alpha");
+
+    crate::held::without_no_replace_rename(|| {
+        let refused = files(&plane)
+            .rename("notes/plan.md", "renamed.md", &[])
+            .unwrap_err();
+        assert!(matches!(refused, NotWritten::Failed { .. }), "{refused}");
+    });
+
+    assert!(ws.join("notes/plan.md").is_file());
+    assert!(!ws.join("notes/renamed.md").exists());
+}
+
+/// A folder of the test's own with `mode`, and the test's own uid.
+#[cfg(unix)]
+fn folder_with(mode: u32) -> (tempfile::TempDir, u32) {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(mode)).unwrap();
+    (dir, rustix::process::getuid().as_raw())
+}
+
+#[cfg(unix)]
+#[test]
+fn a_volume_whose_own_trash_can_be_made_takes_a_delete_on_its_own_disk() {
+    let (top, uid) = folder_with(0o755);
+    assert!(super::volume_trash_usable(top.path(), uid));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_volume_with_a_writable_trash_of_the_users_own_takes_a_delete() {
+    let (top, uid) = folder_with(0o755);
+    std::fs::create_dir(top.path().join(format!(".Trash-{uid}"))).unwrap();
+    assert!(super::volume_trash_usable(top.path(), uid));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_volume_whose_top_cannot_be_written_and_has_no_trash_does_not() {
+    if rustix::process::geteuid().is_root() {
+        return; // root writes anywhere, so there is no such volume to make
+    }
+    let (top, uid) = folder_with(0o755);
+    let path = top.path().to_path_buf();
+    std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o555)).unwrap();
+    let usable = super::volume_trash_usable(&path, uid);
+    std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    assert!(!usable);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_volume_whose_shared_trash_has_the_users_folder_takes_a_delete_when_the_top_is_read_only() {
+    use std::os::unix::fs::PermissionsExt;
+    if rustix::process::geteuid().is_root() {
+        return;
+    }
+    let (top, uid) = folder_with(0o755);
+    let shared = top.path().join(".Trash");
+    std::fs::create_dir(&shared).unwrap();
+    std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o1777)).unwrap();
+    std::fs::create_dir(shared.join(uid.to_string())).unwrap();
+    std::fs::set_permissions(top.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    let usable = super::volume_trash_usable(top.path(), uid);
+    std::fs::set_permissions(top.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(usable);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_volume_whose_trash_of_the_users_own_cannot_be_written_does_not() {
+    use std::os::unix::fs::PermissionsExt;
+    if rustix::process::geteuid().is_root() {
+        return;
+    }
+    let (top, uid) = folder_with(0o755);
+    let own = top.path().join(format!(".Trash-{uid}"));
+    std::fs::create_dir(&own).unwrap();
+    std::fs::set_permissions(&own, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    let usable = super::volume_trash_usable(top.path(), uid);
+    std::fs::set_permissions(&own, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(!usable);
+}
+
+#[test]
+fn the_top_of_a_path_is_the_longest_mount_point_it_is_in_as_the_trash_finds_it() {
+    let mounts = "/dev/sda1 / ext4 rw 0 0\n\
+                  /dev/sda2 /home ext4 rw 0 0\n\
+                  /dev/sdb1 /mnt/my\\040disk vfat rw 0 0\n";
+    let top = |path: &str| super::volume_top(Path::new(path), mounts);
+
+    assert_eq!(
+        top("/mnt/my disk/ws/notes"),
+        Some(PathBuf::from("/mnt/my disk"))
+    );
+    assert_eq!(top("/home/me/ws"), Some(PathBuf::from("/home")));
+    assert_eq!(top("/homer/ws"), Some(PathBuf::from("/")));
+    assert_eq!(top("/mnt/my diskette/ws"), Some(PathBuf::from("/")));
+    assert_eq!(super::volume_top(Path::new("/home/me"), ""), None);
+}
