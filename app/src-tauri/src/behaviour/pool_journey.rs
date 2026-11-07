@@ -757,11 +757,19 @@ fn in_the_journey(
     step("an update with no chat running");
     // The plain way (#4248): nothing runs, and the project's link is still on the old runner. The
     // update replaces it at once, its sign-ins follow, and a new chat just starts on the new one.
-    let said = crate::poolfollow::follow_and_drain(machine, Some(first), &chats_on, &held_on);
-    assert!(
-        said.iter().any(|line| line.contains("had no chat left")),
-        "{said:?}"
-    );
+    // The closed chat's branches come back on a thread of their own, and the runner waits for
+    // them: the first look may find their fetch still running.
+    let deadline = Instant::now() + LONG;
+    let mut image = Some(first);
+    loop {
+        let said = crate::poolfollow::follow_and_drain(machine, image, &chats_on, &held_on);
+        if said.iter().any(|line| line.contains("had no chat left")) {
+            break;
+        }
+        assert!(Instant::now() < deadline, "it never drained: {said:?}");
+        image = None;
+        std::thread::sleep(Duration::from_secs(1));
+    }
     assert_eq!(crate::poolfollow::waiting_on(&machine.config, pool), 0);
     let updated = the_runner(machine, pool);
     assert_ne!(updated.container, followed.container, "a runner of its own");

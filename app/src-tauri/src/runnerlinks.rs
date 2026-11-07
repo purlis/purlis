@@ -685,21 +685,22 @@ pub fn unpair(to: &ToARunner) -> Result<(), String> {
 
 /// **Every repository the runner `to` holds in the projects it keeps**, with what it could not
 /// look through, as a draining runner is checked before it goes (ruled 2026-11-07): one link,
-/// waiting as long as a fresh runner's proof does for the list. Why not, shown safely, where it
-/// did not list, or is too old to.
+/// waiting as long as a fresh runner's proof does for the list. `None` from a runner too old to
+/// list them (before 1.69), which a drain lets go of as it did before. Why not, shown safely,
+/// where it did not list.
 pub fn repos_held_on(
     to: &ToARunner,
-) -> Result<(Vec<purlis_core::codelink::held::Held>, Vec<String>), String> {
+) -> Result<Option<(Vec<purlis_core::codelink::held::Held>, Vec<String>)>, String> {
     use purlis_session_protocol::session::{Answer, Command, KNOWS_REPOS_HELD};
     let within = purlis_core::codelink::held::LOOK_WITHIN + ANSWER_WITHIN;
     on_one_link_within(to, within, async |linked| {
         let client = linked.map_err(|down| down.why)?;
         if client.version() < KNOWS_REPOS_HELD {
-            return Err("the runner is too old to list what it holds".to_owned());
+            return Ok(None);
         }
         match client.call(Command::ReposHeld).await {
             Ok(Answer::ReposHeld { repos, unread }) => {
-                Ok((crate::runnercode::held_of(repos), unread))
+                Ok(Some((crate::runnercode::held_of(repos), unread)))
             }
             Ok(_) => Err("the runner did not say which repositories it holds".to_owned()),
             Err(why) => Err(refused_by_the_runner(&why)),

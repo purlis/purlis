@@ -373,7 +373,7 @@ pub fn follow_and_drain(
     machine: &Machine,
     image: Option<&Image>,
     chats_on: &dyn Fn(&ToARunner) -> Result<u32, String>,
-    held_on: &dyn Fn(&ToARunner) -> Result<Held, String>,
+    held_on: &dyn Fn(&ToARunner) -> Result<Option<Held>, String>,
 ) -> Vec<String> {
     let mut said = Vec::new();
     if let Some(image) = image {
@@ -579,8 +579,11 @@ pub fn follow_and_drain(
         // home as a fresh runner's is. What is not stays on it, with the runner, and the Pools
         // group says so.
         if !kept.unpaired && runs {
-            let left = held_on(&to).and_then(|(held, unread)| {
-                purlis_core::pools::left_beyond_a_fetch(&machine.config, &held, &unread)
+            // A runner too old to list what it holds goes as it did before it could.
+            let left = held_on(&to).and_then(|listed| {
+                listed.map_or(Ok(Vec::new()), |(held, unread)| {
+                    purlis_core::pools::left_beyond_a_fetch(&machine.config, &held, &unread)
+                })
             });
             let left = match left {
                 Ok(left) => left,
@@ -603,6 +606,21 @@ pub fn follow_and_drain(
             purlis_core::pools::drain(&machine.config, &machine.docker, kept.name(), Some(&unpair)),
         ));
     }
+    // What a runner held is said only while it still drains, held by no one: one removed, or the
+    // person's now, says nothing more.
+    let draining: Vec<Waiting> = purlis_core::runners::draining(&machine.config)
+        .unwrap_or_default()
+        .iter()
+        .filter(|kept| !kept.held)
+        .map(|kept| {
+            (
+                machine.config.clone(),
+                kept.pool().to_owned(),
+                kept.name().to_owned(),
+            )
+        })
+        .collect();
+    lock_left().retain(|at, _| at.0 != machine.config || draining.contains(at));
     said
 }
 
