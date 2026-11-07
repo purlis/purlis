@@ -2406,25 +2406,20 @@ jobs:
 
   # **The Skill studio's outcome bars** (SK-23, #4343): the scenario legs' steps, with every leg's
   # own flag off and `outcome` on, so it runs the three runs alone, on a `dev-release` build
-  # (2026-11-03, #4351). Its macOS leg is not required, and no `scenario-checks` waits on it: it
-  # measures on a shared runner, and a miss is a ticket (the operator's ruling of 2026-10-31), not a
-  # block on every merge. It becomes required with the flag's flip (#2786). Its Linux leg is
-  # `outcome-bars-linux`, below, and is required. Each says L10's p95 and judges a median guard
-  # of its own platform: the 300 ms is judged on a real Mac (ADR 0086, amended 2026-11-05 and
-  # 2026-11-06).
+  # (2026-11-03, #4351). Its macOS leg is required since the studio's flag went (#2786), through
+  # `outcome-bars-checks`, which carries the check's name: a miss blocks the merge, as the finish
+  # line's ruling of 2026-10-31 asked once #4351 and #4352 were fixed. Its Linux leg is
+  # `outcome-bars-linux`, below, and is required since #5277. Each says L10's p95 and judges a
+  # median guard of its own platform: the 300 ms is judged on a real Mac (ADR 0086, amended
+  # 2026-11-05 and 2026-11-06).
   #
-  # On main's push, and on a pull request that touches what the bars measure (`GATES`), by the
-  # operator's choice of 2026-11-01: it takes a macOS and a Linux runner, for 11 to 17 minutes on
-  # the debug build it used to make, and for about 31 on the release build warm (#4351). A
-  # regression from anywhere else shows on main, not on its pull request.
+  # On main's push, in the merge queue and nightly, and on a pull request that touches what the
+  # bars measure (`GATES`), by the operator's choice of 2026-11-01: it takes a macOS and a Linux
+  # runner, for about 31 minutes on the release build warm (#4351). A regression from anywhere
+  # else shows in the merge queue, not on its pull request.
   outcome-bars:
-    # Named outright, not by `matrix.os`: a pattern would match the Linux leg's required check too.
-    name: outcome bars (macos-latest)
+    name: outcome bars run (macos-latest)
     needs: changes
-    # A missed bar keeps this job red and the `ci` run green, so it does not stop `tools/land.mjs`,
-    # which refuses to land while main's newest finished `ci` run failed. This line goes once its
-    # bars are met (#4352 among them), and the job is made required before the flag's flip (#2786).
-    continue-on-error: true
     # A timed-out job still turns the run `cancelled`, which skips the release: this bounds that,
     # and main's queue behind it, from the 6 hours a job gets by default. 75, not the 40 the debug
     # build had (twice its slowest, 9 to 18 minutes), for the release build (the operator's ruling
@@ -2434,7 +2429,7 @@ jobs:
     # run from 05:41 to 10:44, so the cache was never saved, every run ended `cancelled`, and no dev
     # build shipped. One run that finishes warms the cache again.
     timeout-minutes: 130
-    if: ${{ !cancelled() && (github.event_name == 'push' || (github.event_name == 'pull_request' && needs.changes.outputs.outcome-bars != 'false')) && !github.event.pull_request.draft }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.outcome-bars != 'false') && !github.event.pull_request.draft }}
     # Where the specs find the build: the profile the build step names for `outcome` (one place
     # for the path, so no harness's run can take another build's program).
     env:
@@ -2451,6 +2446,27 @@ jobs:
         outcome: [true]
     runs-on: ${{ matrix.os }}
     steps: *scenario-steps
+
+  # The required check that names the outcome bars' macOS leg (#2786), as `scenario-checks` is for
+  # the macOS scenarios: its leg passed wherever it runs, and on a pull request it is skipped where
+  # its change cannot move a bar and on a draft, as `outcome-bars`'s `if:` says.
+  outcome-bars-checks:
+    name: outcome bars (macos-latest)
+    needs: [changes, outcome-bars]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: The macOS leg passed
+        env:
+          SCOPE: ${{ needs.changes.outputs.outcome-bars }}
+          EVENT: ${{ github.event_name }}
+          DRAFT: ${{ github.event.pull_request.draft }}
+          RESULT: ${{ needs.outcome-bars.result }}
+        run: |
+          want=success
+          if [ "$EVENT" = pull_request ] && { [ "$SCOPE" = false ] || [ "$DRAFT" = true ]; }; then want=skipped; fi
+          echo "scope: ${SCOPE:-unknown}, event: $EVENT, draft: ${DRAFT:-false}, result: $RESULT"
+          test "$RESULT" = "$want"
 
   # **The outcome bars' Linux leg, required** (#5277): what `outcome-bars` does, on Linux, with no
   # `continue-on-error`. A runner shutdown cut it off until #5379 gave its build a swap file, which
