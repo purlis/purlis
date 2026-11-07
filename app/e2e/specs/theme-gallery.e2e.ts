@@ -22,7 +22,8 @@ import { closeProject, openThroughTheTrustQuestion } from "../opening.js";
  *
  * **The pointer is the page's own events**, as `tab-chip.e2e.ts` sends them: a WebDriver move
  * does not make WebKit match `:hover` (run 37260967190), and React hears a card entered and left
- * from the `pointerout` and `pointerover` a pointer sends. The keyboard's way in is a focus, as
+ * from the `pointerout` and `pointerover` a pointer sends. The driver's pointer is moved to the
+ * same place first, so nothing WebKit sends from where it was ends the hover ({@link point}). The keyboard's way in is a focus, as
  * a WebDriver Tab moves none.
  *
  * **Its own project, copied into the run's tree**, holding a theme folder of the project's, and
@@ -87,8 +88,17 @@ const surface = () =>
     document.documentElement.style.getPropertyValue("--surface-base").trim().toLowerCase(),
   );
 
-/** Sends the card the events a pointer sends going onto it (`over`) or off it to the nav. */
+/**
+ * Sends the card the events a pointer sends going onto it (`over`) or off it to the nav.
+ *
+ * **The driver's own pointer goes there first** (#5586). A hover react-aria has started ends at
+ * the first `pointerover` outside the card, and WebKit sends one where its pointer last was
+ * whenever the layout under it changes, as drawing the card's theme does. A spec run alone has
+ * no pointer in the window; after other specs in one process (the stress run) it is wherever the
+ * last of them moved it, and the preview's own redraw ended the hover there.
+ */
 async function point(over: boolean): Promise<void> {
+  await $(over ? CARD : 'nav[aria-label="Groups"]').moveTo();
   await browser.execute(
     (card: string, onto: boolean) => {
       const it = document.querySelector<HTMLElement>(card);
