@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { ListedChat } from "./chatsTree";
 import {
   askedByOf,
+  chatsOfChat,
   chatsOfPane,
   chatsOfTab,
   chatsOfTabs,
@@ -125,6 +126,27 @@ describe("the chats of a tab, as a tree", () => {
     const rows = chatsOfTab(all, tabOf(all, 1), chats);
     const sweep = rows.find((row) => row.name === "sweep");
     expect(sweep).toMatchObject({ level: 2, posinset: 2, setsize: 2, orphaned: false });
+  });
+});
+
+describe("the chats of one chat, as its pane head's tasks menu lists them (#5341)", () => {
+  const rows = () => {
+    const all = tabs();
+    return chatsOfTab(all, tabOf(all, 1), chats);
+  };
+  const said = (of: ReturnType<typeof rows>) => of.map((row) => `${row.level} ${row.name}`);
+
+  it("is the chat and every task below it, the chat at the top level", () => {
+    expect(said(chatsOfChat(rows(), 1))).toEqual(["1 steward 1", "2 talk", "3 probe", "2 sweep"]);
+  });
+
+  it("is a task and its own tasks, that task at the top level, where a pane shows a task", () => {
+    expect(said(chatsOfChat(rows(), 4))).toEqual(["1 talk", "2 probe"]);
+    expect(said(chatsOfChat(rows(), 5))).toEqual(["1 sweep"]);
+  });
+
+  it("is nothing for a chat the rows do not hold", () => {
+    expect(chatsOfChat(rows(), 99)).toEqual([]);
   });
 });
 

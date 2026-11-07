@@ -830,6 +830,7 @@ fn save(root: &Path, old: &str, new: &str, say: Sink) {
             no_push: false,
             cwd: root,
             provenance: None,
+            for_a_chat: false,
         },
         crate::planegit::Trigger::Rename,
         say,

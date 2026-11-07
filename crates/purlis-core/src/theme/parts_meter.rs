@@ -27,36 +27,36 @@ pub(super) const METER: Family = Family {
     name: "meter",
     description: "A value drawn as a bar: a grade's score beside the ones it compares with, how \
                   far a running grade is.",
-    since: super::NEXT,
+    since: 13,
     parts: &[
         Part {
             name: "root",
-            since: super::NEXT,
+            since: 13,
             description: "The meter's line: its words, and the room between its label, its \
                           track and its value.",
             properties: &[Prop::Text, Prop::Gap],
         },
         Part {
             name: "label",
-            since: super::NEXT,
+            since: 13,
             description: "Its name, at its start.",
             properties: WORDS,
         },
         Part {
             name: "track",
-            since: super::NEXT,
+            since: 13,
             description: "The track the fill is drawn on: its fill and its corners.",
             properties: &[Prop::Fill, Prop::CornerRadius],
         },
         Part {
             name: "fill",
-            since: super::NEXT,
+            since: 13,
             description: "The bar, as long as the value: held at 3:1 on its track.",
             properties: &[Prop::Fill],
         },
         Part {
             name: "value",
-            since: super::NEXT,
+            since: 13,
             description: "The value in figures, at its end.",
             properties: WORDS,
         },
@@ -64,19 +64,19 @@ pub(super) const METER: Family = Family {
     variants: &[
         Variant {
             name: "subject",
-            since: super::NEXT,
+            since: 13,
             description: "What is measured: the skill with it, how far a grade is.",
             consent: None,
         },
         Variant {
             name: "baseline",
-            since: super::NEXT,
+            since: 13,
             description: "What it is compared with: the chats without it.",
             consent: None,
         },
         Variant {
             name: "previous",
-            since: super::NEXT,
+            since: 13,
             description: "Its previous version.",
             consent: None,
         },

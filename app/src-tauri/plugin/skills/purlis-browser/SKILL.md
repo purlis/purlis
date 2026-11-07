@@ -16,7 +16,8 @@ script. The first browser tool asks the person what the browser may reach.
 Each browser has its own cookies, storage and pages, so workers that must be logged in as
 different users each use one of their own: `browser_new` opens another, and the tools use it
 from then on (pass `browser` to pick one by the name a tool answered with, `b1`, `b2`).
-`browser_close` ends one and everything it held.
+`browser_close` ends one and everything it held. While the person has taken a browser over it stays
+open: the answer says so, and you close it once they hand it back.
 
 ## Files: downloads and uploads
 
@@ -57,7 +58,8 @@ screenshot, and the fields purlis filled are blanked. From then on that browser 
 login's site alone; call `browser_new` for any other site. Where it signs in on another host,
 the browser keeps reaching that host too, so the site's own redirects and token refreshes work,
 but you may read or act on that host's pages only while it signs in: until the browser is back
-on the login's page, for two minutes at most. A step that host asks for after the password is
+on the login's page, for two minutes at most, and only on the page the login ran on and the
+windows it opens. Another tab stays kept off that host. A step that host asks for after the password is
 yours or the user's to take in that time. Outside it, a call on that host's page is refused, and
 where the page asks to sign in again, call `browser_login` again. The login goes into the browser
 you name, or the one you're using. A browser that holds it, on a page of its site that asks for no sign-in, answers "already logged

@@ -1064,6 +1064,11 @@ pub struct Recent {
 pub struct ChatOnPool {
     pub pool: String,
     pub workspace: String,
+    /// The pool's runner as the chat started there, so a draining runner is held only by a chat
+    /// that may be on it (#5393). None for a chat found by a restart or kept before this was
+    /// written: it may be on any of the pool's runners.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runner: Option<String>,
 }
 
 /// The most chats on pools a project keeps: the lowest numbers, the oldest, go first.

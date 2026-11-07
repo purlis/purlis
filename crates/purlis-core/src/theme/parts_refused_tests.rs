@@ -54,7 +54,7 @@ fn states_of(manifest: &Value, name: &str) -> Vec<String> {
 
 #[test]
 fn invalid_is_a_state_since_next_keyed_on_data_invalid() {
-    assert_eq!(State::Invalid.since(), parts::NEXT);
+    assert_eq!(State::Invalid.since(), 13);
     let manifest = parts::manifest_json();
     let invalid = manifest["states"]
         .as_array()
@@ -63,9 +63,9 @@ fn invalid_is_a_state_since_next_keyed_on_data_invalid() {
         .find(|one| one["name"] == "invalid")
         .expect("the manifest lists invalid");
     assert_eq!(invalid["attribute"], "[data-invalid]");
-    assert_eq!(invalid["since"], parts::NEXT);
-    // The release the last version shipped knew no such state.
-    let released = parts::manifest_as_of(parts::VERSION);
+    assert_eq!(invalid["since"], 13);
+    // The release before it knew no such state.
+    let released = parts::manifest_as_of(12);
     assert!(
         !released["states"]
             .as_array()

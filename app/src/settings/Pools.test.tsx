@@ -18,6 +18,7 @@ import type {
 } from "../bindings";
 import { doneWithTheAddedPool, stopAddingAPool } from "../pools";
 import { forgetThisLaunch } from "../regions";
+import { owedSaid } from "./pools";
 import { GLOBAL } from "../windowprefs";
 
 /**
@@ -118,6 +119,8 @@ beforeEach(() => {
     held: 0,
     named: null,
     waiting: 0,
+    owed: [],
+    owed_why: null,
   };
   added = [];
   removed = [];
@@ -921,6 +924,8 @@ describe("You › This machine › Pools", () => {
       held: 0,
       named: null,
       waiting: 2,
+      owed: [],
+      owed_why: null,
     };
     render(<App />);
     const nav = await yourSettings();
@@ -930,10 +935,85 @@ describe("You › This machine › Pools", () => {
       await within(group).findByText(
         /Its runner runs purlis 0\.4\.2-dev\.16, and this machine runs 0\.4\.2-dev\.17\. New chats start on a runner of 0\.4\.2-dev\.17 once that version's runner image is published\./,
       ),
-    ).toHaveTextContent(/1 older runner keeps its chats until they end, then purlis removes it\./);
+    ).toHaveTextContent(
+      /1 older runner keeps its chats until they end, then purlis removes it once their work is brought back\./,
+    );
     expect(
       within(group).getByText(
         /2 chats still run there: end them to let purlis remove the older runners\./,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("names the closed project an older runner waits on, and what lets the runner go", async () => {
+    pools = [a_pool("builds")];
+    const now = Date.now();
+    version = {
+      ...version,
+      draining: 1,
+      owed: [
+        {
+          path: "/projects/alpha",
+          name: "alpha",
+          opened: Math.floor(now / 1000) - 12 * 86_400 - 60,
+          open_now: false,
+        },
+        { path: "/projects/beta", name: "beta", opened: Math.floor(now / 1000), open_now: true },
+      ],
+    };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    const said = await within(group).findByText(
+      /An older runner stays until 2 projects bring back the work their chats saved on that runner: alpha, beta\./,
+    );
+    expect(said).toHaveTextContent(
+      "alpha is closed, and was last opened 12 days ago. Open alpha to bring its work back.",
+    );
+    expect(said).toHaveTextContent("beta is open, so purlis brings it back on its own.");
+    expect(said).toHaveTextContent(
+      "Removing the pool lets the runner go now too, but anything not brought back is deleted with it.",
+    );
+    expect(said.closest("li")).toHaveTextContent("builds");
+  });
+
+  it("says nothing of removing the pool when the one project waited on is open", async () => {
+    pools = [a_pool("builds")];
+    version = {
+      ...version,
+      draining: 1,
+      owed: [
+        {
+          path: "/projects/alpha",
+          name: "alpha",
+          opened: Math.floor(Date.now() / 1000),
+          open_now: true,
+        },
+      ],
+    };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    expect(
+      await within(group).findByText(
+        "An older runner stays until project alpha brings back the work its chats saved on that runner. alpha is open, so purlis brings it back on its own.",
+      ),
+    ).toBeInTheDocument();
+    expect(group).not.toHaveTextContent(/Removing the pool lets the runner go/);
+  });
+
+  it("says why it can't name the projects an older runner waits on", async () => {
+    pools = [a_pool("builds")];
+    version = { ...version, draining: 1, owed_why: "machine.json is not valid JSON" };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    expect(
+      await within(group).findByText(
+        "purlis could not read which projects still have work on an older runner, so the runner stays: machine.json is not valid JSON",
       ),
     ).toBeInTheDocument();
   });
@@ -949,6 +1029,8 @@ describe("You › This machine › Pools", () => {
       held: 1,
       named: null,
       waiting: 0,
+      owed: [],
+      owed_why: null,
     };
     render(<App />);
     const nav = await yourSettings();
@@ -971,6 +1053,8 @@ describe("You › This machine › Pools", () => {
       held: 0,
       named: null,
       waiting: 0,
+      owed: [],
+      owed_why: null,
     };
     render(<App />);
     const nav = await yourSettings();
@@ -1026,6 +1110,8 @@ describe("You › This machine › Pools", () => {
       held: 0,
       named: false,
       waiting: 0,
+      owed: [],
+      owed_why: null,
     };
     render(<App />);
     const nav = await yourSettings();
@@ -1049,6 +1135,8 @@ describe("You › This machine › Pools", () => {
       held: 0,
       named: null,
       waiting: 0,
+      owed: [],
+      owed_why: null,
     };
     render(<App />);
     const nav = await yourSettings();
@@ -1256,5 +1344,43 @@ describe("A cluster pool (#3292)", () => {
     );
     await userEvent.click(within(asked).getByRole("button", { name: "Remove pool" }));
     await waitFor(() => expect(removed).toEqual(["team"]));
+  });
+});
+
+describe("owedSaid", () => {
+  const now = Date.UTC(2026, 10, 6, 12);
+  const opened = (secondsAgo: number) => Math.floor(now / 1000) - secondsAgo;
+  const owing = (secondsAgo: number): PoolVersion => ({
+    runner: "0.4.2",
+    why: null,
+    desktop: "0.4.2",
+    follows: true,
+    draining: 1,
+    held: 0,
+    named: null,
+    waiting: 0,
+    owed: [{ path: "/p/alpha", name: "alpha", opened: opened(secondsAgo), open_now: false }],
+    owed_why: null,
+  });
+
+  it("says how many whole days ago a closed project was last opened", () => {
+    expect(owedSaid(owing(3600), now)).toContain("was last opened less than a day ago.");
+    expect(owedSaid(owing(-3600), now)).toContain("was last opened less than a day ago.");
+    expect(owedSaid(owing(86_400 + 1), now)).toContain("was last opened 1 day ago.");
+    expect(owedSaid(owing(2 * 86_400), now)).toContain("was last opened 2 days ago.");
+  });
+
+  it("tells two projects in folders of the same name apart by where they are", () => {
+    const two = owing(0);
+    two.owed = [
+      { path: "/a/app", name: "app", opened: opened(0), open_now: true },
+      { path: "/b/app", name: "app", opened: opened(0), open_now: true },
+    ];
+    expect(owedSaid(two, now)).toContain("on that runner: /a/app, /b/app.");
+  });
+
+  it("says nothing where no project is waited on", () => {
+    expect(owedSaid({ ...owing(0), owed: [] }, now)).toBeUndefined();
+    expect(owedSaid(undefined, now)).toBeUndefined();
   });
 });

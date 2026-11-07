@@ -628,8 +628,33 @@ export function copyFixturePlane(name = "daily"): string {
       mkdirSync(join(root, rel), { recursive: true });
     }
   }
+  aCurrentLayout(root);
   oneMoment(root, new Date());
   return root;
+}
+
+/**
+ * The workspace layout version `purlis workspace reinit` stamps now: the core's
+ * `wslayer::STRUCTURE_VERSION`. The status line spec's reinit alert fails the day it moves
+ * without this.
+ */
+const CURRENT_LAYOUT = 6;
+
+/**
+ * Stamps each workspace of a copied plane with the current layout, under the name its stamp
+ * already has. A fixture keeps the version it was recorded at, because the recorded scenarios
+ * start from that plane's own commit (`tests/fixtures/recorded`). The window's specs start from
+ * a healthy plane, and one layout behind is a `reinit` alert on every one of them.
+ */
+function aCurrentLayout(plane: string): void {
+  const workspaces = join(plane, "workspaces");
+  if (!existsSync(workspaces)) return;
+  for (const ws of readdirSync(workspaces)) {
+    for (const stamp of [".purlis-structure", ".charter-structure"]) {
+      const at = join(workspaces, ws, stamp);
+      if (existsSync(at)) writeFileSync(at, `${CURRENT_LAYOUT}\n`);
+    }
+  }
 }
 
 /**

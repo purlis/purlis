@@ -76,15 +76,24 @@ pub struct StudioLink {
     /// The skill, by its name: `None` for a new skill's draft.
     pub skill: Option<String>,
     pub level: SkillLevel,
-    pub job: StudioJobKind,
+    #[specta(type = StudioJobKind)]
+    pub job: StudioWork,
     /// Whether the chat wrote its draft: once true, never running again.
     pub done: bool,
+    /// When the studio started the chat (RFC 3339), where its record knows (#5248): what the
+    /// Grades card's running job counts from.
+    pub started: Option<String>,
+    /// When its job stopped running (#5248): its draft came, its program ended, or it closed.
+    pub finished: Option<String>,
 }
 
-/// The studio's jobs a chat is started for: [`StudioWork`], by the record's words.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+/// **The studio's jobs, as the window types them**: the core's [`StudioWork`], which writes
+/// itself as its word, typed for the window here, since purlis-core keeps no UI typing crate.
+/// Never made: a test holds its words to the core's.
+#[derive(Serialize, Type)]
 #[serde(rename_all = "kebab-case")]
-pub enum StudioJobKind {
+#[cfg_attr(not(test), allow(dead_code))]
+enum StudioJobKind {
     Draft,
     TriggerTests,
     OutcomeEvals,
@@ -98,17 +107,56 @@ impl From<&StudioJob> for StudioLink {
         StudioLink {
             skill: job.skill.clone(),
             level: (&job.level).into(),
-            job: match job.job {
-                StudioWork::Draft => StudioJobKind::Draft,
-                StudioWork::TriggerTests => StudioJobKind::TriggerTests,
-                StudioWork::OutcomeEvals => StudioJobKind::OutcomeEvals,
-                StudioWork::Checks => StudioJobKind::Checks,
-                StudioWork::Improve => StudioJobKind::Improve,
-                StudioWork::Redo => StudioJobKind::Redo,
-            },
+            job: job.job,
             done: job.done,
+            started: job.started.clone(),
+            finished: job.finished.clone(),
         }
     }
+}
+
+/// **A chat the studio started, closed here** (#5248), as a skill's Runs lists it: its number
+/// (what a draft names its chat by), its name as it closed, when, and what it was started for.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct ClosedStudioChat {
+    pub session: u32,
+    pub name: String,
+    /// When it closed (RFC 3339).
+    pub closed: String,
+    /// What it was started for, its `finished` always set.
+    pub link: StudioLink,
+}
+
+impl From<&purlis_core::reopen::studio_chats::ClosedStudioChat> for ClosedStudioChat {
+    fn from(one: &purlis_core::reopen::studio_chats::ClosedStudioChat) -> ClosedStudioChat {
+        ClosedStudioChat {
+            session: one.chat,
+            name: one.name.clone(),
+            closed: one.closed.clone(),
+            link: StudioLink::from(&one.job),
+        }
+    }
+}
+
+/// **The chats the studio started that have closed here** (#5248), newest first: what a skill's
+/// Runs keeps after a chat ends. None while the studio is off.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn studio_chats_closed(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<Vec<ClosedStudioChat>, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading the studio's chats", move || {
+        if !purlis_core::skills::studio_on_here() {
+            return Ok(Vec::new());
+        }
+        Ok(purlis_core::reopen::studio_chats::closed(held.root())
+            .iter()
+            .map(ClosedStudioChat::from)
+            .collect())
+    })
+    .await
 }
 
 /// One draft skill, as the studio lists it.
@@ -370,12 +418,12 @@ pub(crate) async fn skill_draft_chat(
                 skill: Some(asked),
                 then_a_space: false,
                 starts_runs: None,
-                studio: Some(StudioJob {
-                    skill: None,
-                    level: level.clone(),
-                    job: StudioWork::Draft,
-                    done: false,
-                }),
+                studio: Some(StudioJob::new(
+                    None,
+                    level.clone(),
+                    StudioWork::Draft,
+                    chrono::Utc::now(),
+                )),
             },
             purlis_core::engine::Size { columns, rows },
         )
@@ -508,12 +556,12 @@ fn on_a_skill(
     name: &str,
     work: StudioWork,
 ) -> StudioJob {
-    StudioJob {
-        skill: Some(name.to_owned()),
-        level: level.clone(),
-        job: work,
-        done: false,
-    }
+    StudioJob::new(
+        Some(name.to_owned()),
+        level.clone(),
+        work,
+        chrono::Utc::now(),
+    )
 }
 
 /// A chat where the skill of `job` lives, on the project's default profile, with `prompt` typed
@@ -712,12 +760,12 @@ pub(crate) async fn skill_draft_redo(
                 skill: Some(asked),
                 then_a_space: false,
                 starts_runs: None,
-                studio: Some(StudioJob {
-                    skill: Some(draft.name.clone()),
-                    level: draft.level.clone(),
-                    job: StudioWork::Redo,
-                    done: false,
-                }),
+                studio: Some(StudioJob::new(
+                    Some(draft.name.clone()),
+                    draft.level.clone(),
+                    StudioWork::Redo,
+                    chrono::Utc::now(),
+                )),
             },
             purlis_core::engine::Size { columns, rows },
         )
@@ -934,12 +982,15 @@ mod tests {
     #[test]
     fn the_window_reads_a_studio_chats_skill_level_and_job_off_its_record() {
         // #5185: what the chat's chip and the skill page's line are drawn from.
-        let link = StudioLink::from(&StudioJob {
-            skill: Some("test-design".to_owned()),
-            level: purlis_core::skills::verbs::Level::workspace("purlis-demo"),
-            job: StudioWork::OutcomeEvals,
-            done: false,
-        });
+        let started = chrono::DateTime::parse_from_rfc3339("2026-11-04T17:31:00Z")
+            .expect("a time")
+            .with_timezone(&chrono::Utc);
+        let link = StudioLink::from(&StudioJob::new(
+            Some("test-design".to_owned()),
+            purlis_core::skills::verbs::Level::workspace("purlis-demo"),
+            StudioWork::OutcomeEvals,
+            started,
+        ));
 
         assert_eq!(
             serde_json::to_value(link).expect("json"),
@@ -948,8 +999,31 @@ mod tests {
                 "level": {"at": "workspace", "name": "purlis-demo", "local": false},
                 "job": "outcome-evals",
                 "done": false,
+                "started": "2026-11-04T17:31:00Z",
+                "finished": null,
             })
         );
+    }
+
+    #[test]
+    fn the_window_is_typed_every_studio_job_by_the_word_the_core_writes() {
+        // #5248: the window's type is the core's jobs, no more and no fewer.
+        let typed: std::collections::BTreeSet<String> = [
+            StudioJobKind::Draft,
+            StudioJobKind::TriggerTests,
+            StudioJobKind::OutcomeEvals,
+            StudioJobKind::Checks,
+            StudioJobKind::Improve,
+            StudioJobKind::Redo,
+        ]
+        .iter()
+        .map(|kind| serde_json::to_string(kind).expect("json"))
+        .collect();
+        let written: std::collections::BTreeSet<String> = StudioWork::all()
+            .map(|work| serde_json::to_string(&work).expect("json"))
+            .collect();
+
+        assert_eq!(typed, written);
     }
 
     /// Makes the record of `id` look as if it was written long ago, past the sweep's grace.

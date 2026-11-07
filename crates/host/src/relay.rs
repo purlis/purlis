@@ -957,6 +957,13 @@ impl Upstream {
                 why,
             });
         }
+        // Likewise a fill, and the read of a field for one.
+        if let Some(why) = no_fill_for(&command, self.client.version()) {
+            return Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why,
+            });
+        }
         let _in_flight = Counted::start(&self.calls);
         self.client.call(command).await.map_err(|why| refused(&why))
     }
@@ -1677,6 +1684,30 @@ fn no_login_for(
             "the runner this host relays to speaks session protocol {}.{}, which doesn't start a \
              login clean on its site, so nothing was filled. Update purlis on the runner, then \
              call browser_login again",
+            version.major, version.minor
+        )
+    })
+}
+
+/// Why a fill, or the read of a field for one, isn't sent on to a runner of `version`
+/// ([`session::KNOWS_FILLS_KEPT_OUT`]).
+fn no_fill_for(
+    command: &Command,
+    version: purlis_session_protocol::version::Version,
+) -> Option<String> {
+    let a_fill = matches!(
+        command,
+        Command::FillSecret { .. }
+            | Command::Browse {
+                act: purlis_session_protocol::browsing::Act::DescribeField { .. },
+                ..
+            }
+    );
+    (a_fill && version < session::KNOWS_FILLS_KEPT_OUT).then(|| {
+        format!(
+            "the runner this host relays to speaks session protocol {}.{}, which is too old to \
+             fill a secret, so nothing was filled. Update purlis on the runner, then call \
+             browser_fill_secret again",
             version.major, version.minor
         )
     })

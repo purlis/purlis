@@ -35,13 +35,14 @@ export const SkillRunChip = memo(function SkillRunChip({
   const tokens = run.tokens === null ? undefined : `${tokensShort(run.tokens)} tokens`;
   const sofar = tokens === undefined ? calls : `${calls} and ${tokens}`;
   return (
-    <span className="tab-tasks tab-skill-run">
-      {/* On the chip's pill, as a tab's task counts are (`TabChip`, #3264). */}
-      <span className="tab-tasks-pill">
+    <span className="tab-run tab-skill-run">
+      {/* On a sunken pill, as a tab's task counts were before they moved to its pane's head
+          (#3264, #5341). */}
+      <span className="tab-run-pill">
         <Button
           variant="quiet"
           size="sm"
-          className="tab-tasks-counts"
+          className="tab-run-counts"
           data-testid="tab-skill-run"
           tooltip={`Using the skill ${run.name}: ${sofar} so far. Open its runs.`}
           aria-label={`Using the skill ${run.name}, ${sofar} so far. Open its runs`}

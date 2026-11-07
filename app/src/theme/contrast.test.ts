@@ -98,9 +98,15 @@ const KEYWORDS = new Set(["inherit", "transparent", "none", "currentcolor", "uns
  */
 const READ_BY_HAND: readonly string[] = [
   // A chat's state badge (#3342) is ringed in the ground of the row it stands on: the panel's
-  // fill, the hover's or the chosen row's (`--chat-badge-ground`). Its mark is a state token the
+  // fill, the hover's or the chosen row's (`--chat-mark-ground`). Its mark is a state token the
   // engine holds at 3:1 on each of those grounds in `PAIRS`.
-  ".chat-persona > .shown-state .shape | background-color: var(--chat-badge-ground)",
+  '[data-scope="chat-mark"][data-part="badge"] | background-color: var(--chat-mark-ground)',
+  // A tab's × (#5341) stands on its tab's own ground, so the name under it is covered: the
+  // window behind a tab at rest, the chosen tab's fill (`--chat-mark-ground`), under the hover's
+  // pill. Its mark is `text.faint`, held as a mark on each tab ground with the tab's own words.
+  '[data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"] | background-color: var(--tabs-closer-ground)',
+  `[data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"]::before | background: linear-gradient(to right, transparent, var(--tabs-closer-over)),
+    linear-gradient(to right, transparent, var(--tabs-closer-ground))`,
   '[data-scope="panel-section"][data-part="top"] | background-color: var(--panel-fill)',
   '[data-scope="panel-section"][data-frame] [data-scope="list"][data-part="header"] | background-color: var(--panel-fill)',
   // A view frame's page header (#3666), held over the item's body on the panel's fill.

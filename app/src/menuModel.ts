@@ -252,6 +252,9 @@ const DRESS: Readonly<Record<string, Dress>> = {
   // A tab's own rows (#4753): what a tab is, and never a chat's. Close other tabs (#4762) is
   // drawn among what closes (#4760), and, as Close, ends nothing (#4756): never coloured.
   "tab.closeOthers": { said: SAID.closeOtherTabs, slot: "end" },
+  // A lone view's splits (#5318), with the rows that rearrange a tab's panes.
+  "tab.split.right": { said: (offer) => offer.title, slot: "first" },
+  "tab.split.down": { said: (offer) => offer.title, slot: "first" },
   "tab.select": { said: SAID.switchTo, slot: "first", quiet: true },
   "tab.pin": pin,
   // Tile all (#4765): among a tab's own rows on its right-click, and with the splits on a pane's,
@@ -374,6 +377,9 @@ const DRESS: Readonly<Record<string, Dress>> = {
   "file.shell": { said: (offer) => offer.title, slot: "open" },
   "file.chat": { said: (offer) => offer.title, slot: "run" },
   "file.addtochat": { said: (offer) => offer.title, slot: "run" },
+  // A LIVE workspace's own entry (#5377): it shares the entry with the project, so it stands
+  // under the line, apart from the rows that only place or hand the file.
+  "file.savewithproject": { said: (offer) => offer.title, slot: "end" },
 
   // The panes. Not about one named thing, so the catalogue's words are the row's: what starts
   // in a pane, then what is done to the pane with the keyboard, then what closes it.

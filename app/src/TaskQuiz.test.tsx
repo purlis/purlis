@@ -72,6 +72,7 @@ function draw(ask: Shown, more = 0, own = false, onOpenTask = vi.fn()) {
         own={own}
         now={NOW}
         onOpenTask={onOpenTask}
+        defaultOpen
         onAnswered={() => {}}
       />
     </>,
@@ -186,6 +187,7 @@ describe("a task question's quiz (#4565)", () => {
         own={false}
         now={NOW}
         onOpenTask={() => {}}
+        defaultOpen
         onAnswered={() => {}}
       />,
     );
@@ -240,6 +242,7 @@ describe("a task question's quiz (#4565)", () => {
         own={false}
         now={NOW}
         onOpenTask={vi.fn()}
+        defaultOpen
         onAnswered={() => {}}
         onTyped={typed}
       />,

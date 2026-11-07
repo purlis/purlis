@@ -26,10 +26,11 @@ name = "purlis_app_lib"
 # compiled it afresh on every run however the cache stood (#3742).
 crate-type = ["rlib"]
 
-# The app's program keeps its name: the keyring writer (`secrets::keyhold::APP_BINARY`), the
-# e2e runs and the release steps find it by it. Renaming the program is not the crate's rename.
+# The app's program, `purlis-app` since #1309: the keyring writer (`secrets::keyhold::APP_BINARY`,
+# which `names::APP_BINARY` holds), the e2e runs and the release steps find it by this name, and
+# `tauri.conf.json`'s `mainBinaryName` must say the same.
 [[bin]]
-name = "charter-app"
+name = "purlis-app"
 path = "src/main.rs"
 
 [build-dependencies]

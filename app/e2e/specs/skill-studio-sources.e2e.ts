@@ -7,12 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { choose, projectRoot } from "../acting.js";
-import {
-  closeTheViewTabsOpenedSince,
-  focusWorkspace,
-  runFromThePalette,
-  tabNames,
-} from "../reach.js";
+import { closesTheTabsItOpens, focusWorkspace, runFromThePalette } from "../reach.js";
 import { studioPage } from "../studio.js";
 
 /**
@@ -106,7 +101,6 @@ describe("installing a skill from a skill source", function () {
 
   let root = "";
   let url = "";
-  let wereOpen: string[] = [];
   let manifest = "";
   let localManifest: string | null = null;
 
@@ -118,11 +112,13 @@ describe("installing a skill from a skill source", function () {
       : null;
     url = aSource();
     await focusWorkspace("alpha");
-    wereOpen = await tabNames();
   });
 
-  after(async () => {
-    await closeTheViewTabsOpenedSince(wereOpen);
+  // Between the two: the strip is read once alpha is focused, and its view tabs are closed
+  // before the files are tidied.
+  closesTheTabsItOpens();
+
+  after(() => {
     for (const name of [SHIPPER, NOTIFIER, LINTER])
       rmSync(join(root, "skills", name), { recursive: true, force: true });
     rmSync(join(root, "skills.lock"), { force: true });

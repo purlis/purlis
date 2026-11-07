@@ -232,6 +232,12 @@ means.
   turn ends, purlis also looks through the folders it may write, and the Inbox names the chat and
   any new file that a later program loads. That look tells and changes nothing, within the bounds
   ADR 0067 §5, amended 2026-11-05, states, and says when it was incomplete.
+- **Claude Code on Linux.** Claude Code's sandbox there keeps a plain path and not a rule for any
+  depth. So purlis names what a later program loads in each folder a chat may write, by path, and
+  those are refused. Below those folders nothing is refused by name: the look above tells what
+  arrives there, and what changes in a name that was already there. Names inside `.git` that aren't
+  there as the chat starts, and a home's folders a project doesn't have, are told and not refused
+  too.
 - **Temp directories.** A wrapped opencode or Codex chat gets a temp directory of its own, under
   `TMPDIR`, `TMP` and `TEMP`, and `xcrun`'s cache and clang's module cache go there too. Some
   macOS tools read no variable and ask the system for its per-user temp folder, which no

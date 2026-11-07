@@ -11,6 +11,7 @@ import type {
   Studio,
   StudioSkill,
 } from "./bindings";
+import { inACheckout } from "./skillFile";
 import { pinsRefusedSaid } from "./skillStudio";
 
 /**
@@ -297,6 +298,7 @@ function rowOfChat(skill: ChatSkill): StudioSkill {
     lint: [],
     hidden: [],
     pinned: false,
+    archived: false,
     pinned_by: [],
   };
 }
@@ -487,25 +489,6 @@ export type ExplorerPlace = {
   piece?: string;
   folder: string;
 };
-
-/** **Where a repo skill's folder is**, from its path in the project: in a clone's own folder
- *  (`workspaces/<workspace>/<clone>/…`, the core's `worktree::clone_dir`), or in a branch folder
- *  of one (`workspaces/<workspace>/.worktrees/<clone>/<piece>/…`, #4326). */
-function inACheckout(
-  folder: string,
-): { workspace: string; repo: string; piece?: string; rest: string[] } | undefined {
-  const [top, workspace, repo, ...rest] = folder.split("/");
-  if (top !== "workspaces" || !workspace || !repo) return undefined;
-  if (repo === BRANCH_FOLDERS) {
-    const [clone, piece, ...inside] = rest;
-    if (!clone || !piece || inside.length === 0) return undefined;
-    return { workspace, repo: clone, piece, rest: inside };
-  }
-  return rest.length === 0 ? undefined : { workspace, repo, rest };
-}
-
-/** The folder of a workspace that holds its branch folders (the core's `worktree::DIR_NAME`). */
-const BRANCH_FOLDERS = ".worktrees";
 
 /** **The branch folder a repo skill's row is a copy in** (#4376), or `undefined` for any other
  *  row. The Skill studio lists each clone's own folder, so it cannot describe such a copy: its

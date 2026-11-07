@@ -22,6 +22,7 @@ import type { Token } from "./theme/theme";
 export type ShownKind =
   | "working"
   | "needs-you"
+  | "task-failed"
   | "waiting-on-tasks"
   | "waiting-on-own-work"
   | "asking"
@@ -54,8 +55,37 @@ export type ShownShape =
   | "pause"
   | "dots";
 
-/** A chat's state as a row shows it. */
-export type Shown = {
+/**
+ * **A chat's one state, the first true of these winning** (#5340, spec #5339): what its mark
+ * wears on its tab, its row, its pane's head and a folded pane's rail (`ui/chat-mark`). The order
+ * is the spec's, and a split tab's mark reads it too.
+ */
+export const MARK_STATES = ["needs", "failed", "working", "waiting", "idle", "ended"] as const;
+export type MarkState = (typeof MARK_STATES)[number];
+
+/**
+ * **A split tab's mark is its most urgent pane's** (#5342, spec #5339), so a pane that needs the
+ * person can't hide behind the focused one: of `panes`, in reading order, the one whose state
+ * comes first in {@link MARK_STATES}. Of two in one state the first in reading order wins, and a
+ * pane with no state (a view, an empty pane, a harness that has said nothing) is never chosen:
+ * nothing, where no pane has one.
+ */
+export function urgentOf<T>(
+  panes: readonly T[],
+  markOf: (pane: T) => MarkState | null | undefined,
+): T | undefined {
+  let best: { pane: T; rank: number } | undefined;
+  for (const pane of panes) {
+    const mark = markOf(pane);
+    if (mark === null || mark === undefined) continue;
+    const rank = MARK_STATES.indexOf(mark);
+    if (best === undefined || rank < best.rank) best = { pane, rank };
+  }
+  return best?.pane;
+}
+
+/** A state in words and a shape, as a line that says it beside its word draws it. */
+export type Said = {
   kind: ShownKind;
   /** The word beside the mark. Always drawn. */
   word: string;
@@ -63,6 +93,47 @@ export type Shown = {
   /** The theme token the mark is coloured by. Never the word's colour: the word stays
    *  legible whatever a theme does with these. Finished states share the muted grey. */
   token: Token;
+};
+
+/** A chat's state as a row shows it. */
+export type Shown = Said & {
+  /** Its one state, or nothing where none is known: a harness that has said nothing is said
+   *  in words, and no state is claimed for it (V100-71). */
+  mark: MarkState | null;
+};
+
+/** **Each state's shape and colour, where a line says it beside its word** (the pane's head, the
+ *  explorer: `ChatRows.ChatShownState`), so a chat wears one glyph in one place. */
+export const MARK_SAID: Readonly<Record<MarkState, { shape: ShownShape; token: Token }>> = {
+  needs: { shape: "hand", token: "needs-you.base" },
+  failed: { shape: "cross", token: "state.failed" },
+  working: { shape: "ring", token: "state.running" },
+  waiting: { shape: "hourglass", token: "state.running" },
+  idle: { shape: "pause", token: "text.muted" },
+  ended: { shape: "dash", token: "text.muted" },
+};
+
+/** Which of the one states each word stands for. Everything a program has finished is `ended`:
+ *  the word says which way, and what is below it is `failed` only until it has been seen. */
+const MARK_OF_KIND: Readonly<Record<ShownKind, MarkState | null>> = {
+  "needs-you": "needs",
+  "task-failed": "failed",
+  working: "working",
+  "waiting-on-tasks": "waiting",
+  "waiting-on-own-work": "waiting",
+  asking: "waiting",
+  idle: "idle",
+  done: "ended",
+  failed: "ended",
+  cancelled: "ended",
+  "stopped-by-you": "ended",
+  "closed-by-you": "ended",
+  "stopped-at-limit": "ended",
+  "stopped-with-above": "ended",
+  unreported: "ended",
+  "last-message": "ended",
+  reported: "ended",
+  unheard: null,
 };
 
 /** What a task's own record says of it, apart from what its program is doing. */
@@ -99,18 +170,23 @@ export type Facts = {
   /** What it waits on of its own, where its turn ended while that is in flight (#3878,
    *  `chatState.ownWorkOf`). None where it waits on none, or a surface does not say. */
   ownWork?: OwnWork;
+  /** How many tasks it asked for came to nothing and have not been seen (#5340,
+   *  `chatState.failuresUnseenOf`). None where a surface does not say. */
+  failuresUnseen?: number;
+  /** It is such a task itself, and has not been seen (#5340, `chatState.failedUnseen`). */
+  failedUnseen?: boolean;
 };
 
-const WORKING: Shown = { kind: "working", word: "working", shape: "ring", token: "state.running" };
-const NEEDS_YOU: Shown = {
+const WORKING: Said = { kind: "working", word: "working", shape: "ring", token: "state.running" };
+const NEEDS_YOU: Said = {
   kind: "needs-you",
   word: "needs you",
   shape: "hand",
   token: "needs-you.base",
 };
-const DONE: Shown = { kind: "done", word: "done", shape: "tick", token: "text.muted" };
-const FAILED: Shown = { kind: "failed", word: "failed", shape: "cross", token: "state.failed" };
-const CANCELLED: Shown = {
+const DONE: Said = { kind: "done", word: "done", shape: "tick", token: "text.muted" };
+const FAILED: Said = { kind: "failed", word: "failed", shape: "cross", token: "state.failed" };
+const CANCELLED: Said = {
   kind: "cancelled",
   word: "cancelled",
   shape: "dash",
@@ -118,14 +194,14 @@ const CANCELLED: Shown = {
 };
 /** **The person stopped it and got its report** (#1488): the square of a stop button. Its own
  *  word and shape, as the person's doing: never "cancelled", which is the asking chat's. */
-const STOPPED_BY_YOU: Shown = {
+const STOPPED_BY_YOU: Said = {
   kind: "stopped-by-you",
   word: "stopped by you",
   shape: "square",
   token: "text.muted",
 };
 /** **The person closed it**, with no report from it (#1488): the stop sign's eight sides. */
-const CLOSED_BY_YOU: Shown = {
+const CLOSED_BY_YOU: Said = {
   kind: "closed-by-you",
   word: "closed by you",
   shape: "octagon",
@@ -133,27 +209,27 @@ const CLOSED_BY_YOU: Shown = {
 };
 /** **purlis stopped it at its time limit** (#1512): a stop, so the stop's square, in words
  *  that say it was the limit and not the person there and then. */
-const STOPPED_AT_LIMIT: Shown = {
+const STOPPED_AT_LIMIT: Said = {
   kind: "stopped-at-limit",
   word: "stopped at its time limit",
   shape: "square",
   token: "text.muted",
 };
 /** **purlis stopped it with the task above it**, at that task's time limit (#1512). */
-const STOPPED_WITH_ABOVE: Shown = {
+const STOPPED_WITH_ABOVE: Said = {
   kind: "stopped-with-above",
   word: "stopped with the task above it",
   shape: "square",
   token: "text.muted",
 };
 /** **purlis stopped it because its session reached its token limit** (#1512, #1457). */
-const STOPPED_AT_TOKEN_LIMIT: Shown = {
+const STOPPED_AT_TOKEN_LIMIT: Said = {
   kind: "stopped-at-limit",
   word: "stopped at its session's token limit",
   shape: "square",
   token: "text.muted",
 };
-const UNREPORTED: Shown = {
+const UNREPORTED: Said = {
   kind: "unreported",
   word: "ended without a report",
   shape: "triangle",
@@ -161,21 +237,21 @@ const UNREPORTED: Shown = {
 };
 /** **A report purlis made from its last message** (#1981): the task's turns ended without a
  *  report, and purlis sent what it last said. Its words, never the task's own report. */
-const LAST_MESSAGE: Shown = {
+const LAST_MESSAGE: Said = {
   kind: "last-message",
   word: "a report purlis made from its last message",
   shape: "triangle",
   token: "state.unreadable",
 };
-const IDLE: Shown = { kind: "idle", word: "idle", shape: "pause", token: "text.muted" };
-const REPORTED: Shown = { kind: "reported", word: "reported", shape: "dot", token: "text.muted" };
+const IDLE: Said = { kind: "idle", word: "idle", shape: "pause", token: "text.muted" };
+const REPORTED: Said = { kind: "reported", word: "reported", shape: "dot", token: "text.muted" };
 
 /**
  * How a report a task sent reads, by the dispatch record's word for its outcome. `blocked` is
  * a task that could not do the work, which the row says as `failed`; its report says why. Any
  * other word is not one this window knows, and is not guessed at.
  */
-const BY_OUTCOME: ReadonlyMap<string, Shown> = new Map([
+const BY_OUTCOME: ReadonlyMap<string, Said> = new Map([
   ["done", DONE],
   ["failed", FAILED],
   ["blocked", FAILED],
@@ -189,7 +265,7 @@ const BY_OUTCOME: ReadonlyMap<string, Shown> = new Map([
  * says how many. The core keeps such a chat out of the needs-you queue, so this never stands
  * where `needs you` would.
  */
-export function waitingOnTasks(tasks: number): Shown {
+export function waitingOnTasks(tasks: number): Said {
   return {
     kind: "waiting-on-tasks",
     word: tasks === 1 ? "waiting on 1 task" : `waiting on ${tasks} tasks`,
@@ -232,7 +308,7 @@ export function ownWorkSaid(work: OwnWork): string {
  * and not on the person, so it wears the working colour and the hourglass a chat waiting on its
  * tasks wears, and says what it waits on. The core keeps such a chat out of the needs-you queue.
  */
-export function waitingOnOwnWork(work: OwnWork): Shown {
+export function waitingOnOwnWork(work: OwnWork): Said {
   return {
     kind: "waiting-on-own-work",
     word: ownWorkSaid(work),
@@ -247,7 +323,7 @@ export function waitingOnOwnWork(work: OwnWork): Shown {
  * of itself reads as either. `stopped` is the outcome of a record written before the way was
  * kept, and is read as closed.
  */
-const BY_THE_PERSON: ReadonlyMap<string, Shown> = new Map([
+const BY_THE_PERSON: ReadonlyMap<string, Said> = new Map([
   ["stopped_by_person", STOPPED_BY_YOU],
   ["closed_by_person", CLOSED_BY_YOU],
   ["stopped", CLOSED_BY_YOU],
@@ -270,19 +346,42 @@ const BY_THE_PERSON: ReadonlyMap<string, Shown> = new Map([
  * or cancelled however its turn then ends: that end is what made a finished task look like a
  * chat waiting on the person. One that is running again, on the person's word, is working.
  *
- * **The order, whole** (#1491): needs you; a sent report (working while a turn runs, else how
- * it ended); a report written in its place; a program that ended; asking its asker; waiting on
- * its tasks; waiting on its own work; idle; working; not known.
+ * **The order, whole** (#1491, #5340): needs you; a failed task not yet seen; a sent report
+ * (working while a turn runs, else how it ended); a report written in its place; a program that
+ * ended; asking its asker; waiting on its tasks; waiting on its own work; idle; working; not
+ * known. **A record of how it ended is a program that has ended** (a task ends at its report), so
+ * `working` and `waiting` are not true of it: its tasks at work leave it `ended`.
  */
-export function shownState({
+export function shownState(facts: Facts): Shown | undefined {
+  const said = saidOf(facts);
+  if (said === undefined) return undefined;
+  // Its own failure, not yet seen: its own word, on the mark that says so.
+  if (facts.failedUnseen === true && !facts.needsYou) return { ...said, mark: "failed" };
+  return { ...said, mark: MARK_OF_KIND[said.kind] };
+}
+
+/** `a task failed`, `3 tasks failed`: what a chat's tasks came to, until it has been seen. */
+function tasksFailed(tasks: number): Said {
+  return {
+    kind: "task-failed",
+    word: tasks === 1 ? "a task failed" : `${tasks} tasks failed`,
+    shape: "cross",
+    token: "state.failed",
+  };
+}
+
+/** The words and shape of a chat's state, in the order {@link shownState} says. */
+function saidOf({
   board,
   needsYou,
   task,
   harness,
   tasksAtWork = 0,
   ownWork,
-}: Facts): Shown | undefined {
+  failuresUnseen = 0,
+}: Facts): Said | undefined {
   if (needsYou) return NEEDS_YOU;
+  if (failuresUnseen > 0) return tasksFailed(failuresUnseen);
   const byThePerson = task?.outcome == null ? undefined : BY_THE_PERSON.get(task.outcome);
   if (task?.report === "sent") {
     if (board === "running") return WORKING;

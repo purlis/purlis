@@ -1311,9 +1311,10 @@ pub fn repo_name_ok(name: &str) -> bool {
 
 /// **What a workspace's folder keeps of its own**, beside its clones (docs/plane-format.md): its
 /// file and settings, memory, todos, session records, pieces, references, skills, themes, change
-/// proposals and work links. The folders starting with a dot (`.worktrees`, `.claude`, purlis's
-/// own) are no repo's name already ([`repo_name_ok`]).
-const WORKSPACE_OWN: [&str; 11] = [
+/// proposals, work links and, from structure version 6, the `repos/` its clones go in (ADR 0114).
+/// The folders starting with a dot (`.worktrees`, `.claude`, purlis's own) are no repo's name
+/// already ([`repo_name_ok`]).
+const WORKSPACE_OWN: [&str; 12] = [
     "workspace.md",
     "workspace.json",
     "memory",
@@ -1325,6 +1326,7 @@ const WORKSPACE_OWN: [&str; 11] = [
     "themes",
     "changes",
     "work",
+    "repos",
 ];
 
 /// **Whether `name` is one a workspace keeps for its own** ([`WORKSPACE_OWN`]), however it is

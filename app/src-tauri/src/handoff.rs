@@ -121,8 +121,9 @@ pub struct Arrived {
     /// before the number when it adopted no persona (charter-app#254).
     pub harness: Option<String>,
     /// **Whether it can't tell the person it needs them** (#4759): its harness's card says no
-    /// to hooks or to reporting a wait, or it has no adapter at all
-    /// ([`purlis_core::harness_card::reports_asks`]). A task on one is announced as a handoff
+    /// to hooks or to reporting a wait ([`purlis_core::harness_card::reports_asks`]). A program
+    /// purlis has no adapter for never arrives: [`told_first`] refuses it before it starts.
+    /// A task on one is announced as a handoff
     /// is, and the asking chat is told the person must look at it.
     pub cant_report_asks: bool,
     /// **Whether the window announces it** (#4759, [`Chat::announced`]): a handoff, or a task
@@ -136,6 +137,10 @@ pub struct Arrived {
 /// 0090 as amended 2026-11-02): one of the notes beside its start, which the CLI says as
 /// `Note: …`. The task starts in no pane, and nothing it asks reaches the person, so the person
 /// must look at it, and only the asking chat can tell them.
+///
+/// **Only a harness is ever to blame** (#5271): a program purlis has no adapter for is never
+/// started as a task, since nothing knows how to hand it the brief ([`told_first`]), so no
+/// asking chat is told this of one.
 pub const CANT_REPORT_ASKS: &str =
     "its harness can't report asks, so tell the person they must look at it themselves";
 
@@ -371,6 +376,7 @@ pub fn answer(
         // A proposed value for a pool's limit (#4284): no ticket, for the removal's reason. The
         // app writes nothing for it, and holds it for the person.
         Ask::ProposeLimit(proposal) => crate::proposals::asked_limit(held, &proposal),
+        Ask::ProposeSkillSet(proposal) => crate::proposals::asked_skills(held, &proposal),
         // A prompt for the asking chat's router (SK-15c): no ticket, for the record's reason.
         // Its router and the skills its list leaves out are this app's record of the chat whose
         // token the line carries, never anything the line names.

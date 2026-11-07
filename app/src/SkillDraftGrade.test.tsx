@@ -65,6 +65,7 @@ function drawn(grade: SkillDraftGrade, isNew = false) {
         state={state}
         isNew={isNew}
         level={{ at: "workspace", name: "ops", local: false }}
+        plane="/p/purlis"
         {...go}
       />
     </>,

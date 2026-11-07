@@ -143,10 +143,84 @@ pub struct Shown {
     /// is typed in. Absent for any other ask.
     #[specta(optional)]
     pub secret: Option<SecretShown>,
+    /// **The program a run asks the person to allow** (ADR 0112, #5239): the app's facts, kept
+    /// apart from the chat's command. Absent for any other ask.
+    #[specta(optional)]
+    pub run: Option<RunShown>,
     /// **The secret a fill would put into a page, and where** (#5115): drawn with its site
     /// large. Absent for any other ask.
     #[specta(optional)]
     pub fill: Option<FillShown>,
+}
+
+/// **An ask to allow a program, as its row draws it** (ADR 0112, #5239). Every field is the app's
+/// own record of the run but [`Self::command`], which is the chat's words made inert: spelled so
+/// no character in them changes what they seem to say, and drawn as the chat's. Names only: no
+/// value is ever here.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct RunShown {
+    pub persona: String,
+    pub vault: String,
+    /// The program's full path, as the app resolved it where no chat writes.
+    pub program: String,
+    /// Each hand-over: the variable, the key, and whether it is a file or the value itself.
+    pub values: Vec<RunValueShown>,
+    /// The hosts this chat's sandbox lets the run reach.
+    pub hosts: Vec<String>,
+    /// The chat's sandbox holds the run to no host.
+    pub every_host: bool,
+    /// T-4's sentence, where the program is a general-purpose one.
+    #[specta(optional)]
+    pub caution: Option<String>,
+    /// The vault is not one the persona may use: an Allow opens it for that grant's scope alone.
+    pub not_its_vault: bool,
+    /// The chat's command, its words made inert.
+    pub command: String,
+    /// The folder it starts in.
+    pub cwd: String,
+    /// What Always allow would write, where it is offered (#5245).
+    #[specta(optional)]
+    pub always: Option<AlwaysShown>,
+    /// **The keys the run lacks**, one value field each (#5242).
+    pub fills: Vec<RunFillShown>,
+    /// **What the notice asks of the program** (#5242): `program` for an Allow; `vault` where it
+    /// has none and the vault's line has its own Allow; `fill` for its value fields alone.
+    pub offer: String,
+    /// Why it offers no Allow for the program, where policy is why: the app's own words.
+    #[specta(optional)]
+    pub no_allow: Option<String>,
+    /// **Asked ahead of its run** (#5244): no command yet; only Allow for this chat is offered,
+    /// and the first run fixes how the values are handed.
+    pub ahead: bool,
+}
+
+/// **A key a run lacks, as its notice's value field** (#5242). Names only.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct RunFillShown {
+    pub key: String,
+    /// What the persona's definition says it is for, where it declares it.
+    #[specta(optional)]
+    pub declared: Option<String>,
+    /// The entry a link read, which is gone, where the key is such a link.
+    #[specta(optional)]
+    pub gone: Option<SecretEntryShown>,
+}
+
+/// **What Always allow writes** ([`RunShown`], #5245): the exact line, and whether it hands a value
+/// by a variable as the command did, where a file is safer.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct AlwaysShown {
+    pub line: String,
+    pub by_env: bool,
+}
+
+/// One value a run asks to hand its program ([`RunShown`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct RunValueShown {
+    pub var: String,
+    pub key: String,
+    /// In a private file, whose path is in the variable; otherwise in the variable itself.
+    pub in_a_file: bool,
 }
 
 /// **A Secret ask, as its row draws it** (#5068, ADR 0109): the persona, the vault and the key
@@ -172,6 +246,9 @@ pub struct SecretShown {
     pub declared_purpose: Option<String>,
     /// How many chats wait on it.
     pub waiting: u32,
+    /// **Why the run that missed it is offered no Allow** (ADR 0112, #5243): the app's own words.
+    #[specta(optional)]
+    pub no_allow: Option<String>,
     /// **The chat says its value doesn't work** (#5075): the chat's own words, drawn as the
     /// chat's. Absent on an ask for a key the vault doesn't hold.
     #[specta(optional)]
@@ -357,6 +434,9 @@ pub enum AskSource {
     /// A key a chat's brokered run found missing from its persona's vault (#5068, ADR 0109):
     /// answered by a value typed in the window, or Not now.
     Secret,
+    /// A brokered run of a program its persona does not declare (ADR 0112, #5239): an Allow is a
+    /// Run grant, and Don't allow is remembered for that chat, program and vault.
+    RunGrant,
     /// A secret a chat asks purlis to fill into a field of its browser (#5115): an Allow lets
     /// purlis put that one key into that field, on that one origin, once.
     SecretFill,
@@ -446,6 +526,8 @@ pub enum AnswerPath {
     /// `answer_secret_ask` on Secret ask `id` (#5068): Fill with the value typed in the ask's
     /// masked field, Not now with none.
     Secret { id: u32 },
+    /// `answer_run_grant` on the ask `id`, at the press an option names (ADR 0112).
+    RunGrant { id: u32 },
     /// `answer_secret_fill` at the press an option names, on held fill `id`, for the notice
     /// whose digest is `shown` (#5115).
     SecretFill { id: u32, shown: String },
@@ -562,6 +644,7 @@ pub fn permission(raised: Raised) -> Option<Shown> {
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     })
 }
 
@@ -762,6 +845,7 @@ pub fn dispatch(told: &crate::dispatchgrants::DispatchPending) -> Shown {
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -808,6 +892,7 @@ pub fn sandbox_host(
             fill: None,
             earlier_messages: None,
             secret: None,
+            run: None,
         });
     };
     // In its Notice's order (#1666, N-3): this project on this machine is the main button.
@@ -846,6 +931,7 @@ pub fn sandbox_host(
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     })
 }
 
@@ -913,6 +999,7 @@ pub fn sandbox_write(
             fill: None,
             earlier_messages: None,
             secret: None,
+            run: None,
         });
     }
     Some(Shown {
@@ -941,6 +1028,7 @@ pub fn sandbox_write(
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     })
 }
 
@@ -1009,6 +1097,7 @@ pub fn sandbox_runner(
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     })
 }
 
@@ -1088,6 +1177,7 @@ pub fn sandbox_port(
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     })
 }
 
@@ -1164,6 +1254,7 @@ pub fn sandbox_local(
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     })
 }
 
@@ -1207,6 +1298,7 @@ pub fn terminal(
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -1231,6 +1323,7 @@ pub fn question(session: u32, last_message: Option<String>, earlier: Vec<String>
         fill: None,
         earlier_messages: (!earlier.is_empty()).then_some(earlier),
         secret: None,
+        run: None,
     }
 }
 
@@ -1264,6 +1357,7 @@ pub fn task_question(
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -1324,6 +1418,7 @@ pub fn workspace_removal(
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -1441,6 +1536,7 @@ pub fn browser_posture(
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -1510,6 +1606,7 @@ pub fn browser_needs_you(waiting: &crate::browserneedsyou::Waiting) -> Shown {
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -1581,6 +1678,7 @@ pub fn secret_fill(
         login: None,
         earlier_messages: None,
         secret: None,
+        run: None,
         fill: Some(FillShown {
             key: wait.key.clone(),
             vault: wait.vault.clone(),
@@ -1589,7 +1687,8 @@ pub fn secret_fill(
             label: purlis_core::shown::short(&wait.label),
             browser: wait.browser.clone(),
             warnings: wait.warnings.clone(),
-            card: wait.card,
+            // A field the page marks for payment is said as a card's (the decision of 2026-11-06).
+            card: wait.card || wait.payment,
             multi_line: wait.multi_line,
             line: (!wait.once_only()).then(|| wait.line.clone()).flatten(),
             under: wait
@@ -1710,6 +1809,7 @@ pub fn browser_login(
         }),
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -1780,6 +1880,7 @@ pub fn pool_login(waits: &crate::chatbrowsers::PoolLoginWaits) -> Shown {
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -1846,6 +1947,7 @@ pub fn pool_tool(waits: &crate::pooltools::PoolToolWaits) -> Shown {
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -1928,6 +2030,7 @@ pub fn vault_refused(one: &crate::vaultroute::VaultRefused) -> Shown {
         earlier_messages: None,
         secret: None,
         fill: None,
+        run: None,
     }
 }
 
@@ -2081,12 +2184,236 @@ pub fn secret_ask(open: &purlis_core::secrets::ask::Open, may_remember: bool) ->
             declared: open.declared.is_some(),
             declared_purpose: open.declared.clone(),
             waiting: u32::try_from(open.waiting()).unwrap_or(u32::MAX),
+            no_allow: open.no_allow.clone(),
             replace,
             reads,
             gone,
             remember,
         }),
+        run: None,
     }
+}
+
+/// The key of the ask to allow a program `id` (ADR 0112).
+fn run_grant_key(id: u32) -> String {
+    format!("run-grant:{id}")
+}
+
+/// The id of Allow once on a Run grant's ask (ADR 0112).
+pub const RUN_ALLOW_ONCE: &str = "allow-once";
+/// The Allow of an ask to allow a program that holds for the chat (#5241).
+pub const RUN_ALLOW_CHAT: &str = "allow-chat";
+/// The Allow of an ask to allow a program that declares it as the persona's tool (#5245).
+pub const RUN_ALLOW_ALWAYS: &str = "allow-always";
+/// The vault's own Allow on a run's notice with no program Allow (#5242).
+pub const RUN_ALLOW_VAULT: &str = "allow-vault";
+/// Fill on a run's notice of value fields alone (#5242).
+pub const RUN_FILL: &str = "fill";
+
+/// **The Run grant adapter** (ADR 0112, #5239): a chat's brokered run names a program its persona
+/// does not declare. Every word of the line is purlis's, and every name the app's; the chat's
+/// command is never in it, and is drawn apart ([`RunShown::command`]). Allow once comes first, the
+/// narrowest and the one a keyboard reaches first.
+pub fn run_grant(
+    open: &purlis_core::secrets::ask::run::OpenRun,
+    locks: &purlis_core::sandbox::policy::Locks,
+) -> Shown {
+    use purlis_core::secrets::ask::run::Hosts;
+    let bound = &open.bound;
+    let values = |specs: &[String], in_a_file: bool| -> Vec<RunValueShown> {
+        specs
+            .iter()
+            .filter_map(|spec| spec.split_once('='))
+            .map(|(var, key)| RunValueShown {
+                var: var.to_owned(),
+                key: key.to_owned(),
+                in_a_file,
+            })
+            .collect()
+    };
+    let (hosts, every_host) = match &open.hosts {
+        Hosts::Listed(hosts) => (hosts.clone(), false),
+        Hosts::Every => (Vec::new(), true),
+    };
+    use purlis_core::sandbox::grant::Level;
+    // Wider than one command only for a program reviewed for any arguments (ADR 0112).
+    let reviewed = bound.reviewed_for_any_arguments();
+    // Only for a persona, and only what would be written whole.
+    let always = (!open.persona.is_empty() && reviewed)
+        .then(|| purlis_core::settings::always_allow::line_of(bound))
+        .flatten()
+        .filter(|_| locks.keeps_scope(Level::Project))
+        .map(|line| AlwaysShown {
+            line: line.text,
+            by_env: line.by_env,
+        });
+    let locked = locks
+        .refuses_run_grant(&open.persona, &bound.program_name())
+        .is_some()
+        || (open.not_its_vault && locks.forbids_vault_grants());
+    use purlis_core::secrets::ask::run::Offer;
+    let lacks = open
+        .fills
+        .iter()
+        .map(|fill| fill.key.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let says = match &open.offer {
+        Offer::Program if open.ahead => format!(
+            "{} asks for {lacks} from vault {} to run {} with, in this chat's own sandbox. What \
+             you fill is stored there whatever you allow",
+            open.persona,
+            bound.vault,
+            bound.program.display(),
+        ),
+        Offer::Program if lacks.is_empty() => format!(
+            "{} wants to run {} with {} from vault {}, in this chat's own sandbox",
+            open.persona,
+            bound.program.display(),
+            open.keys().join(", "),
+            bound.vault,
+        ),
+        Offer::Program => format!(
+            "{} wants to run {} with {} from vault {}, in this chat's own sandbox. The vault lacks \
+             {lacks}: what you fill is stored there whatever you allow",
+            open.persona,
+            bound.program.display(),
+            open.keys().join(", "),
+            bound.vault,
+        ),
+        Offer::Vault { .. } => format!(
+            "{} runs {} with {} from vault {}, which it may not use, and the vault lacks {lacks}. \
+             Allow lets every chat opened as {} use it in this project on this machine",
+            open.persona,
+            bound.program.display(),
+            open.keys().join(", "),
+            bound.vault,
+            open.persona,
+        ),
+        Offer::Fill { .. } => format!(
+            "{} runs {} with {} from vault {}, which lacks {lacks}. Fill stores it in that vault on \
+             this machine; the chat never sees it",
+            open.persona,
+            bound.program.display(),
+            open.keys().join(", "),
+            bound.vault,
+        ),
+    };
+    let options: Vec<Offered> = match &open.offer {
+        // Ahead of its run (#5244): Allow for this chat alone, with no command to allow once.
+        Offer::Program if open.ahead => program_options(locks, reviewed, false, locked)
+            .into_iter()
+            .filter(|one| one.id != RUN_ALLOW_ONCE)
+            .collect(),
+        Offer::Program => program_options(locks, reviewed, always.is_some(), locked),
+        Offer::Vault { .. } => (!locks.forbids_vault_grants())
+            .then(|| Offered {
+                id: RUN_ALLOW_VAULT.to_owned(),
+                label: format!("Allow {} to use this vault", said_inertly(&open.persona)),
+                allows: true,
+                preselected: None,
+            })
+            .into_iter()
+            .chain([refuses(KEEP, KEEP_SAID)])
+            .collect(),
+        Offer::Fill { .. } => vec![
+            Offered {
+                id: RUN_FILL.to_owned(),
+                label: "Fill".to_owned(),
+                allows: true,
+                preselected: None,
+            },
+            refuses(KEEP, "Not now"),
+        ],
+    };
+    let fills = open
+        .fills
+        .iter()
+        .map(|fill| RunFillShown {
+            key: fill.key.clone(),
+            declared: fill.declared.clone().filter(|purpose| !purpose.is_empty()),
+            gone: match &fill.reason {
+                Some(purlis_core::secrets::ask::Reason::BrokenLink { was }) => {
+                    Some(SecretEntryShown {
+                        vault: was.vault.clone(),
+                        key: was.key.clone(),
+                    })
+                }
+                _ => None,
+            },
+        })
+        .collect();
+    Shown {
+        session: bound.chat,
+        ask: run_grant_key(open.id),
+        says: said_inertly(&says),
+        options,
+        source: AskSource::RunGrant,
+        chain: Vec::new(),
+        answer: AnswerPath::RunGrant { id: open.id },
+        since: None,
+        held_until: None,
+        writes: None,
+        lines: None,
+        last_message: None,
+        login: None,
+        earlier_messages: None,
+        fill: None,
+        secret: None,
+        run: Some(RunShown {
+            persona: open.persona.clone(),
+            vault: bound.vault.clone(),
+            program: bound.program.display().to_string(),
+            values: values(&bound.file, true)
+                .into_iter()
+                .chain(values(&bound.env, false))
+                .collect(),
+            hosts,
+            every_host,
+            caution: open.caution.clone(),
+            not_its_vault: open.not_its_vault,
+            command: open.command.clone(),
+            cwd: purlis_core::shown::ascii_word(&bound.cwd.to_string_lossy()),
+            always: always.filter(|_| open.offer == Offer::Program && !open.ahead),
+            fills,
+            offer: match &open.offer {
+                Offer::Program => "program",
+                Offer::Vault { .. } => "vault",
+                Offer::Fill { .. } => "fill",
+            }
+            .to_owned(),
+            no_allow: open.offer.no_allow().map(str::to_owned),
+            ahead: open.ahead,
+        }),
+    }
+}
+
+/// **A run's notice's program Allows** (ADR 0112): Allow once first, the narrowest and the one a
+/// keyboard reaches first; wider only for a reviewed program; and Don't allow.
+fn program_options(
+    locks: &purlis_core::sandbox::policy::Locks,
+    reviewed: bool,
+    always: bool,
+    locked: bool,
+) -> Vec<Offered> {
+    use purlis_core::sandbox::grant::Level;
+    [
+        (RUN_ALLOW_ONCE, "Allow once", Level::Once, true),
+        (RUN_ALLOW_CHAT, "Allow for this chat", Level::Chat, reviewed),
+        (RUN_ALLOW_ALWAYS, "Always allow", Level::Project, always),
+    ]
+    .into_iter()
+    // Policy's `allow-scopes` (#1666) holds for these as for every Allow.
+    // And a lock that came since it was raised leaves only Don't allow.
+    .filter(|(_, _, level, offered)| *offered && locks.keeps_scope(*level) && !locked)
+    .map(|(id, label, _, _)| Offered {
+        id: id.to_owned(),
+        label: label.to_owned(),
+        allows: true,
+        preselected: None,
+    })
+    .chain(std::iter::once(refuses(KEEP, "Don't allow")))
+    .collect()
 }
 
 /// The key of chat `session`'s browser sites Ask (#2018): one per chat, every site it waits on.
@@ -2130,6 +2457,7 @@ pub fn browser_sites(
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -2257,11 +2585,12 @@ pub fn proposed_change(
             let writes = crate::askwrites::proposed(path, before, after);
             let whole = matches!(writes, crate::askwrites::WritesShown::Whole { .. });
             opens = crate::askwrites::proposed_too_long(before, after);
-            (
-                format!("Proposes a change to {path}, which only you apply"),
-                Some(writes),
-                whole,
-            )
+            let says = if one.skills.is_some() {
+                format!("Proposes a change to skills, which only you apply: {path}")
+            } else {
+                format!("Proposes a change to {path}, which only you apply")
+            };
+            (says, Some(writes), whole)
         }
         Now::Stale => (
             format!(
@@ -2326,6 +2655,7 @@ pub fn proposed_change(
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -2356,6 +2686,7 @@ pub fn runner_dispatch(one: &crate::runnerdispatches::HeldDispatch) -> Shown {
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -2414,6 +2745,7 @@ pub fn runner_write(one: &crate::runnerwrites::HeldWrite) -> Shown {
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -2473,6 +2805,7 @@ pub fn sign_in(wait: &purlis_core::profilestore::sign_in::Wait) -> Shown {
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -2532,6 +2865,7 @@ pub fn pool_sign_in(wait: &purlis_core::profilestore::onrunner::PoolWait) -> Sho
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -2592,6 +2926,7 @@ pub fn sandbox_only(_wait: &purlis_core::profilestore::sandbox_only::Wait) -> Sh
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -2625,6 +2960,7 @@ pub fn old_harness_plugins(old: &crate::oldplugins::OldHarnessPlugins) -> Shown 
         fill: None,
         earlier_messages: None,
         secret: None,
+        run: None,
     }
 }
 
@@ -2668,6 +3004,8 @@ pub type HoldEnds<'a> = dyn Fn(u32, &str, Option<u32>) -> Option<u32> + 'a;
 /// **What waits in one project, read from each source as it stands** (#1690): the inputs of
 /// [`derive`], so the registry's rules are tested without a running project.
 pub struct Waiting<'a> {
+    /// The programs chats' brokered runs ask the person to allow (ADR 0112).
+    pub run_grants: Vec<purlis_core::secrets::ask::run::OpenRun>,
     /// The permission asks its chats' hooks hold open (HP-6).
     pub permissions: Vec<Raised>,
     /// The needs-you queue: the chats the board says need the person.
@@ -2810,6 +3148,13 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
             .secret_fills
             .iter()
             .map(|wait| secret_fill(wait, waiting.locks)),
+    );
+    // A chat whose brokered run names a program its persona does not declare (ADR 0112).
+    asks.extend(
+        waiting
+            .run_grants
+            .iter()
+            .map(|open| run_grant(open, waiting.locks)),
     );
     // A runner chat whose declared tool waits on the person's Allow for its pool (#2047).
     asks.extend(waiting.pool_tools.iter().map(pool_tool));
@@ -3047,6 +3392,10 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     for one in &pool_tools {
         since.insert(pool_tool_key(one.session, one.run), one.since);
     }
+    let run_grants = held.secret_asks().open_runs();
+    for one in &run_grants {
+        since.insert(run_grant_key(one.id), one.since);
+    }
     let secrets = held.secret_asks().open();
     let may_remember = |persona: &str| crate::proposals::need_offerable(held.root(), persona);
     for one in &secrets {
@@ -3064,6 +3413,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     let declared = purlis_core::sandbox::services::declared(root);
     let tasks = held.tasks();
     let waiting = Waiting {
+        run_grants,
         browsers,
         needs_you,
         browser_sites,

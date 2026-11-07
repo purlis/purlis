@@ -295,8 +295,8 @@ describe("a plain shell tab", () => {
 const stateMark = () =>
   within(stripNamed("Tabs"))
     .getByRole("tab")
-    .querySelector("[data-state]")
-    ?.getAttribute("data-state") ?? null;
+    .querySelector(".tab-said")
+    ?.getAttribute("aria-label") ?? null;
 
 describe("a shell tab's state mark", () => {
   it("draws none: its terminal mark already says what it is, and `unknown` read as a spinner", async () => {
@@ -339,7 +339,7 @@ describe("a shell tab's state mark", () => {
     render(<App />);
 
     await waitFor(() => expect(chatTabs()).toEqual(["shell 4"]));
-    await waitFor(() => expect(stateMark()).toBe("running"));
+    await waitFor(() => expect(stateMark()).toBe("working"));
   });
 
   it("leaves a harness chat's `unknown` as it was", async () => {
@@ -347,7 +347,7 @@ describe("a shell tab's state mark", () => {
     render(<App />);
 
     await waitFor(() => expect(chatTabs()).toEqual(["claude 1"]));
-    expect(stateMark()).toBe("unknown");
+    expect(stateMark()).toBe("running (no detail from claude)");
   });
 });
 

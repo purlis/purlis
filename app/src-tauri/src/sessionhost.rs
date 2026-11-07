@@ -128,16 +128,27 @@ impl Composes {
     }
 
     /// With what a test's build ships ([`crate::Shipped::default`]): a stand-in `purlis` and an
-    /// empty plugin.
+    /// empty plugin, and, as every host the person runs has, a folder for a chat's settings too
+    /// long for its command line, such as a Claude Code chat's on Linux.
     #[cfg(test)]
     pub fn as_the_tests_ship() -> Composes {
+        static SETTINGS: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+        let settings = SETTINGS.get_or_init(|| {
+            // Beside this test's own program, as the app's data folder is: outside every plane
+            // and every temp folder a sandboxed chat writes.
+            let beside = std::env::current_exe()
+                .ok()
+                .and_then(|exe| exe.parent().map(std::path::Path::to_path_buf))
+                .expect("this test's own folder");
+            tempfile::tempdir_in(beside).expect("a folder for chats' settings")
+        });
         let shipped = crate::Shipped::default();
         Composes(purlis_core::hoststart::Kit {
             binary: shipped.binary,
             plugin: shipped.plugin,
             git_hooks: shipped.git_hooks,
             skill_sets: None,
-            chat_settings: None,
+            chat_settings: Some(settings.path().join("chat-settings")),
         })
     }
 }

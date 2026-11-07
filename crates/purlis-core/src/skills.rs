@@ -103,6 +103,26 @@ pub const LISTED_ENV: &str = "PURLIS_SKILLS_DIR";
 /// the plane where arming did not.
 pub const PLANE_LISTED_ENV: &str = "PURLIS_SKILLS_PLANE";
 
+/// **The variable a chat whose harness loads the plane's skills from a set's folder is started
+/// with** (#4510): that folder ([`lay_out`]), the one its harness's own skill tool knows them from.
+/// purlis's MCP server, which the harness starts with its environment, reads it so `skill_load`
+/// never sends a chat to that tool for a skill the folder does not hold: one the router hid, or
+/// one made since the chat started. Set by the adapter of a harness whose own start
+/// `skill_load` sends a chat to ([`crate::harness::HarnessAdapter::narrowed_start`]), where its
+/// set holds plane skills.
+pub const HANDED_ENV: &str = "PURLIS_SKILLS_HANDED";
+
+/// **Whether `folder`, a set's folder its harness was handed, holds the skill `name`** of the
+/// plane: the `SKILL.md` purlis wrote for it there ([`lay_out`]).
+pub fn handed_in(folder: &Path, name: &str) -> bool {
+    plain_name(name)
+        && folder
+            .join(DIR_IN_BUNDLE)
+            .join(name)
+            .join(purlis_skills::FILE)
+            .is_file()
+}
+
 /// The plane a chat's skills come from beside the built-in ones (ADR 0099), as a chat is armed.
 #[derive(Debug, Clone, Copy)]
 pub struct PlaneSkills<'a> {
@@ -2279,6 +2299,7 @@ pub fn checkouts_of_chat(plane: &Path, workspace: &str, cwd: &Path) -> Vec<crate
         return Vec::new();
     };
     let here = resolved(cwd);
+    let branches = crate::worktree::root_of(&resolved(plane), workspace);
     clones
         .repos
         .into_iter()
@@ -2287,7 +2308,7 @@ pub fn checkouts_of_chat(plane: &Path, workspace: &str, cwd: &Path) -> Vec<crate
             if here.starts_with(&at) {
                 return Some(repo);
             }
-            let path = branch_folder_of(&at, &repo.name, &here)?;
+            let path = branch_folder_of(&branches, &repo.name, &here)?;
             Some(crate::repos::Repo {
                 name: repo.name,
                 path,
@@ -2345,14 +2366,14 @@ fn resolved(path: &Path) -> std::path::PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
-/// **The branch folder of the clone `name` at `clone` that `here` is in**
-/// (`workspaces/<ws>/.worktrees/<repo>/<piece>`), or `None`. Both paths are resolved already, so
-/// a link anywhere in the layout, `.worktrees` included, has `here` somewhere else and answers
-/// `None`. Worked out from the path and the one `.git` beside it, as [`crate::repos::clones`]
+/// **The branch folder of the clone `name` that `here` is in**, under the workspace's
+/// `branches` (`workspaces/<ws>/.worktrees`, wherever the clone is: ADR 0114 keeps them there),
+/// as `<branches>/<repo>/<piece>`, or `None`. Both paths are resolved already, so a link anywhere
+/// in the layout, `.worktrees` included, has `here` somewhere else and answers `None`. Worked out from the path and the one `.git` beside it, as [`crate::repos::clones`]
 /// looks at each clone's: no git is asked, for this runs on a chat's open. A linked worktree's
 /// `.git` is a file; a folder without one is not where a harness stops looking for its repo.
-fn branch_folder_of(clone: &Path, name: &str, here: &Path) -> Option<std::path::PathBuf> {
-    let pieces = clone.parent()?.join(crate::worktree::DIR_NAME).join(name);
+fn branch_folder_of(branches: &Path, name: &str, here: &Path) -> Option<std::path::PathBuf> {
+    let pieces = branches.join(name);
     let piece = here.strip_prefix(&pieces).ok()?.components().next()?;
     let folder = pieces.join(piece);
     std::fs::symlink_metadata(folder.join(".git"))

@@ -139,12 +139,9 @@ fn a_name_that_is_a_path_never_becomes_a_directory_this_command_enters() {
     let ws_dir = root.join("workspaces").join("beta");
     std::fs::create_dir_all(&ws_dir).unwrap();
     for bad in ["../esc", "/etc", "..", ".", "a/b", "a\\b", ""] {
-        assert!(child(root, "beta", &ws_dir, bad).is_none(), "{bad}");
+        assert!(child(root, "beta", bad).is_none(), "{bad}");
     }
-    assert_eq!(
-        child(root, "beta", &ws_dir, "svc"),
-        Some(ws_dir.join("svc"))
-    );
+    assert_eq!(child(root, "beta", "svc"), Some(ws_dir.join("svc")));
 }
 
 #[test]
@@ -160,5 +157,5 @@ fn a_clone_symlinked_out_of_the_plane_is_refused() {
     let ws_dir = root.join("workspaces").join("beta");
     std::os::unix::fs::symlink(&outside, ws_dir.join("svc")).unwrap();
 
-    assert!(child(&root, "beta", &ws_dir, "svc").is_none());
+    assert!(child(&root, "beta", "svc").is_none());
 }

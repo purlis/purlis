@@ -2,7 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { samePlace, type Strip, tabsLeftOver, tabsLeftSaid } from "./tabsLeft.js";
+import {
+  arrivedAt,
+  samePlace,
+  type Strip,
+  stripsToJudge,
+  tabsLeftOver,
+  tabsLeftSaid,
+} from "./tabsLeft.js";
 
 const strip = (tabs: string[], project = "/p", workspace = ""): Strip => ({
   project,
@@ -80,5 +87,48 @@ describe("what the tab guard says", () => {
 
   it("says one tab in the singular", () => {
     expect(tabsLeftSaid("specs/one.e2e.ts", ["Settings"], strip([]))).toContain("left 1 tab open");
+  });
+});
+
+describe("the strips a spec file visited (#5269)", () => {
+  it("are written down once each, with what each held when the file first came to it", () => {
+    let seen: Strip[] = [];
+    seen = arrivedAt(seen, strip(["steward 1"]));
+    seen = arrivedAt(seen, strip(["New chat"], "/p", "alpha"));
+    seen = arrivedAt(seen, strip(["steward 1", "Settings"]));
+    expect(seen).toEqual([strip(["steward 1"]), strip(["New chat"], "/p", "alpha")]);
+  });
+
+  it("judge a strip the file only passed through against what it held when the file came to it", () => {
+    const began = strip(["steward 1"]);
+    const passed = strip(["Activity"], "/p", "alpha");
+    const ended = strip([], "/p", "beta");
+    expect(stripsToJudge(began, ended, [began, passed, ended])).toEqual([ended, passed, began]);
+  });
+
+  it("judge the strip it ended on first, then every other it visited, then the one it began on", () => {
+    const began = strip([]);
+    const visits = [strip([], "/p", "a"), strip([], "/q", "b"), strip([], "/p", "c")];
+    const ended = visits[2];
+    expect(stripsToJudge(began, ended, [began, ...visits])).toEqual([
+      ended,
+      visits[0],
+      visits[1],
+      began,
+    ]);
+  });
+
+  it("judge the strip it began on against what it held as the file began, once, when it ended there", () => {
+    const began = strip(["steward 1"]);
+    const passed = strip([], "/p", "alpha");
+    expect(stripsToJudge(began, strip(["steward 1", "Settings"]), [began, passed])).toEqual([
+      began,
+      passed,
+    ]);
+  });
+
+  it("judge a strip it ended on but never saw arrive at as holding nothing of its own", () => {
+    const ended = strip(["New chat", "Settings"], "/p", "alpha");
+    expect(stripsToJudge(strip([]), ended, [])).toEqual([{ ...ended, tabs: [] }, strip([])]);
   });
 });

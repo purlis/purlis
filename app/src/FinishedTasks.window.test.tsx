@@ -386,7 +386,15 @@ describe("a chat's finished tasks", () => {
       .getAllByRole("treeitem")
       .find((one) => one.querySelector(".session")?.textContent === "probe");
     if (open === undefined) throw new Error("the open task has no row");
-    expect(says(open)).toEqual({ word: "failed", shape: "cross" });
+    // Its mark is the chat's one state (#5340): a failure seen is an ended chat, and its word says
+    // which way it ended.
+    expect(open.querySelector('[data-scope="chat-mark"][data-part="word"]')?.textContent).toBe(
+      "failed",
+    );
+    expect(open.querySelector('[data-scope="chat-mark"][data-part="root"]')).toHaveAttribute(
+      "data-variant",
+      "ended",
+    );
     // **One line, as a chat's row is** (#1687): the state is the mark, and its word, with the
     // core's own beside it, is still the row's to a screen reader, out of sight where it stands,
     // and whole in the row's tooltip.

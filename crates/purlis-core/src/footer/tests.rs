@@ -23,7 +23,7 @@ fn a_plane(ws: &str) -> (tempfile::TempDir, PathBuf) {
     std::fs::write(wd.join("workspace.json"), "{}\n").unwrap();
     std::fs::write(wd.join("memory").join("MEMORY.md"), "# memory\n").unwrap();
     std::fs::write(wd.join("refs").join("README.md"), "# refs\n").unwrap();
-    std::fs::write(wd.join(STRUCTURE_MARKER), "5\n").unwrap();
+    std::fs::write(wd.join(STRUCTURE_MARKER), "6\n").unwrap();
     (dir, root)
 }
 
@@ -159,7 +159,7 @@ fn a_stale_structure_is_named_before_anything_informational() {
     let (_held, root) = a_plane("alpha");
     let wd = root.join("workspaces").join("alpha");
     std::fs::write(wd.join("todos").join("20260302-090000-one.md"), "# one\n").unwrap();
-    std::fs::write(wd.join(STRUCTURE_MARKER), "4\n").unwrap();
+    std::fs::write(wd.join(STRUCTURE_MARKER), "5\n").unwrap();
     let env = |name: &str| (name == "PURLIS_WORKSPACE").then(|| "alpha".to_string());
     let line = row(&root, &serde_json::Value::Null, &env);
     let tip = line.find("reinit").expect("the tip is on the row");
@@ -176,9 +176,9 @@ fn stale_is_a_missing_baseline_file_or_an_old_marker_and_nothing_else() {
     assert!(!needs_reinit(&root, "alpha"));
 
     // An older layout.
-    std::fs::write(wd.join(STRUCTURE_MARKER), "4\n").unwrap();
-    assert!(needs_reinit(&root, "alpha"));
     std::fs::write(wd.join(STRUCTURE_MARKER), "5\n").unwrap();
+    assert!(needs_reinit(&root, "alpha"));
+    std::fs::write(wd.join(STRUCTURE_MARKER), "6\n").unwrap();
     assert!(!needs_reinit(&root, "alpha"));
 
     // No marker at all is version 0.
@@ -186,14 +186,14 @@ fn stale_is_a_missing_baseline_file_or_an_old_marker_and_nothing_else() {
     assert!(needs_reinit(&root, "alpha"));
     // Each pre-rename name still answers, without being renamed on a render path.
     for legacy in [".charter-structure", ".edm-structure"] {
-        std::fs::write(wd.join(legacy), "5\n").unwrap();
+        std::fs::write(wd.join(legacy), "6\n").unwrap();
         assert!(!needs_reinit(&root, "alpha"), "{legacy}");
         assert!(!wd.join(STRUCTURE_MARKER).exists());
         std::fs::remove_file(wd.join(legacy)).unwrap();
     }
     // The newest one there decides: charter's over the one before it.
-    std::fs::write(wd.join(".edm-structure"), "5\n").unwrap();
-    std::fs::write(wd.join(".charter-structure"), "4\n").unwrap();
+    std::fs::write(wd.join(".edm-structure"), "6\n").unwrap();
+    std::fs::write(wd.join(".charter-structure"), "5\n").unwrap();
     assert!(needs_reinit(&root, "alpha"));
     std::fs::remove_file(wd.join(".edm-structure")).unwrap();
     std::fs::remove_file(wd.join(".charter-structure")).unwrap();
@@ -202,7 +202,7 @@ fn stale_is_a_missing_baseline_file_or_an_old_marker_and_nothing_else() {
     std::fs::create_dir(wd.join(STRUCTURE_MARKER)).unwrap();
     assert!(needs_reinit(&root, "alpha"));
     std::fs::remove_dir(wd.join(STRUCTURE_MARKER)).unwrap();
-    std::fs::write(wd.join(STRUCTURE_MARKER), "5\n").unwrap();
+    std::fs::write(wd.join(STRUCTURE_MARKER), "6\n").unwrap();
 
     // A missing baseline file.
     std::fs::remove_file(wd.join("refs").join("README.md")).unwrap();
@@ -258,7 +258,7 @@ fn a_workspace_or_stamp_it_cannot_read_is_not_called_stale() {
     // …so the identity row names it without the repair tip.
     assert!(!line.contains("reinit"), "{line:?}");
     // And once it can be read again, an old stamp is still behind.
-    std::fs::write(&stamp, "4\n").unwrap();
+    std::fs::write(&stamp, "5\n").unwrap();
     assert!(needs_reinit(&root, "alpha"));
 }
 
@@ -392,8 +392,8 @@ fn an_alert_row_follows_the_declaration_inside_the_frame_and_the_active_workspac
     let (_held, root) = a_plane("alpha");
     let (_other, other) = a_plane("beta");
     std::fs::rename(other.join("workspaces/beta"), root.join("workspaces/beta")).unwrap();
-    std::fs::write(root.join("workspaces/alpha").join(STRUCTURE_MARKER), "4\n").unwrap();
-    std::fs::write(root.join("workspaces/beta").join(STRUCTURE_MARKER), "4\n").unwrap();
+    std::fs::write(root.join("workspaces/alpha").join(STRUCTURE_MARKER), "5\n").unwrap();
+    std::fs::write(root.join("workspaces/beta").join(STRUCTURE_MARKER), "5\n").unwrap();
     let env = |name: &str| match name {
         "COLUMNS" => Some("80".to_string()),
         "PURLIS_WORKSPACE" => Some("alpha".to_string()),

@@ -113,10 +113,10 @@ const DRAWN: &[Drawn] = &[
         family: "tabs",
         part: "count",
         css: include_str!("../../../../app/src/App.css"),
-        own: &[".tab-tasks-counts .count"],
-        // The chip's pill, which the counts' quiet ghost lets show through (#3264).
-        around: &[".tabs .tab-tasks-pill"],
-        on: None,
+        own: &[".tasks-menu-summary .count"],
+        // The summary of a chat's tasks menu, on the menu's own surface (#5341).
+        around: &[".tasks-menu-summary"],
+        on: Some("surface.overlay"),
     },
     Drawn {
         family: "status-item",

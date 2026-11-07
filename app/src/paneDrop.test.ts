@@ -9,7 +9,6 @@ import {
   judgeDrop,
   PANE_FLOOR,
   placeAt,
-  previewOf,
   type Source,
 } from "./paneDrop";
 import { undone } from "./layoutUndo";
@@ -539,19 +538,6 @@ describe("a place holds a little past its edge, so a pointer near a line doesn't
   it("holds nothing with no place before it", () => {
     expect(placeAt(0.27, 0.5)).toBe("middle");
     expect(placeAt(0.23, 0.5)).toBe("left");
-  });
-});
-
-describe("what is drawn before a drop (#4763)", () => {
-  const pane = { left: 100, top: 50, width: 800, height: 400 };
-  it.each([
-    ["left", { left: 100, top: 50, width: 400, height: 400 }],
-    ["right", { left: 500, top: 50, width: 400, height: 400 }],
-    ["top", { left: 100, top: 50, width: 800, height: 200 }],
-    ["bottom", { left: 100, top: 250, width: 800, height: 200 }],
-    ["middle", pane],
-  ] as const)("the %s place draws its half, or the whole pane", (place, box) => {
-    expect(previewOf(pane, place)).toEqual(box);
   });
 });
 

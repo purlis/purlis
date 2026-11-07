@@ -70,7 +70,6 @@ const SKIP_SMUDGE: &str = "GIT_LFS_SKIP_SMUDGE";
 pub(super) struct Route<'a> {
     pub root: &'a Path,
     pub ws: &'a str,
-    pub ws_dir: &'a Path,
     pub name: &'a str,
     pub dest: &'a Path,
     pub url: &'a str,
@@ -97,6 +96,12 @@ enum Tried {
 }
 
 impl Route<'_> {
+    /// The folder the clone lands in, and its landing folder with it: the workspace's `repos/`
+    /// for a new clone, the workspace itself for an old one finished again.
+    fn folder(&self) -> &Path {
+        self.dest.parent().unwrap_or(self.dest)
+    }
+
     /// Whether this is a chat's clone, run by the app with git isolated (#1335).
     fn for_a_chat() -> bool {
         git::isolation().is_some()
@@ -194,7 +199,7 @@ impl Route<'_> {
             .and_then(|watch| watch.stand_in.script.as_deref());
         #[cfg(not(test))]
         let script = None;
-        self.followed(self.ws_dir, &args, &into, script, second, pass, climb)
+        self.followed(self.folder(), &args, &into, script, second, pass, climb)
     }
 
     /// Whether the clone in `hidden` has Git LFS files this machine's git would have fetched
@@ -407,7 +412,7 @@ impl Hidden {
     /// link at the name is taken away, never followed. A holder that lands or goes between the
     /// look and the lock leaves another directory at the name, so it is looked at again.
     fn claim(route: &Route) -> Result<Option<Self>, String> {
-        let path = route.ws_dir.join(format!(".cloning-{}", route.name));
+        let path = route.folder().join(format!(".cloning-{}", route.name));
         if std::fs::symlink_metadata(&path).is_ok_and(|found| found.file_type().is_symlink()) {
             std::fs::remove_file(&path).map_err(|why| why.to_string())?;
         }

@@ -134,6 +134,7 @@ function OneFill({
       at="pane"
       tone={refused === undefined ? "news" : "trouble"}
       label="Secret fill"
+      since={ask.since}
       fixes={[first, ...rest]}
     >
       {offScreen ? "It asks" : "This chat asks"} to put a secret from a vault into its browser, and

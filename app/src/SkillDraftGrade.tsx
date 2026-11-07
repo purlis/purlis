@@ -155,6 +155,7 @@ export function DraftGradeActions({
   onScorecard,
   onAskForTests,
   level,
+  plane,
 }: {
   state: DraftGradeState;
   /** A new skill: it has no current version, and no folder a chat could write its tests in. */
@@ -166,6 +167,8 @@ export function DraftGradeActions({
   onAskForTests: () => void;
   /** The draft's level: where the chat its Ask starts, which the button names (#5184). */
   level: SkillLevel;
+  /** The project: the button names it, for a skill of its own (#5248). */
+  plane: string;
 }) {
   const again = (
     <Button size="sm" onPress={onGrade}>
@@ -192,7 +195,7 @@ export function DraftGradeActions({
     case "no-tests":
       return state.refused !== null || isNew ? null : (
         <Button size="sm" onPress={onAskForTests}>
-          {askAChat(level, "write them")}
+          {askAChat(level, "write them", plane)}
         </Button>
       );
     case "graded":

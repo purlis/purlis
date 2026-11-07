@@ -76,6 +76,7 @@ fn a_code_filled_as_any_secret_is_accepted_by_the_sites_verifier() {
                 key: "dash-2fa".to_owned(),
                 value: code.clone().into(),
                 multi_line: false,
+                under_a_grant: false,
             },
             Arc::new(Holds),
         )

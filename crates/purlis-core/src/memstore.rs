@@ -27,6 +27,7 @@ pub const INDEX: &str = "MEMORY.md";
 
 #[cfg(unix)]
 mod holding;
+mod near;
 #[cfg(unix)]
 pub(crate) use holding::{NoGates, rewrite_index, write_in};
 
@@ -763,6 +764,42 @@ pub(crate) fn index_dropping(text: &str, filename: &str) -> String {
     }
 }
 
+/// An index's whole text rebuilt from its files, as a merge of two sides leaves them (#5338):
+/// one line for each of `files` (file name and text), in the order of their names, which start
+/// with the time they were written. A line either of `sides` has for a file is kept as it is,
+/// and a file with none gets one from its heading. A file no longer there has no line. The text
+/// above the first line is the first side's, or `header`.
+pub(crate) fn index_rebuilt(header: &str, sides: &[&str], files: &[(String, String)]) -> String {
+    let above: Option<String> = sides.first().filter(|side| !side.is_empty()).map(|side| {
+        side.split_inclusive('\n')
+            .take_while(|line| leading_link(line).is_none())
+            .collect()
+    });
+    let mut text = above
+        .filter(|above| !above.is_empty())
+        .unwrap_or_else(|| header.to_owned());
+    let mut names: Vec<&(String, String)> = files.iter().collect();
+    names.sort_by(|a, b| a.0.cmp(&b.0));
+    for (name, body) in names {
+        let kept = sides.iter().find_map(|side| {
+            side.lines()
+                .find(|line| leading_link(line).is_some_and(|(_, file)| file == name))
+        });
+        match kept {
+            Some(line) => text.push_str(line),
+            None => {
+                let title = body
+                    .lines()
+                    .find_map(|line| line.strip_prefix("# "))
+                    .unwrap_or_else(|| name.trim_end_matches(".md"));
+                text.push_str(&index_line(title, name));
+            }
+        }
+        text.push('\n');
+    }
+    text
+}
+
 /// One index line, `- [title](file)`, with `\\`, `[` and `]` in the title escaped (SI-9d): a
 /// title holding `](b.md)` would otherwise read as the end of its own line's link, and a retitle
 /// of `b.md` rewrote the line of the memory whose title mentioned it. Escaped, the title is
@@ -1121,7 +1158,7 @@ pub fn is_word(c: char) -> bool {
 }
 
 /// `re.split(r"\W+", text.lower())` without the empty strings at either end.
-fn tokens(text: &str) -> Vec<String> {
+pub(crate) fn tokens(text: &str) -> Vec<String> {
     text.to_lowercase()
         .split(|c: char| !is_word(c))
         .filter(|t| !t.is_empty())
@@ -1330,26 +1367,13 @@ pub(crate) fn is_stamp_line(line: &str) -> bool {
 /// Near-duplicate pairs among the memories of `dirs`, by Jaccard word overlap at or above
 /// `threshold` — `memstore.duplicates`. Strongest first; pairs in listing order within a
 /// score. Each pair is `(score, first, second)` as indexes into the returned entries.
+///
+/// Each entry is scored only against its candidates, never every other entry ([`near`]), and the
+/// answer is still the full comparison's.
 pub fn duplicates(entries: &[Found], threshold: f64) -> Vec<(f64, usize, usize)> {
     let sets: Vec<std::collections::BTreeSet<String>> =
         entries.iter().map(|e| wordset(&e.text)).collect();
-    let mut out = Vec::new();
-    for (i, a) in sets.iter().enumerate() {
-        for (j, b) in sets.iter().enumerate().skip(i + 1) {
-            if a.is_empty() || b.is_empty() {
-                continue;
-            }
-            let shared = a.intersection(b).count() as f64;
-            let union = a.union(b).count() as f64;
-            let jaccard = shared / union;
-            if jaccard >= threshold {
-                out.push((jaccard, i, j));
-            }
-        }
-    }
-    // Stable, as Python's sort is: equal scores keep their listing order.
-    out.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-    out
+    near::pairs(&sets, threshold)
 }
 
 /// The filenames the index links to — `memstore._listed`. Empty when charter may not

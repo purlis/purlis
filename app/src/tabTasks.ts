@@ -11,7 +11,7 @@
 import type { ChatStates } from "./chatState";
 import { kindsOf as standing, readOfRow } from "./sessionTasks";
 import type { ChatRow } from "./chatsTree";
-import type { Shown, ShownKind } from "./shownState";
+import type { Said, ShownKind } from "./shownState";
 import type { Placed } from "./tabs";
 import {
   taskBucketOf,
@@ -44,7 +44,7 @@ export type Ended = {
   name: string;
   persona: string | null;
   /** How it ended, as its row says. */
-  shown: Shown;
+  shown: Said;
   /** The core's own words for how it ended, where they say more than the state's word. */
   qualifier?: string;
   /** Whether the core folds it into Finished (n) (`FinishedTask.folds`): done and cancelled
@@ -102,7 +102,7 @@ export type Line = {
   /** The open chat it is, whose state its line reads live. A press goes to it. */
   row?: ChatRow;
   /** How it ended, for a task that has: its line says this and reads nothing. */
-  ended?: Shown;
+  ended?: Said;
   qualifier?: string;
   /** An ended task's report: a press opens it under the line. */
   report?: string;

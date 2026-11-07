@@ -371,7 +371,10 @@ version, is not named by its digest, or is not purlis's own image.
 A while after each launch, and as often as it looks for updates, the app reads its channel's
 manifest for **its own** version and checks the image in it the same way. A Docker pool of
 purlis's own image then gets a runner of that image beside its old one. New chats start on the
-new runner, and the old one keeps its chats until they end, then is removed. If it stops during that, it is
+new runner, and the old one keeps its chats until they end, then is removed once every project its
+chats ran for has brought back what they did there. Only a project open in a window does, so the
+pool's row in Settings names each project the old runner waits on, says when a closed one was last
+opened, and says that opening it, or removing the pool, lets the runner go. If it stops during that, it is
 kept with its home. If it had stopped already, for a suspend, or its container was removed outside
 purlis, it is kept only where its home holds a chat's conversation. Devices then offers to bring
 those conversations back to the new runner, where their chats pick up again, or to discard them,

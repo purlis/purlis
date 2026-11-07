@@ -280,6 +280,7 @@ pub fn read(
                         &reference.vault,
                         &reference.key,
                     ),
+                    no_allow: None,
                 };
                 missing
                     .read_asking(need, &mut once)

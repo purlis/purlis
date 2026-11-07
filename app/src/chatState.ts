@@ -117,6 +117,13 @@ export type ChatStates = {
    * `Moved.background_turn`): each reads `waiting`, and is at work.
    */
   readonly backgroundTurns: Readonly<Record<number, true>>;
+  /**
+   * **The chats in the queue only for tasks of theirs that came to nothing** (#5340,
+   * `Moved.only_failures`): the core's word, since nothing here knows whether a chat's own turn
+   * also ended on the person. Such a chat asks nothing, and its mark says a task failed. Under
+   * `heardAt`'s rule.
+   */
+  readonly onlyFailures: Readonly<Record<number, true>>;
 };
 
 /** One task that came to nothing, as its asking chat's item is told it (`Need`'s
@@ -146,6 +153,7 @@ export const nothingKnown: ChatStates = {
   asking: {},
   ownWork: {},
   backgroundTurns: {},
+  onlyFailures: {},
 };
 
 /** The state of one chat, which is `unknown` until something says otherwise. */
@@ -292,6 +300,42 @@ export function failedTasksOf(states: ChatStates, session: number): readonly Fai
 
 const NO_FAILED: readonly FailedBelow[] = [];
 
+/** **Whether chat `session` itself asks for the person** (#5340): in the queue, and not only for
+ *  tasks of its that came to nothing. What its mark's first state reads. */
+export function asksThePerson(states: ChatStates, session: number): boolean {
+  return states.needsYou.includes(session) && states.onlyFailures[session] !== true;
+}
+
+/** **How many of the tasks chat `session` asked for failed, unseen** (#5340). The core's own
+ *  record of what has not been looked at (`failedTasks`) answers "until seen": nothing more is
+ *  stored for it. */
+export function failuresUnseenOf(states: ChatStates, session: number): number {
+  return failedTasksOf(states, session).length;
+}
+
+/** **Whether chat `session` is itself a task that failed and has not been seen** (#5340): its
+ *  asker's record of it names its chat, while that is open. */
+export function failedUnseen(states: ChatStates, session: number): boolean {
+  return Object.values(states.failedTasks).some((failed) =>
+    failed.some((one) => one.chat === session),
+  );
+}
+
+/**
+ * **What looking at chat `session` sees** (#5340): the failures of its own tasks and its own
+ * failure on its asker's record, each by the asker and the id the core is told them by.
+ */
+export function failuresSeenBy(
+  states: Pick<ChatStates, "failedTasks">,
+  session: number,
+): readonly { asker: number; id: string }[] {
+  return Object.entries(states.failedTasks).flatMap(([asker, failed]) =>
+    failed
+      .filter((one) => Number(asker) === session || one.chat === session)
+      .map((one) => ({ asker: Number(asker), id: one.id })),
+  );
+}
+
 /** `failed` as `session`'s entry, and the same map when it says what the map already held. */
 function withFailed(
   by: Readonly<Record<number, readonly FailedBelow[]>>,
@@ -416,6 +460,9 @@ export function moved(states: ChatStates, move: Moved): ChatStates {
     backgroundTurns: newerChat
       ? withAsking(states.backgroundTurns, move.session, move.background_turn === true)
       : states.backgroundTurns,
+    onlyFailures: newerChat
+      ? withAsking(states.onlyFailures, move.session, move.only_failures === true)
+      : states.onlyFailures,
   };
 }
 

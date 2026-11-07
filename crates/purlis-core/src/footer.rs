@@ -478,15 +478,15 @@ fn todo_count(plane: &Path, ws: &str) -> usize {
     if unread.is_empty() { found.len() } else { 0 }
 }
 
-/// The baseline files every workspace has, and the version the layout is at — `workspace.py`'s
-/// `_required_components` and `STRUCTURE_VERSION`.
+/// The baseline files every workspace has — `workspace.py`'s `_required_components` — and the
+/// version the layout is at, the one `reinit` stamps.
 const BASELINE: [&str; 4] = [
     "workspace.md",
     "workspace.json",
     "memory/MEMORY.md",
     "refs/README.md",
 ];
-const STRUCTURE_VERSION: i64 = 5;
+const STRUCTURE_VERSION: i64 = crate::wslayer::STRUCTURE_VERSION as i64;
 #[cfg(test)]
 const STRUCTURE_MARKER: &str = crate::names::STRUCTURE_STAMP.write;
 

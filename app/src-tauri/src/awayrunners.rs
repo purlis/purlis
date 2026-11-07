@@ -168,11 +168,17 @@ fn with_the_pools_they_left(
 
 /// Whether any clone of `workspace` keeps branches of `pool`, which it no longer runs on.
 fn left_branches_on(root: &Path, workspace: &str, pool: &str) -> bool {
-    std::fs::read_dir(root.join("workspaces").join(workspace))
-        .into_iter()
-        .flatten()
-        .filter_map(Result::ok)
-        .any(|clone| !purlis_core::codelink::on_a_pool_left(&clone.path(), pool).is_empty())
+    clones_of(root, workspace)
+        .iter()
+        .any(|clone| !purlis_core::codelink::on_a_pool_left(&clone.path, pool).is_empty())
+}
+
+/// The clones of `workspace`, in `repos/` or at its root, sorted by name
+/// ([`purlis_core::repos::clones`], #5371). None where it cannot be read.
+fn clones_of(root: &Path, workspace: &str) -> Vec<purlis_core::repos::Repo> {
+    purlis_core::repos::clones(root, workspace)
+        .map(|found| found.repos)
+        .unwrap_or_default()
 }
 
 /// Each chat of a project, by its id, with its number and the pool the window routed it to.
@@ -245,21 +251,12 @@ fn runners_of(
 /// The branches of `pool`'s runner each clone of `workspace` keeps, in the order of the clones'
 /// folders: a clone with none is left out.
 fn branches_of(root: &Path, workspace: &str, pool: &str) -> Vec<BranchesOfAClone> {
-    let folder = root.join("workspaces").join(workspace);
-    let Ok(entries) = std::fs::read_dir(&folder) else {
-        return Vec::new();
-    };
-    let mut repos: Vec<String> = entries
-        .filter_map(Result::ok)
-        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
-        .filter_map(|entry| entry.file_name().into_string().ok())
-        .collect();
-    repos.sort();
-    repos
+    clones_of(root, workspace)
         .into_iter()
-        .filter_map(|repo| {
+        .filter_map(|clone| {
+            let repo = clone.name;
             let branches: Vec<RunnerBranch> =
-                purlis_core::codelink::on_a_pool_left(&folder.join(&repo), pool)
+                purlis_core::codelink::on_a_pool_left(&clone.path, pool)
                     .into_iter()
                     .map(|branch| RunnerBranch {
                         pool: pool.to_owned(),
@@ -284,8 +281,15 @@ mod tests {
 
     #[test]
     fn a_workspace_stays_under_a_pool_it_left_while_it_keeps_branches_of_it() {
+        // At the workspace's root, or in `repos/` (ADR 0114).
+        for below in ["web", "repos/web"] {
+            stays_under_a_pool_it_left(below);
+        }
+    }
+
+    fn stays_under_a_pool_it_left(below: &str) {
         let dir = tempfile::tempdir().expect("a project");
-        let clone = dir.path().join("workspaces/app/web");
+        let clone = dir.path().join("workspaces/app").join(below);
         std::fs::create_dir_all(&clone).expect("a clone");
         let git = |args: &[&str]| {
             let ran = purlis_core::forklock::output(
@@ -319,7 +323,8 @@ mod tests {
 
         assert_eq!(
             on,
-            BTreeMap::from([("old-pool".to_owned(), vec!["app".to_owned()])])
+            BTreeMap::from([("old-pool".to_owned(), vec!["app".to_owned()])]),
+            "{below}"
         );
     }
 

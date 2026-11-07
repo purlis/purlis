@@ -334,6 +334,86 @@ pub(crate) async fn skill_export_review(
     .await
 }
 
+/// **What an export of the skills `members` would write** (#5332), each once with what they name.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_set_export_review(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    members: Vec<crate::skillset::SkillSetMember>,
+) -> Result<ExportReview, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading what an export would write", move || {
+        flag_on()?;
+        let out = set_gathered(held.root(), &members)?;
+        Ok(ExportReview {
+            skills: out.skills.iter().map(|skill| esc(&skill.name)).collect(),
+            behind: behind_of(&out),
+            broken: out.broken.iter().map(|one| esc(one)).collect(),
+            stops: stops_of(&out),
+        })
+    })
+    .await
+}
+
+/// The skills of `members`, and those they name, as an export would write them.
+fn set_gathered(
+    root: &Path,
+    members: &[crate::skillset::SkillSetMember],
+) -> Result<source::Outgoing, String> {
+    let built_in = crate::skillchange::built_in();
+    let skills: Vec<_> = members
+        .iter()
+        .map(|one| ((&one.level).into(), one.name.clone()))
+        .collect();
+    source::gather_set(root, built_in.as_deref(), &skills, Purpose::Export)
+}
+
+/// **Asks where, and writes an export of the skills `members`** (#5332): a zip, or a folder of
+/// skill folders. The place written, or `None` where the person chose none. Nothing is written
+/// over anything.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_set_export(
+    app: tauri::AppHandle,
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    members: Vec<crate::skillset::SkillSetMember>,
+    zip: bool,
+) -> Result<Option<String>, String> {
+    let held = planes.held(&plane)?;
+    flag_on()?;
+    let Some(to) = export_place(&app, zip).await? else {
+        return Ok(None);
+    };
+    crate::off_the_window("exporting the skills", move || {
+        let out = set_gathered(held.root(), &members)?;
+        if zip {
+            source::export_zip(&out, &to)?;
+        } else {
+            source::export_folder(&out, &to)?;
+        }
+        Ok(Some(to.display().to_string()))
+    })
+    .await
+}
+
+/// **Where the person picks to write an export of several skills**: a zip in the save dialog, or
+/// a `skills` folder in the folder they pick, as Select's Export asks (#5332). `None` where they
+/// picked none.
+pub(crate) async fn export_place(
+    app: &tauri::AppHandle,
+    zip: bool,
+) -> Result<Option<PathBuf>, String> {
+    if zip {
+        save_to(app, "skills.zip".to_owned()).await
+    } else {
+        Ok(crate::opener::pick_folder(app)
+            .await?
+            .map(|folder| PathBuf::from(folder).join("skills")))
+    }
+}
+
 /// Where to write a zip, as the person picks in the system's save dialog: `None` where they did not.
 async fn save_to(app: &tauri::AppHandle, suggested: String) -> Result<Option<PathBuf>, String> {
     let (chose, chosen) = std::sync::mpsc::channel();

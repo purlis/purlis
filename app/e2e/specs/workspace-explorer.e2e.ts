@@ -138,6 +138,9 @@ describe("the explorer", () => {
   /** The tabs on alpha's strip before this spec, where its file tabs open: `after` closes the
    *  ones it opened (#5111). `null` when the `before` never read them. */
   let alphaHad: string[] | null = null;
+  /** The tabs on beta's strip before a chat is started there: `after` closes its tab once the
+   *  chat is ended, as it does alpha's file tabs (#5269). `null` when no test went there. */
+  let betaHad: string[] | null = null;
   // The left side opens on Chats (#1673): these are about the Explorer view's rows.
   before(async () => {
     wereRunning = await chatsRunning();
@@ -152,6 +155,15 @@ describe("the explorer", () => {
       await endTheChatsStartedSince(wereRunning);
     } catch (error) {
       trouble = error;
+    }
+    // The tab of the chat it started on beta's strip, by its own ×, once the chat is ended.
+    try {
+      if (betaHad !== null) {
+        await focus("beta");
+        await closeTheViewTabsOpenedSince(betaHad);
+      }
+    } catch (error) {
+      trouble ??= error;
     }
     // The file tabs it opened on alpha's strip, each by its own ×, once its chats are ended.
     try {
@@ -955,6 +967,7 @@ describe("the explorer", () => {
     // is the same guarantee a project behind another one has (#125).
     await untilListed(["alpha", "beta"]);
     await focus("beta");
+    betaHad ??= await tabNames();
     // By the number the core gave it (#1796): another chat may carry the same name.
     const started = await startAChat();
 

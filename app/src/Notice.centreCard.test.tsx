@@ -343,26 +343,6 @@ describe("a card waiting on consent in the Notices centre (ADR 0097 §6, #5217)"
   });
 });
 
-describe("a chat's own words on a card (#5217)", () => {
-  it("go through ChatText, at the card's size in the secondary tier, under purlis's sentence", async () => {
-    const card = await inTheCentre({
-      cause: "words",
-      label: "Passed on",
-      chatWords: "Read **this** first <b>raw</b>\n\n![alt](https://example.com/x.png)",
-      onDismiss: () => {},
-      children: "It passed this on.",
-    });
-
-    const words = part(card, "chat-words") as HTMLElement;
-    expect(within(words).getByText("this").tagName).toBe("STRONG");
-    expect(words.querySelector("img")).toBeNull();
-    expect(words.querySelector("b")).toBeNull();
-    expect(drawnWith(words, "font-size")).toBe("var(--font-size-md)");
-    expect(drawnWith(words, "color")).toBe("var(--text-secondary)");
-    expect(drawnWith(within(words).getByText("this"), "color")).toBe("var(--text-primary)");
-  });
-});
-
 describe("the Notices centre's list (#5217)", () => {
   it("draws no box of its own: each Notice is its own card", async () => {
     await inTheCentre({ cause: "one", onDismiss: () => {}, children: "One." });

@@ -16,6 +16,11 @@ FROM ${RUNNER}
 ARG AT
 COPY --chmod=0755 fake-harness purlis ${AT}/
 
+# The time this build's `purlis` judges its engine's age by, the moment its pin was issued (#5413):
+# a browser on the runner turns neither on today's date nor on reading the published manifest.
+ARG ENGINE_NOW
+ENV PURLIS_TEST_ENGINE_NOW=${ENGINE_NOW}
+
 # The program Claude Code ships, the version purlis supports, which a behaviour runs under the
 # runner's own wrap with a stand-in model (#4083). The image a pool really runs carries no harness.
 COPY --chmod=0755 claude-code /usr/local/lib/parity/claude-code

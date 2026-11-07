@@ -56,24 +56,24 @@ const QUIET: &[(&str, &str)] = &[("placeholder", "text.quiet"), ("chevron", "tex
 pub(super) const SELECT: Family = Family {
     name: "select",
     description: "A select: one of many, picked from a list it opens.",
-    since: super::NEXT,
+    since: 13,
     parts: &[
         Part {
             name: "root",
-            since: super::NEXT,
+            since: 13,
             description: "The box itself: its fill, border, corners and size, and the words of \
                           what is picked.",
             properties: BOX,
         },
         Part {
             name: "placeholder",
-            since: super::NEXT,
+            since: 13,
             description: "What it shows while nothing is picked.",
             properties: &[Prop::Text],
         },
         Part {
             name: "chevron",
-            since: super::NEXT,
+            since: 13,
             description: "The chevron at its end, which says it opens a list.",
             properties: &[Prop::Text],
         },
@@ -117,18 +117,18 @@ pub(super) const SELECT: Family = Family {
 pub(super) const COMBOBOX: Family = Family {
     name: "combobox",
     description: "A combobox: a box to type in, with the suggestions that match in a list under it.",
-    since: super::NEXT,
+    since: 13,
     parts: &[
         Part {
             name: "root",
-            since: super::NEXT,
+            since: 13,
             description: "The box itself: its fill, border, corners and size, and the words typed \
                           in it.",
             properties: BOX,
         },
         Part {
             name: "chevron",
-            since: super::NEXT,
+            since: 13,
             description: "The chevron at its end, which opens every suggestion.",
             properties: &[Prop::Text],
         },

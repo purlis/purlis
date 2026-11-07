@@ -117,24 +117,7 @@ pub fn sweep_keeping(
             |file, written| (!hands_out_a_secret(file)).then_some(written),
         ),
         reports: sweep_reports(plane, now),
-        // Read however lately written: a record says when its dispatch ended (#1556).
-        dispatches: collect_by(
-            plane,
-            &[
-                crate::names::state_name(plane),
-                "app",
-                crate::dispatchrecord::DIR_NAME,
-            ],
-            now,
-            // A record, or what a record's write left behind when it was cut short: a
-            // temporary file holding a brief, which nothing else ever removes.
-            |name| {
-                crate::dispatchrecord::a_record(name)
-                    || crate::dispatchrecord::a_record_s_temp(name)
-            },
-            true,
-            |file, written| crate::dispatchrecord::aged_from(file, written, now, chats),
-        ),
+        dispatches: dispatches(plane, now, chats),
         // A chat's figure, by its id: kept while the chat comes back, however old.
         spend: collect(
             plane,
@@ -537,6 +520,32 @@ fn collect(
     from: impl Fn(&mut std::fs::File, SystemTime) -> Option<SystemTime>,
 ) -> usize {
     collect_by(plane, steps, now, ours, false, from)
+}
+
+/// The dispatch records of `plane` collected at `now`, keeping those of the chats in `chats`
+/// ([`sweep_keeping`]), and the store's summary of what ended kept in step with them (#5502).
+fn dispatches(plane: &Path, now: SystemTime, chats: &[crate::dispatchrecord::Live]) -> usize {
+    // Read however lately written: a record says when its dispatch ended (#1556).
+    let gone = collect_by(
+        plane,
+        &[
+            crate::names::state_name(plane),
+            "app",
+            crate::dispatchrecord::DIR_NAME,
+        ],
+        now,
+        // A record, or what a record's write left behind when it was cut short: a
+        // temporary file holding a brief, which nothing else ever removes.
+        |name| {
+            crate::dispatchrecord::a_record(name) || crate::dispatchrecord::a_record_s_temp(name)
+        },
+        true,
+        |file, written| crate::dispatchrecord::aged_from(file, written, now, chats),
+    );
+    if gone > 0 {
+        crate::dispatchrecord::ended::in_step(plane);
+    }
+    gone
 }
 
 /// [`collect`], reading every file of a store whose files say their own time

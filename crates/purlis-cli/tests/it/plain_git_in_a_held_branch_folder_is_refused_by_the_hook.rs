@@ -163,6 +163,8 @@ impl Project {
                         persona: Some("steward".to_owned()),
                         harnessed: true,
                         unsandboxed: true,
+                        roots_git_held: false,
+                        unreadable: Vec::new(),
                         config: None,
                         id: Some(ME.to_owned()),
                         live: Some(vec![live(ME, 3), live(HOLDER, 4)]),

@@ -226,7 +226,7 @@ fn a_password_key_on_another_site_is_said_and_its_own_site_is_not() {
             .said()
             .contains("https://old.example.test")
     );
-    let same = proposed(dir.path(), "https://old.example.test/signin");
+    let same = proposed(dir.path(), "https://old.example.test/");
     assert!(same.warnings.is_empty(), "{same:?}");
 }
 
@@ -300,18 +300,31 @@ fn the_same_key_twice_is_refused() {
     assert!(proposal(dir.path(), "qa", "shop-login", &twice, &[]).is_err());
 }
 
+/// The person's ruling of 2026-11-05: any page but the site's front one is said, a usual login
+/// address too, as the site decides what its page does as it opens.
 #[test]
-fn a_page_no_login_is_usually_on_is_said_and_shown_whole() {
+fn a_page_but_the_front_one_is_said_and_shown_whole() {
     let dir = project("");
-    let one = proposed(dir.path(), "https://wiki.example.test/~mallory/notes.html");
-    assert_eq!(
-        one.warnings,
-        vec![Warning::ChatsPage {
-            path: "/~mallory/notes.html".to_owned()
-        }]
-    );
+    for path in ["/~mallory/notes.html", "/login/", "/signin"] {
+        let one = proposed(dir.path(), &format!("https://wiki.example.test{path}"));
+        assert_eq!(
+            one.warnings,
+            vec![Warning::ChatsPage {
+                path: path.to_owned()
+            }]
+        );
+        let said = one.warnings[0].said();
+        assert!(
+            said.contains(&format!("The chat chose the page {path}, not")),
+            "{said}"
+        );
+        assert!(
+            said.contains("sign the browser in to someone else's account"),
+            "{said}"
+        );
+    }
     assert!(
-        proposed(dir.path(), "https://wiki.example.test/login/")
+        proposed(dir.path(), "https://wiki.example.test/")
             .warnings
             .is_empty()
     );
@@ -566,7 +579,7 @@ fn a_form_on_the_page_s_own_origin_is_said_as_before_and_writes_no_form() {
         dir.path(),
         "qa",
         "shop-login",
-        &suggested("https://shop.example.test/login"),
+        &suggested("https://shop.example.test/"),
         &|_| Ok("https://shop.example.test/login?next=%2F".to_owned()),
         &[],
     )

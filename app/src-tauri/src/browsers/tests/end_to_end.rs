@@ -264,16 +264,31 @@ impl Host {
     /// test's: where the profile the `.deb` installs names its engine (#2835; on CI, whose homes
     /// are under the temporary folder, as `ci.yml` tells AppArmor).
     pub(crate) fn serving() -> Host {
-        Host::serving_with(true)
+        Host::serving_with(true, &[])
     }
 
     /// A host whose data home is a folder the person named elsewhere: no profile the `.deb`
     /// installs names its engine.
     pub(crate) fn serving_with_its_data_folder_elsewhere() -> Host {
-        Host::serving_with(false)
+        Host::serving_with(false, &[])
     }
 
-    fn serving_with(default_data_home: bool) -> Host {
+    /// A host 22 days past its pin's issue, whose every read of the network fails at a proxy
+    /// that answers nothing: what a machine past the limit has when the published manifest
+    /// answers 504 (#5413).
+    fn serving_past_its_engines_limit_with_no_manifest_to_read() -> Host {
+        let past = purlis_core::browsers::when_the_pin_was_issued() + chrono::TimeDelta::days(22);
+        Host::serving_with(
+            true,
+            &[
+                (purlis_core::browsers::ENGINES_CLOCK_VAR, past.to_rfc3339()),
+                ("ALL_PROXY", "http://127.0.0.1:9".to_owned()),
+            ],
+        )
+    }
+
+    /// A host in a home of its own, `extra` in its environment over what it would inherit.
+    fn serving_with(default_data_home: bool, extra: &[(&str, String)]) -> Host {
         let home = tempfile::tempdir().expect("the host's home");
         let crate::behaviour::HostHome {
             place,
@@ -293,6 +308,12 @@ impl Host {
             inherited.push(("HOME".into(), home.path().as_os_str().to_owned()));
             data = purlis_core::names::DATA_HOME.folder_at(&home.path().join(".local/share"));
         }
+        inherited.retain(|(name, _)| !extra.iter().any(|(ours, _)| name == *ours));
+        inherited.extend(
+            extra
+                .iter()
+                .map(|(name, value)| ((*name).into(), value.into())),
+        );
         let purlis = crate::behaviour::built_beside("purlis", "purlis-cli");
         let session = SessionHost::default();
         session.start_at(place, move || {
@@ -1235,6 +1256,56 @@ fn a_chats_downloads_and_uploads_go_through_every_hop() {
 }
 
 // ---- #2835: where the engine cannot make its sandbox ----
+
+/// **An engine past the limit is refused on a real host** (#5413): 22 days past its pin's issue,
+/// with no manifest to read, a chat's browser does not start, and the chat is told why. Every
+/// other test here runs on a clock of its own at the pin's issue; this one is the refusal. Run in
+/// homes of its own, as the tests above are.
+#[test]
+fn past_its_limit_with_no_manifest_to_read_a_hosts_engine_is_refused() {
+    if !a_real_engine_runs_here() {
+        return;
+    }
+    in_homes_of_its_own(
+        "browsers::tests::end_to_end::the_refusal_of_an_engine_past_its_limit_in_homes_of_their_own",
+    );
+}
+
+/// [`past_its_limit_with_no_manifest_to_read_a_hosts_engine_is_refused`], in homes of its own.
+#[test]
+#[ignore = "run by past_its_limit_with_no_manifest_to_read_a_hosts_engine_is_refused"]
+fn the_refusal_of_an_engine_past_its_limit_in_homes_of_their_own() {
+    if !a_real_engine_runs_here() {
+        return;
+    }
+    let site = Site::serve();
+    let window = Window::holding_on(
+        Host::serving_past_its_engines_limit_with_no_manifest_to_read,
+        &site,
+        &[&site],
+    );
+    let (chat, mut tools) = window.a_chat();
+    tools.call("browser_snapshot", json!({}));
+    crate::chatbrowsers::allowed(&window.held, chat, false).expect("the person allows it");
+
+    let refused = tools.call(
+        "browser_open",
+        json!({ "address": site.at("counter.html") }),
+    );
+    assert!(refused.error, "{refused:?}");
+    assert!(
+        refused
+            .text
+            .contains("The browser engine is 22 days behind, so it was not started."),
+        "{}",
+        refused.text
+    );
+    assert!(site.heard().is_empty(), "nothing started");
+    assert!(
+        logged(&["the browser engine's update check did not update it"]).is_some(),
+        "the published manifest was tried first"
+    );
+}
 
 /// Where AppArmor restricts user namespaces and no profile names the pinned engine (its data
 /// folder elsewhere), the chat is told a browser is not available on this machine, never the

@@ -44,7 +44,7 @@ import { specsOfPart } from "./parts.js";
  * the service's default), which is the only path that works on macOS as well as Linux — see
  * the service's ADR 0002. Both plugins are behind the app's `e2e` cargo feature.
  */
-const app = built(process.platform === "win32" ? "charter-app.exe" : "charter-app");
+const app = built(process.platform === "win32" ? "purlis-app.exe" : "purlis-app");
 
 /**
  * What the service starts. A stress run starts the app the way launchd would, with a soft
@@ -142,6 +142,8 @@ export const config: WebdriverIO.Config = {
     // Pool setup's Docker path needs Docker and the runner image this build makes, which only
     // Linux's pool leg has (`wdio.pool.conf.ts`, #4985).
     "./specs/**/*.pool.e2e.ts",
+    // The nightly scale run opens a project of a thousand workspaces (`wdio.scale.conf.ts`, #5497).
+    "./specs/**/*.scale.e2e.ts",
     ...(process.env.STRESS === "1" ? [] : ["./specs/stress.e2e.ts"]),
   ],
   maxInstances: 1,

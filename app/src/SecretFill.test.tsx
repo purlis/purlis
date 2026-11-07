@@ -206,3 +206,33 @@ describe("a secret ask that replaces or mends (#5075)", () => {
     );
   });
 });
+
+describe("a fill policy offers no Allow beside (#5243)", () => {
+  it("says why, and the key can still be filled", () => {
+    const no_allow = "policy turns off allowing a program with a vault's keys";
+    render(
+      <SecretFill
+        secret={{ ...secret, no_allow }}
+        box={null}
+        entries={() => Promise.resolve(KEPT)}
+        picked={undefined}
+        onPicked={() => {}}
+      />,
+    );
+    expect(screen.getByTestId("secret-no-allow").textContent).toBe(no_allow);
+    expect(screen.getByText("KUBECONFIG")).toBeTruthy();
+  });
+
+  it("says nothing of it on any other fill", () => {
+    render(
+      <SecretFill
+        secret={secret}
+        box={null}
+        entries={() => Promise.resolve(KEPT)}
+        picked={undefined}
+        onPicked={() => {}}
+      />,
+    );
+    expect(screen.queryByTestId("secret-no-allow")).toBeNull();
+  });
+});

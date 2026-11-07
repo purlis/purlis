@@ -27,7 +27,8 @@
     "e2e:browser": "wdio run e2e/wdio.browser.conf.ts",
     "e2e:upgrade": "wdio run e2e/wdio.upgrade.conf.ts",
     "e2e:outcome": "wdio run e2e/wdio.outcome.conf.ts",
-    "e2e:pool": "wdio run e2e/wdio.pool.conf.ts"
+    "e2e:pool": "wdio run e2e/wdio.pool.conf.ts",
+    "e2e:scale": "wdio run e2e/wdio.scale.conf.ts"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",
@@ -54,6 +55,7 @@
     "@radix-ui/react-radio-group": "^1.5.1",
     "@radix-ui/react-roving-focus": "^1.1.19",
     "@radix-ui/react-switch": "^1.4.1",
+    "@tanstack/react-virtual": "3.14.26",
     "@tauri-apps/api": "~2.12.4",
     "@tauri-apps/plugin-opener": "~2.7.2",
     "@xterm/addon-fit": "^0.11.0",

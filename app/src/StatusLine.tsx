@@ -19,6 +19,7 @@ import {
   useStatusOrder,
 } from "./statusBarPrefs";
 import { NoticeDot } from "./ui/titlebar/TitleBarWorkspaces";
+import { projectName } from "./projectName";
 
 /**
  * **charter's status line**: one line at the very bottom of the window, under everything.
@@ -368,15 +369,6 @@ export function StatusLine({
 
 /** The mark before the workspace's name: purlis's own (`crates/purlis-core/src/footer.rs`). */
 const WORKSPACE_GLYPH = <span aria-hidden="true">⬢</span>;
-
-/**
- * A project's name: the last segment of its directory, as its tab on the title bar and a
- * terminal's prompt say it. A root (`/`, `C:\`) has no segment and is said whole.
- */
-export function projectName(plane: string): string {
-  const segments = plane.split(/[\\/]+/).filter((one) => one !== "");
-  return segments.at(-1) ?? plane;
-}
 
 /**
  * **The project, as its name** (qw357): the operator's *"project directory is very large and

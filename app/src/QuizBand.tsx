@@ -12,7 +12,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { commands, type PlaneId, type Shown } from "./bindings";
-import { Notice } from "./Notice";
+import { Notice, useBandRows } from "./Notice";
 import { useQuestionsHere } from "./QuestionsHere";
 import { QuizClosing, type Closed } from "./QuizClosing";
 import { closeQuizSaid, moreSaid, moreSaidFully, TaskQuiz } from "./TaskQuiz";
@@ -25,6 +25,8 @@ import { quizIn, setWhereYouAnswer, useWhereYouAnswer, type QuizHere } from "./w
 export const FIRST_LINE =
   "Questions from this chat's tasks now come here, so you answer them in one place.";
 export const CHANGE = "Change";
+/** What the folded band's line calls a task's question (#5215). */
+export const QUESTION_WHAT = "A task's question";
 
 /**
  * **Where the window places a task's question**, lent to every pane by the window (#4565):
@@ -37,6 +39,8 @@ export const QuizPlaces = createContext<
       openTask: (task: number) => void;
       /** Opens Settings at Where you answer, for the note's Change. */
       openSettings: () => void;
+      /** Opens the Inbox at a task's question, for its row's Answer (#5215). */
+      answerInInbox: (task: number) => void;
     }
   | undefined
 >(undefined);
@@ -232,11 +236,11 @@ export function QuizBand({
   const held = useQuestionsHere();
   const places = useContext(QuizPlaces);
   const prefs = useWhereYouAnswer();
-  /** The questions closed in this pane: put away here, still the registry's, so still the
-   *  Inbox's and the ✋'s. */
-  const [closed, setClosed] = useState<ReadonlySet<string>>(() => new Set());
+  /** The questions closed in this pane, kept with its band (#5215): put away here, still the
+   *  registry's, so still the Inbox's and the ✋'s. */
+  const rows = useBandRows();
   const asks = held?.asks ?? [];
-  const open = asks.filter((ask) => !closed.has(ask.ask));
+  const open = asks.filter((ask) => rows?.closed.has(ask.ask) !== true);
   const quiz = places === undefined ? undefined : quizIn(open, session, prefs.answer, places.topOf);
   const { pausing, closings, dismiss, box, answered, typedIn } = useQuizzes(
     plane,
@@ -249,7 +253,7 @@ export function QuizBand({
   );
   if (quiz === undefined && closings.length === 0) return null;
   const closeQuiz = () => {
-    if (quiz !== undefined) setClosed((now) => new Set(now).add(quiz.ask.ask));
+    if (quiz !== undefined) rows?.close(quiz.ask.ask);
   };
   return (
     <>
@@ -267,6 +271,7 @@ export function QuizBand({
         <div
           className="quiz-band-quiz"
           data-waits=""
+          data-what={QUESTION_WHAT}
           style={{ minBlockSize: `${pausing.height}px` }}
         >
           <Card variant="ask" className="inbox-ask task-quiz task-quiz-pause">
@@ -287,7 +292,7 @@ export function QuizBand({
         </Notice>
       )}
       {pausing === undefined && quiz !== undefined && places !== undefined && (
-        <div ref={box} className="quiz-band-quiz" data-waits="">
+        <div ref={box} className="quiz-band-quiz" data-waits="" data-what={QUESTION_WHAT}>
           {quiz.drawn ? (
             <TaskQuiz
               // A new question is a new quiz: nothing typed for one is carried to the next.
@@ -297,6 +302,7 @@ export function QuizBand({
               more={quiz.more}
               own={quiz.own}
               onOpenTask={places.openTask}
+              onAnswerInInbox={places.answerInInbox}
               onAnswered={() => {
                 answered(quiz.ask.ask);
                 if (!prefs.offered) setWhereYouAnswer({ offered: true });

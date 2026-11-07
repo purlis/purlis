@@ -6,11 +6,10 @@ import { join } from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import { appStateOf, projectRoot } from "../acting.js";
 import {
-  closeTheViewTabsOpenedSince,
+  closesTheTabsItOpens,
   endTheSessionsStartedSince,
   focusWorkspace,
   runFromThePalette,
-  tabNames,
 } from "../reach.js";
 import { studioPage } from "../studio.js";
 import { projectInFront, runningIn } from "../running.js";
@@ -83,9 +82,11 @@ describe("draft skills in the Skill studio", function () {
   let root = "";
   let state = "";
   let plane = "";
-  let wereOpen: string[] = [];
   let wereRunning: number[] = [];
 
+  // Hooks of a kind run in the order they are registered: the strip is read once alpha is
+  // focused and the profile approved, and its view tabs are closed once the chats are ended,
+  // before the drafts are taken away.
   before(async () => {
     root = await projectRoot();
     state = appStateOf(root);
@@ -93,18 +94,24 @@ describe("draft skills in the Skill studio", function () {
     // The studio's chats start without the picker, on a profile someone approved (#3562): in
     // the project and workspace they start in.
     await theDefaultProfileApproved();
-    wereOpen = await tabNames();
-    plane = await projectInFront();
-    wereRunning = await runningIn(plane);
-    drafted(state, ACCEPTED_ID, ACCEPTED, 1);
-    drafted(state, REJECTED_ID, REJECTED, 1);
   });
 
   after(async () => {
     await endTheSessionsStartedSince(wereRunning);
     // A chat at the project's root is filed on the root's strip: the studio's tab is on alpha's.
     await focusWorkspace("alpha");
-    await closeTheViewTabsOpenedSince(wereOpen);
+  });
+
+  closesTheTabsItOpens();
+
+  before(async () => {
+    plane = await projectInFront();
+    wereRunning = await runningIn(plane);
+    drafted(state, ACCEPTED_ID, ACCEPTED, 1);
+    drafted(state, REJECTED_ID, REJECTED, 1);
+  });
+
+  after(() => {
     for (const id of [ACCEPTED_ID, REJECTED_ID])
       rmSync(join(state, "skill-drafts", id), { recursive: true, force: true });
     rmSync(join(root, "skills", ACCEPTED), { recursive: true, force: true });

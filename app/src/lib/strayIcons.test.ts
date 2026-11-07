@@ -34,6 +34,8 @@ const OWN_SVG: Record<string, string> = {
     "the icon theme's and a theme's icon set's symbols, rebuilt from checked path data",
   "ui/popover/Popover.tsx": "a popover's point toward what opened it, in the surface's ground",
   "editor/imagePreview.ts": "a one-pixel SVG decoded as bytes to ask the webview, never drawn",
+  "ui/tabs/Tabs.tsx":
+    "a split tab's picture of its own layout, drawn from its tree, which no icon set holds (#5342)",
   "ui/harness-icon/HarnessIcon.tsx":
     "a theme's harness glyphs and a person's own icon, rebuilt from checked path data and shapes",
 };
