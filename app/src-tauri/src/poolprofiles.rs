@@ -923,6 +923,8 @@ pub struct LimitRefused {
 /// open for this vault and key.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct StartSecretAsk {
+    /// The variable the chat's harness is handed the value in.
+    pub variable: String,
     pub vault: String,
     pub key: String,
     /// What the dialog says once the person declines it: the core's words for a start whose ask
@@ -1001,6 +1003,7 @@ pub(crate) fn offering_limits<T>(
         let secret_ask = asked
             .filter(|asked| words.contains(asked.said.as_str()))
             .map(|asked| StartSecretAsk {
+                variable: asked.variable,
                 vault: asked.vault,
                 key: asked.key,
                 declined: asked.declined,

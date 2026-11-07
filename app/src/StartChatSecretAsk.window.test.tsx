@@ -1,0 +1,186 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+import { StrictMode } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, render as renderBare, screen, waitFor, within } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
+import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import App from "./App";
+import { secretAsk } from "./secretAsk.testkit";
+
+/**
+ * **The Start dialog fills a start's missing credential, and the start goes on** (#5137, from
+ * D-5074-2): a start refused on its profile credential's Secret ask draws that ask's body in the
+ * dialog. Fill answers the one ask for that vault and key and starts again with no second press;
+ * Not now declines it and says the core's words for a declined start.
+ */
+
+vi.mock("./SessionPane", () => ({
+  SessionPane: ({ session }: { session: number }) => (
+    <div data-testid="pane">session {session}</div>
+  ),
+}));
+
+const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
+
+afterEach(() => {
+  cleanup();
+  clearMocks();
+});
+
+const PLANE = "/home/dev/plane";
+
+const OPTIONS = {
+  profiles: [
+    {
+      name: "work-key",
+      kind: "claude",
+      shown: "claude",
+      source: "built-in",
+      is_default: true,
+      approval: null,
+    },
+  ],
+  refused: [],
+  personas: ["devops"],
+  persona: "devops",
+  persona_profiles: {},
+  ignore_fix: null,
+  declares_none: true,
+};
+
+const REFUSED =
+  "this chat's profile names ANTHROPIC_API_KEY as 'anthropic' in vault 'providers', and it could " +
+  "not be read (waiting on you for providers/anthropic; retry once answered), so nothing was " +
+  "started; fill it from the Secret ask in the Inbox, then start the chat again";
+const DECLINED =
+  "this chat's profile names ANTHROPIC_API_KEY as 'anthropic' in vault 'providers', and it could " +
+  "not be read (declined providers/anthropic), so nothing was started";
+
+/** The start's ask, as the registry lists it: a start has no chat yet (D-5074-1). */
+const ASK = (() => {
+  const ask = secretAsk({ persona: "devops", vault: "providers", key: "anthropic" });
+  return { ...ask, session: 0, ask: "secret:4", answer: { via: "secret" as const, id: 4 } };
+})();
+
+/** The window's core: the first start is refused on the ask while it is open; once it is
+ *  answered, the ask is gone from the list and a start starts. */
+function core() {
+  const asked: { cmd: string; args: Record<string, unknown> }[] = [];
+  let open = false;
+  let opened = 0;
+  mockIPC((cmd, args) => {
+    asked.push({ cmd, args: (args ?? {}) as Record<string, unknown> });
+    if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
+    if (cmd === "plane_sidebar")
+      return { root: PLANE, workspaces: [], personas: ["devops"], persona: "devops", unfiled: [] };
+    if (cmd === "running_sessions") return [];
+    if (cmd === "opened_chats") return [];
+    if (cmd === "chat_states") return [];
+    if (cmd === "chats_that_would_not_start") return [];
+    if (cmd === "start_details") return [];
+    if (cmd === "start_options" || cmd === "start_options_first") return OPTIONS;
+    if (cmd === "asks_waiting") return { plane: PLANE, asks: open ? [ASK] : [] };
+    if (cmd === "answer_secret_ask") {
+      open = false;
+      return null;
+    }
+    if (cmd === "start_chat") {
+      if (opened === 0 && !answered()) {
+        open = true;
+        throw {
+          words: REFUSED,
+          limit: null,
+          secret_ask: {
+            variable: "ANTHROPIC_API_KEY",
+            vault: "providers",
+            key: "anthropic",
+            declined: DECLINED,
+          },
+        };
+      }
+      return { session: ++opened };
+    }
+    return null;
+  });
+  const answered = () => asked.some(({ cmd }) => cmd === "answer_secret_ask");
+  const of = (cmd: string) => asked.filter((one) => one.cmd === cmd);
+  return { asked, of };
+}
+
+async function startRefused() {
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "New chat" }));
+  await user.click(await screen.findByRole("button", { name: /^Start chat/ }));
+  const dialog = screen.getByRole("dialog", { name: "Start a chat" });
+  const body = await within(dialog).findByRole("group", {
+    name: "devops asks for anthropic from vault providers",
+  });
+  return { user, dialog, body };
+}
+
+describe("a start missing its profile credential, in the Start dialog (#5137)", () => {
+  it("draws the Secret ask's body in the dialog, in place of the words that point to the Inbox", async () => {
+    core();
+    render(<App />);
+
+    const { dialog, body } = await startRefused();
+
+    expect(within(body).getByLabelText("Value of anthropic")).toBeTruthy();
+    expect(dialog.textContent).not.toContain("fill it from the Secret ask in the Inbox");
+    // What the start does with it, never what a chat hears; and its key is its profile's.
+    expect(body.textContent).toContain("starts with the value in ANTHROPIC_API_KEY.");
+    expect(within(body).queryByRole("button", { name: /^Change where/ })).toBeNull();
+  });
+
+  it("filled, answers the one ask for that vault and key and starts again with no second press", async () => {
+    const { of } = core();
+    render(<App />);
+
+    const { user, body } = await startRefused();
+    await user.type(within(body).getByLabelText("Value of anthropic"), "fr3sh-anthropic");
+    await user.click(within(body).getByRole("button", { name: "Fill" }));
+
+    await waitFor(() => expect(of("start_chat")).toHaveLength(2));
+    expect(of("answer_secret_ask")).toHaveLength(1);
+    expect(of("answer_secret_ask")[0].args).toMatchObject({
+      plane: PLANE,
+      id: 4,
+      value: "fr3sh-anthropic",
+    });
+    expect(of("start_chat")[1].args).toMatchObject({ profile: "work-key", persona: "devops" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Start a chat" })).toBeNull());
+    expect(await screen.findByTestId("pane")).toHaveTextContent("session 1");
+  });
+
+  it("answered in the dialog, the ask is read again and gone from the Inbox", async () => {
+    const { asked } = core();
+    render(<App />);
+
+    const { user, body } = await startRefused();
+    await user.type(within(body).getByLabelText("Value of anthropic"), "fr3sh-anthropic");
+    await user.click(within(body).getByRole("button", { name: "Fill" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Start a chat" })).toBeNull());
+
+    const answeredAt = asked.findIndex(({ cmd }) => cmd === "answer_secret_ask");
+    await waitFor(() =>
+      expect(asked.slice(answeredAt).some(({ cmd }) => cmd === "asks_waiting")).toBe(true),
+    );
+    expect(screen.queryByTestId("secret-ask")).toBeNull();
+  });
+
+  it("Not now declines it, starts nothing and says the core's words for a declined start", async () => {
+    const { of } = core();
+    render(<App />);
+
+    const { user, dialog, body } = await startRefused();
+    await user.click(within(body).getByRole("button", { name: "Not now" }));
+
+    await waitFor(() => expect(within(dialog).getByRole("alert")).toHaveTextContent(DECLINED));
+    expect(of("answer_secret_ask")).toHaveLength(1);
+    expect(of("answer_secret_ask")[0].args).toMatchObject({ id: 4, value: null });
+    expect(of("start_chat")).toHaveLength(1);
+    expect(within(dialog).queryByTestId("secret-ask")).toBeNull();
+  });
+});

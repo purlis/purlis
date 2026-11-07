@@ -12,7 +12,8 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, waitFor, within } from "storybook/test";
 import type { ProfileRow, StartOptions } from "./bindings";
-import { StartChat, type RunsOnInPicker } from "./StartChat";
+import { StartChat, type RunsOnInPicker, type StartSecretAsk } from "./StartChat";
+import { ENTRIES, secretAsk } from "./secretAsk.testkit";
 import {
   SHORT_WINDOW,
   expectAnchored,
@@ -96,6 +97,28 @@ const OPTIONS: StartOptions = {
   declares_none: true,
 };
 
+/** A start refused on its profile credential's Secret ask (#5137), in the core's words. */
+const MISSING_REFUSED =
+  "this chat's profile names ANTHROPIC_API_KEY as 'anthropic' in vault 'providers', and it could " +
+  "not be read (waiting on you for providers/anthropic; retry once answered), so nothing was " +
+  "started; fill it from the Secret ask in the Inbox, then start the chat again";
+const MISSING_DECLINED =
+  "this chat's profile names ANTHROPIC_API_KEY as 'anthropic' in vault 'providers', and it could " +
+  "not be read (declined providers/anthropic), so nothing was started";
+/** Its ask, as the registry lists it: a start has no chat and no purpose of its own. */
+const MISSING_ASK = secretAsk({
+  persona: "steward",
+  vault: "providers",
+  key: "anthropic",
+  purpose: null,
+  remember: {
+    file: "personas/steward/persona.md",
+    need: true,
+    purpose: "",
+    vault: null,
+  },
+});
+
 /** Where a start's Runs on choice sends the chat, as the story's status says it (#4536). */
 const whereSaid = (runsOn?: { pool: string | null } | null) =>
   runsOn == null ? "" : runsOn.pool === null ? " on this machine" : ` on pool ${runsOn.pool}`;
@@ -107,6 +130,7 @@ function Window({
   trouble,
   poolUnavailable,
   pending = false,
+  missing = false,
 }: {
   options?: StartOptions;
   /** Where a new chat would run, and why: the Runs on row (#4536), with how each pool stands
@@ -115,9 +139,35 @@ function Window({
   trouble?: string;
   poolUnavailable?: string;
   pending?: boolean;
+  /** The start was refused on its profile credential's Secret ask (#5137): the dialog fills it,
+   *  and the start goes on, as the window does it. */
+  missing?: boolean;
 }) {
   const [open, setOpen] = useState(true);
   const [said, setSaid] = useState("Nothing started");
+  const [refused, setRefused] = useState(missing ? MISSING_REFUSED : trouble);
+  const [asking, setAsking] = useState(missing);
+  const [askSaid, setAskSaid] = useState<string>();
+  const ask: StartSecretAsk | undefined = asking
+    ? {
+        ask: MISSING_ASK,
+        variable: "ANTHROPIC_API_KEY",
+        entries: () => Promise.resolve(ENTRIES),
+        busy: false,
+        said: askSaid,
+        onSaid: setAskSaid,
+        onAnswer: (option, given) => {
+          given();
+          setAsking(false);
+          if (option.id === "keep") {
+            setRefused(MISSING_DECLINED);
+            return;
+          }
+          setSaid("Filled anthropic, and started steward as steward on claude");
+          setOpen(false);
+        },
+      }
+    : undefined;
   return (
     <>
       <p role="status" style={{ margin: 0 }}>
@@ -129,7 +179,8 @@ function Window({
           pending={pending}
           place="smart-ide"
           runsOn={runsOn}
-          trouble={trouble}
+          trouble={refused}
+          secretAsk={ask}
           poolUnavailable={poolUnavailable}
           onPoolSetup={(pool) => {
             setSaid(pool === undefined ? "Pool setup" : `Pool setup on ${pool}`);
@@ -571,5 +622,75 @@ export const DetailsPending: Story = {
     await pictureNow();
     await userEvent.keyboard("{Escape}");
     await expect(page.getByRole("status")).toHaveTextContent("Cancelled");
+  },
+};
+
+/** **Tabs forward until `target` has the keyboard** (`step` names it), the focus in sight at
+ *  every stop: the path a person without a pointer takes. */
+async function tabTo(
+  user: { tab: () => Promise<void> },
+  target: () => Element | null,
+  step: string,
+) {
+  for (let stops = 0; stops < 80 && document.activeElement !== target(); stops += 1) {
+    await user.tab();
+    expectFocusInSight();
+  }
+  await untilFocused(target, step);
+}
+
+/**
+ * **A start missing its profile credential** (#5137): the dialog draws the Secret ask's body in
+ * place of the refusal that pointed to the Inbox. Filled by keyboard alone, the start goes on with
+ * no second press.
+ */
+export const MissingCredential: Story = {
+  args: { missing: true },
+  play: async ({ userEvent }) => {
+    const page = await opened();
+    const body = page.getByRole("group", {
+      name: "steward asks for anthropic from vault providers",
+    });
+    await expect(body).toHaveTextContent("The chat starts with the value in ANTHROPIC_API_KEY.");
+    await expect(page.queryByText(/fill it from the Secret ask in the Inbox/)).toBeNull();
+    await pictureNow();
+    const box = () => within(body).getByLabelText("Value of anthropic");
+    await tabTo(userEvent, box, "Missing credential: the value's box");
+    await userEvent.keyboard("sk-ant-st0ry");
+    await tabTo(
+      userEvent,
+      () => within(body).getByRole("button", { name: "Fill" }),
+      "Missing credential: Fill",
+    );
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(page.getByRole("status", { hidden: true })).toHaveTextContent(
+        "Filled anthropic, and started steward as steward on claude",
+      ),
+    );
+  },
+};
+
+/**
+ * **Not now cancels the start** (#5137), by keyboard alone: the ask goes, nothing starts, and the
+ * dialog says the core's words for a start whose credential was declined.
+ */
+export const MissingCredentialDeclined: Story = {
+  args: { missing: true },
+  play: async ({ userEvent }) => {
+    const page = await opened();
+    const body = page.getByRole("group", {
+      name: "steward asks for anthropic from vault providers",
+    });
+    await tabTo(
+      userEvent,
+      () => within(body).getByRole("button", { name: "Not now" }),
+      "Missing credential: Not now",
+    );
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(page.getByRole("alert")).toHaveTextContent(MISSING_DECLINED));
+    await expect(page.queryByTestId("secret-ask")).toBeNull();
+    await expect(page.getByRole("status", { hidden: true })).toHaveTextContent("Nothing started");
+    await pictureNow();
   },
 };

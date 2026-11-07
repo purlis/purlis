@@ -295,6 +295,7 @@ pub fn read(
                                 refused(&line)
                             );
                             asked_on(Asked {
+                                variable: variable.clone(),
                                 vault: reference.vault.clone(),
                                 key: reference.key.clone(),
                                 said: said.clone(),
@@ -330,6 +331,8 @@ pub fn read(
 /// it out of the refusal's words.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Asked {
+    /// The variable the chat's harness is handed the value in.
+    pub variable: String,
     pub vault: String,
     pub key: String,
     /// The refusal it was named for: a refusal in other words came of another step.

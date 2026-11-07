@@ -98,6 +98,7 @@ export function SecretAskNotice({
   busy,
   onAnswer,
   onSaid,
+  start,
 }: {
   ask: Shown;
   /** The chat that asks, by the name the person sees. */
@@ -109,6 +110,10 @@ export function SecretAskNotice({
   onAnswer: (option: Offered, given: () => SecretAskGiven) => void;
   /** Why a press sends nothing yet, said where the row says it. */
   onSaid: (said: string) => void;
+  /** **A start's ask, in the Start dialog** (#5137): the chat starts with the value in
+   *  `variable`. Its key is the one its profile names, so its field offers no Change, as a
+   *  run's doesn't (D-5080-1). */
+  start?: { variable: string };
 }) {
   const secret = ask.secret ?? undefined;
   const run = ask.run ?? undefined;
@@ -251,6 +256,7 @@ export function SecretAskNotice({
 
   const hears = (() => {
     const whom = `${chat} hears`;
+    if (secret && start) return `${chat} starts with the value in ${start.variable}.`;
     if (secret) {
       return `${whom} filled or declined${secret.no_allow != null ? ", why no Allow is offered," : ""} and the key's name. Never the value.`;
     }
@@ -308,7 +314,7 @@ export function SecretAskNotice({
           }}
           listed={listed}
           named={named}
-          onNamed={secret ? setNamed : undefined}
+          onNamed={secret && !start ? setNamed : undefined}
           chat={chat}
         />
       ))}

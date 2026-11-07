@@ -42,6 +42,26 @@ import { Select } from "./ui/select/Select";
 import { reachableWords, START_WITHOUT_SANDBOX, startAnswer } from "./StartChatApproval";
 import { Reserved } from "./ui/dialog/Reserved";
 import { RaiseLimit } from "./RaiseLimit";
+import type { Offered, Shown } from "./bindings";
+import { SecretAskNotice, type SecretAskGiven } from "./SecretAskNotice";
+import type { VaultEntries } from "./VaultEntryPicker";
+
+/**
+ * **The Secret ask a start was refused on, as the Start dialog fills it** (#5137): the open ask
+ * for the profile's credential, its answer, and what is said beside it.
+ */
+export type StartSecretAsk = {
+  ask: Shown;
+  /** The variable the chat starts with the value in. */
+  variable: string;
+  entries: () => Promise<readonly VaultEntries[]>;
+  /** Whether its answer, or the start it goes on with, is running. */
+  busy: boolean;
+  /** Why the last press sent nothing, or how its answer was refused. */
+  said?: string;
+  onAnswer: (option: Offered, given: () => SecretAskGiven) => void;
+  onSaid: (said: string) => void;
+};
 
 /**
  * The key of the row that stands for "no persona at all".
@@ -210,6 +230,7 @@ export function StartChat({
   pool,
   poolUnavailable,
   onPoolSetup,
+  secretAsk,
   onCancel,
 }: {
   options: StartOptions;
@@ -295,6 +316,9 @@ export function StartChat({
   /** Opens Pool setup, where a pool is added or mended: on `pool`, where one is named (#4484).
    *  Absent, it is not offered. */
   onPoolSetup?: (pool?: string) => void;
+  /** **The Secret ask the last attempt was refused on** (#5137): drawn in place of `trouble`,
+   *  whose words point to the Inbox, so the person fills it here and the start goes on. */
+  secretAsk?: StartSecretAsk;
   onCancel: () => void;
 }) {
   // Only a persona there is a row for. The core already filters `[persona] default`
@@ -824,10 +848,25 @@ export function StartChat({
             refusal, its way to the Inbox, the command to approve and what the harness lacks the
             first time. Below them the pane would scroll them out of sight. */}
           <div ref={told} className="start-chat-told">
-            {trouble && (
+            {/* The refusal, or, where it is the start's Secret ask drawn below (#5137), only what
+              its last press was told: its own words point to the Inbox, and the ask is here. */}
+            {(secretAsk === undefined ? trouble : secretAsk.said) && (
               <p className="honest mid-turn" role="alert">
-                {trouble}
+                {secretAsk === undefined ? trouble : secretAsk.said}
               </p>
+            )}
+            {/* The start's missing credential (#5137): the Secret ask's own body, whose Fill
+              goes on with the start and whose Not now cancels it. */}
+            {secretAsk !== undefined && (
+              <SecretAskNotice
+                ask={secretAsk.ask}
+                chat="The chat"
+                entries={secretAsk.entries}
+                busy={secretAsk.busy || starting}
+                onAnswer={secretAsk.onAnswer}
+                onSaid={secretAsk.onSaid}
+                start={{ variable: secretAsk.variable }}
+              />
             )}
             {trouble && signIn !== undefined && onShowSignIn && (
               <p className="honest">

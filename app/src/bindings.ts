@@ -16369,6 +16369,8 @@ export type StartRunsOn = {
  *  open for this vault and key.
  */
 export type StartSecretAsk = {
+	/**  The variable the chat's harness is handed the value in. */
+	variable: string,
 	vault: string,
 	key: string,
 	/**

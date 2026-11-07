@@ -1239,6 +1239,7 @@ fn a_pool_not_reached_is_offered_only_beside_the_refusal_it_made() {
 #[test]
 fn a_start_refused_on_its_secret_ask_names_it_beside_its_own_refusal_alone() {
     let asked = || purlis_core::profilesignin::Asked {
+        variable: "ANTHROPIC_API_KEY".to_owned(),
         vault: "providers".to_owned(),
         key: "anthropic".to_owned(),
         said: "waiting on you for providers/anthropic".to_owned(),
@@ -1252,6 +1253,7 @@ fn a_start_refused_on_its_secret_ask_names_it_beside_its_own_refusal_alone() {
     assert_eq!(
         refused.secret_ask,
         Some(StartSecretAsk {
+            variable: "ANTHROPIC_API_KEY".to_owned(),
             vault: "providers".to_owned(),
             key: "anthropic".to_owned(),
             declined: "declined providers/anthropic, so nothing was started".to_owned(),

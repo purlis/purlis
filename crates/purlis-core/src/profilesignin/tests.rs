@@ -320,8 +320,12 @@ mod at_start {
         let why = why.unwrap_err();
         let asked = asked.expect("the refusal names the ask it waits on");
         assert_eq!(
-            (asked.vault.as_str(), asked.key.as_str()),
-            ("providers", "elsewhere")
+            (
+                asked.variable.as_str(),
+                asked.vault.as_str(),
+                asked.key.as_str()
+            ),
+            ("ANTHROPIC_API_KEY", "providers", "elsewhere")
         );
         assert!(why.contains(&asked.said), "{why} / {asked:?}");
         assert_eq!(
