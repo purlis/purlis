@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useRef, useState } from "react";
+import type { DoctorFix } from "./bindings";
 import { Field, SettingActions, SettingRow } from "./settings/components";
 import { Form, useFormRefusal, type Refused } from "./ui/field/Field";
 import { Button } from "./ui/button/Button";
@@ -25,7 +26,7 @@ import { DialogAnswers, useInADialog } from "./ui/dialog/Dialog";
  */
 
 /** The fix ids whose Fix opens a form instead of applying at once. */
-export const FIXES_WITH_A_FORM: ReadonlySet<string> = new Set(["git-identity"]);
+export const FIXES_WITH_A_FORM: ReadonlySet<DoctorFix> = new Set<DoctorFix>(["git-identity"]);
 
 /** Each field's refusal, in the core's words; `undefined` when the input was taken. */
 export type IdentityRefused = { name: string[]; email: string[] };

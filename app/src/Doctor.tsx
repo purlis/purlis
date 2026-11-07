@@ -13,6 +13,7 @@ import {
 } from "./GitIdentityForm";
 import {
   commands,
+  type DoctorFix,
   type DoctorFixed,
   type DoctorReport,
   type DoctorRow,
@@ -101,7 +102,7 @@ export type DoctorState = {
   run: (full: boolean) => void;
   /** Apply the fix a row carries, by its id, then check again (the full doctor: the dialog
    *  is open). Absent where nothing can apply one. */
-  fix?: (id: string) => void;
+  fix?: (id: DoctorFix) => void;
   /** Apply `git-identity` with the form's name and email, then check again. Resolves with
    *  each field's refusal, or `undefined` once the fix ran or was refused as a whole. */
   fixIdentity?: (name: string, email: string) => Promise<IdentityRefused | undefined>;
@@ -185,7 +186,7 @@ export function useDoctor(plane: PlaneId): DoctorState {
   // answer that lands after the project changed (or the dialog closed) is dropped, not drawn.
   const [lastFix, setLastFix] = useState<{
     plane: PlaneId;
-    fixing?: string;
+    fixing?: DoctorFix;
     fixed?: DoctorFixed;
   }>();
   const newestFix = useRef(0);
@@ -196,7 +197,7 @@ export function useDoctor(plane: PlaneId): DoctorState {
     [plane],
   );
   const sendFix = useCallback(
-    (id: string, send: () => ReturnType<typeof commands.planeDoctorFix>) => {
+    (id: DoctorFix, send: () => ReturnType<typeof commands.planeDoctorFix>) => {
       const mine = ++newestFix.current;
       setLastFix({ plane, fixing: id });
       const landed = (fixed: DoctorFixed) => {
@@ -220,7 +221,7 @@ export function useDoctor(plane: PlaneId): DoctorState {
     [plane, run],
   );
   const fix = useCallback(
-    (id: string) => sendFix(id, () => commands.planeDoctorFix(plane, id)),
+    (id: DoctorFix) => sendFix(id, () => commands.planeDoctorFix(plane, id)),
     [plane, sendFix],
   );
   const moveIntoRepos = useCallback(
@@ -280,7 +281,7 @@ export async function sendIdentity(
   name: string,
   email: string,
 ): Promise<{ fixed: DoctorFixed } | { refused: IdentityRefused }> {
-  const whole = (why: string) => ({
+  const whole = (why: string): { fixed: DoctorFixed } => ({
     fixed: { fix: "git-identity", refused: why, said: [], complete: false },
   });
   try {
@@ -371,7 +372,7 @@ const MARK: Record<DoctorRow["status"], LucideIcon> = { ok: Check, warn: Triangl
 
 /** What a row's Fix button needs: the doctor's `fix`, and whether one may be pressed now. */
 export type Fixer = {
-  apply: (id: string) => void;
+  apply: (id: DoctorFix) => void;
   busy: boolean;
   /** The git identity form's submit; absent where no form can be sent. */
   identity?: (name: string, email: string) => Promise<IdentityRefused | undefined>;
@@ -389,17 +390,19 @@ export type Fixer = {
  * is that fix (#1301). For a fix in {@link FIXES_WITH_A_FORM},
  * `press` opens the form (once what is set has been read, which is what it locks) or closes
  * it; for any other, it applies the fix. `form` is the form while it is open, and it closes
- * itself once the fix was applied or refused as a whole.
+ * itself once the fix was applied or refused as a whole. With no `fix` (a place that draws one
+ * only sometimes, and asks for this hook every time), it is offered nowhere and presses nothing.
  */
-export function useFixForm(fix: string, fixer: Fixer) {
+export function useFixForm(fix: DoctorFix | undefined, fixer: Fixer) {
   // The form is open once what is set has been read: `current` is what it locks.
   const [current, setCurrent] = useState<IdentityNow>();
   const id = useId();
-  const withForm = FIXES_WITH_A_FORM.has(fix);
+  const withForm = fix !== undefined && FIXES_WITH_A_FORM.has(fix);
   const open = current !== undefined;
   // `move-into-repos` asks first, naming what it moves and what it costs (#5374).
   const [plans, setPlans] = useState<MovePlanRead>();
   const press = () => {
+    if (fix === undefined) return;
     if (fix === MOVE_INTO_REPOS && fixer.movePlan) {
       void fixer.movePlan().then(setPlans);
     } else if (!withForm) fixer.apply(fix);
@@ -435,9 +438,11 @@ export function useFixForm(fix: string, fixer: Fixer) {
     /** Whether this fix can be pressed here: one with a form needs somewhere to send it, and
      *  `move-into-repos` a way to ask what it would do. */
     offered:
-      fix === MOVE_INTO_REPOS
-        ? fixer.movePlan !== undefined && fixer.moveIntoRepos !== undefined
-        : !withForm || fixer.identity !== undefined,
+      fix === undefined
+        ? false
+        : fix === MOVE_INTO_REPOS
+          ? fixer.movePlan !== undefined && fixer.moveIntoRepos !== undefined
+          : !withForm || fixer.identity !== undefined,
     press,
     /** The button's state, for a fix with a form. */
     opens: withForm ? { id, open } : undefined,
@@ -446,7 +451,7 @@ export function useFixForm(fix: string, fixer: Fixer) {
 }
 
 /** A row's Fix button, and the form under it for a fix that takes input (FX-3). */
-function FixButton({ row, fixer }: { row: DoctorRow & { fix: string }; fixer: Fixer }) {
+function FixButton({ row, fixer }: { row: DoctorRow & { fix: DoctorFix }; fixer: Fixer }) {
   const { offered, press, opens, form } = useFixForm(row.fix, fixer);
   if (!offered) return null;
   return (
@@ -505,7 +510,7 @@ function FixButton({ row, fixer }: { row: DoctorRow & { fix: string }; fixer: Fi
  * Each by the name of the doctor row that finds it: a clean row carries no fix id, so the name
  * is how a report says the finding has gone (and a dismissal of it is let go).
  */
-export const FINDINGS_AS_NOTICES: ReadonlyMap<string, string> = new Map([
+export const FINDINGS_AS_NOTICES: ReadonlyMap<DoctorFix, string> = new Map<DoctorFix, string>([
   ["git-identity", "git identity"],
   ["memory-optimize", "memory indexes"],
   ["persona-agents", "personas"],
@@ -520,8 +525,8 @@ function FindingNotice({
   doctor,
   onDismiss,
 }: {
-  row: DoctorRow & { fix: string };
-  doctor: DoctorState & { fix: (id: string) => void };
+  row: DoctorRow & { fix: DoctorFix };
+  doctor: DoctorState & { fix: (id: DoctorFix) => void };
   onDismiss: () => void;
 }) {
   const fixer: Fixer = {
@@ -581,7 +586,7 @@ export function DoctorNotices({
 }) {
   const { report, fix } = doctor;
   const findings = (report?.rows ?? []).filter(
-    (row): row is DoctorRow & { fix: string } =>
+    (row): row is DoctorRow & { fix: DoctorFix } =>
       row.status !== "ok" && row.checked && row.fix !== null && FINDINGS_AS_NOTICES.has(row.fix),
   );
 

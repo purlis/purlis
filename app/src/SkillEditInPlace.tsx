@@ -40,25 +40,40 @@ const SkillEditor = lazy(() => import("./SkillEditor"));
  * **The core's lint of the text typed** (`skill_lint`), asked a moment after each edit while
  * `edit` is open: what it found, and whether that was found in the text as it is now. Until it
  * has, nothing may be saved on its word, so a text drawn afresh is never saved unchecked.
+ *
+ * **The extensions' lints are asked as the edit opens, not as it is typed** (#3093): each starts
+ * its extension's program confined, which took 345 to 449 ms a question on macOS, longer than
+ * the moment after a keystroke. What they said of the text as it opened is kept beside purlis's
+ * own lints of the text now; it only warns, so Save never waits on it. The studio asks them
+ * again of what is saved.
  */
+/** What a lint found, and the skill and text it was found in ({@link lintedOf}). */
+type Linted = { of: string; findings: readonly SkillLintFinding[] };
+
+const NOT_LINTED: Linted = { of: "", findings: [] };
+
+/** The key of the skill `name`'s text `text`, as {@link Linted.of} holds it. */
+const lintedOf = (name: string | undefined, text: string | undefined) =>
+  `${name ?? ""}\u0000${text ?? ""}`;
+
 function useSkillLint(
   plane: string,
   edit: SkillEdit | undefined,
 ): { findings: readonly SkillLintFinding[]; checked: boolean } {
-  const [lint, setLint] = useState<{ of: string; findings: readonly SkillLintFinding[] }>({
-    of: "",
-    findings: [],
-  });
+  const [lint, setLint] = useState<Linted>(NOT_LINTED);
+  const [theirs, setTheirs] = useState<Linted>(NOT_LINTED);
   const level = edit?.level;
   const name = edit?.skill.name;
   const text = edit?.now;
-  const of = `${name ?? ""}\u0000${text ?? ""}`;
+  const opened = edit?.was;
+  const of = lintedOf(name, text);
+  const openedOf = lintedOf(name, opened);
   useEffect(() => {
     if (level === undefined || name === undefined || text === undefined) return;
     let live = true;
     const asked = setTimeout(() => {
       void commands
-        .skillLint(plane, level, name, text)
+        .skillLint(plane, level, name, text, false)
         .then((answer) => {
           if (live && answer.status === "ok") setLint({ of, findings: answer.data });
         })
@@ -70,9 +85,24 @@ function useSkillLint(
     };
     // Each edit keeps the level it opened with: a keystroke never asks again for it alone.
   }, [plane, level, name, text, of]);
+  useEffect(() => {
+    if (level === undefined || name === undefined || opened === undefined) return;
+    let live = true;
+    void commands
+      .skillLint(plane, level, name, opened, true)
+      .then((answer) => {
+        if (live && answer.status === "ok")
+          setTheirs({ of: openedOf, findings: answer.data.filter((one) => one.by !== null) });
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [plane, level, name, opened, openedOf]);
   // Another skill's findings are never shown as this one's.
-  const findings = lint.of.startsWith(`${name ?? ""}\u0000`) ? lint.findings : [];
-  return { findings, checked: lint.of === of };
+  const ours = lint.of.startsWith(lintedOf(name, "")) ? lint.findings : [];
+  const extensions = theirs.of === openedOf ? theirs.findings : [];
+  return { findings: [...ours, ...extensions], checked: lint.of === of };
 }
 
 /** What is left, once the person has answered: a step, or nothing more. */

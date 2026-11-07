@@ -158,7 +158,7 @@ fn each_kind_of_alert_has_its_way_out() {
             stale: vec!["ide".into()]
         }),
         AlertWay::Fix {
-            id: "workspace-reinit".to_owned()
+            id: crate::doctor::DoctorFix::WorkspaceReinit
         }
     );
     assert_eq!(

@@ -2178,8 +2178,13 @@ export const commands = {
 	 *  **The live lint** of `text`, a `SKILL.md` being edited for the skill `name` at `level` of
 	 *  `plane` (SK-7; SK-8, #2771): each line the editor shows, checked against the project's skills
 	 *  and this machine's programs. Save waits only on one that blocks.
+	 * 
+	 *  **The extensions' lints only where `extensions`** (#3093): each starts its extension's
+	 *  program confined, its own proxy and folder with it, which took 345 to 449 ms a question on
+	 *  macOS where the editor asks 200 ms after a keystroke. The editor asks them as an edit opens,
+	 *  and purlis's own as it is typed; what an extension says only warns, so Save never waits on it.
 	 */
-	skillLint: (plane: PlaneId, level: SkillLevel, name: string, text: string) => typedError<SkillLintFinding[], string>(__TAURI_INVOKE("skill_lint", { plane, level, name, text })),
+	skillLint: (plane: PlaneId, level: SkillLevel, name: string, text: string, extensions: boolean) => typedError<SkillLintFinding[], string>(__TAURI_INVOKE("skill_lint", { plane, level, name, text, extensions })),
 	/**  **Makes a skill** from `template` at `level`. */
 	skillNew: (plane: PlaneId, level: SkillLevel, name: string, description: string, template: SkillTemplateId) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_new", { plane, level, name, description, template })),
 	/**  The text of a skill's `SKILL.md`, which the light editor opens. */
@@ -4837,7 +4842,7 @@ export const commands = {
 	 * 
 	 *  On a blocking thread, as [`plane_doctor`] is: a fix writes files and takes the plane's lock.
 	 */
-	planeDoctorFix: (plane: PlaneId, fix: string) => typedError<DoctorFixed, string>(__TAURI_INVOKE("plane_doctor_fix", { plane, fix })),
+	planeDoctorFix: (plane: PlaneId, fix: DoctorFix) => typedError<DoctorFixed, string>(__TAURI_INVOKE("plane_doctor_fix", { plane, fix })),
 	/**
 	 *  What **Move into repos/** would do in the plane the window names, workspace by workspace,
 	 *  for its confirmation: the core's [`purlis_core::doctor::fix::move_into_repos::plan`], with the
@@ -5413,7 +5418,7 @@ export type AlertWay =
  */
 { kind: "settings"; group: string; setting: string | null } | 
 /**  A fix of the doctor's registry, by the id `charter doctor --fix` takes (FX-1). */
-{ kind: "fix"; id: string } | 
+{ kind: "fix"; id: DoctorFix } | 
 /**  Another project to open: the one whose `workspaces/` this one is nested in. */
 { kind: "open-project"; path: string } | 
 /**  The project's Saving view, where a save is resolved. */
@@ -7910,10 +7915,18 @@ export type Dispatches = {
 	undrawn: number,
 };
 
+/**
+ *  **A fix the doctor can make, by its id** (FX-1, #3138): the core's
+ *  [`purlis_core::doctor::fix::FixId`] as the window names it, spelled as `charter doctor --fix
+ *  <id>` takes it. Every way the window asks for a fix carries this, so it can only ask for one
+ *  the core has, and an id that names none is refused as the command's argument is read.
+ */
+export type DoctorFix = "rename-local" | "plugin-install" | "reinit" | "local-ignore" | "memory-optimize" | "discover" | "git-identity" | "rename-plane" | "persona-agents" | "workspace-reinit" | "handoff-rule" | "project-skills" | "live-skills" | "move-into-repos";
+
 /**  What applying a fix came to, as the Doctor dialog draws it. */
 export type DoctorFixed = {
 	/**  The fix that was asked for, by its id. */
-	fix: string,
+	fix: DoctorFix,
 	/**  Why it was refused, before anything was written. `None` when it ran. */
 	refused: string | null,
 	/**  What it changed, line by line, in the words and marks `charter doctor --fix` prints. */
@@ -7994,7 +8007,7 @@ export type DoctorRow = {
 	 *  by the id `charter doctor --fix <id>` takes: the dialog draws a Fix button for it, which
 	 *  calls [`plane_doctor_fix`]. `None` for a row charter cannot fix, and for the app's own.
 	 */
-	fix: string | null,
+	fix: DoctorFix | null,
 };
 
 /**  A row's verdict, as the window draws it. */
@@ -10578,7 +10591,7 @@ export type NeedFix =
  *  Move the project's skills where every program reads them: the doctor's fix, by its id
  *  (`plane_doctor_fix`).
  */
-{ kind: "move-skills"; fix: string } | 
+{ kind: "move-skills"; fix: DoctorFix } | 
 /**
  *  Propose the files without the old keys, for the person to apply
  *  (`remove_old_harness_plugins`); or leave them, which says so once
@@ -15884,6 +15897,11 @@ export type SkillLintFinding = {
 	level: SkillLintLevel,
 	/**  What it says, the core's sentence. */
 	says: string,
+	/**
+	 *  The extension's lint that said it, by the title it is said under; `None` for purlis's
+	 *  own. The editor asks the extensions only as an edit opens (#3093) and keeps theirs apart.
+	 */
+	by: string | null,
 };
 
 /**  How much a lint's finding stops, as the editor draws it: the core's `Severity`. */
@@ -16490,7 +16508,7 @@ export type StartOptions = {
 	 *  the picker offers the fix the doctor row does (NO-8). Null for a file git already
 	 *  tracks: that needs the operator's `git rm --cached`, which charter never runs.
 	 */
-	ignore_fix_id: string | null,
+	ignore_fix_id: DoctorFix | null,
 	/**
 	 *  Whether this plane declares no profiles of its own. The built-ins still start, and
 	 *  the picker says so rather than looking empty or broken.
@@ -17047,7 +17065,7 @@ export type StudioSkill = {
 export type StudioUnmoved = {
 	skills: number,
 	/**  The doctor's fix that moves them, by its id (`planeDoctorFix`). */
-	fix: string,
+	fix: DoctorFix,
 };
 
 /**  What one subject is offered. */

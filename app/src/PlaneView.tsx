@@ -57,6 +57,7 @@ import {
   type HarnessSetupFound,
   type NeedsApproval,
   type NotStarted,
+  type DoctorFix,
   type FinishedTask,
   type LaidOut,
   type OpenChat,
@@ -3842,7 +3843,7 @@ export const PlaneView = memo(function PlaneView({
    * options again, so what it draws is what is true after the fix; a refusal is said in it.
    */
   const fixInPicker = useCallback(
-    async (id: string) => {
+    async (id: DoctorFix) => {
       setPickerFixing(true);
       setPickerTrouble(undefined);
       const fixed = await commands
