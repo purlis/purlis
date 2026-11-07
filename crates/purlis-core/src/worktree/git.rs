@@ -2440,15 +2440,40 @@ pub fn run_in_hook(dir: &Path, args: &[&str], timeout: Duration) -> Result<RawRu
 /// repository's config, so [`programs_held`] never tells its filter, and a repository it brings
 /// can name where that filter goes in its own `.lfsconfig` (#4400).
 pub fn run_network(dir: &Path, helper: Option<&str>, args: &[&str]) -> Result<Run, GitUnavailable> {
+    run_network_with(dir, helper, args, Vec::new())
+}
+
+/// [`run_network`] in **no repository at all**, for a call that names its remote by address and
+/// needs none (`ls-remote <url>`): `GIT_DIR` names `/dev/null`, so git reads no repository's
+/// configuration, not even one a `.git` in `dir` would be found as.
+pub fn run_network_in_no_repository(
+    dir: &Path,
+    helper: Option<&str>,
+    args: &[&str],
+) -> Result<Run, GitUnavailable> {
+    run_network_with(
+        dir,
+        helper,
+        args,
+        vec![("GIT_DIR".to_owned(), "/dev/null".into())],
+    )
+}
+
+/// [`run_network`], with `more` variables in git's environment.
+fn run_network_with(
+    dir: &Path,
+    helper: Option<&str>,
+    args: &[&str],
+    more: Vec<(String, std::ffi::OsString)>,
+) -> Result<Run, GitUnavailable> {
     let mut config: Vec<String> = NETWORK_RULE.iter().map(|s| (*s).to_string()).collect();
     if let Some(helper) = helper {
         config.push(format!("credential.helper={helper}"));
     }
-    let pass = if verb(args) == Some("clone") {
-        vec![(LFS_SKIP_SMUDGE.to_owned(), "1".into())]
-    } else {
-        Vec::new()
-    };
+    let mut pass = more;
+    if verb(args) == Some("clone") {
+        pass.push((LFS_SKIP_SMUDGE.to_owned(), "1".into()));
+    }
     let extra = Extra {
         config,
         credentials: true,
