@@ -107,6 +107,22 @@ pub enum Warning {
 }
 
 impl Warning {
+    /// **Whether the person was shown this, or more than this**, among `shown`: the same
+    /// warning, or keys missing from a vault of which these are some (one added since is no
+    /// news).
+    pub fn seen_in(&self, shown: &[Warning]) -> bool {
+        shown.iter().any(|one| match (self, one) {
+            (
+                Self::NotInVault { vault, keys },
+                Self::NotInVault {
+                    vault: was,
+                    keys: were,
+                },
+            ) => vault == was && keys.iter().all(|key| were.contains(key)),
+            _ => one == self,
+        })
+    }
+
     /// The warning in the words the notice says it.
     pub fn said(&self) -> String {
         match self {
@@ -146,11 +162,19 @@ impl Warning {
                 "The password goes to {form_host}, not {page_host}: {page_host} sent the browser \
                  there to sign in. Allow only if you know {form_host} as this site's sign-in."
             ),
-            Self::NotInVault { vault, keys } => format!(
-                "Vault {vault} has nothing under {} yet. If you allow this, purlis asks you for \
-                 it when it signs in. Check the name if you expected it there.",
-                keys.join(" or ")
-            ),
+            Self::NotInVault { vault, keys } => {
+                let (values, names, them) = if keys.len() == 1 {
+                    ("its value", "the name", "it")
+                } else {
+                    ("their values", "the names", "them")
+                };
+                format!(
+                    "Vault {vault} has nothing under {} yet. If you allow this, purlis asks you \
+                     for {values} when it fills this login. Check {names} if you expected {them} \
+                     there.",
+                    keys.join(" or ")
+                )
+            }
         }
     }
 }

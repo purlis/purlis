@@ -846,7 +846,7 @@ pub fn answer(
         .proposal
         .warnings
         .iter()
-        .any(|warning| !wait.proposal.warnings.contains(warning));
+        .any(|warning| !warning.seen_in(&wait.proposal.warnings));
     if changed && (!spelled || unseen || press == Press::Always) {
         let said = format!(
             "purlis would open {} and type the password on {}. Check it, then choose again.",

@@ -422,6 +422,24 @@ fn a_key_the_vault_has_nothing_under_is_said_on_the_notice() {
 }
 
 #[test]
+fn a_key_put_in_the_vault_while_the_notice_is_up_is_no_reason_to_draw_it_again() {
+    let dir = project("");
+    std::fs::write(dir.path().join("q.json"), "{}").expect("vault qa, empty");
+    let grants = Grants::default();
+    let (id, proposal, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
+    std::fs::write(dir.path().join("q.json"), r#"{"username":"u"}"#).expect("one key added");
+    let audited = Audited::default();
+    let done = answered(
+        dir.path(),
+        &grants,
+        &audited,
+        &press(id, Press::Once, &proposal.digest()),
+    );
+    assert!(matches!(done, Ok(Pressed::Done { .. })), "{done:?}");
+    assert_eq!(heard.try_recv(), Ok(Heard::Allowed));
+}
+
+#[test]
 fn a_vault_the_project_doesnt_have_is_never_asked_about() {
     let dir = project("");
     let unknown = Suggested {

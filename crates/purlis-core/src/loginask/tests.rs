@@ -908,7 +908,11 @@ fn a_key_its_vault_has_nothing_under_is_said_by_name() {
     let said = not_in_vault(&ctx(dir.path()), &one)
         .expect("a warning")
         .said();
-    assert!(said.contains("username"), "{said}");
+    assert_eq!(
+        said,
+        "Vault qa has nothing under username yet. If you allow this, purlis asks you for its \
+         value when it fills this login. Check the name if you expected it there."
+    );
 }
 
 #[test]
@@ -926,4 +930,19 @@ fn a_vault_that_cant_be_listed_quietly_is_not_listed() {
         ..proposed(dir.path(), "https://shop.example.test/")
     };
     assert_eq!(not_in_vault(&ctx(dir.path()), &one), None);
+}
+
+#[test]
+fn two_keys_its_vault_has_nothing_under_are_said_as_two() {
+    let dir = with_vaults("{}");
+    let one = proposed(dir.path(), "https://shop.example.test/");
+    let said = not_in_vault(&ctx(dir.path()), &one)
+        .expect("a warning")
+        .said();
+    assert_eq!(
+        said,
+        "Vault qa has nothing under username or password yet. If you allow this, purlis asks \
+         you for their values when it fills this login. Check the names if you expected them \
+         there."
+    );
 }
