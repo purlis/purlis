@@ -1,0 +1,5 @@
+{"type":"thread.started","thread_id":"0199f2a4-6c1e-7d30-b8a2-3e5c9f41d07a"}
+{"type":"turn.started"}
+{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"bash -lc 'cat /home/runner/work/purlis/purlis/app/src-tauri/plugin/skills/purlis-secrets/SKILL.md'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"bash -lc 'cat /home/runner/work/purlis/purlis/app/src-tauri/plugin/skills/purlis-secrets/SKILL.md'","aggregated_output":"---\nname: purlis-secrets\n---\n","exit_code":0,"status":"completed"}}
+{"type":"turn.failed","error":{"message":"stream disconnected before completion"}}
