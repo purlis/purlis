@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Scrolled under a frame</title>
+<style>
+  body { margin: 0; font: 24px sans-serif; }
+  .room { height: 400px; }
+  button { display: block; width: 300px; height: 40px; margin: 0; }
+  .after { height: 2000px; }
+  iframe { position: fixed; left: 0; top: 180px; width: 600px; height: 100px; border: 0; }
+</style></head>
+<body>
+  <div class="room">The app's own page, above its button</div>
+  <button type="button">Press under the frame</button>
+  <div class="after"></div>
+  <iframe title="Provider frame" src="http://auth.fixture.test/frame.html"></iframe>
+  <script>
+    // Scrolled 200 down: the button, laid out 400 down the document, is drawn 200 down the
+    // window, under the provider's frame; 200 above where it is drawn is the page's own text.
+    window.scrollTo(0, 200);
+  </script>
+</body></html>

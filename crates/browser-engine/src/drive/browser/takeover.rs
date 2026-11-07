@@ -935,12 +935,14 @@ impl Browser {
     /// what is there is a frame's element, whose inside may be any frame within it; `None`
     /// where the engine cannot say.
     fn frame_under(&self, session: &str, x: f64, y: f64) -> Option<(String, bool)> {
+        // A point of the viewport, found in the document as far as it is scrolled.
+        let (left, top) = self.scrolled(session)?;
         let at = self
             .devtools()
             .call(
                 "DOM.getNodeForLocation",
                 // As the engine routes the event: a box the pointer passes through is not hit.
-                json!({ "x": x.round(), "y": y.round(), "includeUserAgentShadowDOM": true, "ignorePointerEventsNone": false }),
+                json!({ "x": (x + left).round(), "y": (y + top).round(), "includeUserAgentShadowDOM": true, "ignorePointerEventsNone": false }),
                 Some(session),
             )
             .ok()?;
