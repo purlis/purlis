@@ -130,7 +130,9 @@ fn a_click_in_a_scrolled_frame_where_a_frame_of_the_site_is_drawn_is_refused() {
         kept_off_refusal(false),
         "drawn on the provider's frame"
     );
-    call(&browser, Call::Click { target: beside });
+    if let Err(why) = browser.call(&next_id(), Call::Click { target: beside }) {
+        panic!("the button drawn clear of the provider's frame: {why}\n{found}");
+    }
     assert!(
         find(&browser, "Pressed beside the frame").contains("Pressed beside the frame"),
         "drawn on the other site's own document"

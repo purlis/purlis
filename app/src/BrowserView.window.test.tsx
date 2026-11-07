@@ -9,6 +9,7 @@ import type { Channel } from "@tauri-apps/api/core";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { BrowserFrame } from "./bindings";
+import { forgetOrigins } from "./browserWatch";
 import { pickIn, selectNamed } from "./ui/select/select.testkit";
 import { onAMac } from "./tabKeys";
 import { stripNamed } from "./test-strips";
@@ -53,6 +54,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   clearMocks();
+  // Where each browser's page is outlives a render: each test starts from none.
+  forgetOrigins();
 });
 
 const PLANE = "/home/dev/plane";
