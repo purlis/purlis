@@ -1702,6 +1702,7 @@ export const commands = {
 	workspaceFilesRename: __WINDOW_ONLY_RESULT,
 	workspaceFilesTrash: __WINDOW_ONLY_RESULT,
 	workspaceFilesImport: __WINDOW_ONLY_RESULT,
+	workspaceFilesImportDropped: __WINDOW_ONLY_RESULT,
 	workspaceSaveWithTheProject: __WINDOW_ONLY_RESULT,
 	/**
 	 *  What a branch changed against the branch it was cut from, committed or not, file by file and

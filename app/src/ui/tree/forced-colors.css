@@ -15,6 +15,14 @@
     box-shadow: inset 2px 0 0 SelectedItemText;
   }
 
+  /* A row, or the whole tree, a drop lands on (#5378): an edge in the system's highlight, since
+     forced colours draw no shadow. */
+  [data-scope="tree"][data-part="root"][data-drop-target],
+  [data-scope="tree"][data-part="body"][data-drop-target] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
   /* A row that cannot be used. */
   [data-scope="tree"][data-part="root"][data-disabled] {
     color: GrayText;

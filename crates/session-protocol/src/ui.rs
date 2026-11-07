@@ -672,6 +672,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "workspace_files_rename",
     "workspace_files_trash",
     "workspace_files_import",
+    // A drop from the file manager onto a workspace's own files (#5378): what the system dropped
+    // on the person's window, imported where they dropped it.
+    "workspace_files_import_dropped",
     // Save with the project (#5377): it shares one of the person's workspace files with the
     // project, which a script holding a token would make a leak, so only their press asks it.
     "workspace_save_with_the_project",

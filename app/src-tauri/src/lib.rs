@@ -3887,6 +3887,16 @@ pub fn run() {
     app.invoke_handler(commands.invoke_handler())
         .menu(lifecycle::menu)
         .on_menu_event(|app, event| lifecycle::clicked(app, event.id().as_ref()))
+        // A drop from the file manager (#5378): its files held for the window's import of them,
+        // as the system tells it, so the window never sends a path from outside the workspace.
+        .manage(workspacewrites::Dropped::default())
+        .on_webview_event(|webview, event| {
+            if let tauri::WebviewEvent::DragDrop(drag) = event {
+                webview
+                    .state::<workspacewrites::Dropped>()
+                    .heard(webview.label(), drag);
+            }
+        })
         .on_window_event(|window, event| {
             // The close button hides the window. Every session is a child of this process
             // (ADR 0025), so a close that ended them would end the day's work; the way out

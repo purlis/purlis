@@ -3477,6 +3477,12 @@ export const commands = {
 	 */
 	workspaceFilesImport: (plane: PlaneId, workspace: string, folder: string) => typedError<string[], string>(__TAURI_INVOKE("workspace_files_import", { plane, workspace, folder })),
 	/**
+	 *  **A drop from the file manager**, onto the folder `folder` of a workspace's own files
+	 *  (#5378): the files the system dropped on this webview last, copied in as Import files… copies
+	 *  them, each imported once. The paths they were given; none when nothing was dropped.
+	 */
+	workspaceFilesImportDropped: (plane: PlaneId, workspace: string, folder: string) => typedError<string[], string>(__TAURI_INVOKE("workspace_files_import_dropped", { plane, workspace, folder })),
+	/**
 	 *  **Save with the project** (#5377): one file or folder at the top of a LIVE workspace's folder
 	 *  gets one line in the workspace's LIVE allowlist, so the next save shares it. `true` when the
 	 *  line was added, `false` when it was there already.

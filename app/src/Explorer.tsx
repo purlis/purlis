@@ -76,6 +76,7 @@ import { Breadcrumb, CockpitHeader, focusStands, useAheadBehind } from "./Cockpi
 import { carriedReference, type Referenced } from "./references";
 import { pickable, useFilePicks, type Pickable } from "./filePicks";
 import { useLastRead } from "./editor/lastRead";
+import { dropOn, rowDrop, useFinderDrop, type FinderDrop } from "./finderDrop";
 import {
   touchingIn,
   touchingOf,
@@ -295,6 +296,7 @@ export function Explorer({
   reveal,
   onSearchContents,
   onSearchKey,
+  onDropFiles,
 }: {
   /** The project, for reading a branch's folders. Without one no folder is read. */
   plane?: PlaneId;
@@ -357,6 +359,12 @@ export function Explorer({
    * instead of Search on the window's focus. Handed over after each render, and taken back.
    */
   onSearchKey?: (here: SearchKeyHere | undefined) => void;
+  /**
+   * **Files dropped from the file manager onto the workspace's own files** (#5378): where in
+   * `workspace` they landed, a folder of the person's own or a row that takes none. Heard only
+   * while the tree is the workspace's own folder; a drop anywhere else is left alone.
+   */
+  onDropFiles?: (workspace: string, drop: FinderDrop) => void;
 }) {
   const has = (section: SectionId) => PART_SECTIONS[part].includes(section);
   /** Whether this draws the plane root's files (issue 1916): the strip is on the plane root,
@@ -823,6 +831,14 @@ export function Explorer({
     );
     return () => onSearchKey(undefined);
   });
+
+  // A drop from the file manager onto the workspace's own files (#5378).
+  useFinderDrop(
+    () => navRef.current?.querySelector<HTMLElement>('[data-section="files"]') ?? null,
+    onDropFiles !== undefined && onWs && has("files") && workspace !== undefined
+      ? (drop) => onDropFiles(workspace, drop)
+      : undefined,
+  );
 
   /** Steps back out of the cockpit to the whole workspace. */
   const leave = () => onFocus?.(undefined);
@@ -2543,6 +2559,11 @@ function FilesRow({
       data-row={id}
       data-mark={marked?.mark}
       data-managed={managed ? "" : undefined}
+      // Where a drop from the file manager on it lands (#5378).
+      data-drop-folder=""
+      {...dropOn(
+        rowDrop(at.place, branch.folder, { folder: true, name, managed, reposFolder: bare }),
+      )}
       busy={level !== undefined && "pending" in level}
       hasChildItems
       // A folder's menu (FM-10). The branch's own *Files* row has one too (#1143): its folder
@@ -2845,6 +2866,10 @@ function FileRow({ branch, entry, at }: { branch: BranchFolderRef; entry: Child;
       className="file-node"
       data-row={id}
       data-managed={entry.managed === true ? "" : undefined}
+      // A drop from the file manager on it lands in its folder (#5378).
+      {...dropOn(
+        rowDrop(at.place, path, { folder: false, name: entry.name, managed: entry.managed }),
+      )}
       data-refused={refused !== undefined || undefined}
       data-ignored={entry.ignored ? "" : undefined}
       data-mark={entry.marked?.mark}
