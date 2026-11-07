@@ -26,13 +26,19 @@
 //!
 //! **Each entry says two things of itself**: whether purlis keeps it ([`managed`]), which the
 //! window marks and opens read-only, with its own view where it has one ([`view_of`]); and whether
-//! it is a dotfile, which the window draws only with Show hidden.
+//! it is a dotfile, which the window draws only with Show hidden. In a LIVE workspace it says a
+//! third: where it is kept ([`Kept`], #5377), This machine only or Saved with the project, read
+//! from the LIVE block by [`crate::wscmd::saved`]. **Save with the project**
+//! ([`Files::save_with_the_project`]) is the one write here, and it writes the plane's
+//! `.gitignore`, never the workspace's folder.
 
 use std::path::{Path, PathBuf};
 
-use super::{Kept, Kind, Opened, Placed, Refused};
+use super::{Kind, Opened, Placed, Refused};
 use crate::repofolder::{self, Layout};
 use crate::worktree::confine::{self, Outside};
+pub use crate::wscmd::saved::Kept;
+use crate::wscmd::saved::{self, Marks, NotSaved};
 use crate::youreditor::{self, Editor, Launch};
 
 /// The folder of the branches' folders, never one of the workspace files.
@@ -57,6 +63,9 @@ pub struct Entry {
     pub managed: bool,
     /// Whether its name starts with a dot.
     pub hidden: bool,
+    /// Where it is kept, in a LIVE workspace; `None` in a LOCAL one, whose files are all this
+    /// machine's and carry no mark.
+    pub kept: Option<Kept>,
     /// Why it does not open, as the sentence the window shows; `None` for a file that opens and
     /// a folder that expands.
     pub refused: Option<String>,
@@ -114,6 +123,13 @@ pub enum NotHere {
          in the workspace's files. Open the file the link points to from where it is kept."
     )]
     ThroughALink(String),
+    #[error(
+        "purlis keeps '{0}' itself, and shares it with the project as the workspace's LIVE \
+         switch says. Save with the project is for your own files."
+    )]
+    KeptByPurlis(String),
+    #[error(transparent)]
+    NotSaved(#[from] NotSaved),
 }
 
 /// Why a write to the workspace files was not made, as the sentence the window shows.
@@ -207,7 +223,12 @@ pub struct Files {
     /// every clone there that `holdings` names.
     outside: Vec<String>,
     repos: Vec<Repo>,
-    kept: Kept,
+    kept: super::Kept,
+    /// The project's folder and the workspace's name, which Save with the project writes by.
+    plane: PathBuf,
+    ws: String,
+    /// Where each file is kept, for a LIVE workspace alone.
+    marks: Option<Marks>,
 }
 
 impl Files {
@@ -229,6 +250,19 @@ impl Files {
             .chain(&holdings.others)
             .filter(|row| row.layout == Layout::Root);
         outside.extend(at_root.map(|row| folded(&row.repo.name)));
+        // A folder with a `.git` whose name purlis takes for no repo's (`My Tool`), or whose
+        // `.git` could not be read, is still a repo to git, and never the person's own file.
+        // `refused` also names a link, which is listed as one, so only one holding a `.git`.
+        let refused = holdings
+            .refused
+            .iter()
+            .filter(|said| dir.join(&said.name).join(".git").symlink_metadata().is_ok());
+        outside.extend(
+            refused
+                .chain(&holdings.unreadable)
+                .filter(|said| said.layout == Layout::Root && !said.name.is_empty())
+                .map(|said| folded(&said.name)),
+        );
         let repos = holdings
             .repos
             .iter()
@@ -237,13 +271,16 @@ impl Files {
                 layout: row.layout,
             })
             .collect();
-        let kept = Kept::in_a_branch(plane, &dir, &crate::sandbox::Machine::this());
+        let kept = super::Kept::in_a_branch(plane, &dir, &crate::sandbox::Machine::this());
         kept.whole()?;
         Ok(Self {
             dir,
             outside,
             repos,
             kept,
+            plane: plane.to_path_buf(),
+            ws: ws.to_string(),
+            marks: Marks::of(plane, ws),
         })
     }
 
@@ -354,6 +391,10 @@ impl Files {
                 Entry {
                     managed: managed(&path, extension_folders),
                     hidden: name.starts_with('.'),
+                    kept: self
+                        .marks
+                        .as_ref()
+                        .map(|marks| marks.of_path(&path, one.kind == Kind::Folder)),
                     name,
                     kind: one.kind,
                     refused,
@@ -365,6 +406,27 @@ impl Files {
             more,
             repos: if top { self.repos.clone() } else { Vec::new() },
         })
+    }
+
+    /// **Save one entry with the project** (#5377): a file or folder at the top of a LIVE
+    /// workspace's folder, which purlis does not keep, gets one line in the LIVE block. Only the
+    /// person's press calls this. `true` when the line was added, `false` when the entry was
+    /// saved already. Refused for a path below the top, one purlis keeps, a link, one not there,
+    /// and in a workspace that is not LIVE.
+    pub fn save_with_the_project(
+        &self,
+        path: &str,
+        extension_folders: &[String],
+    ) -> Result<bool, NotHere> {
+        let spelled = self.judged(path)?;
+        if !saved::one_entry(&spelled) {
+            return Err(NotSaved::NotOneEntry(path.to_string()).into());
+        }
+        if managed(&spelled, extension_folders) {
+            return Err(NotHere::KeptByPurlis(path.to_string()));
+        }
+        self.resolved(&spelled, path)?;
+        Ok(saved::add(&self.plane, &self.ws, &spelled)?)
     }
 
     /// **One file**, by its path: refused as [`Self::tree`] refuses a folder, and when a link is
@@ -530,3 +592,7 @@ pub use write::{SystemTrash, Trash};
 #[cfg(test)]
 #[path = "workspace/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "workspace/kept_tests.rs"]
+mod kept_tests;

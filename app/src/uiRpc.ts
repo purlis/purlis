@@ -1701,6 +1701,7 @@ export const commands = {
 	workspaceFilesRename: __WINDOW_ONLY_RESULT,
 	workspaceFilesTrash: __WINDOW_ONLY_RESULT,
 	workspaceFilesImport: __WINDOW_ONLY_RESULT,
+	workspaceSaveWithTheProject: __WINDOW_ONLY_RESULT,
 	/**
 	 *  What a branch changed against the branch it was cut from, committed or not, file by file and
 	 *  rolled up onto its folders: the explorer's markers and its "Changed only" (FM-4).
@@ -5940,6 +5941,11 @@ export type FolderEntry_Deserialize = {
 	 *  out where it is not.
 	 */
 	hidden: boolean,
+	/**
+	 *  In a LIVE workspace's own files (#5377), where it is kept. Left out everywhere else, a
+	 *  LOCAL workspace's files included: they carry no mark.
+	 */
+	kept: KeptMark | null,
 };
 
 /**  One entry of a branch's folder, as the explorer's tree draws it (FM-1). */
@@ -5966,6 +5972,11 @@ export type FolderEntry_Serialize = {
 	 *  out where it is not.
 	 */
 	hidden?: boolean,
+	/**
+	 *  In a LIVE workspace's own files (#5377), where it is kept. Left out everywhere else, a
+	 *  LOCAL workspace's files included: they carry no mark.
+	 */
+	kept?: KeptMark | null,
 };
 
 /**  One folder of a branch, one level deep: its first entries, and how many more it holds. */
@@ -6983,6 +6994,13 @@ export type KeptBlocked = {
 	/**  When, in seconds since 1970. */
 	at: number,
 };
+
+/**  Where a LIVE workspace's file is kept (#5377). */
+export type KeptMark = 
+/**  Ignored by the project's git: it stays on this machine. */
+"this-machine-only" | 
+/**  In the workspace's LIVE allowlist: a save shares it with the project. */
+"with-the-project";
 
 /**  What the person's key did (#2014). */
 export type KeyAct = "down" | "up";

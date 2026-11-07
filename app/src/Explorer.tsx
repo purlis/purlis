@@ -36,6 +36,7 @@ import type {
   FileScope,
   FolderEntry,
   FoundFile,
+  KeptMark,
   OpenChat,
   Piece,
   PlaneId,
@@ -2037,6 +2038,8 @@ export type Child = {
   repo?: string;
   /** In a workspace's own folder, whether purlis keeps it: marked *managed*, opened read-only. */
   managed?: boolean;
+  /** In a LIVE workspace's own folder (#5377), where it is kept; nothing in a LOCAL one. */
+  kept?: KeptMark;
   /** `repos/` in a workspace's own folder, drawn from the top's read: no menu, no drag. */
   reposFolder?: boolean;
 };
@@ -2183,6 +2186,7 @@ function wsChildren(files: FilesOf, ref: BranchFolderRef): Child[] | Level {
       always: false,
       marked: undefined,
       managed: entry.managed === true,
+      kept: entry.kept ?? undefined,
     }));
   if (!top) return listed;
   const inside = new Set(repos.filter((one) => one.inside_repos).map((one) => one.name));
@@ -2264,10 +2268,12 @@ function rowSaid(
   folder: boolean,
   refused?: string,
   managed?: boolean,
+  kept?: KeptMark,
 ): string {
   return [
     name,
     ...(managed === true ? [MANAGED_SAID] : []),
+    ...(kept === undefined ? [] : [KEPT_SAID[kept].toLowerCase()]),
     ...(marked === undefined ? [] : [markSaid(marked, folder)]),
     ...(refused === undefined ? [] : [refused]),
   ].join(" ");
@@ -2284,6 +2290,41 @@ function ManagedMark() {
       <Badge className="managed-mark">{MANAGED_SAID}</Badge>
     </Tooltip>
   );
+}
+
+/** What each mark of where a LIVE workspace's file is kept says (#5377). */
+const KEPT_SAID: Record<KeptMark, string> = {
+  "this-machine-only": "This machine only",
+  "with-the-project": "Saved with the project",
+};
+
+/** What each mark of where a file is kept means, on hover and to the keyboard. */
+const KEPT_TIP: Record<KeptMark, string> = {
+  "this-machine-only": "Kept in this clone: a save leaves it out",
+  "with-the-project": "In the workspace's LIVE allowlist: a save shares it with the project",
+};
+
+/** **Where a LIVE workspace's file is kept** (#5377): This machine only, or Saved with the
+ *  project. Drawn by no row of a LOCAL workspace, whose files are all this machine's. */
+function KeptBadge({ kept }: { kept: KeptMark | undefined }) {
+  if (kept === undefined) return null;
+  return (
+    <Tooltip tip={KEPT_TIP[kept]}>
+      <Badge
+        className="kept-mark"
+        data-kept={kept}
+        variant={kept === "with-the-project" ? "accent" : "neutral"}
+      >
+        {KEPT_SAID[kept]}
+      </Badge>
+    </Tooltip>
+  );
+}
+
+/** Whether a row offers Save with the project (#5377): an entry at the top of a LIVE
+ *  workspace's folder, kept on this machine only, that purlis does not keep. */
+function saveable(path: string, kept: KeptMark | undefined, managed: boolean): boolean {
+  return kept === "this-machine-only" && !managed && !path.includes("/");
 }
 
 /** The live mark on `path` of the branch `branch` names, drawn again only when it changes. */
@@ -2456,6 +2497,7 @@ function FilesRow({
   always = false,
   repo = false,
   managed = false,
+  kept,
   bare = false,
   trail,
   at,
@@ -2464,6 +2506,8 @@ function FilesRow({
   branch: BranchFolderRef;
   /** In a workspace's own folder, a folder purlis keeps (#5375): marked so. */
   managed?: boolean;
+  /** In a LIVE workspace's own folder (#5377), where it is kept. */
+  kept?: KeptMark;
   /** No menu and no drag: `repos/` in a workspace's own folder, whose rows are each repo's. */
   bare?: boolean;
   /** At the row's end: a repo's branch (#3343). */
@@ -2494,7 +2538,7 @@ function FilesRow({
       {...press}
       {...pickedAs(at, picked)}
       id={id}
-      textValue={rowSaid(name, marked, true, undefined, managed)}
+      textValue={rowSaid(name, marked, true, undefined, managed, kept)}
       className="file-node"
       data-row={id}
       data-mark={marked?.mark}
@@ -2506,7 +2550,16 @@ function FilesRow({
       menu={
         bare
           ? undefined
-          : fileMenu({ on: "file", at: pathOn(at, branch.folder), kind: "folder", managed }, at)
+          : fileMenu(
+              {
+                on: "file",
+                at: pathOn(at, branch.folder),
+                kind: "folder",
+                managed,
+                saveable: saveable(branch.folder, kept, managed),
+              },
+              at,
+            )
       }
       carries={bare ? undefined : carriedBy(at, branch.folder, true)}
       content={
@@ -2531,6 +2584,7 @@ function FilesRow({
           />
           <ChangeBadge marked={marked} folder />
           {managed && <ManagedMark />}
+          <KeptBadge kept={kept} />
           {trail}
         </>
       }
@@ -2669,6 +2723,7 @@ function folderItems(branch: BranchFolderRef, level: Level, at: FileRows): React
           name={entry.name}
           always={entry.always}
           managed={entry.managed}
+          kept={entry.kept}
           bare={entry.reposFolder}
           at={at}
           data-ignored={entry.ignored ? "" : undefined}
@@ -2786,7 +2841,7 @@ function FileRow({ branch, entry, at }: { branch: BranchFolderRef; entry: Child;
       {...press}
       {...(at.shown === undefined ? pickedAs(at, picked) : { chosen: path === at.shown })}
       id={id}
-      textValue={rowSaid(entry.name, entry.marked, false, refused, entry.managed)}
+      textValue={rowSaid(entry.name, entry.marked, false, refused, entry.managed, entry.kept)}
       className="file-node"
       data-row={id}
       data-managed={entry.managed === true ? "" : undefined}
@@ -2805,6 +2860,7 @@ function FileRow({ branch, entry, at }: { branch: BranchFolderRef; entry: Child;
           kind: entry.kind,
           refused,
           managed: entry.managed,
+          saveable: saveable(path, entry.kept, entry.managed === true),
         },
         at,
         line,
@@ -2821,6 +2877,7 @@ function FileRow({ branch, entry, at }: { branch: BranchFolderRef; entry: Child;
           <TouchMarkOf touching={at.files.touching} branch={branchKey(branch)} path={path} />
           <ChangeBadge marked={entry.marked} folder={false} />
           {entry.managed === true && <ManagedMark />}
+          <KeptBadge kept={entry.kept} />
           {/* Why it does not open, said beside it — an ignored file's too, which is drawn only
               once the operator asked to see what git ignores. */}
           {refused !== undefined && <span className="spot-what ui-text-secondary">{refused}</span>}

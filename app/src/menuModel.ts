@@ -377,6 +377,9 @@ const DRESS: Readonly<Record<string, Dress>> = {
   "file.shell": { said: (offer) => offer.title, slot: "open" },
   "file.chat": { said: (offer) => offer.title, slot: "run" },
   "file.addtochat": { said: (offer) => offer.title, slot: "run" },
+  // A LIVE workspace's own entry (#5377): it shares the entry with the project, so it stands
+  // under the line, apart from the rows that only place or hand the file.
+  "file.savewithproject": { said: (offer) => offer.title, slot: "end" },
 
   // The panes. Not about one named thing, so the catalogue's words are the row's: what starts
   // in a pane, then what is done to the pane with the keyboard, then what closes it.

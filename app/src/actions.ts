@@ -705,6 +705,10 @@ export type Does =
   /** Shows a branch file or folder in the operating system's file manager (FM-10). The core
    *  places it, inside the branch and through no link, and reveals it. */
   | { verb: "revealPath"; at: BranchPath }
+  /** Saves one file or folder at the top of a LIVE workspace's own folder with the project
+   *  (#5377): one line in the workspace's LIVE allowlist, so the next save shares it. Only this
+   *  press adds one, since a script may hold a token. */
+  | { verb: "saveWithTheProject"; at: BranchPath }
   /** Opens a branch file in the operator's editor at `line` (RC-20). */
   | { verb: "openInEditor"; at: BranchPath; line: number }
   /** Opens a shell tab whose working directory is a folder of a branch (FM-10). The core
@@ -1312,6 +1316,8 @@ export type Doing = {
    *  branch, a link, a file gone meanwhile — and says so in its own sentence. */
   copyPath: (at: BranchPath, absolute: boolean) => Promise<Ran>;
   revealPath: (at: BranchPath) => Promise<Ran>;
+  /** The core checks the entry is the person's and the workspace LIVE, and says why not. */
+  saveWithTheProject: (at: BranchPath) => Promise<Ran>;
   /** Refused, rather than guessed, while no editor is chosen in Settings. */
   openInEditor: (at: BranchPath, line: number) => Promise<Ran>;
   /** A shell tab in that folder; a refusal is said the way a shell tab's is. */
@@ -3879,6 +3885,8 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return doing.copyPath(does.at, does.absolute);
     case "revealPath":
       return doing.revealPath(does.at);
+    case "saveWithTheProject":
+      return doing.saveWithTheProject(does.at);
     case "openInEditor":
       return doing.openInEditor(does.at, does.line);
     case "shellInFolder":
@@ -6114,6 +6122,9 @@ export type FileOn = {
   managed?: boolean;
   /** The chats writing it right now (FM-6), by name: a rename or delete of it asks first. */
   touchedBy?: readonly string[];
+  /** In a LIVE workspace's own folder (#5377), an entry at its top that is kept on this machine
+   *  only and that purlis does not keep: it offers Save with the project. */
+  saveable?: boolean;
 };
 
 /** A write on the person's own workspace files, as a row carries it (#5376). */
@@ -6348,5 +6359,14 @@ export function fileRows(what: FileOn): Offer[] {
   );
   // The person's own workspace files are also written here (#5376), after every row above.
   rows.push(...workspaceWriteRows(what, key));
+  // A LIVE workspace's own entry (#5377): the one row that shares it, and only on its press. It
+  // writes the project's `.gitignore`, never the branch, so it is no verb of FILE_VERBS.
+  if (what.saveable === true)
+    rows.push(
+      can(`file.savewithproject:${key}`, SAID.saveWithTheProject, {
+        verb: "saveWithTheProject",
+        at,
+      }),
+    );
   return rows;
 }

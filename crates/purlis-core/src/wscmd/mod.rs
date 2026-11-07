@@ -68,6 +68,7 @@ pub mod reinit;
 pub mod remove;
 pub mod rename;
 pub mod restore;
+pub mod saved;
 pub mod select;
 pub mod snapshot;
 pub mod todo;
@@ -147,34 +148,59 @@ fn live_line(line: &str) -> Option<String> {
 /// parent was re-included two lines above — git cannot re-include a file whose parent
 /// directory is excluded — which is why the three lines are written together.
 pub fn live_block<'a>(root: &Path, names: impl IntoIterator<Item = &'a str>) -> String {
+    let live: BTreeSet<String> = names.into_iter().map(str::to_string).collect();
+    block_for(root, &live, &BTreeMap::new())
+}
+
+/// The block for the workspaces in `live`, each one's own lines followed by the entries it has
+/// saved with the project ([`saved`]), one line each and sorted. A saved entry of a workspace not
+/// in `live` is dropped: it is not LIVE, so nothing of it is shared.
+pub(crate) fn block_for(
+    root: &Path,
+    live: &BTreeSet<String>,
+    saved: &BTreeMap<String, BTreeSet<String>>,
+) -> String {
     let mut lines = vec![self::names::LIVE_BEGIN.writes_for(root).to_string()];
-    let mut sorted: Vec<&str> = names.into_iter().collect();
-    sorted.sort_unstable();
-    for n in sorted {
-        for line in [
-            format!("!/workspaces/{n}/workspace.json"),
-            format!("!/workspaces/{n}/workspace.md"),
-            format!("!/workspaces/{n}/memory"),
-            format!("!/workspaces/{n}/memory/**"),
-            format!("!/workspaces/{n}/todos"),
-            format!("!/workspaces/{n}/todos/**"),
-            format!("!/workspaces/{n}/work"),
-            format!("!/workspaces/{n}/work/**"),
-            format!("!/workspaces/{n}/sessions"),
-            format!("!/workspaces/{n}/sessions/**"),
-        ]
-        .into_iter()
-        .chain(skills_pair(n))
-        .chain([
-            format!("!/workspaces/{n}/changes"),
-            format!("!/workspaces/{n}/changes/**"),
-            format!("/workspaces/{n}/changes/log/"),
-        ]) {
-            lines.push(line);
+    for n in live {
+        lines.extend(workspace_lines(n));
+        for entry in saved.get(n).into_iter().flatten() {
+            if !saved::holds_a_repo(root, n, entry) {
+                lines.push(saved::line_for(n, entry));
+            }
         }
     }
     lines.push(self::names::LIVE_END.writes_for(root).to_string());
     lines.join("\n")
+}
+
+/// The lines the block writes for every LIVE workspace `n`, in their order.
+pub(crate) fn workspace_lines(n: &str) -> Vec<String> {
+    [
+        format!("!/workspaces/{n}/workspace.json"),
+        format!("!/workspaces/{n}/workspace.md"),
+        format!("!/workspaces/{n}/memory"),
+        format!("!/workspaces/{n}/memory/**"),
+        format!("!/workspaces/{n}/todos"),
+        format!("!/workspaces/{n}/todos/**"),
+        format!("!/workspaces/{n}/work"),
+        format!("!/workspaces/{n}/work/**"),
+        format!("!/workspaces/{n}/sessions"),
+        format!("!/workspaces/{n}/sessions/**"),
+    ]
+    .into_iter()
+    .chain(skills_pair(n))
+    .chain([
+        format!("!/workspaces/{n}/changes"),
+        format!("!/workspaces/{n}/changes/**"),
+        format!("/workspaces/{n}/changes/log/"),
+    ])
+    .collect()
+}
+
+/// `text` with its block rewritten for the workspaces in `live`, each keeping the entries it has
+/// saved with the project.
+fn rebuilt(root: &Path, text: &str, live: &BTreeSet<String>) -> String {
+    with_block(text, &block_for(root, live, &saved::saved_in(text)))
 }
 
 /// Rewrite the managed block for exactly `names`, creating it when it is absent.
@@ -190,21 +216,14 @@ pub fn write_live_block<'a>(
     root: &Path,
     names: impl IntoIterator<Item = &'a str>,
 ) -> io::Result<()> {
-    let block = live_block(root, names);
-    rewrite_gitignore(root, |text| Some(with_block(text, &block))).map(|_| ())
+    let live: BTreeSet<String> = names.into_iter().map(str::to_string).collect();
+    rewrite_gitignore(root, |text| Some(rebuilt(root, text, &live))).map(|_| ())
 }
 
 /// Rewrite the managed block for the workspaces it already lists — what `reinit` does to
 /// bring an older block's per-workspace paths up to date. Read and written under one lock.
 pub fn refresh_live_block(root: &Path) -> io::Result<()> {
-    rewrite_gitignore(root, |text| {
-        let names = live_in(text);
-        Some(with_block(
-            text,
-            &live_block(root, names.iter().map(String::as_str)),
-        ))
-    })
-    .map(|_| ())
+    rewrite_gitignore(root, |text| Some(rebuilt(root, text, &live_in(text)))).map(|_| ())
 }
 
 /// The two lines that publish LIVE workspace `name`'s skills (SK-4, #2860): its skills folder,
@@ -454,10 +473,7 @@ pub fn set_live(root: &Path, name: &str, live: bool) -> io::Result<bool> {
         } else {
             names.remove(name);
         }
-        Some(with_block(
-            text,
-            &live_block(root, names.iter().map(String::as_str)),
-        ))
+        Some(rebuilt(root, text, &names))
     })
 }
 
@@ -471,10 +487,11 @@ pub fn rename_live(root: &Path, old: &str, new: &str) -> io::Result<bool> {
             return None;
         }
         names.insert(new.to_string());
-        Some(with_block(
-            text,
-            &live_block(root, names.iter().map(String::as_str)),
-        ))
+        let mut saved = saved::saved_in(text);
+        if let Some(entries) = saved.remove(old) {
+            saved.insert(new.to_string(), entries);
+        }
+        Some(with_block(text, &block_for(root, &names, &saved)))
     })
 }
 
@@ -508,6 +525,14 @@ pub fn meta_paths(root: &Path, name: &str) -> Vec<String> {
     if has_change_records(&dir) {
         out.push(format!("workspaces/{name}/changes"));
     }
+    // What the person saved with the project (#5377): `live --off` untracks it with the rest,
+    // or a file git still tracks would go on being committed though the block re-ignores it.
+    out.extend(
+        saved::saved(root, name)
+            .into_iter()
+            .filter(|entry| dir.join(entry).symlink_metadata().is_ok())
+            .map(|entry| format!("workspaces/{name}/{entry}")),
+    );
     out
 }
 
