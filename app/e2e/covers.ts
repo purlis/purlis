@@ -25,28 +25,36 @@ export function coveredIn(message: string): string | undefined {
  * running on it or on what holds it, what has the keyboard, each overlay open, and an outline of
  * what is drawn around it with the target marked.
  *
- * `target` is the element itself, or WebdriverIO's selector for it where it was never found. It
- * runs in the page through `browser.execute`, so it is self-contained: nothing from outside its
- * body. It reads no field's value, and no text but a control's or a heading's own words, cut
- * short; a field and anything in a terminal give only their label.
+ * `target` is the element itself, or WebdriverIO's selectors for it where it was never found:
+ * one, or a chain (`$(a).$(b)`) each looked for inside what the one before found. It runs in the
+ * page through `browser.execute`, so it is self-contained: nothing from outside its body, and
+ * `budget` handed in. It reads no field's value, and no text but a control's or a heading's own
+ * words, cut short; a field, anything holding one and anything in a terminal give only their
+ * label. Its lines keep within `budget` characters, the outline cut first, so the lines about the
+ * element itself always reach the annotation (`tools/e2e-annotations.mjs`'s EVIDENCE_CHARS).
  */
-export function aMissedPress(target: Element | string): string[] {
+export function aMissedPress(
+  target: Element | string | readonly string[],
+  budget = MISSED_PRESS_CHARS,
+): string[] {
   const LEAF_TAGS = /^(button|a|h[1-6]|label|legend|summary|option)$/;
   const LEAF_ROLES = /^(button|tab|menuitem\w*|option|heading|link|radio|checkbox|switch)$/;
   const FIELDS = "input, textarea, select, [contenteditable], .xterm";
   const describe = (el: Element | null): string => {
     if (el === null) return "nothing";
-    const id = el.id ? `#${el.id}` : "";
+    const id = el.id ? `#${el.id.slice(0, 40)}` : "";
     const classes =
       typeof el.className === "string" && el.className.trim()
-        ? `.${el.className.trim().split(/\s+/).slice(0, 3).join(".")}`
+        ? `.${el.className.trim().split(/\s+/).slice(0, 3).join(".").slice(0, 60)}`
         : "";
     const role = el.getAttribute("role");
     const state = el.getAttribute("data-state");
     const label = el.getAttribute("aria-label");
     const tag = el.tagName.toLowerCase();
     const wordy =
-      el.closest(FIELDS) === null && (LEAF_TAGS.test(tag) || LEAF_ROLES.test(role ?? ""));
+      el.closest(FIELDS) === null &&
+      el.querySelector(FIELDS) === null &&
+      (LEAF_TAGS.test(tag) || LEAF_ROLES.test(role ?? ""));
     const words = wordy ? (el.textContent ?? "").trim().replace(/\s+/g, " ") : "";
     return [
       `${tag}${id}${classes}`,
@@ -58,17 +66,17 @@ export function aMissedPress(target: Element | string): string[] {
       .join(" ");
   };
   // WebdriverIO's own forms: `tag=text`, `tag*=text`, or plain CSS.
-  const find = (wanted: string): Element | null => {
+  const find = (wanted: string, inside: ParentNode): Element | null => {
     const text = /^([a-z0-9-]*)(\*?)=(.+)$/i.exec(wanted);
     if (!text) {
       try {
-        return document.querySelector(wanted);
+        return inside.querySelector(wanted);
       } catch {
         return null;
       }
     }
     const [, tag, partly, words] = text;
-    for (const el of document.querySelectorAll(tag || "*")) {
+    for (const el of inside.querySelectorAll(tag || "*")) {
       const said = (el.textContent ?? "").trim();
       if (partly ? said.includes(words) : said === words) return el;
     }
@@ -78,7 +86,15 @@ export function aMissedPress(target: Element | string): string[] {
     '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], ' +
     "[data-radix-popper-content-wrapper]";
   const lines: string[] = [];
-  const it = typeof target === "string" ? find(target) : target;
+  const chain = typeof target === "string" ? [target] : target;
+  let it: Element | null = null;
+  if (Array.isArray(chain)) {
+    let inside: ParentNode | null = document;
+    for (const wanted of chain as readonly string[]) {
+      inside = inside === null ? null : find(wanted, inside);
+    }
+    it = inside as Element | null;
+  } else it = target as Element;
   if (it === null || !it.isConnected) lines.push("the element: not in the page");
   else {
     const box = it.getBoundingClientRect();
@@ -155,6 +171,15 @@ export function aMissedPress(target: Element | string): string[] {
     lines.push("around it:", ...outline);
     if (left > 0) lines.push(`  … and ${left} more`);
   }
+  // Within the budget: from the end, the outline first, with a line that counts what went.
+  const size = (some: string[]): number => some.reduce((n, line) => n + line.length + 1, 0);
+  if (size(lines) <= budget) return lines;
+  let cut = 0;
+  while (lines.length > 1 && size(lines) + 20 > budget) {
+    lines.pop();
+    cut++;
+  }
+  lines.push(`  … and ${cut} more`);
   return lines;
 }
 
@@ -163,15 +188,34 @@ export function aMissedPress(target: Element | string): string[] {
  * page as itself where it was found, or its selector. A window that does not answer says so.
  */
 export async function whatWasOver(target: WebdriverIO.Element | string): Promise<string[]> {
-  const handed =
-    typeof target === "string" ? target : target.elementId ? target : String(target.selector);
-  return browser
-    .execute(aMissedPress, handed as unknown as Element | string)
-    .catch((err: unknown) => [`the window did not answer: ${String(err).slice(0, 120)}`]);
+  const chain = typeof target === "string" ? [target] : selectorsOf(target);
+  const asked = (handed: Element | readonly string[]) =>
+    browser.execute(aMissedPress, handed, MISSED_PRESS_CHARS);
+  const said = (err: unknown) => [`the window did not answer: ${String(err).slice(0, 120)}`];
+  if (typeof target === "string" || !target.elementId) return asked(chain).catch(said);
+  // The element itself, or, where it went stale as the page drew again, its selectors.
+  return asked(target as unknown as Element).catch(() => asked(chain).catch(said));
 }
 
+/** The selectors `$(a).$(b)` was found by, outermost first; a selector that is not a string ends
+ *  the chain (WebdriverIO's functions and element references). */
+function selectorsOf(element: WebdriverIO.Element): string[] {
+  const chain: string[] = [];
+  for (
+    let at: { selector?: unknown; parent?: unknown } | undefined = element;
+    at !== undefined && typeof at.selector === "string";
+    at = at.parent as typeof at
+  )
+    chain.unshift(at.selector);
+  return chain;
+}
+
+/** How many characters `aMissedPress` says at most (#5609's review). */
+export const MISSED_PRESS_CHARS = 1500;
+
 /** The element commands a press or a sight goes through (`describeEveryMissedPress`). */
-export const PRESSES = [
+const PRESSES = [
+  "waitForExist",
   "click",
   "doubleClick",
   "waitForClickable",
@@ -221,6 +265,12 @@ let latest: { message: string; lines: string[] } | undefined;
 /** Keeps `lines` as what the press that failed with `message` was pressing; only the latest. */
 export function rememberTheMiss(message: string, lines: string[]): void {
   latest = { message, lines };
+}
+
+/** Forgets the latest miss: as each test or hook begins, so a miss a spec caught on purpose
+ *  is never handed to a later failure with the same message. */
+export function forgetTheMiss(): void {
+  latest = undefined;
 }
 
 /**

@@ -22,6 +22,7 @@ import { browser } from "@wdio/globals";
 import {
   coveredIn,
   describeEveryMissedPress,
+  forgetTheMiss,
   messageOf,
   theMissBehind,
   whatWasOver,
@@ -88,7 +89,7 @@ async function evidence(error?: unknown): Promise<Evidence> {
     )
     .catch(() => []);
   // And, where the test could not press or see an element, what lay over it: as the press
-  // missed, where `afterCommand` took it then (#5609), or else asked now.
+  // missed, where `describeEveryMissedPress` took it then (#5609), or else asked now.
   const message = messageOf(error);
   const covered = coveredIn(message);
   const missed = theMissBehind(message);
@@ -231,6 +232,14 @@ export const config: WebdriverIO.Config = {
       },
     ],
   ],
+
+  // A miss a spec caught on purpose is never handed to a later failure (`covers.ts`, #5609).
+  beforeTest() {
+    forgetTheMiss();
+  },
+  beforeHook() {
+    forgetTheMiss();
+  },
 
   // A test that fails because the app died looks, from the test, like any other: an element
   // that never came. So every failure writes down whether the app is alive, its size, and

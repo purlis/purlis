@@ -2,7 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it } from "vitest";
-import { aMissedPress, coveredIn, rememberTheMiss, theMissBehind } from "./covers";
+import {
+  MISSED_PRESS_CHARS,
+  aMissedPress,
+  coveredIn,
+  forgetTheMiss,
+  rememberTheMiss,
+  theMissBehind,
+} from "./covers";
 
 /**
  * **A test that could not press or see an element says what covered it** (`covers.ts`): the
@@ -27,9 +34,9 @@ describe("a failure about an element it could not reach", () => {
 /**
  * **A press that missed says, as it missed, what it was pressing** (#5609): the target's box,
  * what sits at its centre, whether it is disabled, out of view or still animating, and an
- * outline of what is drawn around it. Asked of the page by `aMissedPress`, which `afterCommand`
- * runs the moment the press fails, before any `after` hook puts the page away. jsdom draws
- * nothing, so each test draws the boxes and what is at a point itself.
+ * outline of what is drawn around it. Asked of the page by `aMissedPress`, which
+ * `describeEveryMissedPress` runs the moment the press fails, before any `after` hook puts the
+ * page away. jsdom draws nothing, so each test draws the boxes and what is at a point itself.
  */
 describe("a press that missed", () => {
   afterEach(() => {
@@ -99,6 +106,36 @@ describe("a press that missed", () => {
     expect(missing.join("\n")).not.toContain("at its centre");
   });
 
+  it("finds a chained selector's target inside what the chain found first", () => {
+    const elsewhere = document.createElement("button");
+    elsewhere.textContent = "Close and end the other";
+    document.body.append(elsewhere);
+    theCloseQuestion();
+    drawnAtEveryPoint(null);
+
+    expect(aMissedPress(['[role="alertdialog"]', "button*=Close and end"])).toContain(
+      "the element: button “Close and end 2 chats”, 120×32 at 100,50",
+    );
+  });
+
+  it("keeps within its budget, cutting the outline first", () => {
+    const { dialog, answer } = theCloseQuestion();
+    for (let n = 0; n < 40; n++) {
+      const row = document.createElement("div");
+      row.id = `row-${n}-${"x".repeat(80)}`;
+      row.className = `${"a".repeat(60)} ${"b".repeat(60)} ${"c".repeat(60)}`;
+      dialog.insertBefore(row, answer);
+    }
+    drawnAtEveryPoint(answer);
+
+    const said = aMissedPress(answer);
+
+    expect(said.join("\n").length).toBeLessThanOrEqual(MISSED_PRESS_CHARS);
+    expect(said[0]).toContain("the element: button “Close and end 2 chats”");
+    expect(said).toContain("at its centre: itself");
+    expect(said.at(-1)).toMatch(/^ {2}… and \d+ more$/);
+  });
+
   it("says what disables it: its own attribute, or an inert ancestor", () => {
     const { dialog, answer } = theCloseQuestion();
     drawnAtEveryPoint(answer);
@@ -159,6 +196,22 @@ describe("a press that missed", () => {
     expect(aMissedPress(answer)).toContain("animating: nothing");
   });
 
+  it("says no words of a control that holds a field", () => {
+    const { dialog, answer } = theCloseQuestion();
+    const label = document.createElement("label");
+    label.append("Note ");
+    const note = document.createElement("textarea");
+    note.textContent = "the password is hunter2";
+    label.append(note);
+    dialog.insertBefore(label, answer);
+    drawnAtEveryPoint(label);
+
+    const said = aMissedPress(answer).join("\n");
+
+    expect(said).toContain("at its centre: label\n");
+    expect(said).not.toContain("hunter2");
+  });
+
   it("outlines what is drawn around it, marking it, with no field's value or text", () => {
     const { dialog, answer } = theCloseQuestion();
     const name = document.createElement("input");
@@ -206,6 +259,13 @@ describe("the miss a failure carries", () => {
     expect(
       theMissBehind('element ("button*=Close and end") still not clickable after 20000ms'),
     ).toBeUndefined();
+  });
+
+  it("is forgotten as a test begins, so a miss a spec caught is not another's", () => {
+    rememberTheMiss('element ("#a") still not displayed after 3000ms', ["caught"]);
+    forgetTheMiss();
+
+    expect(theMissBehind('element ("#a") still not displayed after 3000ms')).toBeUndefined();
   });
 
   it("is only the latest, so an earlier miss a spec caught is not mistaken for it", () => {
