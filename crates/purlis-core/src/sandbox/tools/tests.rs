@@ -1432,3 +1432,36 @@ fn an_unallowed_tool_absent_from_the_image_refuses_in_a_sentence() {
     let _ = std::fs::remove_dir_all(root);
     let _ = std::fs::remove_dir_all(system);
 }
+
+#[test]
+fn the_forms_a_run_grant_refuses_by_name_leave_curl_and_the_usual_tools_offered() {
+    for name in [
+        "curl",
+        "gh",
+        "glab",
+        "wget",
+        "openssl",
+        "kubectl",
+        "psql",
+        "aws",
+        "gcloud",
+        "printenv",
+        "helm",
+        "terraform",
+        "gpg",
+        "gpg2",
+        "jq",
+        "base64",
+        "Curl",
+        "curl.exe",
+        "ssh-keygen",
+        "aws-vault",
+        "op",
+        "gsutil",
+        "glab",
+        "pg_dump",
+        "s3cmd",
+    ] {
+        assert!(!super::not_for_a_run_grant(name), "{name}");
+    }
+}

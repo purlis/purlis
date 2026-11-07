@@ -483,3 +483,63 @@ fn a_wider_answer_on_a_program_not_reviewed_is_refused_from_the_window_too() {
     assert_eq!(asks.open_runs().len(), 1);
     assert!(asks.answer_run(id, RunAnswer::Refuse, window()).is_ok());
 }
+
+/// [`need`] for a vault its persona may not use: only the vault's own Allow would open it.
+fn on_a_vault_not_its(bound: Bound) -> RunNeed {
+    RunNeed {
+        not_its_vault: true,
+        offer: Offer::Vault { no_allow: None },
+        ..need(bound)
+    }
+}
+
+#[test]
+fn keep_blocked_after_the_gate_read_it_refuses_an_ask_opened_after_it() {
+    // The run read "not kept blocked" at the gate; the person's Keep blocked lands before its ask
+    // opens (#5424). It opens nothing, and is refused, rather than raise a notice after the sweep.
+    let tmp = tempfile::tempdir().unwrap();
+    let asks = Asks::new(tmp.path());
+    let swept = asks.keep_vault_blocked(7, "team");
+    assert!(swept.is_empty(), "nothing open to sweep yet");
+    let held = asks.allowed_or_held(
+        on_a_vault_not_its(bound(7, &["a"])),
+        Duration::ZERO,
+        &mut |_| {},
+    );
+    assert!(matches!(held, RunHeld::Refused { .. }), "{held:?}");
+    assert!(asks.open_runs().is_empty());
+    // Another chat, and a vault its persona uses, are another matter.
+    asks.allowed_or_held(
+        on_a_vault_not_its(bound(8, &["a"])),
+        Duration::ZERO,
+        &mut |_| {},
+    );
+    stopped(&asks, bound(7, &["a"]));
+    assert_eq!(asks.open_runs().len(), 2);
+}
+
+#[test]
+fn keep_blocked_names_the_open_asks_that_would_open_the_vault_and_ends_with_the_chat() {
+    let tmp = tempfile::tempdir().unwrap();
+    let asks = Asks::new(tmp.path());
+    asks.allowed_or_held(
+        on_a_vault_not_its(bound(7, &["a"])),
+        Duration::ZERO,
+        &mut |_| {},
+    );
+    stopped(&asks, bound(7, &["b"]));
+    let vaults = asks.open_runs();
+    let not_its = vaults.iter().find(|open| open.not_its_vault).unwrap().id;
+    assert_eq!(asks.keep_vault_blocked(7, "team"), vec![not_its]);
+    asks.forget(7);
+    let held = asks.allowed_or_held(
+        on_a_vault_not_its(bound(7, &["a"])),
+        Duration::ZERO,
+        &mut |_| {},
+    );
+    assert!(
+        matches!(held, RunHeld::StillOpen { .. }),
+        "a chat number used again starts clean: {held:?}"
+    );
+}
+

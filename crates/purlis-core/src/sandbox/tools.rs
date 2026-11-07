@@ -1937,11 +1937,44 @@ pub fn for_run_grant(
 /// The longest variable name a person is asked to allow: it is drawn among the app's own facts.
 const MOST_VARIABLE_SHOWN: usize = 64;
 
-/// Whether `name` is on [`NOT_FOR_A_RUN_GRANT`], as itself or as a build of it (`vim.basic`).
+/// **Whether `name` is on [`NOT_FOR_A_RUN_GRANT`], or runs what it is told** ([`REFUSED_NAMES`]),
+/// as itself or by a form its builds are named by (#5424): `vim.basic`, a version (`gcc-13`,
+/// `clang-17`, `gcc13`), a GNU build (`gm4`, `genv`, `gnumake`), a target's (`x86_64-linux-gnu-gcc`)
+/// and one of git's own programs (`git-shell`). Each form only takes away an Allow, so a name it
+/// catches by chance loses a notice and nothing more.
 fn not_for_a_run_grant(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
+    let refused = |one: &str| {
+        !one.is_empty() && (NOT_FOR_A_RUN_GRANT.contains(&one) || runs_what_it_is_told(one))
+    };
     let stem = name.split('.').next().unwrap_or_default();
-    NOT_FOR_A_RUN_GRANT.contains(&name.as_str()) || NOT_FOR_A_RUN_GRANT.contains(&stem)
+    // git's own programs are git's: `git-shell` runs what it is told, `git-lfs` runs git.
+    if stem.starts_with("git-") {
+        return true;
+    }
+    let mut forms = vec![name.as_str(), stem];
+    for one in [name.as_str(), stem] {
+        let unversioned = without_version(one);
+        forms.push(unversioned);
+        // The program a target's build is: its last part (`aarch64-linux-gnu-gcc`).
+        if let Some((_, last)) = unversioned.rsplit_once('-') {
+            forms.push(last);
+            forms.push(without_version(last));
+        }
+    }
+    let gnu = forms
+        .iter()
+        .filter_map(|one| one.strip_prefix("gnu").or_else(|| one.strip_prefix('g')))
+        .collect::<Vec<_>>();
+    forms.iter().chain(&gnu).any(|one| refused(one))
+}
+
+/// `name` without a version at its end: `gcc-13`, `clang-17.0`, `gcc13` and `ld64` are `gcc`,
+/// `clang`, `gcc` and `ld`.
+fn without_version(name: &str) -> &str {
+    let bare = name.trim_end_matches(|c: char| c.is_ascii_digit() || c == '.');
+    let bare = bare.strip_suffix(['-', '_']).unwrap_or(bare);
+    if bare.is_empty() { name } else { bare }
 }
 
 /// **The caution beside a Run grant's Allow** ([`caution`]), on the app's own search path.

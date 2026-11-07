@@ -1775,3 +1775,64 @@ fn an_allow_once_a_lock_refuses_after_its_retrys_fill_is_dropped() {
     // The person's ruling (#5242): refused after its Allow, the Allow once goes unused.
     assert!(asks.given_runs().is_empty(), "{:?}", asks.given_runs());
 }
+
+/// `name` asked for by a chat, refused at once with the sentence for a program that runs others,
+/// and no notice raised (#5424).
+fn refused_as_running_others(name: &str) {
+    let project = project();
+    let asks = Asks::new(project.path());
+    let mut want = printenv(project.path(), &["."]);
+    want.command[0] = name.to_owned();
+    let frames = run_with(&the_chat(project.path()), want, &asks, Duration::ZERO);
+    assert!(asks.open_runs().is_empty(), "{name}: {frames:?}");
+    assert!(
+        refusal(&frames).0.contains("runs other programs"),
+        "{name}: {frames:?}"
+    );
+}
+
+#[test]
+fn a_gnu_build_of_a_refused_program_by_its_g_name_is_offered_no_run_grant() {
+    for name in ["gm4", "genv", "gtimeout", "gnice"] {
+        refused_as_running_others(name);
+    }
+}
+
+#[test]
+fn a_gnu_build_of_a_refused_program_by_its_gnu_name_is_offered_no_run_grant() {
+    for name in ["gnumake", "gnum4"] {
+        refused_as_running_others(name);
+    }
+}
+
+#[test]
+fn a_git_program_by_its_dashed_name_is_offered_no_run_grant() {
+    for name in ["git-shell", "git-upload-archive", "git-lfs"] {
+        refused_as_running_others(name);
+    }
+}
+
+#[test]
+fn a_versioned_compiler_is_offered_no_run_grant() {
+    for name in [
+        "gcc-13",
+        "clang-17",
+        "clang++-17",
+        "g++-14",
+        "gcc13",
+        "cc-12.2",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+#[test]
+fn a_cross_compiler_named_for_its_target_is_offered_no_run_grant() {
+    for name in [
+        "x86_64-linux-gnu-gcc",
+        "aarch64-linux-gnu-gcc-13",
+        "x86_64-w64-mingw32-ld",
+    ] {
+        refused_as_running_others(name);
+    }
+}

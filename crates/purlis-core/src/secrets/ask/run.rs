@@ -499,6 +499,9 @@ pub(super) struct Runs {
     given: Vec<Given>,
     /// What each chat was not allowed: by chat, program and vault, for the chat's life.
     refused: std::collections::HashSet<(u32, PathBuf, String)>,
+    /// The vaults the person kept blocked for each chat (#5424), for the chat's life: no ask
+    /// that would open one opens, whatever the gate read before.
+    kept_blocked: std::collections::HashSet<(u32, String)>,
 }
 
 impl Runs {
@@ -542,6 +545,7 @@ impl Runs {
         self.open.retain(|asked| keep(asked.open.bound.chat));
         self.given.retain(|given| keep(given.bound.chat));
         self.refused.retain(|(chat, _, _)| keep(*chat));
+        self.kept_blocked.retain(|(chat, _)| keep(*chat));
     }
 
     /// The highest number any kept ask holds.
@@ -637,6 +641,14 @@ fn refused_said(bound: &Bound) -> String {
 }
 
 /// What a second run of one command hears where Allow once went to the first.
+fn kept_blocked_said(bound: &Bound) -> String {
+    format!(
+        "the person kept vault {} blocked for this chat, so {} did not run: don't try it again",
+        bound.vault,
+        bound.program_name()
+    )
+}
+
 fn taken_said(bound: &Bound) -> String {
     format!(
         "the person allowed {} with vault {} for one run, and another run of this command took \
@@ -684,6 +696,17 @@ impl Asks {
             }) {
                 return RunHeld::Refused {
                     line: super::declined_said(&bound.vault, key),
+                };
+            }
+            // Kept blocked since the gate read it (#5424): the run hears what the gate says.
+            if not_its_vault
+                && inner
+                    .runs
+                    .kept_blocked
+                    .contains(&(bound.chat, bound.vault.clone()))
+            {
+                return RunHeld::Refused {
+                    line: kept_blocked_said(&bound),
                 };
             }
             if offer == Offer::Program
@@ -791,6 +814,26 @@ impl Asks {
                 }
             }
         }
+    }
+
+    /// **The person kept `vault` blocked for chat `chat`** (#5424): from now on, for the chat's
+    /// life, an ask that only the vault's own Allow would answer is refused as it would open,
+    /// under the lock it opens under, so a run the gate let past just before cannot raise one.
+    /// The asks open on it already are returned, for the window to answer Don't allow.
+    pub fn keep_vault_blocked(&self, chat: u32, vault: &str) -> Vec<u32> {
+        let mut inner = self.inner();
+        inner.runs.kept_blocked.insert((chat, vault.to_owned()));
+        inner
+            .runs
+            .open
+            .iter()
+            .filter(|asked| {
+                asked.open.not_its_vault
+                    && asked.open.bound.chat == chat
+                    && asked.open.bound.vault == vault
+            })
+            .map(|asked| asked.open.id)
+            .collect()
     }
 
     /// **Records that policy refused a run of `program`** (ADR 0112, #5243): closed words in the
