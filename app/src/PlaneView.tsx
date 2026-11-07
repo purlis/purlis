@@ -5904,6 +5904,8 @@ export const PlaneView = memo(function PlaneView({
                 outcome={factsOf(content.session)?.outcome ?? null}
               />
             ),
+            // Its mark wears the chat's state, ✋ among them: the rail draws no second (#5447).
+            stated: true,
           },
     [naming, personaOf, shells, factsOf],
   );

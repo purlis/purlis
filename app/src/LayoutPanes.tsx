@@ -1152,8 +1152,9 @@ export function NoticeOfChat({
 const NO_HEADS = (): ChatHead | undefined => undefined;
 const NO_SHELLS: ReadonlySet<number> = new Set();
 
-/** **What a folded pane's rail shows for what it holds** (#4766): its name and its icon. */
-export type PaneFace = { name: string; mark: ReactNode };
+/** **What a folded pane's rail shows for what it holds** (#4766): its name and its icon, and
+ *  whether that icon wears its chat's one state (#5447), its needs badge among them. */
+export type PaneFace = { name: string; mark: ReactNode; stated?: boolean };
 
 /** A pane's face where the window gives none: its chat's own name, a view's, or what an empty
  *  pane would do, each with its kind's mark. */
