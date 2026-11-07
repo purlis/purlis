@@ -170,17 +170,50 @@ export async function whatWasOver(target: WebdriverIO.Element | string): Promise
     .catch((err: unknown) => [`the window did not answer: ${String(err).slice(0, 120)}`]);
 }
 
-/**
- * The commands a press or a sight goes through: the ones whose failure `afterCommand` takes the
- * evidence of, as it fails (`wdio.conf.ts`).
- */
-export const PRESSES: ReadonlySet<string> = new Set([
+/** The element commands a press or a sight goes through (`describeEveryMissedPress`). */
+export const PRESSES = [
   "click",
   "doubleClick",
   "waitForClickable",
   "waitForDisplayed",
   "waitForEnabled",
-]);
+] as const;
+
+/** The message of `error`, an `Error` or one shaped like it. */
+export function messageOf(error: unknown): string {
+  return typeof error === "object" && error !== null && "message" in error
+    ? String((error as { message: unknown }).message)
+    : String(error ?? "");
+}
+
+/**
+ * **A press that misses is described as it misses** (#5609): each of PRESSES, for every element
+ * of the session, takes `aMissedPress`'s evidence before its failure leaves it, for the failure's
+ * record to carry (`theMissBehind`). Asked afterwards, the page may already have been put away:
+ * `closingByTheWindow` presses Escape on the close question before it throws, and the record of
+ * the macOS miss said only "the element: not in the page". By `overwriteCommand`, WebdriverIO's
+ * own way to wrap a command, which hands the wrapper the element as `this`.
+ */
+export function describeEveryMissedPress(): void {
+  for (const name of PRESSES) {
+    browser.overwriteCommand(
+      name,
+      async function (
+        this: WebdriverIO.Element,
+        original: (...args: unknown[]) => Promise<unknown>,
+        ...args: unknown[]
+      ) {
+        try {
+          return await original(...args);
+        } catch (error) {
+          rememberTheMiss(messageOf(error), await whatWasOver(this));
+          throw error;
+        }
+      } as never,
+      true,
+    );
+  }
+}
 
 /** The latest press that missed: its failure's message, and what the page said then. */
 let latest: { message: string; lines: string[] } | undefined;

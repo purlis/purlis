@@ -19,7 +19,13 @@ import {
   writeShell,
 } from "./harness.js";
 import { browser } from "@wdio/globals";
-import { PRESSES, coveredIn, rememberTheMiss, theMissBehind, whatWasOver } from "./covers.js";
+import {
+  coveredIn,
+  describeEveryMissedPress,
+  messageOf,
+  theMissBehind,
+  whatWasOver,
+} from "./covers.js";
 import { theWindowIsDrawn } from "./drawn.js";
 import { theProjectsFoldersAreAccepted } from "./acting.js";
 import { noDialogIsLeftUp } from "./opening.js";
@@ -72,13 +78,6 @@ writeForgeCache(plane);
  * in time, asked of the window itself, and the core's last log lines. A window that does not
  * answer leaves the first out, not the failure.
  */
-/** The message of `error`, an `Error` or one shaped like it. */
-function messageOf(error: unknown): string {
-  return typeof error === "object" && error !== null && "message" in error
-    ? String((error as { message: unknown }).message)
-    : String(error ?? "");
-}
-
 async function evidence(error?: unknown): Promise<Evidence> {
   const late = await browser
     .execute(
@@ -182,6 +181,8 @@ export const config: WebdriverIO.Config = {
   // its first key to a window with nothing in it yet. Every config spreads this one, so each of
   // them waits too.
   async before() {
+    // A press that misses is described as it misses (#5609, `covers.ts`).
+    describeEveryMissedPress();
     await theWindowIsDrawn();
     // The default window, wide enough for the project rail beside both sidebars, whatever an
     // earlier spec left (`rail.ts`, #3077). A spec that measures a narrower window, where the
@@ -230,16 +231,6 @@ export const config: WebdriverIO.Config = {
       },
     ],
   ],
-
-  // **A press that missed is described as it misses** (#5609): an `after` that puts a question
-  // away before it throws (`closingByTheWindow`) would leave `afterHook` to describe a page with
-  // no question in it. WebdriverIO runs no command hook for the commands run here.
-  async afterCommand(this: unknown, command, _args, _result, error) {
-    if (error === undefined || !PRESSES.has(command)) return;
-    const on = this as WebdriverIO.Element;
-    if (typeof on?.selector !== "string" && typeof on?.elementId !== "string") return;
-    rememberTheMiss(messageOf(error), await whatWasOver(on));
-  },
 
   // A test that fails because the app died looks, from the test, like any other: an element
   // that never came. So every failure writes down whether the app is alive, its size, and
