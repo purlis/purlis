@@ -460,16 +460,18 @@ fn a_clone_the_runner_chat_made_comes_back_with_move_here_and_names_what_a_tool_
 
     let came =
         super::move_workspace_back(&link, &project, &world.root, "app", "builds").expect("moved");
-    assert_eq!(came.watch, ["workspaces/app/api/Makefile"]);
+    assert_eq!(came.watch, ["workspaces/app/repos/api/Makefile"]);
     assert_eq!(
         came.made,
         [crate::host::MadeHere {
-            clone: "workspaces/app/api".into(),
+            clone: "workspaces/app/repos/api".into(),
             remote: Ok("https://github.com/owner/api.git".into()),
         }],
         "the clone is said to be whole from the runner, with the remote it may be given (#3985)"
     );
-    let api = world.root.join("workspaces/app/api");
+    // It lands where every new clone lands (#5534, ADR 0114).
+    assert!(!world.root.join("workspaces/app/api").exists());
+    let api = world.root.join("workspaces/app/repos/api");
     assert_eq!(git(&api, &["rev-parse", "main"]), made);
     assert_eq!(git(&api, &["symbolic-ref", "--short", "HEAD"]), "main");
     assert_eq!(
@@ -792,4 +794,39 @@ fn a_clone_in_a_workspace_reached_through_a_link_is_refused_and_never_joined_by_
 
     assert!(found.is_err(), "{found:?}");
     assert_eq!(super::folder_of(&root, "").unwrap(), root);
+}
+
+/// **A clone the runner chat made lands in `repos/`** (#5534, ADR 0114), however the runner
+/// holds it: a folder of the person's at the old place, sharing only its name, neither blocks it
+/// nor is written into.
+#[test]
+fn a_clone_the_runner_chat_made_lands_in_repos_beside_a_folder_of_that_name_at_the_root() {
+    let world = World::new();
+    world.sessions.hold_with_the_code().expect("sent");
+    let (link, project) = world.sessions.moving_link_in_a_test().unwrap();
+    let notes = world.root.join("workspaces/app/api");
+    std::fs::create_dir_all(&notes).unwrap();
+    std::fs::write(notes.join("mine.txt"), "mine\n").unwrap();
+    let there = world.kept().join("workspaces/app/repos/api");
+    std::fs::create_dir_all(&there).unwrap();
+    git(&there, &["init", "-q", "-b", "main"]);
+    let made = committed(&there, "lib.rs", "pub fn api() {}\n");
+
+    let came =
+        super::move_workspace_back(&link, &project, &world.root, "app", "builds").expect("moved");
+
+    assert_eq!(
+        came.made
+            .iter()
+            .map(|one| one.clone.as_str())
+            .collect::<Vec<_>>(),
+        ["workspaces/app/repos/api"]
+    );
+    let api = world.root.join("workspaces/app/repos/api");
+    assert_eq!(git(&api, &["rev-parse", "main"]), made);
+    assert_eq!(
+        std::fs::read_dir(&notes).unwrap().count(),
+        1,
+        "the person's folder is as it was"
+    );
 }

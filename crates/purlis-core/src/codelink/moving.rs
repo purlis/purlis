@@ -686,6 +686,8 @@ fn work_named(heads: &[Ref]) -> Result<(String, Ref, Ref, Vec<Ref>), Refused> {
 /// Refused where anything is at `repo` already, which is never written into, where its folder
 /// is not a folder reached through no link, and at a name the workspace keeps for its own
 /// ([`crate::contain::workspace_keeps`]); a clone that does not come leaves nothing at `repo`.
+/// A `repo` in a `repos/` not there yet makes it, and one that does not come takes it away again
+/// (#5534).
 /// No remote of the runner's comes with it.
 pub fn take_work_fresh(
     repo: &Path,
@@ -708,12 +710,25 @@ pub fn take_work_fresh(
         return Err(not_made("is not a name a clone may have"));
     }
     let parent = repo.parent().ok_or_else(|| not_made("has no folder"))?;
+    // `repos/`, where a new clone goes (ADR 0114), is made by the clone that needs it, with
+    // `mkdir` alone, which follows no link (#5534).
+    let made_repos = parent
+        .file_name()
+        .is_some_and(|name| name == crate::repofolder::REPOS)
+        && std::fs::create_dir(parent).is_ok();
+    let unmake_repos = || {
+        if made_repos {
+            // Only an empty folder goes, and only the one made here.
+            let _ = std::fs::remove_dir(parent);
+        }
+    };
     if !std::fs::symlink_metadata(parent).is_ok_and(|meta| meta.is_dir()) {
         return Err(not_made("is not in a folder here"));
     }
     // Made, or refused where anything is there already: the folder removed below is only ever
     // the one made here.
     if let Err(why) = std::fs::create_dir(repo) {
+        unmake_repos();
         return Err(if why.kind() == std::io::ErrorKind::AlreadyExists {
             not_made("is here already")
         } else {
@@ -738,6 +753,7 @@ pub fn take_work_fresh(
     if made.is_err() {
         // Only what this made: nothing was at `repo` before it.
         let _ = std::fs::remove_dir_all(repo);
+        unmake_repos();
     } else {
         drop_incoming(repo);
     }
