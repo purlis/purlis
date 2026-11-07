@@ -1727,7 +1727,13 @@ body {
   color: var(--text-secondary);
 }
 
-.skill-run-counts > .count + .count {
+/* The chip's words, heard as one sentence (#5614): laid out as if it were not there, so its pills
+   are the button's own items, and the spaces between them are never drawn. */
+.skill-run-said {
+  display: contents;
+}
+
+.skill-run-said > .count ~ .count {
   margin-inline-start: var(--space-2);
 }
 

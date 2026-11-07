@@ -53,8 +53,8 @@ describe("a skill run on a chat's pane head", function () {
     const chip = await $(CHIP);
     await chip.waitForExist({ timeout: 30_000, timeoutMsg: "the pane head never showed the run" });
     await expect(chip).toHaveText(expect.stringContaining(USED_SKILL));
-    await expect(chip).toHaveAttribute(
-      "aria-label",
+    // Named by what it shows, the rest of its sentence heard and not drawn (#5614).
+    await expect(chip).toHaveComputedLabel(
       expect.stringContaining(`Using the skill ${USED_SKILL}`),
     );
 
