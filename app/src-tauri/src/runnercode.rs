@@ -389,7 +389,10 @@ fn room_for(root: &Path, rel: &str) -> Result<(), String> {
 /// a clone here has the name, or nothing does.
 fn held_back_here(root: &Path, workspace: &str, name: &str) -> Option<String> {
     let row = purlis_core::repofolder::held(root, workspace, name)?;
-    if clones_of(root, workspace).contains(&format!("workspaces/{workspace}/{}", row.repo.name)) {
+    if clones_of(root, workspace)
+        .iter()
+        .any(|rel| rel.rsplit('/').next() == Some(row.repo.name.as_str()))
+    {
         return None;
     }
     let what = match row.git {
