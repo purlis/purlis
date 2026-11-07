@@ -135,7 +135,8 @@ describe("a chat with no row yet (#5308)", () => {
 
   it("left first by its tab's own chat's close, names the tab as its row will, never its number", async () => {
     const listed = chat(1, "build");
-    const unlisted = chat(2, "review");
+    // Run as a persona, so what its row will say is more than its pane's own name (#5308).
+    const unlisted = chat(2, "review", { persona: "devops" });
     core(
       [listed, unlisted],
       [listed],
@@ -155,6 +156,6 @@ describe("a chat with no row yet (#5308)", () => {
     await userEvent.click(within(first).getByRole("button", { name: "Close this pane" }));
 
     await waitFor(() => expect(screen.getAllByTestId("pane")).toHaveLength(1));
-    expect(tabName()).toBe("review");
+    expect(tabName()).toBe("devops review");
   });
 });
