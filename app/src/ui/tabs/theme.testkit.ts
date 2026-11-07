@@ -18,6 +18,10 @@ export default {
     ["piece-files-head", ["terminal.background"]],
   ],
   classless: [
+    // A session tab's `×` at rest (`tabs.css`, #2914): the tab's ground under its `×`, through
+    // `--tabs-closer-ground` (read since #4971); its attributes are the family's (`tabPart`), and
+    // it holds no button.
+    '[data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"]',
     // The editor's toolbar (#2914): its attributes are spread by `editorToolbar`, and its ground
     // is listed by class in `spreadGrounds`.
     '[data-scope="editor"][data-part="toolbar"]',

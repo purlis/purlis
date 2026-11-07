@@ -12,8 +12,11 @@
  *
  * - **a ground** is an element a stylesheet under `src/` gives a background token, at rest or in
  *   a state (`.row:hover`), by its class, its tag or an attribute it is written with (inside the
- *   classes the rule is scoped by), or a Tailwind `bg-*` utility; the window itself (`:root`) is
- *   the ground under everything else, and what is portaled to the body;
+ *   classes the rule is scoped by), or a Tailwind `bg-*` utility; it is read every way a wash is
+ *   (below: a fallback, an alias, a gradient), but only a layer that covers the box is a ground, so
+ *   a repeating gradient's lines (a tree's guide) or a fade to `transparent` is not one (#4971);
+ *   the window itself (`:root`) is the ground under everything else, and what is portaled to the
+ *   body;
  * - **a button** is an element of the family: the family's `data-scope="button"` root, or a member
  *   of `ui/button` (no class marks one: the old `ui-button` is retired, #3365);
  * - every component is read: a button is on the grounds of the elements around it, up to the
@@ -162,16 +165,13 @@ function groundsOfClasses(css: string[]): {
   const byClass = new Map<string, Ground>();
   const window = new Set<Token>();
   const unread: Unread = { classless: [], within: [], byAttribute: new Map() };
+  const aliases = aliasesOf(css);
   for (const sheet of css)
     for (const [, selectors, body] of sheet.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-      // A plain `var()` only: a gradient's token is a line drawn on the element, as a tree's
-      // guide is, more often than a ground under what it holds (D-4876-2).
-      const backs = [
-        ...body.matchAll(/(?<![\w-])background(?:-color)?\s*:\s*var\((--[\w-]+)\)/g),
-      ].flatMap(([, name]) => {
-        const token = BY_PROPERTY.get(name);
-        return token === undefined ? [] : [token];
-      });
+      // Every way a ground is painted, as a wash's is (#4971), but only a layer that covers the
+      // box: a gradient's line, as a tree's guide is, is drawn on the element, never under what
+      // it holds (D-4876-2).
+      const backs = backgroundsIn(body, aliases, true);
       if (backs.length === 0) continue;
       for (const selector of topLevel(selectors.replace(/^\s*@[^;{]*;?/, ""), /,/)) {
         if (/^(?::root|html|body)$/.test(selector)) backs.forEach((token) => window.add(token));
@@ -229,16 +229,27 @@ function groundsOfClasses(css: string[]): {
 
 /** The ground a Tailwind utility draws: `bg-surface-hover`, or `hover:bg-surface-hover` in a
  *  state; or an arbitrary value, `bg-[var(--danger-wash)]` or `bg-(--danger-wash)` (#4876). */
-function utility(name: string, aliases: Aliases = new Map()): Ground | undefined {
+function utility(
+  name: string,
+  aliases: Aliases = new Map(),
+): (Ground & { fills: Set<Token> }) | undefined {
   const hit = /^((?:[\w-]+:)*)bg-(?:\[([^\]]*)\]|\(([^)]*)\)|([\w-]+))$/.exec(name);
   if (hit === null) return undefined;
   const [, state, arbitrary, shorthand, dashed] = hit;
-  const tokens =
+  // A theme's colour is its `--color-*` (Tailwind's `@theme`), which may alias a token of another
+  // name; an arbitrary value's spaces are written as `_`.
+  const body =
     dashed !== undefined
-      ? [BY_DASHED.get(dashed)].filter((token): token is Token => token !== undefined)
-      : backgroundsIn(`background: ${arbitrary ?? `var(${shorthand})`}`, aliases);
-  if (tokens.length === 0) return undefined;
-  return { tokens: new Set(tokens), rest: state === "" };
+      ? `background: var(--color-${dashed})`
+      : `background: ${(arbitrary ?? `var(${shorthand})`).replace(/_/g, " ")}`;
+  const own = dashed === undefined ? undefined : BY_DASHED.get(dashed);
+  const tokens = new Set([...backgroundsIn(body, aliases), ...(own === undefined ? [] : [own])]);
+  if (tokens.size === 0) return undefined;
+  const fills = new Set([
+    ...backgroundsIn(body, aliases, true),
+    ...(own === undefined ? [] : [own]),
+  ]);
+  return { tokens, fills, rest: state === "" };
 }
 
 /** Each custom property a sheet sets to another's value alone, by its name: an alias a rule may
@@ -253,16 +264,33 @@ function aliasesOf(css: string[]): Aliases {
   return aliases;
 }
 
+/** **Whether one layer of a background covers the box it paints**, as a ground does (#4971): a
+ *  colour, or a gradient that does not repeat, has no see-through stop and is not sized smaller
+ *  than the box. A repeating gradient draws lines, as a tree's guide is (D-4876-2), and one that
+ *  fades to `transparent` shows what is under it: each is a decoration, never a ground. */
+function covers(layer: string, sized: boolean): boolean {
+  if (/^(?:none|url\()/.test(layer.trim())) return false;
+  if (!/gradient\(/.test(layer)) return true;
+  return (
+    !sized &&
+    !/repeating-[\w-]*gradient\(/.test(layer) &&
+    !/(?<![\w-])transparent(?![\w-])/.test(layer)
+  );
+}
+
 /** **The tokens a rule's body paints as a background**, by every way it can name one (#4876):
  *  `background`, `background-color` or `background-image`, and each `var()` in its value, so a
  *  fallback's (`var(--a, var(--b))`), a gradient's and a `color-mix()`'s, each through the
  *  aliases a sheet sets. */
 function backgroundsIn(body: string, aliases: Aliases, fills = false): Token[] {
   const found = new Set<Token>();
+  // An image sized smaller than the box is drawn on part of it.
+  const sized =
+    /(?<![\w-])background-size\s*:\s*(?!(?:cover|auto|100%(?:\s+100%)?)\s*(?:;|$))/.test(body);
   for (const [, value] of body.matchAll(/(?<![\w-])background(?:-color|-image)?\s*:([^;]*)/g)) {
-    // A gradient may draw a line, as a tree's guide is, never a fill that hides what is under it.
-    if (fills && /gradient\(/.test(value)) continue;
-    for (const [, name] of value.matchAll(/var\(\s*(--[\w-]+)/g)) {
+    // Only a layer that covers the box is a fill that hides what is under it (#4971).
+    const layers = fills ? topLevel(value, /,/).filter((one) => covers(one, sized)) : [value];
+    for (const [, name] of layers.join(",").matchAll(/var\(\s*(--[\w-]+)/g)) {
       const seen = new Set<string>();
       const follow = (one: string) => {
         if (seen.has(one)) return;
@@ -713,7 +741,7 @@ class Reader {
           const drawn = utility(one.name, this.given.aliases);
           if (drawn === undefined) continue;
           drawn.tokens.forEach((token) => frame.painted.tokens.add(token));
-          if (drawn.rest && one.always) frame.painted.covers = true;
+          if (drawn.rest && one.always && drawn.fills.size > 0) frame.painted.covers = true;
           // A see-through ground a utility paints is laid as a rule's is (#4876).
           for (const token of drawn.tokens)
             if (this.given.washes?.has(token))
@@ -745,7 +773,12 @@ class Reader {
               ground.tokens.forEach((token) => frame.tokens.add(token));
           }
         for (const one of carried) {
-          const ground = this.byClass.get(one.name) ?? utility(one.name);
+          const drawn = utility(one.name, this.given.aliases);
+          const ground =
+            this.byClass.get(one.name) ??
+            (drawn === undefined || drawn.fills.size === 0
+              ? undefined
+              : { tokens: drawn.fills, rest: drawn.rest });
           if (ground === undefined || this.buttonClasses.has(one.name)) continue;
           ground.tokens.forEach((token) => frame.tokens.add(token));
           if (ground.rest && one.always) frame.covers = true;
@@ -1271,6 +1304,65 @@ describe("the grounds a button is drawn on", () => {
       ),
     );
     expect(found).toEqual(["surface.base", "surface.sunken"]);
+  });
+
+  it("read a ground however it is painted: a fallback, an alias, a utility, a solid gradient (#4971)", () => {
+    const found = buttonGrounds(
+      [
+        file(
+          "G.tsx",
+          `export function G() {
+             return <>
+               <div className="fallback"><button data-scope="button" data-part="root" /></div>
+               <div className="aliased"><button data-scope="button" data-part="root" /></div>
+               <div className="solid"><button data-scope="button" data-part="root" /></div>
+               <div className="bg-panel"><button data-scope="button" data-part="root" /></div>
+               <div className="bg-(--well)"><button data-scope="button" data-part="root" /></div>
+             </>;
+           }`,
+        ),
+      ],
+      css(
+        `@theme { --color-panel: var(--surface-overlay); }
+         :root { --pane-ground: var(--surface-sunken); --well: var(--danger-surface); }
+         .fallback { background: var(--unset, var(--surface-raised)); }
+         .aliased { background-color: var(--pane-ground); }
+         .solid { background-image: linear-gradient(var(--surface-deep), var(--surface-deep)), none; }`,
+      ),
+    );
+    expect(found).toEqual([
+      "danger.surface",
+      "surface.base",
+      "surface.deep",
+      "surface.overlay",
+      "surface.raised",
+      "surface.sunken",
+    ]);
+  });
+
+  it("never read a decoration as a ground, nor let one hide the ground under it (#4971)", () => {
+    const found = buttonGrounds(
+      [
+        file(
+          "T.tsx",
+          `export function T() {
+             return <div className="raised"><div className="guided"><div className="fade">
+               <div className="bg-[repeating-linear-gradient(to_right,var(--tree-guide)_0_1px,transparent_1px_8px)]">
+                 <button data-scope="button" data-part="root" />
+               </div>
+             </div></div></div>;
+           }`,
+        ),
+      ],
+      css(
+        `.raised { background: var(--surface-raised); }
+         .guided {
+           background-image: repeating-linear-gradient(to right, var(--tree-guide) 0 1px, transparent 1px 8px);
+         }
+         .fade { background: linear-gradient(to bottom, var(--surface-hover), transparent); }`,
+      ),
+    );
+    expect(found).toEqual(["surface.base", "surface.raised"]);
   });
 
   it("never follow a property's name, or an attribute's, as a variable (#3783)", () => {
