@@ -84,8 +84,8 @@ export function theChatKeepsIt(e: KeyboardEvent): boolean {
 }
 
 /**
- * Whether an `F2` landed on a chat's tab, where it renames the tab rather than opening this
- * (charter-app#254, `actions.RENAMES_ON_F2`).
+ * Whether an `F2` landed on a tab or a chat's row, where it renames rather than opening this
+ * (charter-app#254, #5343, `actions.RENAMES_ON_F2`).
  *
  * The same question `theChatKeepsIt` asks — where did the keystroke land — about the one other
  * place `F2` means something of its own: the platform's rename key on a focused item. Nothing

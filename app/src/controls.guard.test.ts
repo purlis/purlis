@@ -241,7 +241,6 @@ const CEILING: Record<string, number> = {
   "StartChat.tsx": 6,
   "StripMarks.tsx": 4,
   "TabChip.tsx": 3,
-  "TabRename.tsx": 1,
   "TaskBlocksNotice.tsx": 1,
   "TaskChangesTab.tsx": 4,
   "TaskEnd.tsx": 6,
@@ -1399,7 +1398,6 @@ describe("a chat's tab (#5341)", () => {
         "TabCell",
         "TabMarks",
         "TabNeeds",
-        "TabRename",
         "Pin",
       ].sort(),
     );

@@ -123,6 +123,8 @@ describe("what a menu lists", () => {
     // (#4756) and is still last, after Close other tabs (#4762).
     const tab = titles({ on: "tab", tab: 1 }, { tabs });
     expect(tab.above).toEqual([
+      // A tab's own Rename… (#5343), whose dialog says it renames the chat.
+      "Rename chat 3 steward…",
       "Pin tab 3 steward",
       "Tile all in 3 steward",
       // Placement mode, the keyboard's drag (#4764).
@@ -348,7 +350,7 @@ describe("a menu on screen", () => {
     // **The chat is named once, by the menu**, and by no row of it.
     expect(menu).toHaveAccessibleName(`Chat ${NAME}`);
     expect(rowsIn(menu).map((row) => row.getAttribute("aria-label"))).toEqual([
-      "Rename…",
+      "Rename chat…",
       "Ask",
       // Where it is drawn, by the keys (#4764).
       "Move…",
@@ -427,7 +429,7 @@ describe("a menu on screen", () => {
     expect(row("Start fresh")).toHaveAccessibleDescription(FRESH_UNCHANGED);
     expect(row("End…")).toHaveAccessibleDescription("Ends the program it runs. There is no undo.");
     // A row with nothing more to say than its words has none.
-    expect(row("Rename…")).not.toHaveAttribute("aria-describedby");
+    expect(row("Rename chat…")).not.toHaveAttribute("aria-describedby");
 
     const sub = await openSub("Stop");
     const below = within(sub).getByRole("menuitem", { name: "Stop and everything below it" });
@@ -569,7 +571,7 @@ describe("a menu on screen", () => {
     expect(ends).toHaveAttribute("data-scope", "menu");
     expect(ends).toHaveAttribute("data-variant", "danger");
     // Restart keeps the conversation, and Stop only opens the ways to stop.
-    for (const name of ["Restart", "Stop", "Rename…"]) {
+    for (const name of ["Restart", "Stop", "Rename chat…"]) {
       const row = within(menu).getByRole("menuitem", { name });
       expect(row).not.toHaveClass("ends-it");
       expect(row).toHaveAttribute("data-variant", "default");
@@ -581,7 +583,7 @@ describe("a menu on screen", () => {
     const menu = await open();
     const keys = (name: string) =>
       within(menu).getByRole("menuitem", { name }).querySelector('[data-part="shortcut"]');
-    expect(keys("Rename…")).toHaveTextContent("F2");
+    expect(keys("Rename chat…")).toHaveTextContent("F2");
     expect(keys("Restart")).toBeNull();
     fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
@@ -611,7 +613,7 @@ describe("a menu on screen", () => {
 
     // Opened from the keyboard, so the first row has it; the arrows move on from there.
     await waitFor(() =>
-      expect(within(menu).getByRole("menuitem", { name: "Rename…" })).toHaveFocus(),
+      expect(within(menu).getByRole("menuitem", { name: "Rename chat…" })).toHaveFocus(),
     );
     await user.keyboard("{ArrowDown}");
     expect(within(menu).getByRole("menuitem", { name: "Ask" })).toHaveFocus();
