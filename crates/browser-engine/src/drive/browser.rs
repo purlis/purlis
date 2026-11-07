@@ -4112,14 +4112,10 @@ impl Browser {
         };
         let (mut session, mut x, mut y) = (session.to_owned(), x, y);
         // Each step goes one frame deeper, and no page holds more frames than it has.
-        for step in 0..=self.frame_count(target) {
+        for _ in 0..=self.frame_count(target) {
             // The point is in the viewport input is dispatched in; the engine finds what is at a
             // point of the document, which the document's scroll moves.
-            let (left, top) = if step == 0 {
-                self.scrolled(&session).ok_or_else(refused)?
-            } else {
-                (0.0, 0.0)
-            };
+            let (left, top) = self.scrolled(&session).ok_or_else(refused)?;
             let hit = self
                 .devtools()
                 .call(
