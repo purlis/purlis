@@ -192,7 +192,7 @@ describe("a harness's capability card", function () {
     await $('button[aria-label="New tab"]').waitForClickable({ timeout: 60_000 });
   });
 
-  // The tabs it opens, unnamed "New chat" ones too, close here, after its chats end (#5586).
+  // The tabs it opens, unnamed "Empty tab" ones too, close here, after its chats end (#5586).
   closesTheTabsItOpens();
 
   it("is named in a chat's header, and opens the harness's card in a tab", async () => {

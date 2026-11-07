@@ -44,13 +44,13 @@ describe("the tabs a spec file left open", () => {
   });
 
   it("are a second unnamed tab, past the strip's kept empty one (#5586)", () => {
-    expect(tabsLeftOver(strip([]), strip(["New chat", "New chat"]))).toEqual(["New chat"]);
-    expect(tabsLeftOver(strip(["New chat"]), strip(["New chat", "steward 1", "New chat"]))).toEqual(
-      ["steward 1", "New chat"],
-    );
-    expect(tabsLeftOver(strip(["New chat", "New chat"]), strip(["New chat", "New chat"]))).toEqual(
-      [],
-    );
+    expect(tabsLeftOver(strip([]), strip(["Empty tab", "Empty tab"]))).toEqual(["Empty tab"]);
+    expect(
+      tabsLeftOver(strip(["Empty tab"]), strip(["Empty tab", "steward 1", "Empty tab"])),
+    ).toEqual(["steward 1", "Empty tab"]);
+    expect(
+      tabsLeftOver(strip(["Empty tab", "Empty tab"]), strip(["Empty tab", "Empty tab"])),
+    ).toEqual([]);
   });
 
   it("are none when another project or workspace is in front: that strip says nothing of this one", () => {

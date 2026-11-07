@@ -115,7 +115,7 @@ describe("an app opened from Finder", () => {
     await endTheChatsStartedSince(wereOpen);
   });
 
-  // The tabs it opens, unnamed "New chat" ones too, close here, after its chats end (#5586).
+  // The tabs it opens, unnamed "Empty tab" ones too, close here, after its chats end (#5586).
   closesTheTabsItOpens();
 
   it("offers the built-in profile whose program only a shell's PATH would find", async () => {

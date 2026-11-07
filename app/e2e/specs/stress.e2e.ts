@@ -102,6 +102,7 @@ const OPEN_TARGET_BUDGET = 10 * 60_000;
  * the workflow puts in its summary and as a warning. Everything else this spec checks still
  * fails it: every chat opening and running, the open-file limit raised, one app throughout,
  * nothing leaked once they close. As `CHARTER_MEASURE_BUDGETS=report` does for search at scale.
+ * The opens it reported first, four times dearer than on 2026-10-01, are #5615.
  */
 const holdsTheTimeBudgets = process.env.STRESS_BUDGETS !== "report";
 

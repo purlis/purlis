@@ -61,7 +61,7 @@ describe("starting a chat", () => {
     if (trouble !== undefined) throw trouble;
   });
 
-  // The tabs it opens, unnamed "New chat" ones too, close here, after its chats end (#5586).
+  // The tabs it opens, unnamed "Empty tab" ones too, close here, after its chats end (#5586).
   closesTheTabsItOpens();
 
   it("asks which profile and which persona, and starts nothing until a row is picked", async () => {

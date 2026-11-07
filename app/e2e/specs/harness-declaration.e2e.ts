@@ -114,7 +114,7 @@ describe("a harness the project declares", function () {
       rmSync(folder, { recursive: true, force: true });
   });
 
-  // The tabs it opens, unnamed "New chat" ones too, close here, after its chats end (#5586).
+  // The tabs it opens, unnamed "Empty tab" ones too, close here, after its chats end (#5586).
   closesTheTabsItOpens();
 
   it("asks before running it, showing every word that would run (#969)", async () => {
