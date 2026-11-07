@@ -120,3 +120,13 @@ fn a_key_setup_had_the_person_add_before_is_still_purlis_made() {
     assert!(key("purlis on studio").purlis_made());
     assert!(!key("my laptop").purlis_made());
 }
+
+#[test]
+fn a_key_added_by_hand_is_noticed_in_the_public_list_with_no_scope() {
+    let signer = Signer::generate().unwrap();
+    let recorded = recording("publicly_listed", &signer);
+    let listed = listed_publicly_over(&recorded, &github(), "octocat").unwrap();
+    assert_eq!(listed.this_device(&signer).map(|key| key.id), Some(4242));
+    let nothing = Recorded::parse(r#"{"source": "nothing", "exchanges": []}"#).unwrap();
+    assert!(listed_publicly_over(&nothing, &github(), "../x").is_err());
+}

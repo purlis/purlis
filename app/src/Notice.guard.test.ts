@@ -530,6 +530,16 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "what a picked entry does to the asked key, a live value under the picker in the ask's own row (#5073, #5080)",
   },
   "UnsavedWorkQuestion.tsx": { count: 1, why: ACTION },
+  "SigningSetupDialog.tsx": {
+    count: 14,
+    why:
+      ACTION +
+      ". Set up signing's own lines (#5628), inside its dialog: each step's progress while it " +
+      "runs by itself (reading, making the key, asking GitHub for a code, adding the key, the " +
+      "wait on GitHub's page, the watch for a key added by hand, the check), each step's " +
+      "refusal in the core's or GitHub's words, and the Verified line; its Try again, Check " +
+      "again and Cancel are the way out",
+  },
   "SkillBudget.tsx": {
     count: 3,
     why: "A reset's refusal under the table, Change…'s own refusal, and what a typed number would cost, said as it moves: each about the act in hand, gone when that is done, so not a standing line",
@@ -719,6 +729,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       ACTION +
       ". The Accounts group's lines (#1814): a sign-out's or a read's refusal, and what was " +
       "just done; its Sign in with a token and Sign out are the way on",
+  },
+  "settings/signing.tsx": {
+    count: 1,
+    why:
+      ACTION +
+      ". The Signed commits card's read refusal (#5628), in the core's words; Set up signing " +
+      "is the way on",
   },
   "settings/profiles.tsx": {
     count: 2,

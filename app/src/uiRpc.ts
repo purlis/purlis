@@ -813,6 +813,13 @@ export const commands = {
 	forgeDeviceSignInStart: __WINDOW_ONLY_RESULT,
 	forgeDeviceSignInWait: __WINDOW_ONLY_RESULT,
 	forgeDeviceSignInCancel: __WINDOW_ONLY,
+	forgeSigningPermissionStart: __WINDOW_ONLY_RESULT,
+	forgeSigningPermissionWait: __WINDOW_ONLY_RESULT,
+	signingState: __WINDOW_ONLY_RESULT,
+	signingMakeKey: __WINDOW_ONLY_RESULT,
+	signingAddKey: __WINDOW_ONLY_RESULT,
+	signingKeyListed: __WINDOW_ONLY_RESULT,
+	signingCheck: __WINDOW_ONLY_RESULT,
 	agentIdentities: __WINDOW_ONLY_RESULT,
 	agentIdentityCreate: __WINDOW_ONLY_RESULT,
 	agentIdentityCreateCancel: __WINDOW_ONLY,
@@ -3155,7 +3162,12 @@ export type Asks =
 /**  `purlis profile sign-in --pool`. */
 "sign-in" | 
 /**  `purlis pool remove-profile`: its runner forgets the profile, and its sign-in there. */
-"take-off";
+"take-off" | 
+/**
+ *  `purlis signing check` (#5625): the window asks GitHub how a pushed commit shows. Its
+ *  `profile` is the repository (`owner/name`) and its `pool` the commit.
+ */
+"signing-check";
 
 /**  What a chat's row says while it is at its task limit. */
 export type AtLimit = {
@@ -12676,6 +12688,58 @@ export type SidebarWorkspace = {
 	 *  (charter-app#301). Every place a workspace is drawn marks it.
 	 */
 	live: boolean,
+};
+
+/**  The forge account setup adds the key to. */
+export type SigningAccount = {
+	login: string,
+	host: string,
+	/**  The forge, as a sentence names it: `GitHub`. */
+	forge: string,
+	/**  Whether its sign-in may add a signing key already, so setup asks for no permission. */
+	may_add: boolean,
+	/**
+	 *  The email the last Check in this window found verified, for "Verified on GitHub ✓".
+	 *  Only the forge's own answer sets it, and it lasts the window's life.
+	 */
+	verified_as: string | null,
+};
+
+/**  How adding the key went. */
+export type SigningAdded = 
+/**  GitHub has it now, or had it already. */
+"added" | 
+/**  The sign-in may not add it: setup asks for the permission, or the person adds it by hand. */
+"needs_permission";
+
+/**  What Check found: GitHub's own verdict on a signed test commit. */
+export type SigningCheck = {
+	verified: boolean,
+	/**
+	 *  GitHub's reason, such as `valid`, `unverified_email` or `unknown_key`: the window words
+	 *  it.
+	 */
+	reason: string,
+	/**  The email the test commit was made as: chat commits use it too. */
+	email: string,
+	/**  The repository the test commit was made in. */
+	repo: string,
+};
+
+/**  What the card shows: whether this device has a signing key, and the GitHub account it goes to. */
+export type SigningState = {
+	/**  "On": this device has a signing key (ADR 0116 §1). Nothing else turns it on. */
+	on: boolean,
+	/**
+	 *  The key's fingerprint and public line, for the card's Details and the by-hand step; only
+	 *  where it is on.
+	 */
+	fingerprint: string | null,
+	public_key: string | null,
+	/**  What the key is titled on the forge: `purlis · <device>`. */
+	title: string,
+	/**  The GitHub account on github.com setup adds the key to, where one is signed in. */
+	account: SigningAccount | null,
 };
 
 /**

@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::forge::recorded::Recorded;
-use crate::forge::signingkeys::recording;
+use crate::forge::signingkeys::{recording, recording_with};
 use crate::secrets::keyring;
 
 fn on_account(signer: &Signer) -> Asked {
@@ -36,39 +36,39 @@ fn no_key_then_made_then_added_then_listed_then_verified() {
     assert!(had);
     assert_eq!(again, signer, "a second setup keeps the key it made");
 
-    let none = recording("none_listed", &signer);
+    // Whether the account has it is read from GitHub's public list of its signing keys.
+    let none = recording("publicly_none", &signer);
     assert_eq!(
-        answered_over(&none, &github(), &on_account(&signer)).unwrap(),
+        answered_over(&none, &github(), "octocat", &on_account(&signer)).unwrap(),
         Heard::KeyOnAccount { on: false }
     );
 
     let added = recording("added_then_listed", &signer);
     signingkeys::add_over(&added, &github(), &signer, "purlis · studio").unwrap();
-    assert_eq!(
-        answered_over(&added, &github(), &on_account(&signer)).unwrap(),
-        Heard::KeyOnAccount { on: true }
+    assert!(
+        signingkeys::listed_over(&added, &github())
+            .unwrap()
+            .this_device(&signer)
+            .is_some()
     );
     assert!(added.unspent().is_empty());
+    let public = recording("publicly_listed", &signer);
+    assert_eq!(
+        answered_over(&public, &github(), "octocat", &on_account(&signer)).unwrap(),
+        Heard::KeyOnAccount { on: true }
+    );
 
     let verified = recording("commit_verified", &signer);
     let asked = Asked::Check {
         repo: "octo/hello".to_owned(),
         commit: "0123abc".to_owned(),
+        code: "A1B2C3".to_owned(),
     };
-    let Heard::Checked(checked) = answered_over(&verified, &github(), &asked).unwrap() else {
+    let Heard::Checked(checked) = answered_over(&verified, &github(), "octocat", &asked).unwrap()
+    else {
         panic!("a check is answered with what the forge said of the commit");
     };
     assert!(checked.verified);
-}
-
-#[test]
-fn a_sign_in_that_may_not_read_signing_keys_is_heard_as_needing_permission() {
-    let signer = Signer::generate().unwrap();
-    let recorded = recording("list_needs_permission", &signer);
-    assert_eq!(
-        answered_over(&recorded, &github(), &on_account(&signer)).unwrap(),
-        Heard::NeedsPermission
-    );
 }
 
 #[test]
@@ -84,7 +84,7 @@ fn what_is_not_one_public_key_is_refused_before_anything_is_sent() {
             key: key.to_owned(),
         };
         assert!(
-            answered_over(&recorded, &github(), &asked).is_err(),
+            answered_over(&recorded, &github(), "octocat", &asked).is_err(),
             "{key:?}"
         );
     }
@@ -120,11 +120,11 @@ mod over_the_window_line {
         let socket = dir.path().join("purlis").join("window.sock");
         let signer = Signer::generate().unwrap();
         let line = signer.public_line();
-        let recorded = std::sync::Arc::new(recording("added_then_listed", &signer));
+        let recorded = std::sync::Arc::new(recording("publicly_listed", &signer));
         let theirs = std::sync::Arc::clone(&recorded);
         windowline::serve_on(&socket, move |asked| match asked {
             windowline::Asked::Signing(asked) => {
-                match answered_over(theirs.as_ref(), &github(), &asked) {
+                match answered_over(theirs.as_ref(), &github(), "octocat", &asked) {
                     Ok(heard) => Said::Signing(heard),
                     Err(why) => Said::Refused { why },
                 }
@@ -134,9 +134,6 @@ mod over_the_window_line {
             },
         })
         .unwrap();
-        // The add is the window's alone, so it is spent here before the command asks.
-        signingkeys::add_over(recorded.as_ref(), &github(), &signer, "purlis · studio").unwrap();
-
         let within = Duration::from_secs(10);
         let reached = reach(Asked::KeyOnAccount { key: line }, |asked| {
             windowline::ask_on(&socket, asked, within)
@@ -149,6 +146,7 @@ mod over_the_window_line {
         let asked = || Asked::Check {
             repo: "octo/hello".to_owned(),
             commit: "0123abc".to_owned(),
+            code: "A1B2C3".to_owned(),
         };
         assert_eq!(reach(asked(), |_| Answered::NoWindow), Reached::NoWindow);
         assert_eq!(reach(asked(), |_| Answered::NoAnswer), Reached::NoAnswer);
@@ -177,5 +175,99 @@ mod over_the_window_line {
             |_, _, _| panic!("no take-off"),
         );
         assert!(matches!(said, Said::Refused { .. }));
+    }
+}
+
+mod the_check {
+    use super::*;
+
+    const TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+    const WHEN: i64 = 1_794_067_200;
+
+    fn who() -> Who {
+        Who {
+            name: "Octo Cat".to_owned(),
+            email: "octocat@example.invalid".to_owned(),
+        }
+    }
+
+    /// The recording `case`, this test's own signature of the test commit put in.
+    fn signed(case: &str, signer: &Signer) -> Recorded {
+        let signature = signer.sign(&test_commit(TREE, &who(), WHEN)).unwrap();
+        recording_with(case, &[("@SIGNATURE@", &signature)])
+    }
+
+    #[test]
+    fn a_test_commit_github_verifies_is_verified() {
+        let signer = Signer::generate().unwrap();
+        let recorded = signed("test_commit_verified", &signer);
+        let checked =
+            check_with_a_test_commit(&recorded, &github(), &signer, "octo/hello", &who(), WHEN)
+                .unwrap();
+        assert!(checked.verified);
+        assert!(recorded.unspent().is_empty());
+    }
+
+    #[test]
+    fn a_test_commit_whose_email_github_does_not_know_is_not_verified_and_says_why() {
+        let signer = Signer::generate().unwrap();
+        let recorded = signed("test_commit_email_unverified", &signer);
+        let checked =
+            check_with_a_test_commit(&recorded, &github(), &signer, "octo/hello", &who(), WHEN)
+                .unwrap();
+        assert!(!checked.verified);
+        assert_eq!(checked.reason, "unverified_email");
+    }
+
+    /// The test commit is the object git itself writes for the same fields, byte for byte: what
+    /// GitHub rebuilds from them and checks the signature over.
+    #[test]
+    fn the_test_commit_is_what_git_writes_for_the_same_fields() {
+        let repo = tempfile::tempdir().unwrap();
+        crate::testgit::run(repo.path(), &["init", "-q"]);
+        let date = format!("{WHEN} +0000");
+        let made = crate::forklock::output(
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(repo.path())
+                .args(["commit-tree", TREE, "-m", TEST_MESSAGE.trim_end()])
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .env("GIT_AUTHOR_NAME", "Octo Cat")
+                .env("GIT_AUTHOR_EMAIL", "octocat@example.invalid")
+                .env("GIT_AUTHOR_DATE", &date)
+                .env("GIT_COMMITTER_NAME", "Octo Cat")
+                .env("GIT_COMMITTER_EMAIL", "octocat@example.invalid")
+                .env("GIT_COMMITTER_DATE", &date),
+        )
+        .unwrap();
+        assert!(
+            made.status.success(),
+            "{}",
+            String::from_utf8_lossy(&made.stderr)
+        );
+        let id = String::from_utf8(made.stdout).unwrap();
+        let raw = crate::forklock::output(
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(repo.path())
+                .args(["cat-file", "commit", id.trim()]),
+        )
+        .unwrap()
+        .stdout;
+        assert_eq!(
+            String::from_utf8(raw).unwrap(),
+            String::from_utf8(test_commit(TREE, &who(), WHEN)).unwrap()
+        );
+    }
+
+    #[test]
+    fn with_no_repository_named_the_accounts_own_latest_is_checked_in() {
+        let signer = Signer::generate().unwrap();
+        let recorded = recording("own_repo", &signer);
+        assert_eq!(
+            a_repo_to_check_in(&recorded, &github()).unwrap().as_deref(),
+            Some("octo/hello")
+        );
     }
 }

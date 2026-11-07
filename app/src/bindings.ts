@@ -1761,6 +1761,47 @@ export const commands = {
 	 */
 	forgeDeviceSignInCancel: (flow: number) => __TAURI_INVOKE<void>("forge_device_sign_in_cancel", { flow }),
 	/**
+	 *  **Ask the GitHub account on github.com for signing setup's permission** (#5627, #5628, ADR 0116
+	 *  §5): a device flow asking for the scopes it holds and [`signingkeys::GITHUB_SCOPES`], at the
+	 *  moment setup needs them, never at sign-in. Waited on with [`forge_signing_permission_wait`] and
+	 *  cancelled with [`forge_device_sign_in_cancel`]. A flow already waiting is ended.
+	 * 
+	 *  [`signingkeys::GITHUB_SCOPES`]: purlis_core::forge::signingkeys::GITHUB_SCOPES
+	 */
+	forgeSigningPermissionStart: () => typedError<ForgeDeviceCode, string>(__TAURI_INVOKE("forge_signing_permission_start")),
+	/**
+	 *  Wait for the person to allow signing setup's permission for `flow` on GitHub's page, then keep
+	 *  the new token in the account's place ([`device::widen`]). The account as Settings lists it, or
+	 *  a sentence saying how it ended: a refusal on GitHub's page leaves the account as it was.
+	 */
+	forgeSigningPermissionWait: (flow: number) => typedError<ForgeAccountRow, string>(__TAURI_INVOKE("forge_signing_permission_wait", { flow })),
+	/**
+	 *  **What the Signed commits card shows.** Asks the keychain only whether the key is there, so
+	 *  opening Settings never makes macOS ask; the key itself is read only where it is.
+	 */
+	signingState: () => typedError<SigningState, string>(__TAURI_INVOKE("signing_state")),
+	/**
+	 *  **Step 1: this device's key, made and kept in the Keychain**, where it has none. macOS asks the
+	 *  person here; where they say no, the sentence says to try again and choose Always Allow.
+	 */
+	signingMakeKey: () => typedError<string, string>(__TAURI_INVOKE("signing_make_key")),
+	/**
+	 *  **Step 2: the key added to the GitHub account** with the window's sign-in, under
+	 *  `purlis · <device>`. One GitHub has already is added again as nothing.
+	 */
+	signingAddKey: () => typedError<SigningAdded, string>(__TAURI_INVOKE("signing_add_key")),
+	/**
+	 *  **Whether GitHub lists this device's key on the account yet**, from its public list, which
+	 *  needs no permission: how the by-hand path notices the person added it.
+	 */
+	signingKeyListed: () => typedError<boolean, string>(__TAURI_INVOKE("signing_key_listed")),
+	/**
+	 *  **Step 3, Check**: a test commit signed with this device's key, made in `repo` (`owner/name`)
+	 *  or, with none, in the account's own most recently pushed repository, and GitHub's own verdict
+	 *  on it. Never on a branch. A verdict of Verified is kept for the card while the window runs.
+	 */
+	signingCheck: (repo: string | null) => typedError<SigningCheck, string>(__TAURI_INVOKE("signing_check", { repo })),
+	/**
 	 *  **What the Agent identity tab draws**, read fresh. Each row proves itself against GitHub, so
 	 *  it shows what it acts as now.
 	 */
@@ -5826,7 +5867,12 @@ export type Asks =
 /**  `purlis profile sign-in --pool`. */
 "sign-in" | 
 /**  `purlis pool remove-profile`: its runner forgets the profile, and its sign-in there. */
-"take-off";
+"take-off" | 
+/**
+ *  `purlis signing check` (#5625): the window asks GitHub how a pushed commit shows. Its
+ *  `profile` is the repository (`owner/name`) and its `pool` the commit.
+ */
+"signing-check";
 
 /**  What a chat's row says while it is at its task limit. */
 export type AtLimit = {
@@ -15347,6 +15393,58 @@ export type SidebarWorkspace = {
 	 *  (charter-app#301). Every place a workspace is drawn marks it.
 	 */
 	live: boolean,
+};
+
+/**  The forge account setup adds the key to. */
+export type SigningAccount = {
+	login: string,
+	host: string,
+	/**  The forge, as a sentence names it: `GitHub`. */
+	forge: string,
+	/**  Whether its sign-in may add a signing key already, so setup asks for no permission. */
+	may_add: boolean,
+	/**
+	 *  The email the last Check in this window found verified, for "Verified on GitHub ✓".
+	 *  Only the forge's own answer sets it, and it lasts the window's life.
+	 */
+	verified_as: string | null,
+};
+
+/**  How adding the key went. */
+export type SigningAdded = 
+/**  GitHub has it now, or had it already. */
+"added" | 
+/**  The sign-in may not add it: setup asks for the permission, or the person adds it by hand. */
+"needs_permission";
+
+/**  What Check found: GitHub's own verdict on a signed test commit. */
+export type SigningCheck = {
+	verified: boolean,
+	/**
+	 *  GitHub's reason, such as `valid`, `unverified_email` or `unknown_key`: the window words
+	 *  it.
+	 */
+	reason: string,
+	/**  The email the test commit was made as: chat commits use it too. */
+	email: string,
+	/**  The repository the test commit was made in. */
+	repo: string,
+};
+
+/**  What the card shows: whether this device has a signing key, and the GitHub account it goes to. */
+export type SigningState = {
+	/**  "On": this device has a signing key (ADR 0116 §1). Nothing else turns it on. */
+	on: boolean,
+	/**
+	 *  The key's fingerprint and public line, for the card's Details and the by-hand step; only
+	 *  where it is on.
+	 */
+	fingerprint: string | null,
+	public_key: string | null,
+	/**  What the key is titled on the forge: `purlis · <device>`. */
+	title: string,
+	/**  The GitHub account on github.com setup adds the key to, where one is signed in. */
+	account: SigningAccount | null,
 };
 
 /**

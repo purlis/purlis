@@ -1,0 +1,9 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest/users/ssh-signing-keys (List SSH signing keys for a user: public, no scope; an account with none answers an empty list)",
+  "exchanges": [
+    {
+      "call": {"endpoint": {"rest": {"method": null, "path": "users/octocat/ssh_signing_keys"}}, "fields": [{"typed": ["per_page", "100"]}]},
+      "reply": {"code": 0, "out": "[]", "err": "", "status": 200}
+    }
+  ]
+}

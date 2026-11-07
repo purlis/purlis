@@ -182,6 +182,51 @@ pub fn listed_over(transport: &dyn Transport, forge: &Forge) -> Result<Listed, R
     Ok(Listed { keys })
 }
 
+/// **`login`'s signing keys as anyone may read them** (GitHub's public list, which needs no
+/// scope): how setup notices a key the person added by hand, where the sign-in may not read the
+/// account's own list.
+pub fn listed_publicly_over(
+    transport: &dyn Transport,
+    forge: &Forge,
+    login: &str,
+) -> Result<Listed, Refused> {
+    github_only(forge)?;
+    if !named(login) {
+        return Err(Refused::Said(format!("{login} is not an account's name")));
+    }
+    let mut call = Call::get(format!("users/{login}/ssh_signing_keys"), WITHIN);
+    call.fields.push(Field::typed("per_page", PAGE));
+    let reply = transport
+        .send(forge, &call)
+        .map_err(|no| unanswered(forge, no.said()))?;
+    if !reply.ok() {
+        return Err(Refused::Said(format!(
+            "{} did not list {login}'s signing keys ({})",
+            forge.kind.display(),
+            first_line(&reply.said(forge.kind))
+        )));
+    }
+    // The public list names each key and its id, and no title.
+    let keys: Vec<serde_json::Value> = serde_json::from_str(&reply.out).map_err(|_| {
+        Refused::Said(format!(
+            "{}'s list of {login}'s signing keys did not read as one",
+            forge.kind.display()
+        ))
+    })?;
+    Ok(Listed {
+        keys: keys
+            .iter()
+            .filter_map(|key| {
+                Some(Key {
+                    id: key.get("id")?.as_u64()?,
+                    title: String::new(),
+                    key: key.get("key")?.as_str()?.to_owned(),
+                })
+            })
+            .collect(),
+    })
+}
+
 /// **`signer`'s key added to the account** as a signing key under `title`, over `transport`,
 /// and the key as the forge holds it.
 pub fn add_over(
@@ -309,12 +354,22 @@ pub fn window(forge: &Forge, caller: &Caller) -> Result<Arc<dyn Transport>, Forg
 /// for `@KEY@`: a key is made afresh by each test, so a recording names it by that mark.
 #[cfg(test)]
 pub(crate) fn recording(case: &str, signer: &Signer) -> super::recorded::Recorded {
+    recording_with(case, &[("@KEY@", &signer.public_line())])
+}
+
+/// The recording `case`, each mark in `marks` replaced by its value, written as a JSON string's
+/// inside is: a signature runs over several lines.
+#[cfg(test)]
+pub(crate) fn recording_with(case: &str, marks: &[(&str, &str)]) -> super::recorded::Recorded {
     let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/forge_contract/signing_keys/github")
         .join(format!("{case}.json"));
-    let text = std::fs::read_to_string(&file)
-        .unwrap_or_else(|why| panic!("{}: {why}", file.display()))
-        .replace("@KEY@", &signer.public_line());
+    let mut text =
+        std::fs::read_to_string(&file).unwrap_or_else(|why| panic!("{}: {why}", file.display()));
+    for (mark, value) in marks {
+        let quoted = serde_json::to_string(value).unwrap();
+        text = text.replace(mark, &quoted[1..quoted.len() - 1]);
+    }
     super::recorded::Recorded::parse(&text).unwrap_or_else(|why| panic!("{case}: {why}"))
 }
 

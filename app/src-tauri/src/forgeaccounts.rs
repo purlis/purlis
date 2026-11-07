@@ -359,6 +359,8 @@ struct DeviceFlow {
     registration: &'static Registration,
     started: Arc<device::Started>,
     cancelled: Arc<AtomicBool>,
+    /// The account a step-up asks more of (#5627), or `None` for a sign-in.
+    widening: Option<ForgeAccount>,
 }
 
 /// The one device flow in progress. Starting another ends this one.
@@ -448,6 +450,7 @@ pub async fn forge_device_sign_in_start(
             registration,
             started: Arc::new(started),
             cancelled: Arc::new(AtomicBool::new(false)),
+            widening: None,
         }) {
             before.cancelled.store(true, Ordering::SeqCst);
         }
@@ -467,7 +470,10 @@ pub async fn forge_device_sign_in_wait(flow: u32) -> Result<ForgeAccountRow, Str
         let scope = host_scope()?;
         let (registration, started, cancelled) = {
             let held = DEVICE_FLOW.lock().unwrap_or_else(|e| e.into_inner());
-            match held.as_ref().filter(|held| held.number == flow) {
+            match held
+                .as_ref()
+                .filter(|held| held.number == flow && held.widening.is_none())
+            {
                 Some(held) => (
                     held.registration,
                     held.started.clone(),
@@ -497,6 +503,120 @@ pub async fn forge_device_sign_in_wait(flow: u32) -> Result<ForgeAccountRow, Str
         ended
             .map(ForgeAccountRow::from)
             .map_err(|why| why.said(registration.kind.display()))
+    })
+    .await
+}
+
+/// **Ask the GitHub account on github.com for signing setup's permission** (#5627, #5628, ADR 0116
+/// §5): a device flow asking for the scopes it holds and [`signingkeys::GITHUB_SCOPES`], at the
+/// moment setup needs them, never at sign-in. Waited on with [`forge_signing_permission_wait`] and
+/// cancelled with [`forge_device_sign_in_cancel`]. A flow already waiting is ended.
+///
+/// [`signingkeys::GITHUB_SCOPES`]: purlis_core::forge::signingkeys::GITHUB_SCOPES
+#[tauri::command]
+#[specta::specta]
+pub async fn forge_signing_permission_start() -> Result<ForgeDeviceCode, String> {
+    use purlis_core::forge::signingkeys::GITHUB_SCOPES;
+    blocking(move || {
+        host_scope()?;
+        let root = config_root()?;
+        let account = accounts::signed_in_on(&root, Kind::GitHub, "github.com")?
+            .ok_or_else(|| "Sign in to GitHub first, in Settings › You › Accounts.".to_string())?;
+        let registration = registration::on(Kind::GitHub, "github.com")
+            .filter(|r| r.flow == registration::Flow::Device)
+            .ok_or_else(|| no_device_flow(Kind::GitHub, "github.com"))?;
+        if purlis_core::fence::FENCED {
+            return Err(
+                "A test build of purlis does not ask GitHub for permission through the browser."
+                    .to_string(),
+            );
+        }
+        let scopes = accounts::widened_scopes(&account, &GITHUB_SCOPES);
+        let started = device::start_asking(
+            &oauth::Https::new(),
+            &oauth::Endpoints::of(registration),
+            registration,
+            &scopes,
+        )?;
+        let number = NEXT_FLOW.fetch_add(1, Ordering::SeqCst);
+        let code = ForgeDeviceCode {
+            flow: number,
+            host: registration.host.to_string(),
+            title: Kind::GitHub.display().to_string(),
+            user_code: started.user_code.clone(),
+            verification_uri: started.verification_uri.clone(),
+            expires_in: u32::try_from(started.expires_in.as_secs()).unwrap_or(u32::MAX),
+            scopes,
+        };
+        let mut held = DEVICE_FLOW.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(before) = held.replace(DeviceFlow {
+            number,
+            registration,
+            started: Arc::new(started),
+            cancelled: Arc::new(AtomicBool::new(false)),
+            widening: Some(account),
+        }) {
+            before.cancelled.store(true, Ordering::SeqCst);
+        }
+        Ok(code)
+    })
+    .await
+}
+
+/// Wait for the person to allow signing setup's permission for `flow` on GitHub's page, then keep
+/// the new token in the account's place ([`device::widen`]). The account as Settings lists it, or
+/// a sentence saying how it ended: a refusal on GitHub's page leaves the account as it was.
+#[tauri::command]
+#[specta::specta]
+pub async fn forge_signing_permission_wait(flow: u32) -> Result<ForgeAccountRow, String> {
+    use purlis_core::forge::signingkeys::GITHUB_SCOPES;
+    blocking(move || {
+        let scope = host_scope()?;
+        let (registration, started, cancelled, account) = {
+            let held = DEVICE_FLOW.lock().unwrap_or_else(|e| e.into_inner());
+            match held.as_ref().filter(|held| held.number == flow) {
+                Some(DeviceFlow {
+                    registration,
+                    started,
+                    cancelled,
+                    widening: Some(account),
+                    ..
+                }) => (
+                    *registration,
+                    started.clone(),
+                    cancelled.clone(),
+                    account.clone(),
+                ),
+                _ => return Err(device::Ended::Cancelled.said("the forge")),
+            }
+        };
+        let root = config_root()?;
+        let keyring = accounts::keyring_at(&root);
+        let ended = device::widen(
+            &scope,
+            &root,
+            keyring.as_ref(),
+            &token_check,
+            &oauth::Https::new(),
+            &oauth::Endpoints::of(registration),
+            registration,
+            &started,
+            &UntilCancelled(cancelled),
+            &account,
+            &GITHUB_SCOPES,
+        );
+        let mut held = DEVICE_FLOW.lock().unwrap_or_else(|e| e.into_inner());
+        if held.as_ref().is_some_and(|held| held.number == flow) {
+            *held = None;
+        }
+        ended.map(ForgeAccountRow::from).map_err(|why| match why {
+            device::Ended::Denied => {
+                "You didn't allow it on GitHub, so nothing changed. You can add the key \
+                     yourself instead."
+                    .to_string()
+            }
+            other => other.said(registration.kind.display()),
+        })
     })
     .await
 }

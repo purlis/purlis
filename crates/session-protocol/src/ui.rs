@@ -274,6 +274,16 @@ pub const WINDOW_ONLY: &[&str] = &[
     "forge_device_sign_in_start",
     "forge_device_sign_in_wait",
     "forge_device_sign_in_cancel",
+    // Signed commits, set up from the window (#5628, ADR 0116 §2): GitHub asked for signing
+    // setup's permission, this device's signing key made, added to the account, watched for and
+    // checked. The key is the app's and never a chat's, so no link reaches any of them.
+    "forge_signing_permission_start",
+    "forge_signing_permission_wait",
+    "signing_state",
+    "signing_make_key",
+    "signing_add_key",
+    "signing_key_listed",
+    "signing_check",
     // Agent identity (#4485): GitHub's App flow, the tool lines and the key, each the person's.
     "agent_identities",
     "agent_identity_create",
