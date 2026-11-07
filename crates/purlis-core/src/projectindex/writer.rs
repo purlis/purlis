@@ -556,7 +556,9 @@ fn plan(
         gone.push(recorded.into_values().map(|r| r.id).collect());
         unread_of.push(unread);
     }
-    let changes = in_parallel(&files, |(_, path, rel, was)| change(path, rel, was.as_ref()));
+    let changes = in_parallel(&files, |(_, path, rel, was)| {
+        change(path, rel, was.as_ref())
+    });
     let mut planned: Vec<Planned> = batch
         .iter()
         .zip(unread_of)
@@ -612,8 +614,7 @@ fn change(path: &Path, rel: &str, was: Option<&Recorded>) -> Option<Change> {
     }
     let title = words::scanned(&crate::memstore::title_in(path, &text));
     let name = path.file_name().unwrap_or_default().to_string_lossy();
-    let date =
-        crate::memstore::memory_date(&text, &name).map(|d| d.format("%Y-%m-%d").to_string());
+    let date = crate::memstore::memory_date(&text, &name).map(|d| d.format("%Y-%m-%d").to_string());
     Some(Change::Write {
         was: was.map(|was| was.id),
         row: Row {
@@ -671,13 +672,16 @@ fn apply(
     let mut swept = Swept::default();
     tx.execute("DELETE FROM unread WHERE base = ?1", [&base])?;
     for (path, code) in &planned.unread {
-        tx.execute("INSERT INTO unread(base, kind, owner, path, code) VALUES (?1, ?2, ?3, ?4, ?5)", params![
-            base,
-            source.kind.as_str(),
-            source.owner,
-            relative(root, path).unwrap_or_default(),
-            code
-        ])?;
+        tx.execute(
+            "INSERT INTO unread(base, kind, owner, path, code) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                base,
+                source.kind.as_str(),
+                source.owner,
+                relative(root, path).unwrap_or_default(),
+                code
+            ],
+        )?;
     }
     let rank = sources::rank(source.kind, &source.owner);
     let basekey = sort_key(&base);
@@ -685,7 +689,10 @@ fn apply(
     for change in planned.changes {
         match change {
             Change::Touch { id, size, mtime } => {
-                tx.execute("UPDATE item SET size = ?2, mtime = ?3 WHERE id = ?1", params![id, size, mtime])?;
+                tx.execute(
+                    "UPDATE item SET size = ?2, mtime = ?3 WHERE id = ?1",
+                    params![id, size, mtime],
+                )?;
             }
             Change::Delete(id) => {
                 delete_row(tx, id)?;
@@ -695,25 +702,31 @@ fn apply(
                 if let Some(was) = was {
                     delete_row(tx, was)?;
                 }
-                tx.execute("INSERT INTO item(path, base, kind, owner, audience, rank, basekey, pathkey,
+                tx.execute(
+                    "INSERT INTO item(path, base, kind, owner, audience, rank, basekey, pathkey,
                                       title, date, size, mtime, hash)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)", params![
-                    row.rel,
-                    base,
-                    source.kind.as_str(),
-                    source.owner,
-                    AUDIENCE,
-                    rank,
-                    basekey,
-                    sort_key(&row.rel),
-                    row.title,
-                    row.date,
-                    row.size,
-                    row.mtime,
-                    row.hash
-                ])?;
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                    params![
+                        row.rel,
+                        base,
+                        source.kind.as_str(),
+                        source.owner,
+                        AUDIENCE,
+                        rank,
+                        basekey,
+                        sort_key(&row.rel),
+                        row.title,
+                        row.date,
+                        row.size,
+                        row.mtime,
+                        row.hash
+                    ],
+                )?;
                 let id = tx.last_insert_rowid();
-                tx.execute("INSERT INTO words(rowid, title, text, reach) VALUES (?1, ?2, ?3, ?4)", params![id, row.title_words, row.text_words, reach])?;
+                tx.execute(
+                    "INSERT INTO words(rowid, title, text, reach) VALUES (?1, ?2, ?3, ?4)",
+                    params![id, row.title_words, row.text_words, reach],
+                )?;
                 swept.written += 1;
             }
         }
