@@ -599,7 +599,7 @@ fn a_claude_code_chats_bare_ssh_takes_its_route_through_the_file_read_before_eac
     assert!(!folder.exists());
 }
 
-/// **Each Claude Code chat gets a temporary folder of its own** (plane#2423): two chats in one
+/// **Each Claude Code chat gets a temporary folder of its own** (#5675): two chats in one
 /// project are started with `CLAUDE_CODE_TMPDIR` naming two different folders, each its
 /// confinement's own, so Claude Code roots its own temporary files and its sandbox's `$TMPDIR`
 /// there and not in the one `/tmp/claude-<uid>` every chat shared. The folder goes as the chat

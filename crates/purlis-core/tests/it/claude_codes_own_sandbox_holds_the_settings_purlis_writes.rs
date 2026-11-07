@@ -623,7 +623,7 @@ fn a_chat_at_the_floor_makes_its_tools_folders_in_a_bare_home() {
 }
 
 /// **Two Claude Code chats each write a temporary folder of their own, and not the other's**
-/// (plane#2423), through Claude Code's own sandbox, each started with the environment and
+/// (#5675), through Claude Code's own sandbox, each started with the environment and
 /// `--settings` of the line purlis builds for it under its own confinement. Before, every chat
 /// on the machine was handed the one `/tmp/claude-<uid>`, so one chat's file of a name took the
 /// place of another's. Binds the chats' proxies; runs where `PURLIS_CLAUDE_CODE` names Claude
