@@ -241,11 +241,6 @@ fn answer(
     {
         let held = held_to.lock().unwrap();
         if !held.is_empty() && !held.iter().any(|one| one == host) {
-            // RED-PROOF: refused as the proxy once did, with a 403 a plain request commits.
-            drop(held);
-            heard.lock().unwrap().push(format!("refused {host}"));
-            let mut out = stream;
-            let _ = respond(&mut out, "403 Forbidden", "text/plain", &[], b"refused");
             return;
         }
     }
