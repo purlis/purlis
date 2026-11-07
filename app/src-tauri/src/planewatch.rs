@@ -717,7 +717,9 @@ impl<W: notify::Watcher + Send + 'static> Watch<W> {
     ) -> notify::Result<Self> {
         // The platform reports paths as the disk spells them, which a root opened through a
         // link (`/var` for `/private/var` on macOS) is not.
+        let t0 = std::time::Instant::now(); // [DEBUG-5672]
         let spelled = root.canonicalize().ok();
+        let t_canon = t0.elapsed(); // [DEBUG-5672]
         let listened = Listened {
             folders: Arc::default(),
             root: root.to_path_buf(),
@@ -745,7 +747,9 @@ impl<W: notify::Watcher + Send + 'static> Watch<W> {
             };
             notify::EventHandler::handle_event(&mut send, event);
         };
+        let t = std::time::Instant::now(); // [DEBUG-5672]
         let watcher = W::new(heard, config)?;
+        let t_new = t.elapsed(); // [DEBUG-5672]
         let inner = Arc::new(Mutex::new(Inner {
             watcher: Some(watcher),
             mode,
@@ -755,9 +759,11 @@ impl<W: notify::Watcher + Send + 'static> Watch<W> {
             lapsed: false,
             rewatch: Rewatch::default(),
         }));
+        let t = std::time::Instant::now(); // [DEBUG-5672]
         let first = {
             let mut inner = inner.lock().unwrap_or_else(PoisonError::into_inner);
             inner.follow(root);
+            tracing::info!("[DEBUG-5672] follow total {} ms", t.elapsed().as_millis());
             // The root is where a workspace or a persona arriving is heard: without it the
             // watch could never become whole, so it is no watch.
             if inner.unwatched.contains(root) {
@@ -824,10 +830,17 @@ impl<W: notify::Watcher + Send + 'static> Watch<W> {
                 })
                 .map_err(notify::Error::io)?;
         }
+        let t = std::time::Instant::now(); // [DEBUG-5672]
         if mode == Mode::OneStream {
             covering(root, true);
         }
+        let t_cover = t.elapsed(); // [DEBUG-5672]
+        let t = std::time::Instant::now(); // [DEBUG-5672]
         windows.watching(root);
+        tracing::info!(
+            "[DEBUG-5672] watch phases: canonicalize {:?} new {:?} cover {:?} windows {:?} total-so-far {:?}",
+            t_canon, t_new, t_cover, t.elapsed(), t0.elapsed()
+        );
         // The focus count the first look stands at, read here and not on the look's thread: a
         // focus between this start and that thread's first read would otherwise be counted as
         // already seen, and wait out a whole `every` (#1731).
@@ -965,8 +978,11 @@ impl<W: notify::Watcher> Inner<W> {
         let Some(watcher) = self.watcher.as_mut() else {
             return;
         };
+        let t = std::time::Instant::now(); // [DEBUG-5672]
         let wanted = wanted(root);
-        self.unwatched = match self.mode {
+        tracing::info!("[DEBUG-5672] wanted {} folders in {:?}", wanted.len(), t.elapsed());
+        let t = std::time::Instant::now(); // [DEBUG-5672]
+        let unwatched = match self.mode {
             Mode::PerFolder => crate::watchset::follow(watcher, &mut self.watched, wanted),
             Mode::OneStream => {
                 let stream = wanted.iter().filter(|dir| *dir == root).cloned().collect();
@@ -980,6 +996,8 @@ impl<W: notify::Watcher> Inner<W> {
                 unwatched
             }
         };
+        tracing::info!("[DEBUG-5672] platform watch calls in {:?}", t.elapsed());
+        self.unwatched = unwatched;
         if !self.unwatched.is_empty() {
             self.lapsed = true;
         }

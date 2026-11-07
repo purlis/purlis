@@ -101,6 +101,9 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Command::Index { project } => {
+            if std::env::var_os("PURLIS_DEBUG_5672_FRESH").is_some() {
+                let _ = std::fs::remove_dir_all(purlis_core::projectindex::home(&project)); // [DEBUG-5672]
+            }
             let started = Instant::now();
             // What `projectindex::Keeper` does before it hears its first change: build (or
             // sweep) the index, then record the git standing the briefing reads in its place.
@@ -112,6 +115,7 @@ fn main() -> ExitCode {
                 }
             };
             let built = started.elapsed().as_secs_f64() * 1000.0;
+            eprintln!("{} built={built:.0}", purlis_core::projectindex::dbg5672::report()); // [DEBUG-5672]
             let standing = purlis_core::planegit::shared_standing(&project);
             if let Err(why) = writer.record_standing(&standing) {
                 eprintln!("scale-project: the standing is not recorded: {why}");

@@ -158,6 +158,28 @@ jobs:
           # would be a second app, and a load nobody measures.
           pkill -f "$CHARTER_TARGET_DIR/purlis-app" || true
           ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}npm run e2e:scale
+      # [DEBUG-5672] temporary: the full build's phases under variants.
+      - name: "[DEBUG-5672] index build phases"
+        if: always() && steps.built.outcome == 'success'
+        shell: bash
+        env:
+          PURLIS_HOME: ${{ runner.temp }}/dbg-5672-home
+          PURLIS_DEBUG_5672_FRESH: "1"
+        run: |
+          set -u
+          nproc 2>/dev/null || sysctl -n hw.ncpu hw.memsize
+          df -h "$RUNNER_TEMP" || true
+          run() { echo "== $*"; env "$@" target/release/scale-project index --project "$PURLIS_SCALE_PLANE" 2>&1 | grep -v '^{' ; }
+          run X=default
+          run X=default-again
+          run PURLIS_DEBUG_5672_THREADS=1
+          run PURLIS_DEBUG_5672_THREADS=3
+          run PURLIS_DEBUG_5672_THREADS=8
+          run PURLIS_DEBUG_5672_SYNC=OFF
+          run PURLIS_DEBUG_5672_JOURNAL=OFF PURLIS_DEBUG_5672_SYNC=OFF
+          run PURLIS_DEBUG_5672_JOURNAL=MEMORY
+          if [ "$RUNNER_OS" = macOS ]; then sync; sudo purge; echo purged; run X=cold; fi
+          du -sh "$PURLIS_HOME" || true
       - name: This system's numbers, in the job summary
         if: always()
         run: |
