@@ -1089,6 +1089,51 @@ fn allow_once_is_given_back_only_to_a_login_that_never_ran() {
     assert!(tool_of(&grants, "shop-login").is_none(), "answered once");
 }
 
+/// A call cancelled while its notice waits is noticed: the notice goes, and nothing is held for
+/// the chat's next call.
+#[test]
+fn a_call_whose_asker_hung_up_ends_its_wait_and_its_notice() {
+    let dir = project("");
+    let grants = Grants::default();
+    let (id, _, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
+    let looked = std::cell::Cell::new(0);
+    let gone = || {
+        looked.set(looked.get() + 1);
+        looked.get() >= 2
+    };
+    let started = Instant::now();
+
+    let waited = waited_for_the_person(&grants, id, &heard, Duration::from_secs(600), &gone);
+
+    assert_eq!(waited, Waited::AskerGone);
+    assert!(
+        started.elapsed() < Duration::from_secs(60),
+        "it looked again, and stopped"
+    );
+    assert!(grants.waiting().is_empty(), "the notice went");
+    assert!(tool_of(&grants, "shop-login").is_none());
+}
+
+#[test]
+fn a_wait_nobody_answers_ends_its_notice_and_a_press_in_time_is_heard() {
+    let dir = project("");
+    let grants = Grants::default();
+    let (id, _, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
+    let here = || false;
+    assert_eq!(
+        waited_for_the_person(&grants, id, &heard, Duration::from_millis(20), &here),
+        Waited::NotAnswered
+    );
+    assert!(grants.waiting().is_empty(), "the notice went");
+
+    let (id, _, heard) = raised(dir.path(), &grants, "https://shop.example.test/");
+    grants.end(id, Heard::Kept(None));
+    assert_eq!(
+        waited_for_the_person(&grants, id, &heard, Duration::from_secs(600), &here),
+        Waited::Heard(Heard::Kept(None))
+    );
+}
+
 /// The person's ruling of 2026-11-07: a runner chat's notice, which no call waits on, goes after
 /// as long as a waiting call waits, unless it was answered or its chat closed by then.
 #[test]

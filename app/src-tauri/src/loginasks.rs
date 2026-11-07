@@ -29,7 +29,7 @@
 
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard, PoisonError, mpsc};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use purlis_core::hookwire::{Answer, BrowseAsk, Browsing};
 use purlis_core::loginask::{self, FindsForm, Proposal, Suggested};
@@ -425,11 +425,14 @@ pub const NOT_ANSWERED: &str = "nobody answered about this login in time, so not
 /// persona, one its host composed, a call that suggests nothing, or a browser nobody allowed yet,
 /// whose Ask comes first. Otherwise it answers with why not, or having waited. Allowed answers
 /// `None`, and the normal path fills what's now held.
+///
+/// `gone` says whether the call's asker hung up: its wait then ends, and its notice goes with it.
 pub fn before_the_login(
     held: &Held,
     browse: &BrowseAsk,
     pool: Option<&str>,
     now: u64,
+    gone: &dyn Fn() -> bool,
 ) -> Option<Answer> {
     let Browsing::LogIn { login, suggested } = &browse.asked else {
         return None;
@@ -533,22 +536,78 @@ pub fn before_the_login(
         let_go_unanswered(held, session, login, id, heard);
         return no(asked_on_a_runner_said(login, pool));
     }
-    match heard.recv_timeout(loginask::THE_PERSON_IS_WAITED_FOR) {
-        Ok(Heard::Allowed) => None,
-        Ok(Heard::Kept(reason)) => no(match &replaces {
+    let waited =
+        waited_for_the_person(grants, id, &heard, loginask::THE_PERSON_IS_WAITED_FOR, gone);
+    match waited {
+        Waited::Heard(Heard::Allowed) => None,
+        Waited::Heard(Heard::Kept(reason)) => no(match &replaces {
             Some(old) => kept_where_it_is_said(login, &old.page, reason.as_deref()),
             None => kept_said(login, reason.as_deref()),
         }),
-        Ok(Heard::Gone) | Err(mpsc::RecvTimeoutError::Disconnected) => no(NOT_ANSWERED.to_owned()),
-        Err(mpsc::RecvTimeoutError::Timeout) => {
-            // A press in that very moment has ended it, and its answer is waiting here.
-            if !grants.end(id, Heard::Gone)
-                && let Ok(Heard::Allowed) = heard.try_recv()
-            {
-                return None;
-            }
+        Waited::Heard(Heard::Gone) => no(NOT_ANSWERED.to_owned()),
+        Waited::NotAnswered => {
             held.chats().asks_may_have_moved();
             no(NOT_ANSWERED.to_owned())
+        }
+        Waited::AskerGone => {
+            tracing::info!("purlis: chat {session}'s browser login call ended, so its notice went");
+            held.chats().asks_may_have_moved();
+            no(ASKER_GONE.to_owned())
+        }
+    }
+}
+
+/// What a call is answered where its asker hung up while its notice waited: nobody reads it.
+const ASKER_GONE: &str = "the call ended while the person was asked, so its notice went and \
+                          nothing was filled";
+
+/// **How a wait on the person ended** ([`waited_for_the_person`]).
+#[derive(Debug, PartialEq, Eq)]
+enum Waited {
+    /// The press, or the chat's close.
+    Heard(Heard),
+    /// Nobody answered in time: the notice went.
+    NotAnswered,
+    /// The call's asker hung up: the notice went.
+    AskerGone,
+}
+
+/// How often a waiting call looks whether its asker hung up.
+const LOOKS_AGAIN: Duration = Duration::from_secs(1);
+
+/// **The answer to the notice numbered `id`**, waited for `at_most`, looking every
+/// [`LOOKS_AGAIN`] whether the call's asker is `gone`: past the time, or with nobody waiting any
+/// more, the notice goes. A press in that very moment wins, and its answer is what was heard.
+fn waited_for_the_person(
+    grants: &Grants,
+    id: u32,
+    heard: &mpsc::Receiver<Heard>,
+    at_most: Duration,
+    gone: &dyn Fn() -> bool,
+) -> Waited {
+    let until = Instant::now() + at_most;
+    loop {
+        let left = until.saturating_duration_since(Instant::now());
+        match heard.recv_timeout(left.min(LOOKS_AGAIN)) {
+            Ok(one) => return Waited::Heard(one),
+            Err(mpsc::RecvTimeoutError::Disconnected) => return Waited::Heard(Heard::Gone),
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                let hung_up = gone();
+                if !hung_up && Instant::now() < until {
+                    continue;
+                }
+                // A press in that very moment has ended it, and its answer is waiting here.
+                if !grants.end(id, Heard::Gone)
+                    && let Ok(one) = heard.try_recv()
+                {
+                    return Waited::Heard(one);
+                }
+                return if hung_up {
+                    Waited::AskerGone
+                } else {
+                    Waited::NotAnswered
+                };
+            }
         }
     }
 }
