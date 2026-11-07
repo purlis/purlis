@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794037772275,
+  "lastUpdate": 1794040046033,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -41874,6 +41874,48 @@ window.BENCHMARK_DATA = {
             "value": 102.4848345,
             "unit": "ms",
             "extra": "median of 5 runs: 102.044, 102.157, 102.485, 103.680, 103.848 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "3b98a93bb15b7631df602e53624a1115ac71fcc1",
+          "message": "The strip's + lists what opens in a new tab; ⌘T, ⌘N; an empty pane that asks (#5292) (#5487)\n\n* The strip's + lists what opens in a new tab, ⌘T and ⌘N, and an empty pane that asks (#5292)\n\nPressing + still opens an empty tab. A rest on it (160 ms) or Down shows a list drawn\nfrom the action catalogue: Empty tab, New chat and New shell, then the views, each with\nits key; past 8 rows it has a filter. Every row means a new tab (the call from #5297),\nso the opening rule gains ownTab. ⌘T is tab.new and ⌘N chat.new, ⌘⇧T stays New shell.\nAn empty pane asks what goes here, offers New chat and New shell and says a chat can be\ndragged in. A tab of one empty pane is called Empty tab.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6R2AWK4XFPSYNJAJQPWPBNR\nPurlis-Persona: steward\n\n* The + list's stories and window test (#5292)\n\nStories walk the list by the keyboard (Down, Esc back to +, Enter, the filter and its\nnothing-matches line); no picture waits on a rest or a tooltip. The window test says what\neach way of opening leaves: + an empty tab named Empty tab, closed without asking; each\nrow of the list a tab of its own; ⌘T and ⌘N; and the empty pane's New shell filling it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6R2AWK4XFPSYNJAJQPWPBNR\nPurlis-Persona: steward\n\n* Commit the + list's own files (#5292)\n\nNewTabButton, newTabList and their tests, the changelog fragment and the ADR 0043\namendment were left out of the first commit, which named no new file. A keyboard press\non + no longer blocks the next rest from opening the list.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6R2AWK4XFPSYNJAJQPWPBNR\nPurlis-Persona: steward\n\n* Review fixes for the + list (#5292)\n\n- An empty pane's headline is a claim, \"Nothing in this pane yet\", as docs/ui-copy.md asks\n  of every empty state, where the prototype asked \"What goes here?\". Its body names the\n  sidebar, as the window does.\n- A filtered list's \"nothing matches\" line is the popover family's own part, none (since\n  NEXT), drawn quiet; the menu's filter and the select's both use it, where the menu had\n  borrowed the group header (which capitalises) and the select drew an undeclared part.\n- The menu family's filter has a story of its own; the + list's Filtered picture waits for\n  the aimed row.\n- The changelog no longer claims ⌘T was a new chat: neither key did anything before.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6R2AWK4XFPSYNJAJQPWPBNR\nPurlis-Persona: steward\n\n* Stories wait on the field's aim; the last test that named the empty tab New chat (#5292)\n\nThe filter stories wait for the field's aria-activedescendant to name the aimed row, where\nthey waited on a data-focused mark the row never carries. Format two files the copy change\nleft unformatted.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6R2AWK4XFPSYNJAJQPWPBNR\nPurlis-Persona: steward\n\n* The filter stories wait for React Aria's own aim, and press no key that races it (#5292)\n\nIn a browser React Aria aims a filtered list's first row a moment after the typing, so a\nDown pressed before that landed on the second row in Chromium. The pictures now wait for\nthe field to name the first row.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6R2AWK4XFPSYNJAJQPWPBNR\nPurlis-Persona: steward\n\n* Pictures for the + list, the empty pane, the menu's filter and the cheat sheet (#5292)\n\nDrawn by this pull request's stories run 42224929546 and taken with\ntools/story-baselines-pull.mjs: the + list's three stories, the empty pane's new copy and\nNew shell, the menu family's AFilter, and the cheat sheet's ⌘T and ⌘N rows.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6R2AWK4XFPSYNJAJQPWPBNR\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-07T07:29:41Z",
+          "tree_id": "9d24c26829780f4dc554ad3f7add948f8bf2b876",
+          "url": "https://github.com/purlis/purlis/commit/3b98a93bb15b7631df602e53624a1115ac71fcc1"
+        },
+        "date": 1794040041591,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.551859,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.550, 0.551, 0.552, 0.552, 0.563 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.173275500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.986, 16.129, 16.173, 16.249, 16.290 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.490129,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.718, 101.054, 101.490, 101.848, 102.178 ms"
           }
         ]
       }
