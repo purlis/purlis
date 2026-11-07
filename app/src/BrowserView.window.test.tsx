@@ -641,6 +641,21 @@ describe("a browser the person opened goes where they send it (#2176)", () => {
     expect(screen.queryByText(/on this (Mac|computer)/)).toBeNull();
   });
 
+  it("names no site, plainly, once its page is told with none", async () => {
+    const host = await opened();
+    host.page("http://localhost:5173");
+    expect(await screen.findByText(/^localhost:5173 on this/)).toBeInTheDocument();
+
+    // A page whose address holds what purlis kept out is told with no site at all.
+    host.page(null);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("browser-chip")).toHaveTextContent(/^On this (Mac|computer)$/),
+    );
+    expect(screen.queryByText(/localhost:5173/)).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("names no device while neither its view nor the chats' browsers say where it runs (#2050)", async () => {
     watchAnswers = false;
     besides.chat_browsers = () => [];

@@ -102,6 +102,41 @@ fn a_click_on_a_scrolled_page_where_a_frame_of_the_site_is_drawn_is_refused() {
     );
 }
 
+/// Through a frame of another site, in a process of its own, on a page scrolled down: the point
+/// is followed into that frame's document as far as it is scrolled too, so a frame of the site
+/// drawn there over the other site's button takes the click and refuses it, and a button of that
+/// document drawn clear of it is pressed.
+#[test]
+fn a_click_in_a_scrolled_frame_where_a_frame_of_the_site_is_drawn_is_refused() {
+    let Some((browser, _folder, site)) = started_judged(going()) else {
+        return;
+    };
+    let signing_in = Arc::new(AtomicBool::new(false));
+    browser.keep_off(kept_off(&signing_in));
+
+    open(&browser, "kept-frame-in-a-scrolled-frame.html");
+    let start = Instant::now();
+    while !site.was_sent("GET auth.fixture.test/frame.html") {
+        assert!(start.elapsed() < Duration::from_secs(10), "the frame loads");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    std::thread::sleep(Duration::from_millis(500));
+    let found = find(&browser, "Press");
+    let under = ref_on(&found, "Press under the frame");
+    let beside = ref_on(&found, "Press beside the frame");
+
+    assert_eq!(
+        refused(&browser, Call::Click { target: under }),
+        kept_off_refusal(false),
+        "drawn on the provider's frame"
+    );
+    call(&browser, Call::Click { target: beside });
+    assert!(
+        find(&browser, "Pressed beside the frame").contains("Pressed beside the frame"),
+        "drawn on the other site's own document"
+    );
+}
+
 #[test]
 fn a_site_the_agent_is_kept_off_loads_and_is_neither_read_nor_acted_on() {
     let Some((browser, folder, site)) = started_judged(going()) else {
