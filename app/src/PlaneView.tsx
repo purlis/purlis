@@ -10168,6 +10168,12 @@ export const PlaneView = memo(function PlaneView({
     (session: number, where: TaskPlace) => placeNow.current(session, where),
     [],
   );
+  /** The catalogue's row a task's line in a tab's menu presses to move it (#5679): read as the
+   *  line is drawn, so its button says that row's title. */
+  const placeRowFromChip = useCallback(
+    (session: number, where: TaskPlace) => byNow.current(placeRowId(session, where)),
+    [],
+  );
   /** What a tab's chats used, for its menu (#1500): read only as the window asks. */
   const usedFromChip = useCallback((ask: UsedAsk) => readUsed(plane, "menu", ask), [plane]);
   /** Opens a session's Activity from its tab's menu (#1495): the view the catalogue's
@@ -10278,6 +10284,7 @@ export const PlaneView = memo(function PlaneView({
           ends={taskEndsOf}
           onPress={pressTaskEnd}
           onPlace={placeFromChip}
+          placeOf={placeRowFromChip}
           used={usedFromChip}
           // The limits of this pane's own chat, the menu's first row (#1498).
           limits={runningSaid(rows[0])}
@@ -10298,6 +10305,7 @@ export const PlaneView = memo(function PlaneView({
       isDragging,
       nameOf,
       placeFromChip,
+      placeRowFromChip,
       pressTaskEnd,
       showPickedIn,
       stopAllOf,
