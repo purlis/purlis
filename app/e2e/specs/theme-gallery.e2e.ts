@@ -160,7 +160,7 @@ async function surfaceBecomes(want: string | readonly string[], why: string): Pr
       { timeout: 20_000 },
     );
   } catch {
-    const window = await browser.execute((card: string) => {
+    const seen = await browser.execute((card: string) => {
       const cards = document.querySelectorAll<HTMLElement>(card);
       const it = cards[0];
       return {
@@ -177,7 +177,7 @@ async function surfaceBecomes(want: string | readonly string[], why: string): Pr
     }, CARD);
     throw new Error(
       `${why}: the window drew ${saw || "nothing"}, not ${wanted.join(" or ")} ` +
-        `(${JSON.stringify(window)})`,
+        `(${JSON.stringify(seen)})`,
     );
   }
 }
