@@ -20,7 +20,13 @@ import {
   secretAsk,
 } from "./secretAsk.testkit";
 import { SecretAskNotice } from "./SecretAskNotice";
-import { expectFocusInSight, inAWindow, untilFocused, untilSettled } from "./stories.testkit";
+import {
+  expectFocusInSight,
+  inAWindow,
+  pictureNow,
+  untilFocused,
+  untilSettled,
+} from "./stories.testkit";
 import { Card } from "./ui/card/Card";
 
 /** The card the Inbox draws an ask on, around the notice. */
@@ -72,6 +78,13 @@ const meta = {
 
 export default meta;
 type Story = StoryObj<typeof meta>;
+
+/** **A click that leaves no hover behind**: the pointer leaves what it pressed, so the picture
+ *  never finds it drawn hovered in one run and not the next. */
+async function clickAway(target: Element) {
+  await userEvent.click(target);
+  await userEvent.unhover(target);
+}
 
 /** The press the story's notice sent last: its option's id and what it gave. */
 function pressed(onAnswer: unknown) {
@@ -167,7 +180,7 @@ export const ScopeForThisChat: Story = {
   play: async ({ canvasElement }) => {
     await inAWindow(TALL.width, TALL.height);
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("radio", { name: "Allow once" }));
+    await clickAway(canvas.getByRole("radio", { name: "Allow once" }));
     await userEvent.keyboard("{ArrowRight}");
     await untilFocused(
       () => canvas.getByRole("radio", { name: "Allow for this chat" }),
@@ -188,7 +201,7 @@ export const ScopeAlways: Story = {
   play: async ({ canvasElement }) => {
     await inAWindow(TALL.width, TALL.height);
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("radio", { name: "Always allow" }));
+    await clickAway(canvas.getByRole("radio", { name: "Always allow" }));
     await expect(canvas.getByTestId("sa-tool-line")).toHaveTextContent('curl = { vault = "team"');
     await expect(canvas.getByTestId("sa-others-wait")).toHaveTextContent("moves with this line");
     await expect(canvas.getByTestId("sa-env-advice")).toBeVisible();
@@ -210,7 +223,7 @@ export const ScopeAlwaysOthersPending: Story = {
   play: async ({ canvasElement }) => {
     await inAWindow(TALL.width, TALL.height);
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("radio", { name: "Always allow" }));
+    await clickAway(canvas.getByRole("radio", { name: "Always allow" }));
     await expect(canvas.getByTestId("sa-others-wait")).toHaveTextContent(
       "This approves only this line: their notice stays up",
     );
@@ -225,7 +238,7 @@ export const ScopeDont: Story = {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByLabelText("Value of STRIPE_API_KEY"));
     await userEvent.keyboard("sk_test_v4lue");
-    await userEvent.click(canvas.getByRole("radio", { name: "Allow once" }));
+    await clickAway(canvas.getByRole("radio", { name: "Allow once" }));
     await userEvent.keyboard("{ArrowRight}{ArrowRight}{ArrowRight}");
     await untilFocused(() => canvas.getByRole("radio", { name: "Don't allow" }), "Don't allow");
     await expect(canvas.getByTestId("sa-scope-said")).toHaveTextContent(
@@ -488,7 +501,7 @@ export const BrokenLink: Story = {
 export const PickAnEntry: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("radio", { name: "Use an entry I have" }));
+    await clickAway(canvas.getByRole("radio", { name: "Use an entry I have" }));
     const picker = await canvas.findByRole("button", { name: /Entry STRIPE_API_KEY reads/ });
     await userEvent.click(picker);
     const page = within(canvasElement.ownerDocument.body);
@@ -514,7 +527,7 @@ export const ThePickerOpen: Story = {
   parameters: { screenshot: "page" },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("radio", { name: "Use an entry I have" }));
+    await clickAway(canvas.getByRole("radio", { name: "Use an entry I have" }));
     const picker = await canvas.findByRole("button", { name: /Entry STRIPE_API_KEY reads/ });
     await userEvent.click(picker);
     const page = within(canvasElement.ownerDocument.body);
@@ -522,8 +535,10 @@ export const ThePickerOpen: Story = {
     await expect(await page.findByRole("option", { name: "STRIPE_TEST_KEY" })).toBeInTheDocument();
     await expect(page.getByRole("option", { name: "SENTRY_DSN" })).toBeInTheDocument();
     await document.fonts.ready;
-    // Pictured once the popover is done arriving and placed.
+    // Pictured once the popover is done arriving and placed, and there and then: after the
+    // story it may already be closing.
     await untilSettled(page.getByRole("listbox"));
+    await pictureNow();
   },
 };
 
@@ -531,7 +546,7 @@ export const ThePickerOpen: Story = {
 export const PickNothingYet: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("radio", { name: "Use an entry I have" }));
+    await clickAway(canvas.getByRole("radio", { name: "Use an entry I have" }));
     await userEvent.click(canvas.getByRole("button", { name: "Fill and allow once" }));
     await expect(args.onSaid).toHaveBeenCalledWith(
       "Pick an entry for STRIPE_API_KEY, or choose New value.",
@@ -616,7 +631,7 @@ export const InAnOrdinaryWindow: Story = {
       if (foot === undefined || last.bottom > foot.top)
         throw new Error(`the last line (${last.bottom}) runs under the bar (${foot?.top})`);
     });
-    await userEvent.click(canvas.getByRole("radio", { name: "Allow once" }));
+    await clickAway(canvas.getByRole("radio", { name: "Allow once" }));
     await untilFocused(() => canvas.getByRole("radio", { name: "Allow once" }), "the Allow");
     expectFocusInSight();
   },
