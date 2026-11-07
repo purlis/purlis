@@ -707,6 +707,36 @@ pub async fn docker_pool_remove_held_runner(
     }
 }
 
+/// **Lets the older runner `runner` go, as the person pressed Let it go in Devices** (the
+/// person's ruling of 2026-11-07): a draining runner the drain keeps for work no fetch brings
+/// here, removed with that work ([`crate::poolfollow::let_go`]). Its pool and the pool's runner
+/// now are untouched. The window's alone, as removing a held runner is. Why not, where it does
+/// not go.
+#[tauri::command]
+#[specta::specta]
+pub async fn docker_pool_let_runner_go(
+    app: tauri::AppHandle,
+    runner: String,
+) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("letting an older runner go", move || {
+            let machine = Machine::here(&config_root()?)?;
+            crate::poolfollow::let_go(&machine, &runner, &|to| crate::runnerlinks::chats_on(to))?;
+            if let Some(host) = tauri::Manager::try_state::<crate::sessionhost::SessionHost>(&app) {
+                host.connection().links_to_gone_runners_end(&machine.config);
+            }
+            Ok(())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (app, runner);
+        Err(NOT_HERE.to_owned())
+    }
+}
+
 /// **Brings back the held runner `runner`'s conversations to its pool's runner, as the person
 /// pressed** (#4633, ruled 2026-11-02), and then removes it, once none is left behind
 /// ([`purlis_core::pools::bring_back`]). The window's alone, as removing one is. What stopped

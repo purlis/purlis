@@ -59,6 +59,7 @@ import { AddDockerPoolHost } from "../AddDockerPool";
 import { startAddingAPool } from "../pools";
 import { ReplaceRunner } from "../settings/PoolLimits";
 import { DiscardHeldRunner, RemovePool } from "../settings/pools";
+import { LetRunnerGo } from "../KeptRunnerNotice";
 import { StartOverAsk } from "../AgentIdentityFlow";
 import { RemoveIdentity } from "../AgentIdentityTab";
 import { RemoveProfile } from "../settings/profiles";
@@ -1052,6 +1053,20 @@ const DIALOGS: Opened[] = [
     open: async () =>
       render(
         <DiscardHeldRunner name="builds-old" ask="again" onGoOn={nothing} onCancel={nothing} />,
+      ),
+  },
+  {
+    name: "letting an older runner go with the work it holds",
+    file: "KeptRunnerNotice.tsx",
+    open: async () =>
+      render(
+        <LetRunnerGo
+          runner="builds-old"
+          pool="builds"
+          left={["the project's own repository on the runner holds 1 stashed change"]}
+          onGo={nothing}
+          onCancel={nothing}
+        />,
       ),
   },
   {

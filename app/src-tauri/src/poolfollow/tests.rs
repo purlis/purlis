@@ -948,3 +948,98 @@ fn a_pruned_draining_runner_whose_home_holds_none_is_forgotten() {
     assert_eq!(names(&machine), ["first-fedcba98"], "{said:?}");
     assert!(said[0].contains("removed outside purlis"), "{said:?}");
 }
+
+/// A runner that holds a stash of the project's own repository no fetch brings.
+fn holds_a_stash(_: &ToARunner) -> Result<Vec<String>, String> {
+    Ok(vec![
+        "in project ide, the project's own repository on the runner holds 1 stashed change \
+         (refs/stash), which Fetch again does not bring back"
+            .to_owned(),
+    ])
+}
+
+/// **Let it go frees the runner the check kept, and only it** (ruled 2026-11-07): the person
+/// pressed it in Devices, so the runner is removed with what it holds, and the pool keeps its
+/// runner now.
+#[test]
+fn a_runner_kept_for_work_left_on_it_goes_when_the_person_lets_it_go_and_the_pool_stays() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine(config.path());
+    a_pool_draining(&machine);
+    follow_and_drain(&machine, None, &|_| Ok(0), &holds_a_stash);
+    assert_eq!(names(&machine), ["first", "first-fedcba98"]);
+    assert_eq!(left_by(&machine.config, "first", "first").len(), 1);
+
+    let_go(&machine, "first", &|_| Ok(0)).unwrap();
+
+    assert_eq!(names(&machine), ["first-fedcba98"]);
+    assert_eq!(
+        runners::pools(&machine.config)
+            .unwrap()
+            .iter()
+            .map(|pool| pool.name().to_owned())
+            .collect::<Vec<_>>(),
+        ["first"],
+        "the pool stays"
+    );
+    assert_eq!(
+        left_by(&machine.config, "first", "first"),
+        Vec::<String>::new()
+    );
+    assert_eq!(left_on(&machine.config, "first"), Vec::<String>::new());
+    let log = std::fs::read_to_string(config.path().join("log")).unwrap();
+    assert!(
+        log.contains(&format!(
+            "container rm --force --volumes {}",
+            "a".repeat(64)
+        )),
+        "{log}"
+    );
+    assert!(
+        !log.contains(&format!(
+            "container rm --force --volumes {}",
+            "b".repeat(64)
+        )),
+        "the pool's runner now is untouched: {log}"
+    );
+}
+
+/// **Only a runner the check kept is let go**: one no look has kept for work left on it, and the
+/// pool's runner now, are refused, and nothing is removed.
+#[test]
+fn only_a_runner_kept_for_work_left_on_it_is_let_go() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine(config.path());
+    a_pool_draining(&machine);
+
+    let draining = let_go(&machine, "first", &|_| Ok(0)).unwrap_err();
+    let now = let_go(&machine, "first-fedcba98", &|_| Ok(0)).unwrap_err();
+    let none = let_go(&machine, "nobody", &|_| Ok(0)).unwrap_err();
+
+    assert!(
+        draining.contains("not kept for work left on it"),
+        "{draining}"
+    );
+    assert!(now.contains("not draining"), "{now}");
+    assert!(none.contains("not draining"), "{none}");
+    assert_eq!(names(&machine), ["first", "first-fedcba98"]);
+    assert!(only_looked(config.path()), "nothing is removed");
+}
+
+/// **A kept runner a chat runs on, or that does not answer, is not let go**: what runs there
+/// would go with it.
+#[test]
+fn a_kept_runner_with_a_chat_on_it_or_that_does_not_answer_is_not_let_go() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine(config.path());
+    a_pool_draining(&machine);
+    follow_and_drain(&machine, None, &|_| Ok(0), &holds_a_stash);
+
+    let running = let_go(&machine, "first", &|_| Ok(1)).unwrap_err();
+    let silent = let_go(&machine, "first", &|_| Err("down".into())).unwrap_err();
+
+    assert!(running.contains("1 chat"), "{running}");
+    assert!(silent.contains("down"), "{silent}");
+    assert_eq!(names(&machine), ["first", "first-fedcba98"]);
+    assert!(only_looked(config.path()), "nothing is removed");
+}

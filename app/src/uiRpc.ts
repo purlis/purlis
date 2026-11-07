@@ -1781,6 +1781,7 @@ export const commands = {
 	dockerPoolReplaceRunner: __WINDOW_ONLY_RESULT,
 	dockerPoolRemoveHeldRunner: __WINDOW_ONLY_RESULT,
 	dockerPoolBringBackHeldRunner: __WINDOW_ONLY_RESULT,
+	dockerPoolLetRunnerGo: __WINDOW_ONLY_RESULT,
 	dockerPoolVersion: __WINDOW_ONLY_RESULT,
 	runnerImageOfThisVersion: __WINDOW_ONLY_RESULT,
 	clusterContexts: __WINDOW_ONLY_RESULT,
@@ -11421,6 +11422,12 @@ export type RunnerOnTheList = {
 	 *  end, then purlis removes it (#2749).
 	 */
 	draining: boolean,
+	/**
+	 *  **What it holds that no fetch brings here** (ruled 2026-11-07), a sentence each, shown
+	 *  safely, as the drain's last look found it: a draining runner kept for it, which the person
+	 *  may let go of with it. Empty where none keeps it.
+	 */
+	left: string[],
 	on: OnADevice,
 };
 

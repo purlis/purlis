@@ -339,6 +339,75 @@ pub fn left_on(config: &std::path::Path, pool: &str) -> Vec<String> {
         .collect()
 }
 
+/// **What the draining runner `runner` of pool `pool` holds that no fetch brings here, as the
+/// last look found it** (ruled 2026-11-07): what Devices names before the person lets it go.
+/// Empty where no look kept it for that.
+#[cfg(unix)]
+pub fn left_by(config: &std::path::Path, pool: &str, runner: &str) -> Vec<String> {
+    lock_left()
+        .get(&(config.to_path_buf(), pool.to_owned(), runner.to_owned()))
+        .cloned()
+        .unwrap_or_default()
+}
+
+/// **Lets the draining runner `runner` go, with the work it holds that no fetch brings** (the
+/// person's ruling of 2026-11-07), as the person pressed Let it go in Devices: only a runner the
+/// drain's last look kept for that work, held by no one, with no chat on it now as `chats_on`
+/// asks. It is removed as a drain removes it; its pool, and the pool's runner now, are untouched.
+/// Why not, in a sentence, where it does not go.
+#[cfg(unix)]
+pub fn let_go(
+    machine: &Machine,
+    runner: &str,
+    chats_on: &dyn Fn(&ToARunner) -> Result<u32, String>,
+) -> Result<(), String> {
+    let kept = purlis_core::runners::named(&machine.config, runner)
+        .map_err(|why| why.to_string())?
+        .filter(|kept| kept.draining)
+        .ok_or_else(|| format!("Runner {runner} is not draining on this machine, so it stays."))?;
+    if kept.held {
+        return Err(format!(
+            "Runner {runner} is kept with its chats' conversations: bring them back or discard \
+             them instead."
+        ));
+    }
+    let at = (
+        machine.config.clone(),
+        kept.pool().to_owned(),
+        kept.name().to_owned(),
+    );
+    if lock_left().get(&at).is_none_or(Vec::is_empty) {
+        return Err(format!(
+            "Runner {runner} is not kept for work left on it, so it goes once its chats end and \
+             their work is brought back."
+        ));
+    }
+    let to = ToARunner::of_kept(machine, &kept)?;
+    // What runs there now would go with it.
+    match chats_on(&to) {
+        Ok(0) => {}
+        Ok(chats) => {
+            return Err(format!(
+                "{} still {} on runner {runner}, so it stays until {} end.",
+                purlis_core::counts::counted(chats, "chat", "chats"),
+                if chats == 1 { "runs" } else { "run" },
+                if chats == 1 { "it" } else { "they" },
+            ));
+        }
+        Err(why) => {
+            return Err(format!(
+                "Runner {runner} did not say whether a chat runs on it, so it stays: {why}"
+            ));
+        }
+    }
+    let unpair = |_: &purlis_core::runners::Kept| crate::runnerlinks::unpair(&to);
+    let removed =
+        purlis_core::pools::drain(&machine.config, &machine.docker, kept.name(), Some(&unpair))
+            .map_err(|why| why.to_string())?;
+    forget_waiting_on(&machine.config, kept.pool(), kept.name());
+    removed.left().map_or(Ok(()), Err)
+}
+
 #[cfg(unix)]
 fn lock_left() -> std::sync::MutexGuard<'static, std::collections::BTreeMap<Waiting, Vec<String>>> {
     static LEFT: std::sync::Mutex<std::collections::BTreeMap<Waiting, Vec<String>>> =

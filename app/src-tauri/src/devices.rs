@@ -45,6 +45,8 @@ pub struct KeptRunner {
     pub pool: String,
     pub runner: String,
     pub draining: bool,
+    /// What it holds that no fetch brings here, as the drain's last look found it, shown safely.
+    pub left: Vec<String>,
 }
 
 /// One chat the window has open, and the pool it runs on, as the router keeps it: `None` for
@@ -109,6 +111,10 @@ pub struct RunnerOnTheList {
     /// It was replaced by a runner of this machine's version: it keeps its chats until they
     /// end, then purlis removes it (#2749).
     pub draining: bool,
+    /// **What it holds that no fetch brings here** (ruled 2026-11-07), a sentence each, shown
+    /// safely, as the drain's last look found it: a draining runner kept for it, which the person
+    /// may let go of with it. Empty where none keeps it.
+    pub left: Vec<String>,
     pub on: OnADevice,
 }
 
@@ -197,6 +203,7 @@ pub fn placed(kept: &[KeptRunner], chats: Vec<Placed>, browsers: Vec<BrowserPlac
             pool: one.pool.clone(),
             runner: one.runner.clone(),
             draining: one.draining,
+            left: one.left.clone(),
             on: OnADevice::default(),
         })
         .collect();
@@ -1168,6 +1175,10 @@ fn kept_here() -> Result<(Vec<KeptRunner>, Vec<PoolRequests>, bool), String> {
             pool: one.pool().to_owned(),
             runner: one.name().to_owned(),
             draining: one.draining,
+            left: crate::poolfollow::left_by(&config, one.pool(), one.name())
+                .iter()
+                .map(|said| shown_safely(said))
+                .collect(),
         })
         .collect();
     let hours = purlis_core::runnerhours::read(&config);

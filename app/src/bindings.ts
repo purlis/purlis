@@ -3684,6 +3684,14 @@ export const commands = {
 	 *  it, or what is left of it, is said.
 	 */
 	dockerPoolBringBackHeldRunner: (runner: string) => typedError<null, string>(__TAURI_INVOKE("docker_pool_bring_back_held_runner", { runner })),
+	/**
+	 *  **Lets the older runner `runner` go, as the person pressed Let it go in Devices** (the
+	 *  person's ruling of 2026-11-07): a draining runner the drain keeps for work no fetch brings
+	 *  here, removed with that work ([`crate::poolfollow::let_go`]). Its pool and the pool's runner
+	 *  now are untouched. The window's alone, as removing a held runner is. Why not, where it does
+	 *  not go.
+	 */
+	dockerPoolLetRunnerGo: (runner: string) => typedError<null, string>(__TAURI_INVOKE("docker_pool_let_runner_go", { runner })),
 	/**  **Which version the pool `name`'s runner runs, against this desktop's** (#2749). */
 	dockerPoolVersion: (name: string) => typedError<PoolVersion, string>(__TAURI_INVOKE("docker_pool_version", { name })),
 	/**
@@ -14071,6 +14079,12 @@ export type RunnerOnTheList = {
 	 *  end, then purlis removes it (#2749).
 	 */
 	draining: boolean,
+	/**
+	 *  **What it holds that no fetch brings here** (ruled 2026-11-07), a sentence each, shown
+	 *  safely, as the drain's last look found it: a draining runner kept for it, which the person
+	 *  may let go of with it. Empty where none keeps it.
+	 */
+	left: string[],
 	on: OnADevice,
 };
 
