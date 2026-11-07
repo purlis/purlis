@@ -7,3 +7,10 @@
 # npm's @anthropic-ai/claude-code. 2.1.316 is the newest version purlis's own notes record
 # measuring (crates/purlis-core/src/harness/); the first nightly bumps it.
 claude-code = "2.1.316"
+# npm's @openai/codex, whose versions are Codex's `rust-v` tags. 0.167.0 is the release whose
+# source the grader's reading of `codex exec --json` and `--dangerously-bypass-hook-trust` was
+# checked against (#5728); purlis's own notes measured 0.163.0 last.
+codex = "0.167.0"
+# npm's opencode-ai. 1.19.5 is the release whose source the grader's reading of `opencode run
+# --format json` was checked against (#5728); purlis's own notes measured 1.18.33 last.
+opencode = "1.19.5"

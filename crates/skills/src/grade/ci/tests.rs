@@ -55,7 +55,7 @@ fn briefed_skills() -> Vec<crate::Skill> {
     vec![
         skill("purlis-secrets", "app/src-tauri/plugin/skills"),
         skill("purlis-browser", "app/src-tauri/plugin/skills"),
-        skill("vault-credentials", "ci/skill-grades/crowd"),
+        skill("vault-credentials", "ci/skill-grades/crowd/skills"),
     ]
 }
 

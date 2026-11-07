@@ -17,8 +17,10 @@ use purlis_skills::grade::ci;
 
 /// **A grade to run**: one harness, the built-ins to grade, and where the runs' output is kept.
 pub struct Ask<'a> {
-    /// The `claude` to start.
-    pub claude: &'a Path,
+    /// The harness graded: each is its own grade, with its own key and its own result.
+    pub harness: ci::Harness,
+    /// Its program to start: `claude`, `codex` or `opencode`.
+    pub program: &'a Path,
     /// The `purlis` the plugin's hooks and the MCP server run.
     pub purlis: &'a Path,
     /// purlis's plugin: its manifest, hooks and built-in skills.
@@ -48,16 +50,31 @@ pub enum Graded {
     Done { passed: bool, summary: String },
 }
 
-/// The line a grade without its key says.
-pub const NO_KEY: &str = "Skill trigger grades skipped: no `ANTHROPIC_API_KEY` from the \
-`skill-grades` environment (it is not set up, or this is a fork's pull request, which is never \
-handed it), so nothing was graded.";
+/// **The `skill-grades` environment's secret a harness runs on** (spec #5714, decision Q10):
+/// Codex on an OpenAI key, Claude Code and opencode on the Anthropic one.
+pub fn key_name(harness: ci::Harness) -> &'static str {
+    match harness {
+        ci::Harness::Codex => "OPENAI_API_KEY",
+        ci::Harness::ClaudeCode | ci::Harness::Opencode => "ANTHROPIC_API_KEY",
+    }
+}
 
-/// **Grade `ask`'s built-ins on Claude Code**: each trigger test [`purlis_skills::grade::RUNS`]
+/// The line a grade of `harness` without its key says.
+pub fn no_key(harness: ci::Harness) -> String {
+    format!(
+        "Skill trigger grades on {} skipped: no `{}` from the `skill-grades` environment (it is \
+         not set up, or this is a fork's pull request, which is never handed it), so nothing was \
+         graded.",
+        harness.name(),
+        key_name(harness)
+    )
+}
+
+/// **Grade `ask`'s built-ins on its harness**: each trigger test [`purlis_skills::grade::RUNS`]
 /// times among the crowd and as many bare, scored by [`ci::score`].
 pub fn grade(ask: &Ask<'_>) -> Graded {
     let Some(key) = ask.key.map(str::trim).filter(|key| !key.is_empty()) else {
-        return Graded::Skipped(NO_KEY.to_owned());
+        return Graded::Skipped(no_key(ask.harness));
     };
     let skills_dir = ask.plugin.join("skills");
     let graded: Vec<ci::Graded> = ask
@@ -67,14 +84,15 @@ pub fn grade(ask: &Ask<'_>) -> Graded {
         .collect();
     let runs = launch::run_all(ask, key, &graded);
     let built_ins = launch::built_ins(&skills_dir);
-    let (version, model) = launch::ran_as(&runs);
+    let (version, model) = launch::ran_as(ask, &runs);
+    let briefed = launch::briefed(ask);
     let card = ci::score(&ci::Grade {
-        harness: ci::Harness::ClaudeCode,
+        harness: ask.harness,
         version: version.as_deref().unwrap_or(ask.pinned),
-        model: model.as_deref().unwrap_or("unknown"),
+        model: model.as_deref().unwrap_or(launch::MODEL_NOT_SAID),
         briefed: ci::Briefed {
             cwd: ask.cwd,
-            skills: &[],
+            skills: &briefed,
         },
         built_ins: &built_ins,
         skills: &graded,

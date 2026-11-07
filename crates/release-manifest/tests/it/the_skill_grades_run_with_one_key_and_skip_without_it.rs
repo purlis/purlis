@@ -1,13 +1,15 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! The CI grader's workflow (#5727 of spec #5714) runs Claude Code on built-in skills' trigger
-//! tests with one model key, held in the GitHub environment `skill-grades` under one static
-//! name, so the runner is sent that key and no other secret. Only the job that grades is in the
-//! environment; the key reaches the step that checks it is there and the step that grades,
-//! after the build, and no command prints it. That job restores no cache. Without the key
-//! (not provisioned, or a fork's pull request) it says so in the run's summary and runs
-//! nothing else, green. It starts on a pull request only for the paths that can move a grade.
+//! The CI grader's workflow (#5727 and #5728 of spec #5714) grades built-in skills' trigger tests
+//! on Claude Code, Codex and opencode, one job each, so each harness is reported and gated on
+//! its own. Each job runs on one model key, held in the GitHub environment `skill-grades` under
+//! one static name, so its runner is sent that key and no other secret: `ANTHROPIC_API_KEY` for
+//! Claude Code and opencode, `OPENAI_API_KEY` for Codex. Only the jobs that grade are in the
+//! environment; a key reaches the step that checks it is there and the step that grades, after
+//! the build, and no command prints it. Those jobs restore no cache. Without its key (not
+//! provisioned, or a fork's pull request) a job says so in the run's summary and runs nothing
+//! else, green. It starts on a pull request only for the paths that can move a grade.
 
 use crate::workflow;
 
@@ -15,7 +17,16 @@ use workflow::{job_named, jobs, read, run_lines, step_uses, step_value, workflow
 
 const FILE: &str = "skill-grades.yml";
 
-const KEY: &str = "${{ secrets.ANTHROPIC_API_KEY }}";
+/// Each grading job, the harness it grades and the one secret it is handed.
+const GRADES: [(&str, &str, &str); 3] = [
+    ("grade-claude-code", "claude-code", "ANTHROPIC_API_KEY"),
+    ("grade-codex", "codex", "OPENAI_API_KEY"),
+    ("grade-opencode", "opencode", "ANTHROPIC_API_KEY"),
+];
+
+fn secret(name: &str) -> String {
+    format!("${{{{ secrets.{name} }}}}")
+}
 
 fn workflow() -> (String, Vec<workflow::Job>) {
     let text = read(&workflows_dir().join(FILE));
@@ -28,29 +39,45 @@ fn names_a_secret(line: &str) -> bool {
 }
 
 #[test]
-fn the_only_secret_named_is_the_key_in_its_own_environments_grading_job() {
+fn the_only_secret_each_grading_job_names_is_its_own_key_in_its_own_environment() {
     let (text, jobs) = workflow();
-    for line in text.lines().filter(|l| !l.trim_start().starts_with('#')) {
-        if names_a_secret(line) {
-            assert!(
-                line.trim_end().ends_with(KEY),
-                "a secret other than the key, or the key by another form: {line}"
-            );
-        }
-    }
     assert!(
         text.contains("\npermissions: {}\n"),
         "the workflow grants nothing"
     );
     let select = job_named(&jobs, "select", FILE);
-    let grade = job_named(&jobs, "grade", FILE);
     assert_eq!(select.environment(), None);
     assert!(
         !select.reads_a_secret(),
         "the selecting job holds no secret"
     );
-    assert_eq!(grade.environment(), Some("skill-grades"));
-    for job in [select, grade] {
+    for (name, _, key) in GRADES {
+        let grade = job_named(&jobs, name, FILE);
+        assert_eq!(grade.environment(), Some("skill-grades"), "{name}");
+        for line in grade
+            .body
+            .iter()
+            .filter(|l| !l.trim_start().starts_with('#'))
+        {
+            if names_a_secret(line) {
+                assert!(
+                    line.trim_end().ends_with(&secret(key)),
+                    "{name} names a secret other than {key}, or {key} by another form: {line}"
+                );
+            }
+        }
+    }
+    let graders: Vec<&str> = jobs
+        .iter()
+        .filter(|job| job.reads_a_secret())
+        .map(|job| job.name.as_str())
+        .collect();
+    assert_eq!(
+        graders,
+        GRADES.map(|(name, _, _)| name),
+        "the jobs holding a key"
+    );
+    for job in jobs.iter() {
         assert_eq!(
             job.permissions(),
             Some(vec![("contents".to_owned(), "read".to_owned())]),
@@ -61,18 +88,69 @@ fn the_only_secret_named_is_the_key_in_its_own_environments_grading_job() {
 }
 
 #[test]
+fn each_harness_is_graded_by_its_own_job_on_its_own_pin() {
+    let (_, jobs) = workflow();
+    for (name, harness, _) in GRADES {
+        let grade = job_named(&jobs, name, FILE);
+        let said = grade
+            .steps()
+            .iter()
+            .flat_map(|step| run_lines(step))
+            .collect::<Vec<_>>()
+            .join("\n");
+        for words in [
+            format!("skill-grader pin {harness}"),
+            format!("--harness {harness}"),
+        ] {
+            assert!(said.contains(&words), "{name} has no {words:?}: {said}");
+        }
+        let kept = grade
+            .steps()
+            .into_iter()
+            .find(|step| step_uses(step).is_some_and(|a| a.starts_with("actions/upload-artifact@")))
+            .unwrap_or_else(|| panic!("{name} keeps no runs"));
+        assert_eq!(
+            step_value(&kept, "with", "name"),
+            Some(format!("skill-grades-runs-{harness}").as_str()),
+            "each job keeps its runs under its own name"
+        );
+    }
+}
+
+#[test]
 fn the_key_reaches_the_check_and_the_grade_after_the_build_and_no_command_prints_it() {
     let (_, jobs) = workflow();
-    let grade = job_named(&jobs, "grade", FILE);
+    for (name, _, key) in GRADES {
+        its_key_reaches_the_check_and_the_grade(job_named(&jobs, name, FILE), key);
+    }
+}
+
+fn its_key_reaches_the_check_and_the_grade(grade: &workflow::Job, key: &str) {
+    let name = &grade.name;
+    let handed_key = secret(key);
     let steps = grade.steps();
     let handed: Vec<usize> = (0..steps.len())
-        .filter(|&i| steps[i].iter().any(|l| l.contains(KEY)))
+        .filter(|&i| steps[i].iter().any(|l| l.contains(&handed_key)))
         .collect();
-    assert_eq!(handed.len(), 2, "the key reaches two steps: {handed:?}");
-    assert_eq!(handed[0], 0, "the first step checks the key is there");
-    assert_eq!(step_value(&steps[0], "env", "KEY"), Some(KEY));
+    assert_eq!(
+        handed.len(),
+        2,
+        "{name}: the key reaches two steps: {handed:?}"
+    );
+    assert_eq!(
+        handed[0], 0,
+        "{name}: the first step checks the key is there"
+    );
+    assert_eq!(
+        step_value(&steps[0], "env", "KEY"),
+        Some(handed_key.as_str())
+    );
     let grading = &steps[handed[1]];
-    assert_eq!(step_value(grading, "env", "ANTHROPIC_API_KEY"), Some(KEY));
+    assert_eq!(
+        step_value(grading, "env", key),
+        Some(handed_key.as_str()),
+        "{name}"
+    );
     assert!(
         run_lines(grading).join(" ").contains("skill-grader grade"),
         "the second is the grade"
@@ -87,14 +165,14 @@ fn the_key_reaches_the_check_and_the_grade_after_the_build_and_no_command_prints
     );
     for step in &steps {
         for line in run_lines(step) {
-            let names = line.contains("$KEY") || line.contains("ANTHROPIC_API_KEY");
+            let names = line.contains("$KEY") || line.contains(key);
             assert!(
                 !names || line.contains("[ -z \"$KEY\" ]") || line.starts_with("echo"),
                 "a command reads the key: {line}"
             );
             if line.starts_with("echo") {
                 assert!(
-                    !line.contains("$KEY") && !line.contains("$ANTHROPIC_API_KEY"),
+                    !line.contains("$KEY") && !line.contains(&format!("${key}")),
                     "{line}"
                 );
             }
@@ -120,9 +198,14 @@ fn the_key_reaches_the_check_and_the_grade_after_the_build_and_no_command_prints
 }
 
 #[test]
-fn without_the_key_it_says_so_in_the_summary_and_runs_nothing_else() {
+fn without_its_key_each_job_says_so_in_the_summary_and_runs_nothing_else() {
     let (_, jobs) = workflow();
-    let grade = job_named(&jobs, "grade", FILE);
+    for (name, _, key) in GRADES {
+        without_its_key(job_named(&jobs, name, FILE), key);
+    }
+}
+
+fn without_its_key(grade: &workflow::Job, key: &str) {
     let steps = grade.steps();
     let first = &steps[0];
     assert!(first.iter().any(|l| l.trim() == "id: provisioned"));
@@ -133,6 +216,7 @@ fn without_the_key_it_says_so_in_the_summary_and_runs_nothing_else() {
         "skipped",
         "skill-grades",
         "nothing was graded",
+        key,
     ] {
         assert!(said.contains(words), "no {words:?} in: {said}");
     }

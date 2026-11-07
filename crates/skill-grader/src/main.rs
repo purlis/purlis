@@ -8,10 +8,11 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
+use purlis_skills::grade::ci::Harness;
 
 #[derive(Parser)]
 #[command(
-    about = "The CI grader: what a change grades, and a grade of built-in skills on Claude Code"
+    about = "The CI grader: what a change grades, and a grade of built-in skills on one harness"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -31,19 +32,24 @@ enum Step {
     },
     /// Print the version the pin file names for a harness.
     Pin {
-        /// The harness: `claude-code`.
+        /// The harness: `claude-code`, `codex` or `opencode`.
         harness: String,
         #[arg(long, default_value = "ci/skill-grades/pins.toml")]
         pins: PathBuf,
     },
-    /// Grade built-ins on Claude Code, the key from `ANTHROPIC_API_KEY`, and append the result
-    /// to the summary file. Exits 1 when a skill is below its bar or not scored.
+    /// Grade built-ins on one harness, the key from its variable (`ANTHROPIC_API_KEY` for
+    /// Claude Code and opencode, `OPENAI_API_KEY` for Codex), and append the result to the
+    /// summary file. Exits 1 when a skill is below its bar or not scored.
     Grade {
         /// The built-ins to grade, as `select` printed them.
         #[arg(long, value_delimiter = ',', required = true)]
         skills: Vec<String>,
-        #[arg(long, default_value = "claude")]
-        claude: PathBuf,
+        /// The harness: `claude-code`, `codex` or `opencode`.
+        #[arg(long, default_value = "claude-code", value_parser = harness)]
+        harness: Harness,
+        /// Its program: `claude`, `codex` or `opencode`.
+        #[arg(long)]
+        program: PathBuf,
         #[arg(long)]
         purlis: PathBuf,
         #[arg(long, default_value = "app/src-tauri/plugin")]
@@ -78,7 +84,8 @@ fn main() -> ExitCode {
         },
         Step::Grade {
             skills,
-            claude,
+            harness,
+            program,
             purlis,
             plugin,
             crowd,
@@ -88,13 +95,23 @@ fn main() -> ExitCode {
             summary,
             parallel,
         } => {
-            let pin = match pinned(&pins, "claude-code") {
+            let pin = match pinned(&pins, harness.word()) {
                 Ok(pin) => pin,
                 Err(why) => return fail(&why),
             };
-            let key = std::env::var("ANTHROPIC_API_KEY").ok();
+            // Each run starts in `cwd`, so every path it is handed is whole.
+            let whole = |path: PathBuf| std::path::absolute(&path).unwrap_or(path);
+            let (program, purlis, plugin, crowd, records) = (
+                whole(program),
+                whole(purlis),
+                whole(plugin),
+                whole(crowd),
+                whole(records),
+            );
+            let key = std::env::var(skill_grader::key_name(harness)).ok();
             let ask = skill_grader::Ask {
-                claude: &claude,
+                harness,
+                program: &program,
                 purlis: &purlis,
                 plugin: &plugin,
                 crowd: &crowd,
@@ -130,6 +147,14 @@ fn main() -> ExitCode {
             code
         }
     }
+}
+
+/// A harness by its word in a result.
+fn harness(word: &str) -> Result<Harness, String> {
+    [Harness::ClaudeCode, Harness::Codex, Harness::Opencode]
+        .into_iter()
+        .find(|harness| harness.word() == word)
+        .ok_or_else(|| format!("`{word}` is none of claude-code, codex, opencode"))
 }
 
 fn fail(why: &str) -> ExitCode {

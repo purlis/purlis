@@ -48,6 +48,16 @@ fn the_plugin_wiring_the_briefing_or_the_grader_grades_every_built_in_and_says_w
     for (path, why) in [
         ("app/src-tauri/plugin/hooks/hooks.json", "the plugin wiring"),
         ("crates/purlis-core/src/chattools.rs", "the plugin wiring"),
+        // How a Codex or opencode chat is armed is what their grades start them with (#5728).
+        (
+            "crates/purlis-core/src/harness/codex.rs",
+            "the plugin wiring",
+        ),
+        (
+            "crates/purlis-core/src/harness/opencode.rs",
+            "the plugin wiring",
+        ),
+        ("crates/purlis-core/src/opencode.rs", "the plugin wiring"),
         (
             "crates/purlis-core/src/briefing.rs",
             "the session-start briefing",
