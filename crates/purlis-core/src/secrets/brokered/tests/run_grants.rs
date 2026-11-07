@@ -1836,3 +1836,22 @@ fn a_cross_compiler_named_for_its_target_is_offered_no_run_grant() {
         refused_as_running_others(name);
     }
 }
+
+#[test]
+fn a_refused_program_named_with_a_suffix_or_a_sibling_name_is_offered_no_run_grant() {
+    for name in [
+        "bm4",
+        "c89",
+        "c99",
+        "emacs-nox",
+        "gdb-multiarch",
+        "ninja-build",
+        "sudo-rs",
+        "tmux-next",
+        "swiftc",
+        "gfortran",
+        "libtool",
+    ] {
+        refused_as_running_others(name);
+    }
+}

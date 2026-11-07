@@ -608,3 +608,26 @@ fn a_run_grants_raise_is_traced_before_its_answer_however_soon_it_is_answered() 
     }
     assert!(!answered.is_empty(), "{traced:?}");
 }
+
+#[test]
+fn keep_blocked_takes_back_a_grant_given_on_that_vault_for_that_chat() {
+    // A run past the gate before the press is covered by a grant, and never reaches an ask: the
+    // grant goes with the press (#5424), and another chat's stays.
+    let asks = Asks::new(std::path::Path::new("/nowhere"));
+    for chat in [7, 8] {
+        asks.allowed_or_held(
+            RunNeed {
+                not_its_vault: true,
+                ..need(bound(chat, &["a"]))
+            },
+            Duration::ZERO,
+            &mut |_| {},
+        );
+        answer_open(&asks, RunAnswer::ForChat);
+    }
+    assert!(asks.covers(&bound(7, &["b"])));
+    asks.keep_vault_blocked(7, "team");
+    assert!(!asks.covers(&bound(7, &["b"])), "taken back");
+    assert!(!asks.granted(&bound(7, &["b"])));
+    assert!(asks.covers(&bound(8, &["b"])), "another chat's stays");
+}

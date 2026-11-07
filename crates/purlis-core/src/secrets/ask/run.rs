@@ -824,10 +824,16 @@ impl Asks {
     /// **The person kept `vault` blocked for chat `chat`** (#5424): from now on, for the chat's
     /// life, an ask that only the vault's own Allow would answer is refused as it would open,
     /// under the lock it opens under, so a run the gate let past just before cannot raise one.
-    /// The asks open on it already are returned, for the window to answer Don't allow.
+    /// A grant the chat was given on the vault goes with it, so a run the gate let past is not
+    /// covered either. The asks open on it already are returned, for the window to answer Don't
+    /// allow.
     pub fn keep_vault_blocked(&self, chat: u32, vault: &str) -> Vec<u32> {
         let mut inner = self.inner();
         inner.runs.kept_blocked.insert((chat, vault.to_owned()));
+        inner
+            .runs
+            .given
+            .retain(|given| given.bound.chat != chat || given.bound.vault != vault);
         inner
             .runs
             .open

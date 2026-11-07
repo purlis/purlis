@@ -1690,6 +1690,8 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "screen",
     "tmux",
     "m4",
+    "bm4",
+    "libtool",
     // build and run what their files say, files a chat writes
     "make",
     "gmake",
@@ -1725,6 +1727,10 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "c++",
     "clang",
     "clang++",
+    "c89",
+    "c99",
+    "swiftc",
+    "gfortran",
     "ld",
     "docker",
     "podman",
@@ -1939,8 +1945,8 @@ const MOST_VARIABLE_SHOWN: usize = 64;
 
 /// **Whether `name` is on [`NOT_FOR_A_RUN_GRANT`], or runs what it is told** ([`REFUSED_NAMES`]),
 /// as itself or by a form its builds are named by (#5424): `vim.basic`, a version (`gcc-13`,
-/// `clang-17`, `gcc13`), a GNU build (`gm4`, `genv`, `gnumake`), a target's (`x86_64-linux-gnu-gcc`)
-/// and one of git's own programs (`git-shell`). Each form only takes away an Allow, so a name it
+/// `clang-17`, `gcc13`), a GNU build (`gm4`, `genv`, `gnumake`), a target's (`x86_64-linux-gnu-gcc`),
+/// a flavour (`emacs-nox`, `sudo-rs`) and one of git's own programs (`git-shell`). Each form only takes away an Allow, so a name it
 /// catches by chance loses a notice and nothing more.
 fn not_for_a_run_grant(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
@@ -1956,10 +1962,14 @@ fn not_for_a_run_grant(name: &str) -> bool {
     for one in [name.as_str(), stem] {
         let unversioned = without_version(one);
         forms.push(unversioned);
-        // The program a target's build is: its last part (`aarch64-linux-gnu-gcc`).
+        // The program a target's build is, its last part (`aarch64-linux-gnu-gcc`), and the
+        // program a build is a flavour of, its first (`emacs-nox`, `gdb-multiarch`, `sudo-rs`).
         if let Some((_, last)) = unversioned.rsplit_once('-') {
             forms.push(last);
             forms.push(without_version(last));
+        }
+        if let Some((first, _)) = unversioned.split_once('-') {
+            forms.push(first);
         }
     }
     let gnu = forms
