@@ -3444,3 +3444,84 @@ fn the_window_is_told_a_chat_is_queued_only_for_what_failed_until_it_asks_itself
     .expect("a turn's end is a move");
     assert_eq!((ended.needs_you, ended.only_failures), (true, None));
 }
+
+/// A Secret ask of chat 3's for `team`/`KEY`, with nothing declared.
+fn secret_need() -> purlis_core::secrets::ask::Need {
+    purlis_core::secrets::ask::Need {
+        chat: Some(3),
+        persona: "devops".into(),
+        vault: "team".into(),
+        key: "KEY".into(),
+        tool: None,
+        purpose: None,
+        declared: None,
+        names_no_vault: false,
+        reason: None,
+        no_allow: None,
+    }
+}
+
+#[test]
+fn a_secret_ask_raised_before_the_event_log_opens_is_written_before_its_answer() {
+    use purlis_core::eventlog::{self, ArgsKey, Log, Recorder};
+    use purlis_core::secrets::ask::{Answer, Asks};
+    let dir = tempfile::tempdir().expect("a directory");
+    let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
+    let hooks = Hooks::deaf(plane);
+    let asks = Asks::new(dir.path());
+    asks.telling(hooks.secret_asks_told(dir.path()));
+    asks.hold(secret_need(), std::time::Duration::ZERO, &mut |_| {});
+    // The log opens only now, as it does once the session host is up.
+    let logs = dir.path().join("events");
+    hooks.record_into(Events::here(Recorder::new(
+        Log::open(&logs, "DEVICE").expect("a log"),
+        ArgsKey::open(&logs).expect("a key"),
+    )));
+    let id = asks.open()[0].id;
+    let ctx = purlis_core::secrets::Ctx::new(
+        dir.path(),
+        purlis_core::secrets::Env::of(&[(
+            "PURLIS_HOME",
+            &dir.path().join("home").to_string_lossy(),
+        )]),
+    );
+    asks.answer(&ctx, id, Answer::Decline, crate::asking::the_window())
+        .expect("declined");
+    hooks.secret_asks_written();
+    let kinds: Vec<String> = eventlog::read(&logs)
+        .expect("the log reads")
+        .into_iter()
+        .map(|event| event.kind)
+        .filter(|kind| kind.starts_with("secret_ask."))
+        .collect();
+    assert_eq!(kinds, ["secret_ask.raised", "secret_ask.declined"]);
+}
+
+#[test]
+fn a_secret_asks_step_reaches_the_session_host_with_the_asks_lock_let_go() {
+    use purlis_core::secrets::ask::Asks;
+    let dir = tempfile::tempdir().expect("a directory");
+    let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
+    let hooks = Hooks::deaf(plane);
+    let asks = Arc::new(Asks::new(dir.path()));
+    let (heard, hearing) = std::sync::mpsc::channel();
+    // A host that, while it writes, reads the window's asks back: it must not wait on them.
+    let back = Arc::downgrade(&asks);
+    hooks.record_into(Events::in_the_host(move |entry| {
+        let open = back.upgrade().map(|asks| asks.open().len());
+        if let Entry::SecretAsk { step, .. } = entry {
+            heard.send((step.kind(), open)).ok();
+        }
+        Ok(())
+    }));
+    asks.telling(hooks.secret_asks_told(dir.path()));
+    let raising = Arc::clone(&asks);
+    std::thread::spawn(move || {
+        raising.hold(secret_need(), std::time::Duration::ZERO, &mut |_| {});
+    });
+    let (kind, open) = hearing
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("the host heard the raise, and read the asks back, without waiting on them");
+    assert_eq!(kind, "secret_ask.raised");
+    assert_eq!(open, Some(1));
+}

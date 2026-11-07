@@ -332,6 +332,8 @@ pub struct Hooks {
     /// a project is opened the same way with or without it. Every line the channel hears from
     /// a chat's hooks is recorded there, whether or not it moved the board.
     events: Arc<Mutex<Option<Events>>>,
+    /// The Secret asks' steps on their way to `events`, in order, off the asks' lock (#5509).
+    secret_ask_steps: crate::secretasksteps::Steps,
     /// Told EVERY report on this socket once the board has had it, whether it moved the board or
     /// not — a slot filled after the fact, for `answering`'s reason. A smart close queued for a
     /// turn's end waits on it (`crate::smartclose`): the `Stop` that ends a turn in which the
@@ -2384,6 +2386,7 @@ impl Hooks {
             waits: Arc::new(Mutex::new(None)),
             saved: Arc::new(Mutex::new(None)),
             events: Arc::new(Mutex::new(None)),
+            secret_ask_steps: crate::secretasksteps::Steps::default(),
             asks: Arc::new(HookAsks::new(Arc::new(Asks::new()))),
             asks_told: Arc::new(Mutex::new(None)),
             doings,
@@ -2870,6 +2873,7 @@ impl Hooks {
             waits,
             saved,
             events,
+            secret_ask_steps: crate::secretasksteps::Steps::default(),
             asks,
             asks_told,
             touching,
@@ -2938,6 +2942,7 @@ impl Hooks {
     /// Records every hook call this project's channel hears into `events` from now on (FD-9).
     pub fn record_into(&self, events: Events) {
         *self.events.lock().unwrap_or_else(PoisonError::into_inner) = Some(events);
+        self.secret_ask_steps.opened();
     }
 
     /// One audited act (`kind` with `body`) in the event log, under chat `number` where it came
@@ -3047,28 +3052,18 @@ impl Hooks {
             .map_err(|why| why.to_string())
     }
 
-    /// **Writes a step of a Secret ask of chat `number`'s** (#5078): counts and closed words
-    /// alone, the audit's and telemetry's record. Refused where this machine has no event log
-    /// open, or the log refused it.
-    pub fn record_secret_ask(
-        &self,
-        root: &Path,
-        number: Option<u32>,
-        step: purlis_core::eventlog::secretasks::Step,
-    ) -> Result<(), String> {
-        let events = self
-            .events
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-            .ok_or_else(|| "purlis's event log is not open on this machine".to_owned())?;
-        events
-            .record(Entry::SecretAsk {
-                plane: root.to_path_buf(),
-                number,
-                step,
-            })
-            .map_err(|why| why.to_string())
+    /// **What tells this plane's Secret asks' steps to the event log** (#5078), for
+    /// [`purlis_core::secrets::ask::Asks::telling`]: the audit's and telemetry's record, best
+    /// effort, written in the order told, never under the asks' lock, and held until the log
+    /// opens (#5509, [`crate::secretasksteps`]).
+    pub fn secret_asks_told(&self, root: &Path) -> purlis_core::secrets::ask::Telling {
+        self.secret_ask_steps.teller(root, &self.events)
+    }
+
+    /// Waits until every Secret ask's step told so far is written, or held for a log not open.
+    #[cfg(test)]
+    pub fn secret_asks_written(&self) {
+        self.secret_ask_steps.written();
     }
 
     /// **Use skill… typed a skill into chat `number`**, unsent (SK-12): `typed` is held for its
