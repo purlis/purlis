@@ -5081,10 +5081,12 @@ impl Confinement {
     /// `CLAUDE_CODE_TMPDIR` naming it, and roots its own temporary files and its sandbox's
     /// `$TMPDIR` there, where before every chat on the machine shared `/tmp/claude-<uid>`.
     /// Claude Code's sandbox lets the chat write the folder it roots there and no other chat's.
+    /// It is made where that path stays short enough for Claude Code to take it, in `/tmp` on
+    /// macOS ([`claude_wrap::own_tmp`]).
     pub fn proxy_only(serving: egress::Serving) -> std::io::Result<Self> {
         let asks = serving.asks.clone();
         let proxy = egress::Proxy::serving(serving)?;
-        let tmp = tempfile::Builder::new().prefix("charter-chat-").tempdir()?;
+        let tmp = claude_wrap::own_tmp()?;
         Ok(Self {
             proxy: Proxied::Here(Box::new(proxy)),
             tmp: Some(Folder::Own(tmp)),

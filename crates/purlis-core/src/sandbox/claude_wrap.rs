@@ -124,6 +124,48 @@ pub const STATE_FILE: &str = ".claude.json";
 /// `/tmp/claude-<uid>`, which a wrapped chat may not.
 pub const TMP_ENV: &str = "CLAUDE_CODE_TMPDIR";
 
+/// The longest `<CLAUDE_CODE_TMPDIR>/claude-<uid>`, in bytes, that Claude Code roots its own
+/// sandbox's `$TMPDIR` in. Past it, too long for the AF_UNIX sockets it keeps there, Claude Code
+/// falls back to the `/tmp/claude-<uid>` every chat on the machine shares (#5675), and only
+/// warns, and only when a command names `TMPDIR`. macOS's own temporary folder,
+/// `/var/folders/…/T`, is always past it.
+pub const ROOTED_TMP_MAX: usize = 44;
+
+/// The folder a temporary folder of a Claude Code chat's own is made in (#5675): the system's
+/// temporary folder where Claude Code would root its sandbox's `$TMPDIR` in a folder made there
+/// (`<base>/charter-chat-XXXXXX/claude-<uid>` within [`ROOTED_TMP_MAX`]), else `/tmp`, where it
+/// always does.
+pub fn tmp_base(system: &Path, uid: u32) -> PathBuf {
+    let rooted = system
+        .join("charter-chat-XXXXXX")
+        .join(format!("claude-{uid}"));
+    if rooted.as_os_str().len() <= ROOTED_TMP_MAX {
+        system.to_path_buf()
+    } else {
+        PathBuf::from("/tmp")
+    }
+}
+
+/// A new temporary folder of a Claude Code chat's own, in [`tmp_base`], removed when dropped.
+/// Where `/tmp` cannot be written, in the system's temporary folder: still the chat's own, though
+/// Claude Code then roots its sandbox's `$TMPDIR` in the shared one.
+pub fn own_tmp() -> std::io::Result<tempfile::TempDir> {
+    let system = std::env::temp_dir();
+    let base = tmp_base(&system, rustix::process::getuid().as_raw());
+    let made = |at: &Path| {
+        tempfile::Builder::new()
+            .prefix("charter-chat-")
+            .tempdir_in(at)
+    };
+    made(&base).or_else(|refused| {
+        if base == system {
+            Err(refused)
+        } else {
+            made(&system)
+        }
+    })
+}
+
 /// What keeps Claude Code's telemetry and error reports from asking a person about hosts they
 /// never listed, through the proxy that now carries them.
 pub const QUIET_ENV: &str = "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC";
