@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794085435726,
+  "lastUpdate": 1794087085911,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -42588,6 +42588,48 @@ window.BENCHMARK_DATA = {
             "value": 102.015533,
             "unit": "ms",
             "extra": "median of 5 runs: 100.002, 100.707, 102.016, 102.605, 102.634 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e5b269c031a3164f4c1daf04c16809a95d58681f",
+          "message": "Skill editor asks lint extensions as an edit opens; doctor fix ids as a type across the seam (#3093, #3138) (#5682)\n\n* Doctor fix ids cross the window seam as a type (#3138)\n\nDoctorRow.fix, DoctorFixed.fix, plane_doctor_fix's argument, the studio's\nStudioUnmoved.fix and its Needs-you MoveSkills, an alert's Fix way out and the\npicker's ignore_fix_id now carry DoctorFix, the app's mirror of the core's\nFixId (kebab-case, as `purlis doctor --fix <id>` spells it), converted both\nways by exhaustive matches so a new core fix fails to build until mirrored.\nbindings.ts and uiRpc.ts type it as a union, so the window can only send a\nfix the core has; an unknown id is refused as the argument is read.\n\nCloses #3138\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VNFBCFADD2HY008BPTT08K\nPurlis-Persona: steward\n\n* The skill editor asks lint extensions as an edit opens, not as it is typed (#3093)\n\nMeasured first: CI's Seatbelt job prints what one confined lint question costs,\nits program's start included: 345 ms (run 42379068174's PR sibling, job\n128481996090) and 449 ms (job 128483274274). The live lint asked every\nextension that dearly 200 ms after each keystroke, so each pause in typing\nstarted one confined program per extension, with its proxy and folder.\n\nskill_lint takes `extensions`: the live rounds ask purlis's own lints only,\nand the editor asks the extensions once, of the text as the edit opened. A\nfinding now names the extension lint it is by (`by`), so the editor keeps\ntheirs beside its live ones. Save's check asks none: only purlis's own lints\nblock. After a save the studio's list asks the extensions of what was saved.\n\nCloses #3093\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VNFBCFADD2HY008BPTT08K\nPurlis-Persona: steward\n\n* Review follow-ups: one shape for the editor's lint state, and the fragment says what a save asks (#3093)\n\nThe two-axis review found the editor's two lint states declared twice and\ntheir key built twice; they share a Linted type and lintedOf now. The\nfragment no longer promises the extensions are asked of a saved skill outright:\nthe studio's list asks them within its own time. The alerts test says why it\nuses discover (a fix with no label of the window's own).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6VNFBCFADD2HY008BPTT08K\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-07T20:20:00Z",
+          "tree_id": "63309e50f4f58ab563b38f82e37528834486259c",
+          "url": "https://github.com/purlis/purlis/commit/e5b269c031a3164f4c1daf04c16809a95d58681f"
+        },
+        "date": 1794087077659,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.320484,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.295, 0.318, 0.320, 0.328, 0.337 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.686768,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.585, 16.678, 16.687, 16.733, 16.751 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.4943315,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.541, 100.733, 101.494, 101.588, 102.751 ms"
           }
         ]
       }
