@@ -101,7 +101,7 @@
 //! is what `purlis doctor` counts ([`record::counts`]), Settings' Network page and a chat's
 //! Network view list, and the window shows it as a notice on the chat's tab.
 //! A block of purlis's own is a purlis bug, and the notice offers a Report whose draft is made
-//! from the block alone (`report::Draft::of_sandbox_block`). Nothing is sent without a press.
+//! from the block alone (`report::PurlisFailure::SandboxBlock`). Nothing is sent without a press.
 
 use std::path::{Component, Path, PathBuf};
 
