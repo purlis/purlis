@@ -66,3 +66,8 @@
   in `workspaces/<ws>/`, never inside `repos/`.
 - The LIVE block of `.gitignore` is unchanged: `repos/` is outside its allowlist, so it stays out
   of the plane's commits like any clone did.
+
+## Amendments
+
+The amendments to this decision are files of their own in [`0114/`](0114/), one per amendment,
+named `<yyyy-mm-dd>-<slug>.md`.

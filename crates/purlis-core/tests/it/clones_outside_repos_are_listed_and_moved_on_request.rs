@@ -364,13 +364,14 @@ fn a_failure_partway_through_the_move_leaves_the_workspace_exactly_as_it_was() {
 
     // The first clone moves, and is repaired; the second will not.
     let mut moves = 0;
-    let moved = move_into_repos::move_workspace(&root, "alpha", &[], &mut |from, to| {
-        moves += 1;
-        if moves == 2 {
-            return Err(std::io::Error::other("the disk said no"));
-        }
-        std::fs::rename(from, to)
-    });
+    let moved =
+        move_into_repos::move_workspace(&root, "alpha", &Vec::new, None, &mut |from, to| {
+            moves += 1;
+            if moves == 2 {
+                return Err(std::io::Error::other("the disk said no"));
+            }
+            std::fs::rename(from, to)
+        });
 
     let why = moved.expect_err("the move failed");
     assert!(why.contains("the disk said no"), "{why}");
@@ -576,10 +577,11 @@ fn a_repair_that_fails_after_the_clone_moved_leaves_the_workspace_exactly_as_it_
     let before = tree(&ws(&root));
 
     let mut moves = 0;
-    let moved = move_into_repos::move_workspace(&root, "alpha", &[], &mut |from, to| {
-        moves += 1;
-        std::fs::rename(from, to)
-    });
+    let moved =
+        move_into_repos::move_workspace(&root, "alpha", &Vec::new, None, &mut |from, to| {
+            moves += 1;
+            std::fs::rename(from, to)
+        });
 
     let why = moved.expect_err("the repair failed");
     assert_eq!(moves, 1, "the clone moved before the repair ran");
@@ -587,4 +589,221 @@ fn a_repair_that_fails_after_the_clone_moved_leaves_the_workspace_exactly_as_it_
     assert!(why.contains("put back"), "{why}");
     assert_eq!(tree(&ws(&root)), before);
     works(&piece);
+}
+
+// ---- a move cut short, open chats, case, and what was shown (#5569) -------------------------
+
+const CUT_SHORT: &str = "move into repos/ cut short";
+
+/// `move_workspace` killed at its `kill`th `mv`, after that move: what a power cut or a killed
+/// process leaves, since nothing after the panic runs (no rollback, no journal removed).
+fn killed_at(root: &Path, kill: usize) {
+    let mut moves = 0;
+    let killed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        move_into_repos::move_workspace(root, "alpha", &Vec::new, None, &mut |from, to| {
+            moves += 1;
+            if moves > kill {
+                panic!("killed before move {moves}");
+            }
+            std::fs::rename(from, to)?;
+            if moves == kill {
+                panic!("killed after move {moves}");
+            }
+            Ok(())
+        })
+    }));
+    assert!(killed.is_err(), "the move was not killed");
+}
+
+/// Whether git reads the branch folder at `piece`.
+fn git_reads(piece: &Path) -> bool {
+    support::git_tried(piece, &["status", "--porcelain"])
+        .status
+        .success()
+}
+
+#[test]
+fn a_move_killed_midway_is_flagged_and_the_next_move_finishes_it() {
+    purlis_core::unsteered!();
+    let (_d, root) = plane();
+    clone_at(&root, "api");
+    clone_at(&root, "web");
+    let api_piece = worktree::add(&root, "alpha", "api", "piece", None)
+        .expect("a branch folder of api")
+        .path;
+    let web_piece = worktree::add(&root, "alpha", "web", "other", None)
+        .expect("a branch folder of web")
+        .path;
+
+    killed_at(&root, 1);
+    assert!(ws(&root).join("repos/api/.git").is_dir(), "api moved");
+    assert!(ws(&root).join("web/.git").is_dir(), "web did not");
+    assert!(
+        !git_reads(&api_piece),
+        "the kill left api's branch folder unrepaired"
+    );
+
+    let flagged = rows(&root);
+    let row = find(&flagged, CUT_SHORT);
+    assert_eq!(row.status, Status::Warn, "{row:?}");
+    assert!(row.detail.contains("alpha"), "{row:?}");
+    assert_eq!(row.fix, Some(FixId::MoveIntoRepos), "{row:?}");
+
+    let applied = fix::apply(&root, FixId::MoveIntoRepos);
+
+    let said = said(&applied);
+    assert!(
+        said.iter().any(|line| line.contains("cut short")),
+        "it says it finished the move cut short: {said:?}"
+    );
+    assert!(ws(&root).join("repos/web/.git").is_dir());
+    works(&api_piece);
+    works(&web_piece);
+    let after = rows(&root);
+    assert!(!after.iter().any(|r| r.name == CUT_SHORT), "{after:?}");
+    assert_eq!(names(&after), Vec::<&str>::new());
+}
+
+#[test]
+fn a_move_killed_after_its_last_clone_moved_is_still_offered_and_finished() {
+    purlis_core::unsteered!();
+    let (_d, root) = plane();
+    clone_at(&root, "api");
+    let piece = worktree::add(&root, "alpha", "api", "piece", None)
+        .expect("a branch folder of api")
+        .path;
+
+    killed_at(&root, 1);
+    assert!(!git_reads(&piece));
+
+    let planned = move_into_repos::plan(&root);
+    assert_eq!(planned.len(), 1, "{planned:?}");
+    assert_eq!(planned[0].repos, Vec::<String>::new());
+    assert_eq!(planned[0].finishing, ["api"]);
+
+    said(&fix::apply(&root, FixId::MoveIntoRepos));
+
+    works(&piece);
+    assert!(move_into_repos::plan(&root).is_empty());
+}
+
+#[test]
+fn an_open_chat_the_record_gives_no_folder_still_holds_the_move_back() {
+    purlis_core::unsteered!();
+    let (_d, root) = plane();
+    clone_at(&root, "api");
+    let record = purlis_core::reopen::Record {
+        chats: vec![purlis_core::reopen::Chat {
+            program: "claude".to_owned(),
+            name: "nowhere".to_owned(),
+            cwd: None,
+            number: Some(1),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    purlis_core::reopen::write(&root, &record).unwrap();
+    let before = tree(&ws(&root));
+
+    let why = refused(&fix::apply(&root, FixId::MoveIntoRepos)).to_owned();
+
+    assert!(why.contains("nowhere"), "it names the chat: {why}");
+    assert_eq!(tree(&ws(&root)), before, "something moved");
+}
+
+#[test]
+fn a_chat_opened_while_the_move_runs_puts_the_workspace_back() {
+    purlis_core::unsteered!();
+    let (_d, root) = plane();
+    clone_at(&root, "api");
+    let piece = worktree::add(&root, "alpha", "api", "piece", None)
+        .expect("a branch folder of api")
+        .path;
+    let before = tree(&ws(&root));
+    let asked = std::cell::Cell::new(0);
+    let open = || {
+        asked.set(asked.get() + 1);
+        if asked.get() == 1 {
+            Vec::new()
+        } else {
+            vec!["late".to_owned()]
+        }
+    };
+
+    let moved = move_into_repos::move_workspace(&root, "alpha", &open, None, &mut |from, to| {
+        std::fs::rename(from, to)
+    });
+
+    let why = moved.expect_err("a chat opened during the move");
+    assert!(why.contains("late"), "it names the chat: {why}");
+    assert!(why.contains("put back"), "{why}");
+    assert_eq!(tree(&ws(&root)), before);
+    works(&piece);
+}
+
+/// Whether the disk under `root` reads a name in any case as the same name, as APFS and NTFS do
+/// by default.
+fn ignores_case(root: &Path) -> bool {
+    std::fs::write(root.join("Probe"), "").unwrap();
+    let ignores = root.join("probe").exists();
+    std::fs::remove_file(root.join("Probe")).unwrap();
+    ignores
+}
+
+#[test]
+fn a_root_folder_named_as_one_in_repos_in_another_case_is_reported_beside_it() {
+    purlis_core::unsteered!();
+    let (_d, root) = plane();
+    if !ignores_case(&root) {
+        // A disk that tells `Api` from `api` has two repos here, and nothing to report.
+        return;
+    }
+    clone_at(&root, "repos/api");
+    clone_at(&root, "Api");
+
+    let rows = rows(&root);
+
+    assert_eq!(names(&rows), [BESIDE]);
+    let row = find(&rows, BESIDE);
+    assert!(row.detail.contains("alpha/Api/"), "{row:?}");
+    assert!(row.detail.contains("repos/api/ is the repo"), "{row:?}");
+    assert!(move_into_repos::plan(&root).is_empty());
+}
+
+fn shown(repos: &[&str]) -> Vec<move_into_repos::Shown> {
+    vec![move_into_repos::Shown {
+        workspace: "alpha".to_owned(),
+        repos: repos.iter().map(|r| (*r).to_owned()).collect(),
+    }]
+}
+
+#[test]
+fn a_clone_added_after_the_confirmation_was_shown_refuses_the_move() {
+    purlis_core::unsteered!();
+    let (_d, root) = plane();
+    clone_at(&root, "api");
+    let confirmed = shown(&["api"]);
+    clone_at(&root, "web");
+    let before = tree(&ws(&root));
+
+    let applied = fix::apply_moving_into_repos(&root, &|_, _| Vec::new(), Some(&confirmed));
+
+    let why = refused(&applied);
+    assert!(why.contains("web"), "it names what was not shown: {why}");
+    assert_eq!(tree(&ws(&root)), before, "something moved");
+}
+
+#[test]
+fn the_move_takes_what_the_confirmation_showed() {
+    purlis_core::unsteered!();
+    let (_d, root) = plane();
+    clone_at(&root, "api");
+    clone_at(&root, "web");
+
+    let applied =
+        fix::apply_moving_into_repos(&root, &|_, _| Vec::new(), Some(&shown(&["api", "web"])));
+
+    said(&applied);
+    assert!(ws(&root).join("repos/api/.git").is_dir());
+    assert!(ws(&root).join("repos/web/.git").is_dir());
 }

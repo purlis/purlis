@@ -37,8 +37,11 @@ export function MoveIntoReposConfirm(
       />
     );
   const { plans } = props;
-  const moving = plans.filter((plan) => plan.open.length === 0);
-  const held = plans.filter((plan) => plan.open.length > 0);
+  const toMove = plans.filter((plan) => plan.repos.length > 0);
+  const moving = toMove.filter((plan) => plan.open.length === 0);
+  const held = toMove.filter((plan) => plan.open.length > 0);
+  // A move a crash cut short is finished whatever is open: it moves nothing more (#5569).
+  const finishing = plans.filter((plan) => plan.finishing.length > 0);
   const unresumable = moving.flatMap((plan) => plan.unresumable);
   return (
     <AlertDialog
@@ -51,9 +54,24 @@ export function MoveIntoReposConfirm(
         </p>
       }
       main={
-        moving.length > 0 ? { children: "Move repos", byReturn: false, onPress: onMove } : undefined
+        moving.length > 0 || finishing.length > 0
+          ? { children: "Move repos", byReturn: false, onPress: onMove }
+          : undefined
       }
     >
+      {finishing.length > 0 && (
+        <section aria-label="Cut short">
+          <p>
+            A move into repos/ stopped partway in these workspaces, so git may not read some branch
+            folders. Moving finishes it first by repairing them:
+          </p>
+          <ul>
+            {finishing.map((plan) => (
+              <li key={plan.workspace}>{`${plan.workspace}: ${plan.finishing.join(", ")}`}</li>
+            ))}
+          </ul>
+        </section>
+      )}
       {moving.length > 0 ? (
         <ul aria-label="What moves">
           {moving.map((plan) => (
@@ -61,7 +79,7 @@ export function MoveIntoReposConfirm(
           ))}
         </ul>
       ) : (
-        <p>Nothing can move now: every workspace below has a chat open in it.</p>
+        held.length > 0 && <p>Nothing can move now: every workspace below has a chat open in it.</p>
       )}
       {held.length > 0 && (
         <section aria-label="Left as they are">
