@@ -325,7 +325,7 @@ describe("discarding on a turn and undoing it (#5411)", () => {
   it("discards a turn's hunk as the turn started, naming the turn to the core", async () => {
     const asked = onATurn(
       () => ofTurn(null),
-      [{ kind: "discarded", now: turnShown(true), unrecorded: null }],
+      [{ kind: "discarded", now: turnShown(true), unrecorded: null, untold: [] }],
     );
     await toTheTurn();
     expect(screen.queryByText("You changed this file since the turn ended.")).toBeNull();
@@ -342,11 +342,48 @@ describe("discarding on a turn and undoing it (#5411)", () => {
     expect(await screen.findByText("You changed this file since the turn ended.")).toBeVisible();
   });
 
+  it("says which chat in the folder is not told of a discard (#5477)", async () => {
+    onATurn(
+      () => ofTurn(null),
+      [{ kind: "discarded", now: turnShown(true), unrecorded: null, untold: ["Fix the parser"] }],
+    );
+    await toTheTurn();
+
+    await userEvent.click(screen.getByRole("button", { name: "Discard the change at line 2" }));
+
+    expect(
+      await screen.findByText(
+        "Fix the parser is not told of this change at its next turn, because purlis cannot " +
+          "add to its prompts. Tell it in its chat if it should know.",
+      ),
+    ).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(screen.queryByText(/is not told of this change/)).toBeNull());
+  });
+
+  it("says which chats in the folder are not told of an undone turn (#5477)", async () => {
+    onATurn(
+      () => ofTurn(FILES),
+      [{ kind: "undone", unrecorded: null, unmarked: null, untold: ["Alpha", "Beta"] }],
+    );
+    await toTheTurn();
+    await userEvent.click(screen.getByRole("button", { name: "Undo turn 3…" }));
+    const question = await screen.findByRole("alertdialog", { name: "Undo turn 3?" });
+    await userEvent.click(within(question).getByRole("button", { name: "Undo turn 3" }));
+
+    expect(
+      await screen.findByText(
+        "Alpha and Beta are not told of this change at their next turn, because purlis cannot " +
+          "add to their prompts. Tell them in their chats if they should know.",
+      ),
+    ).toBeVisible();
+  });
+
   it("offers Undo only on the turn offered, and asks once, listing every file", async () => {
     let undo: string[] | null = FILES;
     const asked = onATurn(
       () => ofTurn(undo),
-      [{ kind: "undone", unrecorded: null, unmarked: null }],
+      [{ kind: "undone", unrecorded: null, unmarked: null, untold: [] }],
     );
     await toTheTurn();
 
@@ -862,7 +899,7 @@ describe("discarding a hunk (#5406)", () => {
       hunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1 }],
     };
     const { asked, reads } = discarding(changed(TEXT), [
-      { kind: "discarded", now: changed(left), unrecorded: null },
+      { kind: "discarded", now: changed(left), unrecorded: null, untold: [] },
     ]);
     const control = await opened();
 
@@ -886,7 +923,7 @@ describe("discarding a hunk (#5406)", () => {
   it("warns of a chat that is not idle by name and state, and goes on only at the operator's word", async () => {
     const { asked } = discarding(changed(TEXT), [
       { kind: "busy", chats: [{ name: "Fix the parser", state: "is running" }] },
-      { kind: "discarded", now: changed(TEXT), unrecorded: null },
+      { kind: "discarded", now: changed(TEXT), unrecorded: null, untold: [] },
     ]);
     await userEvent.click(await opened());
 
@@ -930,7 +967,7 @@ describe("discarding a hunk (#5406)", () => {
   it("offers Overwrite for a file changed on disk, sending what was drawn and merging nothing", async () => {
     const { asked } = discarding(changed(TEXT), [
       { kind: "stale" },
-      { kind: "discarded", now: changed(TEXT), unrecorded: null },
+      { kind: "discarded", now: changed(TEXT), unrecorded: null, untold: [] },
     ]);
     await userEvent.click(await opened());
     const stale = await screen.findByRole("alertdialog");
@@ -988,7 +1025,7 @@ describe("discarding a hunk (#5406)", () => {
     cleanup();
 
     discarding(changed(TEXT), [
-      { kind: "discarded", now: changed(TEXT), unrecorded: "the event log refused it" },
+      { kind: "discarded", now: changed(TEXT), unrecorded: "the event log refused it", untold: [] },
     ]);
     await userEvent.click(await opened());
     expect(
