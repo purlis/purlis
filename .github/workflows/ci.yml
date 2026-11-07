@@ -1878,17 +1878,37 @@ jobs:
       # around the `purlis` built above, as the parity job builds it, with a `claude` that reports
       # its chat's start (`app/e2e/pool-runner.Dockerfile`), pushed to a registry of this job's
       # own: a pool names its image by digest alone.
+      #
+      # Its job is a required check (#5176), and each of these fetches from the network: the
+      # registry's image, gh's and glab's packages, Ubuntu's archive. So each command that fetches
+      # is asked up to four times, 30 s more apart each time, before it fails the job; a build
+      # asked again starts from the layers its last try finished, so only what failed is fetched
+      # again. apt asks each of its own files again too (`Acquire::Retries`).
       - name: The runner image of this build, for Pool setup's run, by digest
         if: matrix.pool
         run: |
           set -euo pipefail
-          docker run --detach --publish 127.0.0.1:5000:5000 --name registry registry:3@sha256:01cd312e67026f06f5d89c3e133a4a9adc7cb9eeb9b1194e0b2954dfd770efd2
+          again() {
+            for try in 1 2 3 4; do
+              "$@" && return 0
+              [ "$try" = 4 ] && break
+              echo "::warning::try $try of 4 failed: $*; asking again in $((try * 30)) s"
+              sleep $((try * 30))
+            done
+            return 1
+          }
+          registry=registry:3@sha256:01cd312e67026f06f5d89c3e133a4a9adc7cb9eeb9b1194e0b2954dfd770efd2
+          again docker pull "$registry"
+          docker run --detach --publish 127.0.0.1:5000:5000 --name registry "$registry"
           context="$RUNNER_TEMP/runner"
           cp -R app/src-tauri/plugin "$context/plugin"
-          docker build --file runner-image/Dockerfile --tag purlis-runner:scenario "$context"
-          docker build --build-arg RUNNER=purlis-runner:scenario \
+          again docker build --file runner-image/Dockerfile --tag purlis-runner:scenario "$context"
+          # Its Dockerfile copies nothing in, so its context is an empty folder: stdin, as before,
+          # would be read once and empty on a second try.
+          mkdir -p "$RUNNER_TEMP/pool-runner"
+          again docker build --file app/e2e/pool-runner.Dockerfile --build-arg RUNNER=purlis-runner:scenario \
             --build-arg "VERSION=$(cat tests/fixtures/harness-versions/claude.txt)" \
-            --tag localhost:5000/purlis-runner-scenario:candidate - < app/e2e/pool-runner.Dockerfile
+            --tag localhost:5000/purlis-runner-scenario:candidate "$RUNNER_TEMP/pool-runner"
           docker push localhost:5000/purlis-runner-scenario:candidate
           image=$(docker image inspect --format '{{index .RepoDigests 0}}' localhost:5000/purlis-runner-scenario:candidate)
           echo "image $image"
@@ -2270,18 +2290,20 @@ jobs:
   # criterion): the scenario legs' steps with every leg's own flag off and `pool` on, on Linux,
   # which has Docker. It builds the runner image this build makes, as `parity` does, and its run
   # (`wdio.pool.conf.ts`) makes a pool of it and presses each step's main button to Try it's last
-  # screen. On main's push, and on a pull request that touches Pool setup, its pools or the runner
-  # image (`GATES`), as the outcome bars are: the image's build fetches from the network, and a
-  # second build of the core without its test fence costs about as much again. Not required yet,
-  # so a fetch that fails doesn't block an unrelated merge (#5176 makes it required once it has
-  # run steadily).
+  # screen. On a pull request only where it touches Pool setup, its pools or the runner image
+  # (`GATES`), as the outcome bars are: a second build of the core without its test fence costs
+  # about as much again.
+  #
+  # **Required since #5176** (the person's ruling of 2026-11-07): it passed 12 of 12 of main's
+  # completed runs before. So it runs wherever a required check is read, the merge group and the
+  # nightly too, has no `continue-on-error`, and `pool-setup-scenario-checks` carries the check's
+  # name, as `outcome-bars-linux-checks` does. Its image's build fetches gh, glab, Ubuntu's
+  # packages and the registry's image from the network, and each of those is asked again before
+  # it fails the job (the image step), so one fetch that fails does not drop a merge group.
   pool-setup-scenario:
-    name: scenario tests (${{ matrix.os }}, Pool setup on Docker)
+    name: Pool setup on Docker run (${{ matrix.os }})
     needs: changes
-    # Evidence until #5176: its red stays on the job and leaves the `ci` run green, so a fetch that
-    # fails on main's push doesn't stop `tools/land.mjs` or the dev build.
-    continue-on-error: true
-    if: ${{ !cancelled() && (github.event_name == 'push' || (github.event_name == 'pull_request' && needs.changes.outputs.pool-setup != 'false')) }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.pool-setup != 'false') }}
     timeout-minutes: 60
     strategy:
       matrix:
@@ -2295,6 +2317,26 @@ jobs:
         pool: [true]
     runs-on: ${{ matrix.os }}
     steps: *scenario-steps
+
+  # The required check that names Pool setup's run on Docker (#5176), as
+  # `outcome-bars-linux-checks` is for the outcome bars' Linux leg: its leg passed wherever it
+  # runs, and on a pull request it is skipped where its gate says the change cannot move it.
+  pool-setup-scenario-checks:
+    name: scenario tests (ubuntu-24.04, Pool setup on Docker)
+    needs: [changes, pool-setup-scenario]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Pool setup's run passed
+        env:
+          SCOPE: ${{ needs.changes.outputs.pool-setup }}
+          EVENT: ${{ github.event_name }}
+          RESULT: ${{ needs.pool-setup-scenario.result }}
+        run: |
+          want=success
+          if [ "$EVENT" = pull_request ] && [ "$SCOPE" = false ]; then want=skipped; fi
+          echo "scope: ${SCOPE:-unknown}, event: $EVENT, result: $RESULT"
+          test "$RESULT" = "$want"
 
   # The required check `scenario tests (ubuntu-24.04)`, as `scenario-checks` is for macOS.
   scenario-linux-checks:

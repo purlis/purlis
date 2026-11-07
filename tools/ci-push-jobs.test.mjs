@@ -283,6 +283,9 @@ test("ci.yml's standings are the ones this ticket read", () => {
   assert.ok(ids(sorted.evidence).includes("outcome-bars"));
   assert.ok(ids(sorted.reached).includes("outcome-bars-linux"));
   assert.ok(ids(sorted.required).includes("outcome-bars-linux-checks"));
+  // Pool setup's run on Docker is required through its carrier since #5176.
+  assert.ok(ids(sorted.reached).includes("pool-setup-scenario"));
+  assert.ok(ids(sorted.required).includes("pool-setup-scenario-checks"));
   assert.ok(ids(sorted.reached).includes("rust"));
   assert.ok(ids(sorted.required).includes("parity"));
   assert.ok(!("parity" in LISTED));
