@@ -38,8 +38,10 @@
 //! back. One still there was cut short by a crash, a kill or a power cut: some clones are in
 //! `repos/` with their branch folders not repaired, which git cannot read. The doctor says so
 //! ([`cut_short`]), and the next move finishes it first ([`apply`]): `git worktree repair` in
-//! each clone the journal names that is in `repos/`. Nothing is moved back: both layouts are
-//! read, so finishing is the smaller step.
+//! each clone the journal names that is in `repos/`, and in each a rollback moved back to the
+//! root, whose branch folders may still point into `repos/`. Nothing is moved back: both layouts
+//! are read, so finishing is the smaller step. A move never starts while a journal is there, so
+//! a rollback that could not put everything back keeps its journal from the next workspace.
 //!
 //! # What the confirmation showed
 //!
@@ -127,15 +129,14 @@ fn write_journal(root: &Path, journal: &Journal) -> std::io::Result<()> {
 }
 
 /// **A move cut short**: the workspace its journal names, and the clones it names that are in
-/// `repos/` and no longer at the root, whose branch folders may not have been repaired. `None`
-/// with no journal, or one that names a workspace that cannot be read.
+/// `repos/`, whose branch folders may not have been repaired. A clone counts whatever now stands
+/// at its old place: a rollback that could not move it back left it there for that reason.
+/// `None` with no journal, or one that names a workspace that cannot be read.
 pub fn cut_short(root: &Path) -> Option<(String, Vec<String>)> {
     let journal = read_journal(root)?;
-    let dir = crate::worktree::confine::workspace_dir(root, &journal.workspace).ok()?;
     let moved = journal
         .repos
         .into_iter()
-        .filter(|name| std::fs::symlink_metadata(dir.join(name)).is_err())
         .filter(|name| {
             repofolder::new_folder(root, &journal.workspace, name)
                 .is_ok_and(|to| to.join(".git").is_dir())
@@ -144,7 +145,9 @@ pub fn cut_short(root: &Path) -> Option<(String, Vec<String>)> {
     Some((journal.workspace, moved))
 }
 
-/// **Finish a move cut short**: `git worktree repair` in each clone it left in `repos/`, then its
+/// **Finish a move cut short**: `git worktree repair` in each clone it left in `repos/`, and in
+/// each it names that is back at the root, whose branch folders may still point into `repos/`
+/// (a rollback cut short between moving it back and writing their pointers back), then its
 /// journal removed. What it did, or why it could not, with the journal kept. `None` with no
 /// journal.
 fn finish(root: &Path) -> Option<Result<Vec<String>, String>> {
@@ -153,6 +156,21 @@ fn finish(root: &Path) -> Option<Result<Vec<String>, String>> {
         Ok(dir) => std::fs::canonicalize(&dir).unwrap_or(dir),
         Err(why) => return Some(Err(why.to_string())),
     };
+    let back: Vec<String> = read_journal(root)
+        .map(|journal| journal.repos)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|name| !moved.contains(name) && dir.join(name).join(".git").is_dir())
+        .collect();
+    for name in &back {
+        let was = dir.join(repofolder::REPOS).join(name);
+        if let Err(why) = repair(&was, &dir.join(name)) {
+            return Some(Err(format!(
+                "workspace '{ws}': the move into repos/ put back could not be finished: \
+                 {name}: {why}"
+            )));
+        }
+    }
     let mut branch_folders = 0;
     for name in &moved {
         let to = match repofolder::new_folder(root, &ws, name) {
@@ -463,6 +481,12 @@ pub fn move_workspace(
         .iter()
         .flat_map(|(row, _)| repairable(&row.repo.path))
         .collect();
+    if std::fs::symlink_metadata(journal_path(root)).is_ok() {
+        return Err(format!(
+            "workspace '{ws}': a move into repos/ cut short is not finished yet; run the move \
+             again to finish it first; nothing was moved"
+        ));
+    }
     let journal = Journal {
         workspace: ws.to_owned(),
         repos: moves.iter().map(|(row, _)| row.repo.name.clone()).collect(),

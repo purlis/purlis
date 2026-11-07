@@ -19,7 +19,7 @@ import {
   type MoveIntoReposPlan,
   type PlaneId,
 } from "./bindings";
-import { MOVE_INTO_REPOS, MoveIntoReposConfirm } from "./MoveIntoReposConfirm";
+import { MOVE_INTO_REPOS, MoveIntoReposConfirm, shownMoving } from "./MoveIntoReposConfirm";
 import { said, useSwitches } from "./switchClock";
 import { Button } from "./ui/button/Button";
 import { Dialog } from "./ui/dialog/Dialog";
@@ -425,8 +425,9 @@ export function useFixForm(fix: string, fixer: Fixer) {
       onCancel={() => setPlans(undefined)}
       onMove={() => {
         setPlans(undefined);
-        // Only what the confirmation showed moves: a repo added since refuses the move (#5569).
-        if ("plans" in plans) fixer.moveIntoRepos?.(plans.plans);
+        // Only what the confirmation showed moves: a repo added since refuses the move, and a
+        // workspace it left as it is stays so (#5569).
+        if ("plans" in plans) fixer.moveIntoRepos?.(shownMoving(plans.plans));
       }}
     />
   );

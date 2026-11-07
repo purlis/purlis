@@ -807,3 +807,105 @@ fn the_move_takes_what_the_confirmation_showed() {
     assert!(ws(&root).join("repos/api/.git").is_dir());
     assert!(ws(&root).join("repos/web/.git").is_dir());
 }
+
+/// A rollback that cannot move a clone back keeps its journal, and no other workspace's move
+/// may write over it: the clone left in `repos/` is still flagged, and the next move mends it.
+#[test]
+fn a_rollback_that_leaves_a_clone_in_repos_keeps_its_journal_from_the_next_workspace() {
+    purlis_core::unsteered!();
+    let (_d, root) = plane();
+    clone_at(&root, "api");
+    let piece = worktree::add(&root, "alpha", "api", "piece", None)
+        .expect("a branch folder of api")
+        .path;
+    let beta = root.join("workspaces/beta/web");
+    std::fs::create_dir_all(&beta).unwrap();
+    support::git(&beta, &["init", "-q", "-b", "main", "."]);
+    std::fs::write(beta.join("README.md"), "one\n").unwrap();
+    support::git(&beta, &["add", "README.md"]);
+    support::git(&beta, &["commit", "-q", "-m", "one"]);
+    // api moves; then something takes its old place, and a chat opens, so the rollback runs and
+    // cannot move api back.
+    let asked = std::cell::Cell::new(0);
+    let open = || {
+        asked.set(asked.get() + 1);
+        if asked.get() == 1 {
+            Vec::new()
+        } else {
+            vec!["late".to_owned()]
+        }
+    };
+    let moved = move_into_repos::move_workspace(&root, "alpha", &open, None, &mut |from, to| {
+        std::fs::rename(from, to)?;
+        std::fs::write(from, "in the way\n")
+    });
+    let why = moved.expect_err("a chat opened during the move");
+    assert!(why.contains("not everything could be put back"), "{why}");
+
+    let next = move_into_repos::move_workspace(&root, "beta", &Vec::new, None, &mut |from, to| {
+        std::fs::rename(from, to)
+    });
+
+    let why = next.expect_err("a move cut short is not finished yet");
+    assert!(why.contains("nothing was moved"), "{why}");
+    assert!(beta.join(".git").is_dir(), "beta's clone moved");
+    let flagged = rows(&root);
+    let row = find(&flagged, CUT_SHORT);
+    assert!(row.detail.contains("alpha"), "{row:?}");
+    assert!(row.detail.contains("api"), "{row:?}");
+
+    std::fs::remove_file(ws(&root).join("api")).unwrap();
+    fix::apply(&root, FixId::MoveIntoRepos);
+    works(&piece);
+    assert!(!rows(&root).iter().any(|r| r.name == CUT_SHORT));
+}
+
+/// A rollback killed after it moved a clone back and before it wrote its branch folders'
+/// pointers back leaves the clone at the root with them pointing into `repos/`: the next move
+/// mends them even when it moves nothing.
+#[test]
+fn a_rollback_killed_before_its_pointers_were_written_back_is_mended_by_the_next_move() {
+    purlis_core::unsteered!();
+    let (_d, root) = plane();
+    clone_at(&root, "api");
+    clone_at(&root, "web");
+    let piece = worktree::add(&root, "alpha", "api", "piece", None)
+        .expect("a branch folder of api")
+        .path;
+    // api moves and is repaired, then the run is killed before web moves; the rollback's
+    // first step, api moved back, is all that happened before the kill.
+    let mut moves = 0;
+    let killed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        move_into_repos::move_workspace(&root, "alpha", &Vec::new, None, &mut |from, to| {
+            moves += 1;
+            if moves == 2 {
+                panic!("killed before move 2");
+            }
+            std::fs::rename(from, to)
+        })
+    }));
+    assert!(killed.is_err(), "the move was not killed");
+    assert!(
+        git_reads(&piece),
+        "api's branch folder was repaired in repos/"
+    );
+    std::fs::rename(ws(&root).join("repos/api"), ws(&root).join("api")).unwrap();
+    std::fs::remove_dir(ws(&root).join("repos")).unwrap();
+    assert!(!git_reads(&piece), "its pointers still lead into repos/");
+    // A chat is open, so the move itself is refused.
+    let record = purlis_core::reopen::Record {
+        chats: vec![purlis_core::reopen::Chat {
+            program: "claude".to_owned(),
+            name: "steward".to_owned(),
+            cwd: None,
+            number: Some(1),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    purlis_core::reopen::write(&root, &record).unwrap();
+
+    fix::apply(&root, FixId::MoveIntoRepos);
+
+    works(&piece);
+}

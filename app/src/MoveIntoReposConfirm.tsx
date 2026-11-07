@@ -8,6 +8,16 @@ import { AlertDialog } from "./ui/dialog/Dialog";
 export const MOVE_INTO_REPOS = "move-into-repos";
 
 /**
+ * **What the confirmation shows as moving or finishing**: every workspace but those it leaves as
+ * they are, because a chat is open in them. Only these are sent with Move repos, so a workspace
+ * shown as left alone is never moved, even once its chat closes (#5569). A move cut short is
+ * finished whatever is sent.
+ */
+export function shownMoving(plans: readonly MoveIntoReposPlan[]): MoveIntoReposPlan[] {
+  return plans.filter((plan) => plan.repos.length === 0 || plan.open.length === 0);
+}
+
+/**
  * **Move into repos/, asked before anything moves** (#5374, ADR 0114 decision 4): which repos
  * move in each workspace, which workspaces stay as they are because a chat is open in them, and
  * which chats their harness can no longer resume afterwards, because they were started in a repo

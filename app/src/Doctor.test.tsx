@@ -907,8 +907,29 @@ describe("Move into repos/ asks before anything moves (#5374)", () => {
     await userEvent.click(within(again).getByRole("button", { name: "Move repos" }));
 
     await vi.waitFor(() => expect(asked).toContain("plane_doctor_move_into_repos"));
-    expect(shown).toEqual([plans]);
+    expect(shown).toEqual([[plans[0]]]);
     expect(asked).not.toContain("plane_doctor_fix");
+  });
+
+  it("never sends a workspace it showed as left as they are, so closing its chat moves nothing there (#5569)", async () => {
+    const asked: string[] = [];
+    const shown: unknown[] = [];
+    const finishing: MoveIntoReposPlan = {
+      workspace: "gamma",
+      repos: [],
+      unresumable: [],
+      open: [],
+      finishing: ["lib"],
+    };
+    const asking = await confirmation(asked, shown, [...plans, finishing]);
+    expect(within(asking).getByRole("region", { name: "Left as they are" })).toHaveTextContent(
+      "beta",
+    );
+
+    await userEvent.click(within(asking).getByRole("button", { name: "Move repos" }));
+
+    await vi.waitFor(() => expect(shown).toHaveLength(1));
+    expect(shown).toEqual([[plans[0], finishing]]);
   });
 
   it("names a move cut short, and offers to finish it with nothing left to move (#5569)", async () => {
