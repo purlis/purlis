@@ -899,6 +899,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Bringing a held runner's conversations back (#4633): it writes into the pool's runner's
     // home and then removes the held one, so the person's press alone.
     "docker_pool_bring_back_held_runner",
+    // Letting an older runner go with work no fetch brings (ruled 2026-11-07): that work goes
+    // with it, so the person's press alone.
+    "docker_pool_let_runner_go",
     // The runner image this version's release names (2026-10-30): the Add a pool dialog's
     // default image, read through the updater, for the person's own window.
     "runner_image_of_this_version",

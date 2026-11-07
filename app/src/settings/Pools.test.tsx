@@ -1413,7 +1413,7 @@ describe("leftSaid", () => {
     );
     expect(said).toContain("An older runner stays");
     expect(said).toContain("refs/stash of the repository workspaces/app/web");
-    expect(said).toContain("Removing the pool lets the runner go");
+    expect(said).toContain("Let it go in Devices removes only that runner");
   });
 
   it("names the first five and counts the rest", () => {

@@ -4764,6 +4764,86 @@ mod left_beyond_a_fetch {
         assert!(says(&left, "refs/heads/main"), "{left:?}");
     }
 
+    /// What the branch `main` of the runner's clone `web` is at, recorded as fetched from it.
+    fn fetched_once(world: &World) -> String {
+        let tip = git(&world.web(), &["rev-parse", "HEAD"]);
+        crate::tipsfetched::record(&world.config, PROJECT, std::slice::from_ref(&tip)).unwrap();
+        tip
+    }
+
+    #[test]
+    fn a_branch_fetched_once_and_squashed_here_since_is_not_left() {
+        let world = World::new();
+        commit(&world.web(), "index.html", "squashed here since\n");
+        assert!(says(&world.left(), "refs/heads/main"), "not yet fetched");
+
+        fetched_once(&world);
+
+        assert_eq!(world.left(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_branch_moved_on_the_runner_after_its_fetch_is_left() {
+        let world = World::new();
+        commit(&world.web(), "index.html", "fetched\n");
+        fetched_once(&world);
+        commit(&world.web(), "index.html", "after the fetch\n");
+
+        let left = world.left();
+
+        assert!(says(&left, "refs/heads/main"), "{left:?}");
+    }
+
+    #[test]
+    fn the_work_of_a_workspace_renamed_here_and_fetched_once_is_not_left() {
+        let world = World::new();
+        std::fs::rename(
+            world.here.join("workspaces/app"),
+            world.here.join("workspaces/apps"),
+        )
+        .unwrap();
+        commit(&world.web(), "index.html", "after the rename\n");
+
+        fetched_once(&world);
+
+        assert_eq!(world.left(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_stash_is_left_though_its_branch_was_fetched_once() {
+        let world = World::new();
+        commit(&world.web(), "index.html", "fetched\n");
+        fetched_once(&world);
+        std::fs::write(world.web().join("index.html"), "stashed\n").unwrap();
+        git(
+            &world.web(),
+            &[
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.invalid",
+                "stash",
+                "-q",
+            ],
+        );
+
+        let left = world.left();
+
+        assert!(says(&left, "refs/stash"), "{left:?}");
+    }
+
+    #[test]
+    fn a_tip_fetched_into_another_project_does_not_count() {
+        let world = World::new();
+        commit(&world.web(), "index.html", "only on the runner\n");
+        let tip = git(&world.web(), &["rev-parse", "HEAD"]);
+        crate::tipsfetched::record(&world.config, "01J9PRJCT00000000000000001", &[tip]).unwrap();
+
+        let left = world.left();
+
+        assert!(says(&left, "refs/heads/main"), "{left:?}");
+    }
+
     #[test]
     fn what_the_runner_could_not_look_through_is_left() {
         let world = World::new();

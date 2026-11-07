@@ -5467,8 +5467,16 @@ impl HostedSessions {
                 let beside = self.connection.links_of(&self.root).len() > 1
                     || lock(&self.stays_on).is_some()
                     || self.connection.pool_drains();
+                let tips_in = self.connection.runners_config();
                 crate::runnercode::fetch_workspace(
-                    &link, &project, &self.root, workspace, pool, beside, left,
+                    &link,
+                    &project,
+                    &self.root,
+                    workspace,
+                    pool,
+                    beside,
+                    left,
+                    tips_in.as_deref(),
                 )
             }
             Err(why) => vec![why],

@@ -16,6 +16,7 @@ fn runner(pool: &str, runner: &str, draining: bool) -> KeptRunner {
         pool: pool.to_owned(),
         runner: runner.to_owned(),
         draining,
+        left: Vec::new(),
     }
 }
 
@@ -82,6 +83,23 @@ fn a_chat_on_a_pool_is_on_its_runner_that_takes_new_chats_and_one_named_whole_on
     assert_eq!(sessions(&by_name("builds-2b1f").on), [3]);
     assert_eq!(sessions(&by_name("builds").on), [4]);
     assert!(by_name("builds").draining);
+}
+
+/// **A draining runner kept for work left on it says what**, for its row to offer Let it go
+/// (ruled 2026-11-07).
+#[test]
+fn a_runner_kept_for_work_left_on_it_lists_what_on_its_row() {
+    let mut kept = runner("builds", "builds", true);
+    kept.left = vec!["the project's own repository on the runner holds 1 stashed change".into()];
+
+    let shown = placed(
+        &[kept, runner("builds", "builds-2b1f", false)],
+        Vec::new(),
+        Vec::new(),
+    );
+
+    assert_eq!(shown.runners[0].left.len(), 1);
+    assert!(shown.runners[1].left.is_empty());
 }
 
 #[test]

@@ -220,7 +220,8 @@ export function owedSaid(version: PoolVersion | undefined, now: number): string 
  * **What a row says of work an older runner holds that bringing work back does not reach**
  * (ruled 2026-11-07): a stash, a commit on no branch, a clone only on the runner, or one whose
  * folder here was removed or renamed. The runner stays, the row lists what keeps it, and says
- * what lets it go. Nothing where nothing does.
+ * what lets it go: Let it go in Devices, which frees that runner alone. Nothing where nothing
+ * does.
  */
 export function leftSaid(version: PoolVersion | undefined): string | undefined {
   if (version === undefined || version.left.length === 0) return undefined;
@@ -228,7 +229,7 @@ export function leftSaid(version: PoolVersion | undefined): string | undefined {
   const more = version.left.length - shown.length;
   return [
     `An older runner stays, since it holds work purlis can't bring back on its own: ${shown.join("; ")}${more > 0 ? `; and ${more} more` : ""}.`,
-    "To keep it, copy it out of the runner's container with Docker. Removing the pool lets the runner go, and deletes that work with it.",
+    "To keep it, copy it out of the runner's container with Docker. Let it go in Devices removes only that runner, and deletes that work with it.",
   ].join(" ");
 }
 

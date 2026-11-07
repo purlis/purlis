@@ -287,6 +287,8 @@ pub mod testrun;
 pub mod theme;
 pub mod themechat;
 pub mod themepreview;
+#[cfg(unix)]
+pub mod tipsfetched;
 pub mod toolgate;
 pub mod toolhooks;
 pub mod touching;
