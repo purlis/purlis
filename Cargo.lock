@@ -6050,6 +6050,7 @@ dependencies = [
  "percent-encoding",
  "plist",
  "proptest",
+ "psl",
  "purlis-browser-engine",
  "purlis-core",
  "purlis-host",
