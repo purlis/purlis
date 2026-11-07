@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794046296773,
+  "lastUpdate": 1794048445223,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -42042,6 +42042,48 @@ window.BENCHMARK_DATA = {
             "value": 101.87037849999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.514, 101.780, 101.870, 101.966, 102.490 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "362bed9fd41e94dcc5630a683b14499666e3f4e8",
+          "message": "A picture pull clears the folders killed pulls left in the temp folder (#5348) (#5606)\n\nA pull removes its story-baselines-* download in a finally, which a killed\npull never reaches. Each pull now first removes the story-baselines-* folders\ndirectly under the resolved temp folder that nothing has written to for a day\n(newest mtime of anything inside, links not followed). Only real folders\nwhose name is exactly mkdtemp's, never a link, never under a temp path that\nresolves to nothing or a root.\n\nCloses #5348\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6TCQ734PEXV0WBV7Q602CAR\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-07T09:56:35Z",
+          "tree_id": "7d440c536e1b080b8bdc25c6aad295b3739f9f1b",
+          "url": "https://github.com/purlis/purlis/commit/362bed9fd41e94dcc5630a683b14499666e3f4e8"
+        },
+        "date": 1794048440301,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3288805,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.321, 0.323, 0.329, 0.332, 0.337 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.667679999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.605, 16.629, 16.668, 16.695, 16.742 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5747595,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.797, 100.957, 101.575, 101.793, 102.082 ms"
           }
         ]
       }
