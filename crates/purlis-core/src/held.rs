@@ -517,6 +517,17 @@ impl Store {
 
     /// The names of the plain files directly in the store (a regular file with one name),
     /// sorted.
+    /// [`Store::files`], each with its [`Entry`] from the same `lstat`.
+    pub(crate) fn file_entries(&self) -> Result<Vec<(String, Entry)>, String> {
+        let mut files: Vec<(String, Entry)> = listed(self.fd.as_fd())
+            .map_err(|e| self.failed(e))?
+            .into_iter()
+            .filter(|(_, entry)| kind_of(entry) == FileType::RegularFile)
+            .collect();
+        files.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(files)
+    }
+
     pub(crate) fn files(&self) -> Result<Vec<String>, String> {
         let mut names = Vec::new();
         for (name, kind) in entries(self.fd.as_fd()).map_err(|e| self.failed(e))? {
@@ -883,6 +894,16 @@ fn walk(
 /// The entries of the directory `fd` holds, `.` and `..` left out, each with its own type as
 /// `lstat` gives it, and a regular file with more than one name read as a link.
 fn entries(fd: rustix::fd::BorrowedFd<'_>) -> rustix::io::Result<Vec<(String, FileType)>> {
+    Ok(listed(fd)?
+        .into_iter()
+        .map(|(name, entry)| (name, kind_of(&entry)))
+        .collect())
+}
+
+/// Every entry directly in the directory `fd` holds, each with what its one `lstat` said: the
+/// listing [`entries`] and [`Store::file_entries`] both read, so a reader that needs a file's
+/// size or link count does not ask the filesystem a second time (#5486).
+fn listed(fd: rustix::fd::BorrowedFd<'_>) -> rustix::io::Result<Vec<(String, Entry)>> {
     let mut names = Vec::new();
     let mut dir = rustix::fs::Dir::read_from(fd)?;
     while let Some(entry) = dir.read() {
@@ -896,16 +917,25 @@ fn entries(fd: rustix::fd::BorrowedFd<'_>) -> rustix::io::Result<Vec<(String, Fi
         }
         names.push(name.to_owned());
     }
-    kinds(fd, names)
+    stats(fd, names)
 }
 
-/// Each of `names` in the directory `fd` holds with its type as `lstat` gives it. A name that
-/// is no longer there is left out: the listing named it, and an edit's rename took it away
-/// before it was looked at, which is not a store that cannot be read.
-fn kinds(
+/// An entry's type as a reader takes it: a regular file with another name is a link.
+fn kind_of(entry: &Entry) -> FileType {
+    if entry.kind == FileType::RegularFile && entry.links > 1 {
+        FileType::Symlink
+    } else {
+        entry.kind
+    }
+}
+
+/// Each of `names` in the directory `fd` holds with its `lstat`. A name that is no longer
+/// there is left out: the listing named it, and an edit's rename took it away before it was
+/// looked at, which is not a store that cannot be read.
+fn stats(
     fd: rustix::fd::BorrowedFd<'_>,
     names: impl IntoIterator<Item = String>,
-) -> rustix::io::Result<Vec<(String, FileType)>> {
+) -> rustix::io::Result<Vec<(String, Entry)>> {
     let mut out = Vec::new();
     for name in names {
         let stat = match rustix::fs::statat(fd, name.as_str(), AtFlags::SYMLINK_NOFOLLOW) {
@@ -913,13 +943,7 @@ fn kinds(
             Err(rustix::io::Errno::NOENT) => continue,
             Err(e) => return Err(e),
         };
-        let kind = FileType::from_raw_mode(stat.st_mode);
-        let kind = if kind == FileType::RegularFile && stat.st_nlink > 1 {
-            FileType::Symlink
-        } else {
-            kind
-        };
-        out.push((name, kind));
+        out.push((name, Entry::of(&stat)));
     }
     Ok(out)
 }
@@ -1022,11 +1046,15 @@ mod tests {
         )
         .unwrap();
 
-        let found = kinds(fd.as_fd(), ["gone.md".to_owned(), "there.md".to_owned()]);
+        let found = stats(fd.as_fd(), ["gone.md".to_owned(), "there.md".to_owned()]);
 
         assert_eq!(
-            found.unwrap(),
-            vec![("there.md".to_owned(), FileType::RegularFile)]
+            found
+                .unwrap()
+                .iter()
+                .map(|(name, entry)| (name.as_str(), kind_of(entry)))
+                .collect::<Vec<_>>(),
+            vec![("there.md", FileType::RegularFile)]
         );
     }
 }

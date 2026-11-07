@@ -231,16 +231,14 @@ impl Spot<'_> {
 /// the bound on one file — what [`super::read_files`] lists by path. A link, a file with
 /// another name, a FIFO or a directory is not a memory.
 fn md_names(store: &Store) -> io::Result<Vec<String>> {
+    // Each file as its listing's one `lstat` found it: a second look at each cost a sweep of
+    // 200,000 memories seconds (#5486).
     let mut out = Vec::new();
-    for name in store.files().map_err(io::Error::other)? {
+    for (name, entry) in store.file_entries().map_err(io::Error::other)? {
         if name == INDEX || !name.ends_with(".md") {
             continue;
         }
-        if store
-            .entry(&name)
-            .map_err(io::Error::other)?
-            .is_some_and(|entry| entry.plain() && entry.size <= MAX_BYTES)
-        {
+        if entry.plain() && entry.size <= MAX_BYTES {
             out.push(name);
         }
     }
