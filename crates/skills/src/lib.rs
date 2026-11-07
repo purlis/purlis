@@ -176,6 +176,20 @@ impl Origin {
     pub fn of_the_plane(self) -> bool {
         matches!(self, Self::Project | Self::Workspace | Self::Persona)
     }
+
+    /// **The origin whose [`Self::level`] is `word`**, or `None` for a word that is no level's:
+    /// what a runner says a chat's skill is of (#4218).
+    pub fn from_level(word: &str) -> Option<Self> {
+        Some(match word {
+            "built-in" => Self::BuiltIn,
+            "project" => Self::Project,
+            "workspace" => Self::Workspace,
+            "persona" => Self::Persona,
+            "installed" => Self::Harness,
+            "repo" => Self::Repo,
+            _ => return None,
+        })
+    }
 }
 
 /// **A skill's name without the namespace a harness started it by**: `purlis-project:deploy` is

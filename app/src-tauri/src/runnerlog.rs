@@ -198,6 +198,12 @@ impl RunnerLog {
         self.cursor = self.cursor.max(resumes_at.saturating_sub(1));
     }
 
+    /// Some of the runner's lines were let go of before anything read them (#4219): said, as a
+    /// gap in its log is.
+    pub fn let_go(&mut self) {
+        self.missed = true;
+    }
+
     /// The link to the runner went down, or came back.
     pub fn link(&mut self, down: bool) {
         self.down = down;

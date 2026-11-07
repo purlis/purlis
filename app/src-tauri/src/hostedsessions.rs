@@ -1399,6 +1399,9 @@ struct Shared {
 struct SkillLines {
     heard: std::collections::VecDeque<(u64, purlis_core::skilluse::relayed::Relayed)>,
     told_up_to: HashMap<String, u64>,
+    /// The newest `seq` let go of to keep [`MOST_SKILL_LINES_HELD`]: a project whose cursor is
+    /// below it missed lines, which is said ([`crate::runnerlog::RunnerLog::let_go`]).
+    let_go_up_to: u64,
 }
 
 /// The most skill lines a link holds for a project held on it after they came.
@@ -1410,8 +1413,28 @@ struct SkillLogged {
         crate::host::SkillRunsHeard,
         purlis_core::skilluse::relayed::Relayed,
     )>,
-    /// The config home, the runner's device, the project and the `seq` it was told up to.
-    keep: Option<(PathBuf, String, String, u64)>,
+    keep: Option<KeptCursor>,
+}
+
+/// **How far a project was told its runner's skill lines**, kept in this machine's config home
+/// ([`purlis_core::runnercursors`], #4219).
+struct KeptCursor {
+    config: PathBuf,
+    device: String,
+    project: String,
+    seq: u64,
+}
+
+impl KeptCursor {
+    /// Where the link keeps cursors at all and its runner said its device: else none.
+    fn of(config: Option<&Path>, device: Option<&str>, project: &str, seq: u64) -> Option<Self> {
+        Some(KeptCursor {
+            config: config?.to_path_buf(),
+            device: device?.to_owned(),
+            project: project.to_owned(),
+            seq,
+        })
+    }
 }
 
 impl Shared {
@@ -1429,9 +1452,13 @@ impl Shared {
                     if let Some((tell, run)) = &line.tell {
                         tell(None, run);
                     }
-                    if let Some((config, device, project, seq)) = &line.keep
-                        && let Err(why) =
-                            purlis_core::runnercursors::keep(config, device, project, *seq)
+                    if let Some(kept) = &line.keep
+                        && let Err(why) = purlis_core::runnercursors::keep(
+                            &kept.config,
+                            &kept.device,
+                            &kept.project,
+                            kept.seq,
+                        )
                     {
                         tracing::warn!(
                             "purlis: how far a runner's skill runs were logged was not kept ({why})"
@@ -1446,16 +1473,71 @@ impl Shared {
         }
     }
 
+    /// **`project` is held on the link, its runs told to `tell`** ([`HostLink::hear_skill_runs`]):
+    /// the lines held past its kept cursor first, and each read after.
+    fn hand_off(&self, project: &str, tell: crate::host::SkillRunsHeard) {
+        let shared = self;
+        let (device, began_at) = {
+            let log = lock(&shared.runner_log);
+            (log.now().device, log.began_at())
+        };
+        let config = lock(&shared.cursors).clone();
+        let kept = config
+            .as_deref()
+            .zip(device.as_deref())
+            .and_then(|(config, device)| {
+                purlis_core::runnercursors::logged_up_to(config, device, project)
+            });
+        let from = kept.unwrap_or(began_at);
+        // Held before the project is, as a line read takes it first (see `Shared::skill_line`).
+        let mut lines = lock(&shared.skill_lines);
+        if lock(&shared.skill_runs)
+            .insert(project.to_owned(), Arc::clone(&tell))
+            .is_some()
+        {
+            return;
+        }
+        let keep = |seq: u64| KeptCursor::of(config.as_deref(), device.as_deref(), project, seq);
+        let mut logged: Vec<SkillLogged> = lines
+            .heard
+            .iter()
+            .filter(|(seq, _)| *seq > from)
+            .map(|(seq, run)| SkillLogged {
+                tell: Some((Arc::clone(&tell), run.clone())),
+                keep: keep(*seq),
+            })
+            .collect();
+        // Lines past its cursor this link let go of before it was held: said, never skipped in
+        // silence.
+        let missed = lines.let_go_up_to > from;
+        let up_to = lines.heard.back().map_or(from, |(seq, _)| from.max(*seq));
+        lines.told_up_to.insert(project.to_owned(), up_to);
+        drop(lines);
+        if missed {
+            lock(&shared.runner_log).let_go();
+        }
+        // A project with no cursor kept starts one where the link came up.
+        if logged.is_empty() && kept.is_none() {
+            logged.push(SkillLogged {
+                tell: None,
+                keep: keep(from),
+            });
+        }
+        shared.log(logged);
+    }
+
     /// **A skill line of the runner's log came, read at `seq`** (#4219): held for a project held
     /// on the link later, and told to each held on it now that was not told it.
     fn skill_line(&self, seq: u64, run: purlis_core::skilluse::relayed::Relayed) {
         let device = lock(&self.runner_log).now().device;
         let config = lock(&self.cursors).clone();
+        // Taken before the projects, as a project's hand-off takes it before it is held: a line
+        // is either held for its hand-off or told it here, never neither.
+        let mut lines = lock(&self.skill_lines);
         let tells: Vec<(String, crate::host::SkillRunsHeard)> = lock(&self.skill_runs)
             .iter()
             .map(|(project, tell)| (project.clone(), Arc::clone(tell)))
             .collect();
-        let mut lines = lock(&self.skill_lines);
         let mut logged = Vec::new();
         for (project, tell) in tells {
             // A project whose hand-off has not begun is told it there.
@@ -1468,15 +1550,14 @@ impl Shared {
             *up_to = seq;
             logged.push(SkillLogged {
                 tell: Some((tell, run.clone())),
-                keep: config
-                    .clone()
-                    .zip(device.clone())
-                    .map(|(config, device)| (config, device, project, seq)),
+                keep: KeptCursor::of(config.as_deref(), device.as_deref(), &project, seq),
             });
         }
         lines.heard.push_back((seq, run));
         while lines.heard.len() > MOST_SKILL_LINES_HELD {
-            lines.heard.pop_front();
+            if let Some((gone, _)) = lines.heard.pop_front() {
+                lines.let_go_up_to = gone;
+            }
         }
         drop(lines);
         self.log(logged);
@@ -2604,51 +2685,7 @@ impl HostLink {
     /// project's kept cursor, those its runner wrote while no window read its log among them, are
     /// told it first; a project with none kept is told those since the link came up.
     pub(crate) fn hear_skill_runs(&self, project: &str, tell: crate::host::SkillRunsHeard) {
-        let shared = &self.shared;
-        if lock(&shared.skill_runs)
-            .insert(project.to_owned(), Arc::clone(&tell))
-            .is_some()
-        {
-            return;
-        }
-        let (device, began_at) = {
-            let log = lock(&shared.runner_log);
-            (log.now().device, log.began_at())
-        };
-        let Some(device) = device else {
-            return;
-        };
-        let config = lock(&shared.cursors).clone();
-        let kept = config
-            .as_deref()
-            .and_then(|config| purlis_core::runnercursors::logged_up_to(config, &device, project));
-        let from = kept.unwrap_or(began_at);
-        let keep = |seq: u64| {
-            config
-                .clone()
-                .map(|config| (config, device.clone(), project.to_owned(), seq))
-        };
-        let mut lines = lock(&shared.skill_lines);
-        let mut logged: Vec<SkillLogged> = lines
-            .heard
-            .iter()
-            .filter(|(seq, _)| *seq > from)
-            .map(|(seq, run)| SkillLogged {
-                tell: Some((Arc::clone(&tell), run.clone())),
-                keep: keep(*seq),
-            })
-            .collect();
-        let up_to = lines.heard.back().map_or(from, |(seq, _)| from.max(*seq));
-        lines.told_up_to.insert(project.to_owned(), up_to);
-        drop(lines);
-        // A project with no cursor kept starts one where the link came up.
-        if logged.is_empty() && kept.is_none() {
-            logged.push(SkillLogged {
-                tell: None,
-                keep: keep(from),
-            });
-        }
-        shared.log(logged);
+        self.shared.hand_off(project, tell);
     }
 
     /// Hear the lines `project`'s hooks write with `relayed`, from now on.

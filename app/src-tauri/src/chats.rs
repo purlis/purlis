@@ -6941,8 +6941,8 @@ impl Chats {
     /// `pool`'s runner says it started or ended, logged in this project's skill log as a local
     /// run is, with this window's own word for where the chat ran: the persona it runs as, its
     /// harness and its workspace. Only for a chat open here that runs on that pool's runner, by
-    /// its id, or one still coming back as the window puts its chats back (#4219), whose record
-    /// says where it ran; any other line names no chat of this window's, and nothing is logged.
+    /// its id, or one still coming back as the window puts its chats back, or that its put-back
+    /// could not start (#4219), whose record says where it ran; any other line names no chat of this window's, and nothing is logged.
     pub fn skill_run_heard(
         &self,
         pool: Option<&str>,
@@ -6978,17 +6978,29 @@ impl Chats {
             // line came from the runner that keeps this project, under its id. Its record says
             // where it ran.
             None => {
-                let coming = lock(&self.coming);
-                let Some(one) = coming
+                let is_it = |chat: &Chat| chat.identity.id.as_deref() == Some(run.chat.as_str());
+                let coming = lock(&self.coming)
                     .iter()
-                    .find(|one| one.chat.identity.id.as_deref() == Some(run.chat.as_str()))
-                else {
+                    .find(|one| is_it(&one.chat))
+                    .map(|one| (one.chat.clone(), one.workspace.clone()));
+                // Or one its put-back could not start, which is still this window's.
+                let waiting = || {
+                    lock(&self.would_not_start)
+                        .iter()
+                        .find(|one| is_it(&one.chat))
+                        .map(|one| {
+                            let workspace =
+                                workspace_at_start(Some(&self.project), one.chat.cwd.as_deref());
+                            (one.chat.clone(), workspace)
+                        })
+                };
+                let Some((chat, workspace)) = coming.or_else(waiting) else {
                     return;
                 };
                 (
-                    one.chat.persona.clone(),
-                    one.chat.harness().map(Harness::name),
-                    one.workspace.clone(),
+                    chat.persona.clone(),
+                    chat.harness().map(Harness::name),
+                    workspace,
                 )
             }
         };

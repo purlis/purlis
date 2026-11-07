@@ -1222,20 +1222,10 @@ pub fn armed_by_its_runner(
     workspace: Option<&str>,
     armed: &[purlis_session_protocol::session::ArmedSkill],
 ) -> ChatSkills {
-    const LEVELS: [Origin; 6] = [
-        Origin::BuiltIn,
-        Origin::Project,
-        Origin::Workspace,
-        Origin::Persona,
-        Origin::Harness,
-        Origin::Repo,
-    ];
     let offered = armed
         .iter()
         .filter_map(|one| {
-            let origin = LEVELS
-                .into_iter()
-                .find(|origin| origin.level() == one.level)?;
+            let origin = Origin::from_level(&one.level)?;
             Some(Offered {
                 known_as: harness.skill_name(&one.name, origin),
                 effective: Effective {

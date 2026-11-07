@@ -3922,3 +3922,55 @@ fn a_runners_skill_runs_made_while_no_window_read_its_log_are_told_once_the_wind
     );
     drop(again);
 }
+
+/// **#4219: what a link let go of before a project was held on it is said, never skipped in
+/// silence**, and a project held before its runner said where its log ends is told the lines
+/// that come after.
+#[test]
+fn a_projects_hand_off_says_the_lines_let_go_past_its_cursor_and_hears_on_without_a_device() {
+    use purlis_core::skilluse::relayed::{Line, Relayed};
+    let run = |n: u64| Relayed {
+        chat: "01K6W0RKER000000000000000B".into(),
+        run: format!("01K6RUN{n:019}"),
+        at_ms: 1_793_440_800_000,
+        line: Line::Started {
+            skill: "review".into(),
+            started_by: purlis_core::skills::runs::StartedBy::SkillTool,
+            level: None,
+            tree: None,
+        },
+    };
+    let telling = || {
+        let told: Arc<Mutex<Vec<String>>> = Arc::default();
+        let tell: crate::host::SkillRunsHeard = {
+            let told = Arc::clone(&told);
+            Arc::new(move |_, run: &Relayed| told.lock().unwrap().push(run.run.clone()))
+        };
+        (told, tell)
+    };
+
+    let shared = Shared::default();
+    lock(&shared.runner_log).starts_at(RUNNERS_DEVICE.into(), 0, None);
+    for seq in 1..=(MOST_SKILL_LINES_HELD as u64 + 3) {
+        shared.skill_line(seq, run(seq));
+    }
+    assert!(!lock(&shared.runner_log).now().missed);
+    let (told, tell) = telling();
+    shared.hand_off("01J9PRJCT00000000000000000", tell);
+    until("the lines held are told", || {
+        told.lock().unwrap().len() == MOST_SKILL_LINES_HELD
+    });
+    assert!(
+        lock(&shared.runner_log).now().missed,
+        "the three let go are said"
+    );
+
+    let unsaid = Shared::default();
+    let (told, tell) = telling();
+    unsaid.hand_off("01J9PRJCT00000000000000000", tell);
+    lock(&unsaid.runner_log).starts_at(RUNNERS_DEVICE.into(), 0, None);
+    unsaid.skill_line(1, run(1));
+    until("a line after its device was said is told", || {
+        told.lock().unwrap().len() == 1
+    });
+}

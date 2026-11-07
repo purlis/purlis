@@ -2333,7 +2333,7 @@ impl Hosting {
         };
         // Answered only to a link that may compose a start or take one back: the window's, or
         // its host's relaying it (#3369).
-        let answers_prompt_key = peer.scope().may(Power::Launch);
+        let answers_a_launch = peer.scope().may(Power::Launch);
         // Read now: the link may end while the program starts, and the chat stays its window's.
         let started_for = opened_by(&self.state(), peer);
         // Composed off the runtime: a start the host composes itself reads the project's files
@@ -2559,8 +2559,8 @@ impl Hosting {
             process,
             confined,
             sandbox: Some(sandbox),
-            prompt_key: prompt_key.filter(|_| answers_prompt_key),
-            armed_skills: armed.filter(|_| answers_prompt_key).map(Box::new),
+            prompt_key: prompt_key.filter(|_| answers_a_launch),
+            armed_skills: armed.filter(|_| answers_a_launch).map(Box::new),
         })
     }
 
