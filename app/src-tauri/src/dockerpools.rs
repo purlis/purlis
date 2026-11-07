@@ -218,6 +218,11 @@ pub struct PoolVersion {
     pub owed: Vec<PoolOwed>,
     /// Why purlis could not read which projects those are, shown safely; none where it could.
     pub owed_why: Option<String>,
+    /// **What an older runner holds that bringing its work back does not reach**, as the last
+    /// look found it (ruled 2026-11-07), a sentence each, shown safely: a stash, a commit on no
+    /// branch, a clone only there, or one whose folder here was removed or renamed, keeps the
+    /// runner. Empty where none does.
+    pub left: Vec<String>,
 }
 
 /// **A project an older runner of a pool waits on** (#5461): it still has to bring back what its
@@ -875,6 +880,10 @@ pub fn version_on(
             .map(suspends_shown),
         owed,
         owed_why,
+        left: crate::poolfollow::left_on(&machine.config, name)
+            .iter()
+            .map(|one| crate::devices::shown_safely(one))
+            .collect(),
     })
 }
 

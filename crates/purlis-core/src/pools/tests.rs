@@ -4548,3 +4548,215 @@ fn a_first_chat_on_a_pool_is_one_nothing_of_the_workspace_has_run_or_come_back_f
     // A workspace with no clone has nothing to send, so no chat of it is a first anywhere.
     assert_eq!(run_on("notes"), ["first", "second"]);
 }
+
+/// **What a draining runner holds that no fetch brings** (ruled 2026-11-07): each project it keeps
+/// is found here by its id among the projects this machine knows, and the runner's every
+/// repository is proved home against that folder, as a fresh runner's is.
+mod left_beyond_a_fetch {
+    use std::path::{Path, PathBuf};
+
+    use crate::codelink::held::repos_held;
+
+    const PROJECT: &str = "01J9PRJCT00000000000000000";
+
+    fn git(dir: &Path, args: &[&str]) -> String {
+        let done = crate::testgit::run(dir, args);
+        assert!(done.ok(), "git {args:?} failed: {done:?}");
+        done.out.trim().to_owned()
+    }
+
+    fn commit(dir: &Path, file: &str, text: &str) {
+        std::fs::write(dir.join(file), text).unwrap();
+        git(dir, &["add", file]);
+        git(
+            dir,
+            &[
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-q",
+                "-m",
+                text,
+            ],
+        );
+    }
+
+    fn init(dir: &Path) {
+        std::fs::create_dir_all(dir).unwrap();
+        git(dir, &["init", "-q", "-b", "main", "."]);
+    }
+
+    /// A draining runner keeping project [`PROJECT`] with a clone `workspaces/app/web`, and this
+    /// machine's folder of that project, which it knows, holding all of it.
+    struct World {
+        _dir: tempfile::TempDir,
+        config: PathBuf,
+        projects: PathBuf,
+        runner: PathBuf,
+        here: PathBuf,
+    }
+
+    impl World {
+        fn new() -> World {
+            let dir = tempfile::tempdir().unwrap();
+            let top = dir.path().canonicalize().unwrap();
+            let projects = top.join("runner/projects");
+            let runner = projects.join(PROJECT);
+            init(&runner);
+            std::fs::write(runner.join(".gitignore"), "workspaces/\n").unwrap();
+            commit(&runner, ".gitignore", "workspaces/\n");
+            commit(
+                &runner,
+                "charter.toml",
+                &format!("[project]\nid = \"{PROJECT}\"\n"),
+            );
+            let web = runner.join("workspaces/app/web");
+            init(&web);
+            commit(&web, "index.html", "web\n");
+            let here = top.join("alpha");
+            git(&top, &["clone", "-q", runner.to_str().unwrap(), "alpha"]);
+            let app = here.join("workspaces/app");
+            std::fs::create_dir_all(&app).unwrap();
+            git(&app, &["clone", "-q", web.to_str().unwrap(), "web"]);
+            let config = top.join("config");
+            std::fs::create_dir_all(&config).unwrap();
+            crate::machine::update(&config, |store| store.remember(&here, 1)).unwrap();
+            World {
+                _dir: dir,
+                config,
+                projects,
+                runner,
+                here,
+            }
+        }
+
+        fn web(&self) -> PathBuf {
+            self.runner.join("workspaces/app/web")
+        }
+
+        fn left(&self) -> Vec<String> {
+            let (held, unread) = repos_held(&self.projects);
+            super::left_beyond_a_fetch(&self.config, &held, &unread).unwrap()
+        }
+    }
+
+    fn says(left: &[String], words: &str) -> bool {
+        left.iter().any(|one| one.contains(words))
+    }
+
+    #[test]
+    fn a_draining_runner_whose_every_commit_is_in_its_project_here_leaves_nothing() {
+        assert_eq!(World::new().left(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_stash_on_a_draining_runner_is_left_and_names_its_project() {
+        let world = World::new();
+        std::fs::write(world.web().join("index.html"), "stashed\n").unwrap();
+        git(
+            &world.web(),
+            &[
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.invalid",
+                "stash",
+                "-q",
+            ],
+        );
+
+        let left = world.left();
+
+        assert!(says(&left, "refs/stash"), "{left:?}");
+        assert!(says(&left, "alpha"), "{left:?}");
+    }
+
+    #[test]
+    fn a_commit_on_no_branch_on_a_draining_runner_is_left() {
+        let world = World::new();
+        git(&world.web(), &["checkout", "-q", "--detach"]);
+        commit(&world.web(), "index.html", "detached\n");
+
+        let left = world.left();
+
+        assert!(says(&left, "HEAD"), "{left:?}");
+    }
+
+    #[test]
+    fn a_clone_made_on_a_draining_runner_and_not_here_is_left() {
+        let world = World::new();
+        let api = world.runner.join("workspaces/app/api");
+        init(&api);
+        commit(&api, "main.rs", "fn main() {}\n");
+
+        let left = world.left();
+
+        assert!(says(&left, "workspaces/app/api"), "{left:?}");
+    }
+
+    #[test]
+    fn a_clone_removed_here_is_left_on_a_draining_runner() {
+        let world = World::new();
+        std::fs::remove_dir_all(world.here.join("workspaces/app/web")).unwrap();
+
+        let left = world.left();
+
+        assert!(says(&left, "workspaces/app/web"), "{left:?}");
+    }
+
+    #[test]
+    fn the_work_of_a_workspace_renamed_here_is_left_on_a_draining_runner() {
+        let world = World::new();
+        std::fs::rename(
+            world.here.join("workspaces/app"),
+            world.here.join("workspaces/apps"),
+        )
+        .unwrap();
+        commit(&world.web(), "index.html", "after the rename\n");
+
+        let left = world.left();
+
+        assert!(says(&left, "workspaces/app/web"), "{left:?}");
+    }
+
+    #[test]
+    fn the_work_of_a_project_this_machine_no_longer_knows_is_left() {
+        let world = World::new();
+        crate::machine::update(&world.config, |store| store.forget(&world.here)).unwrap();
+
+        let left = world.left();
+
+        assert!(says(&left, PROJECT), "{left:?}");
+    }
+
+    #[test]
+    fn a_project_with_two_folders_here_needs_its_work_in_only_one() {
+        let world = World::new();
+        let other = world.here.with_file_name("beta");
+        std::fs::create_dir_all(&other).unwrap();
+        std::fs::write(
+            other.join("charter.toml"),
+            format!("[project]\nid = \"{PROJECT}\"\n"),
+        )
+        .unwrap();
+        crate::machine::update(&world.config, |store| store.remember(&other, 2)).unwrap();
+
+        assert_eq!(world.left(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn what_the_runner_could_not_look_through_is_left() {
+        let world = World::new();
+        let (held, _) = repos_held(&world.projects);
+
+        let left =
+            super::left_beyond_a_fetch(&world.config, &held, &["a folder ran out".to_owned()])
+                .unwrap();
+
+        assert!(says(&left, "a folder ran out"), "{left:?}");
+    }
+}

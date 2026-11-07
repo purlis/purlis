@@ -18,7 +18,7 @@ import type {
 } from "../bindings";
 import { doneWithTheAddedPool, stopAddingAPool } from "../pools";
 import { forgetThisLaunch } from "../regions";
-import { owedSaid } from "./pools";
+import { leftSaid, owedSaid } from "./pools";
 import { GLOBAL } from "../windowprefs";
 
 /**
@@ -121,6 +121,7 @@ beforeEach(() => {
     waiting: 0,
     owed: [],
     owed_why: null,
+    left: [],
   };
   added = [];
   removed = [];
@@ -926,6 +927,7 @@ describe("You › This machine › Pools", () => {
       waiting: 2,
       owed: [],
       owed_why: null,
+      left: [],
     };
     render(<App />);
     const nav = await yourSettings();
@@ -1031,6 +1033,7 @@ describe("You › This machine › Pools", () => {
       waiting: 0,
       owed: [],
       owed_why: null,
+      left: [],
     };
     render(<App />);
     const nav = await yourSettings();
@@ -1055,6 +1058,7 @@ describe("You › This machine › Pools", () => {
       waiting: 0,
       owed: [],
       owed_why: null,
+      left: [],
     };
     render(<App />);
     const nav = await yourSettings();
@@ -1112,6 +1116,7 @@ describe("You › This machine › Pools", () => {
       waiting: 0,
       owed: [],
       owed_why: null,
+      left: [],
     };
     render(<App />);
     const nav = await yourSettings();
@@ -1137,6 +1142,7 @@ describe("You › This machine › Pools", () => {
       waiting: 0,
       owed: [],
       owed_why: null,
+      left: [],
     };
     render(<App />);
     const nav = await yourSettings();
@@ -1361,6 +1367,7 @@ describe("owedSaid", () => {
     waiting: 0,
     owed: [{ path: "/p/alpha", name: "alpha", opened: opened(secondsAgo), open_now: false }],
     owed_why: null,
+    left: [],
   });
 
   it("says how many whole days ago a closed project was last opened", () => {
@@ -1382,5 +1389,40 @@ describe("owedSaid", () => {
   it("says nothing where no project is waited on", () => {
     expect(owedSaid({ ...owing(0), owed: [] }, now)).toBeUndefined();
     expect(owedSaid(undefined, now)).toBeUndefined();
+  });
+});
+
+describe("leftSaid", () => {
+  const version = (left: string[]): PoolVersion => ({
+    runner: "0.4.2",
+    why: null,
+    desktop: "0.4.2",
+    follows: true,
+    draining: 1,
+    held: 0,
+    named: null,
+    waiting: 0,
+    owed: [],
+    owed_why: null,
+    left,
+  });
+
+  it("says what an older runner holds that can't be brought back, and what lets it go", () => {
+    const said = leftSaid(
+      version(["in project alpha: refs/stash of the repository workspaces/app/web"]),
+    );
+    expect(said).toContain("An older runner stays");
+    expect(said).toContain("refs/stash of the repository workspaces/app/web");
+    expect(said).toContain("Removing the pool lets the runner go");
+  });
+
+  it("names the first five and counts the rest", () => {
+    const said = leftSaid(version(["a", "b", "c", "d", "e", "f", "g"]));
+    expect(said).toContain("a; b; c; d; e; and 2 more.");
+  });
+
+  it("says nothing where nothing is left", () => {
+    expect(leftSaid(version([]))).toBeUndefined();
+    expect(leftSaid(undefined)).toBeUndefined();
   });
 });

@@ -616,6 +616,10 @@ pub(crate) fn a_window_again_on_a_pool_of(
         pool: name.clone(),
     });
     a_repository(&target.root);
+    // The window remembers the project it opened, as every window does: a drain finds the
+    // projects a runner holds among those this machine knows.
+    purlis_core::machine::update(config.path(), |store| store.remember(&target.root, 1))
+        .expect("the project is remembered");
     // Ended in this order once the window's sessions are: the runtime and its links, the
     // window's host, the pool and its runner, and last the config home it is kept in.
     target._keeps.push(Box::new(runtime));

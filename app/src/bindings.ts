@@ -12388,6 +12388,13 @@ export type PoolVersion = {
 	owed: PoolOwed[],
 	/**  Why purlis could not read which projects those are, shown safely; none where it could. */
 	owed_why: string | null,
+	/**
+	 *  **What an older runner holds that bringing its work back does not reach**, as the last
+	 *  look found it (ruled 2026-11-07), a sentence each, shown safely: a stash, a commit on no
+	 *  branch, a clone only there, or one whose folder here was removed or renamed, keeps the
+	 *  runner. Empty where none does.
+	 */
+	left: string[],
 };
 
 /**  What the Pools group draws: the pools, and the limits a new pool gets by default. */

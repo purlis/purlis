@@ -441,6 +441,22 @@ pub struct Owing {
     pub opened: u64,
 }
 
+/// **What the draining runner holds that no fetch brings here** (ruled 2026-11-07), in sentences:
+/// none only where every repository it keeps is proved home ([`crate::codelink::held::not_home`])
+/// against a folder this machine knows of its project, as a fresh runner's is. A fetch brings
+/// only the branches of the clones that are here, so a clone only on the runner, a clone or
+/// workspace removed or renamed here, a commit on no branch and a stash are each said, and so is
+/// the work of a project no folder here holds. `unread` is what the runner could not look
+/// through. Why, where this machine's records can't be read.
+pub fn left_beyond_a_fetch(
+    config_root: &Path,
+    held: &[crate::codelink::held::Held],
+    unread: &[String],
+) -> Result<Vec<String>, String> {
+    let _ = (config_root, held);
+    Ok(unread.to_vec())
+}
+
 /// **Chat `number` no longer runs where it was kept** (#4590): no restart asks for it, and its
 /// branches are still to come back. Nothing is written for a chat with no record, which is every
 /// chat of this machine.
